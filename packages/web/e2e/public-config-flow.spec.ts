@@ -1,10 +1,8 @@
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 
 // ---------------------------------------------------------------------------
 // E2E: Public configuration flow
-//   space picker → config creation → save flash → events sheet → enquiry
+//   space picker → config creation → save state → events sheet → enquiry
 //
 // Selector strategy:
 //   - Space cards:        getByTestId("space-card-<slug>")
@@ -12,22 +10,27 @@ import { test, expect, type Page } from "@playwright/test";
 //   - Enquiry form:       getByTestId("guest-enquiry-form")
 //   - Toolbar buttons:    getByRole("button", { name: "…" }) via aria-label
 //
-// All external API calls are intercepted with page.route() so these tests
-// run without a live backend. API base URL matches the VITE_API_URL default.
+// Configuration, venue and enquiry requests use page.route() fixtures; the
+// rendered planner and its real controls remain active. API base URL matches
+// the VITE_API_URL default.
 // ---------------------------------------------------------------------------
 
 const API = "http://localhost:3001";
 const VENUE_ID = "e2e-venue-001";
 const SPACE_ID = "e2e-space-001";
 const CONFIG_ID = "e2e-config-001";
-const WIDGET_COLLISION_ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-widget-collision-2026-06-22";
 
-// Every active test in this file boots the real R3F planner. Running those
-// canvases concurrently in separate Chromium workers contends for the shared
-// GPU process and can starve both React and Playwright polling even though the
-// page eventually becomes interactive. Keep this WebGL-heavy flow serial;
-// Playwright can still run other spec files in parallel around it.
-test.describe.configure({ mode: "serial" });
+// Keep this file's real R3F canvases sequential without cascading one failure
+// into unrelated unrun cases. Each test creates its own page and API fixtures.
+test.describe.configure({ mode: "default" });
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", { value: null });
+  });
+  await mockSpacePickerApis(page);
+});
 
 // ---------------------------------------------------------------------------
 // Typed mock fixtures
@@ -58,47 +61,6 @@ interface MockConfig {
   readonly revision: number;
   readonly objects: readonly MockPlacedObject[];
 }
-
-interface RectSnapshot {
-  readonly bottom: number;
-  readonly left: number;
-  readonly right: number;
-  readonly top: number;
-}
-
-interface CollisionSnapshot {
-  readonly status: "measured";
-  readonly bottomOverlap: number;
-  readonly capacityOverlap: number;
-  readonly capacityBottomOverlap: number;
-  readonly capacityChildrenFit: boolean;
-  readonly capacityCommandDeckGap: number;
-  readonly capacityCommandDeckOverlap: number;
-  readonly minimapCapacityGap: number;
-  readonly standaloneTruthAttached: boolean;
-  readonly truthChildrenFit: boolean;
-  readonly truthMinimapHorizontalOverlap: number;
-  readonly truthMinimapVerticalGap: number;
-  readonly truthOverlap: number;
-  readonly truthStatusLineFits: boolean;
-  readonly truthToolbarOverlap: number;
-  readonly viewModeMinimapOverlap: number;
-  readonly viewModeToolbarOverlap: number;
-  readonly bottom: RectSnapshot;
-  readonly capacity: RectSnapshot;
-  readonly commandDeck: RectSnapshot;
-  readonly minimap: RectSnapshot;
-  readonly toolbar: RectSnapshot;
-  readonly truth: RectSnapshot | null;
-  readonly viewMode: RectSnapshot;
-}
-
-interface MissingCollisionTarget {
-  readonly status: "missing-target";
-  readonly missing: string;
-}
-
-type CollisionCheck = CollisionSnapshot | MissingCollisionTarget;
 
 const MOCK_VENUE = {
   id: VENUE_ID,
@@ -198,6 +160,9 @@ async function mockSpacePickerApis(page: Page): Promise<void> {
   await page.route(`${API}/venues`, (route) => {
     void route.fulfill({ json: [MOCK_VENUE] });
   });
+  await page.route(`${API}/venues/${VENUE_ID}`, (route) => {
+    void route.fulfill({ json: { data: { ...MOCK_VENUE, spaces: [MOCK_SPACE] } } });
+  });
   await page.route(`${API}/venues/${VENUE_ID}/spaces`, (route) => {
     void route.fulfill({ json: [MOCK_SPACE] });
   });
@@ -219,7 +184,61 @@ async function waitForPlannerReady(page: Page, configId = CONFIG_ID): Promise<vo
   await expect(plannerShell).toHaveAttribute("data-planner-config-id", configId, {
     timeout: 15_000,
   });
-  await expect(page.getByTestId("planner-toolbar")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("toolbar", { name: "Planner tools", exact: true })).toBeVisible({ timeout: 15_000 });
+}
+
+async function openPlannerTools(page: Page): Promise<Locator> {
+  const toggle = page.getByRole("button", { name: "More planner tools", exact: true });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const tools = page.getByTestId("planner-toolbar");
+  await expect(tools).toBeVisible();
+  return tools;
+}
+
+async function expectClear(a: Locator, b: Locator, gap = 8): Promise<void> {
+  await expect(a).toBeVisible();
+  await expect(b).toBeVisible();
+  const aBox = await a.boundingBox();
+  const bBox = await b.boundingBox();
+  expect(aBox).not.toBeNull();
+  expect(bBox).not.toBeNull();
+  if (aBox === null || bBox === null) throw new Error("Visible panels must have bounds");
+  const clearance = Math.max(
+    aBox.x - bBox.x - bBox.width,
+    bBox.x - aBox.x - aBox.width,
+    aBox.y - bBox.y - bBox.height,
+    bBox.y - aBox.y - aBox.height,
+  );
+  expect(clearance).toBeGreaterThanOrEqual(gap);
+}
+
+async function expectPanelCopyContained(panel: Locator, child: Locator): Promise<void> {
+  await child.evaluate((element) => {
+    element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+  });
+  const panelBox = await panel.boundingBox();
+  expect(panelBox).not.toBeNull();
+  if (panelBox === null) throw new Error("Panel must have bounds");
+  // A fixed-width child can fit while its text overflows. Measure both after
+  // scrolling each row into the actual dock's visible area.
+  const bounds = await child.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const rect = element.getBoundingClientRect();
+    const text = range.getBoundingClientRect();
+    return {
+      left: Math.min(rect.left, text.left),
+      right: Math.max(rect.right, text.right),
+      top: Math.min(rect.top, text.top),
+      bottom: Math.max(rect.bottom, text.bottom),
+    };
+  });
+  expect(bounds.left).toBeGreaterThanOrEqual(panelBox.x + 8);
+  expect(bounds.right).toBeLessThanOrEqual(panelBox.x + panelBox.width - 8);
+  expect(bounds.top).toBeGreaterThanOrEqual(panelBox.y + 8);
+  expect(bounds.bottom).toBeLessThanOrEqual(panelBox.y + panelBox.height - 8);
 }
 
 // ---------------------------------------------------------------------------
@@ -293,15 +312,19 @@ test.describe("Grand Hall public blank draft", () => {
     await page.waitForURL(`**/plan/${CONFIG_ID}`, { timeout: 10_000 });
     await waitForPlannerReady(page);
 
-    await expect(page.getByTestId("planner-spatial-hud")).toBeVisible({ timeout: 8_000 });
+    const inspector = page.getByRole("complementary", { name: "Furniture inspector" });
+    await expect(inspector).toBeVisible();
+    for (const label of ["Tables", "Placed chairs", "Objects"]) {
+      await expect(inspector.locator("dl > div").filter({ has: page.getByText(label, { exact: true }) })
+        .locator("dd")).toHaveText("0");
+    }
+    await expect(inspector.getByRole("button", { name: "Add furniture", exact: true })).toBeEnabled();
     await expect(page.getByTestId("save-send-panel")).not.toBeAttached();
-    await expect(page.getByText("Start placing furniture to grade your layout")).toBeVisible();
-    await expect(page.getByText("0 placed items")).toBeVisible();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Editor with empty config — save flash, events sheet, SaveSendPanel gate
+// Editor with empty config — save state, events sheet, SaveSendPanel gate
 // ---------------------------------------------------------------------------
 
 test.describe("Editor with empty config", () => {
@@ -311,22 +334,33 @@ test.describe("Editor with empty config", () => {
     await waitForPlannerReady(page);
   });
 
-  test("Save Layout toolbar button is visible in the editor", async ({ page }) => {
-    await expect(page.getByRole("button", { name: "Save Layout" })).toBeVisible();
+  test("Saved layout action is visible in the editor toolbar", async ({ page }) => {
+    const tools = await openPlannerTools(page);
+    await expect(tools.getByRole("button", { name: "Layout saved", exact: true })).toBeVisible();
   });
 
-  test("Save Layout button aria-label changes to 'Saved just now' after a successful save", async ({ page }) => {
-    // Guest (unauthenticated) save path → publicBatchSave
-    await page.route(
-      `${API}/public/configurations/${CONFIG_ID}/objects/batch`,
-      (route) => { void route.fulfill({ json: { data: { objects: [], revision: 2 } } }); },
-    );
-    await page.getByRole("button", { name: "Save Layout" }).click();
-    // setSaveFlash(true) fires in the .then() callback after the save resolves.
-    // The label reverts after 2 s, so the 5 s timeout is safe.
-    await expect(
-      page.getByRole("button", { name: "Saved just now" }),
-    ).toBeVisible({ timeout: 5_000 });
+  test("Save action reports pending and saved states for a successful public request", async ({ page }) => {
+    let finishSave: (() => void) | undefined;
+    const saveGate = new Promise<void>((resolve) => { finishSave = resolve; });
+    let saveRequests = 0;
+    await page.route(`${API}/public/configurations/${CONFIG_ID}/objects/batch`, async (route) => {
+      saveRequests += 1;
+      await saveGate;
+      await route.fulfill({ json: { data: { objects: [], revision: 2 } } });
+    });
+    const tools = await openPlannerTools(page);
+    try {
+      await tools.getByRole("button", { name: "Layout saved", exact: true }).click();
+      await expect.poll(() => saveRequests).toBe(1);
+      const pending = tools.getByRole("button", { name: /^Saving/ });
+      await expect(pending).toBeVisible();
+      await expect(pending).toBeDisabled();
+    } finally {
+      finishSave?.();
+    }
+    await expect(tools.getByRole("button", { name: "Layout saved", exact: true })).toBeEnabled();
+    await expect(page.getByRole("banner", { name: "Room and save status" })
+      .getByRole("status")).toHaveText("Layout saved");
   });
 
   test("Events Sheet button opens the hallkeeper route in a new browser tab", async ({ page }) => {
@@ -341,9 +375,10 @@ test.describe("Editor with empty config", () => {
     // the suite runs at full parallelism — the underlying dev server can
     // take noticeably longer to serve the new tab's bundle than 5s under
     // load, even though window.open fires immediately.
+    const tools = await openPlannerTools(page);
     const [newPage] = await Promise.all([
       page.waitForEvent("popup", { timeout: 15_000 }),
-      page.getByRole("button", { name: "Events Sheet" }).click(),
+      tools.getByRole("button", { name: "Events Sheet", exact: true }).click(),
     ]);
     // Initial URL targets hallkeeper; guard then redirects to /login.
     await newPage.waitForURL(/\/(hallkeeper|login)/, { timeout: 10_000 });
@@ -381,231 +416,84 @@ test.describe("Editor with placed objects", () => {
     const truthRail = page.getByTestId("cockpit-truth-rail");
 
     await expect(sendPanel).toBeVisible({ timeout: 5_000 });
-    await expect(truthRail).toBeVisible({ timeout: 5_000 });
-
-    const sendBox = await sendPanel.boundingBox();
-    const railBox = await truthRail.boundingBox();
-
-    expect(sendBox).not.toBeNull();
-    expect(railBox).not.toBeNull();
-    if (sendBox === null || railBox === null) return;
-
-    expect(sendBox.x + sendBox.width).toBeLessThanOrEqual(railBox.x - 8);
+    const tools = await openPlannerTools(page);
+    await tools.getByText("Recorded evidence", { exact: true }).click();
+    await expect(truthRail).toBeVisible();
+    await truthRail.scrollIntoViewIfNeeded();
+    await expectClear(sendPanel, truthRail);
+    await expect(truthRail).toContainText("human review required");
   });
 
-  test("Layout grade card keeps long recommendation copy inside the panel", async ({ page }) => {
+  test("Layout evidence keeps long recommendation copy inside the panel", async ({ page }) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
     await page.goto(`/plan/${CONFIG_ID}`);
     await waitForPlannerReady(page);
-    await expect(page.getByTestId("planner-layout-grade")).toBeVisible({ timeout: 5_000 });
-
-    const layout = await page.evaluate(() => {
-      const panel = document.querySelector<HTMLElement>('[data-testid="planner-layout-grade"]');
-      if (panel === null) return { status: "missing-panel" as const };
-
-      const children = [
-        panel.querySelector<HTMLElement>(".planner-spatial-hud__title"),
-        panel.querySelector<HTMLElement>(".planner-spatial-hud__grade-row"),
-        panel.querySelector<HTMLElement>(".planner-spatial-hud__grade-recommendation"),
-      ];
-      if (children.some((child) => child === null)) return { status: "missing-child" as const };
-
-      const panelRect = panel.getBoundingClientRect();
-      const childRects = children.map((child) => {
-        if (child === null) throw new Error("unreachable");
-        const rect = child.getBoundingClientRect();
-        return {
-          bottom: rect.bottom,
-          left: rect.left,
-          right: rect.right,
-          top: rect.top,
-        };
-      });
-      const inset = 8;
-
-      return {
-        status: "measured" as const,
-        fits: childRects.every((rect) =>
-          rect.left >= panelRect.left + inset
-          && rect.right <= panelRect.right - inset
-          && rect.top >= panelRect.top + inset
-          && rect.bottom <= panelRect.bottom - inset,
-        ),
-        panel: {
-          bottom: panelRect.bottom,
-          left: panelRect.left,
-          right: panelRect.right,
-          top: panelRect.top,
-        },
-        children: childRects,
-      };
-    });
-
-    expect(layout.status).toBe("measured");
-    if (layout.status === "measured") {
-      expect(layout.fits).toBe(true);
+    await page.getByRole("navigation", { name: "Planner lenses" })
+      .getByRole("button", { name: "Evidence", exact: true }).click();
+    const panel = page.getByTestId("evidence-lens-panel");
+    await expect(panel).toBeVisible();
+    const recommendations = panel.locator('[data-testid^="evidence-check-"] .lens-panel__row-meta');
+    await expect(recommendations).not.toHaveCount(0);
+    const copy = await recommendations.allTextContents();
+    expect(copy.some((text) => text.length > 100)).toBe(true);
+    for (const recommendation of await recommendations.all()) {
+      await expectPanelCopyContained(panel, recommendation);
     }
+    await expectPanelCopyContained(panel, panel.locator(".lens-panel__footer"));
+    await expect(panel.locator(".lens-panel__footer")).toContainText("human review");
   });
 
-  test("Plan View widget clears the Capacity HUD and Event Phase Graph", async ({ page }, testInfo) => {
+  test("Plan navigation and capacity controls clear the event schedule and command deck", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
-    await page.evaluate(() => {
-      window.localStorage.removeItem("venviewer:floating-widget:cockpit-minimap:v2");
-    });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
     await page.goto(`/plan/${CONFIG_ID}`);
     await waitForPlannerReady(page);
 
-    const minimap = page.locator("[data-floating-widget-id='cockpit-minimap']");
-    const viewMode = page.locator("[data-floating-widget-id='planner-view-mode']");
-    await expect(minimap).toBeVisible({ timeout: 5_000 });
-    await expect(viewMode).toBeVisible({ timeout: 5_000 });
+    // Navigation and recorded evidence live in the Design lens's disclosure.
+    // They are embedded in its scrolling menu, not floating over capacity.
+    const tools = await openPlannerTools(page);
+    await tools.getByText("Plan navigation", { exact: true }).click();
+    const minimap = page.getByTestId("cockpit-minimap-embedded");
+    await expect(minimap.getByRole("complementary", { name: "Plan view minimap" })).toBeVisible();
+    await minimap.scrollIntoViewIfNeeded();
+    const viewMode = page.getByRole("group", { name: "View mode", exact: true });
+    const schedule = page.getByRole("contentinfo", { name: "Your event schedule" });
+    const commandDeck = page.getByRole("region", { name: "Planner command deck" });
+    await expectClear(tools, viewMode);
+    await expectClear(tools, schedule);
+    await expectClear(tools, commandDeck);
+    await tools.getByText("Recorded evidence", { exact: true }).click();
+    const truth = page.getByTestId("cockpit-truth-rail");
+    await truth.scrollIntoViewIfNeeded();
+    await expect(truth).toBeVisible();
+    await expectClear(minimap, truth);
     await expect(page.getByTestId("truth-mode-indicator")).not.toBeAttached();
-    await expect(page.getByTestId("cockpit-truth-rail")).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId("planner-capacity-panel")).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId("cockpit-bottom")).toBeVisible({ timeout: 5_000 });
-
-    const collision = await page.evaluate<CollisionCheck>(() => {
-      function snapshot(selector: string): RectSnapshot | null {
-        const element = document.querySelector<HTMLElement>(selector);
-        if (element === null) return null;
-        const rect = element.getBoundingClientRect();
-        return {
-          bottom: rect.bottom,
-          left: rect.left,
-          right: rect.right,
-          top: rect.top,
-        };
-      }
-
-      function overlapArea(a: RectSnapshot, b: RectSnapshot): number {
-        const left = Math.max(a.left, b.left);
-        const right = Math.min(a.right, b.right);
-        const top = Math.max(a.top, b.top);
-        const bottom = Math.min(a.bottom, b.bottom);
-        return Math.max(0, right - left) * Math.max(0, bottom - top);
-      }
-
-      function childrenFitInside(parentSelector: string, inset: number): boolean {
-        const parent = document.querySelector<HTMLElement>(parentSelector);
-        if (parent === null) return false;
-        const parentRect = parent.getBoundingClientRect();
-        const children = Array.from(parent.children);
-        return children.every((child) => {
-          const rect = child.getBoundingClientRect();
-          if (rect.width === 0 && rect.height === 0) return true;
-          return rect.left >= parentRect.left + inset
-            && rect.right <= parentRect.right - inset
-            && rect.top >= parentRect.top + inset
-            && rect.bottom <= parentRect.bottom - inset;
-        });
-      }
-
-      function elementFitsInside(parentSelector: string, childSelector: string, inset: number): boolean {
-        const parent = document.querySelector<HTMLElement>(parentSelector);
-        const child = document.querySelector<HTMLElement>(childSelector);
-        if (parent === null || child === null) return false;
-        const parentRect = parent.getBoundingClientRect();
-        const rect = child.getBoundingClientRect();
-        return rect.left >= parentRect.left + inset
-          && rect.right <= parentRect.right - inset
-          && rect.top >= parentRect.top + inset
-          && rect.bottom <= parentRect.bottom - inset;
-      }
-
-      function horizontalOverlap(a: RectSnapshot, b: RectSnapshot): number {
-        return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
-      }
-
-      function axisClearance(a: RectSnapshot, b: RectSnapshot): number {
-        const horizontalGap = Math.max(a.left - b.right, b.left - a.right);
-        const verticalGap = Math.max(a.top - b.bottom, b.top - a.bottom);
-        return Math.max(horizontalGap, verticalGap);
-      }
-
-      const minimapRect = snapshot("[data-floating-widget-id='cockpit-minimap']");
-      if (minimapRect === null) return { status: "missing-target", missing: "cockpit-minimap" };
-
-      const capacityRect = snapshot("[data-testid='planner-capacity-panel']");
-      if (capacityRect === null) return { status: "missing-target", missing: "planner-capacity-panel" };
-
-      const truthRect = snapshot("[data-testid='truth-mode-indicator']");
-
-      const bottomRect = snapshot("[data-testid='cockpit-bottom']");
-      if (bottomRect === null) return { status: "missing-target", missing: "cockpit-bottom" };
-
-      const commandDeckRect = snapshot("[data-testid='planner-command-deck']");
-      if (commandDeckRect === null) return { status: "missing-target", missing: "planner-command-deck" };
-
-      const toolbarRect = snapshot("[data-testid='planner-toolbar']");
-      if (toolbarRect === null) return { status: "missing-target", missing: "planner-toolbar" };
-
-      const viewModeRect = snapshot("[data-floating-widget-id='planner-view-mode']");
-      if (viewModeRect === null) return { status: "missing-target", missing: "planner-view-mode" };
-
-      return {
-        status: "measured",
-        minimap: minimapRect,
-        capacity: capacityRect,
-        truth: truthRect,
-        bottom: bottomRect,
-        commandDeck: commandDeckRect,
-        toolbar: toolbarRect,
-        viewMode: viewModeRect,
-        capacityOverlap: overlapArea(minimapRect, capacityRect),
-        capacityBottomOverlap: overlapArea(capacityRect, bottomRect),
-        capacityChildrenFit: childrenFitInside("[data-testid='planner-capacity-panel']", 6),
-        capacityCommandDeckGap: axisClearance(capacityRect, commandDeckRect),
-        capacityCommandDeckOverlap: overlapArea(capacityRect, commandDeckRect),
-        minimapCapacityGap: axisClearance(minimapRect, capacityRect),
-        standaloneTruthAttached: truthRect !== null,
-        truthChildrenFit: truthRect === null || childrenFitInside("[data-testid='truth-mode-toggle']", 4),
-        truthMinimapHorizontalOverlap: truthRect === null ? 0 : horizontalOverlap(minimapRect, truthRect),
-        truthMinimapVerticalGap: truthRect === null ? Number.POSITIVE_INFINITY : minimapRect.top - truthRect.bottom,
-        truthOverlap: truthRect === null ? 0 : overlapArea(minimapRect, truthRect),
-        truthStatusLineFits: truthRect === null || elementFitsInside(
-          "[data-testid='truth-mode-toggle']",
-          "[data-testid='truth-mode-status-line']",
-          4,
-        ),
-        truthToolbarOverlap: truthRect === null ? 0 : overlapArea(truthRect, toolbarRect),
-        viewModeMinimapOverlap: overlapArea(viewModeRect, minimapRect),
-        viewModeToolbarOverlap: overlapArea(viewModeRect, toolbarRect),
-        bottomOverlap: overlapArea(minimapRect, bottomRect),
-      };
-    });
-
-    const screenshotPath = `${WIDGET_COLLISION_ARTIFACT_DIR}/plan-minimap-capacity-clear.png`;
-    await mkdir(dirname(screenshotPath), { recursive: true });
-    const screenshot = await page.screenshot({ path: screenshotPath, fullPage: false });
-    await testInfo.attach("plan-minimap-collision-proof", {
-      body: screenshot,
+    await testInfo.attach("plan-navigation-and-evidence", {
+      body: await page.screenshot({ path: testInfo.outputPath("plan-navigation-and-evidence.png") }),
       contentType: "image/png",
     });
 
-    expect(collision.status).toBe("measured");
-    if (collision.status === "measured") {
-      expect(collision.capacityOverlap).toBe(0);
-      expect(collision.truthOverlap).toBe(0);
-      expect(collision.bottomOverlap).toBe(0);
-      expect(collision.capacityBottomOverlap).toBe(0);
-      expect(collision.capacityCommandDeckOverlap).toBe(0);
-      expect(collision.capacityCommandDeckGap).toBeGreaterThanOrEqual(8);
-      expect(collision.capacityChildrenFit).toBe(true);
-      expect(collision.minimapCapacityGap).toBeGreaterThanOrEqual(8);
-      expect(collision.standaloneTruthAttached).toBe(false);
-      expect(collision.truthChildrenFit).toBe(true);
-      expect(collision.truthStatusLineFits).toBe(true);
-      expect(collision.truthToolbarOverlap).toBe(0);
-      expect(collision.viewModeToolbarOverlap).toBe(0);
-      expect(collision.viewModeMinimapOverlap).toBe(0);
-      if (collision.truthMinimapHorizontalOverlap > 0) {
-        expect(collision.truthMinimapVerticalGap).toBeGreaterThanOrEqual(16);
-      }
-      expect(collision.minimap.bottom).toBeLessThanOrEqual(collision.bottom.top - 8);
-      expect(collision.capacity.bottom).toBeLessThanOrEqual(collision.bottom.top - 8);
+    await page.getByRole("button", { name: "More planner tools", exact: true }).click();
+    await expect(tools).not.toBeAttached();
+    await page.getByRole("navigation", { name: "Planner lenses" })
+      .getByRole("button", { name: "Guests", exact: true }).click();
+    const capacity = page.getByTestId("guests-lens-panel");
+    await expect(capacity).toBeVisible();
+    const seats = capacity.locator(".lens-panel__metric").filter({ hasText: "Seats placed" });
+    await expect(seats.locator(".lens-panel__metric-value")).toHaveText("144");
+    await expectClear(capacity, commandDeck);
+    await expectClear(capacity, schedule);
+    await expectClear(capacity, viewMode);
+    for (const metric of await capacity.locator(".lens-panel__metric").all()) {
+      await expectPanelCopyContained(capacity, metric);
     }
+    await expectPanelCopyContained(capacity, capacity.locator(".lens-panel__footer"));
+    await expect(capacity.locator(".lens-panel__footer")).toContainText("Not occupancy or fire limits");
+    await testInfo.attach("capacity-controls-clear", {
+      body: await page.screenshot({ path: testInfo.outputPath("capacity-controls-clear.png") }),
+      contentType: "image/png",
+    });
   });
 
   test("Send to Events Team button opens the guest enquiry form", async ({ page }) => {

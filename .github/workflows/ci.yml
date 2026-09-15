@@ -1,8 +1,7 @@
 # =============================================================================
 # OMNITWIN — Continuous Integration
 # =============================================================================
-# Seven jobs run in parallel against every push to master and every pull
-# request targeting master:
+# Checks run against every push to master and every pull request targeting master:
 #
 #   audit      - pnpm audit at moderate severity and above
 #   lint       — ESLint v9 across all packages, zero errors required
@@ -10,7 +9,10 @@
 #   build      — production builds across all packages
 #   native-image — actual Linux API image and native decoder boundary checks
 #   test       — required migrated PostgreSQL regressions and workspace Vitest
-#   e2e        — Playwright E2E against a Vite dev server (Chromium only)
+#   e2e        — four CPU shards, with the exact GPU file excluded before sharding
+#   gate-tooling — receipt, inventory, source and worker boundary regressions
+#   gpu-required — authenticated, bounded hardware run of all five Twin cases
+#   browser-gate — independently collected full inventory and required CPU/GPU union
 #
 # Each job is fully isolated and reproducible: pnpm version is pinned to
 # match the local development environment, the lockfile is enforced via
@@ -28,9 +30,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'release/**']
   pull_request:
-    branches: [master]
+    branches: [master, 'release/**']
 
 # Cancel any in-flight runs for the same ref when a new commit lands —
 # saves CI minutes when force-pushing or rapid-iterating on a PR.
@@ -321,10 +323,11 @@ jobs:
         run: pnpm test
 
   e2e:
-    name: E2E (${{ matrix.shard }}/4)
+    name: E2E CPU (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    # Run every Chromium case across isolated single-worker shards. A failed
-    # shard must not cancel the others or hide their failure evidence.
+    # Every non-GPU Chromium case executes across isolated single-worker shards.
+    # The final browser-gate independently requires the complete CPU/GPU union;
+    # excluding the exact GPU file here cannot produce a green release by itself.
     strategy:
       fail-fast: false
       matrix:
@@ -360,17 +363,182 @@ jobs:
         # single "chromium" project — skipping Firefox/WebKit saves ~300 MB.
         run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
 
-      - name: Run E2E tests
-        run: pnpm --filter @omnitwin/web e2e --shard=${{ matrix.shard }}/4
+      - name: Record the scheduled browser inventory
+        run: |
+          mkdir -p packages/web/playwright-report
+          pnpm --filter @omnitwin/web exec playwright test --list --test-list-invert=../../.github/gpu/gpu-tests.txt --shard=${{ matrix.shard }}/4 --update-snapshots=none --reporter=json > packages/web/playwright-report/inventory.json
 
-      - name: Upload Playwright artifacts on failure
-        if: failure()
+      - name: Run E2E tests
+        # Native ANGLE/OpenGL capture tests need an X display. Playwright's
+        # installed Ubuntu dependencies already include Xvfb; Chromium remains
+        # headless, with the same scene detail, assertions and timing budgets.
+        run: xvfb-run --auto-servernum pnpm --filter @omnitwin/web e2e --test-list-invert=../../.github/gpu/gpu-tests.txt --shard=${{ matrix.shard }}/4 --update-snapshots=none
+
+      - name: Bind CPU artifacts to this checkout and run attempt
+        if: always()
+        run: node .github/gpu/reconcile-browser.mjs record-cpu --directory packages/web/playwright-report --shard ${{ matrix.shard }}
+
+      - name: Upload Playwright results and evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results-${{ github.run_id }}-shard-${{ matrix.shard }}
+          name: playwright-results-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           # Default outputDir is ./test-results relative to playwright.config.ts
           # (packages/web/). Contains screenshots (only-on-failure) and traces
           # (on-first-retry) as configured in playwright.config.ts.
-          path: packages/web/test-results/
-          if-no-files-found: ignore
+          path: |
+            packages/web/test-results/
+            packages/web/playwright-report/
+          if-no-files-found: error
           retention-days: 7
+
+  gate-tooling:
+    name: Browser gate tooling
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout gate implementation
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Verify receipt, authenticated bridge and inventory boundaries
+        run: node --test .github/gpu/*.test.mjs
+
+      - name: Verify committed source and isolated worker boundaries
+        run: |
+          python3 - <<'PY'
+          import sys
+          import unittest
+          suite = unittest.defaultTestLoader.discover('.github/gpu', pattern='test_*.py')
+          if suite.countTestCases() == 0:
+              raise SystemExit('No Python GPU boundary tests were discovered')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+
+  gpu-required:
+    name: GPU performance (required)
+    needs: gate-tooling
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      actions: read
+      contents: read
+      statuses: read
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Prepare exact-source GPU request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/gpu/hosted-gate.mjs prepare --output-dir gpu-evidence
+
+      - name: Publish request for the isolated operator
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-request-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            gpu-evidence/request.json
+            gpu-evidence/trusted.json
+            gpu-evidence/READY.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require authenticated GPU evidence before expiry
+        timeout-minutes: 27
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/gpu/hosted-gate.mjs wait --output-dir gpu-evidence
+
+      - name: Preserve GPU request and received evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: gpu-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  browser-gate:
+    name: Browser release gate
+    needs: [gate-tooling, e2e, gpu-required]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout independently for complete inventory
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install exact frozen dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared runtime for test discovery
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Independently collect every browser case and committed source
+        run: |
+          mkdir -p browser-gate-evidence
+          pnpm --filter @omnitwin/web exec playwright test --list --update-snapshots=none --reporter=json > browser-gate-evidence/full-inventory.json
+          python3 .github/gpu/source_manifest.py --repo "$GITHUB_WORKSPACE" --commit "$GITHUB_SHA" > browser-gate-evidence/source.json
+
+      - name: Download all CPU shard receipts from this run attempt
+        uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-results-${{ github.run_id }}-${{ github.run_attempt }}-shard-*
+          path: browser-artifacts
+
+      - name: Download required GPU evidence from this run attempt
+        uses: actions/download-artifact@v4
+        with:
+          name: gpu-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: browser-gate-evidence/gpu
+
+      - name: Require the complete unchanged browser inventory and both jobs
+        env:
+          TOOLING_JOB_RESULT: ${{ needs.gate-tooling.result }}
+          CPU_JOB_RESULT: ${{ needs.e2e.result }}
+          GPU_JOB_RESULT: ${{ needs.gpu-required.result }}
+        run: >-
+          node .github/gpu/reconcile-browser.mjs verify
+          --artifacts-root browser-artifacts
+          --inventory browser-gate-evidence/full-inventory.json
+          --source browser-gate-evidence/source.json
+          --gpu-directory browser-gate-evidence/gpu
+          --output browser-gate-evidence/reconciliation.json
+
+      - name: Preserve complete browser gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-release-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: browser-gate-evidence/
+          if-no-files-found: error
+          retention-days: 14

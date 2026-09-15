@@ -1,0 +1,3763 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "venviewer-browser-partition-v1",
+  "sourceRunId": "35008947128",
+  "sourceCommit": "037fcc83c4244936b7d94914966b682b0525e362",
+  "sourceReports": [
+    {
+      "shard": 1,
+      "sha256": "51f19edb27494d5d524b5a030a52b779b3b5794141c65efadba735d4dc96bc66"
+    },
+    {
+      "shard": 2,
+      "sha256": "85841145df0b6c59d3b2796f1bfa87fe933c533b89edda82c2a35a67a7959db0"
+    },
+    {
+      "shard": 3,
+      "sha256": "346b10a217da32a35a82c5a7168324477fcf49e440f183a5021d956155f96880"
+    },
+    {
+      "shard": 4,
+      "sha256": "0c4b7b3d176c6c10c46e6b815c8601b07ccf3080ccf158cf3c4969363fd3aeb7"
+    }
+  ],
+  "cases": [
+    {
+      "id": "0352f4f91b15d572d91d-4051a485a86f0b69392b",
+      "file": "planner-guest-entry.spec.ts",
+      "title": "an unseeded guest opens a saved draft from /plan",
+      "suitePath": [
+        "planner-guest-entry.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0352f4f91b15d572d91d-73a49d224c95aafe9934",
+      "file": "planner-guest-entry.spec.ts",
+      "title": "an unseeded guest opens a saved draft from /v/guest-entry-fixture/plan?space=grand-hall",
+      "suitePath": [
+        "planner-guest-entry.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-0dd7dd946ae1163033a8",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "phone 390 uses touch-native chrome without clipped controls",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "3D planner mobile shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-3c9c6995d306ef19daf8",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "tablet landscape keeps a roomy planner layout",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "3D planner mobile shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-4b02ace7ac4519532f3a",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "desktop keeps keyboard shortcut hints",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "3D planner mobile shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-71f1d177dee7a258209c",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "phone 375 uses touch-native chrome without clipped controls",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "3D planner mobile shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-765874ad9a4eb5756f73",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "phone 430 uses touch-native chrome without clipped controls",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "3D planner mobile shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-94d9d10d92fb1b1e647c",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "a table chosen above the expanded schedule is placed and saved through touch",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "Small phone canvas placement"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-a33c647b0e6c88348776",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "tablet portrait keeps a roomy planner layout",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "3D planner mobile shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0566ce7e918d6e1cf20c-bb27517d55d5ce4a7932",
+      "file": "editor-mobile-shell.spec.ts",
+      "title": "phone 320 uses touch-native chrome without clipped controls",
+      "suitePath": [
+        "editor-mobile-shell.spec.ts",
+        "3D planner mobile shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-00c344dbe8c0c1fc1c1b",
+      "file": "public-config-flow.spec.ts",
+      "title": "space cards appear for each venue space returned by the API",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Space picker"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "098b539f18aead5c39f5-24bdc1ad06c8065c2d8f",
+      "file": "public-config-flow.spec.ts",
+      "title": "clicking a space card creates a config and enters the 3D editor",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Config creation from space picker"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "098b539f18aead5c39f5-311810bd99719f509495",
+      "file": "public-config-flow.spec.ts",
+      "title": "renders the venue landing page with the venue name",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Space picker"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "098b539f18aead5c39f5-50b61a67e3a563e60304",
+      "file": "public-config-flow.spec.ts",
+      "title": "SaveSendPanel is not in the DOM when the config has no placed objects",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with empty config"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-6d13af0d3803b1c0eb8e",
+      "file": "public-config-flow.spec.ts",
+      "title": "Layout evidence keeps long recommendation copy inside the panel",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with placed objects"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-7bee588a7f66b3e05256",
+      "file": "public-config-flow.spec.ts",
+      "title": "submitting the enquiry with a valid email shows the success state",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with placed objects"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-7cf68355fa8c58dc7d05",
+      "file": "public-config-flow.spec.ts",
+      "title": "SaveSendPanel clears the cockpit Truth Mode rail",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with placed objects"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-857f416d9c2a0be3601a",
+      "file": "public-config-flow.spec.ts",
+      "title": "Saved layout action is visible in the editor toolbar",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with empty config"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-ad1751ce1187f54426f5",
+      "file": "public-config-flow.spec.ts",
+      "title": "Events Sheet button opens the hallkeeper route in a new browser tab",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with empty config"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-c16d979691238aacb926",
+      "file": "public-config-flow.spec.ts",
+      "title": "SaveSendPanel becomes visible when the loaded config has placed objects",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with placed objects"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-c88f2a95ddca632d4c56",
+      "file": "public-config-flow.spec.ts",
+      "title": "opening /plan creates an empty editable hall",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Grand Hall public blank draft"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-f4847f7a36ef5d419a55",
+      "file": "public-config-flow.spec.ts",
+      "title": "Plan navigation and capacity controls clear the event schedule and command deck",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with placed objects"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-f5d900c54ba91b9f1945",
+      "file": "public-config-flow.spec.ts",
+      "title": "Save action reports pending and saved states for a successful public request",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with empty config"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "098b539f18aead5c39f5-f757a17b7eb434b0813e",
+      "file": "public-config-flow.spec.ts",
+      "title": "Send to Events Team button opens the guest enquiry form",
+      "suitePath": [
+        "public-config-flow.spec.ts",
+        "Editor with placed objects"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0f4d6526277b5a781f19-603b7772d9cdae2d926e",
+      "file": "planner-submit.spec.ts",
+      "title": "changes_requested state also surfaces the submit button (re-submit path)",
+      "suitePath": [
+        "planner-submit.spec.ts",
+        "Planner submit for review"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0f4d6526277b5a781f19-66a2a121a0606e4ef27a",
+      "file": "planner-submit.spec.ts",
+      "title": "clicking Submit hits the /submit endpoint and flips UI to locked",
+      "suitePath": [
+        "planner-submit.spec.ts",
+        "Planner submit for review"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "0f4d6526277b5a781f19-843ef6eb7d2b508a5553",
+      "file": "planner-submit.spec.ts",
+      "title": "draft config surfaces the 'Submit for Approval' button",
+      "suitePath": [
+        "planner-submit.spec.ts",
+        "Planner submit for review"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "12c519ca1d8a804aa881-1e93e79da0cbf983a107",
+      "file": "plan-tool-pill.spec.ts",
+      "title": "five hands, the Escape ladder, and a judged amber ring",
+      "suitePath": [
+        "plan-tool-pill.spec.ts",
+        "Stage S2 \u2014 the tool pill and the clearance ring"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-1a2de309a89bbb059bd6",
+      "file": "twin-walk.spec.ts",
+      "title": "the twin holds its composition at 320x568 phone",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-23ebf1518312b6532ea9",
+      "file": "twin-walk.spec.ts",
+      "title": "a named-room hop lands at its validated viewpoint and records it in the URL",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-2b9fb2592d26efe6c054",
+      "file": "twin-walk.spec.ts",
+      "title": "a legacy cube-faces bundle still renders (imagery default path)",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-3de104b2d93d06694d0f",
+      "file": "twin-walk.spec.ts",
+      "title": "the native Rooms dialog supports Tab, Space, Enter, Escape and return focus",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-4011012440b08b5601dd",
+      "file": "twin-walk.spec.ts",
+      "title": "the twin holds its composition at 390x844 phone",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-463b00e989245d8c9c43",
+      "file": "twin-walk.spec.ts",
+      "title": "the twin holds its composition at 768x1024 tablet portrait",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-5863107ee2722d798579",
+      "file": "twin-walk.spec.ts",
+      "title": "the browser back button returns to the previous validated room",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-77144e3494afdabc04c3",
+      "file": "twin-walk.spec.ts",
+      "title": "the twin renders scan_000 with its named landmark, one disclosure, and no errors",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-8268744cad196519dc57",
+      "file": "twin-walk.spec.ts",
+      "title": "the twin holds its composition at 1280x800 desktop",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-c313271dcfdf3f70c95a",
+      "file": "twin-walk.spec.ts",
+      "title": "reduced motion swaps named rooms instantly instead of springing",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-dc76a607babb1413b13a",
+      "file": "twin-walk.spec.ts",
+      "title": "the twin holds its composition at 2048x1000 desktop",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "13a7f61ee2630e1495c4-ff91908e2dcc7c27fade",
+      "file": "twin-walk.spec.ts",
+      "title": "a manifest failure shows the calm error line, and retry recovers",
+      "suitePath": [
+        "twin-walk.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "15e01bc256dfab8f74e3-075f07cb2933bd648352",
+      "file": "proposal-share-link.spec.ts",
+      "title": "renders a client-safe sent proposal with quote, capacity guidance, and SAFE disclosure",
+      "suitePath": [
+        "proposal-share-link.spec.ts",
+        "proposal share link"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "15e01bc256dfab8f74e3-13e57b69d65b75aec86c",
+      "file": "proposal-share-link.spec.ts",
+      "title": "request changes is note-gated and sends the note",
+      "suitePath": [
+        "proposal-share-link.spec.ts",
+        "proposal share link"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "15e01bc256dfab8f74e3-3459fb23be76bb51be18",
+      "file": "proposal-share-link.spec.ts",
+      "title": "accepts the proposal and shows the accepted banner",
+      "suitePath": [
+        "proposal-share-link.spec.ts",
+        "proposal share link"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "15e01bc256dfab8f74e3-5c1f0a546f3b6a6d6151",
+      "file": "proposal-share-link.spec.ts",
+      "title": "shows the plain-English unavailable state for unknown codes",
+      "suitePath": [
+        "proposal-share-link.spec.ts",
+        "proposal share link"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "1bca2bd0aa350d62078e-36ce65971f6e55c6dd2f",
+      "file": "staff-review.spec.ts",
+      "title": "clicking Approve hits the approve endpoint",
+      "suitePath": [
+        "staff-review.spec.ts",
+        "Staff review \u2014 approve action"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "1bca2bd0aa350d62078e-71f3abac1e049467758b",
+      "file": "staff-review.spec.ts",
+      "title": "opening a pending review shows its detail + available actions",
+      "suitePath": [
+        "staff-review.spec.ts",
+        "Staff review \u2014 pending list"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "1bca2bd0aa350d62078e-d462a119e6bbbbdec494",
+      "file": "staff-review.spec.ts",
+      "title": "dashboard Reviews tab shows the submitted config in the pending list",
+      "suitePath": [
+        "staff-review.spec.ts",
+        "Staff review \u2014 pending list"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "203e5a905de9618d8ebf-2a7d4fe5e0e788799266",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "admin nested space, pricing, and destructive dialogs stay accessible and keyboard-contained",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "203e5a905de9618d8ebf-48ec67e17f38f009b793",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "loadout create and delete dialogs trap focus without keyboard leaks",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "203e5a905de9618d8ebf-493dc21ed172bd678c8c",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "onboarding admin action forms keep focus visible across seeded operator controls",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "203e5a905de9618d8ebf-53d6b74a46fa0a60a244",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "review request-changes dialog traps keyboard focus and closes cleanly",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "203e5a905de9618d8ebf-60fac0fdcd874df68e78",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "proposal drawer and composer controls remain keyboard reachable within frame budget",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "203e5a905de9618d8ebf-89b4a0a1b49a8a7e1946",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "event-day mobile ops controls are keyboard reachable without horizontal overflow",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "203e5a905de9618d8ebf-deb2e26cb2da7e24514b",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "admin create-venue dialog traps keyboard focus and stays within frame budget",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-035e73a854a5898784d0",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "desktop: demand and review stay usable with keyboard and reduced motion",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-3f15da91476e85f18dd3",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "admin reviews exact occupied demand and records the first reservation",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-a06aa19ac90a90c8b4db",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "an honest stock correction refreshes shortages without changing approved event instructions",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-a9af0b1385bc879024d9",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "phone: demand and review stay usable with keyboard and reduced motion",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-ae10a1bc2ac29a72d86f",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "the second approval shows its shortage and survives a committed-but-lost response",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-b7a755ab2b263337aa7f",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "tablet: demand and review stay usable with keyboard and reduced motion",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-ba75cdab80e2e47ccfab",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "hire remedy is prepared then explicitly approved while the shortage stays visible",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-bd700a821c14252d760e",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "a lost prepare response recovers the current request approved meanwhile by another venue admin",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "24b5f5d8ec041ecf830d-d5445caa25504c3640ac",
+      "file": "venue-inventory-reservations-live.spec.ts",
+      "title": "a prepared remedy cannot be approved after a concurrent stock revision",
+      "suitePath": [
+        "venue-inventory-reservations-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-0120b1ad7c79abe2afa9",
+      "file": "button-action-audit.spec.ts",
+      "title": "supplier users are denied internal dashboard routes before any staff data loads",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-09dcbf08e055f0c3371d",
+      "file": "button-action-audit.spec.ts",
+      "title": "proposal conversation and client-link controls call the staff proposal APIs",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-0e87fb2d72252c5333b7",
+      "file": "button-action-audit.spec.ts",
+      "title": "review change-request modal requires a note and posts the review action",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-1092c98abd34f99ec623",
+      "file": "button-action-audit.spec.ts",
+      "title": "planner cockpit controls update visible state",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-16ea172818294a97230d",
+      "file": "button-action-audit.spec.ts",
+      "title": "proposal drawer history and conversation failures are retryable",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-2063b6b1de26aa5f53bc",
+      "file": "button-action-audit.spec.ts",
+      "title": "dashboard admin role exposes commercial and deployment controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-24cac8b5b0b260506115",
+      "file": "button-action-audit.spec.ts",
+      "title": "planner cockpit has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-28492b1a3430fb962d34",
+      "file": "button-action-audit.spec.ts",
+      "title": "dashboard has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-2f0a44086ca3359a572b",
+      "file": "button-action-audit.spec.ts",
+      "title": "reference-loadout list and create failures keep recovery controls live",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-39bbd213a2641b2a6368",
+      "file": "button-action-audit.spec.ts",
+      "title": "review list, context, and approve failures remain visible and retryable",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-3b07b1fe0d713c662e9b",
+      "file": "button-action-audit.spec.ts",
+      "title": "hallkeeper controls update progress, locate rows, download, and print",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-43f47625461b56c4d28a",
+      "file": "button-action-audit.spec.ts",
+      "title": "admin registry view wires venue, space, and pricing actions",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-4ee2a70b4052d06c2394",
+      "file": "button-action-audit.spec.ts",
+      "title": "public room has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-65571534e907808da8d8",
+      "file": "button-action-audit.spec.ts",
+      "title": "internal visual has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-7fe032da67234ee034f7",
+      "file": "button-action-audit.spec.ts",
+      "title": "dashboard navigation and notification controls are live",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-8265ef7314e9066c80fb",
+      "file": "button-action-audit.spec.ts",
+      "title": "executive users get only the analytics cockpit and direct commercial surfaces fail closed",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-86e7512f5819faee972d",
+      "file": "button-action-audit.spec.ts",
+      "title": "public room buttons select event context and preserve safe runtime copy",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-8d469b9662128d451293",
+      "file": "button-action-audit.spec.ts",
+      "title": "event-day controls acknowledge changes, update tasks, and log issues",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-8d777b5f5026e94883d8",
+      "file": "button-action-audit.spec.ts",
+      "title": "reference-loadout detail and caption failures expose drawer-level recovery",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-8dc74cc64efe560f5140",
+      "file": "button-action-audit.spec.ts",
+      "title": "the rite (previous landing) has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-912285414080935e7b51",
+      "file": "button-action-audit.spec.ts",
+      "title": "venue settings direct route validates, resets, and saves through the venue API",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-93c275e9faea9246572c",
+      "file": "button-action-audit.spec.ts",
+      "title": "proposal controls approve, reveal change request, and post token comments",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-93d28b876297773a2b8c",
+      "file": "button-action-audit.spec.ts",
+      "title": "commercial pipeline forms and detail actions call the CRM APIs",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-98a8aeef756f82793cf4",
+      "file": "button-action-audit.spec.ts",
+      "title": "proposal share has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-9c6ad3942d2f3c37967b",
+      "file": "button-action-audit.spec.ts",
+      "title": "pricing has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-a071e90d2189948dd5e7",
+      "file": "button-action-audit.spec.ts",
+      "title": "landing (fresh) has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-a472c88e976a7e645802",
+      "file": "button-action-audit.spec.ts",
+      "title": "admin deployment project-gate failures keep the save control retryable",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-a71b5d1ba525ca2b0ae0",
+      "file": "button-action-audit.spec.ts",
+      "title": "reference-loadout detail edits, uploads, captions, reorders, and deletes through real controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-aa1c6d797cded41dacd1",
+      "file": "button-action-audit.spec.ts",
+      "title": "hallkeeper has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-ab1016e5d48645bf4281",
+      "file": "button-action-audit.spec.ts",
+      "title": "dashboard direct admin-view URLs fail closed for hallkeepers",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-ad3f99a5f588b7ee64d0",
+      "file": "button-action-audit.spec.ts",
+      "title": "executive analytics failure exposes a branded retry path",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-adc35dfd74e278513e7d",
+      "file": "button-action-audit.spec.ts",
+      "title": "admin deployment controls invite staff and save reviewed rollout gates",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-b42e47ae9fc968a6aa97",
+      "file": "button-action-audit.spec.ts",
+      "title": "admin onboarding form enforces required fields and posts the rollout package",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-bcbe7addfc4d6d6a1754",
+      "file": "button-action-audit.spec.ts",
+      "title": "reference-loadout modal is keyboard-readable and creates a real loadout",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-c201e9e3af3d238646ed",
+      "file": "button-action-audit.spec.ts",
+      "title": "internal visual controls switch layer, phase, and command mode",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-cb78c72bc82296784513",
+      "file": "button-action-audit.spec.ts",
+      "title": "expired proposals expose terminal copy and remove response buttons",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-d1931178cd6e2aabbfc7",
+      "file": "button-action-audit.spec.ts",
+      "title": "hallkeeper mobile denied sheet path stays readable and recovers on retry",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-d1d5bbad6d421cc21b39",
+      "file": "button-action-audit.spec.ts",
+      "title": "proposal has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-d5d2f383bcbfa1a5619e",
+      "file": "button-action-audit.spec.ts",
+      "title": "dashboard role restrictions hide staff/admin-only surfaces from hallkeepers",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-da3e40024af8302bac4a",
+      "file": "button-action-audit.spec.ts",
+      "title": "notification drawer view action navigates to the live event-day board",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-e42957b04323e89928e3",
+      "file": "button-action-audit.spec.ts",
+      "title": "proposal response and comment failures keep clients informed",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-ec95d760b2900d93d1a1",
+      "file": "button-action-audit.spec.ts",
+      "title": "commercial pipeline load and detail failures expose recovery paths",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-f1cb2cf5b15bbc911381",
+      "file": "button-action-audit.spec.ts",
+      "title": "hallkeeper sheet retry and PDF download failure paths are visible",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-f561d48a412784203a9b",
+      "file": "button-action-audit.spec.ts",
+      "title": "event day ops has no unnamed, placeholder, or unusable visible controls",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ button and action inventory"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-f88d4fd31e5b73607fbc",
+      "file": "button-action-audit.spec.ts",
+      "title": "event-day board surfaces retry and missing-handoff states",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3768592e07b6a93568d8-52ded275d58d8a36c46d",
+      "file": "public-acquisition-visual-performance.spec.ts",
+      "title": "pricing route stays visually stable and smooth on desktop",
+      "suitePath": [
+        "public-acquisition-visual-performance.spec.ts",
+        "T-469 public acquisition visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3768592e07b6a93568d8-5e38f39f4d48b212abb8",
+      "file": "public-acquisition-visual-performance.spec.ts",
+      "title": "pricing route remains contained and smooth on mobile",
+      "suitePath": [
+        "public-acquisition-visual-performance.spec.ts",
+        "T-469 public acquisition visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3768592e07b6a93568d8-901f5a9d8e96836306a7",
+      "file": "public-acquisition-visual-performance.spec.ts",
+      "title": "landing page renders updated venue photos and stays smooth on desktop",
+      "suitePath": [
+        "public-acquisition-visual-performance.spec.ts",
+        "T-469 public acquisition visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3768592e07b6a93568d8-bbfa381d65e6c447f94a",
+      "file": "public-acquisition-visual-performance.spec.ts",
+      "title": "landing page remains contained and smooth on mobile",
+      "suitePath": [
+        "public-acquisition-visual-performance.spec.ts",
+        "T-469 public acquisition visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3f352fcb62a55bd2f17a-0588accbacaa6669e855",
+      "file": "plan-room-resolve.spec.ts",
+      "title": "walk exit: Escape returns to plan view (T-560 GL teleport wedge)",
+      "suitePath": [
+        "plan-room-resolve.spec.ts",
+        "CARD A2: the room resolves over the blueprint"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "3f352fcb62a55bd2f17a-086d21133ef7210a3fab",
+      "file": "plan-room-resolve.spec.ts",
+      "title": "staged: no package \u2192 the room STILL resolves, from the staged capture, under its label",
+      "suitePath": [
+        "plan-room-resolve.spec.ts",
+        "CARD A2: the room resolves over the blueprint"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3f352fcb62a55bd2f17a-e0f4b97b4d3adde7e78e",
+      "file": "plan-room-resolve.spec.ts",
+      "title": "walk: stand in the captured room at eye level",
+      "suitePath": [
+        "plan-room-resolve.spec.ts",
+        "CARD A2: the room resolves over the blueprint"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3f352fcb62a55bd2f17a-fd9d8d106d5b2fb7ced7",
+      "file": "plan-room-resolve.spec.ts",
+      "title": "linework first, accessible progress and controls work while capture chunks are pending",
+      "suitePath": [
+        "plan-room-resolve.spec.ts",
+        "CARD A2: the room resolves over the blueprint"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-02df3badecf3b5302b6f",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic Trades Hall visual route screenshot",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-2804499afabc40677b15",
+      "file": "sspp-hardening.spec.ts",
+      "title": "event-day mobile task status works from keyboard activation",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening keyboard and mobile operations"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-43a260ea007ebb2968bb",
+      "file": "sspp-hardening.spec.ts",
+      "title": "landing CTA is reachable by keyboard",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening keyboard and mobile operations"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-4b3d97028e9c2ea273e2",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic hallkeeper screenshot",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-5df7dc98ef2c3bdc7403",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic room showcase screenshot",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-5ee88dfbcd03d9022b34",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic planner screenshot for /plan",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-60eb35c1daa924bfdcaa",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic client proposal screenshot",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-7bd9b28d5b3e71ca5928",
+      "file": "sspp-hardening.spec.ts",
+      "title": "public room selector is keyboard reachable and mobile-safe",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening keyboard and mobile operations"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-8e0fe7697768827cde10",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic dashboard pipeline screenshot",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-ae028b825efe4f7c603f",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic public room route screenshot",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "45a9bc94846821fdd0cb-dbc27950b64e06813e3a",
+      "file": "sspp-hardening.spec.ts",
+      "title": "captures deterministic pricing screenshot",
+      "suitePath": [
+        "sspp-hardening.spec.ts",
+        "SS++ hardening visual regression"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "4fc9693f76b1742a30a1-ac1a25a65896f8f68422",
+      "file": "plan-room-resolve-reduced-motion.spec.ts",
+      "title": "reduced motion: the resolve still completes as a crossfade, no develop choreography required",
+      "suitePath": [
+        "plan-room-resolve-reduced-motion.spec.ts",
+        "CARD A2 reduced motion"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "55314ca2cec2170df90e-272876e9274fc5090f90",
+      "file": "production-smoke.spec.ts",
+      "title": "a signed-in coordinator reaches the Diary: live calendar, presence, welcome",
+      "suitePath": [
+        "production-smoke.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "55314ca2cec2170df90e-56aa739cbd4ddc0035ad",
+      "file": "production-smoke.spec.ts",
+      "title": "the API answers on every health surface",
+      "suitePath": [
+        "production-smoke.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "55314ca2cec2170df90e-67c0566d4e6551b1243b",
+      "file": "production-smoke.spec.ts",
+      "title": "write probe: a labelled house block lands and is released (opt-in)",
+      "suitePath": [
+        "production-smoke.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "55314ca2cec2170df90e-b31ee383380af1161ee2",
+      "file": "production-smoke.spec.ts",
+      "title": "the front door stands",
+      "suitePath": [
+        "production-smoke.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "5d2868f7d23420c27cca-29fc9a02e81a57f7b1b4",
+      "file": "navigation.spec.ts",
+      "title": "navigating to /hallkeeper without a configId renders without crashing",
+      "suitePath": [
+        "navigation.spec.ts",
+        "Navigation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5d2868f7d23420c27cca-4826df6d4fbe5d3fc22b",
+      "file": "navigation.spec.ts",
+      "title": "venue-scoped planner shows not-found instead of falling back",
+      "suitePath": [
+        "navigation.spec.ts",
+        "Navigation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5d2868f7d23420c27cca-4ed595da77c63b1b8bd5",
+      "file": "navigation.spec.ts",
+      "title": "unknown route shows 404 or redirects",
+      "suitePath": [
+        "navigation.spec.ts",
+        "Navigation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5d2868f7d23420c27cca-516a61b6d9dd25d36915",
+      "file": "navigation.spec.ts",
+      "title": "page has correct title",
+      "suitePath": [
+        "navigation.spec.ts",
+        "Navigation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5d2868f7d23420c27cca-a45e4c0c3a395b123dbf",
+      "file": "navigation.spec.ts",
+      "title": "editor route loads with a visible WebGL canvas",
+      "suitePath": [
+        "navigation.spec.ts",
+        "Navigation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5d2868f7d23420c27cca-eec51ebdb4fbd52d9232",
+      "file": "navigation.spec.ts",
+      "title": "venue-scoped planner creates the first layout in the requested venue",
+      "suitePath": [
+        "navigation.spec.ts",
+        "Navigation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5d2868f7d23420c27cca-fc7175c3035d193ccb89",
+      "file": "navigation.spec.ts",
+      "title": "venue-scoped planner shows forbidden for scoped users on another venue",
+      "suitePath": [
+        "navigation.spec.ts",
+        "Navigation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-0c6d19f1db2336dfad60",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the tour HUD keeps its panels apart at 1440x900 laptop",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-21ca692d801ab9a2663c",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint is centred at 390x844 phone upright under reduced motion",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "failed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-2c8a4b78dbc7fc8634a1",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "every tour control stays pressable at 1440x900 laptop",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-2d379503f1a9b08255df",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "no tour button is truncated mid-word at 1440x900 laptop",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-31e6e5ba9b989ba5458d",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "no tour button is truncated mid-word at 390x844 phone upright",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-37d99cead7ecb5af208a",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the tour HUD keeps its panels apart at 844x390 phone on its side",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-392860de5ce1c835ca8f",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the tour HUD keeps its panels apart at 390x844 phone upright",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-3fe11ec704dddd35b8cb",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint clears the quick-action rail at 390x844 phone upright",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "failed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-5baa834121daea8d04a0",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint is centred at 844x390 phone on its side under reduced motion",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "failed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-7f9c73918b6e034db09a",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint clears the quick-action rail at 1440x900 laptop",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-8c2b96b77fdc60c1c29d",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint is centred at 390x844 phone upright with motion allowed",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-a0e45a844392519b9da8",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint clears the quick-action rail at 844x390 phone on its side",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-a3ab4df8af617a43aef0",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "every tour control stays pressable at 844x390 phone on its side",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-c06c0a1c6b34393f7555",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "every tour control stays pressable at 390x844 phone upright",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-c439702a5fc3fcddfc83",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint is centred at 1440x900 laptop with motion allowed",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-cfd48a798453e6ed2130",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "no tour button is truncated mid-word at 844x390 phone on its side",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-eee8d567aaade89ecc93",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint is centred at 1440x900 laptop under reduced motion",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "failed"
+    },
+    {
+      "id": "699f53c7ced41f6ab548-f3ab9eb86f3e221417db",
+      "file": "twin-tour-responsive.spec.ts",
+      "title": "the coach hint is centred at 844x390 phone on its side with motion allowed",
+      "suitePath": [
+        "twin-tour-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "845caa4eac97bb329ce4-1a83a368736bc52963ab",
+      "file": "trades-hall-visual.spec.ts",
+      "title": "keeps the Reception Room route safe when unauthenticated adjunct APIs return 401",
+      "suitePath": [
+        "trades-hall-visual.spec.ts",
+        "Trades Hall internal visual layer route"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "845caa4eac97bb329ce4-bf06a8647784fb15f879",
+      "file": "trades-hall-visual.spec.ts",
+      "title": "rejects manual splatUrl overrides in production builds",
+      "suitePath": [
+        "trades-hall-visual.spec.ts",
+        "Trades Hall internal visual layer route",
+        "procedural fallback"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "845caa4eac97bb329ce4-d14d26448755fe786073",
+      "file": "trades-hall-visual.spec.ts",
+      "title": "updates visible shell state from layer and phase controls",
+      "suitePath": [
+        "trades-hall-visual.spec.ts",
+        "Trades Hall internal visual layer route",
+        "procedural fallback"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "845caa4eac97bb329ce4-f209abcc1a0ab9ca6999",
+      "file": "trades-hall-visual.spec.ts",
+      "title": "loads the registered Reception Room runtime package with no-auth-safe ancillary failures",
+      "suitePath": [
+        "trades-hall-visual.spec.ts",
+        "Trades Hall internal visual layer route"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "845caa4eac97bb329ce4-fef6f78f2fb7f10d91b0",
+      "file": "trades-hall-visual.spec.ts",
+      "title": "loads the empty internal command shell without runtime errors",
+      "suitePath": [
+        "trades-hall-visual.spec.ts",
+        "Trades Hall internal visual layer route",
+        "procedural fallback"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-06dc7448310920144e6a",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 375x667",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-0db46fc8a32ad55f96d9",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 375x667",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-1c56b6d366c8e9efd1f6",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "lands the Craft reveal whole on desktop at 1280x800",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-1eb6913eeb1737a54606",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 1366x768",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-249491c044965a1ce078",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 430x932",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-34ae9a1cabe1f88b7eec",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 1920x1080",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-3768f08b68307121f051",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 393x852",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-5edb21accbb780838cb6",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "lands the Craft reveal whole on desktop at 2560x1440",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-703b1d879b43124e51e5",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 390x844",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-7f63681cacf4c96cf3f7",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 1024x768",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-a58e3b96dcee0a7b36be",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 768x1024",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-a5ac0a178dd96c7a2f7c",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "stages the quiz as a full-viewport invitation at 2048x1200",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-a6e9a7df689cb8bf5534",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "stages the quiz as a full-viewport invitation at 2000x930",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-aa15aa1615547080dcad",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 1512x945",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-b42daa711fffab50a9c5",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 1920x1080",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-b435800ddac84197c3fd",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 1280x720",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-b6df34ebb17eae828751",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "lands the Craft reveal whole on desktop at 1920x1080",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-ca1b35874c4f01cb5f4c",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 1512x945",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-ccefdcb87801c7a6af9f",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 430x932",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-cf93a742f84799711e7a",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "the deliberation can be skipped, and skipping does not change the Craft",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-dc9e211d2d2b60465c04",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 1366x768",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-dea1b6dd5969c387be6d",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 768x1024",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-debf0d518aeee3e1d76a",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 390x844",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-f37033146486fcc5cf67",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 1024x768",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-fb99d3490a023af5ce83",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits every Craft quiz state without page scrolling at 1280x720",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8729f5c7952d2ababb60-fddfbcfce36af450f94c",
+      "file": "trades-house-craft-quiz-responsive.spec.ts",
+      "title": "fits the threshold with every line told at 393x852",
+      "suitePath": [
+        "trades-house-craft-quiz-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "8f2bdfeefffff6571eaf-38fe83f32201e4e5ed49",
+      "file": "private-brief.spec.ts",
+      "title": "does not serve the Trades Hall private brief from the public app",
+      "suitePath": [
+        "private-brief.spec.ts",
+        "private brief exposure"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "93ffd98e958758b817a2-0df8b72c6017f4d93352",
+      "file": "splat-fixture.spec.ts",
+      "title": "loads the Three.js 0.180 + Spark smoke route",
+      "suitePath": [
+        "splat-fixture.spec.ts",
+        "Spark fixture"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9c15d4faad25ce62ae44-292eb8734eeaf3aa8b29",
+      "file": "landing-rite-responsive.spec.ts",
+      "title": "the rite holds its composition at 2048x1000 desktop",
+      "suitePath": [
+        "landing-rite-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9c15d4faad25ce62ae44-47b818eb1a47a7096fef",
+      "file": "landing-rite-responsive.spec.ts",
+      "title": "the rite holds its composition at 768x1024 tablet portrait",
+      "suitePath": [
+        "landing-rite-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9c15d4faad25ce62ae44-59443cffc153ce0d39b9",
+      "file": "landing-rite-responsive.spec.ts",
+      "title": "the rite holds its composition at 1280x800 desktop",
+      "suitePath": [
+        "landing-rite-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9c15d4faad25ce62ae44-5a8986d3b416c37c0306",
+      "file": "landing-rite-responsive.spec.ts",
+      "title": "the enter control descends into the dark",
+      "suitePath": [
+        "landing-rite-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9c15d4faad25ce62ae44-9e802feeec6712050fbb",
+      "file": "landing-rite-responsive.spec.ts",
+      "title": "the rite holds its composition at 390x844 phone",
+      "suitePath": [
+        "landing-rite-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9c15d4faad25ce62ae44-a1d49f20f71860af2d42",
+      "file": "landing-rite-responsive.spec.ts",
+      "title": "the rite holds its composition at 320x568 phone",
+      "suitePath": [
+        "landing-rite-responsive.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9c8247ff92e9ab70e0af-2a978a53f28700349c97",
+      "file": "diary-live.spec.ts",
+      "title": "the live channel carries a colleague's booking without a reload (T-497)",
+      "suitePath": [
+        "diary-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "9c8247ff92e9ab70e0af-430e0d1e6bf2476310be",
+      "file": "diary-live.spec.ts",
+      "title": "a keyed REST resend replays the recorded outcome instead of duplicating (T-538)",
+      "suitePath": [
+        "diary-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "9c8247ff92e9ab70e0af-4a9a0993007379fb1fb1",
+      "file": "diary-live.spec.ts",
+      "title": "the seeded Trades Hall week renders from the live calendar",
+      "suitePath": [
+        "diary-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "9c8247ff92e9ab70e0af-8b0f2537b87257d33d50",
+      "file": "diary-live.spec.ts",
+      "title": "a public enquiry becomes a pencil through the tray (T-496)",
+      "suitePath": [
+        "diary-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "9c8247ff92e9ab70e0af-c264fefb68e68b439c01",
+      "file": "diary-live.spec.ts",
+      "title": "the exclusion constraint arbitrates a live two-coordinator ink race (T-487)",
+      "suitePath": [
+        "diary-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "9c8247ff92e9ab70e0af-c87f39ce20bfae1391cb",
+      "file": "diary-live.spec.ts",
+      "title": "a live create travels as a command envelope, not REST (T-537; Canon \u00a79)",
+      "suitePath": [
+        "diary-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "9c8247ff92e9ab70e0af-f90a0b888f8a5f2b5b14",
+      "file": "diary-live.spec.ts",
+      "title": "the drawer writes a real booking into the diary",
+      "suitePath": [
+        "diary-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "a0c5603dce54fc911cb7-20a625730f290e10628a",
+      "file": "plan-room-runtime-default.spec.ts",
+      "title": "failed staged capture retains its notice and leaves Model view usable",
+      "suitePath": [
+        "plan-room-runtime-default.spec.ts",
+        "CARD A1: /plan Reception Room runtime default"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "a0c5603dce54fc911cb7-551b3dfdd0000563f756",
+      "file": "plan-room-runtime-default.spec.ts",
+      "title": "uncaptured room: honest fallback over the procedural room",
+      "suitePath": [
+        "plan-room-runtime-default.spec.ts",
+        "CARD A1: /plan Reception Room runtime default"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "a0c5603dce54fc911cb7-8ec303a7634e76c473d6",
+      "file": "plan-room-runtime-default.spec.ts",
+      "title": "loaded: runtime package resolves \u2192 real captured chunks stream with the evidence chip",
+      "suitePath": [
+        "plan-room-runtime-default.spec.ts",
+        "CARD A1: /plan Reception Room runtime default"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "a8e2f529df293220f75c-1104c38408fc8b140c6c",
+      "file": "production-live-route-pass.spec.ts",
+      "title": "live protected dashboard drawer routes fail closed to auth without console errors",
+      "suitePath": [
+        "production-live-route-pass.spec.ts",
+        "T-469 production-live route pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "a8e2f529df293220f75c-2bcbacc654cfa5344f3a",
+      "file": "production-live-route-pass.spec.ts",
+      "title": "live unavailable share links stay polished, accessible, and smooth on mobile",
+      "suitePath": [
+        "production-live-route-pass.spec.ts",
+        "T-469 production-live route pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "a8e2f529df293220f75c-955b1739bd209546a8c0",
+      "file": "production-live-route-pass.spec.ts",
+      "title": "public room pages stay live, accessible, controlled, and within frame budget",
+      "suitePath": [
+        "production-live-route-pass.spec.ts",
+        "T-469 production-live route pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "a8e2f529df293220f75c-b786c1d491393ea7ef01",
+      "file": "production-live-route-pass.spec.ts",
+      "title": "supplier portal acknowledgement controls work against the live frontend bundle without production mutation",
+      "suitePath": [
+        "production-live-route-pass.spec.ts",
+        "T-469 production-live route pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "a8e2f529df293220f75c-c0555c7ac2268d82f3bc",
+      "file": "production-live-route-pass.spec.ts",
+      "title": "proposal share full client controls work against the live frontend bundle without production mutation",
+      "suitePath": [
+        "production-live-route-pass.spec.ts",
+        "T-469 production-live route pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "b15d6361b2fc38288977-2af04d84518c9f1d1ff5",
+      "file": "performance.spec.ts",
+      "title": "page loads within 10 seconds",
+      "suitePath": [
+        "performance.spec.ts",
+        "Performance"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "b15d6361b2fc38288977-5bd4d45d66d226d7a3f3",
+      "file": "performance.spec.ts",
+      "title": "no uncaught JavaScript errors on load",
+      "suitePath": [
+        "performance.spec.ts",
+        "Performance"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "b15d6361b2fc38288977-a46b0d07ed133678b02c",
+      "file": "performance.spec.ts",
+      "title": "no failed network requests for core assets",
+      "suitePath": [
+        "performance.spec.ts",
+        "Performance"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "b15d6361b2fc38288977-fec4c9adab1b4ac36fa9",
+      "file": "performance.spec.ts",
+      "title": "code splitting works \u2014 hallkeeper chunk loads lazily",
+      "suitePath": [
+        "performance.spec.ts",
+        "Performance"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-05db83eb684335d10b54",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "proposal share unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-171094dcac49f5ce3298",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "dashboard analytics error has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-1718b60be402c282ff07",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public room unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-2077bc1953a367e186c9",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public Reception Room has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-28d27c2a749fcdfe60ee",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public rooms home has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-29a7e6062eebf65131f4",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the rite (previous landing) has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-30624313ac6bf7130a55",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public room unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-39864073833d451b6198",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "proposal share unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-3ef5573533f1da3a1abd",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "dashboard executive analytics has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-46d4427e0fcb0c89a7d7",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "proposal share unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-4c45e0519add0044fbc0",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "proposal share has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-55b372767f73366fa98d",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public pricing has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-624135588372b9e8097a",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public pricing has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-6399d0aef4a071788cac",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public pricing has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-6c5f4762035df79d1297",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "supplier portal unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-6fd9750382190092eb58",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "dashboard executive analytics has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-702908bf147f0f932a36",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public Reception Room has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-7aaff64cec641686320f",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public room unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-7dcb63d71348ead7b789",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "proposal share has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-8b8075304af73a623c9c",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the rite (previous landing) has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-9550fd9e5c53ff683f09",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public Reception Room has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-957a2be0528df70440e1",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "dashboard executive analytics has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-9a6a4152c6648f5419a2",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "supplier portal unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-a6c32f2fa4adab664b0d",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "the rite (previous landing) has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-b221f7fd6d10ab8072d2",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "dashboard analytics error has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-ba3b816a1e8e3dacf469",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "supplier portal unavailable has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-bdb88874e5ce9afea77f",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "supplier portal has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-c11dc55da8666fe9d617",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "dashboard analytics error has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-c24c4cfc6b3e5479d83a",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public rooms home has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-dca818e966ae126369af",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "proposal share has named controls, landmarks, reduced motion, contrast, and focus-visible at desktop",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-de1536644f791a322983",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "public rooms home has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-e858ff00d88b5c392edc",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "supplier portal has named controls, landmarks, reduced motion, contrast, and focus-visible at mobile",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c44af26be19d92edde78-fe7b596ccba978796e34",
+      "file": "accessibility-route-audit.spec.ts",
+      "title": "supplier portal has named controls, landmarks, reduced motion, contrast, and focus-visible at tablet",
+      "suitePath": [
+        "accessibility-route-audit.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-068fde1e8728a645b7f6",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "protected ops handoff unavailable state stays mobile-stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-375d08c81647a9b47f7d",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "protected asset room registry role-denied state stays mobile-stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-4637161428eb45b0c606",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "protected asset room registry loading and error state stays tablet-stable and retryable",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-4abd02ff0ef72a8c3a27",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "admin venue-create mutation failure stays visually stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-80b630f63d2946bceaa1",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "supplier portal acknowledgement error stays visually stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-98c741ec591d15624e64",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "onboarding project-gate mutation failure stays tablet-stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-9b4d238c572a49950c44",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "event-day ops acknowledgement failure stays mobile-stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-a4e2a682ea3c57ba0609",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "protected asset room registry success state stays visually stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-fa5234071d86f6feddb8",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "protected ops handoff pack stays visually stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "c93ac8eb5dc41be909c3-faf7840f5c638a4c37c4",
+      "file": "operational-state-visual-performance.spec.ts",
+      "title": "proposal share comment error stays visually stable and within frame budget",
+      "suitePath": [
+        "operational-state-visual-performance.spec.ts",
+        "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-13db2c6bdf4504d6d4a5",
+      "file": "hallkeeper.spec.ts",
+      "title": "unauthenticated navigation redirects to /login",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 route protection"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-1618b012cc25aba400b5",
+      "file": "hallkeeper.spec.ts",
+      "title": "accessory rows retain their dependency order hint",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-1fa3ffcf142890c66809",
+      "file": "hallkeeper.spec.ts",
+      "title": "displays the room dimensions in the layout record",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-239db8a5cf76d54a3bcc",
+      "file": "hallkeeper.spec.ts",
+      "title": "Print button is present",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-4604c98379c977681f41",
+      "file": "hallkeeper.spec.ts",
+      "title": "Download PDF button is present",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-4b8a4391f79fc1ea1fd9",
+      "file": "hallkeeper.spec.ts",
+      "title": "interactive floor plan is shown when diagramUrl is null",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-56eb53a8ca4f8fc10ce8",
+      "file": "hallkeeper.spec.ts",
+      "title": "shows configuration-not-found message when the API returns 404",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 authorized error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-5d667452f4f800171430",
+      "file": "hallkeeper.spec.ts",
+      "title": "clicking a row toggles its checkbox (aria-checked)",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-6ce813348e937a5bd593",
+      "file": "hallkeeper.spec.ts",
+      "title": "makes every supplied setup phase selectable",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-77c3b89c8ce1769e2b59",
+      "file": "hallkeeper.spec.ts",
+      "title": "shows permission-denied message when the API returns 403",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 authorized error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-77fdb95a3294de359398",
+      "file": "hallkeeper.spec.ts",
+      "title": "renders item rows with their quantities",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-880f90733950ff789f9d",
+      "file": "hallkeeper.spec.ts",
+      "title": "renders the approval banner when approval is populated",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 approval stamp banner"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-8ad89881e61ed9dcd03c",
+      "file": "hallkeeper.spec.ts",
+      "title": "displays the guest count in the header",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-8c35ad606825e05b5ca2",
+      "file": "hallkeeper.spec.ts",
+      "title": "displays the venue name in the page header",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-96621119e0bcbcdf6143",
+      "file": "hallkeeper.spec.ts",
+      "title": "does NOT render the approval banner when approval is null",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 approval stamp banner"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-ad07fbc9ea8a81a53827",
+      "file": "hallkeeper.spec.ts",
+      "title": "renders the room heading and config name together",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-d8b046de9e4e6d50a8cc",
+      "file": "hallkeeper.spec.ts",
+      "title": "displays the selected space in the event room rail",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-e3480d868b9803a388f1",
+      "file": "hallkeeper.spec.ts",
+      "title": "setup rows identify their supplied zone in each phase",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-207aa74f9fa9aeead9cd",
+      "file": "editor.spec.ts",
+      "title": "laser diagram tool draws persisted floor markup",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-2120d2fac15729f725aa",
+      "file": "editor.spec.ts",
+      "title": "dragging catalogue furniture lifts a polished placement token",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-3f36b47a944a1b0f9c63",
+      "file": "editor.spec.ts",
+      "title": "furniture catalogue lists Round Table",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-439eee6507967ade4f2e",
+      "file": "editor.spec.ts",
+      "title": "canvas accepts left and right clicks without crashing",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-496f341adc0367018d50",
+      "file": "editor.spec.ts",
+      "title": "all core toolbar buttons are present",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-4c7aef5ef23cb9bde986",
+      "file": "editor.spec.ts",
+      "title": "clicking Add Furniture again closes the catalogue panel",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-5feb186f33c0b6779332",
+      "file": "editor.spec.ts",
+      "title": "desktop tool disclosure clears the room header and main tool pill",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-97821ac28afbfe87f15e",
+      "file": "editor.spec.ts",
+      "title": "page loads with a visible WebGL canvas",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-9e0fc354538266ecc575",
+      "file": "editor.spec.ts",
+      "title": "right-drag orbit does not open the camera POV composer",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-b29830d96411fee40c52",
+      "file": "editor.spec.ts",
+      "title": "right-clicking the planner creates a camera POV reference",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-ba17bb80c92203e90641",
+      "file": "editor.spec.ts",
+      "title": "active furniture toolbar caption fits inside its button",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-cf1de2a37e9157f231f6",
+      "file": "editor.spec.ts",
+      "title": "clicking Add Furniture opens the catalogue panel",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-e6b58d964e93ac1f6e76",
+      "file": "editor.spec.ts",
+      "title": "furniture catalogue exposes section jumps without deep scrolling",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-f99b03a3ab95e224a5e4",
+      "file": "editor.spec.ts",
+      "title": "planner chrome text cannot be drag-highlighted",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d2f56d7d370f0ba02e91-fd76f56cfdebbd894b7c",
+      "file": "editor.spec.ts",
+      "title": "desktop planner exposes room identity, save state and recorded evidence",
+      "suitePath": [
+        "editor.spec.ts",
+        "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d7bdca693dad40bb115d-68f9a4545753726a2b04",
+      "file": "truth-mode-indicator.spec.ts",
+      "title": "opens the gated summary without mobile overflow or false verification",
+      "suitePath": [
+        "truth-mode-indicator.spec.ts",
+        "Truth Mode L1/L2 foundation"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-29dcc16fd7be9b2e86b0",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "supplier denied dashboard route stays polished and within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-332d86a4669d862bd95e",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "hallkeeper mobile API-denied state remains readable, contained, and within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-3ca93aa76a6c52d8e159",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "reviews drawer approval-error state stays visually stable and within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-4bb18eae7e2d246347d2",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "admin registry error state stays polished and within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-55249284a76e526cac81",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "admin denied dashboard sub-route stays polished and within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-8b88bdd45ab9acae0136",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "executive analytics API failure state stays readable and within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-a35d5000a402f4e18f17",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "loadout drawer caption-error state stays visually stable and within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d9af67aa77b62a616592-b30c89f2645616271dbb",
+      "file": "dashboard-state-visual-performance.spec.ts",
+      "title": "executive analytics success and error surfaces stay within frame budget",
+      "suitePath": [
+        "dashboard-state-visual-performance.spec.ts",
+        "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-109700cd2215fc0e97c8",
+      "file": "twin-visual.spec.ts",
+      "title": "the walkthrough HUD at a validated viewpoint",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "desktop 1440x900"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-2298f2bdd75a365589b2",
+      "file": "twin-visual.spec.ts",
+      "title": "plan",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "mobile 390x844"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-357dfccadb6e3e68028c",
+      "file": "twin-visual.spec.ts",
+      "title": "plan",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "landscape 844x390"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-48de501f86194c27ffc9",
+      "file": "twin-visual.spec.ts",
+      "title": "dollhouse",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "landscape 844x390"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-7aba1cc000487841a4e7",
+      "file": "twin-visual.spec.ts",
+      "title": "the room selector open",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "mobile 390x844"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-8386937483037936b65f",
+      "file": "twin-visual.spec.ts",
+      "title": "the room selector open",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "landscape 844x390"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-84be6441b700b37d475a",
+      "file": "twin-visual.spec.ts",
+      "title": "dollhouse",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "desktop 1440x900"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-bd631dc5b619e484e10a",
+      "file": "twin-visual.spec.ts",
+      "title": "plan",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "desktop 1440x900"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-cfccdb60b9140b5cafc0",
+      "file": "twin-visual.spec.ts",
+      "title": "the walkthrough HUD at a validated viewpoint",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "landscape 844x390"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-d8f9b07f62245a010729",
+      "file": "twin-visual.spec.ts",
+      "title": "the room selector open",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "desktop 1440x900"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-db2b92493895985fbf24",
+      "file": "twin-visual.spec.ts",
+      "title": "the walkthrough HUD at a validated viewpoint",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "mobile 390x844"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "de493fc5d177c5a0fe4c-e0654cd622d622b3f342",
+      "file": "twin-visual.spec.ts",
+      "title": "dollhouse",
+      "suitePath": [
+        "twin-visual.spec.ts",
+        "mobile 390x844"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-06fcf700a81f1f141f53",
+      "file": "twin-tour.spec.ts",
+      "title": "walk, dollhouse and plan each render, and walk-only chrome leaves with walk",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-1f0fda9ea80d07a037fd",
+      "file": "twin-tour.spec.ts",
+      "title": "a ?node= deep link lands on that viewpoint",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-2f04a97a5e9e7fa552a1",
+      "file": "twin-tour.spec.ts",
+      "title": "a ?mode=dollhouse deep link opens in the dollhouse",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-6a86fb1972c0271cd9f7",
+      "file": "twin-tour.spec.ts",
+      "title": "the dossier states the venue's own figures at a validated viewpoint",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-83519f599eda246aaec1",
+      "file": "twin-tour.spec.ts",
+      "title": "a click on the stage walks to the next viewpoint and relabels the HUD",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-90a7d60a288db01e4a73",
+      "file": "twin-tour.spec.ts",
+      "title": "an unknown ?mode= clamps to the walk and canonicalises the URL",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-96bf7105210dcee234f5",
+      "file": "twin-tour.spec.ts",
+      "title": "the Rooms panel lists the published rooms, marks the one underfoot, and travels",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-a0409a75730a876d6244",
+      "file": "twin-tour.spec.ts",
+      "title": "the tour opens on its first viewpoint with a live stage and no errors",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "e94a470ec7a80f28c7d4-c49f38fb3a6c3331add2",
+      "file": "twin-tour.spec.ts",
+      "title": "the tour says NOTHING about the room at an unvalidated viewpoint",
+      "suitePath": [
+        "twin-tour.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-07a9302a35fa41ef63fc",
+      "file": "editor-interactions.spec.ts",
+      "title": "Ctrl+Z key does not crash the page",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-2ec14f6d6b49bbf13c4e",
+      "file": "editor-interactions.spec.ts",
+      "title": "clearing search restores all catalogue items",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-314c51921a78686ddaea",
+      "file": "editor-interactions.spec.ts",
+      "title": "placement hint bar is not in the DOM on initial load",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-4f76d875a66e42f0a198",
+      "file": "editor-interactions.spec.ts",
+      "title": "furniture panel has a search text input",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-51128d52c45d1478ca17",
+      "file": "editor-interactions.spec.ts",
+      "title": "section slider can be repositioned without crashing",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-6c7ec2f737417221e696",
+      "file": "editor-interactions.spec.ts",
+      "title": "catalogue search filters to items matching the query",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-7126e15df7c743ec5229",
+      "file": "editor-interactions.spec.ts",
+      "title": "auth modal closes when Escape is pressed",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-72eb6041ee9b391d49f9",
+      "file": "editor-interactions.spec.ts",
+      "title": "F key opens the furniture panel",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-737dca2981364f475f5a",
+      "file": "editor-interactions.spec.ts",
+      "title": "F key with panel already open closes it",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-87c59679e1a6f0f9f81f",
+      "file": "editor-interactions.spec.ts",
+      "title": "G key toggles grid snap without crashing",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-8e12759fc00aed0a6255",
+      "file": "editor-interactions.spec.ts",
+      "title": "catalogue search shows empty state for a no-match query",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-9101f43bf33f17755804",
+      "file": "editor-interactions.spec.ts",
+      "title": "clicking a category header collapses its item list",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-956acb8174edb1d12aa8",
+      "file": "editor-interactions.spec.ts",
+      "title": "section slider is visible with correct accessible name",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-9663a58b68d58feafe08",
+      "file": "editor-interactions.spec.ts",
+      "title": "clicking a collapsed category header expands it again",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-9cc8f2ca45923c191e9b",
+      "file": "editor-interactions.spec.ts",
+      "title": "auth modal closes when the backdrop is clicked",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f465814c41c912814ac1-f0e2c91018a091a3c7b5",
+      "file": "editor-interactions.spec.ts",
+      "title": "Sign In button opens the auth modal",
+      "suitePath": [
+        "editor-interactions.spec.ts",
+        "Editor Interactions"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f8134e905ff06580654e-1070206bf6c4c4f77b96",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "unrecorded stock can become an explicit zero and survives a new page load",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "f8134e905ff06580654e-2dfa89167ee0df369fc7",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "phone: real stock and adjustment controls fit and remain keyboard-accessible",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "f8134e905ff06580654e-44b577d03bbaa85165e2",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "count corrections persist with a readable audit receipt",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "f8134e905ff06580654e-485210a2b296cf96791e",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "venue isolation and platform-only authority are enforced by real HTTP",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "f8134e905ff06580654e-6bb9c49bce1193c264ea",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "desktop: real stock and adjustment controls fit and remain keyboard-accessible",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "f8134e905ff06580654e-a85bb3dcf1874ca9371b",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "a lost response can be closed and retried after reopening without another revision",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "f8134e905ff06580654e-e33c595bc04ca5ef543e",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "tablet: real stock and adjustment controls fit and remain keyboard-accessible",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "f8134e905ff06580654e-f3a4ed1e7fa77b3c0eef",
+      "file": "venue-inventory-live.spec.ts",
+      "title": "a concurrent update is shown and explicit review preserves the editor's intent",
+      "suitePath": [
+        "venue-inventory-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "fa60f812434e8f42e38e-06878f24f04b365faf6d",
+      "file": "venue-inventory-style-live.spec.ts",
+      "title": "filtering retains the selected draft and changing equipment asks before discarding it",
+      "suitePath": [
+        "venue-inventory-style-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "fa60f812434e8f42e38e-2e69e635c7181567d854",
+      "file": "venue-inventory-style-live.spec.ts",
+      "title": "More and Diary preserve a dirty correction until the chosen route is accepted",
+      "suitePath": [
+        "venue-inventory-style-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "fa60f812434e8f42e38e-c92048d2270447da8e11",
+      "file": "venue-inventory-style-live.spec.ts",
+      "title": "sign out waits for an explicit discard and Keep editing retains counts and focus",
+      "suitePath": [
+        "venue-inventory-style-live.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "skipped"
+    },
+    {
+      "id": "fcb6daab40c4fb2fea0b-0ce706fe228dba3a8d7b",
+      "file": "twin-performance.spec.ts",
+      "title": "the fixture the budgets were measured against still holds",
+      "suitePath": [
+        "twin-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "fcb6daab40c4fb2fea0b-206a537707d3076903ec",
+      "file": "twin-performance.spec.ts",
+      "title": "a hop between rooms neither floods the network nor blocks the main thread",
+      "suitePath": [
+        "twin-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "fcb6daab40c4fb2fea0b-a0b4f7b8dbeb6aa93181",
+      "file": "twin-performance.spec.ts",
+      "title": "orbiting the dollhouse holds its frame pacing",
+      "suitePath": [
+        "twin-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "fcb6daab40c4fb2fea0b-b908e030cd90035cd1b5",
+      "file": "twin-performance.spec.ts",
+      "title": "looking around the pano holds its frame pacing",
+      "suitePath": [
+        "twin-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "fcb6daab40c4fb2fea0b-fb0acf4492a7fc4f0bd3",
+      "file": "twin-performance.spec.ts",
+      "title": "the arrival at a validated viewpoint stays inside its byte budget",
+      "suitePath": [
+        "twin-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    }
+  ]
+}

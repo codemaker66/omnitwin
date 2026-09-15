@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { RuntimePackageSchema, type RuntimePackage } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Shared /plan bootstrap stubs for the CARD A1/A2 planner e2e specs.
@@ -72,9 +73,12 @@ export const ATELIER_FALLBACK_COPY =
   "Captured visual layer not yet available — planning on reviewed geometry";
 export const LOADED_EVIDENCE_COPY = "Runtime asset loaded, not yet verified/signed.";
 
-export function receptionRuntimePackage(origin: string): Record<string, unknown> {
+export function receptionRuntimePackage(origin: string): RuntimePackage {
   const chunkUrls = RECEPTION_SOG_CHUNKS.map((chunk) => `${origin}/splats/reception/${chunk}`);
-  return {
+  const visualAssetVersionIds = RECEPTION_SOG_CHUNKS.map((_, index) =>
+    `10000000-0000-4000-8000-${String(index + 3).padStart(12, "0")}`,
+  );
+  return RuntimePackageSchema.parse({
     id: "e2e-runtime-package-reception",
     venueSlug: "trades-hall",
     roomSlug: "reception-room",
@@ -89,13 +93,14 @@ export function receptionRuntimePackage(origin: string): Record<string, unknown>
       packageType: "room-runtime",
       assets: {
         primaryVisualAssetVersionId: ASSET_VERSION_ID,
+        visualAssetVersionIds,
         semanticMeshAssetVersionId: null,
         collisionAssetVersionId: null,
         pointCloudAssetVersionId: null,
       },
     },
     evidenceStatus: "unverified",
-    runtimeStatus: "internal_ready",
+    runtimeStatus: "published",
     createdAt: "2026-07-09T22:56:00.000Z",
     updatedAt: "2026-07-09T22:56:00.000Z",
     primaryVisualAssetUrl: chunkUrls[0],
@@ -112,7 +117,7 @@ export function receptionRuntimePackage(origin: string): Record<string, unknown>
       r2Key: "venues/trades-hall/rooms/reception-room/xgrids/0_0.sog",
       externalUrl: null,
       mimeType: "application/octet-stream",
-      sha256: "a".repeat(64),
+      sha256: "0a5b8c21327be7c747087baab237d1907e0a0277b0d019300e0d6b2e7eba0a16",
       sizeBytes: 9017864,
       evidenceStatus: "unverified",
       runtimeStatus: "usable",
@@ -120,7 +125,7 @@ export function receptionRuntimePackage(origin: string): Record<string, unknown>
       createdAt: "2026-07-09T22:56:00.000Z",
       updatedAt: "2026-07-09T22:56:00.000Z",
     },
-  };
+  });
 }
 
 /**
@@ -142,12 +147,14 @@ export async function settleCockpit(page: Page): Promise<void> {
     .toBe("1|1");
 }
 
-export async function stubPlannerBootstrap(page: Page): Promise<void> {
+export async function stubPlannerBootstrap(page: Page, uncaptured = false): Promise<void> {
+  const space = uncaptured ? { ...RECEPTION_ROOM_SPACE, name: "Uncaptured room", slug: "uncaptured-room" } : RECEPTION_ROOM_SPACE;
+  await page.route(`${API}/venues/${VENUE.id}`, (route) => route.fulfill({ json: { data: { ...VENUE, spaces: [GRAND_HALL_SPACE, space] } } }));
   await page.route(`${API}/venues`, (route) => {
     void route.fulfill({ json: { data: [VENUE] } });
   });
   await page.route(`${API}/venues/${VENUE.id}/spaces`, (route) => {
-    void route.fulfill({ json: { data: [GRAND_HALL_SPACE, RECEPTION_ROOM_SPACE] } });
+    void route.fulfill({ json: { data: [GRAND_HALL_SPACE, space] } });
   });
   await page.route(`${API}/public/configurations`, (route) => {
     void route.fulfill({ json: { data: PLAN_CONFIG } });
@@ -156,7 +163,7 @@ export async function stubPlannerBootstrap(page: Page): Promise<void> {
     void route.fulfill({ json: { data: PLAN_CONFIG } });
   });
   await page.route(`${API}/venues/${VENUE.id}/spaces/${RECEPTION_ROOM_SPACE.id}`, (route) => {
-    void route.fulfill({ json: { data: RECEPTION_ROOM_SPACE } });
+    void route.fulfill({ json: { data: space } });
   });
   await page.route(`${API}/truth-mode/summary*`, (route) => {
     void route.fulfill({
@@ -177,4 +184,15 @@ export async function stubPlannerBootstrap(page: Page): Promise<void> {
       },
     });
   });
+}
+
+/** Mirrors the supported dev fixture boundary; only registry tests opt in. */
+export async function seedRegistryAdmin(page: Page): Promise<void> {
+  await page.addInitScript(({ venueId }) => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", { value: {
+      id: "00000000-0000-4000-8000-000000005001", email: "capture-admin@fixture.test",
+      name: "Capture fixture admin", role: "admin", platformRole: "admin", venueId,
+    } });
+  }, { venueId: VENUE.id });
 }

@@ -57,7 +57,9 @@ export default defineConfig({
   // The GitHub reporter emits failure annotations only when the run ends.
   // Print each case immediately, and leave time for reports and artifact upload
   // before the 30-minute Actions job deadline even if the suite stalls.
-  reporter: process.env["CI"] !== undefined ? [["line"], ["github"]] : "html",
+  reporter: process.env["CI"] !== undefined
+    ? [["line"], ["github"], ["json", { outputFile: "playwright-report/results.json" }]]
+    : "html",
   globalTimeout: process.env["CI"] !== undefined ? 26 * 60_000 : undefined,
   timeout: 30_000,
 

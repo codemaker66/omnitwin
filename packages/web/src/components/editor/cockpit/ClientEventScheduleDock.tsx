@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, ChevronDown, ChevronUp } from "lucide-react";
 import { useClientEventSchedule } from "../../../hooks/use-client-event-schedule.js";
@@ -14,7 +14,24 @@ export function ClientEventScheduleDock({ initiallyCollapsed = false }: { readon
   const expectedVenueId = useEditorStore((state) => state.venueId);
   const result = useClientEventSchedule(eventId, { configurationId, expectedVenueId });
   const [collapsed, setCollapsed] = useState(initiallyCollapsed);
-  return <footer className={`cockpit-bottom client-event-dock${collapsed ? " is-collapsed" : ""}`} aria-label="Your event schedule">
+  const dockRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const dock = dockRef.current;
+    const shell = dock?.closest<HTMLElement>(".cockpit-shell");
+    if (dock === null || shell === undefined || shell === null) return;
+    const property = "--client-event-dock-height";
+    const previous = shell.style.getPropertyValue(property);
+    const update = (): void => { shell.style.setProperty(property, `${String(dock.getBoundingClientRect().height)}px`); };
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(dock);
+    return () => {
+      observer?.disconnect();
+      if (previous === "") shell.style.removeProperty(property);
+      else shell.style.setProperty(property, previous);
+    };
+  }, []);
+  return <footer ref={dockRef} data-schedule-state={result.status} className={`cockpit-bottom client-event-dock${collapsed ? " is-collapsed" : ""}`} aria-label="Your event schedule">
     <div className="client-event-dock__header">
       <div className="client-event-dock__identity"><CalendarDays size={21} aria-hidden="true" /><div>
         <strong>{result.data?.event.name ?? "Your event schedule"}</strong>
@@ -30,7 +47,7 @@ export function ClientEventScheduleDock({ initiallyCollapsed = false }: { readon
       </div>
     </div>
     {!collapsed && <div className="client-event-dock__body">
-      <ClientEventScheduleState result={result} />
+      {result.status === "none" ? <p className="client-event-empty">You can keep working on your room plan.</p> : <ClientEventScheduleState result={result} />}
       {result.data !== null && <ClientEventPhases data={result.data} />}
     </div>}
   </footer>;

@@ -1,14 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { API, settleCockpit, stubPlannerBootstrap } from "./support/plan-bootstrap.js";
+import { settleCockpit, stubPlannerBootstrap } from "./support/plan-bootstrap.js";
 
 // ---------------------------------------------------------------------------
 // Stage S2 — the hands (T-562).
 //
 // The pill's DOM state machine and the judged clearance ring, on a booted
-// cockpit with the whole backend stubbed (no live API, splat tiles 404 so the
-// room plans on reviewed geometry — the pill owes nothing to the captured
+// cockpit with the whole backend stubbed (no live API, an uncaptured room
+// plans on procedural geometry — the pill owes nothing to the captured
 // layer). Furniture is staged through the DEV __plannerHands bridge: placing
 // through the catalogue drawer would couple this evidence to drawer
 // choreography, and the ring's judgement needs an EXACT 0.60 m planning gap.
@@ -31,24 +29,15 @@ const TABLE_WIDTH_M = 1.83;
 /** Inside [blockedM 0.45, tightM 0.90) → the amber "single-file" reason. */
 const STAGED_GAP_M = 0.6;
 
-/** Runner cwd is packages/web; evidence lands beside the other stage proofs. */
-const EVIDENCE_PATH = resolve(
-  process.cwd(),
-  "../../docs/evidence/stage/2026-09-01-s2-hands-pill-and-ring.png",
-);
-
 test.describe("Stage S2 — the tool pill and the clearance ring", () => {
   // Wide enough for the pill's labels (they collapse to icons below 1280).
   test.use({ viewport: { width: 1680, height: 1000 } });
 
-  test("five hands, the Escape ladder, and a judged amber ring", async ({ page }) => {
+  test("five hands, the Escape ladder, and a judged amber ring", async ({ page }, testInfo) => {
     // Boot + resolve choreography on a churned worker can exceed the default
     // 30s (the S1 lesson); the interactions themselves are fast.
     test.setTimeout(180_000);
-    await stubPlannerBootstrap(page);
-    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
-      void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
-    });
+    await stubPlannerBootstrap(page, true);
     // No captured layer in this spec: the staged-capture path would stream
     // real SOG tiles and the pill owes nothing to them.
     await page.route("**/splats/**", (route) => {
@@ -61,7 +50,7 @@ test.describe("Stage S2 — the tool pill and the clearance ring", () => {
     // Interact only with a settled stage: the resolve choreography animates
     // ancestors of the pill, and a moving bounding box fails Playwright's
     // stability check in a way that reads as a mystery timeout. With the
-    // captured layer stubbed away the phase must land on "fallback".
+    // explicitly uncaptured room the phase must land on "fallback".
     await expect
       .poll(
         () => page.evaluate(() =>
@@ -69,7 +58,7 @@ test.describe("Stage S2 — the tool pill and the clearance ring", () => {
         ),
         { timeout: 90_000, message: "waiting for the room resolve to settle" },
       )
-      .toMatch(/^(resolved|fallback)$/);
+      .toBe("fallback");
 
     // The pill: five hands, Select in hand.
     const pill = page.getByTestId("planner-tool-pill");
@@ -115,9 +104,8 @@ test.describe("Stage S2 — the tool pill and the clearance ring", () => {
     await expect(reason).toHaveAttribute("title", "Planning-grade clearance estimate");
 
     // Visual evidence at the judgement moment: pill + amber ring + reason.
-    mkdirSync(dirname(EVIDENCE_PATH), { recursive: true });
-    const shot = await page.screenshot({ path: EVIDENCE_PATH });
-    await test.info().attach("s2-hands-pill-and-ring", { body: shot, contentType: "image/png" });
+    const shot = await page.screenshot({ path: testInfo.outputPath("s2-hands-pill-and-ring.png") });
+    await testInfo.attach("s2-hands-pill-and-ring", { body: shot, contentType: "image/png" });
 
     // The value chip reads the selected table's rotation, tabular.
     await page.getByTestId("planner-tool-rotate").click();

@@ -89,10 +89,14 @@ async function beginAndPassThreshold(page: Page): Promise<void> {
 // The threshold is the one screen that GROWS while you look at it: the painting
 // is the hero of it, and under the painting his lines accumulate as he says
 // them. So the state that matters is the last one, and waiting for it costs
-// ~13s of beat timers — too much to spend inside a twelve-scene walk, and the
+// 22.73s of beat timers — too much to spend inside a twelve-scene walk, and the
 // reason it had no desktop guard at all. It gets its own test.
 for (const viewport of NO_SCROLL_VIEWPORTS) {
   test(`fits the threshold with every line told at ${String(viewport.width)}x${String(viewport.height)}`, async ({ page }) => {
+    // Keep the 25s narration-readiness assertion below, with a separate total
+    // allowance for navigation/fonts and final geometry. The timed narration
+    // plus observed cold navigation already exceeds the default 30s total.
+    test.setTimeout(45_000);
     await page.setViewportSize(viewport);
     await page.goto("/quiz");
     await page.evaluate(async () => { await document.fonts.ready; });
@@ -263,7 +267,20 @@ for (const desktop of [{ width: 2048, height: 1200 }, { width: 2000, height: 930
     expect(core.x + core.width).toBeLessThanOrEqual(rightRail.x + 2);
 
     await expect(page.locator(".craft-quiz-achievement")).toBeVisible();
-    await expect(page.locator(".craft-quiz-intro-foot")).toBeVisible();
+    // The intro now ends with its question count and native Begin action.
+    // Both must remain visible and contained; the removed flourish is not UI.
+    const questionCount = page.locator(".craft-quiz-intro-core").getByText("12 questions", { exact: true });
+    const begin = page.getByRole("button", { name: "Begin the Craft quiz", exact: true });
+    await expect(begin).toBeEnabled();
+    for (const element of [questionCount, begin]) {
+      await expect(element).toBeVisible();
+      const box = await element.boundingBox();
+      if (box === null) throw new Error("Craft invitation content geometry is unavailable.");
+      expect(box.x).toBeGreaterThanOrEqual(core.x - 1);
+      expect(box.x + box.width).toBeLessThanOrEqual(core.x + core.width + 1);
+      expect(box.y).toBeGreaterThanOrEqual(-1);
+      expect(box.y + box.height).toBeLessThanOrEqual(desktop.height + 1);
+    }
     await expectNoPageScroll(page);
 
     await beginAndPassThreshold(page);

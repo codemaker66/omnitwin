@@ -1,67 +1,26 @@
 import { test, expect, type Page } from "@playwright/test";
+import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // E2E: Hallkeeper page — events sheet web view
 //
-// Selector strategy:
-//   - Venue name:       getByText("Trades Hall Glasgow")
-//   - Config name h1:   getByRole("heading", { level: 1, name: "Annual Gala" })
-//   - Space chip:       getByText("Grand Hall")
-//   - Manifest h2:      getByRole("heading", { name: "Setup Manifest" })
-//   - Manifest rows:    getByText("6ft Round Table")
-//   - Group headers:    getByRole("button", { name: /Tables & Seating/ })
-//   - Action buttons:   getByRole("button", { name: "Download PDF" | "Print" })
-//   - Totals bar:       getByText("TOTALS")
-//
-// All API calls are intercepted with page.route(). HallkeeperPage calls
-// GET /hallkeeper/:configId/v2 with an auth token (null for unauthenticated
-// users). Playwright intercepts at CDP level before the request leaves the
-// browser, so the actual auth middleware is bypassed entirely.
-//
-// Note: the HallkeeperPage has no enquiry form and no copy-link button —
-// those features are not yet implemented in the current build. Tests cover
-// what the page actually renders.
+// The room is the main heading; the event is its subtitle. Setup categories
+// reveal each phase's rows while the full manifest remains printable. Review
+// metadata is visible in the summary/brief and on the printed approval stamp.
+// API fixtures are intercepted before transport, so these tests exercise the
+// client workflow and runtime contract, not server-side authorization.
 // ---------------------------------------------------------------------------
 
 const API = "http://localhost:3001";
-const CONFIG_ID = "e2e-config-001";
+const CONFIG_ID = "10000000-0000-4000-8000-000000000001";
 
 // ---------------------------------------------------------------------------
-// Typed mock fixture — mirrors HallkeeperPage.tsx SheetData interface
+// Runtime-validated standalone sheet fixture
 // ---------------------------------------------------------------------------
 
-interface MockV2Row {
-  readonly key: string;
-  readonly name: string;
-  readonly category: string;
-  readonly qty: number;
-  readonly afterDepth: number;
-  readonly isAccessory: boolean;
-  readonly notes: string;
-}
-
-interface MockSheetDataV2 {
-  readonly venue: { readonly name: string; readonly address: string; readonly logoUrl: null; readonly timezone: string };
-  readonly space: { readonly name: string; readonly widthM: number; readonly lengthM: number; readonly heightM: number };
-  readonly config: { readonly id: string; readonly name: string; readonly layoutStyle: string; readonly guestCount: number };
-  readonly timing: null | { readonly eventStart: string; readonly setupBy: string; readonly bufferMinutes: number };
-  readonly instructions: null;
-  readonly phases: readonly {
-    readonly phase: string;
-    readonly zones: readonly { readonly zone: string; readonly rows: readonly MockV2Row[] }[];
-  }[];
-  readonly totals: {
-    readonly entries: readonly { readonly name: string; readonly category: string; readonly qty: number }[];
-    readonly totalRows: number;
-    readonly totalItems: number;
-  };
-  readonly diagramUrl: null;
-  readonly webViewUrl: string;
-  readonly generatedAt: string;
-  readonly approval: null | ApprovalFixture;
-}
-
-const MOCK_SHEET: MockSheetDataV2 = {
+// Validate the fixture at the same boundary as the page. Invalid UUIDs must
+// fail here rather than masquerading as missing hallkeeper controls.
+const MOCK_SHEET = HallkeeperSheetV2Schema.parse({
   venue: {
     name: "Trades Hall Glasgow",
     address: "85 Glassford Street, Glasgow G1 1UH",
@@ -113,16 +72,28 @@ const MOCK_SHEET: MockSheetDataV2 = {
   webViewUrl: `http://localhost:5173/hallkeeper/${CONFIG_ID}`,
   generatedAt: "2026-04-13T10:00:00.000Z",
   approval: null,
-};
+});
 
 // ---------------------------------------------------------------------------
 // Route-mock helper — fulfils /v2 (new) and leaves /data (v1) unmocked
 // so a stale consumer fails loud rather than pretending to work.
 // ---------------------------------------------------------------------------
 
-async function mockSheetData(page: Page, data: MockSheetDataV2 = MOCK_SHEET): Promise<void> {
+async function mockSheetData(page: Page, data: HallkeeperSheetV2 = MOCK_SHEET): Promise<void> {
+  const validated = HallkeeperSheetV2Schema.parse(data);
   await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
-    void route.fulfill({ json: { data } });
+    void route.fulfill({ json: { data: validated } });
+  });
+  // These standalone legacy sheets have no separately linked event/context or
+  // review snapshot. Return their explicit unavailable states without a live API.
+  await page.route(`${API}/configurations/${CONFIG_ID}`, (route) => {
+    void route.fulfill({ status: 403, json: { error: "No linked context in this fixture", code: "FORBIDDEN" } });
+  });
+  await page.route(`${API}/configurations/${CONFIG_ID}/review/available-transitions`, (route) => {
+    void route.fulfill({ status: 404, json: { error: "No review record", code: "NOT_FOUND" } });
+  });
+  await page.route(`${API}/configurations/${CONFIG_ID}/snapshot/latest`, (route) => {
+    void route.fulfill({ status: 404, json: { error: "No snapshot", code: "NOT_FOUND" } });
   });
   // Mock the progress endpoint — starts with no checked rows
   await page.route(`${API}/hallkeeper/${CONFIG_ID}/progress`, (route) => {
@@ -180,74 +151,94 @@ test.describe("Hallkeeper Page", () => {
     await seedAuthenticatedPlanner(page);
     await mockSheetData(page);
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
-    // The skeleton shows during parallel fetch of /v2 + /progress.
-    // Wait for the h1 (event name) to confirm data has loaded.
-    await page.waitForSelector("h1", { timeout: 10_000 });
+    await expect(page.getByRole("main", { name: "Hallkeeper sheet for Annual Gala at Trades Hall Glasgow" }))
+      .toBeVisible({ timeout: 10_000 });
   });
 
   // -------------------------------------------------------------------------
-  // Header — venue, config name, space chip, guest count, dimensions
+  // Room and event identity — venue, room, config, guests, dimensions
   // -------------------------------------------------------------------------
 
   test("displays the venue name in the page header", async ({ page }) => {
     await expect(page.getByText("Trades Hall Glasgow").first()).toBeVisible();
   });
 
-  test("renders the config name as the page h1", async ({ page }) => {
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Annual Gala" }),
-    ).toBeVisible();
+  test("renders the room heading and config name together", async ({ page }) => {
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+    await expect(page.locator("header").getByText("Annual Gala", { exact: true })).toBeVisible();
   });
 
-  test("displays the space name in the header meta chips", async ({ page }) => {
-    await expect(page.getByText("Grand Hall").first()).toBeVisible();
+  test("displays the selected space in the event room rail", async ({ page }) => {
+    await expect(page.getByRole("complementary", { name: "Rooms linked to this event" })
+      .getByText("Grand Hall", { exact: true })).toBeVisible();
   });
 
   test("displays the guest count in the header", async ({ page }) => {
-    // guestCount: 120 renders as a large standalone number in the header
-    await expect(page.getByText("120").first()).toBeVisible();
+    await expect(page.locator("header").getByText("120 guests", { exact: true })).toBeVisible();
   });
 
-  test("displays the room dimensions chip in the header", async ({ page }) => {
-    // Chip text: "{widthM}m × {lengthM}m" — scoped to <header> to avoid
-    // matching the footer which shows the same dimensions as part of a longer string
-    await expect(page.locator("header").getByText(/21m/)).toBeVisible();
+  test("displays the room dimensions in the layout record", async ({ page }) => {
+    await expect(page.getByRole("complementary", { name: "Rooms linked to this event" })
+      .getByText("21 × 10 m", { exact: true })).toBeVisible();
   });
 
   // -------------------------------------------------------------------------
-  // Phase sections — v2 replaces the single "Setup Manifest" accordion
-  // with per-phase blocks (structure / furniture / dress / technical /
-  // final). Each phase has zone subheaders and checkable rows.
+  // Setup category navigation preserves every phase, row, quantity, zone and
+  // dependency hint without requiring all phases to be visible at once.
   // -------------------------------------------------------------------------
 
-  test("renders a phase heading for every phase in the payload", async ({ page }) => {
-    await expect(page.getByText(/Phase 1 — Structure/)).toBeVisible();
-    await expect(page.getByText(/Phase 2 — Furniture/)).toBeVisible();
-    await expect(page.getByText(/Phase 3 — Dress/)).toBeVisible();
+  test("makes every supplied setup phase selectable", async ({ page }) => {
+    const category = page.getByRole("combobox", { name: "Setup category" });
+    await expect(category.locator("option")).toHaveCount(MOCK_SHEET.phases.length);
+    for (const phase of MOCK_SHEET.phases) {
+      await category.selectOption(phase.phase);
+      await expect(category).toHaveValue(phase.phase);
+      for (const zone of phase.zones) {
+        for (const row of zone.rows) {
+          await expect(page.getByRole("checkbox", { name: new RegExp(row.name) })).toBeVisible();
+        }
+      }
+    }
   });
 
   test("renders item rows with their quantities", async ({ page }) => {
-    await expect(page.getByText("6ft Round Table with 10 chairs")).toBeVisible();
-    await expect(page.getByText("Stage Platform")).toBeVisible();
-    await expect(page.getByText("Ivory Tablecloth")).toBeVisible();
+    for (const phase of MOCK_SHEET.phases) {
+      await page.getByRole("combobox", { name: "Setup category" }).selectOption(phase.phase);
+      for (const zone of phase.zones) {
+        for (const row of zone.rows) {
+          await expect(page.getByRole("checkbox", { name: new RegExp(row.name) }))
+            .toContainText(`×${String(row.qty)}`);
+        }
+      }
+    }
   });
 
-  test("accessory rows with afterDepth > 0 show an 'after' badge", async ({ page }) => {
-    // Gold Organza Runner has afterDepth=1 → should carry the badge
-    const runnerRow = page.getByText("Gold Organza Runner").locator("..");
-    await expect(runnerRow.getByText("after")).toBeVisible();
+  test("accessory rows retain their dependency order hint", async ({ page }) => {
+    await page.getByRole("combobox", { name: "Setup category" }).selectOption("dress");
+    await expect(page.getByRole("checkbox", { name: /Gold Organza Runner/ }))
+      .toContainText("after preceding items");
+    await expect(page.getByRole("checkbox", { name: /Ivory Tablecloth/ }))
+      .not.toContainText("after preceding items");
   });
 
-  test("zone subheaders are rendered under each phase", async ({ page }) => {
-    // The mock has all items in "Centre" and one in "North wall"
-    await expect(page.getByText(/▹ North wall/).first()).toBeVisible();
-    await expect(page.getByText(/▹ Centre/).first()).toBeVisible();
+  test("setup rows identify their supplied zone in each phase", async ({ page }) => {
+    for (const phase of MOCK_SHEET.phases) {
+      await page.getByRole("combobox", { name: "Setup category" }).selectOption(phase.phase);
+      for (const zone of phase.zones) {
+        for (const row of zone.rows) {
+          await expect(page.getByRole("checkbox", { name: new RegExp(row.name) })).toContainText(zone.zone);
+        }
+      }
+    }
   });
 
   test("clicking a row toggles its checkbox (aria-checked)", async ({ page }) => {
     const row = page.getByRole("checkbox", { name: /Stage Platform/ });
     await expect(row).toHaveAttribute("aria-checked", "false");
+    const saved = page.waitForResponse((response) => response.url() === `${API}/hallkeeper/${CONFIG_ID}/progress`
+      && response.request().method() === "PATCH");
     await row.click();
+    expect((await saved).ok()).toBe(true);
     await expect(row).toHaveAttribute("aria-checked", "true");
   });
 
@@ -327,9 +318,9 @@ test.describe("Hallkeeper Page — authorized error states", () => {
 // Approval stamp banner — Phase 4c audit trail
 //
 // When the config is in the `approved` review state, the API returns a
-// populated `approval` block on the /v2 payload. HallkeeperPage renders
-// an `ApprovalStampBanner` above the main header with version + approver
-// name + date. Unapproved sheets must NOT render the banner.
+// populated `approval` block on the /v2 payload. The workspace summary and
+// brief preserve version, approver and venue-local time; the complete stamp
+// remains in the printable handoff. Unapproved sheets must carry neither.
 // ---------------------------------------------------------------------------
 
 interface ApprovalFixture {
@@ -346,26 +337,25 @@ test.describe("Hallkeeper Page — approval stamp banner", () => {
       approverName: "Catherine Tait",
     };
     await seedAuthenticatedPlanner(page);
-    // Include approval in the /v2 payload — the page reads `data.approval`.
-    await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
-      void route.fulfill({ json: { data: { ...MOCK_SHEET, approval } } });
-    });
-    await page.route(`${API}/hallkeeper/${CONFIG_ID}/progress`, (route) => {
-      void route.fulfill({ json: { data: { configId: CONFIG_ID, checked: {} } } });
-    });
+    await mockSheetData(page, { ...MOCK_SHEET, approval });
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
-    await page.waitForSelector("h1", { timeout: 10_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
 
-    // The banner has role="status" with an aria-label combining the
-    // three audit fields. Asserting on aria-label covers all three.
+    await expect(page.getByText("Sheet v3 · approved by Catherine Tait", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Brief & contacts ↗" }).click();
+    const brief = page.getByRole("dialog", { name: "Brief & contacts" });
+    await expect(brief).toContainText("Sheet v3 approved by Catherine Tait on 17/04/2026, 15:30:00.");
+    await brief.getByRole("button", { name: "Close brief" }).click();
+
+    // The full approval stamp remains in the printable handoff. Its parent
+    // is intentionally hidden from the screen accessibility tree.
+    await page.emulateMedia({ media: "print" });
     const banner = page.getByRole("status", {
-      name: /Approved version 3 by Catherine Tait/,
+      name: /Approved version 3 by Catherine Tait/, includeHidden: true,
     });
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText(/Approved/i);
     await expect(banner).toContainText("v3");
     await expect(banner).toContainText("Catherine Tait");
-    // Date rendered via toLocaleDateString("en-GB") — "17 Apr 2026".
     await expect(banner).toContainText("17 Apr 2026");
   });
 
@@ -373,10 +363,10 @@ test.describe("Hallkeeper Page — approval stamp banner", () => {
     await seedAuthenticatedPlanner(page);
     await mockSheetData(page); // MOCK_SHEET has no approval → null
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
-    await page.waitForSelector("h1", { timeout: 10_000 });
-
-    // No status role element carrying "APPROVED" should exist.
-    const banner = page.getByRole("status", { name: /Approved version/ });
-    await expect(banner).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+    await expect(page.getByText(/Sheet v\d+ · approved by/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Brief & contacts ↗" }).click();
+    await expect(page.getByRole("dialog", { name: "Brief & contacts" })).not.toContainText("approved by");
+    await expect(page.getByRole("status", { name: /Approved version/, includeHidden: true })).toHaveCount(0);
   });
 });
