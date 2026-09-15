@@ -479,8 +479,8 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   // Custom inertial zoom — scroll ticks add velocity, friction decays it
   const zoomVelocity = useRef(0);
 
-  // The subscription restoring Walk runs synchronously when PlannerScene's
-  // later effect yields the camera. Keep this callback current without changing
+  // Restoring Walk runs synchronously inside the capture handoff below.
+  // Keep this callback current without changing
   // applyWalkMode's identity (which would tear down its saved-pose ownership).
   recoverCapture.current = () => {
     const pending = pendingCaptureRecovery.current;
@@ -524,6 +524,10 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       // Flow selected over Interior has no orbit goal to preserve.
       flowOverWalk: cockpit.walkMode && cockpit.activeMode === "flow",
     };
+    // Canvas commits through a separate reconciler: a PlannerScene effect can
+    // run before this layout effect. Record the old owner here before yielding
+    // Interior, so Flow over Interior cannot be mistaken for a new orbit choice.
+    if (captureUnavailableKey !== null && cockpit.walkMode) cockpit.setWalkMode(false);
   }, [captureUnavailableKey]);
   // Also covers failure in orbit and failure received during a frozen preview;
   // preview restores its camera in layout effects before this handoff runs.

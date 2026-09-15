@@ -198,7 +198,11 @@ describe("PlannerScene", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(sceneComponent("RoomMesh")).toBeDefined();
     expect(namedSceneNode("live-room-capture")?.props.visible).toBe(false);
-    expect(useCockpitStore.getState().walkMode).toBe(false);
+    // The real Canvas child owns the store handoff. This structural Canvas
+    // mock deliberately never mounts it: assert the command and removed owner.
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(sceneComponent("InteriorCamera")).toBeUndefined();
+    expect(sceneComponent("CameraRig")?.props.captureUnavailableKey).toEqual(expect.any(String));
     expect(useCockpitStore.getState().roomResolve.phase).toBe("unavailable");
     expect(useCockpitStore.getState().sceneSource?.captureSource).toBe("none");
   });
@@ -326,8 +330,9 @@ describe("PlannerScene resolve phase wiring", () => {
     expect(namedSceneNode("live-room-capture")?.props.visible).toBe(false);
     expect(sceneComponent("CockpitSplatLayer")?.props.active).toBe(false);
     expect(sceneComponent("CameraRig")?.props.suspended).toBe(true);
+    expect(sceneComponent("CockpitPlanningCamera")?.props.suspended).toBe(true);
     expect(sceneComponent("FrozenLayoutPreviewCamera")?.props).toMatchObject({ active: true, room: frozenLayoutRoomModel(runtime) });
-    for (const name of ["RoomMesh", "GrandHallRoom", "InkArchitectureLayer", "SectionPlane", "SelectionSystem", "PlannerMotionOverlayLayers", "PlacementGhost", "CockpitCameraFocus", "CockpitPlanningCamera"]) {
+    for (const name of ["RoomMesh", "GrandHallRoom", "InkArchitectureLayer", "SectionPlane", "SelectionSystem", "PlannerMotionOverlayLayers", "PlacementGhost", "CockpitCameraFocus"]) {
       expect(sceneComponent(name), name).toBeUndefined();
     }
     expect(useCockpitStore.getState().sceneSource).toMatchObject({ captureSource: "none", loadedChunks: 0, totalChunks: 0, proceduralGeometryVisible: true });
@@ -335,6 +340,7 @@ describe("PlannerScene resolve phase wiring", () => {
     act(() => { useLayoutTimelinePreviewStore.getState().clear(); });
     expect(sceneComponent("FrozenLayoutRoom")).toBeUndefined();
     expect(sceneComponent("CameraRig")?.props.suspended).toBe(false);
+    expect(sceneComponent("CockpitPlanningCamera")?.props.suspended).toBe(false);
     expect(namedSceneNode("planner-furniture-frame")?.props.position).toEqual([0, 0, 0]);
     expect(namedSceneNode("live-room-capture")?.props.visible).toBe(true);
     expect(sceneComponent("SelectionSystem")).toBeDefined();
@@ -498,7 +504,11 @@ describe("PlannerScene interior arrival", () => {
     expect(useCockpitStore.getState().walkMode).toBe(true);
     arrivals.failedCount = 1;
     rerender(<PlannerScene />);
-    expect(useCockpitStore.getState().walkMode).toBe(false);
+    // The real Canvas child owns the store handoff. This structural Canvas
+    // mock deliberately never mounts it: assert the command and removed owner.
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(sceneComponent("InteriorCamera")).toBeUndefined();
+    expect(sceneComponent("CameraRig")?.props.captureUnavailableKey).toEqual(expect.any(String));
     expect(useCockpitStore.getState().roomResolve.phase).toBe("unavailable");
   });
 

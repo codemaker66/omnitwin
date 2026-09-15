@@ -54,9 +54,12 @@ function cameraVerticalFov(camera: { readonly type?: string; readonly fov?: numb
 
 export function CockpitPlanningCamera({
   dimensionsOverride,
+  suspended = false,
 }: {
   /** Renderer-local frozen bounds; never written into the live dimensions store. */
   readonly dimensionsOverride?: SpaceDimensions;
+  /** Frozen preview owns the camera; lens changes must not queue a later move. */
+  readonly suspended?: boolean;
 } = {}): null {
   const activeMode = useCockpitStore((state) => state.activeMode);
   const liveDimensions = useRoomDimensionsStore((state) => state.dimensions);
@@ -78,7 +81,9 @@ export function CockpitPlanningCamera({
   useEffect(() => {
     const previousMode = prevModeRef.current;
     prevModeRef.current = activeMode;
-    if (activeMode !== FLOW_LENS) { goalRef.current = null; return; }
+    // Keep the current lens remembered across preview instead of treating its
+    // return as a new selection and replaying a camera move over the restored pose.
+    if (suspended || activeMode !== FLOW_LENS) { goalRef.current = null; return; }
     if (previousMode === FLOW_LENS) return;
     goalRef.current = null;
     // Interior remains the camera owner on both a fresh lens choice and a
@@ -94,11 +99,11 @@ export function CockpitPlanningCamera({
       cameraVerticalFov(camera),
     );
     invalidate();
-  }, [activeMode, dimensions, camera, controls, size, invalidate]);
+  }, [activeMode, dimensions, camera, controls, size, invalidate, suspended]);
 
   useFrame(() => {
     // A lens change can reach the store before the effect above commits.
-    if (useCockpitStore.getState().activeMode !== FLOW_LENS || !plannerOrbitOwnsCamera()) {
+    if (suspended || useCockpitStore.getState().activeMode !== FLOW_LENS || !plannerOrbitOwnsCamera()) {
       goalRef.current = null;
       return;
     }
