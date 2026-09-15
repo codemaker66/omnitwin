@@ -4,9 +4,15 @@ import { MemoryRouter } from "react-router-dom";
 import { InternalEventRoute } from "../InternalEventRoute.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 
-// In the app this guard always renders inside ClerkRouteProvider, which is
-// what lets the denial screen offer "Use another account".
-vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: vi.fn() }) }));
+// ClerkRouteProvider returns its children bare under the E2E auth bypass, so
+// the refusal screen has to render with no Clerk context at all. Throwing
+// here is what this mock reproduces: a guard that renders nothing is worse
+// than the dead end it replaced (caught by CI on
+// operational-state-visual-performance.spec.ts:1482).
+vi.mock("@clerk/react", () => ({
+  useClerk: () => { throw new Error("useClerk can only be used within <ClerkProvider />"); },
+}));
+vi.mock("../../../lib/e2e-auth-bypass.js", () => ({ isE2EAuthBypassEnabled: () => true }));
 
 function seedUser(role: string, platformRole: "none" | "admin" = "none"): void {
   useAuthStore.getState().setUser({ id: "operator", role, platformRole, venueId: "venue", name: "Operator", email: "operator@example.test" });
@@ -30,6 +36,14 @@ describe("InternalEventRoute", () => {
     showRoute();
     expect(screen.queryByText("Internal event tool")).toBeNull();
     expect(screen.getByRole("alert").textContent).toContain("Access needed");
+  });
+
+  it("still renders the refusal, and both ways out of it, with no Clerk context", () => {
+    seedUser("client");
+    showRoute();
+    expect(screen.getByRole("heading", { level: 1, name: "Access needed" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Use another account" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to Venviewer" }).getAttribute("href")).toBe("/");
   });
 
   it("admits a platform administrator with a customer base role", () => {

@@ -224,6 +224,18 @@ describe("GET /analytics/pipeline-summary — commercial surface", () => {
       expectAllowedThrough(res.statusCode);
     }
   });
+
+  // The refusal above is about money, not about analytics. Room utilisation
+  // carries no price — room names, counts and a percentage — and reading how
+  // busy the rooms are is the hallkeeper's own job, so decision 6b does not
+  // touch it. A blanket swap of the analytics scope helper would have taken
+  // it away silently.
+  it("still lets a hallkeeper read room utilisation, which carries no price", async () => {
+    const res = await server.inject({
+      method: "GET", url: "/analytics/room-utilisation", headers: auth("hallkeeper"),
+    });
+    expectAllowedThrough(res.statusCode);
+  });
 });
 
 // ---------------------------------------------------------------------------

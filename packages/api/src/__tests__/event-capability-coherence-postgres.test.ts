@@ -118,12 +118,27 @@ describe.skipIf(target === undefined)("event capabilities on disposable PostgreS
     }
   });
 
-  it.each(["staff", "admin", "hallkeeper", "platform"] as const)("preserves current %s venue analytics reads", async role => {
+  it.each(["staff", "admin", "platform"] as const)("preserves current %s venue analytics reads", async role => {
     const f = await fixture();
     for (const route of analytics) {
       const response = await server.inject({ method: "GET", url: `/analytics/${route}?venueId=${f.venues[0]}`,
         headers: await headers(f.actor[role]) });
       expect(response.statusCode, response.body).toBe(200);
+    }
+  });
+
+  // Goal 18 §6 decision 6b: hallkeepers never see prices. The money-bearing
+  // payloads (pipeline value, quote totals, revenue scenarios) close to them;
+  // room utilisation carries no money and is their own job, so it stays open.
+  it("keeps the hallkeeper's room utilisation while closing the priced analytics", async () => {
+    const f = await fixture();
+    const open = await server.inject({ method: "GET", url: `/analytics/room-utilisation?venueId=${f.venues[0]}`,
+      headers: await headers(f.actor.hallkeeper) });
+    expect(open.statusCode, open.body).toBe(200);
+    for (const route of ["pipeline-summary", "venue-dashboard"] as const) {
+      const priced = await server.inject({ method: "GET", url: `/analytics/${route}?venueId=${f.venues[0]}`,
+        headers: await headers(f.actor.hallkeeper) });
+      expect(priced.statusCode, priced.body).toBe(403);
     }
   });
 
