@@ -1,4 +1,5 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
   API,
   ATELIER_FALLBACK_COPY,
@@ -9,6 +10,8 @@ import {
   seedRegistryAdmin,
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
+
+test.use({ launchOptions: captureLaunchOptions });
 
 // ---------------------------------------------------------------------------
 // The planner keeps a usable procedural model for rooms without a capture.

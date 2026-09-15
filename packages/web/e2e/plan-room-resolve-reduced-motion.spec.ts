@@ -1,8 +1,11 @@
 import { expect, type Page } from "@playwright/test";
+import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
 import { test } from "./support/staged-reception.js";
+
+test.use({ launchOptions: captureLaunchOptions });
 
 // ---------------------------------------------------------------------------
 // Reduced-motion resolve, in its own file deliberately: fifth-in-sequence on a

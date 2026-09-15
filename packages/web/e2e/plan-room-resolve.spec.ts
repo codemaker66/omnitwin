@@ -1,10 +1,14 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import type { Camera, Scene, WebGLRenderer } from "three";
+import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
   API,
   settleCockpit,
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
 import { test } from "./support/staged-reception.js";
+
+test.use({ launchOptions: captureLaunchOptions });
 
 // ---------------------------------------------------------------------------
 // E2E: CARD A2 (G1b) — Resolve-over-blueprint load ("the room resolves")
@@ -26,7 +30,7 @@ test.describe.configure({ mode: "default" });
 
 declare global {
   interface Window {
-    __stageWake?: number;
+    __venPerf?: { gl: WebGLRenderer; scene: Scene; camera: Camera };
     __setWalkMode?: (value: boolean) => void;
     __walkDebug?: {
       walkMode: boolean;
@@ -58,53 +62,62 @@ async function throttleTo50Mbps(page: Page): Promise<void> {
 
 async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(name);
-  // A settled demand-loop splat canvas produces no frames, and page.screenshot
-  // waits for one forever (see .claude/gotchas/splat-camera-and-capture.md).
-  // This only ever worked before because the dissolve's per-frame setState kept
-  // the loop awake; the ref-driven dissolve lets the loop go properly idle. A
-  // single impulse is not enough either — it decays before the capture begins
-  // waiting — so alternating wheel impulses (net-zero zoom) keep frames flowing
-  // for the whole capture window, and stop the moment it is done.
-  await page.evaluate(() => {
-    const canvas = document.querySelector("canvas");
-    if (canvas === null) return;
-    let flip = 1;
-    window.__stageWake = window.setInterval(() => {
-      flip = -flip;
-      canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: flip, bubbles: true, cancelable: true }));
-    }, 120);
-  });
-  // In-page readback: the one capture path that returns on a splat canvas.
-  // Requires the page to have been opened with ?capture=1 (preserved buffer).
-  let screenshot: Buffer;
-  try {
-    await page.waitForTimeout(400);
-    const dataUrl = await page.evaluate(
-      () => document.querySelector("canvas")?.toDataURL("image/png") ?? null,
-    );
-    if (dataUrl === null) throw new Error("no canvas to capture");
-    screenshot = Buffer.from(dataUrl.split(",")[1] ?? "", "base64");
-    const { writeFileSync } = await import("node:fs");
-    writeFileSync(path, screenshot);
-  } finally {
-    await page.evaluate(() => {
-      if (window.__stageWake !== undefined) window.clearInterval(window.__stageWake);
-      window.__stageWake = undefined;
+  const readPreservedCanvas = async (): Promise<Buffer> => {
+    const dataUrl = await page.evaluate(() => {
+      // Both calling cases opt into PlannerScene's existing DEV capture aid.
+      // Inspect the actual context: the URL alone cannot prove preservation.
+      if (new URLSearchParams(window.location.search).get("capture") !== "1") {
+        throw new Error("Stage evidence requires the existing ?capture=1 page");
+      }
+      const canvases = document.querySelectorAll("canvas");
+      const canvas = canvases.item(0);
+      if (canvases.length !== 1 || !(canvas instanceof HTMLCanvasElement)
+        || !canvas.isConnected || canvas.closest(".cockpit-stage") === null) {
+        throw new Error("Stage evidence requires exactly one connected planner canvas");
+      }
+      // PerfMonitor publishes the application-owned renderer in DEV. Its
+      // getContext() returns that renderer's existing context; never call the
+      // canvas context factory, which could create one in a broken scene.
+      const renderer: unknown = window.__venPerf?.gl;
+      if (typeof renderer !== "object" || renderer === null
+        || !("isWebGLRenderer" in renderer) || renderer.isWebGLRenderer !== true
+        || !("domElement" in renderer) || renderer.domElement !== canvas
+        || !("getContext" in renderer) || typeof renderer.getContext !== "function") {
+        throw new Error("Stage evidence requires its application-owned renderer");
+      }
+      const gl: unknown = Reflect.apply(renderer.getContext, renderer, []);
+      if (typeof WebGL2RenderingContext === "undefined"
+        || !(gl instanceof WebGL2RenderingContext) || gl.canvas !== canvas
+        || gl.getContextAttributes()?.preserveDrawingBuffer !== true
+        || gl.isContextLost()) {
+        throw new Error("Stage evidence requires a live, preserved WebGL2 context");
+      }
+      if (canvas.width <= 0 || canvas.height <= 0
+        || gl.drawingBufferWidth !== canvas.width || gl.drawingBufferHeight !== canvas.height) {
+        throw new Error("Stage evidence requires the complete nonzero drawing buffer");
+      }
+      // Read the existing pixels only. No input, invalidation or extra draw.
+      // Native readback can still stall; the existing case timeout bounds it.
+      const png = canvas.toDataURL("image/png");
+      if (!png.startsWith("data:image/png;base64,")) {
+        throw new Error("Stage canvas did not produce a PNG data URL");
+      }
+      return png;
     });
-  }
+    return Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+  };
+  // Preserve the existing pre-read wait and one blank-image recovery attempt.
+  await page.waitForTimeout(400);
+  let screenshot = await readPreservedCanvas();
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(path, screenshot);
   if (screenshot.byteLength <= 15_000) {
-    // Blank buffer = the capture raced the recovery remount; settle + reshoot
-    // once. A persistently blank canvas still fails below.
+    // Blank buffer may race a recovery remount; settle + reshoot once.
+    // A persistently blank canvas still fails the existing evidence limit.
     await settleCockpit(page);
     await page.waitForTimeout(1_000);
-    const retryUrl = await page.evaluate(
-      () => document.querySelector("canvas")?.toDataURL("image/png") ?? null,
-    );
-    if (retryUrl !== null) {
-      screenshot = Buffer.from(retryUrl.split(",")[1] ?? "", "base64");
-      const { writeFileSync } = await import("node:fs");
-      writeFileSync(path, screenshot);
-    }
+    screenshot = await readPreservedCanvas();
+    writeFileSync(path, screenshot);
   }
   expect(screenshot.byteLength).toBeGreaterThan(15_000);
   await testInfo.attach(name, { body: screenshot, contentType: "image/png" });
