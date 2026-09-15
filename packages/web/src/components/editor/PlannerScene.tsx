@@ -142,17 +142,12 @@ function plannerTouchLookEnabled(): boolean {
     && !useMeasurementStore.getState().active && !useGuidelineStore.getState().active;
 }
 
-function PlannerMotionOverlayLayers({
-  renderSceneOverlays,
-}: {
-  readonly renderSceneOverlays: boolean;
-}): ReactElement | null {
+function PlannerMotionOverlayLayers(): ReactElement | null {
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   if (!shouldRenderPlannerMotionOverlays(cameraInteractionActive)) return null;
 
   return (
     <>
-      {renderSceneOverlays && <CockpitSceneOverlays />}
       <CockpitEvidenceBeam />
       <SnapGuides />
       <CirculationOverlay />
@@ -535,7 +530,8 @@ export function PlannerScene(): ReactElement {
             <PlacementGhost />
             <SelectionSystem />
             <FurnitureMotion />
-            <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
+            <CockpitSceneOverlays renderGeometry={renderSceneOverlays} />
+            <PlannerMotionOverlayLayers />
           </>}
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             <PlacedFurniture />

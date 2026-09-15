@@ -288,6 +288,22 @@ describe("PlannerScene", () => {
     expect(shouldRenderPlannerSceneOverlays(1440)).toBe(true);
   });
 
+  it.each([390, 960, 1440])("retains the annotation owner while moving at viewport %s", (width) => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    try {
+      const view = render(<PlannerScene />);
+      const before = sceneComponent("CockpitSceneOverlays");
+      expect(before).toBeDefined();
+      expect(before?.props.renderGeometry).toBe(width > 1024);
+      act(() => { useCockpitStore.getState().setCameraInteractionActive(true); });
+      view.rerender(<PlannerScene />);
+      expect(sceneComponent("CockpitSceneOverlays")?.type).toBe(before?.type);
+      expect(sceneComponent("CockpitSceneOverlays")?.props.renderGeometry).toBe(width > 1024);
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: previousWidth });
+    }
+  });
   it("precompiles the planner scene so shader setup stays in the load window", async () => {
     const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
 
@@ -332,7 +348,7 @@ describe("PlannerScene resolve phase wiring", () => {
     expect(sceneComponent("CameraRig")?.props.suspended).toBe(true);
     expect(sceneComponent("CockpitPlanningCamera")?.props.suspended).toBe(true);
     expect(sceneComponent("FrozenLayoutPreviewCamera")?.props).toMatchObject({ active: true, room: frozenLayoutRoomModel(runtime) });
-    for (const name of ["RoomMesh", "GrandHallRoom", "InkArchitectureLayer", "SectionPlane", "SelectionSystem", "PlannerMotionOverlayLayers", "PlacementGhost", "CockpitCameraFocus"]) {
+    for (const name of ["RoomMesh", "GrandHallRoom", "InkArchitectureLayer", "SectionPlane", "SelectionSystem", "PlannerMotionOverlayLayers", "CockpitSceneOverlays", "PlacementGhost", "CockpitCameraFocus"]) {
       expect(sceneComponent(name), name).toBeUndefined();
     }
     expect(useCockpitStore.getState().sceneSource).toMatchObject({ captureSource: "none", loadedChunks: 0, totalChunks: 0, proceduralGeometryVisible: true });
