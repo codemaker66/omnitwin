@@ -15,13 +15,21 @@ import { FURNITURE_CATEGORIES } from "@omnitwin/types";
 // ---------------------------------------------------------------------------
 
 describe("CATALOGUE_ITEMS", () => {
-  it("labels provisional batch dimensions without changing the measured chair", () => {
+  // Provisional dimensions are carried by `dimensionStatus`, which the drawer
+  // renders as an "Approx." prefix on the measurement line. The subtitle says
+  // what the item IS; repeating the measurement there (the old "Approx. 1.83 ×
+  // 0.76m · check dimensions") said it twice and left no room for anything
+  // useful.
+  it("labels provisional dimensions without changing the measured chair", () => {
     const approximate = CATALOGUE_ITEMS.filter((item) => item.dimensionStatus === "approximate");
-    expect(approximate).toHaveLength(14);
     expect(approximate.map((item) => item.slug)).toEqual(expect.arrayContaining([
-      "trestle-4ft-black", "trestle-4ft-white",
+      "trestle-4ft-black", "trestle-4ft-white", "chiavari-chair", "staging-deck-6x4",
     ]));
-    for (const item of approximate) expect(item.subtitle).toContain("Approx.");
+    for (const item of approximate) {
+      expect(item.subtitle, `${item.slug} repeats its dimensions in the subtitle`)
+        .not.toMatch(/Approx\.|check dimensions/u);
+      expect(item.subtitle.trim().length).toBeGreaterThan(0);
+    }
     expect(getCatalogueItemBySlug("burgess-turini-18-3")).toMatchObject({
       width: 0.42, depth: 0.58, height: 0.88,
     });
@@ -209,9 +217,15 @@ describe("getCatalogueByCategory", () => {
     }
   });
 
+  // Enumerated rather than counted: the chairs are what the venue can actually
+  // seat guests on, so an addition should be a deliberate edit here too.
   it("returns all items in the chair category", () => {
     const chairs = getCatalogueByCategory("chair");
-    expect(chairs.map((chair) => chair.slug)).toEqual(["banquet-chair", "burgess-turini-18-3", "checked-banquet-chair"]);
+    expect(chairs.map((chair) => chair.slug)).toEqual([
+      "banquet-chair", "burgess-turini-18-3", "checked-banquet-chair",
+      "chiavari-chair", "gallery-chair-red-gold", "pink-chair",
+      "highchair-white", "highchair-green", "highchair-blue", "highchair-wooden",
+    ]);
     for (const item of chairs) {
       expect(item.category).toBe("chair");
     }
