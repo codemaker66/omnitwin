@@ -104,7 +104,7 @@ describe("direct dependency reproducibility", () => {
     // 6.11.0 audited with the OAuth consent route work (9fcfe339, 2026-06-25).
     expect(web.dependencies?.["@clerk/react"]).toBe("6.11.0");
     expect(web.devDependencies?.["vite"]).toBe("6.4.3");
-    expect(web.devDependencies?.["vitest"]).toBe("4.1.8");
-    expect(api.devDependencies?.["vitest"]).toBe("4.1.8");
+    expect(web.devDependencies?.["vitest"]).toBe("4.1.11");
+    expect(api.devDependencies?.["vitest"]).toBe("4.1.11");
   });
 });
