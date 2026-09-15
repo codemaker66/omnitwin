@@ -370,7 +370,7 @@ const BLOCKING_UI = [
   ".planner-tool-pill", ".reference-more-tools", ".reference-extra-tools", ".planner-command-deck",
   "[data-testid='mobile-planner-topbar']", ".mobile-planner-dock", ".planner-status-header",
   "[data-floating-widget-id]", "[aria-label='Room view']", "[aria-label='View mode']",
-  "[aria-label='Room layout timeline']", "[data-testid='cockpit-bottom']",
+  "[aria-label='Room layout timeline']", "[data-testid='cockpit-bottom']", ".client-event-dock",
 ].join(", ");
 const MODAL_UI = "[role='dialog'][aria-modal='true'], dialog[open]";
 
@@ -574,7 +574,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
   </Html>;
 }
 
-export function CockpitSceneOverlays(): ReactElement | null {
+export function CockpitSceneOverlays({ renderGeometry = true }: { readonly renderGeometry?: boolean }): ReactElement | null {
   const overlayVisibility = useCockpitStore((state) => state.overlayVisibility);
   const activeMode = useCockpitStore((state) => state.activeMode);
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
@@ -612,7 +612,9 @@ export function CockpitSceneOverlays(): ReactElement | null {
     [artifact],
   );
 
-  const showReplayLayers = !cameraInteractionActive && artifact !== null && bounds !== null;
+  // Keep accessible warnings mounted when compact or moving views omit scene geometry.
+  const showGeometry = renderGeometry && !cameraInteractionActive;
+  const showReplayLayers = showGeometry && artifact !== null && bounds !== null;
   const annotations = useMemo<readonly SceneAnnotation[]>(() => {
     const result: SceneAnnotation[] = [];
     if (artifact !== null && layers.routeConflicts && bounds !== null) {
@@ -662,8 +664,8 @@ export function CockpitSceneOverlays(): ReactElement | null {
           ))}
         </>
       )}
-      {layers.heritageBuffer && <HeritageBufferBand dimensions={dimensions} />}
-      {layers.lightingProbes && <LightingProbeGrid dimensions={dimensions} />}
+      {showGeometry && layers.heritageBuffer && <HeritageBufferBand dimensions={dimensions} />}
+      {showGeometry && layers.lightingProbes && <LightingProbeGrid dimensions={dimensions} />}
       {annotations.length > 0 && <SceneAnnotations annotations={annotations} />}
     </group>
   );

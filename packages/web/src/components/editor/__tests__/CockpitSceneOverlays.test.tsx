@@ -80,6 +80,24 @@ describe("CockpitSceneOverlays", () => {
     expect(screen.getAllByRole("button", { name: /Simulated/ }).length).toBeGreaterThan(0);
   });
 
+  it("preserves the selected warning while compact geometry policy changes", () => {
+    useCockpitStore.getState().setMode("flow");
+    const { container, rerender } = render(<CockpitSceneOverlays />);
+    expect(container.querySelector('[name="cockpit-heritage"]')).not.toBeNull();
+    const marker = screen.getAllByRole("button", { name: /Simulated/ })[0];
+    if (marker === undefined) throw new Error("Missing marker");
+    fireEvent.click(marker);
+    const beam = useCockpitStore.getState().beam;
+    rerender(<CockpitSceneOverlays renderGeometry={false} />);
+    expect(container.querySelector("mesh, lineSegments")).toBeNull();
+    expect(marker.getAttribute("aria-expanded")).toBe("true");
+    expect(useCockpitStore.getState().beam).toBe(beam);
+    expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
+    rerender(<CockpitSceneOverlays renderGeometry />);
+    expect(container.querySelector('[name="cockpit-heritage"]')).not.toBeNull();
+    expect(marker.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("shows only the labelled lighting placeholder in the Lighting lens", () => {
     useCockpitStore.getState().setMode("lighting");
     render(<CockpitSceneOverlays />);
@@ -243,6 +261,38 @@ describe("CockpitSceneOverlays", () => {
     if (callback === undefined) throw new Error("Missing annotation frame");
     act(callback);
     expect(container.querySelector(".scene-annotations")?.getAttribute("aria-hidden")).toBe("true");
+    unmount(); shell.remove(); canvasBox.mockRestore();
+  });
+
+  it("reflows around the actual client schedule dock when it expands and collapses", () => {
+    const canvas = frameState.canvas;
+    if (canvas === null) throw new Error("Missing canvas");
+    const shell = document.createElement("div"); shell.className = "cockpit-shell";
+    const dock = document.createElement("footer"); dock.className = "cockpit-bottom client-event-dock";
+    dock.setAttribute("aria-label", "Your event schedule");
+    shell.append(canvas, dock); document.body.append(shell);
+    const canvasBox = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    const dockBox = vi.spyOn(dock, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 80, 1366, 920));
+    useCockpitStore.getState().setMode("flow");
+    const { container, unmount } = render(<CockpitSceneOverlays renderGeometry={false} />);
+    const runFrame = (): void => {
+      const callback = frameState.callbacks.at(-1);
+      if (callback === undefined) throw new Error("Missing annotation frame");
+      callback();
+    };
+    act(runFrame);
+    const layer = container.querySelector<HTMLElement>(".scene-annotations");
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    dockBox.mockReturnValue(new DOMRect(0, 940, 1366, 60));
+    fireEvent(window, new Event("resize")); act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("false");
+    const cards = [...container.querySelectorAll<HTMLElement>(".scene-annotations__card")];
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      const match = /translate\([^,]+, ([^)]+)px\)/.exec(card.style.transform);
+      if (match?.[1] === undefined) throw new Error("Missing annotation placement");
+      expect(Number.parseFloat(match[1]) + 44).toBeLessThanOrEqual(932);
+    }
     unmount(); shell.remove(); canvasBox.mockRestore();
   });
 
