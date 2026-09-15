@@ -360,17 +360,24 @@ jobs:
         # single "chromium" project — skipping Firefox/WebKit saves ~300 MB.
         run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
 
+      - name: Record the scheduled browser inventory
+        run: |
+          mkdir -p packages/web/playwright-report
+          pnpm --filter @omnitwin/web exec playwright test --list --shard=${{ matrix.shard }}/4 --reporter=json > packages/web/playwright-report/inventory.json
+
       - name: Run E2E tests
         run: pnpm --filter @omnitwin/web e2e --shard=${{ matrix.shard }}/4
 
-      - name: Upload Playwright artifacts on failure
-        if: failure()
+      - name: Upload Playwright results and evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results-${{ github.run_id }}-shard-${{ matrix.shard }}
           # Default outputDir is ./test-results relative to playwright.config.ts
           # (packages/web/). Contains screenshots (only-on-failure) and traces
           # (on-first-retry) as configured in playwright.config.ts.
-          path: packages/web/test-results/
-          if-no-files-found: ignore
+          path: |
+            packages/web/test-results/
+            packages/web/playwright-report/
+          if-no-files-found: warn
           retention-days: 7
