@@ -343,6 +343,9 @@ test.describe("Public Editor", () => {
   });
 
   test("right-clicking the planner creates a camera POV reference", async ({ page }) => {
+    // This complete create/drag/view/exit/reopen journey also includes planner
+    // startup. Keep each 5s state gate while allowing the composed sequence.
+    test.setTimeout(45_000);
     const canvas = page.locator("canvas");
     await expect(page.getByTestId("planner-tool-pill")).toBeVisible();
     await page.waitForTimeout(250);

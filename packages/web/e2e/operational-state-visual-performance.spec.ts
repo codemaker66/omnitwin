@@ -1445,10 +1445,17 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
       firstResponseGate,
     });
 
-    const navigation = page.goto("/dev/assets/rooms");
-    await expect(page.getByText("Loading room runtime status.")).toBeVisible();
-    releaseFirstResponse();
-    await navigation;
+    try {
+      // Wait for this page's held request before timing the loading view; cold
+      // module startup belongs to navigation, not the five-second UI assertion.
+      await Promise.all([
+        page.waitForRequest(`${API}/admin/assets/rooms**`),
+        page.goto("/dev/assets/rooms", { waitUntil: "domcontentloaded" }),
+      ]);
+      await expect(page.getByText("Loading room runtime status.")).toBeVisible();
+    } finally {
+      releaseFirstResponse();
+    }
     await expect(page.getByRole("alert")).toContainText("Asset status unavailable.");
     await expect(page.getByRole("alert")).toContainText("t469 asset registry failure");
     await expect(page.getByRole("button", { name: "Retry asset registry" })).toBeVisible();

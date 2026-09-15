@@ -97,7 +97,13 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     await page.route("**/splats/trades-hall/reception-room/*", (route) => route.fulfill({
       status: 503, contentType: "text/plain", body: "Capture temporarily unavailable",
     }));
-    await page.goto("/plan", { waitUntil: "domcontentloaded" });
+    // Measure failure feedback after the browser receives the failed capture
+    // response. Cold module/worker startup happens before that event.
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/splats/trades-hall/reception-room/")
+        && response.status() === 503),
+      page.goto("/plan", { waitUntil: "domcontentloaded" }),
+    ]);
     await expect(page.locator(".cockpit-stage")).toHaveAttribute("data-resolve-phase", "unavailable");
     const caption = page.getByTestId("room-resolve-caption");
     await expect(caption).toHaveAttribute("data-visible", "true");
