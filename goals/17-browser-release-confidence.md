@@ -80,6 +80,18 @@ failures. Run and inspect a representative failure before changing it.
 
 ## Execution checkpoint — 15 September
 
+Current continuation: the earlier hardware-choice approval hold was unnecessary
+for a temporary job on the existing workstation. Standing authorization covers
+this isolated verification path; ongoing service scheduling and paid compute
+remain separate. A one-shot RTX worker, authenticated GitHub evidence publisher,
+mandatory hosted GPU check and complete 353-case reconciliation are implemented.
+The same five cases pass inside the private namespace without retries. The actual
+worker/probe trial also passes independent receipt-v2 verification. All 151 Node
+tooling checks pass on Windows and Linux, and 32 Python boundaries pass on Linux.
+The published candidate still awaits fresh hosted qualification, integration and
+live verification. No Goal17 production deployment or aesthetic/device acceptance
+is claimed. The following checkpoints retain the earlier investigation history.
+
 All four baseline shards are audited:84 failed,114 passed,37 skipped and116
 never executed. Each failed name also failed on the prior release, which is
 not a waiver. Isolated repairs now include real camera-panel stacking, mobile

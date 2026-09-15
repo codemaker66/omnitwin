@@ -4,6 +4,56 @@ Status: **in progress**, 15 September 2026. This is working evidence, not a
 completed release or acceptance claim. The [goal contract](../../goals/17-browser-release-confidence.md)
 requires complete browser qualification, coordinated integration and the changed live journey.
 
+## Current continuation — isolated GPU evidence path
+
+The previous hardware-choice hold was an overly broad interpretation of approval.
+The existing authorization permits a temporary, isolated job on the available RTX
+4090. No rental, permanent worker enrollment, daemon, repository permission or
+production-origin change is required for this path.
+
+The new `.github/gpu/` tooling partitions the unchanged 353-case inventory into
+348 hosted CPU cases and five required hardware cases. Four shard inventories
+contain 93/87/81/87 cases; the exact full union, 42 original skips and four
+executed expected failures are independently checked. Every hosted attempt issues
+a fresh source-bound request. The operator's publisher authenticates the original
+artifact, committed source and actual worker observations before uploading the
+bounded raw report and owner status. GitHub independently verifies that evidence
+and requires the full CPU/GPU union. Unavailable hardware or missing evidence
+fails the workflow. This is an operator-invoked check, not an unattended service
+or newly configured server-side branch prohibition.
+
+Bubblewrap isolation was measured with no external network route or host
+credentials, read-only source/dependencies, private writable caches/results,
+private Xvfb and `/dev/dxg`. Namespace UID65534 maps to host0; the boundary is the
+namespace/mount/capability policy, not a new unprivileged host account. The
+benchmark lease serializes participating jobs, not every desktop GPU consumer.
+The first suite attempt correctly failed when pnpm attempted an unavailable
+download. A read-only mount of installed pnpm9.15.4 fixed that setup issue.
+All five unchanged cases then passed in 22.8s without retries. The complete new
+worker/probe trial passed five cases in25.8s, measured wrapper elapsed30.426s;
+observed before/after runtime identities agree and both render p95 values are
+17.1ms. This local-only request is explicitly not authenticated hosted evidence.
+
+An independent installed-source review found the old verifier mixed wall-clock
+starts and monotonic durations to invent finish timestamps. Receipt v2 instead
+requires the actual controller monotonic duration, checks summed case duration
+against report duration against that measured envelope, and retains recorded
+wall starts for freshness. No timing budget, pixel size, scene, assertion or
+historical measurement was modified. No missing historical duration was invented.
+
+Verification:151/151 Node cases pass separately on Windows and Linux;32/32 Python
+boundary/source cases pass on Linux. Independent reviews covered the worker,
+clock correction, partition order and final reconciliation. Source admission now
+rejects extra Vite configuration files, escaped cache paths and mismatched runner
+helpers. The publisher's archive transport was read-only checked against a real
+GitHub artifact and its SHA256 matched. Evidence is in
+`output/qualification/gpu-ci-contingency/` and
+`output/qualification/gpu-ci-partition-20260915/`; the actual worker result is at
+`/root/venviewer-t613-gpu-isolation-probe/worker-qualification-1/result` in Ubuntu.
+
+Fresh hosted CI on the complete committed implementation, integration and live
+delivery remain required. The earlier evidence below is retained history.
+
 ## Source and baseline
 
 Owned checkout: `D:/claude/venviewer-browser-release-20260915`, branch
