@@ -817,7 +817,12 @@ function BlueprintFromStore(): ReactElement {
   return (
     <div className="bp-root" style={shell}>
       <Chrome scene={scene} savedLabel={savedLabel} dirty={saveStatus === "unsaved" || saveStatus === "failed"} saving={isSaving} />
-      <div className="bp-body" style={body}>
+      {/* T-615: the planner's 2D mode. This is the other half of the
+          landmark pair with PlannerCockpit's stage — exactly one of the two
+          is mounted at a time, so #main-content stays unique, and
+          EditorPage's skip link reaches whichever is showing. Chrome and
+          StatusBar are plain divs outside it, so nothing loses a role. */}
+      <main id="main-content" className="bp-body" style={body}>
         <LeftSidebar
           scene={scene}
           onEventType={setEventType}
@@ -867,7 +872,7 @@ function BlueprintFromStore(): ReactElement {
           onToggleLayerLock={null}
           onReorderLayers={null}
         />
-      </div>
+      </main>
       <StatusBar metrics={metrics} onSendForQuote={noop} onExportPng={null} />
     </div>
   );

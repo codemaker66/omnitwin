@@ -202,7 +202,7 @@
 
 .vv-twin-measure-stat-label {
   font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
-  font-size: 11px;
+  font-size: 9.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3, #b9aa8b);
@@ -224,7 +224,7 @@
   margin: 10px 0 0;
   padding: 9px 0 0;
   border-top: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.45;
   color: var(--ink-3, #b9aa8b);
 }

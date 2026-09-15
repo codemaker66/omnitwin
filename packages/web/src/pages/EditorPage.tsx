@@ -450,16 +450,17 @@ function PlannerCommsLayer(): React.ReactElement {
   return (
     <>
       <EditorBridge />
-      {/* T-615: the planner had no <main>. A screen-reader user landing here
-          had no landmark to jump to and no way past the toolbox, so the skip
-          link and the landmark arrive together. The shell element itself
-          becomes the landmark rather than gaining a wrapper — a wrapper would
-          break the 100dvh fixed-inset layout the canvas depends on. Every
-          selector for it, in src tests and e2e alike, is by data-testid. */}
+      {/* T-615: the planner had no <main> and no skip link. The landmark does
+          NOT go on this shell: a <main> ancestor strips the implicit
+          `banner` role off the room header and `contentinfo` off the event
+          schedule dock (HTML only grants those to a <header>/<footer> with no
+          sectioning ancestor), which silently removes two landmarks to add
+          one. It goes on the scene itself — PlannerCockpit's stage in 3D,
+          BlueprintFromStore's body in 2D — where the header and the dock stay
+          outside it. Exactly one of those two is mounted at a time, so
+          #main-content is unique. */}
       <a className="vv-skip-link" href="#main-content">Skip to the room</a>
-      <main
-        id="main-content"
-        aria-label="Room planner"
+      <div
         data-testid="planner-3d-shell"
         data-planner-config-id={configId ?? undefined}
         data-layout-timeline-preview={timelinePreviewMode}
@@ -485,7 +486,7 @@ function PlannerCommsLayer(): React.ReactElement {
         ) : (
           <BlueprintPage source="editor-store" />
         )}
-      </main>
+      </div>
       {mobile ? (
         <MobilePlannerTopBar mode={viewMode} onModeChange={changeViewMode} />
       ) : (
