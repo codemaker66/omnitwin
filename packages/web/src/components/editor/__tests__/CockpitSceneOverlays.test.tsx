@@ -228,4 +228,22 @@ describe("CockpitSceneOverlays", () => {
     expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
   });
 
+  it("measures the mobile shell's actual top bar outside the canvas parent", () => {
+    const canvas = frameState.canvas;
+    if (canvas === null) throw new Error("Missing canvas");
+    const shell = document.createElement("div"); shell.className = "cockpit-shell is-mobile";
+    const canvasParent = document.createElement("div"); canvasParent.append(canvas);
+    const topbar = document.createElement("div"); topbar.setAttribute("data-testid", "mobile-planner-topbar");
+    shell.append(canvasParent, topbar); document.body.append(shell);
+    const canvasBox = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    vi.spyOn(topbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    useCockpitStore.getState().setMode("flow");
+    const { container, unmount } = render(<CockpitSceneOverlays />);
+    const callback = frameState.callbacks.at(-1);
+    if (callback === undefined) throw new Error("Missing annotation frame");
+    act(callback);
+    expect(container.querySelector(".scene-annotations")?.getAttribute("aria-hidden")).toBe("true");
+    unmount(); shell.remove(); canvasBox.mockRestore();
+  });
+
 });
