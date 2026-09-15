@@ -11,11 +11,14 @@ import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useCatalogueStore } from "../../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useMarkupStore } from "../../../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 
+const media = vi.hoisted(() => ({ narrow: true, coarse: false }));
+
 vi.mock("../../../hooks/use-media-query.js", () => ({
-  useIsNarrowViewport: () => true,
-  useIsCoarsePointer: () => false,
+  useIsNarrowViewport: () => media.narrow,
+  useIsCoarsePointer: () => media.coarse,
 }));
 
 function Fixture({ view = "3d" }: { readonly view?: "3d" | "2d" }): React.ReactElement {
@@ -27,6 +30,7 @@ function Fixture({ view = "3d" }: { readonly view?: "3d" | "2d" }): React.ReactE
 }
 
 beforeEach(() => {
+  media.narrow = true; media.coarse = false;
   window.localStorage.clear();
   window.localStorage.setItem("omnitwin_onboarding_seen", "1");
   useEditorStore.getState().reset();
@@ -107,5 +111,65 @@ describe("mobile planner chrome", () => {
     act(() => { useLayoutTimelinePreviewStore.getState().clear(); });
     expect(container.querySelector("textarea")?.value).toBe("Keep the table draft");
     expect(useEditorStore.getState().objects.every((item) => item.notes === "")).toBe(true);
+  });
+
+  it.each([
+    { label: "fresh narrow phone", narrow: true, coarse: false },
+    { label: "fresh wide coarse-pointer screen", narrow: false, coarse: true },
+  ])("opens Flow from More on a $label without changing the plan or camera mode", ({ narrow, coarse }) => {
+    media.narrow = narrow; media.coarse = coarse;
+    useSelectionStore.getState().clearSelection();
+    useCockpitStore.getState().setWalkMode(true);
+    useCockpitStore.getState().setLayerMode("splat");
+    render(<Fixture />);
+    const more = screen.getByRole("button", { name: "More" });
+    const placements = usePlacementStore.getState().placedItems;
+    const selection = useSelectionStore.getState().selectedIds;
+    const catalogueSelection = useCatalogueStore.getState().selectedItemId;
+    const objects = useEditorStore.getState().objects;
+    fireEvent.click(more);
+    expect(more.getAttribute("aria-expanded")).toBe("true");
+    const lenses = screen.getByRole("group", { name: "Planner lenses" });
+    expect(within(lenses).getByRole("button", { name: "Design" }).getAttribute("aria-pressed")).toBe("true");
+    const flow = within(lenses).getByRole("button", { name: "Flow" });
+    expect(flow.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(flow);
+    expect(useCockpitStore.getState().activeMode).toBe("flow");
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(useCockpitStore.getState().layerMode).toBe("splat");
+    expect(usePlacementStore.getState().placedItems).toBe(placements);
+    expect(useSelectionStore.getState().selectedIds).toBe(selection);
+    expect(useCatalogueStore.getState().selectedItemId).toBe(catalogueSelection);
+    expect(useEditorStore.getState().objects).toBe(objects);
+    expect(screen.queryByTestId("mobile-more-sheet")).toBeNull();
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(more);
+    fireEvent.click(more);
+    expect(screen.getByRole("button", { name: "Flow" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Design" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("closes the lens choices with Escape and restores More focus without choosing a lens", () => {
+    useSelectionStore.getState().clearSelection();
+    render(<Fixture />);
+    const more = screen.getByRole("button", { name: "More" });
+    fireEvent.click(more);
+    const flow = screen.getByRole("button", { name: "Flow" });
+    flow.focus();
+    fireEvent.keyDown(flow, { key: "Escape" });
+    expect(screen.queryByTestId("mobile-more-sheet")).toBeNull();
+    expect(document.activeElement).toBe(more);
+    expect(useCockpitStore.getState().activeMode).toBe("design");
+  });
+
+  it("keeps the drawing tool active when a lens is chosen", () => {
+    useSelectionStore.getState().clearSelection();
+    render(<Fixture />);
+    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    expect(useMarkupStore.getState().active).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "Flow" }));
+    expect(useMarkupStore.getState().active).toBe(true);
+    expect(screen.getByRole("button", { name: "Draw" }).getAttribute("aria-pressed")).toBe("true");
   });
 });

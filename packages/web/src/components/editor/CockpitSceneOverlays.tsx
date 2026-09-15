@@ -370,11 +370,13 @@ const BLOCKING_UI = [
   ".planner-tool-pill", ".reference-more-tools", ".reference-extra-tools", ".planner-command-deck",
   "[data-testid='mobile-planner-topbar']", ".mobile-planner-dock", ".planner-status-header",
   "[data-floating-widget-id]", "[aria-label='Room view']", "[aria-label='View mode']",
-  "[aria-label='Room layout timeline']", "[data-testid='cockpit-bottom']", ".client-event-dock",
+  "[aria-label='Room layout timeline']", "[data-testid='cockpit-bottom']", ".client-event-dock", ".room-resolve-caption",
 ].join(", ");
 const MODAL_UI = "[role='dialog'][aria-modal='true'], dialog[open]";
 
 function hasVisibleBounds(element: Element): boolean {
+  // Resolve captions retain their text and box while their success state fades.
+  if (element.matches(".room-resolve-caption") && element.getAttribute("data-visible") !== "true") return false;
   const box = element.getBoundingClientRect();
   const style = getComputedStyle(element);
   return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
@@ -455,7 +457,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     });
     membership.observe(document.body, {
       childList: true, subtree: true, attributes: true,
-      attributeFilter: ["style", "class", "hidden", "open", "aria-hidden"],
+      attributeFilter: ["style", "class", "hidden", "open", "aria-hidden", "data-visible"],
     });
     window.addEventListener("resize", markDirty);
     window.addEventListener("scroll", markDirty, true);

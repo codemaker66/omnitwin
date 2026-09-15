@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, type ReactNode } from "react";
+import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useNavigate } from "react-router-dom";
@@ -23,6 +23,7 @@ import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../sto
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { COCKPIT_MODES } from "../../lib/cockpit-modes.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
 import { FurnitureCataloguePreview } from "../shared/FurnitureCataloguePreview.js";
 import type { FurnitureCategory } from "@omnitwin/types";
@@ -1117,6 +1118,9 @@ type ActiveTool = "select" | "add" | "rotate" | "delete" | "markup";
 type MobileShellMode = "idle" | "placing" | "selected";
 
 interface MobileDockAction {
+  readonly buttonRef?: React.RefObject<HTMLButtonElement>;
+  readonly expanded?: boolean;
+  readonly controls?: string;
   readonly label: string;
   readonly ariaLabel?: string;
   readonly active?: boolean;
@@ -1145,6 +1149,7 @@ interface MobilePlannerDockProps {
   readonly onMarkup: () => void;
   readonly onCamera: () => void;
   readonly onMore: () => void;
+  readonly onDismissMore: () => void;
   readonly onSnap: () => void;
   readonly onWalls: () => void;
   readonly onUndo: () => void;
@@ -1254,7 +1259,10 @@ function MobileDockButton(action: MobileDockAction): React.ReactElement {
   return (
     <button
       type="button"
+      ref={action.buttonRef}
       aria-label={action.ariaLabel ?? action.label}
+      aria-expanded={action.expanded}
+      aria-controls={action.controls}
       aria-pressed={action.active === true ? true : undefined}
       disabled={action.disabled}
       onClick={action.onClick}
@@ -1287,6 +1295,7 @@ function MobilePlannerDock({
   onMarkup,
   onCamera,
   onMore,
+  onDismissMore,
   onSnap,
   onWalls,
   onUndo,
@@ -1299,12 +1308,19 @@ function MobilePlannerDock({
   onRotateSelected,
   onDeleteSelected,
 }: MobilePlannerDockProps): React.ReactElement {
+  const activeLens = useCockpitStore((state) => state.activeMode);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const moreSheetId = useId();
+  const dismissMore = (): void => {
+    onDismissMore();
+    moreButtonRef.current?.focus();
+  };
   const idleActions: readonly MobileDockAction[] = [
     { label: "Select", active: activeTool === "select", onClick: onSelect, icon: <MousePointer2 size={20} /> },
     { label: "Add", active: panelOpen, onClick: onAdd, icon: <Armchair size={20} /> },
     { label: "Draw", active: activeTool === "markup", onClick: onMarkup, icon: <PenLine size={20} /> },
     { label: "View", active: cameraOpen, onClick: onCamera, icon: <Camera size={20} /> },
-    { label: "More", active: moreOpen, onClick: onMore, icon: <MoreHorizontal size={20} /> },
+    { label: "More", active: moreOpen, expanded: moreOpen, controls: moreOpen ? moreSheetId : undefined, buttonRef: moreButtonRef, onClick: onMore, icon: <MoreHorizontal size={20} /> },
   ];
   const placingActions: readonly MobileDockAction[] = [
     { label: "Rotate", tone: "primary", onClick: onRotatePlacement, icon: <RotateCw size={20} /> },
@@ -1342,7 +1358,26 @@ function MobilePlannerDock({
       ) : null}
 
       {moreOpen ? (
-        <div data-testid="mobile-more-sheet" style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}>
+        <div id={moreSheetId} data-testid="mobile-more-sheet" role="region" aria-label="More planner tools"
+          style={{ ...mobileSheetStyle, display: "grid", gap: 8 }}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault(); event.stopPropagation(); dismissMore();
+          }}>
+          <div style={mobileSheetTitleStyle}>Planner lenses</div>
+          <div className="mobile-planner-lenses" role="group" aria-label="Planner lenses">
+            {COCKPIT_MODES.map((lens) => (
+              <button key={lens.id} type="button" className="mobile-planner-lenses__button"
+                aria-pressed={activeLens === lens.id}
+                onClick={() => {
+                  useCockpitStore.getState().setMode(lens.id);
+                  dismissMore();
+                }}>
+                <span>{lens.label}</span>
+                {activeLens === lens.id && <Check size={18} aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
           <div style={mobileSheetTitleStyle}>Tools</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
             <MobileDockButton label="Snap" active={snapEnabled} onClick={onSnap} icon={<Grid3X3 size={20} />} />
@@ -1887,6 +1922,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           onMarkup={() => { handleToolClick("markup"); }}
           onCamera={handleCameraToggle}
           onMore={handleMobileMoreToggle}
+          onDismissMore={() => { setMobileMoreOpen(false); }}
           onSnap={handleSnapToggle}
           onWalls={handleToggleAllWalls}
           onUndo={handleUndo}

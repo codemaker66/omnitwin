@@ -296,4 +296,38 @@ describe("CockpitSceneOverlays", () => {
     unmount(); shell.remove(); canvasBox.mockRestore();
   });
 
+  it("follows capture caption visibility without reserving its retained hidden bounds", async () => {
+    const canvas = frameState.canvas;
+    if (canvas === null) throw new Error("Missing canvas");
+    const shell = document.createElement("div"); shell.className = "cockpit-shell is-mobile";
+    const caption = document.createElement("p"); caption.className = "room-resolve-caption";
+    caption.setAttribute("data-visible", "false"); caption.textContent = "Room capture could not load.";
+    shell.append(canvas, caption); document.body.append(shell);
+    const canvasBox = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    vi.spyOn(caption, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    useCockpitStore.getState().setMode("flow");
+    const { container, unmount } = render(<CockpitSceneOverlays renderGeometry={false} />);
+    const marker = screen.getAllByRole("button", { name: /Simulated/ })[0];
+    if (marker === undefined) throw new Error("Missing marker");
+    fireEvent.click(marker);
+    const runFrame = (): void => {
+      const callback = frameState.callbacks.at(-1);
+      if (callback === undefined) throw new Error("Missing annotation frame");
+      callback();
+    };
+    act(runFrame);
+    const layer = container.querySelector<HTMLElement>(".scene-annotations");
+    expect(layer?.getAttribute("aria-hidden")).toBe("false");
+    await act(async () => { caption.setAttribute("data-visible", "true"); await Promise.resolve(); });
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    expect(useCockpitStore.getState().beam).toBeNull();
+    await act(async () => { caption.setAttribute("data-visible", "false"); await Promise.resolve(); });
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("false");
+    expect(marker.getAttribute("aria-expanded")).toBe("true");
+    expect(useCockpitStore.getState().beam).not.toBeNull();
+    unmount(); shell.remove(); canvasBox.mockRestore();
+  });
+
 });

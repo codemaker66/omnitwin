@@ -2,7 +2,7 @@
 
 The existing Windows task `VenviewerSmokeMON` invokes the reviewed public-only runner at `D:/claude/demo-smoke-readonly-20260906/Invoke-PublicReleaseSmoke.ps1`, using `final-config.json`. On 7 September 2026 at 20:25 UTC, its old draft-creating action was replaced after all 15 bounded public checks passed. The existing trigger, principal and settings were compared before and after and remained identical. No new automation, credential or notification was created.
 
-The task is Ready and retains its Monday 08:00 Europe/London schedule. Its next recorded run is 14 September 2026; the existing interactive-login, awake and power conditions still apply. The old scheduled run's exit code is historical evidence, not a run of the replacement action.
+On 15 September 2026 the task was confirmed Ready, retaining its Monday 08:00 Europe/London schedule. The replacement action actually ran on 14 September at 08:00 BST: result 0 and all fifteen public checks passed. Its next recorded run is 21 September 2026; the existing interactive-login, awake and power conditions still apply.
 
 ## Release maintenance
 

@@ -120,7 +120,7 @@
 .reference-when-ribbon .when-ribbon { margin: 0; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-when-ribbon { bottom: 311px; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-left-dock { bottom: 326px; }
-.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) > :is(.reference-inspector-dock, .cockpit-panel, .cockpit-truth) { bottom: 390px; }
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) > :is(.reference-inspector-dock, .cockpit-panel, .lens-panel, .cockpit-truth) { bottom: 390px; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-layer-controls { bottom: 376px; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .planner-command-deck.is-reference-compact { bottom: 326px; }
 .reference-viewer .room-resolve-caption { top: auto; bottom: 211px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; color: #e7d2a7; font: 400 12px/1.5 "Inter", sans-serif; }
