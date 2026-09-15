@@ -13,11 +13,21 @@ function illustration(name: string): string | null {
   return null;
 }
 
+/**
+ * The image this item would show, or null when it has none. Exported so the
+ * panel can open on an item there is something to look at, without rendering
+ * every candidate first.
+ */
+export function inventoryPictureSource(name: string, assetId?: string): string | null {
+  const modelPreview = assetId === undefined ? undefined : getCanonicalAssetById(assetId)?.thumbnailUrl;
+  return modelPreview ?? illustration(name);
+}
+
 export function InventoryPicture({ name, assetId, hero = false }: {
   readonly name: string; readonly assetId?: string; readonly hero?: boolean;
 }): ReactElement {
   const modelPreview = assetId === undefined ? undefined : getCanonicalAssetById(assetId)?.thumbnailUrl;
-  const src = modelPreview ?? illustration(name);
+  const src = inventoryPictureSource(name, assetId);
   const caption = modelPreview === undefined ? "Illustrative view" : "3D model preview";
   const [failedSource, setFailedSource] = useState<string | null>(null);
   return <figure className={`inventory-picture${hero ? " inventory-picture--hero" : ""}`}>
