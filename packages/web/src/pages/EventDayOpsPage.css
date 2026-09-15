@@ -36,6 +36,7 @@
 .event-day-issue-list li[data-severity="urgent"] { border-left-color: var(--hk-alert); }
 .event-day-issue-list li[data-severity="attention"] { border-left-color: var(--hk-copper); }
 .event-day-issue-list li > div:first-child { min-width: 0; }
+.event-day-issue-list h3, .event-day-issue-list p { overflow-wrap: anywhere; }
 .event-day-issue-list span {
   color: var(--hk-copper);
   font-size: 0.66rem;
@@ -47,7 +48,7 @@
 .event-day-issue-list p { color: var(--hk-ink-dim); font-size: 0.82rem; margin: 0; }
 .event-day-issue-list small { color: var(--hk-ink-faint); display: block; font-size: 0.7rem; margin-top: 6px; }
 
-.event-day-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.event-day-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .event-day-issue-actions button {
   background: var(--hk-ivory-sunk);
   border: 1px solid var(--hk-line);
@@ -81,7 +82,7 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.event-day-handoff-notes h3 { font-size: 0.92rem; margin: 6px 0 4px; }
+.event-day-handoff-notes h3 { font-size: 0.92rem; margin: 6px 0 4px; overflow-wrap: anywhere; }
 .event-day-handoff-notes p { color: var(--hk-ink-dim); font-size: 0.82rem; margin: 0; }
 
 .event-day-centered {
@@ -133,8 +134,10 @@
 .event-day-sync {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .event-day-sync span {
