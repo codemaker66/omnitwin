@@ -374,15 +374,29 @@ describe("CameraRig capture failure recovery", () => {
       }
     }
   }
-  it("frames portrait after the later Walk restore and keeps real controls from clamping it back", () => {
+  it.each(["desktop", "initial portrait", "resize while held"])("owns the capture-failure Interior handoff in %s without a parent store mutation", (viewport) => {
+    if (viewport === "initial portrait") portrait();
+    const view = render(<CameraRig dimensions={dimensions} />);
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    harness.camera?.position.fromArray(GRAND_HALL_ARRIVAL.position);
+    act(() => { useCockpitStore.setState({ activeMode: "flow" }); });
+    if (viewport === "resize while held") {
+      portrait();
+      view.rerender(<CameraRig dimensions={dimensions} />);
+    }
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    expect(useCockpitStore.getState().walkMode).toBe(false);
+    tick();
+    assertRoomFramed();
+    expect(harness.controls?.enabled).toBe(true);
+  });
+  it("frames portrait after owning the Walk restore and keeps real controls from clamping it back", () => {
     portrait();
     const view = render(<CameraRig dimensions={dimensions} />);
     act(() => { useCockpitStore.getState().setWalkMode(true); });
     harness.camera?.position.fromArray(GRAND_HALL_ARRIVAL.position);
     view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
-    expect(harness.camera?.position.y).toBe(1.6);
-    // PlannerScene yields Walk in a later parent effect, after the child saw failure.
-    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    expect(useCockpitStore.getState().walkMode).toBe(false);
     tick();
     assertRoomFramed();
     expect(harness.camera?.position.y).toBeGreaterThan(dimensions.height);
@@ -396,8 +410,7 @@ describe("CameraRig capture failure recovery", () => {
     // Flow can be a lens over Interior without creating an orbit camera goal.
     act(() => { useCockpitStore.setState({ activeMode: "flow" }); });
     view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
-    expect(harness.camera?.position.y).toBe(1.6);
-    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    expect(useCockpitStore.getState().walkMode).toBe(false);
     tick();
     assertRoomFramed();
     expect(harness.controls?.enabled).toBe(true);
@@ -413,10 +426,10 @@ describe("CameraRig capture failure recovery", () => {
     act(() => { useCockpitStore.getState().setWalkMode(true); });
     harness.camera.position.fromArray(GRAND_HALL_ARRIVAL.position);
     if (initialFlow) act(() => { useCockpitStore.setState({ activeMode: "flow" }); });
-    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    view.rerender(<CameraRig dimensions={dimensions} suspended captureUnavailableKey="hall:failed" />);
     if (initialFlow) act(() => { useCockpitStore.setState({ activeMode: "design" }); });
     act(() => { useCockpitStore.setState({ activeMode: "flow" }); });
-    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
     expect(harness.camera.position.distanceTo(saved)).toBeLessThan(1e-8);
   });
   it("recovers in orbit once, then preserves the user's camera and target across rerenders", () => {

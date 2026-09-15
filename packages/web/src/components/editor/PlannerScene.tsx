@@ -401,9 +401,7 @@ export function PlannerScene(): ReactElement {
     roomSlug, captureSource, layerMode, splatActive, timelinePreviewActive,
   });
   const resolvePhase = roomResolvePhase({ splatStatus, hasAsset: hasAsset && !captureFailed, totalChunks, loadedChunks, failedChunks, captureAvailability: availability });
-  useEffect(() => {
-    if (captureFailed && walkMode) useCockpitStore.getState().setWalkMode(false);
-  }, [captureFailed, walkMode]);
+  // CameraRig owns the failure handoff so it records Interior before yielding it.
   useEffect(() => {
     useCockpitStore.getState().setRoomResolve({ phase: resolvePhase, loadedChunks, totalChunks });
   }, [loadedChunks, resolvePhase, totalChunks]);
@@ -531,7 +529,6 @@ export function PlannerScene(): ReactElement {
           {!timelinePreviewActive && <>
             <PlannerInteractionFloor geometry={roomGeometry} dimensions={dimensions} />
             <CockpitCameraFocus />
-            <CockpitPlanningCamera />
             <XrayToggle />
             <MeasurementTool />
             <TapeMeasure />
@@ -543,6 +540,7 @@ export function PlannerScene(): ReactElement {
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             <PlacedFurniture />
           </group>
+          <CockpitPlanningCamera suspended={timelinePreviewActive} />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive}
             captureUnavailableKey={captureFailed ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
           {walkMode && walkData !== null && !walkCameraDisabled && !captureFailed && (
