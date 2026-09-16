@@ -1,17 +1,19 @@
 import { type ReactNode, useState, useEffect, useId, useRef } from "react";
 import { useClerk } from "@clerk/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { Bell, ChevronDown } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
 import { NotificationCenter } from "./NotificationCenter.js";
+import { listNotifications } from "../../api/notifications.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import {
-  COMMERCIAL_ROLES, CRM_PIPELINE_ROLES, DIARY_ROLES, EVENT_SCOPED_ROLES,
-  hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
+  ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
+  DIARY_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
+  REVIEW_QUEUE_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
 
@@ -40,7 +42,9 @@ interface DashboardLayoutProps {
 // mirror of a named API gate (lib/role-capabilities.ts). The rule: no entry
 // ships that the API then refuses. A missing tab is a better R1 than a tab
 // that answers 403.
-type NavCapability = "workspace" | "commercial" | "crmPipeline" | "venueAdmin" | "platformAdmin";
+type NavCapability =
+  | "workspace" | "commercial" | "crmPipeline" | "analytics" | "clientSearch"
+  | "reviewQueue" | "venueAdmin" | "platformAdmin";
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavCapability }[] = [
   { view: "enquiries", label: "Enquiries", capability: "workspace" },
@@ -48,18 +52,23 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   // routes/crm.ts:31 and routes/opportunities.ts:38, which are staff-only on
   // release/r1 until Lane 7 (PR #24) widens them to canManageCommercial.
   { view: "pipeline", label: "Pipeline", capability: "crmPipeline" },
-  { view: "reviews", label: "Pending Reviews", capability: "workspace" },
-  { view: "analytics", label: "Executive Analytics", capability: "commercial" },
+  { view: "reviews", label: "Pending Reviews", capability: "reviewQueue" },
+  { view: "analytics", label: "Executive Analytics", capability: "analytics" },
   // Proposals is ProposalsView, which reads api/proposals.js — already on
   // canManageCommercial, so the whole commercial set can open it.
   { view: "proposals", label: "Proposals", capability: "commercial" },
-  { view: "search", label: "Client Search", capability: "workspace" },
+  // Client Search is ClientSearchView, reading api/clients.js — every
+  // /clients route gates on canManageVenue, so sales and planner are refused.
+  { view: "search", label: "Client Search", capability: "clientSearch" },
   { view: "loadouts", label: "Reference Loadouts", capability: "workspace" },
   { view: "settings", label: "Venue Settings", capability: "workspace" },
   { view: "inventory", label: "Inventory", capability: "venueAdmin" },
   { view: "onboarding", label: "Clients & access", capability: "platformAdmin" },
   { view: "admin", label: "Admin", capability: "platformAdmin" },
 ];
+
+/** How many unread notifications the nav chip counts before it stops counting. */
+const UNREAD_CHIP_LIMIT = 20;
 
 // What the account menu calls the signed-in person. A role with no entry is a
 // workspace member, which is also what an unknown future role reads as.
@@ -90,6 +99,9 @@ export function canShowNavItem(
   if (platformRole === "admin") return true;
   if (item.capability === "commercial") return hasRole(COMMERCIAL_ROLES, role);
   if (item.capability === "crmPipeline") return hasRole(CRM_PIPELINE_ROLES, role);
+  if (item.capability === "analytics") return hasRole(ANALYTICS_ROLES, role);
+  if (item.capability === "clientSearch") return hasRole(CLIENT_SEARCH_ROLES, role);
+  if (item.capability === "reviewQueue") return hasRole(REVIEW_QUEUE_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 
@@ -201,6 +213,47 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
     logoutLocal();
   };
 
+  // -------------------------------------------------------------------------
+  // Unread notifications on the VISIBLE nav row
+  //
+  // The NotificationCenter lives inside the More popover, so its badge is only
+  // readable once the popover is open — which means "unread count on the nav"
+  // was not actually met: a hallkeeper never learns a change landed until they
+  // go looking. The count is therefore lifted onto the always-visible row as a
+  // chip, and the popover's own content is left exactly as it was
+  // (NotificationCenter.tsx belongs to the notifications lane).
+  //
+  // GET /notifications is scoped by recipient and audience rather than by
+  // role, so every signed-in identity that may receive one is covered; a role
+  // the API refuses simply reads zero and shows no chip.
+  //
+  // The count is re-read whenever the More popover closes, because marking a
+  // notification read happens inside it.
+  // -------------------------------------------------------------------------
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadReadAt, setUnreadReadAt] = useState(0);
+  useEffect(() => {
+    if (openMenu !== "more") return;
+    return () => { setUnreadReadAt((tick) => tick + 1); };
+  }, [openMenu]);
+  const identityId = user?.id ?? null;
+  useEffect(() => {
+    if (identityId === null) {
+      setUnreadNotifications(0);
+      return;
+    }
+    const request = { current: true };
+    void listNotifications("unread", UNREAD_CHIP_LIMIT)
+      .then((rows) => {
+        if (request.current) {
+          setUnreadNotifications(rows.filter((row) => row.readAt === null).length);
+        }
+      })
+      .catch(() => { if (request.current) setUnreadNotifications(0); });
+    return () => { request.current = false; };
+  }, [identityId, unreadReadAt]);
+  const unreadLabel = `Notifications: ${String(unreadNotifications)} unread`;
+
   const platformRole = user?.platformRole ?? "none";
   // One flag per ROUTE, not one flag per neighbourhood: /diary and
   // /hallkeeper have different gates, and a single canSchedule offered the
@@ -242,7 +295,17 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
             className={`dashboard-layout-nav-item${activeView === "inventory" ? " dashboard-layout-nav-item--active" : ""}`}
             aria-current={activeView === "inventory" ? "page" : undefined}
             onClick={() => { selectView("inventory"); }}>Inventory</button>}
-          <div className="dashboard-layout-disclosure" ref={moreRef}>
+          <div className="dashboard-layout-disclosure dashboard-layout-more" ref={moreRef}>
+            {unreadNotifications > 0 && <button type="button"
+              className="dashboard-layout-nav-item dashboard-layout-unread"
+              data-testid="nav-unread-notifications"
+              aria-label={unreadLabel} aria-expanded={openMenu === "more"} aria-controls={`${menuId}-more`}
+              onClick={() => { setOpenMenu((current) => current === "more" ? null : "more"); }}>
+              <Bell aria-hidden="true" size={16} />
+              <span aria-hidden="true" className="dashboard-layout-unread-count">
+                {unreadNotifications >= UNREAD_CHIP_LIMIT ? `${String(UNREAD_CHIP_LIMIT)}+` : unreadNotifications}
+              </span>
+            </button>}
             <button type="button" ref={moreButtonRef} className={`dashboard-layout-nav-item${moreActive ? " dashboard-layout-nav-item--active" : ""}`}
               aria-expanded={openMenu === "more"} aria-controls={`${menuId}-more`}
               onClick={() => { setOpenMenu((current) => current === "more" ? null : "more"); }}>

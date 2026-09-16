@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  COMMERCIAL_ROLES, CRM_PIPELINE_ROLES, EVENT_SCOPED_ROLES, hasRole,
-  INVENTORY_WRITE_ROLES, WORKSPACE_ROLES,
+  ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
+  EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
+  WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
@@ -63,7 +64,15 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
 // api/proposals.js, which is already on canManageCommercial, so the two
 // cannot share one set. See lib/role-capabilities.ts CRM_PIPELINE_ROLES.
 const CRM_PIPELINE_VIEWS = new Set<DashboardView>(["pipeline"]);
-const COMMERCIAL_VIEWS = new Set<DashboardView>(["proposals", "analytics"]);
+const COMMERCIAL_VIEWS = new Set<DashboardView>(["proposals"]);
+// Analytics, Client Search and the review queue each answer to their own API
+// gate, and each is narrower than "commercial" or "workspace": the analytics
+// tab is held back from sales until Lane 7's #24 lands, /clients gates on
+// canManageVenue, and the pending-review queue takes the review state
+// machine's own role set. See lib/role-capabilities.ts for each mirror.
+const ANALYTICS_VIEWS = new Set<DashboardView>(["analytics"]);
+const CLIENT_SEARCH_VIEWS = new Set<DashboardView>(["search"]);
+const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 type PlatformRole = "none" | "operator" | "admin";
 
@@ -85,6 +94,9 @@ export function canOpenDashboardView(view: DashboardView, role: string | null, p
   if (platformRole === "admin") return true;
   if (CRM_PIPELINE_VIEWS.has(view)) return hasRole(CRM_PIPELINE_ROLES, role);
   if (COMMERCIAL_VIEWS.has(view)) return hasRole(COMMERCIAL_ROLES, role);
+  if (ANALYTICS_VIEWS.has(view)) return hasRole(ANALYTICS_ROLES, role);
+  if (CLIENT_SEARCH_VIEWS.has(view)) return hasRole(CLIENT_SEARCH_ROLES, role);
+  if (REVIEW_QUEUE_VIEWS.has(view)) return hasRole(REVIEW_QUEUE_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 

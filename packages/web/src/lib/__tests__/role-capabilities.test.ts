@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { USER_ROLES } from "@omnitwin/types";
 import {
+  ANALYTICS_ROLES,
+  CLIENT_SEARCH_ROLES,
   COMMERCIAL_ROLES,
   CRM_PIPELINE_ROLES,
   DIARY_ROLES,
   INVENTORY_WRITE_ROLES,
   PLANNER_ROLES,
+  REVIEW_QUEUE_ROLES,
   VENUE_DAY_ROLES,
   VENUE_FLOOR_ROLES,
   WORKSPACE_ROLES,
@@ -63,15 +66,51 @@ describe("nav offers are reachable", () => {
     }
   });
 
-  it("offers Analytics to the commercial set, because /analytics/venue-dashboard admits it", () => {
-    // This branch moves that route to canManageCommercial, so the offer is
-    // already correct and needs no un-hide when Lane 7 (PR #24) lands. The
-    // hallkeeper refusal here is the priced half of decision 6b.
+  it("offers Analytics no wider than /analytics/venue-dashboard admits", () => {
+    // Route truth at this head: routes/revenue-analytics.ts:313 gates the
+    // venue-dashboard payload on canManageCommercial — admin, manager, staff,
+    // sales — and refuses the hallkeeper, the priced half of decision 6b.
+    // The offer is deliberately NARROWER: sales is held back until Lane 7's
+    // #24 lands (see ANALYTICS_ROLES). Narrower is safe, wider is a dead end,
+    // so the assertion is the subset, plus the two named cases.
     for (const role of USER_ROLES) {
-      expect(canOpenDashboardView("analytics", role, "none"), `analytics for ${role}`)
-        .toBe(hasRole(COMMERCIAL_ROLES, role));
+      const offered = canOpenDashboardView("analytics", role, "none");
+      expect(offered, `analytics for ${role}`).toBe(hasRole(ANALYTICS_ROLES, role));
+      if (offered) {
+        expect(hasRole(COMMERCIAL_ROLES, role), `${role} is admitted by the analytics route`).toBe(true);
+      }
     }
     expect(canOpenDashboardView("analytics", "hallkeeper", "none")).toBe(false);
+    expect(canOpenDashboardView("analytics", "sales", "none")).toBe(false);
+    // The un-hide when #24 lands is ANALYTICS_ROLES = COMMERCIAL_ROLES, and
+    // that is the only difference between the two.
+    expect([...COMMERCIAL_ROLES].filter((role) => !hasRole(ANALYTICS_ROLES, role))).toEqual(["sales"]);
+  });
+
+  it("offers Client Search only to the roles /clients admits", () => {
+    // routes/clients.ts:36,145,231,293 all gate on canManageVenue, so sales
+    // and planner were being offered a tab that answers 403.
+    expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper"]);
+    for (const role of USER_ROLES) {
+      expect(canOpenDashboardView("search", role, "none"), `search for ${role}`)
+        .toBe(hasRole(VENUE_FLOOR_ROLES, role));
+    }
+    expect(canOpenDashboardView("search", "sales", "none")).toBe(false);
+    expect(canOpenDashboardView("search", "planner", "none")).toBe(false);
+  });
+
+  it("offers Pending Reviews only to the roles the review queue admits", () => {
+    // GET /configurations/reviews/pending now takes its role set from the
+    // review state machine itself (VENUE_REVIEW_ROLES: staff, manager,
+    // admin), so approving and listing are one gate.
+    expect([...REVIEW_QUEUE_ROLES]).toEqual(["admin", "manager", "staff"]);
+    for (const role of USER_ROLES) {
+      expect(canOpenDashboardView("reviews", role, "none"), `reviews for ${role}`)
+        .toBe(hasRole(REVIEW_QUEUE_ROLES, role));
+    }
+    for (const role of ["hallkeeper", "planner", "sales", "client"]) {
+      expect(canOpenDashboardView("reviews", role, "none"), `reviews for ${role}`).toBe(false);
+    }
   });
 
   it("offers venue stock only to the roles canWriteInventory admits", () => {
@@ -156,6 +195,7 @@ describe("the capability sets themselves", () => {
     for (const set of [
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES,
       DIARY_ROLES, VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES,
+      ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
     ]) {
       expect(hasRole(set, "caterer")).toBe(false);
     }
@@ -166,6 +206,7 @@ describe("the capability sets themselves", () => {
     for (const set of [
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES, DIARY_ROLES,
       VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES, CRM_PIPELINE_ROLES,
+      ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
     ]) {
       for (const role of set) {
         expect(vocabulary.has(role), `${role} is not in USER_ROLES`).toBe(true);

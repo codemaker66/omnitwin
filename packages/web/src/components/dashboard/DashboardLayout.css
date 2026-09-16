@@ -41,6 +41,13 @@
 .dashboard-layout-header :is(button, a):focus-visible,
 .dashboard-layout-skip:focus-visible { outline: 2px solid #365f4f; outline-offset: 3px; }
 .dashboard-layout-disclosure { position: relative; }
+.dashboard-layout-more { display: flex; align-items: center; gap: 2px; }
+.dashboard-layout-unread { gap: 5px; padding-right: 6px; padding-left: 6px; }
+.dashboard-layout-unread-count {
+  display: inline-grid; place-items: center; min-width: 22px; padding: 2px 6px;
+  border-radius: 999px; background: #8c5a22; color: #fdf7ea;
+  font-size: 0.78rem; font-weight: 650; line-height: 1.3;
+}
 .dashboard-layout-account { justify-self: end; min-width: 0; }
 .dashboard-layout-account-button {
   display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 4px 0 4px 4px;
@@ -120,7 +127,10 @@
   .dashboard-layout-account { grid-area: account; align-self: start; }
   .dashboard-layout-account-button { gap: 7px; min-height: 44px; }
   .dashboard-layout-avatar { width: 36px; height: 36px; flex-basis: 36px; font-size: 0.85rem; }
-  .dashboard-layout-navigation { grid-area: navigation; justify-content: space-between; gap: 2px; margin-top: 8px; }
+  /* The phone row carries up to five destinations, the unread chip and More.
+     Without wrapping, the chip pushed More past the right edge at 390px — the
+     one control that holds the rest of the workspace. */
+  .dashboard-layout-navigation { grid-area: navigation; flex-wrap: wrap; justify-content: space-between; gap: 2px; margin-top: 8px; }
   .dashboard-layout-nav-item { min-height: 48px; padding: 10px 9px; font-size: 0.9rem; }
   .dashboard-layout-popover { top: calc(100% + 8px); max-height: calc(100dvh - 160px); }
   .dashboard-layout-account-panel { max-height: calc(100dvh - 80px); }
