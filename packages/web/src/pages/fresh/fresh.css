@@ -862,10 +862,13 @@
 .fr-enq-field input:hover {
   border-color: var(--fr-ink-2);
 }
+/* The public enquiry form is the one place a keyboard visitor must never lose
+   themselves, so its fields take the app's shared focus ring rather than a
+   private 2px underline that read as a hover state (Lane 1 review, T-615). */
 .fr-enq-field input:focus-visible {
-  outline: none;
-  border-bottom: 2px solid var(--fr-green);
-  margin-bottom: -1px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+  border-bottom-color: var(--fr-green);
 }
 .fr-enq-field input[type="number"] {
   width: 110px;

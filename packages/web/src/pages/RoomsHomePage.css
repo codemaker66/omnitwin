@@ -1,9 +1,15 @@
-/* The front door — eight rooms of Trades Hall, measured.
+/* The front door — the one canonical public home.
  *
- * Palette and type are the House language, not a new identity: sandstone on
- * warm ink, brass as the only accent, Fraunces for display, Geist Mono for the
- * numbers. The ground is deliberately warm-black rather than neutral — a
- * Georgian interior by candlelight, not a streaming app's void. */
+ * T-616 merged /fresh into this page, so it now renders on the Fresh paper:
+ * the root element carries `.fr-root` alongside `.rooms`, which supplies the
+ * --fr-* tokens (sandstone ground, brown-black ink, bottle green, its own
+ * dark-mode sheet) and the section grammar both merged halves share. This file
+ * therefore styles only the furniture this page owns — masthead, hero, the
+ * captured-room rail, the capacity table, the foot — on top of those tokens.
+ *
+ * The warm-black ground the poster board used to paint is gone with the merge:
+ * it was a second register beside the ivory Lane 1 settled on, and on this page
+ * the photography is what should be dark, not the paper. */
 
 .rooms {
   --ink: #14100c;
@@ -14,8 +20,6 @@
   --hairline: rgba(242, 236, 223, 0.12);
 
   min-height: 100vh;
-  background: var(--ink);
-  color: var(--stone);
   font-family: var(--fr-body, "Newsreader", Georgia, serif);
 }
 
@@ -27,10 +31,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  /* viewport-fit=cover is on, so the notch inset is a real number here. */
   padding: 1rem clamp(1rem, 4vw, 3rem);
-  background: #f4efe4;
-  color: #203c31;
-  border-bottom: 1px solid #d5d0c3;
+  padding-left: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-left));
+  padding-right: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-right));
+  background: var(--fr-paper-2);
+  color: var(--fr-green);
+  border-bottom: 1px solid var(--fr-rule);
 }
 
 .rooms__identity { display: grid; gap: 0.25rem; }
@@ -52,14 +59,16 @@
   padding: 0.6rem 0.85rem;
   border: 1px solid transparent;
   border-radius: 999px;
-  color: #203c31;
+  color: var(--fr-green);
   text-decoration: none;
 }
 
-.rooms__primaryNav a:hover { background: #e3e6db; }
-.rooms__primaryNav .rooms__navPlan { background: #203c31; color: #fff9ec; }
-.rooms__primaryNav .rooms__navPlan:hover { background: #315344; }
-.rooms__primaryNav .rooms__navLogin { border-color: #839486; }
+.rooms__primaryNav a:hover { background: var(--fr-green-soft); }
+.rooms__primaryNav .rooms__navPlan { background: var(--fr-green); color: var(--fr-paper); }
+.rooms__primaryNav .rooms__navPlan:hover {
+  background: color-mix(in srgb, var(--fr-green) 86%, var(--fr-ink) 14%);
+}
+.rooms__primaryNav .rooms__navLogin { border-color: var(--fr-rule); }
 .rooms__primaryNav a:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 
 .rooms__wordmark {
@@ -72,141 +81,98 @@
 .rooms__venue {
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.78rem;
-  color: #586658;
+  color: var(--fr-ink-2);
 }
 
 /* ── hero ─────────────────────────────────────────────────── */
+/* The venue's own photograph of its own room, on paper. The picture is the
+ * dark element on this page; the type sits beside it rather than being washed
+ * over it, which is what let the old hero print a measurement on top of a
+ * ceiling and hope for the best. */
 
 .rooms__hero {
-  position: relative;
-  isolation: isolate;
-  min-height: min(72vh, 40rem);
-  display: flex;
-  align-items: flex-end;
-  overflow: hidden;
+  display: grid;
+  gap: clamp(1.25rem, 3vw, 2.25rem);
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(28px, 5vh, 64px) clamp(16px, 4vw, 44px) 0;
 }
 
-.rooms__heroPoster {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
+@media (min-width: 900px) {
+  .rooms__hero {
+    grid-template-columns: 1.35fr 1fr;
+    align-items: center;
+  }
+}
+
+.rooms__heroPhoto {
   width: 100%;
-  height: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
   object-fit: cover;
-  object-position: center 55%;
+  border-radius: 10px;
+  background: var(--fr-paper-2);
 }
 
-/* Ink wash so type stays legible over any room. Not decoration: it is the
- * only thing standing between sandstone text and a bright ceiling. */
-.rooms__heroInk {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(to top, var(--ink) 2%, rgba(20, 16, 12, 0.72) 34%, rgba(20, 16, 12, 0.12) 72%);
-}
+.rooms__heroText { max-width: 34rem; }
 
-.rooms__heroText {
-  padding: clamp(1.5rem, 5vw, 3.5rem);
-  max-width: 46rem;
-}
-
-.rooms__eyebrow {
+.rooms__heroKicker {
   margin: 0 0 0.5rem;
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.7rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--brass);
+  color: var(--fr-ink-2);
 }
 
 .rooms__heroName {
   margin: 0;
   font-family: var(--fr-display, "Fraunces", Georgia, serif);
-  font-size: clamp(2.4rem, 7vw, 4.6rem);
+  font-size: clamp(2.4rem, 7vw, 4.2rem);
   font-weight: 300;
   line-height: 1.02;
   letter-spacing: -0.015em;
+  font-variation-settings: "opsz" 144;
+}
+
+.rooms__heroLede {
+  max-width: 30rem;
+  margin: 0.9rem 0 0;
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  line-height: 1.6;
+  color: var(--fr-ink-2);
 }
 
 /* ── the measured line: this page's signature ─────────────── */
 
 .rooms__measure {
   display: block;
-  margin: 0.7rem 0 0;
+  margin: 0.4rem 0 0;
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.79rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-  color: var(--stone-dim);
+  color: var(--fr-ink-2);
 }
 
-.rooms__measure--hero {
-  font-size: 0.88rem;
-  color: var(--stone);
-}
-
-.rooms__dot { margin: 0 0.5em; color: var(--brass); }
-
-.rooms__enter {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0.62rem 1.5rem;
-  border: 1px solid var(--brass);
-  border-radius: 999px;
-  color: var(--brass);
-  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
-  font-size: 0.85rem;
-  text-decoration: none;
-  transition: background-color 180ms ease, color 180ms ease;
-}
-
-.rooms__enter:hover,
-.rooms__enter:focus-visible { background: var(--brass); color: var(--ink); }
-
-.rooms__heroDescription {
-  max-width: 36rem;
-  margin: 1rem 0 0;
-  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
-  font-size: clamp(0.9rem, 1.8vw, 1rem);
-  line-height: 1.6;
-  color: var(--stone);
-}
-
-.rooms__heroActions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.4rem; }
-.rooms__enter--plan { background: #f4efe4; border-color: #f4efe4; color: #203c31; font-weight: 600; }
-.rooms__enter--plan:hover,
-.rooms__enter--plan:focus-visible { background: #e1e7da; color: #203c31; }
-.rooms__enter:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
-
-/* ── rail ─────────────────────────────────────────────────── */
-
-.rooms__rail { padding: clamp(1.75rem, 5vw, 3rem) 0 1rem; }
-
-.rooms__railHead {
+.rooms__heroActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem 1.25rem;
-  align-items: baseline;
-  padding: 0 clamp(1rem, 4vw, 3rem);
-  margin-bottom: 1.1rem;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1.6rem;
 }
+
+/* ── rail ─────────────────────────────────────────────────── */
+/* .fr-rooms (fresh.css) owns the section's width, padding and arch; this
+ * adds only the track itself. */
 
 .rooms__railTitle {
   margin: 0;
   font-family: var(--fr-display, "Fraunces", Georgia, serif);
-  font-size: clamp(1.15rem, 2.5vw, 1.5rem);
+  font-size: clamp(1.5rem, 3.4vw, 2.2rem);
   font-weight: 400;
-}
-
-.rooms__railNote {
-  margin: 0;
-  font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 0.74rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--stone-dim);
+  font-variation-settings: "opsz" 72;
 }
 
 .rooms__track {
@@ -214,11 +180,13 @@
   grid-auto-flow: column;
   grid-auto-columns: minmax(15rem, 19rem);
   gap: 1rem;
-  padding: 0 clamp(1rem, 4vw, 3rem) 0.5rem;
+  margin-top: 1.6rem;
+  /* The rail bleeds to the section's edge and no further: the page body must
+   * never scroll sideways, only this track. */
+  padding-bottom: 0.5rem;
   overflow-x: auto;
   scroll-snap-type: x proximity;
   scrollbar-width: thin;
-  scrollbar-color: var(--hairline) transparent;
 }
 
 .rooms__card {
@@ -232,7 +200,7 @@
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--fr-rule);
   border-radius: 10px;
   background: var(--ink-raised);
 }
@@ -273,6 +241,7 @@
   font-family: var(--fr-display, "Fraunces", Georgia, serif);
   font-size: 1.02rem;
   font-weight: 400;
+  color: var(--fr-ink);
 }
 
 /* ── foot ─────────────────────────────────────────────────── */
@@ -283,9 +252,10 @@
   gap: 0.75rem 2rem;
   align-items: baseline;
   justify-content: space-between;
-  margin-top: 2.5rem;
-  padding: 1.25rem clamp(1rem, 4vw, 3rem) 2.5rem;
-  border-top: 1px solid var(--hairline);
+  max-width: 1080px;
+  margin: clamp(48px, 8vh, 96px) auto 0;
+  padding: 1.25rem clamp(16px, 4vw, 44px) calc(2.5rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--fr-rule);
 }
 
 .rooms__footNote {
@@ -294,7 +264,7 @@
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.75rem;
   line-height: 1.6;
-  color: var(--stone-dim);
+  color: var(--fr-ink-2);
 }
 
 .rooms__footLinks {
@@ -305,9 +275,60 @@
   font-size: 0.8rem;
 }
 
-.rooms__footLinks a { display: inline-flex; align-items: center; min-height: 44px; color: var(--stone-dim); text-decoration: none; }
+.rooms__footLinks a { display: inline-flex; align-items: center; min-height: 44px; color: var(--fr-ink-2); text-decoration: none; }
 .rooms__footLinks a:hover,
-.rooms__footLinks a:focus-visible { color: var(--brass); }
+.rooms__footLinks a:focus-visible { color: var(--fr-green); }
+.rooms__footLinks a:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+
+/* ── the capacity table ───────────────────────────────────── */
+/* Numbers are instruments: tabular figures, a hairline grid, no zebra. The
+ * last row is the house envelope — the smallest and largest published figure
+ * for each layout, so no single number can be read as "the" capacity. */
+
+.rooms__capacityScroll {
+  margin-top: 1.6rem;
+  overflow-x: auto;
+}
+
+.rooms__capacity {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rooms__capacityCaption {
+  margin-bottom: 0.9rem;
+  text-align: left;
+  font-family: var(--fr-body, "Newsreader", Georgia, serif);
+  font-size: 1rem;
+  color: var(--fr-ink-2);
+}
+
+.rooms__capacity th,
+.rooms__capacity td {
+  padding: 0.62rem 0.9rem 0.62rem 0;
+  text-align: right;
+  border-bottom: 1px solid var(--fr-rule);
+  white-space: nowrap;
+}
+
+.rooms__capacity thead th { font-weight: 500; color: var(--fr-ink-2); }
+.rooms__capacity th[scope="row"] {
+  text-align: left;
+  font-weight: 400;
+  font-family: var(--fr-body, "Newsreader", Georgia, serif);
+  font-size: 0.98rem;
+}
+
+.rooms__capacity tfoot th,
+.rooms__capacity tfoot td {
+  border-bottom: 0;
+  border-top: 1px solid var(--fr-ink-2);
+  font-weight: 500;
+  color: var(--fr-green);
+}
 
 /* ── resolve-in on load ───────────────────────────────────── */
 
@@ -326,7 +347,6 @@
 @media (max-width: 640px) {
   .rooms__primaryNav { width: 100%; }
   .rooms__primaryNav a { flex: 1 0 auto; }
-  .rooms__hero { min-height: 62vh; }
   .rooms__track { grid-auto-columns: minmax(13rem, 76vw); }
 }
 
@@ -365,17 +385,11 @@
   color: var(--stone-dim);
 }
 
-.rooms__state--hero {
-  margin-top: 0.9rem;
-  font-size: 0.82rem;
-}
-
 .rooms__state {
   display: block;
   margin-top: 0.3rem;
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.68rem;
   letter-spacing: 0.03em;
-  color: var(--brass);
-  opacity: 0.85;
+  color: var(--fr-ink-2);
 }

@@ -119,23 +119,16 @@ describe("dates", () => {
 
 describe("composeEnquiry", () => {
   it("writes subject and body from the draft, with the suggested room", () => {
-    const composed = composeEnquiry(
-      { eventKey: "wedding", guests: 120, dateISO: "2027-03-14" },
-      "events@example.com",
-    );
+    const composed = composeEnquiry({ eventKey: "wedding", guests: 120, dateISO: "2027-03-14" });
     expect(composed.subject).toBe("Enquiry — Wedding for 120, 14 March 2027");
     expect(composed.body).toContain("The Grand Hall looks the right scale");
-    expect(composed.mailtoHref.startsWith("mailto:events@example.com?subject=")).toBe(
-      true,
-    );
-    expect(composed.mailtoHref).toContain(encodeURIComponent("14 March 2027"));
+    // T-616: the composer posts to /public/enquiries, so there is no longer a
+    // mailto href for a visitor to leave the page through.
+    expect(composed).not.toHaveProperty("mailtoHref");
   });
 
   it("leaves the date open honestly when none is chosen", () => {
-    const composed = composeEnquiry(
-      { eventKey: "dinner", guests: 40, dateISO: "" },
-      "events@example.com",
-    );
+    const composed = composeEnquiry({ eventKey: "dinner", guests: 40, dateISO: "" });
     expect(composed.subject).toBe("Enquiry — Dinner for 40");
     expect(composed.body).toContain("date still open");
   });

@@ -16,15 +16,25 @@ Disallow: /dev/
 # Deployed-but-unlisted client collateral.
 Disallow: /private/
 
-# Duplicate homepage-class surfaces. The canonical homepage is
-# https://venviewer.com/ — /fresh and /editor render that exact same page, and
-# /landing, /welcome and /living-hall are earlier designs kept reachable for
-# stale bookmarks.
+# Retired homepage-class surfaces. The canonical homepage is
+# https://venviewer.com/. /landing, /welcome, /living-hall and /editor now
+# redirect to it and hold no content of their own; the rules stay so a crawler
+# holding a stale URL never queues the redirect. /fresh survives as the
+# about-and-enquiry page the homepage links to, but the homepage now carries
+# the same photography, capacities, rates and enquiry composer, so it stays out
+# of the index as a near-duplicate.
 Disallow: /landing
 Disallow: /welcome
 Disallow: /living-hall
 Disallow: /fresh
 Disallow: /editor
+
+# Off the public surface: /pricing until billing exists, /demo because it is an
+# internal sales deck now behind the admin route guard. Neither is in the
+# sitemap. /pricing still renders for anyone holding the URL, but it is not a
+# page we ask a search engine to put in front of a venue.
+Disallow: /pricing
+Disallow: /demo
 
 # Duplicate legal aliases. The canonical copies are /privacy, /terms and
 # /accessibility — the URLs the live homepage footer links to and the ones

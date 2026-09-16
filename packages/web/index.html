@@ -2,15 +2,24 @@
 <html lang="en" style="scroll-behavior: smooth;">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: iOS exposes the notch and home-indicator insets to
+         CSS as env(safe-area-inset-*) only under `cover`. Without it they
+         resolve to 0 and full-bleed chrome sits beneath the phone's own
+         furniture. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="stylesheet" href="/src/components/shared/Activity.css" />
     <title>Trades Hall of Glasgow — weddings and events</title>
     <!-- Static social/meta card: link scrapers (WhatsApp, iMessage, Instagram,
          Facebook) do not execute JavaScript, so the shared-link first
          impression must live here, not in the client-side route effects.
-         Keep in sync with FRESH_META_* in
-         src/pages/fresh/fresh-copy.ts (the homepage at `/`). -->
+         Keep in sync with HOME_META_TITLE and HOME_META_DESCRIPTION in
+         src/pages/home-copy.ts: the homepage at `/` is RoomsHomePage, and it
+         sets those same two strings as its document title and description.
+         (This comment used to name fresh-copy.ts, which was true while /fresh
+         was the homepage; /fresh is now the about-and-enquiry sibling.) -->
     <meta name="description" content="Robert Adam's guild hall on Glassford Street — weddings, dinners, and conferences in the room Glasgow has celebrated in since 1791." />
     <link rel="canonical" href="https://venviewer.com/" />
     <meta property="og:type" content="website" />
@@ -24,8 +33,11 @@
     <meta property="og:image:alt" content="Trades Hall and its dome from above, amid the rooftops of Glasgow's Merchant City" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://venviewer.com/images/venue/trades-hall-exterior-og.jpg" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ede7db" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b1713" />
+    <!-- One register (T-615, Lane 1's request on PR #20): the ivory ground is
+         the app's page colour in both schemes, so the browser chrome takes the
+         same single value. The old pair painted the iOS status bar near-black
+         under a dark system theme while the page underneath stayed ivory. -->
+    <meta name="theme-color" content="#f2edda" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -47,10 +59,23 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Inter + Playfair Display belong to the cockpit and legacy pages;
-         the router attaches their stylesheet with the first chunk that
-         needs it (cockpitImport in src/router.tsx) so the homepage never
-         render-blocks on fonts it doesn't use. -->
+    <!-- Inter and Playfair Display belong to the cockpit and the legacy pages;
+         the router attaches their stylesheet with the first chunk that needs it
+         (cockpitImport in src/router.tsx) so the front door never render-blocks
+         on fonts it doesn't use. Those are plan 18's "two unused families", and
+         they were already off this request before T-616.
+
+         The four that remain ARE all requested by front-door rules, measured
+         rather than assumed: Fraunces (RoomsHomePage.css, RoomWalkPage.css,
+         fresh.css — including its opsz, SOFT and WONK axes and its italic),
+         Newsreader (the same three plus the twin), Geist (weights 300–600,
+         every one of which appears in CSS), and Geist Mono, which T-616 first
+         dropped on the belief it was cockpit-only. It is not: RoomsHomePage.css
+         lines 151, 375 and 382 name it FIRST, ahead of ui-monospace, for the
+         footprint line and the two card-plate numerals — so dropping it quietly
+         demoted three visible front-door rules to the platform monospace, and
+         it is back. Activity.css does put ui-monospace first, which is why a
+         list of files was misleading: read the position in the stack. -->
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..700,0..100,0..1;1,9..144,300..700,0..100,0..1&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }

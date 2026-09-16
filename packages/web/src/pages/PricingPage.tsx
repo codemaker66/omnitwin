@@ -287,7 +287,7 @@ export function PricingPage(): React.ReactElement {
         </Link>
         <div className="pricing-nav-links" style={{ display: "flex", gap: 28, alignItems: "center", fontSize: 14 }}>
           <Link to="/" style={{ color: CREAM_MUT, textDecoration: "none" }}>Home</Link>
-          <a href="/#how-it-works" style={{ color: CREAM_MUT, textDecoration: "none" }}>How it works</a>
+          <a href="/#enquire" style={{ color: CREAM_MUT, textDecoration: "none" }}>Ask about a date</a>
           <Link to="/pricing" style={{ color: CREAM, textDecoration: "none", fontWeight: 600 }}>Pricing</Link>
           <Link
             to="/login"

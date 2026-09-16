@@ -3,16 +3,11 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
-  type FormEvent,
   type ReactElement,
 } from "react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
-import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
-import { submitGuestEnquiry } from "../../api/configurations.js";
-import { isValidEmail } from "../../lib/email-validation.js";
+import { ActivityStatus } from "../../components/shared/Activity.js";
 import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
@@ -31,20 +26,6 @@ import {
   FRESH_CONTACT_EMAIL_LABEL,
   FRESH_CONTACT_VISIT_LABEL,
   FRESH_CTA_DATES,
-  FRESH_ENQUIRY_NAME_LABEL,
-  FRESH_ENQUIRY_EMAIL_LABEL,
-  FRESH_ENQUIRY_PHONE_LABEL,
-  FRESH_ENQUIRY_OPTIONAL,
-  FRESH_ENQUIRY_SUBMIT,
-  FRESH_ENQUIRY_SENDING,
-  FRESH_ENQUIRY_EMAIL_REQUIRED,
-  FRESH_ENQUIRY_EMAIL_INVALID,
-  FRESH_ENQUIRY_SENT_TITLE,
-  FRESH_ENQUIRY_SENT_LINE,
-  FRESH_ENQUIRY_ERROR,
-  FRESH_ENQUIRY_PRIVACY_NOTE,
-  FRESH_ENQUIRY_PRIVACY_LINK,
-  FRESH_ENQUIRY_PRIVACY_HREF,
   FRESH_CTA_ROOMS,
   FRESH_CTA_TOUR,
   FRESH_TOUR_CTA,
@@ -83,15 +64,6 @@ import {
   FRESH_ROOMS_TITLE,
   FRESH_THEME_LABEL,
   FRESH_THEME_OPTIONS,
-  freshEnquiryHref,
-  FRESH_ENQUIRY_COPIED,
-  FRESH_ENQUIRY_COPY_ACTION,
-  FRESH_ENQUIRY_DATE_LABEL,
-  FRESH_ENQUIRY_EVENT_LABEL,
-  FRESH_ENQUIRY_GUESTS_LABEL,
-  FRESH_ENQUIRY_GUESTS_PROMPT,
-  FRESH_ENQUIRY_OR_CALL,
-  FRESH_ENQUIRY_SEND,
   FRESH_ENQUIRY_TITLE,
   FRESH_HERO_LADDER,
   FRESH_HERO_PORTRAIT_MEDIA,
@@ -116,25 +88,18 @@ import {
   ladderSrcSet,
   type FreshRoom,
 } from "./fresh-copy.js";
+import { useHashTarget } from "../../lib/use-hash-target.js";
 import { RoomDossier } from "./RoomDossier.js";
+// The composer moved to its own module in T-616 so this page and the canonical
+// home at `/` render one form rather than two copies that drift apart.
+import { FreshEnquiry } from "./FreshEnquiry.js";
+import "./fresh.css";
 
 /** The captured room costs nothing until invited: three + Spark live in
  *  this chunk, which only downloads when the visitor steps in. */
 const FreshWalk = lazy(() => import("./FreshWalk.js"));
 
 type WalkState = "poster" | "loading" | "live" | "failed";
-import {
-  ENQUIRY_EVENT_TYPES,
-  alsoFitsSentence,
-  composeEnquiry,
-  enquiryYear,
-  fitReport,
-  fitSentence,
-  weddingRateLine,
-  weddingScopeNote,
-  type EnquiryEventKey,
-} from "./enquiry-fit.js";
-import "./fresh.css";
 
 // -----------------------------------------------------------------------------
 // FreshPage — /fresh: the pictures-only prototype, 2026 grammar.
@@ -321,276 +286,6 @@ function useDomeAperture(): DomeApertureRefs {
   };
 }
 
-/** The Enquiry Composer — the conversation half. State stays tiny: an
- *  occasion, a guest count (kept as text so half-typed numbers don't judder
- *  the answer), an optional date. Everything said below it is computed by
- *  enquiry-fit from published figures, and the finished email is visible,
- *  copyable, and openable — no dead-end links. */
-type EnquirySendState = "idle" | "sending" | "sent" | "error";
-
-function FreshEnquiry(): ReactElement {
-  const [eventKey, setEventKey] = useState<EnquiryEventKey>("wedding");
-  const [guestsText, setGuestsText] = useState("100");
-  const [dateISO, setDateISO] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [emailTouched, setEmailTouched] = useState(false);
-  const [sendState, setSendState] = useState<EnquirySendState>("idle");
-
-  const guestsParsed = Number.parseInt(guestsText, 10);
-  const guests =
-    Number.isFinite(guestsParsed) && guestsParsed >= 2 && guestsParsed <= 999
-      ? guestsParsed
-      : null;
-
-  const report = useMemo(
-    () => (guests === null ? null : fitReport(eventKey, guests)),
-    [eventKey, guests],
-  );
-  const composed = useMemo(
-    () =>
-      guests === null
-        ? null
-        : composeEnquiry({ eventKey, guests, dateISO }, FRESH_CONTACT_EMAIL),
-    [eventKey, guests, dateISO],
-  );
-  const also = report === null ? "" : alsoFitsSentence(report);
-  const rateLine =
-    eventKey === "wedding" ? weddingRateLine(enquiryYear(dateISO)) : null;
-  const scopeNote =
-    eventKey === "wedding" && guests !== null ? weddingScopeNote(guests) : null;
-  const today = new Date().toISOString().slice(0, 10);
-
-  const emailTrimmed = email.trim();
-  const emailProblem =
-    emailTrimmed === ""
-      ? FRESH_ENQUIRY_EMAIL_REQUIRED
-      : isValidEmail(emailTrimmed)
-        ? null
-        : FRESH_ENQUIRY_EMAIL_INVALID;
-
-  /** Post the enquiry the page has already written. The mailto and the phone
-   *  number stay on screen throughout: if this fails, the visitor still has a
-   *  working way to reach the hall, which is the whole point of keeping them. */
-  const sendEnquiry = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (composed === null || guests === null) return;
-      if (emailProblem !== null) {
-        setEmailTouched(true);
-        return;
-      }
-      setSendState("sending");
-      void submitGuestEnquiry({
-        venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
-        email: emailTrimmed,
-        name: name.trim() !== "" ? name.trim() : undefined,
-        phone: phone.trim() !== "" ? phone.trim() : undefined,
-        eventDate: dateISO !== "" ? dateISO : undefined,
-        eventType: eventKey,
-        guestCount: guests,
-        message: composed.body,
-      })
-        .then(() => {
-          setSendState("sent");
-        })
-        .catch(() => {
-          setSendState("error");
-        });
-    },
-    [composed, guests, emailProblem, emailTrimmed, name, phone, dateISO, eventKey],
-  );
-
-  const copyEnquiry = useCallback(() => {
-    if (composed === null) return;
-    const clipboard = navigator.clipboard as Clipboard | undefined;
-    if (clipboard === undefined) return;
-    void clipboard
-      .writeText(`${composed.subject}\n\n${composed.body}`)
-      .then(() => {
-        setCopied(true);
-      })
-      .catch(() => undefined);
-  }, [composed]);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => {
-      setCopied(false);
-    }, 1600);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [copied]);
-
-  return (
-    <form className="fr-enq" onSubmit={sendEnquiry} noValidate>
-      <div className="fr-enq-controls">
-        <fieldset className="fr-enq-types">
-          <legend>{FRESH_ENQUIRY_EVENT_LABEL}</legend>
-          <div className="fr-enq-pills">
-            {ENQUIRY_EVENT_TYPES.map((type) => (
-              <button
-                key={type.key}
-                type="button"
-                aria-pressed={eventKey === type.key}
-                onClick={() => {
-                  setEventKey(type.key);
-                }}
-              >
-                {type.label}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-        <div className="fr-enq-fields">
-          <label className="fr-enq-field">
-            <span>{FRESH_ENQUIRY_GUESTS_LABEL}</span>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={2}
-              max={999}
-              value={guestsText}
-              onChange={(event) => {
-                setGuestsText(event.target.value);
-              }}
-            />
-          </label>
-          <label className="fr-enq-field">
-            <span>{FRESH_ENQUIRY_DATE_LABEL}</span>
-            <input
-              type="date"
-              min={today}
-              value={dateISO}
-              onChange={(event) => {
-                setDateISO(event.target.value);
-              }}
-            />
-          </label>
-        </div>
-        <div className="fr-enq-fields fr-enq-contact">
-          <label className="fr-enq-field">
-            <span>
-              {FRESH_ENQUIRY_NAME_LABEL} <em>{FRESH_ENQUIRY_OPTIONAL}</em>
-            </span>
-            <input
-              type="text"
-              autoComplete="name"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-              }}
-            />
-          </label>
-          <label className="fr-enq-field">
-            <span>{FRESH_ENQUIRY_EMAIL_LABEL}</span>
-            <input
-              type="email"
-              autoComplete="email"
-              inputMode="email"
-              required
-              value={email}
-              aria-invalid={emailTouched && emailProblem !== null}
-              aria-describedby={
-                emailTouched && emailProblem !== null ? "fr-enq-email-problem" : undefined
-              }
-              onChange={(event) => {
-                setEmail(event.target.value);
-              }}
-              onBlur={() => {
-                setEmailTouched(true);
-              }}
-            />
-            {emailTouched && emailProblem !== null && (
-              <small className="fr-enq-problem" id="fr-enq-email-problem">
-                {emailProblem}
-              </small>
-            )}
-          </label>
-          <label className="fr-enq-field">
-            <span>
-              {FRESH_ENQUIRY_PHONE_LABEL} <em>{FRESH_ENQUIRY_OPTIONAL}</em>
-            </span>
-            <input
-              type="tel"
-              autoComplete="tel"
-              value={phone}
-              onChange={(event) => {
-                setPhone(event.target.value);
-              }}
-            />
-          </label>
-        </div>
-      </div>
-
-      <div className="fr-enq-answer" aria-live="polite">
-        {report === null ? (
-          <p className="fr-enq-fit">{FRESH_ENQUIRY_GUESTS_PROMPT}</p>
-        ) : (
-          <>
-            <p className="fr-enq-fit">{fitSentence(report)}</p>
-            {also !== "" && <p className="fr-enq-also">{also}</p>}
-            {rateLine !== null && <p className="fr-enq-also">{rateLine}</p>}
-            {scopeNote !== null && <p className="fr-enq-also">{scopeNote}</p>}
-          </>
-        )}
-      </div>
-
-      {composed !== null && (
-        <div className="fr-enq-compose">
-          <p className="fr-enq-subject">{composed.subject}</p>
-          <pre className="fr-enq-body">{composed.body}</pre>
-          {sendState === "sent" ? (
-            <div className="fr-enq-sent" role="status">
-              <p className="fr-enq-sent-title">{FRESH_ENQUIRY_SENT_TITLE}</p>
-              <p className="fr-enq-sent-line">{FRESH_ENQUIRY_SENT_LINE}</p>
-              <span className="fr-enq-call">
-                {FRESH_ENQUIRY_OR_CALL}{" "}
-                <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
-              </span>
-            </div>
-          ) : (
-            <>
-              {sendState === "error" && (
-                <p className="fr-enq-problem fr-enq-problem-send" role="alert">
-                  {FRESH_ENQUIRY_ERROR}
-                </p>
-              )}
-              <div className="fr-enq-actions">
-                <button
-                  type="submit"
-                  className="fr-cta"
-                  disabled={sendState === "sending"}
-                  aria-busy={sendState === "sending"}
-                >
-                  {sendState === "sending" && <ActivityIndicator size={20} />}
-                  {sendState === "sending" ? FRESH_ENQUIRY_SENDING : FRESH_ENQUIRY_SUBMIT}
-                </button>
-                <a className="fr-enq-quiet" href={composed.mailtoHref}>
-                  {FRESH_ENQUIRY_SEND}
-                </a>
-                <button type="button" className="fr-enq-copy" onClick={copyEnquiry}>
-                  {copied ? FRESH_ENQUIRY_COPIED : FRESH_ENQUIRY_COPY_ACTION}
-                </button>
-                <span className="fr-enq-call">
-                  {FRESH_ENQUIRY_OR_CALL}{" "}
-                  <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
-                </span>
-              </div>
-              <p className="fr-enq-privacy">
-                {FRESH_ENQUIRY_PRIVACY_NOTE}{" "}
-                <a href={FRESH_ENQUIRY_PRIVACY_HREF}>{FRESH_ENQUIRY_PRIVACY_LINK}</a>
-              </p>
-            </>
-          )}
-        </div>
-      )}
-    </form>
-  );
-}
 
 const roomCaps = (slug: keyof typeof TRADES_HALL_ROOM_CAPACITIES): string =>
   CAPACITY_FORMATS.map(
@@ -604,6 +299,9 @@ export function FreshPage(): ReactElement {
   const [walkPercent, setWalkPercent] = useState(0);
   const reveal = useRevealOnce();
   const aperture = useDomeAperture();
+
+  // A shared /fresh#enquire link resolved its hash before this chunk loaded.
+  useHashTarget();
 
   const wakeWalk = useCallback(() => {
     // Cheap honesty check before paying for the chunk: no WebGL, no room.
@@ -690,11 +388,13 @@ export function FreshPage(): ReactElement {
             {FRESH_CTA_DATES}
           </a>
         </div>
+        {/* T-616: Dashboard, Diary and Hallkeeper are gone from the public nav.
+            Every one of them bounced an anonymous visitor into a Clerk login
+            wall, so the page advertised three doors its readers cannot open.
+            "Log in" is the one way in for the people who do hold an account. */}
         <nav className="fr-primary-nav" aria-label="Primary">
           <a className="fr-primary-plan" href="/plan?space=grand-hall">Plan an event</a>
-          <a href="/dashboard">Dashboard</a>
-          <a href="/diary">Diary</a>
-          <a href="/hallkeeper/today">Hallkeeper</a>
+          <a href="/">Rooms</a>
           <a className="fr-primary-login" href="/login">Log in</a>
         </nav>
       </header>
@@ -966,9 +666,15 @@ export function FreshPage(): ReactElement {
               <small>{FRESH_CONTACT_TEL_LABEL}</small>
               <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
             </p>
+            {/* T-616: this used to be a mailto that pre-filled a message in the
+                visitor's own mail app, which reached the venue but left no row
+                in `enquiries` and nothing for the team to work from. The
+                address stays legible for anyone who prefers to write it
+                themselves; the link goes to the composer on this page. */}
             <p className="fr-contact-way">
               <small>{FRESH_CONTACT_EMAIL_LABEL}</small>
-              <a href={freshEnquiryHref()}>{FRESH_CONTACT_EMAIL}</a>
+              <span className="fr-contact-address">{FRESH_CONTACT_EMAIL}</span>
+              <a href="#enquire">{FRESH_CTA_DATES}</a>
             </p>
             <p className="fr-contact-way">
               <small>{FRESH_CONTACT_VISIT_LABEL}</small>

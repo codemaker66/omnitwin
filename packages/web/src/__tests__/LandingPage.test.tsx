@@ -12,7 +12,7 @@ import {
   ROOM_CHAPTERS,
   ROOM_INDEX_CARDS,
   THRESHOLD_LINE,
-  enquiryMailtoHref,
+  enquiryComposerHref,
 } from "../pages/landing/rite-copy.js";
 
 // ---------------------------------------------------------------------------
@@ -62,18 +62,25 @@ describe("LandingPage — the enquiry funnel has a real destination", () => {
       document.querySelector(`a[href="${FOOTER_PHONE_HREF}"]`),
     ).toBeTruthy();
     expect(
-      document.querySelector(`.rite-footer-contact a[href^="mailto:"]`),
+      document.querySelector(`.rite-footer-contact a[href="${enquiryComposerHref()}"]`),
     ).toBeTruthy();
   });
 
-  it("routes every index Enquire link to a room-contextual mailto", () => {
+  // T-616: the Rite's Enquire links used to open the visitor's mail client.
+  // They now reach the composer, which posts to /public/enquiries.
+  it("routes every index Enquire link to the composer", () => {
     mount();
     for (const card of ROOM_INDEX_CARDS) {
       const anchor = document.querySelector(
         `a[aria-label="Enquire about ${card.name}"]`,
       );
-      expect(anchor?.getAttribute("href")).toBe(enquiryMailtoHref(card.name));
+      expect(anchor?.getAttribute("href")).toBe(enquiryComposerHref());
     }
+  });
+
+  it("leaves no mailto anywhere on the page", () => {
+    mount();
+    expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
   });
 });
 

@@ -28,17 +28,21 @@ afterEach(() => {
 });
 
 describe("the hero", () => {
-  it("links directly to planning, login and the venue workspaces without an auth or router provider", () => {
+  // T-616 gate line 2: Dashboard, Diary and Hallkeeper each bounced an
+  // anonymous visitor into a Clerk login wall, so this page advertised three
+  // doors its readers cannot open. Rooms, planning and Log in are what remains.
+  it("links to planning, the rooms and login without an auth or router provider", () => {
     render(<FreshPage />);
     const nav = within(screen.getByRole("navigation", { name: "Primary" }));
     for (const [name, destination] of [
       ["Plan an event", "/plan?space=grand-hall"],
-      ["Dashboard", "/dashboard"],
-      ["Diary", "/diary"],
-      ["Hallkeeper", "/hallkeeper/today"],
+      ["Rooms", "/"],
       ["Log in", "/login"],
     ]) {
       expect(nav.getByRole("link", { name }).getAttribute("href")).toBe(destination);
+    }
+    for (const staff of ["Dashboard", "Diary", "Hallkeeper"]) {
+      expect(nav.queryByRole("link", { name: staff }), staff).toBeNull();
     }
     expect(document.querySelector('.fr-header-cta')?.getAttribute("href")).toBe("#enquire");
   });
@@ -154,14 +158,17 @@ describe("the enquiry composer", () => {
     expect(screen.getByText(/The North Gallery holds exactly/)).toBeTruthy();
   });
 
-  it("composes the visible email from the draft, still openable via mailto", () => {
+  it("composes the visible enquiry from the draft, and offers no way out by mail", () => {
     render(<FreshPage />);
     expect(screen.getByText("Enquiry — Wedding for 100")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Conference" }));
     expect(screen.getByText("Enquiry — Conference for 100")).toBeTruthy();
-    // The mailto survives, demoted from primary CTA to fallback: if the POST
-    // fails the visitor must still have a working way to reach the hall.
-    expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
+    // T-616 gate line 4: the mailto is gone. It reached a person but wrote no
+    // row in `enquiries`, so nothing could be chased and no acknowledgement
+    // could be sent. The telephone number is the fallback when the POST fails,
+    // and it stays on screen throughout.
+    expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
   });
 
   it("makes sending the enquiry the primary action, with the phone beside it", () => {
@@ -330,10 +337,13 @@ describe("the walkthrough — wired from the front door", () => {
 });
 
 describe("contact — real destinations", () => {
-  it("offers phone, email, and a map link under their labels", () => {
+  it("offers phone, the enquiry composer, and a map link under their labels", () => {
     render(<FreshPage />);
     expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
-    expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
+    // The address stays legible for anyone who prefers to write it themselves;
+    // the link beside it goes to the composer rather than to a mail client.
+    expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(screen.getByText("info@tradeshallglasgow.co.uk")).toBeTruthy();
     expect(document.querySelector('a[href*="maps.google.com"]')).toBeTruthy();
     expect(screen.getByText("Telephone")).toBeTruthy();
     expect(screen.getByText("Email")).toBeTruthy();

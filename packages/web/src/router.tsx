@@ -23,8 +23,9 @@ import { RouteArrival } from "./components/shared/RouteArrival.js";
 // the homepage doesn't use either, so that stylesheet must not render-block
 // the front door. cockpitImport() attaches it alongside the first chunk that
 // actually needs it (display=swap keeps the first cockpit paint readable).
+// T-615 (Lane 1): 700 must be a real face, not a synthesised bold.
 const COCKPIT_FONTS_HREF =
-  "https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&family=Playfair+Display:wght@400;500;600;700&display=swap";
+  "https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap";
 let cockpitFontsRequested = false;
 function cockpitImport<T>(factory: () => Promise<T>): Promise<T> {
   if (!cockpitFontsRequested) {
@@ -58,15 +59,8 @@ const ClientEventPage = lazy(() =>
 const BlueprintPage = lazy(() =>
   cockpitImport(() => import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage }))),
 );
-const SpotlightLandingPage = lazy(() =>
-  cockpitImport(() => import("./pages/spotlight/SpotlightLandingPage.js").then((m) => ({
-    default: m.SpotlightLandingPage,
-  }))),
-);
-const LandingPage = lazy(() =>
-  cockpitImport(() => import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage }))),
-);
 const DemoShowcasePage = lazy(() => import("./pages/demo/DemoShowcasePage.js").then(m => ({ default: m.DemoShowcasePage })));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js").then((m) => ({ default: m.NotFoundPage })));
 const DashboardPage = lazy(() =>
   cockpitImport(() => import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage }))),
 );
@@ -104,7 +98,8 @@ const TradesHouseCraftQuizPage = lazy(() =>
   import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage })),
 );
 const RoomsHomePage = lazy(() =>
-  cockpitImport(() => import("./pages/RoomsHomePage.js").then((m) => ({ default: m.RoomsHomePage }))),
+  // Fraunces/Newsreader/Geist: never the cockpit faces it cannot use.
+  import("./pages/RoomsHomePage.js").then((m) => ({ default: m.RoomsHomePage })),
 );
 const RoomWalkPage = lazy(() =>
   cockpitImport(() => import("./pages/RoomWalkPage.js").then((m) => ({ default: m.RoomWalkPage }))),
@@ -133,17 +128,9 @@ const EventDayOpsPage = lazy(() =>
 const EventArchitectPage = lazy(() =>
   import("./pages/EventArchitectPage.js").then((m) => ({ default: m.EventArchitectPage })),
 );
-const RoomShowcasePage = lazy(() =>
-  cockpitImport(() => import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage }))),
-);
 const FreshPage = lazy(() =>
-  // The homepage: never triggers the cockpit font load.
+  // The about-and-enquiry page: never triggers the cockpit font load.
   import("./pages/fresh/FreshPage.js").then((m) => ({ default: m.FreshPage })),
-);
-const LivingHallPage = lazy(() =>
-  cockpitImport(() => import("./pages/living-hall/LivingHallPage.js").then((m) => ({
-    default: m.LivingHallPage,
-  }))),
 );
 // Living Hall preview/preflight routes return WITH their pages when that
 // feature commits (in flight; see docs/sessions/2026-07-17.md, T-526).
@@ -260,36 +247,31 @@ function OnboardRedirect(): ReactElement {
 
 export const router = createBrowserRouter([
   {
-    // The Rite (the previous scroll-dramaturgy homepage) lives on here for
-    // comparison and stale bookmarks. The homepage at `/` is now the
-    // spotlight-reveal hero (see the bottom of this route list).
+    // T-616 landing cull: four earlier homepages, each its own visual language.
     path: "/landing",
-    element: withSuspense(<LandingPage />),
+    element: <Navigate to="/" replace />,
   },
   {
+    // An internal sales deck that was public and crawlable. Admin-gated now.
     path: "/demo",
-    element: withSuspense(<DemoShowcasePage />),
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <DemoShowcasePage />
+      </ProtectedRoute>,
+    ),
   },
   {
-    // Alias of `/` from the spotlight page's first review round — links
-    // already shared to /welcome keep working.
     path: "/welcome",
-    element: withSuspense(<SpotlightLandingPage />),
+    element: <Navigate to="/" replace />,
   },
   {
-    // /fresh — pictures-only prototype (2026 grammar: kinetic variable type,
-    // organic shapes, light/dark theming, a11y-first). Preview route for
-    // Blake's verdict; not linked from anywhere.
+    // /fresh survives as the about-and-enquiry page the homepage links to.
     path: "/fresh",
     element: withSuspense(<FreshPage />),
   },
   {
-    // The Living Hall — P0 DOM-first document (spec:
-    // docs/superpowers/specs/2026-07-09-living-hall-landing-plan.md).
-    // Dev/preview route while the 3D tiers are built; intended to take `/`
-    // when the minimum-viable narrative ships.
     path: "/living-hall",
-    element: withSuspense(<LivingHallPage />),
+    element: <Navigate to="/" replace />,
   },
   {
     path: "/login",
@@ -313,12 +295,9 @@ export const router = createBrowserRouter([
     element: <OnboardRedirect />,
   },
   {
-    // `/editor` is the URL Trades Hall already shares publicly (on flyers,
-    // on their own website, in email signatures). It renders the current
-    // marketing homepage so visitors see the new design, not the planner
-    // app's login wall. The actual planner moved to `/plan` (below).
+    // A URL Trades Hall already shares publicly; it redirects rather than duplicating `/`.
     path: "/editor",
-    element: withSuspense(<FreshPage />),
+    element: <Navigate to="/" replace />,
   },
   {
     // `/plan` is the new home of the planner app. `/editor` used to live
@@ -386,9 +365,10 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    path: "/hallkeeper/walkthrough",
+    // Lane 6's handoff (PR #21): a FICTIONAL walkthrough, admin-only under /dev.
+    path: "/dev/hallkeeper-walkthrough",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={["admin"]}>
         <HallkeeperWalkthroughPage />
       </ProtectedRoute>,
     ),
@@ -595,10 +575,9 @@ export const router = createBrowserRouter([
     element: withSuspense(<TwinPage />),
   },
   {
-    // Public room showcase. Uses only the client-safe room visual endpoint and
-    // planning-grade copy; internal package/debug data stays out of the route.
+    // Retired (T-616): orphaned, and only ever rendered the API's fallback.
     path: "/venues/:venueSlug/rooms/:roomSlug",
-    element: withSuspense(<RoomShowcasePage />),
+    element: <Navigate to="/" replace />,
   },
   {
     // Client-facing proposal share link (T-427 phase 3). Public — the share
@@ -658,7 +637,8 @@ export const router = createBrowserRouter([
     element: withClerk(<RoleAwareRedirect />),
   },
   {
+    // A wrong URL used to become the homepage silently: a bug, not an answer.
     path: "*",
-    element: <Navigate to="/" replace />,
+    element: withSuspense(<NotFoundPage />),
   },
 ]);
