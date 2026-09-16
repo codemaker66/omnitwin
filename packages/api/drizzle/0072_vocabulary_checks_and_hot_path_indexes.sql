@@ -79,34 +79,40 @@ $assertions$;
 -- ---------------------------------------------------------------------------
 DO $vocabulary$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conname = 'users_role_check' AND conrelid = to_regclass('users')) THEN
     ALTER TABLE "users" ADD CONSTRAINT "users_role_check"
       CHECK ("role" IN ('client', 'planner', 'staff', 'hallkeeper', 'admin', 'caterer', 'sales', 'manager'));
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'configurations_state_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conname = 'configurations_state_check' AND conrelid = to_regclass('configurations')) THEN
     ALTER TABLE "configurations" ADD CONSTRAINT "configurations_state_check"
       CHECK ("state" IN ('draft', 'published'));
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'configurations_review_status_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conname = 'configurations_review_status_check' AND conrelid = to_regclass('configurations')) THEN
     ALTER TABLE "configurations" ADD CONSTRAINT "configurations_review_status_check"
       CHECK ("review_status" IN ('draft', 'submitted', 'under_review', 'approved', 'rejected',
         'changes_requested', 'withdrawn', 'archived'));
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'configurations_visibility_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conname = 'configurations_visibility_check' AND conrelid = to_regclass('configurations')) THEN
     ALTER TABLE "configurations" ADD CONSTRAINT "configurations_visibility_check"
       CHECK ("visibility" IN ('private', 'staff', 'public'));
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'configurations_layout_style_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conname = 'configurations_layout_style_check' AND conrelid = to_regclass('configurations')) THEN
     ALTER TABLE "configurations" ADD CONSTRAINT "configurations_layout_style_check"
       CHECK ("layout_style" IN ('ceremony', 'dinner-rounds', 'dinner-banquet', 'theatre', 'boardroom',
         'cabaret', 'cocktail', 'custom'));
   END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'enquiries_state_check') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conname = 'enquiries_state_check' AND conrelid = to_regclass('enquiries')) THEN
     ALTER TABLE "enquiries" ADD CONSTRAINT "enquiries_state_check"
       CHECK ("state" IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived'));
   END IF;
@@ -117,15 +123,59 @@ $vocabulary$;
 -- 3. Audience-role widening (EVENT_PLAN_AUDIENCE_ROLES = USER_ROLES + supplier
 --    + executive). Each constraint is dropped and re-added rather than
 --    altered, because PostgreSQL has no ALTER CONSTRAINT for a CHECK body.
---    Re-adding revalidates the existing rows, so a stored role outside the new
---    list still stops the migration rather than being silently admitted.
+--    Re-adding revalidates the existing rows — but it fails with an anonymous
+--    "violated by some row", which is the failure mode §1's named assertions
+--    exist to replace, and `DROP CONSTRAINT IF EXISTS` makes it reachable: a
+--    table that never had the constraint has unvalidated data. So every
+--    audience column is asserted by name first, in the same shape as §1.
 -- ---------------------------------------------------------------------------
 DO $audience$
 DECLARE
   widened constant text :=
     '''client'', ''planner'', ''staff'', ''hallkeeper'', ''admin'', ''caterer'', ''sales'', ''manager'', ''supplier'', ''executive''';
   target record;
+  offending text;
 BEGIN
+  -- Pre-flight: name every stored audience role that the widened list would
+  -- still reject, and stop before touching a single constraint.
+  FOR target IN
+    SELECT * FROM (VALUES
+      ('event_plan_changes', 'event_plan_changes_actor_role_check', 'actor_role'),
+      ('event_plan_notifications', 'event_plan_notifications_role_check', 'audience_role'),
+      ('event_plan_change_acknowledgements', 'event_plan_change_ack_role_check', 'acknowledged_by_role'),
+      ('event_mission_events', 'event_mission_events_actor_role_check', 'actor_role'),
+      ('event_mission_acknowledgements', 'event_mission_ack_role_check', 'acknowledged_by_role'),
+      ('event_mission_sessions', 'event_mission_sessions_role_check', 'role')
+    ) AS checks(table_name, constraint_name, column_name) ORDER BY constraint_name
+  LOOP
+    IF to_regclass(quote_ident(target.table_name)) IS NULL THEN CONTINUE; END IF;
+    EXECUTE format(
+      'SELECT string_agg(DISTINCT quote_literal(%I), '', '') FROM %I WHERE %I NOT IN (%s)',
+      target.column_name, target.table_name, target.column_name, widened)
+      INTO offending;
+    IF offending IS NOT NULL THEN
+      RAISE EXCEPTION 'AUDIENCE_ROLE_VOCABULARY: %.% holds unlisted values: %',
+        target.table_name, target.column_name, offending
+        USING ERRCODE = '23514',
+          HINT = 'Correct those rows, or add the role to EVENT_PLAN_AUDIENCE_ROLES and this migration together.';
+    END IF;
+  END LOOP;
+
+  -- The jsonb audience array is asserted the same way, element by element.
+  IF to_regclass('event_plan_changes') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT quote_literal(role_value), ', ') INTO offending
+      FROM "event_plan_changes",
+        LATERAL jsonb_array_elements_text(
+          CASE WHEN jsonb_typeof("audience_roles") = 'array' THEN "audience_roles" ELSE '[]'::jsonb END
+        ) AS element(role_value)
+      WHERE role_value NOT IN ('client', 'planner', 'staff', 'hallkeeper', 'admin', 'caterer',
+        'sales', 'manager', 'supplier', 'executive');
+    IF offending IS NOT NULL THEN
+      RAISE EXCEPTION 'AUDIENCE_ROLE_VOCABULARY: event_plan_changes.audience_roles holds unlisted values: %', offending
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
   FOR target IN
     SELECT * FROM (VALUES
       ('event_plan_changes', 'event_plan_changes_actor_role_check', 'actor_role'),

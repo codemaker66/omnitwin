@@ -1,21 +1,22 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { CANONICAL_ASSETS } from "@omnitwin/types";
 import { describe, expect, it } from "vitest";
+import { migrationText as migration } from "./migration-text.js";
 
-// Migration 0073 carries the catalogue as a literal VALUES list, because a
-// migration must describe the state it migrates to and cannot import
+// The catalogue migration carries the catalogue as a literal VALUES list,
+// because a migration must describe the state it migrates to and cannot import
 // TypeScript. That literal is therefore a copy, and a copy drifts: an item
-// added to CANONICAL_ASSETS but not to 0073 silently never reaches the
-// database, and the planner then offers furniture the API has no identity
+// added to CANONICAL_ASSETS but not to the migration silently never reaches
+// the database, and the planner then offers furniture the API has no identity
 // for. This test is the join between them.
 //
-// It also holds 0072 to its structural promises: it asserts before it
-// constrains, and it marks fixtures rather than adding a second status.
-
-async function migration(tag: string): Promise<string> {
-  return readFile(resolve("drizzle", `${tag}.sql`), "utf8");
-}
+// It also holds the vocabulary migration to its structural promises: it
+// asserts before it constrains, its role lists match @omnitwin/types, and it
+// marks fixtures rather than adding a second status.
+//
+// NOTHING HERE NAMES A MIGRATION NUMBER. The captain allocates those and may
+// renumber at merge, so every file is found through the journal by the stable
+// half of its tag. Resolving it this way also asserts that the migration is
+// journaled at all — an unjournaled migration never runs.
 
 interface CatalogueRow {
   readonly id: string;
@@ -54,8 +55,8 @@ function splitTuple(body: string): string[] {
 function parseCatalogue(sql: string): CatalogueRow[] {
   const start = sql.indexOf("SELECT * FROM (VALUES");
   const end = sql.indexOf(") AS catalogue(", start);
-  expect(start, "0073 must declare its catalogue as a VALUES list").toBeGreaterThan(-1);
-  expect(end, "0073's VALUES list must close into the catalogue alias").toBeGreaterThan(start);
+  expect(start, "the catalogue migration must declare its catalogue as a VALUES list").toBeGreaterThan(-1);
+  expect(end, "the VALUES list must close into the catalogue alias").toBeGreaterThan(start);
   const body = sql.slice(start, end);
   return [...body.matchAll(/^\s+\((.+?)\),?\s*$/gmu)].map((match) => {
     const fields = splitTuple(match[1] ?? "");
@@ -72,14 +73,14 @@ function parseCatalogue(sql: string): CatalogueRow[] {
   });
 }
 
-describe("migration 0073 catalogue reconcile", () => {
+describe("the catalogue reconcile migration", () => {
   it("carries exactly the canonical catalogue, field for field", async () => {
-    const rows = parseCatalogue(await migration("0073_catalogue_reconcile"));
+    const rows = parseCatalogue(await migration("_catalogue_reconcile"));
     expect(rows).toHaveLength(CANONICAL_ASSETS.length);
     const byId = new Map(rows.map((row) => [row.id, row]));
     for (const asset of CANONICAL_ASSETS) {
       const row = byId.get(asset.id);
-      expect(row, `${asset.slug} (${asset.id}) is missing from migration 0073`).toBeDefined();
+      expect(row, `${asset.slug} (${asset.id}) is missing from the catalogue migration`).toBeDefined();
       expect(row).toEqual({
         id: asset.id, name: asset.name, category: asset.category,
         widthM: asset.widthM, depthM: asset.depthM, heightM: asset.heightM,
@@ -90,7 +91,7 @@ describe("migration 0073 catalogue reconcile", () => {
   });
 
   it("registers without overwriting and retires without deleting", async () => {
-    const sql = await migration("0073_catalogue_reconcile");
+    const sql = await migration("_catalogue_reconcile");
     expect(sql).toContain("ON CONFLICT (id) DO NOTHING");
     expect(sql).toContain("CATALOGUE_RECONCILE_CONFLICT");
     // A saved layout, a stock count and an audit receipt all point at these
@@ -102,9 +103,9 @@ describe("migration 0073 catalogue reconcile", () => {
   });
 });
 
-describe("migration 0072 vocabulary and marker", () => {
+describe("the vocabulary and index migration", () => {
   it("asserts the stored values before it constrains them", async () => {
-    const sql = await migration("0072_vocabulary_checks_and_hot_path_indexes");
+    const sql = await migration("_vocabulary_checks_and_hot_path_indexes");
     for (const failure of ["USERS_ROLE_VOCABULARY", "CONFIGURATIONS_STATE_VOCABULARY",
       "CONFIGURATIONS_REVIEW_STATUS_VOCABULARY", "CONFIGURATIONS_VISIBILITY_VOCABULARY",
       "CONFIGURATIONS_LAYOUT_STYLE_VOCABULARY", "ENQUIRIES_STATE_VOCABULARY"]) {
@@ -116,7 +117,7 @@ describe("migration 0072 vocabulary and marker", () => {
   });
 
   it("adds the four hot-path indexes named in the release plan", async () => {
-    const sql = await migration("0072_vocabulary_checks_and_hot_path_indexes");
+    const sql = await migration("_vocabulary_checks_and_hot_path_indexes");
     expect(sql).toContain('"events_venue_starts_idx" ON "events" ("venue_id", "starts_at")');
     expect(sql).toContain('"events_venue_ends_idx" ON "events" ("venue_id", "ends_at")');
     expect(sql).toContain('"pricing_rules_venue_space_live_idx" ON "pricing_rules" ("venue_id", "space_id")');
@@ -124,7 +125,7 @@ describe("migration 0072 vocabulary and marker", () => {
   });
 
   it("marks fixtures with a nullable column, never a second status", async () => {
-    const sql = await migration("0072_vocabulary_checks_and_hot_path_indexes");
+    const sql = await migration("_vocabulary_checks_and_hot_path_indexes");
     for (const table of ["bookings", "events", "enquiries"]) {
       expect(sql).toContain(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "fixture_source" varchar(40)`);
     }
