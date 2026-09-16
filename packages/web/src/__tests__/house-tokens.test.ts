@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 // CARD A3 (G2a): the House token layer. This suite is the card's DoD gate:
 //   1. House token names carry 02-DESIGN-LANGUAGE's exact BOH values.
@@ -94,7 +94,23 @@ const HOUSE_CSS = "src/styles/house-tokens.css";
  * Test files are included on purpose: a stale token name in a test is still a
  * stale token name, and this suite is the only thing that will notice.
  */
+// Five suites read every file under src/. Walking it once, here, keeps that
+// cost out of any single test's timeout — on a loaded machine the first walk
+// alone was overrunning the 20s default and failing tests that had found
+// nothing wrong.
+beforeAll(async () => {
+  await readSrcFiles();
+}, 180_000);
+
+let srcFilesCache: Promise<readonly (readonly [string, string])[]> | null = null;
+
+/** Memoised: five suites share one walk of src/, which each was repeating. */
 async function readSrcFiles(): Promise<readonly (readonly [string, string])[]> {
+  srcFilesCache ??= readSrcFilesUncached();
+  return srcFilesCache;
+}
+
+async function readSrcFilesUncached(): Promise<readonly (readonly [string, string])[]> {
   const root = resolve("src");
   const out: (readonly [string, string])[] = [];
   async function walk(dir: string): Promise<void> {
@@ -399,5 +415,185 @@ describe("house-tokens.css — every consumed var(--house-*) resolves", () => {
     }
     const report = [...unresolved].map(([name, files]) => `${name} <- ${files.join(", ")}`);
     expect(report, "consumed but undefined in house-tokens.css").toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-615 fix round 1 — audit VALUES, not names.
+//
+// The first pass shipped three checks written against the naming convention:
+// a retirement test that only matched `--house-*brass*`, a type floor that
+// only searched `font-size:`, and token audits that could not see a hardcoded
+// hue at all. Each passed while the thing it forbids survived — a gold
+// `--brass` on the public front door, `font: 600 9px/1` in the cockpit, a
+// second oxblood inside the shared primitives.
+//
+// These three look at what renders instead:
+//   * every colour LITERAL, classified by hue, so the next gold gradient fails
+//     whatever hex it is written as — #f0cf84, rgba(219,190,91,…), or a value
+//     nobody has typed yet;
+//   * every size in all three syntaxes CSS and React can express;
+//   * every brass-named token by the value it resolves to rather than its
+//     spelling (two of them live in other lanes' files and cannot be renamed
+//     here, so the name is allowed and the hue is not).
+// ---------------------------------------------------------------------------
+
+/** Paths whose colours are deliberately outside the register. */
+const REGISTER_EXEMPT: readonly RegExp[] = [
+  /__tests__/,
+  // Trades House campaign collateral keeps the venue's own brand register.
+  /features[\\/]trades-house/,
+  /pages[\\/]TradesHouse/,
+  // Materials inside the 3D viewport, not chrome. Moving these changes what a
+  // selected table or a laser mark looks like — a separate decision.
+  /components[\\/]meshes/,
+  /PlacedFurniture\.tsx/,
+  /MarkupLayer\.tsx/,
+  /hallkeeper-geometry\.ts/,
+  /DollhouseStage\.tsx/,
+  /NavMarkers\.tsx/,
+  /TravelControls\.tsx/,
+  /TwinMinimap\.tsx/,
+  /CockpitEvidenceBeam\.tsx/,
+  // Disclosed exceptions: a minified sheet on an admin-gated route, and the
+  // print stylesheet, which works in its own mm scale.
+  /demo-showcase\.css/,
+  /hallkeeper-sheet\.css/,
+];
+
+/**
+ * Files that still carry gold, with the lane that owns them. T-615 may not
+ * edit these, so they are recorded rather than fixed — but the SET is frozen:
+ * gold appearing in any other file fails, and a lane clearing its own file
+ * makes this list wrong and fails too. Neither can pass quietly.
+ */
+const GOLD_HANDOFF: Readonly<Record<string, string>> = {
+  "components/dashboard/NotificationCenter.tsx": "Lane 9",
+  "pages/landing/rite.css": "Lane 2 (retired page, redirected in R1)",
+  "pages/living-hall/living-hall.css": "Lane 2 (retired page, redirected in R1)",
+  "twin/measure/measure.css": "Lane 3",
+  "twin/shell/FloorConstellation.tsx": "Lane 3",
+  "twin/shell/quick-actions.css": "Lane 3",
+  "twin/shell/room-dossier.css": "Lane 3",
+  "twin/shell/room-selector.css": "Lane 3",
+  "twin/shell/viewpoint-plan.css": "Lane 3",
+  "twin/tags/tags.css": "Lane 3",
+  "twin/tour/tour.css": "Lane 3",
+  "twin/twin.css": "Lane 3",
+};
+
+/** Paths exempt from the 11px floor, each for a reason stated in the PR. */
+const TYPE_FLOOR_EXEMPT: readonly RegExp[] = [
+  /__tests__/,
+  /features[\\/]trades-house/,
+  /pages[\\/]TradesHouse/,
+  /demo-showcase\.css/,    // minified, admin-gated, not visually verifiable here
+  /hallkeeper-sheet\.css/, // print sheet in its own scale
+  /twin[\\/]/,             // reverted: raising it broke the HUD geometry test
+];
+
+const TYPE_FLOOR_PX = 11;
+
+function hslOf([r, g, b]: Rgb): readonly [number, number, number] {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const delta = max - min;
+  let hue = 0;
+  if (delta !== 0) {
+    if (max === rn) hue = 60 * (((gn - bn) / delta) % 6);
+    else if (max === gn) hue = 60 * ((bn - rn) / delta + 2);
+    else hue = 60 * ((rn - gn) / delta + 4);
+  }
+  if (hue < 0) hue += 360;
+  const lightness = (max + min) / 2;
+  const saturation = delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+  return [hue, saturation * 100, lightness * 100];
+}
+
+/**
+ * Gold as a region of colour space, not a list of hexes. The copper scale sits
+ * at hue 24–27 and the House amber at 34, so the band opens at 36.
+ *
+ * The saturation floor and lightness ceiling are not decoration. A first pass
+ * used 25 / 80 and swallowed things that are warm but plainly not gold: the
+ * planner's paper backdrop `rgba(221, 208, 184)` (s 35, l 79) and seven
+ * procedural room-texture colours in `lib/grand-hall-textures.ts`. Sweeping
+ * those turned the Grand Hall's floor orange — caught in the screenshot, not
+ * by any assertion. Real gold is saturated and mid-toned: every literal this
+ * lane retired measures s 44–89 and l 42–76.
+ */
+function isGoldFamily(rgb: Rgb): boolean {
+  const [hue, saturation, lightness] = hslOf(rgb);
+  return hue >= 36 && hue <= 70 && saturation >= 40 && lightness >= 25 && lightness <= 76;
+}
+
+/** Every #rrggbb, rgb() and rgba() literal in a file, as rgb triples. */
+function colourLiterals(text: string): readonly Rgb[] {
+  const out: Rgb[] = [];
+  for (const match of text.matchAll(/#([0-9a-fA-F]{6})\b/g)) {
+    const raw = match[1] ?? "";
+    out.push([
+      Number.parseInt(raw.slice(0, 2), 16),
+      Number.parseInt(raw.slice(2, 4), 16),
+      Number.parseInt(raw.slice(4, 6), 16),
+    ]);
+  }
+  for (const match of text.matchAll(/rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/g)) {
+    out.push([Number(match[1] ?? "0"), Number(match[2] ?? "0"), Number(match[3] ?? "0")]);
+  }
+  return out;
+}
+
+describe("the register is enforced by value, not by name", () => {
+  it("has no gold-family colour literal outside the recorded handoff list", async () => {
+    const offenders = new Set<string>();
+    for (const [path, text] of await readSrcFiles()) {
+      if (REGISTER_EXEMPT.some((rule) => rule.test(path))) continue;
+      if (colourLiterals(text).some(isGoldFamily)) offenders.add(path);
+    }
+    expect([...offenders].sort()).toEqual(Object.keys(GOLD_HANDOFF).sort());
+  });
+
+  // The NAME may survive where another lane owns the file and T-615 may not
+  // rename it (RoomsHomePage, RoomWalkPage) — and the Diary has called its
+  // forest greens --diary-brass-* since long before the register existed. What
+  // may not survive is a brass-named token still holding a brass HUE, which is
+  // precisely the defect the House-prefixed name test could not see.
+  it("lets no brass-NAMED token hold a gold value", async () => {
+    const wrong: string[] = [];
+    for (const [path, text] of await readSrcFiles()) {
+      for (const match of text.matchAll(/(--[a-z0-9-]*brass[a-z0-9-]*)\s*:\s*([^;]+);/g)) {
+        const value = (match[2] ?? "").trim();
+        if (value.startsWith("var(")) continue;
+        if (colourLiterals(value).some(isGoldFamily)) {
+          wrong.push(`${path}: ${match[1] ?? ""} = ${value}`);
+        }
+      }
+    }
+    expect(wrong, "a brass NAME may survive; a brass HUE may not").toEqual([]);
+  });
+
+  it("keeps every type size at or above the 11px floor, in all three syntaxes", async () => {
+    const tooSmall: string[] = [];
+    for (const [path, text] of await readSrcFiles()) {
+      if (TYPE_FLOOR_EXEMPT.some((rule) => rule.test(path))) continue;
+      text.split("\n").forEach((line, index) => {
+        const at = `${path}:${String(index + 1)}`;
+        const record = (size: string, syntax: string): void => {
+          if (Number(size) < TYPE_FLOOR_PX) tooSmall.push(`${at} ${syntax} ${size}px`);
+        };
+        if (path.endsWith(".css")) {
+          for (const m of line.matchAll(/font-size:\s*([0-9.]+)px/g)) record(m[1] ?? "0", "font-size");
+          // The shorthand is the syntax the first pass never searched.
+          for (const m of line.matchAll(/font:[^;{}]*?\b([0-9.]+)px/g)) record(m[1] ?? "0", "font: shorthand");
+        } else {
+          for (const m of line.matchAll(/fontSize:\s*"?([0-9.]+)(?:px)?"?/g)) record(m[1] ?? "0", "inline fontSize");
+        }
+      });
+    }
+    expect(tooSmall).toEqual([]);
   });
 });
