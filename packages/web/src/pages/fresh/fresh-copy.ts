@@ -39,19 +39,35 @@ export const FRESH_TOUR_HREF = "/tour";
 
 /** Whether the whole-building walkthrough is actually reachable.
  *
- *  FALSE since 2026-08-15. `/tour` loads its scene from `public/twin/`, which is
- *  552 MB and gitignored, so it is never in the Vercel build. The SPA rewrite
- *  answers the missing manifest with index.html and a 200, so the fetch looks
- *  like it SUCCEEDED and only fails when the HTML is parsed as JSON — which is
- *  why this shipped: every layer reported success. Two live CTAs pointed at it.
+ *  FALSE from 2026-08-15 to 2026-09-16. `/tour` loaded its scene from
+ *  `public/twin/`, which is 552 MB and gitignored, so it was never in the
+ *  Vercel build. The SPA rewrite answers a missing manifest with index.html
+ *  and a 200, so the fetch looked like it SUCCEEDED and only failed when the
+ *  HTML was parsed as JSON — which is why it shipped: every layer reported
+ *  success. Two live CTAs pointed at it.
  *
- *  To turn it back on: publish the twin bundle to R2, set VITE_TWIN_ASSET_BASE
- *  on Vercel, confirm the manifest returns application/json, then flip this to
- *  true. Do not flip it first. */
+ *  TRUE from 2026-09-16 (T-617), against the three conditions this comment
+ *  set, each checked read-only rather than assumed:
+ *
+ *    1. the bundle is published —
+ *       `curl -sI https://twin.venviewer.com/trades-hall/manifest.json`
+ *       → 200, `content-type: application/json`, 161,839 bytes,
+ *       last-modified Mon 20 Jul 2026 16:52:33 GMT;
+ *    2. VITE_TWIN_ASSET_BASE is set on the live deployment — the deployed
+ *       chunk `/assets/TwinPage-BTMTOYQs.js` contains the literal
+ *       `https://twin.venviewer.com` and no `/twin` fallback, which is only
+ *       true when the variable was present at build time;
+ *    3. the SPA-rewrite trap is what it always was, and is now bypassed:
+ *       `https://venviewer.com/twin/trades-hall/manifest.json` still answers
+ *       `text/html`, so the override in (2) is load-bearing, not cosmetic.
+ *
+ *  If VITE_TWIN_ASSET_BASE is ever removed from the deployment, condition (3)
+ *  makes the tour silently dead again: set this back to false in the same
+ *  change, and do not rely on a green build to notice. */
 // Annotated `boolean`, not inferred `false`: the literal type would make every
 // use statically dead and trip no-unnecessary-condition, which would push the
 // next person to delete the branches rather than flip the flag.
-export const FRESH_TOUR_ENABLED: boolean = false;
+export const FRESH_TOUR_ENABLED: boolean = true;
 export const FRESH_TOUR_TITLE = "Then walk the whole building";
 export const FRESH_TOUR_LINE =
   "149 viewpoints, with dollhouse and floor plan views.";

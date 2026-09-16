@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import {
   SparkRendererMount,
   SparkSplatLayer,
-  type SparkSplatErrorEvent,
-  type SparkSplatLoadEvent,
 } from "../scene/SparkSplatLayer.js";
 import { roomSplatBundle, roomSplatLadder, walkPoseForBundle } from "../../data/room-splat-bundles.js";
 import { RoomClipBox } from "./RoomClipBox.js";
 import { InteriorCamera } from "./InteriorCamera.js";
 import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
+import { useSplatDelivery, type RoomSplatProgress } from "../../hooks/use-splat-delivery.js";
 import { settledPixelRatio } from "../../lib/splat-runtime-profile.js";
 import {
   runtimeAssetCameraViewForRoom,
@@ -17,68 +16,69 @@ import {
   type TradesHallRuntimeRoomSlug,
 } from "../../lib/runtime-package-resolution.js";
 
+export type { RoomSplatProgress } from "../../hooks/use-splat-delivery.js";
+
 // ---------------------------------------------------------------------------
 // One captured room, rendered.
 //
-// Shared by the public walkthrough and the internal captures console so the two
-// can never drift apart: the same tiles, the same derived transform, the same
-// camera framed from the room's own measured extent.
+// The public walkthrough's camera and clip box, with the same delivery ladder
+// used by the planner. The internal captures console still owns its own scene.
 // ---------------------------------------------------------------------------
 
-export interface RoomSplatProgress {
-  /** Tiles of the FINEST level that have reported in, loaded or failed. */
-  readonly settled: number;
-  /** Tiles the finest level is made of. The coarse first view is not counted. */
-  readonly total: number;
-  readonly splats: number;
-  /** Failures in the finest level. A coarse tile that never came is not one. */
-  readonly failed: number;
-  /** The finest level is up: the room is as good as it gets. */
-  readonly complete: boolean;
-  /** Something of the room is on screen — the coarse first view counts. */
-  readonly firstView: boolean;
-}
-
-/** How often the scene reports in. */
-const PROGRESS_INTERVAL_MS = 400;
-
 /**
- * How long the finest level waits for the coarse view before starting anyway.
+ * Watches the drawing context and hands the loss back to the page.
  *
- * The wait is what makes the ladder worth having: the coarse tile alone on the
- * wire lands in about three seconds on a 20 Mbps line, where sharing the pipe
- * with the finest level's eleven would take four times that.
+ * A WebGL context can be taken away at any moment — the phone got hot, the
+ * tab went to the background, another tab wanted the GPU, the driver reset.
+ * Left alone the canvas simply goes black and stays black, because the
+ * browser will only ever restore a context whose loss event was
+ * `preventDefault`ed; without that call the loss is final and no amount of
+ * waiting brings the room back.
  *
- * The deadline is a guard against a stuck fetch, not a tuning knob. Spark
- * reports a tile once it is decoded rather than once its bytes are in, so a
- * shorter deadline looks like a way to overlap the decode with the wire; it is
- * not. Measured at 20 Mbps, eight seconds and fifteen finished within noise of
- * each other (78.5 s both), because the tile settles before either fires. What
- * a short deadline does change is the slow line the ladder exists for: at
- * 5 Mbps it would start eleven competing fetches while the coarse tile is still
- * coming, and delay the very first view it was meant to bring forward.
+ * So: prevent the default, tell the page (which says something calm and
+ * offers a reload if nothing comes back), and on restore wake the demand
+ * loop, which is otherwise asleep and would draw nothing at all.
  */
-const COARSE_WAIT_MS = 15_000;
+function ContextLossGuard({ onLost }: { readonly onLost: (lost: boolean) => void }): ReactElement {
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  const onLostRef = useRef(onLost);
+  useEffect(() => { onLostRef.current = onLost; }, [onLost]);
 
-/** Which rung of the ladder the room is standing on. */
-type DeliveryStage = "coarse" | "sharpening" | "sharp";
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleLost = (event: Event): void => {
+      // Without this the context is gone for good. Everything else here is
+      // presentation; this one line is the whole recovery.
+      event.preventDefault();
+      onLostRef.current(true);
+    };
+    const handleRestored = (): void => {
+      onLostRef.current(false);
+      invalidate();
+    };
+    canvas.addEventListener("webglcontextlost", handleLost);
+    canvas.addEventListener("webglcontextrestored", handleRestored);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleLost);
+      canvas.removeEventListener("webglcontextrestored", handleRestored);
+    };
+  }, [gl, invalidate]);
 
-interface Delivery {
-  readonly stage: DeliveryStage;
-  /** A coarse tile has landed, so the room is already drawn at low density. */
-  readonly coarseShowing: boolean;
+  return <></>;
 }
 
 export interface RoomSplatSceneProps {
   readonly room: TradesHallRuntimeRoomSlug;
   readonly onProgress?: (progress: RoomSplatProgress) => void;
   /**
-   * Frame the room from outside, as an object.
+   * The drawing context was taken away (true) or came back (false).
    *
-   * Only honest because the capture is clipped to the room's measured box —
-   * without that, pulling back shows the corridor and stair the operator walked
-   * through on the way in.
+   * The page owns what a visitor is told; the scene only owns the fact.
    */
+  readonly onRendererLost?: (lost: boolean) => void;
+  /** Kill-order fallback for touch: "tap-only" keeps tap-to-glide alone. */
+  readonly touchLocomotion?: "full" | "tap-only";
   /**
    * Keep the drawing buffer after present so the canvas can be read back with
    * toDataURL. Off by default: it costs memory and blocks some driver fast
@@ -101,6 +101,8 @@ export interface RoomSplatSceneProps {
 export function RoomSplatScene({
   room,
   onProgress,
+  onRendererLost,
+  touchLocomotion = "full",
   captureReadback = false,
 }: RoomSplatSceneProps): ReactElement {
   const transform = runtimeAssetViewTransformForRoom(room, "staged");
@@ -163,10 +165,23 @@ export function RoomSplatScene({
   // served as its prebuilt, paged tree when the profile wants the tree and the
   // bundle has one, otherwise as the tile itself (which Spark then trees in a
   // worker if the profile asks).
+  //
+  // The SHARP rung is the best level this device agreed to hold, not always
+  // the finest one. INTERIM (T-617): a phone is served the vendor's coarser
+  // level — for the Grand Hall, level 4 at 2,945,194 splats in 54,148,124
+  // bytes rather than level 5 at 6,019,684 in 106,479,738 — because every
+  // XGRIDS level is the WHOLE room at one density, so the coarser one is a
+  // complete room and not a partial one. A desktop's budget exceeds the
+  // finest level and it is served exactly what it was before.
   const preferTrees = profile.lod && profile.preferTrees;
   const ladder = useMemo(
-    () => roomSplatLadder(room, import.meta.env.VITE_SPLAT_BASE_URL, preferTrees),
-    [room, preferTrees],
+    () => roomSplatLadder(
+      room,
+      import.meta.env.VITE_SPLAT_BASE_URL,
+      preferTrees,
+      profile.lodSplatCount,
+    ),
+    [room, preferTrees, profile.lodSplatCount],
   );
 
   // The motion budget. The camera says when the view is moving; the renderer
@@ -183,140 +198,7 @@ export function RoomSplatScene({
     [profile],
   );
 
-  // Which rung the room is on. The poller below drives it: the load handlers
-  // must keep their identity, and a handler that set state would change on
-  // every tile and make Spark dispose and refetch the room.
-  const [delivery, setDelivery] = useState<Delivery>(() => ({
-    stage: ladder.coarse.length > 0 ? "coarse" : "sharpening",
-    coarseShowing: false,
-  }));
-  const deliveryRef = useRef(delivery);
-  useEffect(() => { deliveryRef.current = delivery; }, [delivery]);
-  const ladderRef = useRef(ladder);
-
-  /** The last report handed out, so an unchanged one is not repeated. */
-  const lastReportRef = useRef<RoomSplatProgress | null>(null);
-  const loadedRef = useRef<Map<string, number>>(new Map());
-  const failedRef = useRef<Set<string>>(new Set());
-
-  // The latest callback lives in a ref so the handlers below never change
-  // identity, while still calling the current prop.
-  const onProgressRef = useRef(onProgress);
-  useEffect(() => { onProgressRef.current = onProgress; }, [onProgress]);
-
-  const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
-    loadedRef.current.set(event.url, event.splatCount);
-  }, []);
-
-  const handleError = useCallback((event: SparkSplatErrorEvent) => {
-    failedRef.current.add(event.url);
-  }, []);
-
-  useEffect(() => {
-    loadedRef.current = new Map();
-    failedRef.current = new Set();
-    lastReportRef.current = null;
-    // Only a genuinely new ladder re-seats the delivery: setting state on mount
-    // would render the scene twice for nothing.
-    if (ladderRef.current !== ladder) {
-      ladderRef.current = ladder;
-      setDelivery({
-        stage: ladder.coarse.length > 0 ? "coarse" : "sharpening",
-        coarseShowing: false,
-      });
-    }
-    const total = ladder.sharp.length;
-    const isSettled = (url: string): boolean =>
-      loadedRef.current.has(url) || failedRef.current.has(url);
-    let waitedMs = 0;
-
-    const timer = setInterval(() => {
-      waitedMs += PROGRESS_INTERVAL_MS;
-      const coarseShowing = ladder.coarse.some((source) => loadedRef.current.has(source.url));
-      const coarseSettled = ladder.coarse.every((source) => isSettled(source.url));
-      const settled = ladder.sharp.filter((source) => isSettled(source.url)).length;
-      const loaded = ladder.sharp.filter((source) => loadedRef.current.has(source.url)).length;
-      const failed = ladder.sharp.filter((source) => failedRef.current.has(source.url)).length;
-      // Nothing more is coming. Not the same as: the room is covered.
-      const complete = total > 0 && settled >= total;
-      // The coarse room is cover, not a placeholder — it is the only thing
-      // drawing the geometry a missing tile would have drawn. So it is dropped
-      // only when every tile of the finest level actually arrived; one failure
-      // and it stays underneath for the rest of the visit, filling the hole.
-      const covered = total > 0 && loaded >= total;
-
-      let stage: DeliveryStage = "coarse";
-      if (covered) {
-        stage = "sharp";
-      } else if (
-        deliveryRef.current.stage !== "coarse"
-        || coarseSettled
-        || waitedMs >= COARSE_WAIT_MS
-      ) {
-        stage = "sharpening";
-      }
-      // Same values, same object: React bails out rather than re-rendering the
-      // scene, which is what keeps the camera in its place.
-      setDelivery((previous) => (previous.stage === stage && previous.coarseShowing === coarseShowing
-        ? previous
-        : { stage, coarseShowing }));
-
-      // What is drawn right now: the sky, plus the coarse room until it is
-      // dropped, plus however much of the finest level has arrived.
-      const drawn = stage === "coarse"
-        ? [...ladder.environment, ...ladder.coarse]
-        : stage === "sharp"
-          ? [...ladder.environment, ...ladder.sharp]
-          : [...ladder.environment, ...ladder.coarse, ...ladder.sharp];
-      let splats = 0;
-      for (const source of drawn) {
-        splats += loadedRef.current.get(source.url) ?? 0;
-      }
-
-      const report: RoomSplatProgress = {
-        settled,
-        total,
-        splats,
-        failed,
-        complete,
-        // A tile that failed put nothing on screen, so it is not a first view.
-        firstView: coarseShowing || loaded > 0,
-      };
-      // Only say something when there is something to say. A tile whose fetch
-      // hangs never loads and never errors, so completion never arrives and
-      // this timer runs for the rest of the visit; reporting an unchanged
-      // number every 400 ms re-rendered the whole page with it.
-      const last = lastReportRef.current;
-      const changed = last === null
-        || last.settled !== report.settled
-        || last.total !== report.total
-        || last.splats !== report.splats
-        || last.failed !== report.failed
-        || last.complete !== report.complete
-        || last.firstView !== report.firstView;
-      if (changed) {
-        lastReportRef.current = report;
-        onProgressRef.current?.(report);
-      }
-      // The last report is the last: a poller that keeps ticking re-renders
-      // the page 2.5 times a second for the rest of the visit.
-      if (complete) clearInterval(timer);
-    }, PROGRESS_INTERVAL_MS);
-    return () => { clearInterval(timer); };
-  }, [ladder]);
-
-  // What is on screen. Every mounted layer is visible, always: a Spark mesh
-  // that loads while invisible renders as unsorted colour blobs when it is
-  // revealed, because Spark drives a mesh's level-of-detail tree only while the
-  // scene traverses it as visible (measured 2026-09-04; a camera move repairs
-  // the tiles one at a time, which is what gave it away). So the finest level's
-  // tiles appear as they land, over the coarse room, and the coarse room is
-  // dropped only once the last of them is in — the room is whole throughout.
-  const mounted = [
-    ...ladder.environment,
-    ...(delivery.stage === "sharp" ? [] : ladder.coarse),
-    ...(delivery.stage === "coarse" ? [] : ladder.sharp),
-  ];
+  const delivery = useSplatDelivery(ladder, onProgress);
 
   return (
     <Canvas
@@ -336,6 +218,7 @@ export function RoomSplatScene({
       data-testid="room-splat-scene"
     >
       <ambientLight intensity={1} />
+      {onRendererLost !== undefined && <ContextLossGuard onLost={onRendererLost} />}
       {extentM !== null && (
         <RoomClipBox extentM={extentM} keepHeightFraction={1} />
       )}
@@ -343,9 +226,9 @@ export function RoomSplatScene({
           coarse room when the finest level lands, and a host riding on that
           tile would take the renderer away with it. */}
       <SparkRendererMount runtime={profile} lodScaleFn={lodScaleFn} />
-      {mounted.map((source) => (
+      {delivery.mounted.map((source) => (
         <SparkSplatLayer
-          key={source.url}
+          key={`${delivery.key}:${source.url}`}
           url={source.url}
           paged={source.tree}
           position={[...transform.position] as [number, number, number]}
@@ -354,8 +237,8 @@ export function RoomSplatScene({
           runtime={profile}
           includeRendererHost={false}
           lodScaleFn={lodScaleFn}
-          onLoad={handleLoad}
-          onError={handleError}
+          onLoad={delivery.onLoad}
+          onError={delivery.onError}
         />
       ))}
       {spawn !== null && walkBounds !== null && (
@@ -367,6 +250,7 @@ export function RoomSplatScene({
           motionDpr={profile.motionDpr}
           settledDpr={settledDpr}
           onMotionChange={handleMotionChange}
+          touchLocomotion={touchLocomotion}
         />
       )}
     </Canvas>

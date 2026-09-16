@@ -13,7 +13,7 @@ import type { DeviceTier } from "../device-tier.js";
 // ---------------------------------------------------------------------------
 
 describe("getHemisphereLightConfig", () => {
-  const tiers: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
+  const tiers: readonly DeviceTier[] = ["poster", "low", "mobile", "medium", "high"];
 
   for (const tier of tiers) {
     it(`returns valid config for ${tier} tier`, () => {
@@ -27,10 +27,12 @@ describe("getHemisphereLightConfig", () => {
   it("intensity increases monotonically with tier", () => {
     const poster = getHemisphereLightConfig("poster").intensity;
     const low = getHemisphereLightConfig("low").intensity;
+    const mobile = getHemisphereLightConfig("mobile").intensity;
     const medium = getHemisphereLightConfig("medium").intensity;
     const high = getHemisphereLightConfig("high").intensity;
     expect(poster).toBeLessThan(low);
-    expect(low).toBeLessThan(medium);
+    expect(low).toBeLessThan(mobile);
+    expect(mobile).toBeLessThan(medium);
     expect(medium).toBeLessThan(high);
   });
 

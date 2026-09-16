@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDeviceStore } from "../stores/device-store.js";
-import { classifyDevice, getGpuRenderer, type DeviceTier } from "../lib/device-tier.js";
+import {
+  classifyDevice,
+  getGpuRenderer,
+  readDeviceEnvironment,
+  type DeviceEnvironment,
+  type DeviceTier,
+} from "../lib/device-tier.js";
 import {
   resolveSplatRuntimeProfile,
   type SplatRuntimeProfile,
@@ -37,6 +43,11 @@ export interface UseSplatRuntimeProfileOptions {
   readonly allowOverrides?: boolean;
   /** Whether to publish the profile on `window`; defaults to DEV. */
   readonly publish?: boolean;
+  /**
+   * What kind of device this is, for the tiers a GPU string cannot separate.
+   * Defaults to the real browser; tests pass a synthetic one.
+   */
+  readonly environment?: DeviceEnvironment | null;
 }
 
 /**
@@ -65,6 +76,11 @@ export function useSplatRuntimeProfile(
     allowOverrides = import.meta.env.DEV,
     publish = import.meta.env.DEV,
   } = options;
+  // Read once, with the probe: "(pointer: coarse)" cannot change under a
+  // visitor mid-visit, and re-reading it per render would re-tier the scene.
+  const [environment] = useState<DeviceEnvironment | null>(
+    () => options.environment ?? readDeviceEnvironment(),
+  );
 
   const storeTier = useDeviceStore((state) => state.tier);
   const detected = useDeviceStore((state) => state.detected);
@@ -73,11 +89,13 @@ export function useSplatRuntimeProfile(
   // Probed exactly once, during the first render, so the first frame already
   // runs at the right tier instead of re-creating the renderer a frame later.
   const [probed] = useState<string | null>(() => (detected ? null : probe()));
-  const tier: DeviceTier = detected || probed === null ? storeTier : classifyDevice(probed);
+  const tier: DeviceTier = detected || probed === null
+    ? storeTier
+    : classifyDevice(probed, environment);
 
   useEffect(() => {
-    if (!detected && probed !== null) detect(probed);
-  }, [detect, detected, probed]);
+    if (!detected && probed !== null) detect(probed, environment);
+  }, [detect, detected, probed, environment]);
 
   const profile = useMemo(
     () => resolveSplatRuntimeProfile(tier, search, allowOverrides),

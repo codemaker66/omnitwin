@@ -444,6 +444,117 @@ describe("splatLadderForBundle", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The served level
+//
+// The whole reconstruction is the finest level, and the Grand Hall's is 101.5
+// MB. Every XGRIDS level is the WHOLE room at one density, so serving a
+// coarser one to a weak device gives a complete room rather than a partial
+// one. INTERIM for Release 1 (T-617).
+// ---------------------------------------------------------------------------
+
+describe("splatLadderForBundle - the sharp rung under a budget", () => {
+  const grandHall = roomSplatBundle("grand-hall");
+  if (grandHall === null) throw new Error("the Grand Hall bundle is the fixture");
+
+  const bytesOf = (
+    bundle: GeneratedRoomSplatBundle,
+    files: readonly { readonly file: string }[],
+  ): number => files.reduce(
+    (sum, source) => sum + (bundle.tiles.find((tile) => tile.file === source.file)?.bytes ?? 0),
+    0,
+  );
+
+  it("serves the finest level when no budget is given, exactly as before", () => {
+    const withoutBudget = splatLadderForBundle(grandHall, "/base", false);
+    const undefinedBudget = splatLadderForBundle(grandHall, "/base", false, undefined);
+
+    expect(undefinedBudget).toEqual(withoutBudget);
+    expect(withoutBudget.sharp).toHaveLength(11);
+  });
+
+  it("serves the vendor's level 4 to the phone tier", () => {
+    // The mobile profile's resting budget is 2.95 M splats; level 5 is
+    // 6,019,684 and level 4 is 2,945,194, so level 4 is the finest the device
+    // agreed to hold.
+    //
+    // The bytes are SUMMED from the descriptor rather than quoted, because
+    // the figure this work inherited - "51.6 MB" - is mebibytes: level 4 is
+    // 54,148,124 bytes, which is 51.6 MiB and 54.1 MB. A gate written "under
+    // 52 MB" is therefore met in MiB and missed in MB, so both are pinned
+    // here and nobody has to guess which was meant.
+    const ladder = splatLadderForBundle(grandHall, "/base", false, 2_950_000);
+    const served = grandHall.tiles.filter((tile) => !tile.isEnvironment && tile.lodLevel === 4);
+    const servedBytes = bytesOf(grandHall, ladder.sharp);
+
+    expect(ladder.sharp.map((source) => source.file)).toEqual(served.map((tile) => tile.file));
+    expect(grandHall.splatsByLevel[3]).toBe(2_945_194);
+    expect(servedBytes).toBe(54_148_124);
+    expect(servedBytes).toBeLessThan(52 * 1024 * 1024); // 52 MiB: met
+    expect(servedBytes).toBeGreaterThan(52 * 1_000_000); // 52 MB: not met
+    expect(servedBytes)
+      .toBeLessThan(bytesOf(grandHall, splatLadderForBundle(grandHall, "/base", false).sharp));
+  });
+
+  it("keeps the coarse rung below the sharp one, and never mounts a level twice", () => {
+    const ladder = splatLadderForBundle(grandHall, "/base", false, 2_950_000);
+    const coarseLevels = new Set(
+      ladder.coarse.map((source) => grandHall.tiles.find((t) => t.file === source.file)?.lodLevel),
+    );
+    const sharpLevels = new Set(
+      ladder.sharp.map((source) => grandHall.tiles.find((t) => t.file === source.file)?.lodLevel),
+    );
+
+    expect([...coarseLevels]).toEqual([1]);
+    expect([...sharpLevels]).toEqual([4]);
+    for (const level of coarseLevels) expect(sharpLevels.has(level)).toBe(false);
+  });
+
+  it("collapses to one rung when the budget reaches only the coarsest level", () => {
+    // Drawing the same level twice hazes the room. A device that asked for
+    // this little gets the room at once instead.
+    const ladder = splatLadderForBundle(grandHall, "/base", false, 400_000);
+
+    expect(ladder.coarse).toEqual([]);
+    expect(ladder.sharp.map((source) => source.file)).toEqual(["0_0.sog"]);
+    expect(ladder.environment.map((source) => source.file)).toEqual(["env.sog"]);
+  });
+
+  it("still serves the coarsest level to a budget below every level", () => {
+    // The least that can honestly be served is the whole room at its lowest
+    // density - never nothing.
+    const ladder = splatLadderForBundle(grandHall, "/base", false, 1);
+
+    expect(ladder.sharp.map((source) => source.file)).toEqual(["0_0.sog"]);
+    expect(ladder.coarse).toEqual([]);
+  });
+
+  it("ignores a budget that is not a number", () => {
+    const ladder = splatLadderForBundle(grandHall, "/base", false, Number.NaN);
+
+    expect(ladder.sharp).toHaveLength(11);
+  });
+
+  it("gives every captured room a complete room inside the phone budget", () => {
+    for (const room of roomsWithSplatBundles()) {
+      const bundle = roomSplatBundle(room);
+      if (bundle === null) throw new Error(room);
+      const ladder = splatLadderForBundle(bundle, "/base", false, 2_950_000);
+      const levels = new Set(
+        ladder.sharp.map((source) => bundle.tiles.find((t) => t.file === source.file)?.lodLevel),
+      );
+
+      // One level, present, and never finer than the unbudgeted ladder's.
+      expect(ladder.sharp.length).toBeGreaterThan(0);
+      expect(levels.size).toBe(1);
+      const [level] = [...levels];
+      expect(level).toBeLessThanOrEqual(bundle.finestLevel);
+      expect(bytesOf(bundle, ladder.sharp))
+        .toBeLessThanOrEqual(bytesOf(bundle, splatLadderForBundle(bundle, "/base", false).sharp));
+    }
+  });
+});
+
 describe("roomSplatLadder", () => {
   it("prefixes the venue and room path, as the tile urls do", () => {
     const ladder = roomSplatLadder("grand-hall", NO_BASE_URL, false);
@@ -458,5 +569,13 @@ describe("roomSplatLadder", () => {
     expect(ladder.environment).toEqual([]);
     expect(ladder.coarse).toEqual([]);
     expect(ladder.sharp).toEqual([]);
+  });
+
+  it("passes a device budget through to the served level", () => {
+    const capped = roomSplatLadder("grand-hall", NO_BASE_URL, false, 2_950_000);
+    const uncapped = roomSplatLadder("grand-hall", NO_BASE_URL, false);
+
+    expect(capped.sharp.length).toBeLessThan(uncapped.sharp.length);
+    expect(capped.sharp.every((s) => s.url.startsWith("/splats/trades-hall/grand-hall/"))).toBe(true);
   });
 });

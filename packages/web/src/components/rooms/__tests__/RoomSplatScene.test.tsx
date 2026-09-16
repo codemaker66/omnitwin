@@ -13,12 +13,25 @@ const recorded = vi.hoisted(() => ({
   hosts: [] as Record<string, unknown>[],
   /** The layers mounted right now, by url, with their latest props. */
   mounted: new Map<string, Record<string, unknown>>(),
+  /** The element the context guard listens to. */
+  canvas: document.createElement("canvas"),
+  invalidate: (): void => undefined,
+  /** Every splat budget the scene handed the ladder. */
+  budgets: [] as (number | undefined)[],
 }));
 
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }: { readonly children?: ReactNode }) => (
     <div data-testid="canvas">{children}</div>
   ),
+  // The guard needs a canvas to listen to and a way to wake the demand loop.
+  // happy-dom cannot give a real drawing context, but it can give a real
+  // element that dispatches real webglcontextlost events, which is the part
+  // the guard is responsible for.
+  useThree: (selector: (state: {
+    gl: { domElement: HTMLCanvasElement };
+    invalidate: () => void;
+  }) => unknown) => selector({ gl: { domElement: recorded.canvas }, invalidate: recorded.invalidate }),
 }));
 vi.mock("../../scene/SparkSplatLayer.js", async () => {
   const { useEffect } = await import("react");
@@ -50,7 +63,13 @@ vi.mock("../../../data/room-splat-bundles.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../data/room-splat-bundles.js")>();
   return {
     ...actual,
-    roomSplatLadder: (room: string, base: string | undefined, preferTrees: boolean) => {
+    roomSplatLadder: (
+      room: string,
+      base: string | undefined,
+      preferTrees: boolean,
+      sharpSplatBudget?: number,
+    ) => {
+      recorded.budgets.push(sharpSplatBudget);
       const ladder = actual.roomSplatLadder(room, base, false);
       if (!preferTrees) return ladder;
       return {
@@ -549,5 +568,87 @@ describe("RoomSplatScene when a tile's fetch hangs", () => {
     const done = onProgress.mock.lastCall?.[0] as { settled: number; complete: boolean };
     expect(done.settled).toBe(11);
     expect(done.complete).toBe(true);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// The device reaching the ladder, and the view being taken away
+// ---------------------------------------------------------------------------
+
+describe("RoomSplatScene and the device", () => {
+  beforeEach(() => {
+    recorded.layers.length = 0;
+    recorded.cameras.length = 0;
+    recorded.hosts.length = 0;
+    recorded.budgets.length = 0;
+    recorded.mounted.clear();
+  });
+
+  afterEach(() => { cleanup(); });
+
+  it("hands the ladder the resting budget this device agreed to", () => {
+    // Without this the ladder always serves the finest level, which for the
+    // Grand Hall is 106,479,738 bytes - not a thing to send to a phone.
+    render(<RoomSplatScene room={ROOM} />);
+
+    expect(recorded.budgets.length).toBeGreaterThan(0);
+    expect(recorded.budgets[0]).toBe(PROFILE.lodSplatCount);
+  });
+
+  it("does not watch the drawing context when nobody asked to be told", () => {
+    // The guard is only mounted for a listener, so the planner's own scene is
+    // untouched by this.
+    const lost = vi.fn();
+    render(<RoomSplatScene room={ROOM} />);
+    recorded.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    expect(lost).not.toHaveBeenCalled();
+  });
+
+  it("keeps a lost context recoverable and says so", () => {
+    // Without preventDefault the browser never restores the context: the loss
+    // is final and the canvas stays black for the rest of the visit. That one
+    // call is the whole recovery; everything else is what the page says.
+    const lost = vi.fn();
+    render(<RoomSplatScene room={ROOM} onRendererLost={lost} />);
+
+    const event = new Event("webglcontextlost", { cancelable: true });
+    act(() => { recorded.canvas.dispatchEvent(event); });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(lost).toHaveBeenCalledWith(true);
+  });
+
+  it("reports the context coming back", () => {
+    const lost = vi.fn();
+    render(<RoomSplatScene room={ROOM} onRendererLost={lost} />);
+
+    act(() => { recorded.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true })); });
+    lost.mockClear();
+    act(() => { recorded.canvas.dispatchEvent(new Event("webglcontextrestored")); });
+
+    expect(lost).toHaveBeenCalledWith(false);
+  });
+
+  it("stops listening once the scene is gone", () => {
+    const lost = vi.fn();
+    const { unmount } = render(<RoomSplatScene room={ROOM} onRendererLost={lost} />);
+    unmount();
+    lost.mockClear();
+
+    recorded.canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true }));
+    expect(lost).not.toHaveBeenCalled();
+  });
+
+  it("passes the touch kill order down to the camera", () => {
+    render(<RoomSplatScene room={ROOM} touchLocomotion="tap-only" />);
+    const camera = recorded.cameras.at(-1);
+    expect(camera?.["touchLocomotion"]).toBe("tap-only");
+  });
+
+  it("keeps the whole touch vocabulary by default", () => {
+    render(<RoomSplatScene room={ROOM} />);
+    const camera = recorded.cameras.at(-1);
+    expect(camera?.["touchLocomotion"]).toBe("full");
   });
 });

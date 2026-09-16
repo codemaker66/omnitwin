@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   classifyDevice,
   getQualitySettings,
+  type DeviceEnvironment,
   type DeviceTier,
   type QualitySettings,
 } from "../lib/device-tier.js";
@@ -19,8 +20,15 @@ export interface DeviceState {
   readonly gpuRenderer: string | null;
   /** Whether detection has been performed. */
   readonly detected: boolean;
-  /** Detect tier from a GPU renderer string. */
-  readonly detect: (rendererString: string) => void;
+  /**
+   * Detect tier from a GPU renderer string.
+   *
+   * Pass the device environment where one can be read: a renderer string
+   * alone cannot tell an iPhone from an M-series Mac (both report
+   * "Apple GPU"), and the tier recorded here is what every later mount reads
+   * instead of probing again.
+   */
+  readonly detect: (rendererString: string, environment?: DeviceEnvironment | null) => void;
   /** Manually override the tier (e.g. from user settings). */
   readonly override: (tier: DeviceTier) => void;
 }
@@ -40,8 +48,8 @@ export const useDeviceStore = create<DeviceState>()((set) => ({
   gpuRenderer: null,
   detected: false,
 
-  detect: (rendererString: string) => {
-    const tier = classifyDevice(rendererString);
+  detect: (rendererString: string, environment?: DeviceEnvironment | null) => {
+    const tier = classifyDevice(rendererString, environment);
     set({
       tier,
       quality: getQualitySettings(tier),
