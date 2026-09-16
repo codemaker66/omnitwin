@@ -4,6 +4,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getLatestRuntimePackage } from "../api/runtime-packages.js";
+import { roomSplatLadder, type RoomSplatLadder } from "../data/room-splat-bundles.js";
 import {
   decideRuntimeAsset,
   plannerRuntimeChipLabel,
@@ -35,6 +36,8 @@ export interface RoomRuntimeSplat {
   readonly splatUrls: readonly string[];
   /** Explicit environment roles from the selected source, not URL names. */
   readonly environmentUrls: readonly string[];
+  /** Only staged bundles have known compatible coarse/fine source levels. */
+  readonly ladder: RoomSplatLadder | null;
   readonly transform: RuntimeAssetViewTransform;
   readonly hasAsset: boolean;
   readonly status: RoomRuntimeSplatStatus;
@@ -94,6 +97,11 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
     allowStagedCapture: true,
   }), [currentPackage, roomSlug]);
   const hasAsset = decision.source !== "none" && decision.splatUrls.length > 0;
+  // Never mix a registered package's coordinate frame or final assets with a
+  // staged coarse room. Registered packages keep their existing direct path.
+  const ladder = useMemo(() => decision.source === "staged" && roomSlug !== null
+    ? roomSplatLadder(roomSlug, import.meta.env.VITE_SPLAT_BASE_URL, false)
+    : null, [roomSlug, decision.source]);
   const transform = useMemo(() => (roomSlug !== null
     ? runtimeAssetViewTransformForRoom(roomSlug, decision.source)
     : IDENTITY_TRANSFORM), [roomSlug, decision.source]);
@@ -104,5 +112,5 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
   }, [runtimeLabel]);
 
   const currentStatus = !canReadRegistry || roomSlug === null ? "none" : packageKey === requestKey ? status : "loading";
-  return { splatUrls: decision.splatUrls, environmentUrls: decision.environmentUrls, transform, hasAsset, status: currentStatus, roomSlug, source: decision.source };
+  return { splatUrls: decision.splatUrls, environmentUrls: decision.environmentUrls, ladder, transform, hasAsset, status: currentStatus, roomSlug, source: decision.source };
 }

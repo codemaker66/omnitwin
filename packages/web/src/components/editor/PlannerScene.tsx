@@ -248,7 +248,7 @@ export function PlannerScene(): ReactElement {
   // Captured interior keeps the procedural shell out of the source image.
   // Explicit Mesh/Hybrid choices and unavailable captures retain the shell.
   const layerMode = useCockpitStore((s) => s.layerMode);
-  const { splatUrls, environmentUrls, transform, hasAsset, status: splatStatus, roomSlug, source: captureSource } = useRoomRuntimeSplat();
+  const { splatUrls, environmentUrls, ladder, transform, hasAsset, status: splatStatus, roomSlug, source: captureSource } = useRoomRuntimeSplat();
 
   // Walk mode — stand in the captured room at eye level. Available only when
   // the mounted capture carries walk data (where the scanner stood and how far
@@ -512,6 +512,7 @@ export function PlannerScene(): ReactElement {
             <group name="live-room-capture" visible={!timelinePreviewActive && !captureFailed}>
               <CockpitSplatLayer
                 urls={splatUrls}
+                ladder={ladder}
                 transform={transform}
                 active={splatActive}
                 onFirstFrame={loadedChunks + failedChunks === totalChunks && loadedChunks > 0 ? enterRoom : undefined}
