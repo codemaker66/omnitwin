@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { HallkeeperSheetV2, SheetApproval } from "@omnitwin/types";
+import type { HallkeeperSheetV2, RequestState, SheetApproval } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Typed in-process event bus
@@ -74,6 +74,33 @@ export interface EventMap {
     readonly actorUserId: string | null;
     readonly at: string;
   };
+  /** A request moved (Ship Friday slice 10): made, answered, or escalated.
+   *  Emitted AFTER the transaction commits; the /ws/diary hub fans it out to
+   *  the venue's connected staff whose role is in the request's OWN audience,
+   *  which was fixed when the request was made. */
+  readonly "request.changed": {
+    readonly venueId: string;
+    readonly kind: "request.created" | "request.updated" | "request.escalated";
+    readonly requestId: string;
+    readonly bookingId: string | null;
+    readonly roomId: string;
+    readonly state: RequestState;
+    /** The request's stored audience — never the caller's current roles. */
+    readonly audienceRoles: readonly string[];
+    readonly actorUserId: string | null;
+    readonly at: string;
+  };
+  /** Something landed in somebody's inbox. Emitted after the notification
+   *  rows commit, so the unread count a client refetches is already true. */
+  readonly "notification.created": {
+    readonly venueId: string;
+    readonly audienceRoles: readonly string[];
+    readonly recipientUserIds: readonly string[];
+    readonly notificationIds: readonly string[];
+    readonly title: string;
+    readonly severity: "info" | "attention" | "urgent";
+    readonly at: string;
+  };
 }
 
 export type EventName = keyof EventMap;
@@ -113,6 +140,12 @@ function setListFor<K extends EventName>(event: K, list: Subscriber<K>[]): void 
       return;
     case "diary.changed":
       registry["diary.changed"] = list as Subscriber<"diary.changed">[];
+      return;
+    case "request.changed":
+      registry["request.changed"] = list as Subscriber<"request.changed">[];
+      return;
+    case "notification.created":
+      registry["notification.created"] = list as Subscriber<"notification.created">[];
       return;
   }
 }
