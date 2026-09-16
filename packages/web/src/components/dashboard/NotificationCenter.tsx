@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck, ExternalLink, RefreshCw } from "lucide-react";
 import type { Notification } from "@omnitwin/types";
-import { listNotifications, markNotificationRead } from "../../api/notifications.js";
+import {
+  getUnreadNotificationCount,
+  listNotifications,
+  markNotificationRead,
+} from "../../api/notifications.js";
+import { subscribeRequestsLive } from "../../lib/requests-live.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 
 type LoadState =
@@ -23,19 +28,19 @@ const triggerStyle: CSSProperties = {
   cursor: "pointer",
   display: "inline-flex",
   gap: 8,
-  fontWeight: 850,
+  fontWeight: 700,
   minHeight: 38,
   padding: "0 12px",
 };
 
 const badgeStyle: CSSProperties = {
   alignItems: "center",
-  background: "#d7b56d",
+  background: "#c98a5b",
   borderRadius: 999,
   color: "#15110c",
   display: "inline-flex",
   fontSize: 11,
-  fontWeight: 900,
+  fontWeight: 700,
   justifyContent: "center",
   minWidth: 22,
   padding: "3px 7px",
@@ -43,7 +48,7 @@ const badgeStyle: CSSProperties = {
 
 const panelStyle: CSSProperties = {
   background: "linear-gradient(180deg, rgba(15,23,24,0.98), rgba(8,10,10,0.98))",
-  border: "1px solid rgba(215,181,109,0.3)",
+  border: "1px solid rgba(201, 138, 91,0.3)",
   borderRadius: 8,
   boxShadow: "0 24px 70px rgba(0,0,0,0.42)",
   color: "var(--house-text-1, #f6f1e8)",
@@ -71,7 +76,7 @@ const iconButtonStyle: CSSProperties = {
 
 function notificationTone(notification: Notification): CSSProperties {
   if (notification.severity === "urgent") return { color: "#ff9b82" };
-  if (notification.severity === "attention") return { color: "#d7b56d" };
+  if (notification.severity === "attention") return { color: "#c98a5b" };
   return { color: "#8fd8d2" };
 }
 
@@ -80,20 +85,31 @@ export function NotificationCenter(): ReactElement {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [busyId, setBusyId] = useState<string | null>(null);
+  // The count is asked for separately from the list: the panel shows the
+  // newest twelve, the nav must be able to say "23".
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const load = (): void => {
+  const load = useCallback((): void => {
     setState({ kind: "loading" });
     void listNotifications("unread", 12)
       .then((notifications) => { setState({ kind: "ready", notifications }); })
       .catch(() => { setState({ kind: "error" }); });
-  };
+    void getUnreadNotificationCount()
+      .then(setUnreadCount)
+      .catch(() => { /* the badge simply does not change */ });
+  }, []);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
+
+  // Something landing in the inbox — a request from the floor included —
+  // updates the number without anybody reloading the page.
+  useEffect(() => subscribeRequestsLive((event) => {
+    if (event.kind === "notification" || event.kind === "reconnected") load();
+  }), [load]);
 
   const notifications = state.kind === "ready" ? state.notifications : [];
-  const unreadCount = notifications.filter((notification) => notification.readAt === null).length;
   const summary = useMemo(() => {
     if (state.kind === "loading") return "Loading notifications";
     if (state.kind === "error") return "Notifications unavailable";
@@ -105,6 +121,7 @@ export function NotificationCenter(): ReactElement {
     setBusyId(notification.id);
     void markNotificationRead(notification.id)
       .then((updated) => {
+        setUnreadCount((current) => Math.max(0, current - 1));
         setState((prev) => prev.kind === "ready"
           ? {
               kind: "ready",
@@ -173,7 +190,7 @@ export function NotificationCenter(): ReactElement {
                 >
                   <div style={{ alignItems: "start", display: "grid", gap: 10, gridTemplateColumns: "minmax(0, 1fr) auto auto" }}>
                     <div>
-                      <p style={{ ...notificationTone(notification), fontSize: 12, fontWeight: 900, margin: "0 0 4px", textTransform: "uppercase" }}>
+                      <p style={{ ...notificationTone(notification), fontSize: 12, fontWeight: 700, margin: "0 0 4px", textTransform: "uppercase" }}>
                         {notification.severity}
                       </p>
                       <h3 style={{ fontSize: 14, margin: 0 }}>{notification.title}</h3>
