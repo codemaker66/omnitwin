@@ -85,7 +85,7 @@ const input: React.CSSProperties = {
 const primaryButton: React.CSSProperties = {
   border: "1px solid rgba(255, 224, 154, 0.52)",
   borderRadius: 6,
-  background: "linear-gradient(135deg, #c98a5b, #f0cf84)",
+  background: "linear-gradient(135deg, #c98a5b, #dca475)",
   color: "#090807",
   minHeight: 40,
   padding: "8px 14px",

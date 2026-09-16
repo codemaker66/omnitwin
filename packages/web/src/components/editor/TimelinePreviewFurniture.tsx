@@ -113,7 +113,7 @@ interface TimelineProxyBatch extends TimelineProxySpec {
 }
 
 function proxyColour(category: string): string {
-  if (category === "table") return "#d5b557";
+  if (category === "table") return "#c98a5b";
   if (category === "chair") return "#a82020";
   if (category === "stage") return "#8d6aa8";
   return "#8e978f";
@@ -801,7 +801,7 @@ function TimelineFurnitureLayerComponent({
     const height = definition.heightM;
     const depth = toRenderSpace(definition.depthM);
     const round = isRoundCollision(definition.collisionType);
-    const colour = definition.category === "table" ? "#d5b557"
+    const colour = definition.category === "table" ? "#c98a5b"
       : definition.category === "chair" ? "#a5b8bc"
         : definition.category === "stage" ? "#b788e4"
           : "#8e978f";

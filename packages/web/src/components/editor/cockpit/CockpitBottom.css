@@ -95,7 +95,7 @@
   gap: 7px;
   color: var(--house-accent-copper, #c98a5b);
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
   line-height: 1;
@@ -139,7 +139,7 @@
   background: transparent;
   color: var(--house-text-2, rgba(244, 239, 230, 0.62));
   cursor: pointer;
-  font: 600 9px/1 "Inter", system-ui, sans-serif;
+  font: 600 11px/1 "Inter", system-ui, sans-serif;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
@@ -182,7 +182,7 @@
   background: color-mix(in srgb, var(--house-status-oxblood, #b25454) 10%, transparent);
   color: var(--house-text-1, #f4efe6);
   cursor: pointer;
-  font: 600 9px/1 "Inter", system-ui, sans-serif;
+  font: 600 11px/1 "Inter", system-ui, sans-serif;
 }
 
 .layout-icon-button:hover:not(:disabled),
@@ -241,7 +241,7 @@
   width: auto;
   padding-inline: 8px;
   color: var(--house-accent-copper, #c98a5b);
-  font: 600 8px/1 "Inter", system-ui, sans-serif;
+  font: 600 11px/1 "Inter", system-ui, sans-serif;
   letter-spacing: 0.035em;
   white-space: nowrap;
 }
@@ -317,7 +317,7 @@
   width: auto;
   padding-inline: 9px;
   color: var(--house-text-2, rgba(244, 239, 230, 0.62));
-  font: 600 8px/1 "Inter", system-ui, sans-serif;
+  font: 600 11px/1 "Inter", system-ui, sans-serif;
   letter-spacing: 0.045em;
   text-transform: uppercase;
   white-space: nowrap;

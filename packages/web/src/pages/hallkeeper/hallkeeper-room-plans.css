@@ -17,7 +17,7 @@
 .hk-room-plans-photo-fallback { display: grid; place-items: center; color: #7b896d; background: #e9eddf; }
 .hk-room-plans-selected { min-width: 0; padding: clamp(18px, 3vw, 34px); }
 .hk-room-plans-room-heading { margin-bottom: 22px; }
-.hk-room-plans-room-heading p { margin: 0 0 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .13em; color: #8c917f; }
+.hk-room-plans-room-heading p { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .13em; color: #8c917f; }
 .hk-room-plans-room-heading h2 { margin: 0; font: 400 29px/1.2 Georgia, serif; color: #36503b; }
 .hk-room-plans-notice { padding: 25px; border: 1px solid #e5e2d7; border-radius: 12px; color: #647058; background: #fffdf7; }
 .hk-room-plans-notice button { min-height: 44px; padding: 8px 17px; border: 1px solid #bac6af; border-radius: 8px; color: #37533e; background: #f5f7ee; cursor: pointer; }

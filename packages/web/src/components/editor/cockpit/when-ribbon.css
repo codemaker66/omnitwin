@@ -161,7 +161,7 @@
   bottom: 5px;
   min-width: 34px;
   border-radius: 6px;
-  background: linear-gradient(180deg, #dca475, #b9924a 55%, #7e4620);
+  background: linear-gradient(180deg, #dca475, #c98a5b 55%, #7e4620);
   border: 1px solid rgba(255, 235, 190, 0.55);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
   color: #241c10;
@@ -254,8 +254,8 @@
 }
 
 .when-ribbon__confirm { color: var(--house-text-1, #f4efe6); }
-.when-ribbon__confirm-warning { color: #d99a2b; }
-.when-ribbon__notice--warning { color: #d99a2b; }
+.when-ribbon__confirm-warning { color: #c98a5b; }
+.when-ribbon__notice--warning { color: #c98a5b; }
 .when-ribbon__notice--error { color: #e06a5a; }
 .when-ribbon__notice--moved { color: rgba(244, 239, 230, 0.75); }
 

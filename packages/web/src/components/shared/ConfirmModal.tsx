@@ -56,7 +56,7 @@ interface ConfirmModalProps {
 }
 
 export function ConfirmModal({
-  title, message, confirmLabel = "Confirm", confirmColor = "#8e3a2c",
+  title, message, confirmLabel = "Confirm", confirmColor = "var(--vv-oxblood)",
   showNoteField = false, inFlight = false, errorMessage = null, onConfirm, onCancel,
 }: ConfirmModalProps): React.ReactElement {
   const [note, setNote] = useState("");
@@ -83,9 +83,9 @@ export function ConfirmModal({
               padding: "10px 12px",
               marginBottom: 12,
               borderRadius: 8,
-              color: "#8e3a2c",
-              background: "#fbf0ec",
-              border: "1px solid rgba(142, 58, 44, 0.38)",
+              color: "var(--vv-oxblood)",
+              background: "var(--vv-oxblood-bg)",
+              border: "1px solid color-mix(in srgb, var(--vv-oxblood) 38%, transparent)",
               fontSize: 13,
             }}
           >

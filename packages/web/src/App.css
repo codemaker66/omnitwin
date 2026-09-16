@@ -166,7 +166,7 @@
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  color: #d7bd68;
+  color: #c98a5b;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 16px;
   font-style: italic;
@@ -197,7 +197,7 @@
   display: block;
   min-width: 0;
   color: rgba(244, 239, 230, 0.54);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
   line-height: 1.18;
@@ -237,12 +237,12 @@
   min-height: 36px;
   max-width: 330px;
   padding: 0 18px;
-  border: 1px solid rgba(215, 167, 75, 0.48);
+  border: 1px solid rgba(201, 138, 91, 0.48);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 18% 0%, rgba(255, 219, 122, 0.16), transparent 52%),
+    radial-gradient(circle at 18% 0%, rgba(220, 164, 117, 0.16), transparent 52%),
     rgba(104, 65, 16, 0.22);
-  color: #f1ce78;
+  color: #dca475;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -261,7 +261,7 @@
 }
 
 .planner-status-header__cell--runtime strong {
-  color: #f4cc79;
+  color: #dca475;
 }
 
 .planner-status-header__cell--summary strong {
@@ -282,7 +282,7 @@
 
 .planner-status-header[data-save-status="unsaved"] .planner-status-header__dot,
 .planner-status-header[data-save-status="saving"] .planner-status-header__dot {
-  background: #d7bd68;
+  background: #c98a5b;
   box-shadow: 0 0 0 4px rgba(201, 138, 91, 0.14);
 }
 
@@ -341,8 +341,8 @@
 
 .planner-command-deck__kicker {
   margin: 0 0 4px;
-  color: #d7bd68;
-  font-size: 10px;
+  color: #c98a5b;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
   line-height: 1;
@@ -386,7 +386,7 @@
   border-radius: 999px;
   background: rgba(255, 246, 222, 0.07);
   color: rgba(247, 240, 228, 0.72);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.055em;
   line-height: 1.1;
@@ -461,16 +461,16 @@
 
 .planner-command-deck__button--primary {
   border-color: rgba(201, 138, 91, 0.72);
-  background: linear-gradient(180deg, rgba(219, 190, 91, 0.95), rgba(177, 142, 43, 0.95));
+  background: linear-gradient(180deg, rgba(220, 164, 117, 0.95), rgba(126, 70, 32, 0.95));
   box-shadow:
-    0 14px 30px rgba(177, 142, 43, 0.22),
+    0 14px 30px rgba(126, 70, 32, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
   color: #16120b;
 }
 
 .planner-command-deck__button--primary:hover:not(:disabled),
 .planner-command-deck__button--primary:focus-visible {
-  background: linear-gradient(180deg, rgba(238, 209, 105, 1), rgba(190, 152, 43, 1));
+  background: linear-gradient(180deg, rgba(220, 164, 117, 1), rgba(201, 138, 91, 1));
   color: #110e08;
 }
 
@@ -689,7 +689,7 @@
 .planner-spatial-hud__row-copy span {
   overflow: hidden;
   color: rgba(246, 239, 227, 0.58);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 680;
   letter-spacing: 0;
   line-height: 1.18;
@@ -749,7 +749,7 @@
 .planner-spatial-hud__subcaption {
   margin-top: 7px;
   color: rgba(201, 138, 91, 0.76);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1;

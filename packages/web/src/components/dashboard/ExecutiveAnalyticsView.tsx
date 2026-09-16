@@ -19,7 +19,7 @@ const cardStyle: React.CSSProperties = {
 
 const metricValueStyle: React.CSSProperties = {
   margin: "8px 0 0",
-  color: "#f1c978",
+  color: "#dca475",
   fontSize: 28,
   lineHeight: 1,
   fontWeight: 700,
@@ -189,7 +189,7 @@ const primaryButtonStyle: React.CSSProperties = {
   minHeight: 40,
   border: "1px solid rgba(255,224,154,0.52)",
   borderRadius: 8,
-  background: "linear-gradient(135deg, #c98a5b, #f0cf84), #c98a5b",
+  background: "linear-gradient(135deg, #c98a5b, #dca475), #c98a5b",
   color: "#0a0b0b",
   padding: "0 14px",
   fontWeight: 700,

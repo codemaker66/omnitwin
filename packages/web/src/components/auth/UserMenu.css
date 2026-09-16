@@ -8,9 +8,9 @@
 .user-menu__sign-in {
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid rgba(219, 166, 75, 0.36);
+  border: 1px solid rgba(201, 138, 91, 0.36);
   border-radius: 8px;
-  color: #f4d17b;
+  color: #dca475;
   background:
     linear-gradient(180deg, rgba(15, 29, 28, 0.94), rgba(5, 11, 11, 0.96)),
     #07100f;

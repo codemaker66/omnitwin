@@ -80,7 +80,7 @@ const MOTE_SIZE = 0.9; // sprite scale for the firefly glow
 
 const MOTE_COLOR = "#d7f0ff";
 const HERITAGE_COLOR = "#c98a5b";
-const PROBE_COLOR = "#c9b06b";
+const PROBE_COLOR = "#c98a5b";
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined"

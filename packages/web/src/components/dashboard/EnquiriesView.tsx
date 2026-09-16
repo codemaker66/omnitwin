@@ -258,7 +258,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
             </button>
             {selected.state === "submitted" && (
               <button type="button" onClick={() => { setTransition({ id: selected.id, status: "under_review" }); }}
-                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#f59e0b", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
+                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#c98a5b", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
                 Start Review
               </button>
             )}
@@ -305,7 +305,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
             title={`${transition.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} Enquiry`}
             message={`Are you sure you want to change status to "${transition.status.replace(/_/g, " ")}"?`}
             confirmLabel={transition.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-            confirmColor={transition.status === "approved" ? "#22c55e" : transition.status === "rejected" ? "#ef4444" : "#f59e0b"}
+            confirmColor={transition.status === "approved" ? "#22c55e" : transition.status === "rejected" ? "#ef4444" : "#c98a5b"}
             showNoteField
             inFlight={transitionSaving}
             onConfirm={(note) => { void handleTransition(note); }}
@@ -339,7 +339,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{e.guestName ?? e.name}</span>
             <StatusBadge status={e.state} />
-            {e.userId === null && <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "#fef3c7", color: "#d97706" }}>Guest</span>}
+            {e.userId === null && <span style={{ fontSize: 11, padding: "1px 5px", borderRadius: 3, background: "#fef3c7", color: "#d97706" }}>Guest</span>}
           </div>
           <div style={{ fontSize: 12, color: "#888" }}>
             {e.guestEmail ?? e.email}

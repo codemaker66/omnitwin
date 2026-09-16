@@ -66,8 +66,8 @@ function describeStatus(
         label: "Awaiting approval",
         detail: `Preview only${version} — the venue hasn't signed off yet.`,
         background: "#fef9e6",
-        borderColor: "#8a6a00",
-        color: "#8a6a00",
+        borderColor: "#7e4620",
+        color: "#7e4620",
         critical: true,
       };
     case "under_review":
@@ -84,8 +84,8 @@ function describeStatus(
         label: "Changes requested",
         detail: "The venue asked the planner for revisions. A new version will replace this draft.",
         background: "#fff4e0",
-        borderColor: "#8c5a00",
-        color: "#8c5a00",
+        borderColor: "#7e4620",
+        color: "#7e4620",
         critical: true,
       };
     case "rejected":

@@ -10,7 +10,7 @@
   --ink-raised: #1b1713;
   --stone: #f2ecdf;
   --stone-dim: #b5aa97;
-  --brass: #d8a64c;
+  --brass: #c98a5b; /* T-615: copper. Name kept — Lane 2 owns this file. */
   --hairline: rgba(242, 236, 223, 0.12);
 
   min-height: 100vh;

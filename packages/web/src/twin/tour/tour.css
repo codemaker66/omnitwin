@@ -286,8 +286,8 @@
 .vv-twin-tour-btn--primary {
   width: 36px;
   height: 36px;
-  background: var(--gold, #c98a5b);
-  border-color: var(--gold, #c98a5b);
+  background: var(--gold, #d7a64b);
+  border-color: var(--gold, #d7a64b);
   color: var(--black-2, #07100f);
 }
 

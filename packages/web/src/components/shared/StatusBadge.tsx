@@ -30,7 +30,7 @@ const STATUS_COLORS: Record<string, StatusTone> = {
   submitted: COPPER,
   under_review: COPPER,
   approved: { bg: "rgba(143, 174, 139, 0.22)", text: "var(--vv-sage-ink)", border: "rgba(85, 112, 90, 0.4)" },
-  rejected: { bg: "#fbf0ec", text: "#8e3a2c", border: "rgba(142, 58, 44, 0.38)" },
+  rejected: { bg: "var(--vv-oxblood-bg)", text: "var(--vv-oxblood)", border: "color-mix(in srgb, var(--vv-oxblood) 38%, transparent)" },
   withdrawn: NEUTRAL,
   archived: NEUTRAL,
 };

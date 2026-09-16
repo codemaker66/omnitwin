@@ -43,7 +43,7 @@
 .client-event-dock__identity > svg { color: #927058; flex: none; }
 .client-event-dock__identity div { min-width: 0; }
 .client-event-dock__identity strong { display: block; font: 400 19px/1.2 Georgia, serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.client-event-dock__identity small { display: block; color: var(--event-muted); font-size: 10px; line-height: 1.5; }
+.client-event-dock__identity small { display: block; color: var(--event-muted); font-size: 11px; line-height: 1.5; }
 .client-event-dock__actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .client-event-dock__actions a { color: var(--event-ink); font-size: 12px; padding: 12px; text-underline-offset: 3px; }
 .client-event-dock__body { min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: #9ba994 var(--event-paper); }

@@ -47,7 +47,7 @@
 }
 .cockpit-truth__head-copy { display: grid; gap: 3px; min-width: 0; }
 .cockpit-truth__eyebrow {
-  color: #d7bd68;
+  color: #dca475;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -140,7 +140,7 @@
   margin: auto 0 0;
   padding-top: 12px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(241, 206, 120, 0.82);
+  color: rgba(220, 164, 117, 0.82);
   font-size: 13.5px;
   font-weight: 650;
   line-height: 1.4;

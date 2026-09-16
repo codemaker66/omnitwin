@@ -83,7 +83,7 @@
 }
 .lh-brand small {
   font-family: var(--lh-sans);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--lh-ink-2);

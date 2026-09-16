@@ -45,7 +45,7 @@ const btnStyle: React.CSSProperties = {
   padding: "8px 16px",
   fontSize: 13,
   fontWeight: 700,
-  background: "linear-gradient(135deg, #c98a5b, #f0cf84)",
+  background: "linear-gradient(135deg, #c98a5b, #dca475)",
   backgroundColor: "#c98a5b",
   color: "#0a0b0b",
   border: "1px solid rgba(255,224,154,0.52)",
@@ -312,13 +312,13 @@ export function LoadoutsView(): React.ReactElement {
               </div>
             )}
             <div style={{ marginBottom: 12 }}>
-              <label htmlFor="loadout-create-name" style={{ fontSize: 12, fontWeight: 700, color: "#f1c978", display: "block", marginBottom: 4 }}>Name *</label>
+              <label htmlFor="loadout-create-name" style={{ fontSize: 12, fontWeight: 700, color: "#dca475", display: "block", marginBottom: 4 }}>Name *</label>
               <input id="loadout-create-name" type="text" value={createName} onChange={(e) => { setCreateName(e.target.value); }}
                 style={fieldStyle}
                 placeholder="e.g. Masonic Lodge Setup" />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label htmlFor="loadout-create-description" style={{ fontSize: 12, fontWeight: 700, color: "#f1c978", display: "block", marginBottom: 4 }}>Description</label>
+              <label htmlFor="loadout-create-description" style={{ fontSize: 12, fontWeight: 700, color: "#dca475", display: "block", marginBottom: 4 }}>Description</label>
               <textarea id="loadout-create-description" value={createDesc} onChange={(e) => { setCreateDesc(e.target.value); }}
                 style={{ ...fieldStyle, minHeight: 70, resize: "vertical" }}
                 placeholder="Full ceremonial layout with altar table…" />

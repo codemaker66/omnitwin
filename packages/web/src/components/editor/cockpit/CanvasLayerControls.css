@@ -39,7 +39,7 @@
 .cockpit-layer-btn:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .cockpit-layer-btn.is-active {
   color: #14110b;
-  background: linear-gradient(145deg, #e0c66c 0%, #c98a5b 44%, #9d7a23 100%);
+  background: linear-gradient(145deg, #dca475 0%, #c98a5b 44%, #7e4620 100%);
   border-color: rgba(255, 239, 177, 0.6);
   box-shadow: 0 6px 16px rgba(201, 138, 91, 0.24);
 }

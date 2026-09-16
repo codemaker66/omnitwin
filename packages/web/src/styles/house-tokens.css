@@ -43,6 +43,15 @@
   --vv-sage-ink: #4A6650;     /* sage as text on ivory (5.4:1)             */
   --vv-rule: #BFC4B2;         /* the hairline on ivory                     */
 
+  /* Refusal on ivory. Deliberately NOT --house-status-oxblood: that value
+   * (#B25454) is tuned for the graphite chrome and measures 4.17:1 on
+   * --vv-ivory, so pointing the light surfaces at it would trade a hardcoded
+   * hue for a failing one. This is the register's own pair, audited on ivory
+   * like every other ink. A refusal keeps a hue of its own on purpose —
+   * "delete" must never read as merely quiet. */
+  --vv-oxblood: #8E3A2C;      /* error text and edge on ivory (6.4:1)      */
+  --vv-oxblood-bg: #FBF0EC;   /* its wash                                  */
+
   /* -- Surfaces (02 §3 BOH) — the viewport ground and the chrome on it ----- */
   --house-bg-0: #0B0A09;            /* canvas behind the scene, Focus mode   */
   --house-bg-1: #131110;            /* panels (blur + scene tint live in 03) */

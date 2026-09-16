@@ -91,7 +91,7 @@
     font-size: 11px;
   }
 
-  .phase-layout-freeze-action__status { font-size: 10px; }
+  .phase-layout-freeze-action__status { font-size: 11px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -10,7 +10,7 @@ export function isClerkGoogleSignInEnabled(): boolean {
 
 export const VENVIEWER_CLERK_APPEARANCE = {
   variables: {
-    colorPrimary: "#dba64b",
+    colorPrimary: "#c98a5b",
     colorBackground: "#08100f",
     colorDanger: "#ff6f59",
     borderRadius: "8px",
@@ -19,7 +19,7 @@ export const VENVIEWER_CLERK_APPEARANCE = {
   elements: {
     card: {
       width: "100%",
-      border: "1px solid rgba(219, 166, 75, 0.28)",
+      border: "1px solid rgba(201, 138, 91, 0.28)",
       background: "linear-gradient(180deg, rgba(13, 25, 24, 0.98), rgba(4, 9, 9, 0.98))",
       boxShadow: "none",
     },
@@ -42,7 +42,7 @@ export const VENVIEWER_CLERK_APPEARANCE = {
     },
     formButtonPrimary: {
       minHeight: "44px",
-      background: "linear-gradient(135deg, #e5c66b, #bd8430)",
+      background: "linear-gradient(135deg, #dca475, #bd8430)",
       color: "#120e08",
       fontWeight: "700",
       boxShadow: "0 12px 28px rgba(189, 132, 48, 0.22)",
@@ -52,7 +52,7 @@ export const VENVIEWER_CLERK_APPEARANCE = {
       color: "rgba(246, 239, 224, 0.72)",
     },
     footerActionLink: {
-      color: "#f4d17b",
+      color: "#dca475",
       fontWeight: "700",
     },
     dividerText: {

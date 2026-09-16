@@ -76,7 +76,7 @@
 .onboarding-member-actions { display: grid; justify-items: end; flex: 0 0 auto; }
 .onboarding-status { display: inline-block; padding: 4px 7px; border: 1px solid transparent; border-radius: 3px; font-size: .65rem; line-height: 1.3; font-weight: 600; }
 .onboarding-status--active { background: #e1ead6; color: #2a5734; border-color: #afc0a0; }
-.onboarding-status--pending { background: #f2e8d0; color: #735328; border-color: #d6c497; }
+.onboarding-status--pending { background: #f2e8d0; color: #735328; border-color: #dca475; }
 .onboarding-status--expired { background: #f6e0d5; color: #863e26; border-color: #d5ad98; }
 .onboarding-status--muted { background: #e9e8df; color: #626554; border-color: #c9cbbd; }
 .onboarding-grant { display: grid; align-content: start; gap: 20px; background: #eef0e2; border: 1px solid #d5dbc8; padding: 24px; }

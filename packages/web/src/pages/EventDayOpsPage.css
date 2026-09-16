@@ -72,8 +72,8 @@
 }
 
 .event-day-sync span[data-pending="true"] {
-  border-color: rgba(232, 184, 95, 0.55);
-  color: #f2cf83;
+  border-color: rgba(220, 164, 117, 0.55);
+  color: #dca475;
 }
 
 .event-day-icon-button,
@@ -108,7 +108,7 @@
 }
 
 .event-day-button.primary {
-  background: #e8b85f;
+  background: #dca475;
   color: #1d1710;
 }
 
@@ -194,7 +194,7 @@
 
 .event-day-phases strong {
   align-self: end;
-  color: #f2cf83;
+  color: #dca475;
 }
 
 .event-day-progress {
@@ -205,7 +205,7 @@
 }
 
 .event-day-progress span {
-  background: linear-gradient(90deg, #8fd8d2, #e8b85f);
+  background: linear-gradient(90deg, #8fd8d2, #dca475);
   display: block;
   height: 100%;
 }
@@ -249,7 +249,7 @@
 }
 
 .event-day-change-feed article[data-risk="attention"] {
-  border-color: rgba(232, 184, 95, 0.45);
+  border-color: rgba(220, 164, 117, 0.45);
 }
 
 .event-day-change-feed article[data-risk="blocker"] {
@@ -270,7 +270,7 @@
 }
 
 .event-day-change-feed span {
-  color: #f2cf83;
+  color: #dca475;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -362,7 +362,7 @@
 }
 
 .event-day-change-grid p {
-  color: #f2cf83;
+  color: #dca475;
   font-size: 1.8rem;
   font-weight: 700;
   margin: 6px 0 0;

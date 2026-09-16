@@ -158,7 +158,7 @@
   background: transparent;
   color: rgba(255, 255, 255, 0.66);
   cursor: pointer;
-  font: 700 9px/1 "Inter", system-ui, sans-serif;
+  font: 700 11px/1 "Inter", system-ui, sans-serif;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   transition: background 160ms ease, color 160ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -167,7 +167,7 @@
 .cockpit-rail__button:active { transform: scale(0.97); }
 .cockpit-rail__button.is-active {
   color: #0e0e0e;
-  background: linear-gradient(145deg, #e0c66c 0%, var(--cockpit-amber) 44%, #9d7a23 100%);
+  background: linear-gradient(145deg, #dca475 0%, var(--cockpit-amber) 44%, #7e4620 100%);
   border-color: rgba(255, 239, 177, 0.62);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 3px 12px rgba(201, 138, 91, 0.35);
 }
@@ -240,7 +240,7 @@
   border-radius: 7px;
   background: var(--house-bg-1);
   color: var(--house-text-2);
-  font: 600 10px/1.2 "Inter", system-ui, sans-serif;
+  font: 600 11px/1.2 "Inter", system-ui, sans-serif;
   letter-spacing: 0.045em;
   pointer-events: none;
 }

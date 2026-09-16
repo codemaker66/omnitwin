@@ -42,7 +42,7 @@ const STATUS_VISUALS: Readonly<Record<ConfigurationReviewStatus, {
   readonly color: string;
 }>> = {
   draft:             { label: "Draft",              background: "rgba(246, 241, 232, 0.09)", color: "rgba(246, 241, 232, 0.72)" },
-  submitted:         { label: "Submitted",          background: "rgba(201, 138, 91, 0.14)", color: "#f1c978" },
+  submitted:         { label: "Submitted",          background: "rgba(201, 138, 91, 0.14)", color: "#dca475" },
   under_review:      { label: "Under Review",       background: "rgba(104, 216, 210, 0.13)", color: "#68d8d2" },
   approved:          { label: "Approved",           background: "rgba(143, 209, 158, 0.13)", color: "#9ff2cb" },
   rejected:          { label: "Rejected",           background: "rgba(255, 91, 71, 0.13)", color: "#ffb59a" },
@@ -60,7 +60,7 @@ const cardStyle: React.CSSProperties = {
 
 const buttonPrimary: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "linear-gradient(135deg, #c98a5b, #f0cf84)", backgroundColor: "#c98a5b", color: "#0b0d0d", border: "1px solid rgba(255,224,154,0.52)", borderRadius: 8, cursor: "pointer",
+  background: "linear-gradient(135deg, #c98a5b, #dca475)", backgroundColor: "#c98a5b", color: "#0b0d0d", border: "1px solid rgba(255,224,154,0.52)", borderRadius: 8, cursor: "pointer",
 };
 
 const buttonSecondary: React.CSSProperties = {
@@ -477,7 +477,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         </div>
 
         <div style={{ borderTop: "1px solid rgba(201, 138, 91,0.16)", paddingTop: 16, marginBottom: 16 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Actions</h3>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#dca475", margin: "0 0 8px" }}>Actions</h3>
           {inFlight && modal === null && <ActivityStatus>Recording the review decision…</ActivityStatus>}
           {contextState.status === "loading" && (
             <div role="status" aria-live="polite" style={{ ...alertStyle, color: "rgba(246,241,232,0.72)" }}>
@@ -542,7 +542,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
         {contextState.status === "ready" && history.length > 0 && (
           <div style={{ borderTop: "1px solid rgba(201, 138, 91,0.16)", paddingTop: 16 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Timeline</h3>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#dca475", margin: "0 0 8px" }}>Timeline</h3>
             {history.map((h) => (
               <div key={h.id} style={{
                 fontSize: 12, color: "rgba(246,241,232,0.66)", padding: "6px 0",

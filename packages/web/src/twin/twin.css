@@ -34,6 +34,11 @@
 
   background: var(--black);
   color: var(--ink);
+  /* T-615: global.css moved :root from `light dark` to `light`, and its comment
+     claimed this surface declared its own. It did not — the twin's UA
+     scrollbars and controls would have come up light on a black hall. One
+     line, and the comment in global.css is now true. */
+  color-scheme: dark;
   font-family: var(--ui);
   -webkit-font-smoothing: antialiased;
   font-size: 16px;
@@ -967,7 +972,7 @@
   .vv-twin [tabindex]:not([tabindex="-1"]):focus-visible,
   .vv-twin .vv-twin-mode-option--active[tabindex]:focus-visible {
     outline: 3px solid Highlight;
-    outline-offset: var(--vv-focus-ring-offset);
+    outline-offset: 2px;
     box-shadow: none;
   }
 

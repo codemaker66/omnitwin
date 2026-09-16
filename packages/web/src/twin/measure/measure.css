@@ -80,7 +80,7 @@
 
 .vv-twin-measure-trigger:hover {
   color: var(--gold-2, #f0c66b);
-  border-color: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
 }
 
 .vv-twin-measure-trigger:active {
@@ -128,7 +128,7 @@
 }
 
 .vv-twin-measure-line {
-  stroke: var(--gold, #c98a5b);
+  stroke: var(--gold, #d7a64b);
   stroke-width: 1.5;
   stroke-linecap: round;
 }
@@ -242,7 +242,7 @@
   align-items: center;
   max-width: 100%;
   padding: 7px 13px;
-  border: 1px solid var(--gold, #c98a5b);
+  border: 1px solid var(--gold, #d7a64b);
   border-radius: 999px;
   background: rgba(215, 166, 75, 0.14);
   color: var(--gold-2, #f0c66b);
@@ -267,7 +267,7 @@
 }
 
 .vv-twin-measure-button--quiet:hover {
-  border-color: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
   background: transparent;
   color: var(--gold-2, #f0c66b);
 }

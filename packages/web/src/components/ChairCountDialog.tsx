@@ -98,7 +98,7 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
     }
     .omni-v2-stepper-btn:hover:not(:disabled) {
       background: rgba(201, 138, 91,0.12) !important;
-      color: #e8c95a !important;
+      color: #dca475 !important;
     }
     .omni-v2-stepper-btn:active:not(:disabled) {
       background: rgba(201, 138, 91,0.22) !important;

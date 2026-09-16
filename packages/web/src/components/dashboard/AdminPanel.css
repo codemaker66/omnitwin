@@ -8,7 +8,7 @@
 .admin-panel-section,
 .admin-panel-state,
 .admin-panel-modal {
-  border: 1px solid rgba(201, 169, 106, 0.26);
+  border: 1px solid rgba(201, 138, 91, 0.26);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)),
     rgba(9, 14, 16, 0.94);
@@ -69,7 +69,7 @@
   justify-content: center;
   gap: 8px;
   border-radius: 8px;
-  border: 1px solid rgba(201, 169, 106, 0.34);
+  border: 1px solid rgba(201, 138, 91, 0.34);
   padding: 9px 14px;
   font-size: 0.86rem;
   font-weight: 700;
@@ -99,18 +99,18 @@
 }
 
 .admin-panel-button--primary {
-  border-color: rgba(201, 169, 106, 0.62);
+  border-color: rgba(201, 138, 91, 0.62);
   color: #14100a;
-  background-color: #d5a550;
-  background-image: linear-gradient(135deg, #f1c978, #b98a35);
-  box-shadow: 0 10px 28px rgba(201, 169, 106, 0.16);
+  background-color: #c98a5b;
+  background-image: linear-gradient(135deg, #dca475, #c98a5b);
+  box-shadow: 0 10px 28px rgba(201, 138, 91, 0.16);
 }
 
 .admin-panel-button--primary:hover:not(:disabled) {
   border-color: rgba(255, 224, 154, 0.82);
   color: #14100a;
-  background-color: #d5a550;
-  background-image: linear-gradient(135deg, #f8d88a, #c7943e);
+  background-color: #c98a5b;
+  background-image: linear-gradient(135deg, #dca475, #c98a5b);
 }
 
 .admin-panel-button--primary:disabled {
@@ -149,7 +149,7 @@
 }
 
 .admin-panel-link:hover {
-  color: #f1c978;
+  color: #dca475;
 }
 
 .admin-panel-metrics,
@@ -176,7 +176,7 @@
 
 .admin-panel-metrics span {
   display: block;
-  color: #f1c978;
+  color: #dca475;
   font-size: 1.15rem;
   font-weight: 700;
   overflow-wrap: anywhere;
@@ -370,7 +370,7 @@
   padding: 22px;
   background:
     radial-gradient(circle at 50% 38%, rgba(104, 216, 210, 0.08), transparent 34%),
-    radial-gradient(circle at 78% 16%, rgba(201, 169, 106, 0.1), transparent 28%),
+    radial-gradient(circle at 78% 16%, rgba(201, 138, 91, 0.1), transparent 28%),
     rgba(0, 0, 0, 0.82);
   contain: paint;
 }
@@ -433,7 +433,7 @@
 .admin-panel-field input,
 .admin-panel-field select {
   min-height: 44px;
-  border: 1px solid rgba(201, 169, 106, 0.32);
+  border: 1px solid rgba(201, 138, 91, 0.32);
   border-radius: 8px;
   padding: 0 12px;
   color: #f4efe4;

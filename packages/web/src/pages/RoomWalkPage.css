@@ -5,7 +5,7 @@
   --ink: #14100c;
   --stone: #f2ecdf;
   --stone-dim: #b5aa97;
-  --brass: #d8a64c;
+  --brass: #c98a5b; /* T-615: copper. Name kept — Lane 3 owns this file. */
 
   position: relative;
   min-height: 100vh;

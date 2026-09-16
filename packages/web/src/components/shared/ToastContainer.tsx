@@ -19,7 +19,7 @@ interface ToastTone {
 const INFO_COLORS: ToastTone = { bg: "var(--vv-ivory-3)", border: "var(--vv-copper)" };
 const TOAST_COLORS: Record<string, ToastTone> = {
   success: { bg: "var(--vv-ivory-3)", border: "var(--vv-sage-ink)" },
-  error: { bg: "#fbf0ec", border: "#8e3a2c" },
+  error: { bg: "var(--vv-oxblood-bg)", border: "var(--vv-oxblood)" },
   info: INFO_COLORS,
 };
 

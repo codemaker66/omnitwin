@@ -9,7 +9,7 @@
   max-height: calc(100% - 16px);
   contain: layout paint style;
   color: #f5ead7;
-  border: 1px solid rgba(231, 202, 139, 0.24);
+  border: 1px solid rgba(220, 164, 117, 0.24);
   border-radius: 8px;
   background:
     linear-gradient(180deg, rgba(17, 19, 20, 0.96), rgba(8, 10, 12, 0.92)),
@@ -95,8 +95,8 @@
 .vv-floating-widget__handle:focus-visible,
 .vv-floating-widget__icon-button:hover,
 .vv-floating-widget__icon-button:focus-visible {
-  color: #f4d37d;
-  background: rgba(215, 170, 73, 0.13);
+  color: #dca475;
+  background: rgba(201, 138, 91, 0.13);
   outline: var(--vv-focus-ring);
   outline-offset: var(--vv-focus-ring-offset);
 }
@@ -114,7 +114,7 @@
   min-height: 0;
   padding: 8px;
   overflow: auto;
-  scrollbar-color: rgba(215, 170, 73, 0.46) rgba(255, 255, 255, 0.06);
+  scrollbar-color: rgba(201, 138, 91, 0.46) rgba(255, 255, 255, 0.06);
   scrollbar-width: thin;
 }
 

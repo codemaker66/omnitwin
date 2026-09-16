@@ -58,7 +58,7 @@ function gradeBandColor(band: LayoutBand): string {
   switch (band) {
     case "S": return "#2bb673";
     case "A": return "#7bbf59";
-    case "B": return "#dcc64d";
+    case "B": return "#c98a5b";
     case "C": return "#d98324";
     case "D": return "#c0473a";
   }
@@ -290,7 +290,7 @@ export function PlannerSpatialHud(): React.ReactElement {
           <div className="planner-spatial-hud__title">Spaces</div>
           <div className="planner-spatial-hud__list">
             <HudRow color="#f08a21" label="Dining rounds" detail={plural(stats.roundTables, "round table")} />
-            <HudRow color="#dcc64d" label="Banquet row" detail={plural(stats.banquetTables, "trestle")} />
+            <HudRow color="#c98a5b" label="Banquet row" detail={plural(stats.banquetTables, "trestle")} />
             <HudRow color="#32b77a" label="Seating" detail={plural(stats.chairs, "chair")} />
             <HudRow
               color="#be8fc1"

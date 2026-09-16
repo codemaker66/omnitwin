@@ -133,7 +133,7 @@
   position: absolute;
   inset: -6px;
   border-radius: 999px;
-  border: 1px solid var(--gold, #c98a5b);
+  border: 1px solid var(--gold, #d7a64b);
   opacity: 0.34;
   pointer-events: none;
   animation: vv-twin-tag-breathe 4s ease-in-out infinite;
@@ -149,7 +149,7 @@
   /* Grows from whatever distance-scale it is already at, rather than jumping to
    * a fixed size — a pin across the room must not become a near pin on hover. */
   transform: scale(calc(var(--vv-tag-scale, 1) * 1.12));
-  border-color: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
   background: rgba(215, 166, 75, 0.2);
 }
 
@@ -158,8 +158,8 @@
  * connector would be free to cross the very chrome this layer is careful not to
  * touch. The filled pin carries the association instead. */
 .vv-twin-tag-pin--open .vv-twin-tag-disc {
-  border-color: var(--gold, #c98a5b);
-  background: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
+  background: var(--gold, #d7a64b);
   color: var(--black-2, #07100f);
 }
 
@@ -255,7 +255,7 @@
 }
 
 .vv-twin-tag-close:hover {
-  border-color: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
   color: var(--gold-2, #f0c66b);
 }
 
@@ -321,7 +321,7 @@
   gap: 7px;
   max-width: 100%;
   padding: 7px 13px;
-  border: 1px solid var(--gold, #c98a5b);
+  border: 1px solid var(--gold, #d7a64b);
   border-radius: 999px;
   background: rgba(215, 166, 75, 0.14);
   color: var(--gold-2, #f0c66b);

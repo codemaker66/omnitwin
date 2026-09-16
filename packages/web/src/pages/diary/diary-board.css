@@ -51,7 +51,7 @@
 .diary-legend { display: flex; flex-wrap: wrap; gap: 9px 18px; list-style: none; padding: 0; margin: 17px 0 0; color: #647267; font-size: 11px; }
 .diary-legend-item { display: flex; gap: 6px; align-items: center; }
 .diary-legend-item::before { content: ''; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #aabda5; background: #cbd9c3; }
-.diary-legend-item.is-hold::before { background: #f3e7bb; border-color: #d9c786; }
+.diary-legend-item.is-hold::before { background: #f3e7bb; border-color: #dca475; }
 .diary-legend-item.is-prospect::before { background: #fbfcf8; border-style: dashed; }
 .diary-legend-item.is-internal_block::before { background: #d7e2de; }
 .diary-legend-item.is-phase::before { background: #f6f6ef; border-style: dotted; }
@@ -86,7 +86,7 @@
 .diary-overview-booking:hover { border-color: #6c8d65; box-shadow: 0 3px 8px #24452a18; }
 .diary-overview-booking strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13px; line-height: 1.35; font-weight: 650; }
 .diary-overview-booking time { display: block; font-size: 12px; line-height: 1.35; font-variant-numeric: tabular-nums; }
-.diary-overview-booking.is-hold { background: #f5e9bf; border-color: #e0cf90; color: #614d28; }
+.diary-overview-booking.is-hold { background: #f5e9bf; border-color: #dca475; color: #7e4620; }
 .diary-overview-booking.is-prospect { background: #f6f8f0; border-color: #b7c7ac; border-style: dashed; }
 .diary-overview-booking.is-internal_block { background: #e0e9e4; border-color: #b9cdc1; }
 .diary-overview-booking.is-exited { background: #f3f2ec; border-color: #e0dfd5; color: #758071; }
@@ -148,12 +148,12 @@
 .diary-lane-col.is-weekend, .diary-axis-day.is-weekend { background: #f6f8f0; }
 .diary-block { position: absolute; border: 0; background: transparent; padding: 0; text-align: left; color: #2e4c37; touch-action: none; border-radius: 7px; z-index: 2; }
 .diary-block-card { display: flex; flex-direction: column; gap: 5px; height: 100%; overflow: hidden; padding: 9px; background: #d8e4cc; border: 1px solid #b5caa5; border-radius: 7px; }
-.diary-block.is-hold .diary-block-card { background: #f5e8b9; border-color: #dfcc8b; color: #6a542e; }
+.diary-block.is-hold .diary-block-card { background: #f5e8b9; border-color: #dca475; color: #6a542e; }
 .diary-block.is-prospect .diary-block-card { background: #f6f8ef; border-style: dashed; }
 .diary-block.is-internal_block .diary-block-card { background: #dce7e0; border-color: #b6cabe; }
 .diary-block.is-exited .diary-block-card { background: #f0f0e8; color: #829078; border-color: #dce0d3; }
 .diary-block.has-conflict-blocking .diary-block-card { background: #f8dfd4; border-color: #d78e79; }
-.diary-block.has-conflict-warning .diary-block-card { border-color: #c69d57; }
+.diary-block.has-conflict-warning .diary-block-card { border-color: #c98a5b; }
 .diary-block:hover .diary-block-card { border-color: #628454; }
 .diary-block-main { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
 .diary-block-title { font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }

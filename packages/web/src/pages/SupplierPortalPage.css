@@ -4,14 +4,14 @@
   --supplier-panel-soft: #191c22;
   --supplier-cream: #f3eee4;
   --supplier-muted: #b7b0a4;
-  --supplier-gold: #c9a96a;
+  --supplier-gold: #c98a5b;
   --supplier-teal: #68d8d2;
   --supplier-amber: #d69b52;
-  --supplier-border: rgba(201, 169, 106, 0.24);
-  --supplier-border-strong: rgba(201, 169, 106, 0.42);
+  --supplier-border: rgba(201, 138, 91, 0.24);
+  --supplier-border-strong: rgba(201, 138, 91, 0.42);
   min-height: 100vh;
   background:
-    radial-gradient(circle at 12% 0%, rgba(201, 169, 106, 0.09), transparent 34%),
+    radial-gradient(circle at 12% 0%, rgba(201, 138, 91, 0.09), transparent 34%),
     linear-gradient(145deg, #15171c 0%, #191b20 52%, #111318 100%);
   color: var(--supplier-cream);
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

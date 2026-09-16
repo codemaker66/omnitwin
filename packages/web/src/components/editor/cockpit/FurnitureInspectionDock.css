@@ -32,7 +32,7 @@
 
 .furniture-inspection__eyebrow,
 .furniture-inspection__card-label {
-  color: var(--house-accent-copper, #d7bd68);
+  color: var(--house-accent-copper, #dca475);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -95,14 +95,14 @@
 
 .furniture-inspection__primary {
   border: 1px solid rgba(255, 239, 177, 0.55);
-  background: linear-gradient(145deg, #e0c66c, var(--house-accent-copper, #aa842d));
+  background: linear-gradient(145deg, #dca475, var(--house-accent-copper, #c98a5b));
   color: var(--house-bg-0, #14110b);
 }
 
 .furniture-inspection__secondary {
   border: 1px solid rgba(201, 138, 91, 0.35);
   background: rgba(201, 138, 91, 0.1);
-  color: var(--house-accent-copper, #f1d888);
+  color: var(--house-accent-copper, #dca475);
 }
 
 .furniture-inspection__quiet {
@@ -134,7 +134,7 @@
 }
 
 .furniture-inspection__control-label output {
-  color: var(--house-accent-copper, #e0c66c);
+  color: var(--house-accent-copper, #dca475);
   font-variant-numeric: tabular-nums;
 }
 

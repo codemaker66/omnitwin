@@ -87,7 +87,7 @@ const layoutStyle: React.CSSProperties = {
 
 const saveStyle: React.CSSProperties = {
   color: "rgba(36,25,19,0.66)",
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: 650,
   lineHeight: 1.1,
   whiteSpace: "nowrap",

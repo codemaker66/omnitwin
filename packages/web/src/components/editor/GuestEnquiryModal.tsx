@@ -297,7 +297,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             style={{
               width: "100%", padding: "13px 20px", fontSize: 14, fontWeight: 600,
               fontFamily: "'Inter', system-ui, sans-serif",
-              background: `linear-gradient(135deg, ${GOLD}, #a8893e)`,
+              background: `linear-gradient(135deg, ${GOLD}, #c98a5b)`,
               border: "none", borderRadius: 12, cursor: "pointer",
               color: CHARCOAL, letterSpacing: 0.3,
               boxShadow: `0 4px 20px rgba(201, 138, 91,0.25)`,
@@ -417,11 +417,11 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               placeholder="you@example.com"
               required
               autoComplete="email"
-              style={showEmailHint ? { borderColor: "rgba(251,191,36,0.4)" } : undefined}
+              style={showEmailHint ? { borderColor: "rgba(201,138,91,0.4)" } : undefined}
             />
             {showEmailHint && (
               <div style={{
-                fontSize: 12, color: "#fbbf24", marginTop: 5, lineHeight: 1.3,
+                fontSize: 12, color: "#c98a5b", marginTop: 5, lineHeight: 1.3,
                 transition: "opacity 0.2s",
               }}>
                 Almost — just needs a valid email address
@@ -575,7 +575,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               fontFamily: "'Inter', system-ui, sans-serif",
               background: isSubmitting
                 ? "rgba(201, 138, 91,0.5)"
-                : `linear-gradient(135deg, ${GOLD}, #a8893e)`,
+                : `linear-gradient(135deg, ${GOLD}, #c98a5b)`,
               border: "none", borderRadius: 12, cursor: isSubmitting ? "wait" : "pointer",
               color: CHARCOAL, letterSpacing: 0.3,
               boxShadow: `0 4px 24px rgba(201, 138, 91,0.25)`,

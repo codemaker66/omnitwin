@@ -359,7 +359,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
               ? "radial-gradient(circle at 45% 35%, rgba(255,237,176,0.34), rgba(201, 138, 91,0.18) 55%, rgba(201, 138, 91,0.12))"
               : "rgba(201, 138, 91,0.12)",
             border: cameraControlsVisible
-              ? "1px solid rgba(222,190,88,0.78)"
+              ? "1px solid rgba(201,138,91,0.78)"
               : "1px solid rgba(201, 138, 91,0.25)",
             display: "grid",
             placeItems: "center",
@@ -400,7 +400,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
           <div style={{ minWidth: 0, flex: 1, ...nonSelectableChromeStyle }}>
             <div
               data-testid="camera-reference-eyebrow"
-              style={{ color: GOLD, fontSize: 10, fontWeight: 700, letterSpacing: 1.8, textTransform: "uppercase", ...nonSelectableChromeStyle }}
+              style={{ color: GOLD, fontSize: 11, fontWeight: 700, letterSpacing: 1.8, textTransform: "uppercase", ...nonSelectableChromeStyle }}
             >
               {labelEyebrow(activeDraft.source, furnitureCategory)}
             </div>
@@ -440,7 +440,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
       </div>
 
       <label style={{ display: "block", marginTop: 14 }}>
-        <span style={{ display: "block", fontSize: 10, fontWeight: 700, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 7, ...nonSelectableChromeStyle }}>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 7, ...nonSelectableChromeStyle }}>
           Name
         </span>
         <input
@@ -470,7 +470,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
       {cameraControlsVisible && (
         <div style={{ marginTop: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", ...nonSelectableChromeStyle }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", ...nonSelectableChromeStyle }}>
               Eye height
             </span>
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.52)", ...nonSelectableChromeStyle }}>
@@ -531,7 +531,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
           marginTop: 14,
           borderRadius: 12,
           border: "1px solid rgba(201, 138, 91,0.35)",
-          background: "linear-gradient(145deg, #d3b35f, #ad8b2b)",
+          background: "linear-gradient(145deg, #c98a5b, #c98a5b)",
           color: "#111",
           fontWeight: 700,
           fontSize: 14,
@@ -595,7 +595,7 @@ export function CameraReferenceHeightSwitch(): React.ReactElement | null {
       }}
     >
       <div style={{ padding: "0 6px", minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1.5, color: GOLD, textTransform: "uppercase", ...nonSelectableChromeStyle }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: GOLD, textTransform: "uppercase", ...nonSelectableChromeStyle }}>
           POV height
         </div>
         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...nonSelectableChromeStyle }}>

@@ -892,7 +892,7 @@ function Chrome({ scene, savedLabel, dirty, saving = false }: { scene: Blueprint
     <div className="bp-chrome" style={chrome}>
       <div style={{ display: "flex", gap: 6 }}>
         <Dot color="#e0574f" />
-        <Dot color="#e0b140" />
+        <Dot color="#c98a5b" />
         <Dot color="#66b559" />
       </div>
       <div className="bp-chrome-title" style={{ flex: 1, textAlign: "center", color: INK, fontSize: 13, letterSpacing: 0.3 }}>
@@ -2564,7 +2564,7 @@ const layerDropIndicatorStyle: CSSProperties = {
 
 const layerGripStyle: CSSProperties = {
   color: INK_FAINT,
-  fontSize: 10,
+  fontSize: 11,
   letterSpacing: -1,
   cursor: "grab",
   userSelect: "none",

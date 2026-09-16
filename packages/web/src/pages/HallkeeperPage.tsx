@@ -593,7 +593,7 @@ function AccessibilityCallouts(
           }}
         >
           <div style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+            fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
             textTransform: "uppercase",
             color: SEVERITY_PALETTE.critical.border,
             marginBottom: 6,
@@ -621,7 +621,7 @@ function AccessibilityCallouts(
           }}
         >
           <div style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+            fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
             textTransform: "uppercase", color: TEXT_SEC, marginBottom: 6,
           }}>
             Accessibility
@@ -678,7 +678,7 @@ function DietarySummaryBlock(
       }}
     >
       <div style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+        fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
         textTransform: "uppercase", color: TEXT_SEC, marginBottom: 6,
       }}>
         Dietary — <span style={{ color: GOLD }}>{String(total)}</span> special meals
@@ -741,7 +741,7 @@ function DoorScheduleBlock(
       }}
     >
       <div style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: 0.4,
+        fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
         textTransform: "uppercase", color: TEXT_SEC, marginBottom: 8,
       }}>
         Door schedule
@@ -783,7 +783,7 @@ function DoorScheduleBlock(
                     <span style={{ color: INK, fontVariantNumeric: "tabular-nums" }}>
                       {fmtTime(ev.at)}
                     </span>
-                    <span style={{ textTransform: "uppercase", letterSpacing: 0.3, fontSize: 10, fontWeight: 700, color: ev.kind === "open" ? GREEN : TEXT_MUT }}>
+                    <span style={{ textTransform: "uppercase", letterSpacing: 0.3, fontSize: 11, fontWeight: 700, color: ev.kind === "open" ? GREEN : TEXT_MUT }}>
                       {ev.kind}
                     </span>
                     <span>{ev.note}</span>
@@ -909,9 +909,9 @@ function OfflinePendingBadge({ count }: { count: number }): React.ReactElement {
         padding: "8px 14px",
         marginBottom: 10,
         background: "#fff4e0",
-        border: "1px solid #eec98f",
+        border: "1px solid #dca475",
         borderRadius: 8,
-        color: "#8c5a00",
+        color: "#7e4620",
         fontWeight: 500,
         fontSize: 13,
       }}

@@ -73,7 +73,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 const buttonPrimary: React.CSSProperties = {
-  background: "linear-gradient(135deg, #c98a5b, #f0cf84)",
+  background: "linear-gradient(135deg, #c98a5b, #dca475)",
   backgroundColor: "#c98a5b",
   color: "#090807",
   border: "1px solid rgba(255, 224, 154, 0.52)",

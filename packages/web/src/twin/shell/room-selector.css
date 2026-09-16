@@ -90,7 +90,7 @@
 
 .vv-twin-rooms-trigger:hover {
   color: var(--gold-2, #f0c66b);
-  border-color: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
 }
 
 .vv-twin-rooms-trigger:active {
@@ -201,7 +201,7 @@
 
 .vv-twin-rooms-close:hover {
   color: var(--gold-2, #f0c66b);
-  border-color: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
 }
 
 /* — levels — */
@@ -262,7 +262,7 @@
 }
 
 .vv-twin-rooms-row--go:hover {
-  border-color: var(--gold, #c98a5b);
+  border-color: var(--gold, #d7a64b);
   background: rgba(215, 166, 75, 0.08);
 }
 
@@ -278,7 +278,7 @@
  * and not a selected control. It is a <div>, never a disabled button — a
  * disabled control invites a press that does nothing. */
 .vv-twin-rooms-row--here {
-  border-left: 2px solid var(--gold, #c98a5b);
+  border-left: 2px solid var(--gold, #d7a64b);
   border-radius: 0 8px 8px 0;
   padding-left: 9px;
   background: rgba(215, 166, 75, 0.05);

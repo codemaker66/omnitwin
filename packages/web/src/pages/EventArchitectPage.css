@@ -8,11 +8,11 @@
   --ea-line: rgba(246, 241, 231, 0.13);
   --ea-mint: #81d8c5;
   --ea-mint-bright: #acf2de;
-  --ea-gold: #e1b866;
+  --ea-gold: #dca475;
   --ea-rose: #e69b8f;
   background:
     radial-gradient(circle at 13% 4%, rgba(129, 216, 197, 0.13), transparent 27rem),
-    radial-gradient(circle at 88% 13%, rgba(225, 184, 102, 0.11), transparent 30rem),
+    radial-gradient(circle at 88% 13%, rgba(220, 164, 117, 0.11), transparent 30rem),
     var(--ea-bg);
   color: var(--ea-ink);
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -470,7 +470,7 @@
 }
 
 .event-architect-plan-object {
-  fill: rgba(225, 184, 102, 0.52);
+  fill: rgba(220, 164, 117, 0.52);
   stroke: rgba(255, 235, 190, 0.86);
   stroke-width: 0.035;
   vector-effect: non-scaling-stroke;
@@ -609,8 +609,8 @@
 
 .event-architect-review-gate {
   align-items: flex-start;
-  background: rgba(225, 184, 102, 0.08);
-  color: #e9ca8d !important;
+  background: rgba(220, 164, 117, 0.08);
+  color: #dca475 !important;
   display: flex;
   gap: 6px;
   padding: 7px;
@@ -692,8 +692,8 @@
 
 .event-architect-flow-gate {
   align-items: flex-start;
-  border-top: 1px solid rgba(225, 184, 102, 0.18);
-  color: #e9ca8d !important;
+  border-top: 1px solid rgba(220, 164, 117, 0.18);
+  color: #dca475 !important;
   display: flex;
   gap: 7px;
   margin-top: 10px !important;
