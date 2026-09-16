@@ -37,8 +37,8 @@ export function InstructionsBanner({ instructions, timezone }: InstructionsBanne
       style={{
         marginTop: 12,
         borderRadius: 10,
-        border: `1px solid rgba(201,168,76,0.25)`,
-        background: "linear-gradient(180deg, rgba(201,168,76,0.06), rgba(201,168,76,0.02))",
+        border: `1px solid rgba(201, 138, 91,0.25)`,
+        background: "linear-gradient(180deg, rgba(201, 138, 91,0.06), rgba(201, 138, 91,0.02))",
         overflow: "hidden",
       }}
     >
@@ -72,7 +72,7 @@ export function InstructionsBanner({ instructions, timezone }: InstructionsBanne
             <div
               style={{
                 padding: "10px 12px", borderRadius: 6,
-                background: "rgba(201,168,76,0.08)",
+                background: "rgba(201, 138, 91,0.08)",
                 borderLeft: `3px solid ${GOLD}`,
               }}
             >

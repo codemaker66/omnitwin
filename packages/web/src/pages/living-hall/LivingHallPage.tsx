@@ -24,7 +24,7 @@ import {
   FOOTER_EMAIL,
   FOOTER_PHONE_DISPLAY,
   FOOTER_PHONE_HREF,
-  enquiryMailtoHref,
+  enquiryComposerHref,
 } from "../landing/rite-copy.js";
 import {
   LH_ACTS,
@@ -37,7 +37,6 @@ import {
   LH_CTA_PLANNER_HREF,
   LH_CTA_PLANNER_LABEL,
   LH_CTA_TEAM_LABEL,
-  LH_ENQUIRY_DRAFT_NOTE,
   LH_ENQUIRE_LABEL,
   LH_EVENT_CHOICE_LEGEND,
   LH_EVENT_TYPES,
@@ -213,7 +212,7 @@ export function LivingHallPage(): ReactElement {
           <a href="#rooms-and-rates" className="lh-header-quiet">
             {LH_CHECK_DATE_LABEL}
           </a>
-          <a href={enquiryMailtoHref()} className="lh-header-cta">
+          <a href={enquiryComposerHref()} className="lh-header-cta">
             {LH_ENQUIRE_LABEL}
           </a>
         </div>
@@ -345,7 +344,7 @@ export function LivingHallPage(): ReactElement {
                   )}
                   <a
                     className="lh-cta-quiet"
-                    href={enquiryMailtoHref(undefined, engaged ? LH_ENQUIRY_DRAFT_NOTE : undefined)}
+                    href={enquiryComposerHref()}
                   >
                     {FOOTER_EMAIL}
                   </a>

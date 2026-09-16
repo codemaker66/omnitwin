@@ -458,7 +458,7 @@ export function PlacementGhost(): React.ReactElement | null {
       <group position={ghostPosition} name="table-setting-placement-ghost">
         <mesh rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.16, 0.24, 32]} />
-          <meshStandardMaterial color="#d6b44f" emissive="#8a6c1a" emissiveIntensity={0.5} transparent opacity={0.72} />
+          <meshStandardMaterial color="#c98a5b" emissive="#7e4620" emissiveIntensity={0.5} transparent opacity={0.72} />
         </mesh>
       </group>
     );
@@ -484,7 +484,7 @@ export function PlacementGhost(): React.ReactElement | null {
               position={[0, 0, 0]}
               rotationY={0}
               opacity={0.52}
-              colorOverride="#d6b44f"
+              colorOverride="#c98a5b"
               name={`chair-brush-preview-${String(index)}`}
             />
           </group>

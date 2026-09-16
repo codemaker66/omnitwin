@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ActivityStatus } from "../components/shared/Activity.js";
 import {
@@ -10,6 +10,7 @@ import {
   roomsWithSplatBundles,
 } from "../data/room-splat-bundles.js";
 import { isRoomWalkable } from "../data/room-walk-exposure.js";
+import { roomWalkMetaTitle } from "./home-copy.js";
 import {
   TRADES_HALL_RUNTIME_ROOMS,
   type TradesHallRuntimeRoomSlug,
@@ -87,10 +88,18 @@ export function RoomWalkPage(): ReactElement {
     return `${width.toFixed(1)} × ${depth.toFixed(1)} × ${height.toFixed(1)} m`;
   }, [bundle]);
 
+  // Per-route title (gate line 7): a /room/:slug link shared in a message
+  // should name its room, not repeat the site's homepage title. Declared
+  // before the early returns so the hook order never changes between renders.
+  useEffect(() => {
+    if (room === null) return;
+    document.title = roomWalkMetaTitle(displayName(room));
+  }, [room]);
+
   if (room === null || bundle === null) {
     return (
       <main className="walk walk--missing">
-        <p className="walk__missingText">That room has not been scanned.</p>
+        <p className="walk__missingText">We have no walkthrough of that room.</p>
         <Link className="walk__back" to="/">Back to the rooms</Link>
       </main>
     );
@@ -103,7 +112,7 @@ export function RoomWalkPage(): ReactElement {
     return (
       <main className="walk walk--missing" data-testid="room-walk-closed">
         <p className="walk__missingText">
-          {displayName(room)} is being aligned and is not yet walkable.
+          {displayName(room)} is not open to walk yet.
         </p>
         <Link className="walk__back" to="/">Back to the rooms</Link>
       </main>
@@ -128,12 +137,15 @@ export function RoomWalkPage(): ReactElement {
         {bundle.alignmentConfidence === "confident" && measured !== null && (
           <p className="walk__measure">{measured}</p>
         )}
+        {/* T-616: Dashboard and Hallkeeper are gone from this public nav —
+            both bounced an anonymous visitor into a Clerk login wall. Enquire
+            reaches the composer on the front door, which is the action a
+            visitor standing in a room actually wants. */}
         <nav className="walk__navigation" aria-label="Planning and workspaces">
           {/* A document navigation starts a fresh plan for this room even after
               another room's configuration has been opened in the editor. */}
           <a className="walk__plan" href={`/plan?space=${room}`}>Plan this room</a>
-          <a href="/dashboard">Dashboard</a>
-          <a href="/hallkeeper/today">Hallkeeper</a>
+          <a href="/#enquire">Ask about a date</a>
           <a href="/login">Log in</a>
         </nav>
       </header>}
@@ -153,9 +165,13 @@ export function RoomWalkPage(): ReactElement {
 
       {!bare && <footer className="walk__foot">
         <p className="walk__note">
+          {/* T-616 / gate line 3: the second branch used to report an
+              incomplete scan and an unsettled alignment — our vocabulary, on a
+              public page. The room is still measured only where it measured
+              cleanly; only the words a visitor reads have changed. */}
           {bundle.alignmentConfidence === "confident"
-            ? "Scan dimensions are estimates. Confirm with the venue."
-            : "Incomplete scan. Alignment is under review; dimensions unavailable."}
+            ? "Dimensions are taken from the scan. Confirm them with the venue."
+            : "Dimensions for this room come from the venue, not this scan."}
         </p>
         {progress.failed > 0 && (
           <p className="walk__failed">{String(progress.failed)} parts of this room did not load.</p>

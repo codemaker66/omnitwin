@@ -12,11 +12,11 @@
   --sp-bg: #030707;
   --sp-ink: #f4ead2;
   --sp-ink-2: rgba(231, 216, 187, 0.82);
-  --sp-gold: #d8ae5b;
-  --sp-gold-2: #f0c66b;
+  --sp-gold: #c98a5b;
+  --sp-gold-2: #dca475;
   /* Interactive borders hold ≥3:1 against the near-black field (WCAG 1.4.11);
      the rite's decorative 0.28 alpha measured 1.7:1 — do not reuse it here. */
-  --sp-rule: rgba(216, 174, 91, 0.5);
+  --sp-rule: rgba(201, 138, 91, 0.5);
   --sp-serif: "Newsreader", "Georgia", serif;
   --sp-ui: "Geist", system-ui, sans-serif;
   --sp-mono: "Geist Mono", ui-monospace, monospace;
@@ -39,7 +39,7 @@
 
 .vv-spotlight :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(240, 198, 107, 0.85);
+  box-shadow: 0 0 0 2px rgba(220, 164, 117, 0.85);
 }
 
 /* ————————————————————————— nav ————————————————————————— */
@@ -74,7 +74,7 @@
   font-style: italic;
   font-size: 14px;
   color: var(--sp-gold-2);
-  background: linear-gradient(145deg, rgba(216, 174, 91, 0.16), rgba(216, 174, 91, 0));
+  background: linear-gradient(145deg, rgba(201, 138, 91, 0.16), rgba(201, 138, 91, 0));
 }
 .vv-spotlight .sp-wordmark {
   font-family: var(--sp-serif);
@@ -110,11 +110,11 @@
 }
 .vv-spotlight .sp-nav-link:hover {
   color: var(--sp-ink);
-  background: rgba(216, 174, 91, 0.16);
+  background: rgba(201, 138, 91, 0.16);
 }
 .vv-spotlight .sp-nav-link.is-current {
   color: #fdf7ea;
-  background: rgba(216, 174, 91, 0.22);
+  background: rgba(201, 138, 91, 0.22);
 }
 
 .vv-spotlight .sp-signin {
@@ -326,7 +326,7 @@
   text-transform: uppercase;
   text-decoration: none;
   color: #171106;
-  background: linear-gradient(180deg, #e7c473, #cfa552);
+  background: linear-gradient(180deg, #dca475, #c98a5b);
   padding: 15px 30px;
   border-radius: 999px;
   transition:
@@ -336,7 +336,7 @@
 @media (hover: hover) and (pointer: fine) {
   .vv-spotlight .sp-cta:hover {
     transform: translateY(-1px) scale(1.03);
-    box-shadow: 0 12px 32px rgba(216, 174, 91, 0.35);
+    box-shadow: 0 12px 32px rgba(201, 138, 91, 0.35);
   }
 }
 .vv-spotlight .sp-cta:active {

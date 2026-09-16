@@ -1,33 +1,46 @@
 import { useState } from "react";
 import { ActivityIndicator } from "./Activity.js";
-import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { useEscapeToClose, useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // ConfirmModal — reusable confirmation dialog
+//
+// T-615 (one register): the sheet was a near-black gradient with a brass
+// hairline and a cyan bloom — three registers inside one dialog. It is now an
+// ivory sheet with forest ink over a forest scrim, and the destructive confirm
+// keeps its own oxblood so "delete" never reads as "continue".
+//
+// Escape now works from the moment the dialog mounts. It used to be a React
+// onKeyDown on the overlay, which only fires once focus is already inside — so
+// Escape did nothing in the frame before the trap had moved focus, and nothing
+// at all if the opener kept it. It is refused while a write is in flight; the
+// trap stays on either way, and unmounting returns focus to the opener
+// (useFocusTrap's cleanup).
 // ---------------------------------------------------------------------------
 
 const overlayStyle: React.CSSProperties = {
   position: "fixed", inset: 0,
-  background:
-    "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(215,181,109,0.1), transparent 28%), rgba(0,0,0,0.82)",
+  background: "rgba(18, 34, 28, 0.62)",
   display: "flex", alignItems: "center", justifyContent: "center",
-  zIndex: 300, fontFamily: "'Inter', sans-serif", contain: "paint",
+  zIndex: 300, fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif", contain: "paint",
 };
 
 const modalStyle: React.CSSProperties = {
-  background: "linear-gradient(150deg, rgba(22,19,15,0.98), rgba(10,10,9,0.95))",
-  border: "1px solid rgba(215,181,109,0.28)",
+  background: "var(--vv-ivory-3)",
+  border: "1px solid var(--vv-rule)",
   borderRadius: 12,
   padding: 24,
   width: 400,
   maxWidth: "90vw",
-  boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-  color: "#fff7e8",
+  boxShadow: "0 24px 70px rgba(18, 34, 28, 0.32)",
+  color: "var(--vv-forest)",
 };
 
 const btnBase: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+  minHeight: 40,
   padding: "8px 16px", fontSize: 14, fontWeight: 600, border: "none",
-  borderRadius: 6, cursor: "pointer",
+  borderRadius: 8, cursor: "pointer",
 };
 
 interface ConfirmModalProps {
@@ -43,17 +56,17 @@ interface ConfirmModalProps {
 }
 
 export function ConfirmModal({
-  title, message, confirmLabel = "Confirm", confirmColor = "#dc2626",
+  title, message, confirmLabel = "Confirm", confirmColor = "var(--vv-oxblood)",
   showNoteField = false, inFlight = false, errorMessage = null, onConfirm, onCancel,
 }: ConfirmModalProps): React.ReactElement {
   const [note, setNote] = useState("");
   const trapRef = useFocusTrap<HTMLDivElement>();
+  useEscapeToClose(onCancel, !inFlight);
 
   return (
     <div
       style={overlayStyle}
       onClick={() => { if (!inFlight) onCancel(); }}
-      onKeyDown={(e) => { if (e.key === "Escape" && !inFlight) onCancel(); }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
@@ -61,8 +74,8 @@ export function ConfirmModal({
       tabIndex={-1}
     >
       <div ref={trapRef} style={modalStyle} onClick={(e) => { e.stopPropagation(); }}>
-        <h3 id="confirm-modal-title" style={{ fontSize: 16, fontWeight: 700, color: "#fff7e8", marginBottom: 8 }}>{title}</h3>
-        <p id="confirm-modal-message" style={{ fontSize: 14, color: "rgba(246,241,232,0.72)", marginBottom: 16 }}>{message}</p>
+        <h3 id="confirm-modal-title" style={{ fontSize: 16, fontWeight: 700, color: "var(--vv-forest)", marginBottom: 8 }}>{title}</h3>
+        <p id="confirm-modal-message" style={{ fontSize: 14, color: "var(--vv-forest-soft)", marginBottom: 16 }}>{message}</p>
         {errorMessage !== null && (
           <div
             role="alert"
@@ -70,9 +83,9 @@ export function ConfirmModal({
               padding: "10px 12px",
               marginBottom: 12,
               borderRadius: 8,
-              color: "#ffd89a",
-              background: "rgba(255, 181, 82, 0.09)",
-              border: "1px solid rgba(255, 181, 82, 0.38)",
+              color: "var(--vv-oxblood)",
+              background: "var(--vv-oxblood-bg)",
+              border: "1px solid color-mix(in srgb, var(--vv-oxblood) 38%, transparent)",
               fontSize: 13,
             }}
           >
@@ -83,7 +96,7 @@ export function ConfirmModal({
           <textarea
             aria-label="Confirmation note"
             disabled={inFlight}
-            style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid rgba(215,181,109,0.28)", borderRadius: 6, marginBottom: 12, boxSizing: "border-box", resize: "vertical", color: "#fff7e8", background: "rgba(255,247,232,0.08)" }}
+            style={{ width: "100%", padding: 8, fontSize: 13, border: "1px solid var(--vv-rule)", borderRadius: 8, marginBottom: 12, boxSizing: "border-box", resize: "vertical", color: "var(--vv-forest)", background: "var(--vv-ivory)" }}
             placeholder="Add a note (optional)"
             value={note}
             onChange={(e) => { setNote(e.target.value); }}
@@ -92,7 +105,7 @@ export function ConfirmModal({
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button
             type="button"
-            style={{ ...btnBase, background: "rgba(255,247,232,0.08)", color: "#fff7e8", border: "1px solid rgba(215,181,109,0.24)" }}
+            style={{ ...btnBase, background: "var(--vv-ivory-2)", color: "var(--vv-forest)", border: "1px solid var(--vv-rule)" }}
             onClick={onCancel}
             disabled={inFlight}
           >
@@ -100,13 +113,13 @@ export function ConfirmModal({
           </button>
           <button
             type="button"
-            style={{ ...btnBase, background: confirmColor, color: "#fff", opacity: inFlight ? 0.7 : 1 }}
+            style={{ ...btnBase, background: confirmColor, color: "var(--vv-ivory-3)", opacity: inFlight ? 0.7 : 1 }}
             disabled={inFlight}
             onClick={() => { onConfirm(showNoteField ? note : undefined); }}
             aria-busy={inFlight}
           >
             {inFlight && <ActivityIndicator size={18} />}
-            {inFlight ? "Working..." : confirmLabel}
+            {inFlight ? "Working…" : confirmLabel}
           </button>
         </div>
       </div>

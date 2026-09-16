@@ -109,7 +109,7 @@ function PendingDot({ position }: { readonly position: Point3 }): React.ReactEle
       <Html center style={{ pointerEvents: "none" }}>
         <div style={{
           ...dotStyle,
-          background: "#ffcc00",
+          background: "#c98a5b",
           width: 10,
           height: 10,
           animation: "pulse 1s ease-in-out infinite",

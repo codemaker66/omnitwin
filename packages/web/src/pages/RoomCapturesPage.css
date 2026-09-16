@@ -41,7 +41,7 @@
   border: 1px solid #4a3f22;
   border-radius: 999px;
   background: #1a160c;
-  color: #d8ad4a;
+  color: #c98a5b;
   font-size: 0.78rem;
 }
 
@@ -78,8 +78,8 @@
 .captures__room:hover { background: #16191e; }
 
 .captures__room:focus-visible {
-  outline: 2px solid #d8ad4a;
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .captures__room--active {
@@ -100,7 +100,7 @@
 }
 
 .captures__badge--confident { background: #14251a; color: #7fbf95; }
-.captures__badge--review { background: #2a2113; color: #d0a95c; }
+.captures__badge--review { background: #2a2113; color: #c98a5b; }
 
 .captures__stage {
   display: flex;

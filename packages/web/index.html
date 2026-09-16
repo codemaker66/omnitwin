@@ -2,15 +2,24 @@
 <html lang="en" style="scroll-behavior: smooth;">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: iOS exposes the notch and home-indicator insets to
+         CSS as env(safe-area-inset-*) only under `cover`. Without it they
+         resolve to 0 and full-bleed chrome sits beneath the phone's own
+         furniture. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="stylesheet" href="/src/components/shared/Activity.css" />
     <title>Trades Hall of Glasgow — weddings and events</title>
     <!-- Static social/meta card: link scrapers (WhatsApp, iMessage, Instagram,
          Facebook) do not execute JavaScript, so the shared-link first
          impression must live here, not in the client-side route effects.
-         Keep in sync with FRESH_META_* in
-         src/pages/fresh/fresh-copy.ts (the homepage at `/`). -->
+         Keep in sync with HOME_META_TITLE and HOME_META_DESCRIPTION in
+         src/pages/home-copy.ts: the homepage at `/` is RoomsHomePage, and it
+         sets those same two strings as its document title and description.
+         (This comment used to name fresh-copy.ts, which was true while /fresh
+         was the homepage; /fresh is now the about-and-enquiry sibling.) -->
     <meta name="description" content="Robert Adam's guild hall on Glassford Street — weddings, dinners, and conferences in the room Glasgow has celebrated in since 1791." />
     <link rel="canonical" href="https://venviewer.com/" />
     <meta property="og:type" content="website" />
@@ -24,8 +33,11 @@
     <meta property="og:image:alt" content="Trades Hall and its dome from above, amid the rooftops of Glasgow's Merchant City" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://venviewer.com/images/venue/trades-hall-exterior-og.jpg" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ede7db" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b1713" />
+    <!-- One register (T-615, Lane 1's request on PR #20): the ivory ground is
+         the app's page colour in both schemes, so the browser chrome takes the
+         same single value. The old pair painted the iOS status bar near-black
+         under a dark system theme while the page underneath stayed ivory. -->
+    <meta name="theme-color" content="#f2edda" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -47,104 +59,75 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Inter + Playfair Display belong to the cockpit and legacy pages;
-         the router attaches their stylesheet with the first chunk that
-         needs it (cockpitImport in src/router.tsx) so the homepage never
-         render-blocks on fonts it doesn't use. -->
+    <!-- Inter and Playfair Display belong to the cockpit and the legacy pages;
+         the router attaches their stylesheet with the first chunk that needs it
+         (cockpitImport in src/router.tsx) so the front door never render-blocks
+         on fonts it doesn't use. Those are plan 18's "two unused families", and
+         they were already off this request before T-616.
+
+         The four that remain ARE all requested by front-door rules, measured
+         rather than assumed: Fraunces (RoomsHomePage.css, RoomWalkPage.css,
+         fresh.css — including its opsz, SOFT and WONK axes and its italic),
+         Newsreader (the same three plus the twin), Geist (weights 300–600,
+         every one of which appears in CSS), and Geist Mono, which T-616 first
+         dropped on the belief it was cockpit-only. It is not: RoomsHomePage.css
+         lines 151, 375 and 382 name it FIRST, ahead of ui-monospace, for the
+         footprint line and the two card-plate numerals — so dropping it quietly
+         demoted three visible front-door rules to the platform monospace, and
+         it is back. Activity.css does put ui-monospace first, which is why a
+         list of files was misleading: read the position in the stack. -->
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..700,0..100,0..1;1,9..144,300..700,0..100,0..1&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body, #root { width: 100%; height: 100%; }
-      /* Cockpit-era globals (golden cursor, springy buttons, golden
-         scrollbar) are scoped away from the editorial homepage — the
-         landing page mounts .fr-root and holds its own manners. */
-      body:not(:has(.fr-root)) {
-        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 20 20'%3E%3Cpath d='M3 2l12 7-5 1.5L8 16z' fill='%23c9a84c' stroke='%231a1a1a' stroke-width='0.8'/%3E%3C/svg%3E") 5 3, auto;
+
+      /* T-615 — ONE REGISTER. Three cockpit-era globals used to live here: a
+         golden arrow cursor, a gold gradient scrollbar, and a 1.06x hover pop
+         plus overshoot spring on EVERY <button> and [role="button"] in the app.
+         All three are deleted, not re-scoped. They were the loudest source of
+         a second visual register, the cursor overrode the OS pointer on every
+         route but the homepage, and the pop fired on controls that were never
+         designed to move (table rows, nav items, disclosure summaries). Press
+         feedback now belongs to the planner shell alone, as a spring, in
+         src/App.css. Do NOT reintroduce a global hover transform here: a
+         control that wants motion declares it at its own source, where its
+         reduced-motion and disabled states can be reasoned about.
+
+         The ivory ground is the register's page colour; it is repeated in
+         src/global.css so it holds whichever sheet lands last. The dark
+         graphite ground survives only inside the 3D viewport, painted by the
+         shells that own it (.venviewer-planner-shell, .vv-twin), each a
+         full-bleed surface over this ground. */
+      html, body {
+        background: #f2edda;
+        color: #1b3a2f;
       }
-      /* The springy cockpit button is OPT-IN on motion, and must stay inside
-         this @media block. Scoping these rules behind body:not(:has(.fr-root))
-         raised them to specificity (0,1,2); the reduced-motion killswitches
-         below and in src/global.css sit at (0,0,1). Both sides are !important,
-         so specificity decided the winner and the killswitch silently LOST —
-         every button kept its 150ms overshoot spring and scale(1.06) hover pop
-         for exactly the vestibular users who had asked for stillness, on every
-         route except the homepage (which mounts .fr-root and so escaped).
-         Gating on no-preference means there is nothing left to override.
-         Do not "fix" a future regression here by adding a more specific
-         override — that is an arms race. Keep the motion opt-in at its source. */
-      @media (prefers-reduced-motion: no-preference) {
-        body:not(:has(.fr-root)) button,
-        body:not(:has(.fr-root)) [role="button"] {
-          transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
-                      box-shadow 0.15s ease,
-                      filter 0.15s ease !important;
-        }
-        body:not(:has(.fr-root)) button:hover:not(:disabled),
-        body:not(:has(.fr-root)) [role="button"]:hover {
-          transform: scale(1.06);
-          filter: brightness(1.15);
-        }
-        body:not(:has(.fr-root)) button:active:not(:disabled),
-        body:not(:has(.fr-root)) [role="button"]:active {
-          transform: scale(0.93);
-          filter: brightness(0.9);
-          transition-duration: 0.06s !important;
-        }
+
+      /* Scrollbar: register furniture, not decoration — a sage thumb that
+         darkens to forest on hover, over the surface's own ground. Dark
+         subsystems declare `color-scheme: dark` and get the matching track. */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #8fae8b transparent;
       }
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 8px;
+        background: #8fae8b;
+        background-clip: padding-box;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #4a6650;
+        background-clip: padding-box;
+      }
+      ::-webkit-scrollbar-corner { background: transparent; }
 
       @media (prefers-reduced-motion: reduce) {
         html {
           scroll-behavior: auto !important;
         }
-
-        button,
-        [role="button"],
-        button:hover:not(:disabled),
-        [role="button"]:hover,
-        button:active:not(:disabled),
-        [role="button"]:active {
-          transition: none !important;
-          transition-property: none !important;
-          transition-duration: 0.001ms !important;
-          transform: none !important;
-          filter: none !important;
-        }
-      }
-
-      /* ============================================
-         Golden scrollbar — matches the VenViewer aesthetic
-         ============================================ */
-
-      /* Webkit (Chrome, Safari, Edge) — cockpit surfaces only */
-      body:not(:has(.fr-root)) ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-      }
-      body:not(:has(.fr-root)) ::-webkit-scrollbar-track {
-        background: rgba(20, 20, 20, 0.6);
-        border-radius: 8px;
-      }
-      body:not(:has(.fr-root)) ::-webkit-scrollbar-thumb {
-        background: linear-gradient(180deg, #a8872e, #c9a84c, #a8872e);
-        border-radius: 8px;
-        border: 2px solid rgba(20, 20, 20, 0.6);
-        transition: background 0.2s;
-      }
-      body:not(:has(.fr-root)) ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #c9a84c, #dfc06a, #c9a84c);
-        box-shadow: 0 0 8px rgba(201, 168, 76, 0.4);
-      }
-      body:not(:has(.fr-root)) ::-webkit-scrollbar-thumb:active {
-        background: linear-gradient(180deg, #8a6e1e, #a8872e, #8a6e1e);
-      }
-      body:not(:has(.fr-root)) ::-webkit-scrollbar-corner {
-        background: rgba(20, 20, 20, 0.6);
-      }
-
-      /* Firefox — cockpit surfaces only */
-      body:not(:has(.fr-root)) * {
-        scrollbar-width: thin;
-        scrollbar-color: #c9a84c rgba(20, 20, 20, 0.6);
       }
     </style>
   </head>

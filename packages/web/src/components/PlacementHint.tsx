@@ -42,7 +42,7 @@ const AVOID_SELECTORS = [
   "[data-testid='cockpit-bottom']",
 ] as const;
 
-const GOLD = "#c9a84c";
+const GOLD = "#c98a5b";
 const CYAN = "#62d7df";
 const AMBER = "#f0a33a";
 
@@ -105,7 +105,7 @@ const invalidReasonStyle: React.CSSProperties = {
   background: "rgba(240, 163, 58, 0.1)",
   color: "#ffd49a",
   fontSize: 12,
-  fontWeight: 760,
+  fontWeight: 600,
   letterSpacing: 0,
   lineHeight: 1.25,
   padding: "8px 10px",
@@ -144,7 +144,7 @@ function keycapStyle(accent: string): React.CSSProperties {
     background: `${accent}1f`,
     color: accent,
     fontSize: 11,
-    fontWeight: 840,
+    fontWeight: 700,
     lineHeight: "19px",
     padding: "0 7px",
   };

@@ -104,7 +104,7 @@ const checkboxStyle: React.CSSProperties = {
 const headingStyle: React.CSSProperties = {
   margin: 0,
   marginBottom: 2,
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: 600,
   textTransform: "uppercase" as const,
   letterSpacing: "0.05em",

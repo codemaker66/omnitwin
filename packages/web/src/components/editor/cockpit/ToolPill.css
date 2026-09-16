@@ -57,12 +57,12 @@
 }
 
 .planner-tool-pill__btn:focus-visible {
-  outline: 2px solid var(--cockpit-amber, #c6a15b);
-  outline-offset: 1px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .planner-tool-pill__btn[aria-pressed="true"] {
-  background: var(--cockpit-amber, #c6a15b);
+  background: var(--cockpit-amber, #c98a5b);
   color: #1c1814;
 }
 
@@ -82,7 +82,7 @@
   border-radius: 999px;
   border: 1px solid var(--cockpit-hairline, rgba(245, 240, 232, 0.08));
   background: rgba(245, 240, 232, 0.05);
-  color: var(--cockpit-amber, #c6a15b);
+  color: var(--cockpit-amber, #c98a5b);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   font-weight: 500;

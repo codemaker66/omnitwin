@@ -49,7 +49,7 @@ const dismissBtnStyle: React.CSSProperties = {
   border: "none",
   background: "rgba(200, 50, 50, 0.9)",
   color: "white",
-  fontSize: 10,
+  fontSize: 11,
   lineHeight: "16px",
   textAlign: "center",
   cursor: "pointer",

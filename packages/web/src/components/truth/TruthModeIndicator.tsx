@@ -77,8 +77,8 @@ const compactStatusLineStyle: CSSProperties = {
   rowGap: 3,
   marginTop: 5,
   color: "rgba(247, 239, 226, 0.72)",
-  fontSize: 10.5,
-  fontWeight: 720,
+  fontSize: 11,
+  fontWeight: 600,
   lineHeight: 1.25,
 };
 
@@ -95,8 +95,8 @@ const compactStatusDotStyle: CSSProperties = {
   flex: "0 0 auto",
   marginRight: 5,
   borderRadius: "50%",
-  background: "#d8ad4a",
-  boxShadow: "0 0 8px rgba(216, 173, 74, 0.55)",
+  background: "#c98a5b",
+  boxShadow: "0 0 8px rgba(201, 138, 91, 0.55)",
 };
 
 const detailsStyle: CSSProperties = {
@@ -111,9 +111,9 @@ const detailsStyle: CSSProperties = {
 
 const labelStyle: CSSProperties = {
   margin: 0,
-  color: "#d8ad4a",
-  fontSize: 10,
-  fontWeight: 820,
+  color: "#c98a5b",
+  fontSize: 11,
+  fontWeight: 700,
   letterSpacing: "0.11em",
   lineHeight: 1.1,
   textTransform: "uppercase",
@@ -158,7 +158,7 @@ function Chip({ children, tone }: { readonly children: ReactNode; readonly tone:
         background: token.background,
         color: token.foreground,
         fontSize: 11,
-        fontWeight: 740,
+        fontWeight: 600,
         lineHeight: 1.2,
         whiteSpace: "normal",
       }}
@@ -248,12 +248,12 @@ export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndic
           <StatusDot summary={summary} />
           {embedded ? <span style={{ flex: 1, minWidth: 0 }}>
             <strong style={{ display: "block", fontSize: 11 }}>Planning provenance</strong>
-            <span style={{ display: "block", marginTop: 2, fontSize: 10 }}>{summary.truthStatusLabel} · {collapsedIssueLabel}</span>
+            <span style={{ display: "block", marginTop: 2, fontSize: 11 }}>{summary.truthStatusLabel} · {collapsedIssueLabel}</span>
           </span> : <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", color: "#d8ad4a", fontSize: 10, fontWeight: 820, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            <span style={{ display: "block", color: "#c98a5b", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>
               Truth Mode L1
             </span>
-            <span style={{ display: "block", marginTop: 2, fontSize: 13, fontWeight: 800, lineHeight: 1.25 }}>
+            <span style={{ display: "block", marginTop: 2, fontSize: 13, fontWeight: 700, lineHeight: 1.25 }}>
               {summary.modeLabel}: {summary.truthStatusLabel}
             </span>
             <span
@@ -274,7 +274,7 @@ export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndic
               <Info size={17} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto", marginTop: 2 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={labelStyle}>Truth Mode</p>
-                <p style={{ ...bodyTextStyle, color: "#f7efe2", fontWeight: 760 }}>{summary.truthStatusLabel}</p>
+                <p style={{ ...bodyTextStyle, color: "#f7efe2", fontWeight: 600 }}>{summary.truthStatusLabel}</p>
               </div>
               <button
                 type="button"

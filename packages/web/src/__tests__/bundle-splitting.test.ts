@@ -54,7 +54,13 @@ describe("router.tsx — lazy route loading (#16)", () => {
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/SplatFixturePage\.js["']/);
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
     expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/TradesHallAssetStatusPage\.js["']/);
-    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/RoomShowcasePage\.js["']/);
+    // The designed not-found page replaced the `*` → `/` redirect in T-616, so
+    // it is a route chunk like any other and must not ride in the main bundle.
+    expect(codeOnly).toMatch(/lazy\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/NotFoundPage\.js["']/);
+    // RoomShowcasePage left this list in T-616: /venues/:venueSlug/rooms/:roomSlug
+    // is retired (the path now redirects to `/`), so the router imports the
+    // page nowhere and there is no chunk left to split. The component and its
+    // own suite stay, so the negative assertion below still has work to do.
   });
 
   it("wraps lazy elements in Suspense with a fallback", async () => {

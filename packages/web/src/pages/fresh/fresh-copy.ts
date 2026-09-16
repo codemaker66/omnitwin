@@ -4,7 +4,7 @@ import {
   FOOTER_PHONE_DISPLAY,
   FOOTER_PHONE_HREF,
   HALL_LIT_YEARS,
-  enquiryMailtoHref,
+  enquiryComposerHref,
 } from "../landing/rite-copy.js";
 
 // -----------------------------------------------------------------------------
@@ -235,8 +235,17 @@ export const FRESH_ENQUIRY_EMAIL_INVALID = "Enter a valid email address.";
 export const FRESH_ENQUIRY_SENT_TITLE = "Enquiry sent";
 export const FRESH_ENQUIRY_SENT_LINE =
   "The events team will reply by email.";
+/** T-616: this used to read "Try your email app or call the hall." The email
+ *  app was the mailto gate line 4 removed, so half the instruction pointed
+ *  nowhere. The phone number sits on screen beside this line and is the
+ *  fallback that actually reaches a person. */
 export const FRESH_ENQUIRY_ERROR =
-  "Enquiry not sent. Try your email app or call the hall.";
+  "Enquiry not sent. Try again, or call the hall.";
+
+/** Prefix for the Craft the Discover Your Craft quiz drew, carried into the
+ *  message so an introduction request does not reach the team looking like an
+ *  ordinary wedding enquiry. The quiz used to put this in a mailto body. */
+export const FRESH_ENQUIRY_CRAFT_PREFIX = "From the Discover Your Craft quiz, my Craft was";
 
 /** Shown at the point of collection, as UK GDPR transparency requires. */
 export const FRESH_ENQUIRY_PRIVACY_NOTE =
@@ -286,7 +295,7 @@ export const FRESH_CONTACT_VISIT_LABEL = "Visit";
 export const FRESH_CONTACT_PHONE_DISPLAY = FOOTER_PHONE_DISPLAY;
 export const FRESH_CONTACT_PHONE_HREF = FOOTER_PHONE_HREF;
 export const FRESH_CONTACT_EMAIL = FOOTER_EMAIL;
-export const freshEnquiryHref = (): string => enquiryMailtoHref();
+export const freshEnquiryHref = (): string => enquiryComposerHref();
 
 export const FRESH_ADDRESS = "85 Glassford Street, Glasgow G1 1UH";
 export const FRESH_MAPS_HREF = "https://maps.google.com/?q=Trades+Hall+of+Glasgow,+85+Glassford+Street,+Glasgow+G1+1UH";
@@ -370,6 +379,7 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ENQUIRY_SENT_TITLE,
     FRESH_ENQUIRY_SENT_LINE,
     FRESH_ENQUIRY_ERROR,
+    FRESH_ENQUIRY_CRAFT_PREFIX,
     FRESH_ENQUIRY_PRIVACY_NOTE,
     FRESH_ENQUIRY_PRIVACY_LINK,
     FRESH_DOSSIER_OPEN,

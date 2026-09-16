@@ -9,7 +9,7 @@ import {
   ROOM_INDEX_CARDS,
   allRiteCopy,
   buildMagnitudeMeasures,
-  enquiryMailtoHref,
+  enquiryComposerHref,
 } from "../rite-copy.js";
 
 describe("rite-copy — claim safety", () => {
@@ -87,29 +87,16 @@ describe("rite-copy — the index leaves no room orphaned", () => {
   });
 });
 
-describe("rite-copy — enquiry mailtos reach the events team with context", () => {
-  it("addresses the venue's published inbox in both variants", () => {
-    expect(enquiryMailtoHref()).toBe(
-      `mailto:${FOOTER_EMAIL}?subject=${encodeURIComponent(
-        "Event enquiry — Trades Hall Glasgow",
-      )}`,
-    );
-    expect(enquiryMailtoHref("The Grand Hall")).toBe(
-      `mailto:${FOOTER_EMAIL}?subject=${encodeURIComponent(
-        "Event enquiry — The Grand Hall, Trades Hall Glasgow",
-      )}`,
-    );
+describe("rite-copy — every Enquire reaches the composer, not a mail client", () => {
+  // T-616 / gate line 4: an enquiry must post to /public/enquiries so it lands
+  // in the team's queue. A mailto reached a person but wrote no row, so
+  // nothing could be chased and no acknowledgement could be sent.
+  it("points at the composer on the front door", () => {
+    expect(enquiryComposerHref()).toBe("/#enquire");
   });
 
-  it("percent-encodes every room name the index can pass it", () => {
-    for (const card of publicRoomSelectionCards) {
-      const href = enquiryMailtoHref(card.name);
-      expect(href.startsWith(`mailto:${FOOTER_EMAIL}?subject=`)).toBe(true);
-      const subject = href.split("?subject=")[1] ?? "";
-      // A correctly encoded subject survives a decode round-trip and
-      // carries no raw spaces or commas into the URL.
-      expect(subject).not.toMatch(/[ ,]/);
-      expect(decodeURIComponent(subject)).toContain(card.name);
-    }
+  it("hands back no mailto", () => {
+    expect(enquiryComposerHref()).not.toContain("mailto:");
+    expect(enquiryComposerHref()).not.toContain(FOOTER_EMAIL);
   });
 });

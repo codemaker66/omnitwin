@@ -1,15 +1,21 @@
-# OMNITWIN Security Policy (RFC 9116)
+# Venviewer Security Policy (RFC 9116)
 #
-# If you've found a security vulnerability, please report it to the
+# If you've found a security vulnerability, please report it through the
 # contact below. We aim to acknowledge reports within 24 hours and
 # resolve critical issues within 7 days.
+#
+# T-616: every URL here used to name omnitwin.com, which this site is not
+# served from. RFC 9116 section 2.5.3 requires Canonical to be the URI the
+# file is actually published at, so the old value made the file invalid, and
+# the Policy and Hiring URLs resolved to nothing. Reporting now goes to the
+# public repository's security advisories — a channel that exists today.
+# A security@venviewer.com mailbox is Blake's to create; this Contact line
+# should become that address once it does.
 
-Contact: mailto:security@omnitwin.com
+Contact: https://github.com/codemaker66/omnitwin/security/advisories/new
 Expires: 2027-04-19T00:00:00.000Z
 Preferred-Languages: en
-Canonical: https://omnitwin.com/.well-known/security.txt
-Policy: https://omnitwin.com/security-policy
-Hiring: https://omnitwin.com/careers
+Canonical: https://venviewer.com/.well-known/security.txt
 
 # Notes for researchers:
 #   - Please do not access data belonging to other users.

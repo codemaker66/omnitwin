@@ -21,7 +21,7 @@
   --lg-ink-2: #5a5244;
   --lg-green: #1f4a38;
   --lg-green-soft: rgba(31, 74, 56, 0.14);
-  --lg-ochre: #b7862f;
+  --lg-ochre: #c98a5b;
   --lg-rule: #d5cbb6;
   --lg-display: "Fraunces", "Georgia", serif;
   --lg-body: "Newsreader", "Georgia", serif;
@@ -54,7 +54,7 @@
     --lg-ink-2: #b5aa97;
     --lg-green: #8fc3a8;
     --lg-green-soft: rgba(143, 195, 168, 0.16);
-    --lg-ochre: #d8a64c;
+    --lg-ochre: #c98a5b;
     --lg-rule: #3a332a;
     color-scheme: dark;
   }
@@ -67,14 +67,14 @@
   --lg-ink-2: #b5aa97;
   --lg-green: #8fc3a8;
   --lg-green-soft: rgba(143, 195, 168, 0.16);
-  --lg-ochre: #d8a64c;
+  --lg-ochre: #c98a5b;
   --lg-rule: #3a332a;
   color-scheme: dark;
 }
 
 .lg-root :focus-visible {
-  outline: 2px solid var(--lg-green);
-  outline-offset: 3px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
   border-radius: 2px;
 }
 

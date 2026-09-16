@@ -50,10 +50,10 @@ const pill: React.CSSProperties = {
 
 const primaryBtn: React.CSSProperties = {
   padding: "9px 20px", fontSize: 13, fontWeight: 500, letterSpacing: 0.3,
-  border: "1px solid rgba(201,168,76,0.3)", borderRadius: 6,
+  border: "1px solid rgba(201, 138, 91,0.3)", borderRadius: 6,
   cursor: "pointer", transition: "opacity 0.2s ease",
-  background: "linear-gradient(135deg, #c9a84c 0%, #a8893e 100%)",
-  color: "#1a1a1a", boxShadow: "0 2px 12px rgba(201,168,76,0.2)",
+  background: "linear-gradient(135deg, #c98a5b 0%, #c98a5b 100%)",
+  color: "#1a1a1a", boxShadow: "0 2px 12px rgba(201, 138, 91,0.2)",
 };
 
 const secondaryBtn: React.CSSProperties = {
@@ -75,11 +75,11 @@ interface StatusVisual {
 
 const STATUS_VISUALS: Readonly<Record<ConfigurationReviewStatus, StatusVisual>> = {
   draft:              { label: "Draft",              background: "#f7f5f0", color: "#666",    borderColor: "#e5e5e0" },
-  submitted:          { label: "Awaiting Review",    background: "#fef9e6", color: "#8a6a00", borderColor: "#eddcb0" },
+  submitted:          { label: "Awaiting Review",    background: "#fef9e6", color: "#7e4620", borderColor: "#eddcb0" },
   under_review:       { label: "Under Review",       background: "#e6f1fd", color: "#1f4e9b", borderColor: "#bcd3ef" },
   approved:           { label: "Approved",           background: "#e8f7ec", color: "#0b6b2c", borderColor: "#a9dfb7" },
   rejected:           { label: "Rejected",           background: "#fdecec", color: "#a02020", borderColor: "#f0b7b7" },
-  changes_requested:  { label: "Changes Requested",  background: "#fff4e0", color: "#8c5a00", borderColor: "#eec98f" },
+  changes_requested:  { label: "Changes Requested",  background: "#fff4e0", color: "#7e4620", borderColor: "#dca475" },
   withdrawn:          { label: "Withdrawn",          background: "#f5f5f5", color: "#777",    borderColor: "#e0e0e0" },
   archived:           { label: "Archived",           background: "#eeeeee", color: "#666",    borderColor: "#d5d5d5" },
 };

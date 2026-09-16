@@ -3,8 +3,8 @@
    entirely under prefers-reduced-motion. */
 
 .tm {
-  --tm-ink: #c9a84c;
-  --tm-line: rgba(201, 168, 76, 0.22);
+  --tm-ink: #c98a5b;
+  --tm-line: rgba(201, 138, 91, 0.22);
   --tm-bg: #17171a;
   --tm-text: #e8e6e1;
   --tm-muted: #9a978f;
@@ -23,7 +23,7 @@
 .tm__head { display: flex; flex-direction: column; gap: 3px; }
 
 .tm__eyebrow {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -43,8 +43,8 @@
   border: 1px solid var(--tm-line);
   border-radius: 8px;
   background:
-    linear-gradient(rgba(201, 168, 76, 0.05) 1px, transparent 1px) 0 0 / 100% 12.5%,
-    linear-gradient(90deg, rgba(201, 168, 76, 0.05) 1px, transparent 1px) 0 0 / 7.1% 100%,
+    linear-gradient(rgba(201, 138, 91, 0.05) 1px, transparent 1px) 0 0 / 100% 12.5%,
+    linear-gradient(90deg, rgba(201, 138, 91, 0.05) 1px, transparent 1px) 0 0 / 7.1% 100%,
     #101012;
   overflow: hidden;
 }
@@ -56,7 +56,7 @@
   margin: -11px 0 0 -11px;
   border: 1.5px solid var(--tm-ink);
   border-radius: 50%;
-  background: rgba(201, 168, 76, 0.14);
+  background: rgba(201, 138, 91, 0.14);
   /* A single settle as the room rearranges under the scrubber. */
   transition: left 260ms cubic-bezier(0.22, 1, 0.36, 1),
               top 260ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -78,7 +78,7 @@
   margin: -26px 0 0 -26px;
   border-radius: 4px;
   border-style: dashed;
-  background: rgba(201, 168, 76, 0.05);
+  background: rgba(201, 138, 91, 0.05);
 }
 
 .tm__object--chair {
@@ -91,7 +91,7 @@
 /* The object this moment actually touched — a quiet gold halo, so scrubbing
    reads as "this is what changed here" rather than a static redraw. */
 .tm__object--touched {
-  box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.28);
+  box-shadow: 0 0 0 3px rgba(201, 138, 91, 0.28);
 }
 
 /* Removed at the selected change. Drawn where it stood, in oxblood, hollow
@@ -117,7 +117,7 @@
 .tm__scrub { display: flex; flex-direction: column; gap: 6px; }
 
 .tm__scrub-label {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--tm-muted);
@@ -132,8 +132,8 @@
 /* Seen in a real browser: the default focus ring lands bright cyan, which
    breaks the House palette. Gold it, and keep it clearly visible. */
 .tm__scrub input[type="range"]:focus-visible {
-  outline: 2px solid var(--tm-ink);
-  outline-offset: 4px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
   border-radius: 4px;
 }
 
@@ -141,7 +141,7 @@
 
 .tm__note { margin: 0; font-size: 12px; color: var(--tm-muted); }
 
-.tm__warn { margin: 0; font-size: 12px; color: #d9a24a; }
+.tm__warn { margin: 0; font-size: 12px; color: #c98a5b; }
 
 .tm__restore {
   align-self: flex-start;
@@ -160,8 +160,8 @@
 .tm__restore:hover { filter: brightness(1.08); }
 
 .tm__restore:focus-visible {
-  outline: 2px solid var(--tm-ink);
-  outline-offset: 3px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -186,10 +186,16 @@ describe("Trades House leaflet experience", () => {
     expect(CRAFT_PROFILES[sent?.result as keyof typeof CRAFT_PROFILES].name).toBe(EXPECTED.name);
     expect(sent?.deliberation === null).toBe(!WALK.deliberated);
     expect(screen.getByText(EXPECTED.archetype)).toBeTruthy();
+    // T-616 / gate line 4: "Request an introduction" was a mailto. It handed
+    // the reader a pre-filled message to send themselves, so the Trades House
+    // got no row to answer from and no record that anyone had asked. It now
+    // reaches the enquiry composer on the front door, carrying the Craft the
+    // quiz drew — the one piece of context the mailto's body used to hold.
     const introduction = screen.getByRole("link", { name: "Request an introduction" });
-    expect(decodeURIComponent(introduction.getAttribute("href") ?? "")).toContain(
-      `Craft introduction — ${EXPECTED.name}`,
-    );
+    const href = introduction.getAttribute("href") ?? "";
+    expect(href).not.toContain("mailto:");
+    expect(href.endsWith("#enquire")).toBe(true);
+    expect(decodeURIComponent(href)).toContain(EXPECTED.name);
     expect(
       screen.getByRole("link", { name: "View the visitor leaflet" }).getAttribute("href"),
     ).toBe("/trades-house/leaflet");

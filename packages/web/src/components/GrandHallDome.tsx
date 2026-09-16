@@ -66,7 +66,7 @@ export function GrandHallDome({
             rotation={[-Math.PI / 2, 0, 0]}
           >
             <torusGeometry args={[ringRadius, 0.024, 8, 72]} />
-            <meshStandardMaterial color="#b98532" roughness={0.45} metalness={0.28} side={DoubleSide} clippingPlanes={clippingPlanes} />
+            <meshStandardMaterial color="#c98a5b" roughness={0.45} metalness={0.28} side={DoubleSide} clippingPlanes={clippingPlanes} />
           </mesh>
         );
       })}

@@ -46,8 +46,18 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
         <CockpitNavRail />
         <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /><GeneratedFurnitureProxyBadge /></div>
       </div>}
-      <section
+      {/* T-615: the stage is the planner's <main>, and the landmark belongs
+          here rather than on the shell in EditorPage. A <main> wrapped around
+          the whole shell strips the implicit `banner` role off
+          ReferenceRoomHeader's <header> and `contentinfo` off
+          ClientEventScheduleDock's <footer> — HTML grants those roles only to
+          a <header>/<footer> with no sectioning ancestor — so it would remove
+          two landmarks to add one. Both are siblings of this element and keep
+          their roles. This was a <section> (role=region) with the same
+          aria-label; nothing selects it by that role. */}
+      <main
         key="stage"
+        id="main-content"
         className="cockpit-stage"
         data-cockpit-mode={activeMode}
         data-resolve-phase={resolvePhase}
@@ -72,7 +82,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
         )}
         {mobile || timelinePreviewActive ? null : <ToolPill />}
         {mobile || timelinePreviewActive ? null : <CanvasLayerControls embedded />}
-      </section>
+      </main>
       {mobile ? null : timelinePreviewActive ? (
         <aside
           key="preview-lock"

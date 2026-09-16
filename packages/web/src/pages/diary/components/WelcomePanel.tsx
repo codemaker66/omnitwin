@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
+import type { ReactElement } from "react";
 import { BOARD_COPY } from "../board-copy.js";
+import { useEscapeToClose, useFocusTrap } from "../../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // WelcomePanel (T-520) — the Board's first-run teaching moment. One screen,
@@ -20,35 +21,30 @@ export interface WelcomePanelProps {
 
 export function WelcomePanel({ onDismiss }: WelcomePanelProps): ReactElement {
   const dismissRef = useRef<HTMLButtonElement | null>(null);
+  // T-615: the hand-rolled single-control trap and Escape handler were a
+  // React onKeyDown on the panel, so both depended on focus already being
+  // inside, and neither returned focus to the control that opened the panel.
+  // The shared hooks do all three, and the trap degrades to the same
+  // keep-Tab-here behaviour when there is exactly one focusable control.
+  const dialogRef = useFocusTrap<HTMLDivElement>();
+  useEscapeToClose(onDismiss);
 
   // Focus the single control WITHOUT scrolling — a plain autoFocus scrolls
-  // the panel to the button and clips the title on smaller viewports.
+  // the panel to the button and clips the title on smaller viewports. This
+  // runs before the trap's rAF, which then leaves the focus where it is.
   useEffect(() => {
     dismissRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onDismiss();
-      return;
-    }
-    // Single focusable control — keep Tab on it while the panel is open.
-    if (event.key === "Tab") {
-      event.preventDefault();
-      dismissRef.current?.focus();
-    }
-  };
-
   return (
     <div className="diary-welcome-overlay">
       <div
+        ref={dialogRef}
         className="diary-welcome"
         role="dialog"
         aria-modal="true"
         aria-label={BOARD_COPY.welcome.title}
         aria-describedby="diary-welcome-intro"
-        onKeyDown={onKeyDown}
       >
         <div className="diary-welcome-body">
           <h2 className="diary-welcome-title">{BOARD_COPY.welcome.title}</h2>

@@ -2,16 +2,16 @@
   --ops-bg: #050708;
   --ops-panel: rgba(13, 20, 22, 0.94);
   --ops-panel-strong: rgba(17, 27, 30, 0.98);
-  --ops-line: rgba(212, 169, 86, 0.28);
+  --ops-line: rgba(201, 138, 91, 0.28);
   --ops-line-cyan: rgba(82, 221, 224, 0.22);
-  --ops-gold: #d4a956;
-  --ops-gold-bright: #f3c56b;
+  --ops-gold: #c98a5b;
+  --ops-gold-bright: #dca475;
   --ops-cyan: #52dde0;
   --ops-text: #f7f0e4;
   --ops-muted: rgba(247, 240, 228, 0.7);
   --ops-soft: rgba(247, 240, 228, 0.52);
   background:
-    linear-gradient(135deg, rgba(212, 169, 86, 0.08), transparent 38%),
+    linear-gradient(135deg, rgba(201, 138, 91, 0.08), transparent 38%),
     linear-gradient(215deg, rgba(82, 221, 224, 0.08), transparent 42%),
     var(--ops-bg);
   color: var(--ops-text);
@@ -85,7 +85,7 @@
 .ops-handoff-kicker {
   color: var(--ops-gold-bright) !important;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.16em;
   margin-bottom: 10px !important;
   text-transform: uppercase;
@@ -98,7 +98,7 @@
   cursor: pointer;
   display: inline-flex;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   gap: 8px;
   min-height: 44px;
   padding: 0 16px;
@@ -107,7 +107,7 @@
 
 .ops-handoff-primary {
   background: var(--ops-gold);
-  border: 1px solid rgba(243, 197, 107, 0.85);
+  border: 1px solid rgba(220, 164, 117, 0.85);
   color: #090807;
 }
 
@@ -161,7 +161,7 @@
   color: var(--ops-cyan);
   display: block;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 8px;
   text-transform: uppercase;
 }
@@ -241,7 +241,7 @@
   background: rgba(82, 221, 224, 0.11);
   color: var(--ops-cyan);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -299,7 +299,7 @@
   color: var(--ops-cyan);
   display: block;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 8px;
   text-transform: uppercase;
 }
@@ -378,7 +378,7 @@
 
 .ops-handoff-page .ai-draft-panel__button {
   background: var(--ops-gold);
-  border-color: rgba(243, 197, 107, 0.85);
+  border-color: rgba(220, 164, 117, 0.85);
   color: #090807;
 }
 

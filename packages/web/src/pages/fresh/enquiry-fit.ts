@@ -171,12 +171,14 @@ export function enquiryYear(dateISO: string): number | null {
 export interface ComposedEnquiry {
   readonly subject: string;
   readonly body: string;
-  readonly mailtoHref: string;
 }
 
-/** The enquiry, written out — visible on the page, copyable, and openable
- *  in the visitor's own mail app. The email address is the venue's real one. */
-export function composeEnquiry(draft: EnquiryDraft, email: string): ComposedEnquiry {
+/** The enquiry, written out — visible on the page before it is sent, and
+ *  copyable. T-616 dropped the third field, a mailto href: the composer posts
+ *  to /public/enquiries now, and a link that opened the visitor's own mail app
+ *  beside the send button was a second way out of the page which left no row
+ *  in `enquiries` for the team to answer from. */
+export function composeEnquiry(draft: EnquiryDraft): ComposedEnquiry {
   const report = fitReport(draft.eventKey, draft.guests);
   const when = prettyEnquiryDate(draft.dateISO);
   const subject = `Enquiry — ${report.eventType.label} for ${String(report.guests)}${
@@ -198,8 +200,7 @@ export function composeEnquiry(draft: EnquiryDraft, email: string): ComposedEnqu
     "",
     "Thank you,",
   ].join("\n");
-  const mailtoHref = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  return { subject, body, mailtoHref };
+  return { subject, body };
 }
 
 /** Everything this module can say, for the page's claim-guard sweep —
@@ -210,10 +211,7 @@ export function allEnquiryFitCopy(): readonly string[] {
     for (const guests of [2, 40, 60, 61, 120, 180, 250, 400]) {
       const report = fitReport(type.key, guests);
       samples.push(fitSentence(report), alsoFitsSentence(report));
-      const composed = composeEnquiry(
-        { eventKey: type.key, guests, dateISO: "2027-03-14" },
-        "someone@example.com",
-      );
+      const composed = composeEnquiry({ eventKey: type.key, guests, dateISO: "2027-03-14" });
       samples.push(composed.subject, composed.body);
     }
   }

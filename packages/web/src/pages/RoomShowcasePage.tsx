@@ -40,7 +40,7 @@ function safeFallbackVisual(roomSlug: RoomShowcaseProfile["slug"]): PublicRoomRu
     runtimeVisualAvailable: false,
     visualUrl: null,
     visualLabel: "Visual preview",
-    safeCopy: "Runtime room visual is not currently available for this public preview. Final details are confirmed by the venue team.",
+    safeCopy: "We have no walkthrough of this room yet for this public preview. Final details are confirmed by the venue team.",
     humanReviewRequired: true,
   };
 }
@@ -123,7 +123,7 @@ function RoomNotFound(): ReactElement {
               <Link key={room.id} to={room.routeHref ?? "/"}>{room.name}</Link>
             ))}
           {roomShowcaseRoutes.length === 0 ? (
-            <Link to="/?room=trades-hall#contact">Enquire with the venue team</Link>
+            <Link to="/#enquire">Enquire with the venue team</Link>
           ) : null}
         </div>
       </section>

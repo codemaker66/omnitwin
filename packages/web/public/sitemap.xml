@@ -12,20 +12,17 @@
   - /tour and /venues/:venueSlug/twin both render TwinPage against the same
     flagship slug, and the twin bundle is not published on the default asset
     base, so neither is a working public URL yet.
+  - /pricing sells a tier no billing exists for, so it is not offered to search
+    until it does (T-616; it is Disallowed in robots.txt too). /demo is an
+    internal sales deck, now behind the admin route guard, and was never listed.
   - Token, planner and operational routes are private by design.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://venviewer.com/</loc>
-    <lastmod>2026-08-15</lastmod>
+    <lastmod>2026-09-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://venviewer.com/pricing</loc>
-    <lastmod>2026-08-15</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://venviewer.com/trades-house/discover-your-craft</loc>

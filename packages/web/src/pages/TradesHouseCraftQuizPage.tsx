@@ -49,7 +49,7 @@ import {
   CRAFT_PROFILES,
   CRAFT_QUESTIONS,
   applyCraftQuizAnswer,
-  buildCraftIntroductionMailto,
+  craftIntroductionHref,
   ZERO_CRAFT_QUIZ_PROGRESS,
   rankCrafts,
   type CraftQuizOption,
@@ -600,7 +600,7 @@ function ResultScreen({ ranking, hung, ledger, onRetake }: ResultScreenProps): R
         )}
       </p>
       <YourYear lines={ledger} craftName={craft.name} />
-      <a className="craft-result-introduction" href={buildCraftIntroductionMailto(winner.craftId)}>Request an introduction</a>
+      <a className="craft-result-introduction" href={craftIntroductionHref(winner.craftId)}>Request an introduction</a>
       <button type="button" className="craft-result-retake" onClick={onRetake}>Retake the questions</button>
       <a className="craft-result-leaflet" href="/trades-house/leaflet">View the visitor leaflet</a>
     </section>

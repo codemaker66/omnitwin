@@ -48,7 +48,7 @@ import { useLatestRequest } from "../../hooks/use-latest-request.js";
 const card: React.CSSProperties = {
   background:
     "linear-gradient(180deg, rgba(20, 27, 28, 0.96), rgba(9, 12, 12, 0.96)), radial-gradient(circle at 86% 0%, rgba(104, 216, 210, 0.1), transparent 34%)",
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   borderRadius: 8,
   padding: 20,
   boxShadow: "0 22px 70px rgba(0, 0, 0, 0.3)",
@@ -56,7 +56,7 @@ const card: React.CSSProperties = {
 };
 
 const labelStyle: React.CSSProperties = {
-  display: "block", fontSize: 12, fontWeight: 800, color: "#d7b56d", marginBottom: 4,
+  display: "block", fontSize: 12, fontWeight: 700, color: "#c98a5b", marginBottom: 4,
 };
 
 const inputStyle: React.CSSProperties = {
@@ -65,7 +65,7 @@ const inputStyle: React.CSSProperties = {
   minHeight: 40,
   padding: "8px 10px",
   fontSize: 14,
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   borderRadius: 6,
   background: "rgba(255, 247, 232, 0.07)",
   color: "#fff7e8",
@@ -73,8 +73,8 @@ const inputStyle: React.CSSProperties = {
 };
 
 const buttonPrimary: React.CSSProperties = {
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
-  backgroundColor: "#d7b56d",
+  background: "linear-gradient(135deg, #c98a5b, #dca475)",
+  backgroundColor: "#c98a5b",
   color: "#090807",
   border: "1px solid rgba(255, 224, 154, 0.52)",
   borderRadius: 6,
@@ -88,7 +88,7 @@ const buttonPrimary: React.CSSProperties = {
 const buttonSecondary: React.CSSProperties = {
   background: "rgba(255, 247, 232, 0.07)",
   color: "#f4efe4",
-  border: "1px solid rgba(215, 181, 109, 0.26)",
+  border: "1px solid rgba(201, 138, 91, 0.26)",
   borderRadius: 6,
   minHeight: 40,
   padding: "9px 18px",
@@ -487,7 +487,7 @@ export function ProposalsView(): ReactElement {
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>Proposals</h2>
           {listLoading && proposals.length > 0 && <ActivityStatus>Refreshing proposals…</ActivityStatus>}
           {listLoading && proposals.length === 0 && (
-            <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals...</ActivityStatus>
+            <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals…</ActivityStatus>
           )}
           {listError !== null && (
             <div role="alert" data-testid="proposal-list-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
@@ -518,8 +518,8 @@ export function ProposalsView(): ReactElement {
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
                     width: "100%", textAlign: "left", padding: "10px 8px", fontSize: 13,
-                    background: selected?.id === proposal.id ? "rgba(215, 181, 109, 0.18)" : "transparent",
-                    border: "none", borderBottom: "1px solid rgba(215, 181, 109, 0.16)", cursor: "pointer",
+                    background: selected?.id === proposal.id ? "rgba(201, 138, 91, 0.18)" : "transparent",
+                    border: "none", borderBottom: "1px solid rgba(201, 138, 91, 0.16)", cursor: "pointer",
                     color: "#fff7e8",
                   }}
                 >
@@ -615,8 +615,8 @@ export function ProposalsView(): ReactElement {
 
               {spacesRequests > 0 && <ActivityStatus>Loading room guidance…</ActivityStatus>}
               {spaces.length > 0 && (
-                <div style={{ marginTop: 10, padding: 12, background: "rgba(215, 181, 109, 0.08)", border: "1px solid rgba(215, 181, 109, 0.22)", borderRadius: 6 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#d7b56d", marginBottom: 8 }}>
+                <div style={{ marginTop: 10, padding: 12, background: "rgba(201, 138, 91, 0.08)", border: "1px solid rgba(201, 138, 91, 0.22)", borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#c98a5b", marginBottom: 8 }}>
                     Capacity guidance — planning-grade, from room floor area
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 1fr", gap: 8 }}>
@@ -755,7 +755,7 @@ export function ProposalsView(): ReactElement {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <tbody>
                   {latestVersion.payload.quote.lineItems.map((item, index) => (
-                    <tr key={index} style={{ borderBottom: "1px solid rgba(215, 181, 109, 0.14)" }}>
+                    <tr key={index} style={{ borderBottom: "1px solid rgba(201, 138, 91, 0.14)" }}>
                       <td style={{ padding: "6px 0" }}>{item.description}</td>
                       <td style={{ padding: "6px 0", textAlign: "right" }}>{item.quantity}×</td>
                       <td style={{ padding: "6px 0", textAlign: "right" }}>{formatMinorAsCurrency(item.lineTotalMinor, latestVersion.payload.quote?.currency ?? "GBP")}</td>
@@ -776,7 +776,7 @@ export function ProposalsView(): ReactElement {
             <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>Conversation</h3>
             {commentsLoading && comments.length > 0 && <ActivityStatus>Refreshing conversation…</ActivityStatus>}
             {commentsLoading && comments.length === 0 ? (
-              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading conversation...</ActivityStatus>
+              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading conversation…</ActivityStatus>
             ) : commentLoadError !== null ? (
               <div role="alert" data-testid="conversation-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
                 <p style={{ margin: "0 0 8px" }}>{commentLoadError}</p>
@@ -799,7 +799,7 @@ export function ProposalsView(): ReactElement {
                   <li
                     key={comment.id}
                     data-testid={`comment-${comment.authorType}`}
-                    style={{ padding: "8px 0", borderBottom: "1px solid rgba(215, 181, 109, 0.14)" }}
+                    style={{ padding: "8px 0", borderBottom: "1px solid rgba(201, 138, 91, 0.14)" }}
                   >
                     <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
                       <span style={{ fontWeight: 700, color: comment.authorType === "client" ? "#68d8d2" : "#fff7e8" }}>
@@ -849,7 +849,7 @@ export function ProposalsView(): ReactElement {
             <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>History</h3>
             {historyLoading && history.length > 0 && <ActivityStatus>Refreshing history…</ActivityStatus>}
             {historyLoading && history.length === 0 ? (
-              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading history...</ActivityStatus>
+              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading history…</ActivityStatus>
             ) : historyError !== null ? (
               <div role="alert" data-testid="history-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
                 <p style={{ margin: "0 0 8px" }}>{historyError}</p>
@@ -867,7 +867,7 @@ export function ProposalsView(): ReactElement {
             ) : (
               <ul style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
                 {history.map((entry) => (
-                  <li key={entry.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(215, 181, 109, 0.14)" }}>
+                  <li key={entry.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(201, 138, 91, 0.14)" }}>
                     <span style={{ fontWeight: 600 }}>{entry.fromStatus.replace(/_/g, " ")} → {entry.toStatus.replace(/_/g, " ")}</span>
                     <span style={{ color: "rgba(246, 241, 232, 0.72)", marginLeft: 8 }}>{new Date(entry.createdAt).toLocaleString("en-GB")}</span>
                     {entry.changedBy === null && <span style={{ color: "#68d8d2", marginLeft: 8 }}>(client via share link)</span>}
