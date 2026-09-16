@@ -241,7 +241,13 @@ async function main() {
   try {
     await stubBackend(page);
     await stubCaptureTiles(page, tiles, requestedTiles);
-    await page.goto(`${BASE_URL}/plan?perf=1&capture=1`, { timeout: LOAD_TIMEOUT_MS });
+    // The DEEP LINK, not bare /plan. `/plan` opens a fresh guest draft and
+    // ignores any configuration this script stubs, so the room arrives empty
+    // and the matrix would report the cost of nothing. `/plan/<id>` fetches
+    // `/public/configurations/<id>` and loads its objects — verified by the
+    // inspector reading "0 tables · 100 chairs" on one and "0 chairs" on the
+    // other.
+    await page.goto(`${BASE_URL}/plan/${CONFIG_ID}?perf=1&capture=1`, { timeout: LOAD_TIMEOUT_MS });
     await page.waitForSelector("canvas", { timeout: LOAD_TIMEOUT_MS });
     // Wait for the room to actually resolve, then settle: the coarse-to-fine
     // develop is its own workload and would contaminate every phase below.
@@ -256,6 +262,18 @@ async function main() {
       .then(() => true)
       .catch(() => false);
     await page.waitForTimeout(SETTLE_MS);
+
+    // Refuse to measure the wrong scene. A planner that opened an empty draft
+    // looks identical to one carrying a hundred chairs until you read its own
+    // count, and an empty-room number published as a hundred-chair number is
+    // worse than no number at all. This ran empty once; it cannot again.
+    const placed = await page.evaluate(() => {
+      const match = /(\d+) tables · (\d+) chairs/u.exec(document.body.innerText);
+      return match === null ? null : { tables: Number(match[1]), chairs: Number(match[2]) };
+    });
+    if (placed === null || placed.chairs !== CHAIRS) {
+      throw new Error(`The planner shows ${placed === null ? "no furniture count" : `${String(placed.chairs)} chairs`}, not ${String(CHAIRS)}`);
+    }
 
     const box = await page.locator("canvas").first().boundingBox();
     if (box === null) throw new Error("The planner canvas has no box to drive");
@@ -281,28 +299,53 @@ async function main() {
       await page.mouse.up({ button: "right" });
     });
 
+    // Tap until the planner says something is selected, then drag THAT.
+    //
+    // The furniture is wherever the layout put it, which is not the middle of
+    // the viewport: a hundred chairs seeded from the room's own origin sit off
+    // to one side under the default camera. Dragging the centre and calling it
+    // a furniture drag is how this phase ends up measuring a camera orbit —
+    // which is exactly what the first run of this script did.
+    const session = await context.newCDPSession(page);
+    const touch = async (type, x, y) => {
+      await session.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
+      });
+    };
+    const somethingSelected = () => page.evaluate(
+      () => !/Select furniture to edit/u.test(document.body.innerText),
+    );
+    let dragPoint = null;
+    for (let row = 1; row <= 6 && dragPoint === null; row += 1) {
+      for (let column = 1; column <= 8 && dragPoint === null; column += 1) {
+        const x = Math.round(box.x + (box.width * column) / 9);
+        const y = Math.round(box.y + (box.height * row) / 7);
+        await touch("touchStart", x, y);
+        await touch("touchEnd", x, y);
+        await page.waitForTimeout(220);
+        if (await somethingSelected()) dragPoint = { x, y };
+      }
+    }
+    if (dragPoint === null) {
+      throw new Error("No furniture under any probe point: a drag here would measure the camera, not a chair");
+    }
+
     phases.touchDragChair = await phase(page, "touchDragChair", async () => {
-      // Tap once to select, then drag: the gesture this lane added. Driven
-      // through CDP so the pointer really is a touch and not a mouse.
-      const session = await context.newCDPSession(page);
-      const touch = async (type, x, y) => {
-        await session.send("Input.dispatchTouchEvent", {
-          type,
-          touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
-        });
-      };
-      await touch("touchStart", centreX, centreY);
-      await touch("touchEnd", centreX, centreY);
-      await page.waitForTimeout(250);
-      await touch("touchStart", centreX, centreY);
+      // The gesture this lane added, driven through CDP so the pointer really
+      // is a touch and not a mouse. The item is already selected by the scan
+      // above, which is the state in which one finger claims the move.
+      await touch("touchStart", dragPoint.x, dragPoint.y);
       const steps = 60;
       for (let step = 1; step <= steps; step += 1) {
-        await touch("touchMove", centreX + step * 3, centreY + Math.sin(step / 6) * 40);
+        await touch("touchMove", dragPoint.x + step * 2, dragPoint.y + Math.sin(step / 6) * 30);
         await page.waitForTimeout(PHASE_MS / steps);
       }
-      await touch("touchEnd", centreX, centreY);
-      await session.detach();
+      await touch("touchEnd", dragPoint.x, dragPoint.y);
     });
+    const dragRecorded = await page.evaluate(() => [...document.querySelectorAll("button")]
+      .some((button) => (button.getAttribute("aria-label") ?? "").startsWith("Undo Move")));
+    await session.detach();
 
     const record = {
       schema: "venviewer.device-matrix/1",
@@ -318,8 +361,13 @@ async function main() {
       scene: {
         room: "Reception Room",
         chairs: CHAIRS,
-        route: "/plan?perf=1&capture=1",
+        route: `/plan/${CONFIG_ID}?perf=1&capture=1`,
         backend: "stubbed (no live API)",
+        /** What the planner itself reported having, not what was requested. */
+        placed,
+        /** Where the drag actually started, and whether it moved furniture. */
+        dragPoint,
+        dragRecordedAsMove: dragRecorded,
         capture: {
           resolved,
           coarseLevel: tiles.coarseLevel,
