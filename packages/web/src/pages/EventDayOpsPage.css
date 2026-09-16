@@ -393,7 +393,7 @@
 .event-day-issue-form input:focus-visible,
 .event-day-issue-form textarea:focus-visible,
 .event-day-issue-form select:focus-visible {
-  outline: 3px solid #4c554a;
+  outline: 3px solid var(--hk-forest);
   outline-offset: 2px;
 }
 
@@ -501,4 +501,17 @@
   font-weight: 750;
   margin: 12px 0 0;
   padding-left: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .event-day-button,
+  .event-day-icon-button {
+    transition: none;
+  }
+
+  .event-day-button:active:not(:disabled),
+  .event-day-icon-button:active:not(:disabled) {
+    transform: none;
+  }
 }
