@@ -14,6 +14,7 @@ import {
   EventSchema,
   LayoutVariantSchema,
   PhaseLayoutSnapshotSchema,
+  PlatformRoleSchema,
   UpdateEventPhaseSchema,
   UpdateEventSchema,
   defaultEventPhaseInputs,
@@ -36,10 +37,11 @@ import {
   layoutVariants,
   phaseLayoutSnapshots,
   spaces,
+  users,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAccessInternalEvent, canAccessResource, canWriteEvents, isEventWriteRole } from "../utils/query.js";
+import { canAccessInternalEvent, canAccessResource, canManageVenue, canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { updateEventCore } from "../services/event-mutations.js";
 
@@ -59,6 +61,25 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
     code: "VALIDATION_ERROR",
     details,
   });
+}
+
+/**
+ * Would an event↔configuration link hand the configuration's OWNER a view of
+ * the event? Mirrors the participation test in
+ * services/client-event-schedule.ts, which admits only a client or planner who
+ * does not already manage the venue. An unreadable platform role is treated as
+ * "none", so an unexpected value refuses the link rather than widening it.
+ */
+function grantsCustomerParticipation(
+  owner: { readonly role: string; readonly venueId: string | null; readonly platformRole: string },
+  venueId: string,
+): boolean {
+  if (owner.role !== "client" && owner.role !== "planner") return false;
+  const platformRole = PlatformRoleSchema.safeParse(owner.platformRole);
+  return !canManageVenue(
+    { role: owner.role, venueId: owner.venueId, platformRole: platformRole.success ? platformRole.data : "none" },
+    venueId,
+  );
 }
 
 function toIso(value: Date): string {
@@ -517,11 +538,19 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     return reply.status(201).send({ data: serializeLayoutVariant(created) });
   });
 
-  // The planner corridor: an event link opened on a saved layout records the
-  // binding the Ops compiler requires before a handoff pack can carry an
+  // The planner corridor: compiling an Ops handoff pack against an event link
+  // records the binding the Ops compiler requires before a pack can carry an
   // eventId. Idempotent by the (event, configuration, link_type) unique
-  // constraint rather than a read-then-write precheck, so two corridor opens
-  // racing each other still leave exactly one row.
+  // constraint rather than a read-then-write precheck, so two compiles racing
+  // each other still leave exactly one row.
+  //
+  // TENANCY: a source_configuration link with no layout variant is also the
+  // sole participation grant that admits a client or planner to an event's
+  // schedule (services/client-event-schedule.ts). Linking a customer-owned
+  // layout would therefore widen who can read the event, so it is refused
+  // below. A distinct "compiled from this layout" link type would keep the two
+  // meanings apart, but the link_type CHECK constraint (migration 0027) cannot
+  // take a new value without a migration, and this lane owns no migration.
   server.post("/:id/configuration-links", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
@@ -545,6 +574,19 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
         error: "A linked configuration must belong to the event venue",
         code: "CONFIGURATION_VENUE_MISMATCH",
       });
+    }
+    if (config.userId !== null) {
+      const [owner] = await db.select({
+        role: users.role,
+        venueId: users.venueId,
+        platformRole: users.platformRole,
+      }).from(users).where(eq(users.id, config.userId)).limit(1);
+      if (owner !== undefined && grantsCustomerParticipation(owner, eventRow.venueId)) {
+        return reply.status(409).send({
+          error: "This layout belongs to a client account, and linking it would give that client access to the event schedule",
+          code: "CONFIGURATION_OWNER_IS_CUSTOMER",
+        });
+      }
     }
 
     const [inserted] = await db.insert(eventConfigurationLinks).values({

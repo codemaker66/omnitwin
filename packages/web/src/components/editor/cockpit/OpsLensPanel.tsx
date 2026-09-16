@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useMemo, useRef, useState, type ReactElement } from "react";
 import { BriefcaseBusiness } from "lucide-react";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import type { OpsHandoffPackBundle } from "@omnitwin/types";
@@ -27,13 +27,21 @@ import { ApiError } from "../../../api/client.js";
 //
 // THE EVENT CHAIN: when the planner was opened from an event link (?eventId),
 // the compiled pack must carry that event or the Event Day board has nothing to
-// show and reports a missing handoff. Two things make that work: the corridor
-// records the event↔configuration link the Ops compiler requires, and the
-// compile call passes the eventId. The link request is idempotent server-side
-// and is awaited before compiling, so opening the lens twice writes one row and
-// an immediate compile never races the binding. Roles without event-write
-// permission simply fail to bind and get the server's actionable
-// EVENT_CONFIGURATION_BINDING_REQUIRED message instead of a silent no-op.
+// show and reports a missing handoff. The Ops compiler refuses an event it has
+// no recorded event_configuration_links row for, so compiling attempts that
+// binding first. Three rules keep the chain honest:
+//
+//  * the binding is attempted by the EXPLICIT compile action, never by mounting
+//    the lens. The row it writes is also the participation grant that admits a
+//    customer to an event's schedule (services/client-event-schedule.ts), so it
+//    follows a human act and the server refuses a client-owned layout outright.
+//  * only a SUCCESSFUL binding is remembered. A refusal or a network blip is
+//    retried by the next explicit compile rather than becoming a permanent dead
+//    end that answers 409 to every later attempt.
+//  * a binding that cannot be made — a hallkeeper's 403, a client-owned layout,
+//    a failed request — falls back to compiling WITHOUT the event, exactly as
+//    this panel did before the event chain existed. The note then states that
+//    the pack is not attached and why, instead of promising an attachment.
 // ---------------------------------------------------------------------------
 
 type OpsPhase = "idle" | "compiling" | "error";
@@ -50,6 +58,44 @@ function opsCompilationErrorMessage(error: unknown): string {
     return error.message;
   }
   return "Couldn't compile the handoff pack. Check the connection and try again, or use Ops in your dashboard.";
+}
+
+// What this panel actually knows about the event binding, for the note. "idle"
+// is "not attempted yet for this event and layout" — never "assumed to work".
+type EventBinding =
+  | { readonly kind: "idle" }
+  | { readonly kind: "bound" }
+  | { readonly kind: "unbound"; readonly reason: string };
+
+const BINDING_IDLE: EventBinding = { kind: "idle" };
+const BINDING_BOUND: EventBinding = { kind: "bound" };
+
+function bindingFailure(error: unknown): EventBinding {
+  if (error instanceof ApiError && error.status === 403) {
+    return {
+      kind: "unbound",
+      reason: "Your role can't attach packs to events, so venue staff or an administrator has to attach this one.",
+    };
+  }
+  if (error instanceof ApiError && error.code === "CONFIGURATION_OWNER_IS_CUSTOMER") {
+    return {
+      kind: "unbound",
+      reason: "This saved layout belongs to a client account, and attaching it would give that client the event's schedule.",
+    };
+  }
+  if (error instanceof ApiError && error.status < 500) {
+    // Server messages on this route are written for the person reading them.
+    return { kind: "unbound", reason: /[.!?]$/u.test(error.message) ? error.message : `${error.message}.` };
+  }
+  return { kind: "unbound", reason: "The attachment request didn't complete — compile again to retry it." };
+}
+
+function bindingNote(eventName: string, binding: EventBinding): string {
+  if (binding.kind === "bound") return `Attached to ${eventName}, so this pack reaches the event day board.`;
+  if (binding.kind === "idle") {
+    return `Not attached to ${eventName} yet — compiling attaches it so the pack reaches the event day board.`;
+  }
+  return `Not attached to ${eventName}. ${binding.reason} The pack compiles without the event, so it won't reach the event day board.`;
 }
 
 export function OpsLensPanel(): ReactElement {
@@ -77,34 +123,53 @@ export function OpsLensPanel(): ReactElement {
   const canCompile = isSignedIn && configId !== null;
   const compiling = phase === "compiling";
 
-  // One in-flight binding per (event, configuration) pair. Keeping the promise
-  // rather than a boolean lets the compile await the same request the corridor
-  // already started instead of firing a second one.
-  const bindingRef = useRef<{ readonly key: string; readonly request: Promise<void> } | null>(null);
-  const ensureEventBinding = useCallback((): Promise<void> => {
-    if (configId === null || linkedEventId === null || !isSignedIn) return Promise.resolve();
-    const key = `${linkedEventId}:${configId}`;
-    const current = bindingRef.current;
-    if (current !== null && current.key === key) return current.request;
-    // A failed binding is not retried on every render; the compile surfaces the
-    // server's own reason, which is more useful than a silent retry loop.
-    const request = linkEventConfiguration(linkedEventId, {
-      configurationId: configId,
-      linkType: "source_configuration",
-    }).then(() => undefined, () => undefined);
-    bindingRef.current = { key, request };
-    return request;
-  }, [configId, isSignedIn, linkedEventId]);
+  // The binding belongs to one (event, configuration) pair; a different pair
+  // starts from "not attempted" rather than inheriting the last verdict.
+  const bindingKey = configId !== null && linkedEventId !== null && isSignedIn
+    ? `${linkedEventId}:${configId}`
+    : null;
+  const [settledBinding, setSettledBinding] = useState<{ readonly key: string; readonly state: EventBinding } | null>(null);
+  const binding: EventBinding = settledBinding !== null && settledBinding.key === bindingKey
+    ? settledBinding.state
+    : BINDING_IDLE;
 
-  useEffect(() => { void ensureEventBinding(); }, [ensureEventBinding]);
+  // Only an IN-FLIGHT request is shared, so a double press cannot issue two
+  // writes. Nothing rejected is ever cached: the next explicit compile retries.
+  const inFlightBindingRef = useRef<{ readonly key: string; readonly request: Promise<EventBinding> } | null>(null);
+  const attemptBinding = (key: string, eventId: string, configurationId: string): Promise<EventBinding> => {
+    const current = inFlightBindingRef.current;
+    if (current !== null && current.key === key) return current.request;
+    const request = linkEventConfiguration(eventId, { configurationId, linkType: "source_configuration" })
+      .then<EventBinding, EventBinding>(() => BINDING_BOUND, (error: unknown) => bindingFailure(error))
+      .then((outcome) => {
+        if (inFlightBindingRef.current?.key === key) inFlightBindingRef.current = null;
+        return outcome;
+      });
+    inFlightBindingRef.current = { key, request };
+    return request;
+  };
 
   const handleCompile = (): void => {
     if (compiling || configId === null) return;
     setPhase("compiling");
     setError(null);
     const eventId = linkedEventId;
-    ensureEventBinding()
-      .then(() => compileOpsHandoffPack(eventId === null ? { configId } : { configId, eventId }))
+    const key = bindingKey;
+    const attempt: Promise<EventBinding> = eventId === null || key === null
+      ? Promise.resolve(BINDING_IDLE)
+      : binding.kind === "bound"
+        ? Promise.resolve(BINDING_BOUND)
+        : attemptBinding(key, eventId, configId);
+    attempt
+      .then((outcome) => {
+        if (key !== null && eventId !== null) setSettledBinding({ key, state: outcome });
+        // An event that could not be bound is left off the compile call: the
+        // server would refuse it, and an unbound pack is what this panel
+        // produced before the event chain existed.
+        return compileOpsHandoffPack(outcome.kind === "bound" && eventId !== null
+          ? { configId, eventId }
+          : { configId });
+      })
       .then((bundle) => { setPack(bundle); setPhase("idle"); })
       .catch((error: unknown) => {
         setError(opsCompilationErrorMessage(error));
@@ -148,8 +213,11 @@ export function OpsLensPanel(): ReactElement {
 
       <LensPanelSection label="Handoff pack">
         {canCompile && linkedEventName !== null && (
-          <p className="lens-panel__note" data-testid="ops-event-binding">
-            This pack will be attached to {linkedEventName}, so it reaches the event day board.
+          <p
+            className={binding.kind === "unbound" ? "lens-panel__note lens-panel__note--warn" : "lens-panel__note"}
+            data-testid="ops-event-binding"
+          >
+            {bindingNote(linkedEventName, binding)}
           </p>
         )}
 

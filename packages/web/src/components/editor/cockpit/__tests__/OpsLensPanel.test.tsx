@@ -183,20 +183,25 @@ describe("OpsLensPanel", () => {
 
     renderPanel(`?eventId=${EVENT_ID}`);
 
-    // The corridor records the link on open, before anyone presses compile.
-    await waitFor(() => {
-      expect(mocks.linkEventConfiguration).toHaveBeenCalledWith(EVENT_ID, {
-        configurationId: CONFIG_ID,
-        linkType: "source_configuration",
-      });
-    });
+    // Mounting the lens writes nothing: the link is also a participation grant,
+    // so it waits for the explicit compile.
     expect((await screen.findByTestId("ops-event-binding")).textContent)
-      .toMatch(/Baxter wedding/);
+      .toMatch(/Not attached to Baxter wedding yet/);
+    expect(mocks.linkEventConfiguration).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId("ops-compile"));
     await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
+    expect(mocks.linkEventConfiguration).toHaveBeenCalledWith(EVENT_ID, {
+      configurationId: CONFIG_ID,
+      linkType: "source_configuration",
+    });
     expect(mocks.compileOpsHandoffPack).toHaveBeenCalledWith({ configId: CONFIG_ID, eventId: EVENT_ID });
-    // One corridor, one link request, however many renders happened.
+    expect(screen.getByTestId("ops-event-binding").textContent)
+      .toMatch(/Attached to Baxter wedding, so this pack reaches the event day board/);
+
+    // A second compile reuses the recorded binding instead of writing again.
+    fireEvent.click(screen.getByTestId("ops-compile"));
+    await waitFor(() => { expect(mocks.compileOpsHandoffPack).toHaveBeenCalledTimes(2); });
     expect(mocks.linkEventConfiguration).toHaveBeenCalledTimes(1);
   });
 
@@ -217,23 +222,81 @@ describe("OpsLensPanel", () => {
     expect(screen.queryByTestId("ops-event-binding")).toBeNull();
   });
 
-  it("still compiles and reports the server reason when the binding request is refused", async () => {
+  it("compiles without the event and names the refusal when a client-owned layout is rejected", async () => {
     signInStaff();
     useEditorStore.setState({ configId: CONFIG_ID, venueId: VENUE_ID });
-    mocks.linkEventConfiguration.mockRejectedValue(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
-    mocks.compileOpsHandoffPack.mockRejectedValue(new ApiError(
+    usePlacementStore.setState({ placedItems: place(chair(), 20) });
+    mocks.linkEventConfiguration.mockRejectedValue(new ApiError(
       409,
-      "Bind this approved configuration to the event before compiling its Ops handoff",
-      "EVENT_CONFIGURATION_BINDING_REQUIRED",
+      "This layout belongs to a client account, and linking it would give that client access to the event schedule",
+      "CONFIGURATION_OWNER_IS_CUSTOMER",
     ));
+    mocks.compileOpsHandoffPack.mockResolvedValue({
+      pack: { id: "pk4", summary: "Setup plan compiled.", status: "compiled" },
+      opsTasks: [{}], loadInSequence: [{}],
+    });
 
     renderPanel(`?eventId=${EVENT_ID}`);
-    await waitFor(() => { expect(mocks.linkEventConfiguration).toHaveBeenCalled(); });
+    await screen.findByTestId("ops-event-binding");
     fireEvent.click(screen.getByTestId("ops-compile"));
 
-    await waitFor(() => {
-      expect(screen.getByTestId("ops-error").textContent).toMatch(/Bind this approved configuration to the event/i);
+    // The refusal never becomes a 409 dead end: the pack still compiles,
+    // unbound, exactly as it did before the event chain existed.
+    await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
+    expect(mocks.compileOpsHandoffPack).toHaveBeenCalledWith({ configId: CONFIG_ID });
+    expect(screen.queryByTestId("ops-error")).toBeNull();
+    const note = screen.getByTestId("ops-event-binding");
+    expect(note.textContent).toMatch(/Not attached to Baxter wedding\./);
+    expect(note.textContent).toMatch(/belongs to a client account/);
+    expect(note.textContent).toMatch(/reach the event day board/);
+    expect(note.className).toMatch(/lens-panel__note--warn/);
+  });
+
+  it("lets a hallkeeper compile the pack without the event when the binding is forbidden", async () => {
+    useAuthStore.getState().setUser({ id: "u2", email: "hall@venue.test", role: "hallkeeper", platformRole: "none", venueId: VENUE_ID, name: "Hallkeeper" });
+    useEditorStore.setState({ configId: CONFIG_ID, venueId: VENUE_ID });
+    usePlacementStore.setState({ placedItems: place(chair(), 20) });
+    mocks.linkEventConfiguration.mockRejectedValue(new ApiError(403, "Insufficient permissions", "FORBIDDEN"));
+    mocks.compileOpsHandoffPack.mockResolvedValue({
+      pack: { id: "pk5", summary: "Setup plan compiled.", status: "compiled" },
+      opsTasks: [{}], loadInSequence: [{}],
     });
-    expect(mocks.compileOpsHandoffPack).toHaveBeenCalledWith({ configId: CONFIG_ID, eventId: EVENT_ID });
+
+    renderPanel(`?eventId=${EVENT_ID}`);
+    await screen.findByTestId("ops-event-binding");
+    fireEvent.click(screen.getByTestId("ops-compile"));
+
+    await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
+    expect(mocks.compileOpsHandoffPack).toHaveBeenCalledWith({ configId: CONFIG_ID });
+    expect(screen.getByTestId("ops-event-binding").textContent)
+      .toMatch(/Your role can't attach packs to events, so venue staff or an administrator has to attach this one/);
+  });
+
+  it("retries a failed binding on the next compile and attaches the pack once it succeeds", async () => {
+    signInStaff();
+    useEditorStore.setState({ configId: CONFIG_ID, venueId: VENUE_ID });
+    usePlacementStore.setState({ placedItems: place(chair(), 20) });
+    mocks.linkEventConfiguration.mockRejectedValueOnce(new Error("network"));
+    mocks.linkEventConfiguration.mockResolvedValue({});
+    mocks.compileOpsHandoffPack.mockResolvedValue({
+      pack: { id: "pk6", summary: "Setup plan compiled.", status: "compiled" },
+      opsTasks: [{}], loadInSequence: [{}],
+    });
+
+    renderPanel(`?eventId=${EVENT_ID}`);
+    await screen.findByTestId("ops-event-binding");
+
+    fireEvent.click(screen.getByTestId("ops-compile"));
+    await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
+    expect(mocks.compileOpsHandoffPack).toHaveBeenNthCalledWith(1, { configId: CONFIG_ID });
+    expect(screen.getByTestId("ops-event-binding").textContent)
+      .toMatch(/The attachment request didn't complete/);
+
+    fireEvent.click(screen.getByTestId("ops-compile"));
+    await waitFor(() => {
+      expect(screen.getByTestId("ops-event-binding").textContent).toMatch(/Attached to Baxter wedding/);
+    });
+    expect(mocks.linkEventConfiguration).toHaveBeenCalledTimes(2);
+    expect(mocks.compileOpsHandoffPack).toHaveBeenNthCalledWith(2, { configId: CONFIG_ID, eventId: EVENT_ID });
   });
 });
