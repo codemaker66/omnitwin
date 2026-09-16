@@ -78,16 +78,24 @@ function seededChairs(count) {
   return Array.from({ length: count }, (_, index) => {
     const row = Math.floor(index / perRow);
     const column = index % perRow;
+    // The shape is the client's PlacedObjectResponseSchema
+    // (src/api/configurations.ts): every rotation axis present, the asset
+    // under assetDefinitionId, and the owning configuration named. Zod
+    // rejects anything less and the planner answers "Couldn't open the
+    // planner" rather than rendering a hundred chairs.
     return {
       id: `matrix-chair-${String(index).padStart(3, "0")}`,
-      assetId: BANQUET_CHAIR,
+      configurationId: CONFIG_ID,
+      assetDefinitionId: BANQUET_CHAIR,
       positionX: (originX + column * pitch).toFixed(3),
       positionY: "0",
       positionZ: (originZ + row * pitch).toFixed(3),
+      rotationX: "0",
+      rotationY: "0",
       rotationZ: "0",
       scale: "1",
       sortOrder: index,
-      metadata: {},
+      metadata: null,
     };
   });
 }
@@ -114,7 +122,11 @@ const CONFIG = {
  */
 async function captureTiles() {
   const source = await readFile(DESCRIPTOR, "utf8");
-  const start = source.indexOf("[", source.indexOf("GENERATED_ROOM_SPLAT_BUNDLES"));
+  // Past the declaration's type annotation — `readonly GeneratedRoomSplatBundle[]`
+  // carries a `[` of its own — to the `=` and then the array literal itself.
+  const declaration = source.indexOf("GENERATED_ROOM_SPLAT_BUNDLES");
+  const assignment = declaration === -1 ? -1 : source.indexOf("=", declaration);
+  const start = assignment === -1 ? -1 : source.indexOf("[", assignment);
   const end = source.lastIndexOf("] as const;");
   if (start === -1 || end === -1) throw new Error(`Cannot read ${DESCRIPTOR}`);
   const bundles = JSON.parse(source.slice(start, end + 1));
@@ -179,6 +191,14 @@ async function stubCaptureTiles(page, tiles, requested) {
 
 async function stubBackend(page) {
   const json = (data) => (route) => { void route.fulfill({ json: { data } }); };
+  // Registered FIRST on purpose: Playwright matches the LAST registered route
+  // first, so a catch-all added at the end shadows every specific stub and the
+  // planner boots on empty envelopes ("Couldn't open the planner").
+  //
+  // Anything not stubbed below gets an empty, successful envelope. A failed
+  // request would put the planner into an error state, and then this would be
+  // measuring the error state.
+  await page.route(`${API}/**`, (route) => { void route.fulfill({ json: { data: null } }); });
   await page.route(`${API}/venues`, json([VENUE]));
   await page.route(`${API}/venues/${VENUE_ID}`, json({ ...VENUE, spaces: [RECEPTION_ROOM] }));
   await page.route(`${API}/venues/${VENUE_ID}/spaces`, json([RECEPTION_ROOM]));
@@ -186,10 +206,6 @@ async function stubBackend(page) {
   await page.route(`${API}/public/configurations`, json(CONFIG));
   await page.route(`${API}/public/configurations/${CONFIG_ID}`, json(CONFIG));
   await page.route(`${API}/public/configurations/${CONFIG_ID}/objects`, json(CONFIG.objects));
-  // Anything else on the API origin gets an empty, successful envelope. A
-  // failed request would put the planner into an error state, and then this
-  // would be measuring the error state.
-  await page.route(`${API}/**`, (route) => { void route.fulfill({ json: { data: null } }); });
 }
 
 /** Run one phase: reset the sampler, do something, read the distribution back. */
