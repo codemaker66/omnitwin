@@ -14,7 +14,7 @@ export interface FurnitureSelectionOutline {
   readonly coordinateKey: string;
 }
 
-export const SELECTION_OUTLINE_BRASS = "#c98a5b";
+export const SELECTION_OUTLINE_BRASS = "#c9a85b";
 const OUTLINE_LIFT = .02;
 const ROUND_SEGMENTS = 64;
 

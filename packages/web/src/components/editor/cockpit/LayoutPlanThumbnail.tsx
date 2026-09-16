@@ -57,7 +57,7 @@ function bounds(snapshot: CanonicalLayoutSnapshotV0): PlanBounds {
 
 function objectColour(object: LayoutSnapshotPlacedObject): string {
   switch (object.assetDefinition.category) {
-    case "table": return "#c98a5b";
+    case "table": return "#d5b557";
     case "chair": return "#a5b8bc";
     case "stage": return "#b788e4";
     case "lighting": return "#67cbd3";
@@ -99,9 +99,9 @@ function paintPlan(
       else context.lineTo(x(point.x), y(point.y));
     });
     context.closePath();
-    context.fillStyle = "rgba(220, 164, 117, 0.055)";
+    context.fillStyle = "rgba(223, 205, 159, 0.055)";
     context.fill();
-    context.strokeStyle = "rgba(220, 164, 117, 0.42)";
+    context.strokeStyle = "rgba(228, 205, 139, 0.42)";
     context.lineWidth = 1;
     context.stroke();
   }

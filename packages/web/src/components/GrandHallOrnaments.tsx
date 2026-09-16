@@ -41,9 +41,9 @@ const PORTRAIT_DARK = "#2a2119";
 const CURTAIN_CREAM = "#d6bea0";
 const CURTAIN_SHADOW = "#92785d";
 const WINDOW_FRAME_SHADOW = "#d9cba8";
-const MURAL_GOLD = "#c98a5b";
-const MURAL_SHADOW = "#7e4620";
-const UNDERLIGHT = "#dca475";
+const MURAL_GOLD = "#b98532";
+const MURAL_SHADOW = "#705018";
+const UNDERLIGHT = "#f5d47a";
 const GLASS_BLUE = "#b7d1df";
 const GLASS_HIGHLIGHT = "#f4fbff";
 const FIREBOX_DARK = "#120d09";
@@ -1125,7 +1125,7 @@ function Chandelier({ anchorY, dropLength, x = 0, z = 0, scale = 1 }: Chandelier
           Eight identical spheres per chandelier → one instanced draw. */}
       <Instances limit={8} range={8} name="chandelier-candles">
         <sphereGeometry args={[0.07, 12, 12]} />
-        <meshStandardMaterial color="#ffe0a3" emissive="#dca475" emissiveIntensity={0.95} roughness={0.18} metalness={0} />
+        <meshStandardMaterial color="#ffe0a3" emissive="#f7c16b" emissiveIntensity={0.95} roughness={0.18} metalness={0} />
         {Array.from({ length: 8 }).map((_, i) => {
           const a = (i / 8) * Math.PI * 2;
           return (

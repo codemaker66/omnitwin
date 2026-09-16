@@ -107,7 +107,7 @@ export function createParquetFloorTexture(): Texture {
       boardGrad.addColorStop(0, "#b37535");
       boardGrad.addColorStop(0.08, tone);
       boardGrad.addColorStop(0.54, tone);
-      boardGrad.addColorStop(1, "#dca475");
+      boardGrad.addColorStop(1, "#e2b979");
       ctx.fillStyle = boardGrad;
       ctx.fillRect(x, y, BOARD_W, BOARD_L);
 
@@ -129,7 +129,7 @@ export function createParquetFloorTexture(): Texture {
         ctx.fillRect(x + g, y + 8, 1, BOARD_L - 16);
       }
       for (let s = 48; s < BOARD_L; s += 76 + Math.floor(hash(col, row, s) * 38)) {
-        ctx.fillStyle = `rgba(220,164,117,${(0.025 + hash(row, s, col) * 0.03).toFixed(3)})`;
+        ctx.fillStyle = `rgba(246,198,107,${(0.025 + hash(row, s, col) * 0.03).toFixed(3)})`;
         ctx.fillRect(x + 4, y + s, BOARD_W - 8, 1);
       }
       if (hash(col, row, 91) > 0.72) {
@@ -139,7 +139,7 @@ export function createParquetFloorTexture(): Texture {
         ctx.ellipse(knotX, knotY, 3.5, 13, hash(col, row, 3) * Math.PI, 0, Math.PI * 2);
         ctx.fillStyle = "rgba(84,50,20,0.1)";
         ctx.fill();
-        ctx.strokeStyle = "rgba(220,164,117,0.12)";
+        ctx.strokeStyle = "rgba(246,192,101,0.12)";
         ctx.lineWidth = 1;
         ctx.stroke();
       }
@@ -270,7 +270,7 @@ export function createCeilingPlasterTexture(): Texture {
       ctx.strokeStyle = "rgba(52,27,10,0.5)";
       ctx.lineWidth = 5;
       ctx.strokeRect(x + 8, y + 8, PANEL - 16, PANEL - 16);
-      ctx.strokeStyle = "rgba(201,138,91,0.28)";
+      ctx.strokeStyle = "rgba(211,164,87,0.28)";
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 15, y + 15, PANEL - 30, PANEL - 30);
     }
@@ -279,7 +279,7 @@ export function createCeilingPlasterTexture(): Texture {
   // Small gold rosette per coffer.
   for (let cx = PANEL / 2; cx < SIZE; cx += PANEL) {
     for (let cy = PANEL / 2; cy < SIZE; cy += PANEL) {
-      ctx.fillStyle = "rgba(201,138,91,0.35)";
+      ctx.fillStyle = "rgba(220,176,92,0.35)";
       ctx.beginPath();
       ctx.arc(cx, cy, 14, 0, Math.PI * 2);
       ctx.fill();
@@ -322,7 +322,7 @@ export function createDomeInteriorTexture(): Texture {
   const baseGrad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
   baseGrad.addColorStop(0, "#8a4f22");
   baseGrad.addColorStop(0.48, "#b97633");
-  baseGrad.addColorStop(1, "#c98a5b");
+  baseGrad.addColorStop(1, "#d9aa60");
   ctx.fillStyle = baseGrad;
   ctx.fillRect(0, 0, SIZE, HEIGHT);
 
@@ -339,7 +339,7 @@ export function createDomeInteriorTexture(): Texture {
   // Burgundy frieze band at the base with brass borders.
   ctx.fillStyle = "rgba(88,31,25,0.74)";
   ctx.fillRect(0, 0, SIZE, 34);
-  ctx.fillStyle = "rgba(201,138,91,0.78)";
+  ctx.fillStyle = "rgba(216,174,93,0.78)";
   ctx.fillRect(0, 31, SIZE, 7);
   ctx.fillRect(0, 0, SIZE, 5);
 
@@ -347,7 +347,7 @@ export function createDomeInteriorTexture(): Texture {
   const segmentW = SIZE / TRADE_COUNT;
 
   // Gold ribs dividing the dome into fourteen trade panels.
-  ctx.strokeStyle = "rgba(201,138,91,0.42)";
+  ctx.strokeStyle = "rgba(221,176,91,0.42)";
   ctx.lineWidth = 2;
   for (let i = 0; i < TRADE_COUNT; i++) {
     const x = i * segmentW;
@@ -359,7 +359,7 @@ export function createDomeInteriorTexture(): Texture {
 
   // Fourteen simplified shields in the frieze: abstract heraldic marks, not
   // copyrighted or literal trade crests.
-  const shieldTones = ["#ead29a", "#c98a5b", "#f0dcc0", "#9f342f"];
+  const shieldTones = ["#ead29a", "#c9a45a", "#f0dcc0", "#9f342f"];
   for (let i = 0; i < TRADE_COUNT; i++) {
     const cx = i * segmentW + segmentW / 2;
     const top = 7;
@@ -433,7 +433,7 @@ export function createWainscotOakTexture(): Texture {
     ctx.fillStyle = "rgba(20,12,4,0.55)";
     ctx.fillRect(x - 2, 0, 2, SIZE);
     // highlight side
-    ctx.fillStyle = "rgba(201,138,91,0.18)";
+    ctx.fillStyle = "rgba(180,140,80,0.18)";
     ctx.fillRect(x, 0, 2, SIZE);
   }
 

@@ -53,7 +53,7 @@ export const TRIM_COLOR = "#f8f3e8";
 export const BRASS_GOLD = "#b8965a";
 
 /** Deeper bronze — gold ornament shadows and weight. */
-export const BRONZE_DARK = "#7e4620";
+export const BRONZE_DARK = "#8a6f37";
 
 /** Burgundy — frieze background, accent inlay, optional carpet runner. */
 export const BURGUNDY = "#6b2a2a";
