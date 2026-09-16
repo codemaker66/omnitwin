@@ -50,3 +50,34 @@ describe("MobilePlannerTopBar activity", () => {
     else expect(screen.queryByTestId("enquiry-ready")).toBeNull();
   });
 });
+
+describe("MobilePlannerTopBar identity", () => {
+  const RECEPTION = {
+    id: "space-reception", venueId: "venue", name: "Reception Room", slug: "reception-room",
+    widthM: "13.4", lengthM: "11.2", heightM: "3.2", floorPlanOutline: [],
+  };
+
+  it("shows the room and layout the server actually returned", () => {
+    useEditorStore.setState({ space: RECEPTION, configId: "cfg-ceilidh", configName: "Ceilidh long tables" });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.getByText("Reception Room")).toBeTruthy();
+    expect(screen.getByText("Ceilidh long tables")).toBeTruthy();
+  });
+
+  it("never guesses a flagship name while the room or the layout is still loading", () => {
+    // The old fallbacks were "Grand Hall" and the literal "Banquet Draft":
+    // confident, specific and wrong on every phone that opened anything else.
+    useEditorStore.setState({ space: null, configId: "cfg-loading", configName: null });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.queryByText("Grand Hall")).toBeNull();
+    expect(screen.queryByText("Banquet Draft")).toBeNull();
+    expect(screen.getByText("Loading room…")).toBeTruthy();
+    expect(screen.getByText("Loading layout…")).toBeTruthy();
+  });
+
+  it("says a draft is unsaved rather than pretending it has a name", () => {
+    useEditorStore.setState({ space: RECEPTION, configId: null, configName: null });
+    render(<MobilePlannerTopBar mode="3d" onModeChange={vi.fn()} />);
+    expect(screen.getByText("Unsaved layout")).toBeTruthy();
+  });
+});

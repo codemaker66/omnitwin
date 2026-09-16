@@ -31,11 +31,32 @@ describe("CameraRig source guards", () => {
     expect(source).toContain("RIGHT: (smoothControls ? 0 : -1) as number");
   });
 
-  it("does not emit OrbitControls performance regression events when planner DPR is fixed", async () => {
+  it("emits OrbitControls performance regression, because planner DPR is no longer fixed", async () => {
     const source = await readFile("src/components/CameraRig.tsx", "utf8");
 
-    expect(source).toContain("regress={false}");
+    // T-618 replaced the fixed planner DPR with PlannerAdaptiveResolution,
+    // which reads R3F's performance signal. OrbitControls' own touch gestures
+    // never reach the rig's wheel handler, so `regress` is the only path that
+    // sees a pinch-zoom; without it a two-finger zoom on a phone would render
+    // at full resolution throughout.
+    expect(/\n\s*regress\r?\n/u.test(source)).toBe(true);
+    expect(source).not.toContain("regress={false}");
     expect(source).not.toContain("regress={smoothControls}");
+  });
+
+  it("holds the camera still while an object drag owns the pointer", async () => {
+    const source = await readFile("src/components/CameraRig.tsx", "utf8");
+
+    // Touch has one button, so one finger has to mean both "orbit the room"
+    // and "move this table". SelectionSystem takes the lock inside the same
+    // pointerdown; the rig has to honour it in BOTH places, or the per-frame
+    // arbitration hands orbit back on the very next frame and the room turns
+    // under the finger.
+    expect(source).toContain("subscribePlannerCameraLock");
+    expect(source).toContain("|| plannerCameraLocked()");
+    // Module state outlives the tree: a planner that unmounts mid-drag must
+    // not leave the next one unable to orbit.
+    expect(source).toContain("useEffect(() => resetPlannerCameraLock, [])");
   });
 
   it("marks camera interaction active only on OrbitControls start/end boundaries", async () => {
