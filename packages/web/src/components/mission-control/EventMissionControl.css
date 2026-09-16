@@ -299,7 +299,7 @@
 
 .mission-stat-strip span {
   color: #91a5a1;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 
@@ -380,7 +380,7 @@
 .mission-incident-list > li > span {
   color: var(--mission-cyan);
   display: block;
-  font-size: 0.61rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -398,7 +398,7 @@
 
 .mission-phase-rail li small {
   color: #849996;
-  font-size: 0.62rem;
+  font-size: 0.6875rem;
   margin-top: 4px;
 }
 
@@ -482,13 +482,13 @@
 .mission-map-legend small,
 .mission-presence small {
   color: #849996;
-  font-size: 0.65rem;
+  font-size: 0.6875rem;
   margin-top: 2px;
 }
 
 .mission-map-legend code {
   color: var(--mission-gold);
-  font-size: 0.64rem;
+  font-size: 0.6875rem;
 }
 
 .mission-presence li > span {
@@ -498,7 +498,7 @@
   border-radius: 50%;
   color: var(--mission-cyan);
   display: flex;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   height: 30px;
   justify-content: center;
@@ -507,7 +507,7 @@
 
 .mission-presence time {
   color: #839591;
-  font-size: 0.62rem;
+  font-size: 0.6875rem;
 }
 
 .mission-task-grid {
@@ -538,7 +538,7 @@
 
 .mission-task-card header strong {
   color: var(--mission-gold);
-  font-size: 0.65rem;
+  font-size: 0.6875rem;
   text-transform: uppercase;
 }
 
@@ -557,7 +557,7 @@
 .mission-task-card > small {
   color: #758986;
   display: block;
-  font-size: 0.62rem;
+  font-size: 0.6875rem;
   margin-top: 8px;
 }
 
@@ -629,7 +629,7 @@
 
 .mission-incident-list li > small {
   color: var(--mission-gold);
-  font-size: 0.63rem;
+  font-size: 0.6875rem;
 }
 
 .mission-timeline > label {
@@ -675,7 +675,7 @@
 .mission-timeline li > span {
   color: var(--mission-gold);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.65rem;
+  font-size: 0.6875rem;
 }
 
 .mission-timeline li strong,
@@ -689,7 +689,7 @@
 
 .mission-timeline li small {
   color: #829591;
-  font-size: 0.62rem;
+  font-size: 0.6875rem;
   margin-top: 2px;
 }
 

@@ -502,7 +502,7 @@
 
 .event-architect-candidate-metrics dt {
   color: var(--ea-faint);
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   margin-bottom: 5px;
   text-transform: uppercase;
@@ -593,7 +593,7 @@
 
 .event-architect-witness-title span {
   color: var(--ea-muted);
-  font-size: 0.65rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -654,7 +654,7 @@
   color: var(--ea-faint);
   display: block;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 0.65rem;
+  font-size: 0.6875rem;
   margin-top: 3px;
 }
 
@@ -672,7 +672,7 @@
 
 .event-architect-flow dt {
   color: var(--ea-faint);
-  font-size: 0.64rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -914,7 +914,7 @@
 }
 
 .event-architect-ops-latest div { background: rgba(255, 255, 255, 0.035); padding: 12px; }
-.event-architect-ops-latest dt { color: var(--ea-faint); font-size: 0.65rem; text-transform: uppercase; }
+.event-architect-ops-latest dt { color: var(--ea-faint); font-size: 0.6875rem; text-transform: uppercase; }
 .event-architect-ops-latest dd { font-size: 0.78rem; margin: 6px 0 0; text-transform: capitalize; }
 
 .event-architect-ops-form { border-top: 1px solid var(--ea-line); padding-top: 22px; }

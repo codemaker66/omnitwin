@@ -12,7 +12,7 @@
 .onboarding-hero::after { position: absolute; width: 540px; height: 540px; border: 1px solid #60785d; border-radius: 50%; right: -260px; top: -220px; content: ""; pointer-events: none; }
 .onboarding-hero h1 { max-width: 720px; font: 400 clamp(2rem, 3.7vw, 3.8rem)/1.04 Georgia, serif; letter-spacing: -.035em; }
 .onboarding-hero p:last-child { max-width: 620px; margin-top: 22px; color: #d7decd; font-size: .97rem; }
-.onboarding-eyebrow { margin-bottom: 15px !important; text-transform: uppercase; letter-spacing: .14em; font-size: .66rem; font-weight: 650; }
+.onboarding-eyebrow { margin-bottom: 15px !important; text-transform: uppercase; letter-spacing: .14em; font-size: 0.6875rem; font-weight: 650; }
 .onboarding-hero .onboarding-eyebrow { color: #d8b699; }
 .onboarding-hero-mark { display: grid; gap: 16px; border-left: 1px solid #5f7562; padding: 20px 0 20px 38px; font: italic 400 1.3rem/1.35 Georgia, serif; color: #e4c9ab; }
 .onboarding-hero-mark svg { width: 66px; height: 66px; }
@@ -74,7 +74,7 @@
 .onboarding-member-main > span:not(.onboarding-status) { font-size: .75rem; }
 .onboarding-member-main small { flex: 1 0 100%; font-size: .7rem; color: #637152; }
 .onboarding-member-actions { display: grid; justify-items: end; flex: 0 0 auto; }
-.onboarding-status { display: inline-block; padding: 4px 7px; border: 1px solid transparent; border-radius: 3px; font-size: .65rem; line-height: 1.3; font-weight: 600; }
+.onboarding-status { display: inline-block; padding: 4px 7px; border: 1px solid transparent; border-radius: 3px; font-size: 0.6875rem; line-height: 1.3; font-weight: 600; }
 .onboarding-status--active { background: #e1ead6; color: #2a5734; border-color: #afc0a0; }
 .onboarding-status--pending { background: #f2e8d0; color: #735328; border-color: #dca475; }
 .onboarding-status--expired { background: #f6e0d5; color: #863e26; border-color: #d5ad98; }
