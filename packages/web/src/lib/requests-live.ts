@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
+import { isE2EAuthBypassEnabled } from "./e2e-auth-bypass.js";
 import { nextBackoffMs } from "../pages/diary/lib/live-protocol.js";
 
 // ---------------------------------------------------------------------------
@@ -135,6 +136,13 @@ function scheduleReconnect(): void {
 
 function connect(): void {
   if (closing || listeners.size === 0 || typeof WebSocket === "undefined") return;
+  // The E2E harness answers HTTP from route mocks and runs no websocket
+  // server, so a socket here can only fail — and a refused handshake is a
+  // console error the BROWSER writes, which no `catch` can swallow and which
+  // the accessibility audit rightly refuses to ignore. The listeners still
+  // register and the snapshot is still fetched; only the live nudge is absent,
+  // and the live path is proved against a real server instead.
+  if (isE2EAuthBypassEnabled()) return;
   if (socket !== null) return;
 
   const ws = new WebSocket(`${API_URL.replace(/^http/u, "ws")}/ws/diary`);
