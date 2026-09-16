@@ -324,3 +324,121 @@ describe("POST /quotes — commercial surface", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// PATCH /venues/:id — the headline decision-6b refusal
+//
+// The venue record itself. This route loads the venue before it gates, so a
+// 403 here is only reachable with a real row; the unit matrix in
+// utils/query.test.ts carries the role semantics and this covers the HTTP
+// envelope around them.
+// ---------------------------------------------------------------------------
+
+describe("PATCH /venues/:id — venue administration", () => {
+  const url = `/venues/${VENUE_ID}`;
+
+  it("returns 401 without an identity", async () => {
+    const res = await server.inject({ method: "PATCH", url, payload: { name: "Renamed" } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 400 for a malformed id before any venue lookup", async () => {
+    const res = await server.inject({
+      method: "PATCH", url: "/venues/not-a-uuid", headers: auth("admin"), payload: { name: "Renamed" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 for a malformed body from an administering identity", async () => {
+    const res = await server.inject({ method: "PATCH", url, headers: auth("admin"), payload: { name: "" } });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /enquiries — the venue inbox union
+// ---------------------------------------------------------------------------
+
+describe("GET /enquiries — the venue inbox", () => {
+  it("returns 401 without an identity", async () => {
+    const res = await server.inject({ method: "GET", url: "/enquiries" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 400 for a malformed status filter", async () => {
+    const res = await server.inject({
+      method: "GET", url: "/enquiries?status=not-a-state", headers: auth("admin"),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("admits the venue floor and the commercial roles alike", async () => {
+    // The inbox is the union of canManageVenue and canManageCommercial: the
+    // hallkeeper read is pinned by enquiry-inbox-authority.test.ts and
+    // decision 6b does not take it, while sales and manager own the pipeline.
+    for (const role of ["admin", "manager", "staff", "hallkeeper", "sales"]) {
+      const res = await server.inject({ method: "GET", url: "/enquiries", headers: auth(role) });
+      expectAllowedThrough(res.statusCode);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The remaining priced surfaces
+// ---------------------------------------------------------------------------
+
+describe("GET /events/:id/revenue-summary — a price surface", () => {
+  const url = `/events/${VENUE_ID}/revenue-summary`;
+
+  it("returns 401 without an identity", async () => {
+    const res = await server.inject({ method: "GET", url });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 400 for a malformed event id", async () => {
+    const res = await server.inject({
+      method: "GET", url: "/events/not-a-uuid/revenue-summary", headers: auth("admin"),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("GET /analytics/venue-dashboard — a price surface", () => {
+  const url = "/analytics/venue-dashboard";
+
+  it("returns 401 without an identity", async () => {
+    const res = await server.inject({ method: "GET", url });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 400 for a malformed venueId query", async () => {
+    const res = await server.inject({ method: "GET", url: `${url}?venueId=not-a-uuid`, headers: auth("admin") });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 403 for a hallkeeper — pipelineValueMinor is a price (decision 6b)", async () => {
+    const res = await server.inject({ method: "GET", url, headers: auth("hallkeeper") });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("returns 403 for a planner, a client and a caterer", async () => {
+    for (const role of ["planner", "client", "caterer"]) {
+      const res = await server.inject({ method: "GET", url, headers: auth(role) });
+      expect(res.statusCode).toBe(403);
+    }
+  });
+
+  it("returns 403 across venues", async () => {
+    const res = await server.inject({
+      method: "GET", url: `${url}?venueId=${OTHER_VENUE_ID}`, headers: auth("manager"),
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("lets sales and manager at this venue through the gate", async () => {
+    for (const role of ["sales", "manager"]) {
+      const res = await server.inject({ method: "GET", url, headers: auth(role) });
+      expectAllowedThrough(res.statusCode);
+    }
+  });
+});

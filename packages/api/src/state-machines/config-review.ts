@@ -2,6 +2,7 @@ import {
   CONFIGURATION_REVIEW_STATUSES,
   VALID_CONFIGURATION_REVIEW_TRANSITIONS,
   type ConfigurationReviewStatus,
+  type UserRole,
 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +31,7 @@ export const CONFIGURATION_REVIEW_STATES = CONFIGURATION_REVIEW_STATUSES;
 
 export type ConfigurationReviewState = ConfigurationReviewStatus;
 
-type TransitionRole = "client" | "planner" | "staff" | "hallkeeper" | "admin";
+type TransitionRole = UserRole;
 
 /**
  * Runtime type guard — narrows an unknown string into the review-state
@@ -63,26 +64,35 @@ function isReviewState(s: string): s is ConfigurationReviewState {
 // Hallkeeper has no write transitions — reads only.
 // ---------------------------------------------------------------------------
 
+// The venue side of a configuration review. The routes gate on
+// canAccessResource, which is canManageVenue, so this list must match the
+// venue floor minus the hallkeeper (who reads reviews but performs none).
+// A role the route admits and this table refuses is a half-granted write.
+const VENUE_REVIEW_ROLES: readonly TransitionRole[] = ["staff", "manager", "admin"];
+
+/** The submitter's own moves, plus the venue side acting on their behalf. */
+const SUBMITTER_ROLES: readonly TransitionRole[] = ["client", "planner", ...VENUE_REVIEW_ROLES];
+
 const TRANSITIONS: Record<string, readonly TransitionRole[]> = {
   // Planner submit path
-  "draft→submitted": ["client", "planner", "staff", "admin"],
-  "changes_requested→draft": ["client", "planner", "staff", "admin"],
-  "rejected→draft": ["client", "planner", "staff", "admin"],
+  "draft→submitted": SUBMITTER_ROLES,
+  "changes_requested→draft": SUBMITTER_ROLES,
+  "rejected→draft": SUBMITTER_ROLES,
 
   // Staff review path
-  "submitted→under_review": ["staff", "admin"],
-  "under_review→approved": ["staff", "admin"],
-  "under_review→rejected": ["staff", "admin"],
-  "under_review→changes_requested": ["staff", "admin"],
+  "submitted→under_review": VENUE_REVIEW_ROLES,
+  "under_review→approved": VENUE_REVIEW_ROLES,
+  "under_review→rejected": VENUE_REVIEW_ROLES,
+  "under_review→changes_requested": VENUE_REVIEW_ROLES,
 
   // Withdraw — planner yanks their submission at any active review state
-  "submitted→withdrawn": ["client", "planner", "staff", "admin"],
-  "under_review→withdrawn": ["client", "planner", "staff", "admin"],
-  "changes_requested→withdrawn": ["client", "planner", "staff", "admin"],
+  "submitted→withdrawn": SUBMITTER_ROLES,
+  "under_review→withdrawn": SUBMITTER_ROLES,
+  "changes_requested→withdrawn": SUBMITTER_ROLES,
 
   // Archive — staff closes out after the event completes
-  "approved→archived": ["staff", "admin"],
-  "rejected→archived": ["staff", "admin"],
+  "approved→archived": VENUE_REVIEW_ROLES,
+  "rejected→archived": VENUE_REVIEW_ROLES,
 };
 
 // ---------------------------------------------------------------------------

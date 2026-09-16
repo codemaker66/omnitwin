@@ -11,7 +11,8 @@ import {
   canTransitionBooking,
   getAvailableBookingTransitions,
 } from "../../state-machines/booking.js";
-import { canWriteBookings } from "../../services/booking-mutations.js";
+import { canWriteBookings, DIARY_WRITE_ROLES } from "../../services/booking-mutations.js";
+import { DIARY_COMMAND_WRITE_ROLES } from "../../services/diary-commands.js";
 import { canTransitionProposal, canTransitionQuote } from "../../state-machines/proposal.js";
 import { canTransition } from "../../state-machines/enquiry.js";
 import { canManageCommercial } from "../../utils/query.js";
@@ -74,6 +75,19 @@ describe("canTransitionBooking", () => {
       const gate = canWriteBookings({ id: "u1", role, venueId: VENUE, platformRole: "none" }, VENUE);
       const machine = canTransitionBooking("prospect", "hold", role);
       expect(machine, `${role}: REST gate ${String(gate)}, state machine ${String(machine)}`).toBe(gate);
+    }
+  });
+
+  // The diary is inked through two doors — the REST surface and the /ws/diary
+  // command channel — and each kept its own role set. A role admitted by one
+  // and refused by the other can watch a slot change on the live channel and
+  // be unable to make one.
+  it("admits exactly the roles the diary COMMAND channel admits", () => {
+    for (const role of USER_ROLES) {
+      expect(
+        DIARY_COMMAND_WRITE_ROLES.has(role),
+        `${role}: REST diary-write ${String(DIARY_WRITE_ROLES.has(role))}, command channel ${String(DIARY_COMMAND_WRITE_ROLES.has(role))}`,
+      ).toBe(DIARY_WRITE_ROLES.has(role));
     }
   });
 

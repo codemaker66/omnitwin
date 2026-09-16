@@ -83,7 +83,10 @@ export async function quoteRoutes(
 
     if (isPlatformAdmin(user)) {
       // Admin sees all venues
-    } else if ((user.role === "staff" || user.role === "admin" || user.role === "hallkeeper") && user.venueId !== null) {
+      // The venue's commercial roles see the venue's quotes. This must match
+      // the create/mutate gate above, or a role could manage a quote it
+      // cannot find in its own list.
+    } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
       whereConditions.push(eq(quotes.venueId, user.venueId));
     } else {
       whereConditions.push(eq(quotes.createdBy, user.id));

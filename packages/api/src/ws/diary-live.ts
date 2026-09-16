@@ -48,7 +48,7 @@ const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
  *  day or its pipeline; caterers are event-scoped and never see the
  *  venue-wide diary. Writing is a narrower set, enforced by the REST surface
  *  and the booking state machine, not here. */
-const DIARY_READ_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "hallkeeper", "manager", "sales"]);
+export const DIARY_READ_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "hallkeeper", "manager", "sales"]);
 
 export interface DiaryLiveSocket {
   send(text: string): void;
