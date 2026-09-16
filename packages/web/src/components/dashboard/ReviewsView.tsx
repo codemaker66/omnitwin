@@ -42,7 +42,7 @@ const STATUS_VISUALS: Readonly<Record<ConfigurationReviewStatus, {
   readonly color: string;
 }>> = {
   draft:             { label: "Draft",              background: "rgba(246, 241, 232, 0.09)", color: "rgba(246, 241, 232, 0.72)" },
-  submitted:         { label: "Submitted",          background: "rgba(215, 181, 109, 0.14)", color: "#f1c978" },
+  submitted:         { label: "Submitted",          background: "rgba(201, 138, 91, 0.14)", color: "#dca475" },
   under_review:      { label: "Under Review",       background: "rgba(104, 216, 210, 0.13)", color: "#68d8d2" },
   approved:          { label: "Approved",           background: "rgba(143, 209, 158, 0.13)", color: "#9ff2cb" },
   rejected:          { label: "Rejected",           background: "rgba(255, 91, 71, 0.13)", color: "#ffb59a" },
@@ -54,18 +54,18 @@ const STATUS_VISUALS: Readonly<Record<ConfigurationReviewStatus, {
 const cardStyle: React.CSSProperties = {
   background: "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
   borderRadius: 8, padding: 16, marginBottom: 8,
-  border: "1px solid rgba(215, 181, 109, 0.22)", cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
+  border: "1px solid rgba(201, 138, 91, 0.22)", cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
   textAlign: "left", width: "100%", fontFamily: "inherit",
 };
 
 const buttonPrimary: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84)", backgroundColor: "#d7b56d", color: "#0b0d0d", border: "1px solid rgba(255,224,154,0.52)", borderRadius: 8, cursor: "pointer",
+  background: "linear-gradient(135deg, #c98a5b, #dca475)", backgroundColor: "#c98a5b", color: "#0b0d0d", border: "1px solid rgba(255,224,154,0.52)", borderRadius: 8, cursor: "pointer",
 };
 
 const buttonSecondary: React.CSSProperties = {
   padding: "10px 18px", fontSize: 13, fontWeight: 600,
-  background: "rgba(255,247,232,0.07)", color: "#fff7e8", border: "1px solid rgba(215,181,109,0.25)", borderRadius: 8, cursor: "pointer",
+  background: "rgba(255,247,232,0.07)", color: "#fff7e8", border: "1px solid rgba(201, 138, 91,0.25)", borderRadius: 8, cursor: "pointer",
 };
 
 const buttonDanger: React.CSSProperties = {
@@ -83,7 +83,7 @@ const panelStyle: React.CSSProperties = {
     "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
   borderRadius: 12,
   padding: 24,
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   color: "var(--house-text-1, #f6f1e8)",
   boxShadow: "0 22px 70px rgba(0,0,0,0.28)",
 };
@@ -212,13 +212,13 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
         position: "fixed", inset: 0, zIndex: 100,
         display: "flex", alignItems: "center", justifyContent: "center",
         background:
-          "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(215,181,109,0.1), transparent 28%), rgba(0,0,0,0.82)",
+          "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(201, 138, 91,0.1), transparent 28%), rgba(0,0,0,0.82)",
         contain: "paint",
       }}
     >
       <div ref={trapRef} onClick={(event) => { event.stopPropagation(); }} style={{
         background: "linear-gradient(150deg, rgba(22,19,15,0.98), rgba(10,10,9,0.95))",
-        border: "1px solid rgba(215,181,109,0.28)",
+        border: "1px solid rgba(201, 138, 91,0.28)",
         borderRadius: 8, padding: 24, maxWidth: 520, width: "90%",
         boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
       }}>
@@ -240,7 +240,7 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
           maxLength={2000}
           style={{
             width: "100%", padding: 10, fontSize: 14, fontFamily: "inherit",
-            border: "1px solid rgba(215,181,109,0.28)", borderRadius: 8, resize: "vertical",
+            border: "1px solid rgba(201, 138, 91,0.28)", borderRadius: 8, resize: "vertical",
             color: "#fff7e8",
             background: "rgba(255,247,232,0.08)",
             boxSizing: "border-box",
@@ -476,12 +476,12 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
           </a>
         </div>
 
-        <div style={{ borderTop: "1px solid rgba(215,181,109,0.16)", paddingTop: 16, marginBottom: 16 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Actions</h3>
+        <div style={{ borderTop: "1px solid rgba(201, 138, 91,0.16)", paddingTop: 16, marginBottom: 16 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#dca475", margin: "0 0 8px" }}>Actions</h3>
           {inFlight && modal === null && <ActivityStatus>Recording the review decision…</ActivityStatus>}
           {contextState.status === "loading" && (
             <div role="status" aria-live="polite" style={{ ...alertStyle, color: "rgba(246,241,232,0.72)" }}>
-              <ActivityIndicator size={16} /> Loading review gates, transitions, and decision history...
+              <ActivityIndicator size={16} /> Loading review gates, transitions, and decision history…
             </div>
           )}
           {contextState.status === "error" && (
@@ -541,12 +541,12 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         </div>
 
         {contextState.status === "ready" && history.length > 0 && (
-          <div style={{ borderTop: "1px solid rgba(215,181,109,0.16)", paddingTop: 16 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Timeline</h3>
+          <div style={{ borderTop: "1px solid rgba(201, 138, 91,0.16)", paddingTop: 16 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#dca475", margin: "0 0 8px" }}>Timeline</h3>
             {history.map((h) => (
               <div key={h.id} style={{
                 fontSize: 12, color: "rgba(246,241,232,0.66)", padding: "6px 0",
-                borderLeft: "2px solid rgba(215,181,109,0.22)", paddingLeft: 12, marginLeft: 4,
+                borderLeft: "2px solid rgba(201, 138, 91,0.22)", paddingLeft: 12, marginLeft: 4,
               }}>
                 <ReviewStatusBadge status={h.fromStatus} /> &rarr; <ReviewStatusBadge status={h.toStatus} />
                 <div style={{ fontSize: 11, marginTop: 2 }}>
@@ -669,7 +669,7 @@ export function ReviewsView(): React.ReactElement {
       </div>
 
       {loading && entries.length === 0 && (
-        <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 40, textAlign: "center", color: "rgba(246,241,232,0.72)" }}>Loading reviews...</ActivityStatus>
+        <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 40, textAlign: "center", color: "rgba(246,241,232,0.72)" }}>Loading reviews…</ActivityStatus>
       )}
 
       {loadError !== null && entries.length === 0 && (
@@ -684,7 +684,7 @@ export function ReviewsView(): React.ReactElement {
       {!loading && loadError === null && entries.length === 0 && (
         <div style={{
           padding: 40, textAlign: "center", color: "rgba(246,241,232,0.66)",
-          background: "rgba(255,247,232,0.05)", borderRadius: 8, border: "1px dashed rgba(215,181,109,0.24)",
+          background: "rgba(255,247,232,0.05)", borderRadius: 8, border: "1px dashed rgba(201, 138, 91,0.24)",
         }}>
           No pending reviews.
         </div>

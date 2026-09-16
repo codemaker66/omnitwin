@@ -1,12 +1,17 @@
 /* Founder reference: loading animations2.mp4, 2026-09-05.
    One particle vocabulary for route, panel, inline and control activity. */
+/* T-615: the first-paint boot screen was graphite, so every visit opened on a
+   dark flash the ivory app then replaced. It is the same ground as html/body
+   now (index.html and global.css), which makes the hand-off to React
+   invisible. Literal values, not tokens: this paints before any stylesheet
+   that defines --vv-ivory has been parsed. */
 .vv-activity-boot {
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 24px;
-  color: #e4dfd6;
-  background: #171715;
+  color: #1b3a2f;
+  background: #f2edda;
   font: 14px/1.5 system-ui, sans-serif;
 }
 .vv-activity-indicator {

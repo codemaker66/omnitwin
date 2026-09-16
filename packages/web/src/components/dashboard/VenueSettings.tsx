@@ -9,7 +9,7 @@ import "./VenueSettings.css";
 
 type LoadState = "loading" | "loaded" | "error";
 
-const DEFAULT_BRAND_COLOUR = "#c9a96a";
+const DEFAULT_BRAND_COLOUR = "#c98a5b";
 const HEX_COLOUR_PATTERN = /^#[0-9a-fA-F]{6}$/u;
 
 function optionalText(value: string): string | null {
@@ -257,7 +257,7 @@ export function VenueSettings(): ReactElement {
                   aria-invalid={!brandColourIsValid}
                 />
               </div>
-              {!brandColourIsValid ? <span className="venue-settings-error">Use a six-digit hex colour, for example #c9a96a.</span> : null}
+              {!brandColourIsValid ? <span className="venue-settings-error">Use a six-digit hex colour, for example #c98a5b.</span> : null}
             </div>
 
             <label className="venue-settings-field" htmlFor="venue-settings-logo-url">

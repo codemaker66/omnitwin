@@ -58,7 +58,7 @@ function gradeBandColor(band: LayoutBand): string {
   switch (band) {
     case "S": return "#2bb673";
     case "A": return "#7bbf59";
-    case "B": return "#dcc64d";
+    case "B": return "#c98a5b";
     case "C": return "#d98324";
     case "D": return "#c0473a";
   }
@@ -128,7 +128,7 @@ const gradeHeadlineStyle: React.CSSProperties = {
   overflowWrap: "anywhere",
   color: "rgba(246, 239, 227, 0.84)",
   fontSize: 12,
-  fontWeight: 720,
+  fontWeight: 600,
   letterSpacing: 0,
   lineHeight: 1.24,
   WebkitBoxOrient: "vertical",
@@ -146,7 +146,7 @@ function gradeBadgeStyle(color: string): React.CSSProperties {
     background: "rgba(255, 255, 255, 0.04)",
     color,
     fontSize: 20,
-    fontWeight: 820,
+    fontWeight: 700,
     letterSpacing: 0,
     lineHeight: 1,
   };
@@ -156,7 +156,7 @@ function gradeScoreStyle(color: string): React.CSSProperties {
   return {
     color,
     fontSize: 20,
-    fontWeight: 820,
+    fontWeight: 700,
     letterSpacing: 0,
     lineHeight: 1,
   };
@@ -169,7 +169,7 @@ function gradeRecommendationStyle(color: string): React.CSSProperties {
     overflowWrap: "anywhere",
     color,
     fontSize: 12,
-    fontWeight: 720,
+    fontWeight: 600,
     letterSpacing: 0,
     lineHeight: 1.3,
     WebkitBoxOrient: "vertical",
@@ -290,7 +290,7 @@ export function PlannerSpatialHud(): React.ReactElement {
           <div className="planner-spatial-hud__title">Spaces</div>
           <div className="planner-spatial-hud__list">
             <HudRow color="#f08a21" label="Dining rounds" detail={plural(stats.roundTables, "round table")} />
-            <HudRow color="#dcc64d" label="Banquet row" detail={plural(stats.banquetTables, "trestle")} />
+            <HudRow color="#c98a5b" label="Banquet row" detail={plural(stats.banquetTables, "trestle")} />
             <HudRow color="#32b77a" label="Seating" detail={plural(stats.chairs, "chair")} />
             <HudRow
               color="#be8fc1"

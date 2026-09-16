@@ -62,7 +62,7 @@ const LazyClerkRouteProvider = lazy(() =>
 const TOOLBAR_W = 68;
 const PANEL_W = 336;
 const DESKTOP_HEADER_H = 70;
-const GOLD = "#c9a84c";
+const GOLD = "#c98a5b";
 const ICON_SIZE = 22;
 
 const TOOL_WIDGET_AVOID_SELECTORS = [
@@ -86,8 +86,8 @@ const TOOL_WIDGET_AVOID_SELECTORS = [
 const toolbarStyle: React.CSSProperties = {
   position: "fixed", left: 0, top: DESKTOP_HEADER_H, bottom: 0, width: TOOLBAR_W,
   background: "linear-gradient(180deg, rgba(7,7,7,0.99) 0%, rgba(18,15,12,0.99) 48%, rgba(8,8,8,0.99) 100%)",
-  borderRight: "1px solid rgba(218,183,86,0.24)",
-  boxShadow: "12px 0 42px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,236,180,0.08), inset -10px 0 24px rgba(201,168,76,0.035)",
+  borderRight: "1px solid rgba(201,138,91,0.24)",
+  boxShadow: "12px 0 42px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,236,180,0.08), inset -10px 0 24px rgba(201, 138, 91,0.035)",
   display: "flex", flexDirection: "column", alignItems: "center",
   padding: "14px 0", gap: 6, zIndex: 50,
   boxSizing: "border-box",
@@ -113,14 +113,14 @@ const btnStyle = (active: boolean, disabled = false, compact = false): React.CSS
   borderRadius: 10,
   cursor: disabled ? "default" : "pointer",
   background: active
-    ? `linear-gradient(145deg, #e0c66c 0%, ${GOLD} 44%, #9d7a23 100%)`
+    ? `linear-gradient(145deg, #dca475 0%, ${GOLD} 44%, #7e4620 100%)`
     : "linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018))",
   color: active ? "#0e0e0e" : disabled ? "#555" : "#d8d8d8",
   transition: "background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s",
   opacity: disabled ? 0.4 : 1,
   borderColor: active ? "rgba(255,239,177,0.62)" : "rgba(255,255,255,0.045)",
   boxShadow: active
-    ? "0 10px 26px rgba(201,168,76,0.32), 0 0 0 1px rgba(201,168,76,0.24), inset 0 1px 0 rgba(255,255,255,0.36)"
+    ? "0 10px 26px rgba(201, 138, 91,0.32), 0 0 0 1px rgba(201, 138, 91,0.24), inset 0 1px 0 rgba(255,255,255,0.36)"
     : "inset 0 1px 0 rgba(255,255,255,0.045), 0 8px 18px rgba(0,0,0,0.16)",
   padding: 0,
 });
@@ -128,32 +128,32 @@ const btnStyle = (active: boolean, disabled = false, compact = false): React.CSS
 const dividerStyle: React.CSSProperties = {
   width: 30,
   height: 1,
-  background: "linear-gradient(90deg, transparent, rgba(201,168,76,0.34), transparent)",
+  background: "linear-gradient(90deg, transparent, rgba(201, 138, 91,0.34), transparent)",
   margin: "5px 0",
 };
 
 const panelStyle: React.CSSProperties = {
   position: "fixed", left: TOOLBAR_W, top: DESKTOP_HEADER_H, bottom: 0, width: PANEL_W,
-  background: "radial-gradient(circle at 22% 0%, rgba(201,168,76,0.13), transparent 31%), linear-gradient(180deg, rgba(8,9,10,0.988) 0%, rgba(16,14,12,0.99) 46%, rgba(8,8,8,0.99) 100%)",
-  borderRight: "1px solid rgba(201,168,76,0.24)",
+  background: "radial-gradient(circle at 22% 0%, rgba(201, 138, 91,0.13), transparent 31%), linear-gradient(180deg, rgba(8,9,10,0.988) 0%, rgba(16,14,12,0.99) 46%, rgba(8,8,8,0.99) 100%)",
+  borderRight: "1px solid rgba(201, 138, 91,0.24)",
   zIndex: 49, overflowY: "auto", padding: "24px 18px",
   fontFamily: "'Inter', sans-serif", color: "#ccc",
   backdropFilter: "blur(24px) saturate(1.05)", WebkitBackdropFilter: "blur(24px) saturate(1.05)",
-  boxShadow: "18px 0 64px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,232,170,0.07), inset -16px 0 42px rgba(201,168,76,0.04)",
+  boxShadow: "18px 0 64px rgba(0,0,0,0.56), inset -1px 0 0 rgba(255,232,170,0.07), inset -16px 0 42px rgba(201, 138, 91,0.04)",
 };
 
 const categoryHeaderStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 2,
   color: GOLD, padding: "18px 8px 9px", cursor: "pointer",
   display: "flex", justifyContent: "space-between", alignItems: "center",
-  borderBottom: "1px solid rgba(201,168,76,0.08)",
+  borderBottom: "1px solid rgba(201, 138, 91,0.08)",
 };
 
 const catalogueHeroStyle: React.CSSProperties = {
   padding: "15px 16px",
   borderRadius: 18,
   marginBottom: 14,
-  background: "linear-gradient(145deg, rgba(255,255,255,0.072), rgba(201,168,76,0.055))",
+  background: "linear-gradient(145deg, rgba(255,255,255,0.072), rgba(201, 138, 91,0.055))",
   border: "1px solid rgba(255,255,255,0.08)",
   boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 18px 42px rgba(0,0,0,0.24)",
 };
@@ -168,9 +168,9 @@ const workflowGridStyle: React.CSSProperties = {
 const workflowCardStyle = (active = false): React.CSSProperties => ({
   minHeight: 76,
   borderRadius: 14,
-  border: active ? "1px solid rgba(201,168,76,0.58)" : "1px solid rgba(255,255,255,0.08)",
+  border: active ? "1px solid rgba(201, 138, 91,0.58)" : "1px solid rgba(255,255,255,0.08)",
   background: active
-    ? "linear-gradient(145deg, rgba(215,180,77,0.22), rgba(108,76,20,0.18))"
+    ? "linear-gradient(145deg, rgba(201,138,91,0.22), rgba(126,70,32,0.18))"
     : "linear-gradient(145deg, rgba(255,255,255,0.055), rgba(255,255,255,0.022))",
   color: active ? "#fff0c8" : "rgba(255,255,255,0.72)",
   padding: "10px 8px",
@@ -180,7 +180,7 @@ const workflowCardStyle = (active = false): React.CSSProperties => ({
   textAlign: "left",
   cursor: "pointer",
   fontFamily: "'Inter', system-ui, sans-serif",
-  boxShadow: active ? "0 12px 28px rgba(201,168,76,0.13), inset 0 1px 0 rgba(255,255,255,0.08)" : "none",
+  boxShadow: active ? "0 12px 28px rgba(201, 138, 91,0.13), inset 0 1px 0 rgba(255,255,255,0.08)" : "none",
 });
 
 const catalogueQuickNavStyle: React.CSSProperties = {
@@ -190,16 +190,16 @@ const catalogueQuickNavStyle: React.CSSProperties = {
   margin: "0 0 14px",
   padding: 6,
   borderRadius: 14,
-  background: "linear-gradient(145deg, rgba(255,255,255,0.035), rgba(201,168,76,0.035))",
+  background: "linear-gradient(145deg, rgba(255,255,255,0.035), rgba(201, 138, 91,0.035))",
   border: "1px solid rgba(255,255,255,0.055)",
 };
 
 const catalogueChipStyle = (active: boolean): React.CSSProperties => ({
   minHeight: 42,
   borderRadius: 9,
-  border: active ? `1px solid rgba(201,168,76,0.5)` : "1px solid rgba(255,255,255,0.08)",
+  border: active ? `1px solid rgba(201, 138, 91,0.5)` : "1px solid rgba(255,255,255,0.08)",
   background: active
-    ? "linear-gradient(145deg, rgba(229,194,92,0.28), rgba(128,91,24,0.18))"
+    ? "linear-gradient(145deg, rgba(220,164,117,0.28), rgba(126,70,32,0.18))"
     : "linear-gradient(145deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",
   color: active ? "#f3ddb0" : "rgba(255,255,255,0.62)",
   display: "flex",
@@ -209,8 +209,8 @@ const catalogueChipStyle = (active: boolean): React.CSSProperties => ({
   padding: "0 8px",
   cursor: "pointer",
   fontFamily: "'Inter', system-ui, sans-serif",
-  fontSize: 9,
-  fontWeight: 750,
+  fontSize: 11,
+  fontWeight: 600,
   letterSpacing: 1.2,
   textTransform: "uppercase",
   boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 22px rgba(0,0,0,0.18)" : "none",
@@ -251,9 +251,9 @@ const catalogueDragPreviewStyle = (preview: CatalogueDragPreview): React.CSSProp
   padding: "12px 14px",
   borderRadius: 18,
   background: "linear-gradient(145deg, rgba(18,18,18,0.94), rgba(31,29,24,0.95))",
-  border: "1px solid rgba(201,168,76,0.48)",
+  border: "1px solid rgba(201, 138, 91,0.48)",
   boxShadow: preview.active
-    ? "0 24px 70px rgba(0,0,0,0.58), 0 0 0 1px rgba(255,255,255,0.08), 0 0 32px rgba(201,168,76,0.18)"
+    ? "0 24px 70px rgba(0,0,0,0.58), 0 0 0 1px rgba(255,255,255,0.08), 0 0 32px rgba(201, 138, 91,0.18)"
     : "0 14px 40px rgba(0,0,0,0.46)",
   color: "#f6efe0",
   fontFamily: "'Inter', system-ui, sans-serif",
@@ -275,7 +275,7 @@ const MARKUP_COLOR_META: Record<MarkupColor, {
   readonly swatch: string;
   readonly halo: string;
 }> = {
-  gold: { label: "Gold", swatch: "#f1c861", halo: "rgba(201,168,76,0.32)" },
+  gold: { label: "Gold", swatch: "#dca475", halo: "rgba(201, 138, 91,0.32)" },
   ivory: { label: "Ivory", swatch: "#fff2cf", halo: "rgba(255,242,207,0.26)" },
   ruby: { label: "Ruby", swatch: "#ff5d6c", halo: "rgba(169,46,58,0.28)" },
   cyan: { label: "Cyan", swatch: "#7bdcff", halo: "rgba(72,169,207,0.24)" },
@@ -328,8 +328,8 @@ function CatalogueLayer({ mobile, children }: { readonly mobile: boolean; readon
 }
 
 const markupPanelEyebrowStyle: React.CSSProperties = {
-  fontSize: 10,
-  fontWeight: 850,
+  fontSize: 11,
+  fontWeight: 700,
   letterSpacing: 2,
   textTransform: "uppercase",
   color: GOLD,
@@ -339,7 +339,7 @@ const markupPanelTitleStyle: React.CSSProperties = {
   marginTop: 4,
   fontSize: 17,
   lineHeight: 1.05,
-  fontWeight: 820,
+  fontWeight: 700,
   color: "#fff6df",
 };
 
@@ -354,9 +354,9 @@ function markupActionButtonStyle(primary = false, disabled = false): React.CSSPr
   return {
     minHeight: 34,
     borderRadius: 10,
-    border: primary ? "1px solid rgba(201,168,76,0.55)" : "1px solid rgba(255,255,255,0.1)",
+    border: primary ? "1px solid rgba(201, 138, 91,0.55)" : "1px solid rgba(255,255,255,0.1)",
     background: primary
-      ? "linear-gradient(145deg, #d5b652, #b99a32)"
+      ? "linear-gradient(145deg, #c98a5b, #c98a5b)"
       : "rgba(255,255,255,0.05)",
     color: primary ? "#15120c" : "#f4ead7",
     display: "inline-flex",
@@ -364,7 +364,7 @@ function markupActionButtonStyle(primary = false, disabled = false): React.CSSPr
     justifyContent: "center",
     gap: 8,
     fontSize: 11,
-    fontWeight: 760,
+    fontWeight: 600,
     cursor: disabled ? "default" : "pointer",
     opacity: disabled ? 0.42 : 1,
     padding: "0 9px",
@@ -414,7 +414,7 @@ function MarkupToolPanel({
           display: "grid",
           placeItems: "center",
           background: MARKUP_COLOR_META[selectedColor].halo,
-          border: "1px solid rgba(201,168,76,0.28)",
+          border: "1px solid rgba(201, 138, 91,0.28)",
           color: MARKUP_COLOR_META[selectedColor].swatch,
           boxShadow: `0 0 28px ${MARKUP_COLOR_META[selectedColor].halo}`,
         }}>
@@ -529,8 +529,8 @@ function MarkupToolPanel({
           marginTop: 12,
           padding: "10px 11px",
           borderRadius: 13,
-          border: "1px solid rgba(201,168,76,0.13)",
-          background: "rgba(201,168,76,0.07)",
+          border: "1px solid rgba(201, 138, 91,0.13)",
+          background: "rgba(201, 138, 91,0.07)",
           color: "rgba(246,238,220,0.66)",
           fontSize: 11,
           lineHeight: 1.35,
@@ -594,7 +594,7 @@ function CameraViewsPanel({
               }}
               onClick={() => { onSelect(i); }}
             >
-              <span style={{ color: "#f2f2f2", fontWeight: 750, lineHeight: 1.2 }}>
+              <span style={{ color: "#f2f2f2", fontWeight: 600, lineHeight: 1.2 }}>
                 {bm.name}
               </span>
               <span style={{ color: "rgba(255,255,255,0.44)", fontSize: 11, lineHeight: 1.2 }}>
@@ -690,15 +690,15 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
     }
     @media (hover: hover) and (pointer: fine) {
       .omni-asset-row:hover {
-        background: linear-gradient(90deg, rgba(201,168,76,0.14), rgba(255,255,255,0.035)) !important;
+        background: linear-gradient(90deg, rgba(201, 138, 91,0.14), rgba(255,255,255,0.035)) !important;
         transform: translateX(6px) !important;
-        border-left: 2px solid rgba(230,195,92,0.72) !important;
+        border-left: 2px solid rgba(220,164,117,0.72) !important;
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 12px 24px rgba(0,0,0,0.18);
       }
     }
     .omni-asset-row:active {
       transform: scale(0.97);
-      background: rgba(201,168,76,0.15) !important;
+      background: rgba(201, 138, 91,0.15) !important;
     }
     @media (hover: hover) and (pointer: fine) {
       [data-testid="planner-toolbar"] button:hover:not(:disabled) {
@@ -707,7 +707,7 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
       }
     }
     [data-testid="planner-toolbar"] button:focus-visible {
-      outline: 2px solid rgba(226,193,93,0.72);
+      outline: 2px solid rgba(220,164,117,0.72);
       outline-offset: 2px;
     }
     [data-testid="planner-toolbar"] button:active:not(:disabled) {
@@ -743,9 +743,9 @@ if (typeof document !== "undefined" && document.getElementById(PANEL_ANIM_ID) ==
     }
     @media (hover: hover) and (pointer: fine) {
       .omni-cam-item:hover {
-        background: rgba(201,168,76,0.1) !important;
+        background: rgba(201, 138, 91,0.1) !important;
         transform: translateX(6px) !important;
-        color: #dfc06a !important;
+        color: #dca475 !important;
       }
     }
   `;
@@ -798,8 +798,8 @@ if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) 
       100% { opacity: 0; transform: translateX(-12px) scale(0.7); filter: blur(6px); }
     }
     @keyframes omni-tt-glow {
-      0%, 100% { box-shadow: 0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.15), inset 0 1px 0 rgba(255,255,255,0.04); }
-      50% { box-shadow: 0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(201,168,76,0.3), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 24px rgba(201,168,76,0.08); }
+      0%, 100% { box-shadow: 0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201, 138, 91,0.15), inset 0 1px 0 rgba(255,255,255,0.04); }
+      50% { box-shadow: 0 16px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(201, 138, 91,0.3), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 24px rgba(201, 138, 91,0.08); }
     }
     @keyframes omni-tt-shimmer {
       0% { background-position: -200% 0; }
@@ -938,25 +938,25 @@ function ToolBtn({
           {/* Card */}
           <div style={{
             background: "linear-gradient(145deg, #141414 0%, #1c1c1c 50%, #181818 100%)",
-            border: "1px solid rgba(201,168,76,0.2)",
+            border: "1px solid rgba(201, 138, 91,0.2)",
             borderRadius: 16,
             padding: "18px 24px 16px",
             minWidth: 240,
             maxWidth: 300,
-            boxShadow: "0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.15), inset 0 1px 0 rgba(255,255,255,0.04)",
+            boxShadow: "0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(201, 138, 91,0.15), inset 0 1px 0 rgba(255,255,255,0.04)",
           }}>
             {/* Gold accent bar at top */}
             <div style={{
               width: 36,
               height: 3,
               borderRadius: 2,
-              background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.3))`,
+              background: `linear-gradient(90deg, ${GOLD}, rgba(201, 138, 91,0.3))`,
               marginBottom: 12,
             }} />
             {/* Label */}
             <div style={{
               fontSize: 20,
-              fontWeight: 800,
+              fontWeight: 700,
               color: "#fff",
               letterSpacing: -0.4,
               fontFamily: "'Playfair Display', serif",
@@ -984,8 +984,8 @@ function ToolBtn({
                 gap: 6,
                 padding: "5px 12px",
                 borderRadius: 8,
-                background: "linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.08))",
-                border: "1px solid rgba(201,168,76,0.2)",
+                background: "linear-gradient(135deg, rgba(201, 138, 91,0.15), rgba(201, 138, 91,0.08))",
+                border: "1px solid rgba(201, 138, 91,0.2)",
                 color: GOLD,
                 fontSize: 12,
                 fontWeight: 700,
@@ -993,7 +993,7 @@ function ToolBtn({
                 letterSpacing: 0.8,
                 animation: "omni-tt-badge 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both",
               }}>
-                <span style={{ fontSize: 10, color: "rgba(201,168,76,0.6)", fontWeight: 500 }}>SHORTCUT</span>
+                <span style={{ fontSize: 11, color: "rgba(201, 138, 91,0.6)", fontWeight: 500 }}>SHORTCUT</span>
                 <span>{shortcut}</span>
               </div>
             )}
@@ -1083,7 +1083,7 @@ function OnboardingHint({ onDismiss, onOpenFurniture }: OnboardingHintProps): Re
               minHeight: 34,
               border: "1px solid rgba(255,236,180,0.42)",
               borderRadius: 7,
-              background: `linear-gradient(145deg, #e0c66c 0%, ${GOLD} 52%, #9d7a23 100%)`,
+              background: `linear-gradient(145deg, #dca475 0%, ${GOLD} 52%, #7e4620 100%)`,
               color: "#12100c",
               cursor: "pointer",
               font: "820 12px/1 'Inter', system-ui, sans-serif",
@@ -1212,7 +1212,7 @@ const mobileSheetStyle: React.CSSProperties = {
 const mobileSheetTitleStyle: React.CSSProperties = {
   color: "#241913",
   fontSize: 15,
-  fontWeight: 780,
+  fontWeight: 600,
   lineHeight: 1.2,
   marginBottom: 3,
 };
@@ -1235,11 +1235,11 @@ function mobileActionStyle(action: MobileDockAction): React.CSSProperties {
     borderRadius: 22,
     border: "1px solid transparent",
     background: primary
-      ? "linear-gradient(145deg, #e0c66c, #b99130)"
+      ? "linear-gradient(145deg, #dca475, #c98a5b)"
       : danger
         ? "rgba(145, 34, 45, 0.18)"
         : active
-          ? "linear-gradient(145deg, rgba(201,168,76,0.26), rgba(201,168,76,0.12))"
+          ? "linear-gradient(145deg, rgba(201, 138, 91,0.26), rgba(201, 138, 91,0.12))"
           : quiet
             ? "rgba(255,255,255,0.03)"
             : "linear-gradient(145deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035))",
@@ -1251,7 +1251,7 @@ function mobileActionStyle(action: MobileDockAction): React.CSSProperties {
     justifyContent: "center",
     gap: 4,
     fontSize: 11,
-    fontWeight: 720,
+    fontWeight: 600,
     lineHeight: 1,
     cursor: action.disabled === true ? "default" : "pointer",
     opacity: action.disabled === true ? 0.36 : 1,
@@ -1970,7 +1970,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
         height: "calc(64px + env(safe-area-inset-bottom))",
         boxSizing: "border-box" as const,
         background: "linear-gradient(180deg, rgba(8,8,8,0.98) 0%, rgba(21,17,12,0.98) 100%)",
-        borderTop: "1px solid rgba(201,168,76,0.22)",
+        borderTop: "1px solid rgba(201, 138, 91,0.22)",
         boxShadow: "0 -10px 42px rgba(0,0,0,0.46), inset 0 1px 0 rgba(255,236,180,0.08)",
         display: "flex", flexDirection: "row" as const, alignItems: "center",
         padding: "6px 10px calc(6px + env(safe-area-inset-bottom))", gap: 6, zIndex: 50,
@@ -2073,7 +2073,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
               WebkitBackdropFilter: "none",
               borderRadius: 18,
               boxSizing: "border-box" as const,
-              boxShadow: "0 -18px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(201,168,76,0.12)",
+              boxShadow: "0 -18px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(201, 138, 91,0.12)",
             } : {}),
             animation: panelOpen
               ? "omni-panel-slide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards"
@@ -2088,11 +2088,11 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           </button>}
           <div style={mobileChrome ? { maxHeight: "inherit", overflowY: "auto", padding: "24px 18px", boxSizing: "border-box" } : { display: "contents" }}>
           <div style={{ ...catalogueHeroStyle, ...(mobileChrome ? { paddingRight: 44 } : {}) }}>
-            <div style={{ width: 40, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.12))`, marginBottom: 12 }} />
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: 2.4, color: GOLD, marginBottom: 4 }}>
+            <div style={{ width: 40, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201, 138, 91,0.12))`, marginBottom: 12 }} />
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: 2.4, color: GOLD, marginBottom: 4 }}>
               Event kit
             </div>
-            <div style={{ fontSize: 28, lineHeight: 1, fontWeight: 850, color: "#fff8e7", fontFamily: "'Playfair Display', serif", letterSpacing: -0.4 }}>
+            <div style={{ fontSize: 28, lineHeight: 1, fontWeight: 700, color: "#fff8e7", fontFamily: "'Playfair Display', serif", letterSpacing: -0.4 }}>
               Build the room
             </div>
             <div style={{ marginTop: 8, color: "rgba(255,246,224,0.58)", fontSize: 12, lineHeight: 1.45 }}>
@@ -2108,8 +2108,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
             >
               <Armchair size={18} />
               <span>
-                <span style={{ display: "block", fontSize: 11, fontWeight: 850 }}>Rows</span>
-                <span style={{ display: "block", marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.48)" }}>drag chair</span>
+                <span style={{ display: "block", fontSize: 11, fontWeight: 700 }}>Rows</span>
+                <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "rgba(255,255,255,0.48)" }}>drag chair</span>
               </span>
             </button>
             <button
@@ -2119,8 +2119,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
             >
               <Grid3X3 size={18} />
               <span>
-                <span style={{ display: "block", fontSize: 11, fontWeight: 850 }}>Tables</span>
-                <span style={{ display: "block", marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.48)" }}>rounds + rows</span>
+                <span style={{ display: "block", fontSize: 11, fontWeight: 700 }}>Tables</span>
+                <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "rgba(255,255,255,0.48)" }}>rounds + rows</span>
               </span>
             </button>
             <button
@@ -2130,8 +2130,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
             >
               <PenLine size={18} />
               <span>
-                <span style={{ display: "block", fontSize: 11, fontWeight: 850 }}>Dress</span>
-                <span style={{ display: "block", marginTop: 2, fontSize: 9, color: "rgba(255,255,255,0.48)" }}>cloth + plates</span>
+                <span style={{ display: "block", fontSize: 11, fontWeight: 700 }}>Dress</span>
+                <span style={{ display: "block", marginTop: 2, fontSize: 11, color: "rgba(255,255,255,0.48)" }}>cloth + plates</span>
               </span>
             </button>
           </div>
@@ -2152,7 +2152,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                 boxSizing: "border-box",
                 transition: "border-color 0.2s, box-shadow 0.2s",
               }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(201,168,76,0.3)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(201,168,76,0.06)"; }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(201, 138, 91,0.3)"; e.currentTarget.style.boxShadow = "0 0 0 3px rgba(201, 138, 91,0.06)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.boxShadow = "none"; }}
             />
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
@@ -2208,7 +2208,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                     toggleCategory(cat);
                   }}
                 >
-                  <span>{categoryLabel(cat)} <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.3)" }}>{items.length}</span></span>
+                  <span>{categoryLabel(cat)} <span style={{ fontSize: 11, fontWeight: 400, color: "rgba(255,255,255,0.3)" }}>{items.length}</span></span>
                   <span style={{ fontSize: 14 }}>{collapsed ? "+" : "\u2212"}</span>
                 </div>
                 {cat === "chair" && !collapsed && q.length === 0 && (
@@ -2218,14 +2218,14 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                       margin: "10px 0 8px",
                       padding: "10px 11px",
                       borderRadius: 13,
-                      background: "linear-gradient(145deg, rgba(201,168,76,0.12), rgba(255,255,255,0.045))",
-                      border: "1px solid rgba(201,168,76,0.18)",
+                      background: "linear-gradient(145deg, rgba(201, 138, 91,0.12), rgba(255,255,255,0.045))",
+                      border: "1px solid rgba(201, 138, 91,0.18)",
                       color: "rgba(255,245,220,0.72)",
                       fontSize: 11,
                       lineHeight: 1.45,
                     }}
                   >
-                    <span style={{ color: GOLD, fontWeight: 850, letterSpacing: 1.4, textTransform: "uppercase" }}>Chair brush</span>
+                    <span style={{ color: GOLD, fontWeight: 700, letterSpacing: 1.4, textTransform: "uppercase" }}>Chair brush</span>
                     <span style={{ display: "block", marginTop: 3 }}>
                       Drag straight for a row; diagonally for a block.
                     </span>
@@ -2252,8 +2252,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                     <div
                       style={{
                         width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                        background: "rgba(201,168,76,0.04)",
-                        border: "1px solid rgba(201,168,76,0.08)",
+                        background: "rgba(201, 138, 91,0.04)",
+                        border: "1px solid rgba(201, 138, 91,0.08)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         padding: 2,
                         userSelect: "none",
@@ -2303,8 +2303,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
               width: 52,
               height: 52,
               borderRadius: 15,
-              background: "linear-gradient(145deg, rgba(201,168,76,0.18), rgba(201,168,76,0.06))",
-              border: "1px solid rgba(201,168,76,0.34)",
+              background: "linear-gradient(145deg, rgba(201, 138, 91,0.18), rgba(201, 138, 91,0.06))",
+              border: "1px solid rgba(201, 138, 91,0.34)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2319,12 +2319,12 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
               height: 3,
               borderRadius: 99,
               marginBottom: 7,
-              background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.18))`,
+              background: `linear-gradient(90deg, ${GOLD}, rgba(201, 138, 91,0.18))`,
               animation: "omni-catalogue-drag-pulse 1.1s ease-in-out infinite",
             }} />
             <div style={{
               fontSize: 14,
-              fontWeight: 850,
+              fontWeight: 700,
               letterSpacing: -0.1,
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -2344,8 +2344,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
             </div>
             <div style={{
               marginTop: 8,
-              fontSize: 9,
-              fontWeight: 800,
+              fontSize: 11,
+              fontWeight: 700,
               letterSpacing: 1.5,
               textTransform: "uppercase",
               color: GOLD,

@@ -68,7 +68,7 @@ const titleStyle: React.CSSProperties = {
 const roomStyle: React.CSSProperties = {
   color: "#241913",
   fontSize: 14,
-  fontWeight: 780,
+  fontWeight: 600,
   lineHeight: 1.1,
   whiteSpace: "nowrap",
   overflow: "hidden",
@@ -87,7 +87,7 @@ const layoutStyle: React.CSSProperties = {
 
 const saveStyle: React.CSSProperties = {
   color: "rgba(36,25,19,0.66)",
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: 650,
   lineHeight: 1.1,
   whiteSpace: "nowrap",
@@ -129,7 +129,7 @@ const sendStyle: React.CSSProperties = {
   background: "#7a1f2a",
   color: "#fff8ed",
   fontSize: 12,
-  fontWeight: 760,
+  fontWeight: 600,
   letterSpacing: 0,
   cursor: "pointer",
   boxShadow: "0 8px 18px rgba(122,31,42,0.2)",
@@ -145,7 +145,7 @@ function segmentButtonStyle(active: boolean): React.CSSProperties {
     background: active ? "#241913" : "transparent",
     color: active ? "#fff8ed" : "rgba(36,25,19,0.68)",
     fontSize: 12,
-    fontWeight: 780,
+    fontWeight: 600,
     cursor: "pointer",
     transition: "background 160ms ease, color 160ms ease",
   };

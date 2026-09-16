@@ -450,6 +450,16 @@ function PlannerCommsLayer(): React.ReactElement {
   return (
     <>
       <EditorBridge />
+      {/* T-615: the planner had no <main> and no skip link. The landmark does
+          NOT go on this shell: a <main> ancestor strips the implicit
+          `banner` role off the room header and `contentinfo` off the event
+          schedule dock (HTML only grants those to a <header>/<footer> with no
+          sectioning ancestor), which silently removes two landmarks to add
+          one. It goes on the scene itself — PlannerCockpit's stage in 3D,
+          BlueprintFromStore's body in 2D — where the header and the dock stay
+          outside it. Exactly one of those two is mounted at a time, so
+          #main-content is unique. */}
+      <a className="vv-skip-link" href="#main-content">Skip to the room</a>
       <div
         data-testid="planner-3d-shell"
         data-planner-config-id={configId ?? undefined}
@@ -502,8 +512,8 @@ function PlannerCommsLayer(): React.ReactElement {
             padding: "8px 14px", borderRadius: 8,
             background: "rgba(20,19,17,0.85)",
             backdropFilter: "blur(8px)",
-            border: "1px solid rgba(201,168,76,0.35)",
-            color: "#c9a84c", fontSize: 12, fontWeight: 600,
+            border: "1px solid rgba(201, 138, 91,0.35)",
+            color: "#c98a5b", fontSize: 12, fontWeight: 600,
             cursor: "pointer", fontFamily: "'Inter', system-ui, sans-serif",
             letterSpacing: "0.04em",
           }}
@@ -561,7 +571,7 @@ export function SaveErrorToast({
         bottom: "calc(var(--toolbox-bottom, 0px) + 16px)",
         zIndex: 40,
         background: "rgba(20,19,17,0.95)",
-        border: "1px solid rgba(201,168,76,0.5)",
+        border: "1px solid rgba(201, 138, 91,0.5)",
         borderRadius: 8,
         padding: "12px 16px",
         display: "flex", alignItems: "center", gap: 12,
@@ -581,7 +591,7 @@ export function SaveErrorToast({
           title={timelinePreviewActive ? "Exit the room timeline preview before retrying this save." : undefined}
           style={{
             padding: "4px 12px", fontSize: 12, fontWeight: 600,
-            background: "#c9a84c", color: "#141311", border: "none",
+            background: "#c98a5b", color: "#141311", border: "none",
             borderRadius: 4, cursor: timelinePreviewActive ? "default" : "pointer",
             opacity: timelinePreviewActive ? 0.6 : 1,
           }}
@@ -596,7 +606,7 @@ export function SaveErrorToast({
           title={timelinePreviewActive ? "Exit the room timeline preview before reloading this layout." : undefined}
           style={{
             padding: "4px 12px", fontSize: 12, fontWeight: 600,
-            background: "#c9a84c", color: "#141311", border: "none",
+            background: "#c98a5b", color: "#141311", border: "none",
             borderRadius: 4, cursor: timelinePreviewActive ? "default" : "pointer",
             opacity: timelinePreviewActive ? 0.6 : 1,
           }}
@@ -657,8 +667,8 @@ function ViewModeToggle({
           borderRadius: 6,
           cursor: disabled ? "default" : "pointer",
           opacity: disabled ? 0.52 : 1,
-          background: active ? "#c9a84c" : "transparent",
-          color: active ? "#141311" : "#c9a84c",
+          background: active ? "#c98a5b" : "transparent",
+          color: active ? "#141311" : "#c98a5b",
           fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >

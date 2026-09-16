@@ -112,7 +112,7 @@ describe("EnquiriesView async ownership", () => {
     mocks.listEnquiries.mockReturnValue(request.promise);
     render(<EnquiriesView />);
 
-    expect(screen.getByRole("status").textContent).toContain("Loading...");
+    expect(screen.getByRole("status").textContent).toContain("Loading…");
     expect(screen.getByRole("status").querySelector("svg[aria-hidden='true']")).not.toBeNull();
 
     await act(async () => { request.resolve([]); await request.promise; });
@@ -145,11 +145,11 @@ describe("EnquiriesView async ownership", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start Review" }));
     fireEvent.click(screen.getByRole("button", { name: "Under Review" }));
 
-    const working = screen.getByRole("button", { name: "Working..." });
+    const working = screen.getByRole("button", { name: "Working…" });
     expect(working.hasAttribute("disabled")).toBe(true);
     expect(working.querySelector("svg[data-activity-indicator]")).not.toBeNull();
     await act(async () => { transition.resolve(enquiryFixture("alice", "Alice", "under_review")); await transition.promise; });
-    expect(screen.queryByRole("button", { name: "Working..." })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Working…" })).toBeNull();
     expect(mocks.transitionEnquiry).toHaveBeenCalledTimes(1);
   });
 
@@ -218,7 +218,7 @@ describe("dashboard result controls", () => {
     mocks.getClientProfile.mockRejectedValue(new Error("Unavailable"));
     render(<ClientProfile userId="user-1" onBack={vi.fn()} onViewEnquiry={vi.fn()} />);
 
-    expect(screen.getByRole("status").textContent).toContain("Loading profile...");
+    expect(screen.getByRole("status").textContent).toContain("Loading profile…");
     expect(await screen.findByText("Failed to load profile")).toBeDefined();
     expect(screen.queryByRole("status")).toBeNull();
   });

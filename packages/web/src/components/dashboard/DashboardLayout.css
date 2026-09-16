@@ -39,7 +39,7 @@
 .dashboard-layout-nav-item:hover { background: #e7e5d5; }
 .dashboard-layout-nav-item--active { border-bottom-color: var(--workspace-ink); font-weight: 650; }
 .dashboard-layout-header :is(button, a):focus-visible,
-.dashboard-layout-skip:focus-visible { outline: 2px solid #365f4f; outline-offset: 3px; }
+.dashboard-layout-skip:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .dashboard-layout-disclosure { position: relative; }
 .dashboard-layout-account { justify-self: end; min-width: 0; }
 .dashboard-layout-account-button {

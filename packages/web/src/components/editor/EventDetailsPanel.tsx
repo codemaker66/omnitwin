@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
+import { useEscapeToClose, useFocusTrap } from "../../lib/use-focus-trap.js";
 import type {
   AccessibilityRequirements,
   DietarySummary,
@@ -55,6 +56,15 @@ export interface EventDetailsPanelProps {
 }
 
 export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): React.ReactElement | null {
+  // T-615: the sheet declared aria-modal but had neither a focus trap nor an
+  // Escape key — Tab walked out into the planner behind it and the only way
+  // out for a keyboard user was to Tab all the way round to the close button.
+  // The trap is gated on `open` so the hook is inert while the sheet is not
+  // mounted-and-visible, and its cleanup returns focus to the control that
+  // opened it. Escape is unconditional: this sheet saves explicitly, so
+  // dismissing it never discards a write already in flight.
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
+  useEscapeToClose(onClose, open);
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
@@ -387,18 +397,19 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         onClick={(e) => { e.stopPropagation(); }}
         style={{
           width: 640, maxWidth: "calc(100% - 32px)",
           marginTop: 40, marginBottom: 40,
           background: CARD_BG,
           border: `1px solid ${BORDER}`, borderRadius: 12,
-          color: "#ddd", fontFamily: "'Inter', system-ui, sans-serif",
+          color: "#ddd", fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
         }}
       >
         <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 18, borderBottom: `1px solid ${BORDER}` }}>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
               Event Details
             </div>
             <h2 style={{ fontSize: 18, margin: "4px 0 0", color: "#fff" }}>Instructions for the hallkeeper</h2>
@@ -420,8 +431,8 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
           {signInRequired && (
             <div role="status" style={{
               fontSize: 12, color: GOLD,
-              background: "rgba(201,168,76,0.08)",
-              border: `1px solid rgba(201,168,76,0.2)`,
+              background: "rgba(201, 138, 91,0.08)",
+              border: `1px solid rgba(201, 138, 91,0.2)`,
               padding: 12, borderRadius: 6,
             }}>
               Event details persist to your saved layout. Sign in and claim this
@@ -693,10 +704,10 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string | null }): React.ReactElement {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <span style={{ fontSize: 10, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <span style={{ fontSize: 11, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
       {children}
       {error !== undefined && error !== null && (
-        <span style={{ fontSize: 10, color: "#ef4444" }}>{error}</span>
+        <span style={{ fontSize: 11, color: "#ef4444" }}>{error}</span>
       )}
     </label>
   );

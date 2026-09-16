@@ -17,7 +17,7 @@
   --fr-ink-2: #5a5244;
   --fr-green: #1f4a38;
   --fr-green-soft: rgba(31, 74, 56, 0.14);
-  --fr-ochre: #b7862f;
+  --fr-ochre: #c98a5b;
   --fr-rule: #d5cbb6;
   --fr-arc: #c6b795;
   color-scheme: light;
@@ -57,10 +57,10 @@
     --fr-ink-2: #b5aa97;
     --fr-green: #8fc3a8;
     --fr-green-soft: rgba(143, 195, 168, 0.16);
-    --fr-ochre: #d8a64c;
+    --fr-ochre: #c98a5b;
     --fr-rule: #3a332a;
     /* Against dark paper the drawn arch needs warmth to read at all. */
-    --fr-arc: rgba(216, 166, 76, 0.55);
+    --fr-arc: rgba(201, 138, 91, 0.55);
     --fr-toplight: rgba(255, 250, 238, 0.06);
     --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
     color-scheme: dark;
@@ -73,9 +73,9 @@
   --fr-ink-2: #b5aa97;
   --fr-green: #8fc3a8;
   --fr-green-soft: rgba(143, 195, 168, 0.16);
-  --fr-ochre: #d8a64c;
+  --fr-ochre: #c98a5b;
   --fr-rule: #3a332a;
-  --fr-arc: rgba(216, 166, 76, 0.55);
+  --fr-arc: rgba(201, 138, 91, 0.55);
   --fr-toplight: rgba(255, 250, 238, 0.06);
   --fr-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.035 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
   color-scheme: dark;
@@ -88,8 +88,8 @@
   filter: none;
 }
 .fr-root :focus-visible {
-  outline: 2px solid var(--fr-green);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
   border-radius: 2px;
 }
 
@@ -146,7 +146,7 @@
 }
 .fr-brand small {
   font-family: var(--fr-ui);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--fr-ink-2);
@@ -1009,8 +1009,8 @@
   cursor: grabbing;
 }
 .fr-walk-canvas:focus-visible {
-  outline: 2px solid var(--fr-green);
-  outline-offset: -2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 .fr-walk-poster {
   position: absolute;

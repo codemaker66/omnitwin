@@ -31,7 +31,7 @@ const MAX_CENTERPIECE = 80;
 
 const segmentStyle = (active: boolean): React.CSSProperties => ({
   padding: "5px 10px", fontSize: 11, fontWeight: active ? 700 : 500,
-  background: active ? "rgba(201,168,76,0.16)" : "transparent",
+  background: active ? "rgba(201, 138, 91,0.16)" : "transparent",
   color: active ? GOLD : TEXT_SEC,
   border: `1px solid ${active ? GOLD : BORDER}`, borderRadius: 6,
   cursor: "pointer", fontFamily: "inherit",
@@ -46,7 +46,7 @@ const dressingInputStyle: React.CSSProperties = {
 };
 
 const rowLabelStyle: React.CSSProperties = {
-  fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+  fontSize: 11, fontWeight: 600, letterSpacing: "0.06em",
   color: TEXT_SEC, textTransform: "uppercase",
 };
 
@@ -104,7 +104,7 @@ function DressingSection({ objectId }: { readonly objectId: string }): React.Rea
 
   return (
     <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${BORDER}` }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 8 }}>
         Dressing
       </div>
 
@@ -268,7 +268,7 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
             Planner Note
           </div>
           <div style={{ fontSize: 11, color: TEXT_SEC, marginTop: 1 }}>
@@ -277,7 +277,7 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
         </div>
         {hasNote && (
           <span
-            style={{ fontSize: 9, color: GOLD, fontWeight: 700, background: "rgba(201,168,76,0.12)", padding: "2px 6px", borderRadius: 4 }}
+            style={{ fontSize: 11, color: GOLD, fontWeight: 700, background: "rgba(201, 138, 91,0.12)", padding: "2px 6px", borderRadius: 4 }}
             aria-label="This object has a saved note"
           >
             SAVED
@@ -306,7 +306,7 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
       />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-        <div style={{ fontSize: 10, color: charsLeft < 40 ? GOLD : TEXT_MUT }}>
+        <div style={{ fontSize: 11, color: charsLeft < 40 ? GOLD : TEXT_MUT }}>
           {charsLeft} characters left
         </div>
         <div style={{ display: "flex", gap: 6 }}>
