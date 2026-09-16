@@ -157,6 +157,12 @@
   font-size: 0.74rem;
   font-variant-numeric: tabular-nums;
   color: var(--stone-dim);
+  /* The pill sits low and centre - exactly where a visitor taps the floor in
+   * front of them on a phone. Measured 2026-09-16 on a 390x844 Chromium with
+   * CDP touch: a tap at (195, 760) reached the pill and NOT the canvas, so
+   * tap-to-glide did nothing in the one place people aim first. It reports;
+   * it does not take input. */
+  pointer-events: none;
 }
 
 /* The view was taken away. Same pill, no alarm in it: the interruption is
@@ -173,6 +179,8 @@
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.74rem;
   cursor: pointer;
+  /* The one thing in the pill that IS a control takes its own input back. */
+  pointer-events: auto;
 }
 
 .walk__reload:focus-visible { outline: 2px solid var(--stone); outline-offset: 3px; }

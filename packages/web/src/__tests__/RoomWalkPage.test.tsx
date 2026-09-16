@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // The walk page mounts a real R3F canvas through RoomSplatScene. That scene is
 // stubbed so the assertions are about what the PAGE says — the header count,
@@ -328,5 +330,56 @@ describe("RoomWalkPage chrome", () => {
     mount("/room/grand-hall?bare=1");
     expect(screen.queryByTestId("walk-fullscreen")).toBeNull();
     expect(screen.queryByTestId("walk-loading")).toBeNull();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Nothing floating over the room may swallow a tap
+//
+// Found by a real-touch probe, not by these tests: on a 390x844 Chromium
+// driven through CDP Input.dispatchTouchEvent, a tap at (195, 760) landed on
+// the status pill and never reached the canvas, so tap-to-glide did nothing
+// in the one place a visitor aims first - the floor just in front of them.
+// The pill reports; it does not take input. Asserted against the stylesheet
+// because happy-dom does not load it and no unit test could otherwise see it.
+// ---------------------------------------------------------------------------
+
+describe("the walk stylesheet", () => {
+  // Resolved from the vitest root (packages/web) rather than import.meta.url,
+  // which the module runner serves over http and fileURLToPath refuses.
+  const css = readFileSync(resolve("src/pages/RoomWalkPage.css"), "utf8");
+
+  function ruleBody(selector: string): string {
+    const at = css.indexOf(selector + " {");
+    expect(at, selector + " is missing from RoomWalkPage.css").toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  }
+
+  it.each([".walk__bar", ".walk__foot", ".walk__loading"])(
+    "%s lets a tap through to the room",
+    (selector) => {
+      expect(ruleBody(selector)).toMatch(/pointer-events:\s*none/u);
+    },
+  );
+
+  it.each([".walk__bar > *", ".walk__reload"])(
+    "%s takes its own input back",
+    (selector) => {
+      expect(ruleBody(selector)).toMatch(/pointer-events:\s*auto/u);
+    },
+  );
+
+  it("measures the viewport in dvh as well as vh", () => {
+    // 100vh is the TALLEST a phone viewport ever gets, so the room's bottom
+    // edge would spend the whole visit behind the address bar.
+    expect(css).toMatch(/min-height:\s*100vh/u);
+    expect(css).toMatch(/min-height:\s*100dvh/u);
+  });
+
+  it("adds the safe-area insets rather than replacing the padding", () => {
+    // A device without a notch must be unchanged.
+    expect(css).toMatch(/calc\(1rem \+ env\(safe-area-inset-top\)\)/u);
+    expect(css).toMatch(/calc\(4\.5rem \+ env\(safe-area-inset-bottom\)\)/u);
   });
 });
