@@ -68,7 +68,18 @@ function isReviewState(s: string): s is ConfigurationReviewState {
 // canAccessResource, which is canManageVenue, so this list must match the
 // venue floor minus the hallkeeper (who reads reviews but performs none).
 // A role the route admits and this table refuses is a half-granted write.
-const VENUE_REVIEW_ROLES: readonly TransitionRole[] = ["staff", "manager", "admin"];
+//
+// Exported because the pending-review QUEUE must be the same set. A role that
+// may approve, reject or archive a review but cannot list the queue holding it
+// is granted half a job, and the nav then offers it a tab the API refuses —
+// so routes/configuration-reviews.ts reads isVenueReviewRole below instead of
+// spelling the roles out a second time.
+export const VENUE_REVIEW_ROLES: readonly TransitionRole[] = ["staff", "manager", "admin"];
+
+/** True if the role performs the venue side of a review, and so may browse its queue. */
+export function isVenueReviewRole(role: string): boolean {
+  return (VENUE_REVIEW_ROLES as readonly string[]).includes(role);
+}
 
 /** The submitter's own moves, plus the venue side acting on their behalf. */
 const SUBMITTER_ROLES: readonly TransitionRole[] = ["client", "planner", ...VENUE_REVIEW_ROLES];

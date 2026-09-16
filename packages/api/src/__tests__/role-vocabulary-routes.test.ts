@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { USER_ROLES } from "@omnitwin/types";
+import { canTransition, isVenueReviewRole } from "../state-machines/config-review.js";
 
 // ---------------------------------------------------------------------------
 // Role vocabulary — route gates (goal 18 §2 line 25, §6 decisions 6a and 6b)
@@ -440,5 +442,52 @@ describe("GET /analytics/venue-dashboard — a price surface", () => {
       const res = await server.inject({ method: "GET", url, headers: auth(role) });
       expectAllowedThrough(res.statusCode);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Configuration reviews — the queue and the transitions are one gate
+//
+// The review state machine admits staff, manager and admin to every venue
+// transition (approve, reject, request changes, archive). The pending queue
+// is where those reviews are found, so it admits exactly the same set: a role
+// that may approve a review it cannot list holds half a job, and the web nav
+// then offers it a "Pending Reviews" tab that answers 403.
+// ---------------------------------------------------------------------------
+
+describe("GET /configurations/reviews/pending — the approver queue", () => {
+  const url = "/configurations/reviews/pending";
+
+  it("returns 401 without an identity", async () => {
+    const res = await server.inject({ method: "GET", url });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a hallkeeper, who reads reviews but performs none", async () => {
+    const res = await server.inject({ method: "GET", url, headers: auth("hallkeeper") });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("returns 403 for planner, client, caterer and sales", async () => {
+    for (const role of ["planner", "client", "caterer", "sales"]) {
+      const res = await server.inject({ method: "GET", url, headers: auth(role) });
+      expect(res.statusCode).toBe(403);
+    }
+  });
+
+  it("admits exactly the roles the review transitions admit", async () => {
+    // Derived from the state machine rather than repeated, so a change to one
+    // is a change to both.
+    for (const role of USER_ROLES) {
+      const res = await server.inject({ method: "GET", url, headers: auth(role) });
+      const admitted = res.statusCode !== 403;
+      expect(admitted, `${role} on the pending queue`).toBe(isVenueReviewRole(role));
+    }
+  });
+
+  it("lets a manager at this venue through the gate it may transition", async () => {
+    expect(canTransition("under_review", "approved", "manager")).toBe(true);
+    const res = await server.inject({ method: "GET", url, headers: auth("manager") });
+    expectAllowedThrough(res.statusCode);
   });
 });
