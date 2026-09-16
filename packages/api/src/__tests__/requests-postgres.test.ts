@@ -358,6 +358,13 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(notifications.length).toBeGreaterThan(0);
     expect(notifications[0]?.severity).toBe("urgent");
 
+    // The escalation is addressed to people, not to a role, so the pass must
+    // hand back WHO it reached — otherwise the live frame cannot be addressed
+    // the same way and the number on their nav sits still until they navigate.
+    const mine = first.find((item) => item.request.id === made.request.id);
+    expect(mine?.recipientUserIds).toContain(f.admin.id);
+    expect(mine?.notificationIds).toHaveLength(mine?.recipientUserIds.length ?? -1);
+
     // A second sweep finds nothing: the claim is the row, not the schedule.
     const second = await runRequestEscalationPass(db, { now: later, send });
     expect(second.filter((item) => item.request.id === made.request.id)).toHaveLength(0);

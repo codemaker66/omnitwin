@@ -261,6 +261,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
     void runRequestEscalationPass(db, { logger: server.log })
       .then((escalated) => {
         for (const item of escalated) {
+          const at = new Date().toISOString();
           emit(server.log, "request.changed", {
             venueId: item.request.venueId,
             kind: "request.escalated",
@@ -270,8 +271,26 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
             state: item.request.state,
             audienceRoles: item.request.audienceRoles,
             actorUserId: null,
-            at: new Date().toISOString(),
+            at,
           });
+          // The inbox copy too, addressed to the administrators BY NAME — the
+          // same announcement the escalation endpoint makes. Without it this
+          // path writes the notification row but the number on their nav sits
+          // still until they navigate, and the two paths disagree about what
+          // "escalated" feels like.
+          if (item.notificationIds.length > 0) {
+            emit(server.log, "notification.created", {
+              venueId: item.request.venueId,
+              audienceRoles: [],
+              recipientUserIds: item.recipientUserIds,
+              notificationIds: item.notificationIds,
+              title: item.request.roomName === null
+                ? "A request is still waiting"
+                : `A request in ${item.request.roomName} is still waiting`,
+              severity: "urgent",
+              at,
+            });
+          }
         }
       })
       .catch((error: unknown) => {

@@ -487,6 +487,11 @@ export function selectDueRequestEscalations<T extends EscalationCandidate>(
 export interface EscalatedRequest {
   readonly request: VenueRequest;
   readonly notificationIds: readonly string[];
+  /** The administrators the escalation was addressed to, BY NAME. An
+   *  escalation's inbox copy is written per person rather than per role, so
+   *  the live frame has to be addressed the same way or the number on their
+   *  nav sits still until they navigate. */
+  readonly recipientUserIds: readonly string[];
   readonly emailedAdmins: number;
 }
 
@@ -575,7 +580,12 @@ export async function runRequestEscalationPass(
       { event: "request.escalated", requestId: row.id, venueId: row.venueId, admins: admins.length },
       "request.escalated",
     );
-    escalated.push({ request: serializeRequest(row, roomName), notificationIds, emailedAdmins });
+    escalated.push({
+      request: serializeRequest(row, roomName),
+      notificationIds,
+      recipientUserIds: admins.map((admin) => admin.id),
+      emailedAdmins,
+    });
   }
 
   return escalated;
