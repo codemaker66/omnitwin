@@ -61,6 +61,12 @@ import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
 import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
 import { readNativePlannerPixelRatio, serverPlannerPixelRatio, subscribeNativePlannerPixelRatio } from "../../lib/planner-resolution-policy.js";
+import {
+  PlannerAdaptiveResolution,
+  PlannerContextLossNotice,
+  PlannerContextLossWatch,
+} from "./PlannerCanvasHealth.js";
+import { frameSamplerRequested } from "../../lib/frame-interval-sampler.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -214,6 +220,14 @@ function useRoomDimensions(): SpaceDimensions {
 const WHEEL_INTERACTION_SETTLE_MS = 450;
 
 /**
+ * Read once at module load, not per render: the sampler either runs for this
+ * whole page load or it does not, and a value that could change mid-session
+ * would mean a recording with a hole in it.
+ */
+const frameSamplerActive = typeof window !== "undefined"
+  && frameSamplerRequested(window.location.search);
+
+/**
  * The live editable planner scene — the single R3F canvas plus every editing
  * system (room geometry, furniture, selection, markup, circulation, camera).
  * Extracted from App so the planner cockpit can host it in its stage cell.
@@ -233,6 +247,12 @@ export function PlannerScene(): ReactElement {
   const viewportWidth = usePlannerViewportWidth();
   const canvasDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
   const canvasGl = useMemo(plannerCanvasGlOptions, []);
+  // The room's absence when the browser takes the context away, which throws
+  // nothing and so never reaches PlannerCanvasBoundary. Kept here rather than
+  // in a store: it is this canvas's state and nothing outside it can act on it.
+  const [contextLost, setContextLost] = useState(false);
+  const handleContextLost = useCallback(() => { setContextLost(true); }, []);
+  const handleContextRestored = useCallback(() => { setContextLost(false); }, []);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
   // Memoized like useRoomDimensions above: the generic floorPlanOutline path
@@ -477,6 +497,8 @@ export function PlannerScene(): ReactElement {
         >
           <color attach="background" args={["#eee9de"]} />
           {!timelinePreviewActive && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
+          <PlannerAdaptiveResolution restingRatio={canvasDpr} />
+          <PlannerContextLossWatch onLost={handleContextLost} onRestored={handleContextRestored} />
           <SceneProvider />
           {furnitureReflections && <FurnitureReflectionExperiment />}
           <PlannerScenePrecompiler signature={sceneWarmupSignature} />
@@ -557,8 +579,9 @@ export function PlannerScene(): ReactElement {
             />
           )}
           <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
-          {import.meta.env.DEV && <PerfMonitor />}
+          {(import.meta.env.DEV || frameSamplerActive) && <PerfMonitor sampleFrames={frameSamplerActive} />}
         </Canvas>
+        {contextLost && <PlannerContextLossNotice />}
       </div>
       {showArrival && <PlannerArrival onEnter={enterRoom} />}
     </PlannerCanvasBoundary>

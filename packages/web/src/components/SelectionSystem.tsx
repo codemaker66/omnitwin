@@ -27,6 +27,7 @@ import {
   scaleFromDrag,
 } from "../lib/planner-tools.js";
 import { beginFurnitureSettle, clearFurnitureSettle } from "../lib/furniture-motion.js";
+import { lockPlannerCamera } from "../lib/planner-camera-lock.js";
 import { prefersReducedMotion } from "../lib/reduced-motion.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import {
@@ -163,6 +164,8 @@ export function SelectionSystem(): null {
   const gestureIdMap = useRef<ReadonlyMap<string, string> | null>(null);
   const dragPointerId = useRef<number | null>(null);
   const cancelPointerGesture = useRef<() => void>(() => undefined);
+  /** Held for the life of a touch drag so the camera cannot orbit under it. */
+  const releaseCameraLock = useRef<(() => void) | null>(null);
   // floorCache removed — drag uses math plane intersection
 
   // Stable ref for invalidate — avoids effect teardown when invalidate ref changes
@@ -320,10 +323,31 @@ export function SelectionSystem(): null {
         !useGuidelineStore.getState().active;
     }
 
+    /**
+     * Does a finger landing here move furniture, or orbit the room?
+     *
+     * Only furniture, and only once the planner knows what the user is working
+     * on. The item already selected always moves. After that first tap any
+     * placed item moves, because by then "touch a thing and it follows your
+     * finger" is the rule the user has just learned, and making them tap twice
+     * for every subsequent item would teach them it is not.
+     *
+     * Before any selection exists nothing is draggable: the first touch on an
+     * object is how you choose it, and stealing that press for a drag would
+     * mean a stray finger slides a table the user only meant to look at.
+     */
+    function touchClaimsMoveGesture(itemId: string | null): boolean {
+      if (itemId === null) return false;
+      const selected = useSelectionStore.getState().selectedIds;
+      return selected.has(itemId) || selected.size > 0;
+    }
+
     // Cancellation retains the last real placement as one undoable gesture.
     // No synthetic snap is introduced on blur, pointer cancellation or preview.
     function closePointerGesture(): void {
       cancelAnimationFrame(marqueeRafId.current);
+      releaseCameraLock.current?.();
+      releaseCameraLock.current = null;
       const token = historyGesture.current;
       historyGesture.current = null;
       gestureIdMap.current = null;
@@ -345,6 +369,15 @@ export function SelectionSystem(): null {
 
     function onPointerDown(event: PointerEvent): void {
       touchTapCandidate.current = false;
+      // Every touch after the first belongs to the camera: two fingers pinch
+      // and pan the room, and they never move furniture. Close whatever this
+      // hand was doing rather than let the second finger turn a drag into a
+      // pinch that flings the item across the floor — the release keeps the
+      // item exactly where it had reached, as one undoable gesture.
+      if (event.pointerType === "touch" && !event.isPrimary) {
+        closePointerGesture();
+        return;
+      }
       if (event.button === 2) {
         rightClickStart.current = { x: event.clientX, y: event.clientY };
         rightClickMoved.current = false;
@@ -370,9 +403,24 @@ export function SelectionSystem(): null {
       // Mobile one-finger drag is the camera gesture. Do not start the
       // selection/marquee pipeline until pointer-up proves this was a tap.
       // This keeps orbiting snappy and preserves tap-to-select.
+      //
+      // Unless the finger came down on furniture the planner is already
+      // working with. Touch has one button, so one finger has to mean both
+      // "orbit the room" and "move this table"; what is under it decides.
+      // Floor, walls and the very first object touched all stay camera.
       if (event.pointerType === "touch" && event.isPrimary && selectionToolsAreIdle()) {
-        touchTapCandidate.current = true;
-        return;
+        cachedRect = canvasEl.getBoundingClientRect();
+        if (!touchClaimsMoveGesture(interactionTargetAt(event.clientX, event.clientY).itemId)) {
+          touchTapCandidate.current = true;
+          return;
+        }
+        // Hold the camera still for as long as the drag lasts. Taken here,
+        // during the same pointerdown, so OrbitControls is disabled before any
+        // pointermove can reach it — its own pointerdown only records a start
+        // position, so the room never turns. Released by closePointerGesture,
+        // whatever ends the drag: the finger lifting, a cancel, a second
+        // finger, a tool taking over, or the planner unmounting.
+        releaseCameraLock.current = lockPlannerCamera();
       }
 
       // Refresh cached rect at interaction start (handles canvas resize)
