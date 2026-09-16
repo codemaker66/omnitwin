@@ -455,6 +455,24 @@ const REGISTER_EXEMPT: readonly RegExp[] = [
   /TravelControls\.tsx/,
   /TwinMinimap\.tsx/,
   /CockpitEvidenceBeam\.tsx/,
+  // Fix round 2: the same rule, applied to the venue's OWN materials and the
+  // in-scene affordances drawn beside them. Round 1's by-hue sweep reached
+  // these — the dome gilt, the mural gold, the bronze fittings, the parquet
+  // board gradient, the selection outline, the placement ghost — and left the
+  // modelled hall disagreeing with itself (a copper dome ring above #8b5a22
+  // ribs) for no chrome gain. Every literal below was restored byte for byte
+  // to its value at release/r1 `0ef12a8a` and is named here so the next sweep
+  // cannot reach it. The register is the CHROME register; what the venue is
+  // made of is a decision about the room, not a token rename.
+  /GrandHallDome\.tsx/,
+  /GrandHallOrnaments\.tsx/,
+  /constants[\\/]colors\.ts/,
+  /grand-hall-textures\.ts/,
+  /furniture-selection-outline\.ts/,
+  /PlacementGhost\.tsx/,
+  /MeasurementTool\.tsx/,
+  /CockpitSceneOverlays\.tsx/,
+  /LayoutPlanThumbnail\.tsx/,
   // Disclosed exceptions: a minified sheet on an admin-gated route, and the
   // print stylesheet, which works in its own mm scale.
   /demo-showcase\.css/,
@@ -492,7 +510,25 @@ const TYPE_FLOOR_EXEMPT: readonly RegExp[] = [
   /twin[\\/]/,             // reverted: raising it broke the HUD geometry test
 ];
 
+/**
+ * Fix round 2 — the FOURTH syntax. Round 1 covered `font-size: Npx`, the
+ * `font:` shorthand and inline `fontSize`, and disclosed `rem` as unguarded
+ * debt. Round 1's own list of that debt said 26 declarations; it was wrong,
+ * because its grep only matched a leading `0.` — the true figure by the same
+ * rule is 30, the four extra being `.66rem`/`.65rem` in OnboardingView.css
+ * and `.66rem`/`.68rem` in CaptureIntakePage.css. 29 are swept; the one below
+ * is in a file this lane may not edit, and is frozen in both directions like
+ * GOLD_HANDOFF: another sub-floor rem anywhere fails, and Lane 2 fixing this
+ * one makes the list wrong and fails too.
+ */
+const REM_FLOOR_HANDOFF: Readonly<Record<string, string>> = {
+  "pages/RoomsHomePage.css": "Lane 2 — .rooms__state, 0.68rem = 10.88px on the public rooms home",
+};
+
 const TYPE_FLOOR_PX = 11;
+
+/** Nothing in the app moves the root font-size, so 1rem renders at 16px. */
+const ROOT_FONT_PX = 16;
 
 function hslOf([r, g, b]: Rgb): readonly [number, number, number] {
   const rn = r / 255;
@@ -595,5 +631,164 @@ describe("the register is enforced by value, not by name", () => {
       });
     }
     expect(tooSmall).toEqual([]);
+  });
+
+  it("keeps every rem type size at or above the 11px floor too", async () => {
+    // `rem` is the fourth syntax, and the one the px floor could never see.
+    // Both forms are read: `0.66rem` and the leading-dot `.66rem` that round
+    // 1's own audit grep missed. Anything inside a font declaration counts,
+    // including the floor of a clamp(), because that floor is what renders on
+    // a narrow phone.
+    const offenders = new Set<string>();
+    for (const [path, text] of await readSrcFiles()) {
+      if (TYPE_FLOOR_EXEMPT.some((rule) => rule.test(path))) continue;
+      for (const declaration of text.matchAll(/(?:font-size:|font:)[^;{}]*/g)) {
+        for (const size of declaration[0].matchAll(/(?<![\w.])([0-9]*\.?[0-9]+)rem/g)) {
+          if (Number(size[1] ?? "0") * ROOT_FONT_PX < TYPE_FLOOR_PX) offenders.add(path);
+        }
+      }
+    }
+    expect([...offenders].sort()).toEqual(Object.keys(REM_FLOOR_HANDOFF).sort());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-615 fix round 2 — ONE accent, but not one colour.
+//
+// Retiring gold by hue moved every amber signal onto the single copper, and
+// nothing in the suite could see it: both value audits classify a colour by
+// its hue band, and a state painted the same as the ordinary case is inside
+// every band it is supposed to be in. The defect it let through was concrete
+// — the Day Board's own legend, the footer whose entire job is to say what
+// the colours mean, drew "Booking starts soon" and "Scheduled event" as
+// identical dots, and a planner's "Awaiting Review" and "Changes Requested"
+// became the same ink.
+//
+// These assertions read RELATIONS between colours instead of colours: two
+// entries of one legend may not be equal, and two states a person has to tell
+// apart may not be equal. They would have failed on the round-1 head.
+// ---------------------------------------------------------------------------
+
+/** CSS with block comments removed, so prose cannot be read as a value. */
+function stripCssComments(css: string): string {
+  return css.replaceAll(/\/\*[\s\S]*?\*\//g, "");
+}
+
+/** TS/TSX with whole-line `//` comments removed, for the same reason. */
+function stripLineComments(source: string): string {
+  return source
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("//"))
+    .join("\n");
+}
+
+/** Every value a custom property is given, in cascade order. */
+function declarationsOf(css: string, token: string): readonly string[] {
+  const pattern = new RegExp(`${token}\\s*:\\s*([^;]+);`, "g");
+  return [...css.matchAll(pattern)].map((match) => (match[1] ?? "").trim());
+}
+
+function firstDuplicate(entries: ReadonlyMap<string, string>): string | null {
+  const seen = new Map<string, string>();
+  for (const [name, value] of entries) {
+    const owner = seen.get(value);
+    if (owner !== undefined) return `${owner} and ${name} are both ${value}`;
+    seen.set(value, name);
+  }
+  return null;
+}
+
+describe("one accent, but never one colour for two states", () => {
+  it("gives every Day Board legend entry its own swatch, on both grounds", async () => {
+    const page = await readFile(resolve("src/pages/hallkeeper/DayBoardPage.tsx"), "utf-8");
+    const css = stripCssComments(await readFile(resolve("src/pages/hallkeeper/day-board.css"), "utf-8"));
+
+    // The legend is the footer that explains the colours; read the chip
+    // classes out of it rather than hard-coding them, so a Lane 6 edit that
+    // adds a fifth entry is audited too.
+    const legend = /<footer className="dayboard-legend"[\s\S]*?<\/footer>/.exec(page);
+    expect(legend, "DayBoardPage must still render the colour legend").not.toBeNull();
+    const chipClasses = [...(legend?.[0] ?? "").matchAll(/dayboard-chip-([a-z-]+)/g)]
+      .map((match) => match[1] ?? "")
+      .filter((name) => name !== "dot");
+    expect(chipClasses.length, "the legend should carry several entries").toBeGreaterThan(2);
+
+    // .dayboard-chip-live points at --db-gilt, not at --db-live: follow the
+    // indirection instead of assuming the names line up.
+    const first = new Map<string, string>();
+    const effective = new Map<string, string>();
+    for (const chip of chipClasses) {
+      const tone = new RegExp(`\\.dayboard-chip-${chip}\\s*\\{\\s*--db-chip-tone:\\s*var\\((--db-[a-z-]+)\\)`).exec(css);
+      expect(tone, `.dayboard-chip-${chip} must declare a tone`).not.toBeNull();
+      const values = declarationsOf(css, tone?.[1] ?? "--db-none");
+      expect(values.length, `${tone?.[1] ?? ""} must be defined`).toBeGreaterThan(0);
+      first.set(chip, values[0] ?? "");
+      // The ivory workspace block is unconditional and comes last, so the last
+      // declaration is what actually renders.
+      effective.set(chip, values[values.length - 1] ?? "");
+    }
+    expect(firstDuplicate(first), "two legend entries share a colour in the base block").toBeNull();
+    expect(firstDuplicate(effective), "two legend entries share a colour as rendered").toBeNull();
+  });
+
+  it("keeps the review statuses a planner must tell apart on different colours", async () => {
+    const panel = stripLineComments(
+      await readFile(resolve("src/components/editor/SubmitForReviewPanel.tsx"), "utf-8"),
+    );
+    const visuals = new Map<string, string>();
+    for (const entry of panel.matchAll(/^\s{2}([a-z_]+):\s*\{([^}]*)\},/gm)) {
+      const key = entry[1] ?? "";
+      const body = entry[2] ?? "";
+      const colour = /\bcolor:\s*"([^"]+)"/.exec(body)?.[1] ?? "";
+      const background = /\bbackground:\s*"([^"]+)"/.exec(body)?.[1] ?? "";
+      const border = /\bborderColor:\s*"([^"]+)"/.exec(body)?.[1] ?? "";
+      if (colour !== "") visuals.set(key, `${background} ${colour} ${border}`);
+    }
+    for (const status of ["submitted", "changes_requested", "approved", "rejected"]) {
+      expect(visuals.has(status), `STATUS_VISUALS must define ${status}`).toBe(true);
+    }
+    // No two statuses may be indistinguishable as a whole.
+    expect(firstDuplicate(visuals), "two review statuses render identically").toBeNull();
+    // And the four a planner acts on must differ in the ink, not only the ground.
+    const inks = new Map<string, string>();
+    for (const status of ["submitted", "under_review", "approved", "changes_requested", "rejected"]) {
+      const body = new RegExp(`^\\s{2}${status}:\\s*\\{([^}]*)\\},`, "m").exec(panel)?.[1] ?? "";
+      inks.set(status, /\bcolor:\s*"([^"]+)"/.exec(body)?.[1] ?? "");
+    }
+    expect(firstDuplicate(inks), "two actionable review statuses share an ink").toBeNull();
+  });
+
+  it("keeps the hallkeeper's banner statuses on different colours", async () => {
+    const banner = stripLineComments(
+      await readFile(resolve("src/components/hallkeeper/HallkeeperStatusBanner.tsx"), "utf-8"),
+    );
+    const inks = new Map<string, string>();
+    for (const status of ["submitted", "under_review", "approved", "changes_requested", "rejected"]) {
+      const block = new RegExp(`case "${status}":[\\s\\S]{0,900}?color:\\s*"([^"]+)"`).exec(banner);
+      expect(block, `describeStatus must still handle ${status}`).not.toBeNull();
+      inks.set(status, block?.[1] ?? "");
+    }
+    expect(firstDuplicate(inks), "two banner statuses share an ink").toBeNull();
+  });
+
+  it("keeps the cockpit's attention state off the panel accent", async () => {
+    const css = stripCssComments(
+      await readFile(resolve("src/components/editor/cockpit/LensPanel.css"), "utf-8"),
+    );
+    const accent = /\.lens-panel__eyebrow\s*\{[^}]*color:\s*([^;]+);/.exec(css)?.[1]?.trim() ?? "";
+    const attention = /\.lens-panel__chip--attention\s*\{[^}]*color:\s*([^;]+);/.exec(css)?.[1]?.trim() ?? "";
+    expect(accent, "the panel eyebrow carries the accent").not.toBe("");
+    expect(attention, "the attention chip carries the attention hue").not.toBe("");
+    expect(attention, "attention may not be the accent wearing another name").not.toBe(accent);
+
+    // A gradient whose two stops are equal is not a gradient; round 1 left
+    // `linear-gradient(90deg, #dca475, #dca475)` on both attention fills.
+    for (const fill of ["meter-fill--attention", "circuit-fill--attention"]) {
+      const rule = new RegExp(`\\.lens-panel__${fill}\\s*\\{[^}]*background:\\s*linear-gradient\\(([^)]*)\\)`).exec(css);
+      expect(rule, `.lens-panel__${fill} must still be a gradient`).not.toBeNull();
+      const stops = (rule?.[1] ?? "").split(",").map((part) => part.trim()).slice(1);
+      expect(stops.length, `${fill} needs two stops`).toBe(2);
+      expect(stops[0], `${fill} is a flat gradient`).not.toBe(stops[1]);
+    }
   });
 });
