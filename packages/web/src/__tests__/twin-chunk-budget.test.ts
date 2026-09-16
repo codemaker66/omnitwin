@@ -83,8 +83,15 @@ describe("twin chunk budgets", () => {
     }
   });
 
-  it.skipIf(!hasTwinBuild)("keeps twin modules out of the LandingPage chunk", async () => {
-    const chunks = jsChunks("LandingPage");
+  // T-616 retargeted this from LandingPage to RoomsHomePage. `/landing` is
+  // retired and redirects to `/`, so the router imports LandingPage nowhere,
+  // Vite emits no chunk for it, and `jsChunks("LandingPage")` came back empty.
+  // The subject was never that one page: it is that the PUBLIC front door must
+  // not drag the twin's basis decoder and walk hook into its chunk. `/` is the
+  // front door now, so that is the chunk to watch. The `toBeGreaterThan(0)`
+  // guard is what caught this instead of letting an empty loop pass — keep it.
+  it.skipIf(!hasTwinBuild)("keeps twin modules out of the front door's chunk", async () => {
+    const chunks = jsChunks("RoomsHomePage");
     expect(chunks.length).toBeGreaterThan(0);
     for (const chunk of chunks) {
       const source = await readFile(resolve(ASSETS_DIR, chunk), "utf-8");
