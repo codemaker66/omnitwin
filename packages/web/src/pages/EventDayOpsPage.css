@@ -173,9 +173,9 @@
 }
 
 .event-day-icon-button {
-  background: #6b8963;
+  background: var(--hk-forest);
   border-radius: 50%;
-  color: #e4e1d9;
+  color: #fffdf8;
   height: 42px;
   width: 42px;
 }
@@ -187,8 +187,8 @@
 }
 
 .event-day-button.primary {
-  background: #986246;
-  color: #e8e4dc;
+  background: var(--hk-copper);
+  color: #fffdf8;
 }
 
 .event-day-button.secondary {
@@ -263,9 +263,11 @@
 }
 
 .event-day-phases span,
+/* Forest, not sage: sage is the signal colour and reads at ~3.0 against these
+   cards at 11.5px. The dot and the rule may be sage; the WORD may not. */
 .event-day-task span,
 .event-day-arrivals span {
-  color: #6b8963;
+  color: var(--hk-forest);
   font-size: 0.72rem;
   font-weight: 900;
   text-transform: uppercase;

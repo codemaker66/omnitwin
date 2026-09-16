@@ -14,7 +14,9 @@
   --ops-cyan: var(--hk-sage-deep);
   --ops-text: var(--hk-ink);
   --ops-muted: var(--hk-ink-dim);
-  --ops-soft: var(--hk-ink-faint);
+  /* Not --hk-ink-faint: at 12.5px/800 the faint ink lands at ~3.4 on ivory,
+     under AA. Faint is for rules and dots, not for words. */
+  --ops-soft: var(--hk-ink-dim);
   background:
     radial-gradient(ellipse at 8% 0, #ece9dc 0, transparent 38%),
     var(--ops-bg);
@@ -54,7 +56,7 @@
 }
 
 .ops-handoff-centered svg {
-  color: var(--ops-cyan);
+  color: var(--hk-forest);
   height: 34px;
   width: 34px;
 }
@@ -90,7 +92,7 @@
 }
 
 .ops-handoff-kicker {
-  color: var(--ops-gold-bright) !important;
+  color: var(--hk-copper-ink) !important;
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.16em;
@@ -165,7 +167,7 @@
 }
 
 .ops-handoff-metric span {
-  color: var(--ops-cyan);
+  color: var(--hk-forest);
   display: block;
   font-size: 0.78rem;
   font-weight: 800;
@@ -197,7 +199,7 @@
 }
 
 .ops-handoff-section-head svg {
-  color: var(--ops-gold-bright);
+  color: var(--hk-copper);
   flex: 0 0 auto;
   height: 22px;
   margin-top: 2px;
@@ -246,14 +248,14 @@
 
 .ops-handoff-row-head {
   background: rgba(107, 137, 99, 0.11);
-  color: var(--ops-cyan);
+  color: var(--hk-forest);
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
 .ops-handoff-row-head span {
-  color: var(--ops-cyan);
+  color: var(--hk-forest);
 }
 
 .ops-handoff-task-list,
@@ -303,7 +305,7 @@
 }
 
 .ops-handoff-note span {
-  color: var(--ops-cyan);
+  color: var(--hk-forest);
   display: block;
   font-size: 0.75rem;
   font-weight: 800;
@@ -370,7 +372,7 @@
 .ops-handoff-page .ai-draft-panel__icon,
 .ops-handoff-page .ai-draft-panel__meta span {
   background: rgba(107, 137, 99, 0.12);
-  color: var(--ops-cyan);
+  color: var(--hk-forest);
 }
 
 .ops-handoff-page .ai-draft-panel p,
@@ -385,8 +387,9 @@
 
 .ops-handoff-page .ai-draft-panel__button {
   background: var(--ops-gold);
-  border-color: rgba(152, 98, 70, 0.85);
-  color: #f4f0e8;
+  border-color: var(--hk-copper);
+  background: var(--hk-copper);
+  color: #fffdf8;
 }
 
 .ops-handoff-page .ai-draft-panel__button:disabled {

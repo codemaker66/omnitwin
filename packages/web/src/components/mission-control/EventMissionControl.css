@@ -38,7 +38,7 @@
 }
 
 .mission-state > svg {
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
 }
 
 .mission-state strong,
@@ -58,10 +58,11 @@
 .mission-task-actions button,
 .mission-incidents button,
 .mission-timeline button {
-  background: var(--mission-cyan);
+  /* Forest, not sage: sage carries ~3.0 against 12.5px/900 button text. */
+  background: var(--hk-forest);
   border: 0;
   border-radius: 9px;
-  color: #e3e0d8;
+  color: #fffdf8;
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
@@ -99,7 +100,7 @@
   background: rgba(107, 137, 99, 0.1);
   border: 1px solid rgba(107, 137, 99, 0.26);
   border-radius: 50%;
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
   display: flex;
   height: 58px;
   justify-content: center;
@@ -136,7 +137,7 @@
 
 .mission-eyebrow {
   align-items: center;
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
   display: flex;
   font-size: 0.7rem;
   font-weight: 950;
@@ -163,7 +164,7 @@
 }
 
 .mission-command-header > div > p:last-child {
-  color: #687465;
+  color: var(--hk-ink-dim);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 0.72rem;
   margin: 7px 0 0;
@@ -213,7 +214,7 @@
 .mission-live-state[data-live="true"] {
   background: rgba(107, 137, 99, 0.1);
   border-color: rgba(107, 137, 99, 0.3);
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
 }
 
 .mission-live-state[data-live="true"] span {
@@ -291,7 +292,7 @@
 }
 
 .mission-stat-strip svg {
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
   grid-row: 1 / 3;
   height: 18px;
   width: 18px;
@@ -302,7 +303,7 @@
 }
 
 .mission-stat-strip span {
-  color: #717e6d;
+  color: var(--hk-ink-dim);
   font-size: 0.68rem;
   font-weight: 800;
 }
@@ -328,7 +329,7 @@
 }
 
 .mission-panel-heading > svg {
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
   flex: 0 0 auto;
   height: 19px;
   margin-top: 1px;
@@ -341,7 +342,7 @@
 
 .mission-panel-heading p,
 .mission-empty-copy {
-  color: #717e6d;
+  color: var(--hk-ink-dim);
   font-size: 0.75rem;
   line-height: 1.45;
   margin: 3px 0 0;
@@ -382,7 +383,7 @@
 .mission-phase-rail li span,
 .mission-task-card header span,
 .mission-incident-list > li > span {
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
   display: block;
   font-size: 0.61rem;
   font-weight: 950;
@@ -401,7 +402,7 @@
 }
 
 .mission-phase-rail li small {
-  color: #7a8776;
+  color: var(--hk-ink-dim);
   font-size: 0.62rem;
   margin-top: 4px;
 }
@@ -485,7 +486,7 @@
 
 .mission-map-legend small,
 .mission-presence small {
-  color: #7a8776;
+  color: var(--hk-ink-dim);
   font-size: 0.65rem;
   margin-top: 2px;
 }
@@ -500,7 +501,7 @@
   background: rgba(107, 137, 99, 0.13);
   border: 1px solid rgba(107, 137, 99, 0.28);
   border-radius: 50%;
-  color: var(--mission-cyan);
+  color: var(--hk-forest);
   display: flex;
   font-size: 0.68rem;
   font-weight: 950;
@@ -510,7 +511,7 @@
 }
 
 .mission-presence time {
-  color: #7c8a78;
+  color: var(--hk-ink-dim);
   font-size: 0.62rem;
 }
 
@@ -559,7 +560,7 @@
 }
 
 .mission-task-card > small {
-  color: #849380;
+  color: var(--hk-ink-dim);
   display: block;
   font-size: 0.62rem;
   margin-top: 8px;
@@ -625,7 +626,7 @@
 }
 
 .mission-incident-list p {
-  color: #788674;
+  color: var(--hk-ink-dim);
   font-size: 0.7rem;
   line-height: 1.4;
   margin: 3px 0 0;
@@ -645,7 +646,7 @@
 }
 
 .mission-timeline input[type="range"] {
-  accent-color: var(--mission-cyan);
+  accent-color: var(--hk-forest);
   width: 100%;
 }
 
@@ -692,7 +693,7 @@
 }
 
 .mission-timeline li small {
-  color: #7c8a78;
+  color: var(--hk-ink-dim);
   font-size: 0.62rem;
   margin-top: 2px;
 }

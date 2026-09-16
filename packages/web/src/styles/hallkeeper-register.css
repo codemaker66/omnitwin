@@ -60,7 +60,10 @@
   --hk-paper-faint: rgba(243, 239, 228, 0.52);
   --hk-line-dark: rgba(243, 239, 228, 0.12);
 
-  /* Accents. */
+  /* Accents. --hk-copper-ink is copper for SMALL text: the register's copper
+     reads 4.46 against the ivory ground at 12px, a hair under AA, so uppercase
+     kickers and pills take the deeper one. Headings and rules keep --hk-copper. */
+  --hk-copper-ink: #8a5840;
   --hk-copper-light: #c98a5e;
   --hk-copper-bright: #d8a179;
   --hk-sage-deep: #6b8963;
