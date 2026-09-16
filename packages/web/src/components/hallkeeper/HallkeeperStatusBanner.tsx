@@ -65,9 +65,13 @@ function describeStatus(
       return {
         label: "Awaiting approval",
         detail: `Preview only${version} — the venue hasn't signed off yet.`,
-        background: "#fef9e6",
-        borderColor: "#7e4620",
-        color: "#7e4620",
+        // Awaiting = the register's signal hue, sage ink (--vv-sage-ink), on
+        // an ivory ground (--vv-ivory-3) so it cannot be read as the green
+        // "Approved"; "Changes requested" below takes oxblood (--vv-oxblood
+        // on --vv-oxblood-bg). Fix round 1 had put both on one copper ink.
+        background: "#fbf8ee",
+        borderColor: "#4a6650",
+        color: "#4a6650",
         critical: true,
       };
     case "under_review":
@@ -83,9 +87,9 @@ function describeStatus(
       return {
         label: "Changes requested",
         detail: "The venue asked the planner for revisions. A new version will replace this draft.",
-        background: "#fff4e0",
-        borderColor: "#7e4620",
-        color: "#7e4620",
+        background: "#fbf0ec",
+        borderColor: "#8e3a2c",
+        color: "#8e3a2c",
         critical: true,
       };
     case "rejected":

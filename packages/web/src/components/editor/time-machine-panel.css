@@ -141,7 +141,9 @@
 
 .tm__note { margin: 0; font-size: 12px; color: var(--tm-muted); }
 
-.tm__warn { margin: 0; font-size: 12px; color: #c98a5b; }
+/* The warning is sage, not --tm-ink: round 1 gave it the panel accent, so
+   "this moment cannot be restored" looked like every other label. */
+.tm__warn { margin: 0; font-size: 12px; color: #8fae8b; }
 
 .tm__restore {
   align-self: flex-start;

@@ -21,9 +21,16 @@
   --db-paper: #efe7d6;
   --db-paper-dim: rgba(239, 231, 214, 0.66);
   --db-line: rgba(246, 241, 232, 0.12);
+  /* Four legend entries, four values. Fix round 1 put --db-gilt and --db-amber
+     on the same copper, so "Booking starts soon" and "Scheduled event" drew
+     identical dots inside the footer whose whole job is to explain the
+     colours. --db-gilt stays the accent (a scheduled event is the ordinary
+     case); --db-amber takes the register's signal hue, sage, because the
+     board may not carry gold. Pairwise distinctness is asserted in
+     src/__tests__/house-tokens.test.ts. */
   --db-gilt: #c98a5b;
   --db-green: #4f9d69;
-  --db-amber: #c98a5b;
+  --db-amber: #8fae8b;
   --db-amber-deep: #c9761d;
   --db-live: #8f2f2a;
   --db-red: #c23b2e;
@@ -285,8 +292,12 @@
   border-top: 1px solid var(--db-line);
 }
 
-/* Selected Hallkeeper workspace: ivory, forest, pastel event phases. */
-.dayboard { --db-ink:#faf8f2; --db-ink-raised:#fffefa; --db-paper:#302e26; --db-paper-dim:#716b5e; --db-line:#e3ded2; --db-gilt:#856548; --db-live:#48664b; --db-red:#a9352c; padding:30px; }
+/* Selected Hallkeeper workspace: ivory, forest, pastel event phases. This
+   block is unconditional and comes last, so THIS is the ground the board
+   actually renders on. --db-amber is overridden here too: sage at its display
+   value (#8fae8b) measures ~2:1 on this ivory, below the 3:1 a legend dot
+   needs, so the light ground takes the register's sage INK. */
+.dayboard { --db-ink:#faf8f2; --db-ink-raised:#fffefa; --db-paper:#302e26; --db-paper-dim:#716b5e; --db-line:#e3ded2; --db-gilt:#856548; --db-amber:#4a6650; --db-live:#48664b; --db-red:#a9352c; padding:30px; }
 .dayboard-title { font:400 36px/1.15 Georgia,serif; }
 .dayboard-subtitle { margin-top:8px; }
 .dayboard-controls { display:flex; align-items:end; flex-wrap:wrap; gap:12px; margin:24px 0; }
