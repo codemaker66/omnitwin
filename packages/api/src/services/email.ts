@@ -240,6 +240,7 @@ export async function sendEmail(
     logger.warn({
       event: "email.default_sender",
       idempotencyKey,
+      recipient: payload.to,
       from: emailFrom,
     }, "email.default_sender");
   }

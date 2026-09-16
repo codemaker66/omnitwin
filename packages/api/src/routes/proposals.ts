@@ -200,19 +200,29 @@ async function recordProposalLifecycleChange(
 ): Promise<void> {
   const context = await loadProposalEventContext(db, proposal);
 
-  // No linked event means no operational change feed to write to — but it
-  // must NOT mean silence. A proposal without a configuration is the ordinary
-  // case for a venue that quotes before it lays anything out, and a client
-  // accepting one used to notify nobody at all. Raise the commercial
-  // notification directly instead of returning early.
+  // No linked event means no operational change feed to write to — but for a
+  // CLIENT action it must not mean silence either. A proposal without a
+  // configuration is the ordinary case for a venue that quotes before it lays
+  // anything out, and a client accepting one used to notify nobody at all.
+  //
+  // Only client-originated changes raise this: a staff member saving a
+  // version or moving a status does not need telling what they just did.
+  // And the notification is best-effort — a proposal version must never fail
+  // because an announcement could not be written.
   if (context === null) {
-    await notifyCommercialTeam(db, {
-      venueId: proposal.venueId,
-      title: input.title,
-      body: input.summary,
-      severity: input.sourceKind === "proposal_response" ? "attention" : "info",
-      actionPath: "/dashboard?view=proposals",
-    });
+    if (input.sourceKind === "proposal") return;
+    try {
+      await notifyCommercialTeam(db, {
+        venueId: proposal.venueId,
+        title: input.title,
+        body: input.summary,
+        severity: input.sourceKind === "proposal_response" ? "attention" : "info",
+        actionPath: "/dashboard?view=proposals",
+      });
+    } catch {
+      // Swallowed deliberately: the client's response is already committed
+      // and is the record of truth. Fastify's error log carries the cause.
+    }
     return;
   }
 
