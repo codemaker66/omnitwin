@@ -9,7 +9,7 @@ import {
   resolveReplayDisposition,
   type ReplayResult,
 } from "../lib/progress-sync-queue.js";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type {
   HallkeeperSheetV2,
   Phase,
@@ -86,6 +86,12 @@ function toggleCheck(prev: CheckMap, rowKey: string, next: boolean): CheckMap {
 
 export function HallkeeperPage(): React.ReactElement {
   const { configId } = useParams<{ configId: string }>();
+  // The corridor carries ?eventId=; a layout reused across events prints the
+  // wrong event's hour without it, so both the sheet payload and the PDF ask
+  // for the event the hallkeeper actually arrived from.
+  const [searchParams] = useSearchParams();
+  const eventId = searchParams.get("eventId");
+  const eventQuery = eventId === null ? "" : `eventId=${encodeURIComponent(eventId)}`;
   const [data, setData] = useState<HallkeeperSheetV2 | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -148,7 +154,7 @@ export function HallkeeperPage(): React.ReactElement {
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
 
-        const sheetRes = await fetch(`${API_URL}/hallkeeper/${configId}/v2`, { headers });
+        const sheetRes = await fetch(`${API_URL}/hallkeeper/${configId}/v2${eventQuery === "" ? "" : `?${eventQuery}`}`, { headers });
 
         // Stale-request guard
         if (thisFetch !== fetchCountRef.current) return;
@@ -188,7 +194,7 @@ export function HallkeeperPage(): React.ReactElement {
         if (thisFetch === fetchCountRef.current) setLoading(false);
       }
     })();
-  }, [configId]);
+  }, [configId, eventQuery]);
 
   useEffect(() => {
     loadData();
@@ -372,7 +378,7 @@ export function HallkeeperPage(): React.ReactElement {
         const token = await getAuthToken();
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
-        const res = await fetch(`${API_URL}/hallkeeper/${configId}/sheet?download=true`, { headers });
+        const res = await fetch(`${API_URL}/hallkeeper/${configId}/sheet?download=true${eventQuery === "" ? "" : `&${eventQuery}`}`, { headers });
         if (!res.ok) {
           setDownloadNotice({
             kind: "error",
@@ -397,7 +403,7 @@ export function HallkeeperPage(): React.ReactElement {
         setDownloadBusy(false);
       }
     })();
-  }, [configId, downloadBusy]);
+  }, [configId, downloadBusy, eventQuery]);
 
   const handlePrint = useCallback(() => { window.print(); }, []);
 

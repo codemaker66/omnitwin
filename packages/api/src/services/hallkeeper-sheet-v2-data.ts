@@ -1,4 +1,4 @@
-import { eq, ne, and, isNull, isNotNull, inArray, desc, asc } from "drizzle-orm";
+import { eq, ne, and, gte, lte, isNull, isNotNull, inArray, desc, asc } from "drizzle-orm";
 import type {
   EventInstructions,
   HallkeeperSheetV2,
@@ -10,13 +10,14 @@ import { hasInstructionContent } from "@omnitwin/types";
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories,
   spaces, venues, configurationSheetSnapshots, users,
-  bookings, eventConfigurationLinks, eventPhases, layoutVariants,
+  bookings, eventConfigurationLinks, eventPhases, layoutVariants, turnaroundRules,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { REAL_METRE_COORDINATE_SPACE, type LayoutCoordinateSpace } from "../db/coordinate-space.js";
 import { generateManifestV2, type ManifestObjectV2, type AccessoryRule } from "./manifest-generator-v2.js";
 import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
 import { buildHallkeeperFloorPlan, type FloorPlanAsset } from "./hallkeeper-floor-plan.js";
+import { resolveTurnaroundRule } from "./calendar-conflicts.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — data assembly
@@ -37,7 +38,6 @@ import { buildHallkeeperFloorPlan, type FloorPlanAsset } from "./hallkeeper-floo
 // produced a time that agreed with nothing on the timetable.
 // ---------------------------------------------------------------------------
 
-const SETUP_BUFFER_MINUTES = 90;
 
 /**
  * Returns v2 data with the auth-pivot fields (venue.id, config.userId)
@@ -56,6 +56,10 @@ export async function assembleSheetDataV2(
   db: Database,
   configId: string,
   baseUrl: string,
+  /** The event the request came from, when the caller knows it. Scopes the
+   *  sheet's times to that event rather than to the union of every event the
+   *  layout is linked to. */
+  requestedEventId: string | null = null,
 ): Promise<SheetDataV2Internal | null> {
   // Step 1: config is the root — every subsequent query either uses its
   // columns or needs it to exist to be meaningful.
@@ -211,7 +215,7 @@ export async function assembleSheetDataV2(
     id: config.id,
     spaceId: config.spaceId,
     venueId: config.venueId,
-  });
+  }, requestedEventId);
   const instructions = resolveInstructions(config.metadata);
 
   const livePayload: HallkeeperSheetV2 = {
@@ -413,14 +417,28 @@ export function buildSheetApproval(
 }
 
 /**
- * Pure "booked window + earliest room phase → Timing" step, extracted so the
- * arithmetic is unit-testable without a database.
+ * Pure "booked window + room phase + venue turnaround → Timing" step,
+ * extracted so the arithmetic is unit-testable without a database.
  *
  * `eventStart` is the Diary booking's own start — never a default hour.
- * `setupBy` prefers the earliest scheduled phase in the same room (the
- * planner said when work begins); otherwise it falls back to the venue's
- * 90-minute setup buffer, and `bufferMinutes` always reports the real gap
- * so the sheet cannot claim a buffer it does not have.
+ *
+ * `setupBy` has two honest sources and no invented third:
+ *   1. the earliest scheduled phase in the SAME room on the SAME day, when it
+ *      is earlier than the booking — the planner said when work begins, and
+ *      that is more specific than any rule;
+ *   2. otherwise the venue's turnaround rule for this room and event type,
+ *      resolved through the same `resolveTurnaroundRule` the calendar conflict
+ *      engine enforces, so the sheet cannot disagree with the conflict rail.
+ *
+ * When neither exists, `setupBy` and `bufferMinutes` are **null** and the
+ * sheet and PDF say the set-up time is not set because the venue's turnaround
+ * rules are not recorded. That is the same honesty the conflict rail shows
+ * when it says "not checked". This function used to fall back to a hard-coded
+ * 90 minutes, which printed an hour a hallkeeper could set a room to and be
+ * wrong about — and which looked identical on the page to a derived one.
+ *
+ * `bufferMinutes` always reports the REAL gap, never the rule's nominal value,
+ * so a phase-derived deadline cannot claim a buffer it does not have.
  *
  * Returns null for an unparseable instant rather than emitting "Invalid
  * Date" into a frozen snapshot.
@@ -428,17 +446,25 @@ export function buildSheetApproval(
 export function deriveSheetTiming(
   bookingStartsAt: Date,
   earliestRoomPhaseStartsAt: Date | null,
+  turnaroundMinutes: number | null,
 ): Timing | null {
   const startMs = bookingStartsAt.getTime();
   if (!Number.isFinite(startMs)) return null;
+  const eventStart = new Date(startMs).toISOString();
 
   const phaseMs = earliestRoomPhaseStartsAt === null ? null : earliestRoomPhaseStartsAt.getTime();
-  const setupMs = phaseMs !== null && Number.isFinite(phaseMs) && phaseMs < startMs
+  const usablePhaseMs = phaseMs !== null && Number.isFinite(phaseMs) && phaseMs < startMs
     ? phaseMs
-    : startMs - SETUP_BUFFER_MINUTES * 60_000;
+    : null;
+  const ruleMs = turnaroundMinutes !== null && Number.isFinite(turnaroundMinutes) && turnaroundMinutes >= 0
+    ? startMs - turnaroundMinutes * 60_000
+    : null;
+  const setupMs = usablePhaseMs ?? ruleMs;
+
+  if (setupMs === null) return { eventStart, setupBy: null, bufferMinutes: null };
 
   return {
-    eventStart: new Date(startMs).toISOString(),
+    eventStart,
     setupBy: new Date(setupMs).toISOString(),
     bufferMinutes: Math.max(0, Math.round((startMs - setupMs) / 60_000)),
   };
@@ -475,14 +501,22 @@ async function linkedEventIds(db: Database, configId: string): Promise<string[]>
  * then say the event is not scheduled rather than printing a fabricated
  * hour a hallkeeper could set a room to.
  */
-async function resolveTiming(
+export async function resolveTiming(
   db: Database,
   config: { readonly id: string; readonly spaceId: string; readonly venueId: string },
+  requestedEventId: string | null = null,
 ): Promise<Timing | null> {
-  const eventIds = await linkedEventIds(db, config.id);
+  // A layout can be reused across events. When the caller knows which event
+  // the hallkeeper arrived from — the corridor carries it as ?eventId= — that
+  // event alone decides the hour. Only fall back to the union of linked
+  // events when no event was supplied, and even then the union is a guess the
+  // caller should avoid making.
+  const eventIds = requestedEventId !== null
+    ? [requestedEventId]
+    : await linkedEventIds(db, config.id);
   if (eventIds.length === 0) return null;
 
-  const [booking] = await db.select({ startsAt: bookings.startsAt })
+  const [booking] = await db.select({ startsAt: bookings.startsAt, eventType: bookings.eventType })
     .from(bookings)
     .where(and(
       inArray(bookings.eventId, eventIds),
@@ -497,15 +531,37 @@ async function resolveTiming(
 
   if (booking === undefined) return null;
 
+  // Bound the phase search to the booking's own day. Without it the earliest
+  // phase of a multi-day event — or of another event sharing the layout —
+  // became this sheet's set-up deadline, and `bufferMinutes` reported
+  // thousands of minutes as though that were a real buffer.
+  const dayStart = new Date(booking.startsAt.getTime() - 24 * 60 * 60_000);
   const [phase] = await db.select({ startsAt: eventPhases.startsAt })
     .from(eventPhases)
     .where(and(
       inArray(eventPhases.eventId, eventIds),
       eq(eventPhases.spaceId, config.spaceId),
       isNotNull(eventPhases.startsAt),
+      gte(eventPhases.startsAt, dayStart),
+      lte(eventPhases.startsAt, booking.startsAt),
     ))
     .orderBy(asc(eventPhases.startsAt))
     .limit(1);
 
-  return deriveSheetTiming(booking.startsAt, phase?.startsAt ?? null);
+  const rules = await db.select({
+    name: turnaroundRules.name,
+    spaceId: turnaroundRules.spaceId,
+    eventType: turnaroundRules.eventType,
+    minutes: turnaroundRules.minutes,
+    isActive: turnaroundRules.isActive,
+  })
+    .from(turnaroundRules)
+    .where(and(
+      eq(turnaroundRules.venueId, config.venueId),
+      isNull(turnaroundRules.deletedAt),
+    ));
+
+  const rule = resolveTurnaroundRule(rules, config.spaceId, booking.eventType);
+
+  return deriveSheetTiming(booking.startsAt, phase?.startsAt ?? null, rule?.minutes ?? null);
 }

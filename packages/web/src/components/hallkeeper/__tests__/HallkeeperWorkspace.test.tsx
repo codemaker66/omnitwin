@@ -221,4 +221,16 @@ describe("HallkeeperWorkspace event time", () => {
     expect(screen.getByText("Not in the Diary yet")).toBeTruthy();
     expect(screen.getByText("Not provided")).toBeTruthy();
   });
+
+  it("names the reason when the hour is known but the set-up time is not", () => {
+    // setupBy is null whenever the venue records no turnaround rule and the
+    // planner scheduled no earlier phase. The card must say WHY, not fall
+    // silent and not invent a constant.
+    withGraphStart("2026-09-19T12:00:00.000Z");
+    mount({ data: { ...sheet, timing: { ...diaryTiming, setupBy: null, bufferMinutes: null } } });
+    expect(screen.getByText("Event starts")).toBeTruthy();
+    expect(screen.getByText("09:00")).toBeTruthy();
+    expect(screen.getByText(/turnaround rules are not recorded/u)).toBeTruthy();
+    expect(screen.queryByText(/Set up by/u)).toBeNull();
+  });
 });

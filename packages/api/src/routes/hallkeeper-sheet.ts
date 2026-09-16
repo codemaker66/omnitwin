@@ -33,6 +33,19 @@ import { resolveProgressMutation, checkedStateAfter } from "../lib/hallkeeper-pr
 
 const ConfigIdParam = z.object({ configId: z.string().uuid() });
 const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("false") });
+/** Which event the hallkeeper arrived from. A layout can be reused across
+ *  events; without this the sheet has to guess which one's hour to print, and
+ *  a shared layout printed the earlier event's time whatever slot was tapped.
+ *  Optional: a sheet opened directly still renders, on the union of its links. */
+const SheetEventQuery = z.object({ eventId: z.string().uuid().optional() });
+
+/** Ignore an unparseable eventId rather than 400 — the sheet is still useful
+ *  without it, and a hallkeeper with a stale link should see the room, not an
+ *  error. The union fallback then applies. */
+function requestedEventId(query: unknown): string | null {
+  const parsed = SheetEventQuery.safeParse(query);
+  return parsed.success ? parsed.data.eventId ?? null : null;
+}
 // `checked` present → idempotent set-state (force the row); omitted → legacy
 // toggle (flip). Unknown keys are stripped, so older `{ rowKey }`-only clients
 // keep working and newer set-state clients are accepted by older servers.
@@ -141,7 +154,7 @@ export async function hallkeeperSheetRoutes(
 
     const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
 
-    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl, requestedEventId(request.query));
     if (result === null) {
       return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
     }
@@ -182,7 +195,7 @@ export async function hallkeeperSheetRoutes(
 
     const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
 
-    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl, requestedEventId(request.query));
     if (result === null) {
       return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
     }
