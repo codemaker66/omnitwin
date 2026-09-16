@@ -107,7 +107,7 @@
 
 .event-day-kicker {
   margin: 0 0 8px;
-  color: #6b8963;
+  color: var(--hk-forest);
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -358,11 +358,11 @@
 }
 
 .event-day-change-feed article[data-risk="blocker"] span {
-  color: #677364;
+  color: var(--hk-alert);
 }
 
 .event-day-change-feed small {
-  color: #6b8963;
+  color: var(--hk-ink-dim);
   display: block;
   font-size: 0.78rem;
   font-weight: 800;

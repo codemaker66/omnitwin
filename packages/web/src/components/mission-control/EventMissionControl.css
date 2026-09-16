@@ -271,7 +271,7 @@
 .mission-complete-confirm button:last-child {
   background: var(--mission-gold);
   border-color: transparent;
-  color: #e5e1d9;
+  color: #fffdf8;
 }
 
 .mission-stat-strip {

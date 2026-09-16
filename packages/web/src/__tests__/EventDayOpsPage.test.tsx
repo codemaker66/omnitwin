@@ -237,6 +237,16 @@ function boardFixture(): EventDayOpsBoard {
   };
 }
 
+function calendarBooking(id: string, startsAt: string): Record<string, unknown> {
+  return {
+    entryType: "booking", id, spaceId: "00000000-0000-4000-8000-000000003061",
+    kind: "ink", status: "active", state: "ink", title: "Blake event day", eventType: "wedding",
+    startsAt, endsAt: "2026-06-12T20:00:00.000Z",
+    rank: null, jointFlag: false, decisionAt: null, ownerUserId: null,
+    nextAction: null, nextActionDueAt: null, eventId: EVENT_ID, seriesId: null,
+  };
+}
+
 function openIssueFixture(): EventDayIssue {
   return {
     id: "00000000-0000-4000-8000-000000003050",
@@ -586,6 +596,32 @@ describe("EventDayOpsPage", () => {
     renderPage();
     await screen.findByText("Blake event day");
     await waitFor(() => { expect(screen.getByText(/\(planned\)/u)).toBeTruthy(); });
+  });
+
+  it("ignores a prospect carrying the event's id when choosing the booked hour", async () => {
+    // Three surfaces used to disagree: the Day Board and the sheet exclude
+    // prospects, this board filtered on `status` alone, so a pipeline row
+    // could set the hero hour nobody else recognised.
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetCalendar.mockResolvedValue({
+      venueId: "00000000-0000-4000-8000-000000003004",
+      range: { from: NOW, to: NOW },
+      rooms: [],
+      entries: [
+        // Earlier, and active — but a prospect, so not board-worthy.
+        { ...calendarBooking("00000000-0000-4000-8000-000000003070", "2026-06-12T05:00:00.000Z"), kind: "prospect", state: "prospect" },
+        calendarBooking("00000000-0000-4000-8000-000000003071", "2026-06-12T07:00:00.000Z"),
+      ],
+      conflicts: { conflicts: [], checks: {
+        inkDoubleBook: { status: "checked" }, holdOverlap: { status: "checked" },
+        turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
+      } },
+    });
+    renderPage();
+    await screen.findByText("Blake event day");
+    // 07:00Z = 08:00 Europe/London — the ink booking, not the 06:00 prospect.
+    await waitFor(() => { expect(screen.getByText(/08:00/u)).toBeTruthy(); });
+    expect(screen.queryByText(/06:00/u)).toBeNull();
   });
 
   it("keeps UI language claim-safe", async () => {

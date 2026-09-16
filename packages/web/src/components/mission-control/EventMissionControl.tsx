@@ -513,6 +513,11 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
   const displayedIncidents = replay?.state.incidents ?? board.incidents;
   const isLiveEdge = replay === null && board.mission.status === "live";
   const ownsControls = props.ownsExecutionControls ?? true;
+  // Decision 7 hands the ops board the TASK grid and the INCIDENT form, and
+  // nothing else. The phase rail stays live here: a mission whose phases can
+  // never be advanced but which still offers "Finish mission" can be ended
+  // and never progressed, and nothing else in the product transitions a
+  // mission phase — `transitionEventMissionPhase` has exactly one caller.
   const canAct = isLiveEdge && ownsControls;
   const missionHeading = board.mission.status === "live"
     ? activePhase === null ? "Mission live · phase not started" : `Now · ${activePhase.name}`
@@ -545,7 +550,7 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
       )}
 
       <div className="mission-stat-strip">
-        <article><Activity aria-hidden="true" /><strong>{displayedTasks.filter((task) => task.status === "done").length}/{displayedTasks.length}</strong><span>tasks complete</span></article>
+        {ownsControls && <article><Activity aria-hidden="true" /><strong>{displayedTasks.filter((task) => task.status === "done").length}/{displayedTasks.length}</strong><span>tasks complete</span></article>}
         <article><AlertTriangle aria-hidden="true" /><strong>{displayedIncidents.filter((incident) => incident.status !== "closed" && incident.status !== "resolved").length}</strong><span>open incidents</span></article>
         <article><Users aria-hidden="true" /><strong>{board.presence.length}</strong><span>active operators</span></article>
         <article><Clock3 aria-hidden="true" /><strong>#{viewingSequence}</strong><span>timeline cursor</span></article>
@@ -557,8 +562,8 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
           {displayedPhases.map((phase) => (
             <li key={phase.id} data-status={phase.status}>
               <div><span>{phase.status}</span><strong>{phase.name}</strong></div>
-              {canAct && phase.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "active"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Go live</button>}
-              {canAct && phase.status === "active" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "completed"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Complete</button>}
+              {isLiveEdge && phase.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "active"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Go live</button>}
+              {isLiveEdge && phase.status === "active" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "completed"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Complete</button>}
             </li>
           ))}
         </ol>

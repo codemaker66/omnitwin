@@ -22,6 +22,7 @@ import { HallkeeperEventLinks } from "../components/hallkeeper/HallkeeperEventLi
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import { getCalendar } from "../api/diary.js";
 import { useAuthStore } from "../stores/auth-store.js";
+import { isBoardWorthy } from "./hallkeeper/lib/day-board-state.js";
 import { useVenueTimezone } from "./hallkeeper/lib/use-venue-timezone.js";
 
 // ---------------------------------------------------------------------------
@@ -333,11 +334,19 @@ export function EventDayOpsPage(): ReactElement {
     void getCalendar(eventVenueId, from, to)
       .then((calendar) => {
         if (!current) return;
-        const booked = calendar.entries
-          .filter((entry) => entry.entryType === "booking" && entry.eventId === boardEventId && entry.status === "active")
-          .map((entry) => entry.startsAt)
-          .sort()[0] ?? null;
-        setBookedStartsAt(booked);
+        // Same predicate the Day Board uses, so the two boards and the sheet
+        // cannot disagree about which bookings count; and compared as
+        // instants, because lexicographic ISO ordering only holds while every
+        // string carries the same offset and precision.
+        const candidates = calendar.entries
+          .flatMap((entry) => entry.entryType === "booking"
+            && entry.eventId === boardEventId
+            && isBoardWorthy(entry)
+            ? [{ iso: entry.startsAt, ms: Date.parse(entry.startsAt) }]
+            : [])
+          .filter((entry) => Number.isFinite(entry.ms))
+          .sort((a, b) => a.ms - b.ms);
+        setBookedStartsAt(candidates[0]?.iso ?? null);
       })
       .catch(() => {
         // No Diary read: the hero falls back to the event record and says so.

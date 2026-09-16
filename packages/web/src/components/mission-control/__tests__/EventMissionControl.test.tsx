@@ -263,4 +263,38 @@ describe("EventMissionControl", () => {
     });
     expect(await screen.findByRole("heading", { name: /mission complete · replay retained/i })).toBeTruthy();
   });
+
+  // --- Decision 7: the event-day board owns tasks and incidents ------------
+  //
+  // The scope is the TASK GRID and the INCIDENT FORM, and nothing else. An
+  // earlier reading of this also took the phase rail's controls, which left a
+  // live mission that could be finished but never advanced — and nothing else
+  // in the product transitions a mission phase.
+
+  it("keeps the phase rail live when the ops board owns tasks and incidents", async () => {
+    mocks.getMission.mockResolvedValue(board);
+
+    render(<EventMissionControl eventId={EVENT_ID} handoffPackId={PACK_ID} ownsExecutionControls={false} />);
+
+    // The phase rail still acts.
+    expect(await screen.findByRole("button", { name: /go live/i })).toBeTruthy();
+    // The two surfaces decision 7 hands over are gone.
+    expect(screen.queryByRole("button", { name: /log incident/i })).toBeNull();
+    expect(screen.queryByLabelText("Incident title")).toBeNull();
+    // And the counter for a grid that is not here, and cannot move, is gone.
+    expect(screen.queryByText("tasks complete")).toBeNull();
+    // The reader is told where to act instead.
+    expect(screen.getByText(/Issues are logged and resolved on the event-day board/i)).toBeTruthy();
+  });
+
+  it("keeps its own task grid and incident form when mounted standalone", async () => {
+    mocks.getMission.mockResolvedValue(board);
+
+    // No `ownsExecutionControls` — the default the docblock claims.
+    render(<EventMissionControl eventId={EVENT_ID} handoffPackId={PACK_ID} />);
+
+    expect(await screen.findByRole("button", { name: /go live/i })).toBeTruthy();
+    expect(screen.getByLabelText("Incident title")).toBeTruthy();
+    expect(screen.getByText("tasks complete")).toBeTruthy();
+  });
 });
