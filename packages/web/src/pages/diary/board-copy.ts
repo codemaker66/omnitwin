@@ -59,7 +59,12 @@ export const BOARD_COPY = {
   create: {
     cellLabel: (room: string, day: string): string => `New booking — ${room}, ${day}`,
     cellHint: "New",
-    laneLabel: (room: string, time: string): string => `New booking — ${room}, ${time}`,
+    // The lane surface picks a TIME when it is clicked and a DAY when it is
+    // reached from the keyboard, which has no position to offer. The label
+    // names the day, because the keyboard is who hears it (review fix 2); it
+    // used to announce the whole visible range, which the control never picks.
+    laneLabel: (room: string, day: string): string =>
+      `New booking — ${room}, ${day}. Click the lane for a particular time.`,
   },
 
   today: "Today",

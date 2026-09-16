@@ -567,6 +567,40 @@ describe("DiaryBoardPage — create in context (T-619)", () => {
     expect(screen.queryByRole("button", { name: /^New booking — / })).toBeNull();
     expect(screen.queryByRole("button", { name: "New booking" })).toBeNull();
   });
+
+  // Review fix 2. The lane surface reads the instant from the pointer's x.
+  // A keyboard activation reports clientX 0, which the first cut mapped to
+  // `-bounds.left / pxPerHour` — whatever the lane happened to be scrolled
+  // to, a time the user never expressed. `detail === 0` identifies it.
+  it("falls back to the shown day when the lane control is reached from the keyboard", async () => {
+    // No time mocking needed, and none added: a Day range has exactly one
+    // column, so the seeded day is 16 September whether or not "today" falls
+    // inside it. (The existing setSystemTime pair above is review minor #3,
+    // deferred — this case deliberately does not add a third.)
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    const lane = await screen.findByRole("button", { name: /^New booking — Grand Hall, / });
+    // detail 0 is exactly what Enter or Space on a <button> produces.
+    fireEvent.click(lane, { detail: 0 });
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    expect(within(drawer).getByDisplayValue("Grand Hall")).toBeTruthy();
+    // The day the board is showing, at the house's default evening hour —
+    // never a time derived from a clientX the keyboard could not supply.
+    expect(within(drawer).getByDisplayValue("2026-09-16T17:00")).toBeTruthy();
+  });
+
+  it("names the day it will pick, not the range it sits in", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    const lane = await screen.findByRole("button", { name: /^New booking — Grand Hall, / });
+    const label = lane.getAttribute("aria-label") ?? "";
+    // It used to announce "Week of 14 September" — a range the control never
+    // picks. A screen-reader user must hear the actual outcome.
+    expect(label).not.toMatch(/Week of|Fortnight of/u);
+    expect(label).toContain("Click the lane for a particular time.");
+  });
 });
 
 describe("DiaryBoardPage — shortcuts, presence and retired views (T-619)", () => {

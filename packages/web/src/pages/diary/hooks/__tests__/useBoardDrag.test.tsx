@@ -108,6 +108,59 @@ describe("touch: a finger scrolls, a long press lifts", () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 
+  // Review fix 1. happy-dom has no scroll arbitration, so no test here can
+  // prove a finger keeps the block — that evidence is the Chromium probe in
+  // D:/claude/ship-friday-plan/sdd/lane5-touch-probe/. What IS pinnable, and
+  // what the old code got wrong, is the contract: a non-passive listener
+  // registered at pointerdown that decides per event.
+  it("registers a non-passive touchmove listener at pointerdown, not at the lift", () => {
+    const addSpy = vi.spyOn(document, "addEventListener");
+    render(<Harness />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    const registration = addSpy.mock.calls.find(([type]) => type === "touchmove");
+    expect(registration, "touchmove must be registered before the press ripens").toBeDefined();
+    // `passive: false` is the whole point: a passive listener's
+    // preventDefault() is ignored with only a console warning.
+    expect(registration?.[2]).toMatchObject({ passive: false });
+  });
+
+  it("lets the page scroll before the lift and holds it only after", () => {
+    render(<Harness />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    // A real cancelable event through the real listener: `defaultPrevented`
+    // is exactly what the browser consults to decide whether to pan.
+    const touchMove = (): boolean => {
+      const event = new Event("touchmove", { cancelable: true, bubbles: true });
+      document.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    // Still ripening: the finger is allowed to scroll.
+    expect(touchMove()).toBe(false);
+    act(() => { vi.advanceTimersByTime(400); });
+    // Lifted: the browser's permission to pan is withdrawn, per event.
+    expect(touchMove()).toBe(true);
+  });
+
+  it("gives the scroll back when the finger leaves", () => {
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    render(<Harness />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    act(() => { vi.advanceTimersByTime(400); });
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 20 });
+    expect(removeSpy.mock.calls.some(([type]) => type === "touchmove")).toBe(true);
+  });
+
+  it("takes no scroll listener for a mouse, which has no scroll to take", () => {
+    const addSpy = vi.spyOn(document, "addEventListener");
+    render(<Harness />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "mouse", clientX: 20, clientY: 20 });
+    expect(addSpy.mock.calls.some(([type]) => type === "touchmove")).toBe(false);
+  });
+
   it("still opens the block from a plain tap", () => {
     const onOpen = vi.fn(); const onCommit = vi.fn();
     render(<Harness onOpen={onOpen} onCommit={onCommit} />);

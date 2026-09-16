@@ -14,6 +14,7 @@ import {
   type InkSpan,
   type NudgeDirection,
 } from "../lib/board-drag.js";
+import { suppressScrollWhileLifted } from "../lib/touch-scroll.js";
 
 // ---------------------------------------------------------------------------
 // useBoardDrag (T-493; Canon §8) — the DOM-aware shell around the pure drag
@@ -88,6 +89,10 @@ interface PointerSession {
   /** The pending long-press timer, cleared the moment the gesture proves
    *  itself a scroll (or the pointer leaves). */
   longPressTimer: number | null;
+  /** Releases the non-passive `touchmove` listener that holds the browser's
+   *  scroll off once this session lifts. Null for a mouse, which never took
+   *  one. See lib/touch-scroll.ts for why CSS alone cannot do this. */
+  releaseScroll: (() => void) | null;
 }
 
 function laneFromPoint(clientX: number, clientY: number): string | null {
@@ -137,12 +142,18 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   }, []);
 
   const endPointerSession = useCallback((): void => {
-    clearLongPress(pointerRef.current);
+    const session = pointerRef.current;
+    clearLongPress(session);
+    session?.releaseScroll?.();
     pointerRef.current = null;
     setLiftedBlockId(null);
   }, [clearLongPress]);
 
-  useEffect(() => () => { clearLongPress(pointerRef.current); }, [clearLongPress]);
+  useEffect(() => () => {
+    const session = pointerRef.current;
+    clearLongPress(session);
+    session?.releaseScroll?.();
+  }, [clearLongPress]);
 
   const envFor = useCallback(
     (isInk: boolean, fine: boolean): DragEnv => ({
@@ -187,6 +198,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
           lifted: false,
           needsLongPress,
           longPressTimer: null,
+          releaseScroll: null,
         };
         pointerRef.current = session;
         // Pointer capture is what makes a drag survive leaving the block —
@@ -196,6 +208,11 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
           event.currentTarget.setPointerCapture(event.pointerId);
           return;
         }
+        // Registered NOW, before the press ripens, and decided per event: a
+        // `touch-action` change made at lift time cannot affect a gesture the
+        // browser has already classified, so without this the block lifts and
+        // then dies on the first movement (review fix 1).
+        session.releaseScroll = suppressScrollWhileLifted(() => session.lifted);
         const target = event.currentTarget;
         const pointerId = event.pointerId;
         session.longPressTimer = window.setTimeout(() => {

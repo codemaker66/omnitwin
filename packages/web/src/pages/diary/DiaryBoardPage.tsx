@@ -31,6 +31,7 @@ import {
 } from "./lib/undo-stack.js";
 import type { DrawerMode } from "./lib/drawer-form.js";
 import { markWelcomeSeen, shouldShowWelcome } from "./lib/welcome.js";
+import { suppressScrollWhileLifted } from "./lib/touch-scroll.js";
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
@@ -380,11 +381,16 @@ export function DiaryBoardPage(): ReactElement {
   // when today is inside the visible range; otherwise the range's first
   // day), and a click on an empty overview cell or a point on a day lane
   // seeds exactly the room and time that was pointed at.
-  const seededDayStartMs = useMemo(() => {
+  // The whole column, not just its start: the lane's create control announces
+  // this day by name, so the label and the instant must come from one place
+  // and cannot drift apart (review fix 2).
+  const seededDay = useMemo(() => {
     const days = dayColumns(range);
     const today = days.find((day) => nowMs >= day.startMs && nowMs < day.endMs);
-    return today?.startMs ?? days[0]?.startMs ?? range.fromMs;
+    const chosen = today ?? days[0];
+    return chosen ?? { startMs: range.fromMs, label: rangeTitle(range) };
   }, [nowMs, range]);
+  const seededDayStartMs = seededDay.startMs;
 
   /** A DAY was chosen (the toolbar button, or an overview square): the
    *  drawer opens on that day at the house's default evening window. */
@@ -494,14 +500,34 @@ export function DiaryBoardPage(): ReactElement {
   // scrolls by default and only a deliberate long-press lifts; a mouse,
   // which has no scroll gesture to steal, still lifts on press. Nothing
   // calls preventDefault — text selection is suppressed in CSS.
+  //
+  // Review fix 1: `touch-action: none` applied at lift time cannot affect a
+  // gesture the browser has already classified as a pan, so the slip lifted
+  // and then died on the first movement. A non-passive `touchmove` listener
+  // is registered at pointerdown and decides per event — see
+  // lib/touch-scroll.ts.
   const longPressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
-  const clearLongPress = useCallback(() => {
-    if (longPressRef.current === null) return;
-    window.clearTimeout(longPressRef.current.timer);
-    longPressRef.current = null;
+  /** Synchronous mirror of `enquiryDrag !== null`. The touchmove listener runs
+   *  far more often than React re-renders and must read the truth of THIS
+   *  instant, not the last committed render's. */
+  const slipLiftedRef = useRef(false);
+  const releaseSlipScrollRef = useRef<(() => void) | null>(null);
+
+  const endSlipPress = useCallback(() => {
+    if (longPressRef.current !== null) {
+      window.clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+    }
+    releaseSlipScrollRef.current?.();
+    releaseSlipScrollRef.current = null;
   }, []);
 
+  /** Kept under its old name because <HoldingTray> takes it as a prop; it now
+   *  also releases the scroll hold, since both belong to the same press. */
+  const clearLongPress = endSlipPress;
+
   const liftSlip = useCallback((enquiry: TrayEnquiry, x: number, y: number) => {
+    slipLiftedRef.current = true;
     setEnquiryDrag({ enquiryId: enquiry.id, name: enquiry.name, x, y, laneId: null, startMs: null });
   }, []);
 
@@ -516,7 +542,10 @@ export function DiaryBoardPage(): ReactElement {
         liftSlip(enquiry, clientX, clientY);
         return;
       }
-      clearLongPress();
+      endSlipPress();
+      // Before the press ripens, deliberately: a listener added at lift time
+      // may never be consulted for a sequence already under way.
+      releaseSlipScrollRef.current = suppressScrollWhileLifted(() => slipLiftedRef.current);
       longPressRef.current = {
         x: clientX,
         y: clientY,
@@ -526,7 +555,7 @@ export function DiaryBoardPage(): ReactElement {
         }, LONG_PRESS_MS),
       };
     },
-    [clearLongPress, liftSlip, writable],
+    [endSlipPress, liftSlip, writable],
   );
 
   /** A finger that travelled while the press was still ripening was
@@ -540,9 +569,17 @@ export function DiaryBoardPage(): ReactElement {
     }
   }, []);
 
-  useEffect(() => clearLongPress, [clearLongPress]);
+  useEffect(() => endSlipPress, [endSlipPress]);
 
   const enquiryDragActive = enquiryDrag !== null;
+  // The ref is set to TRUE synchronously in liftSlip, because the touchmove
+  // listener must not miss the instant of the lift. Going false can safely
+  // follow the render: one extra suppressed touchmove after a drop costs
+  // nothing, whereas one missed one loses the drag.
+  useEffect(() => {
+    slipLiftedRef.current = enquiryDragActive;
+    if (!enquiryDragActive) endSlipPress();
+  }, [enquiryDragActive, endSlipPress]);
   const presentationKey = `${String(range.fromMs)}:${String(range.toMs)}:${showingOverview ? "overview" : "timeline"}`;
   const dragPresentationRef = useRef(presentationKey);
   useEffect(() => {
@@ -858,7 +895,11 @@ export function DiaryBoardPage(): ReactElement {
             writable={writable}
             nowMs={nowMs}
             onOpenBlock={openBlock}
-            onCreateAt={writable ? openCreateAt : undefined}
+            create={writable ? {
+              at: openCreateAt,
+              onDay: openCreateOnDay,
+              day: { startMs: seededDay.startMs, label: seededDay.label },
+            } : undefined}
             turnaroundRules={data.turnaroundRules}
           />}
           <aside className="diary-side">
