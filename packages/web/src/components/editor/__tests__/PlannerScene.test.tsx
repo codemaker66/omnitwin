@@ -244,17 +244,32 @@ describe("PlannerScene", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("starts at native device resolution on a compact viewport", () => {
+  it("starts at device resolution capped at 2 on a compact viewport, never softened by width", () => {
+    // A 3x phone panel renders 2.25 times the fragments of a 2x one for a
+    // difference nobody can find at arm's length, so the ceiling is 2. What
+    // the cap must NOT do is what a width-based policy would: soften the room
+    // merely because the screen is narrow. 390 px at 3x still gets the full 2.
     const oldDpr = window.devicePixelRatio;
     const oldWidth = window.innerWidth;
     Object.defineProperty(window, "devicePixelRatio", { value: 3, configurable: true });
     Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
     try {
       const { getByTestId } = render(<PlannerScene />);
-      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("3");
+      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("2");
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { value: oldDpr, configurable: true });
       Object.defineProperty(window, "innerWidth", { value: oldWidth, configurable: true });
+    }
+  });
+
+  it("keeps a modest display at its own resolution rather than upscaling it", () => {
+    const oldDpr = window.devicePixelRatio;
+    Object.defineProperty(window, "devicePixelRatio", { value: 1.5, configurable: true });
+    try {
+      const { getByTestId } = render(<PlannerScene />);
+      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("1.5");
+    } finally {
+      Object.defineProperty(window, "devicePixelRatio", { value: oldDpr, configurable: true });
     }
   });
 

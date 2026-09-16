@@ -17,6 +17,7 @@ import { sampleTransition } from "../lib/camera-animation.js";
 import { sampleCameraTour } from "../lib/camera-tour.js";
 import { applyCameraTourPose } from "../lib/camera-tour-controls.js";
 import { finishPlannerShowcaseTour, plannerShowcaseStillCurrent } from "../lib/planner-showcase.js";
+import { plannerCameraLocked, resetPlannerCameraLock, subscribePlannerCameraLock } from "../lib/planner-camera-lock.js";
 import {
   HUMAN_POV_TARGET_DISTANCE_M,
   computeHumanPovLookAngles,
@@ -476,6 +477,24 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     useCockpitStore.getState().setCameraInteractionActive(false);
   }, [clearCameraInteractionTimer]);
 
+  // An object drag owns the pointer: hold the camera still underneath it.
+  //
+  // SelectionSystem takes the lock synchronously inside the pointerdown that
+  // claims a touch, so this listener runs within that same event — before any
+  // pointermove can reach OrbitControls, which is the only thing that would
+  // actually turn the room. Releasing re-enables nothing here; the per-frame
+  // arbitration below hands the camera back on its own terms, so a drag that
+  // ends during a bookmark transition, a tour or Walk cannot restore orbit
+  // that something else had deliberately taken away.
+  useEffect(() => subscribePlannerCameraLock(() => {
+    if (!plannerCameraLocked()) { invalidate(); return; }
+    const controls = controlsRef.current;
+    if (controls !== null) controls.enabled = false;
+  }), [invalidate]);
+  // A planner that unmounts mid-drag must not leave the next one unable to
+  // orbit: module state outlives this tree.
+  useEffect(() => resetPlannerCameraLock, []);
+
   // Custom inertial zoom — scroll ticks add velocity, friction decays it
   const zoomVelocity = useRef(0);
 
@@ -710,7 +729,10 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     }
 
     if (store.transition === null) {
-      if (humanPovActiveRef.current || walkActiveRef.current) {
+      // A live object drag holds the camera as firmly as Walk or human POV
+      // does. Without this the re-enable below would hand orbit back on the
+      // very next frame and the room would turn under the finger.
+      if (humanPovActiveRef.current || walkActiveRef.current || plannerCameraLocked()) {
         if (controls.enabled) controls.enabled = false;
         return;
       }
@@ -849,7 +871,11 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     <OrbitControls
       ref={controlsRef}
       makeDefault
-      regress={false}
+      // Feed R3F's performance signal, which PlannerAdaptiveResolution reads.
+      // This is the only path that catches OrbitControls' own touch gestures —
+      // pinch-zoom never reaches the rig's wheel handler, so without it a
+      // two-finger zoom on a phone would render at full resolution throughout.
+      regress
       enabled={suspended ? false : undefined}
       enableDamping={smoothControls}
       dampingFactor={DAMPING_FACTOR}
