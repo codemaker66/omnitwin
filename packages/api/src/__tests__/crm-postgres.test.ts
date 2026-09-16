@@ -58,12 +58,17 @@ interface PipelineBody {
     readonly stageCounts: Record<string, number>;
     readonly pipelineValueMinor: number;
     readonly currency: string;
-  };
-  readonly meta: {
-    readonly total: number;
-    readonly limit: number;
-    readonly offset: number;
-    readonly taskTotal: number;
+    // Inside `data`, not beside it: the shared web client unwraps `data`
+    // before any caller sees the envelope, so a sibling `meta` never reaches
+    // the board — and the board is what needs these numbers.
+    readonly page: {
+      readonly total: number;
+      readonly limit: number;
+      readonly offset: number;
+      readonly taskTotal: number;
+      readonly taskLimit: number;
+      readonly taskOffset: number;
+    };
   };
 }
 
@@ -156,7 +161,7 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     const second = await pipeline("?limit=2&offset=2");
     const third = await pipeline("?limit=2&offset=4");
 
-    expect(first.meta.total).toBe(5);
+    expect(first.data.page.total).toBe(5);
     expect(first.data.opportunities).toHaveLength(2);
     expect(second.data.opportunities).toHaveLength(2);
     expect(third.data.opportunities).toHaveLength(1);
@@ -164,6 +169,14 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     const seen = [...first.data.opportunities, ...second.data.opportunities, ...third.data.opportunities]
       .map((row) => row.id);
     expect(new Set(seen).size).toBe(5);
+  });
+
+  it("hands the board the numbers it needs to page honestly", async () => {
+    // Stage counts span the whole pipeline, so a board without these reads
+    // "qualified 4" above one card and offers no way to the rest.
+    const page = await pipeline("?limit=2&offset=2");
+    expect(page.data.page).toMatchObject({ total: 5, limit: 2, offset: 2 });
+    expect(page.data.page.taskLimit).toBeGreaterThan(0);
   });
 
   it("counts stages over the whole pipeline, not over the page", async () => {
@@ -195,7 +208,7 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
 
   it("keeps the venue boundary", async () => {
     const body = await pipeline();
-    expect(body.meta.total).toBe(5);
+    expect(body.data.page.total).toBe(5);
     expect(body.data.opportunities.some((row) => row.title === "Other venue")).toBe(false);
   });
 
@@ -216,7 +229,7 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     // A one-row page must still surface the task hanging off a row it did not
     // return; the old code only looked at the current page's opportunity ids.
     const page = await pipeline("?limit=1");
-    expect(page.meta.taskTotal).toBe(2);
+    expect(page.data.page.taskTotal).toBe(2);
     expect(page.data.todayTasks.map((task) => task.title)).toEqual([
       "Send the quote", "Call the client", // due 18th before due 20th
     ]);

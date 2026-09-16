@@ -253,14 +253,21 @@ export async function crmRoutes(
         // Analytics reports (services/commercial-pipeline.ts).
         pipelineValueMinor: await loadPipelineValueMinor(db, scope.venueId),
         currency: PIPELINE_VALUE_CURRENCY,
-      },
-      meta: {
-        total: totalRow?.count ?? 0,
-        limit: query.data.limit,
-        offset: query.data.offset,
-        taskTotal: taskTotalRow?.count ?? 0,
-        taskLimit: query.data.taskLimit,
-        taskOffset: query.data.taskOffset,
+        // INSIDE `data`, deliberately. The house `{ data, meta }` envelope is
+        // for plain lists, and the shared web client unwraps `data` before any
+        // caller sees the envelope — so a sibling `meta` is unreachable from
+        // the board without re-contracting that client. The board NEEDS these
+        // numbers: stage counts span the whole pipeline, so without the
+        // unpaged total the header reads "qualified 312" above fifty cards
+        // and offers no way to reach the rest.
+        page: {
+          total: totalRow?.count ?? 0,
+          limit: query.data.limit,
+          offset: query.data.offset,
+          taskTotal: taskTotalRow?.count ?? 0,
+          taskLimit: query.data.taskLimit,
+          taskOffset: query.data.taskOffset,
+        },
       },
     };
   });

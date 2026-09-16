@@ -26,7 +26,7 @@ import {
   spaces,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canAccessInternalEvent, canWriteEvents } from "../utils/query.js";
+import { canAccessInternalEvent, canManageCommercial, canManageVenue, canWriteEvents } from "../utils/query.js";
 import { loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 import {
   ROOM_UTILISATION_WINDOW_DAYS,
@@ -51,10 +51,32 @@ function toIso(value: Date): string {
   return value.toISOString();
 }
 
+/**
+ * What an analytics route actually exposes, which decides who may read it.
+ *
+ * These two answers had drifted apart inside one lane: the CRM board gated on
+ * `canManageCommercial` (admin, manager, staff, sales) while every analytics
+ * route gated on `canManageVenue` (admin, staff, hallkeeper; manager once the
+ * roles lane lands). That produced two contradictions at once — a hallkeeper
+ * could read venue-wide PRICING but not the pipeline that produced it, and a
+ * manager or sales user could work the pipeline but was refused the dashboard
+ * summarising it.
+ *
+ * The split is by what the payload contains, not by habit:
+ *
+ *   "priced"   — pipeline value, conversion, proposal status counts. Money.
+ *                The commercial team reads it: `canManageCommercial`.
+ *   "room-use" — how often each room is spoken for. No money at all, and the
+ *                hallkeeper who runs those rooms has a real need for it:
+ *                `canManageVenue`, which includes them.
+ */
+type AnalyticsCapability = "priced" | "room-use";
+
 function resolveVenueScope(
   request: FastifyRequest,
   reply: FastifyReply,
   requestedVenueId: string | undefined,
+  capability: AnalyticsCapability,
 ): string | null {
   const user = request.user;
   if (isPlatformAdmin(user)) {
@@ -71,9 +93,10 @@ function resolveVenueScope(
     void reply.status(403).send({ error: "User has no venue scope", code: "FORBIDDEN" });
     return null;
   }
-  // Preserve existing hallkeeper commercial reads (quotes/event summaries),
-  // but neither customer role name grants venue-wide analytics authority.
-  if (!canAccessInternalEvent(user, user.venueId)) {
+  const admitted = capability === "priced"
+    ? canManageCommercial(user, user.venueId)
+    : canManageVenue(user, user.venueId);
+  if (!admitted) {
     void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     return null;
   }
@@ -284,7 +307,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/pipeline-summary", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, "priced");
     if (venueId === null) return;
     const pipeline = await loadPipelineSummary(db, venueId);
     return { data: pipeline };
@@ -293,7 +316,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/room-utilisation", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, "room-use");
     if (venueId === null) return;
     const rows = await loadRoomUtilisation(db, venueId);
     return { data: rows };
@@ -302,7 +325,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/venue-dashboard", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, "priced");
     if (venueId === null) return;
     const [pipeline, roomUtilisation, scenarioRows, constraintRows] = await Promise.all([
       loadPipelineSummary(db, venueId),

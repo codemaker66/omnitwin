@@ -96,10 +96,15 @@ describe("Create Opportunity is offered only to the commercial team", () => {
     expect(screen.queryByTestId("create-opportunity-from-enquiry")).toBeNull();
   });
 
-  it("defaults to showing it, so existing call sites are unchanged", async () => {
+  it("FAILS CLOSED: a mount that forgets the flag gets no button", async () => {
+    // The default is the whole point. A permission flag that defaults to
+    // "allowed" means any future surface mounting this view without thinking
+    // about roles silently offers the commercial control to everyone. A
+    // missing button is a visible bug; a wrongly-offered one is not.
     render(<EnquiriesView />);
     await openTheEnquiry();
-    expect(await screen.findByTestId("create-opportunity-from-enquiry")).toBeTruthy();
+    expect(await screen.findByText("Alice")).toBeTruthy();
+    expect(screen.queryByTestId("create-opportunity-from-enquiry")).toBeNull();
   });
 });
 

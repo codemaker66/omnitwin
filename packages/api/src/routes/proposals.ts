@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import {
@@ -183,6 +183,26 @@ async function loadProposalEventContext(db: Database, proposal: ProposalRow): Pr
   };
 }
 
+/**
+ * Announce a proposal change to the people who need to know.
+ *
+ * EVERY call site invokes this AFTER its business write has committed, and the
+ * whole body is failure-isolated: an announcement is downstream of the record,
+ * never a condition of it. That matters concretely because the audience
+ * vocabulary and the database disagree across a deploy boundary —
+ * `COMMERCIAL_AUDIENCE_ROLES` grows to include `sales` the moment the roles
+ * lane widens `USER_ROLES`, while the deployed CHECK constraints
+ * (`event_plan_changes_audience_json_check` and
+ * `event_plan_notifications_role_check`, migration 0042) still admit only the
+ * original seven values until the inventory lane's 0072 widens them to ten.
+ * In that window every insert here raises SQLSTATE 23514. Unwrapped, that
+ * turned a staff member saving a proposal version into a 500.
+ *
+ * The long-term answer is the migration, not a narrower audience: this lane
+ * must not run against a database without 0072. The isolation below keeps the
+ * failure proportionate meanwhile — and is correct in general, since no
+ * announcement should ever be able to fail a save.
+ */
 async function recordProposalLifecycleChange(
   db: Database,
   proposal: ProposalRow,
@@ -196,22 +216,21 @@ async function recordProposalLifecycleChange(
     readonly summary: string;
     readonly affectedSurfaces: readonly EventPlanChangeSurface[];
     readonly includeHallkeeperWhenHandoffExists: boolean;
+    readonly logger: FastifyBaseLogger;
   },
 ): Promise<void> {
-  const context = await loadProposalEventContext(db, proposal);
+  try {
+    const context = await loadProposalEventContext(db, proposal);
 
-  // No linked event means no operational change feed to write to — but for a
-  // CLIENT action it must not mean silence either. A proposal without a
-  // configuration is the ordinary case for a venue that quotes before it lays
-  // anything out, and a client accepting one used to notify nobody at all.
-  //
-  // Only client-originated changes raise this: a staff member saving a
-  // version or moving a status does not need telling what they just did.
-  // And the notification is best-effort — a proposal version must never fail
-  // because an announcement could not be written.
-  if (context === null) {
-    if (input.sourceKind === "proposal") return;
-    try {
+    // No linked event means no operational change feed to write to — but for a
+    // CLIENT action it must not mean silence either. A proposal without a
+    // configuration is the ordinary case for a venue that quotes before it
+    // lays anything out, and a client accepting one used to notify nobody.
+    //
+    // Only client-originated changes raise it: a staff member saving a version
+    // or moving a status does not need telling what they just did.
+    if (context === null) {
+      if (input.sourceKind === "proposal") return;
       await notifyCommercialTeam(db, {
         venueId: proposal.venueId,
         title: input.title,
@@ -219,39 +238,50 @@ async function recordProposalLifecycleChange(
         severity: input.sourceKind === "proposal_response" ? "attention" : "info",
         actionPath: "/dashboard?view=proposals",
       });
-    } catch {
-      // Swallowed deliberately: the client's response is already committed
-      // and is the record of truth. Fastify's error log carries the cause.
+      return;
     }
-    return;
-  }
 
-  const notifyHallkeeper = input.includeHallkeeperWhenHandoffExists && context.handoffPackId !== null;
-  await recordEventPlanChange(db, {
-    eventId: context.eventId,
-    venueId: context.venueId,
-    configurationId: proposal.configurationId,
-    proposalId: proposal.id,
-    handoffPackId: context.handoffPackId,
-    actorUserId: input.actorUserId,
-    actorRole: input.actorRole,
-    actorLabel: input.actorLabel,
-    sourceKind: input.sourceKind,
-    sourceId: input.sourceId,
-    title: input.title,
-    summary: input.summary,
-    affectedSurfaces: [...input.affectedSurfaces],
-    // The commercial audience (staff, venue admin, sales) always hears;
-    // the hallkeeper is added only when there is a handoff pack to disturb.
-    // Before this, only "staff" was notified, so a venue admin watching the
-    // same proposal saw nothing.
-    audienceRoles: notifyHallkeeper
-      ? [...COMMERCIAL_AUDIENCE_ROLES, "hallkeeper"]
-      : [...COMMERCIAL_AUDIENCE_ROLES],
-    riskLevel: notifyHallkeeper ? "attention" : "info",
-    requiresHallkeeperAcknowledgement: notifyHallkeeper,
-    actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : "/dashboard",
-  });
+    const notifyHallkeeper = input.includeHallkeeperWhenHandoffExists && context.handoffPackId !== null;
+    await recordEventPlanChange(db, {
+      eventId: context.eventId,
+      venueId: context.venueId,
+      configurationId: proposal.configurationId,
+      proposalId: proposal.id,
+      handoffPackId: context.handoffPackId,
+      actorUserId: input.actorUserId,
+      actorRole: input.actorRole,
+      actorLabel: input.actorLabel,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+      title: input.title,
+      summary: input.summary,
+      affectedSurfaces: [...input.affectedSurfaces],
+      // The commercial audience (staff, venue admin, sales) always hears;
+      // the hallkeeper is added only when there is a handoff pack to disturb.
+      // Before this, only "staff" was notified, so a venue admin watching the
+      // same proposal saw nothing.
+      audienceRoles: notifyHallkeeper
+        ? [...COMMERCIAL_AUDIENCE_ROLES, "hallkeeper"]
+        : [...COMMERCIAL_AUDIENCE_ROLES],
+      riskLevel: notifyHallkeeper ? "attention" : "info",
+      requiresHallkeeperAcknowledgement: notifyHallkeeper,
+      actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : "/dashboard",
+    });
+  } catch (err) {
+    // Loud, with the ids needed to find the row that went unannounced, and
+    // then swallowed: the business write is already committed and is the
+    // record of truth. A reviewer seeing `proposal.lifecycle_announcement_failed`
+    // in production should suspect a missing migration first.
+    input.logger.error({
+      event: "proposal.lifecycle_announcement_failed",
+      proposalId: proposal.id,
+      venueId: proposal.venueId,
+      configurationId: proposal.configurationId,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+      error: err instanceof Error ? err.message : String(err),
+    }, "proposal change committed but its announcement could not be written");
+  }
 }
 
 function hashShareToken(token: string): string {
@@ -490,6 +520,7 @@ export async function proposalRoutes(
       summary: `${updated.title} was updated by the venue team.`,
       affectedSurfaces: [...affectedSurfaces],
       includeHallkeeperWhenHandoffExists: parsed.data.configurationId !== undefined,
+      logger: request.log,
     });
 
     return { data: updated };
@@ -611,6 +642,7 @@ export async function proposalRoutes(
         summary: `${updated.title} moved from ${fromStatus} to ${parsed.data.status}.`,
         affectedSurfaces: ["proposal"],
         includeHallkeeperWhenHandoffExists: parsed.data.status === "changes_requested",
+        logger: request.log,
       });
     }
 
@@ -926,6 +958,7 @@ export async function proposalRoutes(
           ? ["proposal", "pricing"]
           : ["proposal", "pricing", "layout"],
         includeHallkeeperWhenHandoffExists: false,
+        logger: request.log,
       });
     }
 
@@ -1294,6 +1327,7 @@ export async function publicProposalRoutes(
       )),
       affectedSurfaces: toStatus === "accepted" ? ["proposal"] : ["proposal", "comments"],
       includeHallkeeperWhenHandoffExists: toStatus === "changes_requested",
+      logger: request.log,
     });
 
     return { data: { status: updated?.status ?? toStatus } };
@@ -1387,6 +1421,7 @@ export async function proposalShareRoutes(
       summary: boundedLifecycleSummary(result.body),
       affectedSurfaces: kind === "request_changes" ? ["proposal", "comments"] : ["comments"],
       includeHallkeeperWhenHandoffExists: kind === "request_changes",
+      logger: request.log,
     });
 
     return reply.status(201).send({
@@ -1452,6 +1487,7 @@ export async function proposalShareRoutes(
       summary: boundedLifecycleSummary(parsed.data.body ?? "Client approved the proposal."),
       affectedSurfaces: ["proposal"],
       includeHallkeeperWhenHandoffExists: false,
+      logger: request.log,
     });
 
     return { data: { status: "accepted" } };

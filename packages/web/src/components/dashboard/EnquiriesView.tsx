@@ -53,14 +53,21 @@ interface EnquiriesViewProps {
    *  grants that to the venue's commercial team only, so offering the button
    *  to anyone else was an invitation to a 403. Passed down from the dashboard
    *  rather than re-derived here, so the client keeps ONE definition of who
-   *  may reach the commercial surface. */
+   *  may reach the commercial surface.
+   *
+   *  Defaults to FALSE. It is a permission flag, and a permission flag that
+   *  defaults to "allowed" fails open: a future mount that forgets to pass it
+   *  would silently offer the control to every role. The cost of the safe
+   *  default is a missing button on a surface that forgot to ask — a visible
+   *  bug. The cost of the unsafe one is a role seeing a control it must not,
+   *  which is invisible until someone presses it. */
   readonly canCreateOpportunity?: boolean;
 }
 
 export function EnquiriesView({
   initialSelectedId = null,
   onDetailClose,
-  canCreateOpportunity = true,
+  canCreateOpportunity = false,
 }: EnquiriesViewProps = {}): React.ReactElement {
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");

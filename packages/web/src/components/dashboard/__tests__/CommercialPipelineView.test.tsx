@@ -126,6 +126,7 @@ beforeEach(() => {
     // and the pipeline total has to come from the server, not from the page.
     pipelineValueMinor: 4_000_000,
     currency: "GBP",
+    page: { total: 1, limit: 50, offset: 0, taskTotal: 1, taskLimit: 50, taskOffset: 0 },
   });
   mocks.getOpportunity.mockResolvedValue({
     opportunity: opportunity(),
@@ -209,6 +210,42 @@ describe("CommercialPipelineView", () => {
     });
     expect(screen.queryByText("Opening opportunity…")).toBeNull();
     expect(screen.getByLabelText("Opportunity detail")).toBeDefined();
+  });
+
+  it("says how much of the pipeline is on screen, and offers the rest", async () => {
+    // The board's window is 50 rows. Without this a venue past that saw fifty
+    // cards, no count, and no way forward — the API paged and the UI did not.
+    mocks.getPipeline.mockResolvedValue({
+      opportunities: [opportunity()],
+      todayTasks: [],
+      stageCounts: { new: 312 },
+      pipelineValueMinor: 4_000_000,
+      currency: "GBP",
+      page: { total: 312, limit: 50, offset: 0, taskTotal: 0, taskLimit: 50, taskOffset: 0 },
+    });
+    render(<CommercialPipelineView />);
+
+    expect((await screen.findByTestId("pipeline-page-summary")).textContent)
+      .toContain("Showing 1–1 of 312 opportunities");
+    // Per-stage counts say which count they are, so the header cannot read
+    // "312" over one card without qualification.
+    expect(screen.getByText("1 on this page")).toBeTruthy();
+
+    const next = screen.getByTestId("pipeline-next-page");
+    expect((next as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByTestId("pipeline-prev-page")).toHaveProperty("disabled", true);
+
+    fireEvent.click(next);
+    await waitFor(() => { expect(mocks.getPipeline).toHaveBeenCalledWith({ offset: 50 }); });
+  });
+
+  it("does not dress a single page up as paging", async () => {
+    render(<CommercialPipelineView />);
+    expect((await screen.findByTestId("pipeline-page-summary")).textContent)
+      .toContain("Showing 1–1 of 1 opportunities");
+    // Everything fits, so no per-stage qualifier and no page controls.
+    expect(screen.queryByText("1 on this page")).toBeNull();
+    expect(screen.queryByTestId("pipeline-next-page")).toBeNull();
   });
 
   it("renders the commercial pipeline board with next action and safe planning language", async () => {

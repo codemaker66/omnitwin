@@ -120,6 +120,20 @@ function StatusPill({ status }: { readonly status: string }): ReactElement {
 }
 
 const SENDABLE_STATUSES = ["draft", "changes_requested"];
+
+/**
+ * Statuses for which a client link can still be issued. `sent` is the one that
+ * matters: a proposal that has gone out is exactly when the client rings to
+ * say they lost the email, and until this list included it the dashboard
+ * offered a sent proposal no link and no control to make one — the share-code
+ * fallback had been removed and nothing replaced it.
+ *
+ * Tokens are stored hashed, so an issued link can never be shown again; the
+ * only honest affordance is to issue a fresh one. Issuing does not revoke
+ * earlier links, and the copy beside the button says so.
+ */
+const LINKABLE_STATUSES = [...SENDABLE_STATUSES, "sent"];
+
 const WITHDRAWABLE_STATUSES = ["draft", "sent", "changes_requested"];
 const ARCHIVABLE_STATUSES = ["accepted", "declined", "expired", "withdrawn"];
 
@@ -434,7 +448,10 @@ export function ProposalsView(): ReactElement {
   // share token can. If no token has been minted in this session, the staff
   // member mints one with Send.
   const shareUrl = latestShareUrl;
-  const canSend = selected !== null && SENDABLE_STATUSES.includes(selected.status) && selected.currentVersion >= 1;
+  const canSend = selected !== null && LINKABLE_STATUSES.includes(selected.status) && selected.currentVersion >= 1;
+  // A sent proposal already has a link in the client's inbox that nobody can
+  // reprint, so the control reads "issue a new" rather than "generate".
+  const alreadySent = selected !== null && selected.status === "sent";
   const canCompose = selected !== null && SENDABLE_STATUSES.includes(selected.status);
 
   // Capacity guidance derivations — bounding-box floor area is the same
@@ -559,18 +576,30 @@ export function ProposalsView(): ReactElement {
                 <a data-testid="share-link" href={shareUrl}>{shareUrl}</a>
               </div>
             )}
+            {shareUrl === null && alreadySent && (
+              <p
+                data-testid="share-link-unavailable"
+                style={{ marginTop: 12, marginBottom: 0, fontSize: 12.5, color: "rgba(246, 241, 232, 0.68)", maxWidth: 560 }}
+              >
+                This proposal has been sent. Client links are stored hashed and
+                cannot be shown again — issue a new one to send the client a
+                fresh link. Any link already with them keeps working.
+              </p>
+            )}
 
             <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-              {SENDABLE_STATUSES.includes(selected.status) && (
+              {LINKABLE_STATUSES.includes(selected.status) && (
                 <button
                   type="button"
                   data-testid="send-button"
                   style={{ ...buttonPrimary, opacity: canSend && !busy ? 1 : 0.5 }}
                   disabled={!canSend || busy}
-                  title={canSend ? "Generate a client share link" : "Save a version before sharing"}
+                  title={canSend
+                    ? (alreadySent ? "Issue a fresh client share link" : "Generate a client share link")
+                    : "Save a version before sharing"}
                   onClick={handleCreateShareToken}
                 >
-                  Generate client link
+                  {alreadySent ? "Issue a new client link" : "Generate client link"}
                 </button>
               )}
               {WITHDRAWABLE_STATUSES.includes(selected.status) && (
