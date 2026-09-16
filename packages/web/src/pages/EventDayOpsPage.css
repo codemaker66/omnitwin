@@ -357,8 +357,13 @@
   text-transform: uppercase;
 }
 
+/* The register's own discipline: text is never tinted by state — the tone
+   lives in the article border above. --hk-alert #c2503e measures 3.63:1 on
+   this card at 11.5px/900 and cannot reach AA (4.5) on any ground in this
+   register; --hk-forest measures 6.43:1 on the same card. The word
+   "blocker" carries the meaning, the border carries the tone. */
 .event-day-change-feed article[data-risk="blocker"] span {
-  color: var(--hk-alert);
+  color: var(--hk-forest);
 }
 
 .event-day-change-feed small {

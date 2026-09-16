@@ -28,14 +28,26 @@ import { resolveTurnaroundRule } from "./calendar-conflicts.js";
 // @omnitwin/types/hallkeeper-v2.ts for the schema contract.
 //
 // Timing policy (Ship Friday, gate line 20): times come from the Diary and
-// nowhere else. We resolve the configuration's linked event(s), find the
-// live booking that holds THIS room, and read `eventStart` from that
-// booking's own window. `setupBy` is the earliest scheduled phase in the
-// same room when one exists, otherwise the venue's 90-minute setup buffer
-// before the booked start. When no live booking holds the room we return
-// null and the sheet/PDF say so — the sheet never invents an hour. The
-// previous behaviour (an enquiry's preferredDate at a fixed 18:00 UTC)
-// produced a time that agreed with nothing on the timetable.
+// nowhere else. We resolve which event(s) this configuration belongs to,
+// find the live booking that holds THIS room, and read `eventStart` from
+// that booking's own window. `setupBy` is the earliest scheduled phase in
+// the same room on the same day when one exists, otherwise the venue's own
+// turnaround rule for that room and event type — resolved through the same
+// `resolveTurnaroundRule` the calendar conflict rail enforces — and null
+// when the venue has recorded neither. There is no house constant: the
+// 90-minute buffer this file used to apply printed an hour a hallkeeper
+// could set a room to and be wrong about, and looked identical on the page
+// to a derived one. When no live booking holds the room we return null and
+// the sheet/PDF say so — the sheet never invents an hour. The previous
+// behaviour (an enquiry's preferredDate at a fixed 18:00 UTC) produced a
+// time that agreed with nothing on the timetable.
+//
+// Which event (the `?eventId=` contract): the corridor carries the event a
+// hallkeeper arrived from, and that event alone decides the hour when this
+// configuration is linked to it. An id that parses but is NOT linked — a
+// stale bookmark, a hand-edited query string — is ignored exactly as an
+// unparseable one is, and the union of the configuration's own links
+// applies; that union is what a sheet opened directly has always shown.
 // ---------------------------------------------------------------------------
 
 
@@ -495,6 +507,10 @@ async function linkedEventIds(db: Database, configId: string): Promise<string[]>
  * Resolve the sheet's times from the Diary: configuration → linked event(s)
  * → the live booking that holds this configuration's room in this venue.
  *
+ * `requestedEventId` narrows that to a single event when this configuration
+ * is linked to it, and is ignored otherwise — the contract is spelled out on
+ * the branch below.
+ *
  * Prospect bookings (the sales pipeline) and released/cancelled rows are
  * excluded — a hallkeeper preps rooms for things that are actually
  * happening. If nothing holds the room we return null; the sheet and PDF
@@ -508,12 +524,19 @@ export async function resolveTiming(
 ): Promise<Timing | null> {
   // A layout can be reused across events. When the caller knows which event
   // the hallkeeper arrived from — the corridor carries it as ?eventId= — that
-  // event alone decides the hour. Only fall back to the union of linked
-  // events when no event was supplied, and even then the union is a guess the
-  // caller should avoid making.
-  const eventIds = requestedEventId !== null
+  // event alone decides the hour, PROVIDED this configuration is linked to
+  // it. An id that parses but is not linked (a stale bookmark, a hand-edited
+  // query string) is ignored rather than trusted: trusted verbatim it printed
+  // a DIFFERENT event's hour whenever that event happened to hold the same
+  // room in the same venue, and blanked the times of a perfectly scheduled
+  // sheet when it did not. Both cases fall back to the union of this
+  // configuration's own links — the same answer a sheet opened directly
+  // gives — and the union stays a guess the caller should avoid making by
+  // carrying the event.
+  const linkedIds = await linkedEventIds(db, config.id);
+  const eventIds = requestedEventId !== null && linkedIds.includes(requestedEventId)
     ? [requestedEventId]
-    : await linkedEventIds(db, config.id);
+    : linkedIds;
   if (eventIds.length === 0) return null;
 
   const [booking] = await db.select({ startsAt: bookings.startsAt, eventType: bookings.eventType })

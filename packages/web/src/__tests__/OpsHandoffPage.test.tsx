@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -301,6 +303,32 @@ describe("OpsHandoffPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Print / export" }));
     expect(print).toHaveBeenCalledTimes(1);
+  });
+
+  it("styles the provenance disclosure on the element it actually renders", async () => {
+    // The digests fold into a <ul>. A rule written for a <pre> matched nothing,
+    // so the lines rendered at body size with no wrapping rule, and a
+    // 64-character hash could push a 390px page wide once the disclosure was
+    // opened. Both halves are asserted: the markup, and the selector over it.
+    const bundle = fixtureBundle();
+    mockGetOpsHandoffPack.mockResolvedValue({
+      ...bundle,
+      beoDocument: {
+        ...bundle.beoDocument,
+        body: `Approved planning data.\nSnapshot hash: ${HASH}`,
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText("Provenance (hashes and digests)")).toBeTruthy();
+    const items = document.querySelectorAll(".ops-handoff-provenance li");
+    expect(items.length).toBeGreaterThan(0);
+    expect(items[0]?.textContent).toContain(HASH);
+    expect(document.querySelector(".ops-handoff-provenance pre")).toBeNull();
+
+    const css = readFileSync(resolve("src/pages/OpsHandoffPage.css"), "utf8");
+    expect(css).toMatch(/\.ops-handoff-provenance li \{/u);
+    expect(css).not.toMatch(/\.ops-handoff-provenance pre/u);
   });
 
   it("shows a retryable error state", async () => {

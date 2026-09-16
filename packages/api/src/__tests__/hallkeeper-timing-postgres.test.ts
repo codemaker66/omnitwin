@@ -70,7 +70,7 @@ describe.skipIf(explicitUrl === undefined)("resolveTiming reads the right bookin
 
   /** One venue, one room, one configuration, linked to `eventCount` events. */
   async function seed(eventCount = 1): Promise<{
-    venueId: string; roomId: string; configId: string; eventIds: string[];
+    venueId: string; roomId: string; configId: string; userId: string; eventIds: string[];
   }> {
     const venueId = randomUUID(); const roomId = randomUUID();
     const userId = randomUUID(); const configId = randomUUID();
@@ -97,7 +97,7 @@ describe.skipIf(explicitUrl === undefined)("resolveTiming reads the right bookin
       await db.insert(schema.eventConfigurationLinks).values({ eventId, configurationId: configId, layoutVariantId: variantId, linkType: "variant_configuration" });
       eventIds.push(eventId);
     }
-    return { venueId, roomId, configId, eventIds };
+    return { venueId, roomId, configId, userId, eventIds };
   }
 
   /** Four hours, so two live bookings in one room do not overlap and trip
@@ -135,6 +135,36 @@ describe.skipIf(explicitUrl === undefined)("resolveTiming reads the right bookin
     // Without an event the union still applies — and takes the earliest.
     const unscoped = await resolveTiming(db, { id: configId, spaceId: roomId, venueId }, null);
     expect(unscoped?.eventStart).toBe("2026-09-19T08:00:00.000Z");
+  });
+
+  it("ignores an eventId this configuration is not linked to", async () => {
+    // A stale bookmark or a hand-edited query string. Trusted verbatim, the
+    // id printed the OTHER event's hour whenever that event held the same room
+    // in the same venue — 16:00 here instead of this sheet's own 09:00 — and
+    // blanked the times of a perfectly scheduled sheet when it did not.
+    const { venueId, roomId, configId, userId, eventIds } = await seed();
+    const [linkedEventId] = eventIds;
+    if (linkedEventId === undefined) throw new Error("fixture");
+    await addBooking({ venueId, roomId, eventId: linkedEventId, startsAt: "2026-09-19T09:00:00.000Z" });
+
+    const strangerEventId = randomUUID();
+    await db.insert(schema.events).values({
+      id: strangerEventId, venueId, createdBy: userId, name: "DEMO ONLY unlinked event",
+      startsAt: new Date("2026-09-19T16:00:00.000Z"),
+    });
+    await addBooking({ venueId, roomId, eventId: strangerEventId, startsAt: "2026-09-19T16:00:00.000Z" });
+
+    const timing = await resolveTiming(db, { id: configId, spaceId: roomId, venueId }, strangerEventId);
+    expect(timing?.eventStart).toBe("2026-09-19T09:00:00.000Z");
+
+    // And a configuration with no links of its own never borrows the
+    // stranger's hour, even though that booking holds this very room.
+    const unlinkedConfigId = randomUUID();
+    await db.insert(schema.configurations).values({
+      id: unlinkedConfigId, venueId, spaceId: roomId, userId,
+      name: "DEMO ONLY unlinked plan", layoutStyle: "custom", slug: `plan-${unlinkedConfigId}`,
+    });
+    expect(await resolveTiming(db, { id: unlinkedConfigId, spaceId: roomId, venueId }, strangerEventId)).toBeNull();
   });
 
   it("ignores a prospect booking even when it is earlier", async () => {

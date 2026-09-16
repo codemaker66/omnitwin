@@ -36,12 +36,15 @@ const DownloadQuery = z.object({ download: z.enum(["true", "false"]).default("fa
 /** Which event the hallkeeper arrived from. A layout can be reused across
  *  events; without this the sheet has to guess which one's hour to print, and
  *  a shared layout printed the earlier event's time whatever slot was tapped.
- *  Optional: a sheet opened directly still renders, on the union of its links. */
+ *  Optional: a sheet opened directly still renders, on the union of its links,
+ *  and so does one carrying an eventId this configuration is not linked to —
+ *  see `resolveTiming`, which is where that contract is enforced. */
 const SheetEventQuery = z.object({ eventId: z.string().uuid().optional() });
 
 /** Ignore an unparseable eventId rather than 400 — the sheet is still useful
  *  without it, and a hallkeeper with a stale link should see the room, not an
- *  error. The union fallback then applies. */
+ *  error. The union fallback then applies, exactly as it does for an id that
+ *  parses but names an event this configuration is not linked to. */
 function requestedEventId(query: unknown): string | null {
   const parsed = SheetEventQuery.safeParse(query);
   return parsed.success ? parsed.data.eventId ?? null : null;

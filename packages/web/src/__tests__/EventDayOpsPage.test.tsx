@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -428,6 +430,33 @@ describe("EventDayOpsPage", () => {
       expect(mockAcknowledgeEventPlanChange).toHaveBeenCalledWith(EVENT_ID, { changeId: change.id });
     });
     expect(await screen.findByText("Change acknowledged.")).toBeTruthy();
+  });
+
+  it("renders a blocker-risk change, and keeps its label above AA", async () => {
+    // Two halves of one defect. The first contrast sweep reported “0 offenders”
+    // on this board because `article[data-risk="blocker"]` only exists when a
+    // change carries that risk and none did, so the state is pinned here; the
+    // second half is the colour the stylesheet gives that label. --hk-alert
+    // #c2503e measures 3.63:1 on this card at 11.5px/900 — under AA's 4.5, and
+    // under the 3.88:1 it replaced. The register's discipline is that state
+    // lives in the border, not in the text.
+    const change = { ...requiredChangeFixture(), riskLevel: "blocker" as const, title: "Fire exit blocked" };
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockResolvedValue([change]);
+    renderPage();
+
+    expect(await screen.findByText("Fire exit blocked")).toBeTruthy();
+    const article = document.querySelector(
+      '.event-day-change-feed article[data-risk="blocker"]',
+    );
+    expect(article).not.toBeNull();
+    expect(article?.querySelector("span")?.textContent).toBe("blocker");
+
+    // happy-dom does not apply the stylesheet, so the rule is read from it.
+    const css = readFileSync(resolve("src/pages/EventDayOpsPage.css"), "utf8");
+    const rule = /article\[data-risk="blocker"\] span \{[^}]*\}/u.exec(css)?.[0] ?? "";
+    expect(rule).toContain("var(--hk-forest)");
+    expect(rule).not.toContain("--hk-alert");
   });
 
   it("updates task status from the checklist", async () => {
