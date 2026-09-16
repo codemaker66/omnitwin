@@ -23,6 +23,15 @@
 -- cannot drift apart unnoticed.
 DO $reconcile$
 DECLARE
+  -- The release plan names EIGHT legacy rows, from a readiness report dated
+  -- 7 September that nobody has re-run against production since. The retire
+  -- predicate below is deliberately broader than that list — "everything not
+  -- in the canonical catalogue" cannot miss a row the report forgot — but a
+  -- broader predicate can also be broader than anyone intended. If production
+  -- holds more than this many unrecognised rows, something is true of that
+  -- database that nobody knew, and quietly renaming them is the wrong answer.
+  -- Stop instead, and name every one of them so a person can decide.
+  EXPECTED_RETIREMENTS constant integer := 8;
   expected record;
   registered asset_definitions%ROWTYPE;
   legacy record;
@@ -30,6 +39,8 @@ DECLARE
   added integer := 0;
   retired integer := 0;
   referenced integer := 0;
+  surprise_count integer := 0;
+  surprise_list text;
 BEGIN
   -- Phase 1: register every catalogue item that is missing.
   FOR expected IN
@@ -126,6 +137,20 @@ BEGIN
   -- identity, its history and its references stay intact. Reversal is a
   -- rename back. Each retirement is reported with whether anything still
   -- points at it, so the receipt says what was actually in use.
+  --
+  -- First, refuse a surprise. Count the set before touching any of it, and
+  -- abort the whole transaction if it is larger than the release plan said.
+  SELECT count(*), string_agg(format('%s (%s)', a.name, a.id), ', ' ORDER BY a.id)
+    INTO surprise_count, surprise_list
+    FROM asset_definitions a
+    WHERE NOT (a.id = ANY (canonical)) AND a.name NOT LIKE '% (retired)';
+  IF surprise_count > EXPECTED_RETIREMENTS THEN
+    RAISE EXCEPTION 'CATALOGUE_RECONCILE_UNEXPECTED_SCOPE: % rows are outside the canonical catalogue, expected at most %: %',
+      surprise_count, EXPECTED_RETIREMENTS, surprise_list
+      USING ERRCODE = '23514',
+        HINT = 'Run the §7.1 inventory SELECT and agree the list before migrating; raise EXPECTED_RETIREMENTS only with that evidence.';
+  END IF;
+
   FOR legacy IN
     SELECT a.id, a.name,
       EXISTS (SELECT 1 FROM placed_objects p WHERE p.asset_definition_id = a.id) AS placed,

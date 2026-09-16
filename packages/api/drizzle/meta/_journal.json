@@ -498,6 +498,13 @@
       "when": 1788960000000,
       "tag": "0073_catalogue_reconcile",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1789046400000,
+      "tag": "0075_accessories_reconcile",
+      "breakpoints": true
     }
   ]
 }

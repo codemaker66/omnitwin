@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { inArray } from "drizzle-orm";
 import { type FloorPlanPoint, polygonBoundingBox, ACCESSORY_RULES } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
 import { createDb, isLocalDatabaseUrl } from "./client.js";
@@ -147,6 +148,18 @@ async function seed(): Promise<void> {
     }
   }
 
+  // Idempotent by replacement, not by ON CONFLICT: there is no unique key on
+  // (parent, name, depth) to conflict against, and 0009's header has claimed
+  // "re-running the seed is safe" since the day it was written without that
+  // ever being true — a second run simply added a second copy of every rule.
+  // The seed owns every row it writes here, so it clears its own parents first
+  // and rewrites them. A rule the seed has stopped emitting therefore
+  // disappears on the next run instead of lingering, which is the same
+  // asymmetry migration 0075 fixes for databases that will never be re-seeded.
+  const seededParentIds = insertedAssets.map((asset) => asset.id);
+  if (seededParentIds.length > 0) {
+    await db.delete(assetAccessories).where(inArray(assetAccessories.parentAssetId, seededParentIds));
+  }
   if (accessoryRows.length > 0) {
     await db.insert(assetAccessories).values(accessoryRows);
   }
