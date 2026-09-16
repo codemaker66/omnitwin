@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import {
+  COMMERCIAL_ROLES, CRM_PIPELINE_ROLES, EVENT_SCOPED_ROLES, hasRole,
+  INVENTORY_WRITE_ROLES, WORKSPACE_ROLES,
+} from "../lib/role-capabilities.js";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
 import { ReviewsView } from "../components/dashboard/ReviewsView.js";
@@ -53,7 +57,13 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "admin",
 ];
 
-const STAFF_ONLY_VIEWS = new Set<DashboardView>(["pipeline", "proposals"]);
+// Pipeline is CommercialPipelineView, which reads api/crm.js — still gated on
+// `user.role === "staff"` server-side until Lane 7 widens routes/crm.ts and
+// routes/opportunities.ts to canManageCommercial. Proposals reads
+// api/proposals.js, which is already on canManageCommercial, so the two
+// cannot share one set. See lib/role-capabilities.ts CRM_PIPELINE_ROLES.
+const CRM_PIPELINE_VIEWS = new Set<DashboardView>(["pipeline"]);
+const COMMERCIAL_VIEWS = new Set<DashboardView>(["proposals", "analytics"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 type PlatformRole = "none" | "operator" | "admin";
 
@@ -62,21 +72,20 @@ export function dashboardViewFromSearchValue(value: string | null): DashboardVie
   return DASHBOARD_VIEW_VALUES.find((candidate) => candidate === value) ?? null;
 }
 
-// These mirror the API capability helpers in packages/api/src/utils/query.ts:
-// COMMERCIAL_NAV_ROLES is canManageCommercial and VENUE_ADMIN_VIEW_ROLES is
-// the inventory write set. A view the API would refuse is never offered.
-const COMMERCIAL_VIEW_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
-const VENUE_ADMIN_VIEW_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
-
 export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
   if (role === null) return false;
   // Caterers are event-scoped: they reach an event through a share, never the
   // venue dashboard (goal 18 §6 decision 6a).
-  if (role === "caterer") return false;
-  if (view === "inventory") return VENUE_ADMIN_VIEW_ROLES.has(role);
+  if (hasRole(EVENT_SCOPED_ROLES, role)) return false;
   if (ADMIN_ONLY_VIEWS.has(view)) return platformRole === "admin";
-  if (STAFF_ONLY_VIEWS.has(view)) return platformRole === "admin" || COMMERCIAL_VIEW_ROLES.has(role);
-  return true;
+  // Venue stock is checked BEFORE the platform-admin shortcut: a Venviewer
+  // platform admin is not a member of this venue and holds no stock
+  // authority over it. Putting the shortcut first silently granted it.
+  if (view === "inventory") return hasRole(INVENTORY_WRITE_ROLES, role);
+  if (platformRole === "admin") return true;
+  if (CRM_PIPELINE_VIEWS.has(view)) return hasRole(CRM_PIPELINE_ROLES, role);
+  if (COMMERCIAL_VIEWS.has(view)) return hasRole(COMMERCIAL_ROLES, role);
+  return hasRole(WORKSPACE_ROLES, role);
 }
 
 export function defaultDashboardViewForRole(_role: string | null): DashboardView {

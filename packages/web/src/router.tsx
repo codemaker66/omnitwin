@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
+import {
+  DIARY_ROLES, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
+} from "./lib/role-capabilities.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
@@ -165,14 +168,6 @@ function withSuspense(node: ReactElement): ReactElement {
 function withClerk(node: ReactElement): ReactElement {
   return withSuspense(<ClerkRouteProvider>{node}</ClerkRouteProvider>);
 }
-
-// Route gates named once, mirroring the API capability helpers in
-// packages/api/src/utils/query.ts so a route never offers a surface the API
-// refuses. Caterers are event-scoped and hold no venue-wide route.
-const VENUE_DAY_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
-const VENUE_ROOM_ROLES = ["admin", "manager", "staff", "hallkeeper", "planner"] as const;
-const DIARY_ROLES = ["admin", "manager", "staff", "hallkeeper", "sales"] as const;
-const WORKSPACE_ROLES = ["admin", "manager", "staff", "sales", "hallkeeper", "planner"] as const;
 
 // Planner routes stay Clerk-free for guests (no script cost) but mount the
 // provider for returning signed-in users, whose staff surfaces (the

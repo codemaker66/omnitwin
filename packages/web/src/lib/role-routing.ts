@@ -1,3 +1,5 @@
+import { hasRole, WORKSPACE_ROLES } from "./role-capabilities.js";
+
 // ---------------------------------------------------------------------------
 // Role-aware default route — hallkeepers land on their Day Board, other venue
 // roles on /dashboard, and clients on /plan. (The /editor URL is the public
@@ -7,11 +9,11 @@
 // /plan with the other guests until an event share takes them further.
 // ---------------------------------------------------------------------------
 
-const DASHBOARD_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales", "planner"]);
-
 export function getDefaultRoute(role: string, platformRole?: string): string {
   if (platformRole === "admin") return "/dashboard?view=onboarding";
   if (role === "hallkeeper") return "/hallkeeper/today";
-  if (DASHBOARD_ROLES.has(role)) return "/dashboard";
+  // Everyone the dashboard route admits lands there; the hallkeeper is taken
+  // to their own day first, above.
+  if (hasRole(WORKSPACE_ROLES, role)) return "/dashboard";
   return "/plan";
 }

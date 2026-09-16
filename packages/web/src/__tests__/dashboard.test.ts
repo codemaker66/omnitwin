@@ -301,10 +301,13 @@ describe("AdminPanel wiring (#27) — source-grep", () => {
   });
 
   it("DashboardLayout shows admin nav only for platform admin role", async () => {
+    // The boolean flags (adminOnly/staffOnly/venueAdminOnly) became a named
+    // `capability` per entry, so each nav item states which API gate it
+    // mirrors. The platform-admin rule itself is unchanged.
     const { codeOnly } = await readSource("src/components/dashboard/DashboardLayout.tsx");
-    expect(codeOnly).toContain("adminOnly");
+    expect(codeOnly).toContain("platformAdmin");
     expect(codeOnly).toContain("canShowNavItem");
-    expect(codeOnly).toMatch(/item\.adminOnly\s*===\s*true[\s\S]*?platformRole\s*===\s*["']admin["']/);
+    expect(codeOnly).toMatch(/capability\s*===\s*["']platformAdmin["'][\s\S]*?platformRole\s*===\s*["']admin["']/);
   });
 
   it("DashboardPage imports and renders AdminPanel", async () => {
@@ -401,18 +404,25 @@ describe("DashboardPage", () => {
     expect(canOpenDashboardView("pipeline", "staff")).toBe(true);
     expect(canOpenDashboardView("pipeline", "planner", "admin")).toBe(true);
     expect(canOpenDashboardView("pipeline", "hallkeeper")).toBe(false);
-    // The commercial tabs follow the API's canManageCommercial exactly.
-    expect(canOpenDashboardView("pipeline", "sales")).toBe(true);
-    expect(canOpenDashboardView("pipeline", "manager")).toBe(true);
+    // Pipeline reads api/crm.js, and routes/crm.ts is still staff-only on
+    // release/r1 — Lane 7 (PR #24) widens it. Offering it to sales or manager
+    // now would be offering a 403. Proposals and Analytics read routes this
+    // branch already widened, so they follow canManageCommercial.
+    expect(canOpenDashboardView("pipeline", "sales")).toBe(false);
+    expect(canOpenDashboardView("pipeline", "manager")).toBe(false);
     expect(canOpenDashboardView("proposals", "sales")).toBe(true);
+    expect(canOpenDashboardView("proposals", "manager")).toBe(true);
+    expect(canOpenDashboardView("analytics", "sales")).toBe(true);
     // A caterer is event-scoped: no venue dashboard surface at all.
     expect(canOpenDashboardView("analytics", "caterer")).toBe(false);
     expect(canOpenDashboardView("settings", "caterer")).toBe(false);
-    // The retired role names are now unknown roles, and an unknown role gets
-    // the ordinary member surface rather than a bespoke one.
-    expect(canOpenDashboardView("analytics", "executive")).toBe(true);
+    // The retired role names are now unknown roles, and an unknown role
+    // reaches no capability set at all — not even the analytics view it used
+    // to have a bespoke branch for.
+    expect(canOpenDashboardView("analytics", "executive")).toBe(false);
     expect(canOpenDashboardView("pipeline", "executive")).toBe(false);
     expect(canOpenDashboardView("admin", "executive")).toBe(false);
+    expect(canOpenDashboardView("settings", "executive")).toBe(false);
     expect(canOpenDashboardView("settings", "hallkeeper")).toBe(true);
     expect(canOpenDashboardView("settings", null)).toBe(false);
     expect(canOpenDashboardView("inventory", "admin", "none")).toBe(true);

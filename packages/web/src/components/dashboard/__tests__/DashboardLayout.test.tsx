@@ -145,13 +145,18 @@ describe("DashboardLayout navigation", () => {
     expect(screen.getByRole("button", { name: "Inventory" })).toBeDefined();
   });
 
-  it("offers sales the commercial tabs but not venue stock", async () => {
+  it("offers sales the tabs its APIs admit, and neither stock nor the CRM pipeline", async () => {
     useAuthStore.getState().setUser({ ...admin, role: "sales" });
     renderShell();
     await screen.findByText("Trades Hall");
     expect(screen.queryByRole("button", { name: "Inventory" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("button", { name: "Pipeline" })).toBeDefined();
+    // Proposals and Analytics read routes this branch widened to
+    // canManageCommercial, so sales can open them.
+    expect(screen.getByRole("button", { name: "Proposals" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Executive Analytics" })).toBeDefined();
+    // Pipeline reads api/crm.js, still staff-only until Lane 7 (PR #24).
+    expect(screen.queryByRole("button", { name: "Pipeline" })).toBeNull();
   });
 
   it("preserves platform tools without granting venue stock authority", async () => {

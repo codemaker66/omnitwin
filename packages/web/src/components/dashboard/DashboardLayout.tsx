@@ -9,6 +9,10 @@ import { NotificationCenter } from "./NotificationCenter.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import {
+  COMMERCIAL_ROLES, CRM_PIPELINE_ROLES, DIARY_ROLES, EVENT_SCOPED_ROLES,
+  hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
+} from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
 
 // ---------------------------------------------------------------------------
@@ -32,31 +36,30 @@ interface DashboardLayoutProps {
   readonly children: ReactNode;
 }
 
-const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean; staffOnly?: boolean; venueAdminOnly?: boolean }[] = [
-  { view: "enquiries", label: "Enquiries" },
-  { view: "pipeline", label: "Pipeline", staffOnly: true },
-  { view: "reviews", label: "Pending Reviews" },
-  { view: "analytics", label: "Executive Analytics" },
-  // Proposals are a sales surface — the API grants create/mutate to staff
-  // and admin only, so the nav mirrors that rather than offering a tab
-  // that would only ever 403.
-  { view: "proposals", label: "Proposals", staffOnly: true },
-  { view: "search", label: "Client Search" },
-  { view: "loadouts", label: "Reference Loadouts" },
-  { view: "settings", label: "Venue Settings" },
-  { view: "inventory", label: "Inventory", venueAdminOnly: true },
-  { view: "onboarding", label: "Clients & access", adminOnly: true },
-  { view: "admin", label: "Admin", adminOnly: true },
+// Every entry names the capability behind it, and each capability is the web
+// mirror of a named API gate (lib/role-capabilities.ts). The rule: no entry
+// ships that the API then refuses. A missing tab is a better R1 than a tab
+// that answers 403.
+type NavCapability = "workspace" | "commercial" | "crmPipeline" | "venueAdmin" | "platformAdmin";
+
+const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavCapability }[] = [
+  { view: "enquiries", label: "Enquiries", capability: "workspace" },
+  // Pipeline is CommercialPipelineView, reading api/crm.js — mirrors
+  // routes/crm.ts:31 and routes/opportunities.ts:38, which are staff-only on
+  // release/r1 until Lane 7 (PR #24) widens them to canManageCommercial.
+  { view: "pipeline", label: "Pipeline", capability: "crmPipeline" },
+  { view: "reviews", label: "Pending Reviews", capability: "workspace" },
+  { view: "analytics", label: "Executive Analytics", capability: "commercial" },
+  // Proposals is ProposalsView, which reads api/proposals.js — already on
+  // canManageCommercial, so the whole commercial set can open it.
+  { view: "proposals", label: "Proposals", capability: "commercial" },
+  { view: "search", label: "Client Search", capability: "workspace" },
+  { view: "loadouts", label: "Reference Loadouts", capability: "workspace" },
+  { view: "settings", label: "Venue Settings", capability: "workspace" },
+  { view: "inventory", label: "Inventory", capability: "venueAdmin" },
+  { view: "onboarding", label: "Clients & access", capability: "platformAdmin" },
+  { view: "admin", label: "Admin", capability: "platformAdmin" },
 ];
-
-// The commercial surface the API grants to admin, manager, staff and sales.
-// A tab that would only ever 403 is worse than no tab, so the nav mirrors
-// packages/api/src/utils/query.ts canManageCommercial exactly.
-const COMMERCIAL_NAV_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
-
-// Venue administration: the venue record, its spaces, its pricing and its
-// stock. Hallkeepers lost this edit (goal 18 §6 decision 6b).
-const VENUE_ADMIN_NAV_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
 
 // What the account menu calls the signed-in person. A role with no entry is a
 // workspace member, which is also what an unknown future role reads as.
@@ -70,7 +73,8 @@ const ROLE_LABELS: Readonly<Record<string, string>> = {
   caterer: "Caterer",
 };
 
-function canShowNavItem(
+/** Exported so role-capabilities.test.ts can prove every offer is reachable. */
+export function canShowNavItem(
   item: (typeof NAV_ITEMS)[number],
   role: string | null | undefined,
   platformRole: "none" | "operator" | "admin",
@@ -78,12 +82,18 @@ function canShowNavItem(
   if (role === null || role === undefined) return false;
   // Caterers are event-scoped and reach the venue through a share, never the
   // venue dashboard.
-  if (role === "caterer") return false;
-  if (item.venueAdminOnly === true) return VENUE_ADMIN_NAV_ROLES.has(role);
-  if (item.adminOnly === true) return platformRole === "admin";
-  if (item.staffOnly === true) return platformRole === "admin" || COMMERCIAL_NAV_ROLES.has(role);
-  return true;
+  if (hasRole(EVENT_SCOPED_ROLES, role)) return false;
+  if (item.capability === "platformAdmin") return platformRole === "admin";
+  // Venue stock before the platform-admin shortcut: a platform admin is not a
+  // member of this venue and holds no stock authority over it.
+  if (item.capability === "venueAdmin") return hasRole(INVENTORY_WRITE_ROLES, role);
+  if (platformRole === "admin") return true;
+  if (item.capability === "commercial") return hasRole(COMMERCIAL_ROLES, role);
+  if (item.capability === "crmPipeline") return hasRole(CRM_PIPELINE_ROLES, role);
+  return hasRole(WORKSPACE_ROLES, role);
 }
+
+export { NAV_ITEMS };
 
 function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
   const { signOut } = useClerk();
@@ -192,13 +202,18 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
   };
 
   const platformRole = user?.platformRole ?? "none";
-  const canPlan = platformRole === "admin" || ["admin", "manager", "staff", "planner"].includes(user?.role ?? "");
-  const canSchedule = platformRole === "admin" || ["admin", "manager", "staff", "hallkeeper", "sales"].includes(user?.role ?? "");
-  const canArchitect = platformRole === "admin" || ["admin", "manager", "staff", "hallkeeper", "planner"].includes(user?.role ?? "");
+  // One flag per ROUTE, not one flag per neighbourhood: /diary and
+  // /hallkeeper have different gates, and a single canSchedule offered the
+  // Hallkeeper link to sales, which /hallkeeper/today then refused.
+  const canPlan = platformRole === "admin" || hasRole(PLANNER_ROLES, user?.role);
+  const canOpenDiary = platformRole === "admin" || hasRole(DIARY_ROLES, user?.role);
+  const canOpenHallkeeperDay = platformRole === "admin" || hasRole(VENUE_DAY_ROLES, user?.role);
   // Venue stock is written by venue administration only, and the platform
   // admin's own tools never grant it (pinned by DashboardLayout.test.tsx).
-  const canManageStock = VENUE_ADMIN_NAV_ROLES.has(user?.role ?? "");
+  const canManageStock = hasRole(INVENTORY_WRITE_ROLES, user?.role);
   const moreItems = NAV_ITEMS.filter((item) => item.view !== "inventory" && canShowNavItem(item, user?.role, platformRole));
+  // /event-architect still marks the menu active for anyone who reaches it by
+  // URL, even though R1 offers no link to it.
   const moreActive = moreItems.some((item) => item.view === activeView) ||
     isRouteActive("/event-architect") || isRouteActive("/dev/capture-intake");
   const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
@@ -219,9 +234,9 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
         <nav className="dashboard-layout-navigation" aria-label="Staff dashboard">
           {canPlan && <Link className={routeLinkClass("/plan")} to="/plan"
             aria-current={isRouteActive("/plan") ? "page" : undefined}>Plan</Link>}
-          {canSchedule && <Link className={routeLinkClass("/diary")} to="/diary"
+          {canOpenDiary && <Link className={routeLinkClass("/diary")} to="/diary"
             aria-current={isRouteActive("/diary") ? "page" : undefined}>Diary</Link>}
-          {canSchedule && <Link className={routeLinkClass("/hallkeeper")} to="/hallkeeper"
+          {canOpenHallkeeperDay && <Link className={routeLinkClass("/hallkeeper")} to="/hallkeeper"
             aria-current={isRouteActive("/hallkeeper") ? "page" : undefined}>Hallkeeper</Link>}
           {canManageStock && <button type="button"
             className={`dashboard-layout-nav-item${activeView === "inventory" ? " dashboard-layout-nav-item--active" : ""}`}
@@ -239,8 +254,9 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
                   className={`dashboard-layout-menu-link${activeView === item.view ? " dashboard-layout-menu-link--active" : ""}`}
                   aria-current={activeView === item.view ? "page" : undefined}
                   onClick={() => { selectView(item.view); }}>{item.label}</button>)}
-                {canArchitect && <Link className="dashboard-layout-menu-link" to="/event-architect"
-                  aria-current={isRouteActive("/event-architect") ? "page" : undefined}>Event Architect</Link>}
+                {/* Event Architect is hidden for R1 (goal 18 §6 decision 8).
+                    The route and the page stay; only the way in is closed, so
+                    restoring it is this one link back. */}
                 {platformRole === "admin" && <Link className="dashboard-layout-menu-link" to="/dev/capture-intake"
                   aria-current={isRouteActive("/dev/capture-intake") ? "page" : undefined}>Capture Factory</Link>}
               </div>
