@@ -8,7 +8,7 @@ import {
 } from "../splat-runtime-profile.js";
 import type { DeviceTier } from "../device-tier.js";
 
-const TIERS: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
+const TIERS: readonly DeviceTier[] = ["poster", "low", "mobile", "medium", "high"];
 
 function expectWellFormed(profile: SplatRuntimeProfile): void {
   expect(Number.isFinite(profile.minSortIntervalMs)).toBe(true);
@@ -26,6 +26,44 @@ function expectWellFormed(profile: SplatRuntimeProfile): void {
   expect(profile.motionDpr).toBeGreaterThan(0);
   expect(profile.settledDpr).toBeGreaterThanOrEqual(profile.motionDpr);
 }
+
+// ---------------------------------------------------------------------------
+// The phone tier
+//
+// INTERIM and UNMEASURED (T-617): no phone has run the drag budget, so what
+// can honestly be pinned is the SHAPE of the row - that it asks for less than
+// the desktop it sits under, that its motion budget is inside the 1.0-1.5 M
+// band the plan set, and that it never turns into a claim of 60 fps.
+// ---------------------------------------------------------------------------
+
+describe("the mobile runtime profile", () => {
+  const mobile = SPLAT_RUNTIME_PROFILES.mobile;
+
+  it("keeps the level-of-detail tree on, which is the point of the tier", () => {
+    expect(mobile.lod).toBe(true);
+  });
+
+  it("holds the motion budget inside the 1.0-1.5 M band", () => {
+    expect(mobile.motionLodSplatCount).toBeGreaterThanOrEqual(1_000_000);
+    expect(mobile.motionLodSplatCount).toBeLessThanOrEqual(1_500_000);
+  });
+
+  it("rests at 1.5 device pixels rather than a phone's own 3", () => {
+    expect(mobile.settledDpr).toBe(1.5);
+    expect(mobile.motionDpr).toBeLessThanOrEqual(mobile.settledDpr);
+  });
+
+  it("asks for less than the desktop tiers and more than the budget one", () => {
+    expect(mobile.lodSplatCount).toBeLessThan(SPLAT_RUNTIME_PROFILES.high.lodSplatCount);
+    expect(mobile.lodSplatCount).toBeGreaterThan(SPLAT_RUNTIME_PROFILES.low.lodSplatCount);
+  });
+
+  it("does not pay for a prebuilt tree on the wire", () => {
+    // A tree costs about 3.4x the tile's bytes, and the wire is the scarcest
+    // thing a phone has.
+    expect(mobile.preferTrees).toBe(false);
+  });
+});
 
 describe("parseSplatOverrides", () => {
   it("returns no overrides for an empty or unrelated query", () => {

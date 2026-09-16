@@ -25,7 +25,7 @@ import { usePerfStore } from "../../stores/perf-store.js";
 // ---------------------------------------------------------------------------
 
 describe("getPerfBudget", () => {
-  const tiers: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
+  const tiers: readonly DeviceTier[] = ["poster", "low", "mobile", "medium", "high"];
 
   for (const tier of tiers) {
     it(`returns valid budget for ${tier} tier`, () => {
@@ -49,26 +49,32 @@ describe("getPerfBudget", () => {
   it("maxDrawCalls increases with tier", () => {
     const poster = getPerfBudget("poster").maxDrawCalls;
     const low = getPerfBudget("low").maxDrawCalls;
+    const mobile = getPerfBudget("mobile").maxDrawCalls;
     const medium = getPerfBudget("medium").maxDrawCalls;
     const high = getPerfBudget("high").maxDrawCalls;
     expect(poster).toBeLessThan(low);
-    expect(low).toBeLessThan(medium);
+    expect(low).toBeLessThan(mobile);
+    expect(mobile).toBeLessThan(medium);
     expect(medium).toBeLessThan(high);
   });
 
   it("maxTriangles matches quality settings progression", () => {
     const poster = getPerfBudget("poster").maxTriangles;
     const low = getPerfBudget("low").maxTriangles;
+    const mobile = getPerfBudget("mobile").maxTriangles;
     const medium = getPerfBudget("medium").maxTriangles;
     const high = getPerfBudget("high").maxTriangles;
     expect(poster).toBeLessThan(low);
-    expect(low).toBeLessThan(medium);
+    expect(low).toBeLessThan(mobile);
+    expect(mobile).toBeLessThan(medium);
     expect(medium).toBeLessThan(high);
   });
 
-  it("poster and low target 30fps (33.33ms)", () => {
+  it("poster, low and mobile target 30fps (33.33ms)", () => {
     expect(getPerfBudget("poster").targetFrameTimeMs).toBeCloseTo(33.33, 0);
     expect(getPerfBudget("low").targetFrameTimeMs).toBeCloseTo(33.33, 0);
+    // A phone's budget is 30, and it stays 30 until someone measures one.
+    expect(getPerfBudget("mobile").targetFrameTimeMs).toBeCloseTo(33.33, 0);
   });
 
   it("medium and high target 60fps (16.67ms)", () => {

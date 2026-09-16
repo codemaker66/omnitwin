@@ -67,7 +67,7 @@ export interface SplatRuntimeOverrides extends Partial<SplatRuntimeSettings> {
 /** Spark's own default: Gaussians draw out to sqrt(8) standard deviations. */
 export const SPARK_DEFAULT_MAX_STD_DEV = Math.sqrt(8);
 
-const TIERS: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
+const TIERS: readonly DeviceTier[] = ["poster", "low", "mobile", "medium", "high"];
 
 /**
  * Per-tier settings, set by measurement on 2026-09-03
@@ -159,6 +159,41 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
     maxSh: 3,
     preferTrees: false,
     motionDpr: 1,
+    settledDpr: 1.5,
+  },
+  mobile: {
+    // A phone or tablet on a current mobile GPU. INTERIM and UNMEASURED: no
+    // phone or tablet has run the drag budget, and until one does every
+    // number here is a judgement. §6 decision 11 authorises the reduced tier
+    // for Release 1 only.
+    //
+    // The tree is ON, which is the whole point of the tier: the level served
+    // to a phone is already the vendor's coarser one (roomSplatLadder's
+    // sharpSplatBudget), and the tree then holds what is on screen inside the
+    // resting budget as the viewer turns. `preferTrees` stays off because a
+    // prebuilt tree costs about 3.4x the tile's bytes on the wire, and the
+    // wire is the scarcest thing a phone has.
+    //
+    // The resting budget clears the Grand Hall's level 4 (2,945,194
+    // Gaussians) so that level resolves completely at a standstill rather
+    // than being culled back by its own budget, and stays strictly under the
+    // medium tier's 3,000,000 so the table's own ordering holds. The motion
+    // budget of 1.2 M sits in the 1.0-1.5 M band the plan asks for; on the
+    // measured desktop ladder those budgets ordered the devices (75.7 fps at
+    // 1.0 M, 56.8 at 1.5 M with twelve hosts), so the band is a protection
+    // whose shape is known even where its phone frame rate is not.
+    minSortIntervalMs: 0,
+    maxStdDev: SPARK_DEFAULT_MAX_STD_DEV,
+    lod: true,
+    lodSplatCount: 2_950_000,
+    motionLodSplatCount: 1_200_000,
+    maxSh: 3,
+    preferTrees: false,
+    motionDpr: 1,
+    // 1.5 rather than the phone's own 3: a 390x844 canvas at 3 is 2.96 M
+    // pixels of Gaussian blending per frame against 740 k at 1.5, and the
+    // budget in settledPixelRatio does not bind at this canvas size, so
+    // nothing else would hold it down.
     settledDpr: 1.5,
   },
   medium: {

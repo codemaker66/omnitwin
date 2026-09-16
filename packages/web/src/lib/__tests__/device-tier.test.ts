@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   classifyDevice,
   getQualitySettings,
   getGpuRenderer,
+  readDeviceEnvironment,
+  type DeviceEnvironment,
   type DeviceTier,
 } from "../device-tier.js";
 import { useDeviceStore } from "../../stores/device-store.js";
@@ -90,11 +92,174 @@ describe("classifyDevice — edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The device, not just the string
+//
+// A renderer string cannot tell a phone from a desktop, and on the two
+// families that matter it actively misleads: Safari reports "Apple GPU" for an
+// iPhone and for an M-series Mac alike. These pin the rule that separates
+// them, in BOTH directions - a phone must come down, and a desktop must never
+// be dragged down with it.
+// ---------------------------------------------------------------------------
+
+const IPHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+const IPAD_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
+const MAC_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+const ANDROID_UA =
+  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36";
+const WINDOWS_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+
+function deviceEnv(over: Partial<DeviceEnvironment> = {}): DeviceEnvironment {
+  return {
+    userAgent: WINDOWS_UA,
+    coarsePointer: false,
+    maxTouchPoints: 0,
+    deviceMemoryGb: null,
+    ...over,
+  };
+}
+
+describe("classifyDevice - the device behind the string", () => {
+  it("leaves every verdict alone when no environment is offered", () => {
+    // The planner path passes nothing, and must stay byte-identical.
+    expect(classifyDevice("Apple GPU")).toBe("high");
+    expect(classifyDevice("Adreno (TM) 730")).toBe("high");
+    expect(classifyDevice("NVIDIA GeForce RTX 4090")).toBe("high");
+  });
+
+  it("puts an iPhone reporting Apple GPU on the mobile tier", () => {
+    const tier = classifyDevice("Apple GPU", deviceEnv({
+      userAgent: IPHONE_UA,
+      coarsePointer: true,
+      maxTouchPoints: 5,
+      deviceMemoryGb: null, // iOS does not implement it
+    }));
+    expect(tier).toBe("mobile");
+  });
+
+  it("leaves an M-series Mac reporting the SAME string on high", () => {
+    expect(classifyDevice("Apple GPU", deviceEnv({ userAgent: MAC_UA }))).toBe("high");
+  });
+
+  it("catches an iPad even though it sends a Mac user agent", () => {
+    // iPadOS's desktop-class Safari is indistinguishable by UA; the five touch
+    // points and the coarse pointer are the whole tell.
+    expect(classifyDevice("Apple GPU", deviceEnv({
+      userAgent: IPAD_UA,
+      coarsePointer: true,
+      maxTouchPoints: 5,
+    }))).toBe("mobile");
+  });
+
+  it("puts an Adreno 7xx flagship phone on mobile rather than high", () => {
+    expect(classifyDevice("Adreno (TM) 730", deviceEnv({
+      userAgent: ANDROID_UA,
+      coarsePointer: true,
+      maxTouchPoints: 5,
+      deviceMemoryGb: 8,
+    }))).toBe("mobile");
+  });
+
+  it("holds a low-memory Android at low, below the phone tier", () => {
+    expect(classifyDevice("Adreno (TM) 730", deviceEnv({
+      userAgent: ANDROID_UA,
+      coarsePointer: true,
+      maxTouchPoints: 5,
+      deviceMemoryGb: 3,
+    }))).toBe("low");
+  });
+
+  it("never demotes a touchscreen desktop", () => {
+    // A Surface in tablet mode reports a coarse pointer and ten touch points.
+    // Its GPU is not a phone GPU and its UA is not a phone UA, so nothing here
+    // may touch it - this is the rule's guard rail, not a nicety.
+    expect(classifyDevice("NVIDIA GeForce RTX 4090", deviceEnv({
+      userAgent: WINDOWS_UA,
+      coarsePointer: true,
+      maxTouchPoints: 10,
+      deviceMemoryGb: 32,
+    }))).toBe("high");
+    expect(classifyDevice("Intel(R) Iris(R) Xe Graphics", deviceEnv({
+      userAgent: WINDOWS_UA,
+      coarsePointer: true,
+      maxTouchPoints: 10,
+      deviceMemoryGb: 16,
+    }))).toBe("medium");
+  });
+
+  it("never demotes a mobile GPU behind a mouse", () => {
+    // An Android emulator, or a phone on a desk with a bluetooth mouse,
+    // reports a fine pointer. Demoting on the GPU alone would catch
+    // developers' machines; the PAIR of signals is the rule.
+    expect(classifyDevice("Adreno (TM) 730", deviceEnv({
+      userAgent: ANDROID_UA,
+      coarsePointer: false,
+      maxTouchPoints: 0,
+    }))).toBe("high");
+  });
+
+  it("never RAISES a tier", () => {
+    // The environment is a demotion rule and nothing else: a weak GPU in a
+    // phone stays exactly as weak as its string said.
+    expect(classifyDevice("Mali-G52 MC2", deviceEnv({
+      userAgent: ANDROID_UA,
+      coarsePointer: true,
+      maxTouchPoints: 5,
+      deviceMemoryGb: 8,
+    }))).toBe("low");
+    expect(classifyDevice("Google SwiftShader", deviceEnv({
+      userAgent: ANDROID_UA,
+      coarsePointer: true,
+      maxTouchPoints: 5,
+    }))).toBe("poster");
+  });
+
+  it("still returns poster for an empty string whatever the device is", () => {
+    expect(classifyDevice("", deviceEnv({
+      userAgent: IPHONE_UA,
+      coarsePointer: true,
+      maxTouchPoints: 5,
+    }))).toBe("poster");
+  });
+});
+
+describe("readDeviceEnvironment", () => {
+  it("reads the four signals off the browser", () => {
+    const matchMedia = vi.fn((query: string) => ({ matches: query === "(pointer: coarse)" }));
+    vi.stubGlobal("matchMedia", matchMedia);
+    Object.defineProperty(navigator, "maxTouchPoints", { value: 5, configurable: true });
+    Object.defineProperty(navigator, "deviceMemory", { value: 8, configurable: true });
+
+    const environment = readDeviceEnvironment();
+    expect(environment).not.toBeNull();
+    expect(environment?.coarsePointer).toBe(true);
+    expect(environment?.maxTouchPoints).toBe(5);
+    expect(environment?.deviceMemoryGb).toBe(8);
+    expect(environment?.userAgent).toBe(navigator.userAgent);
+    expect(matchMedia).toHaveBeenCalledWith("(pointer: coarse)");
+
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, "deviceMemory");
+    Object.defineProperty(navigator, "maxTouchPoints", { value: 0, configurable: true });
+  });
+
+  it("reports deviceMemory as null where the engine does not implement it", () => {
+    // Safari on iOS. A null here is a real answer, not a failure, and the
+    // memory rule must simply not fire.
+    Reflect.deleteProperty(navigator, "deviceMemory");
+    expect(readDeviceEnvironment()?.deviceMemoryGb).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Quality settings
 // ---------------------------------------------------------------------------
 
 describe("getQualitySettings", () => {
-  const tiers: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
+  const tiers: readonly DeviceTier[] = ["poster", "low", "mobile", "medium", "high"];
 
   for (const tier of tiers) {
     it(`returns valid settings for ${tier} tier`, () => {
@@ -132,10 +297,12 @@ describe("getQualitySettings", () => {
   it("maxTriangles increases with tier", () => {
     const poster = getQualitySettings("poster").maxTriangles;
     const low = getQualitySettings("low").maxTriangles;
+    const mobile = getQualitySettings("mobile").maxTriangles;
     const medium = getQualitySettings("medium").maxTriangles;
     const high = getQualitySettings("high").maxTriangles;
     expect(poster).toBeLessThan(low);
-    expect(low).toBeLessThan(medium);
+    expect(low).toBeLessThan(mobile);
+    expect(mobile).toBeLessThan(medium);
     expect(medium).toBeLessThan(high);
   });
 
@@ -144,9 +311,21 @@ describe("getQualitySettings", () => {
     expect(getQualitySettings("high").targetFrameTimeMs).toBeCloseTo(16.67, 0);
   });
 
-  it("targets 30fps for poster and low tiers", () => {
+  it("targets 30fps for poster, low and mobile tiers", () => {
     expect(getQualitySettings("poster").targetFrameTimeMs).toBeCloseTo(33.33, 0);
     expect(getQualitySettings("low").targetFrameTimeMs).toBeCloseTo(33.33, 0);
+    // 30 is the honest target on a phone. Claiming 60 there would be a number
+    // nobody has measured; see MOBILE_SETTINGS.
+    expect(getQualitySettings("mobile").targetFrameTimeMs).toBeCloseTo(33.33, 0);
+  });
+
+  it("mobile sits between low and medium without borrowing high's extras", () => {
+    const mobile = getQualitySettings("mobile");
+    expect(mobile.dpr).toEqual([1, 1.5]);
+    expect(mobile.antialias).toBe(false);
+    expect(mobile.envMap).toBe(false);
+    expect(mobile.textureScale).toBeGreaterThan(getQualitySettings("low").textureScale);
+    expect(mobile.textureScale).toBeLessThan(getQualitySettings("high").textureScale);
   });
 });
 

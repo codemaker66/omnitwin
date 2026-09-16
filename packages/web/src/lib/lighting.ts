@@ -23,6 +23,7 @@ const GROUND_COLOR = "#d0c8c0";
 const HEMISPHERE_CONFIGS: Record<DeviceTier, HemisphereLightConfig> = {
   poster: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 0.8 },
   low: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 1.5 },
+  mobile: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 1.7 },
   medium: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 1.8 },
   high: { skyColor: SKY_COLOR, groundColor: GROUND_COLOR, intensity: 2.0 },
 };

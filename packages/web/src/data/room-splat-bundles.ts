@@ -178,12 +178,57 @@ function coarsestRoomLevel(bundle: GeneratedRoomSplatBundle): number | null {
   return coarsest < bundle.finestLevel ? coarsest : null;
 }
 
-/** A bundle's delivery ladder under a room base URL. */
+/**
+ * The best level this device may be asked to keep on screen.
+ *
+ * INTERIM for Release 1 (T-617). The whole reconstruction is the finest
+ * level, and the Grand Hall's is 6,019,684 Gaussians over 106,479,738 bytes
+ * — not a thing to send to a phone on a train. The vendor's own coarser
+ * levels are the cheap protection, because each level is the WHOLE room at a
+ * lower density rather than a part of it: level 4 is 2,945,194 splats in
+ * 54,148,124 bytes and level 3 is 1,451,051 in 27,089,549, both complete
+ * rooms.
+ *
+ * Byte counts are summed from the checked-in descriptor, and they are stated
+ * in bytes on purpose: the figures this work inherited ("101.5 MB", "51.6
+ * MB", "25.8 MB") are MEBIbytes, so the Grand Hall's level 4 is 51.6 MiB but
+ * 54.1 MB, and a gate written as "under 52 MB" passes or fails depending on
+ * which unit the reader meant.
+ *
+ * Derived from the tier's resting budget rather than hard-coded per room:
+ * the finest level whose own splat count the device has already agreed to
+ * hold. A budget below even the coarsest level still gets the coarsest,
+ * which is the least that can honestly be served. With no budget nothing
+ * changes and the finest level is served, as before.
+ */
+function servedSharpLevel(
+  bundle: GeneratedRoomSplatBundle,
+  sharpSplatBudget: number | undefined,
+): number {
+  if (sharpSplatBudget === undefined || !Number.isFinite(sharpSplatBudget)) {
+    return bundle.finestLevel;
+  }
+  for (let level = bundle.finestLevel; level >= 1; level -= 1) {
+    // splatsByLevel[level - 1] is level `level`, with level 1 the coarsest.
+    const splats = bundle.splatsByLevel[level - 1];
+    if (splats !== undefined && splats <= sharpSplatBudget) return level;
+  }
+  return 1;
+}
+
+/**
+ * A bundle's delivery ladder under a room base URL.
+ *
+ * `sharpSplatBudget` caps the level served as the sharp rung — see
+ * `servedSharpLevel`. Omit it and the finest level is served, unchanged.
+ */
 export function splatLadderForBundle(
   bundle: GeneratedRoomSplatBundle,
   roomBaseUrl: string,
   preferTrees: boolean,
+  sharpSplatBudget?: number,
 ): RoomSplatLadder {
+  const sharpLevel = servedSharpLevel(bundle, sharpSplatBudget);
   const coarsest = coarsestRoomLevel(bundle);
   const atLevel = (level: number | null): readonly RoomSplatSource[] => (level === null
     ? []
@@ -194,21 +239,32 @@ export function splatLadderForBundle(
     environment: bundle.tiles
       .filter((tile) => tile.isEnvironment)
       .map((tile) => sourceForTile(tile, roomBaseUrl, preferTrees)),
-    coarse: atLevel(coarsest),
-    sharp: atLevel(bundle.finestLevel),
+    // A budget can pull the sharp rung down onto the coarse one. Mounting the
+    // same level twice draws the room twice and hazes it, so the ladder
+    // collapses to a single rung instead: the room arrives at once, which is
+    // the right answer on a device that asked for so little.
+    coarse: coarsest === null || coarsest >= sharpLevel ? [] : atLevel(coarsest),
+    sharp: atLevel(sharpLevel),
   };
 }
 
-/** The delivery ladder for a room; every stage empty for an unknown room. */
+/**
+ * The delivery ladder for a room; every stage empty for an unknown room.
+ *
+ * `sharpSplatBudget` is the device's resting budget
+ * (`SplatRuntimeProfile.lodSplatCount`). Omitting it serves the finest level,
+ * which is what every caller did before the device tier reached the ladder.
+ */
 export function roomSplatLadder(
   roomSlug: string,
   configuredBaseUrl: string | undefined,
   preferTrees: boolean,
+  sharpSplatBudget?: number,
 ): RoomSplatLadder {
   const bundle = roomSplatBundle(roomSlug);
   if (bundle === null) return { environment: [], coarse: [], sharp: [] };
   const base = `${splatBaseUrl(configuredBaseUrl)}/${GENERATED_VENUE_SLUG}/${roomSlug}`;
-  return splatLadderForBundle(bundle, base, preferTrees);
+  return splatLadderForBundle(bundle, base, preferTrees, sharpSplatBudget);
 }
 
 /** The sources for a room, environment shell last; empty for an unknown room. */

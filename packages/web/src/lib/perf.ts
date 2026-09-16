@@ -43,6 +43,15 @@ const PERF_BUDGETS: Record<DeviceTier, PerfBudget> = {
     maxDrawCalls: 50,
     maxTriangles: 20_000,
   },
+  // A phone or tablet. 30 fps is the honest target here, not 60, and nothing
+  // in this row has been measured on a phone — see MOBILE_SETTINGS.
+  mobile: {
+    targetFrameTimeMs: 33.33,
+    warningThresholdMs: 50,
+    criticalThresholdMs: 100,
+    maxDrawCalls: 75,
+    maxTriangles: 50_000,
+  },
   medium: {
     targetFrameTimeMs: 16.67,
     warningThresholdMs: 33.33,
