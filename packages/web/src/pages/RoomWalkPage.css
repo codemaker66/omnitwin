@@ -5,10 +5,20 @@
   --ink: #14100c;
   --stone: #f2ecdf;
   --stone-dim: #b5aa97;
-  --brass: #d8a64c;
+  /* One register (T-615): copper, not brass. The literal is Lane 1's
+   * --house-accent-copper, kept as a fallback so this page is right both
+   * before and after house-tokens.css lands. The graphite above stays — it is
+   * the ground the 3D viewport sits on, and chrome floating directly on that
+   * ground is the one place the dark register survives. */
+  --brass: var(--house-accent-copper, #C98A5B);
 
   position: relative;
+  /* dvh, not vh: on a phone the browser's own chrome slides in and out, and
+   * 100vh is the TALLEST the viewport ever gets — so the room's bottom edge
+   * would spend the whole visit behind the address bar. vh stays first as the
+   * fallback for anything that has not learned dvh. */
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--ink);
   color: var(--stone);
   font-family: var(--fr-body, "Newsreader", Georgia, serif);
@@ -27,7 +37,11 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.5rem 1.25rem;
-  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+  /* The safe area is the notch, the rounded corner and the status bar. Added
+   * to the padding rather than replacing it, so a device without one is
+   * unchanged and a device with one never puts the room's name under glass. */
+  padding: calc(1rem + env(safe-area-inset-top)) calc(clamp(1rem, 4vw, 2.5rem) + env(safe-area-inset-right))
+    1rem calc(clamp(1rem, 4vw, 2.5rem) + env(safe-area-inset-left));
   background: linear-gradient(to bottom, rgba(20, 16, 12, 0.82), rgba(20, 16, 12, 0));
   pointer-events: none;
 }
@@ -87,11 +101,34 @@
 
 .walk__navigation .walk__plan {
   padding: 0.45rem 0.85rem;
-  border: 1px solid #c9b8a4;
+  /* Ivory ground, forest ink, copper hairline: the register's own button,
+   * which reads against the dark viewport without borrowing the gold. */
+  border: 1px solid var(--house-accent-copper, #C98A5B);
   border-radius: 6px;
-  background: #f2ecdf;
-  color: #163b32;
+  background: var(--vv-ivory, #F2EDDA);
+  color: var(--vv-forest, #1B3A2F);
   font-weight: 600;
+}
+
+/* The quietest control on the page: the room is what people came to see, and
+ * a full-screen button that shouts competes with it. A hairline on the
+ * graphite, sized to the 44 px target every other link here already keeps. */
+.walk__fullscreen {
+  min-height: 44px;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid rgba(242, 236, 223, 0.28);
+  border-radius: 6px;
+  background: rgba(20, 16, 12, 0.55);
+  color: var(--stone);
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.walk__fullscreen:hover { border-color: var(--brass); }
+.walk__fullscreen:focus-visible {
+  outline: 2px solid var(--stone);
+  outline-offset: 4px;
 }
 
 @media (max-width: 700px) {
@@ -105,8 +142,12 @@
 .walk__loading {
   position: absolute;
   left: 50%;
-  bottom: 4.5rem;
+  /* Clear of the footer note AND of the home indicator on a phone. */
+  bottom: calc(4.5rem + env(safe-area-inset-bottom));
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   margin: 0;
   padding: 0.4rem 0.9rem;
   border: 1px solid rgba(242, 236, 223, 0.16);
@@ -118,12 +159,31 @@
   color: var(--stone-dim);
 }
 
+/* The view was taken away. Same pill, no alarm in it: the interruption is
+ * usually momentary, and shouting about it would make it look permanent. */
+.walk__loading--lost { border-color: rgba(242, 236, 223, 0.32); }
+
+.walk__reload {
+  min-height: 44px;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--house-accent-copper, #C98A5B);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--stone);
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.walk__reload:focus-visible { outline: 2px solid var(--stone); outline-offset: 3px; }
+
 .walk__foot {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+  padding: 1rem calc(clamp(1rem, 4vw, 2.5rem) + env(safe-area-inset-right))
+    calc(1rem + env(safe-area-inset-bottom)) calc(clamp(1rem, 4vw, 2.5rem) + env(safe-area-inset-left));
   background: linear-gradient(to top, rgba(20, 16, 12, 0.86), rgba(20, 16, 12, 0));
   pointer-events: none;
 }

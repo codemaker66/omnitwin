@@ -18,6 +18,16 @@ import {
   type CameraState,
   type Vec3,
 } from "./interior-camera.js";
+import {
+  glideTargetFromTap,
+  isHoldGesture,
+  isTapGesture,
+  ndcForPoint,
+  pinchDistance,
+  pinchForwardMetres,
+  HOLD_TO_WALK_MS,
+  type TouchPoint,
+} from "./interior-camera-touch.js";
 
 // ---------------------------------------------------------------------------
 // Standing in a captured room.
@@ -93,6 +103,15 @@ export interface InteriorCameraProps {
   readonly ownsCamera?: () => boolean;
   /** Planner placement/drawing tools retain their existing touch gestures. */
   readonly touchLookEnabled?: () => boolean;
+  /**
+   * How much of the touch vocabulary the walk offers.
+   *
+   * "full" is tap-to-glide, hold-to-walk and pinch-to-move-forward. "tap-only"
+   * is the kill-order fallback: a tap still takes the viewer where they point,
+   * and nothing else moves the body. Walk policy only — the planner keeps its
+   * own touch gestures whatever this says.
+   */
+  readonly touchLocomotion?: "full" | "tap-only";
   /** Editing tools can reserve keyboard navigation independently of looking. */
   readonly keyboardNavigationEnabled?: () => boolean;
   /** Disable when the host Canvas owns resolution throughout camera changes. */
@@ -132,6 +151,7 @@ export function InteriorCamera({
   touchLookEnabled,
   keyboardNavigationEnabled,
   managePixelRatio = true,
+  touchLocomotion = "full",
 }: InteriorCameraProps): ReactElement {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -180,6 +200,8 @@ export function InteriorCamera({
   const keys = useRef<Set<string>>(new Set());
   const dragging = useRef(false);
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  /** Held down and past the long-press: the room walks forward under the finger. */
+  const walkingByHold = useRef(false);
 
   // Re-seat on room change: a new room is a new place to be standing.
   useEffect(() => {
@@ -191,6 +213,12 @@ export function InteriorCamera({
   useEffect(() => {
     const canvas = gl.domElement;
     // Without this a touch drag scrolls the page instead of turning the view.
+    //
+    // Set ONCE, here, and never written again. The browser consults
+    // touch-action when the contact begins and holds that decision for the
+    // whole gesture, so changing it on pointerdown to "let this one scroll"
+    // does nothing to the gesture already under way and everything to the
+    // next one — a class of bug that reads as random.
     canvas.style.touchAction = "none";
 
     // Every handler wakes the demand loop. Without this the scene simply does
@@ -202,8 +230,75 @@ export function InteriorCamera({
     let touchLookMoved = false;
     const suppressedTouches = new Set<number>();
 
+    // --- Walking with a finger -------------------------------------------
+    // These live in the effect's closure rather than in refs because they
+    // belong to one run of these listeners: a policy change tears the
+    // listeners down, and a half-finished gesture must not survive it.
+    interface WalkContact {
+      readonly start: TouchPoint;
+      latest: TouchPoint;
+      readonly startedAtMs: number;
+      travelledPx: number;
+    }
+    const contacts = new Map<number, WalkContact>();
+    let pinchPreviousPx: number | null = null;
+    let holdTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const isWalkTouch = (event: PointerEvent): boolean =>
+      inputPolicy === "walk" && event.pointerType === "touch";
+    const canvasPoint = (event: PointerEvent): TouchPoint => {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    };
+    const endHold = (): void => {
+      if (holdTimer !== null) { clearTimeout(holdTimer); holdTimer = null; }
+      walkingByHold.current = false;
+    };
+    /** Stop looking. Used when a second finger arrives: a pair is never a look. */
+    const endLook = (): void => {
+      dragging.current = false;
+      lastPointer.current = null;
+    };
+
     const onPointerDown = (event: PointerEvent): void => {
       if (!interiorLookButton(inputPolicy, event.button, event.pointerType) || blocked(event.target)) return;
+      if (isWalkTouch(event)) {
+        const point = canvasPoint(event);
+        contacts.set(event.pointerId, {
+          start: point,
+          latest: point,
+          startedAtMs: event.timeStamp,
+          travelledPx: 0,
+        });
+        if (contacts.size >= 2) {
+          // THE RULE: a second finger is a pinch, never a second look. The
+          // look ends here rather than being fed by a pair of fingers moving
+          // together, which would swing the view as they travelled.
+          endLook();
+          endHold();
+          const [first, second] = [...contacts.values()];
+          pinchPreviousPx = first !== undefined && second !== undefined
+            ? pinchDistance(first.latest, second.latest)
+            : null;
+          canvas.setPointerCapture(event.pointerId);
+          wake();
+          return;
+        }
+        pinchPreviousPx = null;
+        // The long press is the throttle. Armed on the way down and disarmed
+        // by any real travel, so a drag that happens to be slow looks around
+        // rather than setting off across the room.
+        if (touchLocomotion === "full") {
+          holdTimer = setTimeout(() => {
+            holdTimer = null;
+            const contact = contacts.get(event.pointerId);
+            if (contact === undefined || contacts.size !== 1) return;
+            if (!isHoldGesture(HOLD_TO_WALK_MS, contact.travelledPx, DRAG_THRESHOLD_PX)) return;
+            walkingByHold.current = true;
+            wake();
+          }, HOLD_TO_WALK_MS);
+        }
+      }
       if (inputPolicy === "planner" && event.pointerType === "touch") {
         if (!event.isPrimary) {
           if (touchStart !== null) {
@@ -229,6 +324,38 @@ export function InteriorCamera({
 
     const onPointerMove = (event: PointerEvent): void => {
       if (suppressedTouches.has(event.pointerId)) { event.stopImmediatePropagation(); return; }
+      if (isWalkTouch(event)) {
+        const contact = contacts.get(event.pointerId);
+        if (contact !== undefined) {
+          contact.latest = canvasPoint(event);
+          contact.travelledPx = Math.hypot(
+            contact.latest.x - contact.start.x,
+            contact.latest.y - contact.start.y,
+          );
+          // Travel is a look, not a hold. Disarm before the timer can fire.
+          if (contact.travelledPx > DRAG_THRESHOLD_PX && !walkingByHold.current) endHold();
+        }
+        if (contacts.size >= 2) {
+          // A pinch moves the body along the heading and never touches the
+          // look, so pitch stays where the viewer left it and the floor does
+          // not tip while two fingers are down.
+          const [first, second] = [...contacts.values()];
+          if (first === undefined || second === undefined) return;
+          const separation = pinchDistance(first.latest, second.latest);
+          if (pinchPreviousPx !== null && touchLocomotion === "full") {
+            const step = pinchForwardMetres(pinchPreviousPx, separation, canvas.clientWidth);
+            if (step !== 0) {
+              target.current.position = containPosition(
+                moveOnFloorPlane(target.current.position, target.current.yaw, step, 0),
+                bounds,
+              );
+              wake();
+            }
+          }
+          pinchPreviousPx = separation;
+          return;
+        }
+      }
       if (!dragging.current) return;
       if (blocked(document.activeElement)) { dragging.current = false; return; }
       if (inputPolicy === "planner" && event.pointerType === "touch") {
@@ -262,6 +389,46 @@ export function InteriorCamera({
       if (suppressedTouches.delete(event.pointerId)) {
         event.stopImmediatePropagation();
         return;
+      }
+      if (isWalkTouch(event)) {
+        const contact = contacts.get(event.pointerId);
+        const wasOnlyContact = contacts.size === 1;
+        contacts.delete(event.pointerId);
+        pinchPreviousPx = null;
+        const wasWalking = walkingByHold.current;
+        endHold();
+        // A tap is short and still. A hold has already walked and a drag has
+        // already turned the view, so neither is also a request to go
+        // somewhere; and a finger lifting out of a pinch is not a tap at all.
+        // A cancel is not a lift. The same listener serves pointerup and
+        // pointercancel, and a cancel means the gesture was TAKEN AWAY — the
+        // system started a back-swipe, the browser began its own zoom, the
+        // finger left the digitiser. Short and still describes most of those,
+        // so without this line an interrupted contact would send the viewer
+        // gliding across the room on a gesture they never completed.
+        if (
+          contact !== undefined
+          && event.type !== "pointercancel"
+          && wasOnlyContact
+          && !wasWalking
+          && isTapGesture(event.timeStamp - contact.startedAtMs, contact.travelledPx, DRAG_THRESHOLD_PX)
+        ) {
+          const ndc = ndcForPoint(contact.latest, canvas.clientWidth, canvas.clientHeight);
+          const destination = ndc === null ? null : glideTargetFromTap(
+            current.current,
+            ndc,
+            "fov" in camera ? camera.fov : 48,
+            canvas.clientWidth / Math.max(1, canvas.clientHeight),
+            bounds,
+          );
+          // Null means the tap never reached the floor — the ceiling, a wall
+          // above the horizon, the sky. Nothing happens, which is the right
+          // answer: there is nowhere there to stand.
+          if (destination !== null) {
+            target.current.position = destination;
+            wake();
+          }
+        }
       }
       if (inputPolicy === "planner" && event.pointerType === "touch" && touchStart?.pointerId === event.pointerId) {
         if (touchLookMoved) event.stopImmediatePropagation();
@@ -306,7 +473,14 @@ export function InteriorCamera({
       keys.current.delete(event.key.toLowerCase());
       wake();
     };
-    const onBlur = (): void => { keys.current.clear(); dragging.current = false; wake(); };
+    const onBlur = (): void => {
+      keys.current.clear();
+      dragging.current = false;
+      contacts.clear();
+      pinchPreviousPx = null;
+      endHold();
+      wake();
+    };
     const onContextMenu = (event: MouseEvent): void => {
       if (inputPolicy === "planner" && !blocked(document.activeElement)) event.preventDefault();
     };
@@ -323,6 +497,8 @@ export function InteriorCamera({
     window.addEventListener("blur", onBlur);
 
     return () => {
+      endHold();
+      contacts.clear();
       canvas.removeEventListener("pointerdown", onPointerDown, capturePlannerPointers);
       canvas.removeEventListener("pointermove", onPointerMove, capturePlannerPointers);
       canvas.removeEventListener("pointerup", onPointerUp, capturePlannerPointers);
@@ -333,17 +509,24 @@ export function InteriorCamera({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [gl, invalidate, bounds, camera, maxPitchUp, start, inputPolicy, ownsCamera, touchLookEnabled, keyboardNavigationEnabled]);
+  }, [gl, invalidate, bounds, camera, maxPitchUp, start, inputPolicy, ownsCamera, touchLookEnabled, keyboardNavigationEnabled, touchLocomotion]);
 
   useFrame((_state, delta) => {
-    if (ownsCamera?.() === false) { keys.current.clear(); dragging.current = false; return; }
+    if (ownsCamera?.() === false) {
+      keys.current.clear();
+      dragging.current = false;
+      walkingByHold.current = false;
+      return;
+    }
     if (keyboardNavigationEnabled?.() === false) {
       keys.current.clear();
+      walkingByHold.current = false;
       target.current.position = [...current.current.position];
     }
     if (interiorInputBlocked(inputPolicy, document.activeElement)) {
       keys.current.clear();
       dragging.current = false;
+      walkingByHold.current = false;
       // Discard a held key's outstanding easing when an editor/modal takes focus.
       target.current = { ...current.current, position: [...current.current.position] };
     }
@@ -352,8 +535,13 @@ export function InteriorCamera({
     const dt = Math.min(delta, 1 / 20);
 
     const held = keys.current;
-    const forward = (held.has("w") || held.has("arrowup") ? 1 : 0)
-      - (held.has("s") || held.has("arrowdown") ? 1 : 0);
+    // A held finger walks at the same speed a held key does, and a key held at
+    // the same time cannot make the room go twice as fast: this is a throttle
+    // with one setting, not an accumulator.
+    const forward = Math.max(-1, Math.min(1,
+      (held.has("w") || held.has("arrowup") ? 1 : 0)
+      - (held.has("s") || held.has("arrowdown") ? 1 : 0)
+      + (walkingByHold.current ? 1 : 0)));
     const strafe = (held.has("d") || held.has("arrowright") ? 1 : 0)
       - (held.has("a") || held.has("arrowleft") ? 1 : 0);
 

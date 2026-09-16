@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import {
   SparkRendererMount,
   SparkSplatLayer,
@@ -25,9 +25,60 @@ export type { RoomSplatProgress } from "../../hooks/use-splat-delivery.js";
 // used by the planner. The internal captures console still owns its own scene.
 // ---------------------------------------------------------------------------
 
+/**
+ * Watches the drawing context and hands the loss back to the page.
+ *
+ * A WebGL context can be taken away at any moment — the phone got hot, the
+ * tab went to the background, another tab wanted the GPU, the driver reset.
+ * Left alone the canvas simply goes black and stays black, because the
+ * browser will only ever restore a context whose loss event was
+ * `preventDefault`ed; without that call the loss is final and no amount of
+ * waiting brings the room back.
+ *
+ * So: prevent the default, tell the page (which says something calm and
+ * offers a reload if nothing comes back), and on restore wake the demand
+ * loop, which is otherwise asleep and would draw nothing at all.
+ */
+function ContextLossGuard({ onLost }: { readonly onLost: (lost: boolean) => void }): ReactElement {
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  const onLostRef = useRef(onLost);
+  useEffect(() => { onLostRef.current = onLost; }, [onLost]);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleLost = (event: Event): void => {
+      // Without this the context is gone for good. Everything else here is
+      // presentation; this one line is the whole recovery.
+      event.preventDefault();
+      onLostRef.current(true);
+    };
+    const handleRestored = (): void => {
+      onLostRef.current(false);
+      invalidate();
+    };
+    canvas.addEventListener("webglcontextlost", handleLost);
+    canvas.addEventListener("webglcontextrestored", handleRestored);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleLost);
+      canvas.removeEventListener("webglcontextrestored", handleRestored);
+    };
+  }, [gl, invalidate]);
+
+  return <></>;
+}
+
 export interface RoomSplatSceneProps {
   readonly room: TradesHallRuntimeRoomSlug;
   readonly onProgress?: (progress: RoomSplatProgress) => void;
+  /**
+   * The drawing context was taken away (true) or came back (false).
+   *
+   * The page owns what a visitor is told; the scene only owns the fact.
+   */
+  readonly onRendererLost?: (lost: boolean) => void;
+  /** Kill-order fallback for touch: "tap-only" keeps tap-to-glide alone. */
+  readonly touchLocomotion?: "full" | "tap-only";
   /**
    * Keep the drawing buffer after present so the canvas can be read back with
    * toDataURL. Off by default: it costs memory and blocks some driver fast
@@ -50,6 +101,8 @@ export interface RoomSplatSceneProps {
 export function RoomSplatScene({
   room,
   onProgress,
+  onRendererLost,
+  touchLocomotion = "full",
   captureReadback = false,
 }: RoomSplatSceneProps): ReactElement {
   const transform = runtimeAssetViewTransformForRoom(room, "staged");
@@ -112,10 +165,23 @@ export function RoomSplatScene({
   // served as its prebuilt, paged tree when the profile wants the tree and the
   // bundle has one, otherwise as the tile itself (which Spark then trees in a
   // worker if the profile asks).
+  //
+  // The SHARP rung is the best level this device agreed to hold, not always
+  // the finest one. INTERIM (T-617): a phone is served the vendor's coarser
+  // level — for the Grand Hall, level 4 at 2,945,194 splats in 54,148,124
+  // bytes rather than level 5 at 6,019,684 in 106,479,738 — because every
+  // XGRIDS level is the WHOLE room at one density, so the coarser one is a
+  // complete room and not a partial one. A desktop's budget exceeds the
+  // finest level and it is served exactly what it was before.
   const preferTrees = profile.lod && profile.preferTrees;
   const ladder = useMemo(
-    () => roomSplatLadder(room, import.meta.env.VITE_SPLAT_BASE_URL, preferTrees),
-    [room, preferTrees],
+    () => roomSplatLadder(
+      room,
+      import.meta.env.VITE_SPLAT_BASE_URL,
+      preferTrees,
+      profile.lodSplatCount,
+    ),
+    [room, preferTrees, profile.lodSplatCount],
   );
 
   // The motion budget. The camera says when the view is moving; the renderer
@@ -152,6 +218,7 @@ export function RoomSplatScene({
       data-testid="room-splat-scene"
     >
       <ambientLight intensity={1} />
+      {onRendererLost !== undefined && <ContextLossGuard onLost={onRendererLost} />}
       {extentM !== null && (
         <RoomClipBox extentM={extentM} keepHeightFraction={1} />
       )}
@@ -183,6 +250,7 @@ export function RoomSplatScene({
           motionDpr={profile.motionDpr}
           settledDpr={settledDpr}
           onMotionChange={handleMotionChange}
+          touchLocomotion={touchLocomotion}
         />
       )}
     </Canvas>

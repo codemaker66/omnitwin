@@ -5,18 +5,28 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 // The walk page mounts a real R3F canvas through RoomSplatScene. That scene is
 // stubbed so the assertions are about what the PAGE says — the header count,
 // the honesty copy — not about WebGL, which happy-dom cannot provide.
-const scene = vi.hoisted(() => ({ push: null as null | ((p: Record<string, unknown>) => void) }));
+const scene = vi.hoisted(() => ({
+  push: null as null | ((p: Record<string, unknown>) => void),
+  /** The scene reports a lost drawing context through this. */
+  lost: null as null | ((lost: boolean) => void),
+  /** How much of the touch vocabulary the page asked for. */
+  touchLocomotion: null as null | string,
+}));
 vi.mock("../components/rooms/RoomSplatScene.js", () => ({
-  RoomSplatScene: ({ room, onProgress }: {
+  RoomSplatScene: ({ room, onProgress, onRendererLost, touchLocomotion }: {
     readonly room: string;
     readonly onProgress?: (p: Record<string, unknown>) => void;
+    readonly onRendererLost?: (lost: boolean) => void;
+    readonly touchLocomotion?: string;
   }) => {
     scene.push = onProgress ?? null;
+    scene.lost = onRendererLost ?? null;
+    scene.touchLocomotion = touchLocomotion ?? null;
     return <div data-testid="room-splat-scene">{room}</div>;
   },
 }));
 
-const { RoomWalkPage } = await import("../pages/RoomWalkPage.js");
+const { RoomWalkPage, walkStatusLine } = await import("../pages/RoomWalkPage.js");
 
 function mount(path: string): void {
   render(
@@ -45,12 +55,21 @@ describe("RoomWalkPage", () => {
     },
   );
 
-  it("provides named dashboard, Hallkeeper and login exits from the tour", () => {
+  // Changed 2026-09-16 (T-617). This used to REQUIRE the dashboard, the
+  // hallkeeper's day and the log-in on the public walk. They are three
+  // invitations to a locked room for the visitor this page is for, and the
+  // test now pins their absence rather than their presence.
+  it("offers a visitor's door and no staff entrances", () => {
     mount("/room/grand-hall");
-    expect(screen.getByRole("navigation", { name: "Planning and workspaces" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Dashboard" }).getAttribute("href")).toBe("/dashboard");
-    expect(screen.getByRole("link", { name: "Hallkeeper" }).getAttribute("href")).toBe("/hallkeeper/today");
-    expect(screen.getByRole("link", { name: "Log in" }).getAttribute("href")).toBe("/login");
+    expect(screen.getByRole("navigation", { name: "Planning this room" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Plan this room" })).toBeTruthy();
+    for (const name of ["Dashboard", "Hallkeeper", "Log in"]) {
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+    const banner = screen.getByRole("banner");
+    for (const href of ["/dashboard", "/hallkeeper/today", "/login"]) {
+      expect(banner.querySelector(`a[href="${href}"]`)).toBeNull();
+    }
   });
 
   it("keeps capture-only renders free of navigation", () => {
@@ -130,6 +149,184 @@ describe("RoomWalkPage delivery copy", () => {
     mount("/room/grand-hall");
     report({ firstView: true, settled: 2 });
 
-    expect(window.__roomWalk).toEqual({ settled: 2, total: 11, complete: false, firstView: true });
+    // The ledger carries the words as well as the numbers: a measurement that
+    // cannot say what the visitor was being told is half a measurement.
+    expect(window.__roomWalk).toEqual({
+      settled: 2,
+      total: 11,
+      complete: false,
+      firstView: true,
+      splats: 0,
+      failed: 0,
+      status: "Sharpening the room — 18%",
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Nought per cent
+  //
+  // The pill used to flip to "Sharpening the room - 0%" the moment the coarse
+  // room landed and sit there for the whole finest level: 106,479,738 bytes
+  // over eleven tiles in the Grand Hall, which is minutes on a phone. Zero is
+  // the one number that reads as broken, and it was shown at the exact moment
+  // the room had in fact just arrived.
+  // -------------------------------------------------------------------------
+
+  it("never shows nought per cent once the room is on screen", () => {
+    mount("/room/grand-hall");
+    report({ firstView: true, settled: 0 });
+
+    const pill = screen.getByTestId("walk-loading").textContent ?? "";
+    expect(pill).not.toMatch(/0\s*%/u);
+    expect(pill).toMatch(/The room is here\. Sharpening it\./u);
+    // No number means no progress bar to sit at zero either.
+    expect(screen.queryByRole("progressbar")).toBeNull();
+  });
+
+  it("floors the first countable tile at one per cent", () => {
+    mount("/room/grand-hall");
+    // One tile of a large set rounds to zero; zero is the thing that must
+    // never be shown once something has happened.
+    report({ firstView: true, settled: 1, total: 500 });
+
+    expect(screen.getByTestId("walk-loading").textContent ?? "").toContain("1%");
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("1");
+  });
+
+  it("says streaming, not nought per cent, before the first view", () => {
+    mount("/room/grand-hall");
+    report({ firstView: false, settled: 0 });
+
+    const pill = screen.getByTestId("walk-loading").textContent ?? "";
+    expect(pill).toMatch(/streaming/iu);
+    expect(pill).not.toMatch(/%/u);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// walkStatusLine, on its own
+// ---------------------------------------------------------------------------
+
+describe("walkStatusLine", () => {
+  const base = { settled: 0, total: 11, splats: 0, failed: 0, complete: false, firstView: false };
+
+  it("offers no percentage before there is one to stand behind", () => {
+    expect(walkStatusLine(base).percent).toBeUndefined();
+    expect(walkStatusLine({ ...base, firstView: true }).percent).toBeUndefined();
+    expect(walkStatusLine({ ...base, firstView: true, total: 0 }).percent).toBeUndefined();
+  });
+
+  it("never returns nought", () => {
+    for (let total = 1; total <= 400; total += 1) {
+      for (const settled of [0, 1]) {
+        const line = walkStatusLine({ ...base, firstView: true, settled, total });
+        expect(line.percent === undefined || line.percent >= 1).toBe(true);
+        expect(line.label).not.toMatch(/\b0\s*%/u);
+      }
+    }
+  });
+
+  it("reaches a hundred when every tile is in", () => {
+    expect(walkStatusLine({ ...base, firstView: true, settled: 11, total: 11 }).percent).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The view being taken away, and the way out of the page
+// ---------------------------------------------------------------------------
+
+describe("RoomWalkPage renderer loss", () => {
+  it("says something calm first, and only offers a reload after a fair wait", () => {
+    vi.useFakeTimers();
+    try {
+      mount("/room/grand-hall");
+      act(() => { scene.lost?.(true); });
+
+      const pill = screen.getByTestId("walk-context-lost").textContent ?? "";
+      expect(pill).toMatch(/The view paused/u);
+      expect(screen.queryByTestId("walk-reload")).toBeNull();
+
+      act(() => { vi.advanceTimersByTime(6_000); });
+      expect(screen.getByTestId("walk-context-lost").textContent ?? "")
+        .toMatch(/The view has not come back/u);
+      expect(screen.getByTestId("walk-reload")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the message away when the context comes back", () => {
+    vi.useFakeTimers();
+    try {
+      mount("/room/grand-hall");
+      act(() => { scene.lost?.(true); });
+      act(() => { vi.advanceTimersByTime(6_000); });
+      expect(screen.getByTestId("walk-reload")).toBeTruthy();
+
+      act(() => { scene.lost?.(false); });
+      expect(screen.queryByTestId("walk-context-lost")).toBeNull();
+      expect(screen.queryByTestId("walk-reload")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not talk about streaming while the view is gone", () => {
+    mount("/room/grand-hall");
+    act(() => {
+      scene.push?.({
+        settled: 3, total: 11, splats: 0, failed: 0, complete: false, firstView: true,
+      });
+    });
+    expect(screen.getByTestId("walk-loading")).toBeTruthy();
+
+    act(() => { scene.lost?.(true); });
+    expect(screen.queryByTestId("walk-loading")).toBeNull();
+    expect(screen.getByTestId("walk-context-lost")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The full-screen control and the touch kill order
+// ---------------------------------------------------------------------------
+
+describe("RoomWalkPage chrome", () => {
+  function allowFullscreen(allowed: boolean): void {
+    Object.defineProperty(document, "fullscreenEnabled", { value: allowed, configurable: true });
+    Object.defineProperty(document.documentElement, "requestFullscreen", {
+      value: allowed ? () => Promise.resolve() : undefined,
+      configurable: true,
+    });
+  }
+
+  it("offers full screen only where the browser can actually do it", () => {
+    // An iPhone's Safari has no Element.requestFullscreen at all. Showing a
+    // control that then fails silently is worse than its absence.
+    allowFullscreen(false);
+    mount("/room/grand-hall");
+    expect(screen.queryByTestId("walk-fullscreen")).toBeNull();
+    cleanup();
+
+    allowFullscreen(true);
+    mount("/room/grand-hall");
+    const control = screen.getByTestId("walk-fullscreen");
+    expect(control.getAttribute("aria-pressed")).toBe("false");
+    expect(control.textContent).toBe("Full screen");
+  });
+
+  it("keeps the whole vocabulary by default and withdraws it on the kill order", () => {
+    mount("/room/grand-hall");
+    expect(scene.touchLocomotion).toBe("full");
+    cleanup();
+
+    mount("/room/grand-hall?touch=tap");
+    expect(scene.touchLocomotion).toBe("tap-only");
+  });
+
+  it("keeps a capture-only render free of every control", () => {
+    allowFullscreen(true);
+    mount("/room/grand-hall?bare=1");
+    expect(screen.queryByTestId("walk-fullscreen")).toBeNull();
+    expect(screen.queryByTestId("walk-loading")).toBeNull();
   });
 });

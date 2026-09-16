@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The camera's smoothing and containment are covered by interior-camera.test.ts
@@ -416,6 +416,289 @@ describe("editable planner interior", () => {
       window.removeEventListener("keydown", drawingShortcut);
       useMarkupStore.getState().setActive(false);
       useSelectionStore.getState().clearSelection();
+    }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Walking a captured room with a finger
+//
+// A mouse has a wheel to go forward with and a button to look with; a finger
+// has neither, so three verbs come out of one contact. The arithmetic is
+// pinned in interior-camera-touch.test.ts. What is pinned HERE is the part
+// only the live listeners can answer: which gesture a sequence of pointer
+// events turns out to be, and what the camera does about it.
+//
+// The canvas in this harness is 1600x900 with a fov of 48 degrees, so from an
+// eye of 1.6 m a tap at y = 850 resolves about 4.0 m ahead - inside the 5 m
+// room, which is what makes the destination assertable rather than clamped.
+// ---------------------------------------------------------------------------
+
+describe("InteriorCamera touch locomotion", () => {
+  beforeEach(() => { fiber.frames.length = 0; });
+  afterEach(() => { cleanup(); });
+
+  function touch(
+    type: string,
+    pointerId: number,
+    x: number,
+    y: number,
+    timeStamp = 0,
+  ): void {
+    const event = new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true });
+    Object.defineProperty(event, "pointerId", { value: pointerId });
+    Object.defineProperty(event, "pointerType", { value: "touch" });
+    Object.defineProperty(event, "isPrimary", { value: pointerId === 1 });
+    Object.defineProperty(event, "timeStamp", { value: timeStamp, configurable: true });
+    fiber.canvas.dispatchEvent(event);
+  }
+
+  function place(): [number, number, number] {
+    return window.__roomCamera?.position ?? [0, 0, 0];
+  }
+
+  it("takes the viewer to the floor they tapped", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+
+    touch("pointerdown", 1, 1200, 850, 0);
+    touch("pointerup", 1, 1200, 850, 90);
+    frame();
+
+    // Right of centre and ahead: -z is forward at yaw 0.
+    const [x, y, z] = place();
+    expect(x).toBeCloseTo(1.6, 1);
+    expect(y).toBe(1.6);
+    expect(z).toBeCloseTo(-4.04, 1);
+  });
+
+  it("holds a tap that resolves past the wall inside the room", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+
+    // Near the horizon: tens of metres out in a five-metre room.
+    touch("pointerdown", 1, 800, 620, 0);
+    touch("pointerup", 1, 800, 620, 90);
+    frame();
+
+    expect(place()[2]).toBeCloseTo(-4.5, 5);
+    expect(window.__roomCamera?.contained).toBe(true);
+  });
+
+  it("does nothing at all when the tap never reached the floor", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+
+    // The ceiling, a wall above the horizon, the sky: there is nowhere there
+    // to stand, and flinging the viewer backwards would be the alternative.
+    touch("pointerdown", 1, 800, 200, 0);
+    touch("pointerup", 1, 800, 200, 90);
+    frame();
+
+    expect(place()).toEqual(SPAWN.position);
+  });
+
+  it("treats a cancel as the gesture being taken away, not as a tap", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+
+    // The system started a back-swipe, or the finger left the digitiser. Short
+    // and still describes that too, so the type is what separates them.
+    touch("pointerdown", 1, 1200, 850, 0);
+    touch("pointercancel", 1, 1200, 850, 90);
+    frame();
+
+    expect(place()).toEqual(SPAWN.position);
+  });
+
+  it("turns the view on a drag and does not also go there", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+    const yawBefore = window.__roomCamera?.yaw ?? 0;
+
+    touch("pointerdown", 1, 800, 850, 0);
+    touch("pointermove", 1, 900, 850, 40);
+    touch("pointerup", 1, 900, 850, 90);
+    frame();
+
+    expect(window.__roomCamera?.yaw).not.toBe(yawBefore);
+    expect(place()).toEqual(SPAWN.position);
+  });
+
+  it("walks forward under a held finger, and does not then glide on the lift", () => {
+    vi.useFakeTimers();
+    try {
+      render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+      frame();
+
+      touch("pointerdown", 1, 800, 850, 0);
+      // Nothing yet: the long press is the throttle.
+      frame(10);
+      expect(place()).toEqual(SPAWN.position);
+
+      act(() => { vi.advanceTimersByTime(350); });
+      frame(60);
+      const walked = place()[2];
+      expect(walked).toBeLessThan(-0.5);
+
+      // A hold has already walked, so its lift is not also a request to go
+      // somewhere: the room must not jump to the tapped floor as well.
+      touch("pointerup", 1, 800, 850, 2_000);
+      frame(10);
+      expect(place()[2]).toBeCloseTo(walked, 5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("disarms the hold as soon as the finger travels", () => {
+    vi.useFakeTimers();
+    try {
+      render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+      frame();
+
+      touch("pointerdown", 1, 800, 850, 0);
+      touch("pointermove", 1, 900, 850, 40);
+      act(() => { vi.advanceTimersByTime(350); });
+      frame(60);
+
+      // A slow drag looks around; it does not set off across the room.
+      expect(place()).toEqual(SPAWN.position);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("makes a second finger a pinch and never a second look", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+    const yawBefore = window.__roomCamera?.yaw ?? 0;
+    const pitchBefore = window.__roomCamera?.pitch ?? 0;
+
+    touch("pointerdown", 1, 700, 450, 0);
+    touch("pointerdown", 2, 900, 450, 10);
+    // Spreading by 200 px on a 1600 px canvas is 0.75 m along the heading.
+    touch("pointermove", 2, 1100, 450, 40);
+    frame();
+
+    expect(place()[2]).toBeCloseTo(-0.75, 5);
+    // The floor must not tip while two fingers are down.
+    expect(window.__roomCamera?.yaw).toBe(yawBefore);
+    expect(window.__roomCamera?.pitch).toBe(pitchBefore);
+  });
+
+  it("moves back when the fingers close", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+
+    touch("pointerdown", 1, 700, 450, 0);
+    touch("pointerdown", 2, 1100, 450, 10);
+    touch("pointermove", 2, 900, 450, 40);
+    frame();
+
+    expect(place()[2]).toBeCloseTo(0.75, 5);
+  });
+
+  it("does not call the finger lifting out of a pinch a tap", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    frame();
+
+    touch("pointerdown", 1, 700, 850, 0);
+    touch("pointerdown", 2, 900, 850, 10);
+    touch("pointerup", 2, 900, 850, 60);
+    frame();
+
+    // Nothing moved: no pinch travel, and no glide to 900,850 either.
+    expect(place()).toEqual(SPAWN.position);
+  });
+
+  it("sets touch-action once and never rewrites it mid-gesture", () => {
+    // The browser consults touch-action when the contact BEGINS and holds that
+    // decision for the whole gesture, so a value changed on pointerdown does
+    // nothing to the gesture under way and everything to the next one.
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+    expect(fiber.canvas.style.touchAction).toBe("none");
+
+    touch("pointerdown", 1, 800, 850, 0);
+    expect(fiber.canvas.style.touchAction).toBe("none");
+    touch("pointermove", 1, 820, 850, 20);
+    expect(fiber.canvas.style.touchAction).toBe("none");
+    touch("pointerup", 1, 820, 850, 60);
+    expect(fiber.canvas.style.touchAction).toBe("none");
+  });
+
+  it("keeps the tap and withdraws the rest under the kill order", () => {
+    vi.useFakeTimers();
+    try {
+      const { unmount } = render(
+        <InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion touchLocomotion="tap-only" />,
+      );
+      frame();
+
+      // The hold does nothing.
+      touch("pointerdown", 1, 800, 850, 0);
+      act(() => { vi.advanceTimersByTime(350); });
+      frame(60);
+      expect(place()).toEqual(SPAWN.position);
+      touch("pointerup", 1, 800, 850, 2_000);
+      frame(10);
+      expect(place()).toEqual(SPAWN.position);
+
+      // The pinch does nothing.
+      touch("pointerdown", 1, 700, 450, 3_000);
+      touch("pointerdown", 2, 900, 450, 3_010);
+      touch("pointermove", 2, 1100, 450, 3_040);
+      frame();
+      expect(place()).toEqual(SPAWN.position);
+      touch("pointerup", 1, 700, 450, 3_100);
+      touch("pointerup", 2, 1100, 450, 3_110);
+
+      // The tap still takes the viewer where they pointed.
+      touch("pointerdown", 1, 1200, 850, 4_000);
+      touch("pointerup", 1, 1200, 850, 4_090);
+      frame();
+      expect(place()[2]).toBeCloseTo(-4.04, 1);
+
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the planner's own touch gestures alone", () => {
+    // The walk vocabulary is walk policy only. A tap in the planner selects
+    // furniture; it must never move the body.
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion inputPolicy="planner" />);
+    frame();
+
+    touch("pointerdown", 1, 1200, 850, 0);
+    touch("pointerup", 1, 1200, 850, 90);
+    frame();
+
+    expect(place()).toEqual(SPAWN.position);
+  });
+
+  it("drops a half-finished gesture when the window loses focus", () => {
+    vi.useFakeTimers();
+    try {
+      render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} reducedMotion />);
+      frame();
+
+      touch("pointerdown", 1, 800, 850, 0);
+      act(() => { vi.advanceTimersByTime(350); });
+      frame(30);
+      expect(place()[2]).toBeLessThan(0);
+      const walked = place()[2];
+
+      window.dispatchEvent(new Event("blur"));
+      frame(60);
+
+      // The walk stops with the focus; it does not carry on under a finger the
+      // page can no longer see.
+      expect(place()[2]).toBeCloseTo(walked, 5);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });
