@@ -257,9 +257,20 @@ export function RoomsHomePage(): ReactElement {
             width={1120}
             height={747}
             decoding="async"
-            // The largest-contentful paint of the whole site: say so, rather
-            // than letting the browser discover the hero behind the CSS.
-            fetchPriority="high"
+            /* The largest-contentful paint of the whole site: say so, rather
+               than letting the browser discover the hero behind the CSS.
+
+               Lowercase, via spread, deliberately — the same form FreshPage.tsx
+               uses, and for the same reason. @types/react 18.3.18 types
+               `fetchPriority`, but react-dom 18.3.1 has never heard of it, so
+               TypeScript accepts the camelCase prop and React then warns and
+               DROPS it: the hint never reaches the HTML, and the warning is a
+               console error the accessibility and acquisition audits count.
+               This shipped as `fetchPriority` and cost 17 console errors on the
+               front door, invisible in a production preview because React
+               strips its warnings there — CI's dev-server run is what caught
+               it. Revisit when this package moves to React 19. */
+            {...({ fetchpriority: "high" } as { readonly fetchpriority: string })}
           />
           <div className="rooms__heroText">
             <p className="rooms__heroKicker">{HOME_HERO_KICKER}</p>
