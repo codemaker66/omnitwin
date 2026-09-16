@@ -75,8 +75,33 @@ describe("venue inventory read access", () => {
     expect(queued).toEqual([]);
   });
 
+  // The one behaviour this lane deliberately changed, and the one the previous
+  // suite stopped asserting when it moved to the write surface. A Venviewer
+  // platform administrator assigned to this venue passes every venue gate
+  // (utils/query's isPlatformAdmin precedent), so they read the counts — even
+  // holding a customer role, because platform authority is the separate axis.
+  // Pinned here rather than argued in a report: if Lane 8's review reverses
+  // that precedent, this is the test that flips.
+  it("lets a venue-scoped platform administrator read, whatever their user role", async () => {
+    queued = [[{ id: venueId }], []];
+    const response = await server.inject({
+      method: "GET", url: base, headers: headers("client", venueId, "admin"),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ data: { items: unknown[] } }>().data.items).toEqual([]);
+  });
+
+  it("refuses platform authority that is not scoped to this venue", async () => {
+    const response = await server.inject({
+      method: "GET", url: base, headers: headers("admin", null, "admin"),
+    });
+    // Past the role gate, stopped by the tenancy assertion in the service.
+    expect(response.statusCode).toBe(403);
+    expect(queued).toEqual([]);
+  });
+
   it("still refuses every reader but the venue administrator an adjustment", async () => {
-    for (const role of ["staff", "hallkeeper", "planner"]) {
+    for (const role of ["staff", "hallkeeper", "planner", "client"]) {
       const response = await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`,
         headers: headers(role),
         payload: { commandId: "00000000-0000-4000-8000-000000000004", expectedRevision: null,

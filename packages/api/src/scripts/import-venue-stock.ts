@@ -251,11 +251,20 @@ export interface ApplyOutcome {
  * partway through leaves the earlier receipts standing, which is the honest
  * outcome for a physical count, and a re-run replays them rather than adding
  * the same stock twice.
+ *
+ * `onOutcome` fires as each receipt lands, not at the end. The realistic
+ * failure here is an INVENTORY_REVISION_CONFLICT on an item somebody already
+ * counted by hand, and it arrives partway down the list. Returning the array
+ * only on success meant a throw on item n printed "Stock import failed" and
+ * nothing about the n-1 receipts already written — at Friday 16:30, against
+ * production, that is the worst possible moment to have to reconstruct what
+ * happened from the database.
  */
 export async function applyStockImport(
   db: Parameters<typeof writeVenueInventory>[0],
   actor: InventoryActor,
   plan: StockImportPlan,
+  onOutcome: (outcome: ApplyOutcome) => void = () => undefined,
 ): Promise<ApplyOutcome[]> {
   const outcomes: ApplyOutcome[] = [];
   for (const adjustment of plan.adjustments) {
@@ -272,12 +281,14 @@ export async function applyStockImport(
       status: adjustment.status,
       reason: adjustment.reason,
     });
-    outcomes.push({
+    const outcome: ApplyOutcome = {
       assetDefinitionId: adjustment.assetDefinitionId,
       catalogueSlug: adjustment.catalogueSlug,
       revision: response.data.stock.revision,
       replayed: response.data.replayed,
-    });
+    };
+    outcomes.push(outcome);
+    onOutcome(outcome);
   }
   return outcomes;
 }
@@ -358,13 +369,25 @@ async function main(): Promise<void> {
     return;
   }
   const connection = createDbConnection(options.databaseUrl);
+  let recorded = 0;
   try {
     const actor: InventoryActor = { userId: options.actorUserId, role: "admin", venueId: options.venueId };
-    const outcomes = await applyStockImport(connection.db, actor, plan);
-    for (const outcome of outcomes) {
-      process.stdout.write(`  recorded ${outcome.catalogueSlug} at revision ${String(outcome.revision)}${outcome.replayed ? " (replay)" : ""}\n`);
-    }
+    // Print each receipt the moment it lands. If item n throws, the operator
+    // still has the list of the n-1 already written, on screen, in order.
+    const outcomes = await applyStockImport(connection.db, actor, plan, (outcome) => {
+      recorded += 1;
+      process.stdout.write(
+        `  [${String(recorded)}/${String(plan.adjustments.length)}] recorded ${outcome.catalogueSlug}`
+        + ` at revision ${String(outcome.revision)}${outcome.replayed ? " (replay)" : ""}\n`);
+    });
     process.stdout.write(`\nRecorded ${String(outcomes.length)} item(s) against backup ${options.backupBranch ?? "unknown"}.\n`);
+  } catch (error) {
+    // Say what stands before the failure propagates, so the operator does not
+    // have to reconstruct it from the database mid-window.
+    process.stdout.write(
+      `\nSTOPPED after ${String(recorded)} of ${String(plan.adjustments.length)} item(s).`
+      + ` Those receipts are written and a re-run replays them rather than counting twice.\n`);
+    throw error;
   } finally {
     await connection.close();
   }

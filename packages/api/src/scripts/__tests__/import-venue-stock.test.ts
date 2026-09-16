@@ -1,13 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getCanonicalAssetBySlug } from "@omnitwin/types";
-import {
+
+const writeVenueInventory = vi.hoisted(() => vi.fn());
+vi.mock("../../services/venue-inventory.js", () => ({ writeVenueInventory }));
+
+const {
   EquipmentIntakeSchema,
   SOURCE_TO_CATALOGUE_SLUG,
+  applyStockImport,
   deterministicUuid,
   parseCliOptions,
   planStockImport,
-  type EquipmentIntake,
-} from "../import-venue-stock.js";
+} = await import("../import-venue-stock.js");
+type EquipmentIntake = Awaited<ReturnType<typeof import("../import-venue-stock.js").readIntake>>;
 
 const VENUE = "11111111-1111-4111-8111-111111111111";
 const ACTOR = "22222222-2222-4222-8222-222222222222";
@@ -138,5 +143,60 @@ describe("deterministicUuid", () => {
   it("reproduces the catalogue's own UUID v5 derivation", () => {
     expect(deterministicUuid("round-table-6ft")).toBe("a1ef4d89-7786-5878-bee1-87b3fac28200");
     expect(deterministicUuid("banquet-chair")).toBe("4dfcae64-b6e3-54f8-817f-af041edab935");
+  });
+});
+
+describe("applyStockImport reporting", () => {
+  const chair = getCanonicalAssetBySlug("chiavari-chair");
+  const table = getCanonicalAssetBySlug("round-table-6ft");
+
+  function twoItemPlan() {
+    return planStockImport(
+      intake([
+        chiavari,
+        { source_record_id: "round-6ft", name: "6 ft round table", category: "table",
+          reported_quantity: 19, quantity_status: "reported" },
+      ]),
+      { venueId: VENUE, actorUserId: ACTOR, reason: REASON },
+    );
+  }
+
+  function receipt(revision: number, replayed = false) {
+    return { data: { stock: { revision }, replayed } };
+  }
+
+  it("reports each receipt as it lands, not once at the end", async () => {
+    writeVenueInventory.mockReset();
+    writeVenueInventory.mockResolvedValueOnce(receipt(1)).mockResolvedValueOnce(receipt(1));
+    const seen: string[] = [];
+    const outcomes = await applyStockImport({} as never,
+      { userId: ACTOR, role: "admin", venueId: VENUE }, twoItemPlan(),
+      (outcome) => { seen.push(outcome.catalogueSlug); });
+    expect(outcomes).toHaveLength(2);
+    expect(seen).toEqual([chair?.slug, table?.slug]);
+  });
+
+  // The realistic Friday failure: item two already has a hand-recorded count,
+  // so it conflicts. The first receipt is written and must not be lost.
+  it("has already reported the earlier receipts when a later item throws", async () => {
+    writeVenueInventory.mockReset();
+    writeVenueInventory
+      .mockResolvedValueOnce(receipt(1))
+      .mockRejectedValueOnce(new Error("INVENTORY_REVISION_CONFLICT"));
+    const seen: string[] = [];
+    await expect(applyStockImport({} as never,
+      { userId: ACTOR, role: "admin", venueId: VENUE }, twoItemPlan(),
+      (outcome) => { seen.push(outcome.catalogueSlug); })).rejects.toThrow(/REVISION_CONFLICT/u);
+    expect(seen).toEqual([chair?.slug]);
+  });
+
+  it("marks a replayed receipt as a replay rather than a fresh count", async () => {
+    writeVenueInventory.mockReset();
+    writeVenueInventory.mockResolvedValueOnce(receipt(3, true)).mockResolvedValueOnce(receipt(1));
+    const replays: boolean[] = [];
+    await applyStockImport({} as never,
+      { userId: ACTOR, role: "admin", venueId: VENUE }, twoItemPlan(),
+      (outcome) => { replays.push(outcome.replayed); });
+    expect(replays).toEqual([true, false]);
   });
 });
