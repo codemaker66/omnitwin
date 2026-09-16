@@ -116,8 +116,8 @@
 
 .ops-handoff-primary {
   background: var(--ops-gold);
-  border: 1px solid rgba(152, 98, 70, 0.85);
-  color: #f4f0e8;
+  border: 1px solid var(--hk-copper);
+  color: #fffdf8;
 }
 
 .ops-handoff-primary:hover {
@@ -464,4 +464,25 @@
     break-inside: avoid;
     color: black;
   }
+}
+
+/* Provenance note: real, kept, and closed by default. A 64-character digest
+   belongs behind a disclosure, not in the middle of a printed BEO. */
+.ops-handoff-provenance { margin-top: 10px; }
+.ops-handoff-provenance summary {
+  color: var(--ops-soft);
+  cursor: pointer;
+  font-size: 12px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.ops-handoff-provenance pre {
+  margin: 6px 0 0;
+  overflow-x: auto;
+  color: var(--ops-soft);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }

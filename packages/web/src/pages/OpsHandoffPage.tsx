@@ -4,6 +4,7 @@ import { AlertCircle, ClipboardCheck, FileText, Printer, RefreshCw, Truck } from
 import type { OpsHandoffPackBundle, OpsTask, TaskGroup } from "@omnitwin/types";
 import { getOpsHandoffPack } from "../api/ops-handoff.js";
 import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
+import { splitBeoProvenance } from "../lib/beo-provenance.js";
 import "../styles/hallkeeper-register.css";
 import "./OpsHandoffPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
@@ -134,6 +135,9 @@ export function OpsHandoffPage(): ReactElement {
   }
 
   const { bundle } = state;
+  // Compute once: the split is pure, but three calls in one render is three
+  // passes over the same text for no reason.
+  const beo = splitBeoProvenance(bundle.beoDocument.body);
 
   return (
     <DashboardLayout mainLabel="Operations handoff pack">
@@ -312,7 +316,18 @@ export function OpsHandoffPage(): ReactElement {
             }}
           />
         </div>
-        <pre className="ops-handoff-beo">{bundle.beoDocument.body}</pre>
+        {/* The compiler writes provenance lines — snapshot hashes, a compiler
+            digest — into the BEO body. They are real and worth keeping, but a
+            64-character hash on the page a hallkeeper prints is developer
+            vocabulary. Split them out: the wording stays in the block, the
+            digests fold into a provenance note that is closed by default. */}
+        <pre className="ops-handoff-beo">{beo.body}</pre>
+        {beo.provenance.length > 0 && (
+          <details className="ops-handoff-provenance">
+            <summary>Provenance (hashes and digests)</summary>
+            <ul>{beo.provenance.map((line) => <li key={line}>{line}</li>)}</ul>
+          </details>
+        )}
       </section>
 
       <section className="ops-handoff-section ops-handoff-sequences">
