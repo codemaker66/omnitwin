@@ -30,7 +30,7 @@ export function AIDraftPanel({
   context,
   requestedTone,
   actionLabel = "Generate draft",
-}: AIDraftPanelProps): ReactElement {
+}: AIDraftPanelProps): ReactElement | null {
   const [status, setStatus] = useState<StatusState>({ kind: "loading" });
   const [draftState, setDraftState] = useState<DraftState>({ kind: "idle" });
 
@@ -68,7 +68,14 @@ export function AIDraftPanel({
       });
   }, [context, requestedTone, status, useCase]);
 
-  const disabled = status.kind !== "ready" || !status.configured || draftState.kind === "loading";
+  // No provider, no panel. An always-disabled "Generate draft" button was a
+  // dead end on every surface that mounts this, so the panel only exists once
+  // /ai/status says a provider is configured. While the status is unknown —
+  // still loading, or the check itself failed — nothing renders rather than a
+  // control that cannot work.
+  if (status.kind !== "ready" || !status.configured) return null;
+
+  const disabled = draftState.kind === "loading";
 
   return (
     <section className="ai-draft-panel" aria-label={`${title} AI draft panel`}>
@@ -81,10 +88,8 @@ export function AIDraftPanel({
       </div>
 
       <div className="ai-draft-panel__status" role="status">
-        {status.kind === "loading" ? <ActivityIndicator size={20} /> : <ShieldCheck aria-hidden="true" size={16} />}
-        <span>
-          {status.kind === "loading" ? "Checking availability…" : status.message}
-        </span>
+        <ShieldCheck aria-hidden="true" size={16} />
+        <span>{status.message}</span>
       </div>
 
       <button

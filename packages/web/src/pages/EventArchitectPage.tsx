@@ -578,11 +578,12 @@ export function EventArchitectPage(): ReactElement {
       <header className="event-architect-hero">
         <div>
           <p className="event-architect-kicker"><Sparkles aria-hidden="true" /> Event Architect</p>
-          <h1>Compare event layouts</h1>
+          <h1>Three ways to set out the room</h1>
+          <p className="event-architect-lede">Describe the event and see three arrangements side by side, each with the number of seats and what the furniture would cost.</p>
         </div>
         <div className="event-architect-scope-note">
           <DraftingCompass aria-hidden="true" />
-          <p><strong>Planning scope:</strong> Room fit, seating, furniture gaps and fully priced budgets. Guest flow is simulated using assumed doors; door, egress/accessibility-route and statutory checks are not included.</p>
+          <p><strong>What this covers:</strong> whether the furniture fits the room, how many people can sit down, and the cost of the furniture. Doorways are assumed rather than measured, so please check access and fire safety with the venue team.</p>
         </div>
       </header>
 

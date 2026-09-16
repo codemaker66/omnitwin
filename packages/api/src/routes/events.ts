@@ -4,6 +4,7 @@ import {
   CreateEventPhaseSchema,
   CreateEventScenarioSchema,
   CreateEventSchema,
+  CreateEventConfigurationLinkSchema,
   CreateLayoutVariantSchema,
   EventConfigurationLinkSchema,
   EventPhaseGraphSchema,
@@ -514,6 +515,65 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
       return reply.status(500).send({ error: "Failed to create layout variant", code: "LAYOUT_VARIANT_CREATE_FAILED" });
     }
     return reply.status(201).send({ data: serializeLayoutVariant(created) });
+  });
+
+  // The planner corridor: an event link opened on a saved layout records the
+  // binding the Ops compiler requires before a handoff pack can carry an
+  // eventId. Idempotent by the (event, configuration, link_type) unique
+  // constraint rather than a read-then-write precheck, so two corridor opens
+  // racing each other still leave exactly one row.
+  server.post("/:id/configuration-links", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = EventIdParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
+    const parsed = CreateEventConfigurationLinkSchema.safeParse(request.body);
+    if (!parsed.success) return validationError(reply, parsed.error.issues);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
+    if (eventRow === null) return;
+
+    const [config] = await db.select().from(configurations)
+      .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
+      .limit(1);
+    if (config === undefined) {
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    }
+    if (!canAccessResource(request.user, config.userId, config.venueId)) {
+      return forbidden(reply);
+    }
+    if (config.venueId !== eventRow.venueId) {
+      return reply.status(409).send({
+        error: "A linked configuration must belong to the event venue",
+        code: "CONFIGURATION_VENUE_MISMATCH",
+      });
+    }
+
+    const [inserted] = await db.insert(eventConfigurationLinks).values({
+      eventId: eventRow.id,
+      configurationId: config.id,
+      linkType: parsed.data.linkType,
+    }).onConflictDoNothing({
+      target: [
+        eventConfigurationLinks.eventId,
+        eventConfigurationLinks.configurationId,
+        eventConfigurationLinks.linkType,
+      ],
+    }).returning();
+
+    if (inserted !== undefined) {
+      return reply.status(201).send({ data: serializeConfigurationLink(inserted) });
+    }
+
+    const [existing] = await db.select().from(eventConfigurationLinks)
+      .where(and(
+        eq(eventConfigurationLinks.eventId, eventRow.id),
+        eq(eventConfigurationLinks.configurationId, config.id),
+        eq(eventConfigurationLinks.linkType, parsed.data.linkType),
+      ))
+      .limit(1);
+    if (existing === undefined) {
+      return reply.status(500).send({ error: "Failed to link configuration", code: "EVENT_CONFIGURATION_LINK_FAILED" });
+    }
+    return { data: serializeConfigurationLink(existing) };
   });
 
   server.get("/:id/phase-graph", { preHandler: [authenticate] }, async (request, reply) => {

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { BriefcaseBusiness } from "lucide-react";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import type { OpsHandoffPackBundle } from "@omnitwin/types";
@@ -9,6 +9,8 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLightingRigStore } from "../../../stores/lighting-rig-store.js";
 import { buildOpsSetupPlan, formatSetupDuration } from "../../../lib/cockpit-ops-model.js";
 import { compileOpsHandoffPack } from "../../../api/ops-handoff.js";
+import { linkEventConfiguration } from "../../../api/events.js";
+import { useLinkedEvent } from "../../../hooks/use-linked-event.js";
 import { ApiError } from "../../../api/client.js";
 
 // ---------------------------------------------------------------------------
@@ -22,6 +24,16 @@ import { ApiError } from "../../../api/client.js";
 // /ops/handoff/:id. Staff sign-in + a saved layout are required; both gated
 // honestly. SAFE: effort figures are planning-grade estimates, not a guaranteed
 // schedule — the footer keeps that visible.
+//
+// THE EVENT CHAIN: when the planner was opened from an event link (?eventId),
+// the compiled pack must carry that event or the Event Day board has nothing to
+// show and reports a missing handoff. Two things make that work: the corridor
+// records the event↔configuration link the Ops compiler requires, and the
+// compile call passes the eventId. The link request is idempotent server-side
+// and is awaited before compiling, so opening the lens twice writes one row and
+// an immediate compile never races the binding. Roles without event-write
+// permission simply fail to bind and get the server's actionable
+// EVENT_CONFIGURATION_BINDING_REQUIRED message instead of a silent no-op.
 // ---------------------------------------------------------------------------
 
 type OpsPhase = "idle" | "compiling" | "error";
@@ -43,7 +55,11 @@ function opsCompilationErrorMessage(error: unknown): string {
 export function OpsLensPanel(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const configId = useEditorStore((state) => state.configId);
+  const venueId = useEditorStore((state) => state.venueId);
   const isSignedIn = useAuthStore((state) => state.isAuthenticated);
+  const linkedEvent = useLinkedEvent(venueId);
+  const linkedEventId = linkedEvent.status === "loaded" ? linkedEvent.graph?.event.id ?? null : null;
+  const linkedEventName = linkedEvent.status === "loaded" ? linkedEvent.eventName : null;
 
   const [phase, setPhase] = useState<OpsPhase>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -61,11 +77,34 @@ export function OpsLensPanel(): ReactElement {
   const canCompile = isSignedIn && configId !== null;
   const compiling = phase === "compiling";
 
+  // One in-flight binding per (event, configuration) pair. Keeping the promise
+  // rather than a boolean lets the compile await the same request the corridor
+  // already started instead of firing a second one.
+  const bindingRef = useRef<{ readonly key: string; readonly request: Promise<void> } | null>(null);
+  const ensureEventBinding = useCallback((): Promise<void> => {
+    if (configId === null || linkedEventId === null || !isSignedIn) return Promise.resolve();
+    const key = `${linkedEventId}:${configId}`;
+    const current = bindingRef.current;
+    if (current !== null && current.key === key) return current.request;
+    // A failed binding is not retried on every render; the compile surfaces the
+    // server's own reason, which is more useful than a silent retry loop.
+    const request = linkEventConfiguration(linkedEventId, {
+      configurationId: configId,
+      linkType: "source_configuration",
+    }).then(() => undefined, () => undefined);
+    bindingRef.current = { key, request };
+    return request;
+  }, [configId, isSignedIn, linkedEventId]);
+
+  useEffect(() => { void ensureEventBinding(); }, [ensureEventBinding]);
+
   const handleCompile = (): void => {
     if (compiling || configId === null) return;
     setPhase("compiling");
     setError(null);
-    compileOpsHandoffPack({ configId })
+    const eventId = linkedEventId;
+    ensureEventBinding()
+      .then(() => compileOpsHandoffPack(eventId === null ? { configId } : { configId, eventId }))
       .then((bundle) => { setPack(bundle); setPhase("idle"); })
       .catch((error: unknown) => {
         setError(opsCompilationErrorMessage(error));
@@ -108,6 +147,12 @@ export function OpsLensPanel(): ReactElement {
       </LensPanelSection>
 
       <LensPanelSection label="Handoff pack">
+        {canCompile && linkedEventName !== null && (
+          <p className="lens-panel__note" data-testid="ops-event-binding">
+            This pack will be attached to {linkedEventName}, so it reaches the event day board.
+          </p>
+        )}
+
         {!canCompile && (
           <p className="lens-panel__note lens-panel__note--warn" data-testid="ops-precondition">
             {!isSignedIn

@@ -259,6 +259,16 @@ export const CreateLayoutVariantSchema = z.object({
 });
 export type CreateLayoutVariant = z.infer<typeof CreateLayoutVariantSchema>;
 
+// The planner corridor (an event link opened on a saved layout) binds the two
+// with an explicit link row so Ops compilation can attach a handoff pack to the
+// event. "source_configuration" is the corridor's own intent; a named variant
+// still writes "variant_configuration" from the layout-variant route.
+export const CreateEventConfigurationLinkSchema = z.object({
+  configurationId: ConfigurationIdSchema,
+  linkType: EventConfigurationLinkTypeSchema.default("source_configuration"),
+}).strict();
+export type CreateEventConfigurationLink = z.infer<typeof CreateEventConfigurationLinkSchema>;
+
 export const EventPhaseGraphSchema = z.object({
   event: EventSchema,
   phases: z.array(EventPhaseSchema),
