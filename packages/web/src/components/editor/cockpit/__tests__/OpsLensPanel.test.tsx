@@ -269,7 +269,7 @@ describe("OpsLensPanel", () => {
     await waitFor(() => { expect(screen.getByTestId("ops-pack-result")).toBeTruthy(); });
     expect(mocks.compileOpsHandoffPack).toHaveBeenCalledWith({ configId: CONFIG_ID });
     expect(screen.getByTestId("ops-event-binding").textContent)
-      .toMatch(/Your role can't attach packs to events, so venue staff or an administrator has to attach this one/);
+      .toMatch(/You don't have permission to attach this pack to the event, so venue staff or an administrator has to do it/);
   });
 
   it("retries a failed binding on the next compile and attaches the pack once it succeeds", async () => {

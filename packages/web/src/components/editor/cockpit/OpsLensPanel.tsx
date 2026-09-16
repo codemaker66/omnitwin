@@ -72,9 +72,11 @@ const BINDING_BOUND: EventBinding = { kind: "bound" };
 
 function bindingFailure(error: unknown): EventBinding {
   if (error instanceof ApiError && error.status === 403) {
+    // Covers both refusals the route can make: a role that cannot write events
+    // (a hallkeeper), and an actor who cannot reach this configuration.
     return {
       kind: "unbound",
-      reason: "Your role can't attach packs to events, so venue staff or an administrator has to attach this one.",
+      reason: "You don't have permission to attach this pack to the event, so venue staff or an administrator has to do it.",
     };
   }
   if (error instanceof ApiError && error.code === "CONFIGURATION_OWNER_IS_CUSTOMER") {
