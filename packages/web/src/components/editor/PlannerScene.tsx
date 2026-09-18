@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
@@ -73,22 +73,12 @@ const CAMERA_INTERACTION_SETTLE_MS = 420;
 export interface PlannerCanvasGlOptions {
   readonly antialias: boolean;
   readonly powerPreference: "high-performance";
-  /** Dev-only capture aid; see plannerCanvasGlOptions. */
-  readonly preserveDrawingBuffer: boolean;
 }
 
 export function plannerCanvasGlOptions(): PlannerCanvasGlOptions {
   return {
     antialias: true,
     powerPreference: "high-performance",
-    // Dev-only capture aid (?capture=1): keep the drawing buffer so evidence
-    // harnesses can read the canvas back with toDataURL. A settled demand-loop
-    // splat canvas gives the compositor no frames, and page.screenshot waits
-    // on one forever — in-page readback is the only capture path that returns
-    // (see .claude/gotchas/splat-camera-and-capture.md). Never on in
-    // production: the preserved buffer costs a fullscreen copy per frame.
-    preserveDrawingBuffer:
-      import.meta.env.DEV && new URLSearchParams(window.location.search).has("capture"),
   };
 }
 
@@ -169,27 +159,28 @@ function PlannerScenePrecompiler({
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
+  const previous = useRef<{ signature: string; gl: typeof gl; scene: typeof scene; camera: typeof camera } | null>(null);
+  const generation = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  useEffect(() => { invalidate(); }, [camera, gl, invalidate, scene, signature]);
+  useEffect(() => () => {
+    generation.current++;
+    previous.current = null;
+  }, []);
 
-    const warmScenePrograms = async (): Promise<void> => {
-      invalidate();
-      try {
-        await gl.compileAsync(scene, camera);
-      } catch {
-        // Compilation is a warmup. Native errors are surfaced by NativeCanvas;
-        // the next draw may retry after a transient material/scene transition.
-      }
-      if (!cancelled) invalidate();
-    };
-
-    void warmScenePrograms();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [camera, gl, invalidate, scene, signature]);
+  // Mounted after the camera owners: InteriorCamera applies its spawn in
+  // useFrame, so compiling from a mount effect warms the wrong view/frustum.
+  // This zero-priority subscriber leaves R3F's demand render loop in control.
+  useFrame(() => {
+    const last = previous.current;
+    if (last?.signature === signature && last.gl === gl && last.scene === scene && last.camera === camera) return;
+    previous.current = { signature, gl, scene, camera };
+    const request = ++generation.current;
+    const completed = (): void => { if (generation.current === request) invalidate(); };
+    // Compilation is a warmup. NativeCanvas surfaces actual draw failures;
+    // a rejected warmup still permits the next ordinary draw to retry.
+    void gl.compileAsync(scene, camera).then(completed, completed);
+  });
 
   return null;
 }
@@ -420,7 +411,7 @@ export function PlannerScene(): ReactElement {
   const cameraInteractionClearTimer = useRef<number | null>(null);
   const sceneWarmupSignature = timelinePreviewActive
     ? `frozen:${frozenRoom?.envelopeKey ?? "unavailable"}`
-    : `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}`;
+    : `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}:shell:${String(meshVisible)}`;
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -481,7 +472,6 @@ export function PlannerScene(): ReactElement {
           {!timelinePreviewActive && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
           {furnitureReflections && <FurnitureReflectionExperiment />}
-          <PlannerScenePrecompiler signature={sceneWarmupSignature} />
           {!timelinePreviewActive && <SectionPlane />}
           {!timelinePreviewActive && <InvalidateOnToggle />}
           {/* Furniture needs scene lighting even when the captured layer hides
@@ -559,6 +549,8 @@ export function PlannerScene(): ReactElement {
           )}
           <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
           {import.meta.env.DEV && <PerfMonitor />}
+          {/* Re-register last when a camera owner mounts or the room shell changes. */}
+          <PlannerScenePrecompiler key={`${sceneWarmupSignature}:${String(walkMode)}`} signature={sceneWarmupSignature} />
         </Canvas>
       </div>
       {showArrival && <PlannerArrival onEnter={enterRoom} />}

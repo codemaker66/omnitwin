@@ -35,7 +35,7 @@ const LazyNativeSplatLayer = lazy(async () => {
 
 /**
  * Ref-driven dissolve engine: every eased value lives in refs and is stepped
- * inside ONE useFrame, with SplatMesh opacity applied by NativeSplatLayer's
+ * inside ONE useFrame, with source opacity applied by NativeSplatLayer's
  * polled opacityFn. Per-channel timestamps preserve a fresh fade after demand
  * idle while allowing genuinely slow active frames to catch up. No React
  * state or per-frame reconciliation is introduced by this animation.
@@ -54,11 +54,11 @@ interface RevealingSplatChunkProps {
 
 /**
  * One captured chunk developing into the scene: invisible until its bytes
- * decode, then eased in by the engine above. The onLoad/onError callbacks
- * passed to the native layer must stay identity-stable — NativeSplatLayer disposes and
- * re-creates its SplatMesh when either callback's identity changes. A
- * permanent decode failure is reported upward so the phase machine can settle
- * instead of wedging in "developing" (reviewer HIGH finding).
+ * decode, then eased in by the engine above. Stable callbacks forward the
+ * latest parent handlers. NativeSplatLayer keeps callback updates separate
+ * from the source's decode/registration lifecycle. A permanent decode failure
+ * is reported upward so the phase machine can settle instead of wedging in
+ * "developing".
  */
 function RevealingSplatChunk({
   url,

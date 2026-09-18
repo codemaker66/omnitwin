@@ -1,5 +1,6 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import type { Camera, Scene, WebGLRenderer } from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
   API,
@@ -30,7 +31,7 @@ test.describe.configure({ mode: "default" });
 
 declare global {
   interface Window {
-    __venPerf?: { gl: WebGLRenderer; scene: Scene; camera: Camera };
+    __venPerf?: { gl: WebGLRenderer | WebGPURenderer; scene: Scene; camera: Camera };
     __setWalkMode?: (value: boolean) => void;
     __walkDebug?: {
       walkMode: boolean;
@@ -62,24 +63,37 @@ async function throttleTo50Mbps(page: Page): Promise<void> {
 
 async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(name);
-  const readPreservedCanvas = async (): Promise<Buffer> => {
-    await page.evaluate(() => {
+  const readNativeCanvas = async (): Promise<Buffer> => {
+    const readback = page.evaluate(() => {
       const canvas = document.querySelector(".cockpit-stage canvas");
-      const renderer: unknown = window.__venPerf?.gl;
+      const runtime = window.__venPerf;
+      const renderer = runtime?.gl;
       if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected
         || canvas.width <= 0 || canvas.height <= 0 || canvas.dataset["renderer"] !== "three-native"
-        || typeof renderer !== "object" || renderer === null
-        || !("domElement" in renderer) || renderer.domElement !== canvas) {
+        || runtime === undefined || renderer === undefined || renderer.domElement !== canvas
+        || renderer.getRenderTarget() !== null) {
         throw new Error("Stage evidence requires the live application-owned native canvas");
       }
+      // Linux software GL can stall Playwright's compositor screenshot while
+      // this demand-loop canvas is idle. Redraw the actual application scene
+      // and camera on its existing renderer, then synchronously encode its
+      // canvas before the browser discards the presented buffer. No additional
+      // graphics context, different camera or reduced scene is used. This
+      // diagnostic readback is outside all first-paint/interaction timings.
+      renderer.render(runtime.scene, runtime.camera);
+      return canvas.toDataURL("image/png");
     });
-    // Screenshot the displayed compositor surface, valid for WebGPU and WebGL2.
-    // Never create another context or draw a separate scene as evidence.
-    return page.locator(".cockpit-stage canvas").screenshot({ timeout: 15000 });
+    let readTimeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      readTimeout = setTimeout(() => { reject(new Error("Native canvas readback exceeded 15000 ms")); }, 15_000);
+    });
+    const dataUrl = await Promise.race([readback, deadline]).finally(() => { clearTimeout(readTimeout); });
+    expect(dataUrl).toMatch(/^data:image\/png;base64,/);
+    return Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
   };
   // Preserve the existing pre-read wait and one blank-image recovery attempt.
   await page.waitForTimeout(400);
-  let screenshot = await readPreservedCanvas();
+  let screenshot = await readNativeCanvas();
   const { writeFileSync } = await import("node:fs");
   writeFileSync(path, screenshot);
   if (screenshot.byteLength <= 15_000) {
@@ -87,7 +101,7 @@ async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: strin
     // A persistently blank canvas still fails the existing evidence limit.
     await settleCockpit(page);
     await page.waitForTimeout(1_000);
-    screenshot = await readPreservedCanvas();
+    screenshot = await readNativeCanvas();
     writeFileSync(path, screenshot);
   }
   expect(screenshot.byteLength).toBeGreaterThan(15_000);
@@ -202,7 +216,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
 
     expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
 
-    // Settle window for Spark's demand-driven paint, then final evidence.
+    // Settle window for the demand-driven paint, then final evidence.
     await page.waitForTimeout(6_000);
     await attachStageScreenshot(page, testInfo, "card-a2-resolve-complete.png");
   });

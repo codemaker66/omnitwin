@@ -16,7 +16,6 @@ export interface NativeCanvasOptions {
   readonly antialias?: boolean;
   readonly alpha?: boolean;
   readonly powerPreference?: "default" | "high-performance" | "low-power";
-  readonly preserveDrawingBuffer?: boolean;
 }
 
 export interface NativeCanvasProps extends Omit<CanvasProps, "gl"> {

@@ -5,7 +5,7 @@ import type ClippingContext from "three/src/renderers/common/ClippingContext.js"
 /**
  * Keep the planner's explicit per-material section exclusions using Three's
  * native clipping groups. No scene reparenting and no custom clipping shader.
- * The public render-object hook exposes the current native clipping context.
+ * The public renderObject method exposes the current native clipping context.
  */
 export function createNativeMaterialClipping(): (
   material: Material,
@@ -28,9 +28,13 @@ export function createNativeMaterialClipping(): (
   };
 }
 
-export function installNativeMaterialClipping(renderer: WebGPURenderer): void {
+export function installNativeMaterialClipping(renderer: Pick<WebGPURenderer, "renderObject">): void {
   const clipping = createNativeMaterialClipping();
-  renderer.setRenderObjectFunction((object, scene, camera, geometry, material, group, lights, context, passId) => {
-    renderer.renderObject(object, scene, camera, geometry, material, group, lights, clipping(material, context), passId);
-  });
+  const renderObject = renderer.renderObject.bind(renderer);
+  // r186 compileAsync dispatches directly to renderObject, bypassing the
+  // setRenderObjectFunction hook used by ordinary draws. Wrap the shared public
+  // entry so warmup builds the same clipped shader variants that render uses.
+  renderer.renderObject = (object, scene, camera, geometry, material, group, lights, context = null, passId) => {
+    renderObject(object, scene, camera, geometry, material, group, lights, clipping(material, context), passId);
+  };
 }

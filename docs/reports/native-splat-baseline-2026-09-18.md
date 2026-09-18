@@ -4,8 +4,14 @@ Requested investigation and isolated renderer benchmark, recorded before
 the T-627 migration. Statements about installed dependencies below describe that
 baseline. Current implementation is tracked in [native splats](../engineering/native-splats.md).
 
-**Baseline outcome:** the application used external Spark. The final focused desktop comparison
-measures about **20% higher frame rate** with Three r186 native WebGPU, retaining
+**Later follow-up:** the [matched-radius comparison below](#follow-up-final-patched-addon-with-matched-radius-18-september-2026)
+uses the final patched addon at the application's √8σ radius and measures
+**18.33% higher median FPS** than Spark's old product settings on this isolated
+room workload. Use that follow-up when discussing the final addon. The original
+stock-addon experiment and its measurements are preserved below.
+
+**Original baseline outcome:** the application used external Spark. The focused desktop comparison
+measured about **20% higher frame rate** with stock Three r186 native WebGPU, retaining
 all 6,019,684 SH3 room splats. Native is a credible optimization candidate, not
 a qualified drop-in replacement; loader, delivery, integration, fallback and
 physical-device requirements remain below. Production remains unchanged.
@@ -68,7 +74,7 @@ The report's final results derive from `results.json` and the preserved raw
 
 ## Results
 
-### Final focused baseline — use these figures
+### Original focused baseline
 
 After an unstable native WebGL run, each headline renderer was restarted in a
 fresh headed browser process. The tab was explicitly brought forward and
@@ -232,3 +238,70 @@ Repository source context was `master` at
 changes. No unrelated files or application dependencies were edited or committed.
 The report and local evidence remain a research deliverable, not a deployed
 renderer, full visual equivalence, mobile qualification or founder acceptance.
+
+## Follow-up: final patched addon with matched radius, 18 September 2026
+
+The original headline compared stock native's 2σ kernel with Spark's √8σ kernel.
+Its additional 2σ controlled Spark arm reduced that mismatch, but neither native
+arm exercised the final application patch, √8σ radius or linear colour workflow.
+Therefore the original ~20% result alone was insufficient evidence for the
+final implementation's renderer performance.
+
+A later isolated run used the actual installed, patched Three r186 addon from
+the migration worktree. Both engines now use √8σ, compensated blur 0.3 and all
+6,019,684 SH3 room splats. The same original PLY SHA, transform, wall camera,
+scripted motion, 1600 × 900 canvas, DPR 1 and 4-second warmup/12-second sampling
+were retained. This still excludes the 11,296 environment splats, furniture,
+application UI, SOG delivery and the production merged-source adapter's hooks.
+
+Three fresh headed Chrome 153 processes ran serially on the same RTX 4090,
+driver 616.92: native, product Spark, then controlled Spark, with three samples
+per process. This fixed order is not a randomized benchmark. Native uses the
+final addon with `kernelRadius: Math.sqrt(8)`, normal linear working space and
+explicit splat sRGB conversion. Product Spark preserves radial sorting,
+512-pixel radius cap, its default alpha cutoff and existing colour path.
+Controlled Spark instead uses Z sorting, alpha cutoff zero and radius cap
+`1024 * Math.sqrt(8)`, matching native's sigma-radius cap before kernel scaling.
+Both Spark arms keep their original packed storage and blur settings.
+
+| Renderer, √8σ in every arm | Median FPS, three runs | Run range | Median p95 interval | Median p99 interval |
+| --- | ---: | ---: | ---: | ---: |
+| Spark 2.1 / Three r180, old product settings | **134.13** | 133.62–134.33 | **16.6 ms** | **20.9 ms** |
+| Spark, controlled sorting/cap/cutoff | **130.88** | 130.39–131.08 | **16.7 ms** | **20.9 ms** |
+| Final patched Three r186 native WebGPU | **158.72** | 158.56–158.75 | **8.4 ms** | **12.5 ms** |
+
+Native's median FPS was **18.33% higher than product Spark** and **21.27% higher
+than controlled Spark** in this follow-up. The earlier improvement therefore
+survives correcting the radius mismatch in this scene, but the precise gain
+changes. These are browser frame-pacing measurements, not GPU timestamps or a
+measurement of the migrated application.
+
+The controlled arm does not prove equal visual quality. Native blends in linear
+space after converting splat colour; Spark retains its existing direct colour
+path (`encodeLinear: false`). Turning that Spark flag on alone would not supply
+the corresponding output-colour pass. Geometry/SH packing, coefficient ranges,
+depth-bin ordering and update scheduling also differ. SH3 present on both sides
+does not establish identical SH precision or full source-range preservation.
+The static images show the same nonblank wall/clock/portrait view; they do not
+establish pixel equivalence, motion-artifact acceptance or founder approval.
+
+Evidence is retained in
+`D:/codex/venviewer-native-splats-20260918/output/playwright/native-migration/matched-footprint-20260918/`:
+the nine `native-final-*`, `spark-product-*` and `spark-controlled-*` raw logs,
+three PNGs, executable harness, `results.json`, `source-provenance.json` and
+`validation.json`. The validator independently recalculates every FPS result,
+checks identical source/count/SH/camera/canvas/browser, verifies focus remained
+visible throughout each capture, and rehashes all 20 recorded source/config
+files. All nine valid captures report no runtime/GPU/context-loss errors.
+The native addon SHA-256 is
+`a88cea324b3532236adfe74628eab7c85ec009490b9805a104b3876b1c4f7145`;
+the Spark bundle remains
+`c0355a962f68a6de9b13df69f05b1aba3614d9aec43a4504975daeb349126a8a`.
+
+One first readiness attempt overlapped another graphics check and was stopped;
+its incomplete log is retained and excluded. A separately reported CPU test
+batch ran between valid native and Spark captures, outside their warmups and
+timed intervals. All owned benchmark browsers and the local server were stopped
+after sampling. No original evidence or production source was changed for this
+experiment, and it does not replace exact-source release GPU qualification,
+physical-device testing, loading/memory measurements or furnished-planner checks.

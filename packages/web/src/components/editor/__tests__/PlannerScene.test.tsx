@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE, SpaceSchema } from "@omnitwin/types";
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { PerspectiveCamera, Scene, type Camera } from "three";
 
 type CanvasMockProps = Readonly<{
   dpr?: unknown;
@@ -11,12 +12,32 @@ type CanvasMockProps = Readonly<{
   children?: ReactNode;
 }>;
 const canvasChildren = vi.hoisted(() => ({ current: null as ReactNode }));
+const precompiler = vi.hoisted(() => ({
+  gl: { compileAsync: vi.fn((_scene: Scene, _camera: Camera) => Promise.resolve()) },
+  scene: null as Scene | null,
+  camera: null as PerspectiveCamera | null,
+  invalidate: vi.fn(),
+  frame: null as (() => void) | null,
+  priority: undefined as number | undefined,
+}));
 
 // Mock the R3F Canvas to render an empty host div: the scene children are
 // constructed as React elements but never mounted, so their useThree/useFrame
 // hooks don't run outside a real Canvas. This keeps the test a structural
 // smoke test that PlannerScene mounts its canvas host.
-vi.mock("@react-three/fiber", () => ({
+vi.mock("@react-three/fiber", async () => {
+  const React = await import("react");
+  return {
+  useThree: (selector: (state: typeof precompiler) => unknown) => selector(precompiler),
+  useFrame: (callback: () => void, priority?: number) => {
+    const latest = React.useRef(callback);
+    latest.current = callback;
+    precompiler.priority = priority;
+    React.useEffect(() => {
+      precompiler.frame = () => { latest.current(); };
+      return () => { precompiler.frame = null; };
+    }, []);
+  },
   Canvas: ({ dpr, frameloop, children }: CanvasMockProps) => {
     canvasChildren.current = children;
     return (
@@ -27,7 +48,8 @@ vi.mock("@react-three/fiber", () => ({
     />
     );
   },
-}));
+  };
+});
 
 // Keep the native GPU splat boundary out of this CPU composition test.
 // It sits inside the mocked Canvas and never mounts here; chunk-arrival semantics are covered by
@@ -100,6 +122,12 @@ function namedSceneNode(name: string): ReactElement<Record<string, unknown>> | u
 }
 
 beforeEach(() => {
+  precompiler.scene = new Scene();
+  precompiler.camera = new PerspectiveCamera();
+  precompiler.gl.compileAsync.mockReset().mockResolvedValue();
+  precompiler.invalidate.mockReset();
+  precompiler.frame = null;
+  precompiler.priority = undefined;
   // happy-dom does not implement native modal top-layer behavior.
   vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
   vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
@@ -177,10 +205,48 @@ describe("PlannerScene", () => {
   it("reveals the existing fallback when every capture chunk fails", () => {
     chooseGrandHall(); readyGrandHall();
     const { rerender } = render(<PlannerScene />);
+    const capturedSignature = sceneComponent("PlannerScenePrecompiler")?.props.signature;
     arrivals.failedCount = 1;
     rerender(<PlannerScene />);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(sceneComponent("RoomMesh")).toBeDefined();
+    expect(sceneComponent("PlannerScenePrecompiler")?.props.signature).not.toBe(capturedSignature);
+  });
+
+  it("warms the current camera once per scene change after the camera frame subscribers", async () => {
+    render(<PlannerScene />);
+    const child = sceneComponent("PlannerScenePrecompiler");
+    if (child === undefined) throw new Error("Missing scene precompiler");
+    const directChildren = Children.toArray(canvasChildren.current);
+    expect(directChildren.at(-1)).toEqual(child);
+    const view = render(child);
+    expect(precompiler.gl.compileAsync).not.toHaveBeenCalled();
+    expect(precompiler.priority).toBeUndefined(); // Demand rendering stays owned by R3F.
+    precompiler.camera?.position.set(0.4, 1.6, 7.5);
+    await act(async () => { precompiler.frame?.(); await Promise.resolve(); });
+    expect(precompiler.gl.compileAsync).toHaveBeenCalledExactlyOnceWith(precompiler.scene, precompiler.camera);
+    act(() => { precompiler.frame?.(); });
+    expect(precompiler.gl.compileAsync).toHaveBeenCalledOnce();
+
+    view.rerender(cloneElement(child, { signature: "fallback-shell-visible" }));
+    expect(precompiler.gl.compileAsync).toHaveBeenCalledOnce();
+    await act(async () => { precompiler.frame?.(); await Promise.resolve(); });
+    expect(precompiler.gl.compileAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not wake an unmounted scene after its shader warmup settles", async () => {
+    render(<PlannerScene />);
+    const child = sceneComponent("PlannerScenePrecompiler");
+    if (child === undefined) throw new Error("Missing scene precompiler");
+    let finish = (): void => { throw new Error("Warmup did not start"); };
+    precompiler.gl.compileAsync.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const view = render(child);
+    act(() => { precompiler.frame?.(); });
+    expect(precompiler.gl.compileAsync).toHaveBeenCalledOnce();
+    view.unmount();
+    precompiler.invalidate.mockClear();
+    await act(async () => { finish(); await Promise.resolve(); });
+    expect(precompiler.invalidate).not.toHaveBeenCalled();
   });
 
   it.each([false, true])("falls back when every room tile fails even with an environment loaded=%s", (loaded) => {
@@ -264,12 +330,9 @@ describe("PlannerScene", () => {
   });
 
   it("enables planner canvas antialiasing independent of viewport width", () => {
-    // preserveDrawingBuffer is the C2 dev-only capture aid (?capture=1);
-    // outside that flag it is always the explicit false below.
     expect(plannerCanvasGlOptions()).toEqual({
       antialias: true,
       powerPreference: "high-performance",
-      preserveDrawingBuffer: false,
     });
   });
 
@@ -307,9 +370,9 @@ describe("PlannerScene", () => {
     const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
 
     expect(source).toContain("function PlannerScenePrecompiler");
-    expect(source).toContain("await gl.compileAsync(scene, camera)");
+    expect(source).toContain("gl.compileAsync(scene, camera)");
     expect(source).not.toContain("gl.compile(scene, camera)");
-    expect(source).toContain("<PlannerScenePrecompiler signature={sceneWarmupSignature} />");
+    expect(source).toContain("signature={sceneWarmupSignature} />");
   });
 
 });

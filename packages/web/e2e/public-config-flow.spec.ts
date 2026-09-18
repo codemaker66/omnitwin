@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { captureLaunchOptions } from "./support/capture-launch";
 
 // ---------------------------------------------------------------------------
 // E2E: Public configuration flow
@@ -198,47 +199,86 @@ async function openPlannerTools(page: Page): Promise<Locator> {
 }
 
 async function expectClear(a: Locator, b: Locator, gap = 8): Promise<void> {
-  await expect(a).toBeVisible();
-  await expect(b).toBeVisible();
-  const aBox = await a.boundingBox();
-  const bBox = await b.boundingBox();
-  expect(aBox).not.toBeNull();
-  expect(bBox).not.toBeNull();
-  if (aBox === null || bBox === null) throw new Error("Visible panels must have bounds");
-  const clearance = Math.max(
-    aBox.x - bBox.x - bBox.width,
-    bBox.x - aBox.x - aBox.width,
-    aBox.y - bBox.y - bBox.height,
-    bBox.y - aBox.y - aBox.height,
-  );
-  expect(clearance).toBeGreaterThanOrEqual(gap);
+  await expectClearPairs([[a, b]], gap);
 }
 
-async function expectPanelCopyContained(panel: Locator, child: Locator): Promise<void> {
-  await child.evaluate((element) => {
-    element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
-  });
-  const panelBox = await panel.boundingBox();
-  expect(panelBox).not.toBeNull();
-  if (panelBox === null) throw new Error("Panel must have bounds");
-  // A fixed-width child can fit while its text overflows. Measure both after
-  // scrolling each row into the actual dock's visible area.
-  const bounds = await child.evaluate((element) => {
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    const rect = element.getBoundingClientRect();
-    const text = range.getBoundingClientRect();
-    return {
-      left: Math.min(rect.left, text.left),
-      right: Math.max(rect.right, text.right),
-      top: Math.min(rect.top, text.top),
-      bottom: Math.max(rect.bottom, text.bottom),
-    };
-  });
-  expect(bounds.left).toBeGreaterThanOrEqual(panelBox.x + 8);
-  expect(bounds.right).toBeLessThanOrEqual(panelBox.x + panelBox.width - 8);
-  expect(bounds.top).toBeGreaterThanOrEqual(panelBox.y + 8);
-  expect(bounds.bottom).toBeLessThanOrEqual(panelBox.y + panelBox.height - 8);
+async function expectClearPairs(pairs: readonly (readonly [Locator, Locator])[], gap = 8): Promise<void> {
+  const locators = [...new Set(pairs.flatMap(([a, b]) => [a, b]))];
+  await Promise.all(locators.map(async (locator) => { await expect(locator).toBeVisible(); }));
+  const handles = await Promise.all(locators.map(async (locator) => locator.elementHandle()));
+  try {
+    const elements = handles.map((handle) => {
+      if (handle === null) throw new Error("Visible panels must remain attached");
+      return handle;
+    });
+    const first = elements[0];
+    if (first === undefined) throw new Error("At least one clearance pair is required");
+    // Keep the exact role/test-id locator identities. Measure every concurrently
+    // visible pair in one browser task, so graphics work cannot separate boxes.
+    const boxes = await first.evaluate((element, remaining) => [element, ...remaining].map((panel) => {
+      const style = getComputedStyle(panel);
+      const rect = panel.getBoundingClientRect();
+      if (!panel.isConnected || panel.getClientRects().length === 0
+        || style.visibility === "hidden" || style.visibility === "collapse"
+        || rect.width <= 0 || rect.height <= 0) {
+        throw new Error("Visible panels must have nonempty bounds");
+      }
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    }), elements.slice(1));
+    expect(boxes).toHaveLength(locators.length);
+    for (const [a, b] of pairs) {
+      const aBox = boxes[locators.indexOf(a)];
+      const bBox = boxes[locators.indexOf(b)];
+      if (aBox === undefined || bBox === undefined) throw new Error("Missing panel bounds");
+      const clearance = Math.max(
+        aBox.x - bBox.x - bBox.width,
+        bBox.x - aBox.x - aBox.width,
+        aBox.y - bBox.y - bBox.height,
+        bBox.y - aBox.y - aBox.height,
+      );
+      expect(clearance).toBeGreaterThanOrEqual(gap);
+    }
+  } finally {
+    await Promise.all(handles.map(async (handle) => { await handle?.dispose(); }));
+  }
+}
+
+async function expectPanelCopyContained(panel: Locator, childSelectors: readonly string[]): Promise<void> {
+  // Every row still scrolls into the live dock and forces layout. Read its
+  // element/text bounds and the panel in the same browser task, avoiding
+  // graphics work between separate protocol round trips for the same check.
+  const measurements = await panel.evaluate((panelElement, selectors) => selectors.flatMap((selector) => {
+    const children = [...panelElement.querySelectorAll(selector)];
+    if (children.length === 0) throw new Error(`No panel children match ${selector}`);
+    return children.map((element, index) => {
+      element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+      const style = getComputedStyle(panelElement);
+      if (panelElement.getClientRects().length === 0 || style.visibility === "hidden" || style.visibility === "collapse") {
+        throw new Error("Panel must have visible bounds");
+      }
+      const panelBox = panelElement.getBoundingClientRect();
+      // A fixed-width child can fit while its text overflows.
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const rect = element.getBoundingClientRect();
+      const text = range.getBoundingClientRect();
+      return {
+        label: `${selector} [${String(index)}]`,
+        panel: { left: panelBox.left, right: panelBox.right, top: panelBox.top, bottom: panelBox.bottom },
+        left: Math.min(rect.left, text.left),
+        right: Math.max(rect.right, text.right),
+        top: Math.min(rect.top, text.top),
+        bottom: Math.max(rect.bottom, text.bottom),
+      };
+    });
+  }), childSelectors);
+  expect(measurements.length).toBeGreaterThan(0);
+  for (const bounds of measurements) {
+    expect(bounds.left, bounds.label).toBeGreaterThanOrEqual(bounds.panel.left + 8);
+    expect(bounds.right, bounds.label).toBeLessThanOrEqual(bounds.panel.right - 8);
+    expect(bounds.top, bounds.label).toBeGreaterThanOrEqual(bounds.panel.top + 8);
+    expect(bounds.bottom, bounds.label).toBeLessThanOrEqual(bounds.panel.bottom - 8);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -397,21 +437,35 @@ test.describe("Editor with empty config", () => {
 // Editor with objects loaded — SaveSendPanel + guest enquiry flow
 // ---------------------------------------------------------------------------
 
-test.describe("Editor with placed objects", () => {
-  test.beforeEach(async ({ page }) => {
+// Use the existing native GL capture profile for this render-heavy UI group.
+// Linux software qualification uses llvmpipe; default SwiftShader exceeded
+// the unchanged 30 s budget for 162 objects and two full-page receipts.
+const placedObjectsTest = test.extend({ launchOptions: captureLaunchOptions });
+
+placedObjectsTest.describe("Editor with placed objects", () => {
+  placedObjectsTest.beforeEach(async ({ page }) => {
     await mockConfigLoad(page, MOCK_CONFIG_WITH_OBJECTS);
-    await page.goto(`/plan/${CONFIG_ID}`);
-    await waitForPlannerReady(page);
   });
 
-  test("SaveSendPanel becomes visible when the loaded config has placed objects", async ({ page }) => {
+  async function openPlacedLayout(page: Page): Promise<void> {
+    await page.goto(`/plan/${CONFIG_ID}`);
+    await waitForPlannerReady(page);
+    // The welcome explicitly supports native Escape to enter while the room
+    // loads. It also works if the welcome dismissed itself before this action.
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Opening the Grand Hall", exact: true })).not.toBeVisible();
+  }
+
+  placedObjectsTest("SaveSendPanel becomes visible when the loaded config has placed objects", async ({ page }) => {
+    await openPlacedLayout(page);
     await expect(page.getByTestId("save-send-panel")).toBeVisible({ timeout: 5_000 });
     await expect(
       page.getByRole("button", { name: "Send to Events Team" }),
     ).toBeVisible();
   });
 
-  test("SaveSendPanel clears the cockpit Truth Mode rail", async ({ page }) => {
+  placedObjectsTest("SaveSendPanel clears the cockpit Truth Mode rail", async ({ page }) => {
+    await openPlacedLayout(page);
     const sendPanel = page.getByTestId("save-send-panel");
     const truthRail = page.getByTestId("cockpit-truth-rail");
 
@@ -424,11 +478,10 @@ test.describe("Editor with placed objects", () => {
     await expect(truthRail).toContainText("human review required");
   });
 
-  test("Layout evidence keeps long recommendation copy inside the panel", async ({ page }) => {
+  placedObjectsTest("Layout evidence keeps long recommendation copy inside the panel", async ({ page }) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
-    await page.goto(`/plan/${CONFIG_ID}`);
-    await waitForPlannerReady(page);
+    await openPlacedLayout(page);
     await page.getByRole("navigation", { name: "Planner lenses" })
       .getByRole("button", { name: "Evidence", exact: true }).click();
     const panel = page.getByTestId("evidence-lens-panel");
@@ -437,18 +490,14 @@ test.describe("Editor with placed objects", () => {
     await expect(recommendations).not.toHaveCount(0);
     const copy = await recommendations.allTextContents();
     expect(copy.some((text) => text.length > 100)).toBe(true);
-    for (const recommendation of await recommendations.all()) {
-      await expectPanelCopyContained(panel, recommendation);
-    }
-    await expectPanelCopyContained(panel, panel.locator(".lens-panel__footer"));
+    await expectPanelCopyContained(panel, ['[data-testid^="evidence-check-"] .lens-panel__row-meta', ".lens-panel__footer"]);
     await expect(panel.locator(".lens-panel__footer")).toContainText("human review");
   });
 
-  test("Plan navigation and capacity controls clear the event schedule and command deck", async ({ page }, testInfo) => {
+  placedObjectsTest("Plan navigation and capacity controls clear the event schedule and command deck", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1493, height: 1053 });
     await mockConfigLoad(page, { ...MOCK_CONFIG_EMPTY, objects: mockSeatedRoundTables(18, 8) });
-    await page.goto(`/plan/${CONFIG_ID}`);
-    await waitForPlannerReady(page);
+    await openPlacedLayout(page);
 
     // Navigation and recorded evidence live in the Design lens's disclosure.
     // They are embedded in its scrolling menu, not floating over capacity.
@@ -460,9 +509,7 @@ test.describe("Editor with placed objects", () => {
     const viewMode = page.getByRole("group", { name: "View mode", exact: true });
     const schedule = page.getByRole("contentinfo", { name: "Your event schedule" });
     const commandDeck = page.getByRole("region", { name: "Planner command deck" });
-    await expectClear(tools, viewMode);
-    await expectClear(tools, schedule);
-    await expectClear(tools, commandDeck);
+    await expectClearPairs([[tools, viewMode], [tools, schedule], [tools, commandDeck]]);
     await tools.getByText("Recorded evidence", { exact: true }).click();
     const truth = page.getByTestId("cockpit-truth-rail");
     await truth.scrollIntoViewIfNeeded();
@@ -482,13 +529,8 @@ test.describe("Editor with placed objects", () => {
     await expect(capacity).toBeVisible();
     const seats = capacity.locator(".lens-panel__metric").filter({ hasText: "Seats placed" });
     await expect(seats.locator(".lens-panel__metric-value")).toHaveText("144");
-    await expectClear(capacity, commandDeck);
-    await expectClear(capacity, schedule);
-    await expectClear(capacity, viewMode);
-    for (const metric of await capacity.locator(".lens-panel__metric").all()) {
-      await expectPanelCopyContained(capacity, metric);
-    }
-    await expectPanelCopyContained(capacity, capacity.locator(".lens-panel__footer"));
+    await expectClearPairs([[capacity, commandDeck], [capacity, schedule], [capacity, viewMode]]);
+    await expectPanelCopyContained(capacity, [".lens-panel__metric", ".lens-panel__footer"]);
     await expect(capacity.locator(".lens-panel__footer")).toContainText("Not occupancy or fire limits");
     await testInfo.attach("capacity-controls-clear", {
       body: await page.screenshot({ path: testInfo.outputPath("capacity-controls-clear.png") }),
@@ -496,9 +538,10 @@ test.describe("Editor with placed objects", () => {
     });
   });
 
-  test("Send to Events Team button opens the guest enquiry form", async ({ page }) => {
+  placedObjectsTest("Send to Events Team button opens the guest enquiry form", async ({ page }) => {
+    await openPlacedLayout(page);
     // flushAutoSave + thumbnail upload are best-effort — mock both so the
-    // modal is not blocked by network errors in test.
+    // modal is not blocked by network errors in the test.
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/objects/batch`,
       (route) => { void route.fulfill({ json: { data: { objects: [MOCK_OBJECT], revision: 2 } } }); },
@@ -512,7 +555,8 @@ test.describe("Editor with placed objects", () => {
     await expect(page.getByTestId("guest-enquiry-form")).toBeVisible({ timeout: 8_000 });
   });
 
-  test("submitting the enquiry with a valid email shows the success state", async ({ page }) => {
+  placedObjectsTest("submitting the enquiry with a valid email shows the success state", async ({ page }) => {
+    await openPlacedLayout(page);
     await page.route(
       `${API}/public/configurations/${CONFIG_ID}/objects/batch`,
       (route) => { void route.fulfill({ json: { data: { objects: [MOCK_OBJECT], revision: 2 } } }); },

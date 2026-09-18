@@ -101,10 +101,39 @@ references are released and garbage collection runs. These estimates do not
 establish a measured memory limit or an improvement over Spark; compare post-GC
 and peak memory on the same scene, backend, device and workload.
 
-The isolated benchmark’s ~20% median FPS improvement on the RTX 4090 is not a
-measurement of this application integration. Recheck load time, memory, frame
+The isolated follow-up with the final patched addon and matching Gaussian radius
+measured 158.72 versus 134.13 FPS (18.33%) on the RTX 4090. It is not a
+measurement of this application integration or proof of equal visual quality;
+colour blending, SH packing and sorting still differ. Recheck load time, memory, frame
 time, visual fidelity, clipping, overlays, capture exports and teardown in the
 complete planner and both renderer backends before making a shipping claim.
+
+Native Three does not preserve the presented canvas buffer through the old
+WebGL `preserveDrawingBuffer` option. Poster exports use an explicit same-device
+render target. The room-resolution E2E evidence instead redraws the existing
+live scene/camera on its application renderer and synchronously encodes that
+same canvas as PNG. This avoids a reproduced Linux software-GL compositor
+screenshot stall on a settled demand loop. It retains the 15-second readback
+deadline, image-size threshold and one blank-image retry, and runs outside
+first-paint/interaction timing. It neither creates another graphics context nor
+changes the view or scene quality. Both affected cases passed under Linux
+llvmpipe/Xvfb; the same operation also produced a nonblank WebGPU PNG.
+
+The native material-clipping bridge wraps public `renderObject`, shared by
+compilation and drawing. Three r186's `compileAsync` bypasses the separate
+`setRenderObjectFunction` hook, which previously warmed unclipped shaders and
+left the actual clipped variants cold. Planner warmup runs after the camera
+owners apply their frame pose and repeats when the procedural fallback shell
+becomes visible. It leaves demand rendering and actual-draw readiness intact.
+
+The placed-object UI browser group uses the existing `captureLaunchOptions`
+OpenGL profile. A same-source Linux diagnostic observed native WebGL2 on
+SwiftShader exceed the unchanged 30-second limit for the 162-object navigation
+case, while Mesa llvmpipe completed the same assertions and both screenshots.
+Only this group's graphics selection changes; its fixtures, viewport, timeouts,
+clearance checks and inventory remain. This replaces default-SwiftShader
+coverage for this group, not a fix or performance qualification of SwiftShader.
+The separately pinned hardware GPU gate is unchanged.
 
 ## Browser inventory identity review
 
