@@ -362,9 +362,9 @@ export class NativeSplatScene {
             source.onRendered?.();
           }
         }
-        const stillPrepared = prepared.filter((source) => opacityOf(source) >= 0.98).length;
         for (const listener of listeners) {
           if (!valid()) { if (this.hosts > 0) this.invalidate(); return; }
+          const stillPrepared = prepared.filter((source) => opacityOf(source) >= 0.98).length;
           if (this.firstFrames.has(listener) && stillPrepared >= listener.minimumSources) {
             this.firstFrames.delete(listener); listener.callback();
           }

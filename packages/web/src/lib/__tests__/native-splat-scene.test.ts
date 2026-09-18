@@ -221,6 +221,23 @@ describe("native complete draw lifecycle", () => {
     expect(second).not.toHaveBeenCalled();
   });
 
+  it("rechecks eligible opacity after each first-frame listener callback", async () => {
+    const state = setup();
+    let opacity = 1;
+    state.add(1, () => opacity);
+    const first = vi.fn(() => { opacity = 0.5; }), second = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: first });
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: second });
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).not.toHaveBeenCalled();
+    opacity = 1; state.runtime.frame(1); state.render();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(second).toHaveBeenCalledOnce();
+    expect(first).toHaveBeenCalledOnce();
+  });
+
   it("surfaces context loss once and does not retry the failed snapshot each frame", async () => {
     const state = setup(), source = state.add(2);
     await vi.advanceTimersByTimeAsync(50); state.render();
