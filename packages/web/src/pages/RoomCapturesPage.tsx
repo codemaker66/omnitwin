@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { ActivityStatus } from "../components/shared/Activity.js";
-import { Canvas } from "@react-three/fiber";
+import { NativeCanvas as Canvas } from "../components/scene/NativeCanvas.js";
 import { OrbitControls } from "@react-three/drei";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  SparkSplatLayer,
-  type SparkSplatErrorEvent,
-  type SparkSplatLoadEvent,
-} from "../components/scene/SparkSplatLayer.js";
+  NativeSplatLayer,
+  type NativeSplatErrorEvent,
+  type NativeSplatLoadEvent,
+} from "../components/scene/NativeSplatLayer.js";
 import {
   roomSplatBundle,
   roomSplatServedBytes,
@@ -63,11 +63,12 @@ function formatCount(value: number): string {
 interface SceneProps {
   readonly room: TradesHallRuntimeRoomSlug;
   readonly urls: readonly string[];
-  readonly onTileLoad: (event: SparkSplatLoadEvent) => void;
-  readonly onTileError: (event: SparkSplatErrorEvent) => void;
+  readonly onTileLoad: (event: NativeSplatLoadEvent) => void;
+  readonly onTileError: (event: NativeSplatErrorEvent) => void;
+  readonly onTileRendered: (url: string) => void;
 }
 
-function CaptureScene({ room, urls, onTileLoad, onTileError }: SceneProps): ReactElement {
+function CaptureScene({ room, urls, onTileLoad, onTileError, onTileRendered }: SceneProps): ReactElement {
   // Derived from this capture's own room mesh, and meaningful only because THIS
   // staged capture is what is mounted — hence the explicit "staged" source.
   const transform = runtimeAssetViewTransformForRoom(room, "staged");
@@ -88,7 +89,7 @@ function CaptureScene({ room, urls, onTileLoad, onTileError }: SceneProps): Reac
     >
       <ambientLight intensity={1} />
       {urls.map((url, index) => (
-        <SparkSplatLayer
+        <NativeSplatLayer
           key={url}
           url={url}
           position={[...transform.position] as [number, number, number]}
@@ -99,6 +100,7 @@ function CaptureScene({ room, urls, onTileLoad, onTileError }: SceneProps): Reac
           includeRendererHost={index === 0}
           onLoad={onTileLoad}
           onError={onTileError}
+          onRendered={onTileRendered}
         />
       ))}
       <OrbitControls
@@ -131,45 +133,46 @@ export function RoomCapturesPage(): ReactElement {
     [room],
   );
 
-  // Tile results live in refs, never in the callbacks' dependency arrays.
-  // SparkSplatLayer's load effect is keyed on the handler identities: a new
-  // identity disposes the mesh and refetches the tile, so a progress counter
-  // wired straight to state would refetch every tile on every completion.
-  // See .claude/gotchas/spark-splat-layer-callback-identity.md.
-  const resultsRef = useRef<Map<string, number>>(new Map());
-  const failuresRef = useRef<Map<string, string>>(new Map());
-  const [progress, setProgress] = useState({ loaded: 0, splats: 0, failed: 0 });
+  // Scope retained events to the mounted room before child effects run. A
+  // reset effect could otherwise erase an early draw or a cached decode.
+  const readiness = useMemo(() => ({
+    decoded: new Map<string, number>(),
+    failures: new Map<string, string>(),
+    drawn: new Set<string>(),
+  }), [urls]);
+  const [progress, setProgress] = useState({ settled: 0, splats: 0, failed: 0, complete: false });
 
-  const onTileLoad = useCallback((event: SparkSplatLoadEvent) => {
-    resultsRef.current.set(event.url, event.splatCount);
-  }, []);
+  const onTileLoad = useCallback((event: NativeSplatLoadEvent) => {
+    readiness.decoded.set(event.url, event.splatCount);
+  }, [readiness]);
 
-  const onTileError = useCallback((event: SparkSplatErrorEvent) => {
-    failuresRef.current.set(event.url, event.error.message);
-  }, []);
+  const onTileError = useCallback((event: NativeSplatErrorEvent) => {
+    readiness.failures.set(event.url, event.error.message);
+  }, [readiness]);
 
-  // Reset on room change, then poll the refs into state. The poll is what
-  // re-renders; the handlers stay identity-stable for the life of the scene.
+  const onTileRendered = useCallback((url: string) => {
+    readiness.drawn.add(url);
+  }, [readiness]);
+
+  // Progress keeps reporting decoded bytes/counts while successful sources
+  // finish upload and compilation. Only a real draw ends their activity.
   useEffect(() => {
-    resultsRef.current = new Map();
-    failuresRef.current = new Map();
-    setProgress({ loaded: 0, splats: 0, failed: 0 });
-
-    const timer = setInterval(() => {
-      let splats = 0;
-      for (const count of resultsRef.current.values()) splats += count;
+    const report = (): void => {
       setProgress({
-        loaded: resultsRef.current.size,
-        splats,
-        failed: failuresRef.current.size,
+        settled: urls.filter((url) => readiness.decoded.has(url) || readiness.failures.has(url)).length,
+        splats: urls.reduce((sum, url) => sum + (readiness.decoded.get(url) ?? 0), 0),
+        failed: urls.filter((url) => readiness.failures.has(url)).length,
+        complete: urls.length > 0 && urls.every((url) => readiness.failures.has(url)
+          || (readiness.decoded.has(url) && readiness.drawn.has(url))),
       });
-    }, 400);
+    };
+    report();
+    const timer = setInterval(report, 400);
     return () => { clearInterval(timer); };
-  }, [room]);
+  }, [readiness, urls]);
 
   const total = urls.length;
-  const settled = progress.loaded + progress.failed;
-  const complete = total > 0 && settled >= total;
+  const { settled, complete } = progress;
 
   return (
     <main className="captures">
@@ -224,6 +227,7 @@ export function RoomCapturesPage(): ReactElement {
                   urls={urls}
                   onTileLoad={onTileLoad}
                   onTileError={onTileError}
+                  onTileRendered={onTileRendered}
                 />
               )
               : <p className="captures__empty">No capture staged for this room.</p>}

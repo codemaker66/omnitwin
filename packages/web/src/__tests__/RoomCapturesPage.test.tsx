@@ -1,11 +1,17 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { NativeSplatLayerProps } from "../components/scene/NativeSplatLayer.js";
 
-// The captures page mounts a real R3F canvas and Spark layers. Both are stubbed
+const layers = vi.hoisted(() => new Map<string, NativeSplatLayerProps>());
+
+// The captures page mounts a native Three canvas and splat layers. Both are stubbed
 // so the assertions are about what the page DECIDES — which tiles, which claim
 // copy, which room — not about WebGL, which happy-dom cannot provide anyway.
+vi.mock("../components/scene/NativeCanvas.js", async () => ({
+  NativeCanvas: (await import("@react-three/fiber")).Canvas,
+}));
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }: { readonly children?: React.ReactNode }) => (
     <div data-testid="room-captures-canvas">{children}</div>
@@ -22,22 +28,21 @@ vi.mock("@react-three/drei", () => ({
   ),
 }));
 
-vi.mock("../components/scene/SparkSplatLayer.js", () => ({
-  SparkSplatLayer: ({ url, position, scale, includeRendererHost }: {
-    readonly url: string;
-    readonly position?: readonly number[];
-    readonly scale?: number;
-    readonly includeRendererHost?: boolean;
-  }) => (
+vi.mock("../components/scene/NativeSplatLayer.js", () => ({
+  NativeSplatLayer: (props: NativeSplatLayerProps) => {
+    layers.set(props.url, props);
+    const { url, position, scale, includeRendererHost } = props;
+    return (
     <div
-      data-testid="spark-splat-layer"
+      data-testid="native-splat-layer"
       data-position={JSON.stringify(position)}
       data-scale={String(scale)}
       data-host={String(includeRendererHost)}
     >
       {url}
     </div>
-  ),
+    );
+  },
 }));
 
 const { RoomCapturesPage } = await import("../pages/RoomCapturesPage.js");
@@ -59,13 +64,61 @@ function mount(path: string): void {
 // every render accumulates in the DOM and later assertions see earlier rooms.
 afterEach(() => {
   cleanup();
+  layers.clear();
+  vi.useRealTimers();
 });
 
 function mountedUrls(): string[] {
-  return screen.getAllByTestId("spark-splat-layer").map((node) => node.textContent ?? "");
+  return screen.getAllByTestId("native-splat-layer").map((node) => node.textContent ?? "");
 }
 
 describe("RoomCapturesPage", () => {
+  it("keeps activity after decode until every successful tile draws, with failures counted once", () => {
+    vi.useFakeTimers();
+    mount("/captures/reception-room");
+    const sources = [...layers.values()];
+    const [failed, ...successful] = sources;
+    if (failed === undefined) throw new Error("Expected capture sources");
+    act(() => {
+      for (const source of sources) source.onLoad?.({ url: source.url, splatCount: 100, localBounds: null });
+      failed.onError?.({ url: failed.url, error: new Error("Upload failed") });
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByTestId("captures-status").textContent).toContain(`Loading ${String(sources.length)}/${String(sources.length)} tiles`);
+    expect(screen.getByRole("status")).toBeDefined();
+    act(() => {
+      for (const source of successful) source.onRendered?.(source.url);
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByTestId("captures-status").textContent).toContain("1 tiles failed");
+  });
+
+  it("retains draw events that arrive before decode metadata and resets readiness for a different room", () => {
+    vi.useFakeTimers();
+    mount("/captures/reception-room");
+    const previous = [...layers.values()];
+    act(() => {
+      for (const source of previous) source.onRendered?.(source.url);
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByRole("status")).toBeDefined();
+    act(() => {
+      for (const source of previous) source.onLoad?.({ url: source.url, splatCount: 100, localBounds: null });
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Grand Hall/u }));
+    act(() => {
+      for (const source of previous) {
+        source.onLoad?.({ url: source.url, splatCount: 100, localBounds: null });
+        source.onRendered?.(source.url);
+      }
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByRole("status").textContent).toContain("Loading 0/");
+  });
+
   it("lists every captured room", () => {
     mount("/captures");
     const rail = screen.getByRole("navigation", { name: "Captured rooms" });
@@ -81,7 +134,7 @@ describe("RoomCapturesPage", () => {
 
   it("mounts exactly one renderer host, on the first tile: a host per tile is a renderer per tile", () => {
     mount("/captures/grand-hall");
-    const hosts = [...document.querySelectorAll('[data-testid="spark-splat-layer"]')]
+    const hosts = [...document.querySelectorAll('[data-testid="native-splat-layer"]')]
       .map((layer) => layer.getAttribute("data-host"));
     expect(hosts.length).toBeGreaterThan(1);
     expect(hosts[0]).toBe("true");
@@ -126,14 +179,14 @@ describe("RoomCapturesPage", () => {
 
   it("never scales a capture, because captures and the scene are both metric", () => {
     mount("/captures/reception-room");
-    for (const node of screen.getAllByTestId("spark-splat-layer")) {
+    for (const node of screen.getAllByTestId("native-splat-layer")) {
       expect(node.getAttribute("data-scale")).toBe("1");
     }
   });
 
   it("applies the room's derived transform to every tile of that room", () => {
     mount("/captures/grand-hall");
-    const positions = screen.getAllByTestId("spark-splat-layer")
+    const positions = screen.getAllByTestId("native-splat-layer")
       .map((node) => node.getAttribute("data-position"));
     expect(new Set(positions).size).toBe(1);
     expect(positions[0]).not.toBe(JSON.stringify([0, 0, 0]));

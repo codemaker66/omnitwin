@@ -28,7 +28,7 @@ export async function prepareLayoutForGuestEnquiry(configId: string): Promise<bo
     const { width: roomWidthRender, length: roomLengthRender } =
       useRoomDimensionsStore.getState().dimensions;
     if (!canContinue()) return false;
-    const dataUrl = captureOrthographic(scene, roomWidthRender, roomLengthRender, {
+    const dataUrl = await captureOrthographic(scene, roomWidthRender, roomLengthRender, {
       width: 800,
       height: 533,
     });

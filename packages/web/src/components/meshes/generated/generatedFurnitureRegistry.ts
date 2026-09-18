@@ -218,6 +218,8 @@ export function createGeneratedFurnitureObject(
  * Factories create their geometry and materials per root. Sets keep disposal
  * correct when multiple meshes within an assembly deliberately share either.
  */
+function isTexture(value: unknown): value is Texture { return value instanceof Texture; }
+
 export function disposeGeneratedFurnitureObject(root: Object3D): void {
   const geometries = new Set<BufferGeometry>();
   const materials = new Set<Material>();
@@ -233,8 +235,8 @@ export function disposeGeneratedFurnitureObject(root: Object3D): void {
       materials.add(material);
       const materialWithTextures = material as MaterialWithTextures;
       for (const key of MATERIAL_TEXTURE_KEYS) {
-        const texture = materialWithTextures[key];
-        if (texture instanceof Texture) textures.add(texture);
+        const texture: unknown = materialWithTextures[key];
+        if (isTexture(texture)) textures.add(texture);
       }
     }
   });

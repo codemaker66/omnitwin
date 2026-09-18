@@ -24,6 +24,9 @@ vi.mock("@react-three/fiber", () => ({
   useFrame: vi.fn(),
 }));
 
+// Exercise App's canvas configuration; native initialization has its own suite.
+vi.mock("../components/scene/NativeCanvas.js", () => ({ NativeCanvas: CanvasMock }));
+
 vi.mock("@react-three/drei", () => ({
   OrbitControls: vi.fn(() => null),
   Html: vi.fn(({ children }: { children?: React.ReactNode }) => children),
@@ -33,9 +36,8 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
 }));
 
-// PlannerScene now mounts CockpitSplatLayer, which imports @sparkjsdev/spark
-// (a WASM module that rejects at import under Node). The Canvas mock never
-// renders scene children, so stub the splat layer to keep Spark out of this test.
+// The Canvas mock never renders scene children; native splat loading and drawing
+// are exercised separately from the planner's canvas configuration.
 vi.mock("../components/editor/CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
 
 import { App } from "../App.js";

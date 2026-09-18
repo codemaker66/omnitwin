@@ -73,7 +73,7 @@
 
 /* One smoked surface for all four cards: translucent ink, a single hairline,
    the panel radius from §5. Translucency (not blur): the shell's blanket
-   backdrop-filter kill above is a GPU guard, and a live Spark canvas behind
+   backdrop-filter kill above is a GPU guard, and a live splat canvas behind
    eight blurred panels is exactly what it guards against. */
 .cockpit-topbar,
 .cockpit-rail,

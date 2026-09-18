@@ -4,9 +4,11 @@ import {
   LinearFilter,
   NormalBlending,
   RGBAFormat,
-  ShaderMaterial,
+
   type IUniform,
 } from "three";
+import { MeshBasicNodeMaterial } from "three/webgpu";
+import { abs, attribute, float, fract, mix, pow, smoothstep, uniform, uv, varying, vec4 } from "three/tsl";
 
 // ---------------------------------------------------------------------------
 // Cockpit overlay materials — shared GPU primitives for the flow overlays.
@@ -14,7 +16,7 @@ import {
 // Two pieces, both built once and shared across every overlay instance so the
 // scene stays a handful of draw calls:
 //
-//  • a flow-ribbon ShaderMaterial: a soft additive cyan band with travelling
+//  • a flow-ribbon node material: a soft additive cyan band with travelling
 //    "comet" pulses that flow along each path's arc length. All the motion
 //    lives in a single `uTime` uniform — the geometry never changes per frame,
 //    so animating the whole flow field costs one uniform write + one redraw,
@@ -30,51 +32,6 @@ import {
 // they carry no data and make no claim of measurement.
 // ---------------------------------------------------------------------------
 
-const flowRibbonVertexShader = /* glsl */ `
-  attribute float aDist;
-  varying vec2 vUv;
-  varying float vDist;
-
-  void main() {
-    vUv = uv;
-    vDist = aDist;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const flowRibbonFragmentShader = /* glsl */ `
-  uniform float uTime;
-  uniform vec3 uColor;
-  uniform vec3 uPulseColor;
-  uniform float uOpacity;
-  uniform float uSpeed;
-  uniform float uWavelength;
-
-  varying vec2 vUv;
-  varying float vDist;
-
-  void main() {
-    // Soft falloff across the band: bright core, transparent edges.
-    float across = 1.0 - smoothstep(0.30, 1.0, abs(vUv.y - 0.5) * 2.0);
-    // Fade the very head and tail so ribbons don't start/stop with a hard cut.
-    float ends = smoothstep(0.0, 0.06, vUv.x) * (1.0 - smoothstep(0.94, 1.0, vUv.x));
-
-    // Steady base presence — strong enough to read as a confident cyan band
-    // over the venue's bright, light floor at any zoom.
-    float base = 0.64 * across;
-
-    // Travelling comet pulses: a sawtooth phase along arc length, scrolling with
-    // time, shaped into a sharp head with a long luminous tail.
-    float phase = fract((vDist - uTime * uSpeed) / uWavelength);
-    float comet = pow(1.0 - phase, 4.0);
-    float energy = comet * across;
-
-    float alpha = (base + energy * 1.1) * ends * uOpacity;
-    vec3 color = mix(uColor, uPulseColor, energy);
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
-
 export interface FlowRibbonUniforms {
   [uniform: string]: IUniform;
   uTime: IUniform<number>;
@@ -89,7 +46,9 @@ export interface FlowRibbonUniforms {
  *  the cyan reads as cyan over the venue's *light* floor — additive would
  *  saturate to white on a pale background and vanish — and always draws through
  *  as a planning overlay. One shared instance animates the whole flow field. */
-export function createFlowRibbonMaterial(): ShaderMaterial {
+export type FlowRibbonMaterial = MeshBasicNodeMaterial & { readonly uniforms: FlowRibbonUniforms };
+
+export function createFlowRibbonMaterial(): FlowRibbonMaterial {
   const uniforms: FlowRibbonUniforms = {
     uTime: { value: 0 },
     uColor: { value: new Color("#2fa6c4") },
@@ -98,29 +57,40 @@ export function createFlowRibbonMaterial(): ShaderMaterial {
     uSpeed: { value: 2.4 }, // scene units / second a pulse travels
     uWavelength: { value: 6.0 }, // scene units between pulses
   };
-  return new ShaderMaterial({
-    vertexShader: flowRibbonVertexShader,
-    fragmentShader: flowRibbonFragmentShader,
-    uniforms,
+  const time = uniform(0).onRenderUpdate(() => uniforms.uTime.value);
+  const color = uniform(uniforms.uColor.value).onRenderUpdate(() => uniforms.uColor.value);
+  const pulseColor = uniform(uniforms.uPulseColor.value).onRenderUpdate(() => uniforms.uPulseColor.value);
+  const opacity = uniform(0.95).onRenderUpdate(() => uniforms.uOpacity.value);
+  const speed = uniform(2.4).onRenderUpdate(() => uniforms.uSpeed.value);
+  const wavelength = uniform(6).onRenderUpdate(() => uniforms.uWavelength.value);
+  const across = float(1).sub(smoothstep(0.3, 1, abs(uv().y.sub(0.5)).mul(2)));
+  const ends = smoothstep(0, 0.06, uv().x).mul(float(1).sub(smoothstep(0.94, 1, uv().x)));
+  const phase = fract(varying(attribute("aDist", "float")).sub(time.mul(speed)).div(wavelength));
+  const energy = pow(float(1).sub(phase), 4).mul(across);
+  const alpha = across.mul(0.64).add(energy.mul(1.1)).mul(ends).mul(opacity);
+  const material = new MeshBasicNodeMaterial({ fog: false,
     transparent: true,
     blending: NormalBlending,
     depthWrite: false,
     depthTest: false,
+    toneMapped: false,
   });
+  material.fragmentNode = vec4(mix(color, pulseColor, energy), alpha);
+  return Object.assign(material, { uniforms });
 }
 
-let sharedFlowRibbonMaterial: ShaderMaterial | null = null;
+let sharedFlowRibbonMaterial: FlowRibbonMaterial | null = null;
 
 /** The process-wide flow-ribbon material, built on first use. */
-export function getFlowRibbonMaterial(): ShaderMaterial {
+export function getFlowRibbonMaterial(): FlowRibbonMaterial {
   sharedFlowRibbonMaterial ??= createFlowRibbonMaterial();
   return sharedFlowRibbonMaterial;
 }
 
 /** Advance the flow pulse by `delta` seconds. Keeps Three's loosely-typed
  *  uniform bag behind a typed boundary so callers stay free of `any`. */
-export function advanceFlowRibbonTime(material: ShaderMaterial, delta: number): void {
-  const uniforms = material.uniforms as FlowRibbonUniforms;
+export function advanceFlowRibbonTime(material: FlowRibbonMaterial, delta: number): void {
+  const uniforms = material.uniforms;
   uniforms.uTime.value += delta;
 }
 

@@ -417,7 +417,7 @@ export function InteriorCamera({
       contained: isContained(now.position, bounds),
     };
 
-    // Spark re-sorts every gaussian whenever the camera moves, so a camera that
+    // The native renderer re-sorts every Gaussian whenever the camera moves, so a camera that
     // moves continuously turns an occasional cost into a per-frame one. Drop
     // resolution while the viewer is driving and restore it once they stop:
     // motion hides the softness, and stillness is when detail gets looked at.

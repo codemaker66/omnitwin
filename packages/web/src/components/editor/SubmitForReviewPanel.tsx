@@ -149,11 +149,11 @@ async function submitReviewWithNotifications(configId: string, notifyTeam?: bool
     assertReviewMutationAllowed();
     if (scene !== null && space !== null && isPublicPreview) {
       const { width: w, length: l } = useRoomDimensionsStore.getState().dimensions;
-      const dataUrl = captureOrthographic(scene, w, l, { width: 800, height: 533 });
-      assertReviewMutationAllowed();
+      const dataUrl = await captureOrthographic(scene, w, l, { width: 800, height: 533 });
+      assertCurrent();
       if (dataUrl !== null) {
         await updatePublicThumbnail(configId, dataUrl);
-        assertReviewMutationAllowed();
+        assertCurrent();
       }
     }
   } catch (error) {

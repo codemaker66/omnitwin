@@ -213,8 +213,7 @@ describe("createLecternProxy", () => {
       }
       expect(mesh.material.map?.name).toBe(mapName);
       expect(mesh.material.map?.colorSpace).toBe(SRGBColorSpace);
-      expect(mesh.material.map?.image.width).toBe(1024);
-      expect(mesh.material.map?.image.height).toBe(1024);
+      expect(mesh.material.map?.image).toMatchObject({ width: 1024, height: 1024 });
       expect(mesh.material.bumpMap?.name).toBe(mapName.replace("albedo", "bump"));
       expect(mesh.material.roughnessMap?.name).toBe(mapName.replace("albedo", "roughness"));
       expect(mesh.material.map).not.toBe(mesh.material.bumpMap);

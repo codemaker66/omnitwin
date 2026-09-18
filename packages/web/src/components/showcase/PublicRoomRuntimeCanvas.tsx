@@ -1,7 +1,7 @@
 import { Suspense, type ReactElement } from "react";
-import { Canvas } from "@react-three/fiber";
+import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import { OrbitControls } from "@react-three/drei";
-import { SparkSplatLayer } from "../scene/SparkSplatLayer.js";
+import { NativeSplatLayer } from "../scene/NativeSplatLayer.js";
 
 export interface PublicRoomRuntimeCanvasProps {
   readonly visualUrl: string;
@@ -33,12 +33,12 @@ export function PublicRoomRuntimeCanvas({
       <color attach="background" args={["#111318"]} />
       <ambientLight intensity={1.6} />
       <Suspense fallback={null}>
-        <SparkSplatLayer
+        <NativeSplatLayer
           url={visualUrl}
           opacity={1}
           position={[0, -1.1, 0]}
           scale={1}
-          onLoad={onLoaded}
+          onRendered={onLoaded}
           onError={onFailed}
         />
       </Suspense>

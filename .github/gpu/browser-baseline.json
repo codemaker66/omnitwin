@@ -2027,12 +2027,12 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "93ffd98e958758b817a2-0df8b72c6017f4d93352",
+      "id": "93ffd98e958758b817a2-e36e3b1c31c31c0adc7c",
       "file": "splat-fixture.spec.ts",
-      "title": "loads the Three.js 0.180 + Spark smoke route",
+      "title": "loads the Three.js r186 native Gaussian smoke route",
       "suitePath": [
         "splat-fixture.spec.ts",
-        "Spark fixture"
+        "Native Gaussian fixture"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

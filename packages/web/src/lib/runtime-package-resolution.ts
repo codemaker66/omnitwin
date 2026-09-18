@@ -11,7 +11,7 @@ import { deriveRoomCamera, roomSplatBundle, roomSplatTileSources } from "../data
 // Runtime asset decision for /dev/trades-hall-visual.
 //
 // The visual route uses the latest usable RuntimePackage for the selected
-// venue/room. Every URL is revalidated in the browser before Spark sees it,
+// venue/room. Every URL is revalidated in the browser before the native decoder sees it,
 // even if it came from the API, so polluted registry rows fall back to the
 // procedural scene.
 // ---------------------------------------------------------------------------

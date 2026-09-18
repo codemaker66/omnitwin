@@ -11,7 +11,7 @@ export interface ChunkArrivals {
   readonly failedCount: number;
   readonly loadedUrls: ReadonlySet<string>;
   readonly failedUrls: ReadonlySet<string>;
-  /** Identity-stable — safe to hand to Spark load callbacks. */
+  /** Identity-stable — safe to hand to native splat load callbacks. */
   readonly markLoaded: (url: string) => void;
   /** Identity-stable — a chunk whose decode failed permanently. */
   readonly markFailed: (url: string) => void;

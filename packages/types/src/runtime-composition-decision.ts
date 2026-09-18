@@ -79,7 +79,7 @@ export const RuntimeCompositionDecisionV0Schema = z
       evidenceRefs: z.array(RuntimeCompositionEvidenceRefSchema).min(1),
     }).strict(),
     runtimeLoading: z.object({
-      renderer: z.literal("@sparkjsdev/spark"),
+      renderer: z.enum(["@sparkjsdev/spark", "three/addons/objects/GaussianSplat.js"]),
       servedChunkStrategy: z.literal("manifest_room_sog_chunks"),
       chunkOrdering: z.literal("api_file_name_ascending"),
       visualAssetUrlsExpectedCount: z.number().int().positive(),

@@ -6,7 +6,8 @@ import {
   useState,
   type ReactElement,
 } from "react";
-import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { NativeCanvas as Canvas } from "../../components/scene/NativeCanvas.js";
 import {
   BufferAttribute,
   BufferGeometry,
@@ -20,9 +21,9 @@ import {
   Vector3,
 } from "three";
 import {
-  SparkSplatLayer,
-  type SparkSplatErrorEvent,
-} from "../../components/scene/SparkSplatLayer.js";
+  NativeSplatLayer,
+  type NativeSplatErrorEvent,
+} from "../../components/scene/NativeSplatLayer.js";
 import {
   FIRST_TABLE,
   INK_GOLD_BRIGHT,
@@ -43,7 +44,7 @@ import {
 // -----------------------------------------------------------------------------
 // FreshWalk — the captured Reception Room, awake on the homepage.
 //
-// Loaded lazily: this module (and with it three + Spark) costs nothing until
+// Loaded lazily: this module (and with it Three and the native splat addon) costs nothing until
 // the visitor asks to step in. The camera stands at a REAL capture viewpoint
 // (pose 1856 of the scan — the splat is only photoreal where the scanner
 // stood; the crane law) and never translates: dragging turns the head, with
@@ -285,17 +286,15 @@ export default function FreshWalk({
 }: FreshWalkProps): ReactElement {
   const urls = useMemo(() => receptionTileUrls(), []);
   const loadedRef = useRef(new Set<string>());
+  const drawnRef = useRef(new Set<string>());
+  const reportedLiveRef = useRef(false);
   const failedRef = useRef(false);
   const interaction = useRef<WalkInteraction>({ tableDrag: false });
   const nudgeRef = useRef<((dx: number, dz: number) => void) | null>(null);
   const [live, setLive] = useState(false);
 
-  // SparkSplatLayer re-creates its mesh — disposing and REFETCHING the
-  // tile — whenever onLoad/onError change identity. The handlers below
-  // must therefore stay identity-stable for the component's whole life,
-  // whatever the parent passes; latest callbacks live in refs. (Unstable
-  // handlers put the room into permanent dispose/refetch churn on slow
-  // networks: state reached "live" while Spark never painted a frame.)
+  // Keep progress callbacks current without coupling source residency to a
+  // parent's renders. Decode and draw readiness are retained independently.
   const onLiveRef = useRef(onLive);
   const onFailedRef = useRef(onFailed);
   const onProgressRef = useRef(onProgress);
@@ -305,22 +304,33 @@ export default function FreshWalk({
     onProgressRef.current = onProgress;
   }, [onFailed, onLive, onProgress]);
 
+  const reportLiveWhenDrawn = useCallback(() => {
+    if (failedRef.current || reportedLiveRef.current
+      || !urls.every((url) => loadedRef.current.has(url) && drawnRef.current.has(url))) return;
+    reportedLiveRef.current = true;
+    setLive(true);
+    onLiveRef.current();
+  }, [urls]);
+
   const handleLoad = useCallback((event: { url: string }) => {
     loadedRef.current.add(event.url);
     const loadedBytes = RECEPTION_TILE_MANIFEST.filter((tile) =>
       loadedRef.current.has(`/splats/reception/${tile.file}`),
     ).reduce((sum, tile) => sum + tile.bytes, 0);
     onProgressRef.current(loadedBytes, TOTAL_BYTES);
-    if (loadedRef.current.size >= RECEPTION_TILE_MANIFEST.length) {
-      setLive(true);
-      onLiveRef.current();
-    }
-  }, []);
+    reportLiveWhenDrawn();
+  }, [reportLiveWhenDrawn]);
 
-  const handleError = useCallback((_event: SparkSplatErrorEvent) => {
+  const handleRendered = useCallback((url: string) => {
+    drawnRef.current.add(url);
+    reportLiveWhenDrawn();
+  }, [reportLiveWhenDrawn]);
+
+  const handleError = useCallback((_event: NativeSplatErrorEvent) => {
     // One missing tile is an incomplete room — fail honestly, once.
     if (failedRef.current) return;
     failedRef.current = true;
+    setLive(false);
     onFailedRef.current();
   }, []);
 
@@ -356,11 +366,12 @@ export default function FreshWalk({
       >
         <group rotation={[-Math.PI / 2, 0, 0]}>
           {urls.map((url, index) => (
-            <SparkSplatLayer
+            <NativeSplatLayer
               key={url}
               url={url}
               includeRendererHost={index === 0}
               onLoad={handleLoad}
+              onRendered={handleRendered}
               onError={handleError}
             />
           ))}

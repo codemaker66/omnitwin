@@ -1,32 +1,17 @@
 import type { DeviceTier } from "./device-tier.js";
 
-// ---------------------------------------------------------------------------
-// How hard the splat renderer may work on this device.
-//
-// Spark's per-frame cost has two independent halves. The SORT reads every
-// Gaussian's depth back from the GPU and orders it in a worker; its cost is a
-// function of splat count alone, and `minSortIntervalMs` is the only knob that
-// changes how often it runs. The RASTER blends every visible Gaussian into
-// every pixel; its cost scales with the pixel ratio and with `maxStdDev`, the
-// radius at which a Gaussian's tail is cut. The level-of-detail tree caps the
-// number of Gaussians that reach either half at a per-device budget.
-//
-// This module is the single place those numbers live. The table is per tier;
-// the overrides exist so the drag budget script (scripts/splat-drag-budget.mjs)
-// can sweep the space on a real GPU without a source edit per point, and they
-// are only honoured where the caller says so (the hook passes DEV).
-//
-// The table's numbers are not opinions. They are set by measurement on the
-// Grand Hall leaf set and recorded in docs/reports; a change here without a
-// new measurement is a regression waiting to be discovered by a visitor.
-// ---------------------------------------------------------------------------
+// Device budgets are preserved from the measured Spark baseline. Native Three
+// uses complete vendor capture levels (selected by roomLevelForBudget), not a
+// Spark tree or arbitrary point removal. DPR and SH settings still apply.
+// Native performance must be measured separately; the old measurements are
+// recorded in docs/reports/splat-drag-budget-2026-09-03.md.
 
 export interface SplatRuntimeSettings {
   /** Minimum gap between depth sorts. 0 sorts on every camera change. */
   readonly minSortIntervalMs: number;
   /** Standard deviations from a Gaussian's centre at which it stops drawing. */
   readonly maxStdDev: number;
-  /** Whether meshes load through Spark's level-of-detail tree. */
+  /** Whether staged scenes select complete capture levels within the device budget. */
   readonly lod: boolean;
   /**
    * Gaussians on screen while the view is still. At or above the room's leaf
@@ -41,12 +26,7 @@ export interface SplatRuntimeSettings {
   readonly motionLodSplatCount: number;
   /** Highest spherical-harmonic degree evaluated per Gaussian, 0 to 3. */
   readonly maxSh: number;
-  /**
-   * When the tree is on and a tile has a prebuilt tree, load that (paged)
-   * instead of the tile. A prebuilt tree spares the browser the build but
-   * costs about 3.4 times the tile's bytes on the wire, so this is a
-   * bandwidth decision, not a quality one.
-   */
+  /** Legacy query field retained for compatibility; native delivery always uses source captures. */
   readonly preferTrees: boolean;
   /** Pixel ratio while the view is moving. */
   readonly motionDpr: number;
@@ -64,44 +44,11 @@ export interface SplatRuntimeOverrides extends Partial<SplatRuntimeSettings> {
   readonly tier?: DeviceTier;
 }
 
-/** Spark's own default: Gaussians draw out to sqrt(8) standard deviations. */
-export const SPARK_DEFAULT_MAX_STD_DEV = Math.sqrt(8);
+/** Preserve the previous Gaussian tail cutoff while changing render backends. */
+export const SPLAT_MAX_STD_DEV = Math.sqrt(8);
 
 const TIERS: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
 
-/**
- * Per-tier settings, set by measurement on 2026-09-03
- * (docs/reports/splat-drag-budget-2026-09-03.md, scripts/splat-drag-budget.mjs).
- *
- * The Grand Hall leaf set (6.02 M Gaussians, twelve tiles) under a four-second
- * drag on an RTX 4090 laptop through WebGL2 ran at 13 to 15 fps whatever the
- * sort interval (33 to 100 ms), the motion pixel ratio (0.5) or the tail
- * radius (sqrt 5): the frame was twelve renderer hosts, one per tile, each
- * sorting, reading back and uploading the whole room. With ONE host the same
- * six million draw at 176 fps (p95 12.4 ms, heap 434 MB against 1.5 GB), and
- * with the level-of-detail tree the drag sits at the display's refresh
- * ceiling (239 fps) at any motion budget from 1.0 M to 2.5 M. The tree's
- * budgets measured with twelve hosts still order the devices (35.6 fps at
- * 2.5 M, 56.8 at 1.5 M, 75.7 at 1.0 M, 125 at 0.5 M), so they remain the
- * shape of the protection for weaker GPUs. The sort interval and the tail
- * radius stay at Spark's defaults because they measured as nothing.
- *
- * The tree is not free, and the measurements say where it pays. Built in the
- * browser it costs about twelve seconds of load on this room; prebuilt and
- * paged it loads in two seconds but fetches 348 MB where the tiles are 102,
- * because a complete resting view needs every leaf and the tree format is
- * 3.5 times the tile's bytes (the compact encoding changes nothing). So the
- * high tier, which needs no protection on the measured GPU, runs the tiles
- * as they are; the three weaker tiers build the tree in the browser, which
- * keeps the wire at the tiles' bytes; and the prebuilt trees stay in the
- * manifest as an opt-in (`trees:on`) for fast connections and for the
- * harness. The cheaper protection for weak devices is the vendor's own
- * coarser levels, which the staged bundle already holds: the next slice.
- *
- * Only the high tier was measured. The other three are scaled from it by
- * the usual gap between GPU classes and are marked so; each is replaced by
- * its own measurement the first time the drag budget runs on such a device.
- */
 /**
  * The largest settled drawing buffer worth asking a device for, in pixels.
  *
@@ -140,7 +87,7 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
   poster: {
     // Extrapolated, not measured: software renderers should not be here at all.
     minSortIntervalMs: 0,
-    maxStdDev: SPARK_DEFAULT_MAX_STD_DEV,
+    maxStdDev: SPLAT_MAX_STD_DEV,
     lod: true,
     lodSplatCount: 600_000,
     motionLodSplatCount: 150_000,
@@ -152,7 +99,7 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
   low: {
     // Extrapolated, not measured: budget mobile GPUs.
     minSortIntervalMs: 0,
-    maxStdDev: SPARK_DEFAULT_MAX_STD_DEV,
+    maxStdDev: SPLAT_MAX_STD_DEV,
     lod: true,
     lodSplatCount: 1_500_000,
     motionLodSplatCount: 300_000,
@@ -164,7 +111,7 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
   medium: {
     // Extrapolated, not measured: integrated desktop and mid-range mobile GPUs.
     minSortIntervalMs: 0,
-    maxStdDev: SPARK_DEFAULT_MAX_STD_DEV,
+    maxStdDev: SPLAT_MAX_STD_DEV,
     lod: true,
     lodSplatCount: 3_000_000,
     motionLodSplatCount: 500_000,
@@ -174,14 +121,9 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
     settledDpr: 2,
   },
   high: {
-    // Measured (RTX 4090 laptop, 1600x900, one host): the full 6.0 M without
-    // the tree drags at 176 fps (p95 12.4 ms, heap 434 MB, 4.4 s load), so
-    // this tier runs the tiles as they are; the tree would cost twelve
-    // seconds of load for a frame rate already far past the display. The
-    // budgets are kept for the day a device in this tier measures otherwise:
-    // 2.5 M is Spark's own desktop default.
+    // Full source detail on high-tier devices; requalify against the native baseline.
     minSortIntervalMs: 0,
-    maxStdDev: SPARK_DEFAULT_MAX_STD_DEV,
+    maxStdDev: SPLAT_MAX_STD_DEV,
     lod: false,
     lodSplatCount: 8_000_000,
     motionLodSplatCount: 2_500_000,
@@ -205,7 +147,7 @@ const RANGES = {
   maxStdDev: { min: 1, max: 4, allowZero: false, integer: false },
   motionDpr: { min: 0.25, max: 3, allowZero: false, integer: false },
   settledDpr: { min: 0.25, max: 3, allowZero: false, integer: false },
-  /** Spark's paged allocation ceiling: 256 pages of 65,536. */
+  /** Retained budget range; actual native storage limits are checked per device. */
   lodSplatCount: { min: 65_536, max: 16_777_216, allowZero: false, integer: true },
   motionLodSplatCount: { min: 65_536, max: 16_777_216, allowZero: false, integer: true },
   maxSh: { min: 0, max: 3, allowZero: true, integer: true },

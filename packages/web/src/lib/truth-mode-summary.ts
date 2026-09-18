@@ -53,7 +53,7 @@ export interface BuildProceduralTruthSummaryInput {
 const SURFACE_LABELS: Readonly<Record<TruthModeSurface, string>> = {
   planner_2d: "2D planning",
   planner_3d: "3D planning",
-  spark_fixture: "Spark fixture",
+  spark_fixture: "Gaussian fixture",
 };
 
 function assertNever(value: never): never {

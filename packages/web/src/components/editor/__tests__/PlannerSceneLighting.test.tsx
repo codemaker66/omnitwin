@@ -1,3 +1,4 @@
+vi.mock("../../scene/NativeCanvas.js", async () => ({ NativeCanvas: (await import("@react-three/fiber")).Canvas }));
 import { Children, Fragment, isValidElement, type ReactNode } from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

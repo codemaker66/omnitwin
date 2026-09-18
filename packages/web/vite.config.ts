@@ -15,7 +15,6 @@ import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
 // out of every other route's initial download:
 //   - react-vendor: react/dom/router (every route needs it; cacheable)
 //   - three:        three.js + R3F + drei + stdlib (3D routes only)
-//   - spark:        Spark 2.1 splat renderer (splat routes only)
 //   - clerk:        @clerk/react (login, register, dashboard need it;
 //                   anonymous /hallkeeper/:id and /editor guests do NOT)
 //
@@ -92,11 +91,12 @@ export default defineConfig(({ mode }) => {
       // staging middleware serves them from "/splats" instead.
       "import.meta.env.VITE_SPLAT_BASE_URL": JSON.stringify(splatBaseUrl),
     },
+    worker: { format: "es" },
     build: {
       target: "es2022",
       sourcemap: sentrySourceMapUpload === null ? false : "hidden",
-      // The Three/Spark chunks are intentionally large and deliberately lazy:
-      // source tests below pin both the split and the absence of Spark from
+      // The Three.js chunks are intentionally large and deliberately lazy:
+      // source tests below pin both the split and the absence of splat decoding from
       // normal editor routes. Raising this limit quiets Vite's generic warning
       // without hiding accidental eager imports.
       chunkSizeWarningLimit: 5_500,
@@ -123,10 +123,6 @@ export default defineConfig(({ mode }) => {
               normalizedId.includes("/node_modules/three-stdlib/")
             ) {
               return "three";
-            }
-
-            if (normalizedId.includes("/node_modules/@sparkjsdev/spark/")) {
-              return "spark";
             }
 
             if (normalizedId.includes("/node_modules/@clerk/")) {

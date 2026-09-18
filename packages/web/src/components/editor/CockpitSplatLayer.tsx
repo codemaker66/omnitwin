@@ -28,14 +28,14 @@ const DISSOLVE_EASE = 0.16;
 // read as the room developing coarse-to-fine rather than popping (02 §6).
 const REVEAL_EASE = 0.12;
 
-const LazySparkSplatLayer = lazy(async () => {
-  const module = await import("../scene/SparkSplatLayer.js");
-  return { default: module.SparkSplatLayer };
+const LazyNativeSplatLayer = lazy(async () => {
+  const module = await import("../scene/NativeSplatLayer.js");
+  return { default: module.NativeSplatLayer };
 });
 
 /**
  * Ref-driven dissolve engine: every eased value lives in refs and is stepped
- * inside ONE useFrame, with SplatMesh opacity applied by SparkSplatLayer's
+ * inside ONE useFrame, with SplatMesh opacity applied by NativeSplatLayer's
  * polled opacityFn. Per-channel timestamps preserve a fresh fade after demand
  * idle while allowing genuinely slow active frames to catch up. No React
  * state or per-frame reconciliation is introduced by this animation.
@@ -43,7 +43,7 @@ const LazySparkSplatLayer = lazy(async () => {
 interface RevealingSplatChunkProps {
   readonly url: string;
   readonly transform: RuntimeAssetViewTransform;
-  /** Polled per frame by SparkSplatLayer; identity-stable per url. */
+  /** Polled per frame by NativeSplatLayer; identity-stable per url. */
   readonly opacityFn: () => number;
   readonly includeRendererHost: boolean;
   readonly onFirstFrame?: () => void;
@@ -55,7 +55,7 @@ interface RevealingSplatChunkProps {
 /**
  * One captured chunk developing into the scene: invisible until its bytes
  * decode, then eased in by the engine above. The onLoad/onError callbacks
- * passed to Spark must stay identity-stable — SparkSplatLayer disposes and
+ * passed to the native layer must stay identity-stable — NativeSplatLayer disposes and
  * re-creates its SplatMesh when either callback's identity changes. A
  * permanent decode failure is reported upward so the phase machine can settle
  * instead of wedging in "developing" (reviewer HIGH finding).
@@ -84,7 +84,7 @@ function RevealingSplatChunk({
   }, [url]);
 
   return (
-    <LazySparkSplatLayer
+    <LazyNativeSplatLayer
       url={url}
       visible
       opacityFn={opacityFn}

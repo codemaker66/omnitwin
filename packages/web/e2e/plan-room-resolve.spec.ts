@@ -63,48 +63,19 @@ async function throttleTo50Mbps(page: Page): Promise<void> {
 async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(name);
   const readPreservedCanvas = async (): Promise<Buffer> => {
-    const dataUrl = await page.evaluate(() => {
-      // Both calling cases opt into PlannerScene's existing DEV capture aid.
-      // Inspect the actual context: the URL alone cannot prove preservation.
-      if (new URLSearchParams(window.location.search).get("capture") !== "1") {
-        throw new Error("Stage evidence requires the existing ?capture=1 page");
-      }
-      const canvases = document.querySelectorAll("canvas");
-      const canvas = canvases.item(0);
-      if (canvases.length !== 1 || !(canvas instanceof HTMLCanvasElement)
-        || !canvas.isConnected || canvas.closest(".cockpit-stage") === null) {
-        throw new Error("Stage evidence requires exactly one connected planner canvas");
-      }
-      // PerfMonitor publishes the application-owned renderer in DEV. Its
-      // getContext() returns that renderer's existing context; never call the
-      // canvas context factory, which could create one in a broken scene.
+    await page.evaluate(() => {
+      const canvas = document.querySelector(".cockpit-stage canvas");
       const renderer: unknown = window.__venPerf?.gl;
-      if (typeof renderer !== "object" || renderer === null
-        || !("isWebGLRenderer" in renderer) || renderer.isWebGLRenderer !== true
-        || !("domElement" in renderer) || renderer.domElement !== canvas
-        || !("getContext" in renderer) || typeof renderer.getContext !== "function") {
-        throw new Error("Stage evidence requires its application-owned renderer");
+      if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected
+        || canvas.width <= 0 || canvas.height <= 0 || canvas.dataset["renderer"] !== "three-native"
+        || typeof renderer !== "object" || renderer === null
+        || !("domElement" in renderer) || renderer.domElement !== canvas) {
+        throw new Error("Stage evidence requires the live application-owned native canvas");
       }
-      const gl: unknown = Reflect.apply(renderer.getContext, renderer, []);
-      if (typeof WebGL2RenderingContext === "undefined"
-        || !(gl instanceof WebGL2RenderingContext) || gl.canvas !== canvas
-        || gl.getContextAttributes()?.preserveDrawingBuffer !== true
-        || gl.isContextLost()) {
-        throw new Error("Stage evidence requires a live, preserved WebGL2 context");
-      }
-      if (canvas.width <= 0 || canvas.height <= 0
-        || gl.drawingBufferWidth !== canvas.width || gl.drawingBufferHeight !== canvas.height) {
-        throw new Error("Stage evidence requires the complete nonzero drawing buffer");
-      }
-      // Read the existing pixels only. No input, invalidation or extra draw.
-      // Native readback can still stall; the existing case timeout bounds it.
-      const png = canvas.toDataURL("image/png");
-      if (!png.startsWith("data:image/png;base64,")) {
-        throw new Error("Stage canvas did not produce a PNG data URL");
-      }
-      return png;
     });
-    return Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+    // Screenshot the displayed compositor surface, valid for WebGPU and WebGL2.
+    // Never create another context or draw a separate scene as evidence.
+    return page.locator(".cockpit-stage canvas").screenshot({ timeout: 15000 });
   };
   // Preserve the existing pre-read wait and one blank-image recovery attempt.
   await page.waitForTimeout(400);

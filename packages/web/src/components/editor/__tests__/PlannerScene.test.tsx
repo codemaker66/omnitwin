@@ -1,3 +1,4 @@
+vi.mock("../../scene/NativeCanvas.js", async () => ({ NativeCanvas: (await import("@react-three/fiber")).Canvas }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
@@ -28,12 +29,10 @@ vi.mock("@react-three/fiber", () => ({
   },
 }));
 
-// CockpitSplatLayer pulls in @sparkjsdev/spark, which instantiates a WASM
-// module at import time and rejects under Node's test environment. Mock it so
-// the splat renderer is never imported. (It sits inside the mocked Canvas and
-// never mounts here — chunk-arrival semantics are covered by
+// Keep the native GPU splat boundary out of this CPU composition test.
+// It sits inside the mocked Canvas and never mounts here; chunk-arrival semantics are covered by
 // use-chunk-arrivals.test.ts, and the real callback plumbing by the
-// plan-room-resolve e2e, which streams actual chunks.)
+// plan-room-resolve e2e, which streams actual chunks.
 vi.mock("../CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
 
 const splatHookMock = vi.hoisted(() => ({ useRoomRuntimeSplat: vi.fn() }));
@@ -309,7 +308,7 @@ describe("PlannerScene", () => {
 
     expect(source).toContain("function PlannerScenePrecompiler");
     expect(source).toContain("await gl.compileAsync(scene, camera)");
-    expect(source).toContain("gl.compile(scene, camera)");
+    expect(source).not.toContain("gl.compile(scene, camera)");
     expect(source).toContain("<PlannerScenePrecompiler signature={sceneWarmupSignature} />");
   });
 

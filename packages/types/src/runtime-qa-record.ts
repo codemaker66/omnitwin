@@ -168,7 +168,7 @@ export const RuntimeQaCameraProfileSchema = z
 
 export const RuntimeQaSparkLoadSchema = z
   .object({
-    renderer: z.literal("@sparkjsdev/spark"),
+    renderer: z.enum(["@sparkjsdev/spark", "three/addons/objects/GaussianSplat.js"]),
     route: z.string().trim().min(1).max(240),
     loadStatus: z.enum(["loaded", "failed", "not_run"]),
     visualChunkCount: z.number().int().nonnegative(),

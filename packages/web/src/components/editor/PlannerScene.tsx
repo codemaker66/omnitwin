@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
+import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -177,7 +178,8 @@ function PlannerScenePrecompiler({
       try {
         await gl.compileAsync(scene, camera);
       } catch {
-        gl.compile(scene, camera);
+        // Compilation is a warmup. Native errors are surfaced by NativeCanvas;
+        // the next draw may retry after a transient material/scene transition.
       }
       if (!cancelled) invalidate();
     };

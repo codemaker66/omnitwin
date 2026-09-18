@@ -118,7 +118,7 @@ import {
 } from "./fresh-copy.js";
 import { RoomDossier } from "./RoomDossier.js";
 
-/** The captured room costs nothing until invited: three + Spark live in
+/** The captured room costs nothing until invited: Three and the native splat addon live in
  *  this chunk, which only downloads when the visitor steps in. */
 const FreshWalk = lazy(() => import("./FreshWalk.js"));
 

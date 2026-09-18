@@ -42,7 +42,7 @@ describe("router.tsx — lazy route loading (#16)", () => {
     expect(codeOnly).toMatch(/import\s+\{[^}]*\bSuspense\b[^}]*\}\s+from\s+["']react["']/);
   });
 
-  it("lazy-loads all route page components, including internal Spark routes", async () => {
+  it("lazy-loads all route page components, including internal Gaussian routes", async () => {
     const { codeOnly } = await readSource(SRC);
     // Each page must be wrapped in lazy(() => import("./pages/X.js")),
     // optionally through the cockpitImport retry helper (Wave-A refactor).
@@ -101,8 +101,8 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
   it("raises the chunk warning limit only for deliberate lazy 3D vendor chunks", async () => {
     const { raw } = await readSource(SRC);
     expect(raw).toMatch(/chunkSizeWarningLimit:\s*5_500/);
-    expect(raw).toContain("Three/Spark chunks are intentionally large");
-    expect(raw).toContain("absence of Spark from");
+    expect(raw).toContain("Three.js chunks are intentionally large");
+    expect(raw).toContain("absence of splat decoding from");
   });
 
   it("defines the three expected vendor chunk groups", async () => {
@@ -110,7 +110,7 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain(`"react-vendor"`);
     expect(codeOnly).toContain(`"three"`);
     expect(codeOnly).toContain(`"clerk"`);
-    expect(codeOnly).toContain(`"spark"`);
+    expect(codeOnly).not.toContain(`"spark"`);
   });
 
   it("react-vendor chunk includes shared app runtime modules", async () => {
@@ -136,10 +136,10 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain(`return "three"`);
   });
 
-  it("spark chunk isolates the Spark renderer from normal editor loads", async () => {
+  it("does not ship a Spark renderer chunk", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toContain(`"/node_modules/@sparkjsdev/spark/"`);
-    expect(codeOnly).toContain(`return "spark"`);
+    expect(codeOnly).not.toContain(`"/node_modules/@sparkjsdev/spark/"`);
+    expect(codeOnly).not.toContain(`return "spark"`);
   });
 
   it("clerk chunk isolates @clerk/react", async () => {

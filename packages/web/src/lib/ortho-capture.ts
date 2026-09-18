@@ -2,17 +2,20 @@
 // Orthographic Capture — renders a top-down PNG of the room from Three.js
 //
 // Creates a temporary orthographic camera directly above the room, renders
-// a single frame to an offscreen canvas, and returns a PNG data URL.
+// a single frame to an offscreen native render target, and returns a PNG URL.
 // Used by the hallkeeper sheet to generate the floor plan diagram.
 // ---------------------------------------------------------------------------
 
 import {
   OrthographicCamera,
-  WebGLRenderer,
-  Scene,
+  RenderTarget,
+  SRGBColorSpace,
+  UnsignedByteType,
+  type Scene,
   Color,
 } from "three";
 import { prepareFurnitureForOrthographicCapture } from "./layout-timeline-capture.js";
+import { nativeRendererForScene } from "./native-renderer.js";
 
 /** Capture options. */
 export interface CaptureOptions {
@@ -35,18 +38,29 @@ export interface CaptureOptions {
  * @param options - Capture dimensions and padding.
  * @returns PNG as a data URL (base64), or null if capture fails.
  */
-export function captureOrthographic(
+export async function captureOrthographic(
   scene: Scene,
   roomWidthRender: number,
   roomLengthRender: number,
   options: CaptureOptions = {},
-): string | null {
+): Promise<string | null> {
   const {
     width = 2400,
     height = 1600,
     padding = 3,
     background = "#f5f5f0",
   } = options;
+  const renderer = nativeRendererForScene(scene);
+  if (renderer === null || !Number.isInteger(width) || !Number.isInteger(height)
+    || width <= 0 || height <= 0 || width > 8192 || height > 8192
+    || !Number.isFinite(roomWidthRender) || roomWidthRender <= 0
+    || !Number.isFinite(roomLengthRender) || roomLengthRender <= 0
+    || !Number.isFinite(padding) || padding < 0) return null;
+  const renderTarget = new RenderTarget(width, height, {
+    type: UnsignedByteType,
+    colorSpace: SRGBColorSpace,
+    depthBuffer: true,
+  });
 
   // The DiagramLabels React component keeps labels hidden by default. Saved
   // plan captures show them; a timeline keyframe capture must suppress them
@@ -56,20 +70,7 @@ export function captureOrthographic(
   // A scrubbed in-between layout is presentational, never export evidence.
   // Substitute the nearest immutable phase keyframe for this render, or the
   // editor's saved layout when no timeline keyframe is mounted.
-  const furnitureCapture = prepareFurnitureForOrthographicCapture(scene);
-  if (labelsGroup !== undefined) labelsGroup.visible = furnitureCapture.diagramLabelsVisible;
-
   try {
-    // Offscreen renderer — separate from the main canvas
-    const renderer = new WebGLRenderer({
-      antialias: true,
-      alpha: false,
-      preserveDrawingBuffer: true,
-    });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(1); // fixed for consistent output
-    renderer.setClearColor(new Color(background), 1);
-
     // Orthographic camera looking straight down
     const halfW = roomWidthRender / 2 + padding;
     const halfL = roomLengthRender / 2 + padding;
@@ -99,22 +100,63 @@ export function captureOrthographic(
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
 
-    // Render
-    renderer.render(scene, camera);
-
-    // Extract PNG
-    const dataUrl = renderer.domElement.toDataURL("image/png");
-
-    // Cleanup
-    renderer.dispose();
-    if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
-    furnitureCapture.restore();
-
-    return dataUrl;
+    const previousTarget = renderer.getRenderTarget();
+    const previousFace = renderer.getActiveCubeFace();
+    const previousMip = renderer.getActiveMipmapLevel();
+    const previousBackground = scene.background;
+    const previousAutoClear = renderer.autoClear;
+    const previousXr = renderer.xr.enabled;
+    const furnitureCapture = prepareFurnitureForOrthographicCapture(scene);
+    // All changes to the live scene/device are scoped to one synchronous draw.
+    // Pixel readback can await the GPU without flashing labels, replacing the
+    // visible camera or holding timeline furniture in its capture state.
+    try {
+      if (labelsGroup !== undefined) labelsGroup.visible = furnitureCapture.diagramLabelsVisible;
+      scene.background = new Color(background);
+      renderer.autoClear = true;
+      renderer.xr.enabled = false;
+      renderer.setRenderTarget(renderTarget);
+      renderer.render(scene, camera);
+    } finally {
+      renderer.setRenderTarget(previousTarget, previousFace, previousMip);
+      renderer.autoClear = previousAutoClear;
+      renderer.xr.enabled = previousXr;
+      scene.background = previousBackground;
+      if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
+      furnitureCapture.restore();
+    }
+    const pixels = await renderer.readRenderTargetPixelsAsync(renderTarget, 0, 0, width, height);
+    const webgl = "isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true;
+    // r186's WebGPU readback retains its mandatory 256-byte row alignment;
+    // the last row ends at the image width. WebGL returns contiguous rows.
+    const rowStride = webgl ? width * 4 : Math.ceil(width * 4 / 256) * 256;
+    const expectedBytes = (height - 1) * rowStride + width * 4;
+    if (!(pixels instanceof Uint8Array) || pixels.length !== expectedBytes) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (context === null) return null;
+    const image = context.createImageData(width, height);
+    copyNativeCapturePixels(pixels, image.data, width, height, webgl, rowStride);
+    context.putImageData(image, 0, 0);
+    return canvas.toDataURL("image/png");
   } catch {
-    if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
-    furnitureCapture.restore();
     return null;
+  } finally {
+    renderTarget.dispose();
+  }
+}
+
+/** Canvas images are top-down; WebGL readback starts at its lower-left corner. */
+export function copyNativeCapturePixels(
+  pixels: Uint8Array, output: Uint8ClampedArray, width: number, height: number, flipY: boolean,
+  rowStride = width * 4,
+): void {
+  const rowBytes = width * 4;
+  for (let row = 0; row < height; row += 1) {
+    const sourceRow = flipY ? height - row - 1 : row;
+    output.set(pixels.subarray(sourceRow * rowStride, sourceRow * rowStride + rowBytes), row * rowBytes);
   }
 }
 
