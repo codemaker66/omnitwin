@@ -4,7 +4,10 @@ T-627 implements Blake’s 18 September 2026 instruction to drop Spark after the
 native r186 baseline. This decision supersedes the renderer choice in D-001/D-002;
 historical evidence and source captures remain unchanged. The native renderer is
 deployed at `da944981`; [release evidence](../reports/native-splat-baseline-2026-09-18.md#production-delivery)
-records complete CI and live checks. Founder visual acceptance remains separate.
+records complete CI and live checks. Blake accepted the inspected native result
+on 18 September: “go ahead and cut out spark, i am satisfied with the results :)”.
+This accepts the renderer migration; broader physical-device qualification remains
+separate.
 
 ## Runtime boundary
 
@@ -86,6 +89,11 @@ Canonical staged SOG URLs replace the optional Spark RAD-tree path. RAD metadata
 and historical QA records remain provenance, not a browser dependency. Legacy
 registered formats without a native adapter report a conversion error explicitly;
 review the loader’s supported formats before registering new runtime artifacts.
+
+The obsolete XGRIDS `lcc2 lod --build-lod` command and its Spark tree generator
+are retired. Stage the original SOG tiles with `lcc2 stage`; the native renderer
+selects those captures directly. Retained RAD descriptors and QA enum values
+describe historical assets and do not invoke or install Spark.
 
 Supported inputs are ZIP SOG v1/v2 with lossless WebP planes, ordinary SPZ v1–4
 (SPZ LOD trees are rejected), conventional 32-byte SPLAT, and KSPLAT v0.1 with
