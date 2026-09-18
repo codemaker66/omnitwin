@@ -92,6 +92,16 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_SPLAT_BASE_URL": JSON.stringify(splatBaseUrl),
     },
     worker: { format: "es" },
+    optimizeDeps: {
+      // The lazy decoder worker otherwise discovers these after the planner
+      // starts, causing Vite to reload the document during capture decoding.
+      include: [
+        "three/addons/loaders/GaussianSplatPLYLoader.js",
+        "three/addons/loaders/SPZLoader.js",
+        "three/addons/libs/zstddec.module.js",
+        "@jsquash/webp/decode.js",
+      ],
+    },
     build: {
       target: "es2022",
       sourcemap: sentrySourceMapUpload === null ? false : "hidden",
