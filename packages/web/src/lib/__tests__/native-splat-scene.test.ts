@@ -42,8 +42,15 @@ function setup() {
   const scene = new Scene(), camera = new PerspectiveCamera();
   const renderer = new WebGPURenderer({ forceWebGL: true });
   const compile = vi.spyOn(renderer, "compileAsync").mockResolvedValue(undefined);
+  const gpu = {
+    SYNC_GPU_COMMANDS_COMPLETE: 37143, ALREADY_SIGNALED: 37146, CONDITION_SATISFIED: 37148, TIMEOUT_EXPIRED: 37147,
+    fenceSync: vi.fn(() => ({})), deleteSync: vi.fn(), flush: vi.fn(), isContextLost: vi.fn(() => false),
+    clientWaitSync: vi.fn(() => 37146),
+  };
+  vi.spyOn(renderer, "getContext").mockReturnValue(gpu);
   const runtime = new NativeSplatScene(scene);
-  const detach = runtime.attach(renderer, camera, vi.fn());
+  const invalidate = vi.fn();
+  const detach = runtime.attach(renderer, camera, invalidate);
   const add = (count: number, readOpacity = () => 1, group?: string) => {
     const anchor = new Object3D(); scene.add(anchor);
     const error = vi.fn(), rendered = vi.fn();
@@ -52,13 +59,180 @@ function setup() {
     return { ...handle, error, rendered, anchor };
   };
   const draw = () => scene.children.find((object) => "isMesh" in object) as Mesh<InstancedBufferGeometry, Material> | undefined;
-  return { scene, camera, renderer, runtime, compile, detach, add, draw };
+  const render = (): void => {
+    const object = draw();
+    if (object === undefined) throw new Error("Expected native draw");
+    withNativeRenderScope(renderer, scene, camera, () => {
+      Reflect.apply(object.onAfterRender.bind(object), object, [renderer, scene, camera, object.geometry, object.material, new Group()]);
+    });
+  };
+  return { scene, camera, renderer, runtime, compile, detach, add, draw, gpu, render, invalidate };
 }
 
 beforeEach(() => { vi.useFakeTimers(); evidence.created = 0; evidence.disposed = 0; evidence.radii.length = 0; evidence.opacityArrays.length = 0; evidence.inputs.length = 0; });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe("native complete draw lifecycle", () => {
+  it("does not report submitted work as ready and coalesces repeated frames until GPU completion", async () => {
+    const state = setup(), source = state.add(2), first = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: first });
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    await vi.advanceTimersByTimeAsync(50);
+    state.render(); state.render();
+    expect(source.rendered).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    expect(state.gpu.fenceSync).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(32);
+    expect(source.rendered).not.toHaveBeenCalled();
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    expect(first).toHaveBeenCalledOnce();
+    expect(state.gpu.deleteSync).toHaveBeenCalledOnce();
+    state.render(); state.render();
+    expect(state.gpu.fenceSync).toHaveBeenCalledOnce();
+  });
+
+  it("uses the opacity submitted for the draw, not a reveal advanced after the host poll", async () => {
+    const state = setup();
+    let opacity = 0.5;
+    const source = state.add(2, () => opacity);
+    await vi.advanceTimersByTimeAsync(50);
+    opacity = 1;
+    state.render();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).not.toHaveBeenCalled();
+    expect(state.gpu.fenceSync).not.toHaveBeenCalled();
+    state.runtime.frame(1); state.render();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a removed snapshot's wait and never attributes its completion to a replacement source", async () => {
+    const state = setup(), old = state.add(2);
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    old.dispose();
+    expect(state.gpu.deleteSync).toHaveBeenCalledOnce();
+    const replacement = state.add(2);
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(old.rendered).not.toHaveBeenCalled();
+    expect(replacement.rendered).not.toHaveBeenCalled();
+    state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(replacement.rendered).toHaveBeenCalledOnce();
+    expect(old.error).not.toHaveBeenCalled();
+  });
+
+  it("does not acknowledge a source hidden during the GPU wait", async () => {
+    const state = setup();
+    let opacity = 1;
+    const source = state.add(2, () => opacity);
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    opacity = 0; state.runtime.frame(1);
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).not.toHaveBeenCalled();
+    opacity = 1; state.runtime.frame(2); state.render();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+  });
+
+  it("aborts pending work on renderer detach and requires a new generation's own completion", async () => {
+    const state = setup(), source = state.add(2);
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    state.detach(); await vi.advanceTimersByTimeAsync(1);
+    expect(state.gpu.deleteSync).toHaveBeenCalledOnce();
+    state.runtime.attach(state.renderer, state.camera, vi.fn());
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(source.rendered).not.toHaveBeenCalled();
+    state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+  });
+
+  it("wakes demand rendering when another source becomes eligible during the pending fence", async () => {
+    const state = setup();
+    let opacity = 0.5;
+    const first = state.add(1), second = state.add(1, () => opacity);
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    opacity = 1; state.runtime.frame(1); state.render();
+    expect(state.gpu.fenceSync).toHaveBeenCalledOnce();
+    state.invalidate.mockClear();
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(first.rendered).toHaveBeenCalledOnce();
+    expect(second.rendered).not.toHaveBeenCalled();
+    expect(state.invalidate).toHaveBeenCalledOnce();
+    state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(second.rendered).toHaveBeenCalledOnce();
+    expect(state.gpu.fenceSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("requires the replacement snapshot's own GPU completion after a partial draw is superseded", async () => {
+    const state = setup(), first = state.add(2), ready = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 2, callback: ready });
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    const second = state.add(3);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(state.draw()?.geometry.instanceCount).toBe(5);
+    expect(state.gpu.deleteSync).toHaveBeenCalledOnce();
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(first.rendered).not.toHaveBeenCalled();
+    expect(second.rendered).not.toHaveBeenCalled();
+    state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(first.rendered).toHaveBeenCalledOnce();
+    expect(second.rendered).toHaveBeenCalledOnce();
+    expect(ready).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a cancelled first-frame subscription silent while acknowledging its drawn source", async () => {
+    const state = setup(), source = state.add(2), ready = vi.fn();
+    const cancel = state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: ready });
+    await vi.advanceTimersByTimeAsync(50); state.render(); cancel();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(ready).not.toHaveBeenCalled();
+    expect(source.rendered).toHaveBeenCalledOnce();
+  });
+
+  it("rechecks ownership after a source callback detaches the renderer", async () => {
+    const state = setup(), first = state.add(1), second = state.add(1), ready = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 2, callback: ready });
+    first.rendered.mockImplementationOnce(() => { state.detach(); });
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(first.rendered).toHaveBeenCalledOnce();
+    expect(second.rendered).not.toHaveBeenCalled();
+    expect(ready).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch later listeners when an earlier listener removes the drawn source", async () => {
+    const state = setup(), source = state.add(1), first = vi.fn(() => { source.dispose(); }), second = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: first });
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: second });
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    await vi.advanceTimersByTimeAsync(16);
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it("surfaces context loss once and does not retry the failed snapshot each frame", async () => {
+    const state = setup(), source = state.add(2);
+    await vi.advanceTimersByTimeAsync(50); state.render();
+    state.gpu.isContextLost.mockReturnValue(true);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).not.toHaveBeenCalled();
+    expect(source.error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("context was lost") }));
+    state.render(); state.render();
+    expect(source.error).toHaveBeenCalledOnce();
+    expect(state.gpu.fenceSync).toHaveBeenCalledOnce();
+  });
+
   it("bakes into the Scene's frame once, preserves nested transforms and avoids rebuilds for Scene-only changes", async () => {
     const state = setup();
     state.scene.position.set(10, 20, -30);
@@ -279,6 +453,8 @@ describe("native complete draw lifecycle", () => {
       });
     };
     render(state.camera); expect(callback).not.toHaveBeenCalled();
+    expect(firstSource.rendered).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(16);
     expect(firstSource.rendered).toHaveBeenCalledOnce();
     expect(secondSource.rendered).not.toHaveBeenCalled();
     opacity = 1; state.runtime.frame(1);
@@ -287,6 +463,8 @@ describe("native complete draw lifecycle", () => {
     expect(callback).not.toHaveBeenCalled();
     expect(secondSource.rendered).not.toHaveBeenCalled();
     render(state.camera); render(state.camera);
+    expect(callback).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(16);
     expect(callback).toHaveBeenCalledOnce();
     expect(secondSource.rendered).toHaveBeenCalledOnce();
   });
@@ -316,6 +494,8 @@ describe("native complete draw lifecycle", () => {
       state.renderer.setRenderTarget(outputTarget);
       afterRender();
     });
+    expect(source.rendered).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(16);
     expect(source.rendered).toHaveBeenCalledOnce();
     expect(callback).toHaveBeenCalledOnce();
     state.renderer.setRenderTarget(null);

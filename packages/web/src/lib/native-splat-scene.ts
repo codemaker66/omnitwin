@@ -3,7 +3,7 @@ import { StorageBufferAttribute, type UniformNode, type WebGPURenderer } from "t
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 import { Fn, If, float, length, max, min, storage, uniform, uniformArray, vec3 } from "three/tsl";
 import { mergeNativeSplatSources, type NativeRoomClip } from "./native-splat-merge.js";
-import { isNativeCanvasRender, nativeRendererStorageLimit } from "./native-renderer.js";
+import { afterNativeCanvasGpuWork, isNativeCanvasRender, nativeRendererStorageLimit } from "./native-renderer.js";
 
 type NativeGaussianObject = GaussianSplat;
 
@@ -36,6 +36,7 @@ interface Snapshot {
   readonly softEdge: UniformNode<"float", number>;
   readonly clipEnabled: UniformNode<"float", number>;
   readonly dispose: () => void;
+  completionFailed: boolean;
 }
 
 interface FirstFrameListener {
@@ -74,6 +75,7 @@ export class NativeSplatScene {
   private desiredKey = "";
   private building = false;
   private generation = 0;
+  private gpuCompletion: { snapshot: Snapshot; controller: AbortController } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastFrame = -1;
   private kernelRadius = Math.sqrt(8);
@@ -324,22 +326,65 @@ export class NativeSplatScene {
     const snapshot: Snapshot = {
       key, mesh, geometry: merged.geometry, tileAttribute, sources, opacityValues,
       center, halfExtent, softEdge, clipEnabled,
-      dispose: () => { mesh.removeFromParent(); mesh.dispose(); tileAttribute.dispose(); merged.geometry.dispose(); },
+      completionFailed: false,
+      dispose: () => {
+        if (this.gpuCompletion?.snapshot === snapshot) {
+          this.gpuCompletion.controller.abort();
+          this.gpuCompletion = null;
+        }
+        mesh.removeFromParent(); mesh.dispose(); tileAttribute.dispose(); merged.geometry.dispose();
+      },
     };
     mesh.onAfterRender = (drawRenderer, _scene, drawCamera) => {
       if ((drawRenderer as unknown) !== this.renderer || drawCamera !== this.camera || !isNativeCanvasRender(drawRenderer, this.scene, drawCamera) || this.active !== snapshot
-        || snapshot.key !== this.key(this.selectedSources()) || mesh.geometry.instanceCount <= 0) return;
-      for (const source of sources) {
-        if (!source.renderedOnce && opacityOf(source) >= 0.98) {
-          source.renderedOnce = true;
-          source.onRendered?.();
+        || snapshot.key !== this.key(this.selectedSources()) || mesh.geometry.instanceCount <= 0 || snapshot.completionFailed || this.gpuCompletion !== null) return;
+      // Use the opacity actually uploaded for this draw as well as current intent.
+      // The reveal subscriber can advance its channel after the native host's poll.
+      const prepared = sources.filter((source, index) => (snapshot.opacityValues[index] ?? 0) >= 0.98 && opacityOf(source) >= 0.98);
+      const pendingSources = prepared.filter((source) => !source.renderedOnce);
+      const listeners = [...this.firstFrames].filter((listener) => drawCamera === listener.camera && prepared.length >= listener.minimumSources);
+      if (pendingSources.length === 0 && listeners.length === 0) return;
+      const controller = new AbortController();
+      const completion = { snapshot, controller };
+      const generation = this.generation;
+      this.gpuCompletion = completion;
+      const valid = (): boolean => this.hosts > 0 && !controller.signal.aborted && generation === this.generation && this.renderer === renderer
+        && this.camera === drawCamera && this.active === snapshot && snapshot.key === this.key(this.selectedSources())
+        && sources.every((source) => this.sources.get(source.anchor.uuid) === source);
+      const complete = (): void => {
+        if (this.gpuCompletion !== completion) return;
+        this.gpuCompletion = null;
+        if (!valid()) { if (this.hosts > 0) this.invalidate(); return; }
+        for (const source of pendingSources) {
+          if (!valid()) { if (this.hosts > 0) this.invalidate(); return; }
+          if (!source.renderedOnce && this.sources.get(source.anchor.uuid) === source && opacityOf(source) >= 0.98) {
+            source.renderedOnce = true;
+            source.onRendered?.();
+          }
         }
-      }
-      const prepared = sources.filter((source) => opacityOf(source) >= 0.98).length;
-      for (const listener of [...this.firstFrames]) {
-        if (drawCamera === listener.camera && prepared >= listener.minimumSources) {
-          this.firstFrames.delete(listener); listener.callback();
+        const stillPrepared = prepared.filter((source) => opacityOf(source) >= 0.98).length;
+        for (const listener of listeners) {
+          if (!valid()) { if (this.hosts > 0) this.invalidate(); return; }
+          if (this.firstFrames.has(listener) && stillPrepared >= listener.minimumSources) {
+            this.firstFrames.delete(listener); listener.callback();
+          }
         }
+        // New listeners and sources that finished fading during this wait need
+        // their own later acknowledged draw; demand mode may otherwise be idle.
+        if (this.selectedSources().some((source) => !source.renderedOnce && opacityOf(source) >= 0.98)
+          || [...this.firstFrames].some((listener) => !listeners.includes(listener))) this.invalidate();
+      };
+      const failed = (reason: unknown): void => {
+        if (this.gpuCompletion !== completion) return;
+        this.gpuCompletion = null;
+        if (!valid()) { if (this.hosts > 0) this.invalidate(); return; }
+        snapshot.completionFailed = true;
+        const error = errorFrom(reason);
+        for (const source of sources) source.onError(error);
+      };
+      if (!afterNativeCanvasGpuWork(renderer, this.scene, drawCamera, controller.signal, complete, failed)) {
+        this.gpuCompletion = null;
+        controller.abort();
       }
     };
     this.updateSnapshot(snapshot);

@@ -120,9 +120,15 @@ images may include displayed DOM overlays; they are not raw framebuffer or
 forced-render measurements. Direct redraw/readback and earlier compositor
 failures remain recorded in the session evidence.
 
-Planner completion follows each source's confirmed native main-camera draw at
-its revealed opacity. Decode still starts the fade, so rendering never waits
-on its own completion signal. The pending caption pauses in Model view, while
+Planner completion follows completed GPU work for each source's native main-camera
+draw at its uploaded revealed opacity. Completion is registered in the outer
+canvas render and starts waiting only after the whole draw successfully returns:
+the active WebGPU queue acknowledges submission completion, or a nonblocking
+WebGL2 fence is polled. Snapshot replacement, disposal and device/context loss
+cancel or fail pending readiness; a 30-second GPU stall becomes an explicit
+product error. This does not change the 15-second capture deadline or certify
+browser compositor presentation. Decode still starts the fade, so rendering never
+waits on its own completion signal. The pending caption pauses in Model view, while
 terminal failure notices remain available. A replacement renderer clears old
 draw counts even when source URLs are unchanged; callbacks from its predecessor
 cannot advance the new generation. Ink fades consume actual nonnegative elapsed

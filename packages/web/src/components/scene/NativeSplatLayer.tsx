@@ -35,7 +35,7 @@ export interface NativeSplatLayerProps {
   readonly onFirstFrame?: () => void;
   readonly minimumDrawnSources?: number;
   readonly onLoad?: (event: NativeSplatLoadEvent) => void;
-  /** First actual main-camera draw of this source after its opacity reaches 0.98. */
+  /** First GPU-completed main-camera draw with submitted opacity >= 0.98; not compositor presentation. */
   readonly onRendered?: (url: string) => void;
   readonly onError?: (event: NativeSplatErrorEvent) => void;
 }
