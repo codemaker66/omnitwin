@@ -4,11 +4,14 @@ Requested investigation and isolated renderer benchmark, recorded before
 the T-627 migration. Statements about installed dependencies below describe that
 baseline. Current implementation is tracked in [native splats](../engineering/native-splats.md).
 
-**Later follow-up:** the [matched-radius comparison below](#follow-up-final-patched-addon-with-matched-radius-18-september-2026)
-uses the final patched addon at the application's √8σ radius and measures
-**18.33% higher median FPS** than Spark's old product settings on this isolated
-room workload. Use that follow-up when discussing the final addon. The original
-stock-addon experiment and its measurements are preserved below.
+**Latest follow-up:** the [recovery comparison below](#recovery-finer-depth-ordering-18-september-2026)
+uses the corrected addon at the application's √8σ radius with 65,536 logarithmic
+depth buckets. It measures **13.15% higher median FPS** on native WebGPU than
+Spark's old product settings on this isolated room workload. The earlier 18.33%
+result predates this sorting repair. Original experiments remain dated evidence.
+The same recovery's synchronous WebGL2 fallback regressed to 81.41 FPS with
+125 ms p95 pauses. A worker-based fallback is being qualified; the WebGPU
+improvement must not be generalized to every backend or the final pending build.
 
 **Original baseline outcome:** the application used external Spark. The focused desktop comparison
 measured about **20% higher frame rate** with stock Three r186 native WebGPU, retaining
@@ -305,3 +308,108 @@ timed intervals. All owned benchmark browsers and the local server were stopped
 after sampling. No original evidence or production source was changed for this
 experiment, and it does not replace exact-source release GPU qualification,
 physical-device testing, loading/memory measurements or furnished-planner checks.
+
+## Recovery: finer depth ordering, 18 September 2026
+
+The full product scene exposed severe wall streaking when the environment shell
+expanded native's bounding radius to 1,432 m. The original 4,096 linear buckets
+then mixed nearby surfaces. The recovered addon uses 65,536 logarithmic buckets,
+preserving every source record and the original bounds. Actual installed WebGPU
+and WebGL2 Grand Hall views were separately inspected at 6,030,980 splats, SH3
+and 3200×2000: walls remain complete and the reproduced severe streaking is gone.
+That visual check includes the environment; the timing experiment below does not.
+
+Fresh measurements use the same full 6,019,684-splat PLY, byte hash, camera,
+scripted yaw/translation, SH3, √8σ kernel, 1600×900 DPR1 buffer, Chrome 153,
+RTX 4090/driver 616.92 and four-second warmup/twelve-second samples as the prior
+matched-radius experiment. Each arm has a fresh headed browser, with three
+samples; arms run serially in fixed native/product/controlled order. Other
+owned graphics and heavy checks were idle. No source geometry or test limit
+was reduced to obtain the result.
+
+| Renderer | Median FPS | Three-run range | Median p95 interval | Median p99 interval |
+| --- | ---: | ---: | ---: | ---: |
+| Spark 2.1 / Three r180, product settings | **135.88** | 134.99–135.97 | **16.6 ms** | **20.8 ms** |
+| Spark, controlled sorting/cap/cutoff | **131.30** | 130.92–131.38 | **16.7 ms** | **24.9 ms** |
+| Corrected native Three r186 WebGPU | **153.74** | 153.14–153.75 | **8.4 ms** | **20.7 ms** |
+
+The corrected addon has **13.15% higher median FPS than product Spark**, or
+17.10% higher than controlled Spark. Its p95 frame interval is 49.40% lower than
+product Spark, while p99 is almost unchanged. Finer sorting costs performance
+relative to the earlier addon, so 18.33% must not describe this recovery build.
+Native performed 56–57 real sorts per sample; this is a moving-camera result,
+not an idle-view FPS claim. Frame intervals still measure browser scheduling,
+not GPU timestamps or guaranteed display presentation.
+
+Evidence is in
+`D:/codex/venviewer-native-splats-20260918/output/playwright/native-migration/recovery-baseline-20260918/`.
+All nine raw records have zero recorded errors or focus/visibility changes.
+The validator independently recalculates FPS, checks matching source/count/SH,
+camera/canvas/browser and rehashes all 23 renderer/config/harness inputs.
+The runtime source is commit `f4e0f141`; installed addon SHA-256 is
+`e37037bcb110255044dcc93382488e98eb28e8a3e2132f58a4fc28d7ad9b2ef6`.
+The native scene host, SOG delivery, environment, furniture and application UI
+remain outside these timings. Different colour blending, packing and sorting
+still prevent a pixel-parity claim. The fixed order and single workstation do
+not establish mobile, office-device, loading, memory or whole-application gains.
+
+### Fallback diagnosis before moving CPU sorting to a worker
+
+Three additional fresh-browser WebGL2 samples used the same full PLY, SH3,
+camera, canvas and motion with the recovered addon. Median FPS was **81.41**
+(78.79–84.16), p95 **125 ms** and p99 **137.4 ms**: **40.09% lower FPS** than
+the product Spark arm. All three had zero recorded errors or focus changes,
+with 56–59 real sorts. Raw `native-webgl-[123].log`, `native-webgl.png` and
+`fallback-validation.json` remain beside the primary evidence.
+
+The actual high-detail public walkthrough reproduced the problem with all
+6,030,980 room/environment splats. An ordinary 12.17-second pointer drag
+measured 60.84 FPS, p95 133.4 ms and p99 141.8 ms. Its 65 main-thread CPU sorts
+took a median 130.7 ms and p95 149.3 ms. The motion buffer was 1600×1000 and
+settled buffer 3200×2000, so this application observation is not another matched
+renderer arm. Full SH3, all eleven ready sources and zero runtime errors were
+verified; `fallback-public-original-{raw,valid}.log` retains the evidence.
+
+These pauses motivated moving the same first-party CPU CountingSort algorithm
+to a bounded worker, preserving source points, SH bands and logarithmic precision.
+The preceding figures describe the synchronous fallback only.
+
+### Actual application worker qualification
+
+The standard production build and a diagnostic build emitted identical worker
+bytes (SHA-256 `1c23715a1a711efbf48f0967957b5e051eee4f53de2e700092fa06e4102096e3`).
+The diagnostic build adds an entry exposing existing R3F roots and capture
+functions; it does not change application source, backend, quality or worker
+code. Chrome's WebGPU service was disabled to exercise the actual WebGL2/ANGLE
+NVIDIA path, without replacing capability APIs.
+
+At full Grand Hall detail (6,030,980 including environment, SH3), an ordinary
+12.063-second pointer drag measured **151.27 rAF FPS**, **12.5 ms p95** and
+**20.8 ms p99**. The application submitted 150.29 main renders per second;
+all 69 eligible sorts completed and applied through one worker. Main-thread
+sort dispatch took a median 0.1 ms and maximum 0.5 ms. Worker sorting itself
+still took a median 116 ms; applied pose age was 126.9 ms p95 and orientation
+lag 0.024 rad median / 0.030 rad maximum. These observations measure responsive
+submission with delayed sort results, not GPU execution time or exact ordering
+at every current camera pose.
+
+The scene retained its complete count throughout, with a 1600×1000 motion buffer
+and 3200×2000 settled buffer, eleven ready sources, zero console errors and
+16 known backend/engine warnings. A 1600×1000 poster export while one main-view
+sort was pending took 331.9 ms. All 6,033,408 padded order entries were restored
+byte-for-byte, along with sort direction, callback and renderer target; main
+readiness remained complete. Root inspected the settled view and exported image.
+This is technical visual qualification, not founder acceptance or pixel parity
+with Spark. The final four-arm isolated baseline remains pending.
+The older public synchronous observation used a development bundle and this
+worker observation uses a production bundle; they do not isolate the worker's
+performance contribution.
+
+Evidence is retained under `output/playwright/native-migration/async-sort-fix-v2/`.
+The installed addon SHA-256 is
+`06092d585eb76bdda926eb5a47028a650d8980e1737f7ab74b5f52fbd01a3a2a`.
+Earlier failed evidence exposed a real PBO-padding length mismatch and a stale
+completion status after resident worker failure; both have regression coverage.
+Seventy focused tests, scoped typed lint, full web/E2E typing and production
+builds pass. The unchanged Linux software capture deadline and final release
+gates remain separate requirements.

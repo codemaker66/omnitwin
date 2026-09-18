@@ -4,6 +4,7 @@ import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 import { Fn, If, float, length, max, min, storage, uniform, uniformArray, vec3 } from "three/tsl";
 import { mergeNativeSplatSources, type NativeRoomClip } from "./native-splat-merge.js";
 import { afterNativeCanvasGpuWork, isNativeCanvasRender, nativeRendererStorageLimit } from "./native-renderer.js";
+import { NativeCpuSortPool, type NativeCpuSortHandle } from "./native-cpu-sort-pool.js";
 
 type NativeGaussianObject = GaussianSplat;
 
@@ -36,6 +37,8 @@ interface Snapshot {
   readonly softEdge: UniformNode<"float", number>;
   readonly clipEnabled: UniformNode<"float", number>;
   readonly dispose: () => void;
+  readonly cpuSort: NativeCpuSortHandle | null;
+  sortFailed: boolean;
   completionFailed: boolean;
 }
 
@@ -82,8 +85,9 @@ export class NativeSplatScene {
   private minSortIntervalMs = 0;
   private clip: NativeRoomClip | null = null;
   private clipOwner: object | null = null;
+  private cpuSortPool: NativeCpuSortPool | null = null;
 
-  constructor(private readonly scene: Scene) {}
+  constructor(private readonly scene: Scene, private readonly createCpuSortPool: () => NativeCpuSortPool = () => new NativeCpuSortPool()) {}
 
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
     if (this.renderer !== null && this.renderer !== renderer) throw new Error("A native splat scene must have one active renderer");
@@ -101,6 +105,8 @@ export class NativeSplatScene {
         if (this.timer !== null) clearTimeout(this.timer);
         this.timer = null;
         this.clearSnapshots();
+        this.cpuSortPool?.dispose();
+        this.cpuSortPool = null;
         this.renderer = null;
         this.camera = null;
         this.desiredKey = "";
@@ -259,6 +265,9 @@ export class NativeSplatScene {
       // SH storage is allocated by the official addon before material compilation.
       snapshot.mesh.updateSphericalHarmonics(renderer, camera);
       snapshot.mesh.updateSort(renderer, camera);
+      // No source-order or partially sorted first view: WebGL's initial order
+      // must return from the worker before this snapshot compiles/activates.
+      if (snapshot.cpuSort !== null) await snapshot.cpuSort.firstSort;
       await renderer.compileAsync(staging, camera);
       staging.remove(snapshot.mesh);
       if (generation !== this.generation || renderer !== this.renderer
@@ -323,21 +332,60 @@ export class NativeSplatScene {
     mesh.frustumCulled = false;
     mesh.material.toneMapped = false;
     mesh.raycast = () => undefined;
+    let cpuSort: NativeCpuSortHandle | null = null;
+    if ("isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true) {
+      try {
+        this.cpuSortPool ??= this.createCpuSortPool();
+        const positions = merged.geometry.getAttribute("position").array;
+        if (!(positions instanceof Float32Array)) throw new Error("Native worker sort requires Float32 centers");
+        cpuSort = this.cpuSortPool.register(positions, (order) => {
+          if (this.hosts === 0 || this.renderer !== renderer || key !== this.key(sources)
+            || sources.some((source) => this.sources.get(source.anchor.uuid) !== source)) return;
+          mesh.applySortOrder(order);
+          this.invalidate();
+        }, (error) => {
+          snapshot.sortFailed = true;
+          mesh.visible = false;
+          if (this.gpuCompletion?.snapshot === snapshot) {
+            this.gpuCompletion.controller.abort();
+            this.gpuCompletion = null;
+          }
+          // A failed resident draw needs the existing canvas retry boundary.
+          // Only the active snapshot reports it: cached levels share this pool,
+          // and source progress may already have completed before a later crash.
+          if (this.active === snapshot && this.renderer === renderer && this.hosts > 0) {
+            renderer.onError(`Native splat sorting failed: ${error.message}`);
+          }
+          // Initial sort errors propagate through buildNext's awaited promise.
+          // A resident snapshot instead reports the failure here exactly once.
+          if (this.snapshots.get(key) === snapshot) {
+            this.failedKeys.add(key);
+            for (const source of sources) source.onError(error);
+          }
+        });
+        mesh.cpuSort = cpuSort.request;
+      } catch (reason: unknown) {
+        cpuSort?.dispose(); mesh.dispose(); tileAttribute.dispose(); merged.geometry.dispose();
+        throw reason;
+      }
+    }
     const snapshot: Snapshot = {
       key, mesh, geometry: merged.geometry, tileAttribute, sources, opacityValues,
       center, halfExtent, softEdge, clipEnabled,
-      completionFailed: false,
+      completionFailed: false, cpuSort, sortFailed: false,
       dispose: () => {
         if (this.gpuCompletion?.snapshot === snapshot) {
           this.gpuCompletion.controller.abort();
           this.gpuCompletion = null;
         }
+        cpuSort?.dispose();
+        mesh.cpuSort = null;
         mesh.removeFromParent(); mesh.dispose(); tileAttribute.dispose(); merged.geometry.dispose();
       },
     };
     mesh.onAfterRender = (drawRenderer, _scene, drawCamera) => {
       if ((drawRenderer as unknown) !== this.renderer || drawCamera !== this.camera || !isNativeCanvasRender(drawRenderer, this.scene, drawCamera) || this.active !== snapshot
-        || snapshot.key !== this.key(this.selectedSources()) || mesh.geometry.instanceCount <= 0 || snapshot.completionFailed || this.gpuCompletion !== null) return;
+        || snapshot.key !== this.key(this.selectedSources()) || mesh.geometry.instanceCount <= 0 || snapshot.completionFailed || snapshot.sortFailed || this.gpuCompletion !== null) return;
       // Use the opacity actually uploaded for this draw as well as current intent.
       // The reveal subscriber can advance its channel after the native host's poll.
       const prepared = sources.filter((source, index) => (snapshot.opacityValues[index] ?? 0) >= 0.98 && opacityOf(source) >= 0.98);
@@ -348,7 +396,7 @@ export class NativeSplatScene {
       const completion = { snapshot, controller };
       const generation = this.generation;
       this.gpuCompletion = completion;
-      const valid = (): boolean => this.hosts > 0 && !controller.signal.aborted && generation === this.generation && this.renderer === renderer
+      const valid = (): boolean => this.hosts > 0 && !controller.signal.aborted && !snapshot.sortFailed && generation === this.generation && this.renderer === renderer
         && this.camera === drawCamera && this.active === snapshot && snapshot.key === this.key(this.selectedSources())
         && sources.every((source) => this.sources.get(source.anchor.uuid) === source);
       const complete = (): void => {
@@ -409,6 +457,7 @@ export class NativeSplatScene {
   }
 
   private activate(snapshot: Snapshot): void {
+    if (snapshot.sortFailed) { snapshot.mesh.visible = false; return; }
     snapshot.mesh.visible = true;
     this.updateSnapshot(snapshot);
     if (this.active === snapshot) return;
@@ -419,6 +468,13 @@ export class NativeSplatScene {
     this.snapshots.delete(snapshot.key);
     this.snapshots.set(snapshot.key, snapshot);
     this.removeDominatedSnapshots(snapshot);
+  }
+
+  /** Export sorting is scoped to its synchronous draw. The addon restores the
+   * interactive order and request metadata before pixel readback can yield. */
+  capture<T>(camera: Camera, draw: () => T): T {
+    if (this.active?.cpuSort === null || this.active === null || this.renderer === null) return draw();
+    return this.active.mesh.withSynchronousSort(this.renderer, camera, draw);
   }
 
   private removeDominatedSnapshots(active: Snapshot): void {
@@ -469,4 +525,9 @@ export function nativeSplatScene(scene: Scene): NativeSplatScene {
   let runtime = runtimes.get(scene);
   if (runtime === undefined) { runtime = new NativeSplatScene(scene); runtimes.set(scene, runtime); }
   return runtime;
+}
+
+export function withNativeSplatCapture<T>(scene: Scene, camera: Camera, draw: () => T): T {
+  const runtime = runtimes.get(scene);
+  return runtime === undefined ? draw() : runtime.capture(camera, draw);
 }

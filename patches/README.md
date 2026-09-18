@@ -4,6 +4,10 @@
 `CountingSort`; the renderer, projection, GPU sort and SH evaluation remain Three.js.
 The patch exposes opacity and SH-direction node hooks, a source color-space option,
 a kernel cutoff, sort cadence and explicit disposal of owned GPU resources.
+Its CPU-sort dispatch hook also lets the application run the same first-party
+CountingSort in a worker. Completed orders are copied into attached native
+storage; an explicit synchronous capture scope restores main-camera ordering
+before asynchronous readback. WebGPU continues to use Three's GPU sort.
 
 These hooks support one globally sorted room with per-tile fades, scene-space
 clipping and correct SH under object transforms. The application keeps the normal

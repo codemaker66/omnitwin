@@ -16,6 +16,7 @@ import {
 } from "three";
 import { prepareFurnitureForOrthographicCapture } from "./layout-timeline-capture.js";
 import { nativeRendererForScene } from "./native-renderer.js";
+import { withNativeSplatCapture } from "./native-splat-scene.js";
 
 /** Capture options. */
 export interface CaptureOptions {
@@ -116,7 +117,7 @@ export async function captureOrthographic(
       renderer.autoClear = true;
       renderer.xr.enabled = false;
       renderer.setRenderTarget(renderTarget);
-      renderer.render(scene, camera);
+      withNativeSplatCapture(scene, camera, () => { renderer.render(scene, camera); });
     } finally {
       renderer.setRenderTarget(previousTarget, previousFace, previousMip);
       renderer.autoClear = previousAutoClear;

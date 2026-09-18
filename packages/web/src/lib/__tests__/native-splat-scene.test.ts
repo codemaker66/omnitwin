@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BufferAttribute, BufferGeometry, Group, Matrix4, Object3D, PerspectiveCamera, RenderTarget, Scene, Vector3, type Material, type Mesh, type InstancedBufferGeometry } from "three";
+import { BufferAttribute, BufferGeometry, Group, Matrix4, Object3D, OrthographicCamera, PerspectiveCamera, RenderTarget, Scene, Vector3, type Material, type Mesh, type InstancedBufferGeometry } from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { NativeSplatScene } from "../native-splat-scene.js";
 import { withNativeRenderScope } from "../native-renderer.js";
+import { GaussianSplat, type GaussianSplatCpuSortRequest } from "three/addons/objects/GaussianSplat.js";
+import { NativeCpuSortPool, type NativeCpuSortWorker } from "../native-cpu-sort-pool.js";
+import type { NativeCpuSortCommand } from "../native-cpu-sort-protocol.js";
 
-const evidence = vi.hoisted(() => ({ created: 0, disposed: 0, radii: [] as number[], opacityArrays: [] as unknown[][], inputs: [] as BufferGeometry[] }));
+const evidence = vi.hoisted(() => ({ created: 0, disposed: 0, applied: 0, radii: [] as number[], opacityArrays: [] as unknown[][], inputs: [] as BufferGeometry[] }));
 vi.mock("three/tsl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three/tsl")>();
   return { ...actual, uniformArray: (values: unknown[], type: string) => {
@@ -16,6 +19,7 @@ vi.mock("three/addons/objects/GaussianSplat.js", async () => {
   const { Mesh, InstancedBufferGeometry, NodeMaterial } = await import("three/webgpu");
   return { GaussianSplat: class extends Mesh {
     minSortIntervalMs = 0;
+    cpuSort: ((request: GaussianSplatCpuSortRequest) => void) | null = null;
     constructor(source: BufferGeometry, options: { kernelRadius: number }) {
       const draw = new InstancedBufferGeometry();
       draw.instanceCount = source.getAttribute("position").count;
@@ -24,7 +28,9 @@ vi.mock("three/addons/objects/GaussianSplat.js", async () => {
       evidence.radii.push(options.kernelRadius);
       evidence.inputs.push(source);
     }
-    updateSort(): boolean { return true; }
+    updateSort(): boolean { this.cpuSort?.({ modelViewMatrix: new Matrix4().elements, nearDepth: 0.1, farDepth: 10, binCount: 65_536 }); return true; }
+    applySortOrder(): void { evidence.applied++; }
+    withSynchronousSort<T>(_renderer: WebGPURenderer, _camera: PerspectiveCamera, draw: () => T): T { return draw(); }
     updateSphericalHarmonics(): boolean { return true; }
     dispose(): void { evidence.disposed++; this.geometry.dispose(); if (!Array.isArray(this.material)) this.material.dispose(); }
   } };
@@ -38,17 +44,41 @@ function geometry(count = 1): BufferGeometry {
   return result;
 }
 
-function setup() {
+class SceneSortWorker implements NativeCpuSortWorker {
+  onmessage: NativeCpuSortWorker["onmessage"] = null;
+  onerror: NativeCpuSortWorker["onerror"] = null;
+  onmessageerror: NativeCpuSortWorker["onmessageerror"] = null;
+  readonly jobs: Extract<NativeCpuSortCommand, { type: "sort" }>[] = [];
+  readonly counts = new Map<number, number>();
+  terminate = vi.fn();
+  constructor(private readonly automatic: boolean) {}
+  postMessage(message: NativeCpuSortCommand): void {
+    if (message.type === "drop") { this.counts.delete(message.geometryId); return; }
+    if (message.centers !== undefined) this.counts.set(message.geometryId, message.centers.length / 3);
+    this.jobs.push(message);
+    if (this.automatic) queueMicrotask(() => { this.complete(this.jobs.indexOf(message)); });
+  }
+  complete(index: number): void {
+    const job = this.jobs[index];
+    if (job === undefined) throw new Error("Missing sort job");
+    const order = Uint32Array.from({ length: this.counts.get(job.geometryId) ?? 0 }, (_, position) => position);
+    this.onmessage?.(new MessageEvent("message", { data: { type: "sorted", geometryId: job.geometryId, requestId: job.requestId, order } }));
+  }
+}
+
+function setup(automaticSort = true) {
   const scene = new Scene(), camera = new PerspectiveCamera();
   const renderer = new WebGPURenderer({ forceWebGL: true });
   const compile = vi.spyOn(renderer, "compileAsync").mockResolvedValue(undefined);
+  const rendererError = vi.spyOn(renderer, "onError").mockImplementation(() => undefined);
   const gpu = {
     SYNC_GPU_COMMANDS_COMPLETE: 37143, ALREADY_SIGNALED: 37146, CONDITION_SATISFIED: 37148, TIMEOUT_EXPIRED: 37147,
     fenceSync: vi.fn(() => ({})), deleteSync: vi.fn(), flush: vi.fn(), isContextLost: vi.fn(() => false),
     clientWaitSync: vi.fn(() => 37146),
   };
   vi.spyOn(renderer, "getContext").mockReturnValue(gpu);
-  const runtime = new NativeSplatScene(scene);
+  const sortWorker = new SceneSortWorker(automaticSort);
+  const runtime = new NativeSplatScene(scene, () => new NativeCpuSortPool(() => sortWorker));
   const invalidate = vi.fn();
   const detach = runtime.attach(renderer, camera, invalidate);
   const add = (count: number, readOpacity = () => 1, group?: string) => {
@@ -66,13 +96,152 @@ function setup() {
       Reflect.apply(object.onAfterRender.bind(object), object, [renderer, scene, camera, object.geometry, object.material, new Group()]);
     });
   };
-  return { scene, camera, renderer, runtime, compile, detach, add, draw, gpu, render, invalidate };
+  return { scene, camera, renderer, rendererError, runtime, compile, detach, add, draw, gpu, render, invalidate, sortWorker };
 }
 
-beforeEach(() => { vi.useFakeTimers(); evidence.created = 0; evidence.disposed = 0; evidence.radii.length = 0; evidence.opacityArrays.length = 0; evidence.inputs.length = 0; });
+beforeEach(() => { vi.useFakeTimers(); evidence.created = 0; evidence.disposed = 0; evidence.applied = 0; evidence.radii.length = 0; evidence.opacityArrays.length = 0; evidence.inputs.length = 0; });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe("native complete draw lifecycle", () => {
+  it("scopes an export through the active mesh while its main-camera worker order is outstanding", async () => {
+    const state = setup(false), source = state.add(3), first = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: first });
+    await vi.advanceTimersByTimeAsync(20);
+    state.sortWorker.complete(0);
+    await vi.advanceTimersByTimeAsync(20);
+    const mesh = state.draw();
+    if (!(mesh instanceof GaussianSplat)) throw new Error("Expected active native splats");
+    mesh.updateSort(state.renderer, state.camera);
+    expect(state.sortWorker.jobs).toHaveLength(2);
+    expect(evidence.applied).toBe(1);
+    const capture = vi.spyOn(mesh, "withSynchronousSort");
+    const camera = new OrthographicCamera(-3, 3, 2, -2, 0.1, 100);
+    const draw = vi.fn(() => "export pixels");
+    expect(state.runtime.capture(camera, draw)).toBe("export pixels");
+    expect(capture).toHaveBeenCalledExactlyOnceWith(state.renderer, camera, draw);
+    expect(draw).toHaveBeenCalledOnce();
+    expect(state.sortWorker.jobs).toHaveLength(2);
+    expect(evidence.applied).toBe(1);
+    expect(state.gpu.fenceSync).not.toHaveBeenCalled();
+    expect(source.rendered).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    state.sortWorker.complete(1);
+    expect(evidence.applied).toBe(2);
+    expect(source.rendered).not.toHaveBeenCalled();
+    state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    expect(first).toHaveBeenCalledOnce();
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("awaits the worker's first real order before compilation and visible activation", async () => {
+    const state = setup(false), source = state.add(3);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(state.sortWorker.jobs).toHaveLength(1);
+    expect(state.compile).not.toHaveBeenCalled();
+    expect(state.draw()).toBeUndefined();
+    expect(source.rendered).not.toHaveBeenCalled();
+    state.sortWorker.complete(0);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(evidence.applied).toBe(1);
+    expect(state.compile).toHaveBeenCalledOnce();
+    expect(state.draw()?.geometry.instanceCount).toBe(3);
+    expect(source.rendered).not.toHaveBeenCalled();
+    state.render(); await vi.advanceTimersByTimeAsync(16);
+    expect(source.rendered).toHaveBeenCalledOnce();
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("does not apply a building snapshot's worker result after its source was removed", async () => {
+    const state = setup(false), source = state.add(3);
+    await vi.advanceTimersByTimeAsync(20);
+    source.dispose();
+    const invalidations = state.invalidate.mock.calls.length;
+    state.sortWorker.complete(0);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(evidence.applied).toBe(0);
+    expect(state.invalidate).toHaveBeenCalledTimes(invalidations);
+    expect(state.draw()).toBeUndefined();
+    expect(source.rendered).not.toHaveBeenCalled();
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("reports first-sort failure without activation or false source readiness", async () => {
+    const state = setup(false), source = state.add(3);
+    await vi.advanceTimersByTimeAsync(20);
+    state.sortWorker.onerror?.(new ErrorEvent("error", { message: "sort worker failed" }));
+    await vi.advanceTimersByTimeAsync(20);
+    expect(state.compile).not.toHaveBeenCalled();
+    expect(state.draw()).toBeUndefined();
+    expect(source.error).toHaveBeenCalledOnce();
+    expect(state.rendererError).not.toHaveBeenCalled();
+    expect(source.rendered).not.toHaveBeenCalled();
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("opens the recoverable renderer boundary once when the active resident worker fails", async () => {
+    const state = setup();
+    let moving = true;
+    const coarse = state.add(1, () => moving ? 1 : 0, "motion");
+    const detail = state.add(3, () => moving ? 0 : 1, "detail");
+    await vi.advanceTimersByTimeAsync(50);
+    moving = false; state.runtime.frame(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(evidence.created).toBe(2);
+    expect(evidence.disposed).toBe(0); // Both named snapshots share the failed pool.
+    expect(state.draw()?.geometry.instanceCount).toBe(3);
+    const first = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: first });
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    state.render();
+    expect(state.gpu.fenceSync).toHaveBeenCalledOnce();
+    state.sortWorker.onerror?.(new ErrorEvent("error", { message: "resident worker crashed" }));
+    expect(state.gpu.deleteSync).toHaveBeenCalledOnce();
+    expect(state.rendererError).toHaveBeenCalledExactlyOnceWith("Native splat sorting failed: resident worker crashed");
+    expect(coarse.error).toHaveBeenCalledOnce();
+    expect(detail.error).toHaveBeenCalledOnce();
+    state.sortWorker.onerror?.(new ErrorEvent("error", { message: "duplicate crash" }));
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(32);
+    expect(state.rendererError).toHaveBeenCalledOnce();
+    expect(detail.rendered).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    expect(state.draw()?.visible).toBe(false);
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("terminates an unfinished initial sort when the canvas releases its scene", async () => {
+    const state = setup(false), source = state.add(3);
+    await vi.advanceTimersByTimeAsync(20);
+    state.detach();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state.sortWorker.terminate).toHaveBeenCalledOnce();
+    state.sortWorker.complete(0);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(evidence.applied).toBe(0);
+    expect(state.draw()).toBeUndefined();
+    expect(source.error).not.toHaveBeenCalled();
+    expect(source.rendered).not.toHaveBeenCalled();
+  });
+
+  it("cancels a submitted GPU readiness fence when the resident sort worker fails", async () => {
+    const state = setup(), source = state.add(3), first = vi.fn();
+    state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: first });
+    await vi.advanceTimersByTimeAsync(50);
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.TIMEOUT_EXPIRED);
+    state.render();
+    expect(state.gpu.fenceSync).toHaveBeenCalledOnce();
+    state.sortWorker.onerror?.(new ErrorEvent("error", { message: "resident sort worker failed" }));
+    state.gpu.clientWaitSync.mockReturnValue(state.gpu.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(32);
+    expect(source.error).toHaveBeenCalledOnce();
+    expect(source.rendered).not.toHaveBeenCalled();
+    expect(first).not.toHaveBeenCalled();
+    expect(state.gpu.deleteSync).toHaveBeenCalledOnce();
+    expect(state.draw()?.visible).toBe(false);
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
+  });
+
   it("does not report submitted work as ready and coalesces repeated frames until GPU completion", async () => {
     const state = setup(), source = state.add(2), first = vi.fn();
     state.runtime.firstFrame({ camera: state.camera, minimumSources: 1, callback: first });

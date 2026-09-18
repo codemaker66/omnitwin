@@ -102,6 +102,7 @@ export default defineConfig(({ mode }) => {
       // The lazy decoder worker otherwise discovers these after the planner
       // starts, causing Vite to reload the document during capture decoding.
       include: [
+        "three/addons/gpgpu/CountingSort.js",
         "three/addons/loaders/GaussianSplatPLYLoader.js",
         "three/addons/loaders/SPZLoader.js",
         "three/addons/libs/zstddec.module.js",

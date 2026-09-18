@@ -17,7 +17,7 @@ index 0ef0bd8442972a7209eb0adb6d14188c95d84278..1113f5a0f4acab2939e727f18e84dd69
  
  		if ( this._webGLBuffersEnabled === true ) return;
 diff --git a/examples/jsm/objects/GaussianSplat.js b/examples/jsm/objects/GaussianSplat.js
-index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc47884ed6c 100644
+index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..c6c5ecbb803f0e31d286dd19c40766d2463704e1 100644
 --- a/examples/jsm/objects/GaussianSplat.js
 +++ b/examples/jsm/objects/GaussianSplat.js
 @@ -6,6 +6,7 @@ import {
@@ -47,18 +47,19 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  const WORKGROUP_SIZE = 256;
  const SORT_DIRECTION_THRESHOLD = 0.9995;
  const KERNEL_2D_SIZE = 0.3;
-@@ -100,7 +104,9 @@ class GaussianSplat extends Mesh {
+@@ -100,7 +104,10 @@ class GaussianSplat extends Mesh {
  	 * @param {Object} [options] - Options.
  	 * @param {boolean} [options.autoSort=true] - Whether to sort automatically in `onBeforeRender`.
  	 */
 -	constructor( splatGeometry, { autoSort = true } = {} ) {
-+	constructor( splatGeometry, { autoSort = true, opacityNode = null, sphericalHarmonicsDirectionNode = null, colorSpace = NoColorSpace, kernelRadius = SPLAT_KERNEL_CUTOFF, minSortIntervalMs = 0 } = {} ) {
++	constructor( splatGeometry, { autoSort = true, opacityNode = null, sphericalHarmonicsDirectionNode = null, colorSpace = NoColorSpace, kernelRadius = SPLAT_KERNEL_CUTOFF, minSortIntervalMs = 0, cpuSort = null } = {} ) {
 +
 +		if ( ! Number.isFinite( kernelRadius ) || kernelRadius <= 0 || kernelRadius > 4 ) throw new RangeError( 'GaussianSplat: kernelRadius must be in (0, 4].' );
++		if ( cpuSort !== null && typeof cpuSort !== 'function' ) throw new TypeError( 'GaussianSplat: cpuSort must be a function or null.' );
  
  		const positionAttribute = splatGeometry.getAttribute( 'position' );
  		const covarianceAttribute = splatGeometry.getAttribute( 'covariance' );
-@@ -111,7 +117,7 @@ class GaussianSplat extends Mesh {
+@@ -111,7 +118,7 @@ class GaussianSplat extends Mesh {
  		if ( splatGeometry.boundingBox === null ) splatGeometry.computeBoundingBox();
  		if ( splatGeometry.boundingSphere === null ) splatGeometry.computeBoundingSphere();
  
@@ -67,7 +68,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  		const buffers = createStorageBuffers( count, positionAttribute.array, covarianceAttribute.array, colorAttribute.array, {
  			degree: sphericalHarmonicsDegree,
  			sh1: sphericalHarmonicsDegree >= 1 ? splatGeometry.getAttribute( 'sphericalHarmonics1' ).array : undefined,
-@@ -119,9 +125,9 @@ class GaussianSplat extends Mesh {
+@@ -119,9 +126,9 @@ class GaussianSplat extends Mesh {
  			sh3: sphericalHarmonicsDegree >= 3 ? splatGeometry.getAttribute( 'sphericalHarmonics3' ).array : undefined
  		} );
  		const localCameraPosition = uniform( new Vector3() );
@@ -79,12 +80,15 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  		const material = createMaterial( materialNodes.vertexNode, materialNodes.fragmentNode );
  
  		super( geometry, material );
-@@ -167,6 +173,12 @@ class GaussianSplat extends Mesh {
+@@ -167,6 +174,15 @@ class GaussianSplat extends Mesh {
  		 */
  		this.autoSort = autoSort;
  
 +		this.kernelRadius = kernelRadius;
 +		this.minSortIntervalMs = minSortIntervalMs;
++		// Optional asynchronous CPU dispatcher. The owner must apply a first order
++		// before presenting this mesh and invalidate after later completed orders.
++		this.cpuSort = cpuSort;
 +		this._lastSortTime = - Infinity;
 +		this._lastSortRenderer = null;
 +		this._lastSphericalHarmonicsRenderer = null;
@@ -92,7 +96,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  		this._buffers = buffers;
  		this._sort = sort;
  		this._sortMatrix = uniform( new Matrix4() );
-@@ -192,7 +204,9 @@ class GaussianSplat extends Mesh {
+@@ -192,7 +208,9 @@ class GaussianSplat extends Mesh {
  			const viewCenter = sortMatrix.mul( vec4( center, 1 ) ).xyz.toVar( 'viewCenter' );
  			const depth = viewCenter.z.negate().toVar( 'depth' );
  			const range = max( sortDepthRange.y.sub( sortDepthRange.x ), 0.0001 ).toVar( 'range' );
@@ -103,7 +107,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  			const depthBin = uint( normalized.mul( BIN_COUNT - 1 ) ).toVar( 'depthBin' );
  
  			return uint( BIN_COUNT - 1 ).sub( depthBin );
-@@ -239,6 +253,7 @@ class GaussianSplat extends Mesh {
+@@ -239,6 +257,7 @@ class GaussianSplat extends Mesh {
  		const isWebGLBackend = renderer.backend && renderer.backend.isWebGLBackend === true;
  
  		if ( this._sphericalHarmonicsInitialized === true &&
@@ -111,7 +115,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  			camera.matrixWorld.equals( this._lastSphericalHarmonicsCameraMatrix ) &&
  			this.matrixWorld.equals( this._lastSphericalHarmonicsWorldMatrix ) &&
  			( isWebGLBackend === true || this._buffers.sphericalHarmonicsContributionRead !== undefined ) ) {
-@@ -259,6 +274,7 @@ class GaussianSplat extends Mesh {
+@@ -259,6 +278,7 @@ class GaussianSplat extends Mesh {
  		this._lastSphericalHarmonicsCameraMatrix.copy( camera.matrixWorld );
  		this._lastSphericalHarmonicsWorldMatrix.copy( this.matrixWorld );
  		this._sphericalHarmonicsInitialized = true;
@@ -119,7 +123,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  
  		if ( isWebGLBackend === true ) return false;
  
-@@ -405,7 +421,8 @@ class GaussianSplat extends Mesh {
+@@ -405,15 +425,32 @@ class GaussianSplat extends Mesh {
  
  		const needsSort = this._needsSort( camera );
  
@@ -127,21 +131,117 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
 +		const now = performance.now();
 +		if ( this._sortInitialized === false || this._lastSortRenderer !== renderer || ( needsSort === true && now - this._lastSortTime >= this.minSortIntervalMs ) ) {
  
++			const direction = _sortDirection.clone();
  			this._updateSortUniforms( camera );
  
-@@ -422,6 +439,8 @@ class GaussianSplat extends Mesh {
+ 			if ( renderer.backend && renderer.backend.isWebGLBackend === true ) {
+ 
+ 				enableWebGLBuffers( this._buffers );
+ 				this._sort.enableWebGLBuffers();
+-				this._sortCPU();
++				if ( this.cpuSort === null ) {
++
++					this._sortCPU();
++
++				} else {
++
++					// Do not expose the mutable uniforms or shared scratch vectors to a
++					// worker request that outlives this render callback.
++					this.cpuSort( Object.freeze( {
++						modelViewMatrix: Object.freeze( this._sortMatrix.value.elements.slice() ),
++						nearDepth: this._sortDepthRange.value.x,
++						farDepth: this._sortDepthRange.value.y,
++						binCount: BIN_COUNT
++					} ) );
++
++				}
+ 
+ 			} else {
+ 
+@@ -422,7 +459,9 @@ class GaussianSplat extends Mesh {
  			}
  
  			this._sortInitialized = true;
+-			this._lastSortDirection.copy( _sortDirection );
 +			this._lastSortTime = now;
 +			this._lastSortRenderer = renderer;
- 			this._lastSortDirection.copy( _sortDirection );
++			this._lastSortDirection.copy( direction );
  
  			return true;
-@@ -432,6 +451,23 @@ class GaussianSplat extends Mesh {
+ 
+@@ -432,6 +471,92 @@ class GaussianSplat extends Mesh {
  
  	}
  
++	/** Apply a trusted CPU sort permutation without replacing live GPU storage. */
++	applySortOrder( order ) {
++
++		if ( this._disposed ) throw new Error( 'GaussianSplat: cannot apply an order after disposal.' );
++		const attribute = this._sort.orderAttribute;
++		// WebGL may pad this backing array to its PBO texture dimensions after
++		// the first upload. Orders always contain the logical splat count.
++		if ( ! ( order instanceof Uint32Array ) || order.length !== this._sort.count ) throw new TypeError( 'GaussianSplat: sort order must be a Uint32Array matching the splat count.' );
++		attribute.array.set( order );
++		attribute.needsUpdate = true;
++		if ( attribute.pbo !== undefined ) attribute.pbo.needsUpdate = true;
++
++	}
++
++	/**
++	 * Draw an explicit WebGL capture with its camera's synchronous native order.
++	 * The callback must draw synchronously: main-camera order and sort metadata
++	 * are restored before any asynchronous readback can yield to worker messages.
++	 * Nested scopes and thrown draws restore their immediate caller's state.
++	 */
++	withSynchronousSort( renderer, camera, draw ) {
++
++		if ( ! ( renderer.backend && renderer.backend.isWebGLBackend === true ) ) return draw();
++		if ( this._disposed ) throw new Error( 'GaussianSplat: cannot capture after disposal.' );
++		const previous = {
++			order: this._sort.orderAttribute.array.slice( 0, this._sort.count ),
++			matrix: this._sortMatrix.value.clone(),
++			range: this._sortDepthRange.value.clone(),
++			direction: this._lastSortDirection.clone(),
++			initialized: this._sortInitialized,
++			time: this._lastSortTime,
++			renderer: this._lastSortRenderer,
++			cpuSort: this.cpuSort
++		};
++
++		try {
++
++			this.cpuSort = null;
++			this._sortInitialized = false;
++			camera.updateWorldMatrix( true, false );
++			this.updateSort( renderer, camera );
++			const result = draw();
++			if ( result !== null && ( typeof result === 'object' || typeof result === 'function' ) && typeof result.then === 'function' ) {
++
++				Promise.resolve( result ).catch( () => {} );
++				throw new TypeError( 'GaussianSplat: capture draw must be synchronous.' );
++
++			}
++			return result;
++
++		} finally {
++
++			if ( ! this._disposed ) {
++
++				this.applySortOrder( previous.order );
++				this._sortMatrix.value.copy( previous.matrix );
++				this._sortDepthRange.value.copy( previous.range );
++				this._lastSortDirection.copy( previous.direction );
++				this._sortInitialized = previous.initialized;
++				this._lastSortTime = previous.time;
++				this._lastSortRenderer = previous.renderer;
++				this.cpuSort = previous.cpuSort;
++
++			}
++
++		}
++
++	}
++
 +	/** Release generated draw, compute and storage resources. Source geometry remains caller-owned. */
 +	dispose() {
 +
@@ -162,7 +262,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  	_needsSort( camera ) {
  
  		_modelViewMatrix.multiplyMatrices( camera.matrixWorldInverse, this.matrixWorld );
-@@ -470,13 +506,13 @@ class GaussianSplat extends Mesh {
+@@ -470,13 +595,13 @@ class GaussianSplat extends Mesh {
  		const matrix = this._sortMatrix.value.elements;
  		const nearDepth = this._sortDepthRange.value.x;
  		const range = Math.max( this._sortDepthRange.value.y - nearDepth, 0.0001 );
@@ -178,7 +278,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  
  			return BIN_COUNT - 1 - depthBin;
  
-@@ -610,14 +646,14 @@ function computeRayIntersection( positionAttribute, covarianceAttribute, colorAt
+@@ -610,14 +735,14 @@ function computeRayIntersection( positionAttribute, covarianceAttribute, colorAt
  
  }
  
@@ -198,7 +298,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  	] ), 3 ) );
  	geometry.setIndex( [ 0, 1, 2, 0, 2, 3 ] );
  	geometry.instanceCount = count;
-@@ -791,9 +827,10 @@ function applySphericalHarmonicsBand( buffer, splatIndex, words, componentCount,
+@@ -791,9 +916,10 @@ function applySphericalHarmonicsBand( buffer, splatIndex, words, componentCount,
  
  }
  
@@ -211,7 +311,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  	const x = viewDirection.x;
  	const y = viewDirection.y;
  	const z = viewDirection.z;
-@@ -859,7 +896,7 @@ function applySphericalHarmonics( rgb, center, localCameraPosition, splatIndex,
+@@ -859,7 +985,7 @@ function applySphericalHarmonics( rgb, center, localCameraPosition, splatIndex,
  
  }
  
@@ -220,7 +320,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  
  	if ( buffers.sphericalHarmonicsDegree === 0 ) return null;
  
-@@ -869,14 +906,14 @@ function createSphericalHarmonicsComputeNode( buffers, localCameraPosition ) {
+@@ -869,14 +995,14 @@ function createSphericalHarmonicsComputeNode( buffers, localCameraPosition ) {
  		const center = buffers.centerRead.element( splatIndex ).xyz.toVar( 'center' );
  		const rgb = vec3( 0 ).toVar( 'sphericalHarmonicsContribution' );
  
@@ -237,7 +337,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  
  	const splatUv = varyingProperty( 'vec2', 'vSplatUv' );
  	const splatColor = varyingProperty( 'vec4', 'vSplatColor' );
-@@ -888,6 +925,7 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -888,6 +1014,7 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  		const covA = buffers.covarianceARead.element( splatIndex ).toVar( 'covA' );
  		const covB = buffers.covarianceBRead.element( splatIndex ).toVar( 'covB' );
  		const color = unpackUnorm4x8( buffers.colorRead.element( splatIndex ) ).toVar( 'splatColor' );
@@ -245,7 +345,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  		const rgb = color.rgb.toVar( 'splatRgb' );
  
  		if ( buffers.sphericalHarmonicsDegree > 0 ) {
-@@ -898,7 +936,7 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -898,7 +1025,7 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  
  			} else {
  
@@ -254,7 +354,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  
  			}
  
-@@ -909,6 +947,8 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -909,6 +1036,8 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  		const viewCenter4 = highpModelViewMatrix.mul( vec4( center, 1 ) ).toVar( 'viewCenter4' );
  		const viewCenter = viewCenter4.xyz.toVar( 'viewCenter' );
  		const centerClip = cameraProjectionMatrix.mul( viewCenter4 ).toVar( 'centerClip' );
@@ -263,7 +363,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  
  		const m = highpModelViewMatrix;
  		const r0 = vec3( m[ 0 ].x, m[ 1 ].x, m[ 2 ].x ).toVar( 'r0' );
-@@ -940,6 +980,16 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -940,6 +1069,16 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  		const j02 = focal.x.mul( viewCenter.x ).mul( invZ2 ).toVar( 'j02' );
  		const j12 = focal.y.mul( viewCenter.y ).mul( invZ2 ).toVar( 'j12' );
  
@@ -280,7 +380,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  		const aBase = j00.mul( j00 ).mul( c00 )
  			.add( j00.mul( j02 ).mul( c02 ).mul( 2 ) )
  			.add( j02.mul( j02 ).mul( c22 ) )
-@@ -959,7 +1009,8 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -959,7 +1098,8 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  		const det = a.mul( c ).sub( b.mul( b ) ).toVar( 'det' );
  		const alphaScale = sqrt( max( detBase.div( max( det, 0.000001 ) ), 0 ) ).toVar( 'alphaScale' );
  
@@ -290,7 +390,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  
  		const halfTrace = a.add( c ).mul( 0.5 ).toVar( 'halfTrace' );
  		const radius = sqrt( max( a.sub( c ).mul( 0.5 ).pow2().add( b.mul( b ) ), 0.0000001 ) ).toVar( 'radius' );
-@@ -984,7 +1035,8 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -984,7 +1124,8 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  
  		const clipLimit = centerClip.w.mul( CLIP_XY ).toVar( 'clipLimit' );
  
@@ -300,7 +400,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..365576129db68022c93879b8dca46dc4
  			.or( centerClip.z.lessThan( centerClip.w.negate() ) )
  			.or( centerClip.z.greaterThan( centerClip.w ) )
  			.or( centerClip.x.lessThan( clipLimit.negate() ) )
-@@ -1007,7 +1059,7 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -1007,7 +1148,7 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  
  		const r2 = dot( splatUv, splatUv ).toVar( 'r2' );
  
