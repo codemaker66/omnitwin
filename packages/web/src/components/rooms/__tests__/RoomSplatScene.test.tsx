@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SplatRuntimeProfile } from "../../../lib/splat-runtime-profile.js";
 import { roomSplatLadder } from "../../../data/room-splat-bundles.js";
 
-// The scene is a composition: the canvas, the tiles, the clip box and the
+// The scene is a composition: the canvas, the tiles and the
 // camera. Each part has its own tests; what this file pins is that the device
 // profile reaches the two parts that spend the frame budget, and nothing else.
 const recorded = vi.hoisted(() => ({
@@ -18,6 +18,7 @@ const recorded = vi.hoisted(() => ({
   mounted: new Map<string, Record<string, unknown>>(),
   onCreated: undefined as unknown,
   capture: vi.fn(),
+  clip: vi.fn(() => null),
 }));
 
 vi.mock("@react-three/fiber", () => ({
@@ -49,7 +50,7 @@ vi.mock("../InteriorCamera.js", () => ({
     return null;
   },
 }));
-vi.mock("../RoomClipBox.js", () => ({ RoomClipBox: () => null }));
+vi.mock("../RoomClipBox.js", () => ({ RoomClipBox: recorded.clip }));
 // Use the real manifest and budget selection, with an override for the
 // multi-tile coarse-level failure regression below.
 vi.mock("../../../data/room-splat-bundles.js", async (importOriginal) => {
@@ -136,6 +137,7 @@ describe("RoomSplatScene runtime wiring", () => {
     recorded.layers.length = 0;
     recorded.cameras.length = 0;
     recorded.hosts.length = 0;
+    recorded.clip.mockClear();
     recorded.mounted.clear();
     if (typeof window.matchMedia !== "function") {
       Object.defineProperty(window, "matchMedia", {
@@ -282,6 +284,7 @@ describe("RoomSplatScene coarse-first ladder", () => {
     recorded.layers.length = 0;
     recorded.cameras.length = 0;
     recorded.hosts.length = 0;
+    recorded.clip.mockClear();
     recorded.mounted.clear();
     if (typeof window.matchMedia !== "function") {
       Object.defineProperty(window, "matchMedia", {
@@ -344,6 +347,21 @@ describe("RoomSplatScene coarse-first ladder", () => {
     onMotionChange(false);
     expect(visibleUrls()).toEqual([...environment, ...detail]);
     expect(mountedUrls()).toEqual([...environment, ...coarse, ...detail]);
+  });
+
+  it("keeps captured walls outside the scanner walk bounds while constraining the camera", () => {
+    render(<RoomSplatScene room={ROOM} />);
+
+    // The walking area locates safe camera positions, not the walls. Spark's
+    // editable:false sources ignored the old global clip; applying it to the
+    // native source cuts away Grand Hall's walls and ceiling.
+    expect(recorded.clip).not.toHaveBeenCalled();
+    expect(recorded.cameras).toHaveLength(1);
+    expect(recorded.cameras[0]?.["bounds"]).toEqual({
+      min: [-5.043551, 1.35, -9.933846999999998],
+      max: [5.043551, 1.85, 9.933847],
+    });
+    expect(recorded.layers.length).toBeGreaterThan(0);
   });
 
   it("exposes poster readback only when requested and waits for the complete actual draw", async () => {

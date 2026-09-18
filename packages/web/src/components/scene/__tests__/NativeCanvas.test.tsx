@@ -2,6 +2,49 @@ import { StrictMode, type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PerspectiveCamera, RenderTarget, Scene, type Camera, type Object3D } from "three";
+import { useFrame } from "@react-three/fiber";
+import type { NativeGpuWorkResult } from "../../../lib/native-gpu-completion.js";
+
+interface FiberState {
+  readonly gl: object;
+  readonly scene: Scene;
+  camera: Camera;
+  invalidate(): void;
+  get(): FiberState;
+}
+
+const fiber = vi.hoisted(() => ({
+  state: null as FiberState | null,
+  invalidate: vi.fn(),
+  frames: new Set<{ callback: (state: FiberState) => void; priority: number }>(),
+}));
+
+const gpuCompletion = vi.hoisted(() => {
+  class Ticket {
+    result: NativeGpuWorkResult = { status: "pending" };
+    readonly completion: Promise<void>;
+    readonly poll = vi.fn(() => this.result);
+    resolve = (): void => { throw new Error("Ticket not initialized"); };
+    reject = (_cause: Error): void => { throw new Error("Ticket not initialized"); };
+    constructor(readonly signal: AbortSignal) {
+      this.completion = new Promise<void>((resolve, reject) => { this.resolve = resolve; this.reject = reject; });
+      signal.addEventListener("abort", () => { this.fail(new DOMException("Cancelled", "AbortError")); }, { once: true });
+    }
+    finish(): void { this.result = { status: "complete", completedAt: performance.now() }; this.resolve(); }
+    fail(error: Error): void { this.result = { status: "failed", error }; this.reject(error); }
+  }
+  const tickets: Ticket[] = [];
+  return { tickets, create: vi.fn((_renderer: object, signal: AbortSignal) => {
+    const ticket = new Ticket(signal);
+    tickets.push(ticket);
+    return ticket;
+  }) };
+});
+
+vi.mock("../../../lib/native-gpu-completion.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../lib/native-gpu-completion.js")>(),
+  createNativeGpuWorkTicket: gpuCompletion.create,
+}));
 
 const native = vi.hoisted(() => {
   const instances: Renderer[] = [];
@@ -15,6 +58,7 @@ const native = vi.hoisted(() => {
     readonly dispose = vi.fn(() => Promise.resolve());
     readonly setRenderObjectFunction = vi.fn();
     readonly renderObject = vi.fn();
+    readonly compileAsync = vi.fn((_scene: Object3D, _camera: Camera) => Promise.resolve());
     readonly rawRender = vi.fn((_scene: Object3D, _camera: Camera): void => undefined);
     render = this.rawRender;
     renderTarget: RenderTarget | null = null;
@@ -50,6 +94,15 @@ vi.mock("three/webgpu", async (importOriginal) => ({
 vi.mock("@react-three/fiber", async () => {
   const React = await import("react");
   return {
+    useFrame: (callback: (state: FiberState) => void, priority = 0) => {
+      const latest = React.useRef(callback);
+      React.useLayoutEffect(() => { latest.current = callback; });
+      React.useLayoutEffect(() => {
+        const subscription = { callback: (state: FiberState) => { latest.current(state); }, priority };
+        fiber.frames.add(subscription);
+        return () => { fiber.frames.delete(subscription); };
+      }, [priority]);
+    },
     Canvas: ({ children, gl, onCreated, frameloop }: {
       children?: ReactNode;
       gl: (canvas: HTMLCanvasElement) => object;
@@ -57,9 +110,18 @@ vi.mock("@react-three/fiber", async () => {
       frameloop: string;
     }) => {
       const renderer = React.useRef<object | null>(null);
+      const state = React.useRef<FiberState | null>(null);
       React.useLayoutEffect(() => {
         renderer.current ??= gl(document.createElement("canvas"));
-        onCreated({ gl: renderer.current, scene: {} });
+        state.current ??= {
+          gl: renderer.current, scene: new Scene(), camera: new PerspectiveCamera(), invalidate: fiber.invalidate,
+          get: () => {
+            if (state.current === null) throw new Error("Missing current R3F state");
+            return state.current;
+          },
+        };
+        fiber.state = state.current;
+        onCreated(state.current);
       }, [gl, onCreated]);
       return <div data-testid="fiber-canvas" data-frameloop={frameloop}>{children}</div>;
     },
@@ -69,8 +131,23 @@ vi.mock("@react-three/fiber", async () => {
 import { NativeCanvas } from "../NativeCanvas.js";
 import { isNativeCanvasRender } from "../../../lib/native-renderer.js";
 
-beforeEach(() => { native.instances.length = 0; });
+beforeEach(() => {
+  native.instances.length = 0;
+  fiber.frames.clear();
+  fiber.state = null;
+  fiber.invalidate.mockReset();
+  gpuCompletion.tickets.length = 0;
+  gpuCompletion.create.mockClear();
+});
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+function automaticFrame(): void {
+  const state = fiber.state;
+  if (state === null) throw new Error("No R3F root state");
+  act(() => {
+    for (const subscription of [...fiber.frames].sort((a, b) => a.priority - b.priority)) subscription.callback(state);
+  });
+}
 
 describe("NativeCanvas", () => {
   it.each([
@@ -114,6 +191,119 @@ describe("NativeCanvas", () => {
     expect(screen.getByText("Room geometry")).toBeDefined();
     expect(screen.getByTestId("fiber-canvas").getAttribute("data-frameloop")).toBe("demand");
     expect(onCreated).toHaveBeenCalledOnce();
+  });
+
+  it("owns automatic drawing after scene updates and coalesces work without retaining an old camera", async () => {
+    let updates = 0;
+    function CameraUpdates(): null {
+      useFrame((state) => { state.camera.position.x = ++updates; });
+      return null;
+    }
+    render(<NativeCanvas frameloop="demand"><CameraUpdates /></NativeCanvas>);
+    expect(fiber.frames.size).toBe(0);
+    const instance = native.instances[0];
+    if (instance === undefined) throw new Error("Missing renderer");
+    await act(() => { instance.resolve(); return Promise.resolve(); });
+    expect([...fiber.frames].map(frame => frame.priority).sort()).toEqual([0, 1]);
+    const presentedPositions: number[] = [];
+    instance.rawRender.mockImplementation((_scene, camera) => { presentedPositions.push(camera.position.x); });
+    automaticFrame();
+    automaticFrame();
+    automaticFrame();
+    automaticFrame();
+    expect(updates).toBe(4);
+    expect(presentedPositions).toEqual([1, 2]);
+    expect(gpuCompletion.tickets).toHaveLength(2);
+    expect(fiber.invalidate).not.toHaveBeenCalled();
+    await act(() => { gpuCompletion.tickets[0]?.finish(); return Promise.resolve(); });
+    expect(fiber.invalidate).toHaveBeenCalledOnce();
+    const state = fiber.state;
+    if (state === null) throw new Error("Missing root");
+    const camera = new PerspectiveCamera();
+    state.camera = camera;
+    automaticFrame();
+    expect(presentedPositions).toEqual([1, 2, 5]);
+    expect(instance.rawRender).toHaveBeenLastCalledWith(state.scene, camera);
+    expect(gpuCompletion.tickets).toHaveLength(3);
+  });
+
+  it("leaves explicit main, nested, offscreen and compile calls immediate while automatic work is full", async () => {
+    render(<NativeCanvas />);
+    const instance = native.instances[0];
+    if (instance === undefined) throw new Error("Missing renderer");
+    await act(() => { instance.resolve(); return Promise.resolve(); });
+    automaticFrame();
+    automaticFrame();
+    automaticFrame();
+    expect(instance.rawRender).toHaveBeenCalledTimes(2);
+    const scene = new Scene(), camera = new PerspectiveCamera();
+    instance.render(scene, camera);
+    instance.rawRender.mockImplementationOnce(() => { instance.render(scene, camera); });
+    instance.render(scene, camera);
+    const target = new RenderTarget(2, 2);
+    instance.renderTarget = target;
+    instance.render(scene, camera);
+    await instance.compileAsync(scene, camera);
+    expect(instance.rawRender).toHaveBeenCalledTimes(6);
+    expect(instance.compileAsync).toHaveBeenCalledExactlyOnceWith(scene, camera);
+    expect(gpuCompletion.tickets).toHaveLength(2);
+    instance.renderTarget = null;
+    target.dispose();
+  });
+
+  it("does not create a completion ticket after an automatic draw fails inside the recoverable wrapper", async () => {
+    render(<NativeCanvas />);
+    const instance = native.instances[0];
+    if (instance === undefined) throw new Error("Missing renderer");
+    await act(() => { instance.resolve(); return Promise.resolve(); });
+    instance.rawRender.mockImplementationOnce(() => { throw new Error("Rejected automatic frame"); });
+    automaticFrame();
+    expect(screen.getByRole("alert").textContent).toContain("Rejected automatic frame");
+    expect(instance.rawRender).toHaveBeenCalledOnce();
+    expect(gpuCompletion.create).not.toHaveBeenCalled();
+    expect(instance.dispose).toHaveBeenCalledOnce();
+    expect(fiber.frames.size).toBe(0);
+  });
+
+  it("cancels pending pacing on a fence failure and cannot wake the replacement renderer from old work", async () => {
+    render(<NativeCanvas />);
+    const first = native.instances[0];
+    if (first === undefined) throw new Error("Missing renderer");
+    await act(() => { first.resolve(); return Promise.resolve(); });
+    automaticFrame();
+    automaticFrame();
+    automaticFrame();
+    const stale = [...gpuCompletion.tickets];
+    await act(() => { stale[0]?.fail(new Error("GPU pacing fence failed")); return Promise.resolve(); });
+    expect(screen.getByRole("alert").textContent).toContain("GPU pacing fence failed");
+    expect(stale.every(ticket => ticket.signal.aborted)).toBe(true);
+    expect(first.dispose).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Try 3D again" }));
+    const second = native.instances[1];
+    if (second === undefined) throw new Error("Missing replacement renderer");
+    await act(() => { second.resolve(); return Promise.resolve(); });
+    await act(() => { for (const ticket of stale) ticket.finish(); return Promise.resolve(); });
+    expect(fiber.invalidate).not.toHaveBeenCalled();
+    automaticFrame();
+    expect(second.rawRender).toHaveBeenCalledOnce();
+    expect(first.rawRender).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("aborts pending draws at unmount without producing a late root invalidation", async () => {
+    const view = render(<NativeCanvas />);
+    await act(() => { native.instances[0]?.resolve(); return Promise.resolve(); });
+    automaticFrame();
+    automaticFrame();
+    automaticFrame();
+    const stale = [...gpuCompletion.tickets];
+    view.unmount();
+    await act(() => Promise.resolve());
+    expect(stale.every(ticket => ticket.signal.aborted)).toBe(true);
+    await act(() => { for (const ticket of stale) ticket.finish(); return Promise.resolve(); });
+    expect(fiber.invalidate).not.toHaveBeenCalled();
+    expect(fiber.frames.size).toBe(0);
+    expect(native.instances[0]?.dispose).toHaveBeenCalledOnce();
   });
 
   it("shows a recoverable init error, releases failed resources and retries a new renderer", async () => {
@@ -242,8 +432,14 @@ describe("NativeCanvas", () => {
     expect(instance?.init).toHaveBeenCalledOnce();
     expect(instance?.dispose).not.toHaveBeenCalled();
     expect(screen.getByText("Room geometry")).toBeDefined();
+    expect(fiber.frames.size).toBe(1);
+    automaticFrame();
+    expect(instance?.rawRender).toHaveBeenCalledOnce();
+    expect(gpuCompletion.tickets).toHaveLength(1);
     view.unmount();
     await act(() => Promise.resolve());
     expect(instance?.dispose).toHaveBeenCalledOnce();
+    expect(gpuCompletion.tickets[0]?.signal.aborted).toBe(true);
+    expect(fiber.frames.size).toBe(0);
   });
 });

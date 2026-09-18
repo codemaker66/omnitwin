@@ -19,6 +19,31 @@ is global. A narrow [pinned Three patch](../../patches/README.md) exposes per-so
 fades, correct SH directions after transforms, center-based room clipping and
 resource disposal; no Spark rendering, sorting or WASM remains in the browser.
 
+Room and environment splats share 65,536 logarithmic depth buckets. The original
+4,096 linear buckets lost nearby surface ordering when a kilometre-scale
+environment expanded the scene's depth range. Both native backends map depth
+relative to the near bound before applying `log1p`; negative orthographic near
+planes remain supported. Every source record and the original bounds remain.
+This improves the reproduced streaking but does not make approximate buckets
+an exact depth sort. Three's serial GPU prefix loop also grows with bucket count,
+so camera-motion performance requires renewed measurement for this patch.
+
+The WebGL2 path dispatches the same first-party CPU CountingSort to one worker
+per native scene. A snapshot's first order completes before compilation and
+activation. There is one in-flight job and at most one coalesced latest pose
+per resident snapshot; completed orders still apply during continuous motion
+so changing cameras cannot starve the sorter. Position data is copied once
+per registration. Only an exchange order buffer transfers between threads;
+live native position/order buffers stay attached. Snapshot disposal and worker
+failure prevent stale readiness, and worker stalls fail explicitly after 30s.
+Explicit WebGL captures temporarily compute their camera's synchronous order,
+restoring main-view order and metadata before asynchronous readback yields.
+Three's WebGL PBO can pad the order array for texture storage without changing
+its logical splat count. Worker results and capture copies use the logical count;
+applying or restoring them preserves the padded allocation and trailing entries.
+A resident worker failure enters the existing recoverable renderer error boundary,
+so a hidden failed mesh cannot leave an apparently complete loading status.
+
 SOG is an asset format, independent of Spark. Its ZIP archive contains encoded
 WebP data planes; libwebp must return raw bytes (Canvas2D alpha/color processing
 can corrupt them). `@jsquash/webp` is a decoder-only dependency. All source SH bands
@@ -101,12 +126,56 @@ references are released and garbage collection runs. These estimates do not
 establish a measured memory limit or an improvement over Spark; compare post-GC
 and peak memory on the same scene, backend, device and workload.
 
-The isolated follow-up with the final patched addon and matching Gaussian radius
-measured 158.72 versus 134.13 FPS (18.33%) on the RTX 4090. It is not a
+Each initialized WebGL worker registration additionally retains 28 bytes per
+splat (12 for copied centers, 12 for Three's sort arrays and four for the
+exchange order) plus 1 MiB of fixed histogram/offset arrays. A full Grand Hall
+registration therefore adds about 162 MiB of CPU backing, before worker/runtime
+overhead, transients and delayed garbage collection. Synchronous capture saves
+another four bytes per splat temporarily for each nested scope. Moving sorting
+off the interaction thread is not a memory optimization.
+
+The isolated follow-up before the depth-order recovery, with matching Gaussian
+radius, measured 158.72 versus 134.13 FPS (18.33%) on the RTX 4090. That result
+does not measure the revised logarithmic sorting patch. It is not a
 measurement of this application integration or proof of equal visual quality;
 colour blending, SH packing and sorting still differ. Recheck load time, memory, frame
 time, visual fidelity, clipping, overlays, capture exports and teardown in the
 complete planner and both renderer backends before making a shipping claim.
+
+The subsequent 65,536-bucket recovery measured 153.74 versus 135.88 FPS
+(13.15%) for native WebGPU and product Spark under the same isolated workload.
+Its synchronous WebGL2 fallback regressed to 81.41 FPS with 125 ms p95 pauses,
+also reproduced in the full public walkthrough. These dated results precede
+the asynchronous fallback repair; see the [baseline report](../reports/native-splat-baseline-2026-09-18.md)
+for source hashes and the newer qualified comparisons below.
+
+The actual production worker subsequently retained all 6,030,980 room/environment
+splats during a 12.06-second ordinary public-view drag: 151.27 rAF FPS, 12.5 ms
+p95 and 20.8 ms p99, with 69 worker sorts applied. Sorting still takes a median
+116 ms on its worker; completed orders therefore trail the camera (126.9 ms p95
+pose age in this run). This is application responsiveness evidence on the RTX
+4090, not the final matched renderer baseline or a mobile result. A poster
+capture during an in-flight sort preserved all padded main-view order entries,
+camera-sort metadata and renderer target, and left all eleven sources ready.
+
+The final isolated runtime-`188ec0e0` comparison uses fresh controls: native
+WebGPU 161.97 FPS versus product Spark 158.75 (+2.03%), and the native WebGL
+worker 194.57 (+22.56%). The WebGPU difference is small and these rAF medians
+are not general device or presentation guarantees. All twelve samples remain,
+including an unexplained one-second-rAF Spark sample; it must not be attributed
+to intrinsic rendering cost. Worker order-age p95 reached 1.035–1.100s per frame,
+including native re-sort thresholds; higher rAF is not equal motion fidelity.
+See the [final report](../reports/native-splat-baseline-2026-09-18.md#final-recovery-baseline-18-september-2026)
+for the complete methodology and limitations.
+
+After pacing, the actual full-scene app submitted 190.32 WebGL2 / 147.01 WebGPU
+main draws per second in separate twelve-second hardware runs. Both retained
+all 6,030,980 splats, SH3 and normal motion/settled resolutions, completed every
+observed GPU ticket (maximum two outstanding), and passed poster export with
+zero browser errors. Fresh original Linux reduced-motion/linework/staged cases
+also passed, zero retries; full captures took 13.848s / 10.994s within unchanged
+15s deadlines. The first retains limited headroom. Fresh release gates and a
+corrected deployed visual check remain required before native promotion.
 
 Native Three does not preserve the presented canvas buffer through the old
 WebGL `preserveDrawingBuffer` option. Poster exports use an explicit same-device
@@ -120,14 +189,41 @@ images may include displayed DOM overlays; they are not raw framebuffer or
 forced-render measurements. Direct redraw/readback and earlier compositor
 failures remain recorded in the session evidence.
 
-Planner completion follows each source's confirmed native main-camera draw at
-its revealed opacity. Decode still starts the fade, so rendering never waits
-on its own completion signal. The pending caption pauses in Model view, while
+Planner completion follows completed GPU work for each source's native main-camera
+draw at its uploaded revealed opacity. Completion is registered in the outer
+canvas render and starts waiting only after the whole draw successfully returns:
+the active WebGPU queue acknowledges submission completion, or a nonblocking
+WebGL2 fence is polled. Snapshot replacement, disposal and device/context loss
+cancel or fail pending readiness; a 30-second GPU stall becomes an explicit
+product error. This does not change the 15-second capture deadline or certify
+browser compositor presentation. Decode still starts the fade, so rendering never
+waits on its own completion signal. The pending caption pauses in Model view, while
 terminal failure notices remain available. A replacement renderer clears old
 draw counts even when source URLs are unchanged; callbacks from its predecessor
 cannot advance the new generation. Ink fades consume actual nonnegative elapsed
 time and apply their final snap without an extra animation callback, preserving
 normal easing and reduced-motion behavior under slow software-rendered frames.
+
+Automatic canvas rendering now owns a bounded GPU submission queue. R3F continues
+updating the current camera and scene, while skipped draw requests coalesce into
+one invalidation after capacity becomes available. Explicit renders and exports
+remain immediate. At most two automatic draws may be outstanding; a completion
+observed more than 50ms after submission begins reduces capacity to one, and three
+successive observations below 25ms restore two. These intervals include CPU
+submission, GPU queueing and observation delay; they are not GPU timestamps.
+WebGL polls the fence nonblockingly before each capacity decision, so the 16ms
+background timer does not impose a frame-rate ceiling. Failure, replacement and
+disposal cancel owned tickets and cannot wake a removed root. Source readiness
+retains its independent completed-work contract.
+
+Public walkthroughs and the internal capture console retain the full captured
+interior. The generated bundle extent can come from the scanner trajectory; it
+frames the camera and constrains movement but does not guarantee containment of
+walls or ceiling. Do not apply it as a splat clip volume. Previous Spark layers
+had `editable:false`, so their global `RoomClipBox` was inactive. Enabling that
+box during the native migration removed visible Grand Hall surfaces and caused
+a production rollback on 18 September. Explicit future cutaway views require a
+separately qualified architectural clip volume and visual evidence.
 
 Vite prepares the planner's static import graph when the development server
 starts and preoptimizes the lazy native decoder imports. This avoids reproduced

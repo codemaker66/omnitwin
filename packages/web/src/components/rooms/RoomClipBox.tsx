@@ -4,7 +4,7 @@ import { createNativeRoomClip } from "../../lib/native-splat-merge.js";
 import { nativeSplatScene } from "../../lib/native-splat-scene.js";
 
 // ---------------------------------------------------------------------------
-// Clip a captured room to its own measured box.
+// Apply an explicitly qualified room-containment box.
 //
 // A handheld capture contains far more than the room: the corridor walked in
 // from, the stair, sometimes a whole other storey. Standing inside the room
@@ -12,22 +12,23 @@ import { nativeSplatScene } from "../../lib/native-splat-scene.js";
 // as an object — pull the camera out and you are looking at a smear of
 // building with a room somewhere inside it.
 //
-// So instead of avoiding the outside, remove it. Native rendering multiplies a splat's
-// alpha by an SDF region, so an inverted box over the measured room erases
-// everything beyond the walls. The camera is then free to pull back into a
-// dollhouse view, and what it frames is only ever this room.
+// This primitive multiplies splat alpha by a box SDF for an explicit cutaway.
+// Its caller must independently establish that the box contains every surface
+// to retain. A generated bundle's extent can come from the scanner's walk
+// (tools/xgrids-lcc2/src/cli.ts), which lies inside the walls and is only suitable
+// for camera movement bounds. Applying that extent here can erase the walls.
 //
-// The edit is added to the scene rather than to a mesh: the room's box is
-// known in scene space (the generated transform centres every room on the
-// origin with its floor at y = 0), and one edit then covers every tile at once.
+// The box is in scene space, centred in x/z with its floor at y = 0. One edit
+// covers every tile at once. Public interior walks do not apply this primitive.
 // ---------------------------------------------------------------------------
 
 export interface RoomClipBoxProps {
-  /** Room extent in scene axes: width, height, depth, in metres. */
+  /** Independently qualified containment extent: width, height, depth, in metres.
+   * Scanner-walk or camera-movement bounds are not suitable containment bounds. */
   readonly extentM: readonly [number, number, number];
   /**
-   * Grown slightly past the measured walls so the clip does not shave the
-   * wall surface itself, which is the part people actually look at.
+   * Padding beyond the qualified containment box. Padding cannot turn a
+   * scanner-walk extent into a verified architectural boundary.
    */
   readonly marginM?: number;
   /** Feathering on the cut, in metres, so the boundary is not a razor edge. */

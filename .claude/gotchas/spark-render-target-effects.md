@@ -1,7 +1,25 @@
-**Read this when:** adding shadows, probes, postprocessing or another render pass
-to a scene containing Spark splats.
+**Read this when:** adding shadows, probes, postprocessing, capture exports or
+another render pass to a Gaussian splat scene.
 
 # Check interactions between render targets and splat sorting
+
+The native migration on 18 September 2026 supersedes the Spark renderer described
+below. See [the native runtime note](../../docs/engineering/native-splats.md) for
+the current integration. The historical filename remains for existing links.
+
+The native host owns a single globally sorted draw under `NativeCanvas`. Native
+poster exports use an explicit render target on that same renderer and restore
+its state afterward; legacy `preserveDrawingBuffer` assumptions do not apply.
+Off-screen or nested passes must not acknowledge main-camera source readiness.
+That acknowledgement is scoped to the successful outer canvas render and waits
+for GPU completion, which still does not prove compositor presentation.
+
+Preserve those boundaries when introducing extra passes. Test camera and target
+changes, restoration after errors, source transitions, clipping and disposal.
+The historical Spark corruption below neither proves nor disproves compatibility
+of a native effect.
+
+## Historical Spark render-target experiment
 
 A 2026-08-06 Reception Room experiment rendered correctly until drei
 `ContactShadows` added an off-screen scene pass; near-floor splats became
@@ -10,7 +28,7 @@ scene. The report used drei 9.122.0 / Three 0.180.0; screenshots were shown then
 but were not retained as a committed regression. This is historical reproduction
 evidence, not a CI-proven guarantee about every effect or newer Spark build.
 
-Extra cameras/targets may interact with Spark's sort/renderer state. Verify the
+Extra cameras/targets could interact with that Spark sort/renderer state. Verify the
 mechanism against the installed renderer and reproduce the specific integration
 before attributing every artifact to off-screen rendering. Keep one clear owner for
 the scene's renderer resources and test camera moves, load transitions and disposal.

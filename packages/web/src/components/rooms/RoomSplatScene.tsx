@@ -9,7 +9,6 @@ import {
   type NativeSplatLoadEvent,
 } from "../scene/NativeSplatLayer.js";
 import { roomSplatBundle, roomSplatLadder, walkPoseForBundle } from "../../data/room-splat-bundles.js";
-import { RoomClipBox } from "./RoomClipBox.js";
 import { InteriorCamera } from "./InteriorCamera.js";
 import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
 import { settledPixelRatio } from "../../lib/splat-runtime-profile.js";
@@ -82,13 +81,6 @@ export interface RoomSplatSceneProps {
   readonly room: TradesHallRuntimeRoomSlug;
   readonly onProgress?: (progress: RoomSplatProgress) => void;
   /**
-   * Frame the room from outside, as an object.
-   *
-   * Only honest because the capture is clipped to the room's measured box —
-   * without that, pulling back shows the corridor and stair the operator walked
-   * through on the way in.
-   */
-  /**
    * Expose a development-only current-view poster capture on the live device.
    * Neither native backend requires a preserved presented drawing buffer.
    */
@@ -109,6 +101,10 @@ export function RoomSplatScene({
 }: RoomSplatSceneProps): ReactElement {
   const transform = runtimeAssetViewTransformForRoom(room, "staged");
   const camera = runtimeAssetCameraViewForRoom(room, "staged");
+  // The bundle's scanner-walk extent frames the camera; it does not contain all
+  // captured wall/ceiling surfaces. Preserve the full interior capture. The old
+  // Spark sources used editable:false and ignored the global room clip, so
+  // applying that box natively would remove surfaces that visitors used to see.
   const extentM = roomSplatBundle(room)?.extentM ?? null;
 
   // Where the scanner actually stood, and how far they went. The walk is the
@@ -370,9 +366,6 @@ export function RoomSplatScene({
       onCreated={handleCreated}
     >
       <ambientLight intensity={1} />
-      {extentM !== null && (
-        <RoomClipBox extentM={extentM} keepHeightFraction={1} />
-      )}
       {/* One renderer host per scene, owned by no tile: the ladder drops the
           coarse room when the finest level lands, and a host riding on that
           tile would take the renderer away with it. */}

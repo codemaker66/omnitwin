@@ -1,5 +1,6 @@
 import type { WebGPURenderer } from "three/webgpu";
 import type { Camera, Object3D, Scene } from "three";
+import { waitForNativeGpuWork } from "./native-gpu-completion.js";
 
 const sceneRenderers = new WeakMap<Scene, WebGPURenderer>();
 
@@ -7,6 +8,7 @@ interface NativeRenderScope {
   readonly scene: Object3D;
   readonly camera: Camera;
   readonly canvas: boolean;
+  readonly completions: { start: () => void; fail: (reason: unknown) => void }[];
 }
 const renderScopes = new WeakMap<object, NativeRenderScope>();
 
@@ -19,13 +21,47 @@ export function withNativeRenderScope(
   draw: () => void,
 ): void {
   const previous = renderScopes.get(renderer);
-  renderScopes.set(renderer, { scene, camera, canvas: renderer.getRenderTarget() === null });
+  const scope: NativeRenderScope = { scene, camera, canvas: previous === undefined && renderer.getRenderTarget() === null, completions: [] };
+  renderScopes.set(renderer, scope);
   try {
     draw();
+  } catch (reason: unknown) {
+    for (const completion of scope.completions) completion.fail(reason);
+    throw reason;
   } finally {
     if (previous === undefined) renderScopes.delete(renderer);
     else renderScopes.set(renderer, previous);
   }
+  // WebGPU submits its command buffer at the end of render, after object callbacks.
+  // Internal/nested renders cannot acknowledge the enclosing main frame early.
+  for (const completion of scope.completions) completion.start();
+}
+
+/** Register only during a matching main draw; wait starts after the whole draw succeeds. */
+export function afterNativeCanvasGpuWork(
+  renderer: WebGPURenderer,
+  scene: Object3D,
+  camera: Camera,
+  signal: AbortSignal,
+  complete: () => void,
+  failed: (reason: unknown) => void,
+): boolean {
+  const scope = renderScopes.get(renderer);
+  if (scope?.canvas !== true || scope.scene !== scene || scope.camera !== camera || signal.aborted) return false;
+  const dispatch = (callback: () => void): void => {
+    try { callback(); } catch (reason: unknown) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      // Async readiness failures use the same recoverable renderer boundary as
+      // synchronous drawing. Never leave callback exceptions as rejected promises.
+      try { renderer.onError(`Native GPU readiness callback failed: ${message}`); }
+      catch (reportingError: unknown) { globalThis.reportError(reportingError); }
+    }
+  };
+  scope.completions.push({
+    start: () => { void waitForNativeGpuWork(renderer, signal).then(() => { dispatch(complete); }, (reason: unknown) => { dispatch(() => { failed(reason); }); }); },
+    fail: (reason: unknown) => { dispatch(() => { failed(reason); }); },
+  });
+  return true;
 }
 
 /** True only inside an explicit main-canvas render of this scene and camera. */

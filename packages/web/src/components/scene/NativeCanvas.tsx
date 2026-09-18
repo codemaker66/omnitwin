@@ -2,11 +2,13 @@ import {
   Component, useCallback, useEffect, useRef, useState,
   type ReactElement, type ReactNode,
 } from "react";
-import { Canvas, type CanvasProps, type RootState } from "@react-three/fiber";
+import { Canvas, useFrame, type CanvasProps, type RootState } from "@react-three/fiber";
 import { WebGPURenderer } from "three/webgpu";
 import { ActivityStatus } from "../shared/Activity.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import { registerNativeSceneRenderer, withNativeRenderScope } from "../../lib/native-renderer.js";
+import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
+import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
 import {
   createNativeRendererLifecycle, nativeRendererError, type NativeRendererLifecycle,
 } from "../../lib/native-renderer-lifecycle.js";
@@ -59,6 +61,13 @@ class NativeCanvasFailureBoundary extends Component<FailureBoundaryProps, { fail
   override render(): ReactNode { return this.state.failed ? null : this.props.children; }
 }
 
+function NativeAutomaticFrames({ renderFrame }: { readonly renderFrame: (state: RootState) => void }): null {
+  // Positive priority takes ownership of R3F's automatic draw after ordinary
+  // scene/camera callbacks. Explicit renderer calls and exports stay immediate.
+  useFrame(renderFrame, 1);
+  return null;
+}
+
 /**
  * R3F 8's runtime accepts a renderer with render/setSize/setPixelRatio, but its
  * store's GL type predates WebGPURenderer and its factory is synchronous. Keep
@@ -77,11 +86,15 @@ export function NativeCanvas({
   const initialize = useRef<(() => Promise<void>) | null>(null);
   const dispose = useRef<((initialized: boolean) => Promise<void>) | null>(null);
   const lifecycle = useRef<NativeRendererLifecycle | null>(null);
+  const framePacer = useRef<{ native: WebGPURenderer; pacer: NativeFramePacer } | null>(null);
   const callbacks = useRef({ onCreated, options, forceWebGL });
   callbacks.current = { onCreated, options, forceWebGL };
 
   const fail = useCallback((cause: Error): void => {
+    framePacer.current?.pacer.dispose();
+    framePacer.current = null;
     // Stop further frames synchronously, before React removes the failed Canvas.
+    if (renderer.current !== null && failedRenderer.current === renderer.current) return;
     failedRenderer.current = renderer.current;
     if (!mounted.current) return;
     setError(cause);
@@ -149,6 +162,10 @@ export function NativeCanvas({
       await native.init();
     };
     dispose.current = async (initialized) => {
+      if (framePacer.current?.native === native) {
+        framePacer.current.pacer.dispose();
+        framePacer.current = null;
+      }
       try {
         if (initialized) await native.dispose();
         // Renderer.dispose() after failed init attempts init again through
@@ -198,6 +215,17 @@ export function NativeCanvas({
           }
           callbacks.current.onCreated?.(state);
           unregisterScene = registerNativeSceneRenderer(state.scene, native);
+          framePacer.current?.pacer.dispose();
+          const current = (): boolean => mounted.current && renderer.current === native
+            && failedRenderer.current !== native;
+          framePacer.current = {
+            native,
+            pacer: createNativeFramePacer({
+              createTicket: (signal) => createNativeGpuWorkTicket(native, signal),
+              invalidate: () => { if (current()) state.get().invalidate(); },
+              onError: (cause) => { if (current()) fail(cause); },
+            }),
+          };
           setStatus("ready");
         } catch (cause) {
           fail(nativeRendererError(cause));
@@ -206,6 +234,25 @@ export function NativeCanvas({
       onError: fail,
     });
   }, [fail]);
+
+  const renderAutomaticFrame = useCallback((state: RootState): void => {
+    const owner = framePacer.current;
+    if (owner === null || !mounted.current || renderer.current !== owner.native
+      || failedRenderer.current === owner.native) return;
+    const native = owner.native;
+    // The automatic main view is paced. A caller intentionally rendering into
+    // another target retains Three's normal immediate render behavior.
+    if (native.getRenderTarget() !== null) {
+      native.render(state.scene, state.camera);
+      return;
+    }
+    owner.pacer.request(() => {
+      native.render(state.scene, state.camera);
+      // The render wrapper reports main-frame errors through fail() and returns.
+      // Never fence that failed draw or a renderer replaced during a callback.
+      return mounted.current && renderer.current === native && failedRenderer.current !== native;
+    });
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -218,6 +265,8 @@ export function NativeCanvas({
   }, []);
 
   const retry = (): void => {
+    framePacer.current?.pacer.dispose();
+    framePacer.current = null;
     lifecycle.current?.cancel();
     lifecycle.current = null;
     renderer.current = null;
@@ -239,7 +288,7 @@ export function NativeCanvas({
             frameloop={status === "ready" ? frameloop : "never"}
             style={{ width: "100%", height: "100%" }}
           >
-            {status === "ready" ? children : null}
+            {status === "ready" ? <>{children}<NativeAutomaticFrames renderFrame={renderAutomaticFrame} /></> : null}
           </Canvas>
         </NativeCanvasFailureBoundary>
       )}

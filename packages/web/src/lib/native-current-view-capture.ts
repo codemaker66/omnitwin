@@ -1,6 +1,7 @@
 import { RenderTarget, SRGBColorSpace, UnsignedByteType, Vector2, type Camera, type Scene } from "three";
 import { nativeRendererForScene } from "./native-renderer.js";
 import { copyNativeCapturePixels } from "./ortho-capture.js";
+import { withNativeSplatCapture } from "./native-splat-scene.js";
 
 export interface NativeCurrentViewCapture {
   readonly width: number;
@@ -31,7 +32,7 @@ export async function captureNativeCurrentView(scene: Scene, camera: Camera): Pr
       renderer.autoClear = true;
       renderer.xr.enabled = false;
       renderer.setRenderTarget(target);
-      renderer.render(scene, camera);
+      withNativeSplatCapture(scene, camera, () => { renderer.render(scene, camera); });
     } finally {
       renderer.setRenderTarget(previousTarget, previousFace, previousMip);
       renderer.autoClear = previousAutoClear;
