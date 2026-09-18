@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { LineBasicMaterial, LineSegments } from "three";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toRenderSpace } from "../../../constants/scale.js";
-import { buildInkSegments, INK_FLOOR_LIFT } from "../InkArchitectureLayer.js";
+import { buildInkSegments, INK_FLOOR_LIFT, InkArchitectureLayer } from "../InkArchitectureLayer.js";
+
+const motion = vi.hoisted(() => ({ invalidate: vi.fn(), reduced: false }));
+vi.mock("@react-three/fiber", () => ({
+  useThree: <T>(selector: (state: { invalidate: () => void }) => T): T => selector(motion),
+}));
+vi.mock("../../../lib/reduced-motion.js", () => ({ prefersReducedMotion: () => motion.reduced }));
 
 // CARD A2: the blueprint ink layer is the planner's first paint. The segment
 // builder is pure — polygon (metres) + ceiling height in, render-space line
@@ -63,5 +71,93 @@ describe("buildInkSegments", () => {
     expect(buildInkSegments([], 3).length).toBe(0);
     expect(buildInkSegments([[0, 0]], 3).length).toBe(0);
     expect(buildInkSegments([[0, 0], [5, 0]], 3).length).toBe(0);
+  });
+});
+
+describe("ink fade timing", () => {
+  const pending = new Map<number, FrameRequestCallback>();
+  let time = 0;
+  let nextId = 0;
+
+  beforeEach(() => {
+    time = 0;
+    nextId = 0;
+    pending.clear();
+    motion.reduced = false;
+    motion.invalidate.mockClear();
+    vi.spyOn(performance, "now").mockImplementation(() => time);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback): number => {
+      pending.set(++nextId, callback);
+      return nextId;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number): void => { pending.delete(id); });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function frame(elapsed: number): void {
+    time += elapsed;
+    const callbacks = [...pending.values()];
+    pending.clear();
+    act(() => { for (const callback of callbacks) callback(time); });
+  }
+
+  function mount(targetOpacity: number) {
+    const hook = renderHook(({ target }) => InkArchitectureLayer({
+      polygon: SQUARE, ceilingHeightM: 3.2, targetOpacity: target,
+    }), { initialProps: { target: targetOpacity } });
+    const props: unknown = hook.result.current?.props;
+    if (typeof props !== "object" || props === null || !("object" in props)
+      || !(props.object instanceof LineSegments) || !(props.object.material instanceof LineBasicMaterial)) {
+      throw new Error("The ink layer did not create its line segments");
+    }
+    return { ...hook, lines: props.object, material: props.object.material };
+  }
+
+  it("finishes a fade on the delayed RAF instead of submitting extra full-scene frames", () => {
+    const ink = mount(1);
+    frame(16.6666666667);
+    expect(ink.material.opacity).toBeCloseTo(0.16);
+    expect(pending.size).toBe(1);
+    frame(5_000);
+    expect(ink.material.opacity).toBe(1);
+    expect(pending.size).toBe(0);
+
+    ink.rerender({ target: 0 });
+    motion.invalidate.mockClear();
+    frame(5_000);
+    expect(ink.material.opacity).toBe(0);
+    expect(ink.lines.visible).toBe(false);
+    expect(motion.invalidate).toHaveBeenCalledOnce();
+    expect(pending.size).toBe(0);
+  });
+
+  it("preserves partial-coverage targets and cancels an unfinished fade on unmount", () => {
+    const ink = mount(0.4);
+    frame(5_000);
+    expect(ink.material.opacity).toBe(0.4);
+    expect(ink.lines.visible).toBe(true);
+    expect(pending.size).toBe(0);
+    ink.rerender({ target: 0.8 });
+    frame(16.6666666667);
+    expect(ink.material.opacity).toBeGreaterThan(0.4);
+    expect(ink.material.opacity).toBeLessThan(0.8);
+    expect(pending.size).toBe(1);
+    ink.unmount();
+    expect(pending.size).toBe(0);
+  });
+
+  it("applies reduced motion immediately without scheduling a frame", () => {
+    motion.reduced = true;
+    const ink = mount(0.4);
+    expect(ink.material.opacity).toBe(0.4);
+    expect(pending.size).toBe(0);
+    ink.rerender({ target: 0 });
+    expect(ink.lines.visible).toBe(false);
+    expect(pending.size).toBe(0);
   });
 });

@@ -39,26 +39,14 @@ const DEVICE_SCALE = Number(process.env.SPLAT_BUDGET_DPR ?? "1");
 /** Profile the main thread during the last drag and record the hottest functions. */
 const CPU_PROFILE = process.env.SPLAT_BUDGET_CPU_PROFILE === "true";
 /**
- * Save the settled view as <label>.png. Uses the route's bare mode, whose
- * canvas keeps its drawing buffer, and reads the canvas back directly: a
- * compositor screenshot of a loaded splat canvas is the known hang that
- * RoomSplatScene's captureReadback comment describes.
+ * Save the settled view as <label>.png using the application canvas screenshot.
+ * This works for either native backend without requesting a second context.
  */
 const SHOT = process.env.SPLAT_BUDGET_SHOT === "true";
-/**
- * Serve each tile's prebuilt level-of-detail tree in place of the tile: the
- * request for <dir>/<name>.sog is redirected to <dir>/lod/<name>-lod.rad.
- * Spark identifies the format from the bytes before it looks at the URL, so
- * this measures the production loading path (build-lod offline) without a
- * manifest change.
- */
-const RAD = process.env.SPLAT_BUDGET_RAD === "true";
-/**
- * Serve the trees from a sibling directory instead of `lod/` (for an A/B of
- * encodings): requests for <room>/lod/<file> are redirected to
- * <room>/<dir>/<file>, header and chunks alike.
- */
-const TREE_DIR = process.env.SPLAT_BUDGET_TREE_DIR ?? "";
+// Legacy RAD redirection would feed a different asset format into this baseline.
+if (process.env.SPLAT_BUDGET_RAD === "true" || process.env.SPLAT_BUDGET_TREE_DIR) {
+  throw new Error("Native baseline uses canonical captures; RAD tree substitution is unsupported.");
+}
 /** Emulate a connection: download throughput in megabits per second (0 = none). */
 const THROTTLE_MBPS = Number(process.env.SPLAT_BUDGET_THROTTLE_MBPS ?? "0");
 const THROTTLE_LATENCY_MS = Number(process.env.SPLAT_BUDGET_THROTTLE_LATENCY_MS ?? "20");
@@ -191,10 +179,15 @@ async function readPageFacts(page) {
       const ext = gl.getExtension("WEBGL_debug_renderer_info");
       gpu = ext === null ? null : String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL));
     }
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
     const sceneCanvas = document.querySelector("canvas");
     const heap = performance.memory?.usedJSHeapSize ?? null;
     return {
       gpu,
+      renderer: sceneCanvas?.dataset.renderer ?? null,
+      backend: sceneCanvas?.dataset.backend ?? null,
+      documentFocused: document.hasFocus(),
+      visibilityState: document.visibilityState,
       userAgent: navigator.userAgent,
       devicePixelRatio: window.devicePixelRatio,
       canvasCss: sceneCanvas === null
@@ -252,13 +245,7 @@ async function waitForRoom(page) {
 }
 
 async function saveCanvasReadback(page, file) {
-  const dataUrl = await page.evaluate(() => {
-    const canvas = document.querySelector("canvas");
-    return canvas === null ? null : canvas.toDataURL("image/png");
-  });
-  if (dataUrl === null) return null;
-  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-  await writeFile(file, Buffer.from(base64, "base64"));
+  await page.locator("canvas").first().screenshot({ path: file, timeout: 15000 });
   return file;
 }
 
@@ -269,7 +256,7 @@ async function run() {
   const url = `${BASE_URL}${path}${query.length > 0 ? `${joiner}${query}` : ""}`;
   const browser = await chromium.launch({
     headless: HEADLESS,
-    args: ["--ignore-gpu-blocklist", "--disable-background-timer-throttling"],
+    args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion"],
   });
   const record = {
     label: LABEL,
@@ -278,7 +265,7 @@ async function run() {
     startedAt: new Date().toISOString(),
     viewport: { width: WIDTH, height: HEIGHT, deviceScaleFactor: DEVICE_SCALE },
     headless: HEADLESS,
-    prebuiltRad: RAD,
+    renderer: "three-native",
     dragMs: DRAG_MS,
     settleMs: SETTLE_MS,
     pageErrors: [],
@@ -293,6 +280,7 @@ async function run() {
       deviceScaleFactor: DEVICE_SCALE,
     });
     const page = await context.newPage();
+    await page.bringToFront();
     // What the room costs on the wire: every response under /splats/, by
     // Playwright's own sizes (Resource Timing under-counts cross-origin).
     const wire = { requests: 0, bytes: 0, pending: [] };
@@ -324,19 +312,6 @@ async function run() {
       }
     });
 
-    if (RAD) {
-      await page.route(/\/splats\/.*\.sog(\?.*)?$/u, (route) => {
-        const original = route.request().url();
-        const rewritten = original.replace(/\/([^/]+)\.sog(\?.*)?$/u, "/lod/$1-lod.rad");
-        return route.continue({ url: rewritten });
-      });
-    }
-    if (TREE_DIR.length > 0) {
-      await page.route(/\/splats\/.*\/lod\/[^/]+\.radc?(\?.*)?$/u, (route) => {
-        const rewritten = route.request().url().replace(/\/lod\/([^/]+)$/u, `/${TREE_DIR}/$1`);
-        return route.continue({ url: rewritten });
-      });
-    }
     if (THROTTLE_MBPS > 0) {
       const throttle = await context.newCDPSession(page);
       await throttle.send("Network.enable");

@@ -102,8 +102,8 @@ on future experiments.
 | --- | --- |
 | Loading, saving or other visible work | [Activity convention](../../.claude/conventions/loading-and-working-motion.md) |
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
-| Splat renderer choice/lifecycle | [Spark integration](../../.claude/gotchas/spark-vs-drei-splat.md) |
-| Updating Spark or its bundled ZIP parser | [Maintained dependency patch](../../patches/README.md) |
+| Splat renderer choice/lifecycle | [Native Three.js splats](native-splats.md) |
+| Updating the native splat addon patch | [Maintained dependency patch](../../patches/README.md) |
 | Loader callbacks and rerenders | [Callback ownership](../../.claude/gotchas/spark-splat-layer-callback-identity.md) |
 | Camera bounds, poses or capture stills | [Camera and capture evidence](../../.claude/gotchas/splat-camera-and-capture.md) |
 | Camera resetting after updates | [Pose identity](../../.claude/gotchas/interior-camera-pose-identity.md) |

@@ -16,9 +16,9 @@ export interface CockpitSplatLayerProps {
   readonly active: boolean;
   readonly onFirstFrame?: () => void;
   readonly minimumDrawnSources?: number;
-  /** Fires once per chunk when its captured bytes finish decoding (CARD A2). */
+  /** Fires once per chunk after its first visible main-camera draw (CARD A2). */
   readonly onChunkLoaded?: (url: string) => void;
-  /** Fires once per chunk whose decode fails permanently, so the resolve
+  /** Fires once per chunk whose load or draw fails, so the resolve
    *  phase can settle instead of wedging in "developing". */
   readonly onChunkFailed?: (url: string) => void;
 }
@@ -28,14 +28,14 @@ const DISSOLVE_EASE = 0.16;
 // read as the room developing coarse-to-fine rather than popping (02 §6).
 const REVEAL_EASE = 0.12;
 
-const LazySparkSplatLayer = lazy(async () => {
-  const module = await import("../scene/SparkSplatLayer.js");
-  return { default: module.SparkSplatLayer };
+const LazyNativeSplatLayer = lazy(async () => {
+  const module = await import("../scene/NativeSplatLayer.js");
+  return { default: module.NativeSplatLayer };
 });
 
 /**
  * Ref-driven dissolve engine: every eased value lives in refs and is stepped
- * inside ONE useFrame, with SplatMesh opacity applied by SparkSplatLayer's
+ * inside ONE useFrame, with source opacity applied by NativeSplatLayer's
  * polled opacityFn. Per-channel timestamps preserve a fresh fade after demand
  * idle while allowing genuinely slow active frames to catch up. No React
  * state or per-frame reconciliation is introduced by this animation.
@@ -43,22 +43,23 @@ const LazySparkSplatLayer = lazy(async () => {
 interface RevealingSplatChunkProps {
   readonly url: string;
   readonly transform: RuntimeAssetViewTransform;
-  /** Polled per frame by SparkSplatLayer; identity-stable per url. */
+  /** Polled per frame by NativeSplatLayer; identity-stable per url. */
   readonly opacityFn: () => number;
   readonly includeRendererHost: boolean;
   readonly onFirstFrame?: () => void;
   readonly minimumDrawnSources?: number;
-  readonly onLoaded: (url: string) => void;
+  readonly onDecoded: (url: string) => void;
+  readonly onRendered: (url: string) => void;
   readonly onFailed: (url: string) => void;
 }
 
 /**
  * One captured chunk developing into the scene: invisible until its bytes
- * decode, then eased in by the engine above. The onLoad/onError callbacks
- * passed to Spark must stay identity-stable — SparkSplatLayer disposes and
- * re-creates its SplatMesh when either callback's identity changes. A
- * permanent decode failure is reported upward so the phase machine can settle
- * instead of wedging in "developing" (reviewer HIGH finding).
+ * decode, then eased in by the engine above. Stable callbacks forward the
+ * latest parent handlers. NativeSplatLayer keeps callback updates separate
+ * from the source's decode/registration lifecycle. A permanent decode failure
+ * is reported upward so the phase machine can settle instead of wedging in
+ * "developing".
  */
 function RevealingSplatChunk({
   url,
@@ -67,16 +68,23 @@ function RevealingSplatChunk({
   includeRendererHost,
   onFirstFrame,
   minimumDrawnSources,
-  onLoaded,
+  onDecoded,
+  onRendered,
   onFailed,
 }: RevealingSplatChunkProps): ReactElement {
-  const onLoadedRef = useRef(onLoaded);
+  const onDecodedRef = useRef(onDecoded);
+  const onRenderedRef = useRef(onRendered);
   const onFailedRef = useRef(onFailed);
-  useEffect(() => { onLoadedRef.current = onLoaded; }, [onLoaded]);
+  useEffect(() => { onDecodedRef.current = onDecoded; }, [onDecoded]);
+  useEffect(() => { onRenderedRef.current = onRendered; }, [onRendered]);
   useEffect(() => { onFailedRef.current = onFailed; }, [onFailed]);
 
   const handleLoad = useCallback(() => {
-    onLoadedRef.current(url);
+    onDecodedRef.current(url);
+  }, [url]);
+
+  const handleRendered = useCallback(() => {
+    onRenderedRef.current(url);
   }, [url]);
 
   const handleError = useCallback(() => {
@@ -84,7 +92,7 @@ function RevealingSplatChunk({
   }, [url]);
 
   return (
-    <LazySparkSplatLayer
+    <LazyNativeSplatLayer
       url={url}
       visible
       opacityFn={opacityFn}
@@ -95,6 +103,7 @@ function RevealingSplatChunk({
       onFirstFrame={onFirstFrame}
       minimumDrawnSources={minimumDrawnSources}
       onLoad={handleLoad}
+      onRendered={handleRendered}
       onError={handleError}
     />
   );
@@ -153,12 +162,17 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
     invalidate();
   }, [urls, invalidate]);
 
-  const handleChunkLoaded = useCallback((url: string) => {
+  const handleChunkDecoded = useCallback((url: string) => {
     const channel = chunksRef.current.get(url);
     if (channel !== undefined) setDissolveTarget(channel, 1, REVEAL_EASE, performance.now());
     invalidate();
-    onChunkLoadedRef.current?.(url);
   }, [invalidate]);
+
+  // Decoding starts the reveal; only native's confirmed main-camera draw
+  // may advance progress and retire the blueprint ink covering that source.
+  const handleChunkRendered = useCallback((url: string) => {
+    onChunkLoadedRef.current?.(url);
+  }, []);
 
   const handleChunkFailed = useCallback((url: string) => {
     onChunkFailedRef.current?.(url);
@@ -186,7 +200,8 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
           includeRendererHost={index === 0}
           onFirstFrame={onFirstFrame}
           minimumDrawnSources={minimumDrawnSources}
-          onLoaded={handleChunkLoaded}
+          onDecoded={handleChunkDecoded}
+          onRendered={handleChunkRendered}
           onFailed={handleChunkFailed}
         />
       ))}

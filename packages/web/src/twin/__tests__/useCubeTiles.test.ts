@@ -168,7 +168,7 @@ describe("useCubeTiles", () => {
     // The CubeTexture's [px,nx,py,ny,pz,nz] slots follow FACE_TO_CUBE targets.
     const texture = result.current.texture;
     expect(texture).not.toBeNull();
-    const cubeImages = (texture as CubeTexture).images as unknown[];
+    const cubeImages = (texture as CubeTexture).images;
     expect(cubeImages).toHaveLength(6);
     for (const face of TWIN_FACES) {
       const slot = SLOT_INDEX[FACE_TO_CUBE[face].target];

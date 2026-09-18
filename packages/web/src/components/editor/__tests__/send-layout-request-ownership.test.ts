@@ -38,7 +38,7 @@ beforeEach(() => {
   spacesApi.getSpace.mockImplementation((_venue, id) => Promise.resolve({
     id, venueId: "venue", name: id, slug: id, widthM: "10", lengthM: "20", heightM: "6", floorPlanOutline: [],
   }));
-  captureApi.captureOrthographic.mockReturnValue("data:image/png;base64,layout-A");
+  captureApi.captureOrthographic.mockResolvedValue("data:image/png;base64,layout-A");
   configApi.updatePublicThumbnail.mockResolvedValue({
     id: "A", revision: 1, spaceId: "A-room", venueId: "venue", userId: null, name: "A", isPublicPreview: true,
   });
@@ -86,9 +86,22 @@ describe("save-to-enquiry request ownership", () => {
     await open("A");
     captureApi.captureOrthographic.mockImplementationOnce(() => {
       useEditorStore.getState().reset();
-      return "data:image/png;base64,old-layout";
+      return Promise.resolve("data:image/png;base64,old-layout");
     });
     expect(await prepareLayoutForGuestEnquiry("A")).toBe(false);
+    expect(configApi.updatePublicThumbnail).not.toHaveBeenCalled();
+  });
+
+  it("rejects a thumbnail that finishes after an editor session change during GPU readback", async () => {
+    await open("A");
+    const pending = deferred<string | null>();
+    const started = deferred<undefined>();
+    captureApi.captureOrthographic.mockImplementationOnce(() => { started.resolve(undefined); return pending.promise; });
+    const preparing = prepareLayoutForGuestEnquiry("A");
+    await started.promise;
+    await open("B");
+    pending.resolve("data:image/png;base64,old-layout");
+    expect(await preparing).toBe(false);
     expect(configApi.updatePublicThumbnail).not.toHaveBeenCalled();
   });
 

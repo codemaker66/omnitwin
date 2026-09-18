@@ -4,7 +4,7 @@ import type { BatchObjectInput } from "../src/api/configurations.js";
 
 declare global {
   interface Window {
-    __venPerf?: { gl: WebGLRenderer; scene: Scene; camera: Camera };
+    __venPerf?: { gl: WebGLRenderer | import("three/webgpu").WebGPURenderer; scene: Scene; camera: Camera };
   }
 }
 

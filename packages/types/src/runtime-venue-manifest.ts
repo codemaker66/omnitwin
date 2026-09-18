@@ -371,7 +371,7 @@ const RuntimeLayerBaseSchema = z.object({
 
 export const RuntimeGaussianSplatLayerSchema = RuntimeLayerBaseSchema.extend({
   kind: z.literal("gaussian_splat"),
-  renderer: z.literal("spark"),
+  renderer: z.enum(["spark", "three-native"]),
   format: z.enum(["spz", "ply", "splat"]),
 }).strict();
 

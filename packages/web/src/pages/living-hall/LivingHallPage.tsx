@@ -115,7 +115,7 @@ function DressingTick({ eventType }: { readonly eventType: DressingEventType }):
 }
 
 // The 3D layer ships in its own chunk: Tier C visitors (and scrapers) never
-// download Spark/three. The document below is complete without it.
+// download Three and the native splat addon. The document below is complete without it.
 const LivingHallScene = lazy(() =>
   import("./LivingHallScene.js").then((m) => ({ default: m.LivingHallScene })),
 );

@@ -1,5 +1,6 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import type { Camera, Scene, WebGLRenderer } from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
   API,
@@ -30,7 +31,7 @@ test.describe.configure({ mode: "default" });
 
 declare global {
   interface Window {
-    __venPerf?: { gl: WebGLRenderer; scene: Scene; camera: Camera };
+    __venPerf?: { gl: WebGLRenderer | WebGPURenderer; scene: Scene; camera: Camera };
     __setWalkMode?: (value: boolean) => void;
     __walkDebug?: {
       walkMode: boolean;
@@ -62,53 +63,97 @@ async function throttleTo50Mbps(page: Page): Promise<void> {
 
 async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(name);
-  const readPreservedCanvas = async (): Promise<Buffer> => {
-    const dataUrl = await page.evaluate(() => {
-      // Both calling cases opt into PlannerScene's existing DEV capture aid.
-      // Inspect the actual context: the URL alone cannot prove preservation.
-      if (new URLSearchParams(window.location.search).get("capture") !== "1") {
-        throw new Error("Stage evidence requires the existing ?capture=1 page");
+  const readNativeCanvas = async (): Promise<Buffer> => {
+    const captureFrame = () => {
+      const canvas = document.querySelector(".cockpit-stage canvas");
+      const runtime = window.__venPerf;
+      const renderer = runtime?.gl;
+      if (!(canvas instanceof HTMLCanvasElement) || !canvas.isConnected
+        || canvas.width <= 0 || canvas.height <= 0 || canvas.dataset["renderer"] !== "three-native"
+        || runtime === undefined || renderer === undefined || renderer.domElement !== canvas
+        || renderer.getRenderTarget() !== null) {
+        throw new Error("Stage evidence requires the live application-owned native canvas");
       }
-      const canvases = document.querySelectorAll("canvas");
-      const canvas = canvases.item(0);
-      if (canvases.length !== 1 || !(canvas instanceof HTMLCanvasElement)
-        || !canvas.isConnected || canvas.closest(".cockpit-stage") === null) {
-        throw new Error("Stage evidence requires exactly one connected planner canvas");
+      const rect = canvas.getBoundingClientRect();
+      if (window.devicePixelRatio !== 1 || rect.width !== canvas.width || rect.height !== canvas.height
+        || rect.x < 0 || rect.y < 0 || rect.right > window.innerWidth || rect.bottom > window.innerHeight) {
+        throw new Error("Stage evidence requires the unchanged full-resolution DPR1 canvas");
       }
-      // PerfMonitor publishes the application-owned renderer in DEV. Its
-      // getContext() returns that renderer's existing context; never call the
-      // canvas context factory, which could create one in a broken scene.
-      const renderer: unknown = window.__venPerf?.gl;
-      if (typeof renderer !== "object" || renderer === null
-        || !("isWebGLRenderer" in renderer) || renderer.isWebGLRenderer !== true
-        || !("domElement" in renderer) || renderer.domElement !== canvas
-        || !("getContext" in renderer) || typeof renderer.getContext !== "function") {
-        throw new Error("Stage evidence requires its application-owned renderer");
+      const splatInstances: number[] = [];
+      runtime.scene.traverseVisible((object) => {
+        if (!("isGaussianSplat" in object) || object.isGaussianSplat !== true || !("geometry" in object)) return;
+        const geometry = object.geometry;
+        if (typeof geometry === "object" && geometry !== null && "instanceCount" in geometry
+          && typeof geometry.instanceCount === "number") splatInstances.push(geometry.instanceCount);
+      });
+      return {
+        x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: canvas.width, height: canvas.height,
+        backend: canvas.dataset["backend"], viewport: [window.innerWidth, window.innerHeight],
+        camera: { position: runtime.camera.position.toArray(), quaternion: runtime.camera.quaternion.toArray() },
+        splatInstances,
+      };
+    };
+    // Capture the already-presented application canvas without another scene
+    // draw or Playwright's stability/snapshot round trips. Keep the same full
+    // host deadline, live-canvas guards, crop dimensions and PNG evidence.
+    const started = performance.now();
+    const details: Record<string, unknown> = { method: "CDP compositor crop", deadlineMs: 15_000 };
+    const mark = (stage: string): void => { details[stage] = performance.now() - started; };
+    const readback = (async (): Promise<string> => {
+      const session = await page.context().newCDPSession(page);
+      mark("sessionReadyMs");
+      try {
+        const response = await session.send("Runtime.evaluate", {
+          expression: `(${captureFrame.toString()})()`,
+          returnByValue: true,
+        });
+        mark("boundsReadMs");
+        if (response.exceptionDetails !== undefined) {
+          throw new Error(response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
+        }
+        const value: unknown = response.result.value;
+        if (typeof value !== "object" || value === null
+          || !("x" in value) || typeof value.x !== "number" || !Number.isFinite(value.x)
+          || !("y" in value) || typeof value.y !== "number" || !Number.isFinite(value.y)
+          || !("width" in value) || typeof value.width !== "number" || !Number.isSafeInteger(value.width) || value.width < 1
+          || !("height" in value) || typeof value.height !== "number" || !Number.isSafeInteger(value.height) || value.height < 1) {
+          throw new Error("Native canvas capture did not return valid bounds");
+        }
+        Object.assign(details, value);
+        const screenshot = await session.send("Page.captureScreenshot", {
+          format: "png", fromSurface: true, captureBeyondViewport: false,
+          clip: { x: value.x, y: value.y, width: value.width, height: value.height, scale: 1 },
+        });
+        mark("pixelsReadMs");
+        const png = Buffer.from(screenshot.data, "base64");
+        details["pngBytes"] = png.byteLength;
+        if (png.length < 24 || !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+          || png.toString("ascii", 12, 16) !== "IHDR"
+          || png.readUInt32BE(16) !== value.width || png.readUInt32BE(20) !== value.height) {
+          throw new Error("Native canvas capture changed the image dimensions");
+        }
+        return `data:image/png;base64,${screenshot.data}`;
+      } finally {
+        await session.detach();
+        mark("sessionDetachedMs");
       }
-      const gl: unknown = Reflect.apply(renderer.getContext, renderer, []);
-      if (typeof WebGL2RenderingContext === "undefined"
-        || !(gl instanceof WebGL2RenderingContext) || gl.canvas !== canvas
-        || gl.getContextAttributes()?.preserveDrawingBuffer !== true
-        || gl.isContextLost()) {
-        throw new Error("Stage evidence requires a live, preserved WebGL2 context");
-      }
-      if (canvas.width <= 0 || canvas.height <= 0
-        || gl.drawingBufferWidth !== canvas.width || gl.drawingBufferHeight !== canvas.height) {
-        throw new Error("Stage evidence requires the complete nonzero drawing buffer");
-      }
-      // Read the existing pixels only. No input, invalidation or extra draw.
-      // Native readback can still stall; the existing case timeout bounds it.
-      const png = canvas.toDataURL("image/png");
-      if (!png.startsWith("data:image/png;base64,")) {
-        throw new Error("Stage canvas did not produce a PNG data URL");
-      }
-      return png;
+    })();
+    let readTimeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      readTimeout = setTimeout(() => { reject(new Error("Native canvas readback exceeded 15000 ms")); }, 15_000);
     });
-    return Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+    try {
+      const dataUrl = await Promise.race([readback, deadline]).finally(() => { clearTimeout(readTimeout); });
+      expect(dataUrl).toMatch(/^data:image\/png;base64,/);
+      return Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+    } finally {
+      mark("totalMs");
+      await testInfo.attach(`${name}.capture.json`, { body: JSON.stringify(details, null, 2), contentType: "application/json" });
+    }
   };
   // Preserve the existing pre-read wait and one blank-image recovery attempt.
   await page.waitForTimeout(400);
-  let screenshot = await readPreservedCanvas();
+  let screenshot = await readNativeCanvas();
   const { writeFileSync } = await import("node:fs");
   writeFileSync(path, screenshot);
   if (screenshot.byteLength <= 15_000) {
@@ -116,7 +161,7 @@ async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: strin
     // A persistently blank canvas still fails the existing evidence limit.
     await settleCockpit(page);
     await page.waitForTimeout(1_000);
-    screenshot = await readPreservedCanvas();
+    screenshot = await readNativeCanvas();
     writeFileSync(path, screenshot);
   }
   expect(screenshot.byteLength).toBeGreaterThan(15_000);
@@ -231,7 +276,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
 
     expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
 
-    // Settle window for Spark's demand-driven paint, then final evidence.
+    // Settle window for the demand-driven paint, then final evidence.
     await page.waitForTimeout(6_000);
     await attachStageScreenshot(page, testInfo, "card-a2-resolve-complete.png");
   });

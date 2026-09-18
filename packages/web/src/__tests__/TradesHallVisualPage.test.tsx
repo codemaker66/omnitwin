@@ -5,6 +5,13 @@ import { MemoryRouter } from "react-router-dom";
 import { runtimeAssetCameraViewForRoom } from "../lib/runtime-package-resolution.js";
 import { roomSplatBundle, roomSplatServedTileCount } from "../data/room-splat-bundles.js";
 import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
+import type { NativeSplatLayerProps } from "../components/scene/NativeSplatLayer.js";
+
+const nativeLayers = vi.hoisted(() => new Map<string, NativeSplatLayerProps>());
+
+vi.mock("../components/scene/NativeCanvas.js", async () => ({
+  NativeCanvas: (await import("@react-three/fiber")).Canvas,
+}));
 
 type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
 type CanvasMockProps = Readonly<{
@@ -134,10 +141,11 @@ vi.mock("../components/editor/RoomMesh.js", () => ({
   ),
 }));
 
-vi.mock("../components/scene/SparkSplatLayer.js", () => ({
-  SparkSplatLayer: ({ url }: { readonly url: string }) => (
-    <div data-testid="spark-splat-layer">{url}</div>
-  ),
+vi.mock("../components/scene/NativeSplatLayer.js", () => ({
+  NativeSplatLayer: (props: NativeSplatLayerProps) => {
+    nativeLayers.set(props.url, props);
+    return <div data-testid="native-splat-layer">{props.url}</div>;
+  },
 }));
 
 vi.mock("../api/runtime-packages.js", () => ({
@@ -173,6 +181,7 @@ import {
 } from "../pages/TradesHallVisualPage.js";
 
 beforeEach(() => {
+  nativeLayers.clear();
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
     writable: true,
@@ -413,7 +422,7 @@ describe("TradesHallVisualPage", () => {
     }));
   });
 
-  it("renders the internal command shell empty state without mounting a Spark asset", () => {
+  it("renders the internal command shell empty state without mounting a native splat asset", () => {
     mount();
     expect(screen.getByText("Venviewer")).toBeTruthy();
     expect(screen.getByText("Truth Mode")).toBeTruthy();
@@ -444,7 +453,7 @@ describe("TradesHallVisualPage", () => {
     expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
     expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("grand-hall");
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
-    expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.queryByTestId("native-splat-layer")).toBeNull();
   });
 
   it("requests the Grand Hall runtime package by default", async () => {
@@ -560,10 +569,45 @@ describe("TradesHallVisualPage", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByTestId("spark-splat-layer").textContent).toBe(
+      expect(screen.getByTestId("native-splat-layer").textContent).toBe(
         "https://assets.example/robert-adam-room/scene.ply",
       );
     });
+  });
+
+  it("retains decoded alignment bounds while waiting for every real draw", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeRuntimePackage("reception-room"));
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
+    await screen.findByTestId("native-splat-layer");
+    const source = [...nativeLayers.values()][0];
+    if (source === undefined) throw new Error("Expected a runtime source");
+    const originalScale = source.scale;
+    act(() => { source.onLoad?.({ url: source.url, splatCount: 1234, localBounds: { min: [-2, -3, -1], max: [2, 3, 2] } }); });
+    expect(nativeLayers.get(source.url)?.scale).not.toBe(originalScale);
+    expect(screen.getAllByText("Loading runtime asset chunks (1/1)").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/\(1,234 splats\)/u)).toBeNull();
+    act(() => { source.onRendered?.(source.url); });
+    expect(screen.getByText(/\(1,234 splats\)/u)).toBeDefined();
+    expect(screen.queryByText("Loading runtime asset chunks (1/1)")).toBeNull();
+  });
+
+  it("retains an early draw until metadata arrives and never overwrites a renderer error with success", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeRuntimePackage("reception-room"));
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
+    await screen.findByTestId("native-splat-layer");
+    const source = [...nativeLayers.values()][0];
+    if (source === undefined) throw new Error("Expected a runtime source");
+    act(() => { source.onRendered?.(source.url); });
+    expect(screen.getAllByText("Loading runtime asset chunks (0/1)").length).toBeGreaterThan(0);
+    act(() => { source.onLoad?.({ url: source.url, splatCount: 1234, localBounds: null }); });
+    expect(screen.getByText(/\(1,234 splats\)/u)).toBeDefined();
+    act(() => {
+      source.onError?.({ url: source.url, error: new Error("Native upload failed") });
+      source.onLoad?.({ url: source.url, splatCount: 1234, localBounds: null });
+      source.onRendered?.(source.url);
+    });
+    expect(screen.getByText("Native upload failed")).toBeDefined();
+    expect(screen.queryByText(/\(1,234 splats\)/u)).toBeNull();
   });
 
   it("does not mount the procedural Grand Hall room when a registered runtime package is active", async () => {
@@ -575,7 +619,7 @@ describe("TradesHallVisualPage", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("spark-splat-layer").textContent).toBe(
+      expect(screen.getByTestId("native-splat-layer").textContent).toBe(
         "https://assets.example/reception-room/scene.ply",
       );
     });
@@ -606,9 +650,9 @@ describe("TradesHallVisualPage", () => {
   it("mounts one layer per served tile when an operator asks with ?staged=1", async () => {
     mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room&staged=1");
     await waitFor(() => {
-      expect(screen.getAllByTestId("spark-splat-layer").length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId("native-splat-layer").length).toBeGreaterThan(0);
     });
-    const urls = screen.getAllByTestId("spark-splat-layer").map((node) => node.textContent ?? "");
+    const urls = screen.getAllByTestId("native-splat-layer").map((node) => node.textContent ?? "");
     // Real captured tiles, served under this room's own namespace.
     expect(urls.every((url) => url.startsWith("/splats/trades-hall/reception-room/"))).toBe(true);
     // One level only: an LCC2 level is a whole-room copy, so the staged
@@ -626,7 +670,7 @@ describe("TradesHallVisualPage", () => {
   it("says a staged capture is unregistered rather than letting it read as reviewed", async () => {
     mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room&staged=1");
     await waitFor(() => {
-      expect(screen.getAllByTestId("spark-splat-layer").length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId("native-splat-layer").length).toBeGreaterThan(0);
     });
     const bodyText = document.body.textContent ?? "";
     expect(bodyText).not.toMatch(/human reviewed/i);
@@ -637,16 +681,16 @@ describe("TradesHallVisualPage", () => {
   it("still refuses a manual splatUrl even when staged capture is opted into", async () => {
     mount("/dev/trades-hall-visual?room=reception-room&staged=1&splatUrl=https%3A%2F%2Fassets.venviewer.test%2Fscene.ply");
     await waitFor(() => {
-      expect(screen.getAllByTestId("spark-splat-layer").length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId("native-splat-layer").length).toBeGreaterThan(0);
     });
     // The opt-in permits the room's OWN capture, never a URL from the address bar.
-    const urls = screen.getAllByTestId("spark-splat-layer").map((node) => node.textContent ?? "");
+    const urls = screen.getAllByTestId("native-splat-layer").map((node) => node.textContent ?? "");
     expect(urls.some((url) => url.includes("assets.venviewer.test"))).toBe(false);
   });
 
   it("ignores manual splatUrl query params and keeps the procedural fallback", () => {
     mount("/dev/trades-hall-visual?splatUrl=https%3A%2F%2Fassets.venviewer.test%2Fscene.ply");
-    expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.queryByTestId("native-splat-layer")).toBeNull();
     expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
     expect(screen.getAllByText("No real asset loaded yet").length).toBeGreaterThan(0);
     expect(screen.getByText(/Manual runtime URLs are disabled/i)).toBeTruthy();

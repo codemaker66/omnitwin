@@ -1,131 +1,12 @@
-// ---------------------------------------------------------------------------
-// clothShader — custom ShaderMaterial for floating cloth vertex displacement
-// ---------------------------------------------------------------------------
-// Vertex shader: catenary drape + wave displacement driven by uniforms.
-// Fragment shader: simple PBR-like with Lambertian + Fresnel sheen.
-// ---------------------------------------------------------------------------
-
-import { DoubleSide, Color, ShaderMaterial } from "three";
+// Native Three.js TSL cloth: the same catenary, waves and fabric shading on
+// both WebGPU and Three's WebGL fallback.
+import { DoubleSide, Color } from "three";
 import type { IUniform } from "three";
-
-// ---------------------------------------------------------------------------
-// GLSL source
-// ---------------------------------------------------------------------------
-
-const vertexShader = /* glsl */ `
-  uniform float uTime;
-  uniform float uDisplacement;
-  uniform float uSpeed;
-  uniform float uHoverHeight;
-  uniform float uEdgeSag;
-  uniform float uRadius;
-
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying float vRadiusFrac;
-  varying float vWave;
-
-  void main() {
-    // Normalized distance from center (0-1)
-    float r = length(position.xz) / uRadius;
-    float rClamped = clamp(r, 0.0, 1.0);
-    vRadiusFrac = rClamped;
-
-    // Catenary drape: center at hover height, edges sag
-    float drapeY = uHoverHeight - uEdgeSag * rClamped * rClamped;
-
-    // Angle around center
-    float angle = atan(position.z, position.x);
-
-    // Wave displacement (same math as JS for consistency)
-    float wave = 0.0;
-    if (uDisplacement > 0.001) {
-      // Primary radial wave
-      float primaryAmp = 0.15 * uDisplacement;
-      float primary = sin(rClamped * 3.0 * 3.14159 - uTime * 4.0) * primaryAmp;
-
-      // Secondary angular folds
-      float secondaryAmp = 0.08 * uDisplacement;
-      float secondary = sin(angle * 5.0 + uTime * 2.0) * secondaryAmp * rClamped;
-
-      // Velocity turbulence
-      float turbAmp = 0.06 * min(uSpeed * 0.2, 1.0) * uDisplacement;
-      float turbulence = sin(rClamped * 7.0 - uTime * 6.0 + angle * 3.0) * turbAmp;
-
-      // Edges ripple more
-      float edgeFactor = rClamped * rClamped;
-      wave = (primary + secondary + turbulence) * (0.3 + 0.7 * edgeFactor);
-    }
-
-    vWave = wave;
-
-    // Final position: flat disc displaced to drape + waves
-    vec3 displaced = vec3(position.x, drapeY + wave, position.z);
-
-    // Approximate normal from displacement gradient
-    float eps = 0.01;
-    float rPlus = clamp((r + eps), 0.0, 1.0);
-    float rMinus = clamp((r - eps), 0.0, 1.0);
-    float yPlus = uHoverHeight - uEdgeSag * rPlus * rPlus;
-    float yMinus = uHoverHeight - uEdgeSag * rMinus * rMinus;
-    float dydx = (yPlus - yMinus) / (2.0 * eps * uRadius);
-
-    vec3 tangentR = normalize(vec3(cos(angle), dydx, sin(angle)));
-    vec3 tangentA = normalize(vec3(-sin(angle), 0.0, cos(angle)));
-    vNormal = normalize(cross(tangentA, tangentR));
-
-    vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
-    vViewDir = normalize(cameraPosition - worldPos.xyz);
-
-    gl_Position = projectionMatrix * viewMatrix * worldPos;
-  }
-`;
-
-const fragmentShader = /* glsl */ `
-  uniform vec3 uColor;
-  uniform float uOpacity;
-  uniform float uDisplacement;
-
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying float vRadiusFrac;
-  varying float vWave;
-
-  void main() {
-    vec3 N = normalize(vNormal);
-    vec3 V = normalize(vViewDir);
-
-    // Simple directional light from above-right
-    vec3 lightDir = normalize(vec3(0.3, 1.0, 0.2));
-    float NdotL = max(dot(N, lightDir), 0.0);
-
-    // Ambient
-    float ambient = 0.35;
-    float diffuse = NdotL * 0.55;
-
-    // Fresnel sheen — edges catch light like real fabric
-    float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-    float sheen = fresnel * 0.2;
-
-    // Subtle fold darkening from wave displacement
-    float foldDark = abs(vWave) * 1.5;
-    float foldFactor = 1.0 - clamp(foldDark, 0.0, 0.2);
-
-    // Edge translucency
-    float edgeAlpha = 1.0 - vRadiusFrac * 0.15;
-
-    vec3 color = uColor * (ambient + diffuse) * foldFactor + vec3(sheen);
-
-    // Subtle blue-ish highlight on moving cloth
-    color += vec3(0.02, 0.03, 0.06) * uDisplacement * fresnel;
-
-    gl_FragColor = vec4(color, uOpacity * edgeAlpha);
-  }
-`;
-
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
+import { MeshBasicNodeMaterial } from "three/webgpu";
+import {
+  abs, atan, cameraPosition, clamp, cos, cross, dot, float, length, max, min,
+  modelWorldMatrix, normalize, positionLocal, pow, sin, uniform, varying, vec3, vec4,
+} from "three/tsl";
 
 export interface ClothShaderUniforms {
   [uniform: string]: IUniform;
@@ -156,13 +37,42 @@ export function createClothUniforms(
   };
 }
 
-export function createClothMaterial(uniforms: ClothShaderUniforms): ShaderMaterial {
-  return new ShaderMaterial({
-    vertexShader,
-    fragmentShader,
-    uniforms,
-    transparent: true,
-    side: DoubleSide,
-    depthWrite: false,
-  });
+export function createClothMaterial(uniforms: ClothShaderUniforms): MeshBasicNodeMaterial {
+  const time = uniform(0).onRenderUpdate(() => uniforms.uTime.value);
+  const displacement = uniform(0).onRenderUpdate(() => uniforms.uDisplacement.value);
+  const speed = uniform(0).onRenderUpdate(() => uniforms.uSpeed.value);
+  const hoverHeight = uniform(0).onRenderUpdate(() => uniforms.uHoverHeight.value);
+  const edgeSag = uniform(0).onRenderUpdate(() => uniforms.uEdgeSag.value);
+  const radius = uniform(1).onRenderUpdate(() => uniforms.uRadius.value);
+  const color = uniform(uniforms.uColor.value).onRenderUpdate(() => uniforms.uColor.value);
+  const opacity = uniform(0.85).onRenderUpdate(() => uniforms.uOpacity.value);
+  const r = length(positionLocal.xz).div(radius);
+  const fraction = clamp(r, 0, 1);
+  const angle = atan(positionLocal.z, positionLocal.x);
+  const drape = hoverHeight.sub(edgeSag.mul(fraction).mul(fraction));
+  const primary = sin(fraction.mul(3 * 3.14159).sub(time.mul(4))).mul(displacement).mul(0.15);
+  const secondary = sin(angle.mul(5).add(time.mul(2))).mul(displacement).mul(0.08).mul(fraction);
+  const turbulence = sin(fraction.mul(7).sub(time.mul(6)).add(angle.mul(3)))
+    .mul(min(speed.mul(0.2), 1)).mul(displacement).mul(0.06);
+  const wave = displacement.greaterThan(0.001).select(
+    primary.add(secondary).add(turbulence).mul(fraction.mul(fraction).mul(0.7).add(0.3)), float(0),
+  );
+  const displaced = vec3(positionLocal.x, drape.add(wave), positionLocal.z);
+  const plus = clamp(r.add(0.01), 0, 1);
+  const minus = clamp(r.sub(0.01), 0, 1);
+  const gradient = edgeSag.mul(minus.mul(minus).sub(plus.mul(plus))).div(radius.mul(0.02));
+  const radial = normalize(vec3(cos(angle), gradient, sin(angle)));
+  const angular = normalize(vec3(sin(angle).negate(), 0, cos(angle)));
+  const normal = normalize(varying(normalize(cross(angular, radial))));
+  const view = normalize(varying(normalize(cameraPosition.sub(modelWorldMatrix.mul(vec4(displaced, 1)).xyz))));
+  const diffuse = max(dot(normal, normalize(vec3(0.3, 1, 0.2))), 0).mul(0.55).add(0.35);
+  const fresnel = pow(float(1).sub(max(dot(normal, view), 0)), 3);
+  const fold = float(1).sub(clamp(abs(varying(wave)).mul(1.5), 0, 0.2));
+  const shaded = color.mul(diffuse).mul(fold).add(vec3(fresnel.mul(0.2)))
+    .add(vec3(0.02, 0.03, 0.06).mul(displacement).mul(fresnel));
+  const alpha = opacity.mul(float(1).sub(varying(fraction).mul(0.15)));
+  const material = new MeshBasicNodeMaterial({ fog: false, transparent: true, side: DoubleSide, depthWrite: false });
+  material.positionNode = displaced;
+  material.fragmentNode = vec4(shaded, alpha);
+  return material;
 }

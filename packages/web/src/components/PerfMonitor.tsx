@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import type { Camera, Scene, WebGLRenderer } from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import { useDeviceStore } from "../stores/device-store.js";
 import { usePerfStore } from "../stores/perf-store.js";
 
 declare global {
   interface Window {
     /** DEV-only perf bridge published by {@link PerfMonitor}; absent in production. */
-    __venPerf?: { gl: WebGLRenderer; scene: Scene; camera: Camera };
+    __venPerf?: { gl: WebGLRenderer | WebGPURenderer; scene: Scene; camera: Camera };
   }
 }
 import {
@@ -61,7 +62,10 @@ export function PerfMonitor(): null {
     usePerfStore.getState().update({
       fps,
       frameTimeMs: avgFrameTime,
-      drawCalls: renderInfo.calls,
+      // Native renderer `calls` counts render() submissions cumulatively;
+      // drawCalls is its actual per-frame geometry work.
+      drawCalls: "drawCalls" in renderInfo && typeof renderInfo.drawCalls === "number"
+        ? renderInfo.drawCalls : renderInfo.calls,
       triangles: renderInfo.triangles,
       rating,
     });

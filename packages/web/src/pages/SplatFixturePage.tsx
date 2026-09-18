@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { NativeCanvas as Canvas } from "../components/scene/NativeCanvas.js";
 import { OrbitControls } from "@react-three/drei";
-import { Color, FrontSide } from "three";
-import { textSplats } from "@sparkjsdev/spark";
+import { FrontSide } from "three";
 import { useSearchParams } from "react-router-dom";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
 import {
-  SparkSplatLayer,
-  type SparkSplatErrorEvent,
-  type SparkSplatLoadEvent,
-} from "../components/scene/SparkSplatLayer.js";
+  NativeSplatLayer,
+  type NativeSplatErrorEvent,
+  type NativeSplatLoadEvent,
+} from "../components/scene/NativeSplatLayer.js";
 import {
   buildProceduralTruthSummary,
   isTruthModeUiEnabled,
@@ -24,7 +23,7 @@ interface SplatFixtureBridge {
     url: string;
     ok: boolean;
     splatCount?: number;
-    bounds?: SparkSplatLoadEvent["localBounds"];
+    bounds?: NativeSplatLoadEvent["localBounds"];
     error?: string;
     elapsedMs: number;
   }[];
@@ -45,31 +44,9 @@ function fixtureBridge(): SplatFixtureBridge {
   return window.__splatFixture;
 }
 
-function SparkTextSplat(): React.ReactElement {
-  const splat = useMemo(() => {
-    const mesh = textSplats({
-      text: "VSIR",
-      fontSize: 84,
-      color: new Color("#d8ad4a"),
-      dotRadius: 0.024,
-      objectScale: 0.018,
-    });
-    mesh.position.set(-1.2, -0.15, -2.8);
-    mesh.rotation.x = -0.08;
-    return mesh;
-  }, []);
-
-  useFrame((_state, delta) => {
-    splat.rotation.y += delta * 0.18;
-  });
-
-  useEffect(() => {
-    return () => {
-      splat.dispose();
-    };
-  }, [splat]);
-
-  return <primitive object={splat} />;
+/** Small real Gaussian byte fixture exercises the same native decoder/render path. */
+function NativeTextSplat(): React.ReactElement {
+  return <NativeSplatLayer url="/fixtures/native-gaussians.splat" position={[-1.2, -0.15, -2.8]} />;
 }
 
 /** "x,y,z" → tuple, or null when absent/malformed. */
@@ -91,7 +68,7 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
     }
   }, [expected]);
 
-  const onLoad = useCallback((event: SparkSplatLoadEvent) => {
+  const onLoad = useCallback((event: NativeSplatLoadEvent) => {
     settle({
       url: event.url,
       ok: true,
@@ -101,7 +78,7 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
     });
   }, [settle]);
 
-  const onError = useCallback((event: SparkSplatErrorEvent) => {
+  const onError = useCallback((event: NativeSplatErrorEvent) => {
     settle({
       url: event.url,
       ok: false,
@@ -117,7 +94,7 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
   return (
     <>
       {urls.map((url, index) => (
-        <SparkSplatLayer
+        <NativeSplatLayer
           key={url}
           url={url}
           includeRendererHost={index === 0}
@@ -176,7 +153,7 @@ export function SplatFixturePage(): React.ReactElement {
         <directionalLight position={[2, 4, 3]} intensity={1.1} />
         {splatUrls === null ? (
           <>
-            <SparkTextSplat />
+            <NativeTextSplat />
             <mesh position={[0, -0.85, -2.9]} rotation={[-Math.PI / 2, 0, 0]}>
               <ringGeometry args={[1.35, 1.38, 96]} />
               <meshBasicMaterial color="#6f5c3a" transparent opacity={0.6} side={FrontSide} />
@@ -206,10 +183,10 @@ export function SplatFixturePage(): React.ReactElement {
         backdropFilter: "blur(14px)",
       }}>
         <div style={{ fontSize: 13, letterSpacing: 0, color: "#d8ad4a", marginBottom: 6 }}>
-          Spark fixture
+          Native Gaussian fixture
         </div>
         <div style={{ fontSize: 15, lineHeight: 1.45 }}>
-          Three.js 0.180 + Spark 2.1 smoke route.
+          Three.js r186 Gaussian splat smoke route.
         </div>
       </div>
       {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}

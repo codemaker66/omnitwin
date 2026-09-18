@@ -183,10 +183,31 @@ async function independentInputs(context) {
   return { source, profile, profileBytes, verifierSha256: sha256(verifierBytes) };
 }
 
-async function checkRun(api, request) {
+async function assignedRun(api, request) {
   const run = await api.get(`/repos/${REPOSITORY}/actions/runs/${request.runId}`);
-  assert(String(run.id) === request.runId && String(run.run_attempt) === request.runAttempt
-    && run.repository?.id === request.repositoryId && run.status === 'in_progress', 'CI run is no longer the active assigned attempt');
+  assert(object(run) && String(run.id) === request.runId && String(run.run_attempt) === request.runAttempt
+    && run.repository?.id === request.repositoryId, 'CI run is no longer the active assigned attempt');
+  return run;
+}
+
+async function checkRun(api, request) {
+  const run = await assignedRun(api, request);
+  assert(run.status === 'in_progress', 'CI run is no longer the active assigned attempt');
+}
+
+export async function waitForRunStart({ api, assignment, now = Date.now,
+  sleep = (ms) => new Promise((done) => setTimeout(done, ms)) }) {
+  const deadline = now() + 60_000;
+  // A starting job can observe its own workflow as queued while GitHub updates
+  // aggregate status. Only preparation may wait; evidence acceptance stays strict.
+  for (let poll = 0; poll <= 12; poll++) {
+    const run = await assignedRun(api, assignment);
+    assert(now() <= deadline, 'CI run did not become in_progress within the preparation window');
+    if (run.status === 'in_progress') return;
+    assert(run.status === 'queued', 'CI run is no longer the active assigned attempt');
+    assert(poll < 12 && now() < deadline, 'CI run did not become in_progress within the preparation window');
+    await sleep(Math.min(5_000, deadline - now()));
+  }
 }
 
 export async function prepareDirectory(directory, prepared) {
@@ -226,8 +247,8 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   const inputs = await independentInputs(context);
   const repository = await api.get(`/repos/${REPOSITORY}`);
   if (argv[0] === 'prepare') {
+    await waitForRunStart({ api, assignment: { ...context, repositoryId: repository.id } });
     const prepared = makeRequest({ ...inputs, repository, context });
-    await checkRun(api, prepared.request);
     await prepareDirectory(directory, prepared);
     process.stdout.write(`GPU request prepared for ${context.commitSha}; local GPU execution remains separate.\n`);
     return;

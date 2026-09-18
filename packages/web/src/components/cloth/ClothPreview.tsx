@@ -9,7 +9,8 @@
 import { useRef, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { BufferGeometry, Color, Float32BufferAttribute } from "three";
-import type { ShaderMaterial, Mesh } from "three";
+import type { Mesh } from "three";
+import type { MeshBasicNodeMaterial } from "three/webgpu";
 import {
   CLOTH_HOVER_HEIGHT,
   CLOTH_EDGE_SAG,
@@ -162,7 +163,7 @@ export function ClothPreview({
   );
   uniforms.uColor.value = new Color(colorOverride ?? "#1a1a1a");
 
-  const material = useMemo<ShaderMaterial>(
+  const material = useMemo<MeshBasicNodeMaterial>(
     () => createClothMaterial(uniforms),
     [uniforms],
   );

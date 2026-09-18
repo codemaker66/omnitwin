@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Color, Euler, Scene, Texture, TextureLoader, PMREMGenerator, WebGLRenderer, WebGLRenderTarget, SRGBColorSpace, EquirectangularReflectionMapping } from "three";
+import { PMREMGenerator as NativePMREMGenerator, WebGPURenderer } from "three/webgpu";
 import {
   createReflectionResourceCache, loadFurnitureReflectionResource,
   mountFurnitureReflectionExperiment, resolveFurnitureReflectionExperiment,
@@ -186,8 +187,26 @@ describe("renderer-local PMREM cache", () => {
 });
 
 describe("actual loader/PMREM boundary", () => {
+  it("uses Three's node-based PMREM generator for a native renderer", async () => {
+    const input = new Texture(document.createElement("img"));
+    vi.spyOn(TextureLoader.prototype, "loadAsync").mockResolvedValue(input);
+    const gl = Object.create(WebGPURenderer.prototype) as WebGPURenderer;
+    Object.assign(gl, {
+      isWebGPURenderer: true, getRenderTarget: () => null,
+      getActiveCubeFace: () => 0, getActiveMipmapLevel: () => 0, setRenderTarget: vi.fn(),
+      xr: { enabled: false }, autoClear: true,
+    });
+    const target = new WebGLRenderTarget(768, 1024);
+    const native = vi.spyOn(NativePMREMGenerator.prototype, "fromEquirectangular").mockReturnValue(target);
+    const legacy = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
+    const result = await loadFurnitureReflectionResource(gl, () => true);
+    expect(native).toHaveBeenCalledWith(input);
+    expect(legacy).not.toHaveBeenCalled();
+    result.dispose();
+  });
+
   it("marks the LDR texture sRGB and disposes decoded input and PMREM working resources", async () => {
-    const input = new Texture();
+    const input = new Texture(document.createElement("img"));
     const inputDispose = vi.spyOn(input, "dispose");
     vi.spyOn(TextureLoader.prototype, "loadAsync").mockResolvedValue(input);
     const target = new WebGLRenderTarget(768, 1024);
@@ -206,7 +225,7 @@ describe("actual loader/PMREM boundary", () => {
   });
 
   it("does not run GPU filtering after unmount during image loading", async () => {
-    const input = new Texture();
+    const input = new Texture(document.createElement("img"));
     const inputDispose = vi.spyOn(input, "dispose");
     vi.spyOn(TextureLoader.prototype, "loadAsync").mockResolvedValue(input);
     const filter = vi.spyOn(PMREMGenerator.prototype, "fromEquirectangular");
@@ -216,7 +235,7 @@ describe("actual loader/PMREM boundary", () => {
   });
 
   it("disposes input and working resources if PMREM generation fails", async () => {
-    const input = new Texture();
+    const input = new Texture(document.createElement("img"));
     const inputDispose = vi.spyOn(input, "dispose");
     vi.spyOn(TextureLoader.prototype, "loadAsync").mockResolvedValue(input);
     const gl = renderer();

@@ -11,7 +11,8 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
+import { NativeCanvas as Canvas } from "../components/scene/NativeCanvas.js";
 import { OrbitControls } from "@react-three/drei";
 import { useSearchParams } from "react-router-dom";
 import { PerspectiveCamera, Vector3 } from "three";
@@ -46,7 +47,7 @@ import {
   computeDefaultCameraPosition,
   computeDistanceLimits,
 } from "../components/CameraRig.js";
-import type { SparkSplatErrorEvent, SparkSplatLoadEvent } from "../components/scene/SparkSplatLayer.js";
+import type { NativeSplatErrorEvent, NativeSplatLoadEvent } from "../components/scene/NativeSplatLayer.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import { roomGeometries } from "../data/room-geometries.js";
 import {
@@ -85,9 +86,9 @@ import {
 import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, GuestFlowReplayArtifact, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 import "./TradesHallVisualPage.css";
 
-const LazySparkSplatLayer = lazy(async () => {
-  const module = await import("../components/scene/SparkSplatLayer.js");
-  return { default: module.SparkSplatLayer };
+const LazyNativeSplatLayer = lazy(async () => {
+  const module = await import("../components/scene/NativeSplatLayer.js");
+  return { default: module.NativeSplatLayer };
 });
 
 type VisualLayerMode = "hybrid" | "mesh" | "splat";
@@ -110,7 +111,13 @@ interface VisualState {
 }
 
 type OverlayState = Readonly<Record<VisualOverlayKey, boolean>>;
-type RuntimeSplatBounds = NonNullable<SparkSplatLoadEvent["localBounds"]>;
+type RuntimeSplatBounds = NonNullable<NativeSplatLoadEvent["localBounds"]>;
+
+interface RuntimeSplatReadiness {
+  readonly loads: Map<string, NativeSplatLoadEvent>;
+  readonly drawn: Set<string>;
+  failure: Error | null;
+}
 
 interface TruthModeTargetOption {
   readonly id: "table" | "route" | "room" | "runtimeAsset" | "reviewGate";
@@ -349,7 +356,7 @@ function fittedZUpRuntimeTransform(
     ],
     rotation: fallback.rotation,
     scale: Number(scale.toFixed(4)),
-    note: "Auto-fitted from Spark-loaded SOG bounds for internal visual QA; signed room-local alignment still required.",
+    note: "Auto-fitted from native-decoded SOG bounds for internal visual QA; signed room-local alignment still required.",
   };
 }
 
@@ -1188,7 +1195,7 @@ function RuntimeAssetPackagePanel({
       </div>
       <p className="visual-url-copy">Current URL: {activeAssetUrl ?? "none"}</p>
       <p className="visual-url-copy">
-        Manual runtime URLs are disabled here. Register an AssetVersion and RuntimePackage before Spark loads a
+        Manual runtime URLs are disabled here. Register an AssetVersion and RuntimePackage before the native renderer loads a
         room asset.
       </p>
       <p className="visual-url-copy" style={{ color: statusTone(visualState.status) }}>
@@ -1500,14 +1507,7 @@ export function TradesHallVisualPage(): ReactElement {
   const [replayProgress, setReplayProgress] = useState(0.42);
   const [replayRunning, setReplayRunning] = useState(false);
   const [visualCameraInteractionActive, setVisualCameraInteractionActive] = useState(false);
-  const [splatLoadCounts, setSplatLoadCounts] = useState<Record<string, number>>({});
-  const [splatLoadBounds, setSplatLoadBounds] = useState<Record<string, RuntimeSplatBounds>>({});
-  const [visualState, setVisualState] = useState<VisualState>(() => {
-    if (runtimeTarget.error !== null) {
-      return { status: "invalid", message: runtimeTarget.error, splatCount: null };
-    }
-    return EMPTY_STATE;
-  });
+  const [splatRevision, setSplatRevision] = useState(0);
 
   const assetDecision = useMemo(
     () => decideRuntimeAsset(null, publishedPackage, {
@@ -1522,6 +1522,31 @@ export function TradesHallVisualPage(): ReactElement {
   );
   const activeSplatUrls = assetDecision.splatUrls;
   const activeSplatUrlKey = activeSplatUrls.join("|");
+  // Initialize a new scope during render, before child callbacks can report.
+  // Retain decode metadata and draw events independently; a reset effect must
+  // not erase either event while the other half is still pending.
+  const splatReadiness = useMemo<RuntimeSplatReadiness>(() => ({
+    loads: new Map(), drawn: new Set(), failure: null,
+  }), [activeSplatUrlKey]);
+  const splatLoadBounds = useMemo(() => Object.fromEntries(
+    [...splatReadiness.loads].flatMap(([url, event]) => event.localBounds === null
+      ? [] : [[url, event.localBounds] as const]),
+  ), [splatReadiness, splatRevision]);
+  const visualState = useMemo<VisualState>(() => {
+    if (runtimeTarget.error !== null) return { status: "invalid", message: runtimeTarget.error, splatCount: null };
+    if (assetDecision.source === "none" || activeSplatUrls.length === 0) return EMPTY_STATE;
+    if (splatReadiness.failure !== null) return {
+      status: "error", message: splatReadiness.failure.message, splatCount: null,
+    };
+    const loadedCount = activeSplatUrls.filter((url) => splatReadiness.loads.has(url)).length;
+    const ready = activeSplatUrls.every((url) => splatReadiness.loads.has(url) && splatReadiness.drawn.has(url));
+    return {
+      status: ready ? "loaded" : "loading",
+      message: ready ? assetDecision.evidenceLabel
+        : `Loading runtime asset chunks (${loadedCount.toLocaleString("en-GB")}/${activeSplatUrls.length.toLocaleString("en-GB")})`,
+      splatCount: activeSplatUrls.reduce((sum, url) => sum + (splatReadiness.loads.get(url)?.splatCount ?? 0), 0),
+    };
+  }, [activeSplatUrls, assetDecision.evidenceLabel, assetDecision.source, runtimeTarget.error, splatReadiness, splatRevision]);
   // Whether a captured layer is mounted at all. This drives rendering and
   // camera only — it is deliberately NOT a statement about registration or
   // review, which the evidence label carries separately.
@@ -1657,16 +1682,6 @@ export function TradesHallVisualPage(): ReactElement {
   }, [replayRunning]);
 
   useEffect(() => {
-    if (runtimeTarget.error !== null) {
-      setVisualState({ status: "invalid", message: runtimeTarget.error, splatCount: null });
-      return;
-    }
-    if (assetDecision.source === "none") {
-      setVisualState(EMPTY_STATE);
-    }
-  }, [assetDecision.source, runtimeTarget.error]);
-
-  useEffect(() => {
     let cancelled = false;
     if (eventId === null || eventId.trim().length === 0) {
       setPhaseGraph(null);
@@ -1732,66 +1747,32 @@ export function TradesHallVisualPage(): ReactElement {
     return () => { cancelled = true; };
   }, [runtimeTarget.error, runtimeTarget.room, runtimeTarget.venue]);
 
-  // When a package asset becomes the active decision,
-  // show a loading line until Spark resolves it; onLoad/onError refine it.
+  // A newly selected capture starts with the room visible at full opacity.
+  // Its status above remains pending until decoded geometry actually draws.
   useEffect(() => {
     if (assetDecision.source !== "none" && activeSplatUrls.length > 0) {
-      setSplatLoadCounts({});
-      setSplatLoadBounds({});
       setOverlays(RUNTIME_ASSET_DEFAULT_OVERLAYS);
       setOpacity(1);
       setSelectedTruthTargetId("runtimeAsset");
-      setVisualState({
-        status: "loading",
-        message: `Loading runtime asset chunks (0/${activeSplatUrls.length.toLocaleString("en-GB")})`,
-        splatCount: null,
-      });
       setLayerMode("splat");
     }
   }, [activeSplatUrlKey, activeSplatUrls.length, assetDecision.source]);
 
-  const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
-    setSplatLoadCounts((current) => ({
-      ...current,
-      [event.url]: event.splatCount,
-    }));
-    if (event.localBounds !== null) {
-      const bounds = event.localBounds;
-      setSplatLoadBounds((current) => ({
-        ...current,
-        [event.url]: bounds,
-      }));
-    }
-  }, []);
+  const handleLoad = useCallback((event: NativeSplatLoadEvent) => {
+    splatReadiness.loads.set(event.url, event);
+    setSplatRevision((revision) => revision + 1);
+  }, [splatReadiness]);
 
-  useEffect(() => {
-    if (assetDecision.source === "none" || activeSplatUrls.length === 0) return;
-    const loadedCount = activeSplatUrls.filter((url) => splatLoadCounts[url] !== undefined).length;
-    if (loadedCount === 0) return;
-    const totalSplats = activeSplatUrls.reduce((sum, url) => sum + (splatLoadCounts[url] ?? 0), 0);
-    const allLoaded = loadedCount === activeSplatUrls.length;
-    setVisualState({
-      status: allLoaded ? "loaded" : "loading",
-      message: allLoaded
-        ? assetDecision.evidenceLabel
-        : `Loading runtime asset chunks (${loadedCount.toLocaleString("en-GB")}/${activeSplatUrls.length.toLocaleString("en-GB")})`,
-      splatCount: totalSplats,
-    });
-  }, [
-    activeSplatUrlKey,
-    activeSplatUrls,
-    assetDecision.evidenceLabel,
-    assetDecision.source,
-    splatLoadCounts,
-  ]);
+  const handleRendered = useCallback((url: string) => {
+    if (splatReadiness.drawn.has(url)) return;
+    splatReadiness.drawn.add(url);
+    setSplatRevision((revision) => revision + 1);
+  }, [splatReadiness]);
 
-  const handleError = useCallback((event: SparkSplatErrorEvent) => {
-    setVisualState({
-      status: "error",
-      message: event.error.message,
-      splatCount: null,
-    });
-  }, []);
+  const handleError = useCallback((event: NativeSplatErrorEvent) => {
+    splatReadiness.failure = event.error;
+    setSplatRevision((revision) => revision + 1);
+  }, [splatReadiness]);
 
   const toggleOverlay = useCallback((key: VisualOverlayKey) => {
     setActiveOverlay(key);
@@ -1846,7 +1827,7 @@ export function TradesHallVisualPage(): ReactElement {
             {activeSplatUrls.length > 0 ? (
               <Suspense fallback={null}>
                 {activeSplatUrls.map((splatUrl, index) => (
-                  <LazySparkSplatLayer
+                  <LazyNativeSplatLayer
                     key={splatUrl}
                     url={splatUrl}
                     visible={splatVisible}
@@ -1856,6 +1837,7 @@ export function TradesHallVisualPage(): ReactElement {
                     scale={runtimeAssetViewTransform.scale}
                     includeRendererHost={index === 0}
                     onLoad={handleLoad}
+                    onRendered={handleRendered}
                     onError={handleError}
                   />
                 ))}

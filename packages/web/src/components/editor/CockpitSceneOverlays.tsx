@@ -9,7 +9,7 @@ import {
   NormalBlending,
   Vector3,
   type Group,
-  type ShaderMaterial,
+
 } from "three";
 import type { AgentTrajectory, DensityHeatmapCell, RouteConflict, SpaceDimensions } from "@omnitwin/types";
 import { useCockpitStore, type CockpitBeam } from "../../stores/cockpit-store.js";
@@ -112,7 +112,7 @@ function FlowRibbon({
   material,
 }: {
   readonly points: readonly WorldPoint[];
-  readonly material: ShaderMaterial;
+  readonly material: import("../../lib/cockpit-overlay-materials.js").FlowRibbonMaterial;
 }): ReactElement | null {
   const geometry = useMemo(() => {
     const data = buildFlowRibbonGeometry(points, FLOW_RIBBON_HALF_WIDTH);

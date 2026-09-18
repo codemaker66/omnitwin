@@ -312,7 +312,7 @@ describe("splatSourcesForBundle", () => {
     };
     const sources = splatSourcesForBundle(renamed, base, preferTrees);
     expect(sources.filter((source) => source.isEnvironment).map((source) => source.url)).toEqual([
-      `${base}/${preferTrees ? "lod/sky.rad" : "sky-shell.sog"}`,
+      `${base}/sky-shell.sog`,
     ]);
     expect(sources.find((source) => source.url === `${base}/env.sog`)?.isEnvironment).toBe(false);
     expect(sources.map((source) => source.file)).toEqual(["0_1_0.sog", "env.sog", "sky-shell.sog"]);
@@ -328,10 +328,10 @@ describe("splatSourcesForBundle", () => {
     expect(sources.every((source) => !source.tree)).toBe(true);
   });
 
-  it("serves a tile's prebuilt tree when wanted and present, and the tile itself when absent", () => {
+  it("keeps canonical source tiles even when a legacy tree preference is supplied", () => {
     const sources = splatSourcesForBundle(bundle, base, true);
     expect(sources.map((source) => [source.url, source.tree])).toEqual([
-      [`${base}/lod/0_1_0-lod.rad`, true],
+      [`${base}/0_1_0.sog`, false],
       [`${base}/0_1_1.sog`, false],
       [`${base}/env.sog`, false],
     ]);
@@ -426,7 +426,7 @@ describe("splatLadderForBundle", () => {
     expect(ladder.environment).toHaveLength(1);
   });
 
-  it("serves each stage's prebuilt trees when the profile asks for them", () => {
+  it("uses native source captures for every stage despite legacy tree metadata", () => {
     const withTree: GeneratedRoomSplatBundle = {
       ...grandHall,
       tiles: grandHall.tiles.map((tile) => (tile.file === "0_0.sog"
@@ -438,8 +438,8 @@ describe("splatLadderForBundle", () => {
     };
     const ladder = splatLadderForBundle(withTree, "/base", true);
 
-    expect(ladder.coarse[0]?.url).toBe("/base/lod/0_0-lod.rad");
-    expect(ladder.coarse[0]?.tree).toBe(true);
+    expect(ladder.coarse[0]?.url).toBe("/base/0_0.sog");
+    expect(ladder.coarse[0]?.tree).toBe(false);
     expect(ladder.coarse[0]?.file).toBe("0_0.sog");
   });
 });
@@ -459,4 +459,20 @@ describe("roomSplatLadder", () => {
     expect(ladder.coarse).toEqual([]);
     expect(ladder.sharp).toEqual([]);
   });
+});
+
+
+describe("native complete capture level budgets", () => {
+  it.each([[1500000, 3], [3000000, 4], [8000000, 5], [150000, 1]])(
+    "selects a whole Grand Hall level for budget %i", (budget, level) => {
+      const bundle = roomSplatBundle("grand-hall");
+      if (bundle === null) throw new Error("Missing real fixture");
+      const ladder = splatLadderForBundle(bundle, "/base", false, budget);
+      const expected = bundle.tiles.filter((tile) => !tile.isEnvironment && tile.lodLevel === level);
+      expect(ladder.sharp.map((tile) => tile.file)).toEqual(expected.map((tile) => tile.file));
+      expect(ladder.environment).toHaveLength(1);
+      expect(new Set([...ladder.coarse, ...ladder.sharp].map((tile) => tile.url)).size)
+        .toBe(ladder.coarse.length + ladder.sharp.length);
+    },
+  );
 });

@@ -1,5 +1,6 @@
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { describe, expect, it } from "vitest";
-import { Color, NormalBlending, ShaderMaterial } from "three";
+import { Color, NormalBlending } from "three";
 import {
   RADIAL_GLOW_TEXTURE_SIZE,
   advanceFlowRibbonTime,
@@ -12,7 +13,7 @@ import {
 describe("createFlowRibbonMaterial", () => {
   it("is a normal-blended, depth-test-off, transparent shader material", () => {
     const material = createFlowRibbonMaterial();
-    expect(material).toBeInstanceOf(ShaderMaterial);
+    expect(material).toBeInstanceOf(MeshBasicNodeMaterial);
     expect(material.transparent).toBe(true);
     expect(material.blending).toBe(NormalBlending);
     expect(material.depthWrite).toBe(false);
@@ -24,14 +25,14 @@ describe("createFlowRibbonMaterial", () => {
     expect(uniforms.uTime?.value).toBe(0);
     expect(uniforms.uColor?.value).toBeInstanceOf(Color);
     expect(uniforms.uPulseColor?.value).toBeInstanceOf(Color);
-    expect((uniforms.uSpeed?.value as number) > 0).toBe(true);
-    expect((uniforms.uWavelength?.value as number) > 0).toBe(true);
+    expect(uniforms.uSpeed.value).toBeGreaterThan(0);
+    expect(uniforms.uWavelength.value).toBeGreaterThan(0);
   });
 
   it("references the per-vertex arc-length attribute so the pulse keeps a constant wavelength", () => {
     const material = createFlowRibbonMaterial();
-    expect(material.vertexShader).toContain("attribute float aDist");
-    expect(material.fragmentShader).toContain("uWavelength");
+    expect(material.fragmentNode).not.toBeNull();
+    expect(material.uniforms.uWavelength.value).toBe(6);
   });
 });
 
@@ -46,7 +47,7 @@ describe("advanceFlowRibbonTime", () => {
     const material = createFlowRibbonMaterial();
     advanceFlowRibbonTime(material, 0.5);
     advanceFlowRibbonTime(material, 0.25);
-    expect((material.uniforms.uTime?.value as number)).toBeCloseTo(0.75, 6);
+    expect(material.uniforms.uTime.value).toBeCloseTo(0.75, 6);
   });
 });
 

@@ -68,15 +68,15 @@ describe("SS++ performance and visual hardening guardrails", () => {
     expect(verticalToolboxSource).toContain('import("../auth/ClerkRouteProvider.js")');
     expect(appSource).not.toContain("@sparkjsdev/spark");
     expect(editorSource).not.toContain("@sparkjsdev/spark");
-    expect(cockpitSplatLayerSource).not.toMatch(/import\s+\{[^}]*SparkSplatLayer[^}]*\}\s+from\s+["']\.\.\/scene\/SparkSplatLayer\.js["']/u);
-    expect(tradesHallVisualSource).not.toMatch(/import\s+\{[^}]*SparkSplatLayer[^}]*\}\s+from\s+["']\.\.\/components\/scene\/SparkSplatLayer\.js["']/u);
-    expect(cockpitSplatLayerSource).toContain('import("../scene/SparkSplatLayer.js")');
-    expect(tradesHallVisualSource).toContain('import("../components/scene/SparkSplatLayer.js")');
+    expect(cockpitSplatLayerSource).not.toMatch(/import\s+\{[^}]*NativeSplatLayer[^}]*\}\s+from\s+["']\.\.\/scene\/NativeSplatLayer\.js["']/u);
+    expect(tradesHallVisualSource).not.toMatch(/import\s+\{[^}]*NativeSplatLayer[^}]*\}\s+from\s+["']\.\.\/components\/scene\/NativeSplatLayer\.js["']/u);
+    expect(cockpitSplatLayerSource).toContain('import("../scene/NativeSplatLayer.js")');
+    expect(tradesHallVisualSource).toContain('import("../components/scene/NativeSplatLayer.js")');
     expect(viteConfig).toContain('"/node_modules/react/"');
     expect(viteConfig).toContain('"/node_modules/react-dom/"');
     expect(viteConfig).toContain('"/node_modules/zustand/"');
     expect(viteConfig).toContain('"vite/preload-helper"');
-    expect(viteConfig).toContain('"/node_modules/@sparkjsdev/spark/"');
+    expect(viteConfig).not.toContain('"/node_modules/@sparkjsdev/spark/"');
     expect(viteConfig).toMatch(/chunkSizeWarningLimit:\s*5_500/u);
   });
 

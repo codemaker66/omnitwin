@@ -1,6 +1,10 @@
 import { EquirectangularReflectionMapping, PMREMGenerator, SRGBColorSpace, TextureLoader } from "three";
 import type { Scene, Texture, WebGLRenderer } from "three";
+import { PMREMGenerator as NativePMREMGenerator, type WebGPURenderer } from "three/webgpu";
 import { GRAND_HALL_FURNITURE_REFLECTION_SOURCE as source } from "../data/grand-hall-furniture-reflection-source.js";
+import { isNativeRenderer } from "./native-renderer.js";
+
+type ReflectionRenderer = WebGLRenderer | WebGPURenderer;
 
 export function resolveFurnitureReflectionExperiment(options: {
   readonly development: boolean;
@@ -79,25 +83,34 @@ export function createReflectionResourceCache<Key extends object>(
 /** Image decode is the only async stage. Cancelled owners never start a PMREM
  * render on a renderer that may already have been disposed. */
 export async function loadFurnitureReflectionResource(
-  renderer: WebGLRenderer, isNeeded: () => boolean,
+  renderer: ReflectionRenderer, isNeeded: () => boolean,
 ): Promise<ReflectionResource> {
   const started = performance.now();
   const texture = await new TextureLoader().loadAsync(new URL("../assets/experiments/grand-hall-reflections-1024.jpg", import.meta.url).href);
-  let generator: PMREMGenerator | undefined;
+  let generator: PMREMGenerator | NativePMREMGenerator | undefined;
   let restoreRenderer: (() => void) | undefined;
   try {
     if (!isNeeded()) throw new Error("Reflection experiment cancelled during image loading");
     texture.colorSpace = SRGBColorSpace;
     texture.mapping = EquirectangularReflectionMapping;
-    const target = renderer.getRenderTarget();
     const face = renderer.getActiveCubeFace(), mip = renderer.getActiveMipmapLevel();
+    let restoreTarget: () => void;
+    if (isNativeRenderer(renderer)) {
+      const target = renderer.getRenderTarget();
+      restoreTarget = () => { renderer.setRenderTarget(target, face, mip); };
+    } else {
+      const target = renderer.getRenderTarget();
+      restoreTarget = () => { renderer.setRenderTarget(target, face, mip); };
+    }
     const xr = renderer.xr.enabled, autoClear = renderer.autoClear;
     restoreRenderer = () => {
       renderer.xr.enabled = xr;
       renderer.autoClear = autoClear;
-      renderer.setRenderTarget(target, face, mip);
+      restoreTarget();
     };
-    generator = new PMREMGenerator(renderer);
+    generator = isNativeRenderer(renderer)
+      ? new NativePMREMGenerator(renderer)
+      : new PMREMGenerator(renderer);
     const filtered = generator.fromEquirectangular(texture);
     filtered.texture.name = "grand-hall-furniture-reflection-hypothesis";
     return {
@@ -130,8 +143,8 @@ export interface FurnitureReflectionLedger {
 /** Exposes actual state to the local comparison harness without adding product
  * chrome. The usable scene stays visible while this optional texture loads. */
 export function mountFurnitureReflectionExperiment(
-  scene: Scene, renderer: WebGLRenderer, invalidate: () => void,
-  acquire: (renderer: WebGLRenderer) => ReflectionLease = acquireReflection,
+  scene: Scene, renderer: ReflectionRenderer, invalidate: () => void,
+  acquire: (renderer: ReflectionRenderer) => ReflectionLease = acquireReflection,
 ): () => void {
   const previousEnvironment = scene.environment;
   const previousRotation = scene.environmentRotation.clone();

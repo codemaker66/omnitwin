@@ -1,6 +1,6 @@
-import { act, renderHook } from "@testing-library/react";
-import { createElement, type ReactElement, type ReactNode } from "react";
-import { MemoryRouter, useSearchParams } from "react-router-dom";
+import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
+import { createElement, Fragment, lazy, Suspense, type ReactElement, type ReactNode } from "react";
+import { createMemoryRouter, MemoryRouter, RouterProvider, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TwinManifest } from "@omnitwin/types";
 import { useTwinWalk } from "../useTwinWalk.js";
@@ -125,6 +125,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -247,6 +248,37 @@ describe("useTwinWalk — the animated hop", () => {
 });
 
 describe("useTwinWalk — URL is the source of truth for back/forward", () => {
+  it.each(["teleport", "animated"] as const)("honors Back during a pending %s destination render", async (travel) => {
+    const manifest = fixtureManifest();
+    let walk: ReturnType<typeof useTwinWalk> | undefined;
+    // A pending destination render makes RouterProvider's transition window
+    // deterministic without browser load or an arbitrary timing delay.
+    const PendingDestination = lazy(() => new Promise<{ default: () => ReactElement }>(() => undefined));
+    function Probe(): ReactElement {
+      walk = useTwinWalk(manifest);
+      return createElement("div", { "data-testid": "walk-node" }, walk.currentId);
+    }
+    function PendingRoute(): ReactElement | null {
+      const [params] = useSearchParams();
+      return params.get("node") === "scan_001" ? createElement(PendingDestination) : null;
+    }
+    const router = createMemoryRouter([{
+      path: "/twin",
+      element: createElement(Fragment, null, createElement(Probe), createElement(PendingRoute)),
+    }], { initialEntries: ["/twin?node=scan_000"] });
+    render(createElement(Suspense, { fallback: "Loading destination" }, createElement(RouterProvider, { router })));
+    expect(screen.getByTestId("walk-node").textContent).toBe("scan_000");
+    act(() => { walk?.hopTo("scan_001", { teleport: travel === "teleport" }); });
+    if (travel === "animated") flushFrames(100);
+    expect(router.state.location.search).toBe("?node=scan_001");
+
+    await act(async () => { await router.navigate(-1); });
+    expect(router.state.location.search).toBe("?node=scan_000");
+    expect(screen.getByTestId("walk-node").textContent).toBe("scan_000");
+    expect(walk?.targetId).toBeNull();
+    router.dispose();
+  });
+
   it("swaps instantly (no spring) when the param changes externally", () => {
     const { result } = mountWalk("/twin?node=scan_000");
 

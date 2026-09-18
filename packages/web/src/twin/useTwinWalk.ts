@@ -129,7 +129,9 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
           next.set("node", id);
           return next;
         },
-        { replace: mode === "replace" },
+        // Commit a visited node before Back can return to the prior URL while
+        // the router still renders that prior location. Canonicalisation stays async.
+        { replace: mode === "replace", flushSync: mode === "push" },
       );
     },
     [setSearchParams],

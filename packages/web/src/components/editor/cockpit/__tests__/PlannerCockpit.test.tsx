@@ -130,4 +130,32 @@ describe("PlannerCockpit", () => {
     expect(container.querySelector(".cockpit-stage")?.getAttribute("data-resolve-phase")).toBe("fallback");
     expect(screen.getByTestId("room-resolve-caption").getAttribute("data-visible")).toBe("false");
   });
+
+  it("pauses pending capture motion and announcements in Model without claiming unseen chunks are ready", () => {
+    useCockpitStore.getState().setRoomResolve({ phase: "developing", loadedChunks: 0, totalChunks: 7 });
+    render(<PlannerCockpit />);
+    const caption = screen.getByTestId("room-resolve-caption");
+    expect(caption.querySelector("svg")).not.toBeNull();
+    act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
+    expect(caption.getAttribute("data-visible")).toBe("false");
+    expect(caption.getAttribute("aria-hidden")).toBe("true");
+    expect(caption.getAttribute("aria-live")).toBe("off");
+    expect(caption.querySelector("svg")).toBeNull();
+    expect(useCockpitStore.getState().roomResolve).toEqual({ phase: "developing", loadedChunks: 0, totalChunks: 7 });
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    expect(caption.getAttribute("data-visible")).toBe("true");
+    expect(caption.getAttribute("aria-hidden")).toBe("false");
+    expect(caption.getAttribute("aria-live")).toBe("polite");
+    expect(caption.querySelector("svg")).not.toBeNull();
+  });
+
+  it.each(["degraded", "unavailable"] as const)("keeps the terminal %s capture notice visible in Model", (phase) => {
+    useCockpitStore.getState().setLayerMode("mesh");
+    useCockpitStore.getState().setRoomResolve({ phase, loadedChunks: 0, totalChunks: 7 });
+    render(<PlannerCockpit />);
+    const caption = screen.getByTestId("room-resolve-caption");
+    expect(caption.getAttribute("data-visible")).toBe("true");
+    expect(caption.getAttribute("aria-live")).toBe("polite");
+    expect(caption.querySelector("svg")).toBeNull();
+  });
 });

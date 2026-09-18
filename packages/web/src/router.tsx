@@ -198,7 +198,7 @@ function withPlannerAuth(node: ReactElement): ReactElement {
 // Dev-only fixture routes.
 //
 // These two render internal engineering fixtures with no client-facing value:
-// /dev/splat-fixture is the Spark 2.1 + Three 0.180 smoke probe (it writes a
+// /dev/splat-fixture is the native Three r186 Gaussian smoke probe (it writes a
 // `window.__splatFixture` bridge for headless checks), and /dev/evidence-chips
 // is the CARD A4 storybook of every chip state. Both were reachable in
 // production — `venviewer.com/dev/splat-fixture` returned 200 — because they
@@ -233,7 +233,7 @@ function devFixtureRoutes(): readonly RouteObject[] {
   return [
     {
       // Dev smoke route for T-087: proves the production renderer stack imports
-      // Spark 2.1 with Three.js 0.180 without reaching for drei's <Splat />.
+      // the first-party Three.js r186 Gaussian addon and its native renderer.
       path: "/dev/splat-fixture",
       element: withSuspense(<SplatFixturePage />),
     },

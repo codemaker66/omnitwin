@@ -69,8 +69,9 @@ do not invent plugin capabilities, API signatures or paths.
 TypeScript stays strict, with no `any`, fake integrations, placeholder success or
 shipped skeletons. Use clear types, cohesive functions and the existing stack:
 React/R3F, Fastify, PostgreSQL/Drizzle, Zustand, Zod, Vitest and pnpm. Read manifests
-and the lockfile for versions. Spark renders splats; preserve its supported Three.js
-compatibility and the existing renderer lifecycle.
+and the lockfile for versions. Native Three.js renders splats through the pinned first-party GaussianSplat addon.
+Preserve the native canvas lifecycle, decoder cancellation and global sorting; see
+[the renderer note](docs/engineering/native-splats.md).
 
 Use existing tests and add regression coverage for changed behavior. Reproduce bugs
 before fixing when practical. Test relevant failure paths, access control, concurrent

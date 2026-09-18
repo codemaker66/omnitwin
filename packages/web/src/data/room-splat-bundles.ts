@@ -108,10 +108,10 @@ export function walkPoseForBundle(bundle: GeneratedRoomSplatBundle): RoomWalkPos
   };
 }
 
-/** One thing the scene mounts for one served tile: the tile, or its prebuilt tree. */
+/** One canonical capture tile mounted by the native scene. */
 export interface RoomSplatSource {
   readonly url: string;
-  /** True when `url` is a paged Spark level-of-detail tree rather than the tile. */
+  /** Retained for source compatibility; native sources always use false. */
   readonly tree: boolean;
   /** Explicit capture-manifest role; never inferred from the filename. */
   readonly isEnvironment: boolean;
@@ -122,20 +122,19 @@ export interface RoomSplatSource {
 /**
  * The sources for a bundle under a room base URL.
  *
- * With `preferTrees`, a tile that has a prebuilt tree (built by `lcc2 lod`)
- * is served as that tree, paged, so the viewer neither downloads the whole
- * tile nor rebuilds a tree in the browser; a tile without one is served as
- * itself. Order is the served order: finest level, then the sky shell.
+ * Canonical SOG tiles remain independent of the renderer. `preferTrees` is a
+ * compatibility argument for older callers; native rendering always chooses
+ * the original capture. Order is the served order: finest level, then sky shell.
  */
 function sourceForTile(
   tile: GeneratedSplatTile,
   roomBaseUrl: string,
   preferTrees: boolean,
 ): RoomSplatSource {
-  const tree = preferTrees ? tile.lod : undefined;
-  return tree === undefined
-    ? { url: `${roomBaseUrl}/${tile.file}`, tree: false, file: tile.file, isEnvironment: tile.isEnvironment }
-    : { url: `${roomBaseUrl}/${tree.file}`, tree: true, file: tile.file, isEnvironment: tile.isEnvironment };
+  // Native Three consumes the canonical capture. Retain historical RAD metadata
+  // for provenance, but never select a Spark-specific paged-tree runtime.
+  void preferTrees;
+  return { url: `${roomBaseUrl}/${tile.file}`, tree: false, file: tile.file, isEnvironment: tile.isEnvironment };
 }
 
 export function splatSourcesForBundle(
@@ -178,13 +177,29 @@ function coarsestRoomLevel(bundle: GeneratedRoomSplatBundle): number | null {
   return coarsest < bundle.finestLevel ? coarsest : null;
 }
 
+/** Highest complete vendor level within the requested budget. The coarsest
+ * available capture is the floor; individual Gaussians are never discarded. */
+export function roomLevelForBudget(bundle: GeneratedRoomSplatBundle, budget = Infinity): number {
+  const levels = [...new Set(bundle.tiles.filter((tile) => !tile.isEnvironment && tile.lodLevel !== null)
+    .map((tile) => tile.lodLevel as number))].sort((a, b) => a - b);
+  let selected = levels[0] ?? bundle.finestLevel;
+  for (const level of levels) {
+    const count = bundle.splatsByLevel[level - 1];
+    if (count !== undefined && count <= budget) selected = level;
+  }
+  return selected;
+}
+
 /** A bundle's delivery ladder under a room base URL. */
 export function splatLadderForBundle(
   bundle: GeneratedRoomSplatBundle,
   roomBaseUrl: string,
   preferTrees: boolean,
+  budget = Infinity,
 ): RoomSplatLadder {
-  const coarsest = coarsestRoomLevel(bundle);
+  const level = roomLevelForBudget(bundle, budget);
+  const firstLevel = coarsestRoomLevel(bundle);
+  const coarsest = firstLevel !== null && firstLevel < level ? firstLevel : null;
   const atLevel = (level: number | null): readonly RoomSplatSource[] => (level === null
     ? []
     : bundle.tiles
@@ -195,7 +210,7 @@ export function splatLadderForBundle(
       .filter((tile) => tile.isEnvironment)
       .map((tile) => sourceForTile(tile, roomBaseUrl, preferTrees)),
     coarse: atLevel(coarsest),
-    sharp: atLevel(bundle.finestLevel),
+    sharp: atLevel(level),
   };
 }
 
@@ -204,11 +219,12 @@ export function roomSplatLadder(
   roomSlug: string,
   configuredBaseUrl: string | undefined,
   preferTrees: boolean,
+  budget = Infinity,
 ): RoomSplatLadder {
   const bundle = roomSplatBundle(roomSlug);
   if (bundle === null) return { environment: [], coarse: [], sharp: [] };
   const base = `${splatBaseUrl(configuredBaseUrl)}/${GENERATED_VENUE_SLUG}/${roomSlug}`;
-  return splatLadderForBundle(bundle, base, preferTrees);
+  return splatLadderForBundle(bundle, base, preferTrees, budget);
 }
 
 /** The sources for a room, environment shell last; empty for an unknown room. */

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("Spark fixture", () => {
-  test("loads the Three.js 0.180 + Spark smoke route", async ({ page }) => {
+test.describe("Native Gaussian fixture", () => {
+  test("loads the Three.js r186 native Gaussian smoke route", async ({ page }) => {
     const runtimeErrors: string[] = [];
 
     page.on("pageerror", (error) => {
@@ -14,11 +14,13 @@ test.describe("Spark fixture", () => {
     });
 
     await page.goto("/dev/splat-fixture");
-    await expect(page.getByText("Spark fixture", { exact: true })).toBeVisible();
-    await expect(page.getByText("Three.js 0.180 + Spark 2.1 smoke route.")).toBeVisible();
+    await expect(page.getByText("Native Gaussian fixture", { exact: true })).toBeVisible();
+    await expect(page.getByText("Three.js r186 Gaussian splat smoke route.")).toBeVisible();
 
     const canvas = page.locator("canvas");
     await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveAttribute("data-renderer", "three-native");
+    await expect(canvas).toHaveAttribute("data-backend", /^(webgpu|webgl2)$/u);
     await expect.poll(async () => {
       const box = await canvas.boundingBox();
       return box === null ? 0 : Math.min(box.width, box.height);

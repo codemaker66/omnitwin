@@ -16,6 +16,8 @@ import { ActivityStatus } from "../../shared/Activity.js";
 // URLs are disposed on change/unmount (GLTFLoader leaks otherwise).
 // ---------------------------------------------------------------------------
 
+function isMaterial(value: unknown): value is Material { return value instanceof Material; }
+
 function disposeMaterial(material: Material): void {
   for (const key of Object.keys(material)) {
     const value: unknown = Reflect.get(material, key);
@@ -30,12 +32,12 @@ function disposeObject(root: Object3D): void {
     const geometry: unknown = child.geometry;
     if (geometry instanceof BufferGeometry) geometry.dispose();
     const material: unknown = child.material;
-    const materials: Material[] = material instanceof Material
-      ? [material]
-      : Array.isArray(material)
-        ? material.filter((entry: unknown): entry is Material => entry instanceof Material)
-        : [];
-    materials.forEach(disposeMaterial);
+    if (isMaterial(material)) disposeMaterial(material);
+    else if (Array.isArray(material)) {
+      for (const entry of material as unknown[]) {
+        if (isMaterial(entry)) disposeMaterial(entry);
+      }
+    }
   });
 }
 

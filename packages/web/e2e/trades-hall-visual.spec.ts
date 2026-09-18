@@ -28,19 +28,50 @@ function isAllowedUnauthenticatedAdjunctResponse(status: number, rawUrl: string)
   );
 }
 
-function isKnownDevConsoleNoise(text: string): boolean {
-  return text.startsWith("Failed to load resource:") ||
+// R3F8 still creates Clock and requests legacy soft shadows. Three r186 maps
+// those shadows to PCF. Windows/software runners may negotiate native WebGL2
+// instead of WebGPU; accepting these exact warnings also requires a ready
+// native canvas below. Console errors and unknown warnings remain failures.
+const KNOWN_NATIVE_WARNINGS = new Set([
+  "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.",
+  "The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127",
+  "No available adapters.",
+  "THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend.",
+  "THREE.WebGPURenderer: PCFSoftShadowMap has been removed. Using PCFShadowMap instead.",
+]);
+
+function isKnownDevWarning(text: string): boolean {
+  return KNOWN_NATIVE_WARNINGS.has(text) ||
     text.includes("Clerk has been loaded with development keys") ||
     text.startsWith("THREE.WebGLProgram: Program Info Log:") ||
     text.includes("GPU stall due to ReadPixels");
 }
 
+async function expectReadyNativeCanvas(page: Page): Promise<void> {
+  const canvas = page.locator("canvas");
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-renderer", "three-native");
+  await expect(canvas).toHaveAttribute("data-backend", /^(webgpu|webgl2)$/);
+}
+
 function watchVisualRouteIssues(page: Page): VisualRouteIssues {
+  const observedAdjunct401s = new Set<string>();
+  const consoleMessages: { readonly type: string; readonly text: string; readonly url: string }[] = [];
   const issues: VisualRouteIssues = {
     blockingResponses: [],
     requestFailures: [],
     pageErrors: [],
-    unexpectedConsole: [],
+    get unexpectedConsole(): string[] {
+      return consoleMessages.filter((message) => {
+        if (message.type === "warning") return !isKnownDevWarning(message.text);
+        // These tests intentionally return 401 for two optional APIs. Correlate
+        // the browser's exact HTTP diagnostic with an observed allowed response,
+        // regardless of console/response event ordering. Other load errors and
+        // every GPU/application console error must remain visible.
+        return !(message.text === "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+          && observedAdjunct401s.has(message.url));
+      }).map((message) => message.text);
+    },
     packageResponses: [],
     runtimeAssetResponses: [],
   };
@@ -48,6 +79,7 @@ function watchVisualRouteIssues(page: Page): VisualRouteIssues {
   page.on("response", (response) => {
     const status = response.status();
     const url = response.url();
+    if (isAllowedUnauthenticatedAdjunctResponse(status, url)) observedAdjunct401s.add(url);
     if (url.startsWith(`${API}/assets/runtime-packages/latest`)) {
       issues.packageResponses.push({ status, url });
     }
@@ -71,9 +103,8 @@ function watchVisualRouteIssues(page: Page): VisualRouteIssues {
   });
 
   page.on("console", (message) => {
-    const text = message.text();
-    if ((message.type() === "error" || message.type() === "warning") && !isKnownDevConsoleNoise(text)) {
-      issues.unexpectedConsole.push(text);
+    if (message.type() === "error" || message.type() === "warning") {
+      consoleMessages.push({ type: message.type(), text: message.text(), url: message.location().url });
     }
   });
 
@@ -124,6 +155,7 @@ test.describe("Trades Hall internal visual layer route", () => {
         const box = await canvas.boundingBox();
         return box === null ? 0 : Math.min(box.width, box.height);
       }).toBeGreaterThan(300);
+      await expectReadyNativeCanvas(page);
 
       expect(issues.blockingResponses).toEqual([]);
       expect(issues.requestFailures).toEqual([]);
@@ -200,6 +232,7 @@ test.describe("Trades Hall internal visual layer route", () => {
       )),
     ).toBe(true);
     expect(issues.runtimeAssetResponses).toEqual([]);
+    await expectReadyNativeCanvas(page);
     expect(issues.blockingResponses).toEqual([]);
     expect(issues.requestFailures).toEqual([]);
     expect(issues.pageErrors).toEqual([]);
@@ -227,6 +260,7 @@ test.describe("Trades Hall internal visual layer route", () => {
     expect(issues.packageResponses.some((response) => response.status === 200)).toBe(true);
     expect(issues.runtimeAssetResponses).toHaveLength(7);
     expect(issues.runtimeAssetResponses.every((response) => response.status === 200)).toBe(true);
+    await expectReadyNativeCanvas(page);
     expect(issues.blockingResponses).toEqual([]);
     expect(issues.requestFailures).toEqual([]);
     expect(issues.pageErrors).toEqual([]);

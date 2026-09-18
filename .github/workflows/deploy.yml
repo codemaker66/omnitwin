@@ -67,7 +67,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           APPROVED_MIGRATION_0044_SHA256: ${{ vars.APPROVED_MIGRATION_0044_SHA256 }}
-        run: pnpm --filter @omnitwin/api db:verify-tail -- --deploy-gate
+        run: pnpm --filter @omnitwin/api db:verify-tail --deploy-gate
 
       - name: Apply pending Drizzle migrations
         env:

@@ -1,7 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { NativeSplatLayerProps } from "../../scene/NativeSplatLayer.js";
+
+vi.mock("../../scene/NativeCanvas.js", async () => ({
+  NativeCanvas: (await import("@react-three/fiber")).Canvas,
+}));
 
 type CanvasMockProps = Readonly<{
   children?: ReactNode;
@@ -17,6 +22,7 @@ type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
 const { orbitControlsMock } = vi.hoisted(() => ({
   orbitControlsMock: vi.fn<(props: OrbitControlsMockProps) => void>(),
 }));
+const layer = vi.hoisted(() => ({ current: undefined as NativeSplatLayerProps | undefined }));
 
 vi.mock("@react-three/fiber", () => {
   function makeR3fState() {
@@ -73,17 +79,34 @@ vi.mock("@react-three/drei", () => ({
   },
 }));
 
-vi.mock("../../scene/SparkSplatLayer.js", () => ({
-  SparkSplatLayer: ({ url }: { readonly url: string }) => (
-    <div data-testid="room-showcase-spark-layer">{url}</div>
-  ),
+vi.mock("../../scene/NativeSplatLayer.js", () => ({
+  NativeSplatLayer: (props: NativeSplatLayerProps) => {
+    layer.current = props;
+    return <div data-testid="room-showcase-native-layer">{props.url}</div>;
+  },
 }));
 
 const { PublicRoomRuntimeCanvas } = await import("../PublicRoomRuntimeCanvas.js");
+afterEach(cleanup);
 
 describe("PublicRoomRuntimeCanvas", () => {
   beforeEach(() => {
     orbitControlsMock.mockClear();
+    layer.current = undefined;
+  });
+
+  it("reports success only on a real draw and uses the latest parent callbacks", () => {
+    const previous = vi.fn(), current = vi.fn(), onFailed = vi.fn();
+    const visualUrl = "https://assets.example/reception-room/scene.ply";
+    const view = render(<PublicRoomRuntimeCanvas visualUrl={visualUrl} onLoaded={previous} onFailed={onFailed} />);
+    act(() => { layer.current?.onLoad?.({ url: visualUrl, splatCount: 100, localBounds: null }); });
+    expect(previous).not.toHaveBeenCalled();
+    view.rerender(<PublicRoomRuntimeCanvas visualUrl={visualUrl} onLoaded={current} onFailed={onFailed} />);
+    act(() => { layer.current?.onRendered?.(visualUrl); });
+    expect(current).toHaveBeenCalledOnce();
+    expect(previous).not.toHaveBeenCalled();
+    act(() => { layer.current?.onError?.({ url: visualUrl, error: new Error("Device lost") }); });
+    expect(onFailed).toHaveBeenCalledOnce();
   });
 
   it("demand-renders the public runtime canvas with a mobile-safe DPR cap", () => {

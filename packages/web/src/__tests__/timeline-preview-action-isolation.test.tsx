@@ -6,7 +6,7 @@ import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
 
 const mocks = vi.hoisted(() => ({
   flushAutoSave: vi.fn<() => Promise<boolean>>(),
-  captureOrthographic: vi.fn<() => string | null>(),
+  captureOrthographic: vi.fn<() => Promise<string | null>>(),
   updatePublicThumbnail: vi.fn<() => Promise<void>>(),
   getAvailableTransitions: vi.fn(),
   submitForReview: vi.fn(),
@@ -111,7 +111,7 @@ beforeEach(() => {
     isPublicPreview: false,
   });
   mocks.flushAutoSave.mockResolvedValue(true);
-  mocks.captureOrthographic.mockReturnValue("data:image/png;base64,preview");
+  mocks.captureOrthographic.mockResolvedValue("data:image/png;base64,preview");
   mocks.updatePublicThumbnail.mockResolvedValue();
   mocks.getAvailableTransitions.mockResolvedValue({
     configurationId: CONFIG_ID,

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
+import { NativeCanvas as Canvas } from "../../components/scene/NativeCanvas.js";
 import { CatmullRomCurve3, Vector3 } from "three";
 import {
-  SparkSplatLayer,
-  type SparkSplatErrorEvent,
-} from "../../components/scene/SparkSplatLayer.js";
+  NativeSplatLayer,
+  type NativeSplatErrorEvent,
+} from "../../components/scene/NativeSplatLayer.js";
 import { DRESSING_SECTION_ID, GoldInkTable } from "./GoldInkTable.js";
 import { TurnSheet } from "./TurnSheet.js";
 import { YourTable } from "./YourTable.js";
@@ -15,7 +16,6 @@ import { tradesHallVenueImages } from "../../lib/trades-hall-room-showcase.js";
 import {
   MIN_GAZE_DISTANCE_M,
   RECEPTION_DOLLY_STATIONS,
-  RECEPTION_TILE_MANIFEST,
   receptionTileUrls,
   type DollyStation,
 } from "./reception-dolly-path.js";
@@ -144,7 +144,7 @@ export interface LivingHallSceneProps {
   /** Fires once if the scene cannot run (WebGL/tile failure) — the page
    *  reverts to the plain document styling. */
   readonly onSceneFailed?: () => void;
-  /** The real capture has arrived; the page can retire its activity status. */
+  /** Every capture source has drawn; the page can retire its activity status. */
   readonly onSceneLoaded?: () => void;
 }
 
@@ -156,22 +156,29 @@ export function LivingHallScene({
   onSceneFailed,
   onSceneLoaded,
 }: LivingHallSceneProps): ReactElement {
-  const [loadedTiles, setLoadedTiles] = useState(0);
+  const [drawnUrls, setDrawnUrls] = useState<ReadonlySet<string>>(() => new Set());
   const [failed, setFailed] = useState(false);
+  const reportedLoaded = useRef(false);
+  const reportedFailed = useRef(false);
   const urls = useMemo(() => receptionTileUrls(), []);
-  const allLoaded = loadedTiles >= RECEPTION_TILE_MANIFEST.length;
+  const allLoaded = urls.every((url) => drawnUrls.has(url));
   useEffect(() => {
-    if (allLoaded && !failed) onSceneLoaded?.();
+    if (allLoaded && !failed && !reportedLoaded.current) {
+      reportedLoaded.current = true;
+      onSceneLoaded?.();
+    }
   }, [allLoaded, failed, onSceneLoaded]);
 
-  const handleLoad = useCallback(() => {
-    setLoadedTiles((n) => n + 1);
+  const handleRendered = useCallback((url: string) => {
+    setDrawnUrls((current) => current.has(url) ? current : new Set([...current, url]));
   }, []);
 
-  const handleError = useCallback((_event: SparkSplatErrorEvent) => {
+  const handleError = useCallback((_event: NativeSplatErrorEvent) => {
     // One missing tile means an incomplete room — honest failure, keep the
     // photograph. (Dev without staged assets and prod before R2 land here;
     // observable via data-scene-state="failed".)
+    if (reportedFailed.current) return;
+    reportedFailed.current = true;
     setFailed(true);
     onSceneFailed?.();
   }, [onSceneFailed]);
@@ -198,11 +205,11 @@ export function LivingHallScene({
         >
           <group rotation={[-Math.PI / 2, 0, 0]}>
             {urls.map((url, index) => (
-              <SparkSplatLayer
+              <NativeSplatLayer
                 key={url}
                 url={url}
                 includeRendererHost={index === 0}
-                onLoad={handleLoad}
+                onRendered={handleRendered}
                 onError={handleError}
               />
             ))}
