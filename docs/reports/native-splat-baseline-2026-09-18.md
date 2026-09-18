@@ -11,18 +11,21 @@ The WebGPU difference is small; the earlier 13.15% and 18.33% figures describe
 older rounds and must not headline the current result. All twelve samples remain,
 including one unexplained Spark stall. These isolated rAF medians do not establish
 statistical significance, equal motion fidelity or broad device performance.
-Separate complete-application checks and unchanged Linux captures now pass;
-fresh release gates and corrected deployment verification remain pending.
+Separate complete-application checks, unchanged Linux captures, all three full
+release CI runs and corrected production verification now pass. The
+[native implementation is deployed](#production-delivery); founder visual
+inspection and physical-device qualification remain separate.
 
 **Original baseline outcome:** the application used external Spark. The focused desktop comparison
 measured about **20% higher frame rate** with stock Three r186 native WebGPU, retaining
 all 6,019,684 SH3 room splats. Native is a credible optimization candidate, not
 a qualified drop-in replacement; loader, delivery, integration, fallback and
-physical-device requirements remain below. Production remains unchanged.
+physical-device requirements remain below. Production was unchanged at that
+original investigation stage.
 
 ## Implementation and released alternative
 
-Venviewer uses **Spark 2.1.0, Three.js 0.180.0, R3F 8.18.0 and Drei 9.122.0**.
+The original baseline used **Spark 2.1.0, Three.js 0.180.0, R3F 8.18.0 and Drei 9.122.0**.
 The package manifest and lockfile, `SparkSplatLayer.tsx` constructors, shared
 `SparkRendererMount`, and `RoomSplatScene` WebGL canvas confirm this. Spark is
 the Gaussian renderer, rather than merely an asset loader. The installed
@@ -508,3 +511,59 @@ Evidence: `output/playwright/native-migration/pacing-production-qualification/`.
 Its diagnostic entry shares the actual app modules and emits byte-identical
 sort-worker code to the standard build. These are technical visual checks, not
 founder aesthetic acceptance or a substitute for fresh CI and live verification.
+
+## Production delivery
+
+T-627 is implemented and live. [PR32](https://github.com/codemaker66/omnitwin/pull/32)
+merged the exact qualified commit `da94498161642093ab56b5dce74b508a9b218ac3`
+(tree `5a6f947195d0d915b9480687e1590ebf1eccb633`) into both `master` and
+`release/r1` at 12:41:20 UTC. Runtime code is unchanged from `188ec0e0`;
+the later branch commit records evidence. Spark is absent from runtime
+dependencies; Three r186's first-party addon, our maintained compatibility patch
+and decoder-only libraries remain.
+
+All thirteen jobs passed on the [PR run](https://github.com/codemaker66/omnitwin/actions/runs/35344415931),
+[master push](https://github.com/codemaker66/omnitwin/actions/runs/35345997887)
+and [release push](https://github.com/codemaker66/omnitwin/actions/runs/35345998493).
+Each independently reconciled all 353 browser cases: 307 ordinary passes,
+four expected failures and 42 original skips, with zero retries, flakes,
+missing/duplicate/interrupted/unrun cases. Each used a fresh authenticated
+five-case RTX 4090 GPU execution; PostgreSQL 60+53 and native-image 12/12 checks
+also passed. The [post-CI deployment workflow](https://github.com/codemaker66/omnitwin/actions/runs/35347133087)
+passed with 69 applied/local migrations and zero pending migrations.
+
+The corrected Vercel deployment `dpl_FP1RfponFd8SeSBZJryCWyxUvddv`
+(`omnitwin-ncqgbbiv6-codemaker66s-projects.vercel.app`) was explicitly promoted
+after the gates passed, replacing the Spark rollback on `venviewer.com`.
+Railway's Git-triggered deployment `2ee9e469-9b44-4244-863b-e76b0f90e46e`
+also reports this source and healthy readiness on both API origins. Its image is
+`sha256:cea0030333459b2142373c2fc9de493b4aff48120ae448011e1f265a5c1f5f5d`.
+The baked API timestamp retains its earlier manual value; Git-triggered source
+identity comes from `RAILWAY_GIT_COMMIT_SHA` and the provider deployment.
+
+Fresh headed Chrome 153 checks of the public Grand Hall and Reception Room
+passed normal loading and camera drag, retaining 11/11 and 4/4 ready detail
+sources respectively, successful environment responses and native WebGPU at
+3200×2000 settled resolution. All four before/after images were inspected:
+complete architectural surfaces remain, without the earlier missing walls or
+colored streaks. Both checks recorded zero console/page errors and failed
+requests. The 15 Grand Hall and ten Reception warnings (Three deprecations,
+Windows adapter preference and shadow-map fallback) remain in the receipts.
+The prior protected-preview check's strict network failure is also retained;
+a diagnostic attributed its two cancelled Fetch requests to Vercel's injected
+feedback toolbar, while the document and room assets succeeded.
+
+All fifteen unchanged public GET/HEAD smoke checks passed. The exact passing
+configuration replaced the prior file after backup; the existing scheduled task
+and runner remained unchanged. Observed public HTML SHA-256 is
+`b527669e6832ee73eff45b47ba40083b0231a87f976c19485c8b411b432b494d`.
+Evidence is under `output/playwright/native-migration/`: the three run/attempt
+directories, `release-helpers/recovery-pr32-preview/` and
+`recovery-public-smoke/final-da944981/`.
+
+These are technical delivery checks. Founder aesthetic acceptance, physical
+device coverage and pixel/temporal parity with Spark are not claimed. The live
+readiness bridge does not independently expose decoded point counts. Native
+exports passed the actual local app build on both backends; the live guest
+planner export was not invoked because it creates/saves production draft and
+thumbnail records before enquiry submission.

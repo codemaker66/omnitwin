@@ -2,8 +2,9 @@
 
 T-627 implements Blake’s 18 September 2026 instruction to drop Spark after the
 native r186 baseline. This decision supersedes the renderer choice in D-001/D-002;
-historical evidence and source captures remain unchanged. Implementation and
-qualification are in progress; this note is not a claim of visual acceptance.
+historical evidence and source captures remain unchanged. The native renderer is
+deployed at `da944981`; [release evidence](../reports/native-splat-baseline-2026-09-18.md#production-delivery)
+records complete CI and live checks. Founder visual acceptance remains separate.
 
 ## Runtime boundary
 
@@ -303,8 +304,11 @@ all 6,030,980 splats, SH3 and normal motion/settled resolutions, completed every
 observed GPU ticket (maximum two outstanding), and passed poster export with
 zero browser errors. Fresh original Linux reduced-motion/linework/staged cases
 also passed, zero retries; full captures took 13.848s / 10.994s within unchanged
-15s deadlines. The first retains limited headroom. Fresh release gates and a
-corrected deployed visual check remain required before native promotion.
+15s deadlines. The first retains limited headroom. The subsequent PR and both
+release-branch CI runs passed the complete browser gate without retries or flakes.
+The promoted native deployment then passed public Grand Hall and Reception Room
+loading/movement checks; all four before/after images were inspected. These checks
+do not establish physical-device coverage or founder aesthetic acceptance.
 
 Native Three does not preserve the presented canvas buffer through the old
 WebGL `preserveDrawingBuffer` option. Poster exports use an explicit same-device
