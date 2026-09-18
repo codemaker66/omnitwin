@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { POLICY, parseJson, sha256 } from './verify-receipt.mjs';
 import { REPOSITORY, contextFromEnvironment, makeRequest, validateRequest, validateStatus,
-  verifyEvidenceBundle, matchingStatus, waitForEvidence, GitHubReader, prepareDirectory } from './hosted-gate.mjs';
+  verifyEvidenceBundle, matchingStatus, waitForEvidence, waitForRunStart, GitHubReader, prepareDirectory } from './hosted-gate.mjs';
 
 // Synthetic authentication/source envelopes around unchanged retained samples.
 // No test publishes a status, calls GitHub, or establishes real qualification.
@@ -123,6 +123,85 @@ test('changed or cancelled hosted attempt rejects before receipt download', asyn
   const f = fixture();
   await assert.rejects(waitForEvidence({ ...f, api: { get: async () => ({ id: 12345, run_attempt: 3,
     repository: { id: 123 }, status: 'in_progress' }) }, now: () => f.nowMs }), /active assigned attempt/u);
+});
+
+test('preparation waits for the same queued attempt to actually become in_progress', async () => {
+  const f = fixture(); let calls = 0; let now = 0; const sleeps = [];
+  await waitForRunStart({ assignment: f.request, now: () => now,
+    api: { get: async (path) => {
+      assert.equal(path, `/repos/${REPOSITORY}/actions/runs/${f.request.runId}`);
+      return { id: 12345, run_attempt: 2, repository: { id: 123 }, status: ++calls < 3 ? 'queued' : 'in_progress' };
+    } }, sleep: async (ms) => { sleeps.push(ms); now += ms; } });
+  assert.equal(calls, 3); assert.deepEqual(sleeps, [5_000, 5_000]);
+});
+
+test('preparation proceeds immediately for an already active assigned attempt', async () => {
+  const f = fixture(); let sleeps = 0;
+  await waitForRunStart({ assignment: f.request, api: fakeApi(f), sleep: async () => { sleeps++; } });
+  assert.equal(sleeps, 0);
+});
+
+for (const status of ['completed', 'cancelled', 'waiting', 'pending', 'requested', undefined]) {
+  test(`preparation does not retry non-queued status ${status}`, async () => {
+    const f = fixture(); let calls = 0; let sleeps = 0;
+    await assert.rejects(waitForRunStart({ assignment: f.request, api: { get: async () => {
+      calls++; return { id: 12345, run_attempt: 2, repository: { id: 123 }, status };
+    } }, sleep: async () => { sleeps++; } }), /active assigned attempt/u);
+    assert.equal(calls, 1); assert.equal(sleeps, 0);
+  });
+}
+
+for (const change of [{ id: 999 }, { run_attempt: 3 }, { repository: { id: 999 } }]) {
+  test(`preparation rejects changed identity after a queued observation: ${JSON.stringify(change)}`, async () => {
+    const f = fixture(); let calls = 0; let sleeps = 0;
+    await assert.rejects(waitForRunStart({ assignment: f.request, api: { get: async () => ({
+      id: 12345, run_attempt: 2, repository: { id: 123 }, status: 'queued', ...(++calls > 1 ? change : {}),
+    }) }, sleep: async () => { sleeps++; } }), /active assigned attempt/u);
+    assert.equal(calls, 2); assert.equal(sleeps, 1);
+  });
+}
+
+test('preparation rejects a terminal transition and API failure without retrying them', async () => {
+  const f = fixture();
+  for (const failure of ['completed', new Error('GitHub read failed (403)')]) {
+    let calls = 0; let sleeps = 0;
+    await assert.rejects(waitForRunStart({ assignment: f.request, api: { get: async () => {
+      calls++;
+      if (calls > 1 && failure instanceof Error) throw failure;
+      return { id: 12345, run_attempt: 2, repository: { id: 123 }, status: calls === 1 ? 'queued' : failure };
+    } }, sleep: async () => { sleeps++; } }), /active assigned attempt|GitHub read failed/u);
+    assert.equal(calls, 2); assert.equal(sleeps, 1);
+  }
+});
+
+test('preparation bounds persistent queued state by elapsed time and by poll count', async () => {
+  const f = fixture();
+  for (const advanceClock of [true, false]) {
+    let now = 0; let calls = 0; const sleeps = [];
+    await assert.rejects(waitForRunStart({ assignment: f.request, now: () => now,
+      api: { get: async () => { calls++; return { id: 12345, run_attempt: 2, repository: { id: 123 }, status: 'queued' }; } },
+      sleep: async (ms) => { sleeps.push(ms); if (advanceClock) now += ms; } }), /preparation window/u);
+    assert.equal(calls, 13); assert.equal(sleeps.length, 12);
+    assert.equal(sleeps.reduce((sum, ms) => sum + ms, 0), 60_000);
+  }
+});
+
+test('preparation cannot accept an active response returned after its bounded window', async () => {
+  const f = fixture(); let now = 0; let sleeps = 0;
+  await assert.rejects(waitForRunStart({ assignment: f.request, now: () => now,
+    api: { get: async () => { now = 60_001; return { id: 12345, run_attempt: 2, repository: { id: 123 }, status: 'in_progress' }; } },
+    sleep: async () => { sleeps++; } }), /preparation window/u);
+  assert.equal(sleeps, 0);
+});
+
+test('evidence wait still rejects queued immediately before any status or receipt fetch', async () => {
+  const f = fixture(); let calls = 0; let sleeps = 0;
+  await assert.rejects(waitForEvidence({ ...f, now: () => f.nowMs,
+    api: { get: async (path) => {
+      assert.equal(path, `/repos/${REPOSITORY}/actions/runs/${f.request.runId}`); calls++;
+      return { id: 12345, run_attempt: 2, repository: { id: 123 }, status: 'queued' };
+    } }, sleep: async () => { sleeps++; } }), /active assigned attempt/u);
+  assert.equal(calls, 1); assert.equal(sleeps, 0);
 });
 test('wait accepts only fetched content-addressed raw evidence while the attempt is live', async () => {
   const f = fixture(); const result = await waitForEvidence({ ...f, api: fakeApi(f), now: () => f.nowMs });
