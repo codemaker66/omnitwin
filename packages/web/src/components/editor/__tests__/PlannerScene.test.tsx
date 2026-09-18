@@ -5,13 +5,16 @@ import { readFile } from "node:fs/promises";
 import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE, SpaceSchema } from "@omnitwin/types";
 import { Children, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { PerspectiveCamera, Scene, type Camera } from "three";
+import { useChunkArrivals } from "../../../hooks/use-chunk-arrivals.js";
 
 type CanvasMockProps = Readonly<{
   dpr?: unknown;
   frameloop?: unknown;
   children?: ReactNode;
+  onCreated?: () => void;
 }>;
 const canvasChildren = vi.hoisted(() => ({ current: null as ReactNode }));
+const canvasCreated = vi.hoisted(() => ({ current: null as (() => void) | null }));
 const precompiler = vi.hoisted(() => ({
   gl: { compileAsync: vi.fn((_scene: Scene, _camera: Camera) => Promise.resolve()) },
   scene: null as Scene | null,
@@ -38,8 +41,9 @@ vi.mock("@react-three/fiber", async () => {
       return () => { precompiler.frame = null; };
     }, []);
   },
-  Canvas: ({ dpr, frameloop, children }: CanvasMockProps) => {
+  Canvas: ({ dpr, frameloop, children, onCreated }: CanvasMockProps) => {
     canvasChildren.current = children;
+    canvasCreated.current = onCreated ?? null;
     return (
     <div
       data-testid="r3f-canvas"
@@ -66,7 +70,7 @@ const arrivals = vi.hoisted(() => ({
   get failedUrls(): ReadonlySet<string> { return this.failedOverride ?? new Set(this.urls.slice(this.loadedCount, this.loadedCount + this.failedCount)); },
   markLoaded: vi.fn(), markFailed: vi.fn(),
 }));
-vi.mock("../../../hooks/use-chunk-arrivals.js", () => ({ useChunkArrivals: () => arrivals }));
+vi.mock("../../../hooks/use-chunk-arrivals.js", () => ({ useChunkArrivals: vi.fn(() => arrivals) }));
 
 const IDENTITY_TRANSFORM = {
   position: [0, 0, 0] as const,
@@ -128,6 +132,8 @@ beforeEach(() => {
   precompiler.invalidate.mockReset();
   precompiler.frame = null;
   precompiler.priority = undefined;
+  canvasCreated.current = null;
+  vi.mocked(useChunkArrivals).mockImplementation(() => arrivals);
   // happy-dom does not implement native modal top-layer behavior.
   vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
   vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
@@ -154,6 +160,32 @@ describe("PlannerScene", () => {
     if (typeof callback !== "function") throw new Error("Missing first-frame callback");
     return callback as () => void;
   }
+
+  it("clears captured readiness when a replacement canvas starts with the same source URLs", async () => {
+    const actual = await vi.importActual<typeof import("../../../hooks/use-chunk-arrivals.js")>("../../../hooks/use-chunk-arrivals.js");
+    vi.mocked(useChunkArrivals).mockImplementation(actual.useChunkArrivals);
+    mockSplat({ splatUrls: ["/a.sog"], hasAsset: true, status: "loaded" });
+    render(<PlannerScene />);
+    const created = canvasCreated.current;
+    if (created === null) throw new Error("Missing canvas generation callback");
+    act(() => { created(); });
+    const loaded = sceneComponent("CockpitSplatLayer")?.props.onChunkLoaded;
+    const failed = sceneComponent("CockpitSplatLayer")?.props.onChunkFailed;
+    if (typeof loaded !== "function" || typeof failed !== "function") throw new Error("Missing chunk callbacks");
+    const oldLoaded = loaded as (url: string) => void;
+    const oldFailed = failed as (url: string) => void;
+    act(() => { oldLoaded("/a.sog"); });
+    expect(useCockpitStore.getState().roomResolve).toEqual({ phase: "resolved", loadedChunks: 1, totalChunks: 1 });
+    expect(canvasCreated.current).toBe(created);
+    act(() => { created(); });
+    expect(useCockpitStore.getState().roomResolve).toEqual({ phase: "developing", loadedChunks: 0, totalChunks: 1 });
+    act(() => { oldLoaded("/a.sog"); oldFailed("/a.sog"); });
+    expect(useCockpitStore.getState().roomResolve.phase).toBe("developing");
+    const newLoaded = sceneComponent("CockpitSplatLayer")?.props.onChunkLoaded;
+    if (typeof newLoaded !== "function") throw new Error("Missing replacement chunk callback");
+    act(() => { (newLoaded as (url: string) => void)("/a.sog"); });
+    expect(useCockpitStore.getState().roomResolve.phase).toBe("resolved");
+  });
 
   it("keeps arrival over decoded bytes until the captured room draws, without remounting Canvas", () => {
     chooseGrandHall(); readyGrandHall();

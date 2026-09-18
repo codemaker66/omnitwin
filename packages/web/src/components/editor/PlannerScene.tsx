@@ -351,9 +351,13 @@ export function PlannerScene(): ReactElement {
 
   // CARD A2 — "the room resolves": count chunk arrivals, derive the resolve
   // phase, and publish it for the quiet caption + the stage's honesty
-  // attribute. The arrival set resets when the room's chunk list changes
-  // (the hook rebuilds the array each render, so key on its joined value).
-  const arrivals = useChunkArrivals(splatUrls.join("|"));
+  // attribute. Still-mounted URLs retain their draws; a recreated renderer
+  // must draw them again before progress can settle.
+  const [rendererGeneration, setRendererGeneration] = useState(0);
+  const handleCanvasCreated = useCallback(() => {
+    setRendererGeneration((generation) => generation + 1);
+  }, []);
+  const arrivals = useChunkArrivals(splatUrls.join("|"), rendererGeneration);
   const totalChunks = splatUrls.length;
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
@@ -461,6 +465,7 @@ export function PlannerScene(): ReactElement {
         onPointerLeave={markCameraInteractionSettling}
       >
         <Canvas
+          onCreated={handleCanvasCreated}
           shadows={furnitureLighting === "panorama-shadow" ? "percentage" : false}
           frameloop="demand"
           dpr={canvasDpr}

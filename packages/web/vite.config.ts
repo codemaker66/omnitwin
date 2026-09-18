@@ -91,6 +91,12 @@ export default defineConfig(({ mode }) => {
       // staging middleware serves them from "/splats" instead.
       "import.meta.env.VITE_SPLAT_BASE_URL": JSON.stringify(splatBaseUrl),
     },
+    server: {
+      // Transform the planner's static import graph when the dev server starts.
+      // Otherwise its first navigation pays a long module-transform waterfall;
+      // this does not load the route in the browser or affect production bundles.
+      warmup: { clientFiles: ["./src/pages/EditorPage.tsx"] },
+    },
     worker: { format: "es" },
     optimizeDeps: {
       // The lazy decoder worker otherwise discovers these after the planner

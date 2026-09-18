@@ -118,15 +118,17 @@ export function InkArchitectureLayer({
     let raf = 0;
     let last = performance.now();
     const step = (now: number): void => {
-      const dt = Math.min(Math.max((now - last) / 1000, 0), 0.1);
+      // This exponential ease is stable for any elapsed time. Capping dt
+      // stretches the fade across repeated expensive scene draws on slow GPUs.
+      const dt = Math.max((now - last) / 1000, 0);
       last = now;
       const current = opacityRef.current;
-      const delta = target - current;
-      if (Math.abs(delta) <= INK_SNAP) {
+      const next = current + (target - current) * (1 - Math.pow(1 - INK_EASE, dt * 60));
+      if (Math.abs(target - next) <= INK_SNAP) {
         apply(target);
         return;
       }
-      apply(current + delta * (1 - Math.pow(1 - INK_EASE, dt * 60)));
+      apply(next);
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);

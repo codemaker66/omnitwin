@@ -34,7 +34,7 @@ describe("useChunkArrivals", () => {
 
   it("preserves arrivals for chunks that survive a partial-overlap key change", () => {
     // A still-mounted chunk (same url, already loaded) never re-fires its
-    // onLoad, so wiping it from the count would wedge the phase machine.
+    // onRendered, so wiping it from the count would wedge the phase machine.
     const { result, rerender } = renderHook(
       ({ key }: { key: string }) => useChunkArrivals(key),
       { initialProps: { key: "/a.sog|/b.sog" } },
@@ -88,5 +88,27 @@ describe("useChunkArrivals", () => {
     expect(result.current.failedCount).toBe(0);
     act(() => { result.current.markFailed("/a.sog"); });
     expect(result.current.failedCount).toBe(0);
+  });
+
+  it("requires fresh draws after renderer replacement and rejects old-generation outcomes for the same URLs", () => {
+    const { result, rerender } = renderHook(({ key, generation }) => useChunkArrivals(key, generation), {
+      initialProps: { key: "/a.sog|/b.sog", generation: 1 },
+    });
+    const oldLoaded = result.current.markLoaded;
+    const oldFailed = result.current.markFailed;
+    act(() => { oldLoaded("/a.sog"); oldFailed("/b.sog"); });
+    expect(result.current.loadedCount).toBe(1);
+    expect(result.current.failedCount).toBe(1);
+    rerender({ key: "/a.sog|/b.sog", generation: 2 });
+    expect(result.current.loadedCount).toBe(0);
+    expect(result.current.failedCount).toBe(0);
+    act(() => { oldLoaded("/a.sog"); oldFailed("/b.sog"); });
+    expect(result.current.loadedCount).toBe(0);
+    expect(result.current.failedCount).toBe(0);
+    act(() => { result.current.markLoaded("/a.sog"); });
+    const currentLoaded = result.current.markLoaded;
+    rerender({ key: "/a.sog|/c.sog", generation: 2 });
+    expect(result.current.loadedCount).toBe(1);
+    expect(result.current.markLoaded).toBe(currentLoaded);
   });
 });

@@ -64,7 +64,7 @@ async function throttleTo50Mbps(page: Page): Promise<void> {
 async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(name);
   const readNativeCanvas = async (): Promise<Buffer> => {
-    const readback = page.evaluate(() => {
+    const captureFrame = () => {
       const canvas = document.querySelector(".cockpit-stage canvas");
       const runtime = window.__venPerf;
       const renderer = runtime?.gl;
@@ -74,22 +74,82 @@ async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: strin
         || renderer.getRenderTarget() !== null) {
         throw new Error("Stage evidence requires the live application-owned native canvas");
       }
-      // Linux software GL can stall Playwright's compositor screenshot while
-      // this demand-loop canvas is idle. Redraw the actual application scene
-      // and camera on its existing renderer, then synchronously encode its
-      // canvas before the browser discards the presented buffer. No additional
-      // graphics context, different camera or reduced scene is used. This
-      // diagnostic readback is outside all first-paint/interaction timings.
-      renderer.render(runtime.scene, runtime.camera);
-      return canvas.toDataURL("image/png");
-    });
+      const rect = canvas.getBoundingClientRect();
+      if (window.devicePixelRatio !== 1 || rect.width !== canvas.width || rect.height !== canvas.height
+        || rect.x < 0 || rect.y < 0 || rect.right > window.innerWidth || rect.bottom > window.innerHeight) {
+        throw new Error("Stage evidence requires the unchanged full-resolution DPR1 canvas");
+      }
+      const splatInstances: number[] = [];
+      runtime.scene.traverseVisible((object) => {
+        if (!("isGaussianSplat" in object) || object.isGaussianSplat !== true || !("geometry" in object)) return;
+        const geometry = object.geometry;
+        if (typeof geometry === "object" && geometry !== null && "instanceCount" in geometry
+          && typeof geometry.instanceCount === "number") splatInstances.push(geometry.instanceCount);
+      });
+      return {
+        x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: canvas.width, height: canvas.height,
+        backend: canvas.dataset["backend"], viewport: [window.innerWidth, window.innerHeight],
+        camera: { position: runtime.camera.position.toArray(), quaternion: runtime.camera.quaternion.toArray() },
+        splatInstances,
+      };
+    };
+    // Capture the already-presented application canvas without another scene
+    // draw or Playwright's stability/snapshot round trips. Keep the same full
+    // host deadline, live-canvas guards, crop dimensions and PNG evidence.
+    const started = performance.now();
+    const details: Record<string, unknown> = { method: "CDP compositor crop", deadlineMs: 15_000 };
+    const mark = (stage: string): void => { details[stage] = performance.now() - started; };
+    const readback = (async (): Promise<string> => {
+      const session = await page.context().newCDPSession(page);
+      mark("sessionReadyMs");
+      try {
+        const response = await session.send("Runtime.evaluate", {
+          expression: `(${captureFrame.toString()})()`,
+          returnByValue: true,
+        });
+        mark("boundsReadMs");
+        if (response.exceptionDetails !== undefined) {
+          throw new Error(response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
+        }
+        const value: unknown = response.result.value;
+        if (typeof value !== "object" || value === null
+          || !("x" in value) || typeof value.x !== "number" || !Number.isFinite(value.x)
+          || !("y" in value) || typeof value.y !== "number" || !Number.isFinite(value.y)
+          || !("width" in value) || typeof value.width !== "number" || !Number.isSafeInteger(value.width) || value.width < 1
+          || !("height" in value) || typeof value.height !== "number" || !Number.isSafeInteger(value.height) || value.height < 1) {
+          throw new Error("Native canvas capture did not return valid bounds");
+        }
+        Object.assign(details, value);
+        const screenshot = await session.send("Page.captureScreenshot", {
+          format: "png", fromSurface: true, captureBeyondViewport: false,
+          clip: { x: value.x, y: value.y, width: value.width, height: value.height, scale: 1 },
+        });
+        mark("pixelsReadMs");
+        const png = Buffer.from(screenshot.data, "base64");
+        details["pngBytes"] = png.byteLength;
+        if (png.length < 24 || !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+          || png.toString("ascii", 12, 16) !== "IHDR"
+          || png.readUInt32BE(16) !== value.width || png.readUInt32BE(20) !== value.height) {
+          throw new Error("Native canvas capture changed the image dimensions");
+        }
+        return `data:image/png;base64,${screenshot.data}`;
+      } finally {
+        await session.detach();
+        mark("sessionDetachedMs");
+      }
+    })();
     let readTimeout: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       readTimeout = setTimeout(() => { reject(new Error("Native canvas readback exceeded 15000 ms")); }, 15_000);
     });
-    const dataUrl = await Promise.race([readback, deadline]).finally(() => { clearTimeout(readTimeout); });
-    expect(dataUrl).toMatch(/^data:image\/png;base64,/);
-    return Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+    try {
+      const dataUrl = await Promise.race([readback, deadline]).finally(() => { clearTimeout(readTimeout); });
+      expect(dataUrl).toMatch(/^data:image\/png;base64,/);
+      return Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+    } finally {
+      mark("totalMs");
+      await testInfo.attach(`${name}.capture.json`, { body: JSON.stringify(details, null, 2), contentType: "application/json" });
+    }
   };
   // Preserve the existing pre-read wait and one blank-image recovery attempt.
   await page.waitForTimeout(400);

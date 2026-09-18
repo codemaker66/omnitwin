@@ -110,14 +110,29 @@ complete planner and both renderer backends before making a shipping claim.
 
 Native Three does not preserve the presented canvas buffer through the old
 WebGL `preserveDrawingBuffer` option. Poster exports use an explicit same-device
-render target. The room-resolution E2E evidence instead redraws the existing
-live scene/camera on its application renderer and synchronously encodes that
-same canvas as PNG. This avoids a reproduced Linux software-GL compositor
-screenshot stall on a settled demand loop. It retains the 15-second readback
-deadline, image-size threshold and one blank-image retry, and runs outside
-first-paint/interaction timing. It neither creates another graphics context nor
-changes the view or scene quality. Both affected cases passed under Linux
-llvmpipe/Xvfb; the same operation also produced a nonblank WebGPU PNG.
+render target. Room-resolution E2E evidence crops the existing compositor surface
+through CDP without another draw or graphics context. It verifies ownership of
+the live canvas, DPR1 dimensions, containment in the unchanged viewport, the
+default render target and exact PNG dimensions. Viewport expansion is disabled.
+The original 15-second host deadline includes session setup, capture and cleanup;
+waits, image-size threshold, one blank-image retry and full traces remain. These
+images may include displayed DOM overlays; they are not raw framebuffer or
+forced-render measurements. Direct redraw/readback and earlier compositor
+failures remain recorded in the session evidence.
+
+Planner completion follows each source's confirmed native main-camera draw at
+its revealed opacity. Decode still starts the fade, so rendering never waits
+on its own completion signal. The pending caption pauses in Model view, while
+terminal failure notices remain available. A replacement renderer clears old
+draw counts even when source URLs are unchanged; callbacks from its predecessor
+cannot advance the new generation. Ink fades consume actual nonnegative elapsed
+time and apply their final snap without an extra animation callback, preserving
+normal easing and reduced-motion behavior under slow software-rendered frames.
+
+Vite prepares the planner's static import graph when the development server
+starts and preoptimizes the lazy native decoder imports. This avoids reproduced
+first-navigation transform and dependency-reload delays. It does not load the
+route in a browser, move test stopwatches or establish a production startup gain.
 
 The native material-clipping bridge wraps public `renderObject`, shared by
 compilation and drawing. Three r186's `compileAsync` bypasses the separate
