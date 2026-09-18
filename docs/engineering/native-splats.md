@@ -129,6 +129,15 @@ cannot advance the new generation. Ink fades consume actual nonnegative elapsed
 time and apply their final snap without an extra animation callback, preserving
 normal easing and reduced-motion behavior under slow software-rendered frames.
 
+Public walkthroughs and the internal capture console retain the full captured
+interior. The generated bundle extent can come from the scanner trajectory; it
+frames the camera and constrains movement but does not guarantee containment of
+walls or ceiling. Do not apply it as a splat clip volume. Previous Spark layers
+had `editable:false`, so their global `RoomClipBox` was inactive. Enabling that
+box during the native migration removed visible Grand Hall surfaces and caused
+a production rollback on 18 September. Explicit future cutaway views require a
+separately qualified architectural clip volume and visual evidence.
+
 Vite prepares the planner's static import graph when the development server
 starts and preoptimizes the lazy native decoder imports. This avoids reproduced
 first-navigation transform and dependency-reload delays. It does not load the
