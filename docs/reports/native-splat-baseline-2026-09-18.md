@@ -4,14 +4,15 @@ Requested investigation and isolated renderer benchmark, recorded before
 the T-627 migration. Statements about installed dependencies below describe that
 baseline. Current implementation is tracked in [native splats](../engineering/native-splats.md).
 
-**Latest follow-up:** the [recovery comparison below](#recovery-finer-depth-ordering-18-september-2026)
-uses the corrected addon at the application's √8σ radius with 65,536 logarithmic
-depth buckets. It measures **13.15% higher median FPS** on native WebGPU than
-Spark's old product settings on this isolated room workload. The earlier 18.33%
-result predates this sorting repair. Original experiments remain dated evidence.
-The same recovery's synchronous WebGL2 fallback regressed to 81.41 FPS with
-125 ms p95 pauses. A worker-based fallback is being qualified; the WebGPU
-improvement must not be generalized to every backend or the final pending build.
+**Latest follow-up:** the [final recovery baseline](#final-recovery-baseline-18-september-2026)
+at runtime commit `188ec0e0` measures **161.97 FPS native WebGPU versus 158.75
+Spark product settings (+2.03%)**, and **194.57 FPS native WebGL worker (+22.56%)**.
+The WebGPU difference is small; the earlier 13.15% and 18.33% figures describe
+older rounds and must not headline the current result. All twelve samples remain,
+including one unexplained Spark stall. These isolated rAF medians do not establish
+statistical significance, equal motion fidelity or broad device performance.
+Separate complete-application checks and unchanged Linux captures now pass;
+fresh release gates and corrected deployment verification remain pending.
 
 **Original baseline outcome:** the application used external Spark. The focused desktop comparison
 measured about **20% higher frame rate** with stock Three r186 native WebGPU, retaining
@@ -413,3 +414,97 @@ completion status after resident worker failure; both have regression coverage.
 Seventy focused tests, scoped typed lint, full web/E2E typing and production
 builds pass. The unchanged Linux software capture deadline and final release
 gates remain separate requirements.
+
+## Final recovery baseline (18 September 2026)
+
+Runtime source `188ec0e0c49ee5a9fdc875ff00ee4649f1af011f` includes asynchronous
+WebGL sorting and bounded automatic canvas submissions. The maintained addon
+SHA-256 is `06092d585eb76bdda926eb5a47028a650d8980e1737f7ab74b5f52fbd01a3a2a`.
+The isolated harness directly renders the addon and uses the actual product
+sort pool/worker/kernel; it excludes the application host and frame pacer.
+
+The four arms retain the original 1,420,646,902-byte PLY, 6,019,684 splats, SH3,
+camera/transform, 1600×900 DPR1 canvas and scripted yaw/translation. Each has a
+fresh headed Chrome 153 process and three consecutive samples, each with the
+same four-second warmup and requested twelve-second measurement. Native WebGL
+and both Spark arms report the same RTX 4090 ANGLE/D3D11 renderer; WebGPU reports
+NVIDIA/Lovelace. The fixed arm order, one device and three samples limit inference.
+
+| Arm | Median rAF FPS | Sample range | Median p95 | Median p99 |
+| --- | ---: | ---: | ---: | ---: |
+| Spark 2.1 / Three r180, product settings | 158.75 | 0.997–159.06 | 12.5 ms | 16.7 ms |
+| Spark, controlled sorting/cap/cutoff | 142.85 | 142.26–142.88 | 12.6 ms | 20.8 ms |
+| Native Three r186 WebGPU | 161.97 | 161.95–162.22 | 8.4 ms | 16.7 ms |
+| Native Three r186 WebGL worker | 194.57 | 194.48–194.82 | 8.4 ms | 12.6 ms |
+
+Observed median differences versus product Spark are **+2.03% WebGPU** and
+**+22.56% WebGL worker**; versus controlled Spark they are +13.39% and +36.21%.
+WebGPU is near parity on this workload, with a lower p95 frame interval. All
+twelve numbered samples were retained without retries, substitutions or added
+filtering. All report full count/SH3, visible/focused state and zero runtime
+errors. Independent recalculation matched every sample and all 45 declared
+input/output hashes; four complete-room PNGs were inspected outside timing.
+
+The first product-Spark sample is an unexplained smoothness failure: ten retained
+intervals at roughly 1000–1004ms, 0.997 FPS, with the same plateau in warmup.
+CPU submission averaged only 0.56ms (maximum 0.8ms); driver, full count, focus
+and error observations do not explain it. It must not be labeled intrinsic Spark
+rendering cost. Samples two and three reached 158.75/159.06 FPS. As sensitivity
+only, using their midpoint changes the native comparisons to +1.93% / +22.45%;
+the reported primary medians still include all three samples.
+
+The worker completed/applied 56, 58 and 58 orders, with one worker and no
+failures. Dispatch latency medians were 109.3–111.1ms, and completed-order apply
+age medians 111.2–113.0ms. Per-frame reused-order age is a different measure:
+median 215–221.8ms, p95 1.035–1.100s, maximum 1.266s. It includes the native
+re-sort thresholds and asynchronous delay; higher rAF does not establish equal
+temporal sorting fidelity. These timings exclude the 11,296 environment splats,
+SOG loading, furniture and UI, and do not measure memory or physical presentation.
+
+Evidence: `output/playwright/native-migration/async-fallback-baseline-20260918-v2/`.
+`results.json` SHA-256 is
+`312d87e248ebe26650459a4228daa0569d51d60ed5e2957055f3efce8aa9f228`;
+`qualification.json` records images, device/source identity and the retained
+setup failures. A Windows path-normalization defect and launcher failure were
+corrected before measurement; inherited workload files remain byte-identical.
+
+### Final complete-application and capture qualification
+
+The same runtime commit passed fresh original reduced-motion, linework and
+staged Linux cases, zero retries and no source/test overrides. All 3,262 tracked
+blobs and installed dependencies matched before/after. Both full Reception
+captures retained 2,108,924 splats and 1440×900 output; original screenshot calls
+took **13.848s / 10.994s** against unchanged 15-second limits. The first has only
+1.15s headroom, so this pass does not establish repeated-CI reliability. Root
+inspected both nonblank fixture images; linework matches the earlier passing
+image exactly. These top-down fixtures are not public walkthrough acceptance.
+Evidence: `output/playwright/native-migration/recovery-final-qualification/`.
+
+Separate actual-app hardware runs retained all **6,030,980 room/environment
+splats**, SH3, normal 1600×1000 motion / 3200×2000 settled buffers and eleven
+ready room sources. Both used ordinary twelve-second pointer motion and the
+public capture function, with no quality, shader or source overrides.
+
+| Backend | rAF FPS | Actual main draws/s | Draw interval p95 | Full-cohort completion p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Native WebGL2 | 239.92 | 190.32 | 8.5 ms | 12.9 ms |
+| Native WebGPU | 240.00 | 147.01 | 9.5 ms | 19.9 ms |
+
+Both observed at most two outstanding post-main completion tickets, with zero
+console/page errors. All 2,294 WebGL and 1,772 WebGPU tickets completed; the two
+and one outstanding at measurement end remain in full-cohort statistics.
+Observed completion includes CPU submission, queueing and notification delay,
+not GPU timestamps or compositor presentation. Full-cohort maxima were 73.6ms
+and 40.4ms, respectively. The callback observer adds no GPU work and correlates
+public completion calls with the reviewed driver; it has no private pacer counters.
+
+The WebGL poster ran during a pending worker sort at 1600×1000 (221.7ms); the
+WebGPU poster captured the settled 3200×2000 view (189.0ms). Both restored the
+render target/readiness and normal settled buffer. These different export sizes
+prevent a speed comparison. Root inspected both after-motion images; the
+additional after-export images and actual posters were also inspected, retaining
+the complete walls, frieze and woodwork without earlier colored streaking.
+Evidence: `output/playwright/native-migration/pacing-production-qualification/`.
+Its diagnostic entry shares the actual app modules and emits byte-identical
+sort-worker code to the standard build. These are technical visual checks, not
+founder aesthetic acceptance or a substitute for fresh CI and live verification.

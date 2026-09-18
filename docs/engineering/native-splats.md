@@ -147,7 +147,7 @@ The subsequent 65,536-bucket recovery measured 153.74 versus 135.88 FPS
 Its synchronous WebGL2 fallback regressed to 81.41 FPS with 125 ms p95 pauses,
 also reproduced in the full public walkthrough. These dated results precede
 the asynchronous fallback repair; see the [baseline report](../reports/native-splat-baseline-2026-09-18.md)
-for source hashes, raw evidence, scope and pending qualification.
+for source hashes and the newer qualified comparisons below.
 
 The actual production worker subsequently retained all 6,030,980 room/environment
 splats during a 12.06-second ordinary public-view drag: 151.27 rAF FPS, 12.5 ms
@@ -157,6 +157,25 @@ pose age in this run). This is application responsiveness evidence on the RTX
 4090, not the final matched renderer baseline or a mobile result. A poster
 capture during an in-flight sort preserved all padded main-view order entries,
 camera-sort metadata and renderer target, and left all eleven sources ready.
+
+The final isolated runtime-`188ec0e0` comparison uses fresh controls: native
+WebGPU 161.97 FPS versus product Spark 158.75 (+2.03%), and the native WebGL
+worker 194.57 (+22.56%). The WebGPU difference is small and these rAF medians
+are not general device or presentation guarantees. All twelve samples remain,
+including an unexplained one-second-rAF Spark sample; it must not be attributed
+to intrinsic rendering cost. Worker order-age p95 reached 1.035–1.100s per frame,
+including native re-sort thresholds; higher rAF is not equal motion fidelity.
+See the [final report](../reports/native-splat-baseline-2026-09-18.md#final-recovery-baseline-18-september-2026)
+for the complete methodology and limitations.
+
+After pacing, the actual full-scene app submitted 190.32 WebGL2 / 147.01 WebGPU
+main draws per second in separate twelve-second hardware runs. Both retained
+all 6,030,980 splats, SH3 and normal motion/settled resolutions, completed every
+observed GPU ticket (maximum two outstanding), and passed poster export with
+zero browser errors. Fresh original Linux reduced-motion/linework/staged cases
+also passed, zero retries; full captures took 13.848s / 10.994s within unchanged
+15s deadlines. The first retains limited headroom. Fresh release gates and a
+corrected deployed visual check remain required before native promotion.
 
 Native Three does not preserve the presented canvas buffer through the old
 WebGL `preserveDrawingBuffer` option. Poster exports use an explicit same-device
