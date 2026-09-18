@@ -9,6 +9,15 @@ type FenceContext = Pick<WebGL2RenderingContext,
   "fenceSync" | "deleteSync" | "flush" | "isContextLost" | "clientWaitSync"
   | "SYNC_GPU_COMMANDS_COMPLETE" | "ALREADY_SIGNALED" | "CONDITION_SATISFIED" | "TIMEOUT_EXPIRED">;
 interface CompletionQueue { onSubmittedWorkDone(): PromiseLike<unknown> }
+export type NativeGpuWorkResult = { readonly status: "pending" }
+  | { readonly status: "complete"; readonly completedAt: number }
+  | { readonly status: "failed"; readonly error: Error };
+
+export interface NativeGpuWorkTicket {
+  readonly completion: Promise<void>;
+  /** Nonblocking WebGL fence check; WebGPU completion arrives from its queue. */
+  poll(): NativeGpuWorkResult;
+}
 function isFenceContext(value: unknown): value is FenceContext {
   return typeof value === "object" && value !== null
     && "fenceSync" in value && typeof value.fenceSync === "function"
@@ -54,10 +63,14 @@ function observeDeviceLoss(device: object, lost: object, callback: (reason: Erro
 }
 
 
-/** Wait for submitted GPU work without blocking JS or changing render state.
- * This acknowledges raster completion, not browser compositor presentation. */
-export function waitForNativeGpuWork(renderer: CompletionRenderer, signal: AbortSignal): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+/** Observe submitted work. Polling can retire a completed WebGL frame in the
+ * current render task instead of imposing the background timer's 16ms floor.
+ * Completion time includes submission, queueing and observation delay; it is
+ * not a GPU execution timestamp or acknowledgement of compositor presentation. */
+export function createNativeGpuWorkTicket(renderer: CompletionRenderer, signal: AbortSignal): NativeGpuWorkTicket {
+  let result: NativeGpuWorkResult = { status: "pending" };
+  let pollNow = (): void => undefined;
+  const completion = new Promise<void>((resolve, reject) => {
     let done = false;
     let poll: ReturnType<typeof setTimeout> | undefined;
     let cleanup = (): void => undefined;
@@ -65,15 +78,27 @@ export function waitForNativeGpuWork(renderer: CompletionRenderer, signal: Abort
       if (done) return;
       done = true;
       if (poll !== undefined) clearTimeout(poll);
+      poll = undefined;
       clearTimeout(deadline);
       signal.removeEventListener("abort", abort);
       let failure = reason;
       try { cleanup(); } catch (cleanupError: unknown) { failure ??= cleanupError ?? new Error("Native GPU fence cleanup failed"); }
-      if (failure === undefined) resolve();
-      else reject(failure instanceof Error ? failure : new Error(typeof failure === "string" ? failure : "Native GPU completion failed", { cause: failure }));
+      if (failure === undefined) {
+        result = { status: "complete", completedAt: performance.now() };
+        resolve();
+      } else {
+        const error = failure instanceof Error ? failure : new Error(typeof failure === "string" ? failure : "Native GPU completion failed", { cause: failure });
+        result = { status: "failed", error };
+        reject(error);
+      }
     };
     const abort = (): void => { finish(new DOMException("Native GPU readiness cancelled", "AbortError")); };
-    const deadline = setTimeout(() => { finish(new Error("Native GPU work did not complete within 30 seconds")); }, DEADLINE_MS);
+    const deadline = setTimeout(() => {
+      // A delayed timer must not report an already completed idle frame as a
+      // GPU stall. Check once before rejecting and release every owned timer.
+      pollNow();
+      if (!done) finish(new Error("Native GPU work did not complete within 30 seconds"));
+    }, DEADLINE_MS);
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) { abort(); return; }
     try {
@@ -86,6 +111,10 @@ export function waitForNativeGpuWork(renderer: CompletionRenderer, signal: Abort
         context.flush();
         const check = (): void => {
           if (done) return;
+          // A caller may poll between timer ticks. Keep at most one background
+          // poll per ticket rather than adding a timer on every render attempt.
+          if (poll !== undefined) clearTimeout(poll);
+          poll = undefined;
           try {
             if (context.isContextLost()) throw new Error("Native WebGL context was lost while waiting for GPU readiness");
             const status = context.clientWaitSync(fence, 0, 0);
@@ -94,6 +123,7 @@ export function waitForNativeGpuWork(renderer: CompletionRenderer, signal: Abort
             else throw new Error("Native WebGL readiness fence failed");
           } catch (reason: unknown) { finish(reason ?? new Error("Native GPU completion failed")); }
         };
+        pollNow = check;
         // WebGL fences cannot signal until control has returned to the event loop.
         poll = setTimeout(check, POLL_MS);
       } else {
@@ -116,4 +146,13 @@ export function waitForNativeGpuWork(renderer: CompletionRenderer, signal: Abort
       }
     } catch (reason: unknown) { finish(reason ?? new Error("Native GPU completion failed")); }
   });
+  // A render owner may consume a synchronous poll result before attaching its
+  // promise continuation. Preserve rejection for that owner without a race.
+  void completion.catch(() => undefined);
+  return { completion, poll: () => { pollNow(); return result; } };
+}
+
+/** Wait for submitted raster work using the same cancellable completion ticket. */
+export function waitForNativeGpuWork(renderer: CompletionRenderer, signal: AbortSignal): Promise<void> {
+  return createNativeGpuWorkTicket(renderer, signal).completion;
 }

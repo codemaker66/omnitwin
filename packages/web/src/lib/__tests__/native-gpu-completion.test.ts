@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PerspectiveCamera, RenderTarget, Scene } from "three";
 import { WebGPURenderer } from "three/webgpu";
-import { waitForNativeGpuWork } from "../native-gpu-completion.js";
+import { createNativeGpuWorkTicket, waitForNativeGpuWork } from "../native-gpu-completion.js";
 import { afterNativeCanvasGpuWork, withNativeRenderScope } from "../native-renderer.js";
 
 function webgl() {
@@ -32,6 +32,68 @@ beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe("native GPU completion", () => {
+  it("retires a signaled fence synchronously before the background polling interval", async () => {
+    const { renderer, gl } = webgl(), done = vi.fn();
+    const ticket = createNativeGpuWorkTicket(renderer, new AbortController().signal);
+    const waiting = ticket.completion.then(done);
+    gl.clientWaitSync.mockReturnValue(gl.ALREADY_SIGNALED);
+    const completedAt = performance.now();
+    expect(ticket.poll()).toEqual({ status: "complete", completedAt });
+    expect(done).not.toHaveBeenCalled();
+    expect(gl.clientWaitSync).toHaveBeenCalledExactlyOnceWith(expect.any(Object), 0, 0);
+    expect(gl.deleteSync).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(ticket.poll()).toEqual({ status: "complete", completedAt });
+    expect(gl.clientWaitSync).toHaveBeenCalledOnce();
+    await waiting; expect(done).toHaveBeenCalledOnce();
+  });
+
+  it("keeps only one background poll when frame requests repeatedly inspect a pending fence", async () => {
+    const { renderer, gl } = webgl();
+    const ticket = createNativeGpuWorkTicket(renderer, new AbortController().signal);
+    for (let index = 0; index < 5; index++) {
+      expect(ticket.poll()).toEqual({ status: "pending" });
+      expect(vi.getTimerCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(2);
+    }
+    expect(gl.clientWaitSync).toHaveBeenCalledTimes(5);
+    gl.clientWaitSync.mockReturnValue(gl.CONDITION_SATISFIED);
+    await vi.advanceTimersByTimeAsync(16);
+    await ticket.completion;
+    expect(ticket.poll()).toMatchObject({ status: "complete" });
+    expect(gl.deleteSync).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("checks a newly completed fence before rejecting at the deadline", async () => {
+    const { renderer, gl } = webgl();
+    const ticket = createNativeGpuWorkTicket(renderer, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(29_999);
+    gl.clientWaitSync.mockReturnValue(gl.ALREADY_SIGNALED);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(ticket.completion).resolves.toBeUndefined();
+    expect(ticket.poll()).toMatchObject({ status: "complete" });
+    expect(gl.deleteSync).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("exposes queue completion and cancellation without allowing late settlement to change the result", async () => {
+    const state = webgpu();
+    const ticket = createNativeGpuWorkTicket(state.renderer, new AbortController().signal);
+    expect(ticket.poll()).toEqual({ status: "pending" });
+    state.resolve(); await ticket.completion;
+    expect(ticket.poll()).toEqual({ status: "complete", completedAt: performance.now() });
+    const cancelled = webgpu(), controller = new AbortController();
+    const cancelledTicket = createNativeGpuWorkTicket(cancelled.renderer, controller.signal);
+    controller.abort();
+    const result = cancelledTicket.poll();
+    expect(result).toMatchObject({ status: "failed", error: { name: "AbortError" } });
+    await expect(cancelledTicket.completion).rejects.toMatchObject({ name: "AbortError" });
+    cancelled.resolve(); await vi.advanceTimersByTimeAsync(0);
+    expect(cancelledTicket.poll()).toBe(result);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("flushes one fence and polls without blocking, then releases it exactly once", async () => {
     const { renderer, gl } = webgl(), done = vi.fn();
     const waiting = waitForNativeGpuWork(renderer, new AbortController().signal).then(done);

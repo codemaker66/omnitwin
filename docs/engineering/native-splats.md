@@ -185,6 +185,18 @@ cannot advance the new generation. Ink fades consume actual nonnegative elapsed
 time and apply their final snap without an extra animation callback, preserving
 normal easing and reduced-motion behavior under slow software-rendered frames.
 
+Automatic canvas rendering now owns a bounded GPU submission queue. R3F continues
+updating the current camera and scene, while skipped draw requests coalesce into
+one invalidation after capacity becomes available. Explicit renders and exports
+remain immediate. At most two automatic draws may be outstanding; a completion
+observed more than 50ms after submission begins reduces capacity to one, and three
+successive observations below 25ms restore two. These intervals include CPU
+submission, GPU queueing and observation delay; they are not GPU timestamps.
+WebGL polls the fence nonblockingly before each capacity decision, so the 16ms
+background timer does not impose a frame-rate ceiling. Failure, replacement and
+disposal cancel owned tickets and cannot wake a removed root. Source readiness
+retains its independent completed-work contract.
+
 Public walkthroughs and the internal capture console retain the full captured
 interior. The generated bundle extent can come from the scanner trajectory; it
 frames the camera and constrains movement but does not guarantee containment of
