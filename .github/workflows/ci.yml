@@ -30,9 +30,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'release/**']
   pull_request:
-    branches: [master]
+    branches: [master, 'release/**']
 
 # Cancel any in-flight runs for the same ref when a new commit lands —
 # saves CI minutes when force-pushing or rapid-iterating on a PR.
