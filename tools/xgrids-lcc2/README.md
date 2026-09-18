@@ -45,6 +45,12 @@ Add `--room <slug>` to either command to work on one room.
 `stage` skips a tile that is already staged at the same size, so re-running to
 refresh the manifest costs seconds rather than recopying a gigabyte.
 
+The former `lcc2 lod --build-lod` command is retired. It exits with an error
+before reading captures or manifests, writing files, or launching a builder.
+Use `stage` for canonical capture tiles; [native Three.js rendering](../../docs/engineering/native-splats.md)
+consumes those tiles directly. Existing RAD/RADC descriptors remain historical
+provenance, and this tool no longer generates Spark trees.
+
 ## How a room is measured
 
 Per axis, build an occupancy histogram of the mesh vertices, smooth it, and keep

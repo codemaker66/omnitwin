@@ -13,8 +13,9 @@ including one unexplained Spark stall. These isolated rAF medians do not establi
 statistical significance, equal motion fidelity or broad device performance.
 Separate complete-application checks, unchanged Linux captures, all three full
 release CI runs and corrected production verification now pass. The
-[native implementation is deployed](#production-delivery); founder visual
-inspection and physical-device qualification remain separate.
+[native implementation is deployed](#production-delivery). Blake subsequently
+accepted the inspected native result and confirmed Spark removal; physical-device
+qualification remains separate.
 
 **Original baseline outcome:** the application used external Spark. The focused desktop comparison
 measured about **20% higher frame rate** with stock Three r186 native WebGPU, retaining
@@ -561,8 +562,10 @@ Evidence is under `output/playwright/native-migration/`: the three run/attempt
 directories, `release-helpers/recovery-pr32-preview/` and
 `recovery-public-smoke/final-da944981/`.
 
-These are technical delivery checks. Founder aesthetic acceptance, physical
-device coverage and pixel/temporal parity with Spark are not claimed. The live
+These are technical delivery checks. Blake subsequently accepted the inspected
+native result on 18 September: “go ahead and cut out spark, i am satisfied with
+the results :)”. This acceptance covers the renderer migration; physical-device
+coverage and pixel/temporal parity with Spark are not claimed. The live
 readiness bridge does not independently expose decoded point counts. Native
 exports passed the actual local app build on both backends; the live guest
 planner export was not invoked because it creates/saves production draft and

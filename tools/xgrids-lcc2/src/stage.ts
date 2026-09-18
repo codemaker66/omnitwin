@@ -24,9 +24,9 @@ export interface StagedFile {
 }
 
 /**
- * A prebuilt level-of-detail tree for one tile: the header (`file`) and the
- * chunks the viewer pages in, all under `lod/`. `splats` is the tree's own
- * count, leaves and interior nodes together.
+ * Historical Spark level-of-detail provenance: the header (`file`) and its
+ * chunks, all under `lod/`. `splats` counts leaves and interior nodes together.
+ * Native rendering uses the canonical capture tile, not this legacy tree.
  */
 export interface StagedLodTree extends StagedFile {
   readonly splats: number;
@@ -39,7 +39,7 @@ export interface StagedTile {
   readonly sha256: string;
   readonly lodLevel: number | null;
   readonly isEnvironment: boolean;
-  /** Present once `lcc2 lod` has built this tile's tree. */
+  /** Historical tree metadata retained when rewriting an existing descriptor. */
   readonly lod?: StagedLodTree;
 }
 
@@ -173,10 +173,9 @@ export function writeRoomManifest(outPath: string, entries: readonly RoomManifes
     "}",
     "",
     "/**",
-    " * A prebuilt Spark level-of-detail tree for one tile: the header (`file`)",
-    " * and the chunks the viewer pages in, all under `lod/`. Loaded with",
-    " * `paged: true` and WITHOUT the `lod` flag, which would rebuild the tree",
-    " * the file already carries. `splats` counts leaves and interior nodes.",
+    " * Historical Spark level-of-detail provenance: the header (`file`) and",
+    " * its chunks under `lod/`. Native rendering uses the canonical capture",
+    " * tile. `splats` counts leaves and interior nodes together.",
     " */",
     "export interface GeneratedSplatLod extends GeneratedSplatFile {",
     "  readonly splats: number;",
@@ -191,7 +190,7 @@ export function writeRoomManifest(outPath: string, entries: readonly RoomManifes
     "  readonly lodLevel: number | null;",
     "  /** The environment sphere, which is not room geometry. */",
     "  readonly isEnvironment: boolean;",
-    "  /** The tile's prebuilt tree, once `lcc2 lod` has built it. */",
+    "  /** Historical tree metadata; not selected by the native renderer. */",
     "  readonly lod?: GeneratedSplatLod;",
     "}",
     "",
