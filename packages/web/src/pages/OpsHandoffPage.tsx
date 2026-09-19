@@ -4,6 +4,7 @@ import { AlertCircle, ClipboardCheck, FileText, Printer, RefreshCw, Truck } from
 import type { OpsHandoffPackBundle, OpsTask, TaskGroup } from "@omnitwin/types";
 import { getOpsHandoffPack } from "../api/ops-handoff.js";
 import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
+import "../styles/hallkeeper-register.css";
 import "./OpsHandoffPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 import { ActivityIndicator } from "../components/shared/Activity.js";

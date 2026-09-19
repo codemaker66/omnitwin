@@ -44,12 +44,23 @@ import {
   transitionEventMissionStatus,
   transitionEventMissionTask,
 } from "../../api/event-mission-control.js";
+import "../../styles/hallkeeper-register.css";
 import "./EventMissionControl.css";
 
 interface EventMissionControlProps {
   readonly eventId: string;
   readonly handoffPackId: string | null;
   readonly onMissionActiveChange?: (active: boolean) => void;
+  /**
+   * Whether THIS surface owns task and incident entry (Ship Friday decision
+   * 7). The event-day board is the hallkeeper's surface, so when it mounts
+   * Mission Control it passes false: the phase rail, timeline and read-only
+   * incident list stay, the task grid and incident form do not. Two forms
+   * writing to two different tables, side by side, is how a room ends up
+   * with two truths about the same evening. Defaults to true so the
+   * component still stands alone wherever it is mounted on its own.
+   */
+  readonly ownsExecutionControls?: boolean;
 }
 
 interface IncidentDraft {
@@ -167,7 +178,7 @@ const MissionSpatialMap = memo(function MissionSpatialMap(props: {
       <div className="mission-panel-heading">
         <MapPinned aria-hidden="true" />
         <div>
-          <h3 id="mission-map-title">Spatial command map</h3>
+          <h3 id="mission-map-title">Where the tasks are</h3>
           <p>Planning references in metres, not survey marks.</p>
         </div>
       </div>
@@ -501,20 +512,22 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
   const displayedPhases = replay?.state.phases ?? board.phases;
   const displayedIncidents = replay?.state.incidents ?? board.incidents;
   const isLiveEdge = replay === null && board.mission.status === "live";
+  const ownsControls = props.ownsExecutionControls ?? true;
+  const canAct = isLiveEdge && ownsControls;
   const missionHeading = board.mission.status === "live"
     ? activePhase === null ? "Mission live · phase not started" : `Now · ${activePhase.name}`
     : board.mission.status === "completed" ? "Mission complete · replay retained" : "Mission cancelled · replay retained";
 
   return (
-    <section className="mission-shell" aria-label="4D Event Mission Control">
+    <section className="mission-shell" aria-label="Event mission record">
       <header className="mission-command-header">
         <div>
-          <p className="mission-eyebrow"><Radio aria-hidden="true" /> 4D Mission Control</p>
+          <p className="mission-eyebrow"><Radio aria-hidden="true" /> Mission record</p>
           <h2>{missionHeading}</h2>
         </div>
         <div className="mission-command-actions">
           <div className="mission-live-state" data-live={isLiveEdge}>
-            <span /> {isLiveEdge ? "Live edge" : replay === null ? board.mission.status : `Replay · #${String(viewingSequence)}`}
+            <span /> {isLiveEdge ? "Live now" : replay === null ? board.mission.status : `Replay · #${String(viewingSequence)}`}
           </div>
           {board.mission.status === "live" && replay === null && (
             <button type="button" className="mission-complete-trigger" onClick={() => { setEndConfirm(true); }}>Finish mission</button>
@@ -539,13 +552,13 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
       </div>
 
       <section className="mission-phase-rail" aria-labelledby="mission-phase-title">
-        <div className="mission-panel-heading"><CircleDot aria-hidden="true" /><div><h3 id="mission-phase-title">Phase authority</h3></div></div>
+        <div className="mission-panel-heading"><CircleDot aria-hidden="true" /><div><h3 id="mission-phase-title">Phases</h3></div></div>
         <ol>
           {displayedPhases.map((phase) => (
             <li key={phase.id} data-status={phase.status}>
               <div><span>{phase.status}</span><strong>{phase.name}</strong></div>
-              {isLiveEdge && phase.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "active"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Go live</button>}
-              {isLiveEdge && phase.status === "active" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "completed"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Complete</button>}
+              {canAct && phase.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "active"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Go live</button>}
+              {canAct && phase.status === "active" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "completed"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Complete</button>}
             </li>
           ))}
         </ol>
@@ -561,12 +574,15 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
         </section>
       </div>
 
-      {isLiveEdge && <MissionTaskGrid tasks={board.tasks} busyId={busyId} onTransition={transitionTask} />}
+      {canAct && <MissionTaskGrid tasks={board.tasks} busyId={busyId} onTransition={transitionTask} />}
 
       <div className="mission-grid">
         <section className="mission-incidents" aria-labelledby="mission-incidents-title">
           <div className="mission-panel-heading"><AlertTriangle aria-hidden="true" /><div><h3 id="mission-incidents-title">Incident channel</h3></div></div>
-          {isLiveEdge && (
+          {!ownsControls && (
+            <p className="mission-empty-copy">Issues are logged and resolved on the event-day board.</p>
+          )}
+          {canAct && (
             <form onSubmit={submitIncident}>
               <input aria-label="Incident title" placeholder="Incident title" maxLength={180} required value={incidentDraft.title} onChange={(event) => { setIncidentDraft((current) => ({ ...current, title: event.target.value })); }} />
               <textarea aria-label="Incident detail" placeholder="What happened, where, and what is needed?" required rows={3} value={incidentDraft.detail} onChange={(event) => { setIncidentDraft((current) => ({ ...current, detail: event.target.value })); }} />
@@ -580,7 +596,7 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
         </section>
 
         <section className="mission-timeline" aria-labelledby="mission-timeline-title">
-          <div className="mission-panel-heading"><Rewind aria-hidden="true" /><div><h3 id="mission-timeline-title">Time machine</h3><p>Replay history. The live event continues.</p></div></div>
+          <div className="mission-panel-heading"><Rewind aria-hidden="true" /><div><h3 id="mission-timeline-title">History</h3><p>Replay what happened. The live event continues.</p></div></div>
           <label>Replay through sequence {viewingSequence}
             <input type="range" min="0" max={board.latestSequence} value={viewingSequence} onChange={(event) => { setViewingSequence(Number(event.target.value)); }} />
           </label>

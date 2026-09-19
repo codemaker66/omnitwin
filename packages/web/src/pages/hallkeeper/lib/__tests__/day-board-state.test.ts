@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarResponse } from "@omnitwin/types";
-import { deriveDayBoard, type DayBoardSlot } from "../day-board-state.js";
+import {
+  deriveDayBoard,
+  deriveSlotRequestSignal,
+  type DayBoardSlot,
+  type DayBoardSlotRequest,
+} from "../day-board-state.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board state machine (Day Board S1) — tests written FIRST.
@@ -265,5 +270,143 @@ describe("deriveDayBoard — shape and hygiene", () => {
     expect(slot.stateLabel.length).toBeGreaterThan(0);
     expect(slot.countdown.length).toBeGreaterThan(0);
     expect(slot.timeRange).toMatch(/\d{1,2}:\d{2}/u);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Requests on the slot (Ship Friday slice 10). The rule under test: ONE pulse
+// when something arrives, then a steady dot for as long as it is open, and
+// nothing at all on a slot with nothing waiting.
+// ---------------------------------------------------------------------------
+
+function request(overrides: Partial<DayBoardSlotRequest> = {}): DayBoardSlotRequest {
+  return {
+    id: "req-1",
+    bookingId: BOOKING,
+    kind: "refreshments",
+    quantity: 6,
+    urgency: "now",
+    state: "sent",
+    createdAt: new Date(NOW).toISOString(),
+    ...overrides,
+  };
+}
+
+describe("the request signal on a slot", () => {
+  it("is nothing at all when nothing is open", () => {
+    expect(deriveSlotRequestSignal([], NOW)).toBeNull();
+    expect(deriveSlotRequestSignal([request({ state: "resolved" })], NOW)).toBeNull();
+  });
+
+  it("pulses once for a request that has just arrived", () => {
+    const signal = deriveSlotRequestSignal([request()], NOW);
+    expect(signal?.motion).toBe("pulse-once");
+    expect(signal?.dot).toBe("copper");
+  });
+
+  it("holds a steady dot once the arrival is no longer fresh", () => {
+    const signal = deriveSlotRequestSignal([request()], NOW + 21_000);
+    expect(signal?.motion).toBe("none");
+    expect(signal?.dot).toBe("copper");
+  });
+
+  it("counts what is waiting and says so in words", () => {
+    const signal = deriveSlotRequestSignal([
+      request({ id: "a" }),
+      request({ id: "b", state: "accepted" }),
+    ], NOW + 60_000);
+    expect(signal?.openCount).toBe(2);
+    expect(signal?.waitingCount).toBe(1);
+    expect(signal?.label).toBe("2 requests · 1 waiting");
+  });
+
+  it("says one request in words, not a numeral", () => {
+    expect(deriveSlotRequestSignal([request()], NOW)?.label).toBe("One request waiting");
+  });
+
+  it("says a request is in hand once somebody has it", () => {
+    const signal = deriveSlotRequestSignal([request({ state: "accepted" })], NOW);
+    expect(signal?.label).toBe("One request in hand");
+    expect(signal?.urgent).toBe(false);
+  });
+
+  it("is urgent only while an urgent request is still unanswered", () => {
+    expect(deriveSlotRequestSignal([request({ urgency: "now" })], NOW)?.urgent).toBe(true);
+    expect(deriveSlotRequestSignal([request({ urgency: "routine" })], NOW)?.urgent).toBe(false);
+    expect(deriveSlotRequestSignal([request({ urgency: "now", state: "acknowledged" })], NOW)?.urgent)
+      .toBe(false);
+  });
+
+  it("pulses for the newest arrival, not the oldest", () => {
+    const signal = deriveSlotRequestSignal([
+      request({ id: "old", createdAt: new Date(NOW - 10 * MIN).toISOString() }),
+      request({ id: "new", createdAt: new Date(NOW).toISOString() }),
+    ], NOW);
+    expect(signal?.newestId).toBe("new");
+    expect(signal?.motion).toBe("pulse-once");
+  });
+});
+
+describe("requests reaching the board", () => {
+  it("attaches a booking's own requests to its slot and nobody else's", () => {
+    const response = baseResponse();
+    response.entries = [
+      booking(60, 240),
+      booking(60, 240, { id: BOOKING_2, spaceId: SALOON, title: "Saloon drinks" }),
+    ];
+    const board = deriveDayBoard(response, NOW, "Europe/London", [
+      request({ id: "a", bookingId: BOOKING }),
+      request({ id: "b", bookingId: BOOKING_2 }),
+      request({ id: "c", bookingId: BOOKING }),
+    ]);
+    const grand = board.lanes.find((lane) => lane.room.id === GRAND_HALL)?.slots[0];
+    const saloon = board.lanes.find((lane) => lane.room.id === SALOON)?.slots[0];
+    expect(grand?.requests.map((item) => item.id)).toEqual(["a", "c"]);
+    expect(grand?.requestSignal?.openCount).toBe(2);
+    expect(saloon?.requests.map((item) => item.id)).toEqual(["b"]);
+  });
+
+  it("drops finished requests before they reach a slot", () => {
+    const response = baseResponse();
+    response.entries = [booking(60, 240)];
+    const board = deriveDayBoard(response, NOW, "Europe/London", [
+      request({ id: "done", state: "resolved" }),
+    ]);
+    const slot = board.lanes.find((lane) => lane.room.id === GRAND_HALL)?.slots[0];
+    expect(slot?.requests).toEqual([]);
+    expect(slot?.requestSignal).toBeNull();
+  });
+
+  it("ignores a request that belongs to no booking", () => {
+    const response = baseResponse();
+    response.entries = [booking(60, 240)];
+    const board = deriveDayBoard(response, NOW, "Europe/London", [request({ bookingId: null })]);
+    const slot = board.lanes.find((lane) => lane.room.id === GRAND_HALL)?.slots[0];
+    expect(slot?.requests).toEqual([]);
+  });
+
+  it("leaves a board derived without requests exactly as it was", () => {
+    const response = baseResponse();
+    response.entries = [booking(60, 240)];
+    const slot = deriveDayBoard(response, NOW, "Europe/London").lanes[0]?.slots[0];
+    expect(slot?.requests).toEqual([]);
+    expect(slot?.requestSignal).toBeNull();
+  });
+
+  it("still carries requests on a slot flagged as an exception", () => {
+    const response = baseResponse();
+    response.entries = [booking(60, 240), booking(255, 330, { id: BOOKING_2 })];
+    response.conflicts.conflicts = [{
+      id: "conflict-3",
+      type: "insufficient_turnaround",
+      severity: "blocking",
+      spaceId: GRAND_HALL,
+      entryIds: [BOOKING, BOOKING_2],
+      explanation: "Only 15 minutes between this booking and the next.",
+    }];
+    const board = deriveDayBoard(response, NOW, "Europe/London", [request()]);
+    const slot = board.lanes.find((lane) => lane.room.id === GRAND_HALL)?.slots[0];
+    expect(slot?.state).toBe("exception");
+    expect(slot?.requestSignal?.openCount).toBe(1);
   });
 });

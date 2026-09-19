@@ -73,6 +73,10 @@ import type {
   ReconstructionReleaseArtifactRef,
   ReconstructionReleaseManifest,
   ReconstructionVisualEvidence,
+  RequestKind,
+  RequestOutcome,
+  RequestState,
+  RequestUrgency,
   RuntimePackageManifestJson,
   RuntimePackageRevisionIdentityKind,
   RuntimeQaRecordV0,
@@ -5534,4 +5538,77 @@ export const quizRuns = pgTable("quiz_runs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("quiz_runs_quiz_created_idx").on(table.quiz, table.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
+// 32. Requests — the one-tap ask from the floor (Ship Friday slice 10).
+//
+// `venue_settings` holds the venue's operating settings; the first is the
+// escalation window, so how long an unanswered "now" request waits before the
+// venue administrator hears about it is DATA, not a constant in code. A venue
+// with no row never escalates.
+//
+// `requests` carries its audience as a list written once at creation. No code
+// path widens it: the read filter reads the stored list, and the transition
+// path never touches the column.
+// ---------------------------------------------------------------------------
+
+export const venueSettings = pgTable("venue_settings", {
+  venueId: uuid("venue_id").primaryKey().references(() => venues.id, { onDelete: "cascade" }),
+  requestEscalationSeconds: integer("request_escalation_seconds").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("venue_settings_escalation_window", sql`${table.requestEscalationSeconds} BETWEEN 30 AND 86400`),
+]);
+
+export const requests = pgTable("requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id, { onDelete: "cascade" }),
+  bookingId: uuid("booking_id").references(() => bookings.id, { onDelete: "set null" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  roomId: uuid("room_id").notNull().references(() => spaces.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 20 }).$type<RequestKind>().notNull(),
+  quantity: integer("quantity"),
+  urgency: varchar("urgency", { length: 10 }).$type<RequestUrgency>().notNull(),
+  detail: text("detail"),
+  requestedByUserId: uuid("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  requestedByName: varchar("requested_by_name", { length: 160 }).notNull(),
+  requestedByRole: varchar("requested_by_role", { length: 30 }).notNull(),
+  /** Fixed at creation. Nothing in the API widens this list. */
+  audienceRoles: jsonb("audience_roles").$type<readonly string[]>().notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  ownerName: varchar("owner_name", { length: 160 }),
+  state: varchar("state", { length: 20 }).$type<RequestState>().notNull().default("sent"),
+  outcome: varchar("outcome", { length: 30 }).$type<RequestOutcome>(),
+  outcomeNote: text("outcome_note"),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  escalationDueAt: timestamp("escalation_due_at", { withTimezone: true }),
+  escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("requests_venue_idempotency_unique").on(table.venueId, table.idempotencyKey),
+  index("requests_venue_state_created_idx").on(table.venueId, table.state, table.createdAt),
+  index("requests_booking_idx").on(table.bookingId, table.createdAt),
+  check("requests_outcome_follows_state", sql`(${table.state} = 'resolved') = (${table.outcome} IS NOT NULL)`),
+  check("requests_quantity", sql`${table.quantity} IS NULL OR (${table.quantity} BETWEEN 1 AND 999)`),
+]);
+
+export const requestStatusHistory = pgTable("request_status_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  requestId: uuid("request_id").notNull().references(() => requests.id, { onDelete: "cascade" }),
+  fromState: varchar("from_state", { length: 20 }).$type<RequestState>(),
+  toState: varchar("to_state", { length: 20 }).$type<RequestState>().notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: varchar("actor_name", { length: 160 }).notNull(),
+  actorRole: varchar("actor_role", { length: 30 }).notNull(),
+  outcome: varchar("outcome", { length: 30 }).$type<RequestOutcome>(),
+  note: text("note"),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("request_status_history_request_idx").on(table.requestId, table.at),
 ]);

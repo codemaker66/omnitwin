@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSheetApproval,
+  deriveSheetTiming,
   parseStoredSnapshotPayload,
 } from "../../services/hallkeeper-sheet-v2-data.js";
 import { LEGACY_RENDER_COORDINATE_SPACE } from "../../db/coordinate-space.js";
@@ -218,5 +219,54 @@ describe("buildSheetApproval", () => {
       { name: "Staff User", displayName: null },
     );
     expect(approval?.version).toBe(42);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// deriveSheetTiming — the sheet's clock (Ship Friday gate line 20)
+//
+// The old rule took an enquiry's preferredDate and asserted an 18:00 UTC
+// start with a 16:30 "setup by". That number agreed with nothing on the
+// timetable: a 14:00 booking printed "Setup by 16:30", which is an hour a
+// hallkeeper could actually set a room to, and be wrong. Times now come from
+// the Diary booking that holds the room, or they do not come at all.
+// ---------------------------------------------------------------------------
+
+describe("deriveSheetTiming", () => {
+  it("takes the event start from the booking, not from a default hour", () => {
+    const timing = deriveSheetTiming(new Date("2026-09-18T13:00:00.000Z"), null);
+    expect(timing?.eventStart).toBe("2026-09-18T13:00:00.000Z");
+    // Nothing anywhere in the result may be 18:00 UTC by construction.
+    expect(timing?.eventStart.slice(11, 16)).not.toBe("18:00");
+  });
+
+  it("falls back to the venue's 90-minute setup buffer when no phase is scheduled", () => {
+    const timing = deriveSheetTiming(new Date("2026-09-18T13:00:00.000Z"), null);
+    expect(timing?.setupBy).toBe("2026-09-18T11:30:00.000Z");
+    expect(timing?.bufferMinutes).toBe(90);
+  });
+
+  it("prefers the earliest scheduled phase in the room over the default buffer", () => {
+    const timing = deriveSheetTiming(
+      new Date("2026-09-18T13:00:00.000Z"),
+      new Date("2026-09-18T09:00:00.000Z"),
+    );
+    expect(timing?.setupBy).toBe("2026-09-18T09:00:00.000Z");
+    // The reported buffer is the REAL gap, never the constant.
+    expect(timing?.bufferMinutes).toBe(240);
+  });
+
+  it("ignores a phase that starts after the booking rather than reporting a negative buffer", () => {
+    const timing = deriveSheetTiming(
+      new Date("2026-09-18T13:00:00.000Z"),
+      new Date("2026-09-18T15:00:00.000Z"),
+    );
+    expect(timing?.setupBy).toBe("2026-09-18T11:30:00.000Z");
+    expect(timing?.bufferMinutes).toBe(90);
+  });
+
+  it("returns null for an unparseable instant instead of freezing Invalid Date into a snapshot", () => {
+    expect(deriveSheetTiming(new Date("not-a-date"), null)).toBeNull();
   });
 });

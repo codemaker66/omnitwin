@@ -733,3 +733,76 @@ export async function holdDecisionReminder(
   const html = await render(<HoldDecisionReminderEmail {...data} />);
   return { subject, html };
 }
+
+// ---------------------------------------------------------------------------
+// requestEscalation — sent to the venue administrator when a request marked
+// "now" has been sitting unanswered for longer than the venue's own window
+// (Ship Friday slice 10). The window is read from venue_settings, never from
+// a constant, so this email follows whatever the venue has decided.
+//
+// Claim-safe copy: it reports what was asked and how long it has waited. It
+// asserts nothing about safety, staffing or what anyone ought to do next.
+// ---------------------------------------------------------------------------
+
+export interface RequestEscalationData {
+  /** The administrator's display name; null renders without a salutation. */
+  readonly adminName: string | null;
+  readonly kindLabel: string;
+  readonly quantity: number | null;
+  readonly roomName: string;
+  readonly requestedByName: string;
+  readonly detail: string | null;
+  readonly waitingMinutes: number;
+  readonly dayBoardUrl: string;
+}
+
+export function RequestEscalationEmail(props: RequestEscalationData): ReactElement {
+  const minuteWord = props.waitingMinutes === 1 ? "minute" : "minutes";
+  const asked = props.quantity === null
+    ? props.kindLabel
+    : `${props.kindLabel} × ${String(props.quantity)}`;
+  return (
+    <Layout
+      label="Still waiting"
+      preview={`${asked} in ${props.roomName} — waiting ${String(props.waitingMinutes)} ${minuteWord}`}
+    >
+      <Heading style={h2Style()}>A request is still waiting</Heading>
+      {props.adminName !== null && props.adminName !== "" && (
+        <Text style={{ fontSize: 13, color: INK_SOFT, margin: "0 0 8px" }}>
+          Hi {props.adminName},
+        </Text>
+      )}
+      <Text style={paragraphStyle}>
+        Nobody has picked this up yet.
+      </Text>
+      <Section>
+        <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
+          <tbody>
+            <MetaRow label="Asked for" value={asked} />
+            <MetaRow label="Room" value={props.roomName} />
+            <MetaRow label="Asked by" value={props.requestedByName} />
+            <MetaRow label="Waiting" value={`${String(props.waitingMinutes)} ${minuteWord}`} />
+            <MetaRow label="Note" value={props.detail} />
+          </tbody>
+        </table>
+      </Section>
+      <Section style={{ marginTop: 20 }}>
+        <Button href={props.dayBoardUrl} style={buttonStyle}>
+          Open the Day Board
+        </Button>
+      </Section>
+      <Hr style={{ marginTop: 24, borderColor: "#eee" }} />
+    </Layout>
+  );
+}
+
+export async function requestEscalation(
+  data: RequestEscalationData,
+): Promise<{ subject: string; html: string }> {
+  const asked = data.quantity === null
+    ? data.kindLabel
+    : `${data.kindLabel} × ${String(data.quantity)}`;
+  const subject = `Still waiting — ${asked} in ${data.roomName}`;
+  const html = await render(<RequestEscalationEmail {...data} />);
+  return { subject, html };
+}

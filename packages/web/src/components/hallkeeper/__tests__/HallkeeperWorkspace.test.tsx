@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { HallkeeperSheetV2Schema } from "@omnitwin/types";
+import { EventPhaseGraphSchema, HallkeeperSheetV2Schema, type EventPhaseGraph } from "@omnitwin/types";
 import { HallkeeperWorkspace, type HallkeeperWorkspaceProps } from "../HallkeeperWorkspace.js";
-import { useHallkeeperContext } from "../useHallkeeperContext.js";
+import { useHallkeeperContext, type HallkeeperVerifiedContext } from "../useHallkeeperContext.js";
 
 vi.mock("../useHallkeeperContext.js", () => ({ useHallkeeperContext: vi.fn() }));
 vi.mock("../HallkeeperStatusBanner.js", () => ({ HallkeeperStatusBanner: () => null }));
@@ -18,6 +18,9 @@ vi.mock("../InteractiveFloorPlan.js", () => ({
 }));
 
 const CONFIG_ID = "00000000-0000-4000-8000-000000000001";
+const VENUE_ID = "00000000-0000-4000-8000-000000000002";
+const ROOM_ID = "00000000-0000-4000-8000-000000000003";
+const EVENT_ID = "00000000-0000-4000-8000-000000000004";
 const rowKey = (index: number): string => `furniture|Centre|Table ${String(index).padStart(2, "0")}|0`;
 
 const sheet = HallkeeperSheetV2Schema.parse({
@@ -152,5 +155,70 @@ describe("HallkeeperWorkspace compact working views", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next setup items" }));
     expect(setupPanel().getByText("6–10 of 12 checks")).toBeTruthy();
     expect(props.onToggle).not.toHaveBeenCalled();
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// The sheet's clock (Ship Friday gate line 20)
+//
+// The sheet and the PDF printed from it must agree, and both must equal the
+// Diary. `data.timing` is the Diary reading (resolved from the booking that
+// holds the room); `events.starts_at` is planning metadata that drifts from
+// it — on the seeded Mackenzie-Ross wedding the event row says 13:00 while
+// the booking says 09:00. Preferring the row put two different hours on one
+// hallkeeper's desk.
+// ---------------------------------------------------------------------------
+
+describe("HallkeeperWorkspace event time", () => {
+  const diaryTiming = {
+    eventStart: "2026-09-19T08:00:00.000Z",  // 09:00 Europe/London
+    setupBy: "2026-09-19T06:30:00.000Z",     // 07:30 Europe/London
+    bufferMinutes: 90,
+  };
+
+  /** A verified context whose EVENT ROW carries `startsAt` — the value the
+   *  card must not prefer over the Diary reading in `data.timing`. */
+  function withGraphStart(startsAt: string): void {
+    const graph: EventPhaseGraph = EventPhaseGraphSchema.parse({
+      event: {
+        id: EVENT_ID, venueId: VENUE_ID, createdBy: null, name: "Mackenzie-Ross wedding",
+        eventType: "wedding", status: "ready_for_ops", startsAt, endsAt: null, guestCount: 120,
+        clientName: "Mackenzie", notes: null, createdAt: startsAt, updatedAt: startsAt,
+      },
+      phases: [], scenarios: [], layoutVariants: [], configurationLinks: [], phaseLayoutSnapshots: [],
+    });
+    const context: HallkeeperVerifiedContext = {
+      configId: CONFIG_ID,
+      venue: { id: VENUE_ID, slug: "trades-hall-glasgow", name: "Test venue" },
+      room: { id: ROOM_ID, slug: "north-gallery", name: "North Gallery" },
+      graph,
+      board: null,
+      layouts: [],
+      unavailableLayoutCount: 0,
+      opsError: null,
+    };
+    vi.mocked(useHallkeeperContext).mockReturnValue({ status: "ready", error: null, retry: vi.fn(), context });
+  }
+
+  it("shows the Diary's hour even when the event row disagrees", () => {
+    withGraphStart("2026-09-19T12:00:00.000Z"); // 13:00 London — the drifted row
+    mount({ data: { ...sheet, timing: diaryTiming } });
+    expect(screen.getByText("Event starts")).toBeTruthy();
+    expect(screen.getByText("09:00")).toBeTruthy();
+    expect(screen.queryByText("13:00")).toBeNull();
+  });
+
+  it("carries the setup deadline and the venue's zone on the same card", () => {
+    withGraphStart("2026-09-19T12:00:00.000Z");
+    mount({ data: { ...sheet, timing: diaryTiming } });
+    expect(screen.getByText(/Set up by 07:30/u)).toBeTruthy();
+    expect(screen.getByText(/Europe\/London/u)).toBeTruthy();
+  });
+
+  it("says the event is not in the Diary rather than inventing an hour", () => {
+    mount();
+    expect(screen.getByText("Not in the Diary yet")).toBeTruthy();
+    expect(screen.getByText("Not provided")).toBeTruthy();
   });
 });

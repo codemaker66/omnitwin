@@ -35,6 +35,7 @@ import { runtimePackagePreviewRoutes } from "./routes/runtime-package-previews.j
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
 import { clientEventScheduleRoutes } from "./routes/client-event-schedule.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
+import { requestRoutes, venueRequestRoutes } from "./routes/requests.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
 import { eventDayEventRoutes, eventDayOpsTaskRoutes } from "./routes/event-day-ops.js";
 import { opsHandoffRoutes } from "./routes/ops-handoff.js";
@@ -400,6 +401,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(phaseLayoutSnapshotRoutes, { db, prefix: "/events" });
   await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });
   await server.register(notificationRoutes, { db, prefix: "/notifications" });
+  await server.register(venueRequestRoutes, { db, prefix: "/venues" });
+  await server.register(requestRoutes, { db, prefix: "/requests" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionRoutes, { db, prefix: "/event-missions" });

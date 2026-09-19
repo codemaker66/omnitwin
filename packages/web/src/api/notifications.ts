@@ -27,6 +27,15 @@ export async function listNotifications(
   return api.get(`/notifications?${params.toString()}`, NotificationListSchema);
 }
 
+const UnreadCountSchema = z.object({ unread: z.number().int().min(0) });
+
+/** The number on the nav. A count, not the length of a capped page, so a busy
+ *  day reads honestly instead of stopping at the page size. */
+export async function getUnreadNotificationCount(): Promise<number> {
+  const result = await api.get("/notifications/unread-count", UnreadCountSchema);
+  return result.unread;
+}
+
 export async function markNotificationRead(notificationId: string): Promise<Notification> {
   return api.patch(`/notifications/${encodeURIComponent(notificationId)}/read`, {}, NotificationSchema);
 }

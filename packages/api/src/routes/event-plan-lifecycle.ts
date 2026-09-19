@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, exists, isNotNull, isNull, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, exists, isNotNull, isNull, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   ChangeFeedListQuerySchema,
@@ -173,6 +173,47 @@ export async function notificationRoutes(server: FastifyInstance, opts: { db: Da
     });
 
     return { data: serializeNotification(notification, now) };
+  });
+
+  // The number on the nav. A count rather than the length of a capped list,
+  // so a busy day reads "23" instead of quietly stopping at the page size
+  // (Ship Friday slice 10 — requests land here too).
+  server.get("/unread-count", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const role = audienceRoleForRequest(request);
+    const conditions: SQL[] = [eq(eventPlanNotifications.recipientUserId, request.user.id)];
+
+    if (role !== null) {
+      if (isPlatformAdmin(request.user)) {
+        const roleCondition = and(
+          isNull(eventPlanNotifications.recipientUserId),
+          eq(eventPlanNotifications.audienceRole, role),
+        );
+        if (roleCondition !== undefined) conditions.push(roleCondition);
+      } else if (request.user.venueId !== null) {
+        const roleCondition = and(
+          isNull(eventPlanNotifications.recipientUserId),
+          eq(eventPlanNotifications.venueId, request.user.venueId),
+          eq(eventPlanNotifications.audienceRole, role),
+        );
+        if (roleCondition !== undefined) conditions.push(roleCondition);
+      }
+    }
+
+    const [row] = await db
+      .select({ unread: count() })
+      .from(eventPlanNotifications)
+      .leftJoin(eventPlanNotificationReads, and(
+        eq(eventPlanNotificationReads.notificationId, eventPlanNotifications.id),
+        eq(eventPlanNotificationReads.userId, request.user.id),
+      ))
+      .where(and(
+        or(...conditions),
+        notificationEventScope(db, request),
+        isNull(eventPlanNotificationReads.id),
+      ));
+
+    return { data: { unread: row?.unread ?? 0 } };
   });
 }
 

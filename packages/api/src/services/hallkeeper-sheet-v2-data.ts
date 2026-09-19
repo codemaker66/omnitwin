@@ -1,4 +1,4 @@
-import { eq, and, isNull, isNotNull, inArray, desc } from "drizzle-orm";
+import { eq, ne, and, isNull, isNotNull, inArray, desc, asc } from "drizzle-orm";
 import type {
   EventInstructions,
   HallkeeperSheetV2,
@@ -9,7 +9,8 @@ import type {
 import { hasInstructionContent } from "@omnitwin/types";
 import {
   configurations, placedObjects, assetDefinitions, assetAccessories,
-  spaces, venues, enquiries, configurationSheetSnapshots, users,
+  spaces, venues, configurationSheetSnapshots, users,
+  bookings, eventConfigurationLinks, eventPhases, layoutVariants,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { REAL_METRE_COORDINATE_SPACE, type LayoutCoordinateSpace } from "../db/coordinate-space.js";
@@ -25,15 +26,17 @@ import { buildHallkeeperFloorPlan, type FloorPlanAsset } from "./hallkeeper-floo
 // grouped with dependency ordering and stable keys — see
 // @omnitwin/types/hallkeeper-v2.ts for the schema contract.
 //
-// Timing policy: if the config has a linked enquiry with a preferredDate,
-// we derive an 18:00 event start + 16:30 setupBy (90-minute buffer).
-// Without an enquiry or preferredDate we return timing=null; the web
-// view then hides the timing chip rather than showing a fake number.
-// This is NOT trying to be a scheduling system — it's a reasonable
-// default the hallkeeper can override in conversation with the planner.
+// Timing policy (Ship Friday, gate line 20): times come from the Diary and
+// nowhere else. We resolve the configuration's linked event(s), find the
+// live booking that holds THIS room, and read `eventStart` from that
+// booking's own window. `setupBy` is the earliest scheduled phase in the
+// same room when one exists, otherwise the venue's 90-minute setup buffer
+// before the booked start. When no live booking holds the room we return
+// null and the sheet/PDF say so — the sheet never invents an hour. The
+// previous behaviour (an enquiry's preferredDate at a fixed 18:00 UTC)
+// produced a time that agreed with nothing on the timetable.
 // ---------------------------------------------------------------------------
 
-const DEFAULT_EVENT_START_HOUR = 18;
 const SETUP_BUFFER_MINUTES = 90;
 
 /**
@@ -204,7 +207,11 @@ export async function assembleSheetDataV2(
   //                     varies between environments (localhost / preview /
   //                     prod) and is NOT an intrinsic property of the
   //                     frozen payload
-  const timing = await resolveTiming(db, configId);
+  const timing = await resolveTiming(db, {
+    id: config.id,
+    spaceId: config.spaceId,
+    venueId: config.venueId,
+  });
   const instructions = resolveInstructions(config.metadata);
 
   const livePayload: HallkeeperSheetV2 = {
@@ -406,32 +413,99 @@ export function buildSheetApproval(
 }
 
 /**
- * Pick the most recent enquiry linked to this configId and derive a
- * setupBy/eventStart pair from its preferredDate. If there's no
- * enquiry or no date, return null — the UI hides the timing chip
- * rather than showing a fabricated time.
+ * Pure "booked window + earliest room phase → Timing" step, extracted so the
+ * arithmetic is unit-testable without a database.
+ *
+ * `eventStart` is the Diary booking's own start — never a default hour.
+ * `setupBy` prefers the earliest scheduled phase in the same room (the
+ * planner said when work begins); otherwise it falls back to the venue's
+ * 90-minute setup buffer, and `bufferMinutes` always reports the real gap
+ * so the sheet cannot claim a buffer it does not have.
+ *
+ * Returns null for an unparseable instant rather than emitting "Invalid
+ * Date" into a frozen snapshot.
  */
-async function resolveTiming(db: Database, configId: string): Promise<Timing | null> {
-  const [recent] = await db.select({
-    preferredDate: enquiries.preferredDate,
-  }).from(enquiries)
-    .where(eq(enquiries.configurationId, configId))
-    .orderBy(desc(enquiries.createdAt))
-    .limit(1);
+export function deriveSheetTiming(
+  bookingStartsAt: Date,
+  earliestRoomPhaseStartsAt: Date | null,
+): Timing | null {
+  const startMs = bookingStartsAt.getTime();
+  if (!Number.isFinite(startMs)) return null;
 
-  if (recent === undefined || recent.preferredDate === null) return null;
-
-  // preferredDate is a date-only string from Postgres ("2026-06-15").
-  // Assume a default local-time event start and serialise as ISO UTC so
-  // the front-end can render in the venue's timezone.
-  const dateStr = recent.preferredDate;
-  const eventStart = new Date(`${dateStr}T${String(DEFAULT_EVENT_START_HOUR).padStart(2, "0")}:00:00.000Z`);
-  if (Number.isNaN(eventStart.getTime())) return null;
-  const setupBy = new Date(eventStart.getTime() - SETUP_BUFFER_MINUTES * 60_000);
+  const phaseMs = earliestRoomPhaseStartsAt === null ? null : earliestRoomPhaseStartsAt.getTime();
+  const setupMs = phaseMs !== null && Number.isFinite(phaseMs) && phaseMs < startMs
+    ? phaseMs
+    : startMs - SETUP_BUFFER_MINUTES * 60_000;
 
   return {
-    eventStart: eventStart.toISOString(),
-    setupBy: setupBy.toISOString(),
-    bufferMinutes: SETUP_BUFFER_MINUTES,
+    eventStart: new Date(startMs).toISOString(),
+    setupBy: new Date(setupMs).toISOString(),
+    bufferMinutes: Math.max(0, Math.round((startMs - setupMs) / 60_000)),
   };
+}
+
+/**
+ * Every event this configuration is attached to: explicit event links and
+ * non-archived layout variants. Both are event-owned references, so a
+ * configuration that was never linked to an event yields no booking and
+ * therefore no timing.
+ */
+async function linkedEventIds(db: Database, configId: string): Promise<string[]> {
+  const [links, variants] = await Promise.all([
+    db.select({ eventId: eventConfigurationLinks.eventId })
+      .from(eventConfigurationLinks)
+      .where(eq(eventConfigurationLinks.configurationId, configId)),
+    db.select({ eventId: layoutVariants.eventId })
+      .from(layoutVariants)
+      .where(and(
+        eq(layoutVariants.configurationId, configId),
+        ne(layoutVariants.status, "archived"),
+      )),
+  ]);
+  return [...new Set([...links, ...variants].map((row) => row.eventId))];
+}
+
+/**
+ * Resolve the sheet's times from the Diary: configuration → linked event(s)
+ * → the live booking that holds this configuration's room in this venue.
+ *
+ * Prospect bookings (the sales pipeline) and released/cancelled rows are
+ * excluded — a hallkeeper preps rooms for things that are actually
+ * happening. If nothing holds the room we return null; the sheet and PDF
+ * then say the event is not scheduled rather than printing a fabricated
+ * hour a hallkeeper could set a room to.
+ */
+async function resolveTiming(
+  db: Database,
+  config: { readonly id: string; readonly spaceId: string; readonly venueId: string },
+): Promise<Timing | null> {
+  const eventIds = await linkedEventIds(db, config.id);
+  if (eventIds.length === 0) return null;
+
+  const [booking] = await db.select({ startsAt: bookings.startsAt })
+    .from(bookings)
+    .where(and(
+      inArray(bookings.eventId, eventIds),
+      eq(bookings.spaceId, config.spaceId),
+      eq(bookings.venueId, config.venueId),
+      eq(bookings.status, "active"),
+      ne(bookings.kind, "prospect"),
+      isNull(bookings.deletedAt),
+    ))
+    .orderBy(asc(bookings.startsAt))
+    .limit(1);
+
+  if (booking === undefined) return null;
+
+  const [phase] = await db.select({ startsAt: eventPhases.startsAt })
+    .from(eventPhases)
+    .where(and(
+      inArray(eventPhases.eventId, eventIds),
+      eq(eventPhases.spaceId, config.spaceId),
+      isNotNull(eventPhases.startsAt),
+    ))
+    .orderBy(asc(eventPhases.startsAt))
+    .limit(1);
+
+  return deriveSheetTiming(booking.startsAt, phase?.startsAt ?? null);
 }
