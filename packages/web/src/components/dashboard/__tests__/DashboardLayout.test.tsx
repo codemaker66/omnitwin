@@ -123,7 +123,10 @@ describe("DashboardLayout navigation", () => {
     expect(screen.queryByRole("button", { name: "Sign Out" })).toBeNull();
   });
 
-  it.each(["staff", "hallkeeper", "planner", "executive", "supplier"])("preserves the venue inventory and platform boundaries for %s", async (role) => {
+  // Venue stock is a venue-administration surface: admin and manager only
+  // (goal 18 §6 decision 6b took the hallkeeper's edit). The platform tools
+  // stay behind platformRole regardless of venue role.
+  it.each(["staff", "hallkeeper", "planner", "sales", "caterer"])("preserves the venue inventory and platform boundaries for %s", async (role) => {
     useAuthStore.getState().setUser({ ...admin, role });
     renderShell();
     await screen.findByText("Trades Hall");
@@ -131,12 +134,24 @@ describe("DashboardLayout navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(screen.queryByRole("button", { name: "Admin" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Capture Factory" })).toBeNull();
-    if (role === "executive") {
-      expect(screen.getByRole("button", { name: "Executive Analytics" })).toBeDefined();
-      expect(screen.queryByRole("button", { name: "Enquiries" })).toBeNull();
-      expect(screen.queryByRole("link", { name: "Plan" })).toBeNull();
-    }
-    if (role === "supplier") expect(screen.queryByRole("button", { name: "Enquiries" })).toBeNull();
+    // A caterer is event-scoped: the venue dashboard offers it nothing.
+    if (role === "caterer") expect(screen.queryByRole("button", { name: "Enquiries" })).toBeNull();
+  });
+
+  it("offers a venue manager the stock the API lets it write", async () => {
+    useAuthStore.getState().setUser({ ...admin, role: "manager" });
+    renderShell();
+    await screen.findByText("Trades Hall");
+    expect(screen.getByRole("button", { name: "Inventory" })).toBeDefined();
+  });
+
+  it("offers sales the commercial tabs but not venue stock", async () => {
+    useAuthStore.getState().setUser({ ...admin, role: "sales" });
+    renderShell();
+    await screen.findByText("Trades Hall");
+    expect(screen.queryByRole("button", { name: "Inventory" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("button", { name: "Pipeline" })).toBeDefined();
   });
 
   it("preserves platform tools without granting venue stock authority", async () => {

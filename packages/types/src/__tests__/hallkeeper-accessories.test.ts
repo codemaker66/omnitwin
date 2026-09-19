@@ -84,36 +84,54 @@ describe("ACCESSORY_RULES — shape integrity", () => {
 });
 
 describe("ACCESSORY_RULES — contents spot-check (canonical names)", () => {
-  it("6ft Round Table generates a cloth, a runner (after cloth), candles", () => {
+  // The venue's own equipment document (2026-09-05) states 16 black round
+  // table linens and 10 black poseur linens. Those two are the only implied
+  // dressings, because they are the only ones with a stated quantity.
+  it("6ft Round Table implies one black round linen and nothing else", () => {
     const rules = accessoriesFor("6ft Round Table");
-    const cloth = rules.find((r) => r.name === "Ivory Tablecloth");
-    const runner = rules.find((r) => r.name === "Gold Organza Runner");
-    const candles = rules.find((r) => r.name === "LED Pillar Candle");
-    expect(cloth).toBeDefined();
-    expect(runner).toBeDefined();
-    expect(candles).toBeDefined();
-    expect(cloth?.afterDepth).toBe(0);
-    expect(runner?.afterDepth).toBe(1);
-    expect(candles?.quantityPerParent).toBe(3);
-  });
-
-  it("Banquet Chair implies a sash per chair", () => {
-    const rules = accessoriesFor("Banquet Chair");
     expect(rules).toHaveLength(1);
-    expect(rules[0]?.name).toBe("Gold Chair Sash");
+    expect(rules[0]?.name).toBe("Black Round Table Linen");
     expect(rules[0]?.quantityPerParent).toBe(1);
-  });
-
-  it("Laser Projector implies an HDMI cable in technical phase", () => {
-    const rules = accessoriesFor("Laser Projector");
-    expect(rules.find((r) => r.name === "HDMI Cable (5m)")?.phase).toBe("technical");
-  });
-
-  it("Platform implies a stage skirt in dress phase", () => {
-    const rules = accessoriesFor("Platform");
-    expect(rules).toHaveLength(1);
-    expect(rules[0]?.name).toBe("Black Stage Skirt");
     expect(rules[0]?.phase).toBe("dress");
+    expect(rules[0]?.afterDepth).toBe(0);
+  });
+
+  it("Poseur Table implies one black poseur linen", () => {
+    const rules = accessoriesFor("Poseur Table");
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.name).toBe("Black Poseur Table Linen");
+  });
+
+  it("a cloth-variant table implies nothing — its cloth is the catalogue item", () => {
+    expect(accessoriesFor("Poseur Table (Black)")).toEqual([]);
+    expect(accessoriesFor("Poseur Table (White)")).toEqual([]);
+  });
+
+  it("chairs imply no covering — 104 covers cannot dress every chair", () => {
+    expect(accessoriesFor("Banquet Chair")).toEqual([]);
+    expect(accessoriesFor("Chiavari Wedding Chair")).toEqual([]);
+  });
+
+  it("AV and stage items imply nothing; their consequences are equipment tags", () => {
+    expect(accessoriesFor("Laser Projector")).toEqual([]);
+    expect(accessoriesFor("Lectern")).toEqual([]);
+    expect(accessoriesFor("Platform")).toEqual([]);
+    expect(accessoriesFor("Narrow Platform")).toEqual([]);
+  });
+
+  // The regression this block exists to prevent: a hallkeeper sheet that
+  // sends staff to fetch dressing Trades Hall does not own.
+  it("names no dressing that is absent from the venue's equipment document", () => {
+    const unowned = [
+      "Ivory Tablecloth", "Rectangular Ivory Tablecloth", "Gold Organza Runner",
+      "Floral Centrepiece (low)", "Acrylic Table Number", "LED Pillar Candle",
+      "Gold Chair Sash", "Black Stage Skirt", "HDMI Cable (5m)", "Bottled Water (500ml)",
+    ];
+    const declared = Object.values(ACCESSORY_RULES)
+      .flatMap((rules) => rules.map((rule) => rule.name));
+    for (const name of unowned) {
+      expect(declared, `${name} is not venue stock`).not.toContain(name);
+    }
   });
 });
 

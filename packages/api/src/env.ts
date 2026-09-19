@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createPublicKey } from "node:crypto";
+import { UserRoleSchema } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Zod-validated environment variables — fail fast on startup if missing
@@ -23,7 +24,7 @@ const EnvSchema = z.object({
   // Optional auth domain policy. Empty by default: invitation/pre-provisioned
   // users remain the primary access path.
   VENVIEWER_APPROVED_AUTH_DOMAINS: z.string().min(1).optional(),
-  VENVIEWER_APPROVED_AUTH_DOMAIN_ROLE: z.enum(["client", "planner", "staff", "hallkeeper", "admin"]).default("planner"),
+  VENVIEWER_APPROVED_AUTH_DOMAIN_ROLE: UserRoleSchema.default("planner"),
   VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID: z.string().uuid().optional(),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { inArray } from "drizzle-orm";
 import { type FloorPlanPoint, polygonBoundingBox, ACCESSORY_RULES } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
 import { createDb, isLocalDatabaseUrl } from "./client.js";
@@ -147,6 +148,18 @@ async function seed(): Promise<void> {
     }
   }
 
+  // Idempotent by replacement, not by ON CONFLICT: there is no unique key on
+  // (parent, name, depth) to conflict against, and 0009's header has claimed
+  // "re-running the seed is safe" since the day it was written without that
+  // ever being true — a second run simply added a second copy of every rule.
+  // The seed owns every row it writes here, so it clears its own parents first
+  // and rewrites them. A rule the seed has stopped emitting therefore
+  // disappears on the next run instead of lingering, which is the same
+  // asymmetry migration 0075 fixes for databases that will never be re-seeded.
+  const seededParentIds = insertedAssets.map((asset) => asset.id);
+  if (seededParentIds.length > 0) {
+    await db.delete(assetAccessories).where(inArray(assetAccessories.parentAssetId, seededParentIds));
+  }
   if (accessoryRows.length > 0) {
     await db.insert(assetAccessories).values(accessoryRows);
   }
@@ -294,6 +307,13 @@ async function seed(): Promise<void> {
   //
   // Times: the week of Mon 14 Sep 2026, expressed as Europe/London wall
   // clock (BST, UTC+1 all week) and stored as UTC instants.
+  // Every row this seed writes is a fixture and now says so. Without the
+  // marker the only way to tell the demo week from real ink was to match its
+  // titles, which would also match a real Kerr wedding; with it, "what did the
+  // seed write" is an exact query. Nothing but this file sets the column, and
+  // a real booking leaves it null (migration 0072).
+  const FIXTURE_SOURCE = "seed:trades-hall-demo";
+
   const weekLabel = "week of Mon 14 Sep 2026";
   const bst = (day: number, hour: number, minute = 0): Date =>
     new Date(Date.UTC(2026, 8, 14 + day, hour - 1, minute));
@@ -339,6 +359,7 @@ async function seed(): Promise<void> {
     headcountGuaranteed: 110,
     headcountExpected: 120,
     headcountSetFor: 126,
+    fixtureSource: FIXTURE_SOURCE,
   }).returning();
   if (weddingEvent === undefined) throw new Error("Failed to seed the wedding event");
 
@@ -391,109 +412,109 @@ async function seed(): Promise<void> {
     // --- Grand Hall ---------------------------------------------------------
     {
       venueId: venue.id, spaceId: grandHall, kind: "ink", title: "Chamber of Commerce conference",
-      eventType: "conference", startsAt: bst(0, 9, 0), endsAt: bst(0, 17, 0), createdBy: adminUser.id,
+      eventType: "conference", startsAt: bst(0, 9, 0), endsAt: bst(0, 17, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       // 90-minute gap after the conference vs the 120-minute Grand Hall reset
       // rule → an honest turnaround warning in the seeded calendar.
       venueId: venue.id, spaceId: grandHall, kind: "ink", title: "Charity ceilidh",
-      eventType: "ceilidh", startsAt: bst(0, 18, 30), endsAt: bst(0, 23, 30), createdBy: adminUser.id,
+      eventType: "ceilidh", startsAt: bst(0, 18, 30), endsAt: bst(0, 23, 30), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: grandHall, kind: "prospect", title: "Design fair enquiry",
-      eventType: "exhibition", startsAt: bst(1, 10, 0), endsAt: bst(1, 16, 0), createdBy: adminUser.id,
+      eventType: "exhibition", startsAt: bst(1, 10, 0), endsAt: bst(1, 16, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 1, title: "MacLeod wedding",
-      eventType: "wedding", startsAt: bst(4, 17, 0), endsAt: bst(4, 23, 30), createdBy: adminUser.id,
+      eventType: "wedding", startsAt: bst(4, 17, 0), endsAt: bst(4, 23, 30), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-08-21T12:00:00.000Z"), "Call Fiona MacLeod about the decision date."),
     },
     {
       venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 2, title: "Robertson ceilidh",
-      eventType: "ceilidh", startsAt: bst(4, 18, 0), endsAt: bst(4, 23, 0), createdBy: adminUser.id,
+      eventType: "ceilidh", startsAt: bst(4, 18, 0), endsAt: bst(4, 23, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-08-28T12:00:00.000Z"), "Confirm band availability with the Robertsons."),
     },
     {
       venueId: venue.id, spaceId: grandHall, eventId: weddingEvent.id, kind: "ink",
       title: "Mackenzie–Ross wedding", eventType: "wedding",
-      startsAt: bst(5, 9, 0), endsAt: bst(6, 2, 0), createdBy: adminUser.id,
+      startsAt: bst(5, 9, 0), endsAt: bst(6, 2, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 1, jointFlag: true,
       title: "Kerr wedding", eventType: "wedding",
-      startsAt: bst(6, 14, 0), endsAt: bst(6, 23, 0), createdBy: adminUser.id,
+      startsAt: bst(6, 14, 0), endsAt: bst(6, 23, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-08-14T12:00:00.000Z"), "Offer the Kerrs first-to-confirm terms."),
     },
     {
       venueId: venue.id, spaceId: grandHall, kind: "hold", rank: 1, jointFlag: true,
       title: "Nairn wedding", eventType: "wedding",
-      startsAt: bst(6, 14, 0), endsAt: bst(6, 23, 0), createdBy: adminUser.id,
+      startsAt: bst(6, 14, 0), endsAt: bst(6, 23, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-08-14T12:00:00.000Z"), "Offer the Nairns first-to-confirm terms."),
     },
     // --- Saloon --------------------------------------------------------------
     {
       venueId: venue.id, spaceId: saloon, kind: "ink", title: "Conference drinks reception",
-      eventType: "reception", startsAt: bst(0, 17, 30), endsAt: bst(0, 19, 30), createdBy: adminUser.id,
+      eventType: "reception", startsAt: bst(0, 17, 30), endsAt: bst(0, 19, 30), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: saloon, kind: "internal_block", title: "Floor maintenance",
-      startsAt: bst(2, 8, 0), endsAt: bst(2, 12, 0), createdBy: adminUser.id,
+      startsAt: bst(2, 8, 0), endsAt: bst(2, 12, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: saloon, kind: "hold", rank: 1, title: "Sinclair anniversary",
-      eventType: "dinner", startsAt: bst(3, 18, 0), endsAt: bst(3, 23, 0), createdBy: adminUser.id,
+      eventType: "dinner", startsAt: bst(3, 18, 0), endsAt: bst(3, 23, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-09-01T12:00:00.000Z"), "Send the Sinclairs the dinner menu options."),
     },
     // --- Reception Room ------------------------------------------------------
     {
       venueId: venue.id, spaceId: receptionRoom, kind: "ink", title: "Board strategy morning",
-      eventType: "meeting", startsAt: bst(1, 8, 0), endsAt: bst(1, 12, 0), createdBy: adminUser.id,
+      eventType: "meeting", startsAt: bst(1, 8, 0), endsAt: bst(1, 12, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       // 30-minute gap vs the 90-minute house default → turnaround warning.
       venueId: venue.id, spaceId: receptionRoom, kind: "ink", title: "Alumni dinner",
-      eventType: "dinner", startsAt: bst(1, 12, 30), endsAt: bst(1, 17, 0), createdBy: adminUser.id,
+      eventType: "dinner", startsAt: bst(1, 12, 30), endsAt: bst(1, 17, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: receptionRoom, kind: "hold", rank: 1, title: "Wedding breakfast option",
-      eventType: "wedding", startsAt: bst(5, 10, 0), endsAt: bst(5, 16, 0), createdBy: adminUser.id,
+      eventType: "wedding", startsAt: bst(5, 10, 0), endsAt: bst(5, 16, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-08-25T12:00:00.000Z"), "Check whether the couple wants the smaller room."),
     },
     // --- Robert Adam Room ----------------------------------------------------
     {
       venueId: venue.id, spaceId: robertAdam, kind: "ink", title: "Trustees meeting",
-      eventType: "meeting", startsAt: bst(2, 9, 0), endsAt: bst(2, 11, 0), createdBy: adminUser.id,
+      eventType: "meeting", startsAt: bst(2, 9, 0), endsAt: bst(2, 11, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: robertAdam, kind: "hold", rank: 1, title: "Portrait workshop",
-      eventType: "workshop", startsAt: bst(2, 10, 0), endsAt: bst(2, 13, 0), createdBy: adminUser.id,
+      eventType: "workshop", startsAt: bst(2, 10, 0), endsAt: bst(2, 13, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-09-04T12:00:00.000Z"), "Confirm easel count with the tutor."),
     },
     {
       venueId: venue.id, spaceId: robertAdam, kind: "prospect", title: "Podcast recording enquiry",
-      startsAt: bst(2, 10, 30), endsAt: bst(2, 12, 30), createdBy: adminUser.id,
+      startsAt: bst(2, 10, 30), endsAt: bst(2, 12, 30), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: robertAdam, kind: "ink", title: "Whisky tasting",
-      eventType: "tasting", startsAt: bst(4, 19, 0), endsAt: bst(4, 22, 0), createdBy: adminUser.id,
+      eventType: "tasting", startsAt: bst(4, 19, 0), endsAt: bst(4, 22, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     // --- Galleries -----------------------------------------------------------
     {
       venueId: venue.id, spaceId: northGallery, kind: "ink", title: "Craft exhibition install",
-      eventType: "exhibition", startsAt: bst(2, 9, 0), endsAt: bst(2, 17, 0), createdBy: adminUser.id,
+      eventType: "exhibition", startsAt: bst(2, 9, 0), endsAt: bst(2, 17, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: northGallery, kind: "ink", title: "Craft exhibition",
-      eventType: "exhibition", startsAt: bst(3, 9, 0), endsAt: bst(5, 8, 0), createdBy: adminUser.id,
+      eventType: "exhibition", startsAt: bst(3, 9, 0), endsAt: bst(5, 8, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
     {
       venueId: venue.id, spaceId: southGallery, kind: "hold", rank: 1, title: "Photography backdrop",
-      eventType: "photography", startsAt: bst(1, 9, 0), endsAt: bst(1, 13, 0), createdBy: adminUser.id,
+      eventType: "photography", startsAt: bst(1, 9, 0), endsAt: bst(1, 13, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
       ...hygiene(new Date("2026-08-30T12:00:00.000Z"), "Ask the photographer for the shot list."),
     },
     {
       venueId: venue.id, spaceId: southGallery, kind: "ink", title: "Wedding photography overflow",
-      eventType: "wedding", startsAt: bst(5, 12, 0), endsAt: bst(5, 23, 0), createdBy: adminUser.id,
+      eventType: "wedding", startsAt: bst(5, 12, 0), endsAt: bst(5, 23, 0), createdBy: adminUser.id, fixtureSource: FIXTURE_SOURCE,
     },
   ]).returning();
   console.log(`  Diary bookings: ${String(insertedBookings.length)} created (${weekLabel})`);

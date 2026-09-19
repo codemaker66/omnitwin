@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import {
   CreateProposalCommentSchema,
-  EventPlanAudienceRoleSchema,
+  toEventPlanAudienceRole,
   ProposalVersionPayloadSchema,
   proposalVersionPayloadDigest,
   isProposalEditable,
@@ -31,9 +31,9 @@ import {
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canManageCommercial } from "../utils/query.js";
 import {
   PROPOSAL_STATES,
   canTransitionProposal,
@@ -137,7 +137,7 @@ function toStaffCommentView(row: {
   };
 }
 
-type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
+
 type ProposalRow = typeof proposals.$inferSelect;
 
 interface ProposalEventContext {
@@ -146,11 +146,7 @@ interface ProposalEventContext {
   readonly handoffPackId: string | null;
 }
 
-/** Create/mutate policy: venue staff/admin in their own venue, or platform admin. */
-function canManageVenueProposals(user: AuthedUser, venueId: string): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return (user.role === "staff" || user.role === "admin") && user.venueId === venueId;
-}
+
 
 async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
   if (proposal.configurationId === null) return null;
@@ -310,7 +306,7 @@ export async function proposalRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    if (!canManageVenueProposals(request.user, parsed.data.venueId)) {
+    if (!canManageCommercial(request.user, parsed.data.venueId)) {
       return reply.status(403).send({ error: "Only venue staff or admin can create proposals for this venue", code: "FORBIDDEN" });
     }
 
@@ -395,7 +391,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueProposals(request.user, proposal.venueId)) {
+    if (!canManageCommercial(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
@@ -448,7 +444,7 @@ export async function proposalRoutes(
     if (parsed.data.configurationId !== undefined) affectedSurfaces.add("layout");
     await recordProposalLifecycleChange(db, updated, {
       actorUserId: request.user.id,
-      actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+      actorRole: toEventPlanAudienceRole(request.user.role),
       actorLabel: request.user.email,
       sourceKind: "proposal",
       sourceId: updated.id,
@@ -474,7 +470,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueProposals(request.user, proposal.venueId)) {
+    if (!canManageCommercial(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (proposal.status === "accepted" && !isPlatformAdmin(request.user)) {
@@ -569,7 +565,7 @@ export async function proposalRoutes(
     if (updated !== undefined) {
       await recordProposalLifecycleChange(db, updated, {
         actorUserId: request.user.id,
-        actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+        actorRole: toEventPlanAudienceRole(request.user.role),
         actorLabel: request.user.email,
         sourceKind: "proposal",
         sourceId: updated.id,
@@ -667,7 +663,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueProposals(request.user, proposal.venueId)) {
+    if (!canManageCommercial(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -720,7 +716,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueProposals(request.user, proposal.venueId)) {
+    if (!canManageCommercial(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (proposal.currentVersion < 1) {
@@ -815,7 +811,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueProposals(request.user, proposal.venueId)) {
+    if (!canManageCommercial(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
@@ -841,7 +837,7 @@ export async function proposalRoutes(
         .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
         .for("update");
       if (current === undefined) return "PROPOSAL_NOT_FOUND" as const;
-      if (!canManageVenueProposals(request.user, current.venueId)) return "PROPOSAL_FORBIDDEN" as const;
+      if (!canManageCommercial(request.user, current.venueId)) return "PROPOSAL_FORBIDDEN" as const;
       if (!isPlatformAdmin(request.user) && !isProposalEditable(current.status as ProposalStatus)) {
         return "PROPOSAL_NOT_EDITABLE" as const;
       }
@@ -882,7 +878,7 @@ export async function proposalRoutes(
     if (version !== undefined) {
       await recordProposalLifecycleChange(db, proposal, {
         actorUserId: request.user.id,
-        actorRole: EventPlanAudienceRoleSchema.parse(request.user.role),
+        actorRole: toEventPlanAudienceRole(request.user.role),
         actorLabel: request.user.email,
         sourceKind: "proposal",
         sourceId: version.id,

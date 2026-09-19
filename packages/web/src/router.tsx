@@ -166,6 +166,14 @@ function withClerk(node: ReactElement): ReactElement {
   return withSuspense(<ClerkRouteProvider>{node}</ClerkRouteProvider>);
 }
 
+// Route gates named once, mirroring the API capability helpers in
+// packages/api/src/utils/query.ts so a route never offers a surface the API
+// refuses. Caterers are event-scoped and hold no venue-wide route.
+const VENUE_DAY_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
+const VENUE_ROOM_ROLES = ["admin", "manager", "staff", "hallkeeper", "planner"] as const;
+const DIARY_ROLES = ["admin", "manager", "staff", "hallkeeper", "sales"] as const;
+const WORKSPACE_ROLES = ["admin", "manager", "staff", "sales", "hallkeeper", "planner"] as const;
+
 // Planner routes stay Clerk-free for guests (no script cost) but mount the
 // provider for returning signed-in users, whose staff surfaces (the
 // layout-timeline dock, phase-snapshot freeze, review submit) call
@@ -368,7 +376,7 @@ export const router = createBrowserRouter([
     // route ranking would prefer the static segment regardless.
     path: "/hallkeeper/today",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
+      <ProtectedRoute allowedRoles={VENUE_DAY_ROLES}>
         <DayBoardPage />
       </ProtectedRoute>,
     ),
@@ -380,7 +388,7 @@ export const router = createBrowserRouter([
   {
     path: "/hallkeeper/rooms",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <HallkeeperRoomPlansPage />
       </ProtectedRoute>,
     ),
@@ -388,7 +396,7 @@ export const router = createBrowserRouter([
   {
     path: "/hallkeeper/walkthrough",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <HallkeeperWalkthroughPage />
       </ProtectedRoute>,
     ),
@@ -400,7 +408,7 @@ export const router = createBrowserRouter([
     // /login rather than hitting the page and getting a 401 from the fetch.
     path: "/hallkeeper/:configId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <HallkeeperPage />
       </ProtectedRoute>,
     ),
@@ -410,7 +418,7 @@ export const router = createBrowserRouter([
     // The API enforces the same write split server-side.
     path: "/diary",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
+      <ProtectedRoute allowedRoles={DIARY_ROLES}>
         <DiaryBoardPage />
       </ProtectedRoute>,
     ),
@@ -418,7 +426,7 @@ export const router = createBrowserRouter([
   {
     path: "/dashboard",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff", "executive"]}>
+      <ProtectedRoute allowedRoles={WORKSPACE_ROLES}>
         <DashboardPage />
       </ProtectedRoute>,
     ),
@@ -426,7 +434,7 @@ export const router = createBrowserRouter([
   {
     path: "/ops/handoff/:handoffPackId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <OpsHandoffPage />
       </ProtectedRoute>,
     ),

@@ -56,11 +56,13 @@ async function readDiaryMigration(): Promise<string> {
 describe("diary schema contract", () => {
   it("keeps migration 0050 table columns identical to the Drizzle diary schema", async () => {
     const sql = await readDiaryMigration();
-    // bookings gained enquiry_id via the additive 0051 ALTER (Slice 3) —
-    // physical column order is 0050's CREATE followed by 0051's addition.
+    // bookings gained enquiry_id via the additive 0051 ALTER (Slice 3) and
+    // fixture_source via 0072's seed marker — physical column order is 0050's
+    // CREATE followed by each additive ALTER in migration order.
     expect(drizzleColumnNames(bookings)).toEqual([
       ...extractCreatedTableColumns(sql, getTableName(bookings)),
       "enquiry_id",
+      "fixture_source",
     ]);
     for (const table of [bookingStatusHistory, turnaroundRules]) {
       const tableName = getTableName(table);

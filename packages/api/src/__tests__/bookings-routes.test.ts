@@ -341,9 +341,13 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
     expect(source).toContain("spaceId: patch.spaceId ?? row.spaceId");
   });
 
-  it("scopes diary writes to staff/admin while reads keep the shared venue policy", async () => {
+  it("scopes diary writes to the roles that ink the diary while reads keep the shared venue policy", async () => {
     const coreSource = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    expect(coreSource).toContain('new Set(["staff", "admin"])');
+    // Sales books the room it sold and a manager is senior venue authority
+    // (goal 18 §6 decision 6a); the hallkeeper is deliberately absent, so the
+    // write set stays strictly narrower than the read policy below.
+    expect(coreSource).toContain('new Set(["staff", "admin", "manager", "sales"])');
+    expect(coreSource).not.toContain('"hallkeeper", "sales"]);');
     expect(coreSource).toContain("canWriteBookings(actor, input.venueId)");
     // Reads still use the shared venue policy (hallkeeper stays
     // read-facing) — since the reviewer P2 fold-in, GET /:id routes through

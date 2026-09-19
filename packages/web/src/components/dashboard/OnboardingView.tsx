@@ -7,10 +7,13 @@ import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { OnboardingSetupControls } from "./OnboardingSetupControls.js";
 import "./OnboardingView.css";
 
+// Every invitable role needs a name here; the Record type makes a new role in
+// the vocabulary a compile error rather than a blank option in this select.
 const ROLE_LABELS: Record<VenueInvitationRole, string> = {
-  admin: "Venue administrator", staff: "Events staff", hallkeeper: "Hallkeeper", planner: "Planner", client: "Client",
+  admin: "Venue administrator", manager: "Venue manager", staff: "Events staff", sales: "Sales",
+  hallkeeper: "Hallkeeper", planner: "Planner", caterer: "Caterer", client: "Client",
 };
-const roleHelp = "Venue administrators manage this venue's settings, inventory and operations. Venviewer platform access is separate.";
+const roleHelp = "Venue administrators and managers manage this venue's settings, inventory and operations. Sales works the enquiry pipeline, hallkeepers run the room, and caterers see only the events they are invited to. Venviewer platform access is separate.";
 const nullableText = (value: string): string | null => value.trim() || null;
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : "The change could not be saved. Please try again.";
 const slugify = (value: string): string => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");

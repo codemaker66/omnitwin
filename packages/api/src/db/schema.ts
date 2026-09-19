@@ -185,7 +185,12 @@ export const users = pgTable("users", {
   username: varchar("username", { length: 30 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  // The role vocabulary, added by migration 0072. USER_ROLES in
+  // @omnitwin/types is the source; a role added there without this list is
+  // rejected by the database rather than stored as an unknown string.
+  check("users_role_check", sql`${table.role} IN ('client', 'planner', 'staff', 'hallkeeper', 'admin', 'caterer', 'sales', 'manager')`),
+]);
 
 // ---------------------------------------------------------------------------
 // 3b. user_invitations
@@ -530,6 +535,14 @@ export const configurations = pgTable("configurations", {
   index("configurations_space_state_idx").on(table.spaceId, table.state),
   index("configurations_venue_visibility_idx").on(table.venueId, table.visibility),
   index("configurations_venue_review_status_idx").on(table.venueId, table.reviewStatus),
+  // Vocabularies added by migration 0072. The unions live in
+  // @omnitwin/types (CONFIGURATION_STATUSES, CONFIGURATION_REVIEW_STATUSES,
+  // VISIBILITY_OPTIONS, LAYOUT_STYLES); these keep the column from holding
+  // a value the application would then have to interpret at read time.
+  check("configurations_state_check", sql`${table.state} IN ('draft', 'published')`),
+  check("configurations_review_status_check", sql`${table.reviewStatus} IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'changes_requested', 'withdrawn', 'archived')`),
+  check("configurations_visibility_check", sql`${table.visibility} IN ('private', 'staff', 'public')`),
+  check("configurations_layout_style_check", sql`${table.layoutStyle} IN ('ceremony', 'dinner-rounds', 'dinner-banquet', 'theatre', 'boardroom', 'cabaret', 'cocktail', 'custom')`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -659,6 +672,9 @@ export const placedObjects = pgTable("placed_objects", {
   coordinateWriteToken: uuid("coordinate_write_token").notNull(),
 }, (table) => [
   index("placed_objects_configuration_id_idx").on(table.configurationId),
+  // "Is this catalogue item still in use anywhere?" — asked by the planner
+  // and by migration 0073 before it retires a legacy asset row (0072).
+  index("placed_objects_asset_definition_idx").on(table.assetDefinitionId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -683,9 +699,13 @@ export const enquiries = pgTable("enquiries", {
   message: text("message"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  // Seed fixtures only; see events.fixtureSource (0072).
+  fixtureSource: varchar("fixture_source", { length: 40 }),
 }, (table) => [
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
   index("enquiries_user_id_idx").on(table.userId),
+  index("enquiries_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
+  check("enquiries_state_check", sql`${table.state} IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -852,7 +872,12 @@ export const pricingRules = pgTable("pricing_rules", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => [
+  // Quoting reads the live rules for a space; the soft-deleted ones are
+  // history and stay out of the index (0072).
+  index("pricing_rules_venue_space_live_idx").on(table.venueId, table.spaceId)
+    .where(sql`${table.deletedAt} IS NULL`),
+]);
 
 // ---------------------------------------------------------------------------
 // 10. files — tracks uploaded files (S3/R2)
@@ -1280,12 +1305,20 @@ export const events = pgTable("events", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Set only by the seed (migration 0072). A real event has no fixture
+  // source, which is what makes a demo week identifiable without matching
+  // titles that a real client could also have.
+  fixtureSource: varchar("fixture_source", { length: 40 }),
 }, (table) => [
   unique("events_id_venue_unique").on(table.id, table.venueId),
   index("events_venue_status_idx").on(table.venueId, table.status),
   index("events_created_by_idx").on(table.createdBy),
   index("events_client_account_idx").on(table.clientAccountId),
   index("events_opportunity_idx").on(table.opportunityId),
+  // The diary reads a venue window on every calendar paint (0072).
+  index("events_venue_starts_idx").on(table.venueId, table.startsAt),
+  index("events_venue_ends_idx").on(table.venueId, table.endsAt),
+  index("events_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -3290,6 +3323,10 @@ export const bookings = pgTable("bookings", {
   // from. Added by migration 0051, so it sits physically after 0050's
   // columns — the diary-schema contract test encodes exactly that order.
   enquiryId: uuid("enquiry_id").references(() => enquiries.id, { onDelete: "set null" }),
+  // Set only by the seed (migration 0072). A real booking has no fixture
+  // source, so a demo week can be found exactly instead of by matching a
+  // title a real client could also have.
+  fixtureSource: varchar("fixture_source", { length: 40 }),
 }, (table) => [
   unique("bookings_id_venue_unique").on(table.id, table.venueId),
   foreignKey({
@@ -3309,6 +3346,7 @@ export const bookings = pgTable("bookings", {
   index("bookings_venue_decision_idx").on(table.venueId, table.decisionAt),
   index("bookings_venue_next_action_idx").on(table.venueId, table.nextActionDueAt),
   index("bookings_enquiry_idx").on(table.enquiryId),
+  index("bookings_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
 ]);
 
 // House status-history convention (enquiry_status_history pattern). Rows

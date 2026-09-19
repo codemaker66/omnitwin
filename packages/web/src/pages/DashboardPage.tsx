@@ -62,17 +62,25 @@ export function dashboardViewFromSearchValue(value: string | null): DashboardVie
   return DASHBOARD_VIEW_VALUES.find((candidate) => candidate === value) ?? null;
 }
 
+// These mirror the API capability helpers in packages/api/src/utils/query.ts:
+// COMMERCIAL_NAV_ROLES is canManageCommercial and VENUE_ADMIN_VIEW_ROLES is
+// the inventory write set. A view the API would refuse is never offered.
+const COMMERCIAL_VIEW_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
+const VENUE_ADMIN_VIEW_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+
 export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
-  if (role === "supplier") return false;
-  if (role === "executive") return view === "analytics";
-  if (view === "inventory") return role === "admin";
+  if (role === null) return false;
+  // Caterers are event-scoped: they reach an event through a share, never the
+  // venue dashboard (goal 18 §6 decision 6a).
+  if (role === "caterer") return false;
+  if (view === "inventory") return VENUE_ADMIN_VIEW_ROLES.has(role);
   if (ADMIN_ONLY_VIEWS.has(view)) return platformRole === "admin";
-  if (STAFF_ONLY_VIEWS.has(view)) return platformRole === "admin" || role === "admin" || role === "staff";
-  return role !== null;
+  if (STAFF_ONLY_VIEWS.has(view)) return platformRole === "admin" || COMMERCIAL_VIEW_ROLES.has(role);
+  return true;
 }
 
-export function defaultDashboardViewForRole(role: string | null): DashboardView {
-  return role === "executive" ? "analytics" : "enquiries";
+export function defaultDashboardViewForRole(_role: string | null): DashboardView {
+  return "enquiries";
 }
 
 export function initialDashboardViewForRole(

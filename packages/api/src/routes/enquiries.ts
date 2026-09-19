@@ -5,7 +5,7 @@ import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, 
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource, canManageVenue } from "../utils/query.js";
+import { canAccessResource, canManageCommercial, canManageVenue } from "../utils/query.js";
 import { canTransition, ENQUIRY_STATES } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
@@ -73,9 +73,15 @@ export async function enquiryRoutes(
       whereConditions.push(eq(enquiries.state, query.data.status));
     }
 
+    // The venue inbox is read by everyone who works the venue's day
+    // (canManageVenue, which keeps the hallkeeper read pinned by
+    // enquiry-inbox-authority.test.ts) plus the commercial roles that own the
+    // pipeline. Decision 6b takes the hallkeeper's edit on venue, spaces and
+    // pricing — not this read. Everyone else sees only their own enquiries.
     if (isPlatformAdmin(user)) {
       // Admin sees all
-    } else if (user.venueId !== null && canManageVenue(user, user.venueId)) {
+    } else if (user.venueId !== null
+      && (canManageVenue(user, user.venueId) || canManageCommercial(user, user.venueId))) {
       whereConditions.push(eq(enquiries.venueId, user.venueId));
     } else {
       whereConditions.push(eq(enquiries.userId, user.id));

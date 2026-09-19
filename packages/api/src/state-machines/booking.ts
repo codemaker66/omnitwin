@@ -2,6 +2,7 @@ import {
   BOOKING_STATES,
   VALID_BOOKING_TRANSITIONS,
   type BookingState,
+  type UserRole,
 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -10,10 +11,17 @@ import {
 // Pure functions, no side effects. The STRUCTURAL matrix (which lifecycle
 // moves exist at all) lives in @omnitwin/types booking.ts as the single
 // source of truth; this module layers WHO may perform each move, mirroring
-// state-machines/proposal.ts. Staff/admin drive the diary. Hallkeeper is a
-// read-facing ops role here. Client/planner never touch bookings directly —
-// they act through enquiry/proposal/portal surfaces. Admin override follows
-// the enquiry house rule: any transition, any state.
+// state-machines/proposal.ts. The diary is driven by the venue team and the
+// people who sell it: staff, manager and sales, with admin overriding.
+// Hallkeeper is a read-facing ops role here. Client, planner and caterer
+// never touch bookings directly — they act through enquiry/proposal/portal
+// surfaces. Admin override follows the enquiry house rule: any transition,
+// any state.
+//
+// This list must stay in step with DIARY_WRITE_ROLES in
+// services/booking-mutations.ts: the REST gate says "may attempt", this table
+// says "may perform", and a role admitted by one and refused by the other is
+// a half-granted write. booking.test.ts drift-guards the pair.
 //
 // The one move this table cannot fully grant is hold→ink / prospect→ink under
 // contention: the database exclusion constraint (bookings_ink_no_overlap,
@@ -24,18 +32,21 @@ import {
 export const BOOKING_MACHINE_STATES = BOOKING_STATES;
 
 /** "planner" and "client" are the customer-facing roles (see enquiry.ts). */
-type TransitionRole = "client" | "planner" | "staff" | "hallkeeper" | "admin";
+type TransitionRole = UserRole;
+
+/** Who may move the diary. Named once so a transition cannot drift from it. */
+const DIARY_TRANSITION_ROLES: readonly TransitionRole[] = ["staff", "manager", "sales", "admin"];
 
 const BOOKING_TRANSITION_ROLES: Record<string, readonly TransitionRole[]> = {
-  "prospect→hold": ["staff", "admin"],
-  "prospect→ink": ["staff", "admin"],
-  "prospect→lost": ["staff", "admin"],
-  "hold→ink": ["staff", "admin"],
-  "hold→released": ["staff", "admin"],
-  "hold→expired": ["staff", "admin"],
-  "hold→lost": ["staff", "admin"],
-  "ink→cancelled": ["staff", "admin"],
-  "internal_block→released": ["staff", "admin"],
+  "prospect→hold": DIARY_TRANSITION_ROLES,
+  "prospect→ink": DIARY_TRANSITION_ROLES,
+  "prospect→lost": DIARY_TRANSITION_ROLES,
+  "hold→ink": DIARY_TRANSITION_ROLES,
+  "hold→released": DIARY_TRANSITION_ROLES,
+  "hold→expired": DIARY_TRANSITION_ROLES,
+  "hold→lost": DIARY_TRANSITION_ROLES,
+  "ink→cancelled": DIARY_TRANSITION_ROLES,
+  "internal_block→released": DIARY_TRANSITION_ROLES,
 };
 
 /** Every role-policy key must be a structurally legal transition. Exported so
