@@ -19,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
+import { hasRole, VENUE_FLOOR_ROLES } from "../lib/role-capabilities.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import type {
   EventArchitectCandidate,
@@ -567,10 +568,10 @@ export function EventArchitectPage(): ReactElement {
   const selectedCandidate = persisted?.run.candidates.find(
     (candidate) => candidate.candidateId === selectedCandidateId,
   ) ?? null;
-  const canRecordOpsReview = user?.platformRole === "admin" ||
-    user?.role === "admin" ||
-    user?.role === "staff" ||
-    user?.role === "hallkeeper";
+  // Mirrors the API's canAccessInternalEvent (canManageVenue): the venue
+  // floor, manager included.
+  const canRecordOpsReview = user?.platformRole === "admin"
+    || hasRole(VENUE_FLOOR_ROLES, user?.role);
 
   return (
     <DashboardLayout mainLabel="Event Architect workspace">

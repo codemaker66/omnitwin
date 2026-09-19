@@ -818,8 +818,8 @@ describe("export count verification", () => {
     expect(FURNITURE_CATEGORIES).toHaveLength(9);
   });
 
-  it("USER_ROLES has exactly 5 roles", () => {
-    expect(USER_ROLES).toHaveLength(5);
+  it("USER_ROLES has exactly 8 roles", () => {
+    expect(USER_ROLES).toHaveLength(8);
   });
 
   it("ENQUIRY_STATUSES has exactly 7 statuses", () => {

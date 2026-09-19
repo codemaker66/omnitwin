@@ -1,4 +1,5 @@
 import type { AuthUser } from "../stores/auth-store.js";
+import { hasRole, VENUE_FLOOR_ROLES } from "./role-capabilities.js";
 
 /** Customers plan their own events; venue calendars remain staff workspaces. */
 export function isCustomerRole(role: string | null | undefined): boolean {
@@ -12,8 +13,10 @@ export function canReadInternalEventData(auth: {
   readonly user: Pick<AuthUser, "role" | "platformRole"> | null;
 }): boolean {
   if (auth.isLoading || !auth.isAuthenticated || auth.user === null) return false;
-  return auth.user.platformRole === "admin"
-    || auth.user.role === "staff" || auth.user.role === "admin" || auth.user.role === "hallkeeper";
+  // Mirrors the API's canAccessInternalEvent, which is canManageVenue: the
+  // venue floor, manager included. Refusing a manager here while the API
+  // admits it would hide data the account is entitled to.
+  return auth.user.platformRole === "admin" || hasRole(VENUE_FLOOR_ROLES, auth.user.role);
 }
 
 export function customerEventPath(eventId: string): string {

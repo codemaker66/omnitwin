@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
 import { and, asc, eq, gt, isNull, or, sql } from "drizzle-orm";
-import { PlatformRoleSchema, type PlatformRole } from "@omnitwin/types";
+import { PlatformRoleSchema, USER_ROLES, type PlatformRole } from "@omnitwin/types";
 import { onboardingAuditEvents, userInvitations, users, venues, workspaceMemberships, workspaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
@@ -34,7 +34,10 @@ const MockTokenSchema = z.object({
   venueId: z.string().nullable(),
 });
 
-const ALLOWED_ROLES = ["client", "planner", "staff", "hallkeeper", "admin"] as const;
+// The vocabulary is defined once in @omnitwin/types; this set only narrows an
+// untrusted string to it. Keeping a second literal here is how a new role
+// silently became "planner" on the invitation path (sanitizeRole below).
+const ALLOWED_ROLES = USER_ROLES;
 type AuthRole = typeof ALLOWED_ROLES[number];
 const allowedRoleSet = new Set<string>(ALLOWED_ROLES);
 

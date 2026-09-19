@@ -12,7 +12,7 @@ import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { requireEditableConfig } from "../middleware/require-editable-config.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { configurationRevisionEtag } from "../lib/configuration-revision.js";
 
 // ---------------------------------------------------------------------------
@@ -80,8 +80,8 @@ export async function configurationRoutes(
     if (isPlatformAdmin(user)) {
       // Venviewer platform admin sees all non-deleted configurations
       whereClause = isNull(configurations.deletedAt);
-    } else if ((user.role === "admin" || user.role === "staff" || user.role === "hallkeeper") && user.venueId !== null) {
-      // Venue admin/staff/hallkeeper sees configs for their venue
+    } else if (user.venueId !== null && canManageVenue(user, user.venueId)) {
+      // Everyone who works the venue's floor sees that venue's configurations
       whereClause = and(
         eq(configurations.venueId, user.venueId),
         isNull(configurations.deletedAt),

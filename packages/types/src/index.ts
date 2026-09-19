@@ -399,6 +399,7 @@ export {
   HallkeeperAcknowledgementIdSchema,
   PlanRevisionIdSchema,
   EventPlanAudienceRoleSchema,
+  toEventPlanAudienceRole,
   EventPlanChangeSurfaceSchema,
   EventPlanRiskLevelSchema,
   EventPlanSourceKindSchema,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BOOKING_STATES,
+  USER_ROLES,
   VALID_BOOKING_TRANSITIONS,
   isValidBookingTransition,
   type BookingState,
@@ -10,14 +11,22 @@ import {
   canTransitionBooking,
   getAvailableBookingTransitions,
 } from "../../state-machines/booking.js";
+import { canWriteBookings, DIARY_WRITE_ROLES } from "../../services/booking-mutations.js";
+import { DIARY_COMMAND_WRITE_ROLES } from "../../services/diary-commands.js";
+import { canTransitionProposal, canTransitionQuote } from "../../state-machines/proposal.js";
+import { canTransition } from "../../state-machines/enquiry.js";
+import { canManageCommercial } from "../../utils/query.js";
+
+const VENUE = "00000000-0000-0000-0000-0000000000a0";
 
 // ---------------------------------------------------------------------------
 // Booking state machine — role policy layer (T-488; Canon §1/§3).
 //
 // The STRUCTURAL matrix lives in @omnitwin/types booking.ts; this layer adds
-// WHO may perform each move, mirroring state-machines/proposal.ts. Staff and
-// admin drive the diary; hallkeeper is read-facing; client/planner act
-// through enquiry/proposal/portal surfaces, never directly on bookings.
+// WHO may perform each move, mirroring state-machines/proposal.ts. Staff,
+// manager, sales and admin drive the diary; hallkeeper is read-facing;
+// client, planner and caterer act through enquiry/proposal/portal surfaces,
+// never directly on bookings.
 // ---------------------------------------------------------------------------
 
 const ALL_VALID_PAIRS: ReadonlyArray<readonly [BookingState, BookingState]> =
@@ -42,18 +51,67 @@ describe("booking role policy ↔ structural matrix drift guard", () => {
 });
 
 describe("canTransitionBooking", () => {
-  it("staff and admin may perform every structural transition", () => {
+  it("every role that may ink the diary may perform every structural transition", () => {
     for (const [from, to] of ALL_VALID_PAIRS) {
-      expect(canTransitionBooking(from, to, "staff"), `staff ${from}→${to}`).toBe(true);
-      expect(canTransitionBooking(from, to, "admin"), `admin ${from}→${to}`).toBe(true);
+      for (const role of ["staff", "manager", "sales", "admin"] as const) {
+        expect(canTransitionBooking(from, to, role), `${role} ${from}→${to}`).toBe(true);
+      }
     }
   });
 
-  it("hallkeeper, client, and planner may perform none", () => {
+  it("hallkeeper, client, planner and caterer may perform none", () => {
     for (const [from, to] of ALL_VALID_PAIRS) {
-      for (const role of ["hallkeeper", "client", "planner"] as const) {
+      for (const role of ["hallkeeper", "client", "planner", "caterer"] as const) {
         expect(canTransitionBooking(from, to, role), `${role} ${from}→${to}`).toBe(false);
       }
+    }
+  });
+
+  // A role admitted by the REST gate and refused by this table is a
+  // half-granted write: the request passes authorisation and then dies in the
+  // state machine. The two lists are maintained apart, so pin them together.
+  it("admits exactly the roles the REST diary-write gate admits", () => {
+    for (const role of USER_ROLES) {
+      const gate = canWriteBookings({ id: "u1", role, venueId: VENUE, platformRole: "none" }, VENUE);
+      const machine = canTransitionBooking("prospect", "hold", role);
+      expect(machine, `${role}: REST gate ${String(gate)}, state machine ${String(machine)}`).toBe(gate);
+    }
+  });
+
+  // The diary is inked through two doors — the REST surface and the /ws/diary
+  // command channel — and each kept its own role set. A role admitted by one
+  // and refused by the other can watch a slot change on the live channel and
+  // be unable to make one.
+  it("admits exactly the roles the diary COMMAND channel admits", () => {
+    for (const role of USER_ROLES) {
+      expect(
+        DIARY_COMMAND_WRITE_ROLES.has(role),
+        `${role}: REST diary-write ${String(DIARY_WRITE_ROLES.has(role))}, command channel ${String(DIARY_COMMAND_WRITE_ROLES.has(role))}`,
+      ).toBe(DIARY_WRITE_ROLES.has(role));
+    }
+  });
+
+  // The same seam exists on the commercial artefacts: routes/proposals.ts and
+  // routes/quotes.ts gate on canManageCommercial, and a role that may create a
+  // proposal but not send it has been granted nothing useful.
+  it("admits exactly the roles the commercial REST gate admits, for proposals and quotes", () => {
+    for (const role of USER_ROLES) {
+      const gate = canManageCommercial({ role, venueId: VENUE, platformRole: "none" }, VENUE);
+      expect(canTransitionProposal("draft", "sent", role),
+        `${role}: proposal draft→sent should follow the REST gate ${String(gate)}`).toBe(gate);
+      expect(canTransitionQuote("draft", "issued", role),
+        `${role}: quote draft→issued should follow the REST gate ${String(gate)}`).toBe(gate);
+    }
+  });
+
+  // The enquiry inbox reads and its triage moves must agree too: a role that
+  // can see an enquiry in the venue inbox can move it through triage.
+  it("lets every venue-inbox role triage an enquiry, and no customer role", () => {
+    for (const role of ["staff", "hallkeeper", "manager", "sales", "admin"] as const) {
+      expect(canTransition("submitted", "under_review", role), `${role} triage`).toBe(true);
+    }
+    for (const role of ["client", "planner", "caterer"] as const) {
+      expect(canTransition("submitted", "under_review", role), `${role} triage`).toBe(false);
     }
   });
 

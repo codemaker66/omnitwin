@@ -4,9 +4,9 @@ import { eq, and, isNull, sql } from "drizzle-orm";
 import { CreateQuoteLineItemSchema, CreateQuoteSchema, MAX_MINOR_UNIT_AMOUNT } from "@omnitwin/types";
 import { quotes, quoteLineItems, proposals, opportunities, enquiries, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canManageCommercial } from "../utils/query.js";
 import { QUOTE_STATES, canTransitionQuote } from "../state-machines/proposal.js";
 import { multiplyMinor, sumMinor } from "../services/money.js";
 
@@ -45,13 +45,9 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
 
-/** Venue staff/admin manage their own venue; platform admins may cross venues. */
-function canManageVenueQuotes(user: AuthedUser, venueId: string): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return (user.role === "staff" || user.role === "admin") && user.venueId === venueId;
-}
+
+
 
 async function validateOpportunityLink(db: Database, opportunityId: string | null | undefined, venueId: string): Promise<"ok" | "missing" | "mismatch"> {
   if (opportunityId === undefined || opportunityId === null) return "ok";
@@ -87,7 +83,10 @@ export async function quoteRoutes(
 
     if (isPlatformAdmin(user)) {
       // Admin sees all venues
-    } else if ((user.role === "staff" || user.role === "admin" || user.role === "hallkeeper") && user.venueId !== null) {
+      // The venue's commercial roles see the venue's quotes. This must match
+      // the create/mutate gate above, or a role could manage a quote it
+      // cannot find in its own list.
+    } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
       whereConditions.push(eq(quotes.venueId, user.venueId));
     } else {
       whereConditions.push(eq(quotes.createdBy, user.id));
@@ -117,7 +116,7 @@ export async function quoteRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    if (!canManageVenueQuotes(request.user, parsed.data.venueId)) {
+    if (!canManageCommercial(request.user, parsed.data.venueId)) {
       return reply.status(403).send({ error: "Only venue staff or admin can create quotes for this venue", code: "FORBIDDEN" });
     }
 
@@ -258,7 +257,7 @@ export async function quoteRoutes(
     if (quote === undefined) {
       return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueQuotes(request.user, quote.venueId)) {
+    if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (!isPlatformAdmin(request.user) && quote.status !== "draft") {
@@ -289,7 +288,7 @@ export async function quoteRoutes(
       if (current === undefined) {
         return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
       }
-      if (!canManageVenueQuotes(request.user, current.venueId)) {
+      if (!canManageCommercial(request.user, current.venueId)) {
         return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
       }
       return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
@@ -315,7 +314,7 @@ export async function quoteRoutes(
     if (quote === undefined) {
       return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueQuotes(request.user, quote.venueId)) {
+    if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (!isPlatformAdmin(request.user) && quote.status !== "draft") {
@@ -329,7 +328,7 @@ export async function quoteRoutes(
         .where(and(eq(quotes.id, quote.id), isNull(quotes.deletedAt)))
         .for("update");
       if (current === undefined) return "QUOTE_NOT_FOUND" as const;
-      if (!canManageVenueQuotes(request.user, current.venueId)) return "QUOTE_FORBIDDEN" as const;
+      if (!canManageCommercial(request.user, current.venueId)) return "QUOTE_FORBIDDEN" as const;
       if (!isPlatformAdmin(request.user) && current.status !== "draft") return "QUOTE_NOT_EDITABLE" as const;
 
       const existingLines = await tx.select().from(quoteLineItems)
@@ -392,7 +391,7 @@ export async function quoteRoutes(
     if (quote === undefined) {
       return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenueQuotes(request.user, quote.venueId)) {
+    if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (quote.status !== "draft" && !isPlatformAdmin(request.user)) {

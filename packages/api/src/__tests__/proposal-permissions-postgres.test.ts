@@ -82,6 +82,26 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     expect((await stored(f)).proposal?.deletedAt).toBeInstanceOf(Date);
   });
 
+
+  // The venue-scoped list must admit exactly who the create/mutate gate
+  // admits (routes/proposals.ts canManageCommercial). A role that may manage
+  // a proposal but cannot find it in its own list has been granted nothing.
+  it.each(["manager", "sales"])("lets %s discover a colleague's venue proposal", async role => {
+    const f = await fixture(role);
+    const response = await server.inject({ method: "GET", url: "/proposals", headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: [expect.objectContaining({ id: f.proposal.id, venueId: f.venueId })] });
+  });
+
+  // A proposal carries money, and hallkeepers never see prices (goal 18 6b) —
+  // the same reading that closed the priced analytics routes to them. The list
+  // falls back to "rows I created", which is empty for a role that cannot create.
+  it("keeps the venue's proposals out of a hallkeeper's list", async () => {
+    const f = await fixture("hallkeeper");
+    const response = await server.inject({ method: "GET", url: "/proposals", headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: [] });
+  });
   it("lets a venue admin discover a colleague's proposal", async () => {
     const f = await fixture("admin");
     const response = await server.inject({ method: "GET", url: "/proposals", headers: f.headers });

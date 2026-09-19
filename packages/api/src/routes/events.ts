@@ -9,7 +9,7 @@ import {
   EventPhaseGraphSchema,
   EventPhaseSchema,
   EventScenarioSchema,
-  EventPlanAudienceRoleSchema,
+  toEventPlanAudienceRole,
   EventSchema,
   LayoutVariantSchema,
   PhaseLayoutSnapshotSchema,
@@ -577,7 +577,7 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
     }
     const affectedSurfaces = changedSurfacesForPhasePatch(parsed.data);
     if (affectedSurfaces.length > 0) {
-      const actorRole = EventPlanAudienceRoleSchema.parse(request.user.role);
+      const actorRole = toEventPlanAudienceRole(request.user.role);
       await recordEventPlanChange(db, {
         eventId: joined.event.id,
         venueId: joined.event.venueId,
