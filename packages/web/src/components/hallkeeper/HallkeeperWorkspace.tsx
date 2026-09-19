@@ -10,6 +10,7 @@ import { ActivityStatus } from "../shared/Activity.js";
 import { InteractiveFloorPlan } from "./InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "./HallkeeperStatusBanner.js";
 import { useHallkeeperContext, type HallkeeperVerifiedContext, type HallkeeperContextResult } from "./useHallkeeperContext.js";
+import "../../styles/hallkeeper-register.css";
 import "./hallkeeper-workspace.css";
 
 const STAGES = [
@@ -61,7 +62,14 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
   const roomPhases = context?.graph?.phases.filter((entry) => entry.spaceId === context.room.id) ?? [];
   const slug = context?.room.slug;
   const roomReference = context?.venue.slug === HALLKEEPER_PLAN_VENUE_SLUG ? getHallkeeperRoomPlan(slug) : null;
-  const plannedAt = context?.graph === null || context?.graph === undefined ? data.timing?.eventStart ?? null : context.graph.event.startsAt;
+  // The Diary booking is the only authority on when an event starts; the sheet
+  // carries that reading in `data.timing` (hallkeeper-sheet-v2-data.ts). The
+  // event ROW's own startsAt is planning metadata that drifts from the booking
+  // — on the seeded Mackenzie-Ross wedding the row says 13:00 while the
+  // booking says 09:00 — so preferring it here made this card disagree with
+  // the PDF printed from the same sheet. Gate line 20 requires them to agree.
+  const plannedAt = data.timing?.eventStart ?? context?.graph?.event.startsAt ?? null;
+  const setupByAt = data.timing?.setupBy ?? null;
   const plannedDate = plannedAt === null ? "Date not supplied" : new Date(plannedAt).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: data.venue.timezone });
   const time = (value: string | null): string => value === null ? "Not provided" : new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: data.venue.timezone });
   const locate = (key: string): void => {
@@ -87,7 +95,7 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
       </aside>
       <div className="hkf-main">
         <header className="hkf-heading"><div><span className="hkf-overline">Hallkeeper sheet</span><h1>{data.space.name}</h1><p className="hkf-event-name" title={data.config.name}>{data.config.name}</p><div className="hkf-facts"><span><Users size={15} /> {data.config.guestCount} guests</span><span>{data.totals.totalItems} manifest items</span>{data.approval !== null && <span>Sheet v{data.approval.version}</span>}<button type="button" onClick={() => { setShowDetails(true); }}>Brief & contacts ↗</button></div></div>
-          <div className="hkf-time-card"><span>{context?.graph !== null && context?.graph !== undefined ? "Event planned at" : "Indicative event time"}</span><strong>{context?.graph !== null && context?.graph !== undefined ? time(context.graph.event.startsAt) : data.timing === null ? "Not provided" : time(data.timing.eventStart)}</strong><small>{plannedDate}<br />{data.venue.timezone}</small></div>
+          <div className="hkf-time-card"><span>{data.timing !== null ? "Event starts" : plannedAt !== null ? "Planned start" : "Not in the Diary yet"}</span><strong>{time(plannedAt)}</strong><small>{plannedDate}<br />{setupByAt !== null ? `Set up by ${time(setupByAt)} · ` : ""}{data.venue.timezone}{setupByAt === null && data.timing !== null ? " · set-up time not set: the venue's turnaround rules are not recorded" : ""}</small></div>
         </header>
         <div className="hkf-provenance"><HallkeeperStatusBanner key={data.config.id} configId={data.config.id} compact />{data.approval !== null && <span className="hkf-approved-by">Sheet v{data.approval.version} · approved by {data.approval.approverName}</span>}{notices}</div>
         <nav className="hkf-stages" aria-label="Event workflow views">{STAGES.map((item, index) => <button key={item.id} type="button" className={`hkf-stage hkf-${item.id}`} aria-pressed={stage === item.id} onClick={() => { setStage(item.id); if (item.id === "checks" && data.phases.some((entry) => entry.phase === "final")) { setCategory("final"); setPage(0); setSearch(""); } }}><span className="hkf-stage-index">{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><small>{item.caption}</small></button>)}</nav>
@@ -120,7 +128,7 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
           </section>
         </div>
         <div className="hkf-attention-strip"><div><span className="hkf-overline">Keep in view</span><strong>{issues.length > 0 ? `${String(issues.length)} event-wide issue${issues.length === 1 ? "" : "s"} open` : board === null || board === undefined ? "Event context" : "No open event-wide issues"}</strong></div><div className="hkf-attention-copy">{result.status === "loading" ? <ActivityStatus>Loading room context…</ActivityStatus> : result.error !== null || context?.opsError !== null && context?.opsError !== undefined ? <><span>{result.error ?? context?.opsError}</span><button type="button" onClick={result.retry}>Retry context</button></> : issues.length > 0 ? <><span>{issues[0]?.title}</span>{context?.graph !== null && context?.graph !== undefined && <Link to={`/ops/events/${context.graph.event.id}`}>Review issues ↗</Link>}</> : <span>{context?.graph === null || context === null ? "Open this sheet from its event to include the running order and operations updates." : "Operations updates are available in the event board."}</span>}</div></div>
-        <footer className="hkf-footer"><span>{disabled ? "Checks unavailable" : `${String(done)} of ${String(allRows.length)} setup rows checked`}</span><span>Full checklist included in Print & PDF</span><Link to="/hallkeeper/walkthrough">Workflow walkthrough ↗</Link></footer>
+        <footer className="hkf-footer"><span>{disabled ? "Checks unavailable" : `${String(done)} of ${String(allRows.length)} setup rows checked`}</span><span>Full checklist included in Print & PDF</span><Link to="/hallkeeper/today">Today’s rooms ↗</Link></footer>
       </div>
     </div>
     {showDetails && <div className="hkf-detail-backdrop" onClick={() => { setShowDetails(false); }}><section ref={briefRef} className="hkf-detail-panel" role="dialog" aria-modal="true" aria-labelledby="hkf-brief-title" onClick={(event) => { event.stopPropagation(); }} onKeyDown={(event) => { if (event.key === "Escape") setShowDetails(false); }}><div className="hkf-panel-heading"><div><span className="hkf-overline">{data.space.name}</span><h2 id="hkf-brief-title">Brief & contacts</h2></div><button type="button" aria-label="Close brief" onClick={() => { setShowDetails(false); }}><X size={20} /></button></div><div className="hkf-detail-body">{details}{data.approval !== null && <p>Sheet v{data.approval.version} approved by {data.approval.approverName} on {new Date(data.approval.approvedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })}.</p>}<p className="hkf-footnote">Generated {new Date(data.generatedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })} · {data.venue.timezone}</p></div></section></div>}

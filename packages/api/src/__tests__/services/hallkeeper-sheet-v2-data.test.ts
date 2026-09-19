@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildSheetApproval,
+  deriveSheetTiming,
   parseStoredSnapshotPayload,
 } from "../../services/hallkeeper-sheet-v2-data.js";
 import { LEGACY_RENDER_COORDINATE_SPACE } from "../../db/coordinate-space.js";
@@ -218,5 +219,65 @@ describe("buildSheetApproval", () => {
       { name: "Staff User", displayName: null },
     );
     expect(approval?.version).toBe(42);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// deriveSheetTiming — the sheet's clock (Ship Friday gate line 20)
+//
+// The old rule took an enquiry's preferredDate and asserted an 18:00 UTC
+// start with a 16:30 "setup by". That number agreed with nothing on the
+// timetable: a 14:00 booking printed "Setup by 16:30", which is an hour a
+// hallkeeper could actually set a room to, and be wrong. Times now come from
+// the Diary booking that holds the room, or they do not come at all.
+// ---------------------------------------------------------------------------
+
+describe("deriveSheetTiming", () => {
+  const BOOKED = new Date("2026-09-18T13:00:00.000Z");
+
+  it("takes the event start from the booking, not from a default hour", () => {
+    const timing = deriveSheetTiming(BOOKED, null, 90);
+    expect(timing?.eventStart).toBe("2026-09-18T13:00:00.000Z");
+    expect(timing?.eventStart.slice(11, 16)).not.toBe("18:00");
+  });
+
+  it("derives setupBy from the venue's turnaround rule", () => {
+    const timing = deriveSheetTiming(BOOKED, null, 120);
+    expect(timing?.setupBy).toBe("2026-09-18T11:00:00.000Z");
+    expect(timing?.bufferMinutes).toBe(120);
+  });
+
+  it("says the set-up time is not set when the venue records no turnaround rule", () => {
+    // The old code answered 90 minutes here. A constant and a derived value
+    // look identical on a printed sheet, which is what made it dangerous.
+    const timing = deriveSheetTiming(BOOKED, null, null);
+    expect(timing).not.toBeNull();
+    expect(timing?.eventStart).toBe("2026-09-18T13:00:00.000Z");
+    expect(timing?.setupBy).toBeNull();
+    expect(timing?.bufferMinutes).toBeNull();
+  });
+
+  it("prefers the earliest scheduled phase in the room over the rule", () => {
+    const timing = deriveSheetTiming(BOOKED, new Date("2026-09-18T09:00:00.000Z"), 90);
+    expect(timing?.setupBy).toBe("2026-09-18T09:00:00.000Z");
+    // The REAL gap, never the rule's nominal value.
+    expect(timing?.bufferMinutes).toBe(240);
+  });
+
+  it("ignores a phase that starts after the booking and falls to the rule", () => {
+    const timing = deriveSheetTiming(BOOKED, new Date("2026-09-18T15:00:00.000Z"), 90);
+    expect(timing?.setupBy).toBe("2026-09-18T11:30:00.000Z");
+    expect(timing?.bufferMinutes).toBe(90);
+  });
+
+  it("falls to the honest absence when the phase is unusable and no rule exists", () => {
+    const timing = deriveSheetTiming(BOOKED, new Date("2026-09-18T15:00:00.000Z"), null);
+    expect(timing?.setupBy).toBeNull();
+    expect(timing?.bufferMinutes).toBeNull();
+  });
+
+  it("returns null for an unparseable instant instead of freezing Invalid Date into a snapshot", () => {
+    expect(deriveSheetTiming(new Date("not-a-date"), null, 90)).toBeNull();
   });
 });

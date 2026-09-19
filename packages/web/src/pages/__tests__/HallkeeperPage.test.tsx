@@ -351,3 +351,28 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
   });
 });
+
+describe("HallkeeperPage carries the corridor's event", () => {
+  it("asks the API for the event the hallkeeper arrived from", async () => {
+    // A layout can be linked to more than one event. Without the corridor's
+    // ?eventId= the sheet resolves its hour from the union of those events
+    // and prints the earliest one, whatever slot was tapped on the board.
+    const eventId = "00000000-0000-4000-8000-0000000000e1";
+    const fetchMock = vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Shared layout")));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}?eventId=${eventId}`]}>
+      <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
+    </MemoryRouter>);
+
+    await screen.findByText("Shared layout", { exact: true, selector: "p" });
+    const sheetUrl = fetchMock.mock.calls
+      .map(([input]) => requestUrl(input))
+      .find((url) => url.includes("/v2"));
+    expect(sheetUrl).toContain(`?eventId=${eventId}`);
+  });
+});
