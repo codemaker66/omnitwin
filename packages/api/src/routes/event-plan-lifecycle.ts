@@ -29,6 +29,9 @@ import {
 
 const IdParam = z.object({ id: z.string().uuid() });
 const EventIdParam = z.object({ eventId: z.string().uuid() });
+const AcknowledgementListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200),
+}).strict();
 
 type EventRow = typeof events.$inferSelect;
 type NotificationRow = typeof eventPlanNotifications.$inferSelect;
@@ -196,6 +199,30 @@ export async function eventPlanLifecycleRoutes(server: FastifyInstance, opts: { 
       .limit(query.data.limit);
 
     return { data: z.array(ChangeFeedItemSchema).parse(changes.map(serializeEventPlanChange)) };
+  });
+
+  // Lane 6's event-day board reads acknowledgements from here instead of local
+  // component state, so a reload or a second device sees what the room already
+  // acknowledged. Same venue-tenancy gate as the POST; every row for the event,
+  // newest first, each carrying who acknowledged it and when (createdAt).
+  server.get("/:eventId/change-acknowledgements", { preHandler: [authenticate] }, async (request, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const params = EventIdParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    const query = AcknowledgementListQuerySchema.safeParse(request.query);
+    if (!query.success) return validationError(reply, query.error.issues);
+
+    const eventRow = await requireEventAccess(db, request, reply, params.data.eventId);
+    if (eventRow === null) return;
+
+    const rows = await db
+      .select()
+      .from(eventPlanChangeAcknowledgements)
+      .where(eq(eventPlanChangeAcknowledgements.eventId, eventRow.id))
+      .orderBy(desc(eventPlanChangeAcknowledgements.createdAt))
+      .limit(query.data.limit);
+
+    return { data: z.array(HallkeeperAcknowledgementSchema).parse(rows.map(serializeAcknowledgement)) };
   });
 
   server.post("/:eventId/change-acknowledgements", { preHandler: [authenticate] }, async (request, reply) => {

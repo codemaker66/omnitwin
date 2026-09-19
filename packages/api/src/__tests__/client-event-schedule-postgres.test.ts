@@ -8,6 +8,7 @@ import { ClientEventScheduleSchema } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { getUserByClerkId, type JwtUser } from "../middleware/auth.js";
 import { clientEventScheduleRoutes } from "../routes/client-event-schedule.js";
+import { eventRoutes } from "../routes/events.js";
 
 // Full migrations must already exist. Never read DATABASE_URL or an env file,
 // truncate shared tables, create substitute tables, or write outside this
@@ -28,6 +29,9 @@ describe.skipIf(target === undefined)("client schedule on fully migrated disposa
   let observer: Pool;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let server: FastifyInstance;
+  // The planner corridor's write side. Registered separately so the read
+  // routes keep their own instance; both speak to the same database.
+  let corridorServer: FastifyInstance;
   const applicationName = `client-schedule-${randomUUID()}`;
   const fixtures: Fixture[] = [];
 
@@ -43,10 +47,14 @@ describe.skipIf(target === undefined)("client schedule on fully migrated disposa
     server = Fastify();
     await server.register(clientEventScheduleRoutes, { db, prefix: "/events" });
     await server.ready();
+    corridorServer = Fastify();
+    await corridorServer.register(eventRoutes, { db, prefix: "/events" });
+    await corridorServer.ready();
   });
 
   afterAll(async () => {
     await server?.close();
+    await corridorServer?.close();
     if (db !== undefined) {
       for (const f of fixtures) {
         await db.delete(schema.eventConfigurationLinks).where(inArray(schema.eventConfigurationLinks.eventId, f.eventIds));
@@ -282,6 +290,59 @@ describe.skipIf(target === undefined)("client schedule on fully migrated disposa
       await blocker.query("ROLLBACK");
       blocker.release();
       await pending;
+    }
+  });
+
+  // THE OPS LENS CORRIDOR. Compiling an Ops handoff pack against an event link
+  // writes an event_configuration_links row, and a source_configuration link
+  // with no layout variant is the ONLY participation grant that admits a client
+  // to an event's schedule. So the corridor must never write that row for a
+  // layout a customer owns: a staff member compiling a pack would otherwise
+  // hand that customer the event. Both halves are proved here — the grant is
+  // real (direct insert), and the route refuses to create it.
+  it("refuses the corridor link on a client-owned layout, so compiling grants no schedule access", async () => {
+    const f = await fixture();
+    const link = (configurationId: string, eventId = f.eventIds[1]) => corridorServer.inject({
+      method: "POST", url: `/events/${eventId}/configuration-links`,
+      headers: { authorization: `Bearer ${JSON.stringify(f.actor.staff)}` },
+      payload: { configurationId, linkType: "source_configuration" },
+    });
+    const linksFor = (eventId: string) => db.select().from(schema.eventConfigurationLinks)
+      .where(eq(schema.eventConfigurationLinks.eventId, eventId));
+
+    // Event 1 starts with no links at all, so the client owning layout 1 has no
+    // relationship to it.
+    expect(await linksFor(f.eventIds[1])).toHaveLength(0);
+    expect((await read(f, f.actor.client, f.configIds[1], f.eventIds[1])).statusCode).toBe(404);
+
+    const refused = await link(f.configIds[1]);
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe("CONFIGURATION_OWNER_IS_CUSTOMER");
+    expect(await linksFor(f.eventIds[1])).toHaveLength(0);
+    expect((await read(f, f.actor.client, f.configIds[1], f.eventIds[1])).statusCode).toBe(404);
+
+    // The instrument is not vacuous: the row the route refused to write is
+    // exactly the one that would have opened the event to that client.
+    await db.insert(schema.eventConfigurationLinks)
+      .values({ eventId: f.eventIds[1], configurationId: f.configIds[1], linkType: "source_configuration" });
+    expect((await read(f, f.actor.client, f.configIds[1], f.eventIds[1])).statusCode).toBe(200);
+    await db.delete(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.eventId, f.eventIds[1]));
+
+    // A venue-owned layout still binds, once, and admits no customer.
+    const staffConfigId = randomUUID();
+    await db.insert(schema.configurations).values({ id: staffConfigId, venueId: f.venueIds[0], spaceId: f.roomIds[0],
+      userId: f.actor.staff.id, name: "Staff layout", layoutStyle: "dinner-rounds", visibility: "private", slug: staffConfigId });
+    try {
+      const created = await link(staffConfigId);
+      expect(created.statusCode, created.body).toBe(201);
+      const repeated = await link(staffConfigId);
+      expect(repeated.statusCode, repeated.body).toBe(200);
+      expect(await linksFor(f.eventIds[1])).toHaveLength(1);
+      expect((await read(f, f.actor.client, staffConfigId, f.eventIds[1])).statusCode).toBe(404);
+      expect((await read(f, f.actor.staff, staffConfigId, f.eventIds[1])).statusCode).toBe(200);
+    } finally {
+      await db.delete(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.configurationId, staffConfigId));
+      await db.delete(schema.configurations).where(eq(schema.configurations.id, staffConfigId));
     }
   });
 });

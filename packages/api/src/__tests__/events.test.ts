@@ -244,6 +244,7 @@ describe("event writes — role and tenant isolation", () => {
       { method: "POST" as const, url: `/events/${EVENT_ID}/phases`, payload: { name: "Dinner", durationMinutes: 60 } },
       { method: "POST" as const, url: `/events/${EVENT_ID}/scenarios`, payload: { name: "Rain plan" } },
       { method: "POST" as const, url: `/events/${EVENT_ID}/layout-variants`, payload: { name: "Option A" } },
+      { method: "POST" as const, url: `/events/${EVENT_ID}/configuration-links`, payload: { configurationId: CONFIG_ID } },
       { method: "PATCH" as const, url: `/event-phases/${PHASE_ID}`, payload: { durationMinutes: 45 } },
     ];
     for (const surface of surfaces) {
@@ -262,5 +263,49 @@ describe("event writes — role and tenant isolation", () => {
     expect(source).toContain("canWriteEvents(request.user, joined.event.venueId)");
     expect(source).toContain("canWriteEvents(request.user, parsed.data.venueId)");
     expect(source).toContain("requireEventWriteRole(request, reply)");
+  });
+});
+
+describe("event configuration links — the planner corridor's binding", () => {
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/configuration-links`,
+      payload: { configurationId: CONFIG_ID },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("validates the configuration id and link vocabulary before database work", async () => {
+    for (const payload of [
+      { configurationId: "not-a-uuid" },
+      { configurationId: CONFIG_ID, linkType: "invented_grant" },
+      { configurationId: CONFIG_ID, unexpected: true },
+    ]) {
+      const res = await server.inject({
+        method: "POST",
+        url: `/events/${EVENT_ID}/configuration-links`,
+        headers: { authorization: `Bearer ${adminToken()}` },
+        payload,
+      });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(responseCode(res.body)).toBe("VALIDATION_ERROR");
+    }
+  });
+
+  it("checks the write role before it loads the event row", async () => {
+    const source = await readFile(resolve("src/routes/events.ts"), "utf-8");
+    const route = source.slice(
+      source.indexOf('server.post("/:id/configuration-links"'),
+      source.indexOf('server.get("/:id/phase-graph"'),
+    );
+    expect(route.length).toBeGreaterThan(0);
+    expect(route.indexOf("requireEventWriteRole(request, reply)"))
+      .toBeLessThan(route.indexOf("requireEventWriteAccess(db, request, reply"));
+    // The venue of the loaded event row is the authority, and the link row is
+    // made idempotent by the unique constraint rather than a read-then-write
+    // precheck, which two simultaneous corridor opens would race past.
+    expect(route).toContain("config.venueId !== eventRow.venueId");
+    expect(route).toContain("onConflictDoNothing");
   });
 });

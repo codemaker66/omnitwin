@@ -9,7 +9,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import type { HallkeeperSheetV2 } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
-import { compileOpsHandoffPackFromConfiguration } from "../services/ops-compiler.js";
+import { OpsHandoffEventBindingRequiredError, compileOpsHandoffPackFromConfiguration } from "../services/ops-compiler.js";
 import { getEventDayOpsBoard } from "../services/event-day-ops.js";
 import { createSnapshot, approveSnapshot } from "../services/sheet-snapshot.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
@@ -90,6 +90,63 @@ describe.skipIf(explicitUrl === undefined)("persisted event phases in Ops", () =
     expect(reopened.sourceStatus).toBe("ready");
     expect(reopened.handoffPack?.pack.id).toBe(pack.pack.id);
     expect(reopened.phases).toMatchObject([{ id: phaseId, spaceId: assigned ? roomId : null }]);
+  });
+
+  // The planner corridor end to end at the boundary that owns the guarantee.
+  // The Event Day board's only question is whether a handoff_packs row carries
+  // the event id; the compiler will not write one without an
+  // event_configuration_links row, which is what the corridor now records. Both
+  // halves are asserted here against real PostgreSQL, because a mocked database
+  // cannot show either refusal or the board flipping.
+  it("refuses an unlinked event, then reaches a ready board once the corridor records the link", async () => {
+    const venueId = randomUUID(); const roomId = randomUUID(); const userId = randomUUID();
+    const configId = randomUUID(); const eventId = randomUUID(); const snapshotId = randomUUID();
+    const now = new Date("2026-09-16T09:00:00.000Z");
+    await db.insert(schema.venues).values({ id: venueId, name: "DEMO ONLY corridor venue", slug: venueId, address: "Local test" });
+    await db.insert(schema.spaces).values({ id: roomId, venueId, name: "Corridor room", slug: "corridor-room", widthM: "10", lengthM: "10", heightM: "3", floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] });
+    await db.insert(schema.users).values({ id: userId, venueId, email: `${userId}@demo.invalid`, name: "Corridor reviewer", role: "staff" });
+    await db.insert(schema.configurations).values({ id: configId, venueId, spaceId: roomId, userId, name: "DEMO ONLY corridor plan", layoutStyle: "custom", slug: "corridor-plan", reviewStatus: "approved" });
+    const [event] = await db.insert(schema.events).values({ id: eventId, venueId, createdBy: userId, name: "DEMO ONLY corridor event", startsAt: now }).returning();
+    if (event === undefined) throw new Error("Event fixture was not persisted");
+    await db.insert(schema.eventPhases).values({ eventId, spaceId: roomId, name: "Dinner", templateKey: "dinner", sortOrder: 0, startsAt: now, durationMinutes: 60 });
+    const payload: HallkeeperSheetV2 = {
+      config: { id: configId, name: "DEMO ONLY corridor plan", guestCount: 0, layoutStyle: "custom" },
+      venue: { name: "DEMO ONLY corridor venue", address: "Local test", logoUrl: null, timezone: "Europe/London" },
+      space: { name: "Corridor room", widthM: 10, lengthM: 10, heightM: 3 },
+      timing: null, instructions: null, phases: [], totals: { entries: [], totalRows: 0, totalItems: 0 },
+      diagramUrl: null, webViewUrl: "https://example.invalid/corridor-test", generatedAt: now.toISOString(),
+      approval: { version: 1, approvedAt: now.toISOString(), approverName: "Corridor reviewer" },
+    };
+    await db.insert(schema.configurationSheetSnapshots).values({ id: snapshotId, configurationId: configId, version: 1, payload, sourceHash: "b".repeat(64), createdBy: userId, approvedBy: userId, approvedAt: now });
+
+    // Before the corridor: the board is empty and the compiler refuses the event.
+    expect((await getEventDayOpsBoard(db, event)).sourceStatus).toBe("missing_handoff");
+    await expect(compileOpsHandoffPackFromConfiguration(db, { configId, eventId, actorUserId: userId, clientNotes: null }))
+      .rejects.toBeInstanceOf(OpsHandoffEventBindingRequiredError);
+
+    // The corridor's own write, twice, exactly as an event link opened twice
+    // would issue it. The unique constraint is the idempotency, so the second
+    // is a no-op rather than a duplicate row.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await db.insert(schema.eventConfigurationLinks)
+        .values({ eventId, configurationId: configId, linkType: "source_configuration" })
+        .onConflictDoNothing({
+          target: [
+            schema.eventConfigurationLinks.eventId,
+            schema.eventConfigurationLinks.configurationId,
+            schema.eventConfigurationLinks.linkType,
+          ],
+        });
+    }
+    const links = await db.select().from(schema.eventConfigurationLinks).where(eq(schema.eventConfigurationLinks.eventId, eventId));
+    expect(links).toHaveLength(1);
+
+    const pack = await compileOpsHandoffPackFromConfiguration(db, { configId, eventId, actorUserId: userId, clientNotes: null });
+    const stored = await db.select().from(schema.handoffPacks).where(eq(schema.handoffPacks.id, pack.pack.id));
+    expect(stored).toMatchObject([{ eventId, configId }]);
+    const board = await getEventDayOpsBoard(db, event);
+    expect(board.sourceStatus).toBe("ready");
+    expect(board.handoffPack?.pack.id).toBe(pack.pack.id);
   });
 
   it("persists every footprint, versions geometry changes, and serves frozen geometry after approval", async () => {

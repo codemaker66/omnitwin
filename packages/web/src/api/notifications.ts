@@ -13,6 +13,7 @@ import { api } from "./client.js";
 
 const NotificationListSchema = z.array(NotificationSchema);
 const ChangeFeedListSchema = z.array(ChangeFeedItemSchema);
+const HallkeeperAcknowledgementListSchema = z.array(HallkeeperAcknowledgementSchema);
 
 export type NotificationStatusFilter = "all" | "unread" | "read";
 
@@ -46,5 +47,22 @@ export async function acknowledgeEventPlanChange(
     payload,
     false,
     HallkeeperAcknowledgementSchema,
+  );
+}
+
+/**
+ * Persisted change acknowledgements for an event, newest first. The event-day
+ * board reads these instead of remembering acknowledgements in component state,
+ * so a reload or a second device shows what the room already acknowledged.
+ * `createdAt` is the moment the acknowledgement was recorded.
+ */
+export async function listEventChangeAcknowledgements(
+  eventId: string,
+  limit = 200,
+): Promise<HallkeeperAcknowledgement[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return api.get(
+    `/events/${encodeURIComponent(eventId)}/change-acknowledgements?${params.toString()}`,
+    HallkeeperAcknowledgementListSchema,
   );
 }
