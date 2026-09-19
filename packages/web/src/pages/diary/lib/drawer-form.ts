@@ -51,6 +51,12 @@ export type DrawerMode =
       readonly spaceId: string;
       readonly dayStartMs: number;
       readonly ownerUserId: string;
+      /** Set when the coordinator opened the drawer by clicking a POSITION —
+       *  an empty overview cell, or a point on a day lane — rather than the
+       *  toolbar button. That instant becomes the start and the default
+       *  evening window becomes its duration, so the drawer opens saying
+       *  back exactly what was clicked (T-619). */
+      readonly startMs?: number;
     }
   | { readonly kind: "edit"; readonly booking: CalendarBookingEntry }
   | {
@@ -98,7 +104,10 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
         booking.nextActionDueAt === null
           ? ""
           : msToWallInput(Date.parse(booking.nextActionDueAt)),
-      notes: "",
+      // The booking's own margin note, seeded from the calendar entry so the
+      // edit drawer shows what is already written there instead of an empty
+      // box that silently discards it on save (T-619).
+      notes: booking.notes ?? "",
     };
   }
 
@@ -131,13 +140,19 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
     };
   }
 
+  // A clicked position wins over the day's default evening window: the
+  // coordinator pointed at a time, so the drawer opens at that time and
+  // keeps the default window's LENGTH as the duration.
+  const createStartMs = mode.startMs ?? mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
+  const createEndMs =
+    createStartMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
   return {
     kind: "hold",
     spaceId: mode.spaceId,
     title: "",
     eventType: "",
-    startsAt: msToWallInput(mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS),
-    endsAt: msToWallInput(mode.dayStartMs + DEFAULT_END_HOUR_OFFSET * HOUR_MS),
+    startsAt: msToWallInput(createStartMs),
+    endsAt: msToWallInput(createEndMs),
     rank: "1",
     jointFlag: false,
     decisionAt: "",
@@ -189,7 +204,13 @@ function issuesToFieldErrors(
  *  BookingDrawer.tsx: the always-set mirrors its unconditional fieldError()
  *  calls, the hold-set mirrors the `showHygiene` fieldset — if a field gains
  *  or loses an inline slot there, update these lists in the same change. */
-const ERROR_SLOTTED_ALWAYS: readonly string[] = ["title", "startsAt", "endsAt"];
+const ERROR_SLOTTED_ALWAYS: readonly string[] = [
+  "spaceId",
+  "title",
+  "startsAt",
+  "endsAt",
+  "notes",
+];
 const ERROR_SLOTTED_HOLD: readonly string[] = [
   "rank",
   "decisionAt",
@@ -254,6 +275,11 @@ export function formToUpdatePayload(
   if (Object.keys(times.errors).length > 0) return { ok: false, fieldErrors: times.errors };
 
   const patch: Record<string, unknown> = {};
+  // A booking may change room without being dragged (T-619) — the same
+  // cross-lane move the board performs, expressed as a field. The server
+  // re-checks the space belongs to the venue and re-runs the exclusion
+  // constraint, so this adds no authority the drag did not already have.
+  if (form.spaceId !== original.spaceId) patch["spaceId"] = form.spaceId;
   if (form.title !== original.title) patch["title"] = form.title;
   const eventType = emptyToUndefined(form.eventType);
   if ((eventType ?? null) !== original.eventType) patch["eventType"] = eventType ?? null;
@@ -286,6 +312,12 @@ export function formToUpdatePayload(
   ) {
     patch["nextActionDueAt"] = times.values["nextActionDueAt"];
   }
+  // Notes are nullable on the wire, so clearing the box must send `null`
+  // (erase the note) rather than `undefined` (leave it alone). `original`
+  // may omit the field entirely on an older server response — treat that
+  // as "no note", the same as null.
+  const notes = emptyToUndefined(form.notes) ?? null;
+  if (notes !== (original.notes ?? null)) patch["notes"] = notes;
 
   const parsed = UpdateBookingSchema.safeParse(patch);
   if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };

@@ -103,12 +103,16 @@ describe("overview focus anchors", () => {
     expect(firstVisibleDay(booking("outside", interval), week)).toBeNull();
   });
 
+  // Same span, same month boundary, same assertions — carried over to the
+  // fortnight when the month board was retired (T-619). The fortnight
+  // anchored on 1 Oct runs Mon 28 Sep to Sun 11 Oct, so it still holds the
+  // whole eight-day booking and still crosses the month.
   it("retains a spanning booking across eight days at a month boundary without adding the end day", () => {
-    const month = boardRange(Date.parse("2026-10-15T12:00:00Z"), "month");
+    const fortnight = boardRange(Date.parse("2026-10-01T12:00:00Z"), "2w");
     const spanning = booking("eight-days", { startsAt: "2026-09-30T23:00:00Z", endsAt: "2026-10-08T23:00:00Z" });
-    const visibleDays = dayColumns(month).filter((day) => entriesForDay([spanning], SPACE, day).length > 0);
+    const visibleDays = dayColumns(fortnight).filter((day) => entriesForDay([spanning], SPACE, day).length > 0);
     expect(visibleDays).toHaveLength(8);
-    expect(firstVisibleDay(spanning, month)).toBe(Date.parse("2026-09-30T23:00:00Z"));
+    expect(firstVisibleDay(spanning, fortnight)).toBe(Date.parse("2026-09-30T23:00:00Z"));
     expect(visibleDays.at(-1)?.endMs).toBe(Date.parse("2026-10-08T23:00:00Z"));
   });
 });

@@ -97,6 +97,14 @@ export interface HoldingTrayProps {
     enquiry: TrayEnquiry,
     event: React.PointerEvent<HTMLElement>,
   ) => void;
+  /** A press that travelled was a scroll, not a lift — the page is told so
+   *  it can abandon the ripening long-press (T-619). */
+  readonly onEnquiryPressMove?: (event: React.PointerEvent<HTMLElement>) => void;
+  /** The finger left, or the platform cancelled the gesture. */
+  readonly onEnquiryPressEnd?: () => void;
+  /** The slip currently being carried. Only THAT slip stops the page from
+   *  scrolling; every other one keeps `touch-action: pan-x pan-y`. */
+  readonly liftedEnquiryId?: string | null;
 }
 
 export function HoldingTray({
@@ -109,6 +117,9 @@ export function HoldingTray({
   canConvert,
   onConvertEnquiry,
   onBeginEnquiryDrag,
+  onEnquiryPressMove,
+  onEnquiryPressEnd,
+  liftedEnquiryId = null,
 }: HoldingTrayProps): ReactElement {
   return (
     <section className="diary-panel diary-tray" aria-label={BOARD_COPY.tray.title}>
@@ -156,12 +167,19 @@ export function HoldingTray({
           {enquiries.map((enquiry) => (
             <li
               key={enquiry.id}
-              className={`diary-tray-enquiry${canConvert && onBeginEnquiryDrag !== undefined ? " is-draggable" : ""}`}
+              className={[
+                "diary-tray-enquiry",
+                canConvert && onBeginEnquiryDrag !== undefined ? "is-draggable" : "",
+                liftedEnquiryId === enquiry.id ? "is-lifted" : "",
+              ].filter(Boolean).join(" ")}
               onPointerDown={
                 canConvert && onBeginEnquiryDrag !== undefined
                   ? (event) => { onBeginEnquiryDrag(enquiry, event); }
                   : undefined
               }
+              onPointerMove={onEnquiryPressMove}
+              onPointerUp={onEnquiryPressEnd}
+              onPointerCancel={onEnquiryPressEnd}
             >
               <span className="diary-tray-item-title">{enquiry.name}</span>
               <span className="diary-tray-item-reason">

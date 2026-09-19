@@ -31,10 +31,14 @@
 .diary-booking-detail { padding: 14px 16px; background: #edf2e6; border: 1px solid #d5dfca; border-radius: 8px; }
 .diary-booking-detail h3 { font: 500 21px/1.3 var(--diary-hand); margin: 0 0 8px; overflow-wrap: anywhere; }
 .diary-booking-detail p { margin: 5px 0 0; font-size: 13px; color: #536b54; }
+/* Owner, client, event, guests as a labelled list (T-619): a bare line of
+   text made the reader guess which fact they were looking at. */
+.diary-booking-facts { margin: 0; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 4px 12px; font-size: 13px; }
+.diary-booking-facts dt { color: #6a7b6c; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; align-self: center; }
+.diary-booking-facts dd { margin: 0; color: #2c4634; overflow-wrap: anywhere; }
 .diary-page button:focus-visible, .diary-page a:focus-visible, .diary-page input:focus-visible, .diary-page select:focus-visible, .diary-page textarea:focus-visible, .diary-page [tabindex]:focus-visible { outline: 3px solid #517963; outline-offset: 3px; }
 .diary-heading { display: flex; align-items: baseline; gap: 22px; }
 .diary-title { margin: 0; color: #183c30; font: 500 clamp(32px,3vw,46px)/1.13 var(--diary-hand); letter-spacing: -.035em; }
-.diary-subtitle { color: #627066; font-size: 14px; margin: 0; }
 .diary-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
 .diary-button { border: 1px solid #d7dcce; background: #fffef8; color: #254235; border-radius: 7px; min-height: 38px; padding: 8px 13px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background-color 160ms ease,border-color 160ms ease; }
 .diary-button:hover { background: #ebf0e6; border-color: #95ad9a; }
@@ -82,6 +86,15 @@
 .diary-overview-room span, .diary-overview-room small { display: block; font-size: 12px; color: #4d604e; margin-top: 4px; }
 .diary-overview-cell { min-width: 0; padding: 10px 6px; border-left: 1px solid #eff0e9; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .diary-overview-cell.is-weekend { background: #fafbf6; }
+/* Create-in-context (T-619): the empty square of the grid is now a target.
+   It stays nearly invisible — a dotted ghost that takes the room the day's
+   bookings leave — and resolves on hover or focus. A phone has no hover, so
+   it is always faintly legible there rather than hidden behind one. */
+.diary-overview-new { flex: 1 1 auto; min-height: 30px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px dashed #d3dcc8; border-radius: 6px; background: transparent; color: #8b9884; font-size: 10px; cursor: cell; opacity: 0; transition: opacity 140ms ease,border-color 140ms ease,color 140ms ease; }
+.diary-overview-cell:hover .diary-overview-new, .diary-overview-new:focus-visible { opacity: 1; border-color: #9db28e; color: #55704b; }
+.diary-overview-new:focus-visible { outline: 2px solid #547d43; outline-offset: 1px; }
+@media (hover: none) { .diary-overview-new { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .diary-overview-new { transition: none; } }
 .diary-overview-booking { width: 100%; min-height: 88px; border: 1px solid #bacbb0; border-radius: 7px; background: #d9e4cf; color: #294431; padding: 9px; text-align: left; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; transition: border-color 160ms ease,box-shadow 160ms ease; }
 .diary-overview-booking:hover { border-color: #6c8d65; box-shadow: 0 3px 8px #24452a18; }
 .diary-overview-booking strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13px; line-height: 1.35; font-weight: 650; }
@@ -112,7 +125,11 @@
 .diary-tray-item-reason { color: #6a7568; font-size: 11px; line-height: 1.4; }
 .diary-tray-enquiry .diary-button { align-self: flex-start; background: #335b45; color: #fff; border-color: #335b45; min-height: 32px; font-size: 11px; padding: 6px 10px; margin-top: 3px; }
 .diary-tray-drag-hint { font-size: 11px; color: #6a786a; }
-.diary-tray-enquiry.is-draggable { cursor: grab; touch-action: none; }
+/* A finger scrolls the tray; a long press lifts the slip (T-619). The page
+   keeps `pan-x pan-y` until the press ripens, and only the slip actually
+   being carried takes the gesture away from the browser. */
+.diary-tray-enquiry.is-draggable { cursor: grab; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; }
+.diary-tray-enquiry.is-lifted { cursor: grabbing; touch-action: none; }
 .diary-conflicts { background: #f6e8de; border-color: #e6d2c2; }
 .diary-conflict-heading { display: flex; align-items: center; gap: 8px; color: #9e6132; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; cursor: pointer; padding: 10px 0; }
 .diary-conflict-heading > span:last-child { margin-left: auto; font-size: 10px; text-transform: none; letter-spacing: 0; }
@@ -142,11 +159,26 @@
 .diary-rail-name { font: 500 17px/1.2 var(--diary-hand); }
 .diary-rail-capacity, .diary-rail-counts, .diary-rail-utilisation { font-size: 10px; color: #77816e; }
 .diary-rail-counts { display: flex; flex-wrap: wrap; gap: 7px; }
-.diary-rail-dial { display: none; }
 .diary-lane { position: relative; flex: 0 0 auto; }
 .diary-lane-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid #e7ecdf; pointer-events: none; }
+/* Create-in-context (T-619): the whole empty lane is the target, sitting
+   UNDER the blocks so it can only be hit where the lane is genuinely free.
+   It shows nothing until the pointer is over it or it holds focus — the
+   board is a document first, and an always-visible "+" on every lane would
+   be noise across every room and every hour. */
+.diary-lane-new { position: absolute; inset: 0; z-index: 1; width: 100%; border: 0; background: transparent; padding: 0; cursor: cell; border-radius: 6px; }
+.diary-lane-new:hover { background: rgb(84 125 67 / 7%); }
+.diary-lane-new:focus-visible { outline: 2px solid #547d43; outline-offset: -3px; background: rgb(84 125 67 / 7%); }
 .diary-lane-col.is-weekend, .diary-axis-day.is-weekend { background: #f6f8f0; }
-.diary-block { position: absolute; border: 0; background: transparent; padding: 0; text-align: left; color: #2e4c37; touch-action: none; border-radius: 7px; z-index: 2; }
+/* Same rule as the tray slips: the lane pans under a finger until a long
+   press lifts a block, and only the lifted block claims the gesture. */
+.diary-block { position: absolute; border: 0; background: transparent; padding: 0; text-align: left; color: #2e4c37; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; border-radius: 7px; z-index: 2; }
+.diary-block.is-lifted { touch-action: none; }
+/* The lifted block rises a hair and casts a shadow, so the finger can see
+   what it picked up. A spring would be wrong here — this is a state change
+   with no travel, not motion through space. */
+.diary-block.is-lifted .diary-block-card { box-shadow: 0 6px 14px rgb(46 76 55 / 28%); transform: translateY(-1px); }
+@media (prefers-reduced-motion: reduce) { .diary-block.is-lifted .diary-block-card { transform: none; } }
 .diary-block-card { display: flex; flex-direction: column; gap: 5px; height: 100%; overflow: hidden; padding: 9px; background: #d8e4cc; border: 1px solid #b5caa5; border-radius: 7px; }
 .diary-block.is-hold .diary-block-card { background: #f5e8b9; border-color: #dfcc8b; color: #6a542e; }
 .diary-block.is-prospect .diary-block-card { background: #f6f8ef; border-style: dashed; }
@@ -201,7 +233,6 @@
 .diary-field-error, .diary-drawer-error { font-size: 12px; line-height: 1.5; }
 .diary-drawer-note { font-size: 12px; line-height: 1.55; color: #70806a; }
 .diary-drawer-transitions { border-top: 1px solid #dde4d2; padding-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
-.diary-return { color: #3b6548; text-underline-offset: 4px; font-size: 13px; }
 .diary-welcome-overlay, .diary-palette-backdrop { position: fixed; inset: 0; z-index: 115; display: grid; place-items: center; background: #1b342b55; padding: 20px; }
 .diary-welcome, .diary-palette { width: min(660px,100%); max-height: calc(100dvh - 40px); overflow: auto; background: #fffdf4; color: #284431; border: 1px solid #d9dfca; border-radius: 15px; box-shadow: 0 20px 60px #152d3330; padding: 30px; }
 .diary-welcome-body { font-size: 14px; line-height: 1.65; }

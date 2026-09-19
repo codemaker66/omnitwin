@@ -56,6 +56,46 @@ export async function listEnquiries(
   return api.get(`/enquiries${params}`, z.array(EnquirySchema), signal);
 }
 
+/** The two states that mean "this enquiry is still someone's job" — what
+ *  the Diary's tray is for. Declared beside the request that uses it so the
+ *  tray and the server filter cannot disagree about what "open" means. */
+export const OPEN_ENQUIRY_STATES = ["submitted", "under_review"] as const;
+
+/** One server page. 100 is the API's own MAX_LIMIT. */
+const OPEN_ENQUIRY_PAGE = 100;
+
+/** A ceiling on the paging loop, so a server that ignored `offset` could
+ *  never spin the browser. 500 open enquiries is far past anything a single
+ *  venue's tray shows. */
+const OPEN_ENQUIRY_MAX_PAGES = 5;
+
+/**
+ * Every OPEN enquiry, newest first (T-619).
+ *
+ * The tray used to call `listEnquiries()` with no arguments — the default
+ * page of twenty rows, ordered by `updatedAt` ASCENDING — and then filter
+ * to the open states in the browser. That reads the twenty LEAST recently
+ * touched enquiries of any state, so a venue with a busy inbox saw a tray
+ * that was both truncated and stale-first. This asks the server the real
+ * question instead: these states, newest first, a full page at a time until
+ * a page comes back short.
+ */
+export async function listOpenEnquiries(signal?: AbortSignal): Promise<Enquiry[]> {
+  const query = `status=${OPEN_ENQUIRY_STATES.join(",")}&order=newest&limit=${String(OPEN_ENQUIRY_PAGE)}`;
+  const all: Enquiry[] = [];
+  for (let page = 0; page < OPEN_ENQUIRY_MAX_PAGES; page += 1) {
+    const offset = page * OPEN_ENQUIRY_PAGE;
+    const rows = await api.get(
+      `/enquiries?${query}&offset=${String(offset)}`,
+      z.array(EnquirySchema),
+      signal,
+    );
+    all.push(...rows);
+    if (rows.length < OPEN_ENQUIRY_PAGE) break;
+  }
+  return all;
+}
+
 export async function getEnquiry(id: string, signal?: AbortSignal): Promise<Enquiry> {
   return api.get(`/enquiries/${id}`, EnquirySchema, signal);
 }

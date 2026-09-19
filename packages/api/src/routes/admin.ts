@@ -1,4 +1,5 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
@@ -9,6 +10,40 @@ import {
   pruneSnapshotsForConfig,
 } from "../services/sheet-snapshot.js";
 import { runHoldReminderPass } from "../services/hold-reminders.js";
+
+// ---------------------------------------------------------------------------
+// The hold-reminder cron's identity (T-619).
+//
+// The reminder pass has to run unattended, and an unattended runner cannot
+// hold a Clerk session. `DIARY_CRON_TOKEN` is therefore a second accepted
+// identity for THAT ONE ROUTE: a shared secret, compared in constant time,
+// valid only when the deployment sets it. Everything else about the route
+// is unchanged — a human platform administrator still reaches it the
+// normal way, and when the variable is unset the scheduled path simply
+// does not exist rather than falling open.
+// ---------------------------------------------------------------------------
+
+/** Constant-time equality over the raw bytes. Lengths are compared first
+ *  because `timingSafeEqual` throws on a length mismatch; the length of a
+ *  secret is not the secret. */
+function secretEquals(presented: string, expected: string): boolean {
+  const a = Buffer.from(presented, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/** True when the request carries the configured cron service token. */
+function hasCronToken(request: FastifyRequest): boolean {
+  const configured = process.env["DIARY_CRON_TOKEN"];
+  // An unset — or implausibly short — token must never authenticate
+  // anything. This mirrors the EnvSchema floor so a deployment that skipped
+  // startup validation still fails closed here.
+  if (configured === undefined || configured.length < 32) return false;
+  const header = request.headers.authorization;
+  if (header === undefined || !header.startsWith("Bearer ")) return false;
+  return secretEquals(header.slice(7), configured);
+}
 
 // ---------------------------------------------------------------------------
 // Plugin — admin-only endpoints
@@ -88,14 +123,44 @@ export async function adminRoutes(
   // repeats, so an external cron can invoke this hourly without double
   // sends. `dryRun: true` reports what WOULD send without sending —
   // the rehearsal path (first-live-week runbook §reminders).
+  //
+  // Two identities reach it (T-619): a signed-in platform administrator, or
+  // the scheduled runner presenting `DIARY_CRON_TOKEN`. The token path skips
+  // Clerk entirely — there is no `request.user` to set and none is read here.
   // -------------------------------------------------------------------------
 
   const HoldRemindersBody = z.object({
     dryRun: z.boolean().optional(),
   });
 
+  // Two preHandlers rather than one wrapper: when `authenticate` answers 401
+  // Fastify stops the lifecycle, so the second never runs. Nothing here
+  // inspects `reply.sent` — Fastify 5 removed it, and a wrapper that guessed
+  // wrong would run the admin check against an unset `request.user`.
+  const cronAuthorised = new WeakSet<FastifyRequest>();
+
+  const authenticateOrCron = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<void> => {
+    if (hasCronToken(request)) {
+      cronAuthorised.add(request);
+      request.log.info({ actor: "diary-cron" }, "hold-reminder pass authorised by service token");
+      return;
+    }
+    await authenticate(request, reply);
+  };
+
+  const platformAdminOrCron = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<void> => {
+    if (cronAuthorised.has(request)) return;
+    await authorizePlatformAdmin()(request, reply);
+  };
+
   server.post("/diary/hold-reminders", {
-    preHandler: [authenticate, authorizePlatformAdmin()],
+    preHandler: [authenticateOrCron, platformAdminOrCron],
   }, async (request, reply) => {
     const body = HoldRemindersBody.safeParse(request.body ?? {});
     if (!body.success) {

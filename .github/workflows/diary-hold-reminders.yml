@@ -1,0 +1,133 @@
+# =============================================================================
+# VENVIEWER — Diary hold reminders (T-619)
+# =============================================================================
+# Calls the deployed API's POST /admin/diary/hold-reminders, which emails the
+# owner of each pencilled hold at T-7, T-3 and T-1 days before its decision
+# date. The pass is idempotent: `email_sends` carries a unique key per
+# (booking, day, stage), so a repeated call sends nothing twice. That is why a
+# retry window is safe, and why a MISSED run is the only real failure mode.
+#
+# Unlike cleanup.yml this workflow holds NO database credential. It talks to
+# the running API over HTTPS, so the same authorisation and audit trail apply
+# as when a human triggers the pass.
+#
+# -----------------------------------------------------------------------------
+# WHAT THIS NEEDS BEFORE IT CAN RUN (both are the captain's to set):
+#
+#   secrets.DIARY_CRON_TOKEN   Repository secret. MUST be byte-identical to the
+#                              API's own `DIARY_CRON_TOKEN` environment
+#                              variable on Railway. At least 32 characters —
+#                              the API's EnvSchema rejects anything shorter at
+#                              startup, and the route ignores a short value
+#                              even if startup validation was skipped.
+#                              Generate with: openssl rand -base64 48
+#
+#   vars.VENVIEWER_API_URL     Repository variable, optional. The API origin,
+#                              no trailing slash. Defaults to the production
+#                              origin used by the smoke suite.
+#
+# Until the secret exists this workflow fails closed and loudly: the API
+# answers 401 and the step exits non-zero. It never falls back to sending.
+#
+# THE DRY-RUN RECEIPT: run this workflow manually once with `dry_run: true`
+# (the default). It reports exactly what WOULD be sent and writes the summary
+# to the run's job summary — that printed summary is the receipt §2 line 19
+# asks for. Only then set `dry_run: false` on a manual run, or let the
+# schedule take over.
+# =============================================================================
+
+name: Diary hold reminders
+
+on:
+  schedule:
+    # 07:00-10:00 UTC daily. Reminders should land in the morning, and four
+    # attempts give the day three chances to recover from a transient failure
+    # with no risk of a double send.
+    - cron: "0 7-10 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be sent, without sending it"
+        type: boolean
+        default: true
+
+concurrency:
+  # Two overlapping passes would be harmless (the unique keys dedupe) but the
+  # logs would be a maze. One at a time.
+  group: diary-hold-reminders
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    name: Run the hold-reminder pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call the hold-reminder endpoint
+        env:
+          API_URL: ${{ vars.VENVIEWER_API_URL || 'https://api.venviewer.com' }}
+          CRON_TOKEN: ${{ secrets.DIARY_CRON_TOKEN }}
+          # A scheduled run is always a real pass; only a manual run may ask
+          # for a rehearsal, and it asks for one by default.
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_TOKEN}" ]; then
+            echo "::error::DIARY_CRON_TOKEN is not set. The reminder pass cannot authenticate; no reminders were sent." >&2
+            exit 1
+          fi
+
+          echo "Calling ${API_URL}/admin/diary/hold-reminders (dryRun=${DRY_RUN})"
+
+          # -sS keeps curl quiet but still reports transport errors. The body
+          # and the status are captured separately so a failure can print the
+          # API's own explanation instead of an empty non-zero exit. The token
+          # travels in a header read from the environment and is never echoed.
+          http_status=$(
+            curl -sS -o response.json -w '%{http_code}' \
+              --max-time 120 \
+              --retry 2 --retry-delay 5 --retry-connrefused \
+              -X POST "${API_URL}/admin/diary/hold-reminders" \
+              -H "Authorization: Bearer ${CRON_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"dryRun\": ${DRY_RUN}}"
+          )
+
+          if [ "${http_status}" != "200" ]; then
+            # 401 means the token does not match the API's; 403 means it was
+            # read as a signed-in user without platform-admin rights.
+            echo "::error::Hold-reminder pass failed with HTTP ${http_status}." >&2
+            cat response.json >&2 || true
+            exit 1
+          fi
+
+          # The receipt. jq is present on ubuntu-latest.
+          summary=$(jq -r '
+            .data | "scanned=\(.scanned) due=\(.due) sent=\(.sent) failed=\(.failed) dryRun=\(.dryRun)"
+          ' response.json)
+          echo "${summary}"
+
+          {
+            echo "### Diary hold reminders"
+            echo ""
+            echo "- Endpoint: \`${API_URL}/admin/diary/hold-reminders\`"
+            echo "- Result: \`${summary}\`"
+            echo ""
+            echo "<details><summary>Reminders</summary>"
+            echo ""
+            echo '```json'
+            # Booking ids and stages only — recipient addresses stay out of a
+            # job summary that anyone with repository read can open.
+            jq '[.data.reminders[] | {bookingId, daysBefore, outcome}]' response.json
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # A pass that failed to deliver is not a green run.
+          failed=$(jq -r '.data.failed' response.json)
+          if [ "${failed}" != "0" ]; then
+            echo "::error::${failed} reminder(s) failed to send." >&2
+            exit 1
+          fi

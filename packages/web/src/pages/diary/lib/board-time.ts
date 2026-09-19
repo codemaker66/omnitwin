@@ -14,7 +14,11 @@
 
 export const VENUE_TIME_ZONE = "Europe/London";
 
-export type BoardView = "day" | "week" | "2w" | "month";
+/** The board's three zooms. The month board was retired in T-619: it was
+ *  never in the toolbar, reachable only by `?view=month` or an undocumented
+ *  `m` key, and at 3px an hour it drew a smear. `?view=month` is normalised
+ *  to "week" at the page boundary, so old deep links still land. */
+export type BoardView = "day" | "week" | "2w";
 
 export interface BoardRange {
   readonly view: BoardView;
@@ -180,13 +184,6 @@ export function boardRange(
       const monday = mondayOf(anchorMs, timeZone);
       return { view, fromMs: monday, toMs: addLocalDays(monday, 14, timeZone) };
     }
-    case "month": {
-      const wall = wallParts(anchorMs, timeZone);
-      const fromMs = instantForWall(wall.year, wall.month, 1, timeZone);
-      const nextYear = wall.month === 12 ? wall.year + 1 : wall.year;
-      const nextMonth = wall.month === 12 ? 1 : wall.month + 1;
-      return { view, fromMs, toMs: instantForWall(nextYear, nextMonth, 1, timeZone) };
-    }
     default: {
       const exhausted: never = view;
       throw new Error(`Unhandled board view: ${String(exhausted)}`);
@@ -296,12 +293,6 @@ export function rangeTitle(range: BoardRange, timeZone: string = VENUE_TIME_ZONE
       return `Week of ${formatWallDayFull(range.fromMs, timeZone)}`;
     case "2w":
       return `Fortnight of ${formatWallDayFull(range.fromMs, timeZone)}`;
-    case "month":
-      return cachedFormatter(`month:${timeZone}`, {
-        timeZone,
-        month: "long",
-        year: "numeric",
-      }).format(new Date(range.fromMs));
     default: {
       const exhausted: never = range.view;
       throw new Error(`Unhandled board view: ${String(exhausted)}`);

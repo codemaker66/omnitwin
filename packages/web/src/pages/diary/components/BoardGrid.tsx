@@ -18,6 +18,7 @@ import {
   formatWallTime,
   hourTicks,
   msToX,
+  snapMs,
   widthPx,
   type BoardRange,
 } from "../lib/board-time.js";
@@ -53,6 +54,19 @@ export interface BoardGridProps {
   readonly writable: boolean;
   readonly nowMs: number;
   readonly onOpenBlock?: (blockId: string) => void;
+  /** Create-in-context (T-619). Undefined for a read-only role — there is
+   *  then no control to offer at all.
+   *
+   *  Two entry points, because a pointer and a keyboard express different
+   *  things: `at` takes the instant a click landed on, `onDay` takes the day
+   *  a keyboard activation falls back to. `day` is that day — its `startMs`
+   *  for the fallback and its `label` for the accessible name, so what a
+   *  screen reader hears is what the control will actually do. */
+  readonly create?: {
+    readonly at: (spaceId: string, startMs: number) => void;
+    readonly onDay: (spaceId: string, dayStartMs: number) => void;
+    readonly day: { readonly startMs: number; readonly label: string };
+  };
   /** The venue's turnaround rules (optional on the wire) — gap dimensions
    *  degrade to plain durations when an older server omits them. */
   readonly turnaroundRules?: readonly CalendarTurnaroundRule[];
@@ -116,7 +130,7 @@ function countdownLabel(ms: number): string {
 }
 
 export function BoardGrid(props: BoardGridProps): ReactElement {
-  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock } = props;
+  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock, create } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
   const columns = dayColumns(range);
   const ticks = range.view === "day" ? hourTicks(range) : [];
@@ -225,6 +239,44 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                   data-diary-lane={room.id}
                   style={{ width: canvasWidth, height: laneHeight }}
                 >
+                  {/* Create-in-context (T-619). Empty lane space is the most
+                      natural place to say "put something here", and it was
+                      inert: the only way to make a booking was the toolbar
+                      button, which then guessed the room and the day. The
+                      surface sits UNDER the blocks (z-index 1 against their
+                      2), so it can only ever be reached where the lane is
+                      genuinely empty, and it is a <button> so the keyboard
+                      and a screen reader reach the same affordance.
+
+                      A pointer says WHERE, and the instant is read from it. A
+                      keyboard cannot: an Enter/Space activation reports
+                      clientX 0, which used to be mapped to whatever time the
+                      lane happened to be scrolled to — a number the user never
+                      expressed. `detail === 0` identifies that activation, and
+                      it falls back to the day the board is showing, exactly as
+                      the toolbar button and the overview squares do (review
+                      fix 2). */}
+                  {create === undefined ? null : (
+                    <button
+                      type="button"
+                      className="diary-lane-new"
+                      aria-label={BOARD_COPY.create.laneLabel(room.name, create.day.label)}
+                      onClick={(event) => {
+                        if (event.detail === 0) {
+                          create.onDay(room.id, create.day.startMs);
+                          return;
+                        }
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        const offsetMs =
+                          ((event.clientX - bounds.left) / pxPerHour) * 3_600_000;
+                        const clicked = snapMs(range.fromMs + offsetMs, 15);
+                        create.at(
+                          room.id,
+                          Math.min(Math.max(clicked, range.fromMs), range.toMs - 15 * 60_000),
+                        );
+                      }}
+                    />
+                  )}
                   {columns.map((column) => (
                     <div
                       key={column.startMs}
@@ -334,6 +386,9 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                           stateClass,
                           severity !== undefined ? `has-conflict-${severity}` : "",
                           beingDragged ? "is-dragging" : "",
+                          // Only the block a finger is actually carrying
+                          // stops the page scrolling (T-619).
+                          drag.liftedBlockId === block.entry.id ? "is-lifted" : "",
                           block.startMs < range.fromMs ? "is-clipped-start" : "",
                           block.endMs > range.toMs ? "is-clipped-end" : "",
                         ]

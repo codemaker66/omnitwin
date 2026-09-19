@@ -19,7 +19,12 @@ export const BOARD_COPY = {
   emptyRange: "No bookings in this range.",
   showExited: "Show released & cancelled",
 
-  views: { day: "Day", week: "Week", "2w": "2W", month: "Month" } as const,
+  // Three zooms, and only three (T-619). The month board was retired: it
+  // was unreachable from the toolbar, reachable only by `?view=month` or an
+  // undocumented `m` key, and at 3px an hour it drew a smear no coordinator
+  // could read. `?view=month` now resolves to the week its anchor falls in,
+  // so every old deep link still lands somewhere true.
+  views: { day: "Day", week: "Week", "2w": "2W" } as const,
 
   /** The Command Centre card face (C1). Doors language, never compliance;
    *  the countdown is minute-granular on the shared board clock. */
@@ -48,13 +53,20 @@ export const BOARD_COPY = {
       "Booked share of this range.",
   },
 
-  /** The drawing-sheet title block (C1). Labels only — no claims. */
-  titleBlock: {
-    sheet: "The Diary",
-    drawnBy: "Drawn from",
-    drawnByValue: "the live diary",
-    rangeLabel: "Sheet",
+  /** Create-in-context (T-619): the affordances that open the drawer at a
+   *  room and a time the coordinator pointed at, rather than at whatever
+   *  the board happened to consider first. */
+  create: {
+    cellLabel: (room: string, day: string): string => `New booking — ${room}, ${day}`,
+    cellHint: "New",
+    // The lane surface picks a TIME when it is clicked and a DAY when it is
+    // reached from the keyboard, which has no position to offer. The label
+    // names the day, because the keyboard is who hears it (review fix 2); it
+    // used to announce the whole visible range, which the control never picks.
+    laneLabel: (room: string, day: string): string =>
+      `New booking — ${room}, ${day}. Click the lane for a particular time.`,
   },
+
   today: "Today",
   previous: "Earlier",
   next: "Later",
@@ -98,6 +110,14 @@ export const BOARD_COPY = {
       `Pencil in ${name}. The enquiry stays in review.`,
     hygieneLegend: "Pencil hygiene",
     ownerNote: "You will own this pencil.",
+    // Detail-list labels for the edit drawer. Each "none" string says the
+    // absence out loud rather than leaving a blank line to interpret.
+    ownerLabel: "Owner",
+    ownerUnassigned: "Nobody yet",
+    clientLabel: "Client",
+    clientNone: "No client linked",
+    eventLabel: "Event",
+    guestsLabel: "Guests",
     saveFailed: "That change could not be saved — nothing was altered.",
     created: (title: string): string => `Added ${title} to the diary.`,
     saved: (title: string): string => `Saved ${title}.`,

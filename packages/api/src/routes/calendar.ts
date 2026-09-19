@@ -8,7 +8,7 @@ import {
   type CalendarQuery,
   type CalendarResponse,
 } from "@omnitwin/types";
-import { bookings, eventPhases, events, spaces, turnaroundRules } from "../db/schema.js";
+import { bookings, eventPhases, events, spaces, turnaroundRules, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
@@ -117,9 +117,9 @@ export async function calendarRoutes(
       // Explicit column map, NOT db.select().from(...): adding a join to a
       // bare select() silently changes Drizzle's row shape to nested
       // { bookings: {...}, events: {...} } and every flat row.* read below
-      // would break. The left join enriches each booking with its event's
-      // card-face fields (name, client, guest count) in the same
-      // round-trip — the route's own latency rule.
+      // would break. The left joins enrich each booking with its event's
+      // card-face fields (name, client, guest count) and its owner's
+      // display name in the same round-trip — the route's own latency rule.
       db
         .select({
           id: bookings.id,
@@ -143,9 +143,11 @@ export async function calendarRoutes(
           eventName: events.name,
           eventClientName: events.clientName,
           eventGuestCount: events.guestCount,
+          ownerName: users.name,
         })
         .from(bookings)
         .leftJoin(events, and(eq(bookings.eventId, events.id), isNull(events.deletedAt)))
+        .leftJoin(users, eq(bookings.ownerUserId, users.id))
         .where(
           and(
             eq(bookings.venueId, query.venueId),
@@ -269,6 +271,10 @@ export async function calendarRoutes(
       clientName: row.eventClientName,
       guestCount: row.eventGuestCount,
       notes: row.notes,
+      // The owner as a person, not a uuid (T-619). Null when the booking
+      // has no owner or that user row is gone — the drawer then says so
+      // rather than printing an identifier nobody can act on.
+      ownerName: row.ownerName,
     }));
 
     const entries = [...bookingEntries, ...phaseEntries].sort((a, b) => {

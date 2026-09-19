@@ -54,6 +54,15 @@ export interface BookingDrawerProps {
 
 const KIND_OPTIONS: readonly BookingKind[] = ["hold", "ink", "internal_block", "prospect"];
 
+/** A detail field is only worth a line when it actually carries a value:
+ *  the calendar marks these optional AND nullable, and an empty string is
+ *  no more informative than either. */
+function detailOrNull(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
 function drawerTitle(mode: DrawerMode): string {
   if (mode.kind === "edit") return BOARD_COPY.drawer.editTitle;
   if (mode.kind === "convert") return BOARD_COPY.drawer.convertTitle;
@@ -300,10 +309,28 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         <p className="diary-drawer-note">{BOARD_COPY.drawer.convertNote(mode.enquiry.name)}</p>
       ) : null}
 
-      {mode.kind === "edit" ? <section className="diary-booking-detail" aria-label="Booking details">
+      {/* "Booking summary", not "Booking details": the drawer itself is
+          already labelled "Booking details", and two landmarks answering to
+          the same name is a maze for anyone navigating by label (T-619). */}
+      {mode.kind === "edit" ? <section className="diary-booking-detail" aria-label="Booking summary">
         <h3>{mode.booking.title}</h3>
-        {mode.booking.clientName !== undefined && mode.booking.clientName !== null && mode.booking.clientName.length > 0 ? <p>{mode.booking.clientName}</p> : null}
-        {mode.booking.guestCount === null || mode.booking.guestCount === undefined ? null : <p>{mode.booking.guestCount} guests</p>}
+        {/* Who owns this pencil, and whose event it is — both by name, and
+            both stated plainly when there is no answer. A uuid, or a silent
+            gap, leaves the coordinator guessing (T-619). */}
+        <dl className="diary-booking-facts">
+          <dt>{BOARD_COPY.drawer.ownerLabel}</dt>
+          <dd>{detailOrNull(mode.booking.ownerName) ?? BOARD_COPY.drawer.ownerUnassigned}</dd>
+          <dt>{BOARD_COPY.drawer.clientLabel}</dt>
+          <dd>{detailOrNull(mode.booking.clientName) ?? BOARD_COPY.drawer.clientNone}</dd>
+          {detailOrNull(mode.booking.eventName) === null ? null : <>
+            <dt>{BOARD_COPY.drawer.eventLabel}</dt>
+            <dd>{detailOrNull(mode.booking.eventName)}</dd>
+          </>}
+          {mode.booking.guestCount === null || mode.booking.guestCount === undefined ? null : <>
+            <dt>{BOARD_COPY.drawer.guestsLabel}</dt>
+            <dd>{BOARD_COPY.card.guests(mode.booking.guestCount)}</dd>
+          </>}
+        </dl>
       </section> : null}
       {!canWriteDiary ? <p className="diary-drawer-note">Read-only booking details. A venue coordinator can make changes.</p> : null}
 
@@ -328,19 +355,21 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           </label>
         ) : null}
 
+        {/* A room change is a cross-lane move, and the board has always
+            allowed one by dragging. Withholding it here meant a coordinator
+            on a phone — where the drag is hardest — could not move a
+            booking at all (T-619). The server applies the same exclusion
+            constraint either way. */}
         <label className="diary-field">
           {BOARD_COPY.drawer.fields.room}
-          <select
-            value={form.spaceId}
-            onChange={onText("spaceId")}
-            disabled={mode.kind === "edit"}
-          >
+          <select value={form.spaceId} onChange={onText("spaceId")}>
             {rooms.map((room) => (
               <option key={room.id} value={room.id}>
                 {room.name}
               </option>
             ))}
           </select>
+          {fieldError("spaceId")}
         </label>
 
         <label className="diary-field">
@@ -439,17 +468,25 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
               />
               {fieldError("nextActionDueAt")}
             </label>
-            <p className="diary-drawer-note">{BOARD_COPY.drawer.ownerNote}</p>
+            {/* "You will own this pencil" is true when you are making one.
+                On an existing booking the owner is already someone — named
+                in the detail list above — so promising ownership there
+                would be a lie (T-619). */}
+            {mode.kind === "edit" ? null : (
+              <p className="diary-drawer-note">{BOARD_COPY.drawer.ownerNote}</p>
+            )}
             {fieldError("ownerUserId")}
           </fieldset>
         ) : null}
 
-        {mode.kind !== "edit" ? (
-          <label className="diary-field">
-            {BOARD_COPY.drawer.fields.notes}
-            <textarea value={form.notes} onChange={onText("notes")} rows={2} />
-          </label>
-        ) : null}
+        {/* Notes are editable in every mode now. On edit they were rendered
+            nowhere and never patched, so a note written at creation was
+            invisible for the rest of the booking's life (T-619). */}
+        <label className="diary-field">
+          {BOARD_COPY.drawer.fields.notes}
+          <textarea value={form.notes} onChange={onText("notes")} rows={3} />
+          {fieldError("notes")}
+        </label>
 
         </fieldset>
         {submitError !== null ? (

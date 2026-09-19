@@ -408,6 +408,12 @@ export const CalendarBookingEntrySchema = z.object({
   clientName: z.string().max(200).nullable().optional(),
   guestCount: z.number().int().nonnegative().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  // The owner's display name, joined from `users` (T-619). `ownerUserId`
+  // alone is a uuid, and a uuid is not a name a coordinator can act on —
+  // §17 wants a real person attached to a pencil. Optional for the same
+  // reason as the fields above (older servers, recorded fixtures); null
+  // when the booking has no owner or that user row is gone.
+  ownerName: z.string().max(200).nullable().optional(),
 });
 export type CalendarBookingEntry = z.infer<typeof CalendarBookingEntrySchema>;
 
