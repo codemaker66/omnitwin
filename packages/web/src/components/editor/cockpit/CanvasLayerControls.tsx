@@ -10,6 +10,9 @@ import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/
 import "./CanvasLayerControls.css";
 import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
 import { interiorInputBlocked } from "../../rooms/interior-camera-input.js";
+import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
+
+const SPLAT_WORK_IN_PROGRESS = "Gaussian splats · Work in progress";
 
 const LAYER_META: Readonly<Record<CockpitLayerMode, { readonly label: string; readonly Icon: LucideIcon }>> = {
   mesh: { label: "Mesh", Icon: Cuboid },
@@ -59,12 +62,14 @@ function walkAvailableForSlug(spaceSlug: string | null): boolean {
 
 export function CanvasLayerControls({ embedded = false }: { readonly embedded?: boolean }): ReactElement {
   const layerMode = useCockpitStore((s) => s.layerMode);
+  const splatsAvailable = gaussianSplatsAvailable();
+  const visibleLayerMode = splatsAvailable ? layerMode : "mesh";
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
   const walkMode = useCockpitStore((s) => s.walkMode);
   const spaceSlug = useEditorStore((s) => s.space?.slug ?? null);
   const povActive = useBookmarkStore((s) => s.activeReferenceId !== null);
   const walkAvailable = useMemo(() => walkAvailableForSlug(spaceSlug), [spaceSlug]);
-  const walkDisabled = !walkAvailable || povActive;
+  const walkDisabled = !splatsAvailable || !walkAvailable || povActive;
 
   // Escape leaves the room. Listening only while walking keeps this from
   // shadowing the rig's own Escape duties (tours, POV exit), none of which
@@ -87,27 +92,30 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
         const meta = LAYER_META[mode];
         const Icon = meta.Icon;
         const label = embedded ? ({ mesh: "Model", splat: "Capture", hybrid: "Combined" } as const)[mode] : meta.label;
-        return <button key={mode} type="button" aria-pressed={mode === layerMode}
-          className={mode === layerMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+        const unavailable = !splatsAvailable && mode !== "mesh";
+        return <button key={mode} type="button" aria-pressed={mode === visibleLayerMode}
+          disabled={unavailable} title={unavailable ? SPLAT_WORK_IN_PROGRESS : undefined}
+          className={mode === visibleLayerMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
           onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setLayerMode(mode); }}>
           <Icon size={14} aria-hidden />{label}
         </button>;
       })}
       <span className="cockpit-layer-controls__divider" aria-hidden />
-      <button type="button" aria-pressed={walkMode} className={walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+      <button type="button" aria-pressed={splatsAvailable && walkMode} className={splatsAvailable && walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
         disabled={walkDisabled} data-testid="planner-walk-toggle"
-        title={walkDisabled ? "This room has no available interior view, or a saved viewpoint is active" : "Switch between interior and orbit navigation"}
+        title={!splatsAvailable ? SPLAT_WORK_IN_PROGRESS : walkDisabled ? "This room has no available interior view, or a saved viewpoint is active" : "Switch between interior and orbit navigation"}
         onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setWalkMode(!walkMode); }}>
         <Footprints size={14} aria-hidden />{embedded ? "Interior" : "Walk"}
       </button>
     </div>
   );
-  if (embedded) return <div className="reference-layer-controls" data-testid="planner-layer-controls">{controls}</div>;
+  const notice = !splatsAvailable && <p className="cockpit-layer-controls__notice">{SPLAT_WORK_IN_PROGRESS}</p>;
+  if (embedded) return <div className="reference-layer-controls" data-testid="planner-layer-controls">{controls}{notice}</div>;
   return (
     <FloatingWidgetFrame
       id="planner-layer-controls"
       title="Visual layer"
-      compactLabel={LAYER_META[layerMode].label}
+      compactLabel={LAYER_META[visibleLayerMode].label}
       strategy="fixed"
       testId="planner-layer-controls"
       className="cockpit-layer-controls-widget"
@@ -123,12 +131,15 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
         {COCKPIT_LAYER_MODES.map((mode) => {
           const meta = LAYER_META[mode];
           const Icon = meta.Icon;
-          const active = mode === layerMode;
+          const active = mode === visibleLayerMode;
+          const unavailable = !splatsAvailable && mode !== "mesh";
           return (
             <button
               key={mode}
               type="button"
               aria-pressed={active}
+              disabled={unavailable}
+              title={unavailable ? SPLAT_WORK_IN_PROGRESS : undefined}
               className={active ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
               onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setLayerMode(mode); }}
             >
@@ -140,11 +151,11 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
         <span className="cockpit-layer-controls__divider" aria-hidden="true" />
         <button
           type="button"
-          aria-pressed={walkMode}
-          className={walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+          aria-pressed={splatsAvailable && walkMode}
+          className={splatsAvailable && walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
           disabled={walkDisabled}
           title={
-            walkDisabled
+            !splatsAvailable ? SPLAT_WORK_IN_PROGRESS : walkDisabled
               ? (povActive
                 ? "Leave the POV reference before walking the room"
                 : "This room's capture has no walk data yet")
@@ -164,6 +175,7 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
           Walk
         </button>
       </div>
+      {notice}
     </FloatingWidgetFrame>
   );
 }

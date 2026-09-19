@@ -81,6 +81,7 @@ import {
   TWIN_MODE_WALK_LABEL,
   TWIN_SURFACE_LABEL,
   TWIN_VIEWER_ROLE,
+  TWIN_WORK_IN_PROGRESS,
   twinNodeLabel,
   twinViewerLabel,
   twinViewpointAnnouncement,
@@ -1613,6 +1614,8 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       aria-label={twinViewerLabel(manifest.name)}
       aria-roledescription={TWIN_VIEWER_ROLE}
     >
+      <p className="vv-twin-work-in-progress">{TWIN_WORK_IN_PROGRESS}</p>
+      <div className="vv-twin-viewer-content">
       {/* Polite arrival announcement — where the walk just moved to (finding
           [10]). Keyed span so identical text still re-announces on revisit. */}
       <p className="vv-sr-only" aria-live="polite" data-testid="twin-live-region">
@@ -1953,6 +1956,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           onPickAtCentre={onPickAtCentre}
         />
       )}
+      </div>
     </div>
   );
 }

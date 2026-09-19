@@ -11,6 +11,9 @@
 
 export const TWIN_TITLE = "The Twin — Trades Hall Glasgow";
 
+/** Static product status, visible during loading, failure and exploration. */
+export const TWIN_WORK_IN_PROGRESS = "Panorama tour · Work in progress";
+
 /** Loading state — the manifest is being fetched. */
 export const TWIN_LOADING_LINE = "Opening the twin…";
 
@@ -127,6 +130,7 @@ export const TWIN_ENQUIRE_DONE = "Back to the walkthrough";
 export function allTwinCopy(): readonly string[] {
   return [
     TWIN_TITLE,
+    TWIN_WORK_IN_PROGRESS,
     TWIN_LOADING_LINE,
     TWIN_ERROR_LINE,
     TWIN_RETRY_LABEL,

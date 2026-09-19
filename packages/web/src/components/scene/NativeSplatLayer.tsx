@@ -5,6 +5,7 @@ import type { SplatRuntimeSettings } from "../../lib/splat-runtime-profile.js";
 import { getNativeRenderer } from "../../lib/native-renderer.js";
 import { nativeSplatScene } from "../../lib/native-splat-scene.js";
 import { nativeSplatCount } from "../../lib/native-splat-merge.js";
+import { gaussianSplatsAvailable } from "../../lib/splat-access.js";
 
 type Vector3Tuple = readonly [number, number, number];
 export type NativeSplatRuntime = Pick<SplatRuntimeSettings, "minSortIntervalMs" | "maxStdDev" | "lod" | "lodSplatCount"> & Partial<Pick<SplatRuntimeSettings, "maxSh">>;
@@ -73,7 +74,13 @@ export function NativeSplatRendererMount({ runtime, onFirstFrame, minimumDrawnSo
 export const NativeRendererMount = NativeSplatRendererMount;
 
 /** Loads one source; the host merges all sources in their actual scene-world frame. */
-export function NativeSplatLayer(props: NativeSplatLayerProps): ReactElement {
+export function NativeSplatLayer(props: NativeSplatLayerProps): ReactElement | null {
+  // A final render boundary also covers future callers and persisted scene state.
+  if (!gaussianSplatsAvailable()) return null;
+  return <AvailableNativeSplatLayer {...props} />;
+}
+
+function AvailableNativeSplatLayer(props: NativeSplatLayerProps): ReactElement {
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
   const host = useMemo(() => nativeSplatScene(scene), [scene]);

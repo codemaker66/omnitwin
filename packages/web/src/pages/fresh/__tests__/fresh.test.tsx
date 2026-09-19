@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
-// The walk chunk carries three + Spark — far beyond jsdom. The page contract
-// under test is the poster-first wiring, so the lazy module becomes a stub.
+// If the captured-room viewer is accidentally restored, expose that mount
+// without creating a WebGL context in the test environment.
 vi.mock("../FreshWalk.js", () => ({
   default: () => <div data-testid="fresh-walk-stub" />,
 }));
@@ -234,65 +234,42 @@ describe("the room dossiers", () => {
   });
 });
 
-describe("walk the room — poster-first", () => {
-  it("shows the rendered poster and pays nothing until invited", () => {
+describe("3D room — work in progress", () => {
+  it("keeps a static preview without a way to mount the captured-room viewer", () => {
     render(<FreshPage />);
     const poster = screen.getByAltText(
       "The Reception Room as a captured scene, rendered by Venviewer — not a photograph",
     );
     expect(poster.getAttribute("src")).toContain("walk-poster");
-    expect(screen.getByRole("button", { name: "Step in" })).toBeTruthy();
+    const region = screen.getByRole("region", { name: "The 3D room" });
+    expect(within(region).getByText("Work in progress")).toBeTruthy();
+    expect(within(region).getByText("3D room access is paused while we improve it.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Step in" })).toBeNull();
+    fireEvent.click(poster);
+    fireEvent.click(within(region).getByText("Work in progress"));
     expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
+    expect(region.querySelector("canvas")).toBeNull();
+    expect(within(region).queryByRole("progressbar")).toBeNull();
+    expect(region.querySelector("[data-activity-indicator]")).toBeNull();
     expect(
-      document.querySelector('[data-walk-state="poster"]'),
+      document.querySelector('[data-walk-state="unavailable"]'),
     ).toBeTruthy();
-  });
-
-  it("wakes into loading when WebGL is available", async () => {
-    const getContext = vi
-      .spyOn(HTMLCanvasElement.prototype, "getContext")
-      .mockReturnValue({} as never);
-    try {
-      render(<FreshPage />);
-      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
-      expect(document.querySelector('[data-walk-state="loading"]')).toBeTruthy();
-      expect(await screen.findByTestId("fresh-walk-stub")).toBeTruthy();
-    } finally {
-      getContext.mockRestore();
-    }
-  });
-
-  it("fails honestly when WebGL is unavailable", () => {
-    const getContext = vi
-      .spyOn(HTMLCanvasElement.prototype, "getContext")
-      .mockReturnValue(null);
-    try {
-      render(<FreshPage />);
-      fireEvent.click(screen.getByRole("button", { name: "Step in" }));
-      expect(document.querySelector('[data-walk-state="failed"]')).toBeTruthy();
-      expect(screen.queryByTestId("fresh-walk-stub")).toBeNull();
-    } finally {
-      getContext.mockRestore();
-    }
   });
 });
 
 describe("the walkthrough — wired from the front door", () => {
-  // This test used to assert that TWO CTAs point at /tour — pinning in place a
-  // route that cannot load in production, because `public/twin/` is gitignored
-  // and never ships. It now asserts the FLAG's contract in both directions, so
-  // it stays honest whether the twin is published or not.
-  it("offers the walkthrough only when the twin bundle is actually published", () => {
+  it("offers the available panorama tour with a visible work-in-progress disclosure", () => {
     render(<FreshPage />);
     const tourLinks = [...document.querySelectorAll('a[href="/tour"]')];
     if (FRESH_TOUR_ENABLED) {
       expect(tourLinks.length).toBeGreaterThanOrEqual(2);
-      expect(screen.getByRole("link", { name: "Walk the building" })).toBeTruthy();
-      expect(screen.getByRole("link", { name: "Open the walkthrough" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Tour preview · Work in progress" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Panorama tour · Work in progress" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Open the tour preview" })).toBeTruthy();
     } else {
       // No dead doors: nothing on the page may advertise an unreachable tour.
       expect(tourLinks).toHaveLength(0);
-      expect(screen.queryByRole("link", { name: "Open the walkthrough" })).toBeNull();
+      expect(screen.queryByRole("link", { name: "Open the tour preview" })).toBeNull();
     }
   });
 
@@ -302,7 +279,7 @@ describe("the walkthrough — wired from the front door", () => {
     const expectHref = (index: number, marker: string): void => {
       fireEvent.click(openButtons[index] as HTMLElement);
       const link = screen.getByRole("link", {
-        name: "See this room in the walkthrough",
+        name: "See this room in the tour preview · Work in progress",
       });
       expect(link.getAttribute("href")).toContain(marker);
       fireEvent.click(screen.getByRole("button", { name: "Close" }));
@@ -313,17 +290,17 @@ describe("the walkthrough — wired from the front door", () => {
     expectHref(3, "scan_105");
   });
 
-  it("gives the Reception Room dossier both doorways — walkthrough and in-page", () => {
+  it("labels both Reception Room destinations as work in progress", () => {
     render(<FreshPage />);
     const openButtons = screen.getAllByRole("button", { name: "Open the room" });
     fireEvent.click(openButtons[2] as HTMLElement);
     expect(
       screen
-        .getByRole("link", { name: "See this room in the walkthrough" })
+        .getByRole("link", { name: "See this room in the tour preview · Work in progress" })
         .getAttribute("href"),
     ).toContain("scan_126");
     const walkLink = screen.getByRole("link", {
-      name: "Step into this room",
+      name: "3D room · Work in progress",
     });
     expect(walkLink.getAttribute("href")).toBe("#walk");
   });

@@ -18,6 +18,8 @@
 // the per-room analysis recorded in docs/state/tasks.md under T-568.
 // ---------------------------------------------------------------------------
 
+import { gaussianSplatsAvailable } from "../lib/splat-access.js";
+
 export interface RoomWalkDecision {
   /** May a visitor open /room/<slug> and be placed in the capture? */
   readonly walkable: boolean;
@@ -98,5 +100,5 @@ export function roomWalkExposure(roomSlug: string): RoomWalkDecision | null {
 
 /** The closed door is the default: unknown or undecided rooms are not walkable. */
 export function isRoomWalkable(roomSlug: string): boolean {
-  return ROOM_WALK_EXPOSURE[roomSlug]?.walkable === true;
+  return gaussianSplatsAvailable() && ROOM_WALK_EXPOSURE[roomSlug]?.walkable === true;
 }

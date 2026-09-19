@@ -61,6 +61,8 @@
  * -------------------------------------------------------------------------- */
 
 .vv-twin-dossier {
+  /* Quick action: bottom inset 56px + 35px chip + 12px clear gap. */
+  --vv-dossier-bottom-clearance: 103px;
   position: absolute;
   top: calc(62px + env(safe-area-inset-top));
   left: calc(18px + env(safe-area-inset-left));
@@ -353,6 +355,8 @@
  * the freed width but still stops clear of the control column. */
 @media (max-width: 700px) {
   .vv-twin-dossier {
+    /* The narrow quick-action rail moves up from 56px to 88px. */
+    --vv-dossier-bottom-clearance: 135px;
     top: calc(56px + env(safe-area-inset-top));
     left: calc(12px + env(safe-area-inset-left));
     /* Phone: the control stack tightens to ~90px at a 12px inset, so the card
@@ -371,7 +375,14 @@
  * view; the card keeps its name and scrolls the rest. */
 @media (max-height: 460px) {
   .vv-twin-dossier {
-    max-height: calc(100dvh - 120px);
+    /* Budget against the scene beneath the WIP strip, not the full viewport.
+     * A definite height lets the scrolling card resolve its percentage cap. */
+    height: calc(100% - 62px - var(--vv-dossier-bottom-clearance) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    max-height: none;
+  }
+
+  .vv-twin-dossier-card {
+    max-height: 100%;
   }
 }
 

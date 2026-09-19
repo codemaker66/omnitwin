@@ -57,3 +57,10 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.cockpit-layer-controls__notice {
+  margin: 4px 6px;
+  color: #d9d2c6;
+  font: 11px/1.4 "Inter", system-ui, sans-serif;
+  text-align: center;
+}
