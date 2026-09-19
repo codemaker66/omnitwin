@@ -6,6 +6,8 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 import { RouteArrival } from "./components/shared/RouteArrival.js";
+import { gaussianSplatsAvailable } from "./lib/splat-access.js";
+import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -162,6 +164,10 @@ function withSuspense(node: ReactElement): ReactElement {
   return <Suspense fallback={<LoadingFallback />}>{node}</Suspense>;
 }
 
+function withSplatAccess(node: ReactElement): ReactElement {
+  return gaussianSplatsAvailable() ? withSuspense(node) : <SplatsWorkInProgressPage />;
+}
+
 function withClerk(node: ReactElement): ReactElement {
   return withSuspense(<ClerkRouteProvider>{node}</ClerkRouteProvider>);
 }
@@ -260,6 +266,14 @@ function OnboardRedirect(): ReactElement {
 
 export const router = createBrowserRouter([
   {
+    path: "/work-in-progress",
+    element: <SplatsWorkInProgressPage />,
+  },
+  {
+    path: "/splats/*",
+    element: <SplatsWorkInProgressPage />,
+  },
+  {
     // The Rite (the previous scroll-dramaturgy homepage) lives on here for
     // comparison and stale bookmarks. The homepage at `/` is now the
     // spotlight-reveal hero (see the bottom of this route list).
@@ -289,7 +303,7 @@ export const router = createBrowserRouter([
     // Dev/preview route while the 3D tiers are built; intended to take `/`
     // when the minimum-viable narrative ships.
     path: "/living-hall",
-    element: withSuspense(<LivingHallPage />),
+    element: withSplatAccess(<LivingHallPage />),
   },
   {
     path: "/login",
@@ -485,32 +499,9 @@ export const router = createBrowserRouter([
   // calls live inside that function.
   ...(import.meta.env.DEV ? devFixtureRoutes() : []),
   {
-    // Internal P0 visual-layer route. It loads registered room runtime packages
-    // when present and keeps procedural fallback copy explicit when absent.
-    //
-    // Unlike the two fixtures above this console is a real production tool: the
-    // capture runbooks QA freshly trained rooms through the deployed URL
-    // (docs/operations/aws-g6e-xgrids-processing-runbook.md lists
-    // venviewer.com/dev/trades-hall-visual?venue=…&room=… per room), and the
-    // admin-only /dev/assets/rooms registry links into it per room. Deleting it
-    // from production would break both. So in production it now carries exactly
-    // the guard its two sibling internal routes carry — Clerk + venue admin +
-    // platform admin — instead of the plain withSuspense() that left a
-    // ~1,900-line engineering console open to anyone who guessed the URL.
-    //
-    // Dev builds keep it open because the console's own Playwright specs
-    // (e2e/trades-hall-visual.spec.ts, e2e/sspp-hardening.spec.ts) drive it
-    // anonymously against `vite dev`, which is the mode CI runs. Its page chunk
-    // stays in the production bundle by design — it is admin-reachable, so it
-    // must ship, exactly like TradesHallAssetStatusPage below.
+    // Founder hold: local development only, including the internal viewer.
     path: "/dev/trades-hall-visual",
-    element: import.meta.env.DEV
-      ? withSuspense(<TradesHallVisualPage />)
-      : withClerk(
-        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
-          <TradesHallVisualPage />
-        </ProtectedRoute>,
-      ),
+    element: withSplatAccess(<TradesHallVisualPage />),
   },
   {
     // Legacy room-level registry remains available during Foundry migration;
@@ -552,31 +543,19 @@ export const router = createBrowserRouter([
     // Placed above /venues/:venueSlug/rooms/:roomSlug so it can never fall
     // through to the public showcase matcher.
     path: "/venues/:venueSlug/captures/:roomSlug?",
-    element: import.meta.env.DEV
-      ? withSuspense(<RoomCapturesPage />)
-      : withClerk(
-        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
-          <RoomCapturesPage />
-        </ProtectedRoute>,
-      ),
+    element: withSplatAccess(<RoomCapturesPage />),
   },
   {
     // Short internal door to the same room, for typing and sharing in ops.
     path: "/captures/:roomSlug?",
-    element: import.meta.env.DEV
-      ? withSuspense(<RoomCapturesPage />)
-      : withClerk(
-        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
-          <RoomCapturesPage />
-        </ProtectedRoute>,
-      ),
+    element: withSplatAccess(<RoomCapturesPage />),
   },
   {
     // Public room walkthrough — where a poster on the front door leads.
     // Streams one room; the front door never streams eight at once. Rooms
     // closed in data/room-walk-exposure.ts render a closed door, not a scene.
     path: "/room/:roomSlug",
-    element: withSuspense(<RoomWalkPage />),
+    element: withSplatAccess(<RoomWalkPage />),
   },
   {
     // Public walkable twin (Twin Phase 1). Placed above the room showcase
@@ -598,7 +577,7 @@ export const router = createBrowserRouter([
     // Public room showcase. Uses only the client-safe room visual endpoint and
     // planning-grade copy; internal package/debug data stays out of the route.
     path: "/venues/:venueSlug/rooms/:roomSlug",
-    element: withSuspense(<RoomShowcasePage />),
+    element: withSplatAccess(<RoomShowcasePage />),
   },
   {
     // Client-facing proposal share link (T-427 phase 3). Public — the share

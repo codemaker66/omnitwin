@@ -6,6 +6,16 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "redirects": [
     {
+      "source": "/splats/:path*",
+      "destination": "/work-in-progress",
+      "permanent": false
+    },
+    {
+      "source": "/fixtures/native-gaussians.splat",
+      "destination": "/work-in-progress",
+      "permanent": false
+    },
+    {
       "source": "/:path*",
       "has": [
         {
@@ -33,10 +43,6 @@
     }
   ],
   "rewrites": [
-    {
-      "source": "/splats/:path*",
-      "destination": "https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats/:path*"
-    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
@@ -99,7 +105,7 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
+          "value": "no-store"
         }
       ]
     }

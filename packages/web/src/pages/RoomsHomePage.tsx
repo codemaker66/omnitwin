@@ -9,6 +9,7 @@ import {
 import { TRADES_HALL_RUNTIME_ROOMS } from "../lib/runtime-package-resolution.js";
 import { isRoomWalkable } from "../data/room-walk-exposure.js";
 import { footprint, stateLine } from "../lib/room-card-copy.js";
+import { gaussianSplatsAvailable } from "../lib/splat-access.js";
 import "./RoomsHomePage.css";
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
   const onPosterError = useCallback(() => { setPosterFailed(true); }, []);
   const showType = posterFailed;
   const walkable = isRoomWalkable(slug);
-  const state = stateLine(bundle, walkable);
+  const state = gaussianSplatsAvailable() ? stateLine(bundle, walkable) : "Work in progress";
 
   const face = (
     <>
@@ -156,7 +157,8 @@ export function RoomsHomePage(): ReactElement {
               <a className="rooms__enter rooms__enter--plan" href="/plan?space=grand-hall">Plan Grand Hall</a>
               {isRoomWalkable(HERO_ROOM)
                 ? <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>Walk the room</Link>
-                : <p className="rooms__state rooms__state--hero">{stateLine(heroBundle, false)}</p>}
+                : <p className="rooms__state rooms__state--hero">Gaussian splats · Work in progress</p>}
+              {!gaussianSplatsAvailable() && <Link className="rooms__enter" to="/tour">Try the virtual tour · Work in progress</Link>}
             </div>
           </div>
         </section>
@@ -182,7 +184,7 @@ export function RoomsHomePage(): ReactElement {
         </p>
         <nav className="rooms__footLinks" aria-label="More">
           <Link to="/fresh">About the venue</Link>
-          <Link to="/venues/trades-hall/twin">Walk the whole building</Link>
+          <Link to="/venues/trades-hall/twin">Virtual tour · Work in progress</Link>
           <Link to="/fresh#enquire">Enquire</Link>
         </nav>
       </footer>

@@ -72,11 +72,42 @@ function receptionRoomPackage(): RuntimePackage {
   };
 }
 
-beforeEach(() => { useEditorStore.setState({ space: null }); useCockpitStore.getState().reset();
+beforeEach(() => { vi.stubEnv("DEV", true); useEditorStore.setState({ space: null }); useCockpitStore.getState().reset();
   useAuthStore.getState().setUser({ id: "platform-admin", name: "Platform admin", email: "admin@example.test", role: "admin", platformRole: "admin", venueId: null }); });
-afterEach(() => { cleanup(); vi.clearAllMocks(); useAuthStore.getState().logout(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllEnvs(); useAuthStore.getState().logout(); });
 
 describe("useRoomRuntimeSplat", () => {
+  it.each(["guest", "venue-admin", "platform-admin"])("keeps production captures unavailable for %s", (account) => {
+    vi.stubEnv("DEV", false);
+    if (account === "guest") useAuthStore.getState().logout();
+    if (account === "venue-admin") {
+      useAuthStore.getState().setUser({ id: "venue-admin", name: "Venue admin", email: "venue@example.test", role: "admin", platformRole: "none", venueId: "v1" });
+    }
+    runtimeApi.getLatestRuntimePackage.mockResolvedValue(receptionRoomPackage());
+    useEditorStore.setState({ space: spaceWith("reception-room") });
+    useCockpitStore.setState({ layerMode: "splat", walkMode: true, runtimeAssetStatus: "Runtime asset loaded, human reviewed." });
+
+    const { result } = renderHook(() => useRoomRuntimeSplat());
+
+    expect(result.current).toMatchObject({ source: "none", status: "none", hasAsset: false, splatUrls: [], environmentUrls: [], roomSlug: "reception-room" });
+    expect(runtimeApi.getLatestRuntimePackage).not.toHaveBeenCalled();
+    expect(useCockpitStore.getState().runtimeAssetStatus).toBe("Gaussian splats · Work in progress");
+  });
+
+  it("withdraws a retained registry package immediately when splats become unavailable", async () => {
+    runtimeApi.getLatestRuntimePackage.mockResolvedValue(receptionRoomPackage());
+    useEditorStore.setState({ space: spaceWith("reception-room") });
+    const { result, rerender } = renderHook(() => useRoomRuntimeSplat());
+    await waitFor(() => { expect(result.current.source).toBe("package"); });
+
+    vi.stubEnv("DEV", false);
+    rerender();
+
+    expect(result.current).toMatchObject({ source: "none", status: "none", hasAsset: false, splatUrls: [], environmentUrls: [] });
+    expect(runtimeApi.getLatestRuntimePackage).toHaveBeenCalledTimes(1);
+    expect(useCockpitStore.getState().runtimeAssetStatus).toBe("Gaussian splats · Work in progress");
+  });
+
   it.each(["client", "planner", "staff", "hallkeeper", "admin"])("keeps staged capture without privileged discovery for venue role %s", (role) => {
     useAuthStore.getState().setUser({ id: "venue-account", role, platformRole: "none", name: "Venue account", email: "venue@example.test", venueId: "v1" });
     useEditorStore.setState({ space: spaceWith("grand-hall") });

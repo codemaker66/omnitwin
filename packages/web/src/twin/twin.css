@@ -74,6 +74,26 @@
   padding: 24px;
 }
 
+/* A static preview disclosure reserves its own strip above the scene, keeping
+ * controls and imagery clear. It stays inside the fullscreen viewer too. */
+.vv-twin-work-in-progress {
+  margin: 0;
+  padding: calc(9px + env(safe-area-inset-top)) 16px 9px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--black-2);
+  color: var(--gold-2);
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.vv-twin-main > .vv-twin-work-in-progress {
+  position: absolute;
+  inset: 0 0 auto;
+}
+
 /* — loading / error states — */
 
 .vv-twin-state {
@@ -133,6 +153,13 @@
 .vv-twin-viewer {
   position: absolute;
   inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.vv-twin-viewer-content {
+  position: relative;
+  min-height: 0;
 }
 
 /* The opening: the canvas holds black until the first pano texture is on
