@@ -471,7 +471,12 @@ export async function configurationReviewRoutes(
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
     if (body.data.notifyTeam) {
     const ctx = await loadReviewEmailContext(db, config, request.user);
-    const reviewUrl = `${baseFeUrl}/dashboard/reviews/${config.id}`;
+    // The dashboard has never had a `/dashboard/reviews/:id` route — that URL
+    // fell through to the router's catch-all, so every "Open Review" button in
+    // every submission email led nowhere. `?view=` is the dashboard's real
+    // view vocabulary (DashboardPage reads it from the query string) and
+    // `config=` selects the submission to open.
+    const reviewUrl = `${baseFeUrl}/dashboard?view=reviews&config=${config.id}`;
     for (const recipient of ctx.staff) {
       fireEmail(
         db,

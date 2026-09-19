@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import {
@@ -42,6 +42,7 @@ import {
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
+import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
 
 // ---------------------------------------------------------------------------
@@ -182,6 +183,26 @@ async function loadProposalEventContext(db: Database, proposal: ProposalRow): Pr
   };
 }
 
+/**
+ * Announce a proposal change to the people who need to know.
+ *
+ * EVERY call site invokes this AFTER its business write has committed, and the
+ * whole body is failure-isolated: an announcement is downstream of the record,
+ * never a condition of it. That matters concretely because the audience
+ * vocabulary and the database disagree across a deploy boundary —
+ * `COMMERCIAL_AUDIENCE_ROLES` grows to include `sales` the moment the roles
+ * lane widens `USER_ROLES`, while the deployed CHECK constraints
+ * (`event_plan_changes_audience_json_check` and
+ * `event_plan_notifications_role_check`, migration 0042) still admit only the
+ * original seven values until the inventory lane's 0072 widens them to ten.
+ * In that window every insert here raises SQLSTATE 23514. Unwrapped, that
+ * turned a staff member saving a proposal version into a 500.
+ *
+ * The long-term answer is the migration, not a narrower audience: this lane
+ * must not run against a database without 0072. The isolation below keeps the
+ * failure proportionate meanwhile — and is correct in general, since no
+ * announcement should ever be able to fail a save.
+ */
 async function recordProposalLifecycleChange(
   db: Database,
   proposal: ProposalRow,
@@ -195,31 +216,72 @@ async function recordProposalLifecycleChange(
     readonly summary: string;
     readonly affectedSurfaces: readonly EventPlanChangeSurface[];
     readonly includeHallkeeperWhenHandoffExists: boolean;
+    readonly logger: FastifyBaseLogger;
   },
 ): Promise<void> {
-  const context = await loadProposalEventContext(db, proposal);
-  if (context === null) return;
+  try {
+    const context = await loadProposalEventContext(db, proposal);
 
-  const notifyHallkeeper = input.includeHallkeeperWhenHandoffExists && context.handoffPackId !== null;
-  await recordEventPlanChange(db, {
-    eventId: context.eventId,
-    venueId: context.venueId,
-    configurationId: proposal.configurationId,
-    proposalId: proposal.id,
-    handoffPackId: context.handoffPackId,
-    actorUserId: input.actorUserId,
-    actorRole: input.actorRole,
-    actorLabel: input.actorLabel,
-    sourceKind: input.sourceKind,
-    sourceId: input.sourceId,
-    title: input.title,
-    summary: input.summary,
-    affectedSurfaces: [...input.affectedSurfaces],
-    audienceRoles: notifyHallkeeper ? ["staff", "hallkeeper"] : ["staff"],
-    riskLevel: notifyHallkeeper ? "attention" : "info",
-    requiresHallkeeperAcknowledgement: notifyHallkeeper,
-    actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : "/dashboard",
-  });
+    // No linked event means no operational change feed to write to — but for a
+    // CLIENT action it must not mean silence either. A proposal without a
+    // configuration is the ordinary case for a venue that quotes before it
+    // lays anything out, and a client accepting one used to notify nobody.
+    //
+    // Only client-originated changes raise it: a staff member saving a version
+    // or moving a status does not need telling what they just did.
+    if (context === null) {
+      if (input.sourceKind === "proposal") return;
+      await notifyCommercialTeam(db, {
+        venueId: proposal.venueId,
+        title: input.title,
+        body: input.summary,
+        severity: input.sourceKind === "proposal_response" ? "attention" : "info",
+        actionPath: "/dashboard?view=proposals",
+      });
+      return;
+    }
+
+    const notifyHallkeeper = input.includeHallkeeperWhenHandoffExists && context.handoffPackId !== null;
+    await recordEventPlanChange(db, {
+      eventId: context.eventId,
+      venueId: context.venueId,
+      configurationId: proposal.configurationId,
+      proposalId: proposal.id,
+      handoffPackId: context.handoffPackId,
+      actorUserId: input.actorUserId,
+      actorRole: input.actorRole,
+      actorLabel: input.actorLabel,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+      title: input.title,
+      summary: input.summary,
+      affectedSurfaces: [...input.affectedSurfaces],
+      // The commercial audience (staff, venue admin, sales) always hears;
+      // the hallkeeper is added only when there is a handoff pack to disturb.
+      // Before this, only "staff" was notified, so a venue admin watching the
+      // same proposal saw nothing.
+      audienceRoles: notifyHallkeeper
+        ? [...COMMERCIAL_AUDIENCE_ROLES, "hallkeeper"]
+        : [...COMMERCIAL_AUDIENCE_ROLES],
+      riskLevel: notifyHallkeeper ? "attention" : "info",
+      requiresHallkeeperAcknowledgement: notifyHallkeeper,
+      actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : "/dashboard",
+    });
+  } catch (err) {
+    // Loud, with the ids needed to find the row that went unannounced, and
+    // then swallowed: the business write is already committed and is the
+    // record of truth. A reviewer seeing `proposal.lifecycle_announcement_failed`
+    // in production should suspect a missing migration first.
+    input.logger.error({
+      event: "proposal.lifecycle_announcement_failed",
+      proposalId: proposal.id,
+      venueId: proposal.venueId,
+      configurationId: proposal.configurationId,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+      error: err instanceof Error ? err.message : String(err),
+    }, "proposal change committed but its announcement could not be written");
+  }
 }
 
 function hashShareToken(token: string): string {
@@ -293,12 +355,14 @@ export async function proposalRoutes(
       .where(where);
     const total = countResult?.count ?? 0;
 
+    // Newest first with a total order (see enquiries.ts): `createdAt` ties are
+    // broken by id so limit/offset paging cannot repeat or drop a row.
     const rows = await db.select()
       .from(proposals)
       .where(where)
       .limit(query.data.limit)
       .offset(query.data.offset)
-      .orderBy(proposals.updatedAt);
+      .orderBy(desc(proposals.createdAt), desc(proposals.id));
 
     return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
   });
@@ -456,6 +520,7 @@ export async function proposalRoutes(
       summary: `${updated.title} was updated by the venue team.`,
       affectedSurfaces: [...affectedSurfaces],
       includeHallkeeperWhenHandoffExists: parsed.data.configurationId !== undefined,
+      logger: request.log,
     });
 
     return { data: updated };
@@ -577,6 +642,7 @@ export async function proposalRoutes(
         summary: `${updated.title} moved from ${fromStatus} to ${parsed.data.status}.`,
         affectedSurfaces: ["proposal"],
         includeHallkeeperWhenHandoffExists: parsed.data.status === "changes_requested",
+        logger: request.log,
       });
     }
 
@@ -892,6 +958,7 @@ export async function proposalRoutes(
           ? ["proposal", "pricing"]
           : ["proposal", "pricing", "layout"],
         includeHallkeeperWhenHandoffExists: false,
+        logger: request.log,
       });
     }
 
@@ -978,6 +1045,54 @@ const CLIENT_VISIBLE_STATUSES: readonly string[] = [
 ];
 
 const ShareCodeParam = z.object({ shareCode: ShortCodeSchema });
+
+// ---------------------------------------------------------------------------
+// Legacy share-code retirement
+//
+// `/proposal/:shareCode` predates the share-token page. A share code is a six
+// character string printed in an email and never expires, while a share token
+// is 32 random bytes, hashed at rest, mintable and revocable per recipient —
+// so the token page is the one a client link should use.
+//
+// Retirement is a thirty-day window, not a switch: links already in clients'
+// inboxes keep working until the sunset, and every response says so in its
+// headers. After the sunset the code path answers 410 GONE with plain English
+// telling the client to ask the venue for a current link, rather than the
+// 404 that would read as "your proposal was deleted".
+//
+// The staff dashboard stopped handing out share-code URLs in the same change;
+// `POST /proposals/:id/share-token` has always returned `/proposal-share/…`.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_LEGACY_SHARE_CODE_SUNSET = "2026-10-18T00:00:00.000Z";
+
+/** The instant the legacy share-code path stops serving. Overridable so the
+ *  window can be extended without a deploy if clients are still on old links. */
+export function legacyShareCodeSunset(): Date {
+  const configured = (process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] ?? "").trim();
+  if (configured !== "") {
+    const parsed = new Date(configured);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(DEFAULT_LEGACY_SHARE_CODE_SUNSET);
+}
+
+/**
+ * Marks a legacy share-code response as deprecated and, once past the sunset,
+ * answers 410. Returns true when the caller should stop.
+ */
+function refuseRetiredShareCode(reply: FastifyReply): boolean {
+  const sunset = legacyShareCodeSunset();
+  reply.header("Deprecation", "true");
+  reply.header("Sunset", sunset.toUTCString());
+  reply.header("Link", '</proposal-share/>; rel="successor-version"');
+  if (Date.now() < sunset.getTime()) return false;
+  void reply.status(410).send({
+    error: "This proposal link has been retired. Ask the venue team for your current link.",
+    code: "SHARE_CODE_RETIRED",
+  });
+  return true;
+}
 const ShareTokenParam = z.object({
   token: z.string().min(32).max(96).regex(/^[A-Za-z0-9_-]+$/),
 });
@@ -1093,8 +1208,10 @@ export async function publicProposalRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // GET /public/proposals/:shareCode — client-safe proposal view
+  // GET /public/proposals/:shareCode — client-safe proposal view (LEGACY,
+  // retiring; see legacyShareCodeSunset)
   server.get("/proposals/:shareCode", async (request, reply) => {
+    if (refuseRetiredShareCode(reply)) return reply;
     const params = ShareCodeParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share code", code: "VALIDATION_ERROR" });
@@ -1157,6 +1274,7 @@ export async function publicProposalRoutes(
   // changedBy: null — an anonymous share-link response. A note travels into
   // proposal_status_history where venue staff read it via /:id/history.
   server.post("/proposals/:shareCode/respond", async (request, reply) => {
+    if (refuseRetiredShareCode(reply)) return reply;
     const params = ShareCodeParam.safeParse(request.params);
     if (!params.success) {
       return reply.status(400).send({ error: "Invalid share code", code: "VALIDATION_ERROR" });
@@ -1209,6 +1327,7 @@ export async function publicProposalRoutes(
       )),
       affectedSurfaces: toStatus === "accepted" ? ["proposal"] : ["proposal", "comments"],
       includeHallkeeperWhenHandoffExists: toStatus === "changes_requested",
+      logger: request.log,
     });
 
     return { data: { status: updated?.status ?? toStatus } };
@@ -1302,6 +1421,7 @@ export async function proposalShareRoutes(
       summary: boundedLifecycleSummary(result.body),
       affectedSurfaces: kind === "request_changes" ? ["proposal", "comments"] : ["comments"],
       includeHallkeeperWhenHandoffExists: kind === "request_changes",
+      logger: request.log,
     });
 
     return reply.status(201).send({
@@ -1367,6 +1487,7 @@ export async function proposalShareRoutes(
       summary: boundedLifecycleSummary(parsed.data.body ?? "Client approved the proposal."),
       affectedSurfaces: ["proposal"],
       includeHallkeeperWhenHandoffExists: false,
+      logger: request.log,
     });
 
     return { data: { status: "accepted" } };

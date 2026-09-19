@@ -118,13 +118,41 @@ describe.skipIf(target === undefined)("event capabilities on disposable PostgreS
     }
   });
 
-  it.each(["staff", "admin", "hallkeeper", "platform"] as const)("preserves current %s venue analytics reads", async role => {
+  // The analytics gate is split by what the payload contains, not by habit.
+  // It used to be one predicate for all three routes, which put the venue
+  // floor inside the venue's money: a hallkeeper could read pipeline value
+  // and conversion while being refused the commercial board that produced
+  // them, and a manager or sales user was refused the dashboard summarising
+  // the pipeline they work. Priced surfaces now admit the commercial team;
+  // room utilisation carries no money and stays with the floor, which is the
+  // one of the three a hallkeeper has a real need for.
+  const pricedAnalytics = ["pipeline-summary", "venue-dashboard"] as const;
+
+  it.each(["staff", "admin", "platform"] as const)("preserves current %s priced analytics reads", async role => {
     const f = await fixture();
-    for (const route of analytics) {
+    for (const route of pricedAnalytics) {
       const response = await server.inject({ method: "GET", url: `/analytics/${route}?venueId=${f.venues[0]}`,
         headers: await headers(f.actor[role]) });
       expect(response.statusCode, response.body).toBe(200);
     }
+  });
+
+  it("keeps the venue floor out of the venue's money, and in the room book", async () => {
+    // Intended change, not a regression: a hallkeeper loses the two priced
+    // analytics reads and keeps room utilisation.
+    const f = await fixture();
+    for (const route of pricedAnalytics) {
+      const response = await server.inject({ method: "GET", url: `/analytics/${route}?venueId=${f.venues[0]}`,
+        headers: await headers(f.actor.hallkeeper) });
+      expect(response.statusCode, response.body).toBe(403);
+    }
+  });
+
+  it.each(["staff", "admin", "hallkeeper", "platform"] as const)("preserves current %s room utilisation reads", async role => {
+    const f = await fixture();
+    const response = await server.inject({ method: "GET", url: `/analytics/room-utilisation?venueId=${f.venues[0]}`,
+      headers: await headers(f.actor[role]) });
+    expect(response.statusCode, response.body).toBe(200);
   });
 
   it("refuses foreign and removed venue analytics scope", async () => {

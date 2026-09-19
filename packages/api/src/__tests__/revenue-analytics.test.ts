@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import type { RevenueScenario } from "@omnitwin/types";
 import {
   buildPipelineSummary,
+  buildRoomUtilisationRows,
   buildVenueDashboardAnalytics,
   comparisonSignals,
   summarizeRevenueScenarios,
@@ -100,14 +101,70 @@ describe("revenue analytics services", () => {
   });
 
   it("builds exact pipeline money and conversion counts", () => {
+    // Pipeline value now arrives already resolved by the one shared
+    // definition (services/commercial-pipeline.ts) instead of being summed
+    // from quote totals here, so the dashboard and the Pipeline tab cannot
+    // drift apart again.
     const pipeline = buildPipelineSummary({
-      quoteTotalsMinor: [100_001, 200_002, 300_003],
+      pipelineValueMinor: 600_006,
       enquiryCount: 4,
       proposalStatuses: ["draft", "sent", "accepted", "accepted"],
     });
     expect(pipeline.pipelineValueMinor).toBe(600_006);
     expect(pipeline.conversionPercent).toBe(50);
     expect(pipeline.proposalStatusCounts.accepted).toBe(2);
+  });
+
+  it("measures room utilisation from confirmed bookings, not from quotes", () => {
+    const windowStart = new Date("2026-07-01T00:00:00.000Z");
+    const windowEnd = new Date("2026-07-11T00:00:00.000Z"); // 10-day window
+    const rows = buildRoomUtilisationRows({
+      rooms: [
+        { spaceId: "00000000-0000-4000-8000-000000003201", roomName: "Grand Hall" },
+        { spaceId: "00000000-0000-4000-8000-000000003202", roomName: "Saloon" },
+      ],
+      bookings: [
+        // Grand Hall: two inked days plus a pencilled hold.
+        { spaceId: "00000000-0000-4000-8000-000000003201", kind: "ink",
+          startsAt: new Date("2026-07-02T09:00:00.000Z"), endsAt: new Date("2026-07-02T23:00:00.000Z") },
+        { spaceId: "00000000-0000-4000-8000-000000003201", kind: "ink",
+          startsAt: new Date("2026-07-05T09:00:00.000Z"), endsAt: new Date("2026-07-05T23:00:00.000Z") },
+        { spaceId: "00000000-0000-4000-8000-000000003201", kind: "hold",
+          startsAt: new Date("2026-07-08T09:00:00.000Z"), endsAt: new Date("2026-07-08T23:00:00.000Z") },
+        // Saloon: pencilled only — demand without a confirmed day.
+        { spaceId: "00000000-0000-4000-8000-000000003202", kind: "prospect",
+          startsAt: new Date("2026-07-03T09:00:00.000Z"), endsAt: new Date("2026-07-03T23:00:00.000Z") },
+      ],
+      windowStart,
+      windowEnd,
+      reviewBottlenecksBySpaceId: new Map(),
+    });
+
+    const grandHall = rows[0];
+    const saloon = rows[1];
+    expect(grandHall?.bookedEvents).toBe(2);
+    expect(grandHall?.proposedEvents).toBe(1);
+    expect(grandHall?.utilisationPercent).toBe(20); // 2 inked days of 10
+    expect(saloon?.bookedEvents).toBe(0);
+    expect(saloon?.proposedEvents).toBe(1);
+    expect(saloon?.utilisationPercent).toBe(0);
+  });
+
+  it("clips a long booking to the window and never exceeds 100 per cent", () => {
+    const rows = buildRoomUtilisationRows({
+      rooms: [{ spaceId: "00000000-0000-4000-8000-000000003201", roomName: "Grand Hall" }],
+      bookings: [
+        { spaceId: "00000000-0000-4000-8000-000000003201", kind: "ink",
+          startsAt: new Date("2026-01-01T00:00:00.000Z"), endsAt: new Date("2027-01-01T00:00:00.000Z") },
+        // An overlapping second booking must not double-count the same days.
+        { spaceId: "00000000-0000-4000-8000-000000003201", kind: "ink",
+          startsAt: new Date("2026-07-02T00:00:00.000Z"), endsAt: new Date("2026-07-04T00:00:00.000Z") },
+      ],
+      windowStart: new Date("2026-07-01T00:00:00.000Z"),
+      windowEnd: new Date("2026-07-11T00:00:00.000Z"),
+      reviewBottlenecksBySpaceId: new Map(),
+    });
+    expect(rows[0]?.utilisationPercent).toBe(100);
   });
 
   it("marks scenario comparison for review when constraints worsen", () => {
@@ -128,7 +185,7 @@ describe("revenue analytics services", () => {
 
   it("dashboard analytics keeps comfort warnings visible", () => {
     const pipeline = buildPipelineSummary({
-      quoteTotalsMinor: [100_000],
+      pipelineValueMinor: 100_000,
       enquiryCount: 1,
       proposalStatuses: ["sent"],
     });

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
   ComfortConstraintSchema,
@@ -14,6 +14,7 @@ import {
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
+  bookings,
   comfortConstraints,
   configurations,
   enquiries,
@@ -25,8 +26,10 @@ import {
   spaces,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canAccessInternalEvent, canWriteEvents } from "../utils/query.js";
+import { canAccessInternalEvent, canManageCommercial, canManageVenue, canWriteEvents } from "../utils/query.js";
+import { loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 import {
+  ROOM_UTILISATION_WINDOW_DAYS,
   buildPipelineSummary,
   buildRoomUtilisationRows,
   buildVenueDashboardAnalytics,
@@ -48,10 +51,32 @@ function toIso(value: Date): string {
   return value.toISOString();
 }
 
+/**
+ * What an analytics route actually exposes, which decides who may read it.
+ *
+ * These two answers had drifted apart inside one lane: the CRM board gated on
+ * `canManageCommercial` (admin, manager, staff, sales) while every analytics
+ * route gated on `canManageVenue` (admin, staff, hallkeeper; manager once the
+ * roles lane lands). That produced two contradictions at once — a hallkeeper
+ * could read venue-wide PRICING but not the pipeline that produced it, and a
+ * manager or sales user could work the pipeline but was refused the dashboard
+ * summarising it.
+ *
+ * The split is by what the payload contains, not by habit:
+ *
+ *   "priced"   — pipeline value, conversion, proposal status counts. Money.
+ *                The commercial team reads it: `canManageCommercial`.
+ *   "room-use" — how often each room is spoken for. No money at all, and the
+ *                hallkeeper who runs those rooms has a real need for it:
+ *                `canManageVenue`, which includes them.
+ */
+type AnalyticsCapability = "priced" | "room-use";
+
 function resolveVenueScope(
   request: FastifyRequest,
   reply: FastifyReply,
   requestedVenueId: string | undefined,
+  capability: AnalyticsCapability,
 ): string | null {
   const user = request.user;
   if (isPlatformAdmin(user)) {
@@ -68,9 +93,10 @@ function resolveVenueScope(
     void reply.status(403).send({ error: "User has no venue scope", code: "FORBIDDEN" });
     return null;
   }
-  // Preserve existing hallkeeper commercial reads (quotes/event summaries),
-  // but neither customer role name grants venue-wide analytics authority.
-  if (!canAccessInternalEvent(user, user.venueId)) {
+  const admitted = capability === "priced"
+    ? canManageCommercial(user, user.venueId)
+    : canManageVenue(user, user.venueId);
+  if (!admitted) {
     void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     return null;
   }
@@ -281,7 +307,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/pipeline-summary", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, "priced");
     if (venueId === null) return;
     const pipeline = await loadPipelineSummary(db, venueId);
     return { data: pipeline };
@@ -290,7 +316,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/room-utilisation", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, "room-use");
     if (venueId === null) return;
     const rows = await loadRoomUtilisation(db, venueId);
     return { data: rows };
@@ -299,7 +325,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/venue-dashboard", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, "priced");
     if (venueId === null) return;
     const [pipeline, roomUtilisation, scenarioRows, constraintRows] = await Promise.all([
       loadPipelineSummary(db, venueId),
@@ -325,22 +351,47 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
 }
 
 async function loadPipelineSummary(db: Database, venueId: string) {
-  const [quoteRows, proposalRows, enquiryRows] = await Promise.all([
-    db.select({ totalMinor: quotes.totalMinor }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
+  // Pipeline value comes from the SHARED definition, not from quote totals.
+  // The Pipeline tab and this dashboard used to answer the same question with
+  // different tables; they now call services/commercial-pipeline.ts.
+  const [pipelineValueMinor, proposalRows, enquiryRows] = await Promise.all([
+    loadPipelineValueMinor(db, venueId),
     db.select({ status: proposals.status }).from(proposals).where(and(eq(proposals.venueId, venueId), isNull(proposals.deletedAt))),
     db.select({ id: enquiries.id }).from(enquiries).where(eq(enquiries.venueId, venueId)),
   ]);
   return buildPipelineSummary({
-    quoteTotalsMinor: quoteRows.map((row) => row.totalMinor),
+    pipelineValueMinor,
     enquiryCount: enquiryRows.length,
     proposalStatuses: proposalRows.map((row) => row.status),
   });
 }
 
 async function loadRoomUtilisation(db: Database, venueId: string): Promise<readonly z.infer<typeof RoomUtilisationRowSchema>[]> {
-  const [roomRows, quoteRows, scenarioRows] = await Promise.all([
+  // The window the utilisation figure is measured over. Anchored to UTC
+  // midnight so the same request made twice in one day returns the same
+  // denominator.
+  const windowStart = new Date(Date.UTC(
+    new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate(),
+  ));
+  const windowEnd = new Date(windowStart.getTime() + ROOM_UTILISATION_WINDOW_DAYS * 86_400_000);
+
+  const [roomRows, bookingRows, scenarioRows] = await Promise.all([
     db.select({ spaceId: spaces.id, roomName: spaces.name }).from(spaces).where(and(eq(spaces.venueId, venueId), isNull(spaces.deletedAt))),
-    db.select({ spaceId: quotes.spaceId, status: quotes.status }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
+    // Only ACTIVE bookings overlapping the window. A released hold or a
+    // cancelled booking is not demand, and a booking that ended last year is
+    // not this quarter's utilisation.
+    db.select({
+      spaceId: bookings.spaceId,
+      kind: bookings.kind,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+    }).from(bookings).where(and(
+      eq(bookings.venueId, venueId),
+      eq(bookings.status, "active"),
+      isNull(bookings.deletedAt),
+      lt(bookings.startsAt, windowEnd),
+      gte(bookings.endsAt, windowStart),
+    )),
     db.select({ configurationId: revenueScenarios.configurationId, reviewGateCount: revenueScenarios.reviewGateCount })
       .from(revenueScenarios)
       .where(eq(revenueScenarios.venueId, venueId)),
@@ -365,8 +416,9 @@ async function loadRoomUtilisation(db: Database, venueId: string): Promise<reado
 
   return buildRoomUtilisationRows({
     rooms: roomRows.length > 0 ? roomRows : [{ spaceId: null, roomName: "Unassigned room" }],
-    quoteSpaceIds: quoteRows.map((row) => row.spaceId),
-    acceptedQuoteSpaceIds: quoteRows.filter((row) => row.status === "accepted").map((row) => row.spaceId),
+    bookings: bookingRows,
+    windowStart,
+    windowEnd,
     reviewBottlenecksBySpaceId,
   });
 }

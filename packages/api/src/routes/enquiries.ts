@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
@@ -89,12 +89,16 @@ export async function enquiryRoutes(
 
     const total = countResult?.count ?? 0;
 
+    // Newest first, and TOTALLY ordered. `createdAt` alone is not unique, so
+    // an offset page boundary that falls inside a group of same-instant rows
+    // can repeat or skip rows between page 1 and page 2. The id tiebreak makes
+    // the sort a total order, which is what makes limit/offset paging honest.
     const rows = await db.select()
       .from(enquiries)
       .where(where)
       .limit(query.data.limit)
       .offset(query.data.offset)
-      .orderBy(enquiries.updatedAt);
+      .orderBy(desc(enquiries.createdAt), desc(enquiries.id));
 
     return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
   });
