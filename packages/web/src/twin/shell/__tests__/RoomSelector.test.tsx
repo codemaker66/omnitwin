@@ -465,7 +465,7 @@ describe("RoomSelector — copy", () => {
 // trigger [18,259,186,294] — while this file reported no collision at all.
 //
 //   1. It never read room-dossier.css's `@media (max-height: 460px)` block,
-//      which relaxes the card's cap from `100dvh - 200px` to `100dvh - 120px`.
+//      which then relaxed the card's cap from `100dvh - 200px` to `100dvh - 120px`.
 //      A model that does not know a breakpoint exists cannot be conservative
 //      about it: at 390px of height it under-read the cap by 70px.
 //
@@ -526,6 +526,9 @@ const CHIP_H_PHONE = 31;
 /** The 480px block wraps the rail in 6px of block padding when it becomes a
  *  scrolling row, so the rail's BOX is taller than its chip there. */
 const RAIL_PAD_PHONE = 12;
+/** The single-line WIP strip: two 9px pads, a 12px × 1.5 line box and a border.
+ * Safe-area insets are zero in these viewport fixtures. */
+const WIP_STRIP_H = 9 + 12 * 1.5 + 9 + 1;
 
 /**
  * The room dossier's own height in CSS px, before any cap.
@@ -552,13 +555,14 @@ const DOSSIER_MEASURED_MAX_H = 250;
  * The dossier's rendered height: its content, clamped by whichever `max-height`
  * the media queries actually leave standing.
  *
- * The short-viewport cap is the one the old model never read, and it is the
- * looser of the two — `100dvh - 120px` against `100dvh - 200px` — so missing it
- * made the card look 70px shorter than it is at 390px of height. That is the
- * whole 35px overlap, and then some.
+ * Short viewports budget against the HUD content below the WIP strip. The
+ * dossier reserves its top inset plus the quick rail's bottom, chip and gap;
+ * its scrolling card then takes at most that definite parent height.
  */
 function dossierHeight(v: Viewport, phone: boolean): number {
-  const cap = v.h - (v.h <= 460 ? 120 : phone ? 230 : 200);
+  const cap = v.h <= 460
+    ? v.h - WIP_STRIP_H - 62 - (phone ? 135 : 103)
+    : v.h - (phone ? 230 : 200);
   return Math.min(DOSSIER_CONTENT_H, cap);
 }
 
@@ -581,7 +585,7 @@ function occupiedHudRects(v: Viewport, quickChips: number): readonly SlotRect[] 
 
   const dossierLeft = phone ? 12 : 18;
   const dossierWidth = phone ? Math.min(320, v.w - 130) : Math.min(340, v.w - 150);
-  const dossierTop = phone ? 56 : 62;
+  const dossierTop = WIP_STRIP_H + (phone ? 56 : 62);
 
   const chip = tiny ? CHIP_H_PHONE : CHIP_H;
   // Column above 480px (chips stacked, 8px gaps); one padded scrolling row below.
@@ -598,10 +602,10 @@ function occupiedHudRects(v: Viewport, quickChips: number): readonly SlotRect[] 
   const rightInset = tiny ? 12 : 18;
 
   return [
-    boxAt("node label", tiny ? 12 : 18, tiny ? 12 : 18, v.w / 2, 34),
-    boxAt("mode control", v.w - rightInset - 260, tiny ? 12 : 18, 260, 34),
-    boxAt("surface", v.w - rightInset - 103, tiny ? 52 : 62, 103, 30),
-    boxAt("utility rail", v.w - rightInset - 112, tiny ? 88 : 106, 112, 131),
+    boxAt("node label", tiny ? 12 : 18, WIP_STRIP_H + (tiny ? 12 : 18), v.w / 2, 34),
+    boxAt("mode control", v.w - rightInset - 260, WIP_STRIP_H + (tiny ? 12 : 18), 260, 34),
+    boxAt("surface", v.w - rightInset - 103, WIP_STRIP_H + (tiny ? 52 : 62), 103, 30),
+    boxAt("utility rail", v.w - rightInset - 112, WIP_STRIP_H + (tiny ? 88 : 106), 112, 131),
     boxAt(
       "room dossier",
       dossierLeft,
@@ -685,15 +689,12 @@ describe("RoomSelector — the HUD slot", () => {
   }
 
   it("would have caught the landscape-phone collision that shipped", () => {
-    // The regression, stated as the two numbers that made it: the dossier's own
-    // stylesheet says its cap at 390px of height is `100dvh - 120px`, not the
-    // `100dvh - 200px` the old model read — and the card is 237px of content
-    // there, which the cap does not reach. Both facts are asserted, so a future
-    // edit that reverts either one fails here rather than at a customer.
+    // The short-viewport card now scrolls within the height left below the WIP
+    // strip and above the quick rail. Restoring the old viewport-based cap
+    // would let its content extend through that rail.
     const landscape: Viewport = { w: 844, h: 390 };
     expect(DOSSIER_CSS).toContain("@media (max-height: 460px)");
-    expect(DOSSIER_CSS).toContain("max-height: calc(100dvh - 120px);");
-    expect(dossierHeight(landscape, false)).toBe(DOSSIER_CONTENT_H);
+    expect(dossierHeight(landscape, false)).toBe(188);
     // The old slot: left column, bottom 96. Reconstructed rather than described,
     // so "it used to collide" is a computation and not a memory.
     const oldTrigger = boxAt("old rooms trigger", 18, 390 - 96 - 36, 168, 36);
@@ -704,6 +705,14 @@ describe("RoomSelector — the HUD slot", () => {
     expect(dossier !== undefined && overlaps(oldTrigger, dossier)).toBe(true);
     // And the slot that shipped instead does not.
     expect(dossier !== undefined && overlaps(triggerRect(landscape), dossier)).toBe(false);
+    const rail = occupiedHudRects(landscape, 1).find(
+      (entry) => entry.name === "quick actions",
+    );
+    expect(rail).toBeDefined();
+    const oldCappedDossier = boxAt("old viewport-capped dossier", 18, WIP_STRIP_H + 62,
+      340, Math.min(DOSSIER_CONTENT_H, landscape.h - 120));
+    expect(rail !== undefined && overlaps(oldCappedDossier, rail)).toBe(true);
+    expect(dossier !== undefined && rail !== undefined && overlaps(dossier, rail)).toBe(false);
   });
 
   it("keeps the dossier model an over-estimate of the measured render", () => {
@@ -765,6 +774,10 @@ describe("RoomSelector — the HUD slot", () => {
       "top: calc(106px + env(safe-area-inset-top));", // .vv-twin-controls
       "top: calc(88px + env(safe-area-inset-top));", // …at ≤480px
       "max-width: 26rem;", // .vv-twin-viewer-disclosure
+      "padding: calc(9px + env(safe-area-inset-top)) 16px 9px;", // WIP strip
+      "border-bottom: 1px solid var(--rule);",
+      "font-size: 12px;",
+      "line-height: 1.5;",
     ]) {
       expect(TWIN_CSS).toContain(declaration);
     }
@@ -774,8 +787,11 @@ describe("RoomSelector — the HUD slot", () => {
       "max-height: calc(100dvh - 200px);",
       "top: calc(56px + env(safe-area-inset-top));",
       "max-height: calc(100dvh - 230px);",
-      // The override the old model never read. Its absence is half the defect.
-      "max-height: calc(100dvh - 120px);",
+      "--vv-dossier-bottom-clearance: 103px;",
+      "--vv-dossier-bottom-clearance: 135px;",
+      "height: calc(100% - 62px - var(--vv-dossier-bottom-clearance) - env(safe-area-inset-top) - env(safe-area-inset-bottom));",
+      "max-height: none;",
+      "max-height: 100%;",
     ]) {
       expect(DOSSIER_CSS).toContain(declaration);
     }

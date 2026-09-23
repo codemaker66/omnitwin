@@ -395,6 +395,19 @@ for (const viewport of VIEWPORTS) {
     await openCrowdedTour(page);
     await expectNoHorizontalOverflow(page);
 
+    // The WIP strip reserves HUD space without changing camera aspect, orbit
+    // sensitivity or the renderer's workload. Its transparent HUD container
+    // must also let pointer input reach the canvas between controls.
+    const viewerBox = await page.locator(".vv-twin-viewer").boundingBox();
+    const canvas = page.locator(".vv-twin-viewer canvas");
+    expect(viewerBox, "the viewer must have measurable bounds").not.toBeNull();
+    expect(await canvas.boundingBox(), "the canvas must retain the full viewer bounds")
+      .toEqual(viewerBox);
+    expect(await canvas.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === element;
+    }), "the HUD must leave the canvas reachable between controls").toBe(true);
+
     // The crowded state is the state under test — if a panel silently stopped
     // rendering, the disjointness below would pass for the wrong reason.
     const rects = await hudRects(page);
@@ -440,6 +453,27 @@ for (const viewport of VIEWPORTS) {
             `(${describe(rightRect)}) by ${String(Math.round(cover.x))}×` +
             `${String(Math.round(cover.y))} px at ${viewport.label}`,
         ).toBeLessThanOrEqual(OVERLAP_TOLERANCE_PX);
+      }
+    }
+
+    // Measure dots use camera-projected percentages. Matching the drawing's
+    // actual bounds to the canvas keeps every projected point aligned, even
+    // though the status strip moves the surrounding HUD down.
+    await page.getByRole("radio", { name: TWIN_MODE_PLAN_LABEL, exact: true }).click();
+    await page.getByTestId("twin-measure-trigger").click();
+    await expect(page.getByTestId("twin-measure")).toBeVisible();
+    expect(await page.locator(".vv-twin-measure-canvas").boundingBox(),
+      "measurement projection and rendering must share the same coordinate bounds")
+      .toEqual(await canvas.boundingBox());
+    const measurePanel = await page.locator(".vv-twin-measure-panel").boundingBox();
+    expect(measurePanel, "the armed measurement panel must be on screen").not.toBeNull();
+    for (const control of await page.locator(".vv-twin-controls button").all()) {
+      const controlBox = await control.boundingBox();
+      if (measurePanel !== null && controlBox !== null) {
+        const cover = overlap(measurePanel, controlBox);
+        expect(Math.min(cover.x, cover.y),
+          `the measurement panel covers ${(await control.getAttribute("aria-label")) ?? "a tour control"} at ${viewport.label}`)
+          .toBeLessThanOrEqual(OVERLAP_TOLERANCE_PX);
       }
     }
 

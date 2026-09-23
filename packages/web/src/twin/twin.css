@@ -74,9 +74,11 @@
   padding: 24px;
 }
 
-/* A static preview disclosure reserves its own strip above the scene, keeping
- * controls and imagery clear. It stays inside the fullscreen viewer too. */
+/* A static preview disclosure reserves a strip above the HUD. The canvas keeps
+ * its full viewer bounds beneath it, including in fullscreen. */
 .vv-twin-work-in-progress {
+  position: relative;
+  z-index: 1;
   margin: 0;
   padding: calc(9px + env(safe-area-inset-top)) 16px 9px;
   border-bottom: 1px solid var(--rule);
@@ -154,16 +156,27 @@
   position: absolute;
   inset: 0;
   display: grid;
-  /* The canvas's previous drawing width must not become the track minimum
-   * when fullscreen exits or the viewport narrows. */
+  /* The HUD must shrink with the viewer on fullscreen exit and narrow screens. */
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.vv-twin-canvas {
+  position: absolute;
+  inset: 0;
 }
 
 .vv-twin-viewer-content {
   position: relative;
   min-width: 0;
   min-height: 0;
+  pointer-events: none;
+}
+
+/* Restore HUD hit targets without overriding their own click-through rules
+ * (coach, vignette, dossier frame and utility rails). */
+:where(.vv-twin-viewer-content) > * {
+  pointer-events: auto;
 }
 
 /* The opening: the canvas holds black until the first pano texture is on

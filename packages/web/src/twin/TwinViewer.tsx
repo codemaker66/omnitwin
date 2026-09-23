@@ -1614,13 +1614,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       aria-label={twinViewerLabel(manifest.name)}
       aria-roledescription={TWIN_VIEWER_ROLE}
     >
-      <p className="vv-twin-work-in-progress">{TWIN_WORK_IN_PROGRESS}</p>
-      <div className="vv-twin-viewer-content">
-      {/* Polite arrival announcement — where the walk just moved to (finding
-          [10]). Keyed span so identical text still re-announces on revisit. */}
-      <p className="vv-sr-only" aria-live="polite" data-testid="twin-live-region">
-        {twinViewpointAnnouncement(walk.currentId, manifest.nodes.length)}
-      </p>
+      <div className="vv-twin-canvas">
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
@@ -1792,6 +1786,14 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           )
         )}
       </Canvas>
+      </div>
+      <p className="vv-twin-work-in-progress">{TWIN_WORK_IN_PROGRESS}</p>
+      <div className="vv-twin-viewer-content">
+      {/* Polite arrival announcement — where the walk just moved to (finding
+          [10]). Keyed span so identical text still re-announces on revisit. */}
+      <p className="vv-sr-only" aria-live="polite" data-testid="twin-live-region">
+        {twinViewpointAnnouncement(walk.currentId, manifest.nodes.length)}
+      </p>
 
       {/* Settle vignette — deepens a few percent in motion, relaxes on arrival.
           Kept static at rest under reduced motion (never breathes). */}
@@ -1948,6 +1950,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           <span className="vv-twin-measure-trigger-label">{MEASURE_GROUP_LABEL}</span>
         </button>
       )}
+      </div>
+      {/* Projected positions use canvas fractions, so this overlay shares the
+          full viewer bounds rather than the shorter HUD content area. */}
       {measureArmed && (
         <MeasureLayer
           points={measurePoints}
@@ -1956,7 +1961,6 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           onPickAtCentre={onPickAtCentre}
         />
       )}
-      </div>
     </div>
   );
 }

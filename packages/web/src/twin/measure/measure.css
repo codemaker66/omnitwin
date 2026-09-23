@@ -350,17 +350,16 @@
  * breakpoints is how the 844×390 collision got in: the model only reads the
  * breakpoints it knows about.
  *
- * The cap subtracts 260 rather than 28 because the utility rail — Enquire,
- * Share, Fullscreen — ends at y=237 on a 390px stage, and a panel grown up
- * through it would cover the three controls a visitor reaches for most. That is
- * the failure this whole slot section exists to prevent. */
+ * The utility rail ends near y=274 beneath the WIP strip. Reserving 300px
+ * leaves the panel's 18px bottom inset and an 8px gap below that rail, with
+ * safe-area insets kept out of the available height too. */
 @media (max-height: 460px) {
   .vv-twin-measure-trigger {
     bottom: calc(18px + env(safe-area-inset-bottom));
   }
 
   .vv-twin-measure-panel {
-    max-height: calc(100dvh - 260px);
+    max-height: calc(100dvh - 300px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     overflow-y: auto;
     overscroll-behavior: contain;
   }
