@@ -31,31 +31,21 @@ export const FRESH_LEDE =
 
 export const FRESH_CTA_DATES = "Ask about a date";
 export const FRESH_CTA_ROOMS = "See the rooms";
-export const FRESH_CTA_TOUR = "Walk the building";
+export const FRESH_CTA_TOUR = "Tour preview · Work in progress";
 
 /** The whole-building walkthrough — the Twin, at its memorable alias.
  *  149 viewpoints is a capture fact (the scan's own sweep count). */
 export const FRESH_TOUR_HREF = "/tour";
 
-/** Whether the whole-building walkthrough is actually reachable.
- *
- *  FALSE since 2026-08-15. `/tour` loads its scene from `public/twin/`, which is
- *  552 MB and gitignored, so it is never in the Vercel build. The SPA rewrite
- *  answers the missing manifest with index.html and a 200, so the fetch looks
- *  like it SUCCEEDED and only fails when the HTML is parsed as JSON — which is
- *  why this shipped: every layer reported success. Two live CTAs pointed at it.
- *
- *  To turn it back on: publish the twin bundle to R2, set VITE_TWIN_ASSET_BASE
- *  on Vercel, confirm the manifest returns application/json, then flip this to
- *  true. Do not flip it first. */
-// Annotated `boolean`, not inferred `false`: the literal type would make every
-// use statically dead and trip no-unnecessary-condition, which would push the
-// next person to delete the branches rather than flip the flag.
-export const FRESH_TOUR_ENABLED: boolean = false;
-export const FRESH_TOUR_TITLE = "Then walk the whole building";
+/** The panorama tour was verified rendering on production on 2026-09-19.
+ *  Production uses its configured asset source; the missing local default
+ *  bundle does not establish live availability. Keep the preview labelled
+ *  Work in progress wherever it is offered. */
+export const FRESH_TOUR_ENABLED: boolean = true;
+export const FRESH_TOUR_TITLE = "Panorama tour · Work in progress";
 export const FRESH_TOUR_LINE =
-  "149 viewpoints, with dollhouse and floor plan views.";
-export const FRESH_TOUR_CTA = "Open the walkthrough";
+  "Explore the building through captured panoramas. This early version is still being developed.";
+export const FRESH_TOUR_CTA = "Open the tour preview";
 /** The door's ground: the walkthrough's own dollhouse view — product
  *  output, not photography, so the no-repeat photo law is untouched. */
 export const FRESH_TOUR_GROUND = "/images/venue/tour-door-1800.webp";
@@ -65,8 +55,8 @@ export const FRESH_TOUR_GROUND_SIZES = "(max-width: 980px) calc(100vw - 32px), 9
 export const FRESH_TOUR_GROUND_ALT =
   "Trades Hall opened as a captured model — rooms and the spiral stair seen from above in the walkthrough's dollhouse view, viewpoints dotted across the floors";
 export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
-export const FRESH_DOSSIER_TWIN_CTA = "See this room in the walkthrough";
-export const FRESH_DOSSIER_WALK_CTA = "Step into this room";
+export const FRESH_DOSSIER_TWIN_CTA = "See this room in the tour preview · Work in progress";
+export const FRESH_DOSSIER_WALK_CTA = "3D room · Work in progress";
 
 /** Section kickers — the page's running heads: small letterspaced marks
  *  above each heading. Written sentence case; CSS sets them uppercase. */
@@ -244,23 +234,14 @@ export const FRESH_ENQUIRY_PRIVACY_NOTE =
 export const FRESH_ENQUIRY_PRIVACY_LINK = "How we handle your data";
 export const FRESH_ENQUIRY_PRIVACY_HREF = "/privacy";
 
-/** Walk the room — the poster-first capture embed. The poster is a render
- *  of the captured scene (never one of the venue photographs, so the
- *  no-repeat law holds); the room itself loads only when invited. */
-export const FRESH_WALK_TITLE = "Walk the room";
+/** The captured 3D room is unavailable. Its existing render is a static
+ *  preview only; no Gaussian assets load from this page. */
+export const FRESH_WALK_TITLE = "The 3D room";
 export const FRESH_WALK_LEDE =
-  "Explore the captured Reception Room and try a table layout.";
-export const FRESH_WALK_CHIP = "Captured room";
-export const FRESH_WALK_WAKE = "Step in";
-export const FRESH_WALK_SIZE_NOTE =
-  "Loads the captured room — about 60 MB, best on wifi.";
-export const FRESH_WALK_LOADING = "Loading room";
-export const FRESH_WALK_HINT =
-  "Drag to look around · drag the gold table to move it · arrow keys nudge · Esc steps out";
-export const FRESH_WALK_FAILED =
-  "The room couldn't open in this browser.";
+  "Work in progress. The captured 3D room is currently unavailable.";
+export const FRESH_WALK_CHIP = "Work in progress";
 export const FRESH_WALK_NOTE =
-  "The same capture drives Venviewer, the planning tool beneath this page.";
+  "3D room access is paused while we improve it.";
 export const FRESH_WALK_POSTER = "/images/venue/walk-poster-1120.webp";
 export const FRESH_WALK_POSTER_SRCSET =
   "/images/venue/walk-poster-560.webp 560w, /images/venue/walk-poster-1120.webp 1120w";
@@ -379,11 +360,6 @@ export function allFreshCopy(): readonly string[] {
     FRESH_WALK_TITLE,
     FRESH_WALK_LEDE,
     FRESH_WALK_CHIP,
-    FRESH_WALK_WAKE,
-    FRESH_WALK_SIZE_NOTE,
-    FRESH_WALK_LOADING,
-    FRESH_WALK_HINT,
-    FRESH_WALK_FAILED,
     FRESH_WALK_NOTE,
     FRESH_WALK_POSTER_ALT,
     FRESH_HERITAGE_TITLE,

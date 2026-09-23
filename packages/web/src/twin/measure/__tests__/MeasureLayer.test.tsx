@@ -716,7 +716,7 @@ function rectsOverlap(a: Rect, b: Rect): boolean {
 }
 
 /**
- * What the shipped build actually paints, at the three sizes the brief names.
+ * Historical rendered bounds before the WIP strip, at the three brief sizes.
  * Captured with `page.getBoundingClientRect()` after arming the tool and taking
  * two picks — the tallest the panel ever gets, which is the case that matters.
  */
@@ -759,12 +759,42 @@ const MEASURED: readonly {
 
 describe("MeasureLayer — the slot it ships in", () => {
   for (const { name, panel, others } of MEASURED) {
-    it(`covers nothing at ${name}`, () => {
+    it(`keeps the measured panel clear of the shifted HUD at ${name}`, () => {
+      const statusStripHeight = 37;
+      const currentPanel: Rect = name === "844×390"
+        ? [panel[0], 390 - 18 - (390 - 300), panel[2], panel[3]]
+        : panel;
       for (const [other, rect] of others) {
-        expect([other, rectsOverlap(panel, rect)]).toEqual([other, false]);
+        // The disclosure retains its bottom anchor; top-anchored controls move
+        // with the HUD content beneath the status strip.
+        const currentRect: Rect = other === "viewer disclosure" ? rect
+          : [rect[0], rect[1] + statusStripHeight, rect[2], rect[3] + statusStripHeight];
+        expect([other, rectsOverlap(currentPanel, currentRect)]).toEqual([other, false]);
       }
     });
   }
+
+  it("caps the completed landscape panel below Fullscreen and keeps its contents reachable", () => {
+    // The real two-pick render at 844×390 put the old 130px panel at y=242,
+    // through Fullscreen at y=236..274. Derive the new height from the shipped
+    // cap so reverting that CSS restores the measured collision in this test.
+    const cap = /max-height: calc\(100dvh - (\d+)px - env\(safe-area-inset-top\) - env\(safe-area-inset-bottom\)\);/u
+      .exec(MEASURE_CSS);
+    expect(cap).not.toBeNull();
+    const reservedHeight = Number(cap?.[1]);
+    const fullscreen: Rect = [788, 236, 826, 274];
+    expect(rectsOverlap([439, 242, 832, 372], fullscreen)).toBe(true);
+    for (const height of [390, 375]) {
+      const panelHeight = height - reservedHeight;
+      expect(panelHeight).toBeGreaterThan(0);
+      const panel: Rect = [439, height - 18 - panelHeight, 832, height - 18];
+      expect(panel[1] - fullscreen[3]).toBeGreaterThanOrEqual(8);
+      expect(rectsOverlap(panel, fullscreen)).toBe(false);
+    }
+    expect(MEASURE_CSS).toContain("overflow-y: auto;");
+    expect(MEASURE_CSS).toContain("overscroll-behavior: contain;");
+    expect(MEASURE_CSS).toMatch(/\.vv-twin-measure-actions \{[^}]*position: sticky;/u);
+  });
 
   it("positions both halves, because a flow-laid panel is clipped away", () => {
     // `.vv-twin-stage { overflow: hidden }` has eaten an unpositioned HUD panel

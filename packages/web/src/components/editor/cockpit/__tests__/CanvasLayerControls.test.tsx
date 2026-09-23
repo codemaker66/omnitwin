@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
@@ -14,12 +14,36 @@ function spaceWith(slug: string): Space {
 }
 
 beforeEach(() => {
+  vi.stubEnv("DEV", true);
   useCockpitStore.getState().reset();
   useEditorStore.setState({ space: null });
 });
-afterEach(() => { cleanup(); });
+afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
 describe("CanvasLayerControls", () => {
+  it.each([true, false])("disables Gaussian controls in production while retaining the model (embedded: %s)", (embedded) => {
+    vi.stubEnv("DEV", false);
+    useEditorStore.setState({ space: spaceWith("reception-room") });
+    useCockpitStore.setState({ layerMode: "splat", walkMode: true });
+    render(<CanvasLayerControls embedded={embedded} />);
+
+    const model = screen.getByRole("button", { name: embedded ? "Model" : "Mesh" });
+    expect((model as HTMLButtonElement).disabled).toBe(false);
+    expect(model.getAttribute("aria-pressed")).toBe("true");
+    const unavailableNames = embedded ? ["Capture", "Combined", "Interior"] : ["Splat", "Hybrid", "Walk"];
+    for (const name of unavailableNames) {
+      const button = screen.getByRole("button", { name });
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(button.getAttribute("aria-pressed")).toBe("false");
+      expect(button.getAttribute("title")).toBe("Gaussian splats · Work in progress");
+    }
+    expect(screen.getByText("Gaussian splats · Work in progress")).toBeTruthy();
+    fireEvent.click(model);
+    expect(useCockpitStore.getState().layerMode).toBe("mesh");
+    fireEvent.click(screen.getByRole("button", { name: unavailableNames[0] }));
+    expect(useCockpitStore.getState().layerMode).toBe("mesh");
+  });
+
   it("renders mesh/splat/hybrid with hybrid pressed by default", () => {
     render(<CanvasLayerControls />);
     expect(screen.getByRole("button", { name: /mesh/i })).toBeTruthy();

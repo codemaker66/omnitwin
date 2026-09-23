@@ -4,6 +4,7 @@ import { useEditorStore } from "../stores/editor-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getLatestRuntimePackage } from "../api/runtime-packages.js";
+import { gaussianSplatsAvailable } from "../lib/splat-access.js";
 import {
   decideRuntimeAsset,
   plannerRuntimeChipLabel,
@@ -18,7 +19,8 @@ import {
 // cockpit is single-tenant (Trades Hall): the room slug comes from the loaded
 // space, the venue is fixed.
 //
-// Precedence is the shared decision pipeline's: a registered, immutable
+// Production keeps Gaussian splats unavailable while this work is in progress.
+// Development preserves the shared decision pipeline: a registered, immutable
 // RuntimePackage always wins; failing that, the room's staged capture mounts —
 // real measured tiles under their honest staged label (the Stage programme's
 // S1 decision: planning happens INSIDE the captured room, and the chip says
@@ -52,7 +54,8 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
   const spaceSlug = useEditorStore((s) => s.space?.slug ?? null);
   const roomSlug = runtimeRoomSlug(spaceSlug);
   const user = useAuthStore((state) => state.user);
-  const canReadRegistry = user?.platformRole === "admin";
+  const splatsAvailable = gaussianSplatsAvailable();
+  const canReadRegistry = splatsAvailable && user?.platformRole === "admin";
   const requestKey = JSON.stringify([roomSlug, user?.id, user?.role, user?.venueId, user?.platformRole]);
   const [packageKey, setPackageKey] = useState<string | null>(null);
   const [pkg, setPkg] = useState<RuntimePackage | null>(null);
@@ -88,16 +91,16 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
   const currentPackage = canReadRegistry && packageKey === requestKey ? pkg : null;
   const decision = useMemo(() => decideRuntimeAsset(null, currentPackage, {
     room: roomSlug,
-    // The planner is a working surface for people planning real events in
-    // these rooms; seeing the staged capture is the point. The label carries
-    // the honesty: STAGED_CAPTURE_STATUS flows into the cockpit chip below.
-    allowStagedCapture: true,
-  }), [currentPackage, roomSlug]);
+    // The production hold covers staged captures as well as the registry.
+    allowStagedCapture: splatsAvailable,
+  }), [currentPackage, roomSlug, splatsAvailable]);
   const hasAsset = decision.source !== "none" && decision.splatUrls.length > 0;
   const transform = useMemo(() => (roomSlug !== null
     ? runtimeAssetViewTransformForRoom(roomSlug, decision.source)
     : IDENTITY_TRANSFORM), [roomSlug, decision.source]);
-  const runtimeLabel = plannerRuntimeChipLabel(decision);
+  const runtimeLabel = splatsAvailable
+    ? plannerRuntimeChipLabel(decision)
+    : "Gaussian splats · Work in progress";
 
   useEffect(() => {
     useCockpitStore.getState().setRuntimeAssetStatus(runtimeLabel);
