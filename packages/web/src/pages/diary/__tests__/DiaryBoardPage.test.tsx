@@ -312,7 +312,7 @@ describe("DiaryBoardPage", () => {
       { states: ["submitted", "under_review"], order: "created_desc", venueId: VENUE, limit: 51 },
       expect.any(AbortSignal),
     );
-    await act(async () => { resolveRequest?.([trayEnquiry(1, "submitted"), trayEnquiry(2, "under_review")]); });
+    await act(async () => { resolveRequest?.([trayEnquiry(1, "submitted"), trayEnquiry(2, "under_review")]); await Promise.resolve(); });
     expect(screen.queryByText("Loading open enquiries…")).toBeNull();
     expect(trayEnquiryNames()).toEqual(["Enquiry 1", "Enquiry 2"]);
     expect(screen.queryByText(/newest open enquiries/)).toBeNull();
@@ -342,7 +342,7 @@ describe("DiaryBoardPage", () => {
     expect(listEnquiriesMock).toHaveBeenLastCalledWith(expect.objectContaining({ venueId: OTHER_VENUE }), expect.any(AbortSignal));
     expect(await screen.findByText("Other venue slip")).toBeTruthy();
 
-    await act(async () => { resolveOld?.([{ ...trayEnquiry(8, "submitted"), name: "Stale first-venue slip" }]); });
+    await act(async () => { resolveOld?.([{ ...trayEnquiry(8, "submitted"), name: "Stale first-venue slip" }]); await Promise.resolve(); });
     expect(screen.queryByText("Stale first-venue slip")).toBeNull();
     expect(screen.getByText("Other venue slip")).toBeTruthy();
   });
