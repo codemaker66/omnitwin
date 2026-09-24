@@ -1,13 +1,15 @@
 # Performance review — 24 September 2026 (T-629)
 
-Status: verified on branch `claude/cool-tesla-90zlcp`, a fast-forward of
-`master`. Blake asked for a push to `master`; this session's permission system
-refused that push, so the release waits for Blake. A master push deploys the
-web app on Vercel and, because this change touches the API's watched paths, the
-API on Railway (see `docs/operations/diary-deploy-checklist.md`). This session
-cannot check the live site either: its network policy blocks `venviewer.com`
-and `api.venviewer.com`. Numbers below are local lab measurements (production
-builds, throttled Chromium, disposable PostgreSQL 16). They are not field data,
+Status: two waves verified on branch `claude/cool-tesla-90zlcp`, a
+fast-forward of `master`. Blake asked for the best choices for maximum
+performance and a push to `master`; this session's permission system refused
+that push, so the release waits for Blake. A master push deploys the web app on
+Vercel and, because the change touches the API's watched paths, the API on
+Railway (see `docs/operations/diary-deploy-checklist.md`); migration 0071 is
+applied by the Deploy workflow once CI passes. This session cannot check the
+live site: its network policy blocks `venviewer.com` and `api.venviewer.com`.
+Numbers below are local lab measurements (production builds, throttled
+Chromium, SwiftShader, disposable PostgreSQL 16). They are not field data,
 physical-device frame rates or founder acceptance.
 
 Four read-only audits (API/database, React rendering, 3D rendering,
@@ -17,27 +19,29 @@ were excluded: T-627/T-628 own them and public splats are on hold.
 
 ## Results
 
-### Page weight (production build, JS + CSS a route adds beyond the entry)
+### Page weight (final production build, JS + CSS a route adds beyond the entry)
 
 | Route | Before (gzip) | After (gzip) |
 |---|---:|---:|
-| Panorama tour `/venues/:slug/twin` | 2,392 KB (633 KB) | 1,199 KB (329 KB) |
-| Planner `/plan` | 3,600 KB (1,021 KB) | 3,136 KB (894 KB) |
+| Panorama tour `/venues/:slug/twin` | 2,392 KB (633 KB) | 1,200 KB (329 KB) |
+| Planner `/plan` | 3,600 KB (1,021 KB) | 3,141 KB (899 KB) |
 | Homepage `/` | 694 KB (175 KB) | 243 KB (75 KB) |
-| `/fresh`, `/editor` | 635 KB (149 KB) | 140 KB (39 KB) |
+| `/fresh`, `/editor` | 635 KB (149 KB) | 141 KB (40 KB) |
 | Landing | 623 KB (146 KB) | 64 KB (19 KB) |
 | Client event, proposal, supplier pages | 578–580 KB (132–134 KB) | 89–104 KB (25–27 KB) |
-| Hallkeeper sheet | 675 KB (164 KB) | 200 KB (59 KB) |
-| Diary | 766 KB (188 KB) | 357 KB (99 KB) |
-| Day Board | 697 KB (167 KB) | 285 KB (77 KB) |
-| Dashboard | 960 KB (230 KB) | 593 KB (154 KB) |
+| Hallkeeper sheet | 675 KB (164 KB) | 201 KB (60 KB) |
+| Diary | 766 KB (188 KB) | 358 KB (99 KB) |
+| Day Board | 697 KB (167 KB) | 286 KB (77 KB) |
+| Dashboard | 960 KB (230 KB) | 594 KB (154 KB) |
 | Craft quiz | 742 KB (178 KB) | 241 KB (66 KB) |
 | Deferred Sentry chunk (every page with a DSN) | 437 KB JS (144 KB) | 77 KB JS (26 KB) |
 
 Routes that load the shared contracts fell by 76–305 KB gzip, and the
 shared Blueprint and living-hall chunks by 84 and 126 KB. Login, registration,
-legal, pricing, leaflet and demo pages were already small and are unchanged, as
-is the entry (281 KB, 93 KB gzip).
+legal, pricing, leaflet and demo pages were already small and are unchanged.
+The entry grows from 280 KB (92 KB gzip) to 307 KB (95 KB gzip) because it now
+carries the site's self-hosted `@font-face` rules, which previously arrived as
+a separate render-blocking stylesheet from Google.
 
 ### Homepage in a browser (same local server, two runs each, consistent)
 
@@ -159,102 +163,213 @@ unchanged (0.59 vs 0.60 ms), as is the lean single-selection sweep.
   per-object writes, including rounding, null metadata, foreign ids and repeated
   ids, and checks the coordinate-write trigger still fires.
 
-## Opportunities not taken here (ranked by expected impact)
+## Second wave — the best invisible choices
 
-1. **Default planner furniture is film-grade geometry.** The default chair and
-   table are ≈50k triangles each with uncompressed GLBs (1–12 MB per model); a
-   20-table banquet draws ≈11.6M triangles per frame. Planner-grade simplified
-   models plus meshopt/quantisation would cut GPU work and downloads by an order
-   of magnitude. Needs visual acceptance of the simplified models.
-2. **Dinner place settings are not instanced**: +1,000 transparent draws for a
-   dressed 20-table banquet, with 200 transmission materials each forcing a
-   framebuffer copy. Instancing and shared materials are invisible; replacing
-   transmission glass is a visual decision.
-3. **Planner render resolution is the raw device pixel ratio with 4× MSAA into a
-   half-float target** (≈180 MB of targets on a 3× phone). This was chosen after
-   blurred captures; changing it needs Blake's decision and side-by-side checks
-   on the declared devices.
-4. **Grand Hall ornaments cost ≈369 draws**; merging static meshes per material
-   would bring that to tens.
-5. **Editable furniture uses drei `<Instances>`**, recomposing every matrix every
-   frame and adding one scene object per item. The existing `DirectInstanceBatch`
-   path would remove that and also fix the culling bug below.
-6. **Camera gestures swap to a lean room shell and back**, remounting walls, dome
-   and features after every orbit (textures are now kept). Keeping the detailed
-   shell is likely better on desktop; measure on the declared devices first.
-7. **Name plates redraw a 1600 × 880 canvas each** when remounted after a gesture.
-8. **Staff pages wait for Clerk and `/auth/me` before downloading their own
-   code**; starting the page import when the route matches saves an estimated
-   1–1.5 s on slow links.
-9. **Planner start-up is a serial chain of API calls with repeats**
-   (venues → spaces → up to five config checks → draft), then re-fetches.
-10. **The homepage still ships the generated splat tile list** (45 KB gzip) to
-    print eight labels and footprints; a generated summary would do. Owned by
-    the splat tasks.
-11. **Fonts**: the Google Fonts stylesheet is render-blocking with full variable
-    axes; self-hosted, subset files with one or two preloads would help, and
-    the homepage also triggers the cockpit fonts.
-12. **API**: the phase graph returns every snapshot's full layout; linked-layout
-    summaries are fetched one configuration at a time; hot paths `SELECT *`
-    data-URL thumbnails; the rate limiter keys by IP because `request.user` is
-    not set at `onRequest` (a venue team shares 100 requests/min); every diary
-    change makes every client refetch the calendar and enquiries; the venue
-    dashboard aggregates whole tables in JavaScript; the pool has no connection
-    timeout; `enquiries.configuration_id` and `proposals.configuration_id` lack
-    indexes. Layout revisions are stored in full on every save with no retention
-    rule (a data-retention decision).
-13. **Heavy images elsewhere**: quiz crests are 3.15 MB of PNG shown at 35–58 px;
-    inventory pictures are 0.75–0.86 MB lossless WebP; room plans are 0.7–1.2 MB
-    PNG.
-14. **Measurement gap**: `scripts/frame-budget-pass.mjs` loads an empty room, so
-    it never measures the furnished-scene 60 fps target. A default banquet, a
-    dressed banquet and a drag trace would give device numbers for items 1–7.
+Blake delegated the choices ("Do the best choices for max extreme
+performance"). The standing founder mandate
+(`docs/plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md`) rules out
+a lower-resolution canvas, blurred motion and visibly simpler furniture, so
+every change here had to leave the image and behaviour unchanged. Each was
+compared with the previous code by equivalence tests and, for 3D, by exact
+RGBA comparisons in headless Chromium (SwiftShader). Six scoped agents did the
+work in isolated worktrees; every commit was reviewed, integrated and
+re-verified here.
+
+### Measured and rejected
+- **Fewer furniture triangles.** Error-bounded simplification removes under 5%
+  of triangles at 0.5 mm, because normals and texture seams set the budget.
+  Distance-based detail levels reach about 2× only at errors that are sub-pixel
+  beyond roughly 20 m. The accepted models have no invisible reduction.
+- **Instanced dinner covers.** One draw per part instead of 1,000, but glass,
+  rim and cutlery share one per-object depth-sorted transparent list and one
+  refraction backdrop: a five-InstancedMesh prototype changed 148–2,082 pixels
+  per view (cutlery seen through glasses vanished). Not shipped.
+- **Render resolution, MSAA and transmission glass**: unchanged (the mandate).
+- **Font preloads**: Chrome treats them as render-blocking; first paint got
+  later. Not shipped.
+- **Room plans as lossless WebP**: identical pixels and 25% smaller, but the
+  re-encode would drop each PNG's C2PA provenance manifest. Kept as PNG.
+- **A Neon connect timeout**: in `@neondatabase/serverless` 0.10.4 a stalled
+  WebSocket handshake with the pool timeout throws an uncaught TypeError that
+  would end the API process. Not shipped; `db/client.ts` records why.
+
+### Planner rendering (CPU and SwiftShader; no GPU in this container)
+
+| Work | Before | After |
+|---|---:|---:|
+| Dinner covers, 20 tables × 10: geometries / materials | 1,000 / 1,000 | 5 / 5 |
+| Select-all drag commit, dressed banquet | ≈24 ms | ≈7 ms |
+| Renderer main-thread time per frame, dressed banquet | ≈28 ms | ≈15 ms |
+| Drag-step commit, 1,287 items, desktop | 65 ms | 8.1 ms |
+| Furniture layer per idle frame | 2.4 ms | ≈0 ms |
+| Scene objects, 1,287-item banquet | 10,303 | 2,698 |
+| Grand Hall overview, draws per frame | 330 | 132 |
+| Grand Hall during a camera gesture, draws per frame | 354 | 145 |
+
+- Dinner covers share one geometry and one material per part (same meshes,
+  transforms and draw order) and are memoised: 0 changed pixels in six views.
+- Editable furniture draws from pooled instance buffers: only moved items are
+  recomposed and uploaded, and idle frames do no instance work. After identical
+  drags all 121,680 drawn matrix values equal the previous path.
+- Opaque Grand Hall ornaments draw as merged batches per surface and material.
+  The original per-mesh tree still draws whenever a surface is blended (camera
+  fades, clicked walls, x-ray) and on its first visible frame, so those states
+  are pixel-identical. Transparent pieces and pieces flush against another
+  material's face stay separate. At rest, 1–41 isolated edge pixels per
+  1440 × 900 frame differ through float rounding of the baked vertices.
+- The room shells stay mounted across camera gestures instead of being rebuilt
+  after every orbit; the drawn shell no longer changes across a gesture (the
+  remount changed up to 17 pixels), and ornament fades keep their first-load
+  timing (the remount left them one frame behind the walls).
+- Name plate textures are shared and kept for 5 s after the last plate
+  unmounts, so gestures no longer redraw (150–200 ms each in software) and
+  re-upload them.
+- Fixed on the way: phantom `template-…` selection at the room origin;
+  instanced furniture culled while on screen (culling is off for these
+  room-spanning batches); instanced tables and chairs jumping 12 cm ahead of
+  their linen and covers during the post-drag settle.
+
+### Loading
+
+| Measure | Before | After |
+|---|---:|---:|
+| `/diary` page code request starts (declared slow profile) | 2.33 s | 0.69 s |
+| `/diary` visible | 3.37 s | 2.42 s |
+| `/dashboard` visible | 3.38 s | 2.47 s |
+| Returning guest `/plan`, planner shown (150 ms API) | 0.68–1.02 s | 0.39–0.43 s |
+| `/` first paint, slow phone / desktop | 598 / 180 ms | 512 / 136 ms |
+| `/quiz` intro transferred, desktop / phone | 5.41 / 5.92 MB | 1.38 / 2.11 MB |
+| `/quiz` through to the result, desktop / phone | 11.2–11.6 / 11.1–11.8 MB | 7.66 / 8.46 MB |
+
+- Guarded staff pages download their code while the account check runs; they
+  still render and fetch only once authorised.
+- The planner's tracked-draft lookups run together (the newest matching draft
+  is still chosen), a guest's chosen draft is not fetched twice, and the room
+  and venue reads start as soon as they are known.
+- Fonts are Google Fonts' own files and rules served from this origin, with
+  provenance and OFL licences in `packages/web/src/styles/fonts/`; nothing
+  third-party stands before first paint. Eleven page states are
+  pixel-identical. Browsers Google sent static single-weight fonts (Opera and
+  Vivaldi on Windows, Yandex, Edge for Android, Firefox on Windows 7/8.1) now
+  get the variable faces, which is the type as designed.
+- Quiz crests, the armorial and inventory pictures come from display-sized
+  WebP ladders (within 4 levels of exact resamples; sources kept). They differ
+  from Chromium's own downscale of the large originals by 33–40 dB, a
+  resampling difference rather than lost detail.
+
+### API
+
+| Measure (disposable PostgreSQL 16) | Before | After |
+|---|---:|---:|
+| Event phase graph, 3 phases of 300-object freezes | 488,824 B | 5,368 B |
+| Linked-layout summaries, 5 layouts | 5 requests, 888,815 B | 1 request, 820 B |
+| Venue dashboard, bytes read from PostgreSQL | 504,455 B | 4,652 B |
+| Guest autosave with a 120 KB thumbnail, bytes read | 167,767 B | 46,827 B |
+| Action-log flush, bytes read | 121,515 B | 472 B |
+
+- Rate limiting is per verified user; it was per IP in practice, so an office
+  shared 100 requests a minute. Forged and unknown tokens stay per IP. Limited
+  requests answer 429 (they answered 500 and were reported as server errors).
+- Access checks no longer read stored thumbnail data URLs; responses are
+  byte-identical.
+- The Diary tray asks for its open enquiries, newest first, for the board's
+  venue, and says when more than 50 exist. Platform admins now see only that
+  venue's enquiries on a venue's board.
+- The web omits phase-snapshot payloads it never reads, batches linked-layout
+  summaries (falling back to per-layout reads while an older API is live), and
+  the dashboard's totals are computed in SQL.
+- Migration 0071 adds `enquiries(configuration_id, created_at)` and
+  `proposals(configuration_id)` indexes (additive, `IF NOT EXISTS`); the code
+  does not depend on them.
+- Pipeline and scenario totals above £1,000,000 no longer make the dashboard
+  answer 500 (the single-amount ceiling was applied to sums).
+
+## Remaining opportunities (ranked by expected impact)
+
+1. **Furniture downloads.** Lossless meshopt compression saves 20–40% of each
+   model and high-precision quantisation 41–70% (the bar: 12.1 → 3.7 MB) with
+   no visible change, but it needs new asset versions, a registration
+   migration and a check that harvesting handles quantised attributes.
+2. **Device measurements.** No GPU was available: the planner results above
+   are CPU and SwiftShader figures, and
+   `packages/web/scripts/frame-budget-pass.mjs` still loads an empty room. A
+   default banquet, a dressed banquet and a drag trace on the declared devices
+   would measure the 60 fps target.
+3. **Diary real-time fan-out**: every change makes every client refetch the
+   calendar and enquiries.
+4. **The homepage still ships the generated splat tile list** (45 KB gzip) to
+   print eight labels and footprints; owned by the splat tasks.
+5. **Smaller page items**: `/` also loads Inter because `RoomsHomePage` sits in
+   `cockpitImport`; `/trades-house/leaflet` frames a page that still loads
+   Google Fonts and full-size crests; `/demo` downloads 1.4–1.5 MP images for
+   hidden slides; `WallTogglePanel`'s 313 KB image is never rendered.
+6. **Signed-in planners** opening a claimed `/plan/<id>` first send a public
+   request that returns 404; changing the endpoint is a product decision.
+7. **A Neon driver upgrade** would allow a bounded connection timeout.
+8. **Layout revision retention**: every save stores a full revision with no
+   retention rule (a data-retention decision).
 
 ## Defects found in passing
 
-Fixed here: the quiz crash above, and `roomPosterUrl("__proto__")` returning
-`Object.prototype` instead of a URL.
+Fixed: the quiz crash when Google Fonts was unreachable; `roomPosterUrl("__proto__")`
+returning `Object.prototype`; the Diary tray showing the 20 least recently
+updated enquiries of any state; phantom `template-…` selection; instanced
+furniture culled while on screen; instanced furniture running ahead of its
+linen and covers in the post-drag settle; rate-limited requests answering 500;
+the dashboard answering 500 once a venue's quotes summed past £1,000,000.
 
-Not fixed (outside this change):
-- The Diary's enquiry tray requests enquiries without a status; the API returns
-  the 20 least recently updated, so new pending enquiries can be missing once a
-  venue has more than 20.
-- Clicking empty floor near the room centre can select a phantom
-  `template-<catalogueId>` item: hidden instancing templates at the origin are
-  hit by the selection raycast and accepted by `findFurnitureItemId`.
-- Instanced furniture keeps a bounding sphere computed once; items added far
-  from the first ones can be frustum-culled while on screen.
+Not fixed (need a decision or are outside this change):
+- The dashboard's Enquiries list requests the default page, so it shows the 20
+  least recently updated enquiries with no paging; choosing an order and
+  paging is a product decision.
+- A clicked-away wall replays its disassembly after every camera gesture (kept
+  as the old remount behaved).
+- `SurfaceVisibilityGroup` draws the window glass opaque at rest, overriding its
+  0.42 opacity (pre-existing).
+- drei's bundled `index.cjs.js` carries an unpatched `setUpdateRange`; only the
+  test environment loads it.
 
 ## Verification
 
-- Web, on the integrated branch: 492 test files (6,462 tests, 16 existing
-  skips); source and E2E typecheck; lint on all 61 changed source files;
-  production build (route sizes above). New regression tests fail against the
-  previous code.
-- Types: 100 test files (2,239 tests), lint and typecheck.
-- API: unit suite (174 files, 2,942 tests; the 14 database-gated files run
-  separately) and lint; `test:platform-db` (65 tests, including the new
-  batch-save comparison) and `test:event-access-db` (53) on fully migrated
-  disposable PostgreSQL 16; onboarding suite (31) on its isolated database.
-- Browser: homepage phone/desktop measurements above; quiz with Google Fonts
-  blocked; hero preload and `srcset` served as rendered.
+On the integrated branch after both waves:
+
+- Web: 514 test files (6,621 tests, 16 existing skips); workspace lint and
+  typecheck (`pnpm -r lint`, `pnpm -r typecheck`) and the E2E typecheck;
+  production build of every package (`pnpm build`). New regression tests fail
+  against the previous code.
+- Types: 100 test files (2,240 tests).
+- API: unit suite (176 files, 2,960 tests; the 15 database-gated files run
+  separately); `test:platform-db` (73 tests, including the batch-save
+  comparison and the hot-path byte measurements) and `test:event-access-db`
+  (53) on fully migrated disposable PostgreSQL 16; `pnpm audit` reports no
+  known vulnerabilities.
+- Production build, all 23 main routes loaded in Chromium: no module or
+  runtime errors.
+- Browser, first wave: homepage phone/desktop measurements above; quiz with
+  Google Fonts blocked; hero preload and `srcset` as rendered.
 - Production build in `vite preview` with mocked APIs (the E2E auth bypass
   build flag, Chromium with SwiftShader), so the `three`/`three-webgpu` split is
-  exercised: 98 of 109 cases across the planner, tour, hallkeeper, quiz,
-  landing, pricing and navigation specs pass. Every remaining failure also fails
-  or flakes on the `master` build under the same conditions (container proxy
-  font errors, SwiftShader timeouts; the quiz "skip" case fails 2 of 4 runs on
-  `master` and 1 of 4 here).
+  exercised. Planner, tour, hallkeeper, quiz, landing, pricing and navigation
+  specs: 105 of 109 pass and 1 is skipped on the final build. The 3 failures
+  (`plan-room-resolve` cases A2) fail identically on the `master` build in this
+  container. The first wave's run (98 of 109) also lost cases to this
+  container's blocked Google font requests, which self-hosting removes.
+- 3D equivalence: the second wave's pixel comparisons and equivalence tests
+  are summarised in its section above; each was run against the previous
+  implementation.
 
 ## Limits
 
-- Not released: the push to `master` was refused by this session's
-  permission system. After the push, CI is the first evidence; its required
-  GPU job needs the operator workstation described in `.github/gpu/README.md`.
+- Not released: the push to `master` was refused by this session's permission
+  system. After the push, CI is the first evidence; its required GPU job needs
+  the operator workstation described in `.github/gpu/README.md`, and the
+  Deploy workflow applies migration 0071 only after CI passes. Web and API
+  deploy independently on that push; the web tolerates the previous API while
+  the new one rolls out.
 - No live check: this session's network policy blocks `venviewer.com` and
   `api.venviewer.com`, and the tools available cannot read Vercel or Railway
   deployment status.
-- No migration. `CLERK_JWT_KEY` is optional and not set by this change.
-  Compression was verified in-process, not through Railway.
-- No GPU was available: 3D changes are verified by scene inspection and CPU
-  tests, not frame timing.
+- `CLERK_JWT_KEY` is optional and not set by this change. Compression was
+  verified in-process, not through Railway.
+- No GPU was available: 3D results are CPU, scene-inspection and SwiftShader
+  measurements, not device frame times.

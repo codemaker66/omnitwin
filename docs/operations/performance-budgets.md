@@ -32,6 +32,10 @@ These budgets are guardrails for planner and operations quality. They are not gu
   `bundle-splitting` fails if a Spark chunk or import returns.
 - File-import readers (zip.js for GDTF/MVR) load when a file is chosen.
 - Stylesheets never `@import` remote CSS; a failed import fails the lazy route.
+- Fonts are served from this origin (`packages/web/src/styles/fonts/`, Google
+  Fonts' own files with provenance and licences); no third-party font host or
+  preconnect stands before first paint, and fonts are not preloaded (Chrome
+  treats a font preload in `<head>` as render-blocking).
 - Clerk remains isolated to the auth chunk.
 - Source and built-output tests (`bundle-splitting`, `twin-chunk-budget`,
   `startup-guardrails`, types `module-side-effects`) fail if these regress.
@@ -43,6 +47,9 @@ These budgets are guardrails for planner and operations quality. They are not gu
   match the rendered width, not multi-megabyte originals as thumbnails.
 - `vercel.json` caches versioned or hash-named files immutably and other public
   files briefly with background revalidation; the app document is never cached.
+- Display copies come from `packages/web/scripts/build-image-ladders.mjs` with a
+  `provenance.json` beside them, never above source resolution. Images that
+  carry provenance metadata (the C2PA-marked room plans) are not re-encoded.
 
 ## Planner Frame Budget
 
@@ -52,6 +59,15 @@ These budgets are guardrails for planner and operations quality. They are not gu
   placement-rule sweep is grid-indexed, and a drag resolves groups and landing
   surfaces once per move. `placement-violation-sweep.equivalence` and the
   `placement-store` linearity test guard both.
+- Draw-call and per-frame work reductions must be invisible: dinner covers
+  share geometries and materials but stay separate meshes (instancing them
+  changed the transparent sort); editable furniture draws from pooled instance
+  buffers updated only for moved items; opaque Grand Hall ornaments draw as
+  merged batches while the per-mesh tree handles blended states; room shells
+  stay mounted across camera gestures. Their equivalence tests
+  (`TableSettingMesh.equivalence`, `InstancedFurnitureLayer.editable`,
+  `GrandHallOrnaments.merge`, `RoomMesh.shell`) compare against the previous
+  implementation.
 - Heavy runtime assets and simulation work must remain lazy or job-backed, not in the first planner request path.
 
 ## Large Layout Object Count
