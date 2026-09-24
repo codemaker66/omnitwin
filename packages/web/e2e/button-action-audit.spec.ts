@@ -1280,7 +1280,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     void route.fulfill({ json: { data: loadoutPhotos } });
   });
   await page.route(`${API}/enquiries**`, (route) => {
-    void route.fulfill({ json: { data: [] } });
+    void route.fulfill({ json: { data: [], meta: { total: 0, limit: 20, offset: 0 } } });
   });
   await page.route(`${API}/notifications**`, (route) => {
     if (route.request().method() === "PATCH") {

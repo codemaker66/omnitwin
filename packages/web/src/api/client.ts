@@ -69,6 +69,9 @@ interface RequestOptions {
    *  keyed diary mutations dedupe server-side via the diary_commands
    *  ledger, so a retry can never re-execute a committed write. */
   readonly idempotencyKey?: string;
+  /** Validate the whole body instead of unwrapping `{ data }`, for an
+   *  envelope whose siblings matter (a paginated list's `meta`). */
+  readonly keepEnvelope?: boolean;
 }
 
 type ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>;
@@ -152,7 +155,7 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
   const json = (await res.json()) as { data?: unknown };
 
   // CRUD endpoints use { data } envelope; some endpoints return raw JSON.
-  const payload = json.data !== undefined ? json.data : json;
+  const payload = opts.keepEnvelope !== true && json.data !== undefined ? json.data : json;
 
   if (schema !== undefined) {
     const result = schema.safeParse(payload);
@@ -187,6 +190,10 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
 export const api = {
   get: <T>(path: string, schema?: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
     request<T>({ method: "GET", path, signal }, schema),
+
+  /** GET validated as the whole `{ data, meta }` envelope; the schema is required. */
+  getEnvelope: <T>(path: string, schema: ResponseSchema<T>, signal?: AbortSignal): Promise<T> =>
+    request<T>({ method: "GET", path, signal, keepEnvelope: true }, schema),
 
   post: <T>(
     path: string,

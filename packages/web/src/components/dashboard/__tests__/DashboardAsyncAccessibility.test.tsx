@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Enquiry, StatusHistoryEntry } from "../../../api/enquiries.js";
+import type { Enquiry, EnquiryListQuery, EnquiryPage, StatusHistoryEntry } from "../../../api/enquiries.js";
 import { ClientProfile } from "../ClientProfile.js";
 import { ClientSearchView } from "../ClientSearchView.js";
 import { EnquiriesView } from "../EnquiriesView.js";
@@ -13,7 +13,7 @@ const { mocks } = vi.hoisted(() => ({
     getEnquiry: vi.fn(),
     getEnquiryHistory: vi.fn(),
     getLeadProfile: vi.fn(),
-    listEnquiries: vi.fn(),
+    listEnquiryPage: vi.fn(),
     searchClients: vi.fn(),
     transitionEnquiry: vi.fn(),
   },
@@ -22,7 +22,7 @@ const { mocks } = vi.hoisted(() => ({
 vi.mock("../../../api/enquiries.js", () => ({
   getEnquiry: mocks.getEnquiry,
   getEnquiryHistory: mocks.getEnquiryHistory,
-  listEnquiries: mocks.listEnquiries,
+  listEnquiryPage: mocks.listEnquiryPage,
   transitionEnquiry: mocks.transitionEnquiry,
 }));
 
@@ -68,6 +68,10 @@ function enquiryFixture(id: string, name: string, state = "submitted"): Enquiry 
   };
 }
 
+function enquiryPage(rows: readonly Enquiry[]): EnquiryPage {
+  return { rows, total: rows.length, limit: 20, offset: 0, order: "created_desc" };
+}
+
 function historyFixture(id: string, enquiryId: string, note: string): StatusHistoryEntry {
   return {
     id,
@@ -98,7 +102,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getEnquiry.mockResolvedValue(enquiryFixture("enquiry-a", "Alice"));
   mocks.getEnquiryHistory.mockResolvedValue([]);
-  mocks.listEnquiries.mockResolvedValue([]);
+  mocks.listEnquiryPage.mockResolvedValue(enquiryPage([]));
 });
 
 afterEach(() => {
@@ -108,14 +112,14 @@ afterEach(() => {
 
 describe("EnquiriesView async ownership", () => {
   it("announces active loading and removes the activity when the request settles", async () => {
-    const request = deferred<Enquiry[]>();
-    mocks.listEnquiries.mockReturnValue(request.promise);
+    const request = deferred<EnquiryPage>();
+    mocks.listEnquiryPage.mockReturnValue(request.promise);
     render(<EnquiriesView />);
 
-    expect(screen.getByRole("status").textContent).toContain("Loading...");
+    expect(screen.getByRole("status").textContent).toContain("Loading enquiries…");
     expect(screen.getByRole("status").querySelector("svg[aria-hidden='true']")).not.toBeNull();
 
-    await act(async () => { request.resolve([]); await request.promise; });
+    await act(async () => { request.resolve(enquiryPage([])); await request.promise; });
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByText("No enquiries found.")).toBeDefined();
   });
@@ -138,7 +142,7 @@ describe("EnquiriesView async ownership", () => {
 
   it("animates the confirmation only while the enquiry transition is saving", async () => {
     const transition = deferred<Enquiry>();
-    mocks.listEnquiries.mockResolvedValue([enquiryFixture("alice", "Alice")]);
+    mocks.listEnquiryPage.mockResolvedValue(enquiryPage([enquiryFixture("alice", "Alice")]));
     mocks.transitionEnquiry.mockReturnValue(transition.promise);
     render(<EnquiriesView />);
     fireEvent.click(await screen.findByRole("button", { name: /Alice/u }));
@@ -164,23 +168,23 @@ describe("EnquiriesView async ownership", () => {
   });
 
   it("aborts and ignores a slower previous filter response", async () => {
-    const all = deferred<Enquiry[]>();
-    const submitted = deferred<Enquiry[]>();
+    const all = deferred<EnquiryPage>();
+    const submitted = deferred<EnquiryPage>();
     const signals: AbortSignal[] = [];
-    mocks.listEnquiries.mockImplementation((status: string | undefined, signal: AbortSignal) => {
+    mocks.listEnquiryPage.mockImplementation((query: EnquiryListQuery, signal: AbortSignal) => {
       signals.push(signal);
-      return status === "submitted" ? submitted.promise : all.promise;
+      return query.status === "submitted" ? submitted.promise : all.promise;
     });
     render(<EnquiriesView />);
 
-    await waitFor(() => { expect(mocks.listEnquiries).toHaveBeenCalledTimes(1); });
+    await waitFor(() => { expect(mocks.listEnquiryPage).toHaveBeenCalledTimes(1); });
     fireEvent.click(screen.getByRole("button", { name: "Submitted" }));
-    await waitFor(() => { expect(mocks.listEnquiries).toHaveBeenCalledTimes(2); });
+    await waitFor(() => { expect(mocks.listEnquiryPage).toHaveBeenCalledTimes(2); });
     expect(signals[0]?.aborted).toBe(true);
 
-    submitted.resolve([enquiryFixture("new", "New result")]);
+    submitted.resolve(enquiryPage([enquiryFixture("new", "New result")]));
     expect(await screen.findByRole("button", { name: /New result/u })).toBeDefined();
-    all.resolve([enquiryFixture("old", "Stale result")]);
+    all.resolve(enquiryPage([enquiryFixture("old", "Stale result")]));
     await act(async () => { await Promise.resolve(); });
 
     expect(screen.queryByText("Stale result")).toBeNull();
@@ -190,10 +194,10 @@ describe("EnquiriesView async ownership", () => {
   it("clears history on back and ignores history from the previous enquiry", async () => {
     const aliceHistory = deferred<StatusHistoryEntry[]>();
     const bobHistory = deferred<StatusHistoryEntry[]>();
-    mocks.listEnquiries.mockResolvedValue([
+    mocks.listEnquiryPage.mockResolvedValue(enquiryPage([
       enquiryFixture("alice", "Alice"),
       enquiryFixture("bob", "Bob"),
-    ]);
+    ]));
     mocks.getEnquiryHistory.mockImplementation((id: string) =>
       id === "alice" ? aliceHistory.promise : bobHistory.promise,
     );

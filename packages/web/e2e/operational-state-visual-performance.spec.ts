@@ -1007,7 +1007,7 @@ async function mockOnboardingRoutes(page: Page): Promise<void> {
     void route.fulfill({ json: { data: [] } });
   });
   await page.route(`${API}/enquiries**`, (route) => {
-    void route.fulfill({ json: { data: [] } });
+    void route.fulfill({ json: { data: [], meta: { total: 0, limit: 20, offset: 0 } } });
   });
   await page.route(`${API}/venues/${VENUE_ID}`, (route) => {
     void route.fulfill({ json: { data: venueDetailFixture() } });
@@ -1028,7 +1028,7 @@ async function mockAdminRegistryRoutes(page: Page): Promise<void> {
     void route.fulfill({ json: { data: [] } });
   });
   await page.route(`${API}/enquiries**`, (route) => {
-    void route.fulfill({ json: { data: [] } });
+    void route.fulfill({ json: { data: [], meta: { total: 0, limit: 20, offset: 0 } } });
   });
   await page.route(`${API}/venues`, (route) => {
     if (route.request().method() === "POST") {

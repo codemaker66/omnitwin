@@ -651,11 +651,13 @@ describe("ClientProfile enquiry navigation (#34)", () => {
     // The fix: when initialSelectedId is set, fetch the enquiry directly
     // via `getEnquiry()` rather than relying on the filtered list lookup.
     // Otherwise a rejected enquiry pre-selected with the "submitted"
-    // filter would silently render nothing.
-    expect(codeOnly).toContain("preselectedEnquiry");
+    // filter would silently render nothing. The fetched enquiry becomes the
+    // opened enquiry, which the detail view prefers over the list lookup.
+    expect(codeOnly).toContain("openedEnquiry");
     expect(codeOnly).toMatch(
-      /enquiriesApi\.getEnquiry\(initialSelectedId,\s*controller\.signal\)/,
+      /enquiriesApi\.getEnquiry\(initialSelectedId,\s*controller\.signal\)[\s\S]{0,120}?setOpenedEnquiry\(enquiry\)/,
     );
+    expect(codeOnly).toMatch(/openedEnquiry\.id === selectedId\)\s*\?\s*openedEnquiry/);
   });
 
   it("EnquiriesView 'Back' button label reflects return destination", async () => {

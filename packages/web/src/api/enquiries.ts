@@ -48,15 +48,31 @@ export type StatusHistoryEntry = z.infer<typeof StatusHistoryEntrySchema>;
 // API functions
 // ---------------------------------------------------------------------------
 
+export type EnquiryListOrder = "updated_asc" | "created_desc";
+
 /** GET /enquiries query. A string is the single-status shorthand; anything
  *  omitted keeps the API default (all visible states, least recently
- *  updated first, 20 rows). `venueId` narrows the caller's scope only. */
+ *  updated first, 20 rows from offset 0). `venueId` narrows the caller's
+ *  scope only. */
 export interface EnquiryListQuery {
   readonly status?: string;
   readonly states?: readonly string[];
-  readonly order?: "updated_asc" | "created_desc";
+  readonly order?: EnquiryListOrder;
   readonly venueId?: string;
   readonly limit?: number;
+  readonly offset?: number;
+}
+
+function enquiryListPath(query: EnquiryListQuery): string {
+  const params = new URLSearchParams();
+  if (query.status !== undefined) params.set("status", query.status);
+  if (query.states !== undefined) params.set("states", query.states.join(","));
+  if (query.order !== undefined) params.set("order", query.order);
+  if (query.venueId !== undefined) params.set("venueId", query.venueId);
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.offset !== undefined) params.set("offset", String(query.offset));
+  const search = params.toString();
+  return `/enquiries${search === "" ? "" : `?${search}`}`;
 }
 
 export async function listEnquiries(
@@ -64,14 +80,40 @@ export async function listEnquiries(
   signal?: AbortSignal,
 ): Promise<Enquiry[]> {
   const options: EnquiryListQuery = typeof query === "string" ? { status: query } : query ?? {};
-  const params = new URLSearchParams();
-  if (options.status !== undefined) params.set("status", options.status);
-  if (options.states !== undefined) params.set("states", options.states.join(","));
-  if (options.order !== undefined) params.set("order", options.order);
-  if (options.venueId !== undefined) params.set("venueId", options.venueId);
-  if (options.limit !== undefined) params.set("limit", String(options.limit));
-  const search = params.toString();
-  return api.get(`/enquiries${search === "" ? "" : `?${search}`}`, z.array(EnquirySchema), signal);
+  return api.get(enquiryListPath(options), z.array(EnquirySchema), signal);
+}
+
+/** One page of GET /enquiries with its paging metadata. */
+export interface EnquiryPage {
+  readonly rows: readonly Enquiry[];
+  /** Enquiries matching the query in the caller's scope, all pages. */
+  readonly total: number;
+  readonly limit: number;
+  readonly offset: number;
+  /** The order the server confirms it applied; null when it did not say. */
+  readonly order: EnquiryListOrder | null;
+}
+
+const EnquiryPageSchema = z.object({
+  data: z.array(EnquirySchema),
+  meta: z.object({
+    total: z.number().int().nonnegative(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+    // Echoed by an API that supports `order`. An older API ignores the
+    // parameter, keeps its least-recently-updated order and omits this.
+    order: z.string().optional(),
+  }),
+}).transform(({ data, meta }): EnquiryPage => ({
+  rows: data,
+  total: meta.total,
+  limit: meta.limit,
+  offset: meta.offset,
+  order: meta.order === "created_desc" || meta.order === "updated_asc" ? meta.order : null,
+}));
+
+export async function listEnquiryPage(query: EnquiryListQuery, signal?: AbortSignal): Promise<EnquiryPage> {
+  return api.getEnvelope(enquiryListPath(query), EnquiryPageSchema, signal);
 }
 
 export async function getEnquiry(id: string, signal?: AbortSignal): Promise<Enquiry> {

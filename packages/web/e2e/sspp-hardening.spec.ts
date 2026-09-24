@@ -376,7 +376,7 @@ async function mockDashboardRoutes(page: Page): Promise<void> {
     });
   });
   await page.route(`${API}/enquiries*`, (route) => {
-    void route.fulfill({ json: { data: [] } });
+    void route.fulfill({ json: { data: [], meta: { total: 0, limit: 20, offset: 0 } } });
   });
   await page.route(`${API}/notifications*`, (route) => {
     void route.fulfill({ json: { data: [] } });

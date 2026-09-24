@@ -86,6 +86,33 @@ describe("enquiries response validation", () => {
     fetchMock.mockResolvedValue(jsonResponse({ data: [broken] }));
     await expectValidationError(enquiries.listEnquiries());
   });
+
+  it("returns a page with its total and the order the server confirmed", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({
+      data: [validEnquiry], meta: { total: 57, limit: 25, offset: 15, order: "created_desc" },
+    }));
+    const page = await enquiries.listEnquiryPage({ status: "submitted", order: "created_desc", limit: 25, offset: 15 });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/enquiries\?status=submitted&order=created_desc&limit=25&offset=15$/u);
+    expect(page).toEqual({ rows: [validEnquiry], total: 57, limit: 25, offset: 15, order: "created_desc" });
+  });
+
+  it("confirms no order from an API that predates the parameter", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [validEnquiry], meta: { total: 57, limit: 20, offset: 0 } }));
+    const page = await enquiries.listEnquiryPage({ order: "created_desc", limit: 20, offset: 0 });
+    expect(page.order).toBeNull();
+    expect(page.total).toBe(57);
+  });
+
+  it("rejects a page without its paging metadata instead of guessing a total", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [validEnquiry] }));
+    await expectValidationError(enquiries.listEnquiryPage({ limit: 20, offset: 0 }));
+  });
+
+  it("rejects a page whose total drifted to a string", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [], meta: { total: "57", limit: 20, offset: 0 } }));
+    await expectValidationError(enquiries.listEnquiryPage({ limit: 20, offset: 0 }));
+  });
 });
 
 describe("pricing response validation", () => {

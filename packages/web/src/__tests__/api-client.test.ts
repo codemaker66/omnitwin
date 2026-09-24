@@ -106,6 +106,28 @@ describe("api.get", () => {
   });
 });
 
+describe("api.getEnvelope", () => {
+  const PageSchema = z.object({ data: z.array(IdSchema), meta: z.object({ total: z.number() }) });
+
+  it("validates and returns the whole envelope, paging metadata included", async () => {
+    const controller = new AbortController();
+    fetchMock.mockResolvedValue(jsonResponse({ data: [{ id: 1 }], meta: { total: 3 } }));
+
+    const result = await api.getEnvelope("/items?limit=1", PageSchema, controller.signal);
+
+    expect(result).toEqual({ data: [{ id: 1 }], meta: { total: 3 } });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/items\?limit=1$/u);
+    expect(init.signal).toBe(controller.signal);
+  });
+
+  it("rejects an envelope without the metadata its schema requires", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: [{ id: 1 }] }));
+
+    await expect(api.getEnvelope("/items", PageSchema)).rejects.toMatchObject({ code: "RESPONSE_VALIDATION_ERROR" });
+  });
+});
+
 describe("error handling", () => {
   it("reads a nested failure message without object coercion and retains its code and details", async () => {
     const details = { expectedRevision: 1, actualRevision: 2 };

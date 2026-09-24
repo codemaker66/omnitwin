@@ -1,18 +1,59 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import * as enquiriesApi from "../../api/enquiries.js";
-import type { Enquiry, StatusHistoryEntry } from "../../api/enquiries.js";
+import type { Enquiry, EnquiryListOrder, EnquiryListQuery, StatusHistoryEntry } from "../../api/enquiries.js";
 import { createOpportunityFromEnquiry } from "../../api/crm.js";
 import { StatusBadge } from "../shared/StatusBadge.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { AIDraftPanel } from "../ai/AIDraftPanel.js";
+import {
+  appendEnquiryPage, describeEnquiryCount, ENQUIRY_PAGE_SIZE, firstPageWindow, hasMoreEnquiries,
+  nextPageWindow, withoutListedEnquiry, type ListedEnquiries,
+} from "./enquiry-list-paging.js";
 
 // ---------------------------------------------------------------------------
 // EnquiriesView — list + detail for enquiry management
 // ---------------------------------------------------------------------------
 
 const STATUSES = ["all", "submitted", "under_review", "approved", "rejected", "withdrawn"] as const;
+
+// Newest first by creation date. Whether staff would rather see the most
+// recently active enquiries first is Blake's call; the API offers both.
+const LIST_ORDER: EnquiryListOrder = "created_desc";
+
+/** The list for one load of one status filter. */
+interface EnquiryListState extends ListedEnquiries {
+  /** Identifies the load; a response for an older one is discarded. */
+  readonly generation: number;
+  readonly filter: string;
+  readonly status: "loading" | "ready" | "error";
+  /** The order the server confirmed; null when an older API did not say. */
+  readonly order: EnquiryListOrder | null;
+  readonly loadingMore: boolean;
+  readonly moreFailed: boolean;
+  /** A later page could not be joined to the listed rows, or the finished
+   *  list no longer matches the server's total. */
+  readonly interrupted: boolean;
+}
+
+const UNLOADED_LIST: EnquiryListState = {
+  generation: 0, filter: "all", status: "loading", rows: [], nextOffset: 0, total: 0,
+  order: null, loadingMore: false, moreFailed: false, interrupted: false,
+};
+
+function listQuery(filter: string): EnquiryListQuery {
+  return filter === "all" ? { order: LIST_ORDER } : { status: filter, order: LIST_ORDER };
+}
+
+// Light ink for copy that sits directly on the dashboard's forest ground.
+const listNoteStyle: React.CSSProperties = { margin: "0 0 12px", fontSize: 13, color: "#c9cdbd" };
+const listAlertStyle: React.CSSProperties = { margin: 0, fontSize: 13, color: "#f3b4a6" };
+const listActionStyle = (busy: boolean): React.CSSProperties => ({
+  display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600,
+  background: "#f2edda", color: "#132b25", border: "1px solid #f2edda", borderRadius: 6,
+  cursor: busy ? "default" : "pointer", fontFamily: "inherit",
+});
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
   padding: "8px 16px", fontSize: 13, fontWeight: active ? 600 : 400,
@@ -34,11 +75,11 @@ const cardStyle: React.CSSProperties = {
 // `initialSelectedId` is set when the user navigates here from a different
 // view (e.g. clicking an enquiry in ClientProfile). The component pre-selects
 // that enquiry on mount AND fetches it independently via `getEnquiry`, so
-// the detail view renders even when the current status filter wouldn't
-// have included it in `listEnquiries`. Without the independent fetch the
-// `find()` call below would return undefined whenever the status filter
-// excluded the target enquiry, leaving the user dumped at an unfiltered
-// list with no idea where to scroll.
+// the detail view renders even when the loaded pages of the current status
+// filter don't include it. Without the independent fetch the `find()` call
+// below would return undefined whenever the filter or paging excluded the
+// target enquiry, leaving the user dumped at an unfiltered list with no
+// idea where to scroll.
 //
 // `onDetailClose` is called when the user clicks "Back" from the detail
 // view. When provided, the parent gets to decide where back goes (e.g.
@@ -52,15 +93,18 @@ interface EnquiriesViewProps {
 }
 
 export function EnquiriesView({ initialSelectedId = null, onDetailClose }: EnquiriesViewProps = {}): React.ReactElement {
-  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [list, setList] = useState<EnquiryListState>(UNLOADED_LIST);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [reloadCount, setReloadCount] = useState(0);
+  const generationRef = useRef(0);
+  const loadMoreRef = useRef<AbortController | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
-  // Independent fetch for the cross-view pre-selection case. Populated by
-  // the effect below; falls back to the list lookup once both are loaded.
-  const [preselectedEnquiry, setPreselectedEnquiry] = useState<Enquiry | null>(null);
+  // The enquiry the detail view shows: the clicked card, or the independent
+  // fetch for the cross-view pre-selection case (populated by the effect
+  // below). It survives the list dropping the row after a status change.
+  const [openedEnquiry, setOpenedEnquiry] = useState<Enquiry | null>(null);
   const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [preselectionLoading, setPreselectionLoading] = useState(initialSelectedId !== null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [transitionSaving, setTransitionSaving] = useState(false);
@@ -68,24 +112,75 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   const [creatingOpportunity, setCreatingOpportunity] = useState(false);
   const addToast = useToastStore((s) => s.addToast);
 
+  // A filter change or reload starts a new list: its first page, and any
+  // in-flight first page or "show more" of the previous list, is aborted
+  // and could not land anyway because its generation no longer matches.
   useEffect(() => {
+    generationRef.current += 1;
+    const generation = generationRef.current;
     const controller = new AbortController();
-    void (async () => {
-      setLoading(true);
-      try {
-        const data = await enquiriesApi.listEnquiries(
-          statusFilter === "all" ? undefined : statusFilter,
-          controller.signal,
-        );
-        if (!controller.signal.aborted) setEnquiries(data);
-      } catch {
-        if (!controller.signal.aborted) addToast("Failed to load enquiries", "error");
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    })();
-    return () => { controller.abort(); };
-  }, [statusFilter, addToast]);
+    setList((previous) => ({
+      ...UNLOADED_LIST,
+      generation,
+      filter: statusFilter,
+      // A reload keeps the filter's rows visible until the new page lands.
+      rows: previous.filter === statusFilter ? previous.rows : [],
+    }));
+    void enquiriesApi.listEnquiryPage({ ...listQuery(statusFilter), ...firstPageWindow() }, controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setList((previous) => previous.generation !== generation ? previous : {
+          ...previous, status: "ready", rows: page.rows, nextOffset: page.offset + page.rows.length,
+          total: page.total, order: page.order,
+        });
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setList((previous) => previous.generation !== generation ? previous : { ...previous, status: "error" });
+        addToast("Failed to load enquiries", "error");
+      });
+    return () => {
+      controller.abort();
+      loadMoreRef.current?.abort();
+      loadMoreRef.current = null;
+    };
+  }, [statusFilter, reloadCount, addToast]);
+
+  const showMore = (): void => {
+    if (list.status !== "ready" || list.loadingMore || !hasMoreEnquiries(list)) return;
+    const { generation, filter } = list;
+    loadMoreRef.current?.abort();
+    const controller = new AbortController();
+    loadMoreRef.current = controller;
+    setList((previous) => previous.generation !== generation ? previous
+      : { ...previous, loadingMore: true, moreFailed: false });
+    void enquiriesApi.listEnquiryPage({ ...listQuery(filter), ...nextPageWindow(list) }, controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setList((previous) => {
+          if (previous.generation !== generation) return previous;
+          const appended = appendEnquiryPage(previous, page);
+          // A page in another order (an API redeployed mid-list) cannot be
+          // joined either, and a finished list must hold what the total says.
+          const finishedAdrift = !hasMoreEnquiries(appended) && appended.rows.length !== appended.total;
+          return {
+            ...previous, rows: appended.rows, nextOffset: appended.nextOffset, total: appended.total,
+            loadingMore: false,
+            interrupted: previous.interrupted || !appended.continuous || page.order !== previous.order || finishedAdrift,
+          };
+        });
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setList((previous) => previous.generation !== generation ? previous
+          : { ...previous, loadingMore: false, moreFailed: true });
+      })
+      .finally(() => {
+        if (loadMoreRef.current === controller) loadMoreRef.current = null;
+      });
+  };
+
+  const reloadList = (): void => { setReloadCount((count) => count + 1); };
 
   // When pre-selected via initialSelectedId, fetch the enquiry directly so
   // the detail view can render regardless of the active status filter.
@@ -99,7 +194,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     setSelectedId(initialSelectedId);
     void enquiriesApi.getEnquiry(initialSelectedId, controller.signal)
       .then((enquiry) => {
-        if (!controller.signal.aborted) setPreselectedEnquiry(enquiry);
+        if (!controller.signal.aborted) setOpenedEnquiry(enquiry);
       })
       .catch(() => {
         if (!controller.signal.aborted) addToast("Failed to load enquiry", "error");
@@ -110,19 +205,19 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     return () => { controller.abort(); };
   }, [initialSelectedId, addToast]);
 
-  // Prefer the freshly-fetched pre-selected enquiry if it matches the
-  // currently-selected id; otherwise fall back to the list lookup. This
-  // makes status-filter mismatches a non-issue for the navigation case.
-  const selected = (preselectedEnquiry !== null && preselectedEnquiry.id === selectedId)
-    ? preselectedEnquiry
-    : enquiries.find((e) => e.id === selectedId);
+  // Prefer the opened enquiry if it matches the currently-selected id;
+  // otherwise fall back to the list lookup. This makes status-filter
+  // mismatches a non-issue for the navigation case.
+  const selected = (openedEnquiry !== null && openedEnquiry.id === selectedId)
+    ? openedEnquiry
+    : list.rows.find((e) => e.id === selectedId);
 
   // "Back" exits the detail view. If a parent provided `onDetailClose`,
   // the parent owns the destination (e.g. restore ClientProfile). Else
   // we just clear the selection and return to the in-component list.
   const handleBack = (): void => {
     setSelectedId(null);
-    setPreselectedEnquiry(null);
+    setOpenedEnquiry(null);
     setHistory([]);
     if (onDetailClose !== undefined) onDetailClose();
   };
@@ -152,11 +247,13 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     setTransitionSaving(true);
     try {
       const updated = await enquiriesApi.transitionEnquiry(transition.id, transition.status, note);
-      setEnquiries((prev) => prev.map((e) => e.id === updated.id ? updated : e));
-      // Also update preselected record so the detail view reflects the change
-      if (preselectedEnquiry !== null && preselectedEnquiry.id === updated.id) {
-        setPreselectedEnquiry(updated);
-      }
+      // A status-filtered list drops an enquiry that no longer matches, and
+      // its later pages shift up one; "all" keeps it with its new status.
+      setList((previous) => previous.filter === "all" || updated.state === previous.filter
+        ? { ...previous, rows: previous.rows.map((e) => e.id === updated.id ? updated : e) }
+        : { ...previous, ...withoutListedEnquiry(previous, updated.id) });
+      // The detail view keeps showing the enquiry with its new status.
+      setOpenedEnquiry((opened) => opened !== null && opened.id === updated.id ? updated : opened);
       addToast(`Enquiry ${transition.status.replace(/_/g, " ")}`, "success");
       setTransition(null);
       setHistoryVersion((version) => version + 1);
@@ -316,6 +413,12 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     );
   }
 
+  const countNote = list.status === "ready"
+    ? describeEnquiryCount({ shown: list.rows.length, total: list.total, filter: list.filter, newestFirst: list.order === "created_desc" })
+    : null;
+  const moreAvailable = list.status === "ready" && hasMoreEnquiries(list);
+  const nextBatch = Math.min(ENQUIRY_PAGE_SIZE, list.total - list.nextOffset);
+
   return (
     <div>
       <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
@@ -327,15 +430,26 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
         ))}
       </div>
 
-      {loading && <ActivityStatus style={{ color: "#999", fontSize: 14 }}>Loading...</ActivityStatus>}
+      {/* Stays mounted so a new count is announced when a page lands. */}
+      <p data-testid="enquiry-list-count" aria-live="polite" style={countNote === null ? { margin: 0 } : listNoteStyle}>
+        {countNote}
+      </p>
+      {list.status === "loading" && <ActivityStatus style={{ color: "#999", fontSize: 14 }}>Loading enquiries…</ActivityStatus>}
       {preselectionLoading && <ActivityStatus>Opening enquiry…</ActivityStatus>}
 
-      {!loading && !preselectionLoading && enquiries.length === 0 && (
+      {list.status === "error" && (
+        <div role="alert" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <p style={listAlertStyle}>Enquiries could not be loaded.</p>
+          <button type="button" style={listActionStyle(false)} onClick={reloadList}>Try again</button>
+        </div>
+      )}
+
+      {list.status === "ready" && !preselectionLoading && list.rows.length === 0 && (
         <p style={{ color: "#999", fontSize: 14 }}>No enquiries found.</p>
       )}
 
-      {enquiries.map((e) => (
-        <button key={e.id} type="button" style={cardStyle} onClick={() => { setSelectedId(e.id); }}>
+      {list.rows.map((e) => (
+        <button key={e.id} type="button" style={cardStyle} onClick={() => { setSelectedId(e.id); setOpenedEnquiry(e); }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{e.guestName ?? e.name}</span>
             <StatusBadge status={e.state} />
@@ -352,6 +466,26 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
           </div>
         </button>
       ))}
+
+      {list.interrupted && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, margin: "4px 0 12px" }}>
+          <p role="status" style={{ ...listNoteStyle, margin: 0 }}>
+            Enquiries changed while this list was open, so it may be incomplete or out of date.
+          </p>
+          <button type="button" style={listActionStyle(false)} onClick={reloadList}>Reload list</button>
+        </div>
+      )}
+
+      {moreAvailable && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
+          <button type="button" data-testid="enquiry-list-more" style={listActionStyle(list.loadingMore)}
+            onClick={showMore} disabled={list.loadingMore} aria-busy={list.loadingMore}>
+            {list.loadingMore && <ActivityIndicator size={16} />}
+            {list.loadingMore ? "Loading more…" : `Show ${String(nextBatch)} more`}
+          </button>
+          {list.moreFailed && <p role="alert" style={listAlertStyle}>More enquiries could not be loaded. Try again.</p>}
+        </div>
+      )}
     </div>
   );
 }
