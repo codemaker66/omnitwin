@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import {
   ConfigurationMetadataSchema,
   ConfigurationStatusSchema,
@@ -26,6 +26,12 @@ import { configurationRevisionEtag } from "../lib/configuration-revision.js";
 // ---------------------------------------------------------------------------
 
 const IdParam = z.object({ id: z.string().uuid() });
+
+const SummaryIdsQuery = z.object({
+  ids: z.string()
+    .transform((value) => [...new Set(value.split(","))])
+    .pipe(z.array(z.string().uuid()).min(1).max(100)),
+});
 
 const CreateConfigBody = z.object({
   spaceId: z.string().uuid(),
@@ -108,6 +114,36 @@ export async function configurationRoutes(
       .orderBy(configurations.updatedAt);
 
     return paginate(rows, total, pq.data);
+  });
+
+  // GET /configurations/summaries?ids=a,b — name and room of up to 100 layouts
+  // in one read, for event-linked layout choices that previously fetched each
+  // whole layout (objects and thumbnail). The access rule is GET /:id's; ids
+  // that are missing, deleted or not permitted are omitted alike.
+  server.get("/summaries", { preHandler: [authenticate] }, async (request, reply) => {
+    const query = SummaryIdsQuery.safeParse(request.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: "Invalid configuration ids", code: "VALIDATION_ERROR", details: query.error.issues });
+    }
+
+    const rows = await db.select({
+      id: configurations.id,
+      name: configurations.name,
+      spaceId: configurations.spaceId,
+      venueId: configurations.venueId,
+      userId: configurations.userId,
+    })
+      .from(configurations)
+      .where(and(inArray(configurations.id, query.data.ids), isNull(configurations.deletedAt)));
+
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const data = query.data.ids.flatMap((id) => {
+      const row = byId.get(id);
+      return row !== undefined && canAccessResource(request.user, row.userId, row.venueId)
+        ? [{ id: row.id, name: row.name, spaceId: row.spaceId, venueId: row.venueId }]
+        : [];
+    });
+    return { data };
   });
 
   // GET /configurations/:id — authenticated, owner/venue-admin/admin

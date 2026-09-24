@@ -12,8 +12,10 @@ import { api } from "./client.js";
 // when an eventId is provided; otherwise it stays on the internal demo fixture.
 // ---------------------------------------------------------------------------
 
+/** Phase-layout snapshots arrive with `payload: null`: callers read which
+ *  layout each phase froze and when, never the frozen objects themselves. */
 export async function getEventPhaseGraph(eventId: string): Promise<EventPhaseGraph> {
-  return api.get(`/events/${eventId}/phase-graph`, EventPhaseGraphSchema);
+  return api.get(`/events/${eventId}/phase-graph?snapshotPayloads=omit`, EventPhaseGraphSchema);
 }
 
 /**

@@ -1,6 +1,5 @@
 import { EventIdSchema, type EventPhaseGraph } from "@omnitwin/types";
-import { ApiError } from "../api/client.js";
-import { getConfig } from "../api/configurations.js";
+import { getConfigSummaries, type ConfigurationSummary } from "../api/configurations.js";
 import { getEventPhaseGraph } from "../api/events.js";
 import { getVenue } from "../api/spaces.js";
 import { getClientEventSchedule } from "../api/client-event-schedule.js";
@@ -17,6 +16,9 @@ export interface EventLinkedLayouts {
   readonly layouts: readonly LinkedLayoutChoice[];
   readonly unavailableCount: number;
 }
+
+/** The summary endpoint's per-request ceiling. */
+const SUMMARY_BATCH_SIZE = 100;
 
 interface CandidateReference {
   readonly configurationId: string;
@@ -116,24 +118,27 @@ export async function resolveEventLinkedLayouts(input: {
   const eligibleRooms = new Map(rooms.filter((room) => requestedRoom === undefined || room.id === requestedRoom.id).map((room) => [room.id, room]));
   let unavailableCount = 0;
   const layouts: LinkedLayoutChoice[] = [];
-  // Limit parallel requests without skipping references or choosing the first
-  // result. A transient failure means the full choice set is not yet known.
-  for (let offset = 0; offset < candidates.length; offset += 4) {
+  // One summary read per 100 references, not a whole layout (objects and
+  // thumbnail) per reference. A layout the caller may not open, or that no
+  // longer exists, is absent and counted unavailable; any request failure
+  // means the full choice set is not yet known.
+  for (let offset = 0; offset < candidates.length; offset += SUMMARY_BATCH_SIZE) {
     assertCurrent();
-    const batch = candidates.slice(offset, offset + 4);
-    const results = await Promise.allSettled(batch.map((candidate) => getConfig(candidate.configurationId)));
+    const batch = candidates.slice(offset, offset + SUMMARY_BATCH_SIZE);
+    let summaries: readonly ConfigurationSummary[];
+    try {
+      summaries = await getConfigSummaries(batch.map((candidate) => candidate.configurationId));
+    } catch {
+      throw new Error("Some linked layouts could not be checked. Retry to load the complete choice.");
+    }
     assertCurrent();
-    for (const [index, result] of results.entries()) {
-      if (result.status === "rejected") {
-        if (result.reason instanceof ApiError && (result.reason.status === 403 || result.reason.status === 404)) {
-          unavailableCount += 1;
-          continue;
-        }
-        throw new Error("Some linked layouts could not be checked. Retry to load the complete choice.");
+    const byId = new Map(summaries.map((summary) => [summary.id, summary]));
+    for (const reference of batch) {
+      const config = byId.get(reference.configurationId);
+      if (config === undefined) {
+        unavailableCount += 1;
+        continue;
       }
-      const config = result.value;
-      const reference = batch[index];
-      if (reference === undefined || config.id !== reference.configurationId) throw new Error("A linked layout's identity could not be verified.");
       const room = eligibleRooms.get(config.spaceId);
       if (config.venueId !== venue.id || room === undefined
         || (reference.phaseRoomIds !== null && !reference.phaseRoomIds.has(config.spaceId))) continue;

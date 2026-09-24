@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import {
   CreateEventPhaseSchema,
   CreateEventScenarioSchema,
@@ -152,7 +152,11 @@ function serializeConfigurationLink(row: EventConfigurationLinkRow): EventConfig
   });
 }
 
-function serializePhaseLayoutSnapshot(row: PhaseLayoutSnapshotRow): PhaseLayoutSnapshot {
+type PhaseLayoutSnapshotSummaryRow = Pick<PhaseLayoutSnapshotRow,
+  "id" | "eventPhaseId" | "layoutVariantId" | "configurationId" | "snapshotHash" | "status" | "objectCount"
+  | "guestCount" | "payload" | "createdAt" | "frozenAt">;
+
+function serializePhaseLayoutSnapshot(row: PhaseLayoutSnapshotSummaryRow): PhaseLayoutSnapshot {
   return PhaseLayoutSnapshotSchema.parse({
     id: row.id,
     eventPhaseId: row.eventPhaseId,
@@ -177,14 +181,37 @@ async function loadEvent(db: Database, id: string): Promise<EventRow | null> {
   return row ?? null;
 }
 
-async function buildPhaseGraph(db: Database, eventRow: EventRow): Promise<EventPhaseGraph> {
+// `snapshotPayloads=omit` returns each phase snapshot with a null payload.
+// Every snapshot stores a full frozen layout; the web client reads only which
+// layout each phase froze and when. The default keeps the full graph.
+const PhaseGraphQuery = z.object({
+  snapshotPayloads: z.enum(["include", "omit"]).default("include"),
+});
+
+async function buildPhaseGraph(
+  db: Database,
+  eventRow: EventRow,
+  options: { readonly snapshotPayloads: "include" | "omit" } = { snapshotPayloads: "include" },
+): Promise<EventPhaseGraph> {
   const [phaseRows, scenarioRows, variantRows, linkRows, snapshotRows] = await Promise.all([
     db.select().from(eventPhases).where(eq(eventPhases.eventId, eventRow.id)).orderBy(eventPhases.sortOrder),
     db.select().from(eventScenarios).where(eq(eventScenarios.eventId, eventRow.id)).orderBy(eventScenarios.createdAt),
     db.select().from(layoutVariants).where(eq(layoutVariants.eventId, eventRow.id)).orderBy(layoutVariants.createdAt),
     db.select().from(eventConfigurationLinks).where(eq(eventConfigurationLinks.eventId, eventRow.id)).orderBy(eventConfigurationLinks.createdAt),
     db
-      .select({ snapshot: phaseLayoutSnapshots })
+      .select({ snapshot: {
+        id: phaseLayoutSnapshots.id,
+        eventPhaseId: phaseLayoutSnapshots.eventPhaseId,
+        layoutVariantId: phaseLayoutSnapshots.layoutVariantId,
+        configurationId: phaseLayoutSnapshots.configurationId,
+        snapshotHash: phaseLayoutSnapshots.snapshotHash,
+        status: phaseLayoutSnapshots.status,
+        objectCount: phaseLayoutSnapshots.objectCount,
+        guestCount: phaseLayoutSnapshots.guestCount,
+        payload: options.snapshotPayloads === "omit" ? sql<null>`null` : phaseLayoutSnapshots.payload,
+        createdAt: phaseLayoutSnapshots.createdAt,
+        frozenAt: phaseLayoutSnapshots.frozenAt,
+      } })
       .from(phaseLayoutSnapshots)
       .innerJoin(eventPhases, eq(phaseLayoutSnapshots.eventPhaseId, eventPhases.id))
       .where(eq(eventPhases.eventId, eventRow.id))
@@ -519,9 +546,11 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.get("/:id/phase-graph", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    const query = PhaseGraphQuery.safeParse(request.query);
+    if (!query.success) return validationError(reply, query.error.issues);
     const eventRow = await requireEventAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
-    return { data: await buildPhaseGraph(db, eventRow) };
+    return { data: await buildPhaseGraph(db, eventRow, query.data) };
   });
 }
 

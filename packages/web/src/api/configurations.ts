@@ -174,6 +174,22 @@ export async function getConfig(configId: string): Promise<Configuration> {
   return api.get(`/configurations/${configId}`, ConfigurationResponseSchema);
 }
 
+const ConfigurationSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  spaceId: z.string(),
+  venueId: z.string(),
+});
+
+export type ConfigurationSummary = z.infer<typeof ConfigurationSummarySchema>;
+
+/** Name and room of up to 100 layouts in one request. Layouts the caller may
+ *  not open, or that no longer exist, are absent from the result. */
+export async function getConfigSummaries(configIds: readonly string[]): Promise<ConfigurationSummary[]> {
+  const ids = configIds.map((id) => encodeURIComponent(id)).join(",");
+  return api.get(`/configurations/summaries?ids=${ids}`, z.array(ConfigurationSummarySchema));
+}
+
 export async function claimConfig(configId: string): Promise<Configuration> {
   return api.post(`/configurations/${configId}/claim`, undefined, undefined, ConfigurationResponseSchema);
 }

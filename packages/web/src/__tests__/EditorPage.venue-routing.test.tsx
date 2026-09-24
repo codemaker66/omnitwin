@@ -4,7 +4,7 @@ import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Configuration } from "../api/configurations.js";
+import type { Configuration, ConfigurationSummary } from "../api/configurations.js";
 import type { Space, Venue } from "../api/spaces.js";
 
 vi.mock("../App.js", () => ({
@@ -55,6 +55,7 @@ vi.mock("../hooks/use-media-query.js", () => ({
 vi.mock("../api/configurations.js", () => ({
   getPublicConfig: vi.fn(),
   getConfig: vi.fn(),
+  getConfigSummaries: vi.fn(),
   createPublicConfig: vi.fn(),
   publicBatchSave: vi.fn(),
   authBatchSave: vi.fn(),
@@ -140,6 +141,11 @@ function publicConfigFor(space: Space, id: string): Configuration {
     revision: 1,
     objects: [],
   };
+}
+
+/** A linked layout as the batched summary read returns it (named by its id). */
+function summaryFor(space: Space, id: string): ConfigurationSummary {
+  return { id, name: id, spaceId: space.id, venueId: space.venueId };
 }
 
 /** The created-plan route, exposing what query it was reached with. */
@@ -376,6 +382,7 @@ describe("EditorPage event-linked bootstrap", () => {
     spacesMock.listSpaces.mockResolvedValue([grandHall, receptionRoom]);
     spacesMock.getVenue.mockResolvedValue({ ...tradesHall, spaces: [grandHall, receptionRoom] });
     configMock.getConfig.mockImplementation((id) => Promise.resolve({ ...publicConfigFor(grandHall, id), name: id, isPublicPreview: false, userId: eventOwner.id }));
+    configMock.getConfigSummaries.mockImplementation((ids) => Promise.resolve(ids.map((id) => summaryFor(grandHall, id))));
   });
 
   it("reopens the only accessible linked plan and carries the event query without creating or probing public drafts", async () => {
@@ -386,7 +393,8 @@ describe("EditorPage event-linked bootstrap", () => {
     expect(route.getAttribute("data-path")).toBe("/plan/Dinner");
     expect(route.getAttribute("data-search")).toContain(`eventId=${EVENT_ID}`);
     expect(route.getAttribute("data-search")).toContain("view=2d");
-    expect(configMock.getConfig).toHaveBeenCalledWith("Dinner");
+    expect(configMock.getConfigSummaries).toHaveBeenCalledWith(["Dinner"]);
+    expect(configMock.getConfig).not.toHaveBeenCalled();
     expect(configMock.getPublicConfig).not.toHaveBeenCalled();
     expect(configMock.createPublicConfig).not.toHaveBeenCalled();
   });
@@ -422,7 +430,7 @@ describe("EditorPage event-linked bootstrap", () => {
 
   it("never uses a linked configuration from another venue or room", async () => {
     eventsMock.getEventPhaseGraph.mockResolvedValue(graph(["Wrong venue", "Wrong room"]));
-    configMock.getConfig.mockImplementation((id) => Promise.resolve(publicConfigFor(id === "Wrong venue" ? ballroom : receptionRoom, id)));
+    configMock.getConfigSummaries.mockImplementation((ids) => Promise.resolve(ids.map((id) => summaryFor(id === "Wrong venue" ? ballroom : receptionRoom, id))));
     renderEventEditor();
     expect(await screen.findByRole("heading", { name: "No linked layout for this room" })).toBeTruthy();
     expect(screen.queryByTestId("created-route")).toBeNull();
@@ -437,7 +445,7 @@ describe("EditorPage event-linked bootstrap", () => {
     act(() => { useAuthStore.getState().setUser(null); });
     await act(async () => { finish(graph(["Dinner"])); await Promise.resolve(); });
     expect(screen.getByRole("heading", { name: "Sign in to open this event's layouts" })).toBeTruthy();
-    expect(configMock.getConfig).not.toHaveBeenCalled();
+    expect(configMock.getConfigSummaries).not.toHaveBeenCalled();
     expect(screen.queryByTestId("created-route")).toBeNull();
   });
 
@@ -445,7 +453,7 @@ describe("EditorPage event-linked bootstrap", () => {
     eventsMock.getEventPhaseGraph.mockResolvedValue(graph(["Other event plan"], OTHER_EVENT_ID));
     renderEventEditor();
     expect(await screen.findByRole("heading", { name: "Could not open this event's layouts" })).toBeTruthy();
-    expect(configMock.getConfig).not.toHaveBeenCalled();
+    expect(configMock.getConfigSummaries).not.toHaveBeenCalled();
   });
 
   it("ignores an old event response after the URL changes", async () => {
@@ -462,35 +470,33 @@ describe("EditorPage event-linked bootstrap", () => {
     await act(async () => { finish(graph(["Old plan"])); await Promise.resolve(); });
     expect(screen.getByRole("button", { name: "Open New dinner" })).toBeTruthy();
     expect(screen.queryByTestId("created-route")).toBeNull();
-    expect(configMock.getConfig).not.toHaveBeenCalledWith("Old plan");
+    expect(configMock.getConfigSummaries).not.toHaveBeenCalledWith(["Old plan"]);
   });
 
   it("does not navigate when authentication changes during a configuration access check", async () => {
     eventsMock.getEventPhaseGraph.mockResolvedValue(graph(["Dinner"]));
-    let finish!: (value: Configuration) => void;
-    configMock.getConfig.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    let finish!: (value: ConfigurationSummary[]) => void;
+    configMock.getConfigSummaries.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     renderEventEditor();
-    await waitFor(() => { expect(configMock.getConfig).toHaveBeenCalledWith("Dinner"); });
+    await waitFor(() => { expect(configMock.getConfigSummaries).toHaveBeenCalledWith(["Dinner"]); });
     act(() => { useAuthStore.getState().setUser(null); });
-    await act(async () => { finish(publicConfigFor(grandHall, "Dinner")); await Promise.resolve(); });
+    await act(async () => { finish([summaryFor(grandHall, "Dinner")]); await Promise.resolve(); });
     expect(screen.queryByTestId("created-route")).toBeNull();
     expect(screen.getByRole("heading", { name: "Sign in to open this event's layouts" })).toBeTruthy();
   });
 
   it("opens the one accessible match after another linked plan is explicitly denied", async () => {
     eventsMock.getEventPhaseGraph.mockResolvedValue(graph(["Denied", "Dinner"]));
-    configMock.getConfig.mockImplementation((id) => id === "Denied"
-      ? Promise.reject(new ApiError(403, "Forbidden", "FORBIDDEN"))
-      : Promise.resolve({ ...publicConfigFor(grandHall, id), name: id }));
+    // A layout the caller may not open is absent from the summaries.
+    configMock.getConfigSummaries.mockImplementation((ids) => Promise.resolve(ids
+      .filter((id) => id !== "Denied").map((id) => summaryFor(grandHall, id))));
     renderEventEditor();
     expect((await screen.findByTestId("created-route")).getAttribute("data-path")).toBe("/plan/Dinner");
   });
 
   it("does not choose a partial result when another linked layout cannot be checked", async () => {
     eventsMock.getEventPhaseGraph.mockResolvedValue(graph(["Unavailable", "Dinner"]));
-    configMock.getConfig.mockImplementation((id) => id === "Unavailable"
-      ? Promise.reject(new ApiError(503, "Unavailable", "UNAVAILABLE"))
-      : Promise.resolve({ ...publicConfigFor(grandHall, id), name: id }));
+    configMock.getConfigSummaries.mockRejectedValue(new ApiError(503, "Unavailable", "UNAVAILABLE"));
     renderEventEditor();
     expect(await screen.findByRole("heading", { name: "Could not open this event's layouts" })).toBeTruthy();
     expect(screen.queryByTestId("created-route")).toBeNull();
@@ -501,14 +507,14 @@ describe("EditorPage event-linked bootstrap", () => {
     eventsMock.getEventPhaseGraph.mockResolvedValue(graph(["Dinner"]));
     renderEditor(`/v/city-rooms/plan?eventId=${EVENT_ID}&space=grand-hall`);
     expect(await screen.findByRole("heading", { name: "Could not open this event's layouts" })).toBeTruthy();
-    expect(configMock.getConfig).not.toHaveBeenCalled();
+    expect(configMock.getConfigSummaries).not.toHaveBeenCalled();
   });
 
   it("does not silently substitute another room when the requested room is missing", async () => {
     eventsMock.getEventPhaseGraph.mockResolvedValue(graph(["Dinner"]));
     renderEditor(`/plan?eventId=${EVENT_ID}&space=missing-room`);
     expect(await screen.findByRole("heading", { name: "Could not open this event's layouts" })).toBeTruthy();
-    expect(configMock.getConfig).not.toHaveBeenCalled();
+    expect(configMock.getConfigSummaries).not.toHaveBeenCalled();
     expect(configMock.createPublicConfig).not.toHaveBeenCalled();
   });
 
