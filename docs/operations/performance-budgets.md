@@ -63,11 +63,13 @@ These budgets are guardrails for planner and operations quality. They are not gu
   share geometries and materials but stay separate meshes (instancing them
   changed the transparent sort); editable furniture draws from pooled instance
   buffers updated only for moved items; opaque Grand Hall ornaments draw as
-  merged batches while the per-mesh tree handles blended states; room shells
-  stay mounted across camera gestures. Their equivalence tests
+  merged batches (translucent pieces such as window glass keep their own
+  objects) while the per-mesh tree handles faded surfaces; room shells stay
+  mounted across camera gestures, and a hidden wall's click animation keeps
+  time with its ornaments. Their equivalence tests
   (`TableSettingMesh.equivalence`, `InstancedFurnitureLayer.editable`,
-  `GrandHallOrnaments.merge`, `RoomMesh.shell`) compare against the previous
-  implementation.
+  `GrandHallOrnaments.merge`, `RoomMesh.shell`, `BrickWall.gesture`) compare
+  against the previous implementation or a never-hidden reference.
 - Heavy runtime assets and simulation work must remain lazy or job-backed, not in the first planner request path.
 
 ## Large Layout Object Count

@@ -203,8 +203,8 @@ re-verified here.
 | Drag-step commit, 1,287 items, desktop | 65 ms | 8.1 ms |
 | Furniture layer per idle frame | 2.4 ms | ≈0 ms |
 | Scene objects, 1,287-item banquet | 10,303 | 2,698 |
-| Grand Hall overview, draws per frame | 330 | 132 |
-| Grand Hall during a camera gesture, draws per frame | 354 | 145 |
+| Grand Hall overview, draws per frame | 330 | 115 |
+| Grand Hall during a camera gesture, draws per frame | 354 | 115 |
 
 - Dinner covers share one geometry and one material per part (same meshes,
   transforms and draw order) and are memoised: 0 changed pixels in six views.
@@ -216,7 +216,11 @@ re-verified here.
   fades, clicked walls, x-ray) and on its first visible frame, so those states
   are pixel-identical. Transparent pieces and pieces flush against another
   material's face stay separate. At rest, 1–41 isolated edge pixels per
-  1440 × 900 frame differ through float rounding of the baked vertices.
+  1440 × 900 frame differ through float rounding of the baked vertices. The
+  draw counts above were re-measured at the same pose on the integrated branch
+  after T-630 made the window glass translucent (124 before it); the first
+  measurement, 132 at rest and 145 during gestures, predates the final
+  integration.
 - The room shells stay mounted across camera gestures instead of being rebuilt
   after every orbit; the drawn shell no longer changes across a gesture (the
   remount changed up to 17 pixels), and ornament fades keep their first-load
@@ -317,15 +321,19 @@ updated enquiries of any state; phantom `template-…` selection; instanced
 furniture culled while on screen; instanced furniture running ahead of its
 linen and covers in the post-drag settle; rate-limited requests answering 500;
 the dashboard answering 500 once a venue's quotes summed past £1,000,000.
+Fixed afterwards at Blake's request: the window glass drawn opaque at rest
+(T-630), a clicked-away wall replaying its disassembly after every camera
+gesture (T-631), and the dashboard's Enquiries list showing only the 20 least
+recently updated enquiries (T-632: newest first, paged, with a count and
+migration 0072).
 
 Not fixed (need a decision or are outside this change):
-- The dashboard's Enquiries list requests the default page, so it shows the 20
-  least recently updated enquiries with no paging; choosing an order and
-  paging is a product decision.
-- A clicked-away wall replays its disassembly after every camera gesture (kept
-  as the old remount behaved).
-- `SurfaceVisibilityGroup` draws the window glass opaque at rest, overriding its
-  0.42 opacity (pre-existing).
+- At 390 px the dashboard's Enquiries page scrolls sideways by 152 px: the
+  status tab row does not wrap (pre-existing, found during T-632).
+- Frieze figures and the underlight strip run across the window openings,
+  between the daylight backing and the glass, so they show through the glass
+  (at rest since T-630, during fades before it). Clearing them from the
+  openings changes the ornaments, so it is Blake's call.
 - drei's bundled `index.cjs.js` carries an unpatched `setUpdateRange`; only the
   test environment loads it.
 
