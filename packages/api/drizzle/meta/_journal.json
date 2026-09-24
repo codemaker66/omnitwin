@@ -484,6 +484,13 @@
       "when": 1788787200000,
       "tag": "0070_client_onboarding_access",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1790251200000,
+      "tag": "0071_configuration_foreign_key_indexes",
+      "breakpoints": true
     }
   ]
 }

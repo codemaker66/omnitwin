@@ -686,6 +686,9 @@ export const enquiries = pgTable("enquiries", {
 }, (table) => [
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
   index("enquiries_user_id_idx").on(table.userId),
+  // Migration 0071: latest enquiry per configuration, and the FK check when
+  // a configuration row is deleted.
+  index("enquiries_configuration_created_idx").on(table.configurationId, table.createdAt),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -2100,6 +2103,8 @@ export const proposals = pgTable("proposals", {
   index("proposals_venue_status_idx").on(table.venueId, table.status),
   index("proposals_opportunity_idx").on(table.opportunityId),
   index("proposals_enquiry_idx").on(table.enquiryId),
+  // Migration 0071: the ON DELETE SET NULL action of a configuration delete.
+  index("proposals_configuration_idx").on(table.configurationId),
 ]);
 
 // ---------------------------------------------------------------------------
