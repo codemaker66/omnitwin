@@ -3,8 +3,10 @@ import { BufferGeometry, Matrix4, Vector3 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   bakeOrnamentGeometry,
+  buildOrnamentStandIn,
   collectOrnamentDraws,
   createOrnamentGeometry,
+  isTranslucentOrnamentMaterial,
   planOrnamentBatches,
   type OrnamentDraw,
   type OrnamentMaterial,
@@ -14,6 +16,8 @@ import {
 const stone: OrnamentMaterial = { color: "#d8ccb4", roughness: 0.7, metalness: 0 };
 const gilt: OrnamentMaterial = { color: "#c9a24a", roughness: 0.35, metalness: 0.8 };
 const glass: OrnamentMaterial = { color: "#dfe8e4", roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.4, depthWrite: false };
+/** Opaque but without depth writes: later draws behind it overwrite it. */
+const decal: OrnamentMaterial = { color: "#6d4b2a", roughness: 0.8, metalness: 0, depthWrite: false };
 
 const mirroredGroup: OrnamentNode = {
   kind: "group",
@@ -135,19 +139,62 @@ describe("bakeOrnamentGeometry", () => {
 });
 
 describe("planOrnamentBatches", () => {
-  it("merges equal materials within a segment and never across a depth-write-disabled draw", () => {
+  it("merges equal materials within a segment and never across an opaque depth-write-disabled draw", () => {
     const plans = planOrnamentBatches([
       { material: stone },
       { material: gilt },
       { material: { ...stone, color: "#D8CCB4" } },
-      { material: glass },
-      { material: glass },
+      { material: decal },
+      { material: decal },
       { material: stone },
       { material: stone, exact: true },
       { material: gilt },
-      { material: glass, exact: true },
-      { material: glass },
+      { material: decal, exact: true },
+      { material: decal },
     ]);
     expect(plans.map((plan) => plan.draws)).toEqual([[0, 2], [1], [3, 4], [5], [6], [7], [8], [9]]);
+  });
+
+  it("keeps each translucent draw on its own, without dividing the opaque batches around it", () => {
+    const plans = planOrnamentBatches([
+      { material: stone },
+      { material: glass },
+      { material: glass },
+      { material: stone },
+      { material: gilt },
+      { material: glass },
+      { material: gilt },
+    ]);
+    expect(plans.map((plan) => plan.draws)).toEqual([[0, 3], [1], [2], [4, 6], [5]]);
+  });
+
+  it("treats only materials that blend on an opaque surface as translucent", () => {
+    expect(isTranslucentOrnamentMaterial(glass)).toBe(true);
+    expect(isTranslucentOrnamentMaterial({ ...glass, opacity: 1 })).toBe(false);
+    // three ignores opacity without transparency.
+    expect(isTranslucentOrnamentMaterial({ ...stone, opacity: 0.4 })).toBe(false);
+    expect(isTranslucentOrnamentMaterial(decal)).toBe(false);
+  });
+});
+
+describe("buildOrnamentStandIn", () => {
+  it("draws translucent pieces on their original transforms, never baked", () => {
+    const set = buildOrnamentStandIn([
+      { kind: "mesh", geometry: { kind: "box", args: [1, 1, 0.1] }, material: stone },
+      { kind: "mesh", position: [0, 0, 0.2], geometry: { kind: "plane", args: [0.8, 0.8] }, material: glass },
+      { kind: "mesh", position: [1, 0, 0], geometry: { kind: "box", args: [1, 1, 0.1] }, material: stone },
+    ]);
+    expect(set?.batches.map((batch) => batch.sourceDraws)).toEqual([[0, 2], [1]]);
+    const pane = set?.batches[1];
+    expect(pane?.transform?.equals(new Matrix4().makeTranslation(0, 0, 0.2))).toBe(true);
+    expect(pane?.material).toBe(glass);
+  });
+
+  it("refuses to bake a translucent instanced block, whose depth sort would move", () => {
+    expect(() => buildOrnamentStandIn([
+      { kind: "mesh", geometry: { kind: "box", args: [1, 1, 0.1] }, material: stone },
+      { kind: "mesh", position: [1, 0, 0], geometry: { kind: "box", args: [1, 1, 0.1] }, material: stone },
+      { kind: "instances", name: "beads", geometry: { kind: "sphere", args: [0.05, 8, 6] }, material: glass, instances: [{ position: [0, 1, 0] }] },
+    ])).toThrow(/beads/);
   });
 });

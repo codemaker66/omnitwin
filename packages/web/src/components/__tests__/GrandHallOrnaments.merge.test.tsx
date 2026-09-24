@@ -15,7 +15,13 @@ import { GrandHallOrnaments } from "../GrandHallOrnaments.js";
 import { describeGrandHallOrnaments } from "../grand-hall-ornament-parts.js";
 import { LegacyGrandHallOrnaments } from "./fixtures/legacy-grand-hall-ornaments.js";
 import { mountFrameRoot, type FrameRoot } from "./r3f-frame-root.js";
-import { collectOrnamentDraws, planOrnamentBatches, type OrnamentMaterial } from "../../lib/ornament-batching.js";
+import {
+  collectOrnamentDraws,
+  isTranslucentOrnamentMaterial,
+  planOrnamentBatches,
+  type OrnamentDraw,
+  type OrnamentMaterial,
+} from "../../lib/ornament-batching.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
 import { useVisibilityStore } from "../../stores/visibility-store.js";
 import { useXrayStore } from "../../stores/xray-store.js";
@@ -111,13 +117,6 @@ function visibleDraws(root: Object3D): Mesh[] {
   };
   visit(root);
   return out;
-}
-
-/** three's opaque sort key: materials number themselves in creation order (untyped in @types/three). */
-function materialId(material: Material): number {
-  const id: unknown = Reflect.get(material, "id");
-  if (typeof id !== "number") throw new Error("three materials carry a numeric id");
-  return id;
 }
 
 function standardMaterial(mesh: Mesh): MeshStandardMaterial {
@@ -288,23 +287,28 @@ const hall = describeGrandHallOrnaments(
 );
 
 /**
- * Pieces the description keeps on exact draws, by per-mesh draw index, for a
- * surface name or "chandelier-fittings". The per-mesh order equals the legacy
- * order (first test), so indices line up.
+ * The described draws of a surface name or "chandelier-fittings", by per-mesh
+ * draw index. The per-mesh order equals the legacy order (first test), so
+ * indices line up with the legacy draws.
  */
-function exactFlags(surface: string): boolean[] {
+function describedDraws(surface: string): OrnamentDraw[] {
   if (surface === "chandelier-fittings") {
     return collectOrnamentDraws(hall.chandeliers.map((chandelier) => ({
       kind: "group" as const,
       position: chandelier.placement.position,
       scale: chandelier.placement.scale,
       children: chandelier.fittings,
-    }))).map((draw) => draw.exact);
+    })));
   }
   const found = [...hall.ceiling, ...hall.walls.flatMap((layer) => (layer.kind === "surface" ? [layer] : layer.surfaces)), ...hall.rosette]
     .find((candidate) => candidate.name === surface);
   if (found === undefined) throw new Error(`No described surface ${surface}`);
-  return collectOrnamentDraws(found.children).map((draw) => draw.exact);
+  return collectOrnamentDraws(found.children);
+}
+
+/** Pieces the description keeps on exact draws, by per-mesh draw index. */
+function exactFlags(surface: string): boolean[] {
+  return describedDraws(surface).map((draw) => draw.exact);
 }
 
 /** The plan three-order rules give for the legacy draws (materials as the legacy JSX declared them). */
@@ -413,80 +417,41 @@ describe("GrandHallOrnaments merged stand-ins", () => {
     expect(crystal.map(meshSignature)).toEqual(parts.crystal.map(meshSignature));
   });
 
-  it("keeps every draw on the same side of each depth-write-disabled pane in three's opaque order", () => {
-    const { legacy, current, declared } = mountPair();
+  it("draws each glass pane translucent at rest, as its own object exactly like the pre-merge tree", () => {
+    const { legacy, current } = mountPair();
+    const surface = "window-wall-ornament-cluster";
+    expect(named(current.scene, `${surface}-opaque-stand-in`).visible).toBe(true);
 
-    // Map each legacy draw to the object that draws it now.
-    const drawnBy = new Map<Mesh, Mesh>();
-    for (const surface of SURFACES) {
-      const legacyDraws = drawObjects(named(legacy.scene, surface));
-      const batches = standInDraws(current.scene, surface);
-      if (batches === null) {
-        perMeshDraws(current.scene, surface).forEach((mesh, i) => {
-          const source = legacyDraws[i];
-          if (source !== undefined) drawnBy.set(source, mesh);
-        });
-        continue;
-      }
-      legacyPlan(declared, legacyDraws, surface).forEach((plan, b) => {
-        for (const i of plan.draws) {
-          const source = legacyDraws[i];
-          const batch = batches[b];
-          if (source !== undefined && batch !== undefined) drawnBy.set(source, batch);
-        }
-      });
-    }
-    const fittings = legacyChandelierParts(legacy.scene, declared).fittings;
-    const fittingBatches = drawObjects(named(current.scene, "chandelier-fittings"));
-    legacyPlan(declared, fittings, "chandelier-fittings").forEach((plan, b) => {
-      for (const i of plan.draws) {
-        const source = fittings[i];
-        const batch = fittingBatches[b];
-        if (source !== undefined && batch !== undefined) drawnBy.set(source, batch);
-      }
-    });
-
-    // three sorts opaque draws by material id (render/group order are all 0 here).
-    const opaqueOrder = (root: Object3D): Map<Mesh, number> => new Map(
-      visibleDraws(root)
-        .filter((mesh) => !standardMaterial(mesh).transparent)
-        .sort((a, b) => materialId(standardMaterial(a)) - materialId(standardMaterial(b)))
-        .map((mesh, position) => [mesh, position]),
+    const translucent = (root: Object3D): Mesh[] => visibleDraws(named(root, surface))
+      .filter((mesh) => standardMaterial(mesh).transparent);
+    const legacyGlass = translucent(legacy.scene);
+    // Three windows: a rectangular pane, an arched pane and two highlights each.
+    expect(legacyGlass.map((mesh) => standardMaterial(mesh).opacity)).toEqual(
+      Array.from({ length: 3 }, () => [0.42, 0.38, 0.34, 0.34]).flat(),
     );
-    const legacyOrder = opaqueOrder(legacy.scene);
-    const currentOrder = opaqueOrder(current.scene);
+    for (const mesh of legacyGlass) expect(standardMaterial(mesh).depthWrite).toBe(false);
+    // Same transform, geometry and material: the stand-in's panes blend and
+    // depth-sort exactly as the per-mesh panes do.
+    expect(translucent(current.scene).map((mesh) => ({ ...meshSignature(mesh), name: "" })))
+      .toEqual(legacyGlass.map((mesh) => ({ ...meshSignature(mesh), name: "" })));
 
-    const barriers = [...legacyOrder.keys()].filter((mesh) => !standardMaterial(mesh).depthWrite);
-    expect(barriers).toHaveLength(12);
-    let checkedPairs = 0;
-    for (const barrier of barriers) {
-      const barrierNow = drawnBy.get(barrier);
-      const barrierBefore = legacyOrder.get(barrier);
-      if (barrierNow === undefined || barrierBefore === undefined) throw new Error("Unmapped barrier");
-      for (const [other, before] of legacyOrder) {
-        const otherNow = drawnBy.get(other);
-        if (otherNow === undefined) throw new Error(`Unmapped draw ${other.name}`);
-        if (other === barrier || otherNow === barrierNow) continue;
-        const now = currentOrder.get(otherNow);
-        const barrierPosition = currentOrder.get(barrierNow);
-        if (now === undefined || barrierPosition === undefined) throw new Error(`Draw ${other.name} is not drawn opaque now`);
-        expect(Math.sign(now - barrierPosition), `${other.name} vs ${barrier.name}`).toBe(Math.sign(before - barrierBefore));
-        checkedPairs += 1;
-      }
+    // No opaque draw is left without depth writes, so nothing constrains how
+    // the opaque pieces are split into batches.
+    for (const root of [legacy.scene, current.scene]) {
+      expect(visibleDraws(root).filter((mesh) => !standardMaterial(mesh).transparent && !standardMaterial(mesh).depthWrite)).toEqual([]);
     }
-    expect(checkedPairs).toBeGreaterThan(4000);
   });
 
   it("issues a fraction of the draw calls for the same content", () => {
     const { legacy, current } = mountPair();
     expect(visibleDraws(legacy.scene)).toHaveLength(391);
-    expect(visibleDraws(current.scene)).toHaveLength(133);
+    expect(visibleDraws(current.scene)).toHaveLength(118);
 
     // Default planner view: ceiling hidden, chandeliers still hung.
     act(() => { useVisibilityStore.setState({ ceiling: false }); });
     frames([legacy, current], 1);
     expect(visibleDraws(legacy.scene)).toHaveLength(359);
-    expect(visibleDraws(current.scene)).toHaveLength(119);
+    expect(visibleDraws(current.scene)).toHaveLength(104);
   });
 
   it("draws the per-mesh tree on a surface's first visible frame, then the stand-in", () => {
@@ -513,32 +478,42 @@ describe("GrandHallOrnaments fades, clicked walls, x-ray and sections", () => {
     return standIn?.visible === true ? "stand-in" : "per-mesh";
   }
 
+  /** Distinct [opacity, transparent] states among the materials of `meshes`. */
+  function blendingStates(meshes: readonly Mesh[]): string[] {
+    return [...new Set(meshes.map((mesh) => {
+      const { opacity, transparent } = standardMaterial(mesh);
+      return JSON.stringify([opacity, transparent]);
+    }))].sort();
+  }
+
   function expectSameDrawing(legacy: FrameRoot, current: FrameRoot, surfaces: readonly string[] = SURFACES): void {
     for (const surface of surfaces) {
       const legacyGroup = named(legacy.scene, surface);
       const legacyDraws = drawObjects(legacyGroup);
-      const blended = legacyDraws.some((mesh) => standardMaterial(mesh).transparent);
+      const described = describedDraws(surface);
+      expect(described, surface).toHaveLength(legacyDraws.length);
+      // The surface itself is faded when a piece that is opaque at rest blends.
+      const faded = legacyDraws.some((mesh, i) => {
+        const draw = described[i];
+        if (draw === undefined) throw new Error(`${surface} draw ${String(i)} is not described`);
+        return standardMaterial(mesh).transparent && !isTranslucentOrnamentMaterial(draw.material);
+      });
       const representation = drawnRepresentation(current.scene, surface);
       if (!legacyGroup.visible) {
         expect(representation, surface).toBe("hidden");
         continue;
       }
-      if (blended || standInDraws(current.scene, surface) === null) {
-        // Blended surfaces sort per object: the exact pre-merge meshes must draw.
+      if (faded || standInDraws(current.scene, surface) === null) {
+        // Faded surfaces sort per object: the exact pre-merge meshes must draw.
         expect(representation, surface).toBe("per-mesh");
         expect(visibleDraws(named(current.scene, surface)).map(meshSignature), surface)
           .toEqual(visibleDraws(legacyGroup).map(meshSignature));
       } else {
         expect(representation, surface).toBe("stand-in");
       }
-      // Surface opacity reaches every material of both representations.
-      const first = legacyDraws[0];
-      if (first === undefined) throw new Error(`${surface} has no draws`);
-      const expected = materialSignature(standardMaterial(first));
-      for (const mesh of drawObjects(named(current.scene, surface))) {
-        const signature = materialSignature(standardMaterial(mesh));
-        expect([signature.opacity, signature.transparent], `${surface} ${mesh.name}`).toEqual([expected.opacity, expected.transparent]);
-      }
+      // Surface opacity reaches every material of both representations,
+      // scaling each piece's authored opacity exactly as before.
+      expect(blendingStates(drawObjects(named(current.scene, surface))), surface).toEqual(blendingStates(legacyDraws));
     }
   }
 
@@ -564,6 +539,45 @@ describe("GrandHallOrnaments fades, clicked walls, x-ray and sections", () => {
     frames([legacy, current], 1);
     expect(drawnRepresentation(current.scene, "window-wall-ornament-cluster")).toBe("stand-in");
     expectSameDrawing(legacy, current);
+  });
+
+  it("keeps the window glass at its authored opacity at rest and fades it with the wall", () => {
+    const current = mount(<GrandHallOrnaments />);
+    const surface = "window-wall-ornament-cluster";
+    const setBackWall = (opacity: number): void => {
+      act(() => {
+        useVisibilityStore.setState({ wallOpacity: { ...useVisibilityStore.getState().wallOpacity, "wall-back": opacity } });
+      });
+      frames([current], 2);
+    };
+    const panes = ["arched-window-glass-pane-rect", "arched-window-glass-pane-arch", "arched-window-glass-highlight"];
+    const paneStates = (): [number, boolean][] => panes.map((name) => {
+      const mesh = named(current.scene, name);
+      if (!isMesh(mesh)) throw new Error(`${name} is not a mesh`);
+      const { opacity, transparent } = standardMaterial(mesh);
+      return [opacity, transparent];
+    });
+    const drawnGlass = (): number[] => visibleDraws(named(current.scene, surface))
+      .filter((mesh) => standardMaterial(mesh).transparent)
+      .map((mesh) => standardMaterial(mesh).opacity);
+
+    frames([current], 2);
+    expect(drawnRepresentation(current.scene, surface)).toBe("stand-in");
+    expect(paneStates()).toEqual([[0.42, true], [0.38, true], [0.34, true]]);
+    expect(drawnGlass()).toEqual(Array.from({ length: 3 }, () => [0.42, 0.38, 0.34, 0.34]).flat());
+
+    setBackWall(0.5);
+    expect(drawnRepresentation(current.scene, surface)).toBe("per-mesh");
+    const faded = paneStates();
+    [0.21, 0.19, 0.17].forEach((opacity, i) => {
+      expect(faded[i]?.[0]).toBeCloseTo(opacity, 12);
+      expect(faded[i]?.[1]).toBe(true);
+    });
+
+    setBackWall(1);
+    expect(drawnRepresentation(current.scene, surface)).toBe("stand-in");
+    expect(paneStates()).toEqual([[0.42, true], [0.38, true], [0.34, true]]);
+    expect(drawnGlass()).toEqual(Array.from({ length: 3 }, () => [0.42, 0.38, 0.34, 0.34]).flat());
   });
 
   it("animates a clicked-open wall frame for frame like the pre-merge ornaments", () => {

@@ -7,15 +7,17 @@
  *
  *   - the canonical per-mesh tree, one mesh per ornament piece, inside each
  *     surface's `SurfaceVisibilityGroup`; and
- *   - an opaque stand-in per surface, the pieces baked into one draw per
- *     material (and per draw-order segment around depth-write-disabled glass).
+ *   - an opaque stand-in per surface, the opaque pieces baked into one draw
+ *     per material, with each translucent piece (window glass) kept as its
+ *     own object on its original transform.
  *
  * `SurfaceVisibilityGroup` draws the stand-in only while its surface is fully
- * opaque, where the depth buffer makes the result independent of how the
- * geometry is split into draws. Fading, clicked-open and x-ray surfaces draw
- * the per-mesh tree, whose per-object depth sort sets the blending order.
- * Chandelier fittings never fade, so they are merged outright; their blended
- * crystal keeps its own objects.
+ * opaque, where the depth buffer makes the opaque result independent of how
+ * the geometry is split into draws, and the glass sorts exactly as before.
+ * Fading, clicked-open and x-ray surfaces draw the per-mesh tree, whose
+ * per-object depth sort sets the blending order. Chandelier fittings never
+ * fade, so they are merged outright; their blended crystal keeps its own
+ * objects.
  */
 
 import { useEffect, useMemo, useRef } from "react";
@@ -179,9 +181,9 @@ function batchMaterialKey(batch: OrnamentBatch, index: number): string {
  * One material per batch, created while this component renders — the same
  * slot in the scene's material-creation order that the per-mesh materials it
  * replaces occupied, which three's opaque sort (by material id) relies on for
- * the glass barriers. Stable across re-renders: a rebuilt set keeps the
- * materials of the batches it still has and releases the rest; everything is
- * released on unmount.
+ * depth-write-disabled barriers. Stable across re-renders: a rebuilt set keeps
+ * the materials of the batches it still has and releases the rest; everything
+ * is released on unmount.
  */
 function useBatchMaterials(set: OrnamentBatchSet | null): readonly MeshStandardMaterial[] {
   const cache = useRef<Map<string, MeshStandardMaterial> | null>(null);

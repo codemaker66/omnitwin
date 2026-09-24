@@ -9,6 +9,7 @@ import {
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
 import { skipDescendantRaycast } from "../lib/raycast-gate.js";
+import { OPAQUE_OPACITY, authoredOpacity } from "../lib/material-opacity.js";
 import {
   stepWallAssemblyOpacity,
   wallAssemblyTargetFromBaseOpacity,
@@ -22,25 +23,21 @@ interface SurfaceVisibilityGroupProps {
   /**
    * Optional cheaper stand-in (e.g. merged draw batches) drawn instead of
    * `children` while the surface is fully opaque. It must render identically
-   * in that state. `children` remain the canonical content: they are drawn
-   * whenever the surface's materials are blended (fades, clicked-open walls,
-   * x-ray), where three's per-object depth sort sets the blending order, and
-   * on the surface's first visible frame, so their buffers are resident before
-   * any fade. The stand-in never receives raycasts; `children` still do.
+   * in that state, including any translucent pieces (window glass), which
+   * blend even then. `children` remain the canonical content: they are drawn
+   * whenever the surface itself is faded (fades, clicked-open walls, x-ray),
+   * where three's per-object depth sort sets the blending order, and on the
+   * surface's first visible frame, so their buffers are resident before any
+   * fade. The stand-in never receives raycasts; `children` still do.
    */
   readonly opaqueStandIn?: React.ReactNode;
 }
 
 /**
- * `setMaterialOpacity` blends materials below this opacity; at or above it
- * they are opaque and the stand-in is an exact replacement.
- */
-const OPAQUE_SURFACE_OPACITY = 0.999;
-
-/**
- * Shows the stand-in or the per-mesh children for the opacity last applied to
- * the materials. Returns true when the per-mesh children were just drawn for
- * the first time and the next frame will switch to the stand-in.
+ * Shows the stand-in or the per-mesh children for the surface opacity last
+ * applied to the materials. The stand-in is an exact replacement only while
+ * the surface is fully opaque. Returns true when the per-mesh children were
+ * just drawn for the first time and the next frame will switch to the stand-in.
  */
 function selectSurfaceRepresentation(
   standIn: Group | null,
@@ -50,7 +47,7 @@ function selectSurfaceRepresentation(
   perMeshDrawn: { current: boolean },
 ): boolean {
   if (standIn === null || perMesh === null) return false;
-  const opaque = appliedOpacity >= OPAQUE_SURFACE_OPACITY;
+  const opaque = appliedOpacity >= OPAQUE_OPACITY;
   const useStandIn = opaque && perMeshDrawn.current;
   standIn.visible = useStandIn;
   perMesh.visible = !useStandIn;
@@ -73,10 +70,30 @@ function materialFromUnknown(value: unknown): Material | readonly Material[] | n
   return null;
 }
 
-export function setMaterialOpacity(material: Material | readonly Material[], opacity: number): void {
+/**
+ * Each material's authored opacity, read the first time a surface fades it,
+ * before any fade has changed it.
+ */
+const authoredOpacities = new WeakMap<Material, number>();
+
+function authoredOpacityOf(material: Material): number {
+  let opacity = authoredOpacities.get(material);
+  if (opacity === undefined) {
+    opacity = authoredOpacity(material.transparent, material.opacity);
+    authoredOpacities.set(material, opacity);
+  }
+  return opacity;
+}
+
+/**
+ * Fades materials with their surface: each draws at its authored opacity
+ * times `surfaceOpacity`, so translucent pieces such as window glass keep
+ * their own opacity on a fully opaque surface and fade with it.
+ */
+export function setSurfaceOpacity(material: Material | readonly Material[], surfaceOpacity: number): void {
   if (isMaterialArray(material)) {
     for (const item of material) {
-      setMaterialOpacity(item, opacity);
+      setSurfaceOpacity(item, surfaceOpacity);
     }
     return;
   }
@@ -84,7 +101,8 @@ export function setMaterialOpacity(material: Material | readonly Material[], opa
   // Opacity is read as a uniform every frame. Only a change of blending mode
   // needs a material rebuild; flagging every fade step made the renderer
   // re-key each wall material on every frame of an orbit.
-  const transparent = opacity < 0.999;
+  const opacity = authoredOpacityOf(material) * surfaceOpacity;
+  const transparent = opacity < OPAQUE_OPACITY;
   material.opacity = opacity;
   if (material.transparent !== transparent) {
     material.transparent = transparent;
@@ -92,15 +110,15 @@ export function setMaterialOpacity(material: Material | readonly Material[], opa
   }
 }
 
-function applyTreeOpacity(root: Object3D, opacity: number): void {
-  const visible = opacity > 0.01;
+function applyTreeOpacity(root: Object3D, surfaceOpacity: number): void {
+  const visible = surfaceOpacity > 0.01;
   root.visible = visible;
   root.traverse((child) => {
     if (child instanceof Mesh) {
       child.visible = visible;
       const material = materialFromUnknown(child.material);
       if (material !== null) {
-        setMaterialOpacity(material, opacity);
+        setSurfaceOpacity(material, surfaceOpacity);
       }
     }
   });

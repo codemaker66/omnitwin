@@ -17,16 +17,17 @@ import {
   Vector3,
   type Side,
 } from "three";
+import { isTranslucentAtRest } from "./material-opacity.js";
 
 // ---------------------------------------------------------------------------
 // Ornament scene description
 //
 // Static decorative dressing is described once as data. The same description
 // renders the canonical per-mesh tree (one <mesh> per node, exactly as it was
-// written in JSX) and bakes merged draw batches for surfaces that are fully
-// opaque. Transforms are composed with three's own Object3D arithmetic
-// (Euler -> Quaternion -> compose, parent * local), so baked vertices match
-// the per-mesh world transforms.
+// written in JSX) and bakes merged draw batches of the opaque pieces for
+// surfaces that are fully opaque. Transforms are composed with three's own
+// Object3D arithmetic (Euler -> Quaternion -> compose, parent * local), so
+// baked vertices match the per-mesh world transforms.
 // ---------------------------------------------------------------------------
 
 export type Vec3 = readonly [number, number, number];
@@ -228,12 +229,22 @@ export function collectOrnamentDraws(nodes: readonly OrnamentNode[], parent: Mat
 }
 
 /**
- * A material that does not write depth is order-dependent even while opaque:
- * whatever is drawn after it can overwrite it. Such draws are barriers that
- * batches never reach across.
+ * A material that still blends on a fully opaque surface (window glass).
+ * three draws it in the transparent pass, after every opaque draw, sorting
+ * each object by its own depth, so every such piece keeps its own draw on its
+ * original transform.
+ */
+export function isTranslucentOrnamentMaterial(spec: OrnamentMaterial): boolean {
+  return isTranslucentAtRest(spec.transparent ?? false, spec.opacity ?? 1);
+}
+
+/**
+ * An opaque material that does not write depth is order-dependent: whatever
+ * is drawn after it can overwrite it. Such draws are barriers that batches
+ * never reach across.
  */
 export function isOrderDependentOrnamentMaterial(spec: OrnamentMaterial): boolean {
-  return spec.depthWrite === false;
+  return spec.depthWrite === false && !isTranslucentOrnamentMaterial(spec);
 }
 
 export interface OrnamentBatchPlan {
@@ -254,11 +265,12 @@ interface PlannedDraw {
  *
  * three sorts opaque draws by material id (creation order) and relies on the
  * depth buffer for the rest, so the order of depth-writing opaque draws does
- * not change the image. A depth-write-disabled draw (window glass once its
- * surface forces it opaque) is different: later draws behind it overwrite it.
- * Every batch therefore stays entirely before or entirely after each such
- * barrier, and barriers keep their relative order (adjacent identical barriers
- * merge in their original order). Exact draws keep a batch of their own.
+ * not change the image. An opaque depth-write-disabled draw is different:
+ * later draws behind it overwrite it. Every batch therefore stays entirely
+ * before or entirely after each such barrier, and barriers keep their relative
+ * order (adjacent identical barriers merge in their original order).
+ * Translucent draws belong to the transparent pass, so they neither join nor
+ * divide opaque batches; each keeps a batch of its own, as do exact draws.
  * Batches are returned in material-creation order.
  */
 export function planOrnamentBatches(draws: readonly PlannedDraw[]): OrnamentBatchPlan[] {
@@ -266,6 +278,10 @@ export function planOrnamentBatches(draws: readonly PlannedDraw[]): OrnamentBatc
   let segment = new Map<string, { key: string; material: OrnamentMaterial; draws: number[]; barrier: boolean }>();
   draws.forEach((draw, index) => {
     const key = ornamentMaterialKey(draw.material);
+    if (isTranslucentOrnamentMaterial(draw.material)) {
+      plans.push({ key, material: draw.material, draws: [index], barrier: false });
+      return;
+    }
     if (isOrderDependentOrnamentMaterial(draw.material)) {
       segment = new Map();
       const previous = plans.at(-1);
@@ -409,8 +425,9 @@ export interface OrnamentBatch {
   readonly geometry: BufferGeometry;
   /**
    * Set when the batch is one mesh drawn on its original transform: an exact
-   * piece, or a lone primitive that baking could not merge with anything.
-   * Such a draw is bit-identical to the per-mesh draw it replaces.
+   * or translucent piece, or a lone primitive that baking could not merge with
+   * anything. Such a draw is bit-identical to the per-mesh draw it replaces,
+   * and sorts at the same depth.
    */
   readonly transform: Matrix4 | null;
   /** Per-mesh draws this batch replaces. */
@@ -426,6 +443,10 @@ export interface OrnamentBatchSet {
 function bakeOrnamentBatches(draws: readonly OrnamentDraw[], plans: readonly OrnamentBatchPlan[]): OrnamentBatchSet {
   const batches = plans.map((plan): OrnamentBatch => {
     const single = plan.draws.length === 1 ? draws[plan.draws[0] ?? -1] : undefined;
+    if (single?.instanced === true && isTranslucentOrnamentMaterial(plan.material)) {
+      // Baking would move the block's depth-sort position to the root.
+      throw new Error(`Translucent instanced ornament ${single.name} cannot be baked; keep it out of batched content`);
+    }
     const matrix = single !== undefined && !single.instanced ? single.matrices[0] : undefined;
     if (single !== undefined && matrix !== undefined) {
       return {
