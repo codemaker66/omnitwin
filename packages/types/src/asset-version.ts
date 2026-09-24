@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRADES_HALL_RUNTIME_ROOM_SLUGS, TRADES_HALL_VENUE_SLUG } from "./trades-hall-runtime-rooms.js";
 import {
   RuntimeTransformAlignmentMethodSchema,
   RuntimeTransformFrameSchema,
@@ -150,17 +151,7 @@ const ASSET_KIND_EXTENSIONS: Readonly<Record<AssetKind, readonly RuntimeFileExte
   other: RUNTIME_FILE_EXTENSIONS,
 };
 
-export const TRADES_HALL_VENUE_SLUG = "trades-hall";
-export const TRADES_HALL_RUNTIME_ROOM_SLUGS = [
-  "grand-hall",
-  "reception-room",
-  "robert-adam-room",
-  "saloon",
-  "lady-convenors-room",
-  "deacon-conveners-room",
-  "north-gallery",
-  "south-gallery",
-] as const;
+export { TRADES_HALL_VENUE_SLUG, TRADES_HALL_RUNTIME_ROOM_SLUGS };
 export const TradesHallRuntimeRoomSlugSchema = z.enum(TRADES_HALL_RUNTIME_ROOM_SLUGS);
 export type TradesHallRuntimeRoomSlug = z.infer<typeof TradesHallRuntimeRoomSlugSchema>;
 

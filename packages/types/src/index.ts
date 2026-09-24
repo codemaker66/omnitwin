@@ -2288,8 +2288,6 @@ export {
   RUNTIME_FILE_EXTENSIONS,
   RuntimeFileExtensionSchema,
   RUNTIME_SPLAT_EXTENSIONS,
-  TRADES_HALL_VENUE_SLUG,
-  TRADES_HALL_RUNTIME_ROOM_SLUGS,
   TradesHallRuntimeRoomSlugSchema,
   TRADES_HALL_ROOM_GROUPS,
   TradesHallRoomGroupSchema,
@@ -2419,6 +2417,12 @@ export {
   type ProcessingJobProcessor,
   type ProcessingJobStatus,
 } from "./asset-version.js";
+
+// Schema-free, so pages that only need the room list skip asset-version.
+export {
+  TRADES_HALL_VENUE_SLUG,
+  TRADES_HALL_RUNTIME_ROOM_SLUGS,
+} from "./trades-hall-runtime-rooms.js";
 
 export * from "./twin.js";
 export * from "./event-mission-control.js";
