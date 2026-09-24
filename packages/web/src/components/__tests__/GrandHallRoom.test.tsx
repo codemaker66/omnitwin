@@ -30,6 +30,59 @@ import {
   WAINSCOT_PANEL_TOP_Y,
   WINDOW_SILL_Y,
 } from "../GrandHallOrnaments.js";
+import {
+  describeGrandHallOrnaments,
+  type OrnamentLayer,
+  type OrnamentSurface,
+} from "../grand-hall-ornament-parts.js";
+import type { OrnamentMeshNode, OrnamentNode } from "../../lib/ornament-batching.js";
+
+// ---------------------------------------------------------------------------
+// Ornament description helpers — the data both the per-mesh tree and the
+// merged stand-ins are rendered from.
+// ---------------------------------------------------------------------------
+
+function grandHallOrnamentSurfaces(): readonly OrnamentSurface[] {
+  const { width, length, height } = GRAND_HALL_RENDER_DIMENSIONS;
+  const description = describeGrandHallOrnaments(width, length, height);
+  const walls = description.walls.flatMap((layer: OrnamentLayer) => (layer.kind === "surface" ? [layer] : layer.surfaces));
+  return [...description.ceiling, ...walls, ...description.rosette];
+}
+
+function ornamentSurface(name: string): OrnamentSurface {
+  const surface = grandHallOrnamentSurfaces().find((candidate) => candidate.name === name);
+  if (surface === undefined) throw new Error(`Ornament surface "${name}" not found`);
+  return surface;
+}
+
+function ornamentNodes(nodes: readonly OrnamentNode[]): OrnamentNode[] {
+  return nodes.flatMap((node) => (node.kind === "group" ? [node, ...ornamentNodes(node.children)] : [node]));
+}
+
+function ornamentMeshes(surface: OrnamentSurface, name: string): OrnamentMeshNode[] {
+  return ornamentNodes(surface.children).filter((node): node is OrnamentMeshNode => node.kind === "mesh" && node.name === name);
+}
+
+function allOrnamentNames(): string[] {
+  const { width, length, height } = GRAND_HALL_RENDER_DIMENSIONS;
+  const description = describeGrandHallOrnaments(width, length, height);
+  const surfaces = grandHallOrnamentSurfaces();
+  const chandelierNodes = description.chandeliers.flatMap((chandelier) => [...chandelier.fittings, ...chandelier.crystal]);
+  return [
+    ...surfaces.map((surface) => surface.name),
+    ...ornamentNodes([...surfaces.flatMap((surface) => surface.children), ...chandelierNodes])
+      .map((node) => node.name ?? ""),
+  ];
+}
+
+/** Both ornament sources, for guards against reintroduced components. */
+async function ornamentSources(): Promise<string> {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const files = ["src/components/GrandHallOrnaments.tsx", "src/components/grand-hall-ornament-parts.ts"];
+  const sources = await Promise.all(files.map((file) => fs.readFile(path.resolve(file), "utf-8")));
+  return sources.join("\n");
+}
 
 // ---------------------------------------------------------------------------
 // Mock R3F — happy-dom has no WebGL context
@@ -428,17 +481,30 @@ describe("Grand Hall ornaments source", () => {
     expect(WINDOW_SILL_Y).toBeGreaterThan(WAINSCOT_PANEL_TOP_Y);
   });
 
-  it("gives the arched windows translucent glass over daylight backing", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+  it("gives the arched windows translucent glass over daylight backing", () => {
+    const windows = ornamentSurface("window-wall-ornament-cluster");
+    const daylight = ornamentMeshes(windows, "arched-window-daylight-pane-rect");
+    const glass = ornamentMeshes(windows, "arched-window-glass-pane-rect");
+    const archGlass = ornamentMeshes(windows, "arched-window-glass-pane-arch");
+    expect(daylight).toHaveLength(3);
+    expect(glass).toHaveLength(3);
+    expect(archGlass).toHaveLength(3);
+    expect(ornamentMeshes(windows, "arched-window-daylight-pane-arch")).toHaveLength(3);
+    expect(ornamentMeshes(windows, "arched-window-glass-highlight")).toHaveLength(6);
 
-    expect(source).toContain("arched-window-daylight-pane-rect");
-    expect(source).toContain("arched-window-glass-pane-rect");
-    expect(source).toContain("arched-window-glass-pane-arch");
-    expect(source).toContain("arched-window-glass-highlight");
-    expect(source).toContain("opacity={0.42}");
-    expect(source).toContain("depthWrite={false}");
+    for (const pane of daylight) {
+      expect(pane.material.emissive).toBe(pane.material.color);
+      expect(pane.material.transparent ?? false).toBe(false);
+    }
+    for (const pane of [...glass, ...archGlass]) {
+      expect(pane.material.transparent).toBe(true);
+      expect(pane.material.depthWrite).toBe(false);
+    }
+    expect(glass.map((pane) => pane.material.opacity)).toEqual([0.42, 0.42, 0.42]);
+    // The glass sits in front of (room-side of) its daylight backing.
+    glass.forEach((pane, i) => {
+      expect(pane.position?.[2] ?? 0).toBeGreaterThan(daylight[i]?.position?.[2] ?? 0);
+    });
   });
 
   it("uses a polished lengthwise plank texture for the floor", async () => {
@@ -456,17 +522,18 @@ describe("Grand Hall ornaments source", () => {
   });
 
   it("restores three ornate double-door sets on the long wall opposite the windows", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-
-    expect(source).toContain("opposite-long-wall-three-door-cluster");
-    expect(source).toContain("computeOppositeLongWallDoorCenters(width)");
-    expect(source).toContain("front-long-wall-door-set");
-    expect(source).toContain("grand-hall-front-wall-door");
-    expect(source).toContain("front-wall-door-raised-panel-frame");
-    expect(source).toContain("front-wall-door-brass-handle");
-    expect(source).not.toContain("honour-cabinet-long-wall");
+    const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
+    const doors = ornamentSurface("opposite-long-wall-three-door-cluster");
+    expect(doors.surfaceKey).toBe("wall-front");
+    const doorSets = doors.children.filter((node) => node.kind === "group" && node.name === "front-long-wall-door-set");
+    expect(doorSets).toHaveLength(3);
+    expect(doorSets.map((node) => (node.kind === "group" ? node.position : undefined)))
+      .toEqual(computeOppositeLongWallDoorCenters(width).map((x) => [x, 0, length / 2 - 0.085]));
+    expect(ornamentMeshes(doors, "grand-hall-front-wall-door")).toHaveLength(6);
+    expect(ornamentMeshes(doors, "front-wall-door-raised-panel-frame")).toHaveLength(12);
+    expect(ornamentMeshes(doors, "front-wall-door-brass-handle")).toHaveLength(6);
+    expect(allOrnamentNames()).not.toContain("honour-cabinet-long-wall");
+    expect(await ornamentSources()).not.toContain("honour-cabinet-long-wall");
   });
 
   it("interrupts the opposite-wall chair rail around each double-door set", () => {
@@ -486,51 +553,59 @@ describe("Grand Hall ornaments source", () => {
     }
   });
 
-  it("renders a named interrupted chair rail on the opposite-wall door side", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-
-    expect(source).toContain("front-long-wall-door-interrupted-chair-rail");
-    expect(source).toContain("computeOppositeLongWallChairRailSegments(width)");
+  it("renders a named interrupted chair rail on the opposite-wall door side", () => {
+    const { width } = GRAND_HALL_RENDER_DIMENSIONS;
+    const rails = ornamentMeshes(ornamentSurface("raised-wainscot-front"), "front-long-wall-door-interrupted-chair-rail");
+    const segments = computeOppositeLongWallChairRailSegments(width);
+    expect(rails).toHaveLength(segments.length);
+    rails.forEach((rail, i) => {
+      expect(rail.position?.[0]).toBe(segments[i]?.centerX);
+      expect(rail.geometry).toEqual({ kind: "box", args: [segments[i]?.width, 0.1, 0.075] });
+    });
   });
 
   it("keeps the opposite short end wall clear of door assemblies", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-
-    expect(source).not.toContain("right-end-wall-doors");
-    expect(source).not.toContain("grand-hall-right-wall-door");
-    expect(source).not.toContain("right-wall-door-brass-handle");
+    const source = await ornamentSources();
+    const names = allOrnamentNames();
+    for (const banned of ["right-end-wall-doors", "grand-hall-right-wall-door", "right-wall-door-brass-handle", "short-end-door"]) {
+      expect(source).not.toContain(banned);
+      expect(names.some((name) => name.includes(banned))).toBe(false);
+    }
     expect(source).not.toContain("wallSide=\"right\"");
-    expect(source).not.toContain("short-end-door");
+    // The right short wall carries only its continuous mouldings and rail.
+    expect(grandHallOrnamentSurfaces().filter((surface) => surface.surfaceKey === "wall-right").map((surface) => surface.name))
+      .toEqual(["crown-right", "skirt-right", "raised-wainscot-right", "frieze-right"]);
   });
 
-  it("keeps the far short-end fireplace as separate surround pieces", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-    expect(source).toContain("surfaceKey=\"wall-left\" name=\"left-end-wall-focal-point\"");
-    expect(source).toContain("left-firebox-back-panel");
-    expect(source).toContain("left-fireplace-left-jamb");
-    expect(source).toContain("left-fireplace-right-jamb");
-    expect(source).not.toContain("right-firebox-back-panel");
-    expect(source).not.toContain("<boxGeometry args={[0.16, 1.08, 2.4]} />");
-    expect(source).not.toContain("<boxGeometry args={[0.08, 0.72, 1.35]} />");
+  it("keeps the far short-end fireplace as separate surround pieces", () => {
+    const focal = ornamentSurface("left-end-wall-focal-point");
+    expect(focal.surfaceKey).toBe("wall-left");
+    for (const piece of ["left-firebox-back-panel", "left-fireplace-left-jamb", "left-fireplace-right-jamb"]) {
+      expect(ornamentMeshes(focal, piece)).toHaveLength(1);
+    }
+    expect(allOrnamentNames()).not.toContain("right-firebox-back-panel");
+    const boxes = grandHallOrnamentSurfaces()
+      .flatMap((surface) => ornamentNodes(surface.children))
+      .flatMap((node) => (node.kind === "mesh" && node.geometry.kind === "box" ? [node.geometry.args] : []));
+    expect(boxes).not.toContainEqual([0.16, 1.08, 2.4]);
+    expect(boxes).not.toContainEqual([0.08, 0.72, 1.35]);
   });
 
   it("removes decorative wall and ceiling ornaments in lowered section mode", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-
+    const source = await ornamentSources();
     expect(source).toContain("wallOrnamentsVisible");
     expect(source).toContain("ceilingOrnamentsVisible");
-    expect(source).toContain("window-wall-ornament-cluster");
-    expect(source).toContain("opposite-long-wall-three-door-cluster");
-    expect(source).toContain("left-end-wall-focal-point");
-    expect(source).toContain("grand-hall-ceiling-ornaments");
+    const names = grandHallOrnamentSurfaces().map((surface) => surface.name);
+    for (const surface of [
+      "window-wall-ornament-cluster",
+      "opposite-long-wall-three-door-cluster",
+      "left-end-wall-focal-point",
+      "grand-hall-ceiling-ornaments",
+    ]) {
+      expect(names).toContain(surface);
+    }
+    // Rendered behaviour at each section height is compared with the
+    // pre-merge ornaments in GrandHallOrnaments.merge.test.tsx.
   });
 
   it("keeps wall ornaments only while the section plane is above planning-cut height", () => {
@@ -544,27 +619,24 @@ describe("Grand Hall ornaments source", () => {
     expect(shouldShowCeilingOrnamentsForSection(6.9, 7)).toBe(true);
   });
 
-  it("upgrades the fireplace beyond a flat box surround", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-
-    expect(source).toContain("left-fireplace-realistic-surround");
-    expect(source).toContain("left-fireplace-firebox-arch");
-    expect(source).toContain("left-fireplace-brass-grate-bar");
-    expect(source).toContain("left-fireplace-charred-log");
-    expect(source).toContain("left-fireplace-ember-glow");
-    expect(source).toContain("left-fireplace-marble-vein");
+  it("upgrades the fireplace beyond a flat box surround", () => {
+    const focal = ornamentSurface("left-end-wall-focal-point");
+    const surround = ornamentNodes(focal.children).find((node) => node.name === "left-fireplace-realistic-surround");
+    expect(surround?.kind).toBe("group");
+    expect(ornamentMeshes(focal, "left-fireplace-firebox-arch")).toHaveLength(1);
+    expect(ornamentMeshes(focal, "left-fireplace-brass-grate-bar")).toHaveLength(4);
+    expect(ornamentMeshes(focal, "left-fireplace-charred-log")).toHaveLength(2);
+    expect(ornamentMeshes(focal, "left-fireplace-ember-glow")).toHaveLength(1);
+    expect(ornamentMeshes(focal, "left-fireplace-marble-vein")).toHaveLength(3);
   });
 
   it("does not bake fixed wall-chair rows into the empty hall", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
-    expect(source).not.toContain("WallChairRows");
-    expect(source).not.toContain("red-upholstered-wall-chair-rows");
-    expect(source).not.toContain("BalconyWallCue");
-    expect(source).not.toContain("floorplan-balcony-wall-cue");
+    const source = await ornamentSources();
+    const names = allOrnamentNames();
+    for (const banned of ["WallChairRows", "red-upholstered-wall-chair-rows", "BalconyWallCue", "floorplan-balcony-wall-cue"]) {
+      expect(source).not.toContain(banned);
+      expect(names).not.toContain(banned);
+    }
   });
 
 });

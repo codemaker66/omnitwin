@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Group, Material, Mesh, Object3D } from "three";
 import {
@@ -8,6 +8,7 @@ import {
 } from "../stores/visibility-store.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
+import { skipDescendantRaycast } from "../lib/raycast-gate.js";
 import {
   stepWallAssemblyOpacity,
   wallAssemblyTargetFromBaseOpacity,
@@ -18,6 +19,44 @@ interface SurfaceVisibilityGroupProps {
   readonly surfaceKey: SurfaceKey;
   readonly name: string;
   readonly children: React.ReactNode;
+  /**
+   * Optional cheaper stand-in (e.g. merged draw batches) drawn instead of
+   * `children` while the surface is fully opaque. It must render identically
+   * in that state. `children` remain the canonical content: they are drawn
+   * whenever the surface's materials are blended (fades, clicked-open walls,
+   * x-ray), where three's per-object depth sort sets the blending order, and
+   * on the surface's first visible frame, so their buffers are resident before
+   * any fade. The stand-in never receives raycasts; `children` still do.
+   */
+  readonly opaqueStandIn?: React.ReactNode;
+}
+
+/**
+ * `setMaterialOpacity` blends materials below this opacity; at or above it
+ * they are opaque and the stand-in is an exact replacement.
+ */
+const OPAQUE_SURFACE_OPACITY = 0.999;
+
+/**
+ * Shows the stand-in or the per-mesh children for the opacity last applied to
+ * the materials. Returns true when the per-mesh children were just drawn for
+ * the first time and the next frame will switch to the stand-in.
+ */
+function selectSurfaceRepresentation(
+  standIn: Group | null,
+  perMesh: Group | null,
+  surfaceVisible: boolean,
+  appliedOpacity: number,
+  perMeshDrawn: { current: boolean },
+): boolean {
+  if (standIn === null || perMesh === null) return false;
+  const opaque = appliedOpacity >= OPAQUE_SURFACE_OPACITY;
+  const useStandIn = opaque && perMeshDrawn.current;
+  standIn.visible = useStandIn;
+  perMesh.visible = !useStandIn;
+  if (useStandIn || !surfaceVisible || perMeshDrawn.current) return false;
+  perMeshDrawn.current = true;
+  return opaque;
 }
 
 function isMaterialArray(material: Material | readonly Material[]): material is readonly Material[] {
@@ -77,11 +116,19 @@ export function SurfaceVisibilityGroup({
   surfaceKey,
   name,
   children,
+  opaqueStandIn,
 }: SurfaceVisibilityGroupProps): React.ReactElement {
   const groupRef = useRef<Group>(null);
+  const standInRef = useRef<Group | null>(null);
+  const perMeshRef = useRef<Group>(null);
+  const perMeshDrawn = useRef(false);
   const assemblyOpacity = useRef<number | null>(null);
   const lastOpacity = useRef<number | null>(null);
   const { invalidate } = useThree();
+  const attachStandIn = useCallback((standIn: Group | null) => {
+    standInRef.current = standIn;
+    if (standIn !== null) standIn.raycast = skipDescendantRaycast;
+  }, []);
 
   useFrame((_state, delta) => {
     const group = groupRef.current;
@@ -108,17 +155,30 @@ export function SurfaceVisibilityGroup({
     const opacity = applyXrayOpacity(surfaceKey, localOpacity, useXrayStore.getState().opacity);
 
     if (lastOpacity.current !== null && Math.abs(lastOpacity.current - opacity) < 0.001) {
+      if (selectSurfaceRepresentation(standInRef.current, perMeshRef.current, group.visible, lastOpacity.current, perMeshDrawn)) {
+        invalidate();
+      }
       return;
     }
 
     lastOpacity.current = opacity;
     applyTreeOpacity(group, opacity);
+    selectSurfaceRepresentation(standInRef.current, perMeshRef.current, group.visible, opacity, perMeshDrawn);
     invalidate();
   });
 
   return (
     <group ref={groupRef} name={name}>
-      {children}
+      {opaqueStandIn === undefined ? children : (
+        <>
+          <group ref={attachStandIn} name={`${name}-opaque-stand-in`}>
+            {opaqueStandIn}
+          </group>
+          <group ref={perMeshRef} name={`${name}-per-mesh`}>
+            {children}
+          </group>
+        </>
+      )}
     </group>
   );
 }
