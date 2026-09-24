@@ -1061,6 +1061,7 @@ export {
   QuoteLineItemIdSchema,
   MAX_MINOR_UNIT_AMOUNT,
   MinorUnitAmountSchema,
+  AggregateMinorUnitAmountSchema,
   PROPOSAL_STATUSES,
   ProposalStatusSchema,
   VALID_PROPOSAL_TRANSITIONS,

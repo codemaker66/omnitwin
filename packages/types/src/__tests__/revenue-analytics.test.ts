@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CreateRevenueScenarioSchema,
+  PipelineSummarySchema,
   RevenueScenarioSchema,
   compareRevenueScenarios,
   computeScenarioMarginMinor,
@@ -40,6 +41,22 @@ function scenario(overrides: Partial<RevenueScenario> = {}): RevenueScenario {
 }
 
 describe("revenue analytics contracts", () => {
+  it("bounds a pipeline total by integer precision, not the single-amount ceiling", () => {
+    const summary = {
+      currency: "GBP",
+      pipelineValueMinor: 250_000_000,
+      enquiryCount: 40,
+      proposalCount: 40,
+      acceptedProposalCount: 10,
+      conversionPercent: 25,
+      proposalStatusCounts: { accepted: 10, sent: 30 },
+    };
+    expect(PipelineSummarySchema.safeParse(summary).success).toBe(true);
+    expect(PipelineSummarySchema.safeParse({ ...summary, pipelineValueMinor: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
+    expect(PipelineSummarySchema.safeParse({ ...summary, pipelineValueMinor: -1 }).success).toBe(false);
+    expect(PipelineSummarySchema.safeParse({ ...summary, pipelineValueMinor: 1.5 }).success).toBe(false);
+  });
+
   it("enforces exact integer money margin", () => {
     expect(computeScenarioMarginMinor(1_800_000, 740_000)).toBe(1_060_000);
     expect(RevenueScenarioSchema.safeParse(scenario()).success).toBe(true);

@@ -5,7 +5,7 @@ import { ConfigurationIdSchema } from "./configuration.js";
 import { SpaceIdSchema } from "./space.js";
 import { UserIdSchema } from "./user.js";
 import { CurrencySchema } from "./pricing.js";
-import { QuoteIdSchema, MinorUnitAmountSchema } from "./proposal.js";
+import { AggregateMinorUnitAmountSchema, QuoteIdSchema, MinorUnitAmountSchema } from "./proposal.js";
 
 // ---------------------------------------------------------------------------
 // Revenue and Executive Analytics v0
@@ -203,7 +203,7 @@ export const RevenueSummarySchema = z.object({
   eventId: EventIdSchema,
   currency: CurrencySchema,
   scenarioCount: z.number().int().nonnegative(),
-  totalScenarioRevenueMinor: MinorUnitAmountSchema,
+  totalScenarioRevenueMinor: AggregateMinorUnitAmountSchema,
   bestScenarioId: RevenueScenarioIdSchema.nullable(),
   comfortWarnings: z.number().int().nonnegative(),
   reviewBottlenecks: z.number().int().nonnegative(),
@@ -213,7 +213,7 @@ export type RevenueSummary = z.infer<typeof RevenueSummarySchema>;
 
 export const PipelineSummarySchema = z.object({
   currency: CurrencySchema,
-  pipelineValueMinor: MinorUnitAmountSchema,
+  pipelineValueMinor: AggregateMinorUnitAmountSchema,
   enquiryCount: z.number().int().nonnegative(),
   proposalCount: z.number().int().nonnegative(),
   acceptedProposalCount: z.number().int().nonnegative(),
@@ -235,7 +235,7 @@ export type RoomUtilisationRow = z.infer<typeof RoomUtilisationRowSchema>;
 export const VenueDashboardAnalyticsSchema = z.object({
   generatedAt: z.string().datetime(),
   currency: CurrencySchema,
-  pipelineValueMinor: MinorUnitAmountSchema,
+  pipelineValueMinor: AggregateMinorUnitAmountSchema,
   enquiryConversionPercent: PercentSchema,
   proposalStatusCounts: z.record(z.number().int().nonnegative()),
   roomUtilisation: z.array(RoomUtilisationRowSchema),

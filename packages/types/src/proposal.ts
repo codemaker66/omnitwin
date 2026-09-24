@@ -60,6 +60,18 @@ export const MinorUnitAmountSchema = z
 
 export type MinorUnitAmount = z.infer<typeof MinorUnitAmountSchema>;
 
+/**
+ * A total of many amounts, such as a venue's pipeline or an event's revenue
+ * scenarios. Each amount is capped by MinorUnitAmountSchema, but their sum is
+ * not: a venue with more than £1,000,000 of quotes must still get a total. It
+ * is bounded only by exact integer arithmetic.
+ */
+export const AggregateMinorUnitAmountSchema = z
+  .number()
+  .int("Money must be an integer count of minor units (pence)")
+  .nonnegative("Money must not be negative")
+  .max(Number.MAX_SAFE_INTEGER, "Total exceeds exact integer precision");
+
 // ---------------------------------------------------------------------------
 // Proposal status — matches the role-gated lifecycle the phase-2 routes will
 // enforce. `changes_requested` mirrors the configuration review vocabulary so

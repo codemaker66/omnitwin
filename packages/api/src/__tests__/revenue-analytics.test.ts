@@ -112,6 +112,25 @@ describe("revenue analytics services", () => {
     expect(pipeline.proposalStatusCounts.accepted).toBe(2);
   });
 
+  it("totals a pipeline above the single-amount ceiling instead of failing", () => {
+    // Each quote is capped at £1,000,000; a venue's pipeline is their sum and
+    // must not turn the dashboard into a server error once it passes that.
+    const pipeline = buildPipelineSummary({
+      pipelineValueMinor: 250_000_000,
+      enquiryCount: 40,
+      proposalStatusCounts: { accepted: 10, sent: 30 },
+    });
+    expect(pipeline.pipelineValueMinor).toBe(250_000_000);
+    const dashboard = buildVenueDashboardAnalytics({
+      generatedAt: NOW,
+      pipeline,
+      roomUtilisation: [],
+      revenueScenarios: [],
+      comfortConstraints: [],
+    });
+    expect(dashboard.pipelineValueMinor).toBe(250_000_000);
+  });
+
   it("marks scenario comparison for review when constraints worsen", () => {
     const comparison = comparisonSignals({
       left: scenario(),
