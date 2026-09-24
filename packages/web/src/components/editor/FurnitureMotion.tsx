@@ -4,6 +4,7 @@ import type { Object3D } from "three";
 import {
   clearAllFurnitureSettles,
   furnitureSettleOffset,
+  publishFurnitureSettleFrame,
   stepFurnitureSettles,
 } from "../../lib/furniture-motion.js";
 
@@ -16,7 +17,9 @@ import {
 // The outer `furniture-<id>` group is the free channel: React manages the
 // inner mesh's position and never writes the outer group's, so imperative
 // writes here never fight reconciliation. Groups are looked up by name and
-// cached; a miss (item deleted mid-settle) simply drops the id.
+// cached; a miss (item deleted mid-settle) simply drops the id. Instanced
+// models are drawn outside those groups, so each frame's live ids are then
+// published for the instancing layer to offset the same items identically.
 //
 // Under frameloop="demand" this component SUSTAINS the loop while springs
 // are live — the seeding site (SelectionSystem's pointer-up) is what WAKES
@@ -42,6 +45,7 @@ export function FurnitureMotion(): null {
       applied.clear();
       cache.clear();
       clearAllFurnitureSettles();
+      publishFurnitureSettleFrame([]);
     };
   }, []);
 
@@ -78,6 +82,7 @@ export function FurnitureMotion(): null {
       group.position.set(offset.x, 0, offset.z);
       applied.add(id);
     }
+    publishFurnitureSettleFrame(live);
 
     if (live.length > 0 || applied.size > 0) invalidate();
   });

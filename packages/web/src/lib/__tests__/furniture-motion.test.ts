@@ -5,7 +5,9 @@ import {
   clearAllFurnitureSettles,
   clearFurnitureSettle,
   furnitureSettleOffset,
+  publishFurnitureSettleFrame,
   stepFurnitureSettles,
+  subscribeFurnitureSettleFrames,
 } from "../furniture-motion.js";
 
 // ---------------------------------------------------------------------------
@@ -92,5 +94,33 @@ describe("furniture settle springs", () => {
 
   it("empty registry steps are free and return no ids", () => {
     expect(stepFurnitureSettles(1 / 60)).toEqual([]);
+  });
+
+  it("publishes every applied frame, then one frame without offsets, then nothing", () => {
+    const frames: (readonly string[])[] = [];
+    const unsubscribe = subscribeFurnitureSettleFrames((live) => { frames.push(live); });
+    try {
+      publishFurnitureSettleFrame([]);
+      expect(frames).toEqual([]);
+      beginFurnitureSettle("a", 0.1, 0);
+      let steps = 0;
+      while (steps < 600) {
+        const live = stepFurnitureSettles(1 / 60);
+        publishFurnitureSettleFrame(live);
+        steps += 1;
+        if (live.length === 0) break;
+      }
+      expect(frames).toHaveLength(steps);
+      expect(frames.slice(0, -1).every((live) => live.length === 1 && live[0] === "a")).toBe(true);
+      expect(frames.at(-1)).toEqual([]);
+      publishFurnitureSettleFrame([]);
+      expect(frames).toHaveLength(steps);
+    } finally {
+      unsubscribe();
+    }
+    beginFurnitureSettle("b", 0.1, 0);
+    publishFurnitureSettleFrame(stepFurnitureSettles(1 / 60));
+    publishFurnitureSettleFrame([]);
+    expect(frames.flat()).not.toContain("b");
   });
 });

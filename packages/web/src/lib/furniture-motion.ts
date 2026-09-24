@@ -84,3 +84,30 @@ export function stepFurnitureSettles(dtSeconds: number): readonly string[] {
   }
   return live;
 }
+
+/** Receives the ids that carry an offset this frame. */
+export type FurnitureSettleFrameListener = (live: readonly string[]) => void;
+
+const settleFrameListeners = new Set<FurnitureSettleFrameListener>();
+let lastFrameHadSettles = false;
+
+/**
+ * Follow the offsets as they are applied, for furniture drawn outside its
+ * `furniture-<id>` group (instanced models). Listeners hear each frame that
+ * carries offsets, then one frame without any, so they can return to store
+ * truth. Returns the unsubscribe.
+ */
+export function subscribeFurnitureSettleFrames(listener: FurnitureSettleFrameListener): () => void {
+  settleFrameListeners.add(listener);
+  return () => { settleFrameListeners.delete(listener); };
+}
+
+/**
+ * The applier calls this once per frame, straight after writing this frame's
+ * offsets, so every listener draws the same spring state before the render.
+ */
+export function publishFurnitureSettleFrame(live: readonly string[]): void {
+  if (live.length === 0 && !lastFrameHadSettles) return;
+  lastFrameHadSettles = live.length > 0;
+  for (const listener of settleFrameListeners) listener(live);
+}

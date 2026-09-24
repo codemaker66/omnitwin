@@ -1,14 +1,15 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Instances, Instance } from "@react-three/drei";
 import {
   type BufferGeometry,
+  DynamicDrawUsage,
   Group,
+  InstancedBufferAttribute,
+  InstancedMesh,
   Material,
   Matrix4,
   Mesh,
-  type InstancedMesh,
-  type Object3D,
+  Object3D,
 } from "three";
 import type { PlacedItem } from "../../lib/placement.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
@@ -19,6 +20,7 @@ import {
 import { GltfFurnitureTemplateContext } from "../meshes/GltfFurnitureTemplateContext.js";
 import { isImportedFurnitureMaterial } from "../../lib/gltf-furniture-instance.js";
 import { furnitureMaterialParts } from "../../lib/gltf-furniture-parts.js";
+import { furnitureSettleOffset, subscribeFurnitureSettleFrames } from "../../lib/furniture-motion.js";
 import {
   materialAppearanceSignature,
   mergePartsByMaterial,
@@ -50,6 +52,11 @@ import {
 // owns its geometries/materials and disposes them when the variant set changes
 // or the layer unmounts. Imported models first batch their procedural fallback,
 // then notify the layer when the GLTF template is ready for a fresh harvest.
+//
+// Editable planner furniture writes instance matrices directly (see
+// EditableVariantBatch): a drag re-renders one small component per variant and
+// rewrites only the items that moved, instead of reconciling one React child
+// and recomposing one matrix per item on every frame.
 // ---------------------------------------------------------------------------
 
 interface HarvestedVariant {
@@ -132,21 +139,24 @@ export function collectMeshInstancesForHarvest(root: Object3D): HarvestMeshInsta
   return result;
 }
 
-/** Growth step for the instance matrix pool. See `instanceCapacityFor`. */
+/** Smallest instance matrix pool. See `instanceCapacityFor`. */
 export const INSTANCE_CAPACITY_STEP = 32;
 
 /**
- * Round an instance count up to the next capacity bucket.
+ * Round an instance count up to its pool capacity: the next power of two,
+ * and never below INSTANCE_CAPACITY_STEP.
  *
- * drei allocates `new Float32Array(limit * 16)` once per mount, so `limit`
- * must never be exceeded by the live count. Bucketing trades a little unused
- * buffer for stability: placing chairs 1..32 reuses one pool, and only the
- * 33rd forces a remount. Chairs are placed in tens, so the alternative —
- * keying on the exact count — would rebuild the pool on every single drop.
+ * A pool's matrix buffer is allocated once, and three's node renderer also
+ * sizes the instance-matrix binding it compiles from it, so the live count
+ * must never exceed the capacity; a larger pool means a new InstancedMesh.
+ * Doubling keeps that rare: placing chairs one by one replaces each pool
+ * log2(n) times, and removing items never does.
  */
 export function instanceCapacityFor(count: number): number {
-  if (!Number.isFinite(count) || count <= 0) return INSTANCE_CAPACITY_STEP;
-  return Math.ceil(count / INSTANCE_CAPACITY_STEP) * INSTANCE_CAPACITY_STEP;
+  let capacity = INSTANCE_CAPACITY_STEP;
+  if (!Number.isFinite(count)) return capacity;
+  while (capacity < count) capacity *= 2;
+  return capacity;
 }
 
 /** Harvest a rendered model template into merged-by-material geometries + cloned materials. */
@@ -224,6 +234,238 @@ function applyHarvestedOpacity(
   }
 }
 
+/** One editable variant: shared instance buffers and a mesh per material group. */
+export interface EditableInstancePool {
+  readonly capacity: number;
+  readonly meshes: readonly InstancedMesh[];
+  readonly matrices: InstancedBufferAttribute;
+  /** The placed transform last composed into each slot: x, y, z, rotationY, scale. */
+  readonly written: Float64Array;
+  /** Items drawn at their live grid-settle offset, like their item groups. */
+  readonly settling: Set<string>;
+  /** Slot of each item id, for the items it was built from. */
+  readonly slots: { items: readonly PlacedItem[] | null; readonly byId: Map<string, number> };
+}
+
+const WRITTEN_STRIDE = 5;
+const editableInstanceTransform = new Object3D();
+
+/**
+ * Create the InstancedMesh for every material group of a variant.
+ *
+ * The groups share one matrix buffer, so a moved item is composed and uploaded
+ * once rather than once per material. They also share one buffer of white
+ * per-instance colours: drei's Instances always attached one, and keeping it
+ * keeps the exact shader variant and therefore the exact pixels.
+ */
+export function createEditableInstancePool(
+  variant: HarvestedVariant,
+  capacity: number,
+): EditableInstancePool {
+  const matrices = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+  matrices.setUsage(DynamicDrawUsage);
+  const colors = new InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+  const meshes: InstancedMesh[] = [];
+  for (const group of variant.groups) {
+    const material = variant.materialByKey.get(group.materialKey);
+    const shadows = variant.shadowsByKey.get(group.materialKey);
+    if (material === undefined || shadows === undefined) continue;
+    const mesh = new InstancedMesh(group.geometry, material, 0);
+    mesh.instanceMatrix = matrices;
+    mesh.instanceColor = colors;
+    // One batch holds items anywhere in the room. three computes an
+    // InstancedMesh's culling sphere once and never refreshes it as items
+    // move or arrive, which culled furniture that was on screen; culling a
+    // whole room-spanning batch would rarely skip any work, so it is off, as
+    // for timeline batches.
+    mesh.frustumCulled = false;
+    mesh.castShadow = shadows.castShadow;
+    mesh.receiveShadow = shadows.receiveShadow;
+    mesh.raycast = noRaycast;
+    meshes.push(mesh);
+  }
+  return {
+    capacity,
+    meshes,
+    matrices,
+    written: new Float64Array(capacity * WRITTEN_STRIDE).fill(Number.NaN),
+    settling: new Set(),
+    slots: { items: null, byId: new Map() },
+  };
+}
+
+function editableInstanceScale(item: PlacedItem, itemScale: number): number {
+  return normalizedFurniturePresentationScale(item.scale) * itemScale;
+}
+
+/** Compose one slot: the placed transform, moved like its item group by a settle offset. */
+function composeEditableSlot(
+  pool: EditableInstancePool,
+  slot: number,
+  item: PlacedItem,
+  scale: number,
+  offset: { readonly x: number; readonly z: number } | null,
+): void {
+  editableInstanceTransform.position.set(
+    offset === null ? item.x : item.x + offset.x,
+    item.y,
+    offset === null ? item.z : item.z + offset.z,
+  );
+  editableInstanceTransform.rotation.set(0, item.rotationY, 0);
+  editableInstanceTransform.scale.setScalar(scale);
+  editableInstanceTransform.updateMatrix();
+  editableInstanceTransform.matrix.toArray(pool.matrices.array, slot * 16);
+  const written = slot * WRITTEN_STRIDE;
+  if (offset !== null) {
+    // No longer the placed transform: the next write recomposes it.
+    pool.written[written] = Number.NaN;
+    return;
+  }
+  pool.written[written] = item.x;
+  pool.written[written + 1] = item.y;
+  pool.written[written + 2] = item.z;
+  pool.written[written + 3] = item.rotationY;
+  pool.written[written + 4] = scale;
+}
+
+function uploadEditableSlots(pool: EditableInstancePool, first: number, last: number): void {
+  pool.matrices.addUpdateRange(first * 16, (last - first + 1) * 16);
+  pool.matrices.needsUpdate = true;
+}
+
+/**
+ * Draw `items` from the pool, composing only the slots whose position,
+ * rotation or scale changed since they were last written and uploading just
+ * that span. Returns whether anything drawn changed.
+ */
+export function writeEditableInstancePool(
+  pool: EditableInstancePool,
+  items: readonly PlacedItem[],
+  itemScale: number,
+): boolean {
+  // Never draw past the buffer: a count above capacity would silently drop
+  // (or garble) the extra items while they stayed selectable and saveable.
+  const count = Math.min(items.length, pool.capacity);
+  const { written } = pool;
+  let firstChanged = count;
+  let lastChanged = -1;
+  for (let index = 0; index < count; index += 1) {
+    const item = items[index];
+    if (item === undefined) continue;
+    const scale = editableInstanceScale(item, itemScale);
+    const slot = index * WRITTEN_STRIDE;
+    if (
+      written[slot] === item.x
+      && written[slot + 1] === item.y
+      && written[slot + 2] === item.z
+      && written[slot + 3] === item.rotationY
+      && written[slot + 4] === scale
+    ) {
+      continue;
+    }
+    composeEditableSlot(pool, index, item, scale, null);
+    firstChanged = Math.min(firstChanged, index);
+    lastChanged = index;
+  }
+  let changed = lastChanged >= 0;
+  if (changed) uploadEditableSlots(pool, firstChanged, lastChanged);
+  for (const mesh of pool.meshes) {
+    if (mesh.count === count) continue;
+    mesh.count = count;
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Follow one frame of FurnitureMotion's grid settle: items with a live offset
+ * are drawn exactly where their item groups (linen, covers, labels) are
+ * drawn, and items whose settle ended return to their placed transform.
+ */
+export function drawEditableSettleFrame(
+  pool: EditableInstancePool,
+  items: readonly PlacedItem[],
+  itemScale: number,
+  live: readonly string[],
+): void {
+  if (live.length === 0 && pool.settling.size === 0) return;
+  if (pool.slots.items !== items) {
+    pool.slots.byId.clear();
+    const count = Math.min(items.length, pool.capacity);
+    for (let index = 0; index < count; index += 1) {
+      const item = items[index];
+      if (item !== undefined) pool.slots.byId.set(item.id, index);
+    }
+    pool.slots.items = items;
+  }
+  let first = pool.capacity;
+  let last = -1;
+  const draw = (id: string, offset: { readonly x: number; readonly z: number } | null): void => {
+    const slot = pool.slots.byId.get(id);
+    const item = slot === undefined ? undefined : items[slot];
+    if (slot === undefined || item === undefined) return;
+    composeEditableSlot(pool, slot, item, editableInstanceScale(item, itemScale), offset);
+    first = Math.min(first, slot);
+    last = Math.max(last, slot);
+  };
+  const liveIds = new Set(live);
+  for (const id of pool.settling) {
+    if (liveIds.has(id)) continue;
+    pool.settling.delete(id);
+    draw(id, null);
+  }
+  for (const id of live) {
+    const offset = furnitureSettleOffset(id);
+    if (offset === null || !pool.slots.byId.has(id)) continue;
+    pool.settling.add(id);
+    draw(id, offset);
+  }
+  if (last >= 0) uploadEditableSlots(pool, first, last);
+}
+
+/** Release the pool's instance buffers and renderer state. The layer owns geometry and materials. */
+export function disposeEditableInstancePool(pool: EditableInstancePool): void {
+  for (const mesh of pool.meshes) mesh.dispose();
+}
+
+/**
+ * Editable planner furniture of one variant. A drag re-renders this component
+ * once, not a React child per item, and frames that change nothing do no
+ * instance work. The pool never shrinks while mounted and grows by doubling,
+ * so routine edits keep its meshes and their compiled pipelines.
+ */
+function EditableVariantBatch({
+  variant,
+  items,
+  itemScale,
+}: {
+  readonly variant: HarvestedVariant;
+  readonly items: readonly PlacedItem[];
+  readonly itemScale: number;
+}): React.ReactElement {
+  const invalidate = useThree((state) => state.invalidate);
+  const [heldCapacity, setHeldCapacity] = useState(() => instanceCapacityFor(items.length));
+  const capacity = Math.max(heldCapacity, instanceCapacityFor(items.length));
+  // Growth is adjusted during render so the larger pool is built in this pass.
+  if (capacity !== heldCapacity) setHeldCapacity(capacity);
+  const pool = useMemo(() => createEditableInstancePool(variant, capacity), [variant, capacity]);
+  const drawn = useRef({ items, itemScale });
+
+  useLayoutEffect(() => () => { disposeEditableInstancePool(pool); }, [pool]);
+
+  useLayoutEffect(() => {
+    drawn.current = { items, itemScale };
+    if (writeEditableInstancePool(pool, items, itemScale)) invalidate();
+  }, [invalidate, itemScale, items, pool]);
+
+  // Runs inside FurnitureMotion's frame, before that frame renders.
+  useLayoutEffect(() => subscribeFurnitureSettleFrames((live) => {
+    drawEditableSettleFrame(pool, drawn.current.items, drawn.current.itemScale, live);
+  }), [pool]);
+
+  return <>{pool.meshes.map((mesh) => <primitive key={mesh.uuid} object={mesh} />)}</>;
+}
+
 function DirectInstanceBatch({
   geometry,
   material,
@@ -296,7 +538,10 @@ export function InstancedFurnitureLayer({
   readonly itemScale?: number;
   /** Optional imperative driver used by timeline crossfades without reconciling item trees. */
   readonly opacitySource?: () => number;
-  /** Timeline-only fast path: one raw InstancedMesh update instead of one React child per item. */
+  /**
+   * Timeline previews: an exactly sized InstancedMesh per material group,
+   * rebuilt with each frozen item set. Editable furniture uses pooled batches.
+   */
   readonly directInstances?: boolean;
   /** Catalogue IDs that must use the caller's per-item visible fallback. */
   readonly onFailedVariantIdsChange?: (ids: ReadonlySet<string>) => void;
@@ -406,54 +651,31 @@ export function InstancedFurnitureLayer({
         if (variant === undefined || variantItems === undefined || variantItems.length === 0) {
           return null;
         }
+        if (!directInstances) {
+          return (
+            <EditableVariantBatch
+              key={key}
+              variant={variant}
+              items={variantItems}
+              itemScale={itemScale}
+            />
+          );
+        }
         return variant.groups.map((group, groupIndex) => {
           const material = variant.materialByKey.get(group.materialKey);
           const shadows = variant.shadowsByKey.get(group.materialKey);
           if (material === undefined || shadows === undefined) return null;
-          if (directInstances) {
-            return (
-              <DirectInstanceBatch
-                key={`${key}-${String(groupIndex)}`}
-                geometry={group.geometry}
-                material={material}
-                items={variantItems}
-                itemScale={itemScale}
-                castShadow={shadows.castShadow}
-                receiveShadow={shadows.receiveShadow}
-                setNonPickable={setNonPickable}
-              />
-            );
-          }
-          // `limit` sizes drei's matrix buffer ONCE, inside a useState
-          // initialiser, but the mesh's `count` is recomputed from live props
-          // every frame. Passing the raw length means adding an item of a type
-          // already on screen grows count past the buffer, and the extra
-          // matrices are silently swallowed by typed-array semantics — the
-          // item vanishes while staying selectable and saveable. Bucketing the
-          // capacity and keying on it remounts the pool only when it genuinely
-          // has to grow, rather than on every placement.
-          const capacity = instanceCapacityFor(variantItems.length);
           return (
-            <Instances
-              key={`${key}-${String(groupIndex)}-cap${String(capacity)}`}
-              ref={setNonPickable}
-              limit={capacity}
-              range={variantItems.length}
+            <DirectInstanceBatch
+              key={`${key}-${String(groupIndex)}`}
               geometry={group.geometry}
               material={material}
+              items={variantItems}
+              itemScale={itemScale}
               castShadow={shadows.castShadow}
               receiveShadow={shadows.receiveShadow}
-              dispose={null}
-            >
-              {variantItems.map((item) => (
-                <Instance
-                  key={item.id}
-                  position={[item.x, item.y, item.z]}
-                  rotation={[0, item.rotationY, 0]}
-                  scale={normalizedFurniturePresentationScale(item.scale) * itemScale}
-                />
-              ))}
-            </Instances>
+              setNonPickable={setNonPickable}
+            />
           );
         });
       })}
