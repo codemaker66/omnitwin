@@ -60,13 +60,36 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full353 union requires348 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
+test('full356 union requires351 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
-  assert.deepEqual(result.totals, { inventory: 353, cpu: 348, gpu: 5, ordinaryPasses: 307,
+  assert.deepEqual(result.totals, { inventory: 356, cpu: 351, gpu: 5, ordinaryPasses: 310,
     expectedFailures: 4, originalSkips: 42, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
+
+const approvedSheetAdditions = [
+  'd04ac5b0eb52f15c1dda-b7dfb525a73709529c30',
+  'd04ac5b0eb52f15c1dda-78f7a968c6554c1a7848',
+  'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
+];
+test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
+  assert.equal(baseline.inventoryAdmissions.length, 1);
+  assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
+  for (const id of approvedSheetAdditions) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'hallkeeper.spec.ts');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+});
+for (const id of approvedSheetAdditions) {
+  rejected(`new approved-sheet case ${id} cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}
 rejected('missing CPU shard cannot pass', (input) => input.cpuShards.pop(), /four CPU/);
 rejected('full inventory cannot silently omit a case', (input) => input.inventory.suites.shift(), /missing or extra/);
 rejected('new test identity requires reviewed baseline update', (input) => specs(input.inventory)[0].id = 'new-case', /missing or extra/);

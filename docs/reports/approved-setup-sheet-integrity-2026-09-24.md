@@ -35,6 +35,10 @@ against stale routes, retries and unmounts; downloads validate PDF media type.
 - Read-only production preflight found 69 applied/local migrations, matching
   every historical hash and timestamp, with zero pending entries. There are no
   migration changes in this repair.
+- The new snapshot reader accepted the existing approved production demo in a
+  read-only transaction, preserving its September 7 version-one approval. The
+  new browser regressions also require explicit admission to the pinned browser
+  inventory; the original inventory and outcome requirements remain preserved.
 
 Evidence, screenshots, failed runs and the connected harness are retained at
 `D:/codex/saved-layout-review-proof-20260924/`. Local synthetic fixtures are

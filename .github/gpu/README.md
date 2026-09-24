@@ -1,10 +1,21 @@
 # Browser release verification
 
-The unchanged browser inventory has 353 cases. Four hosted CPU shards execute
-348 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 356 cases. Four hosted CPU shards execute
+351 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job requires both paths and reconciles every
 case against the reviewed inventory, including the original skips and expected
 failures. A missing GPU result is a failed gate, never an exemption.
+
+The original 353 identities, 42 skips and four expected failures are retained.
+The 2026-09-24 admission adds three ordinary Hallkeeper regressions: approved
+sheet load failure and retry, approved PDF failure invalidating printable
+contents, and a successful non-PDF response being rejected. The baseline's
+`inventoryAdmissions` records their exact source and listing provenance;
+the historical `sourceRunId` and `sourceReports` do not claim to have executed
+these additions. A listing enumerates identities only: test-body `test.fail`
+and conditional `test.skip` statuses remain pinned to their reviewed execution
+policy, and the final gate still requires every current case to execute with
+its expected status.
 
 The GPU profile is an observed reference workstation, not qualification of an
 iPhone, iPad, ordinary office PC, photographic reconstruction or aesthetic
