@@ -73,7 +73,7 @@ export async function publicEnquiryRoutes(
     };
 
     if (parsed.data.configurationId !== undefined) {
-      const [config] = await db.select()
+      const [config] = await db.select({ spaceId: configurations.spaceId })
         .from(configurations)
         .where(and(
           eq(configurations.id, parsed.data.configurationId),

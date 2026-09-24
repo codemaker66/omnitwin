@@ -71,14 +71,25 @@ const BatchBody = z.object({
 
 // ---------------------------------------------------------------------------
 // Helper: verify config ownership
+//
+// Runs on every planner save, so it reads only the columns these routes use.
+// A whole row would also carry `thumbnail_url`, a PNG data URL of tens to
+// hundreds of KB that no object route needs.
 // ---------------------------------------------------------------------------
+
+type ConfigAccessRow = Pick<typeof configurations.$inferSelect, "userId" | "venueId" | "spaceId" | "revision">;
 
 async function verifyConfigAccess(
   db: Database,
   configId: string,
   user: JwtUser,
-): Promise<{ config: typeof configurations.$inferSelect } | { error: string; code: string; status: number }> {
-  const [config] = await db.select()
+): Promise<{ config: ConfigAccessRow } | { error: string; code: string; status: number }> {
+  const [config] = await db.select({
+    userId: configurations.userId,
+    venueId: configurations.venueId,
+    spaceId: configurations.spaceId,
+    revision: configurations.revision,
+  })
     .from(configurations)
     .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
     .limit(1);

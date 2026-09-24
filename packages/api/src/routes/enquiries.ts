@@ -129,7 +129,11 @@ export async function enquiryRoutes(
     }
 
     // Verify configuration exists and belongs to the user (or admin)
-    const [config] = await db.select()
+    const [config] = await db.select({
+      userId: configurations.userId,
+      venueId: configurations.venueId,
+      spaceId: configurations.spaceId,
+    })
       .from(configurations)
       .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
       .limit(1);

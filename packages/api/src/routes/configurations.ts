@@ -194,7 +194,14 @@ export async function configurationRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const [config] = await db.select()
+    // Only what the access check and metadata merge read; the response is the
+    // UPDATE's own RETURNING row. Skipping thumbnail_url keeps a metadata save
+    // from reading the stored data URL twice.
+    const [config] = await db.select({
+      userId: configurations.userId,
+      venueId: configurations.venueId,
+      metadata: configurations.metadata,
+    })
       .from(configurations)
       .where(and(eq(configurations.id, params.data.id), isNull(configurations.deletedAt)))
       .limit(1);
@@ -248,7 +255,7 @@ export async function configurationRoutes(
       return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
     }
 
-    const [config] = await db.select()
+    const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId })
       .from(configurations)
       .where(and(eq(configurations.id, params.data.id), isNull(configurations.deletedAt)))
       .limit(1);

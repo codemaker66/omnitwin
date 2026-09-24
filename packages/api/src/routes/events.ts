@@ -471,7 +471,7 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     if (eventRow === null) return;
 
     if (parsed.data.configurationId !== undefined && parsed.data.configurationId !== null) {
-      const [config] = await db.select().from(configurations)
+      const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId }).from(configurations)
         .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
         .limit(1);
       if (config === undefined) {

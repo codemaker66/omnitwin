@@ -166,8 +166,9 @@ export async function publicConfigRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    // Only allow saving to public preview configs
-    const [config] = await db.select()
+    // Only allow saving to public preview configs. Guest autosaves need the
+    // revision and room only — never the stored thumbnail data URL.
+    const [config] = await db.select({ revision: configurations.revision, spaceId: configurations.spaceId })
       .from(configurations)
       .where(and(
         eq(configurations.id, params.data.configId),

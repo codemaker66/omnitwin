@@ -28,7 +28,7 @@ export async function claimConfigRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    const [config] = await db.select()
+    const [config] = await db.select({ isPublicPreview: configurations.isPublicPreview, userId: configurations.userId })
       .from(configurations)
       .where(and(eq(configurations.id, params.data.configId), isNull(configurations.deletedAt)))
       .limit(1);

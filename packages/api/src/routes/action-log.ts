@@ -33,12 +33,14 @@ const ReadQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+// Flushed at every save boundary: read the ownership pivot only, never the
+// row's thumbnail data URL.
 async function verifyConfigAccess(
   db: Database,
   configId: string,
   user: JwtUser,
-): Promise<{ config: typeof configurations.$inferSelect } | { error: string; code: string; status: number }> {
-  const [config] = await db.select()
+): Promise<{ config: Pick<typeof configurations.$inferSelect, "userId" | "venueId"> } | { error: string; code: string; status: number }> {
+  const [config] = await db.select({ userId: configurations.userId, venueId: configurations.venueId })
     .from(configurations)
     .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
     .limit(1);
