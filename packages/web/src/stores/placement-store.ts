@@ -633,6 +633,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
+    // Moving items can only land on items that stay put. Filtering those once
+    // keeps a large multi-item drag linear instead of rescanning the whole
+    // layout for every moving item (30 ms per pointer move at 1,287 items).
+    const stationary = state.placedItems.filter((item) => !ids.has(item.id));
     set({
       placedItems: state.placedItems.map((item) => {
         if (!ids.has(item.id)) return item;
@@ -642,7 +646,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           item.catalogueItemId,
           newX,
           newZ,
-          state.placedItems,
+          stationary,
           ids,
         );
         return { ...item, x: newX, z: newZ, y: surfaceY };

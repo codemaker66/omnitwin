@@ -825,6 +825,35 @@ export function expandIdsToGroupMembers(
 }
 
 /**
+ * Up to about one table group of selected ids, scanning the layout per id is
+ * cheaper than building the group lookup (measured crossover ≈ 11 ids at
+ * 88–1,287 items). Past it the per-id scans grow quadratically: 20 ms per
+ * pointer move for a 1,287-item select-all drag.
+ */
+export const DRAG_GROUP_SCAN_MAX_IDS = 12;
+
+/**
+ * Every item a furniture drag moves: the dragged item's group first, then the
+ * group of each selected id, in that order. Seeding from the dragged item
+ * keeps a table ring intact when selection state lags a pointer frame or holds
+ * only part of the group.
+ */
+export function dragMovingIds(
+  draggedId: string,
+  selectedIds: ReadonlySet<string>,
+  placedItems: readonly PlacedItem[],
+): ReadonlySet<string> {
+  const groupMemberIds = selectedIds.size > DRAG_GROUP_SCAN_MAX_IDS
+    ? createGroupMemberIdsLookup(placedItems)
+    : (itemId: string) => getGroupMemberIds(itemId, placedItems);
+  const moving = new Set<string>(groupMemberIds(draggedId));
+  for (const selectedId of selectedIds) {
+    for (const memberId of groupMemberIds(selectedId)) moving.add(memberId);
+  }
+  return moving;
+}
+
+/**
  * Returns the real-world position of a placed item for display purposes.
  * X and Z are converted from render-space to real-world metres.
  */

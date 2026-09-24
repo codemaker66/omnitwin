@@ -228,7 +228,7 @@ describe("MAX_LEAN_CONSTRAINT_VIOLATION_SKINS — the shipped cap", () => {
 
   it("keeps the placement sweep enabled — a zero cap short-circuits it", () => {
     // Guards the coupling documented at the constraintViolationIds guard in
-    // PlacedFurniture.tsx: returning this to 0 silently disables the O(n²)
+    // PlacedFurniture.tsx: returning this to 0 silently disables the
     // placement sweep as well as the warning skins.
     expect(MAX_LEAN_CONSTRAINT_VIOLATION_SKINS).toBeGreaterThan(0);
   });

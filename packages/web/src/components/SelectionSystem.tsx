@@ -16,7 +16,7 @@ import { useMarkupStore } from "../stores/markup-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
-import { expandIdsToGroupMembers, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
+import { dragMovingIds, expandIdsToGroupMembers, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
 import { computeFluidFurnitureDragFrame } from "../lib/furniture-drag.js";
 import { isSceneFurniturePlacement } from "../lib/table-dressing.js";
 import { useToolStore } from "../stores/tool-store.js";
@@ -680,19 +680,9 @@ export function SelectionSystem(): null {
             const selectedIds = useSelectionStore.getState().selectedIds;
             // Read placed items once for the entire handler — consistent snapshot
             const placedItems = usePlacementStore.getState().placedItems;
-            // Collect all IDs being moved. Seed from the actively dragged
-            // item first so a table ring stays intact even if selection state
-            // lags a pointer frame or contains only part of the group.
-            const allMovingIds = new Set<string>();
+            // Selected items plus their groups, seeded from the dragged item.
             const primaryId = dragItemId.current;
-            for (const gid of getGroupMemberIds(primaryId, placedItems)) {
-              allMovingIds.add(gid);
-            }
-            for (const sid of selectedIds) {
-              for (const gid of getGroupMemberIds(sid, placedItems)) {
-                allMovingIds.add(gid);
-              }
-            }
+            const allMovingIds = dragMovingIds(primaryId, selectedIds, placedItems);
 
             // Move all items in the moving set (selected + group members)
             const primary = placedItems.find((p) => p.id === primaryId);

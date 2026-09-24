@@ -14,6 +14,8 @@ import {
   placedItemRealPosition,
   checkCollision,
   getGroupMemberIds,
+  DRAG_GROUP_SCAN_MAX_IDS,
+  dragMovingIds,
   computeSurfaceHeight,
   snapToPlatformEdge,
   snapToWallEdge,
@@ -462,6 +464,79 @@ describe("getGroupMemberIds", () => {
     const ids = getGroupMemberIds("nonexistent", []);
     expect(ids.size).toBe(1);
     expect(ids.has("nonexistent")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dragMovingIds
+// ---------------------------------------------------------------------------
+
+describe("dragMovingIds", () => {
+  beforeEach(() => { resetPlacedIdCounter(); });
+
+  /** The drag handler's previous inline expansion: one layout scan per id. */
+  function scannedMovingIds(
+    draggedId: string,
+    selectedIds: ReadonlySet<string>,
+    items: readonly PlacedItem[],
+  ): string[] {
+    const moving = new Set<string>(getGroupMemberIds(draggedId, items));
+    for (const selectedId of selectedIds) {
+      for (const memberId of getGroupMemberIds(selectedId, items)) moving.add(memberId);
+    }
+    return [...moving];
+  }
+
+  function layout(): PlacedItem[] {
+    const items: PlacedItem[] = [];
+    for (let group = 0; group < 6; group += 1) {
+      const groupId = `g${String(group)}`;
+      items.push({ ...createPlacedItem("round-table-6ft", group * 4, 0), groupId });
+      for (let seat = 0; seat < 4; seat += 1) {
+        items.push({ ...createPlacedItem("banquet-chair", group * 4 + seat * 0.5, 1), groupId });
+      }
+    }
+    for (let loose = 0; loose < 10; loose += 1) items.push(createPlacedItem("banquet-chair", loose, 8));
+    const firstChair = items[1];
+    if (firstChair === undefined) throw new Error("Expected a chair");
+    // A retained cloth-applicator row in a group, and a later row reusing an id.
+    items.push({ ...createPlacedItem("white-table-cloth", 0, 0), groupId: "g0" });
+    items.push({ ...firstChair, groupId: "g5" });
+    return items;
+  }
+
+  it("moves the same ids in the same order as scanning per selected id", () => {
+    const items = layout();
+    const ids = items.map((item) => item.id);
+    const cloth = ids[ids.length - 2] ?? "";
+    const selections: string[][] = [
+      [],
+      [ids[3] ?? ""],
+      [cloth, "missing-id", ids[0] ?? ""],
+      ids.slice(0, DRAG_GROUP_SCAN_MAX_IDS),
+      ids.slice(0, DRAG_GROUP_SCAN_MAX_IDS + 1),
+      ids.slice(10).reverse(),
+      [...ids, "missing-id"],
+    ];
+    for (const draggedId of [ids[7] ?? "", ids[32] ?? "", cloth, "missing-dragged-id"]) {
+      for (const selection of selections) {
+        const selectedIds = new Set(selection);
+        expect([...dragMovingIds(draggedId, selectedIds, items)])
+          .toEqual(scannedMovingIds(draggedId, selectedIds, items));
+      }
+    }
+  });
+
+  it("keeps whole table rings together when a large selection holds part of a ring", () => {
+    const items = layout();
+    const partialRing = items.filter((item) => item.groupId === "g2").slice(1);
+    const loose = items.filter((item) => item.groupId === null);
+    const selectedIds = new Set([...partialRing, ...loose].map((item) => item.id));
+    expect(selectedIds.size).toBeGreaterThan(DRAG_GROUP_SCAN_MAX_IDS);
+    const moving = dragMovingIds(partialRing[0]?.id ?? "", selectedIds, items);
+    for (const item of items.filter((candidate) => candidate.groupId === "g2")) {
+      expect(moving.has(item.id)).toBe(true);
+    }
   });
 });
 

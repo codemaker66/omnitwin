@@ -131,8 +131,8 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).toContain("renderedConstraintViolationIds");
     // Wiring, not logic: the lean sweep must be scoped to the selection. That
     // is a perf invariant no unit test of the pure helper can see, because it
-    // lives in which arguments the call site passes (49ms vs 0.07ms at 800
-    // items). The cap arithmetic itself is covered in the lean-rules spec.
+    // lives in which arguments the call site passes (the whole layout vs the
+    // selected items). The cap arithmetic itself is covered in the lean-rules spec.
     expect(codeOnly).toMatch(/leanSweepCandidates\(\s*placedItems,\s*selectedIds/);
     expect(codeOnly).toContain("selectedIds");
     expect(codeOnly).toContain("hasConstraintViolation={renderedConstraintViolationIds.has(placed.id)}");

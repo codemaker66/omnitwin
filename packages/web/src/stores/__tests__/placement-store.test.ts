@@ -570,6 +570,52 @@ describe("moveItemsByDelta", () => {
     expect(usePlacementStore.getState().placedItems[0]?.x).toBe(0);
   });
 
+  it("moves a whole layout without rescanning it for every moving item", () => {
+    /** Counts membership tests: the surface scan asks one per item it visits. */
+    class CountingSet extends Set<string> {
+      hasCalls = 0;
+      override has(value: string): boolean {
+        this.hasCalls += 1;
+        return super.has(value);
+      }
+    }
+    const items = Array.from({ length: 300 }, (_unused, index) =>
+      createPlacedItem(index % 2 === 0 ? tableId : chairId, (index % 20) * 3, Math.floor(index / 20) * 3));
+    usePlacementStore.setState({ placedItems: items });
+    const ids = new CountingSet(items.map((item) => item.id));
+
+    usePlacementStore.getState().moveItemsByDelta(ids, 0.5, -0.25);
+
+    // One pass to find what stays put and one to move: linear. Rescanning the
+    // layout per moving item would ask 300 × 300 times.
+    expect(ids.hasCalls).toBeLessThanOrEqual(2 * items.length);
+    const moved = usePlacementStore.getState().placedItems;
+    moved.forEach((item, index) => {
+      expect(item.x).toBe((items[index]?.x ?? Number.NaN) + 0.5);
+      expect(item.z).toBe((items[index]?.z ?? Number.NaN) - 0.25);
+      expect(item.y).toBe(0);
+    });
+  });
+
+  it("lands moving items on stationary surfaces only", () => {
+    const platformX = GRID_SPACING_RENDER * 3;
+    const stationaryPlatform = createPlacedItem(platformId, platformX, 0);
+    const movingPlatform = createPlacedItem(platformId, -platformX, 0);
+    const micStand = createPlacedItem(micStandId, GRID_SPACING_RENDER * 6, 0);
+    usePlacementStore.setState({ placedItems: [stationaryPlatform, movingPlatform, micStand] });
+
+    usePlacementStore.getState().moveItemsByDelta(
+      new Set([micStand.id, movingPlatform.id]),
+      platformX - micStand.x,
+      0,
+    );
+
+    const after = usePlacementStore.getState().placedItems;
+    expect(after.find((item) => item.id === micStand.id)?.y).toBeCloseTo(0.4);
+    expect(after.find((item) => item.id === movingPlatform.id)?.y).toBe(0);
+    expect(after.find((item) => item.id === stationaryPlatform.id)).toBe(stationaryPlatform);
+  });
+
   it("recomputes mic-stand support policy for the fluid drag commit path", () => {
     const table = createPlacedItem(tableId, 0, 0);
     const platformX = GRID_SPACING_RENDER * 3;
