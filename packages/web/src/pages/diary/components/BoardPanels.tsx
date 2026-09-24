@@ -87,6 +87,8 @@ export interface HoldingTrayProps {
   readonly onFocusEntry: (entryId: string) => void;
   readonly enquiries: readonly TrayEnquiry[];
   readonly enquiriesLoading?: boolean;
+  /** More open enquiries exist than the tray lists (it shows the newest). */
+  readonly enquiriesMore?: boolean;
   readonly enquiryError?: string | null;
   readonly onRetryEnquiries?: () => void;
   readonly canConvert: boolean;
@@ -104,6 +106,7 @@ export function HoldingTray({
   onFocusEntry,
   enquiries,
   enquiriesLoading = false,
+  enquiriesMore = false,
   enquiryError = null,
   onRetryEnquiries,
   canConvert,
@@ -182,6 +185,9 @@ export function HoldingTray({
           ))}
         </ul>
       )}
+      {enquiriesMore && enquiries.length > 0 ? (
+        <p className="diary-tray-more">{BOARD_COPY.trayEnquiries.more(enquiries.length)}</p>
+      ) : null}
     </section>
   );
 }

@@ -73,6 +73,28 @@ describe("GET /enquiries", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it("accepts the Diary tray query exactly as the web client encodes it", async () => {
+    const query = new URLSearchParams({ states: "submitted,under_review", order: "created_desc", venueId: VENUE_ID, limit: "51" });
+    const res = await server.inject({
+      method: "GET",
+      url: `/enquiries?${query.toString()}`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+    });
+    expect(res.statusCode).not.toBe(400);
+  });
+
+  it.each(["states=submitted,bogus", "status=draft&states=submitted", "order=newest", "venueId=venue-1"])(
+    "rejects an invalid list query: %s",
+    async (query) => {
+      const res = await server.inject({
+        method: "GET",
+        url: `/enquiries?${query}`,
+        headers: { authorization: `Bearer ${adminToken()}` },
+      });
+      expect(res.statusCode).toBe(400);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

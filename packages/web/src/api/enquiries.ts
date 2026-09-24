@@ -48,12 +48,30 @@ export type StatusHistoryEntry = z.infer<typeof StatusHistoryEntrySchema>;
 // API functions
 // ---------------------------------------------------------------------------
 
+/** GET /enquiries query. A string is the single-status shorthand; anything
+ *  omitted keeps the API default (all visible states, least recently
+ *  updated first, 20 rows). `venueId` narrows the caller's scope only. */
+export interface EnquiryListQuery {
+  readonly status?: string;
+  readonly states?: readonly string[];
+  readonly order?: "updated_asc" | "created_desc";
+  readonly venueId?: string;
+  readonly limit?: number;
+}
+
 export async function listEnquiries(
-  status?: string,
+  query?: string | EnquiryListQuery,
   signal?: AbortSignal,
 ): Promise<Enquiry[]> {
-  const params = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
-  return api.get(`/enquiries${params}`, z.array(EnquirySchema), signal);
+  const options: EnquiryListQuery = typeof query === "string" ? { status: query } : query ?? {};
+  const params = new URLSearchParams();
+  if (options.status !== undefined) params.set("status", options.status);
+  if (options.states !== undefined) params.set("states", options.states.join(","));
+  if (options.order !== undefined) params.set("order", options.order);
+  if (options.venueId !== undefined) params.set("venueId", options.venueId);
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const search = params.toString();
+  return api.get(`/enquiries${search === "" ? "" : `?${search}`}`, z.array(EnquirySchema), signal);
 }
 
 export async function getEnquiry(id: string, signal?: AbortSignal): Promise<Enquiry> {

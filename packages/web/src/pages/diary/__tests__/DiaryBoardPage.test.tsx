@@ -165,6 +165,23 @@ function setUser(role: string): void {
   });
 }
 
+const OTHER_VENUE = "00000000-0000-4000-8000-000000000002";
+
+function trayEnquiry(index: number, state: string): Record<string, unknown> {
+  return {
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    venueId: VENUE, spaceId: GRAND_HALL, configurationId: null, userId: null,
+    guestEmail: null, guestPhone: null, guestName: null, state,
+    name: `Enquiry ${String(index)}`, email: "guest@example.com", preferredDate: null,
+    eventType: "dinner", estimatedGuests: 40, message: null,
+    createdAt: "2026-09-01T09:00:00.000Z", updatedAt: "2026-09-01T09:00:00.000Z",
+  };
+}
+
+function trayEnquiryNames(): string[] {
+  return [...document.querySelectorAll(".diary-tray-enquiry .diary-tray-item-title")].map((node) => node.textContent ?? "");
+}
+
 function renderPage(): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={["/diary?view=week&date=2026-09-16"]}>
@@ -283,6 +300,51 @@ describe("DiaryBoardPage", () => {
     expect(screen.queryByText("Loading open enquiries…")).toBeNull();
     expect(screen.getByText("Fiona MacLeod")).toBeTruthy();
     expect(screen.getByText(/Enquiries could not be refreshed/)).toBeTruthy();
+  });
+
+  it("asks the API for exactly the open states, newest first, for this board's venue", async () => {
+    let resolveRequest: ((rows: unknown[]) => void) | undefined;
+    listEnquiriesMock.mockReturnValue(new Promise((resolve) => { resolveRequest = resolve; }));
+    renderPage();
+    const loading = await screen.findByText("Loading open enquiries…");
+    expect(loading.closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(listEnquiriesMock).toHaveBeenCalledWith(
+      { states: ["submitted", "under_review"], order: "created_desc", venueId: VENUE, limit: 51 },
+      expect.any(AbortSignal),
+    );
+    await act(async () => { resolveRequest?.([trayEnquiry(1, "submitted"), trayEnquiry(2, "under_review")]); });
+    expect(screen.queryByText("Loading open enquiries…")).toBeNull();
+    expect(trayEnquiryNames()).toEqual(["Enquiry 1", "Enquiry 2"]);
+    expect(screen.queryByText(/newest open enquiries/)).toBeNull();
+  });
+
+  it("keeps the server's newest-first order and says when more open enquiries exist", async () => {
+    listEnquiriesMock.mockResolvedValue(Array.from({ length: 51 }, (_, index) => trayEnquiry(index, "submitted")));
+    renderPage();
+    expect(await screen.findByText("Showing the 50 newest open enquiries. Older ones are not listed here.")).toBeTruthy();
+    expect(trayEnquiryNames()).toEqual(Array.from({ length: 50 }, (_, index) => `Enquiry ${String(index)}`));
+  });
+
+  it("cancels the previous venue's request and never shows its late response", async () => {
+    let resolveOld: ((rows: unknown[]) => void) | undefined;
+    listEnquiriesMock.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    renderPage();
+    await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(1); });
+    const oldSignal = listEnquiriesMock.mock.calls[0]?.[1] as AbortSignal;
+    expect(oldSignal.aborted).toBe(false);
+
+    listEnquiriesMock.mockResolvedValue([{ ...trayEnquiry(7, "submitted"), venueId: OTHER_VENUE, name: "Other venue slip" }]);
+    act(() => {
+      const current = useAuthStore.getState().user;
+      if (current !== null) useAuthStore.setState({ user: { ...current, venueId: OTHER_VENUE } });
+    });
+    expect(oldSignal.aborted).toBe(true);
+    expect(listEnquiriesMock).toHaveBeenLastCalledWith(expect.objectContaining({ venueId: OTHER_VENUE }), expect.any(AbortSignal));
+    expect(await screen.findByText("Other venue slip")).toBeTruthy();
+
+    await act(async () => { resolveOld?.([{ ...trayEnquiry(8, "submitted"), name: "Stale first-venue slip" }]); });
+    expect(screen.queryByText("Stale first-venue slip")).toBeNull();
+    expect(screen.getByText("Other venue slip")).toBeTruthy();
   });
   it("renders lanes, blocks, and the legend from the calendar response", async () => {
     renderPage();

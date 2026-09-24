@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
@@ -43,10 +43,27 @@ const TransitionBody = z.object({
   note: z.string().max(1000).nullable().optional(),
 });
 
+// `states` (comma-separated) and `order=created_desc` let one bounded page
+// hold exactly the states a caller shows, newest first — the Diary tray.
+// `venueId` only narrows the caller's existing scope. Without these
+// parameters the list keeps its original contract: every visible state,
+// least recently updated first, 20 per page.
+const ENQUIRY_LIST_ORDERS = ["updated_asc", "created_desc"] as const;
+
+const EnquiryStatesParam = z.string()
+  .transform((value) => [...new Set(value.split(","))])
+  .pipe(z.array(z.enum(ENQUIRY_STATES)).min(1));
+
 const StatusFilterQuery = z.object({
   status: z.enum(ENQUIRY_STATES).optional(),
+  states: EnquiryStatesParam.optional(),
+  order: z.enum(ENQUIRY_LIST_ORDERS).default("updated_asc"),
+  venueId: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
+}).refine((query) => query.status === undefined || query.states === undefined, {
+  message: "Use either status or states, not both",
+  path: ["states"],
 });
 
 // ---------------------------------------------------------------------------
@@ -72,6 +89,13 @@ export async function enquiryRoutes(
     if (query.data.status !== undefined) {
       whereConditions.push(eq(enquiries.state, query.data.status));
     }
+    if (query.data.states !== undefined) {
+      whereConditions.push(inArray(enquiries.state, query.data.states));
+    }
+    // A filter, never a grant: it is ANDed with the caller's scope below.
+    if (query.data.venueId !== undefined) {
+      whereConditions.push(eq(enquiries.venueId, query.data.venueId));
+    }
 
     if (isPlatformAdmin(user)) {
       // Admin sees all
@@ -94,7 +118,9 @@ export async function enquiryRoutes(
       .where(where)
       .limit(query.data.limit)
       .offset(query.data.offset)
-      .orderBy(enquiries.updatedAt);
+      .orderBy(...(query.data.order === "created_desc"
+        ? [desc(enquiries.createdAt), desc(enquiries.id)]
+        : [enquiries.updatedAt]));
 
     return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
   });

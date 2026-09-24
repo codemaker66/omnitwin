@@ -158,6 +158,8 @@ export const BOARD_COPY = {
     dropSeeking: "Drop on a room lane",
     title: "Open enquiries",
     empty: "No open enquiries right now.",
+    more: (shown: number): string =>
+      `Showing the ${String(shown)} newest open enquiries. Older ones are not listed here.`,
     convert: "Pencil in…",
     detail: (eventType: string | null, guests: number | null): string => {
       const parts = [eventType ?? "event", guests === null ? null : `${String(guests)} guests`];

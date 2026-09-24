@@ -63,6 +63,10 @@ const VIEWS: readonly BoardView[] = ["day", "week", "2w"];
 const TOAST_MS = 7_000;
 const NOW_TICK_MS = 60_000;
 const SEVERITY_RANK: Record<ConflictSeverity, number> = { blocking: 3, warning: 2, info: 1 };
+// The tray asks for exactly the states it can pencil in, newest first, for
+// this board's venue. One row beyond the limit only reveals that more exist.
+const TRAY_ENQUIRY_STATES: readonly string[] = ["submitted", "under_review"];
+const TRAY_ENQUIRY_LIMIT = 50;
 
 function isBoardView(value: string | null): value is BoardView {
   return value === "day" || value === "week" || value === "2w" || value === "month";
@@ -121,11 +125,13 @@ export function DiaryBoardPage(): ReactElement {
   const [enquiryState, setEnquiryState] = useState<{
     readonly venueId: string | null;
     readonly rows: readonly Enquiry[];
+    readonly more: boolean;
     readonly status: "loading" | "ready" | "error";
     readonly error: string | null;
-  }>({ venueId, rows: [], status: "loading", error: null });
+  }>({ venueId, rows: [], more: false, status: "loading", error: null });
   const [enquiryRetry, setEnquiryRetry] = useState(0);
   const openEnquiries = enquiryState.venueId === venueId ? enquiryState.rows : [];
+  const moreEnquiries = enquiryState.venueId === venueId && enquiryState.more;
   const enquiriesLoading = enquiryState.venueId !== venueId || enquiryState.status === "loading";
   const enquiryError = enquiryState.venueId === venueId ? enquiryState.error : null;
 
@@ -158,22 +164,31 @@ export function DiaryBoardPage(): ReactElement {
 
   useEffect(() => {
     if (venueId === null) return;
-    let cancelled = false;
-    setEnquiryState((previous) => ({ venueId,
-      rows: previous.venueId === venueId ? previous.rows : [], status: "loading", error: null }));
-    listEnquiries()
-      .then((all) => {
-        if (cancelled) return;
+    // Aborted on a venue switch, a newer refresh or unmount, so an older
+    // response can never land in the tray.
+    const controller = new AbortController();
+    setEnquiryState((previous) => {
+      const sameVenue = previous.venueId === venueId;
+      return { venueId, rows: sameVenue ? previous.rows : [], more: sameVenue && previous.more,
+        status: "loading", error: null };
+    });
+    listEnquiries({ states: TRAY_ENQUIRY_STATES, order: "created_desc", venueId, limit: TRAY_ENQUIRY_LIMIT + 1 },
+      controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        // The server already filters by state; this also covers an API that
+        // predates the `states` parameter.
+        const open = page.filter((enquiry) => TRAY_ENQUIRY_STATES.includes(enquiry.state));
         setEnquiryState({ venueId, status: "ready", error: null,
-          rows: all.filter((enquiry) => enquiry.state === "submitted" || enquiry.state === "under_review") });
+          rows: open.slice(0, TRAY_ENQUIRY_LIMIT), more: page.length > TRAY_ENQUIRY_LIMIT });
       })
       .catch(() => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setEnquiryState((previous) => ({ ...previous, status: "error",
           error: "Enquiries could not be refreshed. Any previously loaded enquiries remain visible." }));
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [venueId, data, enquiryRetry]);
 
@@ -743,6 +758,7 @@ export function DiaryBoardPage(): ReactElement {
                 estimatedGuests: enquiry.estimatedGuests,
               }))}
               enquiriesLoading={enquiriesLoading}
+              enquiriesMore={moreEnquiries}
               enquiryError={enquiryError}
               onRetryEnquiries={() => { setEnquiryRetry((value) => value + 1); }}
               canConvert={writable}
