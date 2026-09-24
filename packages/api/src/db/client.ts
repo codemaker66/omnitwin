@@ -45,6 +45,12 @@ export const NEON_POOL_IDLE_TIMEOUT_MS = 60_000;
  */
 export function createDbConnection(databaseUrl: string): DatabaseConnection {
   const local = isLocalDatabaseUrl(databaseUrl);
+  // Deliberately no connectionTimeoutMillis on the Neon pool yet. Measured with
+  // @neondatabase/serverless 0.10.4 on Node's WebSocket: the timeout cannot tear
+  // down a stalled socket (the shim closes it gracefully, so the query stays
+  // pending), and when it fires mid-handshake pg-pool assigns `message` on a
+  // read-only ErrorEvent — an uncaught TypeError that would end the process.
+  // Re-qualify against a stalled endpoint before adding a bound.
   const pool = local
     ? new PgPool({ connectionString: databaseUrl })
     : new NeonPool({ connectionString: databaseUrl, idleTimeoutMillis: NEON_POOL_IDLE_TIMEOUT_MS });
