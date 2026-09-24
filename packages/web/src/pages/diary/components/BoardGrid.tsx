@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { ReactElement } from "react";
 import type {
   CalendarTurnaroundRule,
@@ -20,8 +20,10 @@ import {
   msToX,
   widthPx,
   type BoardRange,
+  type DayColumn,
 } from "../lib/board-time.js";
-import { laneGaps, laneUtilisation, layoutLane, type PositionedBlock } from "../lib/board-layout.js";
+import { laneGaps, laneUtilisation, layoutLane, type LaneLayout, type PositionedBlock } from "../lib/board-layout.js";
+import type { Ghost } from "../lib/board-drag.js";
 import type { BoardDrag, DragBlockDescriptor } from "../hooks/useBoardDrag.js";
 
 // ---------------------------------------------------------------------------
@@ -115,13 +117,391 @@ function countdownLabel(ms: number): string {
   return `${String(hours)}h ${String(minutes).padStart(2, "0")}m`;
 }
 
-export function BoardGrid(props: BoardGridProps): ReactElement {
+
+interface BoardBlockProps {
+  readonly block: PositionedBlock;
+  readonly roomName: string;
+  readonly range: BoardRange;
+  readonly pxPerHour: number;
+  readonly severity: ConflictSeverity | undefined;
+  readonly writable: boolean;
+  /** The doors countdown, worked out by the lane: the block re-renders only
+   *  when its text changes, not on every minute tick. */
+  readonly countdown: string | null;
+  readonly beingDragged: boolean;
+  readonly handlersFor: BoardDrag["handlersFor"];
+  readonly onOpenBlock: ((blockId: string) => void) | undefined;
+}
+
+/** One booking block. Memoised: its props are primitives or references that
+ *  survive a drag move, so a pointermove re-renders the ghost, not the board. */
+const BoardBlock = memo(function BoardBlock({
+  block,
+  roomName,
+  range,
+  pxPerHour,
+  severity,
+  writable,
+  countdown,
+  beingDragged,
+  handlersFor,
+  onOpenBlock,
+}: BoardBlockProps): ReactElement {
+  const clampedStart = Math.max(block.startMs, range.fromMs);
+  const clampedEnd = Math.min(block.endMs, range.toMs);
+  const left = msToX(clampedStart, range, pxPerHour);
+  const width = Math.max(
+    msToX(clampedEnd, range, pxPerHour) - left,
+    MIN_BLOCK_WIDTH,
+  );
+  const chip = rankChip(block);
+  const isActive = block.entry.status === "active";
+  const descriptor: DragBlockDescriptor = {
+    id: block.entry.id,
+    title: block.entry.title,
+    spaceId: block.entry.spaceId,
+    startMs: block.startMs,
+    endMs: block.endMs,
+    isInk: block.entry.kind === "ink",
+  };
+  const handlers = isActive ? handlersFor(descriptor) : { onClick: () => { onOpenBlock?.(block.entry.id); } };
+  const timeLabel = `${formatWallTime(block.startMs)}–${formatWallTime(block.endMs)}`;
+  const clientName = block.entry.clientName ?? null;
+  const guestCount = block.entry.guestCount ?? null;
+  const faceParts = [
+    clientName,
+    guestCount === null || guestCount === 0 ? null : BOARD_COPY.card.guests(guestCount),
+  ].filter((part): part is string => part !== null);
+  const stateClass = `is-${block.entry.status === "active" ? block.entry.kind : "exited"}`;
+  const ariaLabel = `${block.entry.title} — ${BOARD_COPY.legend[block.entry.kind]}, ${timeLabel}, ${roomName}${faceParts.length === 0 ? "" : `, ${faceParts.join(", ")}`}${countdown === null ? "" : `, ${countdown}`}${chip === null ? "" : `, ${chip}`}${severity === undefined ? "" : ", has a conflict"}${writable && isActive ? `. ${BOARD_COPY.drag.grabHint}` : ""}`;
+
+  return (
+    <button
+      type="button"
+      id={`diary-block-${block.entry.id}`}
+      className={[
+        "diary-block",
+        stateClass,
+        severity !== undefined ? `has-conflict-${severity}` : "",
+        beingDragged ? "is-dragging" : "",
+        block.startMs < range.fromMs ? "is-clipped-start" : "",
+        block.endMs > range.toMs ? "is-clipped-end" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={{
+        left,
+        width,
+        top: LANE_PADDING + block.subRow * SUB_ROW_HEIGHT,
+        height: BLOCK_HEIGHT,
+      }}
+      aria-label={ariaLabel}
+      {...handlers}
+    >
+      <span
+        className="diary-block-card"
+      >
+      <span className="diary-block-main">
+        {width >= TITLE_MIN_WIDTH ? (
+          <span className="diary-block-title">{block.entry.title}</span>
+        ) : null}
+        {countdown !== null && width >= TIME_MIN_WIDTH ? (
+          <span className="diary-block-countdown">{countdown}</span>
+        ) : null}
+        {chip !== null && width >= TIME_MIN_WIDTH ? (
+          <span className="diary-block-chip">{chip}</span>
+        ) : null}
+      </span>
+      {width >= TIME_MIN_WIDTH ? (
+        <span className="diary-block-face">
+          <span className="diary-block-time">{timeLabel}</span>
+          {faceParts.length > 0 && width >= FACE_MIN_WIDTH ? (
+            <span className="diary-block-client">{faceParts.join(" · ")}</span>
+          ) : null}
+        </span>
+      ) : null}
+      {block.segments.length > 0 && width >= TITLE_MIN_WIDTH ? (
+        // The card's run of show, drawn as a SCHEMATIC over
+        // the occupancy extent (setup phases live before
+        // doors, teardown after the end — clamping them to
+        // the booking window would erase them). The booking
+        // window itself is the LIVE band. Decoration with
+        // titles; the timeline's positional truth stays
+        // with the blocks and phases themselves.
+        <span className="diary-block-segments" aria-hidden="true">
+          {(() => {
+            const extentStart = Math.min(
+              block.startMs,
+              ...block.segments.map((segment) => segment.startMs),
+            );
+            const extentEnd = Math.max(
+              block.endMs,
+              ...block.segments.map((segment) => segment.endMs),
+            );
+            const total = extentEnd - extentStart;
+            const bands = [
+              ...block.segments.map((segment) => ({
+                id: segment.id,
+                name: segment.name,
+                startMs: segment.startMs,
+                endMs: segment.endMs,
+                phase: segmentPhase(segment, block),
+              })),
+              {
+                id: `${block.entry.id}:live`,
+                name: block.entry.title,
+                startMs: block.startMs,
+                endMs: block.endMs,
+                phase: "live" as const,
+              },
+            ];
+            return bands.map((band) => {
+              const bandWidthPx = ((band.endMs - band.startMs) / total) * width;
+              return (
+                <span
+                  key={band.id}
+                  className={`diary-block-segment is-${band.phase}`}
+                  style={{
+                    left: `${String(((band.startMs - extentStart) / total) * 100)}%`,
+                    width: `${String(((band.endMs - band.startMs) / total) * 100)}%`,
+                  }}
+                  title={`${BOARD_COPY.card.segments[band.phase]} · ${band.name}`}
+                >
+                  {bandWidthPx >= SEGMENT_LABEL_MIN_PX ? BOARD_COPY.card.segments[band.phase] : null}
+                </span>
+              );
+            });
+          })()}
+        </span>
+      ) : null}
+      {severity === "blocking" ? (
+        <span className="diary-block-stamp" aria-hidden="true">
+          Conflict
+        </span>
+      ) : null}
+      </span>
+    </button>
+  );
+});
+
+interface BoardLaneProps {
+  readonly room: CalendarRoom;
+  readonly lane: LaneLayout;
+  readonly columns: readonly DayColumn[];
+  readonly range: BoardRange;
+  readonly pxPerHour: number;
+  readonly canvasWidth: number;
+  readonly conflictSeverity: ReadonlyMap<string, ConflictSeverity>;
+  readonly writable: boolean;
+  readonly nowMs: number;
+  readonly turnaroundRules: readonly CalendarTurnaroundRule[] | undefined;
+  readonly handlersFor: BoardDrag["handlersFor"];
+  readonly onOpenBlock: ((blockId: string) => void) | undefined;
+  /** The lifted block, if any — constant for the whole drag. */
+  readonly activeBlockId: string | null;
+  /** The ghost only while it is over THIS lane, so a drag move re-renders
+   *  the lanes it leaves and enters and no others. */
+  readonly ghost: Ghost | null;
+}
+
+/** One room: its rail and its lane of columns, gaps, phases, blocks, ghost. */
+const BoardLane = memo(function BoardLane({
+  room,
+  lane,
+  columns,
+  range,
+  pxPerHour,
+  canvasWidth,
+  conflictSeverity,
+  writable,
+  nowMs,
+  turnaroundRules,
+  handlersFor,
+  onOpenBlock,
+  activeBlockId,
+  ghost,
+}: BoardLaneProps): ReactElement {
+  const photo = diaryRoomPhoto(room.slug);
+  const laneHeight = Math.max(118, lane.subRowCount * SUB_ROW_HEIGHT + LANE_PADDING * 2);
+  const activeBookings = lane.blocks.filter((block) => block.entry.status === "active");
+  const inkCount = activeBookings.filter((block) => block.entry.kind === "ink").length;
+  const holdCount = activeBookings.filter((block) => block.entry.kind === "hold").length;
+
+  return (
+    <div className="diary-lane-row" role="row">
+      <div className="diary-rail" role="rowheader">
+        {/* The room's own scan poster (lightweight tier) — a broken
+            or missing file collapses to the typographic rail. */}
+        {photo === null ? null : <img
+          className="diary-rail-photo"
+          src={photo.src}
+          srcSet={photo.srcSet}
+          sizes={DIARY_ROOM_PHOTO_SIZES}
+          style={{ objectPosition: photo.objectPosition }}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          width={photo.width}
+          height={photo.height}
+          onError={(event) => { event.currentTarget.classList.add("is-missing"); }}
+        />}
+        <span className="diary-rail-id">
+          <span className="diary-rail-name">{room.name}</span>
+          {railCapacity(room.slug) !== null ? (
+            <span
+              className="diary-rail-capacity"
+              title={VENUE_TRUTH_PROVENANCE.capacities}
+            >
+              {railCapacity(room.slug)} reception
+            </span>
+          ) : null}
+          <span className="diary-rail-counts">
+            <span className="diary-rail-count is-ink">
+              {BOARD_COPY.lane.inkCount(inkCount)}
+            </span>
+            <span className="diary-rail-count is-hold">
+              {BOARD_COPY.lane.holdCount(holdCount)}
+            </span>
+          </span>
+          {(() => {
+            const pct = Math.round(laneUtilisation(lane.blocks, range) * 100);
+            return (
+              <span
+                className="diary-rail-utilisation"
+                title={BOARD_COPY.rail.utilisationNote}
+              >
+                {pct}%
+              </span>
+            );
+          })()}
+        </span>
+      </div>
+      <div
+        className="diary-lane"
+        data-diary-lane={room.id}
+        style={{ width: canvasWidth, height: laneHeight }}
+      >
+        {columns.map((column) => (
+          <div
+            key={column.startMs}
+            className={`diary-lane-col${column.isWeekend ? " is-weekend" : ""}`}
+            style={{
+              left: msToX(column.startMs, range, pxPerHour),
+              width: widthPx(column.startMs, column.endMs, pxPerHour),
+            }}
+            aria-hidden="true"
+          />
+        ))}
+
+        {laneGaps(lane.blocks, turnaroundRules, room.id).map((gap) => {
+          const gapStart = Math.max(gap.startMs, range.fromMs);
+          const gapEnd = Math.min(gap.endMs, range.toMs);
+          if (gapEnd <= gapStart) return null;
+          const gapLeft = msToX(gapStart, range, pxPerHour);
+          const gapWidth = widthPx(gapStart, gapEnd, pxPerHour);
+          if (gapWidth < GAP_LABEL_MIN_PX) return null;
+          return (
+            <span
+              key={gap.id}
+              className={`diary-gap${gap.tight ? " is-tight" : ""}`}
+              style={{ left: gapLeft, width: gapWidth }}
+              aria-hidden="true"
+            >
+              <span className="diary-gap-line" />
+              <span className="diary-gap-label">{countdownLabel(gap.endMs - gap.startMs)}</span>
+              {gap.tight && gap.guidelineMinutes !== null && gapWidth >= GAP_NOTE_MIN_PX ? (
+                <span className="diary-gap-note">
+                  {BOARD_COPY.card.tightGap(gap.guidelineMinutes)}
+                </span>
+              ) : null}
+            </span>
+          );
+        })}
+
+        {lane.orphanPhases.map((positioned) => {
+          const left = msToX(
+            Math.max(positioned.startMs, range.fromMs),
+            range,
+            pxPerHour,
+          );
+          const right = msToX(Math.min(positioned.endMs, range.toMs), range, pxPerHour);
+          return (
+            <div
+              key={positioned.phase.id}
+              className="diary-phase-strip"
+              style={{
+                left,
+                width: Math.max(right - left, MIN_BLOCK_WIDTH),
+                top:
+                  LANE_PADDING + positioned.subRow * SUB_ROW_HEIGHT + BLOCK_HEIGHT - 14,
+              }}
+              title={`${positioned.phase.eventName} — ${positioned.phase.name}`}
+            >
+              <span className="diary-phase-strip-label">
+                {positioned.phase.eventName} · {positioned.phase.name}
+              </span>
+            </div>
+          );
+        })}
+
+        {lane.blocks.map((block) => {
+          const startsInMs = block.startMs - nowMs;
+          const countdown =
+            block.entry.status === "active" && block.entry.kind === "ink" && startsInMs > 0 && startsInMs <= COUNTDOWN_WINDOW_MS
+              ? BOARD_COPY.card.doorsIn(countdownLabel(startsInMs))
+              : null;
+          return (
+            <BoardBlock
+              key={block.entry.id}
+              block={block}
+              roomName={room.name}
+              range={range}
+              pxPerHour={pxPerHour}
+              severity={conflictSeverity.get(block.entry.id)}
+              writable={writable}
+              countdown={countdown}
+              beingDragged={activeBlockId === block.entry.id}
+              handlersFor={handlersFor}
+              onOpenBlock={onOpenBlock}
+            />
+          );
+        })}
+
+        {ghost !== null ? (
+          <div
+            className={`diary-ghost is-${ghost.validity.kind}`}
+            style={{
+              left: msToX(Math.max(ghost.startMs, range.fromMs), range, pxPerHour),
+              width: Math.max(
+                msToX(Math.min(ghost.endMs, range.toMs), range, pxPerHour) -
+                  msToX(Math.max(ghost.startMs, range.fromMs), range, pxPerHour),
+                MIN_BLOCK_WIDTH,
+              ),
+            }}
+            aria-hidden="true"
+          >
+            <span className="diary-ghost-time">
+              {formatWallTime(ghost.startMs)}–{formatWallTime(ghost.endMs)}
+            </span>
+            {ghost.validity.kind !== "ok" ? (
+              <span className="diary-ghost-reason">{ghost.validity.reason}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+});
+
+/** Memoised: the page re-renders for toasts, presence and enquiry loads that
+ *  leave the board untouched; `drag` keeps one identity per drag state. */
+export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactElement {
   const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
-  const columns = dayColumns(range);
-  const ticks = range.view === "day" ? hourTicks(range) : [];
+  const columns = useMemo(() => dayColumns(range), [range]);
+  const ticks = useMemo(() => (range.view === "day" ? hourTicks(range) : []), [range]);
   const nowVisible = nowMs >= range.fromMs && nowMs < range.toMs;
-  const ghost = drag.ghost;
+  const { ghost, activeBlockId, handlersFor } = drag;
   // Packing depends only on the entries — never recompute it per pointermove
   // while the drag prop churns (review P2).
   const lanes = useMemo(
@@ -163,302 +543,25 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
         </div>
 
         <div className="diary-lanes">
-          {rooms.map((room) => {
-            const photo = diaryRoomPhoto(room.slug);
-            const lane = lanes.get(room.id) ?? layoutLane([], room.id);
-            const laneHeight = Math.max(118, lane.subRowCount * SUB_ROW_HEIGHT + LANE_PADDING * 2);
-            const activeBookings = lane.blocks.filter((block) => block.entry.status === "active");
-            const inkCount = activeBookings.filter((block) => block.entry.kind === "ink").length;
-            const holdCount = activeBookings.filter((block) => block.entry.kind === "hold").length;
-
-            return (
-              <div key={room.id} className="diary-lane-row" role="row">
-                <div className="diary-rail" role="rowheader">
-                  {/* The room's own scan poster (lightweight tier) — a broken
-                      or missing file collapses to the typographic rail. */}
-                  {photo === null ? null : <img
-                    className="diary-rail-photo"
-                    src={photo.src}
-                    srcSet={photo.srcSet}
-                    sizes={DIARY_ROOM_PHOTO_SIZES}
-                    style={{ objectPosition: photo.objectPosition }}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    width={photo.width}
-                    height={photo.height}
-                    onError={(event) => { event.currentTarget.classList.add("is-missing"); }}
-                  />}
-                  <span className="diary-rail-id">
-                    <span className="diary-rail-name">{room.name}</span>
-                    {railCapacity(room.slug) !== null ? (
-                      <span
-                        className="diary-rail-capacity"
-                        title={VENUE_TRUTH_PROVENANCE.capacities}
-                      >
-                        {railCapacity(room.slug)} reception
-                      </span>
-                    ) : null}
-                    <span className="diary-rail-counts">
-                      <span className="diary-rail-count is-ink">
-                        {BOARD_COPY.lane.inkCount(inkCount)}
-                      </span>
-                      <span className="diary-rail-count is-hold">
-                        {BOARD_COPY.lane.holdCount(holdCount)}
-                      </span>
-                    </span>
-                    {(() => {
-                      const pct = Math.round(laneUtilisation(lane.blocks, range) * 100);
-                      return (
-                        <span
-                          className="diary-rail-utilisation"
-                          title={BOARD_COPY.rail.utilisationNote}
-                        >
-                          {pct}%
-                        </span>
-                      );
-                    })()}
-                  </span>
-                </div>
-                <div
-                  className="diary-lane"
-                  data-diary-lane={room.id}
-                  style={{ width: canvasWidth, height: laneHeight }}
-                >
-                  {columns.map((column) => (
-                    <div
-                      key={column.startMs}
-                      className={`diary-lane-col${column.isWeekend ? " is-weekend" : ""}`}
-                      style={{
-                        left: msToX(column.startMs, range, pxPerHour),
-                        width: widthPx(column.startMs, column.endMs, pxPerHour),
-                      }}
-                      aria-hidden="true"
-                    />
-                  ))}
-
-                  {laneGaps(lane.blocks, turnaroundRules, room.id).map((gap) => {
-                    const gapStart = Math.max(gap.startMs, range.fromMs);
-                    const gapEnd = Math.min(gap.endMs, range.toMs);
-                    if (gapEnd <= gapStart) return null;
-                    const gapLeft = msToX(gapStart, range, pxPerHour);
-                    const gapWidth = widthPx(gapStart, gapEnd, pxPerHour);
-                    if (gapWidth < GAP_LABEL_MIN_PX) return null;
-                    return (
-                      <span
-                        key={gap.id}
-                        className={`diary-gap${gap.tight ? " is-tight" : ""}`}
-                        style={{ left: gapLeft, width: gapWidth }}
-                        aria-hidden="true"
-                      >
-                        <span className="diary-gap-line" />
-                        <span className="diary-gap-label">{countdownLabel(gap.endMs - gap.startMs)}</span>
-                        {gap.tight && gap.guidelineMinutes !== null && gapWidth >= GAP_NOTE_MIN_PX ? (
-                          <span className="diary-gap-note">
-                            {BOARD_COPY.card.tightGap(gap.guidelineMinutes)}
-                          </span>
-                        ) : null}
-                      </span>
-                    );
-                  })}
-
-                  {lane.orphanPhases.map((positioned) => {
-                    const left = msToX(
-                      Math.max(positioned.startMs, range.fromMs),
-                      range,
-                      pxPerHour,
-                    );
-                    const right = msToX(Math.min(positioned.endMs, range.toMs), range, pxPerHour);
-                    return (
-                      <div
-                        key={positioned.phase.id}
-                        className="diary-phase-strip"
-                        style={{
-                          left,
-                          width: Math.max(right - left, MIN_BLOCK_WIDTH),
-                          top:
-                            LANE_PADDING + positioned.subRow * SUB_ROW_HEIGHT + BLOCK_HEIGHT - 14,
-                        }}
-                        title={`${positioned.phase.eventName} — ${positioned.phase.name}`}
-                      >
-                        <span className="diary-phase-strip-label">
-                          {positioned.phase.eventName} · {positioned.phase.name}
-                        </span>
-                      </div>
-                    );
-                  })}
-
-                  {lane.blocks.map((block) => {
-                    const clampedStart = Math.max(block.startMs, range.fromMs);
-                    const clampedEnd = Math.min(block.endMs, range.toMs);
-                    const left = msToX(clampedStart, range, pxPerHour);
-                    const width = Math.max(
-                      msToX(clampedEnd, range, pxPerHour) - left,
-                      MIN_BLOCK_WIDTH,
-                    );
-                    const severity = conflictSeverity.get(block.entry.id);
-                    const chip = rankChip(block);
-                    const isActive = block.entry.status === "active";
-                    const descriptor: DragBlockDescriptor = {
-                      id: block.entry.id,
-                      title: block.entry.title,
-                      spaceId: block.entry.spaceId,
-                      startMs: block.startMs,
-                      endMs: block.endMs,
-                      isInk: block.entry.kind === "ink",
-                    };
-                    const handlers = isActive ? drag.handlersFor(descriptor) : { onClick: () => { onOpenBlock?.(block.entry.id); } };
-                    const timeLabel = `${formatWallTime(block.startMs)}–${formatWallTime(block.endMs)}`;
-                    const startsInMs = block.startMs - nowMs;
-                    const countdown =
-                      isActive && block.entry.kind === "ink" && startsInMs > 0 && startsInMs <= COUNTDOWN_WINDOW_MS
-                        ? BOARD_COPY.card.doorsIn(countdownLabel(startsInMs))
-                        : null;
-                    const clientName = block.entry.clientName ?? null;
-                    const guestCount = block.entry.guestCount ?? null;
-                    const faceParts = [
-                      clientName,
-                      guestCount === null || guestCount === 0 ? null : BOARD_COPY.card.guests(guestCount),
-                    ].filter((part): part is string => part !== null);
-                    const stateClass = `is-${block.entry.status === "active" ? block.entry.kind : "exited"}`;
-                    const beingDragged = drag.activeBlockId === block.entry.id;
-                    const ariaLabel = `${block.entry.title} — ${BOARD_COPY.legend[block.entry.kind]}, ${timeLabel}, ${room.name}${faceParts.length === 0 ? "" : `, ${faceParts.join(", ")}`}${countdown === null ? "" : `, ${countdown}`}${chip === null ? "" : `, ${chip}`}${severity === undefined ? "" : ", has a conflict"}${writable && isActive ? `. ${BOARD_COPY.drag.grabHint}` : ""}`;
-
-                    return (
-                      <button
-                        key={block.entry.id}
-                        type="button"
-                        id={`diary-block-${block.entry.id}`}
-                        className={[
-                          "diary-block",
-                          stateClass,
-                          severity !== undefined ? `has-conflict-${severity}` : "",
-                          beingDragged ? "is-dragging" : "",
-                          block.startMs < range.fromMs ? "is-clipped-start" : "",
-                          block.endMs > range.toMs ? "is-clipped-end" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        style={{
-                          left,
-                          width,
-                          top: LANE_PADDING + block.subRow * SUB_ROW_HEIGHT,
-                          height: BLOCK_HEIGHT,
-                        }}
-                        aria-label={ariaLabel}
-                        {...handlers}
-                      >
-                        <span
-                          className="diary-block-card"
-                        >
-                        <span className="diary-block-main">
-                          {width >= TITLE_MIN_WIDTH ? (
-                            <span className="diary-block-title">{block.entry.title}</span>
-                          ) : null}
-                          {countdown !== null && width >= TIME_MIN_WIDTH ? (
-                            <span className="diary-block-countdown">{countdown}</span>
-                          ) : null}
-                          {chip !== null && width >= TIME_MIN_WIDTH ? (
-                            <span className="diary-block-chip">{chip}</span>
-                          ) : null}
-                        </span>
-                        {width >= TIME_MIN_WIDTH ? (
-                          <span className="diary-block-face">
-                            <span className="diary-block-time">{timeLabel}</span>
-                            {faceParts.length > 0 && width >= FACE_MIN_WIDTH ? (
-                              <span className="diary-block-client">{faceParts.join(" · ")}</span>
-                            ) : null}
-                          </span>
-                        ) : null}
-                        {block.segments.length > 0 && width >= TITLE_MIN_WIDTH ? (
-                          // The card's run of show, drawn as a SCHEMATIC over
-                          // the occupancy extent (setup phases live before
-                          // doors, teardown after the end — clamping them to
-                          // the booking window would erase them). The booking
-                          // window itself is the LIVE band. Decoration with
-                          // titles; the timeline's positional truth stays
-                          // with the blocks and phases themselves.
-                          <span className="diary-block-segments" aria-hidden="true">
-                            {(() => {
-                              const extentStart = Math.min(
-                                block.startMs,
-                                ...block.segments.map((segment) => segment.startMs),
-                              );
-                              const extentEnd = Math.max(
-                                block.endMs,
-                                ...block.segments.map((segment) => segment.endMs),
-                              );
-                              const total = extentEnd - extentStart;
-                              const bands = [
-                                ...block.segments.map((segment) => ({
-                                  id: segment.id,
-                                  name: segment.name,
-                                  startMs: segment.startMs,
-                                  endMs: segment.endMs,
-                                  phase: segmentPhase(segment, block),
-                                })),
-                                {
-                                  id: `${block.entry.id}:live`,
-                                  name: block.entry.title,
-                                  startMs: block.startMs,
-                                  endMs: block.endMs,
-                                  phase: "live" as const,
-                                },
-                              ];
-                              return bands.map((band) => {
-                                const bandWidthPx = ((band.endMs - band.startMs) / total) * width;
-                                return (
-                                  <span
-                                    key={band.id}
-                                    className={`diary-block-segment is-${band.phase}`}
-                                    style={{
-                                      left: `${String(((band.startMs - extentStart) / total) * 100)}%`,
-                                      width: `${String(((band.endMs - band.startMs) / total) * 100)}%`,
-                                    }}
-                                    title={`${BOARD_COPY.card.segments[band.phase]} · ${band.name}`}
-                                  >
-                                    {bandWidthPx >= SEGMENT_LABEL_MIN_PX ? BOARD_COPY.card.segments[band.phase] : null}
-                                  </span>
-                                );
-                              });
-                            })()}
-                          </span>
-                        ) : null}
-                        {severity === "blocking" ? (
-                          <span className="diary-block-stamp" aria-hidden="true">
-                            Conflict
-                          </span>
-                        ) : null}
-                        </span>
-                      </button>
-                    );
-                  })}
-
-                  {ghost !== null && ghost.spaceId === room.id ? (
-                    <div
-                      className={`diary-ghost is-${ghost.validity.kind}`}
-                      style={{
-                        left: msToX(Math.max(ghost.startMs, range.fromMs), range, pxPerHour),
-                        width: Math.max(
-                          msToX(Math.min(ghost.endMs, range.toMs), range, pxPerHour) -
-                            msToX(Math.max(ghost.startMs, range.fromMs), range, pxPerHour),
-                          MIN_BLOCK_WIDTH,
-                        ),
-                      }}
-                      aria-hidden="true"
-                    >
-                      <span className="diary-ghost-time">
-                        {formatWallTime(ghost.startMs)}–{formatWallTime(ghost.endMs)}
-                      </span>
-                      {ghost.validity.kind !== "ok" ? (
-                        <span className="diary-ghost-reason">{ghost.validity.reason}</span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
+          {rooms.map((room) => (
+            <BoardLane
+              key={room.id}
+              room={room}
+              lane={lanes.get(room.id) ?? layoutLane([], room.id)}
+              columns={columns}
+              range={range}
+              pxPerHour={pxPerHour}
+              canvasWidth={canvasWidth}
+              conflictSeverity={conflictSeverity}
+              writable={writable}
+              nowMs={nowMs}
+              turnaroundRules={turnaroundRules}
+              handlersFor={handlersFor}
+              onOpenBlock={onOpenBlock}
+              activeBlockId={activeBlockId}
+              ghost={ghost !== null && ghost.spaceId === room.id ? ghost : null}
+            />
+          ))}
 
           {nowVisible ? (
             <div
@@ -475,4 +578,4 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
       </div>
     </div>
   );
-}
+});

@@ -79,6 +79,48 @@ describe("moveGhostTo (pointer)", () => {
     if (state.phase !== "dragging") throw new Error("expected dragging");
     expect(state.ghost.startMs).toBe(T17 + 7 * 60_000);
   });
+
+  it("returns the SAME state while the snapped slot and its verdict are unchanged (no re-render per pointermove)", () => {
+    const moved = moveGhostTo(lifted(), LANE_B, T17 + 16 * 60_000, env());
+    expect(moveGhostTo(moved, LANE_B, T17 + 14 * 60_000, env())).toBe(moved);
+    expect(moveGhostTo(moved, LANE_B, T17 + 22 * 60_000, env())).toBe(moved);
+    // Holding the origin slot keeps the lifted state itself.
+    const origin = lifted();
+    expect(moveGhostTo(origin, LANE_A, T17 + 5 * 60_000, env())).toBe(origin);
+  });
+
+  it("returns a new state when the slot, the lane or the verdict changes", () => {
+    const moved = moveGhostTo(lifted(), LANE_A, T17 + 16 * 60_000, env());
+    const later = moveGhostTo(moved, LANE_A, T17 + 23 * 60_000, env());
+    expect(later).not.toBe(moved);
+    if (later.phase !== "dragging") throw new Error("expected dragging");
+    expect(later.ghost.startMs).toBe(T17 + 30 * 60_000);
+    const otherLane = moveGhostTo(moved, LANE_C, T17 + 16 * 60_000, env());
+    expect(otherLane).not.toBe(moved);
+    // Same slot, but the board refreshed and an ink now covers it: the
+    // verdict is re-checked on every move, exactly as before.
+    const covered = moveGhostTo(moved, LANE_A, T17 + 16 * 60_000, env({
+      inksByLane: new Map([[LANE_A, [{ id: "ink-new", startMs: T18, endMs: T23, title: "New ink" }]]]),
+    }));
+    expect(covered).not.toBe(moved);
+    if (covered.phase !== "dragging") throw new Error("expected dragging");
+    expect(covered.ghost.validity).toEqual({
+      kind: "warning",
+      reason: 'Lands under "New ink" — a pencil here cannot convert while that ink stands.',
+    });
+    expect(moveGhostTo(covered, LANE_A, T17 + 20 * 60_000, env({
+      inksByLane: new Map([[LANE_A, [{ id: "ink-new", startMs: T18, endMs: T23, title: "New ink" }]]]),
+    }))).toBe(covered);
+  });
+
+  it("a move from the confirming phase still returns to dragging", () => {
+    const ink = moveGhostTo(lifted({ isInk: true, blockId: "ink-self" }), LANE_C, T18, env({ isInk: true }));
+    const confirming = dropDrag(ink, env({ isInk: true })).state;
+    expect(confirming.phase).toBe("confirming");
+    const moved = moveGhostTo(confirming, LANE_C, T18, env({ isInk: true }));
+    expect(moved).not.toBe(confirming);
+    expect(moved.phase).toBe("dragging");
+  });
 });
 
 describe("nudgeGhost (keyboard)", () => {
@@ -99,6 +141,14 @@ describe("nudgeGhost (keyboard)", () => {
     state = nudgeGhost(state, "up", env());
     if (state.phase !== "dragging") throw new Error("expected dragging");
     expect(state.ghost.spaceId).toBe(LANE_A);
+  });
+
+  it("a clamped nudge that goes nowhere keeps the same state", () => {
+    const top = lifted();
+    expect(nudgeGhost(top, "up", env())).toBe(top);
+    const bottom = nudgeGhost(nudgeGhost(top, "down", env()), "down", env());
+    expect(nudgeGhost(bottom, "down", env())).toBe(bottom);
+    expect(nudgeGhost(top, "right", env())).not.toBe(top);
   });
 });
 

@@ -1,37 +1,41 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { BOARD_COPY } from "../board-copy.js";
+import {
+  findPaletteResults,
+  type PaletteCalendar,
+  type PaletteEnquiry,
+  type PaletteResult,
+} from "../lib/board-palette.js";
+
+export type { PaletteResult } from "../lib/board-palette.js";
 
 // ---------------------------------------------------------------------------
 // The board's finding palette (C1) — Ctrl/Cmd-K. Searches what the board
 // already holds in memory (rooms, the visible range's bookings, open
 // enquiries); the empty state says so honestly rather than pretending to
-// search the whole diary. Presentation only: the page owns the matching.
+// search the whole diary. The query lives here rather than in the page, so a
+// keystroke re-renders the palette alone, never the board behind it; closing
+// unmounts the palette, so every opening starts from an empty query.
 // ---------------------------------------------------------------------------
 
-export interface PaletteResult {
-  readonly kind: "room" | "booking" | "enquiry";
-  readonly id: string;
-  readonly label: string;
-  readonly detail: string;
-}
-
 export interface BoardPaletteProps {
-  readonly query: string;
-  readonly results: readonly PaletteResult[];
-  readonly onQueryChange: (query: string) => void;
+  /** The loaded calendar; null while it is still loading (no results yet). */
+  readonly data: PaletteCalendar | null;
+  readonly enquiries: readonly PaletteEnquiry[];
   readonly onPick: (result: PaletteResult) => void;
   readonly onClose: () => void;
 }
 
 export function BoardPalette({
-  query,
-  results,
-  onQueryChange,
+  data,
+  enquiries,
   onPick,
   onClose,
 }: BoardPaletteProps): ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [query, setQuery] = useState("");
+  const results = useMemo(() => findPaletteResults(query, data, enquiries), [query, data, enquiries]);
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -56,7 +60,7 @@ export function BoardPalette({
           value={query}
           placeholder={BOARD_COPY.palette.placeholder}
           onChange={(event) => {
-            onQueryChange(event.target.value);
+            setQuery(event.target.value);
           }}
           onKeyDown={(event) => {
             if (event.key === "Escape") {

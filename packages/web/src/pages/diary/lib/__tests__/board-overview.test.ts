@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarBookingEntry, CalendarEntry, CalendarPhaseEntry } from "@omnitwin/types";
-import { bookingStateLabel, bookingTimeLabel, entriesForDay, firstVisibleDay } from "../board-overview.js";
-import { boardRange, dayColumns, type DayColumn } from "../board-time.js";
+import {
+  bookingStateLabel,
+  bookingTimeLabel,
+  buildOverviewIndex,
+  entriesForDay,
+  firstVisibleDay,
+  type OverviewIndex,
+} from "../board-overview.js";
+import { boardRange, dayColumns, type BoardRange, type DayColumn } from "../board-time.js";
 
 const SPACE = "00000000-0000-4000-8000-000000000001";
 const OTHER_SPACE = "00000000-0000-4000-8000-000000000002";
@@ -153,5 +160,141 @@ describe("overview exact labels", () => {
     { status: "lost", label: "Lost" },
   ] as const)("preserves the real historical exit status: $status", ({ status, label }) => {
     expect(bookingStateLabel(booking("history", { kind: "hold", status, state: status }))).toBe(label);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The overview index must reproduce the per-cell computation it replaced:
+// entriesForDay per room × day, firstVisibleDay per entry, and the labels.
+// ---------------------------------------------------------------------------
+
+const THIRD_SPACE = "00000000-0000-4000-8000-000000000004";
+const SPACES = [SPACE, OTHER_SPACE, THIRD_SPACE];
+const QUARTER = 15 * 60_000;
+
+function phase(id: string, overrides: Partial<CalendarPhaseEntry> = {}): CalendarPhaseEntry {
+  return {
+    entryType: "phase", id, spaceId: SPACE, eventId: "00000000-0000-4000-8000-000000000003",
+    eventName: "Setup-only event", name: "Setup",
+    startsAt: "2026-09-07T07:30:00.000Z", endsAt: "2026-09-07T07:45:00.000Z", sortOrder: 0,
+    ...overrides,
+  };
+}
+
+function expectPerCellEquivalence(entries: readonly CalendarEntry[], range: BoardRange): OverviewIndex {
+  const days = dayColumns(range);
+  const index = buildOverviewIndex(entries, days);
+  const anchors = new Map(entries.map((entry) => [entry, firstVisibleDay(entry, range)]));
+  let cards = 0;
+  for (const spaceId of SPACES) {
+    const roomCells = index.cells.get(spaceId);
+    for (const day of days) {
+      const items = roomCells?.get(day.startMs) ?? [];
+      expect(items.map((item) => item.entry)).toEqual(entriesForDay(entries, spaceId, day));
+      for (const item of items) {
+        cards += 1;
+        expect(item.timeLabel).toBe(bookingTimeLabel(item.entry));
+        expect(item.anchorDayMs).toBe(anchors.get(item.entry));
+        expect(item.startMs < day.startMs).toBe(Date.parse(item.entry.startsAt) < day.startMs);
+        if (item.type === "booking") expect(item.stateLabel).toBe(bookingStateLabel(item.entry));
+        else expect(item.entry.entryType).toBe("phase");
+      }
+    }
+    expect(index.activeBookings.get(spaceId) ?? 0).toBe(
+      entries.filter((entry) => entry.spaceId === spaceId && entry.entryType === "booking" && entry.status === "active").length,
+    );
+  }
+  expect(cards).toBeGreaterThan(0);
+  return index;
+}
+
+const EDGE_CASES: readonly CalendarEntry[] = [
+  booking("short"),
+  booking("ends-at-midnight", { startsAt: "2026-09-07T22:30:00Z", endsAt: "2026-09-07T23:00:00Z" }),
+  booking("overnight", { startsAt: "2026-09-07T22:45:00Z", endsAt: "2026-09-07T23:15:00Z" }),
+  booking("starts-at-midnight", { startsAt: "2026-09-07T23:00:00Z", endsAt: "2026-09-07T23:30:00Z" }),
+  booking("utc-midnight", { startsAt: "2026-09-06T23:45:00Z", endsAt: "2026-09-07T00:15:00Z" }),
+  booking("continued", { kind: "hold", state: "hold", rank: 2, startsAt: "2026-09-06T20:00:00Z", endsAt: "2026-09-08T01:00:00Z" }),
+  booking("multi-day", { spaceId: OTHER_SPACE, kind: "internal_block", state: "internal_block",
+    startsAt: "2026-09-09T16:00:00Z", endsAt: "2026-09-12T10:00:00Z" }),
+  // Equal starts order by localeCompare of the id, exactly as entriesForDay does.
+  booking("B-tie", { spaceId: OTHER_SPACE, kind: "prospect", state: "prospect", startsAt: "2026-09-09T16:00:00Z", endsAt: "2026-09-09T18:00:00Z" }),
+  booking("a-tie", { spaceId: OTHER_SPACE, kind: "hold", state: "hold", rank: 1, jointFlag: true,
+    startsAt: "2026-09-09T16:00:00Z", endsAt: "2026-09-09T17:00:00Z", clientName: "Fiona MacLeod", guestCount: 120 }),
+  booking("released", { kind: "hold", status: "released", state: "released", startsAt: "2026-09-10T10:00:00Z", endsAt: "2026-09-10T12:00:00Z" }),
+  booking("before-range", { startsAt: "2026-09-06T21:00:00Z", endsAt: "2026-09-06T23:00:00Z" }),
+  booking("touches-range-end", { startsAt: "2026-09-13T23:00:00Z", endsAt: "2026-09-14T01:00:00Z" }),
+  booking("unparseable", { startsAt: "not-an-instant", endsAt: "2026-09-08T10:00:00Z" }),
+  phase("phase"),
+  phase("phase-overnight", { spaceId: OTHER_SPACE, startsAt: "2026-09-10T21:00:00Z", endsAt: "2026-09-11T02:00:00Z" }),
+  // The London clock changes: the folded hour of the 25-hour Sunday, and the
+  // skipped hour of the 23-hour Sunday.
+  booking("fold-first", { startsAt: "2026-10-25T00:15:00Z", endsAt: "2026-10-25T00:30:00Z" }),
+  booking("fold-second", { startsAt: "2026-10-25T01:15:00Z", endsAt: "2026-10-25T01:30:00Z" }),
+  booking("fold-span", { spaceId: OTHER_SPACE, startsAt: "2026-10-25T00:30:00Z", endsAt: "2026-10-25T01:30:00Z" }),
+  booking("spring-span", { startsAt: "2026-03-29T00:30:00Z", endsAt: "2026-03-29T01:30:00Z" }),
+  booking("dst-week-long", { spaceId: OTHER_SPACE, startsAt: "2026-10-18T23:00:00Z", endsAt: "2026-10-26T00:00:00Z" }),
+];
+
+/** Deterministic board-sized data: rooms × days of overlapping bookings,
+ *  overnight and multi-day spans, phases and exits, around the range edges. */
+function seededEntries(range: BoardRange, count: number): CalendarEntry[] {
+  let seed = 20260924;
+  const next = (): number => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+  const kinds = ["ink", "hold", "prospect", "internal_block"] as const;
+  const span = range.toMs - range.fromMs + 48 * HOUR;
+  return Array.from({ length: count }, (_, n): CalendarEntry => {
+    const spaceId = SPACES[Math.floor(next() * SPACES.length)] ?? SPACE;
+    const startMs = range.fromMs - 24 * HOUR + Math.floor((next() * span) / QUARTER) * QUARTER;
+    const hours = next() < 0.1 ? 20 + next() * 60 : 0.25 + next() * 6;
+    const endMs = startMs + Math.max(1, Math.round((hours * HOUR) / QUARTER)) * QUARTER;
+    const times = { startsAt: new Date(startMs).toISOString(), endsAt: new Date(endMs).toISOString() };
+    const id = `entry-${String(n % 97).padStart(3, "0")}-${String(n)}`;
+    if (next() < 0.1) return phase(id, { spaceId, ...times });
+    const kind = kinds[Math.floor(next() * kinds.length)] ?? "hold";
+    const exited = next() < 0.1;
+    return booking(id, {
+      spaceId, ...times, kind, status: exited ? "cancelled" : "active", state: exited ? "cancelled" : kind,
+      rank: kind === "hold" && next() < 0.7 ? 1 + Math.floor(next() * 3) : null, jointFlag: next() < 0.2,
+    });
+  });
+}
+
+describe("overview index", () => {
+  it.each([
+    { name: "a BST week", range: boardRange(Date.parse("2026-09-09T12:00:00Z"), "week") },
+    { name: "a fortnight", range: boardRange(Date.parse("2026-09-09T12:00:00Z"), "2w") },
+    { name: "the 169-hour clock-change week", range: boardRange(Date.parse("2026-10-22T12:00:00Z"), "week") },
+    { name: "the 167-hour clock-change week", range: boardRange(Date.parse("2026-03-26T12:00:00Z"), "week") },
+    { name: "a month", range: boardRange(Date.parse("2026-10-15T12:00:00Z"), "month") },
+    { name: "a single day", range: boardRange(Date.parse("2026-09-07T12:00:00Z"), "day") },
+  ])("matches the per-cell membership, order, anchors and labels over $name", ({ range }) => {
+    expectPerCellEquivalence(EDGE_CASES, range);
+  });
+
+  it("orders ties, keeps continuations and anchors a multi-day card to its first visible day", () => {
+    const week = boardRange(Date.parse("2026-09-09T12:00:00Z"), "week");
+    const index = expectPerCellEquivalence(EDGE_CASES, week);
+    const wednesday = Date.parse("2026-09-08T23:00:00Z");
+    const thursday = Date.parse("2026-09-09T23:00:00Z");
+    expect(index.cells.get(OTHER_SPACE)?.get(wednesday)?.map((item) => item.entry.id)).toEqual(["a-tie", "B-tie", "multi-day"]);
+    const continued = index.cells.get(OTHER_SPACE)?.get(thursday)?.find((item) => item.entry.id === "multi-day");
+    expect(continued?.anchorDayMs).toBe(wednesday);
+    expect(continued !== undefined && continued.startMs < thursday).toBe(true);
+    // Unparseable instants never reach a cell, but the room count keeps them,
+    // as the rail's filter always did.
+    expect([...(index.cells.get(SPACE)?.values() ?? [])].flat().some((item) => item.entry.id === "unparseable")).toBe(false);
+    expect(index.activeBookings.get(SPACE)).toBe(EDGE_CASES.filter((entry) => entry.spaceId === SPACE && entry.entryType === "booking" && entry.status === "active").length);
+  });
+
+  it.each([
+    { name: "one week, ~210 entries", view: "week" as const, count: 210 },
+    { name: "two weeks, ~420 entries", view: "2w" as const, count: 420 },
+  ])("matches the per-cell computation on seeded board data: $name", ({ view, count }) => {
+    const range = boardRange(Date.parse("2026-10-21T12:00:00Z"), view);
+    expectPerCellEquivalence(seededEntries(range, count), range);
   });
 });

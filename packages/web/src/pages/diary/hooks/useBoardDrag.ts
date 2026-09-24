@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   announceDrag,
@@ -90,36 +90,43 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   stateRef.current = state;
   const pointerRef = useRef<PointerSession | null>(null);
   const suppressClickRef = useRef(false);
+  // The page builds `args` afresh on every render. Handlers read the latest
+  // COMMITTED args through this ref (events only fire after a commit), so
+  // their identities never change and memoised blocks keep equal props.
+  const argsRef = useRef(args);
+  useLayoutEffect(() => {
+    argsRef.current = args;
+  });
 
   const envFor = useCallback(
     (isInk: boolean, fine: boolean): DragEnv => ({
       snapMinutes: fine ? 1 : 15,
-      laneOrder: args.laneOrder,
-      inksByLane: args.inksByLane,
+      laneOrder: argsRef.current.laneOrder,
+      inksByLane: argsRef.current.inksByLane,
       isInk,
     }),
-    [args.laneOrder, args.inksByLane],
+    [],
   );
 
   const settle = useCallback(
     (env: DragEnv): void => {
       const outcome = dropDrag(stateRef.current, env);
       setState(outcome.state);
-      if (outcome.effect === "commit") args.onCommit(outcome.payload);
-      else if (outcome.effect === "rejected") args.onRejected();
+      if (outcome.effect === "commit") argsRef.current.onCommit(outcome.payload);
+      else if (outcome.effect === "rejected") argsRef.current.onRejected();
     },
-    [args],
+    [],
   );
 
   const handlersFor = useCallback(
     (block: DragBlockDescriptor): BlockDragHandlers => ({
       onClick: () => {
         if (suppressClickRef.current) { suppressClickRef.current = false; return; }
-        if (stateRef.current.phase === "idle") args.onOpenBlock?.(block.id);
+        if (stateRef.current.phase === "idle") argsRef.current.onOpenBlock?.(block.id);
       },
       onPointerDown: (event) => {
         suppressClickRef.current = false;
-        if (!args.writable || event.button !== 0) return;
+        if (!argsRef.current.writable || event.button !== 0) return;
         if (stateRef.current.phase !== "idle" || pointerRef.current !== null) return;
         pointerRef.current = {
           pointerId: event.pointerId,
@@ -157,7 +164,9 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
           current.phase === "idle" ? session.block.spaceId : current.ghost.spaceId;
         const lane = laneFromPoint(event.clientX, event.clientY) ?? fallbackLane;
         const proposedStart =
-          session.block.startMs + (dx / args.pxPerHour) * MS_PER_HOUR;
+          session.block.startMs + (dx / argsRef.current.pxPerHour) * MS_PER_HOUR;
+        // moveGhostTo returns the previous state inside the same snapped
+        // slot, so most pointermoves settle without a render.
         setState((previous) => moveGhostTo(previous, lane, proposedStart, env));
       },
       onPointerUp: (event) => {
@@ -179,10 +188,10 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         if (current.phase === "idle") {
           if (event.key === "Enter") {
             event.preventDefault();
-            args.onOpenBlock?.(block.id);
+            argsRef.current.onOpenBlock?.(block.id);
             return;
           }
-          if (!args.writable) return;
+          if (!argsRef.current.writable) return;
           if (event.key === " ") {
             event.preventDefault();
             setState(
@@ -227,7 +236,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         }
       },
     }),
-    [args, envFor, settle],
+    [envFor, settle],
   );
 
   const confirmDrop = useCallback(() => {
@@ -242,14 +251,19 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
     setState(cancelDrag(stateRef.current));
   }, []);
 
-  return {
-    state,
-    ghost: state.phase === "idle" ? null : state.ghost,
-    activeBlockId: state.phase === "idle" ? null : state.context.blockId,
-    confirming: state.phase === "confirming",
-    announcement: announceDrag(state),
-    handlersFor,
-    confirmDrop,
-    cancel,
-  };
+  // One object per drag state, so a memoised board skips page renders that
+  // leave the drag untouched.
+  return useMemo(
+    () => ({
+      state,
+      ghost: state.phase === "idle" ? null : state.ghost,
+      activeBlockId: state.phase === "idle" ? null : state.context.blockId,
+      confirming: state.phase === "confirming",
+      announcement: announceDrag(state),
+      handlersFor,
+      confirmDrop,
+      cancel,
+    }),
+    [state, handlersFor, confirmDrop, cancel],
+  );
 }

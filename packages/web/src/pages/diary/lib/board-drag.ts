@@ -122,12 +122,32 @@ export function beginDrag(context: DragContext): DragState {
   };
 }
 
+function sameValidity(a: GhostValidity, b: GhostValidity): boolean {
+  if (a.kind !== b.kind) return false;
+  return a.kind === "ok" || (b.kind !== "ok" && a.reason === b.reason);
+}
+
 function withGhost(state: DragState, rect: GhostRect, env: DragEnv): DragState {
   if (state.phase === "idle") return state;
+  const validity = ghostValidity(rect, env, state.context.blockId);
+  // Same snapped slot, same verdict: hand back the SAME state so React bails
+  // out instead of re-rendering the board for every pointermove inside one
+  // quarter-hour. Validity is still re-checked against the current env, so a
+  // refresh mid-drag updates the verdict on the next move as before.
+  const { ghost } = state;
+  if (
+    state.phase === "dragging" &&
+    ghost.spaceId === rect.spaceId &&
+    ghost.startMs === rect.startMs &&
+    ghost.endMs === rect.endMs &&
+    sameValidity(ghost.validity, validity)
+  ) {
+    return state;
+  }
   return {
     phase: "dragging",
     context: state.context,
-    ghost: { ...rect, validity: ghostValidity(rect, env, state.context.blockId) },
+    ghost: { ...rect, validity },
   };
 }
 

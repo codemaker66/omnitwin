@@ -11,7 +11,6 @@ import { ApiError } from "../../api/client.js";
 import { moveBooking } from "../../api/diary.js";
 import { BOARD_COPY } from "./board-copy.js";
 import {
-  formatWallTime,
   snapMs,
   boardRange,
   rangeTitle,
@@ -42,6 +41,7 @@ import { WelcomePanel } from "./components/WelcomePanel.js";
 import {
   type TrayEnquiry, ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
 import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
+import { EnquiryDragGhost } from "./components/EnquiryDragGhost.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import "./diary-board.css";
 
@@ -91,7 +91,13 @@ export function DiaryBoardPage(): ReactElement {
   const viewParam = searchParams.get("view");
   const view: BoardView = isBoardView(viewParam) ? viewParam : "week";
   const anchorMs = anchorFromParam(searchParams.get("date"));
-  const range = useMemo(() => boardRange(anchorMs, view), [anchorMs, view]);
+  // A range depends only on the anchor's venue-local date. Without ?date=
+  // (the nav's plain /diary link) the anchor is Date.now(), a new instant
+  // every render, so the memo keys on that date rather than on anchorMs: one
+  // range object — and memoised boards beneath it — until the venue day
+  // actually changes.
+  const anchorDate = msToWallInput(anchorMs).slice(0, 10);
+  const range = useMemo(() => boardRange(anchorMs, view), [anchorDate, view]);
 
   const { data, status, error, refetch, isRefreshing } = useCalendar(venueId, range);
   const [timeline, setTimeline] = useState(false);
@@ -181,8 +187,10 @@ export function DiaryBoardPage(): ReactElement {
   }, []);
 
   // Server truth arrived — optimistic overrides have served their purpose.
+  // Keep the same empty Map when there is nothing to clear: a fresh one would
+  // rebuild `entries` (and re-render the board) a second time per refetch.
   useEffect(() => {
-    setOverrides(new Map());
+    setOverrides((previous) => (previous.size === 0 ? previous : new Map()));
   }, [data]);
 
   useEffect(() => {
@@ -373,54 +381,25 @@ export function DiaryBoardPage(): ReactElement {
   );
 
   // --- the finding palette (C1, Ctrl/Cmd-K) -------------------------------
+  // The palette owns its query and matching: typing never re-renders the page.
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [paletteQuery, setPaletteQuery] = useState("");
-  const paletteResults = useMemo<readonly PaletteResult[]>(() => {
-    const query = paletteQuery.trim().toLowerCase();
-    if (query.length < 2 || data === null) return [];
-    const out: PaletteResult[] = [];
-    const roomName = (spaceId: string): string =>
-      data.rooms.find((room) => room.id === spaceId)?.name ?? "";
-    for (const room of data.rooms) {
-      if (room.name.toLowerCase().includes(query)) {
-        out.push({ kind: "room", id: room.id, label: room.name, detail: BOARD_COPY.palette.roomDetail });
-      }
-    }
-    for (const entry of data.entries) {
-      if (entry.entryType !== "booking") continue;
-      const hay = `${entry.title} ${entry.clientName ?? ""} ${entry.eventName ?? ""}`.toLowerCase();
-      if (hay.includes(query)) {
-        out.push({
-          kind: "booking",
-          id: entry.id,
-          label: entry.title,
-          detail: `${roomName(entry.spaceId)} · ${formatWallTime(Date.parse(entry.startsAt))}`,
-        });
-      }
-    }
-    for (const enquiry of openEnquiries) {
-      if (`${enquiry.name} ${enquiry.eventType ?? ""}`.toLowerCase().includes(query)) {
-        out.push({
-          kind: "enquiry",
-          id: enquiry.id,
-          label: enquiry.name,
-          detail: BOARD_COPY.palette.enquiryDetail,
-        });
-      }
-    }
-    return out.slice(0, 12);
-  }, [data, openEnquiries, paletteQuery]);
+  const closePalette = useCallback(() => {
+    setPaletteOpen(false);
+  }, []);
 
   // --- the unplaced clipboard's drag-on (C1) ------------------------------
   // A slip dragged from the tray follows the pointer as a paper chip; over a
   // room lane it announces the snapped pencil time, and release opens the
   // SAME convert drawer, prefilled — the drawer keeps every rule (hold
   // hygiene, kinds, validation). Escape or releasing off-lane cancels.
+  // The chip tracks the cursor itself (EnquiryDragGhost); page state holds
+  // only the drop target, so the board re-renders when the target changes,
+  // not on every pointermove.
   const [enquiryDrag, setEnquiryDrag] = useState<{
     readonly enquiryId: string;
     readonly name: string;
-    readonly x: number;
-    readonly y: number;
+    readonly originX: number;
+    readonly originY: number;
     readonly laneId: string | null;
     readonly startMs: number | null;
   } | null>(null);
@@ -432,8 +411,8 @@ export function DiaryBoardPage(): ReactElement {
       setEnquiryDrag({
         enquiryId: enquiry.id,
         name: enquiry.name,
-        x: event.clientX,
-        y: event.clientY,
+        originX: event.clientX,
+        originY: event.clientY,
         laneId: null,
         startMs: null,
       });
@@ -470,7 +449,9 @@ export function DiaryBoardPage(): ReactElement {
         startMs = Math.min(Math.max(snapped, range.fromMs), range.toMs - 15 * 60_000);
       }
       setEnquiryDrag((current) =>
-        current === null ? null : { ...current, x: event.clientX, y: event.clientY, laneId, startMs },
+        current === null || (current.laneId === laneId && current.startMs === startMs)
+          ? current
+          : { ...current, laneId, startMs },
       );
     };
     const onUp = (): void => {
@@ -565,7 +546,6 @@ export function DiaryBoardPage(): ReactElement {
   const pickPaletteResult = useCallback(
     (result: PaletteResult) => {
       setPaletteOpen(false);
-      setPaletteQuery("");
       if (result.kind === "booking") {
         focusEntry(result.id);
         return;
@@ -579,6 +559,24 @@ export function DiaryBoardPage(): ReactElement {
       if (writable) openConvertDrawer(result.id);
     },
     [focusEntry, openConvertDrawer, writable],
+  );
+
+  // Stable identities, so the memoised overview skips page renders that do
+  // not change what it shows (toasts, presence, refresh status, enquiries).
+  const openBookingFromOverview = useCallback(
+    (entry: CalendarBookingEntry) => {
+      openDrawer({ kind: "edit", booking: entry });
+    },
+    [openDrawer],
+  );
+  const cancelBoardDrag = drag.cancel;
+  const openDayFromOverview = useCallback(
+    (startMs: number) => {
+      cancelBoardDrag();
+      setEnquiryDrag(null);
+      setRange("day", startMs);
+    },
+    [cancelBoardDrag, setRange],
   );
 
 
@@ -721,8 +719,8 @@ export function DiaryBoardPage(): ReactElement {
       ) : (
         <div className="diary-layout">
           {showingOverview ? <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
-            conflictSeverity={conflictSeverity} onOpenBooking={(entry) => { openDrawer({ kind: "edit", booking: entry }); }}
-            onOpenDay={(startMs) => { drag.cancel(); setEnquiryDrag(null); setRange("day", startMs); }} /> : <BoardGrid
+            conflictSeverity={conflictSeverity} onOpenBooking={openBookingFromOverview}
+            onOpenDay={openDayFromOverview} /> : <BoardGrid
             rooms={rooms}
             entries={entries}
             range={range}
@@ -780,30 +778,20 @@ export function DiaryBoardPage(): ReactElement {
       {drag.confirming ? <InkConfirm onConfirm={drag.confirmDrop} onCancel={drag.cancel} /> : null}
       {paletteOpen ? (
         <BoardPalette
-          query={paletteQuery}
-          results={paletteResults}
-          onQueryChange={setPaletteQuery}
+          data={data}
+          enquiries={openEnquiries}
           onPick={pickPaletteResult}
-          onClose={() => {
-            setPaletteOpen(false);
-            setPaletteQuery("");
-          }}
+          onClose={closePalette}
         />
       ) : null}
 
       {enquiryDrag !== null ? (
-        <div
-          className="diary-enquiry-ghost"
-          style={{ left: enquiryDrag.x + 12, top: enquiryDrag.y + 10 }}
-          aria-hidden="true"
-        >
-          <span className="diary-tray-item-title">{enquiryDrag.name}</span>
-          <span className="diary-enquiry-ghost-time">
-            {enquiryDrag.startMs !== null
-              ? BOARD_COPY.trayEnquiries.dropAt(formatWallTime(enquiryDrag.startMs))
-              : BOARD_COPY.trayEnquiries.dropSeeking}
-          </span>
-        </div>
+        <EnquiryDragGhost
+          name={enquiryDrag.name}
+          startMs={enquiryDrag.startMs}
+          originX={enquiryDrag.originX}
+          originY={enquiryDrag.originY}
+        />
       ) : null}
 
       {toast !== null ? (
