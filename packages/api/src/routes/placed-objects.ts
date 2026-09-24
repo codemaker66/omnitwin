@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { placedObjects, configurations, configurationLayoutRevisions } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, type JwtUser } from "../middleware/auth.js";
 import { requireEditableConfig } from "../middleware/require-editable-config.js";
+import { syncPlacedObjectBatch } from "../lib/placed-object-batch.js";
 import { canAccessResource } from "../utils/query.js";
 import {
   validatePlacementsInPolygon,
@@ -302,8 +303,6 @@ export async function placedObjectRoutes(
     }
 
     // Full-sync batch: delete stale + update existing + insert new, all atomic.
-    const toUpdate = parsed.data.objects.filter((o) => o.id !== undefined);
-    const toInsert = parsed.data.objects.filter((o) => o.id === undefined);
     const configId = params.data.configId;
 
     const saveResult = await db.transaction(async (tx) => {
@@ -332,63 +331,7 @@ export async function placedObjectRoutes(
         };
       }
 
-      // Delete objects not in the batch
-      const batchIds = toUpdate.map((o) => o.id).filter((id): id is string => id !== undefined);
-      if (batchIds.length > 0) {
-        const existing = await tx.select({ id: placedObjects.id })
-          .from(placedObjects)
-          .where(eq(placedObjects.configurationId, configId));
-
-        const toDelete = existing.map((e) => e.id).filter((id) => !batchIds.includes(id));
-        if (toDelete.length > 0) {
-          await tx.delete(placedObjects).where(inArray(placedObjects.id, toDelete));
-        }
-      } else {
-        await tx.delete(placedObjects).where(eq(placedObjects.configurationId, configId));
-      }
-
-      // Update existing
-      for (const obj of toUpdate) {
-        if (obj.id === undefined) continue;
-        const [updated] = await tx.update(placedObjects)
-          .set({
-            assetDefinitionId: obj.assetDefinitionId,
-            positionX: String(obj.positionX),
-            positionY: String(obj.positionY),
-            positionZ: String(obj.positionZ),
-            rotationX: String(obj.rotationX),
-            rotationY: String(obj.rotationY),
-            rotationZ: String(obj.rotationZ),
-            scale: String(obj.scale),
-            sortOrder: obj.sortOrder,
-            metadata: obj.metadata ?? null,
-            coordinateWriteToken: randomUUID(),
-          })
-          .where(and(eq(placedObjects.id, obj.id), eq(placedObjects.configurationId, configId)))
-          .returning();
-        if (updated !== undefined) txResults.push(updated);
-      }
-
-      // Insert new
-      if (toInsert.length > 0) {
-        const inserted = await tx.insert(placedObjects)
-          .values(toInsert.map((obj) => ({
-            configurationId: configId,
-            assetDefinitionId: obj.assetDefinitionId,
-            positionX: String(obj.positionX),
-            positionY: String(obj.positionY),
-            positionZ: String(obj.positionZ),
-            rotationX: String(obj.rotationX),
-            rotationY: String(obj.rotationY),
-            rotationZ: String(obj.rotationZ),
-            scale: String(obj.scale),
-            sortOrder: obj.sortOrder,
-            metadata: obj.metadata ?? null,
-            coordinateWriteToken: randomUUID(),
-          })))
-          .returning();
-        txResults.push(...inserted);
-      }
+      txResults.push(...await syncPlacedObjectBatch(tx, configId, parsed.data.objects));
 
       await tx.insert(configurationLayoutRevisions).values({
         configurationId: configId,

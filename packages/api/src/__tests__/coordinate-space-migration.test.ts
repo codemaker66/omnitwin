@@ -22,6 +22,10 @@ const publicWrites = readFileSync(
   fileURLToPath(new URL("../routes/public-configs.ts", import.meta.url)),
   "utf8",
 );
+const batchWrites = readFileSync(
+  fileURLToPath(new URL("../lib/placed-object-batch.ts", import.meta.url)),
+  "utf8",
+);
 const websocketWrites = readFileSync(
   fileURLToPath(new URL("../ws/auto-save.ts", import.meta.url)),
   "utf8",
@@ -65,9 +69,20 @@ describe("migration 0044 coordinate-space contract", () => {
     expect(migration).toContain('ALTER COLUMN "coordinate_write_token" SET NOT NULL');
     expect(migration).toContain('CREATE TRIGGER "placed_objects_real_metre_write_guard"');
     expect(migration).toContain('NEW."coordinate_write_token" IS NOT DISTINCT FROM OLD."coordinate_write_token"');
-    expect(authenticatedWrites.match(/coordinateWriteToken:\s*randomUUID\(\)/gu)).toHaveLength(3);
+    expect(authenticatedWrites.match(/coordinateWriteToken:\s*randomUUID\(\)/gu)).toHaveLength(1);
     expect(authenticatedWrites).toContain('updateData["coordinateWriteToken"] = randomUUID()');
-    expect(publicWrites.match(/coordinateWriteToken:\s*randomUUID\(\)/gu)).toHaveLength(2);
+    // Both batch routes write through the shared helper, which gives every
+    // inserted row and every rewritten row its own fresh token.
+    const rowWrites = /\.(?:insert|update)\(placedObjects\)/gu;
+    expect(authenticatedWrites.match(rowWrites)).toHaveLength(2);
+    expect(publicWrites.match(rowWrites)).toBeNull();
+    for (const routeWrites of [authenticatedWrites, publicWrites]) {
+      expect(routeWrites).toContain("await syncPlacedObjectBatch(tx,");
+    }
+    expect(batchWrites.match(rowWrites)).toHaveLength(2);
+    expect(batchWrites.match(/coordinateWriteToken:\s*randomUUID\(\)/gu)).toHaveLength(1);
+    expect(batchWrites.match(/coordinate_write_token:\s*randomUUID\(\)/gu)).toHaveLength(1);
+    expect(batchWrites).toContain("coordinateWriteToken: sql`batch.coordinate_write_token`");
     expect(websocketWrites.match(/coordinateWriteToken:\s*randomUUID\(\)/gu)).toHaveLength(2);
   });
 });

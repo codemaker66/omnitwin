@@ -19,6 +19,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/sheet-snapshot-retention-postgres.test.ts",
   "src/__tests__/quote-permissions-postgres.test.ts",
   "src/__tests__/proposal-permissions-postgres.test.ts",
+  "src/__tests__/placed-object-batch-postgres.test.ts",
 ] as const;
 
 export function requirePlatformTestDatabaseUrl(raw: string | undefined): string {
