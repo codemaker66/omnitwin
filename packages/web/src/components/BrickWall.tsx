@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   BoxGeometry,
@@ -71,6 +71,12 @@ export interface BrickWallProps {
   readonly name: string;
   /** Material roughness. */
   readonly roughness?: number;
+  /**
+   * False while the wall stays mounted in a hidden shell (camera gestures).
+   * An inactive wall does no frame work: it does not animate, request frames
+   * or unlock walls. Defaults to true.
+   */
+  readonly active?: boolean;
 }
 
 // Reusable objects to avoid per-frame allocations.
@@ -102,6 +108,7 @@ export function BrickWall({
   color,
   name,
   roughness = 0.95,
+  active = true,
 }: BrickWallProps): React.ReactElement | null {
   const meshRef = useRef<InstancedMesh>(null);
   const { invalidate } = useThree();
@@ -112,6 +119,18 @@ export function BrickWall({
   const animTarget = useRef(1);
   /** True when instance matrices need updating (animation in progress). */
   const needsMatrixUpdate = useRef(true);
+
+  // A re-activated wall resumes exactly as a freshly mounted one starts (the
+  // planner shell used to remount after every camera gesture): fully built,
+  // with the next frame reading the store to snap or animate away. A wall that
+  // is already settled built has its rest matrices in place and needs nothing.
+  useLayoutEffect(() => {
+    if (!active) return;
+    if (animProgress.current === 1 && animTarget.current === 1) return;
+    animProgress.current = 1;
+    animTarget.current = 1;
+    needsMatrixUpdate.current = true;
+  }, [active]);
 
   const bricks = useMemo(
     () => computeBrickLayout(wallWidth, wallHeight, hashString(name)),
@@ -140,7 +159,7 @@ export function BrickWall({
   // Update instance matrices every frame based on internal animation progress.
   useFrame((_state, delta) => {
     const mesh = meshRef.current;
-    if (mesh === null) return;
+    if (mesh === null || !active) return;
 
     // Read the visibility store to determine whether wall should be built or not
     const { wallOpacity, wallLocks, ceiling, dome } = useVisibilityStore.getState();

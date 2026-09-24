@@ -24,7 +24,10 @@ vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children, shadows }: { children?: ReactNode; shadows?: string | boolean }) => (
     <div data-testid="lighting-canvas" data-shadows={String(shadows)}>{roomChildren(children)}</div>
   ),
-  useThree: () => ({ size: { width: sceneState.width, height: 900 } }),
+  useThree: (select?: (state: { size: { width: number; height: number }; invalidate: () => void }) => unknown) => {
+    const state = { size: { width: sceneState.width, height: 900 }, invalidate: () => undefined };
+    return select === undefined ? state : select(state);
+  },
   useFrame: vi.fn(),
 }));
 vi.mock("../../BrickWall.js", () => ({ BrickWall: () => null }));

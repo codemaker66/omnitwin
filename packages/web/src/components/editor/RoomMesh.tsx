@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Shape, DoubleSide, BufferGeometry, Float32BufferAttribute } from "three";
+import { Shape, DoubleSide, BufferGeometry, Float32BufferAttribute, type Group } from "three";
+import { raycastDescendants, skipDescendantRaycast } from "../../lib/raycast-gate.js";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { RoomGeometry, RoomFeature } from "../../data/room-geometries.js";
 import { FLOOR_COLOR, GRID_COLOR, DOME_COLOR, WALL_COLOR } from "../../constants/colors.js";
@@ -137,10 +138,12 @@ function computeRenderBounds(polygon: readonly (readonly [number, number])[]): R
 // CameraWallDriver — updates visibility store from camera position
 // ---------------------------------------------------------------------------
 
-function CameraWallDriver(): null {
+/** Inactive while its shell is hidden: camera gestures leave wall opacity untouched. */
+function CameraWallDriver({ active }: { readonly active: boolean }): null {
   const { camera, invalidate } = useThree();
 
   useFrame((_state, delta) => {
+    if (!active) return;
     const mode = useVisibilityStore.getState().mode;
     if (mode === "manual") return;
 
@@ -197,6 +200,40 @@ function LeanWall({
       />
     </mesh>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Shell layer — a shell kept mounted across camera gestures
+// ---------------------------------------------------------------------------
+
+/**
+ * Holds one room shell. An inactive layer is neither drawn (three skips an
+ * invisible group's subtree, lights included) nor raycast, which is exactly
+ * what an unmounted shell was — without rebuilding its bricks, materials and
+ * GPU buffers when a gesture starts or settles.
+ */
+function RoomShellLayer({
+  name,
+  active,
+  children,
+}: {
+  readonly name: string;
+  readonly active: boolean;
+  readonly children: React.ReactNode;
+}): React.ReactElement {
+  const layerRef = useRef<Group>(null);
+  const invalidate = useThree((state) => state.invalidate);
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    if (layer === null) return;
+    layer.visible = active;
+    layer.raycast = active ? raycastDescendants : skipDescendantRaycast;
+    // Remounting a shell requested a frame (R3F does for every added or
+    // removed object). A gesture settles on a timer after the camera stops,
+    // so without this request the lean shell would stay on screen.
+    invalidate();
+  }, [active, invalidate]);
+  return <group ref={layerRef} name={name}>{children}</group>;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,17 +336,73 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto", inclu
     };
   }, [surfaceTextures]);
 
+  // Camera gestures swap the detailed shell for the lean one. Both stay
+  // mounted wherever the detailed shell is ever shown, and only the active one
+  // is drawn, lit and raycast, so a gesture no longer rebuilds brick layouts,
+  // materials, lights or GPU buffers when it starts or settles.
   return (
     <group name="room-mesh">
-      {includeLighting && !useLeanRoomShell && <RoomLighting variant="polygon" />}
+      {detailedShellAtRest && (
+        <RoomShellLayer name="room-mesh-detailed-shell" active={!useLeanRoomShell}>
+          {includeLighting && <RoomLighting variant="polygon" />}
 
-      {/* Camera-driven wall auto-fade */}
-      {!useLeanRoomShell && <CameraWallDriver />}
+          {/* Camera-driven wall auto-fade */}
+          <CameraWallDriver active={!useLeanRoomShell} />
 
-      {/* Floor */}
-      <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <shapeGeometry args={[floorShape]} />
-        {useLeanRoomShell ? (
+          {/* Floor */}
+          <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+            <shapeGeometry args={[floorShape]} />
+            <meshStandardMaterial
+              color={FLOOR_COLOR}
+              map={surfaceTextures?.floor ?? null}
+              side={DoubleSide}
+              roughness={isGrandHall ? 0.62 : 0.95}
+              metalness={isGrandHall ? 0.05 : 0}
+              polygonOffset
+              polygonOffsetFactor={1}
+              polygonOffsetUnits={1}
+              clippingPlanes={noClipPlanes}
+            />
+          </mesh>
+
+          {/* Walls — BrickWall instances with click-to-toggle animation.
+              Each segment maps to a cardinal WallKey so the visibility store
+              drives auto-fade from camera position AND click toggles. */}
+          {walls.map((w, i) => (
+            <BrickWall
+              key={`wall-${String(i)}`}
+              name={w.wallKey}
+              wallWidth={w.width}
+              wallHeight={ceilingHeight}
+              position={[w.cx, ceilingHeight / 2, w.cz]}
+              rotation={[0, w.rotY, 0]}
+              color={WALL_COLOR}
+              active={!useLeanRoomShell}
+            />
+          ))}
+
+          {/* Features (balconies, platforms) */}
+          {geometry.features.map((f, i) => (
+            <FeatureMesh key={`feature-${String(i)}`} feature={f} />
+          ))}
+
+          {/* Dome */}
+          {geometry.hasDome && geometry.domeRadius > 0 && (
+            <GrandHallDome
+              radius={geometry.domeRadius}
+              ceilingHeight={ceilingHeight}
+              color={DOME_COLOR}
+              texture={surfaceTextures?.dome ?? null}
+              clippingPlanes={sectionClipPlanes}
+            />
+          )}
+        </RoomShellLayer>
+      )}
+
+      {/* Lean shell: unlit floor and walls, no features or lights. */}
+      <RoomShellLayer name="room-mesh-lean-shell" active={useLeanRoomShell}>
+        <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+          <shapeGeometry args={[floorShape]} />
           <meshBasicMaterial
             color={FLOOR_COLOR}
             side={DoubleSide}
@@ -318,63 +411,19 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto", inclu
             polygonOffsetUnits={1}
             clippingPlanes={noClipPlanes}
           />
-        ) : (
-          <meshStandardMaterial
-            color={FLOOR_COLOR}
-            map={surfaceTextures?.floor ?? null}
-            side={DoubleSide}
-            roughness={isGrandHall ? 0.62 : 0.95}
-            metalness={isGrandHall ? 0.05 : 0}
-            polygonOffset
-            polygonOffsetFactor={1}
-            polygonOffsetUnits={1}
-            clippingPlanes={noClipPlanes}
-          />
-        )}
-      </mesh>
-
-      {/* Floor grid */}
-      <FloorGrid polygon={geometry.wallPolygon} />
-
-      {/* Walls — BrickWall instances with click-to-toggle animation.
-          Each segment maps to a cardinal WallKey so the visibility store
-          drives auto-fade from camera position AND click toggles. */}
-      {walls.map((w, i) => (
-        useLeanRoomShell ? (
+        </mesh>
+        {walls.map((w, i) => (
           <LeanWall
             key={`wall-${String(i)}`}
             segment={w}
             wallHeight={ceilingHeight}
             color={WALL_COLOR}
           />
-        ) : (
-          <BrickWall
-            key={`wall-${String(i)}`}
-            name={w.wallKey}
-            wallWidth={w.width}
-            wallHeight={ceilingHeight}
-            position={[w.cx, ceilingHeight / 2, w.cz]}
-            rotation={[0, w.rotY, 0]}
-            color={WALL_COLOR}
-          />
-        )
-      ))}
+        ))}
+      </RoomShellLayer>
 
-      {/* Features (balconies, platforms) */}
-      {!useLeanRoomShell && geometry.features.map((f, i) => (
-        <FeatureMesh key={`feature-${String(i)}`} feature={f} />
-      ))}
-
-      {/* Dome */}
-      {!useLeanRoomShell && geometry.hasDome && geometry.domeRadius > 0 && (
-        <GrandHallDome
-          radius={geometry.domeRadius}
-          ceilingHeight={ceilingHeight}
-          color={DOME_COLOR}
-          texture={surfaceTextures?.dome ?? null}
-          clippingPlanes={sectionClipPlanes}
-        />
-      )}
+      {/* Floor grid */}
+      <FloorGrid polygon={geometry.wallPolygon} />
 
       {renderGrandHallOrnaments && (
         <GrandHallOrnaments width={bounds.width} length={bounds.length} height={ceilingHeight} />

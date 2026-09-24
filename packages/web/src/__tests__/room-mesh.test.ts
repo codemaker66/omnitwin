@@ -62,23 +62,43 @@ describe("RoomMesh", () => {
     expect(shouldUseRoomMeshLeanShell("auto", 1440)).toBe(false);
   });
 
-  it("keeps camera-driven brick wall fading out of the lean shell", async () => {
+  // Both shells stay mounted across camera gestures; only the active layer is
+  // drawn, lit and raycast. The drawn content of each state, the paused
+  // camera-driven fading and hidden frame work are exercised on a real R3F
+  // root in components/editor/__tests__/RoomMesh.shell.test.tsx.
+  async function shellLayerSource(name: string): Promise<string> {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/components/editor/RoomMesh.tsx"), "utf-8");
-    expect(source).toContain("{!useLeanRoomShell && <CameraWallDriver />}");
+    const start = source.indexOf(`<RoomShellLayer name="${name}"`);
+    const end = source.indexOf("</RoomShellLayer>", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return source.slice(start, end);
+  }
+
+  it("keeps camera-driven brick wall fading out of the lean shell", async () => {
+    const detailed = await shellLayerSource("room-mesh-detailed-shell");
+    expect(detailed).toContain("<CameraWallDriver active={!useLeanRoomShell} />");
+    expect(detailed).toContain("<BrickWall");
+    // The layer, the fade driver and every brick wall pause with the shell.
+    expect(detailed.match(/active=\{!useLeanRoomShell\}/g)).toHaveLength(3);
+    expect(await shellLayerSource("room-mesh-lean-shell")).not.toContain("CameraWallDriver");
   });
 
   it("keeps the lean shell on unlit geometry without feature meshes or scene lights", async () => {
-    const fs = await import("node:fs/promises");
-    const path = await import("node:path");
-    const source = await fs.readFile(path.resolve("src/components/editor/RoomMesh.tsx"), "utf-8");
-    expect(source).toContain("useLeanRoomShell ? (");
-    expect(source).toContain("<meshBasicMaterial");
-    expect(source).toContain("{!useLeanRoomShell && geometry.features.map");
+    const lean = await shellLayerSource("room-mesh-lean-shell");
+    expect(lean).toContain("active={useLeanRoomShell}>");
+    expect(lean).toContain("<meshBasicMaterial");
+    expect(lean).toContain("<LeanWall");
+    for (const detailedOnly of ["RoomLighting", "FeatureMesh", "BrickWall", "GrandHallDome", "meshStandardMaterial"]) {
+      expect(lean).not.toContain(detailedOnly);
+    }
+    const detailed = await shellLayerSource("room-mesh-detailed-shell");
+    expect(detailed).toContain("geometry.features.map");
     // Room-owned lights moved into RoomLighting; the planner's independently
     // owned lighting is covered by PlannerSceneLighting.test.tsx.
-    expect(source).toContain('{includeLighting && !useLeanRoomShell && <RoomLighting variant="polygon" />}');
+    expect(detailed).toContain('{includeLighting && <RoomLighting variant="polygon" />}');
   });
 });
 
