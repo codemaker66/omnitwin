@@ -122,3 +122,42 @@ export function tableGroupedChairCount(
   }
   return count > 0 ? count : undefined;
 }
+
+interface GroupChairTally {
+  total: number;
+  /** Chair rows per id, so an item's count can exclude rows sharing its id. */
+  readonly byId: Map<string, number>;
+}
+
+/**
+ * tableGroupedChairCount for every placed item in one O(n) pass instead of
+ * one O(n) scan per item. The map holds exactly the entries — same keys,
+ * values and insertion order — that setting each defined count in
+ * `placedItems` order would produce.
+ */
+export function tableGroupedChairCounts(
+  placedItems: readonly PlacedItem[],
+): ReadonlyMap<string, number> {
+  const chairsByGroup = new Map<string, GroupChairTally>();
+  for (const placed of placedItems) {
+    if (placed.groupId === null) continue;
+    if (getCatalogueItem(placed.catalogueItemId)?.category !== "chair") continue;
+    let tally = chairsByGroup.get(placed.groupId);
+    if (tally === undefined) {
+      tally = { total: 0, byId: new Map() };
+      chairsByGroup.set(placed.groupId, tally);
+    }
+    tally.total += 1;
+    tally.byId.set(placed.id, (tally.byId.get(placed.id) ?? 0) + 1);
+  }
+
+  const counts = new Map<string, number>();
+  for (const placed of placedItems) {
+    if (placed.groupId === null) continue;
+    const tally = chairsByGroup.get(placed.groupId);
+    if (tally === undefined) continue;
+    const count = tally.total - (tally.byId.get(placed.id) ?? 0);
+    if (count > 0) counts.set(placed.id, count);
+  }
+  return counts;
+}

@@ -402,6 +402,72 @@ export function checkCollision(
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Placement violations — room bounds plus the overlap rule
+// ---------------------------------------------------------------------------
+
+/**
+ * One item's planning geometry at one pose: its centre, rotated X/Z
+ * half-extents (computeRotatedFootprint) and scaled vertical interval.
+ * Resolving it once per item lets a layout-wide sweep compare pairs without
+ * recomputing trigonometry for every pair.
+ */
+export interface PlacementBody {
+  readonly x: number;
+  readonly z: number;
+  readonly halfW: number;
+  readonly halfD: number;
+  readonly bottom: number;
+  readonly top: number;
+  /** Stage items (platforms) may touch and slightly overlap each other. */
+  readonly stage: boolean;
+}
+
+export function placementBody(
+  x: number,
+  z: number,
+  item: CatalogueItem,
+  rotationY: number,
+  y: number,
+  scale?: number,
+): PlacementBody {
+  const { halfW, halfD } = computeRotatedFootprint(item, rotationY, scale);
+  const { bottom, top } = furnitureVerticalInterval(item, y, scale);
+  return { x, z, halfW, halfD, bottom, top, stage: item.category === "stage" };
+}
+
+/**
+ * The overlap rule of the placement violations: does candidate `a` overlap
+ * placed item `b`? getPlacementViolations and the layout-wide sweep
+ * (createPlacementOverlapIndex) both decide overlaps here and nowhere else.
+ */
+export function placementBodiesOverlap(a: PlacementBody, b: PlacementBody): boolean {
+  // Items at different heights don't collide; the 1mm tolerance lets items
+  // sit flush on surfaces.
+  if (a.bottom >= b.top - 0.001 || b.bottom >= a.top - 0.001) return false;
+  // Stage items (platforms) can touch/slightly overlap — negative padding
+  // provides tolerance for floating point imprecision in edge snapping.
+  const effectivePadding = a.stage && b.stage ? -0.05 : 0;
+  // Strict < means touching edges are allowed.
+  const overlapX = Math.abs(a.x - b.x) < (a.halfW + b.halfW + effectivePadding);
+  const overlapZ = Math.abs(a.z - b.z) < (a.halfD + b.halfD + effectivePadding);
+  return overlapX && overlapZ;
+}
+
+/**
+ * The catalogue item a placed row presents to the overlap rule, or undefined
+ * when the rule ignores the row: a retained dressing-applicator row, or an
+ * asset missing from the catalogue.
+ */
+function overlapTargetItem(placed: PlacedItem): CatalogueItem | undefined {
+  if (!isSceneFurniturePlacement(placed)) return undefined;
+  return getCatalogueItem(placed.catalogueItemId);
+}
+
+function placedItemBody(placed: PlacedItem, item: CatalogueItem): PlacementBody {
+  return placementBody(placed.x, placed.z, item, placed.rotationY, placed.y, placed.scale);
+}
+
 export function getPlacementViolations(
   x: number,
   z: number,
@@ -423,32 +489,12 @@ export function getPlacementViolations(
     });
   }
 
-  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY, scale);
-  const { bottom: aBottom, top: aTop } = furnitureVerticalInterval(item, y, scale);
-
+  const body = placementBody(x, z, item, rotationY, y, scale);
   for (const other of placedItems) {
     if (excludeIds.has(other.id)) continue;
-    if (!isSceneFurniturePlacement(other)) continue;
-    const otherItem = getCatalogueItem(other.catalogueItemId);
+    const otherItem = overlapTargetItem(other);
     if (otherItem === undefined) continue;
-
-    const { bottom: bBottom, top: bTop } = furnitureVerticalInterval(
-      otherItem,
-      other.y,
-      other.scale,
-    );
-    if (aBottom >= bTop - 0.001 || bBottom >= aTop - 0.001) continue;
-
-    const effectivePadding = (item.category === "stage" && otherItem.category === "stage") ? -0.05 : 0;
-    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(
-      otherItem,
-      other.rotationY,
-      other.scale,
-    );
-    const overlapX = Math.abs(x - other.x) < (aHalfW + bHalfW + effectivePadding);
-    const overlapZ = Math.abs(z - other.z) < (aHalfD + bHalfD + effectivePadding);
-
-    if (overlapX && overlapZ) {
+    if (placementBodiesOverlap(body, placedItemBody(other, otherItem))) {
       violations.push({
         kind: "overlap",
         message: `Overlaps ${otherItem.name}`,
@@ -458,6 +504,182 @@ export function getPlacementViolations(
   }
 
   return violations;
+}
+
+/**
+ * Whether getPlacementViolations would report anything for this pose, with
+ * the overlap scan answered by `overlapIndex` — built over the same placed
+ * items — instead of a pass over every item. Same parameters, defaults and
+ * rules; only the unreachable pairs are skipped.
+ */
+export function hasPlacementViolation(
+  x: number,
+  z: number,
+  item: CatalogueItem,
+  rotationY: number,
+  overlapIndex: PlacementOverlapIndex,
+  excludeIds: ReadonlySet<string>,
+  y: number = 0,
+  roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  scale?: number,
+): boolean {
+  if (isTableDressingApplicatorSlug(item.slug)) return false;
+  if (!isWithinRoomBounds(x, z, item, rotationY, roomDims, scale)) return true;
+  return overlapIndex.overlapsAny(placementBody(x, z, item, rotationY, y, scale), excludeIds);
+}
+
+// ---------------------------------------------------------------------------
+// Overlap broadphase — a uniform grid for layout-wide sweeps
+//
+// A full-layout violation sweep asks "does this item overlap anything?" for
+// every item, and the planner re-runs it on every drag frame. Scanning every
+// other item makes that O(n²) — hundreds of milliseconds for a thousand-item
+// banquet. The grid answers each query from the few cells an item's
+// footprint touches.
+//
+// Why no overlapping pair is ever skipped. Every gridded body is registered in
+// each cell of floor((x ∓ halfW) / cell) × floor((z ∓ halfD) / cell). The
+// vertical test and group exclusions only remove pairs, so take a pair that
+// passes the X test, fl(|a.x − b.x|) < fl(fl(a.halfW + b.halfW) + padding)
+// with padding ≤ 0 and, say, a.x ≥ b.x. IEEE-754 rounding is monotonic, so
+// the right side is ≤ fl(a.halfW + b.halfW) and the exact difference must be
+// below the exact sum: a.x − a.halfW < b.x + b.halfW. Rounding, division by
+// the positive cell size and Math.floor all preserve that order, so a's first
+// cell is at or before b's last one; b.x − b.halfW ≤ a.x + a.halfW likewise
+// orders b's first cell before a's last. The two cell ranges intersect in X,
+// the same holds in Z, and the pair meets in a shared bucket. Bodies the grid
+// cannot hold — NaN, negative or infinite extents, cells beyond ±2^30, or
+// more than OVERLAP_MAX_CELLS_PER_BODY cells — are compared with everything.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cell edge of the grid: one metre, so a chair touches 1–4 cells and a cell
+ * holds a handful of items. Correctness does not depend on it; speed does.
+ */
+const OVERLAP_CELL_SIZE = toRenderSpace(1);
+/** Larger bodies are compared with every item rather than gridded. */
+const OVERLAP_MAX_CELLS_PER_BODY = 256;
+/** Cell coordinates within this bound stay exact integers when stepped. */
+const OVERLAP_MAX_CELL_COORD = 2 ** 30;
+/**
+ * Bucket keys pack each cell coordinate modulo 2^15 into one small integer.
+ * Distinct cells 2^15 cells apart may share a bucket, which only adds pairs
+ * for the exact rule to reject; one cell never maps to two buckets.
+ */
+const OVERLAP_KEY_BITS = 15;
+const OVERLAP_KEY_MASK = (1 << OVERLAP_KEY_BITS) - 1;
+
+interface OverlapCellRange {
+  readonly x0: number;
+  readonly x1: number;
+  readonly z0: number;
+  readonly z1: number;
+}
+
+/** Grid cells the body's footprint touches, or null if it cannot be gridded. */
+function overlapCellRange(body: PlacementBody): OverlapCellRange | null {
+  // NaN and negative extents fail here, non-finite cells at the bound check.
+  if (!(body.halfW >= 0 && body.halfD >= 0)) return null;
+  const x0 = Math.floor((body.x - body.halfW) / OVERLAP_CELL_SIZE);
+  const x1 = Math.floor((body.x + body.halfW) / OVERLAP_CELL_SIZE);
+  const z0 = Math.floor((body.z - body.halfD) / OVERLAP_CELL_SIZE);
+  const z1 = Math.floor((body.z + body.halfD) / OVERLAP_CELL_SIZE);
+  if (!(
+    x0 >= -OVERLAP_MAX_CELL_COORD && x1 <= OVERLAP_MAX_CELL_COORD
+    && z0 >= -OVERLAP_MAX_CELL_COORD && z1 <= OVERLAP_MAX_CELL_COORD
+  )) return null;
+  if ((x1 - x0 + 1) * (z1 - z0 + 1) > OVERLAP_MAX_CELLS_PER_BODY) return null;
+  return { x0, x1, z0, z1 };
+}
+
+function overlapCellKey(cellX: number, cellZ: number): number {
+  return ((cellX & OVERLAP_KEY_MASK) << OVERLAP_KEY_BITS) | (cellZ & OVERLAP_KEY_MASK);
+}
+
+interface OverlapEntry {
+  readonly id: string;
+  readonly body: PlacementBody;
+  /** Position in the index, for per-query de-duplication. */
+  readonly slot: number;
+}
+
+export interface PlacementOverlapIndex {
+  /**
+   * True when `body` overlaps (placementBodiesOverlap) any indexed item whose
+   * id is not in `excludeIds` — the verdict of getPlacementViolations'
+   * overlap scan over the same items, visiting only nearby ones.
+   */
+  readonly overlapsAny: (body: PlacementBody, excludeIds: ReadonlySet<string>) => boolean;
+}
+
+/**
+ * Indexes every item the overlap rule can hit (scene furniture with a known
+ * catalogue asset) in O(n). Build it once per layout snapshot; it does not
+ * observe later changes to `placedItems`.
+ */
+export function createPlacementOverlapIndex(
+  placedItems: readonly PlacedItem[],
+): PlacementOverlapIndex {
+  const entries: OverlapEntry[] = [];
+  const unbounded: OverlapEntry[] = [];
+  const cells = new Map<number, OverlapEntry[]>();
+
+  for (const placed of placedItems) {
+    const item = overlapTargetItem(placed);
+    if (item === undefined) continue;
+    const body = placedItemBody(placed, item);
+    const entry: OverlapEntry = { id: placed.id, body, slot: entries.length };
+    entries.push(entry);
+    const range = overlapCellRange(body);
+    if (range === null) {
+      unbounded.push(entry);
+      continue;
+    }
+    for (let cellX = range.x0; cellX <= range.x1; cellX += 1) {
+      for (let cellZ = range.z0; cellZ <= range.z1; cellZ += 1) {
+        const key = overlapCellKey(cellX, cellZ);
+        const bucket = cells.get(key);
+        if (bucket === undefined) cells.set(key, [entry]);
+        else bucket.push(entry);
+      }
+    }
+  }
+
+  // Items spanning several of the query's cells are tested once per query.
+  const visitedStamp = new Uint32Array(entries.length);
+  let stamp = 0;
+
+  function overlapsAny(body: PlacementBody, excludeIds: ReadonlySet<string>): boolean {
+    if (stamp === 0xffffffff) {
+      visitedStamp.fill(0);
+      stamp = 0;
+    }
+    stamp += 1;
+    const range = overlapCellRange(body);
+    if (range === null) {
+      for (const entry of entries) {
+        if (placementBodiesOverlap(body, entry.body) && !excludeIds.has(entry.id)) return true;
+      }
+      return false;
+    }
+    for (let cellX = range.x0; cellX <= range.x1; cellX += 1) {
+      for (let cellZ = range.z0; cellZ <= range.z1; cellZ += 1) {
+        const bucket = cells.get(overlapCellKey(cellX, cellZ));
+        if (bucket === undefined) continue;
+        for (const entry of bucket) {
+          if (visitedStamp[entry.slot] === stamp) continue;
+          visitedStamp[entry.slot] = stamp;
+          if (placementBodiesOverlap(body, entry.body) && !excludeIds.has(entry.id)) return true;
+        }
+      }
+    }
+    for (const entry of unbounded) {
+      if (placementBodiesOverlap(body, entry.body) && !excludeIds.has(entry.id)) return true;
+    }
+    return false;
+  }
+
+  return { overlapsAny };
 }
 
 // ---------------------------------------------------------------------------
@@ -555,6 +777,33 @@ export function getGroupMemberIds(
     if (p.groupId === item.groupId && isSceneFurniturePlacement(p)) ids.add(p.id);
   }
   return ids;
+}
+
+/**
+ * getGroupMemberIds for any id of one layout, from a single O(n) pass rather
+ * than an O(n) scan per call. Returns the same sets (same members, same
+ * order); members of one group share one set, so treat results as read-only.
+ */
+export function createGroupMemberIdsLookup(
+  placedItems: readonly PlacedItem[],
+): (itemId: string) => ReadonlySet<string> {
+  // getGroupMemberIds resolves an id to its FIRST matching row.
+  const firstById = new Map<string, PlacedItem>();
+  const membersByGroup = new Map<string, Set<string>>();
+  for (const placed of placedItems) {
+    if (!firstById.has(placed.id)) firstById.set(placed.id, placed);
+    if (placed.groupId === null || !isSceneFurniturePlacement(placed)) continue;
+    const members = membersByGroup.get(placed.groupId);
+    if (members === undefined) membersByGroup.set(placed.groupId, new Set([placed.id]));
+    else members.add(placed.id);
+  }
+  return (itemId) => {
+    const item = firstById.get(itemId);
+    if (item === undefined) return new Set([itemId]);
+    if (!isSceneFurniturePlacement(item)) return new Set();
+    if (item.groupId === null) return new Set([itemId]);
+    return membersByGroup.get(item.groupId) ?? new Set();
+  };
 }
 
 /**

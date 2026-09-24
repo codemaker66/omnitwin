@@ -34,12 +34,18 @@ import { AnimatedTableCloth } from "./meshes/AnimatedTableCloth.js";
 import { TableSettingMesh } from "./meshes/TableSettingMesh.js";
 import { sectionClipPlanes } from "./SectionPlane.js";
 import { ConstraintViolationSkin } from "./ConstraintViolationSkin.js";
-import { getGroupMemberIds, getPlacementViolations } from "../lib/placement.js";
+import {
+  createGroupMemberIdsLookup,
+  createPlacementOverlapIndex,
+  getGroupMemberIds,
+  getPlacementViolations,
+  hasPlacementViolation,
+} from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
 import {
   TABLE_CLOTH_COLORS,
   isSceneFurniturePlacement,
-  tableGroupedChairCount,
+  tableGroupedChairCounts,
 } from "../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
@@ -126,9 +132,8 @@ export const EMPTY_VIOLATION_IDS: ReadonlySet<string> = new Set<string>();
 /**
  * Which items the placement sweep still examines. On the lean path (small
  * viewport, or any camera motion) that is only what the planner is touching:
- * the full sweep is O(n²) and measured at 49ms for an 800-item banquet — three
- * dropped frames, fired at the instant a drag begins — while the cap discards
- * all but one result anyway.
+ * the full sweep still visits the whole layout while the cap discards all but
+ * one result anyway.
  */
 export function leanSweepCandidates(
   placedItems: readonly PlacedItem[],
@@ -145,6 +150,58 @@ export function leanSweepCandidates(
   );
 }
 
+/** Whether one scene-furniture candidate violates a placement rule. */
+type PlacementViolationVerdict = (placed: PlacedItem, item: CatalogueItem) => boolean;
+
+/**
+ * Up to this many candidates, scanning the layout once per candidate is
+ * cheaper than building the sweep index: measured break-even is three
+ * candidates for 88–1,287-item banquet and theatre layouts. The lean path
+ * usually sweeps the single selected item.
+ */
+export const DIRECT_VIOLATION_SCAN_MAX_CANDIDATES = 2;
+
+/** O(n) per candidate: the group scan and every other item. */
+function directViolationVerdict(
+  allItems: readonly PlacedItem[],
+  roomDims: SpaceDimensions,
+): PlacementViolationVerdict {
+  return (placed, item) => getPlacementViolations(
+    placed.x,
+    placed.z,
+    item,
+    placed.rotationY,
+    allItems,
+    getGroupMemberIds(placed.id, allItems),
+    placed.y,
+    roomDims,
+    placed.scale,
+  ).length > 0;
+}
+
+/**
+ * O(n) once, then each candidate visits only the furniture its footprint can
+ * reach — the same rules and verdicts as the direct scan.
+ */
+function indexedViolationVerdict(
+  allItems: readonly PlacedItem[],
+  roomDims: SpaceDimensions,
+): PlacementViolationVerdict {
+  const overlapIndex = createPlacementOverlapIndex(allItems);
+  const groupMemberIds = createGroupMemberIdsLookup(allItems);
+  return (placed, item) => hasPlacementViolation(
+    placed.x,
+    placed.z,
+    item,
+    placed.rotationY,
+    overlapIndex,
+    groupMemberIds(placed.id),
+    placed.y,
+    roomDims,
+    placed.scale,
+  );
+}
+
 /**
  * Ids among `candidates` that violate placement rules. Candidates are always
  * tested against the FULL item list: narrowing the outer loop is what makes the
@@ -157,23 +214,15 @@ export function placementViolationIds(
   roomDims: SpaceDimensions,
 ): ReadonlySet<string> {
   const ids = new Set<string>();
+  if (candidates.length === 0) return ids;
+  const violates = candidates.length <= DIRECT_VIOLATION_SCAN_MAX_CANDIDATES
+    ? directViolationVerdict(allItems, roomDims)
+    : indexedViolationVerdict(allItems, roomDims);
   for (const placed of candidates) {
     if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined) continue;
-    const excludeIds = getGroupMemberIds(placed.id, allItems);
-    const violations = getPlacementViolations(
-      placed.x,
-      placed.z,
-      item,
-      placed.rotationY,
-      allItems,
-      excludeIds,
-      placed.y,
-      roomDims,
-      placed.scale,
-    );
-    if (violations.length > 0) ids.add(placed.id);
+    if (violates(placed, item)) ids.add(placed.id);
   }
   return ids;
 }
@@ -817,9 +866,11 @@ export function PlacedFurniture(): React.ReactElement {
   }, [activeReferenceId, bookmarks]);
 
   // Two memos, deliberately. The lean sweep has to react to selection changes;
-  // the full sweep must NOT, or every desktop click would pay it (49ms at 800
-  // items). React has no conditional dependency array, so they are split and
-  // each early-returns on the path it does not serve.
+  // the full sweep must NOT, or every desktop click would re-sweep the whole
+  // layout. React has no conditional dependency array, so they are split and
+  // each early-returns on the path it does not serve. The full sweep does
+  // re-run on every drag frame (placedItems changes), which is why it is
+  // indexed rather than O(n²).
   const fullConstraintViolationIds = useMemo(
     () => (limitFurnitureOverlays
       ? EMPTY_VIOLATION_IDS
@@ -852,14 +903,7 @@ export function PlacedFurniture(): React.ReactElement {
     [constraintViolationIds, selectedIds, limitFurnitureOverlays],
   );
 
-  const tableSettingCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const placed of placedItems) {
-      const count = tableGroupedChairCount(placedItems, placed);
-      if (count !== undefined) counts.set(placed.id, count);
-    }
-    return counts;
-  }, [placedItems]);
+  const tableSettingCounts = useMemo(() => tableGroupedChairCounts(placedItems), [placedItems]);
 
   // Repeated procedural and imported models share detailed material batches.
   // Imported templates refresh the batch when their GLB finishes loading.
