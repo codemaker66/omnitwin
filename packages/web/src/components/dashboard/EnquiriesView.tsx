@@ -19,7 +19,9 @@ import {
 const STATUSES = ["all", "submitted", "under_review", "approved", "rejected", "withdrawn"] as const;
 
 // Newest first by creation date. Whether staff would rather see the most
-// recently active enquiries first is Blake's call; the API offers both.
+// recently active enquiries first is Blake's call; that order would need an
+// `updated_desc` option (and index) in the API, which offers only
+// `created_desc` and the default least-recently-updated order.
 const LIST_ORDER: EnquiryListOrder = "created_desc";
 
 /** The list for one load of one status filter. */
