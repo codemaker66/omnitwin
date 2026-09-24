@@ -75,10 +75,137 @@ function requestUrl(input: string | URL | Request): string {
 
 function mount(): void {
   render(<MemoryRouter initialEntries={[`/hallkeeper/${CONFIG_A}`]}>
+    <Link to={`/hallkeeper/${CONFIG_A}`}>Open first sheet</Link>
     <Link to={`/hallkeeper/${CONFIG_B}`}>Open second sheet</Link>
     <Routes><Route path="/hallkeeper/:configId" element={<HallkeeperPage />} /></Routes>
   </MemoryRouter>);
 }
+
+const APPROVED_UNAVAILABLE = "The approved setup sheet is unavailable.";
+
+function unavailableSnapshot(): Response {
+  return new Response(JSON.stringify({ code: "APPROVED_SNAPSHOT_UNAVAILABLE", error: "Internal detail must not be displayed" }), {
+    status: 503, headers: { "Content-Type": "application/json" },
+  });
+}
+
+describe("HallkeeperPage approved snapshot failures", () => {
+  it("explains an unavailable approved sheet and retries with activity before showing recovered contents", async () => {
+    const retry = deferred<Response>();
+    let loads = 0;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      if (requestUrl(input).endsWith("/v2")) return ++loads === 1 ? Promise.resolve(unavailableSnapshot()) : retry.promise;
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+    mount();
+    expect((await screen.findByRole("alert")).textContent).toBe(APPROVED_UNAVAILABLE);
+    expect(screen.getByText("Contact venue staff before using a replacement. You can try again once the approved sheet is available.")).toBeTruthy();
+    expect(screen.queryByText(/Internal detail/u)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Print" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try Again" }));
+    expect(screen.getByText("Loading sheet…")).toBeTruthy();
+    expect(document.querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(async () => { retry.resolve(jsonResponse(sheet(CONFIG_A, "Recovered dinner"))); await retry.promise; });
+    await screen.findByText("Recovered dinner", { exact: true, selector: "p" });
+    expect(screen.getByRole("button", { name: "Print" })).toBeTruthy();
+    expect(document.querySelector("[data-activity-indicator]")).toBeNull();
+  });
+
+  it("removes stale approved contents and Print when the PDF reports a missing approved snapshot", async () => {
+    const pdf = deferred<Response>();
+    const approved = { ...sheet(CONFIG_A, "Approved dinner"), approval: { version: 2, approvedAt: checkedAt, approverName: "Venue manager" } };
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/sheet?")) return pdf.promise;
+      if (url.endsWith("/v2")) return Promise.resolve(jsonResponse(approved));
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+    const download = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+    mount();
+    await screen.findByText("Approved dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    expect(screen.getByText("Preparing PDF…")).toBeTruthy();
+    const preparing = screen.getByRole("button", { name: "Preparing PDF…" });
+    expect(preparing.hasAttribute("disabled")).toBe(true);
+    expect(preparing.getAttribute("aria-busy")).toBe("true");
+    expect(preparing.querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(async () => { pdf.resolve(unavailableSnapshot()); await pdf.promise; });
+    expect((await screen.findByRole("alert")).textContent).toBe(APPROVED_UNAVAILABLE);
+    expect(screen.queryByRole("button", { name: "Print" })).toBeNull();
+    expect(screen.queryByText("Approved dinner", { exact: true, selector: "p" })).toBeNull();
+    expect(screen.queryByText(/Approved v2/u)).toBeNull();
+    expect(screen.getByRole("button", { name: "Try Again" })).toBeTruthy();
+    expect(document.querySelector("[data-activity-indicator]")).toBeNull();
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("does not save a successful JSON response as a PDF", async () => {
+    const download = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/sheet?")) return Promise.resolve(new Response("{}", { headers: { "Content-Type": "application/json" } }));
+      if (url.endsWith("/v2")) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Current dinner")));
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+    mount();
+    await screen.findByText("Current dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("PDF could not be downloaded");
+    expect(download).not.toHaveBeenCalled();
+    expect(screen.queryByText("PDF download started.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Download PDF" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("ignores an old PDF integrity failure after navigating A to B to A without retiring the new download", async () => {
+    const oldPdf = deferred<Response>();
+    const newPdf = deferred<Response>();
+    let downloads = 0;
+    const download = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/sheet?")) return ++downloads === 1 ? oldPdf.promise : newPdf.promise;
+      if (url.endsWith(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "First dinner")));
+      if (url.endsWith(`/${CONFIG_B}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_B, "Second dinner")));
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+    mount();
+    await screen.findByText("First dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    await waitFor(() => { expect(downloads).toBe(1); });
+    fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
+    expect(screen.getByRole("button", { name: "Download PDF" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByRole("link", { name: "Open first sheet" }));
+    await screen.findByText("First dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    await waitFor(() => { expect(downloads).toBe(2); });
+    await act(async () => { oldPdf.resolve(unavailableSnapshot()); await oldPdf.promise; });
+    expect(screen.getByText("Preparing PDF…")).toBeTruthy();
+    expect(screen.getByText("First dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => { newPdf.resolve(new Response("%PDF-1.7 fixture", { headers: { "Content-Type": "application/pdf" } })); await newPdf.promise; });
+    await screen.findByText("PDF download started.");
+    expect(download).toHaveBeenCalledOnce();
+  });
+
+  it("does not download a PDF whose response finishes after unmount", async () => {
+    const pending = deferred<Response>();
+    const download = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      if (requestUrl(input).includes("/sheet?")) return pending.promise;
+      if (requestUrl(input).endsWith("/v2")) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "Leaving dinner")));
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+    mount();
+    await screen.findByText("Leaving dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    cleanup();
+    await act(async () => { pending.resolve(new Response("%PDF-1.7 fixture", { headers: { "Content-Type": "application/pdf" } })); await pending.promise; });
+    expect(download).not.toHaveBeenCalled();
+  });
+});
 
 describe("HallkeeperPage request and offline queue isolation", () => {
   it("rejects a malformed sheet before exposing checklist controls or making check writes", async () => {

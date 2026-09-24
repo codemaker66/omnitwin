@@ -312,6 +312,14 @@ jobs:
       - name: Python deps for twin-forge E57 guards
         run: python3 -m pip install numpy scipy Pillow pye57
 
+      - name: Create dedicated saved-plan review test database
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql --host=127.0.0.1 --port=55476 --username=postgres --dbname=postgres
+          --no-psqlrc --set=ON_ERROR_STOP=1
+          --command="CREATE DATABASE venviewer_internal_demo_review_test"
+
       - name: Test (Vitest)
         # Use the same execution policy locally and in CI: serial workspaces
         # avoid contention between heavy suites, while --no-bail ensures a
@@ -320,6 +328,7 @@ jobs:
         env:
           # Ephemeral local fixture only; never load or override DATABASE_URL.
           VENVIEWER_ROUTE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_route_atomicity_test
+          VENVIEWER_INTERNAL_DEMO_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_internal_demo_review_test
         run: pnpm test
 
   e2e:

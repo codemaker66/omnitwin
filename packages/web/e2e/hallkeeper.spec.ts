@@ -254,6 +254,19 @@ test.describe("Hallkeeper Page", () => {
     await expect(page.getByRole("button", { name: "Print" })).toBeVisible();
   });
 
+  test("rejects JSON returned as a successful PDF download", async ({ page }) => {
+    const downloads: string[] = [];
+    page.on("download", (download) => { downloads.push(download.suggestedFilename()); });
+    await page.route(`${API}/hallkeeper/${CONFIG_ID}/sheet?download=true`, (route) =>
+      route.fulfill({ status: 200, json: { error: "Unexpected response" } }));
+    await page.getByRole("button", { name: "Download PDF" }).click();
+    await expect(page.getByRole("alert")).toContainText("PDF could not be downloaded.");
+    await expect(page.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Print" })).toBeVisible();
+    await expect(page.getByText("PDF download started.")).toHaveCount(0);
+    expect(downloads).toEqual([]);
+  });
+
   // -------------------------------------------------------------------------
   // Interactive floor plan (diagramUrl: null in mock)
   // -------------------------------------------------------------------------
@@ -284,6 +297,69 @@ test.describe("Hallkeeper Page — route protection", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Hallkeeper Page — authorized error states", () => {
+  test("shows an unavailable approved sheet and retries with visible activity", async ({ page }) => {
+    await seedAuthenticatedPlanner(page);
+    await mockSheetData(page);
+    let recovering = false;
+    let releaseRetry: (() => void) | undefined;
+    const retryGate = new Promise<void>((resolve) => { releaseRetry = resolve; });
+    await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, async (route) => {
+      if (!recovering) {
+        await route.fulfill({ status: 503, json: {
+          code: "APPROVED_SNAPSHOT_UNAVAILABLE", error: "Internal detail must not be displayed",
+        } });
+        return;
+      }
+      await retryGate;
+      await route.fulfill({ json: { data: MOCK_SHEET } });
+    });
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    await expect(page.getByRole("alert")).toHaveText("The approved setup sheet is unavailable.");
+    await expect(page.getByText("Contact venue staff before using a replacement. You can try again once the approved sheet is available.")).toBeVisible();
+    await expect(page.getByText("Internal detail must not be displayed")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Print" })).toHaveCount(0);
+
+    recovering = true;
+    await page.getByRole("button", { name: "Try Again" }).click();
+    await expect(page.getByText("Loading sheet…", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-activity-indicator]")).toBeVisible();
+    releaseRetry?.();
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Print" })).toBeVisible();
+    await expect(page.locator("[data-activity-indicator]")).toHaveCount(0);
+  });
+
+  test("removes stale approval and printable contents when the approved PDF is unavailable", async ({ page }) => {
+    await seedAuthenticatedPlanner(page);
+    await mockSheetData(page, { ...MOCK_SHEET, approval: {
+      version: 3, approvedAt: "2026-04-17T14:30:00.000Z", approverName: "Catherine Tait",
+    } });
+    let releaseDownload: (() => void) | undefined;
+    const downloadGate = new Promise<void>((resolve) => { releaseDownload = resolve; });
+    const downloads: string[] = [];
+    page.on("download", (download) => { downloads.push(download.suggestedFilename()); });
+    await page.route(`${API}/hallkeeper/${CONFIG_ID}/sheet?download=true`, async (route) => {
+      await downloadGate;
+      await route.fulfill({ status: 503, json: { code: "APPROVED_SNAPSHOT_UNAVAILABLE" } });
+    });
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    await expect(page.getByText("Sheet v3 · approved by Catherine Tait", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Download PDF" }).click();
+    await expect(page.getByRole("button", { name: "Preparing PDF…" })).toBeDisabled();
+    await expect(page.locator("[data-activity-indicator]")).toBeVisible();
+    releaseDownload?.();
+    await expect(page.getByRole("alert")).toHaveText("The approved setup sheet is unavailable.");
+    await expect(page.getByRole("button", { name: "Try Again" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Print" })).toHaveCount(0);
+    await expect(page.getByText(/Sheet v3 · approved by/)).toHaveCount(0);
+    await expect(page.getByRole("status", { name: /Approved version/, includeHidden: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", includeHidden: true })).toHaveCount(0);
+    await expect(page.locator("[data-activity-indicator]")).toHaveCount(0);
+    await page.emulateMedia({ media: "print" });
+    await expect(page.getByText("Stage Platform", { exact: true })).toHaveCount(0);
+    expect(downloads).toEqual([]);
+  });
+
   test("shows configuration-not-found message when the API returns 404", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
     await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {

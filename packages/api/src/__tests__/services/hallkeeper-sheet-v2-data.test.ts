@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  ApprovedSnapshotUnavailableError,
   buildSheetApproval,
+  resolveApprovedSnapshotPayload,
   parseStoredSnapshotPayload,
 } from "../../services/hallkeeper-sheet-v2-data.js";
-import { LEGACY_RENDER_COORDINATE_SPACE } from "../../db/coordinate-space.js";
+import { LEGACY_RENDER_COORDINATE_SPACE, REAL_METRE_COORDINATE_SPACE } from "../../db/coordinate-space.js";
 
 // ---------------------------------------------------------------------------
 // parseStoredSnapshotPayload — pure unit tests
@@ -16,7 +18,7 @@ import { LEGACY_RENDER_COORDINATE_SPACE } from "../../db/coordinate-space.js";
 //     The parser backfills `approval: null` before validation so
 //     older rows remain readable.
 //   - A corrupt or manually-patched row should return null so the
-//     caller falls through to live data rather than rendering garbage.
+//     caller rejects unavailable approved evidence instead of using live data.
 //
 // These tests pin both corners directly, without needing a DB fixture.
 // ---------------------------------------------------------------------------
@@ -161,12 +163,12 @@ describe("parseStoredSnapshotPayload", () => {
 // buildSheetApproval — pure unit tests for the snap+approver → SheetApproval
 // step.
 //
-// Pinned edge cases (the DB-coupled resolveApproval delegates to this):
+// Pinned legacy-stamp construction cases:
 //   - approver row exists with displayName → uses displayName
 //   - approver row exists WITHOUT displayName → falls back to name
 //     (users.name is NOT NULL in schema, so name always resolves)
-//   - approver row has been deleted (null) → returns null so the sheet
-//     renders without a stale approval stamp
+//   - approver row is unavailable (null) → returns null; the frozen resolver
+//     retains an existing stamp or labels the historical identity unavailable
 //   - approvedAt (Date) is serialized to ISO-8601 string
 // ---------------------------------------------------------------------------
 
@@ -196,11 +198,7 @@ describe("buildSheetApproval", () => {
     expect(approval?.approverName).toBe("Catherine Tait");
   });
 
-  it("returns null when the approver row has been deleted", () => {
-    // The DB path returns an empty array → undefined → we normalise
-    // to null at the call site. `buildSheetApproval` treats null as
-    // "no approver resolvable" and returns null so the sheet renders
-    // without a stale approval banner.
+  it("returns null when the legacy approver row is unavailable", () => {
     expect(buildSheetApproval(snap, null)).toBeNull();
   });
 
@@ -218,5 +216,40 @@ describe("buildSheetApproval", () => {
       { name: "Staff User", displayName: null },
     );
     expect(approval?.version).toBe(42);
+  });
+});
+
+
+describe("resolveApprovedSnapshotPayload", () => {
+  const configId = "00000000-0000-0000-0000-000000000001";
+  const stamp = { version: 3, approvedAt: "2026-04-17T14:30:00.000Z", approverName: "Catherine Tait" };
+  const snapshot = {
+    payload: { ...VALID_PAYLOAD, approval: stamp },
+    coordinateSpace: REAL_METRE_COORDINATE_SPACE,
+    version: stamp.version,
+    approvedAt: new Date(stamp.approvedAt),
+    approver: null,
+  } as const;
+
+  // Current PostgreSQL FK/check constraints prevent deleting an approver or
+  // clearing approvedBy on an approved row. These tests qualify only defensive
+  // reads of older/imported evidence, not a supported account-deletion workflow.
+  it("preserves a matching saved stamp even when its account cannot be resolved", () => {
+    expect(resolveApprovedSnapshotPayload(configId, snapshot).approval).toEqual(stamp);
+  });
+
+  it.each(["missing", "null"])("keeps legacy %s-stamp content with an explicit unavailable historical identity", field => {
+    const payload: Record<string, unknown> = { ...VALID_PAYLOAD };
+    if (field === "missing") delete payload["approval"];
+    const result = resolveApprovedSnapshotPayload(configId, { ...snapshot, payload });
+    expect(result.config).toEqual(VALID_PAYLOAD["config"]);
+    expect(result.approval).toEqual({ ...stamp, approverName: "Historical approver unavailable" });
+    expect(payload["approval"]).toBe(field === "missing" ? undefined : null);
+  });
+
+  it("rejects missing evidence and an unapproved row", () => {
+    expect(() => resolveApprovedSnapshotPayload(configId, null)).toThrow(ApprovedSnapshotUnavailableError);
+    expect(() => resolveApprovedSnapshotPayload(configId, { ...snapshot, approvedAt: null }))
+      .toThrow(ApprovedSnapshotUnavailableError);
   });
 });

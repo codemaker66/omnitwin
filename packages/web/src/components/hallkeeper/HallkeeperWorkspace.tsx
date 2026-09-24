@@ -6,7 +6,7 @@ import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { getHallkeeperRoomPlan, HALLKEEPER_PLAN_VENUE_SLUG } from "../../data/hallkeeper-room-plans.js";
 import { RoomPlanReference } from "./RoomPlanReference.js";
 import { roomPosterUrl } from "../../lib/room-posters.js";
-import { ActivityStatus } from "../shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { InteractiveFloorPlan } from "./InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "./HallkeeperStatusBanner.js";
 import { useHallkeeperContext, type HallkeeperVerifiedContext, type HallkeeperContextResult } from "./useHallkeeperContext.js";
@@ -75,7 +75,7 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
     <header className="hkf-topbar">
       <Link className="hkf-brand" to="/hallkeeper/today"><span aria-hidden="true">▥</span><span>{data.venue.name}<small>HALLKEEPER</small></span></Link>
       <nav aria-label="Hallkeeper navigation"><Link to="/hallkeeper/today">Today’s rooms</Link><Link to="/hallkeeper/rooms">Room plans</Link></nav>
-      <div className="hkf-tools"><button type="button" onClick={onPrint}><Printer size={16} /> Print</button><button type="button" onClick={onDownload} disabled={downloadBusy}>{downloadBusy ? <ActivityStatus>Preparing PDF…</ActivityStatus> : "Download PDF"}</button></div>
+      <div className="hkf-tools"><button type="button" onClick={onPrint}><Printer size={16} /> Print</button><button type="button" onClick={onDownload} disabled={downloadBusy} aria-busy={downloadBusy}>{downloadBusy ? <><ActivityIndicator size={20} />Preparing PDF…</> : "Download PDF"}</button></div>
     </header>
     <div className="hkf-shell">
       <aside className="hkf-room-rail" aria-label="Rooms linked to this event">

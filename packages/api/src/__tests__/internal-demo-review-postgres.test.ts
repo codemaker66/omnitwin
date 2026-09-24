@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "../db/schema.js";
 import { configurationReviewRoutes } from "../routes/configuration-reviews.js";
+import { hallkeeperSheetRoutes } from "../routes/hallkeeper-sheet.js";
 import { validateEnv } from "../env.js";
 import { InternalDemoNameSchema } from "../services/internal-demo-review.js";
 import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
@@ -49,6 +50,7 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     server = Fastify();
     await server.register(configurationReviewRoutes, { db, prefix: "/configurations",
       env: validateEnv({ NODE_ENV: "test", DATABASE_URL: target }) });
+    await server.register(hallkeeperSheetRoutes, { db, prefix: "/hallkeeper" });
     await server.ready();
   }, 120000);
   beforeEach(() => { email.mockClear(); });
@@ -116,6 +118,153 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(saved.audit[1]).toMatchObject({ actorUserId: f.userId, metadata: { notifyTeam: false, eventIds: [f.eventId], transition: "approved" } });
     expect((await assembleSheetDataV2(db, f.configId, "http://127.0.0.1"))?.payload.floorPlan?.objects).toHaveLength(1);
     expect(email).not.toHaveBeenCalled();
+  });
+
+  async function approvedFixture() {
+    const f = await fixture();
+    expect((await post(f, "submit", { notifyTeam: false })).statusCode).toBe(200);
+    expect((await post(f, "start-review")).statusCode).toBe(200);
+    expect((await post(f, "approve", { notifyTeam: false })).statusCode).toBe(200);
+    const saved = await state(f);
+    const snapshot = saved.snapshots[0];
+    const sheet = await assembleSheetDataV2(db, f.configId, "http://127.0.0.1");
+    if (snapshot === undefined || sheet === null || sheet.payload.approval === null) {
+      throw new Error("Approved fixture must have a real frozen sheet");
+    }
+    await db.update(schema.configurations).set({ name: "UNREVIEWED LIVE CHANGE", guestCount: 999 })
+      .where(eq(schema.configurations.id, f.configId));
+    await db.delete(schema.placedObjects).where(eq(schema.placedObjects.configurationId, f.configId));
+    return { ...f, snapshot, frozen: sheet.payload };
+  }
+
+  it("serves the approved frozen content after live edits, including an actual downloadable PDF", async () => {
+    const f = await approvedFixture();
+    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/v2`, headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: { config: f.frozen.config, floorPlan: f.frozen.floorPlan, approval: f.frozen.approval } });
+    const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet?download=true`, headers: f.headers });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.headers["content-disposition"]).not.toContain("UNREVIEWED");
+  });
+
+  it.each(["malformed", "missing", "mismatched-approval", "mismatched-time", "wrong-config"])(
+    "refuses JSON and both PDF paths when approved evidence is %s", async defect => {
+      const f = await approvedFixture();
+      if (defect === "missing") {
+        await db.delete(schema.configurationSheetSnapshots).where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+      } else {
+        const payload = { ...f.frozen,
+          ...(defect === "malformed" ? { phases: "invalid frozen schema" } : {}),
+          ...(defect === "mismatched-approval" ? { approval: { ...f.frozen.approval, version: f.snapshot.version + 1 } } : {}),
+          ...(defect === "mismatched-time" ? { approval: { ...f.frozen.approval, approvedAt: "2000-01-01T00:00:00.000Z" } } : {}),
+          ...(defect === "wrong-config" ? { config: { ...f.frozen.config, id: randomUUID() } } : {}),
+        };
+        await db.update(schema.configurationSheetSnapshots).set({ payload, pdfUrl: "https://example.invalid/old.pdf" })
+          .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+      }
+      for (const suffix of ["v2", "sheet", "sheet?download=true"]) {
+        const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/${suffix}`, headers: f.headers });
+        expect(response.statusCode, suffix).toBe(503);
+        expect(response.json()).toMatchObject({ code: "APPROVED_SNAPSHOT_UNAVAILABLE" });
+        expect(response.headers["location"]).toBeUndefined();
+        expect(response.headers["cache-control"]).toBe("private, no-store");
+        expect(response.body).not.toContain("UNREVIEWED LIVE CHANGE");
+      }
+    },
+  );
+
+  it("preserves a matching frozen approver stamp when the author is renamed", async () => {
+    const f = await approvedFixture();
+    await db.update(schema.configurationSheetSnapshots).set({ payload: f.frozen })
+      .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+    await db.update(schema.users).set({ name: "Changed account name", displayName: "Changed display name" })
+      .where(eq(schema.users.id, f.userId));
+    const sheet = await assembleSheetDataV2(db, f.configId, "http://127.0.0.1");
+    expect(sheet?.payload).toMatchObject({ config: f.frozen.config, floorPlan: f.frozen.floorPlan, approval: f.frozen.approval });
+  });
+
+  it.each(["missing", "null"])("backfills legacy %s approval from the same snapshot without changing frozen contents", async field => {
+    const f = await approvedFixture();
+    const payload: Record<string, unknown> = { ...f.frozen, approval: null };
+    if (field === "missing") delete payload["approval"];
+    await db.update(schema.configurationSheetSnapshots).set({ payload })
+      .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+    const sheet = await assembleSheetDataV2(db, f.configId, "http://127.0.0.1");
+    expect(sheet?.payload).toMatchObject({ config: f.frozen.config, floorPlan: f.frozen.floorPlan,
+      approval: { version: f.snapshot.version, approvedAt: f.snapshot.approvedAt?.toISOString(), approverName: "Test actor" } });
+    expect((await state(f)).snapshots[0]?.payload).toEqual(payload);
+  });
+
+  it("binds the PDF redirect and content to the latest approved version, ignoring newer unapproved snapshots", async () => {
+    const f = await approvedFixture();
+    await db.update(schema.configurationSheetSnapshots).set({ pdfUrl: "https://example.invalid/v1.pdf" })
+      .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+    const approvedAt = new Date((f.snapshot.approvedAt?.getTime() ?? 0) + 1000);
+    await db.insert(schema.configurationSheetSnapshots).values([
+      { configurationId: f.configId, version: 2, sourceHash: "2".repeat(64), createdBy: f.userId,
+        payload: { ...f.frozen, config: { ...f.frozen.config, name: "Approved second version" }, approval: null },
+        coordinateSpace: "real_m_v1", approvedAt, approvedBy: f.userId, pdfUrl: "https://example.invalid/v2.pdf" },
+      { configurationId: f.configId, version: 3, sourceHash: "3".repeat(64), createdBy: f.userId,
+        payload: {}, coordinateSpace: "real_m_v1", pdfUrl: "https://example.invalid/unapproved.pdf" },
+    ]);
+    await db.update(schema.configurations).set({ approvedAt, approvedBy: f.userId })
+      .where(eq(schema.configurations.id, f.configId));
+    const json = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/v2`, headers: f.headers });
+    expect(json.json()).toMatchObject({ data: { config: { name: "Approved second version" }, approval: { version: 2 } } });
+    const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet`, headers: f.headers });
+    expect(pdf.statusCode).toBe(302);
+    expect(pdf.headers["location"]).toBe("https://example.invalid/v2.pdf");
+  });
+
+  it.each(["deleted", "cleared"])("does not fall back to an older approval when the current snapshot is %s", async defect => {
+    const f = await approvedFixture();
+    const approvedAt = new Date((f.snapshot.approvedAt?.getTime() ?? 0) + 1000);
+    const snapshotId = randomUUID();
+    await db.insert(schema.configurationSheetSnapshots).values({ id: snapshotId,
+      configurationId: f.configId, version: 2, sourceHash: "2".repeat(64), createdBy: f.userId,
+      payload: { ...f.frozen, approval: null }, coordinateSpace: "real_m_v1", approvedAt, approvedBy: f.userId });
+    await db.update(schema.configurations).set({ approvedAt, approvedBy: f.userId })
+      .where(eq(schema.configurations.id, f.configId));
+    await db.update(schema.configurationSheetSnapshots).set({ pdfUrl: "https://example.invalid/older-approved.pdf" })
+      .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+    if (defect === "deleted") await db.delete(schema.configurationSheetSnapshots).where(eq(schema.configurationSheetSnapshots.id, snapshotId));
+    else await db.update(schema.configurationSheetSnapshots).set({ approvedAt: null, approvedBy: null })
+      .where(eq(schema.configurationSheetSnapshots.id, snapshotId));
+    for (const suffix of ["v2", "sheet", "sheet?download=true"]) {
+      const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/${suffix}`, headers: f.headers });
+      expect(response.statusCode, suffix).toBe(503);
+      expect(response.json()).toMatchObject({ code: "APPROVED_SNAPSHOT_UNAVAILABLE" });
+      expect(response.headers["location"]).toBeUndefined();
+    }
+  });
+
+  it("serves a current unapproved sheet after reopening without redirecting to an old approved PDF", async () => {
+    const f = await approvedFixture();
+    await db.update(schema.configurationSheetSnapshots).set({ pdfUrl: "https://example.invalid/old.pdf" })
+      .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+    // Simulate a persisted reopening; this fixture does not claim an approved-to-draft UI transition.
+    await db.update(schema.configurations).set({ reviewStatus: "draft", approvedAt: null, approvedBy: null })
+      .where(eq(schema.configurations.id, f.configId));
+    const json = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/v2`, headers: f.headers });
+    expect(json.json()).toMatchObject({ data: { config: { name: "UNREVIEWED LIVE CHANGE" }, approval: null } });
+    const pdf = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/sheet`, headers: f.headers });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers["location"]).toBeUndefined();
+    expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
+  });
+
+  it("preserves authentication and tenant denial ahead of unavailable approved evidence", async () => {
+    const f = await approvedFixture();
+    const other = await fixture();
+    await db.update(schema.configurationSheetSnapshots).set({ payload: {} })
+      .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
+    for (const suffix of ["v2", "sheet?download=true"]) {
+      expect((await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/${suffix}` })).statusCode).toBe(401);
+      expect((await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/${suffix}`, headers: other.headers })).statusCode).toBe(403);
+    }
   });
 
   it.each([
