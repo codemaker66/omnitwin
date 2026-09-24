@@ -1,8 +1,10 @@
 import "dotenv/config";
 import Fastify from "fastify";
+import compress from "@fastify/compress";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import rawBody from "fastify-raw-body";
+import { constants as zlibConstants } from "node:zlib";
 import { getImageDecoderRuntime } from "@omnitwin/reconstruction-foundry";
 import { validateEnv, type Env } from "./env.js";
 import { createDbConnection } from "./db/client.js";
@@ -161,6 +163,11 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     // idempotency-replay: T-538 — lets browser clients see whether a keyed
     // diary mutation was deduped (replayed) rather than freshly executed.
     exposedHeaders: ["x-content-sha256", "idempotency-replay"],
+    // The web app is cross-origin and its authenticated JSON calls all need a
+    // preflight. Without Access-Control-Max-Age browsers keep one for only
+    // about five seconds, so polls and saves paid an extra round trip first.
+    // Two hours is Chromium's cap; actual responses still check the origin.
+    maxAge: 7200,
   });
 
   // Rate limiting — per-user where authenticated, per-IP otherwise.
@@ -202,6 +209,28 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
       code: "RATE_LIMITED",
       retryAfterSeconds: Math.ceil(context.ttl / 1000),
     }),
+  });
+
+  // Response compression. Railway's edge forwards an encoded body as-is but
+  // does not compress API responses itself, so layouts (130 KB for 300
+  // objects) and diary calendars (up to ~600 KB) crossed the network raw.
+  // JSON and text only: runtime assets are already-compressed binaries served
+  // with byte ranges. Brotli quality 4 costs about a millisecond per 130 KB;
+  // Node's default of 11 costs ~190 ms. Clients never send compressed bodies,
+  // so request decompression stays off. Registered before any route so its
+  // per-route hooks attach everywhere.
+  await server.register(compress, {
+    customTypes: /^text\/(?!event-stream)|(?:\+|\/)json(?:;|$)/u,
+    encodings: ["br", "gzip"],
+    threshold: 1024,
+    brotliOptions: {
+      params: {
+        [zlibConstants.BROTLI_PARAM_MODE]: zlibConstants.BROTLI_MODE_TEXT,
+        [zlibConstants.BROTLI_PARAM_QUALITY]: 4,
+      },
+    },
+    zlibOptions: { level: 6 },
+    globalDecompression: false,
   });
 
   await server.register(rawBody, {

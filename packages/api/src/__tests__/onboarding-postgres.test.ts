@@ -220,6 +220,47 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
     expect(await getUserByClerkId(db, CLERK_ID, EMAIL)).toMatchObject({ role: "admin", venueId: VENUE });
   });
 
+  // Account linking, webhooks and administrator writes hold the email advisory
+  // lock. Resolve a sign-in while another transaction holds it; the lock is
+  // always released before returning, so a blocked resolution cannot leak.
+  async function resolveWhileLinkingLockHeld(): Promise<JwtUser | null | "blocked"> {
+    let outcome: JwtUser | null | "blocked" = "blocked";
+    let resolution: Promise<JwtUser | null> | undefined;
+    await withBlocker(async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [EMAIL]);
+      resolution = getUserByClerkId(db, CLERK_ID, EMAIL.toUpperCase());
+      outcome = await Promise.race([
+        resolution,
+        new Promise<"blocked">((resolve) => { setTimeout(() => { resolve("blocked"); }, 3000); }),
+      ]);
+    });
+    await resolution;
+    return outcome;
+  }
+
+  it("resolves a linked account without queueing on the account-linking lock, then accepts a later invitation", async () => {
+    const userId = await insertExistingUser({ venueId: VENUE, role: "staff" });
+    expect(await resolveWhileLinkingLockHeld()).toEqual({ id: userId, email: EMAIL, name: "Existing fixture user",
+      role: "staff", platformRole: "none", venueId: VENUE });
+    const created = await createWorkspace();
+    expect(await getUserByClerkId(db, CLERK_ID, EMAIL)).toMatchObject({ id: userId, role: "admin", venueId: VENUE });
+    await expectActiveMembership(created, userId);
+  });
+
+  it("sends a linked account with a pending domain invitation through the locking path", async () => {
+    const userId = await insertExistingUser({ venueId: VENUE, role: "staff" });
+    const invitation = await pool.query<{ id: string }>(
+      "INSERT INTO user_invitations(domain, role, venue_id, status, expires_at) VALUES ('example.test', 'admin', $1, 'pending', now() + interval '1 day') RETURNING id",
+      [VENUE]);
+    const invitationId = invitation.rows[0]?.id;
+    if (invitationId === undefined) throw new Error("Expected domain invitation fixture");
+
+    expect(await getUserByClerkId(db, CLERK_ID, EMAIL)).toMatchObject({ id: userId, role: "admin", venueId: VENUE });
+    expect(await invitationState(invitationId)).toMatchObject({ status: "accepted", accepted_by: userId });
+    // Once accepted, the same sign-in resolves through the lock-free read.
+    expect(await resolveWhileLinkingLockHeld()).toMatchObject({ id: userId, role: "admin" });
+  });
+
   it("serializes concurrent first acceptance and repeated sign-in to one account and membership", async () => {
     const created = await createWorkspace();
     await withBlocker(async (client) => {

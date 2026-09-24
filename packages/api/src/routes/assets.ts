@@ -2251,19 +2251,21 @@ export async function assetRoutes(
     }
   }
 
+  // Asset bytes are already compressed and range-addressable: leave them as-is.
   server.get(
     "/runtime-assets/:assetVersionId",
-    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    { preHandler: [authenticate, authorizePlatformAdmin()], compress: false },
     streamRuntimeAsset,
   );
   server.get(
     "/runtime-assets/:assetVersionId/:fileName",
-    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    { preHandler: [authenticate, authorizePlatformAdmin()], compress: false },
     streamRuntimeAsset,
   );
   server.get(
     "/runtime-profiles/:profileId/members/:memberIndex/:memberFileName",
     {
+      compress: false,
       config: {
         rateLimit: {
           max: PUBLIC_RUNTIME_PROFILE_ROUTE_RATE_LIMIT_PER_MINUTE,

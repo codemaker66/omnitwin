@@ -24,6 +24,7 @@ interface RecordedUpdate {
 interface MockDbState {
   readonly inserted: RecordedInsert[];
   readonly updated: RecordedUpdate[];
+  readonly calls: { transactions: number; linkedLookups: number };
 }
 
 interface MockQuery extends Promise<readonly unknown[]> {
@@ -85,7 +86,7 @@ function makeMockDb(options: {
   readonly invitationClaimSucceeds?: boolean;
   readonly venueExists?: boolean;
 } = {}): { readonly db: Database; readonly state: MockDbState } {
-  const state: MockDbState = { inserted: [], updated: [] };
+  const state: MockDbState = { inserted: [], updated: [], calls: { transactions: 0, linkedLookups: 0 } };
   let userSelectCount = 0;
   let invitationSelectCount = 0;
   const invitationClaimSucceeds = options.invitationClaimSucceeds ?? true;
@@ -95,10 +96,25 @@ function makeMockDb(options: {
     for: (_mode: string) => Promise.resolve(result),
   });
 
+  const hasActiveInvitation = [options.emailInvitation, options.domainInvitation].some((invitation) =>
+    invitation !== undefined && invitation.status === "pending" && invitation.acceptedAt === null &&
+    (invitation.expiresAt === null || invitation.expiresAt > new Date()));
+
   const db = {
-    select: () => ({
+    select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: (_condition: unknown) => {
+            // The lock-free linked-account read: a projected users select whose
+            // NOT EXISTS subquery excludes identities with a pending invitation.
+            if (fields !== undefined && table === userInvitations) return query([]);
+            if (fields !== undefined && table === users) {
+              state.calls.linkedLookups += 1;
+              const linked = options.existingByClerk;
+              if (linked === undefined || hasActiveInvitation) return query([]);
+              const record = asRecord(linked);
+              return query([Object.fromEntries(Object.keys(fields).map((key) => [key, record[key]]))]);
+            }
+
             if (table === users) {
               userSelectCount += 1;
               if (userSelectCount === 1) {
@@ -153,7 +169,10 @@ function makeMockDb(options: {
         },
       }),
     }),
-    transaction: async <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(db),
+    transaction: async <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => {
+      state.calls.transactions += 1;
+      return callback(db);
+    },
     execute: () => Promise.resolve([]),
   };
 
@@ -265,6 +284,58 @@ describe("Clerk invitation access policy", () => {
     expect(state.updated[0]?.values).toMatchObject({
       status: "accepted",
     });
+  });
+
+  it("resolves an already-linked account in one read, without the account-linking transaction", async () => {
+    const linked = userRow({
+      id: "66666666-6666-4666-8666-666666666666",
+      clerkId: "clerk_linked",
+      email: "linked@example.com",
+      name: "Linked Staff",
+      role: "staff",
+      platformRole: "admin",
+      venueId: VENUE_ID,
+    });
+    const { db, state } = makeMockDb({ existingByClerk: linked });
+
+    const user = await getUserByClerkId(db, "clerk_linked", " Linked@Example.com ");
+
+    expect(user).toEqual({
+      id: linked.id,
+      email: "linked@example.com",
+      name: "Linked Staff",
+      role: "staff",
+      platformRole: "admin",
+      venueId: VENUE_ID,
+    });
+    expect(state.calls).toEqual({ transactions: 0, linkedLookups: 1 });
+    expect(state.inserted).toHaveLength(0);
+    expect(state.updated).toHaveLength(0);
+  });
+
+  it("keeps a linked account with a pending invitation on the locking path", async () => {
+    const linked = userRow({ clerkId: "clerk_linked", role: "staff", venueId: VENUE_ID });
+    const { db, state } = makeMockDb({
+      existingByClerk: linked,
+      emailInvitation: invitationRow({ role: "admin", venueId: VENUE_ID }),
+    });
+
+    const user = await getUserByClerkId(db, "clerk_linked", "invited@example.com");
+
+    expect(user).toMatchObject({ id: linked.id, role: "admin", venueId: VENUE_ID });
+    expect(state.calls).toEqual({ transactions: 1, linkedLookups: 1 });
+    expect(state.updated.map((update) => update.table)).toEqual([users, userInvitations, workspaceMemberships]);
+  });
+
+  it("does not let an expired invitation push a linked account onto the locking path", async () => {
+    const linked = userRow({ clerkId: "clerk_linked", role: "planner" });
+    const { db, state } = makeMockDb({
+      existingByClerk: linked,
+      emailInvitation: invitationRow({ expiresAt: new Date("2020-01-01T00:00:00Z") }),
+    });
+
+    expect(await getUserByClerkId(db, "clerk_linked", "invited@example.com")).toMatchObject({ id: linked.id, role: "planner" });
+    expect(state.calls).toEqual({ transactions: 0, linkedLookups: 1 });
   });
 
   it("does not create a planner user for an uninvited Clerk identity", async () => {

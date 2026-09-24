@@ -63,3 +63,45 @@ describe("Clerk token email gate", () => {
     expect(res.json()).toMatchObject({ code: "EMAIL_UNVERIFIED" });
   });
 });
+
+describe("Clerk session-token verification key", () => {
+  let server: FastifyInstance | null = null;
+
+  beforeEach(() => {
+    verifyTokenMock.mockReset();
+  });
+
+  afterEach(async () => {
+    delete process.env["CLERK_JWT_KEY"];
+    if (server !== null) {
+      await server.close();
+      server = null;
+    }
+  });
+
+  it("verifies locally only when CLERK_JWT_KEY holds a key", async () => {
+    const { clerkTokenVerificationOptions } = await import("../middleware/auth.js");
+    expect(clerkTokenVerificationOptions("sk_test_dummy", {})).toEqual({ secretKey: "sk_test_dummy" });
+    expect(clerkTokenVerificationOptions("sk_test_dummy", { CLERK_JWT_KEY: " \n " }))
+      .toEqual({ secretKey: "sk_test_dummy" });
+    expect(clerkTokenVerificationOptions("sk_test_dummy", { CLERK_JWT_KEY: " PEM-KEY\n" }))
+      .toEqual({ secretKey: "sk_test_dummy", jwtKey: "PEM-KEY" });
+  });
+
+  it("passes the configured key to Clerk when authenticating a request", async () => {
+    process.env["CLERK_JWT_KEY"] = "PEM-KEY";
+    verifyTokenMock.mockResolvedValue({ sub: "clerk_missing_email" });
+    server = await buildAuthProbeServer();
+
+    await server.inject({
+      method: "GET",
+      url: "/probe",
+      headers: { authorization: "Bearer clerk-token" },
+    });
+
+    expect(verifyTokenMock).toHaveBeenCalledWith("clerk-token", {
+      secretKey: "sk_test_dummy",
+      jwtKey: "PEM-KEY",
+    });
+  });
+});

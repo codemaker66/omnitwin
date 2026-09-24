@@ -31,6 +31,14 @@ export function isLocalDatabaseUrl(databaseUrl: string): boolean {
   }
 }
 
+// A Neon connection costs a WebSocket, TLS and PostgreSQL start-up handshake
+// across regions, per connection a handler fans out to. pg-pool closes idle
+// clients after 10 s by default, so sporadic venue traffic reconnected on most
+// requests. Idle clients do not keep a Neon compute awake, and one minute stays
+// well inside its five-minute scale-to-zero window, so sockets closed by a
+// suspension are never handed out.
+export const NEON_POOL_IDLE_TIMEOUT_MS = 60_000;
+
 /**
  * Owns the pool alongside the database, for API shutdown hooks and short-lived
  * scripts. Construction is lazy: queries establish the connection.
@@ -39,7 +47,7 @@ export function createDbConnection(databaseUrl: string): DatabaseConnection {
   const local = isLocalDatabaseUrl(databaseUrl);
   const pool = local
     ? new PgPool({ connectionString: databaseUrl })
-    : new NeonPool({ connectionString: databaseUrl });
+    : new NeonPool({ connectionString: databaseUrl, idleTimeoutMillis: NEON_POOL_IDLE_TIMEOUT_MS });
   // An idle pooled client can error at any time (dropped socket, server
   // restart). Without a listener that is an unhandled 'error' event — it
   // kills the whole process (observed live in Slice 4). Log and let the

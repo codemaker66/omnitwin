@@ -170,7 +170,7 @@ export async function adminReconstructionFoundryRoutes(
     return adminResult(request, reply, () => service.getRelease(parsed.data.releaseId));
   });
 
-  server.get("/releases/:releaseId/visual-evidence", platformAdmin, async (request, reply) => {
+  server.get("/releases/:releaseId/visual-evidence", { ...platformAdmin, compress: false }, async (request, reply) => {
     const parsedParams = ReleaseParamsSchema.safeParse(request.params);
     if (!parsedParams.success) return validationError(reply, parsedParams.error.issues);
     const parsedQuery = VisualEvidenceQuerySchema.safeParse(request.query);

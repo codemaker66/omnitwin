@@ -482,7 +482,7 @@ export async function runtimePackagePreviewRoutes(
 
   server.get(
     "/runtime-package-previews/:runtimePackageId/assets/:assetVersionId/:fileName",
-    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    { preHandler: [authenticate, authorizePlatformAdmin()], compress: false },
     async (request, reply) => {
       const parsed = PreviewAssetParamsSchema.safeParse(request.params);
       if (!parsed.success) return reply.status(400).send(validationFailure(parsed.error.issues));

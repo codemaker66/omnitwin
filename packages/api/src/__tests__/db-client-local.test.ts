@@ -3,7 +3,7 @@ import { Pool as NeonPool, neonConfig } from "@neondatabase/serverless";
 import { sql } from "drizzle-orm";
 import { Pool as PgPool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDb, createDbConnection, isLocalDatabaseUrl } from "../db/client.js";
+import { NEON_POOL_IDLE_TIMEOUT_MS, createDb, createDbConnection, isLocalDatabaseUrl } from "../db/client.js";
 
 const NEON_URL = "postgresql://user:redacted@ep-example.eu-west-2.aws.neon.tech/neondb?sslmode=require";
 const LOCAL_URL = "postgresql://postgres@127.0.0.1:55477/venviewer_platform_test";
@@ -53,6 +53,21 @@ describe("database pool ownership", () => {
     expect(connection.close()).toBe(closing);
     await closing;
     expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps idle Neon connections for a minute instead of reconnecting after ten seconds", async () => {
+    const listen = vi.spyOn(NeonPool.prototype, "on");
+    const connection = createDbConnection(NEON_URL);
+    try {
+      const pool = listen.mock.contexts[0];
+      if (!(pool instanceof NeonPool)) throw new Error("Neon pool was not created");
+      expect(NEON_POOL_IDLE_TIMEOUT_MS).toBe(60_000);
+      // pg-pool keeps its resolved options on the instance; Neon's types omit it.
+      const options: unknown = Reflect.get(pool, "options");
+      expect(options).toMatchObject({ idleTimeoutMillis: NEON_POOL_IDLE_TIMEOUT_MS });
+    } finally {
+      await connection.close();
+    }
   });
 
   it("preserves Neon settings when local and remote databases are mixed", async () => {

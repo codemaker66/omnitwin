@@ -42,6 +42,7 @@ describe("production server CORS registration", () => {
     expect(response.headers["access-control-allow-credentials"]).toBe("true");
     expect(String(response.headers["access-control-allow-methods"]).split(/,\s*/u)).toContain(method);
     expect(response.headers["access-control-allow-headers"]).toBe("authorization,content-type,idempotency-key");
+    expect(response.headers["access-control-max-age"]).toBe("7200");
   });
 
   it("does not grant cross-origin access to an unlisted origin", async () => {

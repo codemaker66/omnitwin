@@ -1,7 +1,7 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
-import { and, asc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, notExists, or, sql } from "drizzle-orm";
 import { PlatformRoleSchema, type PlatformRole } from "@omnitwin/types";
 import { onboardingAuditEvents, userInvitations, users, venues, workspaceMemberships, workspaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -182,6 +182,41 @@ async function findPendingInvitation(db: AuthTransaction, email: string, now: Da
 // policy. A Clerk identity alone is not enough to become a planner.
 // ---------------------------------------------------------------------------
 
+// An account already linked to this Clerk identity, with no invitation waiting
+// for this email or its domain, is what nearly every request resolves to. The
+// transaction below makes no writes in that case and returns the same row, so
+// this single lock-free read answers it without an advisory lock, row locks or
+// a commit. First logins, unlinked rows and invitations still take the lock.
+async function findLinkedUserWithoutPendingInvitation(
+  db: Database,
+  clerkId: string,
+  email: string,
+  now: Date,
+): Promise<JwtUser | null> {
+  const domain = getEmailDomain(email);
+  const pendingInvitation = db.select({ id: userInvitations.id }).from(userInvitations).where(and(
+    eq(userInvitations.status, "pending"),
+    isNull(userInvitations.acceptedAt),
+    or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now)),
+    domain === null
+      ? eq(userInvitations.email, email)
+      : or(eq(userInvitations.email, email), eq(userInvitations.domain, domain)),
+  ));
+  const [user] = await db.select({
+    id: users.id,
+    email: users.email,
+    name: users.name,
+    role: users.role,
+    platformRole: users.platformRole,
+    venueId: users.venueId,
+  }).from(users)
+    .where(and(eq(users.clerkId, clerkId), notExists(pendingInvitation)))
+    .limit(1);
+  if (user === undefined) return null;
+  return { id: user.id, email: user.email, name: user.name, role: user.role,
+    platformRole: sanitizePlatformRole(user.platformRole), venueId: user.venueId };
+}
+
 export async function getUserByClerkId(
   db: Database,
   clerkId: string,
@@ -189,6 +224,9 @@ export async function getUserByClerkId(
 ): Promise<JwtUser | null> {
   const normalizedEmail = normalizeAuthEmail(email);
   if (normalizedEmail === null) return null;
+
+  const linked = await findLinkedUserWithoutPendingInvitation(db, clerkId, normalizedEmail, new Date());
+  if (linked !== null) return linked;
 
   return db.transaction(async (tx) => {
     // HTTP, WebSocket, webhook and administrator writes share this lock.
@@ -275,6 +313,19 @@ export async function getUserByClerkId(
   });
 }
 
+/**
+ * Clerk token verification options. With CLERK_JWT_KEY (the instance's PEM
+ * public key from the Clerk dashboard) tokens verify locally; otherwise Clerk
+ * fetches its JWKS over the network and re-fetches it every few minutes.
+ */
+export function clerkTokenVerificationOptions(
+  secretKey: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { readonly secretKey: string; readonly jwtKey?: string } {
+  const jwtKey = env["CLERK_JWT_KEY"]?.trim();
+  return jwtKey === undefined || jwtKey === "" ? { secretKey } : { secretKey, jwtKey };
+}
+
 // ---------------------------------------------------------------------------
 // authenticate — verifies Clerk session token, attaches user to request
 // ---------------------------------------------------------------------------
@@ -321,9 +372,7 @@ export async function authenticate(
 
   let payload: Awaited<ReturnType<typeof verifyToken>>;
   try {
-    payload = await verifyToken(token, {
-      secretKey,
-    });
+    payload = await verifyToken(token, clerkTokenVerificationOptions(secretKey));
   } catch {
     await reply.status(401).send({ error: "Invalid or expired token", code: "UNAUTHORIZED" });
     return;

@@ -14,7 +14,7 @@ import {
   placedObjects,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { getUserByClerkId } from "../middleware/auth.js";
+import { clerkTokenVerificationOptions, getUserByClerkId } from "../middleware/auth.js";
 import { resolveVerifiedClerkEmailWithFallback } from "../middleware/clerk-email.js";
 
 const FLUSH_DEBOUNCE_MS = 500;
@@ -223,7 +223,7 @@ export async function resolveWsUser(
   try {
     const { verifyToken } = await import("@clerk/backend");
     const secretKey = process.env["CLERK_SECRET_KEY"] ?? "";
-    const payload = await verifyToken(token, { secretKey });
+    const payload = await verifyToken(token, clerkTokenVerificationOptions(secretKey));
     // Claims first; Backend-API fallback when the instance issues default
     // tokens with no email claim (middleware/clerk-email.ts). Fail-closed.
     const emailResolution = await resolveVerifiedClerkEmailWithFallback(

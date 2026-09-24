@@ -178,7 +178,7 @@ export async function adminFoundryDerivativeRightsRoutes(
 
   server.get(
     "/evidence-artifacts/:custodyId/content",
-    platformAdmin,
+    { ...platformAdmin, compress: false },
     async (request, reply) => {
       const parsed = CustodyParamsSchema.safeParse(request.params);
       if (!parsed.success) return validationError(reply, parsed.error.issues);
