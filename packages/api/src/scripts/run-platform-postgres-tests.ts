@@ -13,6 +13,7 @@ import { z } from "zod";
 const apiRoot = resolve(import.meta.dirname, "../..");
 const migrationsFolder = join(apiRoot, "drizzle");
 export const PLATFORM_POSTGRES_TEST_FILES = [
+  "src/__tests__/api-hot-paths-postgres.test.ts",
   "src/__tests__/booking-mutations-postgres.test.ts",
   "src/__tests__/event-mutations-postgres.test.ts",
   "src/__tests__/db-client-local.test.ts",
