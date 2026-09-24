@@ -259,7 +259,7 @@ describe("OAuthConsentPage", () => {
     const routerSource = await readFile(resolve("src/router.tsx"), "utf-8");
 
     expect(routerSource).toContain('path: "/oauth-consent"');
-    expect(routerSource).toContain("withClerk(<OAuthConsentPage />)");
+    expect(routerSource).toContain("withClerk(<OAuthConsentPage />, OAuthConsentPage)");
   });
 });
 

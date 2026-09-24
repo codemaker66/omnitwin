@@ -7,6 +7,7 @@ import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 import { RouteArrival } from "./components/shared/RouteArrival.js";
 import { gaussianSplatsAvailable } from "./lib/splat-access.js";
+import { lazyWithPreload, type Preloadable } from "./lib/lazy-with-preload.js";
 import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
 
 // ---------------------------------------------------------------------------
@@ -19,6 +20,8 @@ import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
 // The `then(m => ({ default: m.X }))` form lets each page keep its existing
 // named export so no other consumer needs to change. ProtectedRoute stays
 // static — it's tiny and runs the auth check before the lazy page mounts.
+// Pages behind that check use lazyWithPreload so their chunk downloads while
+// the check runs (see withClerk); the check alone still decides rendering.
 // ---------------------------------------------------------------------------
 
 // The cockpit and legacy pages set their type in Inter + Playfair Display;
@@ -48,22 +51,22 @@ function cockpitImport<T>(factory: () => Promise<T>): Promise<T> {
   return factory();
 }
 
-const LoginPage = lazy(() =>
+const LoginPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/LoginPage.js").then((m) => ({ default: m.LoginPage }))),
 );
-const RegisterPage = lazy(() =>
+const RegisterPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/RegisterPage.js").then((m) => ({ default: m.RegisterPage }))),
 );
-const OAuthConsentPage = lazy(() =>
+const OAuthConsentPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/OAuthConsentPage.js").then((m) => ({ default: m.OAuthConsentPage }))),
 );
-const ClerkRouteProvider = lazy(() =>
+const ClerkRouteProvider = lazyWithPreload(() =>
   cockpitImport(() => import("./components/auth/ClerkRouteProvider.js").then((m) => ({ default: m.ClerkRouteProvider }))),
 );
-const EditorPage = lazy(() =>
+const EditorPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/EditorPage.js").then((m) => ({ default: m.EditorPage }))),
 );
-const ClientEventPage = lazy(() =>
+const ClientEventPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/ClientEventPage.js").then((m) => ({ default: m.ClientEventPage }))),
 );
 const BlueprintPage = lazy(() =>
@@ -78,19 +81,19 @@ const LandingPage = lazy(() =>
   cockpitImport(() => import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage }))),
 );
 const DemoShowcasePage = lazy(() => import("./pages/demo/DemoShowcasePage.js").then(m => ({ default: m.DemoShowcasePage })));
-const DashboardPage = lazy(() =>
+const DashboardPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage }))),
 );
-const HallkeeperPage = lazy(() =>
+const HallkeeperPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/HallkeeperPage.js").then((m) => ({ default: m.HallkeeperPage }))),
 );
-const HallkeeperRoomPlansPage = lazy(() =>
+const HallkeeperRoomPlansPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/hallkeeper/HallkeeperRoomPlansPage.js").then((m) => ({ default: m.HallkeeperRoomPlansPage }))),
 );
-const DayBoardPage = lazy(() =>
+const DayBoardPage = lazyWithPreload(() =>
   import("./pages/hallkeeper/DayBoardPage.js").then((m) => ({ default: m.DayBoardPage })),
 );
-const HallkeeperWalkthroughPage = lazy(() =>
+const HallkeeperWalkthroughPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/hallkeeper/HallkeeperWalkthroughPage.js").then((m) => ({ default: m.HallkeeperWalkthroughPage }))),
 );
 const PrivacyPage = lazy(() =>
@@ -124,10 +127,10 @@ const RoomWalkPage = lazy(() =>
 const RoomCapturesPage = lazy(() =>
   cockpitImport(() => import("./pages/RoomCapturesPage.js").then((m) => ({ default: m.RoomCapturesPage }))),
 );
-const TradesHallAssetStatusPage = lazy(() =>
+const TradesHallAssetStatusPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/TradesHallAssetStatusPage.js").then((m) => ({ default: m.TradesHallAssetStatusPage }))),
 );
-const CaptureIntakePage = lazy(() =>
+const CaptureIntakePage = lazyWithPreload(() =>
   import("./pages/CaptureIntakePage.js").then((m) => ({ default: m.CaptureIntakePage })),
 );
 const ProposalPage = lazy(() =>
@@ -136,13 +139,13 @@ const ProposalPage = lazy(() =>
 const SupplierPortalPage = lazy(() =>
   cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
 );
-const OpsHandoffPage = lazy(() =>
+const OpsHandoffPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/OpsHandoffPage.js").then((m) => ({ default: m.OpsHandoffPage }))),
 );
-const EventDayOpsPage = lazy(() =>
+const EventDayOpsPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/EventDayOpsPage.js").then((m) => ({ default: m.EventDayOpsPage }))),
 );
-const EventArchitectPage = lazy(() =>
+const EventArchitectPage = lazyWithPreload(() =>
   import("./pages/EventArchitectPage.js").then((m) => ({ default: m.EventArchitectPage })),
 );
 const RoomShowcasePage = lazy(() =>
@@ -162,7 +165,7 @@ const LivingHallPage = lazy(() =>
 const TwinPage = lazy(() =>
   cockpitImport(() => import("./pages/TwinPage.js").then((m) => ({ default: m.TwinPage }))),
 );
-const DiaryBoardPage = lazy(() =>
+const DiaryBoardPage = lazyWithPreload(() =>
   import("./pages/diary/DiaryBoardPage.js").then((m) => ({ default: m.DiaryBoardPage })),
 );
 
@@ -178,8 +181,24 @@ function withSplatAccess(node: ReactElement): ReactElement {
   return gaussianSplatsAvailable() ? withSuspense(node) : <SplatsWorkInProgressPage />;
 }
 
-function withClerk(node: ReactElement): ReactElement {
-  return withSuspense(<ClerkRouteProvider>{node}</ClerkRouteProvider>);
+/** Requests route code while rendering, before any lazy provider or guard below resolves. */
+function PreloadRouteCode({ code, children }: {
+  readonly code: readonly Preloadable[];
+  readonly children: ReactElement;
+}): ReactElement {
+  for (const chunk of code) chunk.preload();
+  return children;
+}
+
+// A page nested in the provider and a guard used to request its chunk only
+// after the provider chunk, Clerk and /auth/me had all resolved. Naming the
+// page here requests the provider chunk and then the page chunk as soon as the
+// route matches — the same order, so the same stylesheet order, as before. The
+// guard inside alone still decides whether the page renders or fetches.
+function withClerk(node: ReactElement, page?: Preloadable): ReactElement {
+  const provided = <ClerkRouteProvider>{node}</ClerkRouteProvider>;
+  if (page === undefined) return withSuspense(provided);
+  return withSuspense(<PreloadRouteCode code={[ClerkRouteProvider, page]}>{provided}</PreloadRouteCode>);
 }
 
 // Planner routes stay Clerk-free for guests (no script cost) but mount the
@@ -187,9 +206,19 @@ function withClerk(node: ReactElement): ReactElement {
 // layout-timeline dock, phase-snapshot freeze, review submit) call
 // authenticated endpoints. Detection is cookie-only — see
 // lib/clerk-session-hint.ts for the full rationale.
-export function PlannerAuthBoundary({ children }: { readonly children: ReactElement }): ReactElement {
+export function PlannerAuthBoundary({ children, page }: {
+  readonly children: ReactElement;
+  /** The lazy planner page; requested now rather than after the provider. */
+  readonly page?: Preloadable;
+}): ReactElement {
   const hasHydratedSession = useAuthStore((state) => state.isAuthenticated || state.user !== null || state.accessStatus !== "signed_out");
   const needsClerk = hasHydratedSession || hasLikelyClerkSession();
+  if (page !== undefined) {
+    // Provider first, as the nested imports used to order it for signed-in
+    // planners; a guest renders the page at once, so this changes nothing.
+    if (needsClerk) ClerkRouteProvider.preload();
+    page.preload();
+  }
 
   useEffect(() => {
     if (needsClerk) return;
@@ -206,8 +235,8 @@ export function PlannerAuthBoundary({ children }: { readonly children: ReactElem
   return <ClerkRouteProvider>{children}</ClerkRouteProvider>;
 }
 
-function withPlannerAuth(node: ReactElement): ReactElement {
-  return withSuspense(<PlannerAuthBoundary>{node}</PlannerAuthBoundary>);
+function withPlannerAuth(node: ReactElement, page: Preloadable): ReactElement {
+  return withSuspense(<PlannerAuthBoundary page={page}>{node}</PlannerAuthBoundary>);
 }
 
 // ---------------------------------------------------------------------------
@@ -317,18 +346,18 @@ export const router = createBrowserRouter([
   },
   {
     path: "/login",
-    element: withClerk(<LoginPage />),
+    element: withClerk(<LoginPage />, LoginPage),
   },
   {
     path: "/register",
-    element: withClerk(<RegisterPage />),
+    element: withClerk(<RegisterPage />, RegisterPage),
   },
   {
     // Clerk OAuth application consent screen. Keep this route minimal:
     // no app nav, no account menu, and no custom consent logic that can
     // hide scopes, redirect warnings, or the deny action.
     path: "/oauth-consent",
-    element: withClerk(<OAuthConsentPage />),
+    element: withClerk(<OAuthConsentPage />, OAuthConsentPage),
   },
   {
     // Temporary acquisition path until a dedicated billing/onboarding flow lands.
@@ -349,7 +378,7 @@ export const router = createBrowserRouter([
     // here; it now renders the landing page. Takes optional configId for
     // deep-link.
     path: "/plan",
-    element: withPlannerAuth(<EditorPage />),
+    element: withPlannerAuth(<EditorPage />, EditorPage),
   },
   {
     // The `:code` param matches either a legacy UUID or a guest shortcode.
@@ -361,7 +390,7 @@ export const router = createBrowserRouter([
     // (they don't mock /api/layouts/resolve) and removes a single point
     // of failure when the API is unreachable.
     path: "/plan/:code",
-    element: withPlannerAuth(<EditorPage />),
+    element: withPlannerAuth(<EditorPage />, EditorPage),
   },
   {
     // 2D top-down blueprint editor. Mounted alongside the 3D planner — both
@@ -383,7 +412,7 @@ export const router = createBrowserRouter([
     // the primary URL; `/plan` stays as the single-tenant shortcut for the
     // flagship customer.
     path: "/v/:venueSlug/plan",
-    element: withPlannerAuth(<EditorPage />),
+    element: withPlannerAuth(<EditorPage />, EditorPage),
   },
   {
     // The Day Board (Day Board S1): the hallkeeper's live view of today —
@@ -395,6 +424,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
         <DayBoardPage />
       </ProtectedRoute>,
+      DayBoardPage,
     ),
   },
   {
@@ -407,6 +437,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
         <HallkeeperRoomPlansPage />
       </ProtectedRoute>,
+      HallkeeperRoomPlansPage,
     ),
   },
   {
@@ -415,6 +446,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
         <HallkeeperWalkthroughPage />
       </ProtectedRoute>,
+      HallkeeperWalkthroughPage,
     ),
   },
   {
@@ -427,6 +459,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
         <HallkeeperPage />
       </ProtectedRoute>,
+      HallkeeperPage,
     ),
   },
   {
@@ -437,6 +470,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
         <DiaryBoardPage />
       </ProtectedRoute>,
+      DiaryBoardPage,
     ),
   },
   {
@@ -445,6 +479,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff", "executive"]}>
         <DashboardPage />
       </ProtectedRoute>,
+      DashboardPage,
     ),
   },
   {
@@ -453,6 +488,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
         <OpsHandoffPage />
       </ProtectedRoute>,
+      OpsHandoffPage,
     ),
   },
   {
@@ -461,6 +497,7 @@ export const router = createBrowserRouter([
       <InternalEventRoute>
         <EventDayOpsPage />
       </InternalEventRoute>,
+      EventDayOpsPage,
     ),
   },
   {
@@ -469,6 +506,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute>
         <ClientEventPage />
       </ProtectedRoute>,
+      ClientEventPage,
     ),
   },
   {
@@ -477,6 +515,7 @@ export const router = createBrowserRouter([
       <InternalEventRoute>
         <EventArchitectPage />
       </InternalEventRoute>,
+      EventArchitectPage,
     ),
   },
   {
@@ -485,6 +524,7 @@ export const router = createBrowserRouter([
       <InternalEventRoute>
         <EventArchitectPage />
       </InternalEventRoute>,
+      EventArchitectPage,
     ),
   },
   {
@@ -521,6 +561,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
         <TradesHallAssetStatusPage />
       </ProtectedRoute>,
+      TradesHallAssetStatusPage,
     ),
   },
   {
@@ -542,6 +583,7 @@ export const router = createBrowserRouter([
       <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
         <CaptureIntakePage />
       </ProtectedRoute>,
+      CaptureIntakePage,
     ),
   },
   {
