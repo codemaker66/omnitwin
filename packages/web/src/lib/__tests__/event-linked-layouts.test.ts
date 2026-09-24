@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventPhaseGraphSchema } from "@omnitwin/types";
-import { getConfigSummaries } from "../../api/configurations.js";
+import { getConfig, getConfigSummaries, type Configuration } from "../../api/configurations.js";
 import { getEventPhaseGraph } from "../../api/events.js";
 import { getVenue, type VenueDetail } from "../../api/spaces.js";
 import { ApiError } from "../../api/client.js";
@@ -12,7 +12,7 @@ import { resolveEventLinkedLayouts } from "../event-linked-layouts.js";
 // missing/forbidden layouts counted unavailable and room/venue checks intact.
 // ---------------------------------------------------------------------------
 
-vi.mock("../../api/configurations.js", () => ({ getConfigSummaries: vi.fn() }));
+vi.mock("../../api/configurations.js", () => ({ getConfig: vi.fn(), getConfigSummaries: vi.fn() }));
 vi.mock("../../api/events.js", () => ({ getEventPhaseGraph: vi.fn() }));
 vi.mock("../../api/spaces.js", () => ({ getVenue: vi.fn() }));
 vi.mock("../../api/client-event-schedule.js", () => ({ getClientEventSchedule: vi.fn() }));
@@ -99,6 +99,34 @@ describe("resolveEventLinkedLayouts (staff path)", () => {
     const result = await resolve();
     expect(vi.mocked(getConfigSummaries).mock.calls.map(([ids]) => ids.length)).toEqual([100, 1]);
     expect(result.unavailableCount).toBe(101);
+  });
+
+  it("falls back to whole-layout reads while the API predates the summary endpoint", async () => {
+    vi.mocked(getEventPhaseGraph).mockResolvedValue(graphLinking(3));
+    // An older API reads "summaries" as a layout id and rejects it.
+    vi.mocked(getConfigSummaries).mockRejectedValue(new ApiError(400, "Invalid configuration id", "VALIDATION_ERROR"));
+    const layout = (n: number, name: string, spaceId: string): Configuration => ({
+      id: configId(n), spaceId, venueId: VENUE, userId: null, name, isPublicPreview: false, revision: 1,
+    });
+    vi.mocked(getConfig).mockImplementation((id) => {
+      if (id === configId(0)) return Promise.resolve(layout(0, "North lunch", NORTH));
+      if (id === configId(1)) return Promise.reject(new ApiError(403, "Forbidden", "FORBIDDEN"));
+      return Promise.resolve(layout(2, "South dinner", SOUTH));
+    });
+    const result = await resolve();
+    expect(vi.mocked(getConfig).mock.calls.map(([id]) => id)).toEqual([0, 1, 2].map(configId));
+    expect(result.layouts).toEqual([
+      { configurationId: configId(0), name: "North lunch", spaceName: "North Gallery" },
+      { configurationId: configId(2), name: "South dinner", spaceName: "South Gallery" },
+    ]);
+    expect(result.unavailableCount).toBe(1);
+  });
+
+  it("still reports an incomplete choice when a fallback read fails", async () => {
+    vi.mocked(getEventPhaseGraph).mockResolvedValue(graphLinking(2));
+    vi.mocked(getConfigSummaries).mockRejectedValue(new ApiError(400, "Invalid configuration id", "VALIDATION_ERROR"));
+    vi.mocked(getConfig).mockRejectedValue(new ApiError(503, "Unavailable", "DB_UNREACHABLE"));
+    await expect(resolve()).rejects.toThrow("Some linked layouts could not be checked. Retry to load the complete choice.");
   });
 
   it("reports an incomplete choice when the summary read fails", async () => {

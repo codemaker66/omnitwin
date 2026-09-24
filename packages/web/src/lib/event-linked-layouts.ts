@@ -1,5 +1,6 @@
 import { EventIdSchema, type EventPhaseGraph } from "@omnitwin/types";
-import { getConfigSummaries, type ConfigurationSummary } from "../api/configurations.js";
+import { ApiError } from "../api/client.js";
+import { getConfig, getConfigSummaries, type ConfigurationSummary } from "../api/configurations.js";
 import { getEventPhaseGraph } from "../api/events.js";
 import { getVenue } from "../api/spaces.js";
 import { getClientEventSchedule } from "../api/client-event-schedule.js";
@@ -19,6 +20,41 @@ export interface EventLinkedLayouts {
 
 /** The summary endpoint's per-request ceiling. */
 const SUMMARY_BATCH_SIZE = 100;
+/** Parallel whole-layout reads when the summary endpoint is unavailable. */
+const LEGACY_READ_BATCH_SIZE = 4;
+
+/**
+ * The summaries of an API deployed before GET /configurations/summaries, which
+ * answers 400 (it reads "summaries" as a layout id): one whole-layout read per
+ * reference, with forbidden and missing layouts absent, as the endpoint omits
+ * them. Web and API deploy independently, so the web tolerates either order.
+ */
+async function legacyConfigSummaries(ids: readonly string[]): Promise<ConfigurationSummary[]> {
+  const summaries: ConfigurationSummary[] = [];
+  for (let offset = 0; offset < ids.length; offset += LEGACY_READ_BATCH_SIZE) {
+    const batch = ids.slice(offset, offset + LEGACY_READ_BATCH_SIZE);
+    const results = await Promise.allSettled(batch.map((id) => getConfig(id)));
+    for (const [index, result] of results.entries()) {
+      if (result.status === "rejected") {
+        if (result.reason instanceof ApiError && (result.reason.status === 403 || result.reason.status === 404)) continue;
+        throw result.reason;
+      }
+      const config = result.value;
+      if (config.id !== batch[index]) throw new Error("A linked layout's identity could not be verified.");
+      summaries.push({ id: config.id, name: config.name, spaceId: config.spaceId, venueId: config.venueId });
+    }
+  }
+  return summaries;
+}
+
+async function configSummaries(ids: readonly string[]): Promise<readonly ConfigurationSummary[]> {
+  try {
+    return await getConfigSummaries(ids);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 400) return legacyConfigSummaries(ids);
+    throw error;
+  }
+}
 
 interface CandidateReference {
   readonly configurationId: string;
@@ -127,7 +163,7 @@ export async function resolveEventLinkedLayouts(input: {
     const batch = candidates.slice(offset, offset + SUMMARY_BATCH_SIZE);
     let summaries: readonly ConfigurationSummary[];
     try {
-      summaries = await getConfigSummaries(batch.map((candidate) => candidate.configurationId));
+      summaries = await configSummaries(batch.map((candidate) => candidate.configurationId));
     } catch {
       throw new Error("Some linked layouts could not be checked. Retry to load the complete choice.");
     }
