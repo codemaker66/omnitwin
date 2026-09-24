@@ -46,14 +46,16 @@ function grandHall(): RoomGeometry {
 
 const WALLS: readonly WallKey[] = ["wall-back", "wall-front", "wall-left", "wall-right"];
 
-/** Detailed shell at rest (standalone room lighting, parquet map, brick walls and their click planes). */
+/**
+ * Detailed shell at rest (standalone room lighting, parquet map, brick walls).
+ * The walls' click planes are hidden: raycast (see below), never drawn.
+ */
 const DETAILED_AT_REST = [
   "AmbientLight:0.3",
   "HemisphereLight:1.2",
   "LineSegments::LineBasicMaterial:true:0.22",
   "Mesh:floor:MeshStandardMaterial+map:false:1",
   ...WALLS.map((key) => `InstancedMesh:${key}:MeshStandardMaterial:true:1`),
-  ...WALLS.map((key) => `Mesh:${key}-click-plane:MeshBasicMaterial:true:0.001`),
 ].sort();
 
 /** Lean shell: unlit floor and walls, no lights, features or dome. */
