@@ -1,10 +1,11 @@
 import { useMemo, useState, type ReactElement } from "react";
 import { Armchair, Box, Building2, ChevronDown, Circle, Layers3, Plus, Search } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
-import { getGroupMemberIds } from "../../../lib/placement.js";
+import { getGroupMemberIds, type PlacedItem } from "../../../lib/placement.js";
 import { dispatchPlannerToolbarCommand } from "../../../lib/planner-toolbar-events.js";
 import { referenceCategoryLabel, referenceEntryMatches, referenceSceneEntries, referenceSceneSummary, type ReferenceSceneEntry } from "../../../lib/reference-scene-model.js";
 import "./ReferencePanels.css";
@@ -46,8 +47,17 @@ function OutlinerCategory({ category, entries, selectedIds, locked, searching }:
   );
 }
 
+// What the tree lists: identity, catalogue entry, authored label and group.
+// Dragging replaces placedItems every frame, but positions are never listed,
+// so only a change to this signature rebuilds or re-renders the tree.
+function outlinerSignature(items: readonly PlacedItem[]): readonly (string | null)[] {
+  return items.flatMap((item) => [item.id, item.catalogueItemId, item.label ?? null, item.groupId]);
+}
+
 export function SceneOutliner({ className = "" }: { readonly className?: string }): ReactElement {
-  const items = usePlacementStore((state) => state.placedItems);
+  const signature = usePlacementStore(useShallow((state) => outlinerSignature(state.placedItems)));
+  // Items as of the latest listed change; the tree reads no position fields.
+  const items = useMemo(() => usePlacementStore.getState().placedItems, [signature]);
   const selectedIds = useSelectionStore((state) => state.selectedIds);
   const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const previewItems = useLayoutTimelinePreviewStore((state) => state.currentItems);

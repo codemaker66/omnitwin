@@ -34,7 +34,7 @@ function materialFromUnknown(value: unknown): Material | readonly Material[] | n
   return null;
 }
 
-function setMaterialOpacity(material: Material | readonly Material[], opacity: number): void {
+export function setMaterialOpacity(material: Material | readonly Material[], opacity: number): void {
   if (isMaterialArray(material)) {
     for (const item of material) {
       setMaterialOpacity(item, opacity);
@@ -42,9 +42,15 @@ function setMaterialOpacity(material: Material | readonly Material[], opacity: n
     return;
   }
 
-  material.transparent = opacity < 0.999;
+  // Opacity is read as a uniform every frame. Only a change of blending mode
+  // needs a material rebuild; flagging every fade step made the renderer
+  // re-key each wall material on every frame of an orbit.
+  const transparent = opacity < 0.999;
   material.opacity = opacity;
-  material.needsUpdate = true;
+  if (material.transparent !== transparent) {
+    material.transparent = transparent;
+    material.needsUpdate = true;
+  }
 }
 
 function applyTreeOpacity(root: Object3D, opacity: number): void {

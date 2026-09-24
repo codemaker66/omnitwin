@@ -184,7 +184,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   const disclosureId = useId();
   const disclosureButton = useRef<HTMLButtonElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const objects = useEditorStore((s) => s.objects);
+  const hasObjects = useEditorStore((s) => s.objects.length > 0);
   const configId = useEditorStore((s) => s.configId);
   // Public-preview configs belong to the guest-enquiry flow (SaveSendPanel).
   // The review workflow is authenticated-only: skip rendering + skip the
@@ -248,7 +248,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   if (
     configId === null
     || isPublicPreview
-    || objects.length === 0
+    || !hasObjects
     || loading
     || reviewStatus === null
   ) {

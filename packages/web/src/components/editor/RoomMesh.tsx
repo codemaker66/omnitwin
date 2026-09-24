@@ -276,8 +276,12 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto", inclu
     viewportWidth: size.width,
   });
 
+  // Keyed on whether the detailed shell is ever shown here, not on camera
+  // motion: every orbit swaps to the lean shell, and regenerating the parquet
+  // and dome canvases (plus their uploads) on each release was a hitch.
+  const detailedShellAtRest = !shouldUseRoomMeshLeanShell(detail, size.width);
   const surfaceTextures = useMemo(() => {
-    if (!isGrandHall || useLeanRoomShell || typeof document === "undefined") return null;
+    if (!isGrandHall || !detailedShellAtRest || typeof document === "undefined") return null;
     try {
       return {
         floor: createParquetFloorTexture(),
@@ -286,7 +290,7 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto", inclu
     } catch {
       return null;
     }
-  }, [isGrandHall, useLeanRoomShell]);
+  }, [isGrandHall, detailedShellAtRest]);
 
   useEffect(() => {
     return () => {

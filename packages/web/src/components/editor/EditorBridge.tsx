@@ -249,8 +249,12 @@ export function EditorBridge(): null {
   useEffect(() => {
     const unsub = useSelectionStore.subscribe((state) => {
       const selectedIds = state.selectedIds;
-      const first = selectedIds.size > 0 ? Array.from(selectedIds)[0] : null;
-      useEditorStore.setState({ selectedObjectId: first ?? null });
+      const first = (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null) ?? null;
+      // Marquee and guide updates also notify; only a new primary selection
+      // should reach the editor store's subscribers.
+      if (useEditorStore.getState().selectedObjectId !== first) {
+        useEditorStore.setState({ selectedObjectId: first });
+      }
     });
     return unsub;
   }, []);

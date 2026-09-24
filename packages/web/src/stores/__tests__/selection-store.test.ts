@@ -80,6 +80,19 @@ describe("selectMultiple", () => {
     expect(useSelectionStore.getState().selectedIds.size).toBe(2);
   });
 
+  it("does not notify subscribers when a marquee frame keeps the same members", () => {
+    useSelectionStore.getState().selectMultiple(["a", "b"]);
+    const before = useSelectionStore.getState().selectedIds;
+    let notifications = 0;
+    const unsubscribe = useSelectionStore.subscribe(() => { notifications += 1; });
+    useSelectionStore.getState().selectMultiple(["b", "a", "a"]);
+    expect(useSelectionStore.getState().selectedIds).toBe(before);
+    useSelectionStore.getState().selectMultiple(["a"]);
+    unsubscribe();
+    expect(notifications).toBe(1);
+    expect([...useSelectionStore.getState().selectedIds]).toEqual(["a"]);
+  });
+
   it("empty array clears selection", () => {
     useSelectionStore.getState().select("item-1");
     useSelectionStore.getState().selectMultiple([]);
@@ -167,6 +180,17 @@ describe("activeGuides", () => {
     useSelectionStore.getState().setActiveGuides(guides);
     expect(useSelectionStore.getState().activeGuides).toHaveLength(1);
     expect(useSelectionStore.getState().activeGuides[0]?.coord).toBe(5);
+  });
+
+  it("keeps the empty guide list without notifying while a drag reports none", () => {
+    const empty = useSelectionStore.getState().activeGuides;
+    let notifications = 0;
+    const unsubscribe = useSelectionStore.subscribe(() => { notifications += 1; });
+    useSelectionStore.getState().setActiveGuides([]);
+    useSelectionStore.getState().setActiveGuides([]);
+    unsubscribe();
+    expect(notifications).toBe(0);
+    expect(useSelectionStore.getState().activeGuides).toBe(empty);
   });
 
   it("clearSelection resets activeGuides", () => {

@@ -65,7 +65,7 @@ export function SaveSendPanel({
   avoidRightDock = false,
   embedded = false,
 }: SaveSendPanelProps = {}): React.ReactElement | null {
-  const objects = useEditorStore((s) => s.objects);
+  const hasObjects = useEditorStore((s) => s.objects.length > 0);
   const configId = useEditorStore((s) => s.configId);
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
@@ -82,7 +82,7 @@ export function SaveSendPanel({
     };
   }, []);
 
-  if (objects.length === 0 || configId === null) return null;
+  if (!hasObjects || configId === null) return null;
   if (isNarrow || isTouch) return null;
 
   const handleSend = (): void => {

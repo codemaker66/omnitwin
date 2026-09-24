@@ -12,6 +12,7 @@ import {
   Camera, Grid3X3, Save, User, Eye, FileText, Check, X, MoreHorizontal,
   PenLine, Eraser, Minus, Plus,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
@@ -1477,9 +1478,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
     0,
   ));
 
-  const history = useEditorStore((s) => s.history);
-  const canUndo = historyCanUndo(history);
-  const canRedo = historyCanRedo(history);
+  // Flags, not the history object: every drag frame records a new history.
+  const canUndo = useEditorStore((s) => historyCanUndo(s.history));
+  const canRedo = useEditorStore((s) => historyCanRedo(s.history));
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isSaving = useEditorStore((s) => s.isSaving);
@@ -1499,16 +1500,17 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
       shortLabel: "Reload",
       description: "This layout changed in another tab. Reload the server copy before saving again.",
     };
-  const placedItems = usePlacementStore((s) => s.placedItems);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
-  const selectedFurniture = placedItems.filter(
-    (item) => selectedIds.has(item.id) && isSceneFurniturePlacement(item),
-  );
-  const selectedTables = selectedFurniture.filter((item) => getCatalogueItem(item.catalogueItemId)?.category === "table");
-  const selectedChairs = selectedFurniture.filter((item) => getCatalogueItem(item.catalogueItemId)?.category === "chair");
+  // Catalogue ids of the selected furniture only: dragging replaces placedItems
+  // every frame, and positions never reach the toolbox.
+  const selectedFurniture = usePlacementStore(useShallow((s) => s.placedItems
+    .filter((item) => selectedIds.has(item.id) && isSceneFurniturePlacement(item))
+    .map((item) => item.catalogueItemId)));
+  const selectedTables = selectedFurniture.filter((catalogueItemId) => getCatalogueItem(catalogueItemId)?.category === "table");
+  const selectedChairs = selectedFurniture.filter((catalogueItemId) => getCatalogueItem(catalogueItemId)?.category === "chair");
   const selectedItem = selectedTables[0] ?? selectedFurniture[0];
   const selectedCatalogueItem = selectedItem !== undefined
-    ? getCatalogueItem(selectedItem.catalogueItemId)
+    ? getCatalogueItem(selectedItem)
     : undefined;
   const selectedName = selectedTables.length > 1 ? `${String(selectedTables.length)} tables selected` : selectedCatalogueItem?.name ?? null;
   const selectedDetail = selectedFurniture.length > 1

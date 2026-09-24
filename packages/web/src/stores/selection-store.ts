@@ -66,7 +66,12 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
   },
 
   selectMultiple: (ids: readonly string[]) => {
-    set({ selectedIds: new Set(ids) });
+    // The marquee calls this every animation frame; an unchanged selection
+    // must not notify every selection subscriber again.
+    const next = new Set(ids);
+    const current = get().selectedIds;
+    if (next.size === current.size && [...next].every((id) => current.has(id))) return;
+    set({ selectedIds: next });
   },
 
   clearSelection: () => {
@@ -106,6 +111,8 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
   },
 
   setActiveGuides: (guides: readonly SnapGuide[]) => {
+    // Drags report guides every frame, usually none; keep the empty list.
+    if (guides.length === 0 && get().activeGuides.length === 0) return;
     set({ activeGuides: guides });
   },
 }));

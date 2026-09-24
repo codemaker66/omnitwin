@@ -262,20 +262,16 @@ export function BrickWall({
       />
       {/* Click plane — full wall-sized plane for raycast detection by SelectionSystem.
           Always present so walls can be rebuilt after being fully unbuilt.
-          Near-zero opacity: invisible to eye, hittable by raycaster. */}
+          Not drawn: three's Raycaster tests hidden meshes, so it stays hittable
+          without costing a sorted transparent draw per wall every frame. */}
       <mesh
         position={[position[0], position[1], position[2]]}
         rotation={[rotation[0], rotation[1], rotation[2]]}
         name={`${name}-click-plane`}
+        visible={false}
       >
         <planeGeometry args={[wallWidth, wallHeight]} />
-        <meshBasicMaterial
-          transparent
-          opacity={0.001}
-          depthWrite={false}
-          color="#ffffff"
-          side={DoubleSide}
-        />
+        <meshBasicMaterial side={DoubleSide} />
       </mesh>
     </group>
   );

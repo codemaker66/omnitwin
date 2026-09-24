@@ -1,3 +1,4 @@
+import { Profiler } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SceneOutliner } from "../SceneOutliner.js";
@@ -66,6 +67,22 @@ describe("SceneOutliner", () => {
     const applicator = createPlacedItem(catalogueId("white-table-cloth"), 0, 0);
     const entries = referenceSceneEntries([...items, applicator]);
     expect(referenceSceneSummary(entries)).toEqual({ objects: 162, tables: 18, chairs: 144, groups: 18 });
+  });
+
+  it("does not re-render the tree while furniture only moves, but shows relabelled furniture", () => {
+    const { other } = fixture();
+    const onRender = vi.fn();
+    render(<Profiler id="outliner" onRender={onRender}><SceneOutliner /></Profiler>);
+    const renders = onRender.mock.calls.length;
+    act(() => {
+      usePlacementStore.setState({ placedItems: usePlacementStore.getState().placedItems.map((item) => ({ ...item, x: item.x + 0.5, z: item.z - 0.25 })) });
+    });
+    expect(onRender.mock.calls.length).toBe(renders);
+    act(() => {
+      usePlacementStore.setState({ placedItems: usePlacementStore.getState().placedItems.map((item) => item.id === other.id ? { ...item, label: "Top table host" } : item) });
+    });
+    expect(onRender.mock.calls.length).toBeGreaterThan(renders);
+    expect(screen.getByRole("button", { name: /Top table host/u })).toBeTruthy();
   });
 
   it("selects all9members from a table row, leaves another chair unselected and does not select on mount", () => {

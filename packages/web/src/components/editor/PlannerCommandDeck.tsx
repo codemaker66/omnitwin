@@ -20,12 +20,12 @@ import {
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../lib/furniture-defaults.js";
 import { buildPlannerShowcaseTour } from "../../lib/planner-showcase.js";
-import { canRedo, canUndo, redoLabel, undoLabel, type EditorHistory } from "../../lib/editor-history.js";
+import { canRedo, canUndo, redoLabel, undoLabel } from "../../lib/editor-history.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
-import { useEditorStore, type EditorObject } from "../../stores/editor-store.js";
+import { useEditorStore } from "../../stores/editor-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
@@ -105,9 +105,14 @@ function makeButton(action: CommandAction): React.ReactElement {
  * recorded entry label ("Undo Move 3 items") so screen readers announce
  * exactly what will be reverted.
  */
-function historyActions(history: EditorHistory<EditorObject>): readonly CommandAction[] {
-  const undoEntry = undoLabel(history);
-  const redoEntry = redoLabel(history);
+interface HistoryState {
+  readonly undoEntry: string | null;
+  readonly redoEntry: string | null;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+}
+
+function historyActions({ undoEntry, redoEntry, canUndo: undoAvailable, canRedo: redoAvailable }: HistoryState): readonly CommandAction[] {
   return [
     {
       id: "undo",
@@ -115,7 +120,7 @@ function historyActions(history: EditorHistory<EditorObject>): readonly CommandA
       ariaLabel: undoEntry === null ? "Undo" : `Undo ${undoEntry}`,
       icon: <Undo2 size={16} aria-hidden="true" />,
       onClick: () => { useEditorStore.getState().undo(); },
-      disabled: !canUndo(history),
+      disabled: !undoAvailable,
     },
     {
       id: "redo",
@@ -123,7 +128,7 @@ function historyActions(history: EditorHistory<EditorObject>): readonly CommandA
       ariaLabel: redoEntry === null ? "Redo" : `Redo ${redoEntry}`,
       icon: <Redo2 size={16} aria-hidden="true" />,
       onClick: () => { useEditorStore.getState().redo(); },
-      disabled: !canRedo(history),
+      disabled: !redoAvailable,
     },
   ];
 }
@@ -141,7 +146,15 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     [allPlacedItems],
   );
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
-  const history = useEditorStore((s) => s.history);
+  // Labels and flags, not the history object: every drag frame records one.
+  const undoEntry = useEditorStore((s) => undoLabel(s.history));
+  const redoEntry = useEditorStore((s) => redoLabel(s.history));
+  const undoAvailable = useEditorStore((s) => canUndo(s.history));
+  const redoAvailable = useEditorStore((s) => canRedo(s.history));
+  const history = useMemo<HistoryState>(
+    () => ({ undoEntry, redoEntry, canUndo: undoAvailable, canRedo: redoAvailable }),
+    [undoEntry, redoEntry, undoAvailable, redoAvailable],
+  );
   const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
   const sceneSource = useCockpitStore((s) => s.sceneSource);
   const layerMode = useCockpitStore((s) => s.layerMode);
