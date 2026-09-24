@@ -91,11 +91,19 @@ function screenToFloor(
 // Floor mesh raycast removed — drag uses math-plane intersection instead
 // to work with any room polygon shape.
 
+/** The group whose direct children are the per-item `furniture-{id}` roots. */
+const PLACED_FURNITURE_GROUP = "placed-furniture";
+const FURNITURE_ROOT_PREFIX = "furniture-";
+
 /** Collects furniture group roots from the known parent group. */
 function findFurnitureGroups(scene: Object3D): Object3D[] {
-  const parent = scene.getObjectByName("placed-furniture");
+  const parent = scene.getObjectByName(PLACED_FURNITURE_GROUP);
   if (parent === undefined) return [];
-  return parent.children.filter((c) => c.name.startsWith("furniture-"));
+  return parent.children.filter((c) => c.name.startsWith(FURNITURE_ROOT_PREFIX));
+}
+
+function isPlacedItemId(id: string): boolean {
+  return usePlacementStore.getState().placedItems.some((placed) => placed.id === id);
 }
 
 const WALL_KEYS_SET = new Set<string>(["wall-front", "wall-back", "wall-left", "wall-right"]);
@@ -128,10 +136,17 @@ function findWallKey(obj: Object3D): WallKey | null {
 export function findFurnitureItemId(obj: Object3D): string | null {
   let current: Object3D | null = obj;
   while (current !== null) {
-    if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
-      return current.name.replace("furniture-", "");
+    // Only the `furniture-{id}` root PlacedFurniture renders directly under the
+    // `placed-furniture` group names an item, and only while that id is still
+    // placed: hidden instancing templates, lighting rigs and model parts share
+    // the prefix, and a click on one must never select a phantom item.
+    const parent: Object3D | null = current.parent;
+    if (parent?.name === PLACED_FURNITURE_GROUP) {
+      if (!current.name.startsWith(FURNITURE_ROOT_PREFIX)) return null;
+      const id = current.name.slice(FURNITURE_ROOT_PREFIX.length);
+      return isPlacedItemId(id) ? id : null;
     }
-    current = current.parent;
+    current = parent;
   }
   return null;
 }

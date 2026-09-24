@@ -35,11 +35,14 @@ import {
 // (dozens of identical chairs/tables), so we draw each model's *material group*
 // once for ALL items of that type via an InstancedMesh.
 //
-// How it preserves selection/drag with ZERO changes to SelectionSystem:
+// How it preserves selection/drag:
 //   - The instanced meshes render but are made non-pickable (raycast = noop).
 //   - Per-item selection/drag still keys off the invisible `furniture-{id}`
 //     pick proxy rendered by PlacedFurnitureItem (raycaster hits invisible
 //     meshes), so findFurnitureItemId resolves exactly as before.
+//   - The hidden templates sit at the origin, and three's Raycaster tests
+//     invisible objects too, so their root stops the Raycaster descending:
+//     clicking empty floor there must never pick a phantom template.
 //
 // Lifecycle: each unique variant (catalogue type — placed items carry no colour
 // or opacity overrides) is rendered once into a hidden template, harvested into
@@ -68,6 +71,13 @@ interface MaterialShadows {
 }
 
 const noRaycast: Object3D["raycast"] = () => undefined;
+
+/**
+ * Returning `false` from `raycast` makes three's Raycaster skip the object's
+ * descendants (r186 `Raycaster.intersect`), including template meshes that an
+ * imported model adds after the last harvest.
+ */
+const skipSubtreeRaycast = (): boolean => false;
 
 /** Type guard via the `isMesh` flag — avoids `instanceof Mesh` widening material to `any`. */
 function isMesh(object: Object3D): object is Mesh {
@@ -374,7 +384,7 @@ export function InstancedFurnitureLayer({
     <group name="instanced-furniture">
       {/* Hidden templates — one model per variant at the origin, harvested once. */}
       <GltfFurnitureTemplateContext.Provider value={handleTemplateReady}>
-      <group ref={templateRef} visible={false}>
+      <group ref={templateRef} visible={false} raycast={skipSubtreeRaycast}>
         {variantOrder.map((key) => {
           const sampleItem = sampleByVariant.get(key);
           const catalogueItem =
