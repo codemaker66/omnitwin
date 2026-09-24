@@ -83,6 +83,27 @@ describe("twin chunk budgets", () => {
     }
   });
 
+  it.skipIf(!hasTwinBuild)("keeps the WebGPU renderer chunk out of the twin route's static graph", async () => {
+    // The tour renders with a WebGL R3F canvas. Only NativeCanvas surfaces
+    // should pay for three.webgpu, TSL and the splat addons.
+    expect(jsChunks("three-webgpu").length).toBeGreaterThan(0);
+    const staticImport = /import\s*(?:(?:\{[^}]*\}|\*\s*as\s*[\w$]+|[\w$]+)\s*from\s*)?["']\.\/([^"']+\.js)["']/g;
+    const reached = new Set<string>();
+    const pending = [...jsChunks("TwinPage")];
+    while (pending.length > 0) {
+      const chunk = pending.pop();
+      if (chunk === undefined || reached.has(chunk)) continue;
+      reached.add(chunk);
+      const source = await readFile(resolve(ASSETS_DIR, chunk), "utf-8");
+      for (const match of source.matchAll(staticImport)) {
+        const imported = match[1];
+        if (imported !== undefined) pending.push(imported);
+      }
+    }
+    expect([...reached].some((chunk) => chunk.startsWith("three-") && !chunk.startsWith("three-webgpu-"))).toBe(true);
+    expect([...reached].filter((chunk) => chunk.startsWith("three-webgpu-"))).toEqual([]);
+  });
+
   it.skipIf(!hasTwinBuild)("keeps twin modules out of the LandingPage chunk", async () => {
     const chunks = jsChunks("LandingPage");
     expect(chunks.length).toBeGreaterThan(0);

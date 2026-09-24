@@ -1,6 +1,5 @@
 import { type LightingFixtureFamily } from "./photometrics.js";
 import { parseGdtfDescription, gdtfFixtureFamily } from "./gdtf.js";
-import { readGdtfArchive } from "./gdtf-archive.js";
 
 // ---------------------------------------------------------------------------
 // mvr — MVR scene parsing + rig resolution (Epic 6 import, slice 6).
@@ -185,6 +184,8 @@ export async function resolveMvrRig(
   const types: ResolvedMvrFixtureType[] = [];
   const unresolved: string[] = [];
   let fixtureCount = 0;
+  // zip.js is loaded only when a rig is actually imported, not with the planner.
+  const { readGdtfArchive } = await import("./gdtf-archive.js");
 
   for (const group of groups.values()) {
     const bytes = gdtfFiles.get(basename(group.spec));

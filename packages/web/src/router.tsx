@@ -27,15 +27,24 @@ import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
 // actually needs it (display=swap keeps the first cockpit paint readable).
 const COCKPIT_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&family=Playfair+Display:wght@400;500;600;700&display=swap";
-let cockpitFontsRequested = false;
+// The craft quiz's heraldic faces. Requested here rather than by an @import in
+// its route CSS: a failed @import fails that stylesheet's <link>, Vite then
+// rejects the route import, and the quiz crashed whenever Google Fonts was
+// unreachable. Injected, the stylesheet never blocks the route; display=swap
+// keeps the Georgia fallbacks until the faces arrive.
+const QUIZ_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap";
+const requestedStylesheets = new Set<string>();
+function requestStylesheet(href: string): void {
+  if (requestedStylesheets.has(href)) return;
+  requestedStylesheets.add(href);
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = href;
+  document.head.append(link);
+}
 function cockpitImport<T>(factory: () => Promise<T>): Promise<T> {
-  if (!cockpitFontsRequested) {
-    cockpitFontsRequested = true;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = COCKPIT_FONTS_HREF;
-    document.head.append(link);
-  }
+  requestStylesheet(COCKPIT_FONTS_HREF);
   return factory();
 }
 
@@ -102,9 +111,10 @@ const TradesHallVisualPage = lazy(() =>
 const TradesHouseLeafletPage = lazy(() =>
   import("./pages/TradesHouseLeafletPage.js").then((m) => ({ default: m.TradesHouseLeafletPage })),
 );
-const TradesHouseCraftQuizPage = lazy(() =>
-  import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage })),
-);
+const TradesHouseCraftQuizPage = lazy(() => {
+  requestStylesheet(QUIZ_FONTS_HREF);
+  return import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage }));
+});
 const RoomsHomePage = lazy(() =>
   cockpitImport(() => import("./pages/RoomsHomePage.js").then((m) => ({ default: m.RoomsHomePage }))),
 );

@@ -133,6 +133,19 @@ export default defineConfig(({ mode }) => {
               return "react-vendor";
             }
 
+            // The WebGPU renderer, TSL and the native splat addon stack are
+            // needed only by NativeCanvas surfaces. Kept out of "three", the
+            // WebGL panorama tour and other plain R3F canvases skip them.
+            if (
+              normalizedId.includes("/node_modules/three/build/three.webgpu") ||
+              normalizedId.includes("/node_modules/three/build/three.tsl") ||
+              normalizedId.includes("/node_modules/three/examples/jsm/objects/GaussianSplat") ||
+              normalizedId.includes("/node_modules/three/examples/jsm/utils/GaussianSplatUtils") ||
+              normalizedId.includes("/node_modules/three/examples/jsm/gpgpu/")
+            ) {
+              return "three-webgpu";
+            }
+
             if (
               normalizedId.includes("/node_modules/three/") ||
               normalizedId.includes("/node_modules/@react-three/fiber/") ||

@@ -4,7 +4,6 @@ import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { useLightingRigStore, rigGroupsForRig, fixtureDisplayLabel } from "../../../stores/lighting-rig-store.js";
 import { LIGHTING_FIXTURE_FAMILIES, type LightingFixtureFamily } from "../../../lib/photometrics.js";
 import { parseGdtfDescription, gdtfFixtureFamily, GDTF_IMPORT_DISCLAIMER } from "../../../lib/gdtf.js";
-import { readGdtfArchive, readMvrArchive } from "../../../lib/gdtf-archive.js";
 import { parseMvrScene, resolveMvrRig, MVR_IMPORT_DISCLAIMER, type ResolvedMvrRig } from "../../../lib/mvr.js";
 import { selectFixtureModel, type SelectedFixtureModel } from "../../../lib/gdtf-model.js";
 import { patchSheetCsv, PATCH_SHEET_FILENAME } from "../../../lib/patch-sheet.js";
@@ -99,7 +98,12 @@ function GdtfImportSection(): ReactElement {
     setFixtureModel(null);
     setFileName(null);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
+      // The ZIP reader stays out of the planner bundle until a file is chosen.
+      const [{ readGdtfArchive, readMvrArchive }, buffer] = await Promise.all([
+        import("../../../lib/gdtf-archive.js"),
+        file.arrayBuffer(),
+      ]);
+      const bytes = new Uint8Array(buffer);
       if (file.name.toLowerCase().endsWith(".mvr")) {
         const archive = await readMvrArchive(bytes);
         if (!archive.ok) { setFileError(archive.error); return; }

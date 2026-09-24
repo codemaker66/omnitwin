@@ -1,5 +1,5 @@
 import type { Event } from "@sentry/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   initBrowserSentry,
   parseSentrySampleRate,
@@ -76,5 +76,58 @@ describe("browser Sentry event scrubber", () => {
       url: "/register",
       method: "GET",
     });
+  });
+});
+
+describe("browser Sentry loading", () => {
+  const DSN = "https://public@example.ingest.sentry.io/1";
+
+  afterEach(() => {
+    vi.doUnmock("../observability/sentry-sdk.js");
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function loadWithSdk() {
+    vi.resetModules();
+    const scope = { setTag: vi.fn(), setContext: vi.fn() };
+    const sdk = {
+      init: vi.fn(),
+      captureException: vi.fn(),
+      withScope: vi.fn((callback: (value: typeof scope) => void) => {
+        callback(scope);
+      }),
+    };
+    vi.doMock("../observability/sentry-sdk.js", () => sdk);
+    const sentry = await import("../observability/sentry.js");
+    return { sentry, sdk, scope };
+  }
+
+  it("initializes once through the named SDK entry points with the scrubber", async () => {
+    const { sentry, sdk } = await loadWithSdk();
+
+    await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
+    await sentry.initBrowserSentry({ MODE: "production", VITE_SENTRY_DSN: DSN });
+
+    expect(sdk.init).toHaveBeenCalledTimes(1);
+    expect(sdk.init).toHaveBeenCalledWith(expect.objectContaining({
+      dsn: DSN,
+      environment: "production",
+      sendDefaultPii: false,
+      beforeSend: sentry.scrubSentryErrorEvent,
+    }));
+  });
+
+  it("reports boundary errors with a trimmed component stack", async () => {
+    vi.stubEnv("VITE_SENTRY_DSN", DSN);
+    const { sentry, sdk, scope } = await loadWithSdk();
+    const error = new Error("render failed");
+
+    await sentry.captureBoundaryError(error, { componentStack: "\n    at Planner\n" });
+
+    expect(sdk.init).toHaveBeenCalledTimes(1);
+    expect(scope.setTag).toHaveBeenCalledWith("boundary", "AppErrorBoundary");
+    expect(scope.setContext).toHaveBeenCalledWith("react", { componentStack: "at Planner" });
+    expect(sdk.captureException).toHaveBeenCalledWith(error);
   });
 });

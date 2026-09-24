@@ -1,7 +1,7 @@
 import type { ErrorInfo } from "react";
 import type { ErrorEvent, Event } from "@sentry/react";
 
-type SentryReactModule = typeof import("@sentry/react");
+type SentryReactModule = typeof import("./sentry-sdk.js");
 
 export interface BrowserSentryEnv {
   readonly MODE?: string;
@@ -50,7 +50,7 @@ export function readBrowserSentryConfig(env: BrowserSentryEnv): BrowserSentryCon
 }
 
 function loadSentryModule(): Promise<SentryReactModule> {
-  sentryModulePromise ??= import("@sentry/react");
+  sentryModulePromise ??= import("./sentry-sdk.js");
   return sentryModulePromise;
 }
 

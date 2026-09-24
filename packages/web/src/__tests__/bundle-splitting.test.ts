@@ -136,6 +136,20 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     expect(codeOnly).toContain(`return "three"`);
   });
 
+  it("keeps the WebGPU renderer, TSL and splat addons in their own chunk", async () => {
+    // The WebGL panorama tour needs only core three; NativeCanvas surfaces add
+    // this chunk. Checked before the generic three rule, which would otherwise
+    // claim these modules and ship them to every 3D route.
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain(`"/node_modules/three/build/three.webgpu"`);
+    expect(codeOnly).toContain(`"/node_modules/three/build/three.tsl"`);
+    expect(codeOnly).toContain(`"/node_modules/three/examples/jsm/objects/GaussianSplat"`);
+    expect(codeOnly).toContain(`"/node_modules/three/examples/jsm/gpgpu/"`);
+    const webgpuReturn = codeOnly.indexOf(`return "three-webgpu"`);
+    expect(webgpuReturn).toBeGreaterThan(-1);
+    expect(webgpuReturn).toBeLessThan(codeOnly.indexOf(`return "three"`));
+  });
+
   it("does not ship a Spark renderer chunk", async () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).not.toContain(`"/node_modules/@sparkjsdev/spark/"`);
@@ -155,5 +169,45 @@ describe("vite.config.ts — manualChunks vendor split (#16)", () => {
     ]);
     expect(appSource).not.toContain("@sparkjsdev/spark");
     expect(editorSource).not.toContain("@sparkjsdev/spark");
+  });
+});
+
+describe("planner — on-demand GDTF/MVR archive reader", () => {
+  // zip.js is roughly 230 KB of source. A static import of the archive layer put
+  // it in every planner load for a lighting-file import most sessions never use.
+  async function sourceFiles(directory: string): Promise<string[]> {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const files: string[] = [];
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "__tests__") files.push(...await sourceFiles(entryPath));
+      } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+        files.push(entryPath.replace(/\\/g, "/"));
+      }
+    }
+    return files;
+  }
+
+  it("imports the archive layer dynamically and keeps zip.js behind it", async () => {
+    const staticArchiveImporters: string[] = [];
+    const zipImporters: string[] = [];
+    for (const file of await sourceFiles("src")) {
+      const { codeOnly } = await readSource(file);
+      if (/^\s*import\s[^;]*?from\s+["'][^"']*\/gdtf-archive\.js["']/m.test(codeOnly)) staticArchiveImporters.push(file);
+      if (/from\s+["']@zip\.js\/zip\.js["']/.test(codeOnly)) zipImporters.push(file);
+    }
+
+    expect(staticArchiveImporters).toEqual([]);
+    // The splat SOG reader runs only inside the decoder worker bundle.
+    expect(zipImporters.sort()).toEqual(["src/lib/gdtf-archive.ts", "src/lib/native-splat-sog.ts"]);
+
+    const [{ codeOnly: panel }, { codeOnly: mvr }] = await Promise.all([
+      readSource("src/components/editor/cockpit/LightingLensPanel.tsx"),
+      readSource("src/lib/mvr.ts"),
+    ]);
+    expect(panel).toMatch(/import\(\s*["']\.\.\/\.\.\/\.\.\/lib\/gdtf-archive\.js["']\s*\)/);
+    expect(mvr).toMatch(/import\(\s*["']\.\/gdtf-archive\.js["']\s*\)/);
   });
 });
