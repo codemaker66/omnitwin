@@ -9,6 +9,7 @@ import { getImageDecoderRuntime } from "@omnitwin/reconstruction-foundry";
 import { validateEnv, type Env } from "./env.js";
 import { createDbConnection } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
+import { createRateLimitIdentity } from "./middleware/rate-limit-identity.js";
 import { venueRoutes } from "./routes/venues.js";
 import { venueInventoryRoutes } from "./routes/venue-inventory.js";
 import { inventoryReservationsRoutes } from "./routes/inventory-reservations.js";
@@ -172,23 +173,25 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // Rate limiting — per-user where authenticated, per-IP otherwise.
   // Global 100/min is the baseline; individual routes tighten or
-  // relax via their own `config.rateLimit` option.
+  // relax via their own `config.rateLimit` option, which inherits this
+  // keyGenerator.
   //
-  // The keyGenerator prefers `request.user.id` (so a single user
-  // can't bypass by rotating IPs via proxies) and falls back to IP
-  // for unauthenticated traffic (login, health). This is the pattern
-  // any reviewer will grep for — generic IP-only rate limiting is
-  // trivial to bypass behind NAT.
+  // The limiter keys each request at onRequest, before any route's
+  // `authenticate` preHandler runs, so it cannot read `request.user`.
+  // A bearer token that authenticate() has already accepted is keyed by
+  // its user (one budget across IPs; colleagues behind one office IP no
+  // longer share a bucket). New, forged, expired or rejected tokens and
+  // anonymous requests stay per IP and are limited before any token
+  // verification work. See middleware/rate-limit-identity.ts.
+  const rateLimitIdentity = createRateLimitIdentity();
+  server.addHook("onResponse", (request, _reply, done) => {
+    rateLimitIdentity.learn(request);
+    done();
+  });
   await server.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",
-    keyGenerator: (request) => {
-      const authed = request.user;
-      if (authed !== undefined && typeof authed.id === "string" && authed.id.length > 0) {
-        return `user:${authed.id}`;
-      }
-      return `ip:${request.ip}`;
-    },
+    keyGenerator: rateLimitIdentity.keyFor,
     // Never rate-limit the health / readiness / liveness probes —
     // they're how orchestrators (Railway, K8s) decide whether the
     // instance is alive and ready. Rate-limiting them risks
@@ -204,7 +207,11 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
         u === "/health/observability"
       );
     },
+    // The plugin throws this object; without `statusCode` the error
+    // normaliser answered every limited request as a 500 (and reported
+    // it as a server error). The body stays `{ error, code }`.
     errorResponseBuilder: (_request, context) => ({
+      statusCode: context.statusCode,
       error: "Too many requests — please slow down.",
       code: "RATE_LIMITED",
       retryAfterSeconds: Math.ceil(context.ttl / 1000),
