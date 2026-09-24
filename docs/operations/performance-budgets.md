@@ -1,6 +1,6 @@
 # Performance Budgets
 
-Date: 2026-06-12
+Date: 2026-06-12 (bundle and static asset budgets revised 2026-09-24)
 Status: hardening budget
 Owner: Venviewer engineering
 
@@ -22,15 +22,36 @@ These budgets are guardrails for planner and operations quality. They are not gu
 ## Bundle Budgets
 
 - Main route must lazy-load page components through `React.lazy`.
-- Spark must stay out of normal app and editor route sources.
-- Three/Spark vendor chunks are intentionally lazy and have a warning limit of 5,500 KB.
+- `@omnitwin/types` stays side-effect free (`"sideEffects": false`, top-level
+  declarations only), so a route ships only the contract modules it uses.
+- Deferred observability imports the Sentry SDK by name, never as a namespace.
+- The `three` vendor chunk holds core three, R3F, drei and three-stdlib;
+  `three-webgpu` holds the WebGPU renderer, TSL and the splat addon stack. WebGL
+  surfaces such as the panorama tour must not statically reach `three-webgpu`.
+  Both are lazy and share the 5,500 KB warning limit. Spark has been removed;
+  `bundle-splitting` fails if a Spark chunk or import returns.
+- File-import readers (zip.js for GDTF/MVR) load when a file is chosen.
+- Stylesheets never `@import` remote CSS; a failed import fails the lazy route.
 - Clerk remains isolated to the auth chunk.
-- CI source tests must fail if Spark is imported into normal editor sources.
+- Source and built-output tests (`bundle-splitting`, `twin-chunk-budget`,
+  `startup-guardrails`, types `module-side-effects`) fail if these regress.
+  Measured route weights: `docs/reports/performance-review-2026-09-24.md`.
+
+## Static Asset Budgets
+
+- Pages request display-sized images: responsive WebP ladders with `sizes` that
+  match the rendered width, not multi-megabyte originals as thumbnails.
+- `vercel.json` caches versioned or hash-named files immutably and other public
+  files briefly with background revalidation; the app document is never cached.
 
 ## Planner Frame Budget
 
 - Normal drag/place/selection interactions should stay responsive at a 16 ms frame target on target desktop hardware.
 - Large layouts should keep interaction under 33 ms per frame before release.
+- Work repeated on every drag move stays near-linear in layout size: the
+  placement-rule sweep is grid-indexed, and a drag resolves groups and landing
+  surfaces once per move. `placement-violation-sweep.equivalence` and the
+  `placement-store` linearity test guard both.
 - Heavy runtime assets and simulation work must remain lazy or job-backed, not in the first planner request path.
 
 ## Large Layout Object Count
