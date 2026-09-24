@@ -17,6 +17,8 @@ import { TimelinePreviewFurniture } from "./editor/TimelinePreviewFurniture.js";
 import { SAVED_LAYOUT_FURNITURE_GROUP } from "../lib/layout-timeline-capture.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useFurnitureInspectionStore } from "../stores/furniture-inspection-store.js";
+import { useRetainedTexture } from "../hooks/use-retained-texture.js";
+import { RetainedTextureCache, canvasFontGeneration } from "../lib/retained-texture-cache.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import type { CatalogueItem } from "../lib/catalogue.js";
 import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
@@ -265,6 +267,37 @@ interface NameplateTextureOptions {
   readonly groupedSeatCount?: number;
 }
 
+/**
+ * Nameplates unmount and return with camera gestures and the compact overlay
+ * budget. Sharing each 1600×880 texture (about 7.5 MB on the GPU with its
+ * mipmaps) by its pixel inputs, and keeping it briefly after the last plate
+ * unmounts, stops every return from redrawing and re-uploading it. The idle
+ * window covers a gesture and its settle; the cap bounds what waits unused.
+ */
+export const nameplateTextures = new RetainedTextureCache<CanvasTexture>({
+  idleMs: 5_000,
+  maxIdle: 64,
+});
+
+/** Every input createNameplateTexture reads, plus the fonts its text is drawn in. */
+export function nameplateTextureKey(
+  label: string,
+  item: CatalogueItem,
+  options: NameplateTextureOptions,
+): string {
+  return JSON.stringify([
+    label,
+    item.id,
+    item.slug,
+    item.category,
+    item.name,
+    item.tableShape,
+    options.cameraEnabled,
+    options.groupedSeatCount ?? null,
+    canvasFontGeneration(),
+  ]);
+}
+
 function createNameplateTexture(
   label: string,
   item: CatalogueItem,
@@ -455,9 +488,10 @@ function FurnitureNamePlate({
 }): React.ReactElement | null {
   const groupRef = useRef<Group>(null);
   const { camera } = useThree();
-  const texture = useMemo(
+  const texture = useRetainedTexture(
+    nameplateTextures,
+    nameplateTextureKey(label, item, { cameraEnabled, groupedSeatCount }),
     () => createNameplateTexture(label, item, { cameraEnabled, groupedSeatCount }),
-    [cameraEnabled, groupedSeatCount, item, label],
   );
 
   useFrame(() => {
@@ -465,12 +499,6 @@ function FurnitureNamePlate({
       groupRef.current.lookAt(camera.position);
     }
   });
-
-  useEffect(() => {
-    return () => {
-      texture?.dispose();
-    };
-  }, [texture]);
 
   if (texture === null) return null;
 
