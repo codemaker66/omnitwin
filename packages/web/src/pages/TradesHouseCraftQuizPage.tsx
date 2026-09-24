@@ -43,6 +43,14 @@ import {
   CONVENER_DELIBERATION_BEAT_MS,
   convenerReaction,
 } from "../features/trades-house/convener/convener-lines.js";
+import {
+  INTRO_ACHIEVEMENT,
+  INTRO_ARMORIAL_SIZES,
+  INTRO_ARMS,
+  RAIL_CREST_SIZES,
+  medallionCrestSrc,
+  railCrestSources,
+} from "../features/trades-house/quiz-image-sources.js";
 import { useMediaQuery } from "../hooks/use-media-query.js";
 import {
   CRAFT_ORDER,
@@ -76,9 +84,10 @@ function CraftRail({ craftIds, side }: CraftRailProps): ReactElement {
       {craftIds.map((craftId) => {
         const craft = CRAFT_PROFILES[craftId];
         const label = railLabel(craft.name);
+        const crest = railCrestSources(craft.crest);
         return (
           <div className={`craft-quiz-rail-item${label.length > 12 ? " is-long" : ""}`} key={craftId}>
-            <img data-testid="craft-rail-crest" src={craft.crest} alt={craft.name} />
+            <img data-testid="craft-rail-crest" srcSet={crest.srcSet} sizes={RAIL_CREST_SIZES} src={crest.src} alt={craft.name} />
             <span>{label}</span>
             <i aria-hidden="true">◆</i>
           </div>
@@ -103,10 +112,12 @@ function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
               building engraving fused above the shield, and arms-over-
               architecture reads as collage at invitation scale. */}
           <picture>
-            <source media="(min-width: 1180px)" srcSet="/trades-house-media/assets/crest-sm.png" />
+            <source media="(min-width: 1180px)" srcSet={INTRO_ARMS.srcSet} sizes={INTRO_ARMORIAL_SIZES} />
             <img
               className="craft-quiz-achievement"
-              src="/trades-house-media/assets/achievement.png"
+              srcSet={INTRO_ACHIEVEMENT.srcSet}
+              sizes={INTRO_ARMORIAL_SIZES}
+              src={INTRO_ACHIEVEMENT.src}
               alt="Trades House of Glasgow — Union is Strength"
             />
           </picture>
@@ -573,7 +584,7 @@ function ResultScreen({ ranking, hung, ledger, onRetake }: ResultScreenProps): R
         <span className="craft-result-ember is-four" />
         <span className="craft-result-ember is-five" />
         <ResultLaurel />
-        <img src={craft.crest} alt={`${craft.name} crest`} />
+        <img src={medallionCrestSrc(craft.crest)} alt={`${craft.name} crest`} />
       </div>
       <h1 id="craft-result-name">{craft.name}</h1>
       <p className="craft-result-archetype">{craft.archetype}</p>

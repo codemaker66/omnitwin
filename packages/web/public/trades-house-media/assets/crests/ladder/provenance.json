@@ -1,0 +1,671 @@
+{
+  "schemaVersion": "venviewer.image-ladder.v1",
+  "generator": "packages/web/scripts/build-image-ladders.mjs",
+  "purpose": "Craft quiz crests: the intro rails draw them at most 56 CSS px wide; the result medallion uses the source-width copy.",
+  "transformation": {
+    "tool": "sharp 0.35.4 (libvips 8.18.6, libwebp 1.6.0)",
+    "resize": "Lanczos3 with premultiplied alpha; aspect ratio kept; no crop; source-width copies are not resampled",
+    "encoding": "WebP near-lossless (libwebp near_lossless 60), effort 6",
+    "error": "psnrDb and maxChannelError compare each decoded copy with the exact resample of its source (premultiplied RGBA; psnrDb is null when identical)"
+  },
+  "images": [
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/bakers.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 235324,
+        "sha256": "267a5ff620ae820e1a477a66fda59894c9f058de7e3387da8d7d9cb906bd1a0b"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/bakers-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 7060,
+          "sha256": "4580b156eaefec3bb5ebbe1494ff7e9781f1fc02450f2d2cc9d993a354017012",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/bakers-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 16276,
+          "sha256": "a69619343ca6656efdca9b7807b67e793ebbf6f4127bb7b19c5bcf31430865b4",
+          "psnrDb": 48.92,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/bakers-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 31156,
+          "sha256": "e1a91edea4a2c8df1ca868430fffe6f32a3dfa88464c6f072788626bb1d27320",
+          "psnrDb": 48.65,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/bakers-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 84922,
+          "sha256": "7fd34a259198c4aa59b75ac23dcdbb539b031c7b2cec5be8e8e29f91ab7c29a1",
+          "psnrDb": 49.41,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/barbers.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 223614,
+        "sha256": "a42933e6476f915df689fc3deb41b09bf1410748da8bfe21600c35aaec49c5c3"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/barbers-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6866,
+          "sha256": "7dc065c4e038a87b03c82c0d3bbaa2a8deac49b000a18cdc024423e4c319e5e7",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/barbers-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 14814,
+          "sha256": "b76dd30d72903e59b879531126921ac159ceedc642dfd421b7045ab09c7f6ae3",
+          "psnrDb": 48.94,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/barbers-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 27186,
+          "sha256": "3f4cf10cd8af3cca82dc25f84f8ac6babac99ae3d2513a6179fd29a32aa08e19",
+          "psnrDb": 48.73,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/barbers-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 75196,
+          "sha256": "144b95d9d479dd87dee813563917520804deb1723a823c793d087e6a463f80bc",
+          "psnrDb": 49.65,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/coopers.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 225735,
+        "sha256": "03e296b8631b4e646f5c3360e78ccd712dbcb6d58922218b7b9d8b4ea8c967b2"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/coopers-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6676,
+          "sha256": "a8a715cad9054f13eccdd58fea2a5c66521aa0b65fcd64389c96775cc2a378f1",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/coopers-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 14964,
+          "sha256": "4cc8594d6212aadc97708e3eaf753ed7c286dc5e6169827e80d60e342b41bdeb",
+          "psnrDb": 49.05,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/coopers-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 28786,
+          "sha256": "4c381f016c42f5c258538085fb5993bc8b747da2acc18dd85fef830bfb6c4dc9",
+          "psnrDb": 49.33,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/coopers-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 76444,
+          "sha256": "b2aecb429c7c44327c7e6d82ffefbc0aef745ed716c064167934802945d5c411",
+          "psnrDb": 49.54,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/cordiners.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 217082,
+        "sha256": "fdf162095ef69938b50536b0028cb4f75eff995689226902508580f326849c62"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/cordiners-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6572,
+          "sha256": "298cb2ed29d8f4b0a68ef96f9d1091f3f3748683307ba704f796edf7c52a2dba",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/cordiners-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 14318,
+          "sha256": "7370050b3a6fcfdd32e9e85b2f1c2252b1327ea9516b52d396feeee839e4d4ec",
+          "psnrDb": 49.18,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/cordiners-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 26768,
+          "sha256": "b6974ce2c52bf4328ac287d1330c5c149dc071d7d81e8ddf7a8a082ef68a21a3",
+          "psnrDb": 48.98,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/cordiners-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 74130,
+          "sha256": "b50862accb67c6b3f4a244a613263518578fcacc3976f8debe9ca44f4db3bde9",
+          "psnrDb": 49.8,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/dyers.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 221395,
+        "sha256": "e609b687f7a49f3632de1165b1cd5774f9bb13b25eca4a7eadd5ebe87feee706"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/dyers-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6692,
+          "sha256": "8f5a6018931a4a9c14c62b2ed1a58961ee374461ff487e1e56e75114ca95ec39",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/dyers-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 15034,
+          "sha256": "8af402e5a106abf45c4c4b610e490c3ddbd3b10b405fb6e7b11b474a1de4cf28",
+          "psnrDb": 48.96,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/dyers-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 28096,
+          "sha256": "8ed2fde75e99af78868a825338f44be05d0bf2eb87e4b73931e4fda8d9414a91",
+          "psnrDb": 48.7,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/dyers-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 75562,
+          "sha256": "1b6117202ebef881594010a42e12745fc81625a5f111d638868c0d7989e5e7b4",
+          "psnrDb": 49.66,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/fleshers.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 229579,
+        "sha256": "81fa4ffd06d32e317926ebddeafb49d0991ff8225bae78788318951bf88e60d3"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/fleshers-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6574,
+          "sha256": "f999c916a046660ab7e3fe71b362876fd4c96375836de880133b199da2b77d49",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/fleshers-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 14794,
+          "sha256": "8cdfda76c2c1a825611fe28a8ae5b2daa026ad5e52f2a7d08681e3e1d19e3582",
+          "psnrDb": 48.97,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/fleshers-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 28966,
+          "sha256": "a8e801751e2b47d653ff144b20ed1f321b66b96d77acc7ec4056e45509901f1e",
+          "psnrDb": 48.8,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/fleshers-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 78542,
+          "sha256": "52be045eddca6a49f7f9db981d73d75c6c7963c2a936cd28eb6d44e8c75c06cc",
+          "psnrDb": 49.42,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/gardeners.png",
+        "width": 320,
+        "height": 384,
+        "bytes": 232329,
+        "sha256": "ed57ca61a2d6037af101216c443b347b341734d2d6684d99b6c850deaaaefe00"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/gardeners-56.webp",
+          "width": 56,
+          "height": 67,
+          "bytes": 5062,
+          "sha256": "78988f4a0824e6f36b64b486205ece8da0591cb5ea5719439e2c8326f4e20d27",
+          "psnrDb": 49.11,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/gardeners-112.webp",
+          "width": 112,
+          "height": 134,
+          "bytes": 15888,
+          "sha256": "3156fb78a7d24065c4f6f19aa11b24696ddc1e9424e87d2ad1ac142bf8312f8b",
+          "psnrDb": 49.46,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/gardeners-168.webp",
+          "width": 168,
+          "height": 202,
+          "bytes": 31534,
+          "sha256": "914ff99a9d9271d80c0637ee39a4b86fb2e3edbe97db43ff7e82d9ffeb029948",
+          "psnrDb": 49.61,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/gardeners-320.webp",
+          "width": 320,
+          "height": 384,
+          "bytes": 87314,
+          "sha256": "34fe4b58c427a1fd6cf05c7b21f41b5a0cb13b99f6986be90052741a0b13521d",
+          "psnrDb": 50.06,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/hammermen.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 209622,
+        "sha256": "982dee6642ed7f96993774868ec001fc2e986d426200a428c3217b8ca00f5f7f"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/hammermen-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6306,
+          "sha256": "a1461a362d07c7c842a9ddca8e6559a7c99f009178b314c222df752ab60abd3c",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/hammermen-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 13870,
+          "sha256": "ebfe390f5ce3cba3c74e4209bdaf2de3a8e05a2c3c8536318527cbfad7e51291",
+          "psnrDb": 49.19,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/hammermen-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 26602,
+          "sha256": "984c7a068dc6de5b7deca29fb0dbcc27364980ee1f65c96fdb66b96221d49b48",
+          "psnrDb": 49.44,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/hammermen-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 71506,
+          "sha256": "ce502eb19eb5b1b8dcc796017e963b1008c3c8768b715464d73eef38eb6aa155",
+          "psnrDb": 49.79,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/maltmen.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 226040,
+        "sha256": "d5bbe087c1bec95caceb4f02fb1fb11f38a84fab9dfc94f970fdd48a7f7dc068"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/maltmen-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 7046,
+          "sha256": "496335d6a77593851ebefd25259511338631f23c8c742e1413ceb712993a0053",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/maltmen-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 15666,
+          "sha256": "a933946e704613cf6b6264473b94880cd3a28bfb328981c240ea1a34e8d4dd9d",
+          "psnrDb": 48.83,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/maltmen-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 28808,
+          "sha256": "4119eacc9ef7424fd42fa83417ce6ccf67904fe7f14e81be5c90dd77c1c41e07",
+          "psnrDb": 48.88,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/maltmen-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 80672,
+          "sha256": "862e6050a641e6a73f4542b694f5db5b7de9dc3df61cd5a1671584f95393d9ff",
+          "psnrDb": 49.63,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/masons.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 228064,
+        "sha256": "c868689a7f865c32f34f1972878eaf6e3f7aab411af6a42864799a781aa1edc9"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/masons-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6544,
+          "sha256": "4517c931dc4ecd25d1102fd801b0fdb94736dbee8ec169bdfd9eaabf1f69feb4",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/masons-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 14824,
+          "sha256": "1be6937de32607ad34c18cfec6fd387fcb2a683d95e13a4987ebbf36914eb69d",
+          "psnrDb": 48.98,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/masons-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 28046,
+          "sha256": "445a9eb155443d022c7842fc9bb23f54a39145a57b96ae32275eb0c3408d77fe",
+          "psnrDb": 49.25,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/masons-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 76050,
+          "sha256": "73bfe7ae4d3177bb4cdf26f34aa00dca6f23e4739ef8512c393dfc772c9063e7",
+          "psnrDb": 49.53,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/skinners.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 222637,
+        "sha256": "ba70da31b15f9213f495fb387fc4a84c0b0a3c20d7472c9b1456ec5c7569f83a"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/skinners-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6802,
+          "sha256": "f08afb23aba0f5087ffb3dd3b234d987321e783914a2e576fb1b0b644464116b",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/skinners-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 14964,
+          "sha256": "19dbae41103ce5162c3794d3efe89eba3c8ab684f49f91c60ffdaa7e16906bf2",
+          "psnrDb": 48.97,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/skinners-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 27388,
+          "sha256": "b0fb290e98ee1b7f7bdc34fc7445dcd8ab4058177c8bc2b553018e5f6b0e4b26",
+          "psnrDb": 48.64,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/skinners-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 75794,
+          "sha256": "6bd532e10d95127b2865b3eb35f63027bfcbd2ddb22ab65bfb9d578aba4b7255",
+          "psnrDb": 49.54,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/tailors.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 226622,
+        "sha256": "e0a026e7f247d401c8c1b583d24e5e019568bb3aab62a73de043ae8842fd19fc"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/tailors-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6700,
+          "sha256": "7f2571158485973639dc366827a1b8aa11404117afb3529e6fad9be0b04a70a9",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/tailors-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 15046,
+          "sha256": "2ae11098d0c70321d21b9965d3f0443fbc41ebb2760eb9e2e0fd3526317e1951",
+          "psnrDb": 48.97,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/tailors-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 27406,
+          "sha256": "c9652e970e1c66b5b573cb74a5711feb9a48f193adc3e8e062a12eb733935536",
+          "psnrDb": 48.69,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/tailors-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 76836,
+          "sha256": "a5d6389faeb518ececaeaa7bde824513818c60205d79324b7938c67dc0d67913",
+          "psnrDb": 49.5,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/weavers.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 234667,
+        "sha256": "597b6204b63451e72949ac08952a52feb4f993b287210b3fe70947f617258085"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/weavers-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6828,
+          "sha256": "9a22a5ffc3409916c99f0e6946755f0f77c32f712b9441bf8e42d58ef9b4202d",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/weavers-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 15160,
+          "sha256": "275723128596115bccc39f17c8d7f4967fed145dbfc775e830a6135c426cb6a1",
+          "psnrDb": 48.94,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/weavers-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 28878,
+          "sha256": "257981c1a9a73bee97e148df38602463d5d7d7765128e0bcd3db49796ad51998",
+          "psnrDb": 48.69,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/weavers-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 79740,
+          "sha256": "f5d612d8e39efd2aa6f6276ccfa4158b9fe17abf824b25e1f56e5e81695f5848",
+          "psnrDb": 49.4,
+          "maxChannelError": 3
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crests/wrights.png",
+        "width": 320,
+        "height": 349,
+        "bytes": 213328,
+        "sha256": "e96767fbe41f47997ac5cde12a1a099408bf018bf77f1a78bcad3f52f009460a"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/crests/ladder/wrights-56.webp",
+          "width": 56,
+          "height": 61,
+          "bytes": 6698,
+          "sha256": "779a21190f32a549f836d19fbc91f85add4fd734d881b1805d338dd6b40aca70",
+          "psnrDb": null,
+          "maxChannelError": 0
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/wrights-112.webp",
+          "width": 112,
+          "height": 122,
+          "bytes": 14790,
+          "sha256": "3c4aa3ab146042ddc423f41ad5ad1adf64990f0a73b470f5d14bcb86660bf6bc",
+          "psnrDb": 49.08,
+          "maxChannelError": 3
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/wrights-168.webp",
+          "width": 168,
+          "height": 183,
+          "bytes": 27028,
+          "sha256": "85e30c6d21523a1cefa018e9ba31db67c66ccdf16cf5b003f861cbee95433c53",
+          "psnrDb": 49.08,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/crests/ladder/wrights-320.webp",
+          "width": 320,
+          "height": 349,
+          "bytes": 73226,
+          "sha256": "488c6455ee9b8499bb4cb8644414687d7084fe045a0b57d6128ba29a0ae8d3a9",
+          "psnrDb": 49.78,
+          "maxChannelError": 3
+        }
+      ]
+    }
+  ]
+}

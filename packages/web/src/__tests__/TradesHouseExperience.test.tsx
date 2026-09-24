@@ -15,6 +15,12 @@ import {
 } from "../features/trades-house/convener/convener-lines.js";
 import { DELIBERATION_PREAMBLE, DELIBERATION_REPLY, applyDeliberation, deliberate } from "../features/trades-house/craft-quiz-deliberation.js";
 import { TradesHouseCraftQuizPage } from "../pages/TradesHouseCraftQuizPage.js";
+import {
+  INTRO_ACHIEVEMENT,
+  INTRO_ARMS,
+  medallionCrestSrc,
+  railCrestSources,
+} from "../features/trades-house/quiz-image-sources.js";
 
 // The reveal records the run (no PII) to the API. A unit test must not make
 // API traffic, and the wiring is worth asserting: one run, twelve answers, the
@@ -177,6 +183,8 @@ describe("Trades House leaflet experience", () => {
 
     vi.useRealTimers();
     expect(screen.getByText(EXPECTED.name)).toBeTruthy();
+    // The medallion shows the crest at full resolution, not the rail's thumbnail.
+    expect(screen.getByAltText(`${EXPECTED.name} crest`).getAttribute("src")).toBe(medallionCrestSrc(EXPECTED.crest));
 
     // The run went out once, whole, and names the same Craft the page does.
     expect(recordQuizRun).toHaveBeenCalledTimes(1);
@@ -196,6 +204,28 @@ describe("Trades House leaflet experience", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retake the questions" }));
     expect(screen.getByRole("button", { name: "Begin the Craft quiz" })).toBeTruthy();
+  });
+
+  it("draws the intro's crests and armorial from display-sized copies", () => {
+    renderQuiz();
+    const crests = screen.getAllByTestId("craft-rail-crest");
+    expect(crests).toHaveLength(14);
+    for (const crest of crests) {
+      const craft = Object.values(CRAFT_PROFILES).find((profile) => profile.name === crest.getAttribute("alt"));
+      if (craft === undefined) throw new Error(`No craft is named ${crest.getAttribute("alt") ?? ""}`);
+      const sources = railCrestSources(craft.crest);
+      expect(crest.getAttribute("srcset")).toBe(sources.srcSet);
+      expect(crest.getAttribute("sizes")).toBe("56px");
+      expect(crest.getAttribute("src")).toBe(sources.src);
+    }
+    const armorial = screen.getByAltText("Trades House of Glasgow — Union is Strength");
+    expect(armorial.getAttribute("srcset")).toBe(INTRO_ACHIEVEMENT.srcSet);
+    expect(armorial.getAttribute("sizes")).toBe("216px");
+    expect(armorial.getAttribute("src")).toBe(INTRO_ACHIEVEMENT.src);
+    const desktop = armorial.parentElement?.querySelector("source");
+    expect(desktop?.getAttribute("media")).toBe("(min-width: 1180px)");
+    expect(desktop?.getAttribute("srcset")).toBe(INTRO_ARMS.srcSet);
+    expect(desktop?.getAttribute("sizes")).toBe("216px");
   });
 
   it("explains itself before the first dilemma instead of dropping the reader into one", () => {

@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "venviewer.image-ladder.v1",
+  "generator": "packages/web/scripts/build-image-ladders.mjs",
+  "purpose": "Craft quiz intro armorial (achievement below 1180 px, arms alone above), drawn at most 216 CSS px wide.",
+  "transformation": {
+    "tool": "sharp 0.35.4 (libvips 8.18.6, libwebp 1.6.0)",
+    "resize": "Lanczos3 with premultiplied alpha; aspect ratio kept; no crop; source-width copies are not resampled",
+    "encoding": "WebP near-lossless (libwebp near_lossless 60), effort 6",
+    "error": "psnrDb and maxChannelError compare each decoded copy with the exact resample of its source (premultiplied RGBA; psnrDb is null when identical)"
+  },
+  "images": [
+    {
+      "source": {
+        "path": "/trades-house-media/assets/achievement.png",
+        "width": 760,
+        "height": 1140,
+        "bytes": 1533376,
+        "sha256": "c8c9ef1c72a5ee5b76cf88ec158ba95f955459fc641eb26ad2f1739f9600091b"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/ladder/achievement-216.webp",
+          "width": 216,
+          "height": 324,
+          "bytes": 66358,
+          "sha256": "d28471ac96385e5adf15d2c1aad98577fec7b16e1265731b2d6a6cab4a6425e2",
+          "psnrDb": 49.77,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/ladder/achievement-432.webp",
+          "width": 432,
+          "height": 648,
+          "bytes": 234098,
+          "sha256": "afeb9412882c219896d4228e3c4a022ba5a919f3e60d0ced7df9981b0c07058f",
+          "psnrDb": 49.87,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/ladder/achievement-648.webp",
+          "width": 648,
+          "height": 972,
+          "bytes": 474062,
+          "sha256": "c27fcdc7175988359cc7afe8eb226d7a9f8360e63af5a1dce97c3f0fe97be859",
+          "psnrDb": 49.94,
+          "maxChannelError": 4
+        }
+      ]
+    },
+    {
+      "source": {
+        "path": "/trades-house-media/assets/crest-sm.png",
+        "width": 864,
+        "height": 1000,
+        "bytes": 1021691,
+        "sha256": "bf6f406aa179de847169390cd3ec48e5c855d49201cda07f0919726fca59e043"
+      },
+      "variants": [
+        {
+          "path": "/trades-house-media/assets/ladder/crest-sm-216.webp",
+          "width": 216,
+          "height": 250,
+          "bytes": 45946,
+          "sha256": "e199af0b291017f2980f24eb8fd01eebf50e73794ba1964d874cd1b7b8c97fee",
+          "psnrDb": 50.73,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/ladder/crest-sm-432.webp",
+          "width": 432,
+          "height": 500,
+          "bytes": 136628,
+          "sha256": "6b66d99273819734c31d94eb93ef29e007c28c246418fce74481af21abb18954",
+          "psnrDb": 51.73,
+          "maxChannelError": 4
+        },
+        {
+          "path": "/trades-house-media/assets/ladder/crest-sm-648.webp",
+          "width": 648,
+          "height": 750,
+          "bytes": 269996,
+          "sha256": "f8b5fc7e9b14eac4ba6af77ecd8aa71a2df8e614cc0b0977fbb78b6f532e63a2",
+          "psnrDb": 52.31,
+          "maxChannelError": 4
+        }
+      ]
+    }
+  ]
+}
