@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { ActivityIndicator } from "../components/shared/Activity.js";
-import { useEditorStore } from "../stores/editor-store.js";
+import { handOffPublicConfiguration, prefetchPlannerSpace, useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
@@ -21,8 +21,9 @@ import {
   buildPlannerTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
-import { getPublicConfig } from "../api/configurations.js";
+import { getPublicConfig, type Configuration } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
+import { prefetchPlannerVenue } from "../hooks/use-planner-venue-identity.js";
 import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
@@ -120,17 +121,28 @@ function readReusableConfigCandidates(): readonly string[] {
     .map((entry) => entry.configId);
 }
 
-async function findReusablePublicConfigId(spaceId: string, isCurrent: () => boolean): Promise<string | null> {
-  const candidates = readReusableConfigCandidates();
-  for (const configId of candidates) {
+/**
+ * Look up every tracked draft at once. A lookup needs only the local list,
+ * not the venue or room it must match, so the bootstrap starts them all
+ * beside those requests instead of one after another at the end.
+ */
+function probeReusablePublicConfigs(signal: AbortSignal): readonly Promise<Configuration | null>[] {
+  return readReusableConfigCandidates().map((configId) =>
+    // Ignore stale, claimed, or unreachable local entries.
+    getPublicConfig(configId, signal).catch(() => null));
+}
+
+/** The newest tracked draft for this room: answers are read in the list's order. */
+async function findReusablePublicConfig(
+  probes: readonly Promise<Configuration | null>[],
+  spaceId: string,
+  isCurrent: () => boolean,
+): Promise<Configuration | null> {
+  for (const probe of probes) {
     if (!isCurrent()) return null;
-    try {
-      const config = await getPublicConfig(configId);
-      if (!isCurrent()) return null;
-      if (config.isPublicPreview && config.spaceId === spaceId) return config.id;
-    } catch {
-      // Ignore stale, claimed, or unreachable local entries.
-    }
+    const config = await probe;
+    if (!isCurrent()) return null;
+    if (config !== null && config.isPublicPreview && config.spaceId === spaceId) return config;
   }
   return null;
 }
@@ -228,11 +240,16 @@ export function EditorPage(): React.ReactElement {
       && (useAuthStore.getState().user?.venueId ?? null) === authVenueId
       && useAuthStore.getState().isAuthenticated === isAuthenticated;
     const isCurrent = (): boolean => !cancelled && ownsRoute();
+    // Draft lookups this bootstrap no longer needs are cancelled, not left running.
+    const draftLookups = new AbortController();
     setAutoCreateBlocker(null);
     setOpeningRoomName(null);
     void (async () => {
       try {
-        const venues = await spacesApi.listVenues();
+        // The venue lookup leads the critical path, so it is requested first.
+        const venuesRequest = spacesApi.listVenues();
+        const reusableDrafts = probeReusablePublicConfigs(draftLookups.signal);
+        const venues = await venuesRequest;
         if (!isCurrent()) return;
         const venueResolution = resolvePlannerVenue(venues, routeVenueSlug, venueAccessUser);
         if (venueResolution.status !== "resolved") {
@@ -250,6 +267,8 @@ export function EditorPage(): React.ReactElement {
           return;
         }
 
+        // The planner header reads this venue once the room opens; start it now.
+        prefetchPlannerVenue(venueResolution.venue.id);
         const spaces = await spacesApi.listSpaces(venueResolution.venue.id);
         if (!isCurrent()) return;
         const space =
@@ -259,14 +278,18 @@ export function EditorPage(): React.ReactElement {
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
         setOpeningRoomName(space.name);
+        // Whichever draft opens, it opens in this room; start the room read now.
+        prefetchPlannerSpace(space.venueId, space.id);
         // Preserve generic planner options on the canonical draft route.
         // Event-linked entry is resolved separately above.
         const carried = carriedSearch;
         const search = carried.length === 0 ? "" : `?${carried}`;
-        const reusableConfigId = await findReusablePublicConfigId(space.id, isCurrent);
+        const reusableConfig = await findReusablePublicConfig(reusableDrafts, space.id, isCurrent);
         if (!isCurrent()) return;
-        if (reusableConfigId !== null) {
-          void navigate({ pathname: `/plan/${reusableConfigId}`, search }, { replace: true });
+        if (reusableConfig !== null) {
+          // A guest's page loads it through the public endpoint just read.
+          if (!isAuthenticated) handOffPublicConfiguration(reusableConfig);
+          void navigate({ pathname: `/plan/${reusableConfig.id}`, search }, { replace: true });
           return;
         }
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id, isCurrent);
@@ -277,10 +300,13 @@ export function EditorPage(): React.ReactElement {
         void navigate({ pathname: `/plan/${newConfigId}`, search }, { replace: true });
       } catch {
         if (isCurrent()) setAutoCreateBlocker({ kind: "network" });
+      } finally {
+        draftLookups.abort();
       }
     })();
     return () => {
       cancelled = true;
+      draftLookups.abort();
       if (autoCreateAttemptedFor.current === bootstrapKey) autoCreateAttemptedFor.current = null;
     };
   }, [

@@ -37,6 +37,7 @@ import { plannerActionContext } from "./planner-action-log.js";
 import { flushActionLog } from "./action-log-sync.js";
 import { postActionBatch } from "../api/action-log.js";
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
+import { createOneShotHandoff } from "../lib/one-shot-handoff.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -509,6 +510,30 @@ const INITIAL_STATE: EditorState = {
 let configurationLoadRequest = 0;
 let configurationSession = 0;
 
+// The /plan bootstrap reads tracked drafts through the public endpoint, then
+// opens the one it chose — whose load would request that same row again at
+// once. It hands the response over instead: only to a public load (the
+// endpoint that load would call) of that configuration, and only to the very
+// next load, which consumes or discards it.
+const publicConfigurationHandoff = createOneShotHandoff<configApi.Configuration>(5_000);
+
+/** Give the next public load of this configuration the row the bootstrap already read. */
+export function handOffPublicConfiguration(config: configApi.Configuration): void {
+  if (config.isPublicPreview) publicConfigurationHandoff.offer(config.id, config);
+}
+
+// The bootstrap knows the room before its draft is created or opened, so it
+// requests the room then; the commit's loadSpace joins that request.
+const plannerSpaceHandoff = createOneShotHandoff<Promise<Space>>(10_000);
+
+/** Start the room read the next loadSpace for it will use. */
+export function prefetchPlannerSpace(venueId: string, spaceId: string): void {
+  const request = spacesApi.getSpace(venueId, spaceId);
+  // Never unhandled; loadSpace makes its own request if this one failed.
+  request.catch(() => undefined);
+  plannerSpaceHandoff.offer(`${venueId}/${spaceId}`, request);
+}
+
 export interface EditorSession {
   readonly configId: string | null;
   readonly generation: number;
@@ -528,11 +553,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   loadConfiguration: async (configId, isAuthenticated) => {
     const request = ++configurationLoadRequest;
+    // Taken by every load, so a handoff never outlives the load it was for.
+    const handedOff = publicConfigurationHandoff.take(configId);
     set({ isLoading: true, error: null });
     try {
       const config = isAuthenticated === true
         ? await configApi.getConfig(configId)
-        : await configApi.getPublicConfig(configId);
+        : handedOff ?? await configApi.getPublicConfig(configId);
       if (request !== configurationLoadRequest) return;
       // A GET may have captured its row before a concurrent save was accepted.
       // Reloading cannot roll an acknowledged revision (or newer local edits)
@@ -596,8 +623,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   loadSpace: async (venueId, spaceId) => {
     const session = configurationSession;
+    const early = plannerSpaceHandoff.take(`${venueId}/${spaceId}`);
     try {
-      const space = await spacesApi.getSpace(venueId, spaceId);
+      const space = await (early === null
+        ? spacesApi.getSpace(venueId, spaceId)
+        : early.catch(() => spacesApi.getSpace(venueId, spaceId)));
       if (session !== configurationSession || get().spaceId !== spaceId || get().venueId !== venueId) return;
       set({ space, spaceId, venueId });
     } catch {
@@ -926,6 +956,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   reset: () => {
     configurationLoadRequest += 1;
     configurationSession += 1;
+    publicConfigurationHandoff.clear();
+    plannerSpaceHandoff.clear();
     activeHistoryGesture = null;
     interactionEpoch++;
     useCockpitStore.getState().setPlannedGuestCount(null);

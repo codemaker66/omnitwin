@@ -154,8 +154,8 @@ export async function publicBatchSave(
   );
 }
 
-export async function getPublicConfig(configId: string): Promise<Configuration> {
-  return api.get(`/public/configurations/${configId}`, ConfigurationResponseSchema);
+export async function getPublicConfig(configId: string, signal?: AbortSignal): Promise<Configuration> {
+  return api.get(`/public/configurations/${configId}`, ConfigurationResponseSchema, signal);
 }
 
 /**

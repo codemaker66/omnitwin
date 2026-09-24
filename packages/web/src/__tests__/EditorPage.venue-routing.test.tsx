@@ -174,6 +174,9 @@ beforeEach(() => {
   spacesMock.getSpace.mockImplementation((_venueId: string, spaceId: string) =>
     Promise.resolve(spaceId === ballroom.id ? ballroom : grandHall),
   );
+  spacesMock.getVenue.mockImplementation((venueId: string) => Promise.resolve(venueId === cityRooms.id
+    ? { ...cityRooms, spaces: [ballroom] }
+    : { ...tradesHall, spaces: [grandHall, receptionRoom] }));
 });
 
 afterEach(() => {
@@ -216,7 +219,7 @@ describe("EditorPage venue-scoped bootstrap", () => {
     renderEditor("/v/city-rooms/plan?space=ballroom");
 
     await waitFor(() => {
-      expect(configMock.getPublicConfig).toHaveBeenCalledWith("cfg-city-existing");
+      expect(configMock.getPublicConfig).toHaveBeenCalledWith("cfg-city-existing", expect.any(AbortSignal));
     });
     expect(configMock.createPublicConfig).not.toHaveBeenCalled();
     await screen.findByTestId("created-route");
