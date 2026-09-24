@@ -163,6 +163,11 @@ describe("RoomMesh shells across camera gestures", () => {
     expect(textures.created).toHaveLength(0);
     setCameraInteraction(root, true);
     expect(drawnSignature(root.scene)).toEqual(LEAN);
+    // No brick wall exists here to animate a tapped wall, so the lean walls
+    // are not click-controlled.
+    act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
+    root.frame();
+    expect(drawnSignature(root.scene)).toEqual(LEAN);
   });
 
   it("keeps brick walls, floor, dome, lights and textures instead of rebuilding them after each gesture", () => {
@@ -237,7 +242,7 @@ describe("RoomMesh shells across camera gestures", () => {
     }
   });
 
-  it("does no hidden frame work: gestures neither fade, unlock nor request frames", () => {
+  it("keeps click animations in time behind a gesture without fading walls or requesting frames", () => {
     const root = mountRoom(<RoomMesh geometry={grandHall()} variant="generic" />);
     // Click the back wall away, let the disassembly finish, then start rebuilding it.
     act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
@@ -245,43 +250,98 @@ describe("RoomMesh shells across camera gestures", () => {
     act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
     root.frame(0.05);
 
-    // A gesture that ends near the front wall: the auto-fade driver and the
-    // rebuilding wall stay paused while the lean shell is drawn.
-    setCameraInteraction(root, true, 1);
+    // A gesture that ends near the front wall: the auto-fade driver waits for
+    // the detailed shell, and the hidden bricks request no frames of their own.
+    setCameraInteraction(root, true, 0);
     root.store.getState().camera.position.set(0, 3, 5);
-    const before = {
-      opacity: useVisibilityStore.getState().wallOpacity,
-      locks: useVisibilityStore.getState().wallLocks,
-      invalidations: root.invalidations(),
-    };
-    for (let i = 0; i < 200; i++) root.frame(0.05);
-    expect(useVisibilityStore.getState().wallOpacity).toBe(before.opacity);
-    expect(useVisibilityStore.getState().wallLocks).toBe(before.locks);
-    expect(before.locks["wall-back"]).toBe(true);
-    expect(root.invalidations()).toBe(before.invalidations);
+    const opacity = useVisibilityStore.getState().wallOpacity;
+    const invalidations = root.invalidations();
+    for (let i = 0; i < 20; i++) root.frame(0.05);
+    expect(useVisibilityStore.getState().wallOpacity).toBe(opacity);
+    expect(root.invalidations()).toBe(invalidations);
+    expect(useVisibilityStore.getState().wallLocks["wall-back"]).toBe(true);
+    // The rebuilding wall is not drawn whole by the lean shell.
+    expect(drawnSignature(root.scene)).toEqual(LEAN.filter((entry) => !entry.includes(":wall-back:")));
 
-    // Settling resumes both: the front wall fades from the camera and the back wall unlocks.
+    // The rebuild keeps the time of the frames drawn meanwhile, as the wall's
+    // ornaments do, so it finishes and releases the wall five seconds after
+    // the click, and the lean shell shows the wall again.
+    for (let i = 0; i < 80; i++) root.frame(0.05);
+    expect(useVisibilityStore.getState().wallLocks["wall-back"]).toBe(false);
+    expect(useVisibilityStore.getState().wallOpacity).toBe(opacity);
+    expect(drawnSignature(root.scene)).toEqual(LEAN);
+
+    // Settling resumes the auto-fade: the front wall fades from the camera.
     setCameraInteraction(root, false, 1);
     for (let i = 0; i < 200; i++) root.frame(0.05);
     expect(useVisibilityStore.getState().wallOpacity["wall-front"]).toBeLessThan(0.5);
-    expect(useVisibilityStore.getState().wallLocks["wall-back"]).toBe(false);
+    const back = brickWall(root.scene, "wall-back");
+    expect(back.visible).toBe(true);
+    expect((back.material as MeshStandardMaterial).opacity).toBe(1);
   });
 
-  it("resumes a clicked-away wall after a gesture exactly as the remounted wall did", () => {
-    const root = mountRoom(<RoomMesh geometry={grandHall()} variant="generic" />);
+  it("keeps a clicked-away wall away through gestures instead of replaying its disassembly", () => {
+    const root = mountRoom(<RoomMesh geometry={grandHall()} variant="grand-hall" />);
     act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
     for (let i = 0; i < 120; i++) root.frame(0.05);
-    expect(brickWall(root.scene, "wall-back").visible).toBe(false);
-
-    setCameraInteraction(root, true);
-    setCameraInteraction(root, false, 1);
-    // The shell used to remount here, restarting the still-locked wall from
-    // fully built and replaying its disassembly; the kept wall does the same.
     const wall = brickWall(root.scene, "wall-back");
+    expect(wall.visible).toBe(false);
+    const version = wall.instanceMatrix.version;
+    const withoutBackWall = (signature: readonly string[]): string[] => signature.filter((entry) => !entry.includes(":wall-back:"));
+
+    for (let gesture = 0; gesture < 3; gesture++) {
+      setCameraInteraction(root, true);
+      // No whole wall flashes back while the camera moves.
+      expect(drawnSignature(root.scene)).toEqual(withoutBackWall(LEAN));
+      setCameraInteraction(root, false, 1);
+      const invalidations = root.invalidations();
+      for (let i = 0; i < 120; i++) root.frame(0.05);
+      expect(drawnSignature(root.scene)).toEqual(withoutBackWall(DETAILED_AT_REST));
+      expect(brickWall(root.scene, "wall-back")).toBe(wall);
+      expect(wall.visible).toBe(false);
+      expect(wall.instanceMatrix.version).toBe(version);
+      expect(root.invalidations()).toBe(invalidations);
+    }
+
+    // Clicking it back still rebuilds it brick by brick over five seconds.
+    act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
+    root.frame(0.05);
     expect(wall.visible).toBe(true);
+    expect((wall.material as MeshStandardMaterial).opacity).toBeCloseTo(0.03, 9);
+    for (let i = 0; i < 48; i++) root.frame(0.05);
+    expect(useVisibilityStore.getState().wallLocks["wall-back"]).toBe(true);
+    for (let i = 0; i < 60; i++) root.frame(0.05);
+    expect(useVisibilityStore.getState().wallLocks["wall-back"]).toBe(false);
     expect((wall.material as MeshStandardMaterial).opacity).toBe(1);
-    for (let i = 0; i < 120; i++) root.frame(0.05);
-    expect(brickWall(root.scene, "wall-back").visible).toBe(false);
+    expect(drawnSignature(root.scene)).toEqual(DETAILED_AT_REST);
+  });
+
+  it("carries a clicked wall's animation through a gesture in step with its ornaments", () => {
+    const root = mountRoom(<RoomMesh geometry={grandHall()} variant="grand-hall" />);
+    const wall = brickWall(root.scene, "wall-back");
+    const daylight = root.scene.getObjectByName("arched-window-daylight-pane-rect");
+    if (!(daylight instanceof Mesh) || !(daylight.material instanceof MeshStandardMaterial)) {
+      throw new Error("Missing window-wall ornament");
+    }
+    const ornamentOpacity = (): number => (daylight.material as MeshStandardMaterial).opacity;
+    const brickOpacity = (): number => (wall.material as MeshStandardMaterial).opacity;
+
+    act(() => { useVisibilityStore.getState().toggleWall("wall-back"); });
+    for (let i = 0; i < 30; i++) root.frame(0.05);
+    setCameraInteraction(root, true, 0);
+    for (let i = 0; i < 30; i++) root.frame(0.05);
+    setCameraInteraction(root, false, 0);
+    for (let i = 0; i < 20; i++) root.frame(0.05);
+    // Four seconds into the five-second disassembly for both: the bricks
+    // resumed where the ornaments are (progress 0.2, their fade at 3x), rather
+    // than restarting from a whole wall.
+    expect(ornamentOpacity()).toBeCloseTo(0.2, 9);
+    expect(brickOpacity()).toBeCloseTo(0.6, 9);
+    expect(wall.visible).toBe(true);
+
+    for (let i = 0; i < 20; i++) root.frame(0.05);
+    expect(wall.visible).toBe(false);
+    expect(root.scene.getObjectByName("window-wall-ornament-cluster")?.visible).toBe(false);
   });
 
   it("leaves a settled wall's rest matrices untouched across a gesture", () => {

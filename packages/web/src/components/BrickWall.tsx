@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   BoxGeometry,
@@ -73,8 +73,11 @@ export interface BrickWallProps {
   readonly roughness?: number;
   /**
    * False while the wall stays mounted in a hidden shell (camera gestures).
-   * An inactive wall does no frame work: it does not animate, request frames
-   * or unlock walls. Defaults to true.
+   * An inactive wall writes no brick matrices and requests no frames, but its
+   * click animation keeps time on the frames that are drawn, as the wall's
+   * ornaments (always on screen) do. It reappears where it would have been,
+   * in step with them: a clicked-away wall stays away and nothing replays.
+   * Defaults to true.
    */
   readonly active?: boolean;
 }
@@ -120,18 +123,6 @@ export function BrickWall({
   /** True when instance matrices need updating (animation in progress). */
   const needsMatrixUpdate = useRef(true);
 
-  // A re-activated wall resumes exactly as a freshly mounted one starts (the
-  // planner shell used to remount after every camera gesture): fully built,
-  // with the next frame reading the store to snap or animate away. A wall that
-  // is already settled built has its rest matrices in place and needs nothing.
-  useLayoutEffect(() => {
-    if (!active) return;
-    if (animProgress.current === 1 && animTarget.current === 1) return;
-    animProgress.current = 1;
-    animTarget.current = 1;
-    needsMatrixUpdate.current = true;
-  }, [active]);
-
   const bricks = useMemo(
     () => computeBrickLayout(wallWidth, wallHeight, hashString(name)),
     [wallWidth, wallHeight, name],
@@ -159,7 +150,7 @@ export function BrickWall({
   // Update instance matrices every frame based on internal animation progress.
   useFrame((_state, delta) => {
     const mesh = meshRef.current;
-    if (mesh === null || !active) return;
+    if (mesh === null) return;
 
     // Read the visibility store to determine whether wall should be built or not
     const { wallOpacity, wallLocks, ceiling, dome } = useVisibilityStore.getState();
@@ -207,6 +198,12 @@ export function BrickWall({
 
     const progress = animProgress.current;
     const isAnimating = Math.abs(progress - animTarget.current) > 0.001;
+
+    // Hidden with its shell: the bricks are written once it is shown again.
+    if (!active) {
+      if (isAnimating || targetChanged) needsMatrixUpdate.current = true;
+      return;
+    }
 
     // Early exit: nothing to update when animation is settled
     if (!shouldUpdateBrickWallMatrices(progress, animTarget.current, needsMatrixUpdate.current, targetChanged)) {

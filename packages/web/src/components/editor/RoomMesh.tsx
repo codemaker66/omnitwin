@@ -180,16 +180,26 @@ function LeanWall({
   segment,
   wallHeight,
   color,
+  standsInForBricks,
 }: {
   readonly segment: WallSegment;
   readonly wallHeight: number;
   readonly color: string;
+  /**
+   * The lean shell is drawn in place of the brick walls during a camera
+   * gesture. A wall under click control (clicked away, or mid-animation)
+   * belongs to its bricks, which keep their state behind the lean shell, so
+   * it is not drawn as a whole wall here.
+   */
+  readonly standsInForBricks: boolean;
 }): React.ReactElement {
+  const clickControlled = useVisibilityStore((state) => state.wallLocks[segment.wallKey]);
   return (
     <mesh
       name={segment.wallKey}
       position={[segment.cx, wallHeight / 2, segment.cz]}
       rotation={[0, segment.rotY, 0]}
+      visible={!(standsInForBricks && clickControlled)}
     >
       <boxGeometry args={[segment.width, wallHeight, 0.08]} />
       <meshBasicMaterial
@@ -399,7 +409,8 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto", inclu
         </RoomShellLayer>
       )}
 
-      {/* Lean shell: unlit floor and walls, no features or lights. */}
+      {/* Lean shell: unlit floor and walls, no features or lights. Where the
+          detailed shell exists, it stands in for it during camera gestures. */}
       <RoomShellLayer name="room-mesh-lean-shell" active={useLeanRoomShell}>
         <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
           <shapeGeometry args={[floorShape]} />
@@ -418,6 +429,7 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto", inclu
             segment={w}
             wallHeight={ceilingHeight}
             color={WALL_COLOR}
+            standsInForBricks={detailedShellAtRest}
           />
         ))}
       </RoomShellLayer>
