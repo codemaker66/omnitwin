@@ -689,6 +689,10 @@ export const enquiries = pgTable("enquiries", {
   // Migration 0071: latest enquiry per configuration, and the FK check when
   // a configuration row is deleted.
   index("enquiries_configuration_created_idx").on(table.configurationId, table.createdAt),
+  // Migration 0072: a venue's enquiries newest first (created_at DESC, id
+  // DESC), for every status or one, without reading the whole venue.
+  index("enquiries_venue_created_idx").on(table.venueId, table.createdAt, table.id),
+  index("enquiries_venue_state_created_idx").on(table.venueId, table.state, table.createdAt, table.id),
 ]);
 
 // ---------------------------------------------------------------------------

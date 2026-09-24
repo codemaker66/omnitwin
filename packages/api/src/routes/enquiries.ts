@@ -45,9 +45,11 @@ const TransitionBody = z.object({
 
 // `states` (comma-separated) and `order=created_desc` let one bounded page
 // hold exactly the states a caller shows, newest first — the Diary tray.
-// `venueId` only narrows the caller's existing scope. Without these
-// parameters the list keeps its original contract: every visible state,
-// least recently updated first, 20 per page.
+// The staff dashboard pages the same order with limit/offset. `venueId`
+// only narrows the caller's existing scope. Without these parameters the
+// list keeps its original contract: every visible state, least recently
+// updated first, 20 per page. `meta.order` echoes the order applied; an API
+// that predates `order` strips the parameter and omits the echo.
 const ENQUIRY_LIST_ORDERS = ["updated_asc", "created_desc"] as const;
 
 const EnquiryStatesParam = z.string()
@@ -122,7 +124,8 @@ export async function enquiryRoutes(
         ? [desc(enquiries.createdAt), desc(enquiries.id)]
         : [enquiries.updatedAt]));
 
-    return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
+    const page = paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
+    return { ...page, meta: { ...page.meta, order: query.data.order } };
   });
 
   // GET /enquiries/:id — authenticated, owner/hallkeeper/admin

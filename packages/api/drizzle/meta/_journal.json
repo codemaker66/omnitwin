@@ -491,6 +491,13 @@
       "when": 1790251200000,
       "tag": "0071_configuration_foreign_key_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1790276400000,
+      "tag": "0072_enquiry_list_order_indexes",
+      "breakpoints": true
     }
   ]
 }

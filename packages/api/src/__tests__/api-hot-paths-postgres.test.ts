@@ -14,9 +14,10 @@ import { analyticsRoutes } from "../routes/revenue-analytics.js";
 
 // ---------------------------------------------------------------------------
 // API hot paths on the migrated platform database: configuration reads that
-// skip the stored thumbnail, the Diary tray's enquiry query, batched layout
-// summaries, phase graphs without snapshot payloads, dashboard aggregates
-// computed in SQL, and the foreign-key indexes of migration 0071.
+// skip the stored thumbnail, the Diary tray's enquiry query, the staff
+// dashboard's newest-first enquiry pages and their indexes (migration 0072),
+// batched layout summaries, phase graphs without snapshot payloads, dashboard
+// aggregates computed in SQL, and the foreign-key indexes of migration 0071.
 // ---------------------------------------------------------------------------
 
 const target = process.env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"];
@@ -44,12 +45,13 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let server: FastifyInstance;
   const statements: string[] = [];
+  const statementParams: unknown[][] = [];
 
   beforeAll(async () => {
     if (target === undefined) throw new Error("Explicit test database required");
     pool = new Pool({ connectionString: target, application_name: `api_hot_paths_${randomUUID()}` });
     expect((await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name).toBe("venviewer_platform_test");
-    db = drizzle(pool, { schema, logger: { logQuery: (query) => { statements.push(query); } } });
+    db = drizzle(pool, { schema, logger: { logQuery: (query, params) => { statements.push(query); statementParams.push(params); } } });
     server = Fastify();
     await server.register(configurationRoutes, { db, prefix: "/configurations" });
     await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });
@@ -60,7 +62,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
     await server.register(analyticsRoutes, { db, prefix: "/analytics" });
     await server.ready();
   });
-  beforeEach(() => { statements.length = 0; });
+  beforeEach(() => { statements.length = 0; statementParams.length = 0; });
   afterAll(async () => { await server?.close(); await pool?.end(); });
 
   async function venue(label: string) {
@@ -199,6 +201,116 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         const response = await server.inject({ method: "GET", url: `/enquiries?${query}`, headers: bearer(staff) });
         expect(response.statusCode, query).toBe(400);
       }
+    });
+  });
+
+  describe("GET /enquiries for the staff dashboard list", () => {
+    type ListPage = { data: { id: string; venueId: string }[]; meta: { total: number; limit: number; offset: number; order: string } };
+
+    async function dashboardFixture() {
+      const a = await venue("dashboard A");
+      const b = await venue("dashboard B");
+      const staff = await a.actor("staff");
+      const start = Date.parse("2026-08-01T09:00:00.000Z");
+      // 45 enquiries a minute apart, except five created in one instant, which
+      // straddle the first page boundary and can only be ordered by id.
+      await db.insert(schema.enquiries).values(Array.from({ length: 45 }, (_, index) => ({
+        venueId: a.venueId, spaceId: a.rooms[index % 2] ?? "", state: index % 3 === 0 ? "submitted" : "approved",
+        name: `Dashboard ${String(index)}`, email: "d@hot-paths.invalid",
+        createdAt: new Date(start + (index >= 22 && index <= 26 ? 24 : index) * 60_000),
+        updatedAt: new Date(start + (45 - index) * 60_000),
+      })));
+      // now() records microseconds, which a JavaScript Date cannot tell apart.
+      await pool.query(
+        `INSERT INTO enquiries (venue_id, space_id, state, name, email, created_at)
+         SELECT $1, $2, 'submitted', 'Microsecond ' || n, 'd@hot-paths.invalid',
+                timestamptz '2026-08-01 09:10:30.123+00' + n * interval '1 microsecond'
+         FROM generate_series(1, 3) AS n`, [a.venueId, a.rooms[0]]);
+      // Another venue's newer enquiries are neither listed nor counted.
+      await db.insert(schema.enquiries).values(Array.from({ length: 5 }, (_, index) => ({
+        venueId: b.venueId, spaceId: b.rooms[0] ?? "", state: "submitted", name: `Foreign ${String(index)}`,
+        email: "f@hot-paths.invalid", createdAt: new Date(start + (100 + index) * 60_000),
+      })));
+      return { a, staff };
+    }
+
+    async function pages(staff: Actor, query: string, limit: number, count: number): Promise<ListPage[]> {
+      const served: ListPage[] = [];
+      for (let offset = 0; offset < count * limit; offset += limit) {
+        const response = await server.inject({ method: "GET", url: `/enquiries?${query}&limit=${String(limit)}&offset=${String(offset)}`, headers: bearer(staff) });
+        expect(response.statusCode, response.body).toBe(200);
+        served.push(response.json<ListPage>());
+      }
+      return served;
+    }
+
+    async function newestFirst(venueId: string, state?: string): Promise<string[]> {
+      const rows = await pool.query<{ id: string }>(
+        `SELECT id FROM enquiries WHERE venue_id = $1 AND ($2::text IS NULL OR state = $2)
+         ORDER BY created_at DESC, id DESC`, [venueId, state ?? null]);
+      return rows.rows.map((row) => row.id);
+    }
+
+    it("pages a venue newest first without repeating or skipping an enquiry", async () => {
+      const f = await dashboardFixture();
+      const served = await pages(f.staff, "order=created_desc", 20, 3);
+      expect(served.map((page) => page.meta)).toEqual([0, 20, 40].map((offset) => ({ total: 48, limit: 20, offset, order: "created_desc" })));
+      const listed = served.flatMap((page) => page.data);
+      expect(listed.every((row) => row.venueId === f.a.venueId)).toBe(true);
+      expect(listed.map((row) => row.id)).toEqual(await newestFirst(f.a.venueId));
+      expect(new Set(listed.map((row) => row.id)).size).toBe(48);
+    });
+
+    it("pages one status newest first with its own total", async () => {
+      const f = await dashboardFixture();
+      const served = await pages(f.staff, "status=submitted&order=created_desc", 10, 2);
+      expect(served.map((page) => page.meta.total)).toEqual([18, 18]);
+      expect(served.map((page) => page.data.length)).toEqual([10, 8]);
+      expect(served.flatMap((page) => page.data).map((row) => row.id)).toEqual(await newestFirst(f.a.venueId, "submitted"));
+    });
+
+    it("reads each page of the route from a 0072 index, with or without a status", async () => {
+      const indexes = await pool.query<{ indexdef: string }>(
+        "SELECT indexdef FROM pg_indexes WHERE indexname = ANY($1) ORDER BY indexname",
+        [["enquiries_venue_created_idx", "enquiries_venue_state_created_idx"]],
+      );
+      expect(indexes.rows.map((row) => row.indexdef)).toEqual([
+        "CREATE INDEX enquiries_venue_created_idx ON public.enquiries USING btree (venue_id, created_at, id)",
+        "CREATE INDEX enquiries_venue_state_created_idx ON public.enquiries USING btree (venue_id, state, created_at, id)",
+      ]);
+
+      const staff = await (await venue("dashboard plans")).actor("staff");
+      const plans: string[] = [];
+      for (const [query, index] of [
+        ["order=created_desc&limit=25&offset=15", "enquiries_venue_created_idx"],
+        ["status=withdrawn&order=created_desc&limit=20&offset=0", "enquiries_venue_state_created_idx"],
+      ] as const) {
+        statements.length = 0;
+        statementParams.length = 0;
+        const response = await server.inject({ method: "GET", url: `/enquiries?${query}`, headers: bearer(staff) });
+        expect(response.statusCode, response.body).toBe(200);
+        const position = statements.findIndex((text) => text.includes('from "enquiries"') && text.includes("order by"));
+        const routeSql = statements[position];
+        if (routeSql === undefined) throw new Error(`The route issued no ordered enquiry select for ${query}`);
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          // Planner choice depends on table size. With scans and sorts priced
+          // out, the plan shows an index can serve the route's own statement in order.
+          await client.query("SET LOCAL enable_seqscan = off");
+          await client.query("SET LOCAL enable_bitmapscan = off");
+          await client.query("SET LOCAL enable_sort = off");
+          const plan = (await client.query<{ "QUERY PLAN": string }>(`EXPLAIN ${routeSql}`, statementParams[position]))
+            .rows.map((row) => row["QUERY PLAN"]).join("\n");
+          plans.push(plan);
+          expect(plan).toContain(`Index Scan Backward using ${index}`);
+          expect(plan).not.toMatch(/\bSort\b/);
+        } finally {
+          await client.query("ROLLBACK");
+          client.release();
+        }
+      }
+      expect(plans).toHaveLength(2);
     });
   });
 
