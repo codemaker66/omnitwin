@@ -47,15 +47,14 @@ export function summarizeRevenueScenarios(input: {
   });
 }
 
+/** Inputs are the venue's aggregates (quote total, enquiry count, proposals
+ *  per status), computed by the database rather than from every row. */
 export function buildPipelineSummary(input: {
-  readonly quoteTotalsMinor: readonly number[];
+  readonly pipelineValueMinor: number;
   readonly enquiryCount: number;
-  readonly proposalStatuses: readonly string[];
+  readonly proposalStatusCounts: Readonly<Record<string, number>>;
 }): PipelineSummary {
-  const proposalStatusCounts = input.proposalStatuses.reduce<Record<string, number>>((acc, status) => {
-    acc[status] = (acc[status] ?? 0) + 1;
-    return acc;
-  }, {});
+  const proposalStatusCounts = { ...input.proposalStatusCounts };
   const acceptedProposalCount = proposalStatusCounts["accepted"] ?? 0;
   const conversionPercent = input.enquiryCount > 0
     ? Math.round((acceptedProposalCount / input.enquiryCount) * 100)
@@ -63,24 +62,26 @@ export function buildPipelineSummary(input: {
 
   return PipelineSummarySchema.parse({
     currency: "GBP",
-    pipelineValueMinor: input.quoteTotalsMinor.reduce((sum, value) => sum + value, 0),
+    pipelineValueMinor: input.pipelineValueMinor,
     enquiryCount: input.enquiryCount,
-    proposalCount: input.proposalStatuses.length,
+    proposalCount: Object.values(proposalStatusCounts).reduce((sum, count) => sum + count, 0),
     acceptedProposalCount,
     conversionPercent,
     proposalStatusCounts,
   });
 }
 
+/** `quotesBySpaceId` holds each room's quote count and accepted-quote count;
+ *  the null key collects quotes without a room. */
 export function buildRoomUtilisationRows(input: {
   readonly rooms: readonly { readonly spaceId: string | null; readonly roomName: string }[];
-  readonly quoteSpaceIds: readonly (string | null)[];
-  readonly acceptedQuoteSpaceIds: readonly (string | null)[];
+  readonly quotesBySpaceId: ReadonlyMap<string | null, { readonly proposed: number; readonly booked: number }>;
   readonly reviewBottlenecksBySpaceId: ReadonlyMap<string, number>;
 }): readonly RoomUtilisationRow[] {
   return input.rooms.map((room) => {
-    const proposedEvents = input.quoteSpaceIds.filter((spaceId) => spaceId === room.spaceId).length;
-    const bookedEvents = input.acceptedQuoteSpaceIds.filter((spaceId) => spaceId === room.spaceId).length;
+    const quotesForRoom = input.quotesBySpaceId.get(room.spaceId);
+    const proposedEvents = quotesForRoom?.proposed ?? 0;
+    const bookedEvents = quotesForRoom?.booked ?? 0;
     const utilisationPercent = proposedEvents > 0 ? Math.min(100, Math.round((bookedEvents / proposedEvents) * 100)) : 0;
     return RoomUtilisationRowSchema.parse({
       spaceId: room.spaceId,

@@ -101,11 +101,13 @@ describe("revenue analytics services", () => {
 
   it("builds exact pipeline money and conversion counts", () => {
     const pipeline = buildPipelineSummary({
-      quoteTotalsMinor: [100_001, 200_002, 300_003],
+      pipelineValueMinor: 600_006,
       enquiryCount: 4,
-      proposalStatuses: ["draft", "sent", "accepted", "accepted"],
+      proposalStatusCounts: { accepted: 2, draft: 1, sent: 1 },
     });
     expect(pipeline.pipelineValueMinor).toBe(600_006);
+    expect(pipeline.proposalCount).toBe(4);
+    expect(pipeline.acceptedProposalCount).toBe(2);
     expect(pipeline.conversionPercent).toBe(50);
     expect(pipeline.proposalStatusCounts.accepted).toBe(2);
   });
@@ -128,9 +130,9 @@ describe("revenue analytics services", () => {
 
   it("dashboard analytics keeps comfort warnings visible", () => {
     const pipeline = buildPipelineSummary({
-      quoteTotalsMinor: [100_000],
+      pipelineValueMinor: 100_000,
       enquiryCount: 1,
-      proposalStatuses: ["sent"],
+      proposalStatusCounts: { sent: 1 },
     });
     const dashboard = buildVenueDashboardAnalytics({
       generatedAt: NOW,

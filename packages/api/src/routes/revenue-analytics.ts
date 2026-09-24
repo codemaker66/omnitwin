@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   ComfortConstraintSchema,
@@ -324,49 +324,49 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   });
 }
 
+// Counted and summed in PostgreSQL: the dashboard needs a venue's totals, not
+// every quote, proposal, enquiry and layout row it used to read.
 async function loadPipelineSummary(db: Database, venueId: string) {
-  const [quoteRows, proposalRows, enquiryRows] = await Promise.all([
-    db.select({ totalMinor: quotes.totalMinor }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
-    db.select({ status: proposals.status }).from(proposals).where(and(eq(proposals.venueId, venueId), isNull(proposals.deletedAt))),
-    db.select({ id: enquiries.id }).from(enquiries).where(eq(enquiries.venueId, venueId)),
+  const [[quoteTotal], proposalRows, [enquiryTotal]] = await Promise.all([
+    db.select({ totalMinor: sql<number>`coalesce(sum(${quotes.totalMinor}), 0)`.mapWith(Number) })
+      .from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
+    db.select({ status: proposals.status, count: sql<number>`count(*)`.mapWith(Number) })
+      .from(proposals).where(and(eq(proposals.venueId, venueId), isNull(proposals.deletedAt)))
+      .groupBy(proposals.status).orderBy(proposals.status),
+    db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(enquiries).where(eq(enquiries.venueId, venueId)),
   ]);
   return buildPipelineSummary({
-    quoteTotalsMinor: quoteRows.map((row) => row.totalMinor),
-    enquiryCount: enquiryRows.length,
-    proposalStatuses: proposalRows.map((row) => row.status),
+    pipelineValueMinor: quoteTotal?.totalMinor ?? 0,
+    enquiryCount: enquiryTotal?.count ?? 0,
+    proposalStatusCounts: Object.fromEntries(proposalRows.map((row) => [row.status, row.count])),
   });
 }
 
 async function loadRoomUtilisation(db: Database, venueId: string): Promise<readonly z.infer<typeof RoomUtilisationRowSchema>[]> {
-  const [roomRows, quoteRows, scenarioRows] = await Promise.all([
+  const [roomRows, quoteRows, bottleneckRows] = await Promise.all([
     db.select({ spaceId: spaces.id, roomName: spaces.name }).from(spaces).where(and(eq(spaces.venueId, venueId), isNull(spaces.deletedAt))),
-    db.select({ spaceId: quotes.spaceId, status: quotes.status }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
-    db.select({ configurationId: revenueScenarios.configurationId, reviewGateCount: revenueScenarios.reviewGateCount })
-      .from(revenueScenarios)
-      .where(eq(revenueScenarios.venueId, venueId)),
+    db.select({
+      spaceId: quotes.spaceId,
+      proposed: sql<number>`count(*)`.mapWith(Number),
+      booked: sql<number>`count(*) filter (where ${quotes.status} = 'accepted')`.mapWith(Number),
+    }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))).groupBy(quotes.spaceId),
+    // A scenario's review gates count against its layout's room; the layout
+    // must belong to this venue (a soft-deleted layout still counts).
+    db.select({
+      spaceId: configurations.spaceId,
+      reviewGateCount: sql<number>`sum(${revenueScenarios.reviewGateCount})`.mapWith(Number),
+    }).from(revenueScenarios)
+      .innerJoin(configurations, and(
+        eq(configurations.id, revenueScenarios.configurationId),
+        eq(configurations.venueId, venueId),
+      ))
+      .where(eq(revenueScenarios.venueId, venueId))
+      .groupBy(configurations.spaceId),
   ]);
-
-  const configIds = scenarioRows
-    .map((row) => row.configurationId)
-    .filter((value): value is string => value !== null);
-  const configRows = configIds.length === 0
-    ? []
-    : await db.select({ id: configurations.id, spaceId: configurations.spaceId })
-      .from(configurations)
-      .where(eq(configurations.venueId, venueId));
-  const configSpaceById = new Map(configRows.map((row) => [row.id, row.spaceId] as const));
-  const reviewBottlenecksBySpaceId = new Map<string, number>();
-  for (const scenario of scenarioRows) {
-    if (scenario.configurationId === null) continue;
-    const spaceId = configSpaceById.get(scenario.configurationId);
-    if (spaceId === undefined) continue;
-    reviewBottlenecksBySpaceId.set(spaceId, (reviewBottlenecksBySpaceId.get(spaceId) ?? 0) + scenario.reviewGateCount);
-  }
 
   return buildRoomUtilisationRows({
     rooms: roomRows.length > 0 ? roomRows : [{ spaceId: null, roomName: "Unassigned room" }],
-    quoteSpaceIds: quoteRows.map((row) => row.spaceId),
-    acceptedQuoteSpaceIds: quoteRows.filter((row) => row.status === "accepted").map((row) => row.spaceId),
-    reviewBottlenecksBySpaceId,
+    quotesBySpaceId: new Map(quoteRows.map((row) => [row.spaceId, { proposed: row.proposed, booked: row.booked }])),
+    reviewBottlenecksBySpaceId: new Map(bottleneckRows.map((row) => [row.spaceId, row.reviewGateCount])),
   });
 }
