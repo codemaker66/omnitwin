@@ -1,13 +1,14 @@
 # Performance review — 24 September 2026 (T-629)
 
-Status: verified and released to `master` at Blake's request ("push to
-master"). A master push deploys the web app on Vercel and, because this change
-touches the API's watched paths, the API on Railway (see
-`docs/operations/diary-deploy-checklist.md`). This session could not observe
-either deployment or check the live site: its network policy blocks
-`venviewer.com` and `api.venviewer.com`. Numbers below are local lab
-measurements (production builds, throttled Chromium, disposable PostgreSQL 16).
-They are not field data, physical-device frame rates or founder acceptance.
+Status: verified on branch `claude/cool-tesla-90zlcp`, a fast-forward of
+`master`. Blake asked for a push to `master`; this session's permission system
+refused that push, so the release waits for Blake. A master push deploys the
+web app on Vercel and, because this change touches the API's watched paths, the
+API on Railway (see `docs/operations/diary-deploy-checklist.md`). This session
+cannot check the live site either: its network policy blocks `venviewer.com`
+and `api.venviewer.com`. Numbers below are local lab measurements (production
+builds, throttled Chromium, disposable PostgreSQL 16). They are not field data,
+physical-device frame rates or founder acceptance.
 
 Four read-only audits (API/database, React rendering, 3D rendering,
 page load/network) ran against `d7eb71b`. Findings were checked against source
@@ -247,11 +248,12 @@ Not fixed (outside this change):
 
 ## Limits
 
+- Not released: the push to `master` was refused by this session's
+  permission system. After the push, CI is the first evidence; its required
+  GPU job needs the operator workstation described in `.github/gpu/README.md`.
 - No live check: this session's network policy blocks `venviewer.com` and
   `api.venviewer.com`, and the tools available cannot read Vercel or Railway
-  deployment status. The CI run for the master push is the remaining evidence;
-  its required GPU job needs the operator workstation described in
-  `.github/gpu/README.md`.
+  deployment status.
 - No migration. `CLERK_JWT_KEY` is optional and not set by this change.
   Compression was verified in-process, not through Railway.
 - No GPU was available: 3D changes are verified by scene inspection and CPU
