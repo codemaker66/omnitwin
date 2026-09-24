@@ -1,9 +1,13 @@
 # Performance review — 24 September 2026 (T-629)
 
-Status: implemented and verified on branch `claude/cool-tesla-90zlcp`; not
-deployed and not live-verified. Numbers below are local lab measurements
-(production builds, throttled Chromium, disposable PostgreSQL 16). They are not
-field data, physical-device frame rates or founder acceptance.
+Status: verified and released to `master` at Blake's request ("push to
+master"). A master push deploys the web app on Vercel and, because this change
+touches the API's watched paths, the API on Railway (see
+`docs/operations/diary-deploy-checklist.md`). This session could not observe
+either deployment or check the live site: its network policy blocks
+`venviewer.com` and `api.venviewer.com`. Numbers below are local lab
+measurements (production builds, throttled Chromium, disposable PostgreSQL 16).
+They are not field data, physical-device frame rates or founder acceptance.
 
 Four read-only audits (API/database, React rendering, 3D rendering,
 page load/network) ran against `d7eb71b`. Findings were checked against source
@@ -233,13 +237,22 @@ Not fixed (outside this change):
   disposable PostgreSQL 16; onboarding suite (31) on its isolated database.
 - Browser: homepage phone/desktop measurements above; quiz with Google Fonts
   blocked; hero preload and `srcset` served as rendered.
+- Production build in `vite preview` with mocked APIs (the E2E auth bypass
+  build flag, Chromium with SwiftShader), so the `three`/`three-webgpu` split is
+  exercised: 98 of 109 cases across the planner, tour, hallkeeper, quiz,
+  landing, pricing and navigation specs pass. Every remaining failure also fails
+  or flakes on the `master` build under the same conditions (container proxy
+  font errors, SwiftShader timeouts; the quiz "skip" case fails 2 of 4 runs on
+  `master` and 1 of 4 here).
 
 ## Limits
 
-- Not deployed. Web deploys from `master` on Vercel and the API only by
-  `railway up`; this session may push only its own branch, and its network
-  policy blocks `venviewer.com`, so no live check was possible.
-- The API change needs its own deploy (no migration). `CLERK_JWT_KEY` is
-  optional. Compression was verified in-process, not through Railway.
+- No live check: this session's network policy blocks `venviewer.com` and
+  `api.venviewer.com`, and the tools available cannot read Vercel or Railway
+  deployment status. The CI run for the master push is the remaining evidence;
+  its required GPU job needs the operator workstation described in
+  `.github/gpu/README.md`.
+- No migration. `CLERK_JWT_KEY` is optional and not set by this change.
+  Compression was verified in-process, not through Railway.
 - No GPU was available: 3D changes are verified by scene inspection and CPU
   tests, not frame timing.
