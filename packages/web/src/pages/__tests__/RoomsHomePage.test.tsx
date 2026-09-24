@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { RoomsHomePage } from "../RoomsHomePage.js";
+import { ROOM_CARD_SIZES, RoomsHomePage } from "../RoomsHomePage.js";
 import {
   roomSplatBundle,
   roomsWithSplatBundles,
@@ -27,6 +28,31 @@ describe("RoomsHomePage", () => {
       ["Log in", "/login"],
     ]) {
       expect(nav.getByRole("link", { name }).getAttribute("href")).toBe(destination);
+    }
+  });
+
+  it("fetches a display-sized hero first, exactly as index.html preloads it", () => {
+    mount();
+    const heroImage = screen.getByRole("region", { name: "Grand Hall" }).querySelector("img");
+    if (heroImage === null) throw new Error("Missing hero image");
+    const srcSet = heroImage.getAttribute("srcset") ?? "";
+    expect(srcSet).toMatch(/grand-hall-room-480\.webp 480w/u);
+    expect(heroImage.getAttribute("sizes")).toBe("100vw");
+    expect(heroImage.getAttribute("fetchpriority")).toBe("high");
+
+    const html = readFileSync("index.html", "utf8");
+    expect(html).toContain('if (location.pathname === "/")');
+    expect(html).toContain(`heroPreload.setAttribute("imagesrcset", "${srcSet}")`);
+    expect(html).toContain('heroPreload.setAttribute("imagesizes", "100vw")');
+  });
+
+  it("serves the rail's photographs from display-sized sources", () => {
+    mount();
+    const posters = screen.getAllByRole("img").filter((image) => image.classList.contains("rooms__poster"));
+    expect(posters.length).toBeGreaterThan(0);
+    for (const poster of posters) {
+      expect(poster.getAttribute("srcset"), poster.getAttribute("alt") ?? "").toMatch(/\.webp 480w/u);
+      expect(poster.getAttribute("sizes")).toBe(ROOM_CARD_SIZES);
     }
   });
 

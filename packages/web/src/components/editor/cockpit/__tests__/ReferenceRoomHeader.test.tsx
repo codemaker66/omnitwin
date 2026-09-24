@@ -87,7 +87,7 @@ describe("ReferenceRoomHeader", () => {
     expect(venueRequest).toHaveBeenCalledWith(tradesHall.id);
     expect(venueRequest).not.toHaveBeenCalledWith(cityRooms.id);
     expect(identity.textContent).toContain("Grand Hall");
-    expect(identity.querySelector("img")?.getAttribute("src")).toBe("/images/venues/trades-hall-glasgow-crest.png");
+    expect(identity.querySelector("img")?.getAttribute("src")).toBe("/images/venues/trades-hall-glasgow-crest-200.webp");
     expect(screen.queryByText("VENVIEWER")).toBeNull();
   });
 

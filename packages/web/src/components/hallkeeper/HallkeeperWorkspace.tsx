@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Check, ClipboardList, MapPin, Printer, Users, X 
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { getHallkeeperRoomPlan, HALLKEEPER_PLAN_VENUE_SLUG } from "../../data/hallkeeper-room-plans.js";
 import { RoomPlanReference } from "./RoomPlanReference.js";
-import { roomPosterUrl } from "../../lib/room-posters.js";
+import { roomPosterSources } from "../../lib/room-posters.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { InteractiveFloorPlan } from "./InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "./HallkeeperStatusBanner.js";
@@ -80,8 +80,8 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
     <div className="hkf-shell">
       <aside className="hkf-room-rail" aria-label="Rooms linked to this event">
         <span className="hkf-overline">Your room</span>
-        <div className="hkf-room-current">{slug !== undefined && <img src={roomPosterUrl(slug)} alt="" />}<strong>{data.space.name}</strong><span>Selected layout</span></div>
-        {(context?.layouts ?? []).filter((layout) => layout.configurationId !== data.config.id).map((layout) => <Link className="hkf-room-link" key={layout.configurationId} to={`/hallkeeper/${layout.configurationId}?eventId=${encodeURIComponent(context?.graph?.event.id ?? "")}`}><img src={roomPosterUrl(layout.spaceSlug)} alt="" /><span>{layout.spaceName}<small>{layout.name}</small></span></Link>)}
+        <div className="hkf-room-current">{slug !== undefined && <img {...roomPosterSources(slug)} sizes="160px" alt="" />}<strong>{data.space.name}</strong><span>Selected layout</span></div>
+        {(context?.layouts ?? []).filter((layout) => layout.configurationId !== data.config.id).map((layout) => <Link className="hkf-room-link" key={layout.configurationId} to={`/hallkeeper/${layout.configurationId}?eventId=${encodeURIComponent(context?.graph?.event.id ?? "")}`}><img {...roomPosterSources(layout.spaceSlug)} sizes="48px" alt="" /><span>{layout.spaceName}<small>{layout.name}</small></span></Link>)}
         <Link className="hkf-library-link" to="/hallkeeper/rooms"><MapPin size={16} /> Room references <ArrowRight size={14} /></Link>
         <div className="hkf-rail-bottom"><span className="hkf-overline">Layout record</span><p>{data.space.widthM} × {data.space.lengthM} m</p><p>{data.totals.totalItems} manifest items</p><span className="hkf-muted">{data.config.layoutStyle.replace(/[-_]/g, " ")}</span></div>
       </aside>

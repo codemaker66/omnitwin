@@ -1,4 +1,4 @@
-import { roomPosterUrl as posterUrl } from "../lib/room-posters.js";
+import { roomPosterSources } from "../lib/room-posters.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -27,6 +27,9 @@ import "./RoomsHomePage.css";
 // cards resolve from soft to sharp rather than sliding or popping.
 // ---------------------------------------------------------------------------
 
+/** Rendered rail card width (see .rooms__track in RoomsHomePage.css). */
+export const ROOM_CARD_SIZES = "(min-width: 1800px) 19rem, 15rem";
+
 /** The building's signature room leads, as it does in life. */
 const HERO_ROOM = "grand-hall";
 
@@ -54,7 +57,7 @@ interface CardProps {
  * file is missing the image simply fails and the type takes over.
  */
 function RoomCard({ slug, bundle }: CardProps): ReactElement {
-  const still = posterUrl(slug);
+  const still = roomPosterSources(slug);
   const [posterFailed, setPosterFailed] = useState(false);
   const onPosterError = useCallback(() => { setPosterFailed(true); }, []);
   const showType = posterFailed;
@@ -75,7 +78,11 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
           : (
             <img
               className="rooms__poster"
-              src={still}
+              src={still.src}
+              srcSet={still.srcSet}
+              // The scrolling rail keeps its columns at their 15rem minimum
+              // until the viewport is wide enough for 19rem columns.
+              sizes={ROOM_CARD_SIZES}
               alt={displayName(slug)}
               loading="lazy"
               decoding="async"
@@ -108,6 +115,7 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
 export function RoomsHomePage(): ReactElement {
   const slugs = useMemo(() => roomsWithSplatBundles(), []);
   const heroBundle = roomSplatBundle(HERO_ROOM);
+  const heroStill = roomPosterSources(HERO_ROOM);
   const rest = useMemo(() => slugs.filter((slug) => slug !== HERO_ROOM), [slugs]);
 
   // Resolve the page in once, on mount: the house motion rule is that things
@@ -143,10 +151,15 @@ export function RoomsHomePage(): ReactElement {
         <section className="rooms__hero" aria-labelledby="rooms-hero-name">
           <img
             className="rooms__heroPoster"
-            src={posterUrl(HERO_ROOM)}
+            src={heroStill.src}
+            srcSet={heroStill.srcSet}
+            sizes="100vw"
             alt={displayName(HERO_ROOM)}
             width={1280}
             height={720}
+            // The page's largest paint. Lowercase via spread: react-dom 18.3
+            // drops the camelCase prop (see FreshPage's hero).
+            {...({ fetchpriority: "high" } as { readonly fetchpriority: string })}
             decoding="async"
           />
           <div className="rooms__heroInk" aria-hidden="true" />

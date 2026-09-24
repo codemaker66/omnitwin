@@ -6,6 +6,21 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/src/components/shared/Activity.css" />
     <title>Trades Hall of Glasgow — weddings and events</title>
+    <script>
+      // The front door's largest paint is its Grand Hall photograph, which the
+      // route names only after the app has loaded. Start it while the app boots.
+      // This must stay identical to the hero's srcset and sizes in
+      // RoomsHomePage (RoomsHomePage.test.tsx checks) or it downloads twice.
+      if (location.pathname === "/") {
+        var heroPreload = document.createElement("link");
+        heroPreload.rel = "preload";
+        heroPreload.as = "image";
+        heroPreload.setAttribute("imagesrcset", "/images/venue/ladder/grand-hall-room-480.webp 480w, /images/venue/ladder/grand-hall-room-768.webp 768w, /images/venue/ladder/grand-hall-room-1120.webp 1120w, /images/venue/ladder/grand-hall-room-1535.webp 1535w");
+        heroPreload.setAttribute("imagesizes", "100vw");
+        heroPreload.setAttribute("fetchpriority", "high");
+        document.head.appendChild(heroPreload);
+      }
+    </script>
     <!-- Static social/meta card: link scrapers (WhatsApp, iMessage, Instagram,
          Facebook) do not execute JavaScript, so the shared-link first
          impression must live here, not in the client-side route effects.

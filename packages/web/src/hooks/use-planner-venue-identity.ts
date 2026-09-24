@@ -34,7 +34,7 @@ export function usePlannerVenueIdentity(venueId: string | null): {
   const tradesHall = venue?.slug === "trades-hall-glasgow";
   return {
     name: tradesHall ? "Trade's Hall of Glasgow" : venue?.name ?? (selected === null ? "Venue planner" : "Venue unavailable"),
-    logoUrl: tradesHall ? "/images/venues/trades-hall-glasgow-crest.png" : venue?.logoUrl ?? null,
+    logoUrl: tradesHall ? "/images/venues/trades-hall-glasgow-crest-200.webp" : venue?.logoUrl ?? null,
     loading: venueId !== null && selected === null,
   };
 }

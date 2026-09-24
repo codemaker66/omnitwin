@@ -6,7 +6,7 @@ import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import { RoomPlanReference } from "../../components/hallkeeper/RoomPlanReference.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { HALLKEEPER_PLAN_VENUE_SLUG, HALLKEEPER_ROOM_PLANS, getHallkeeperRoomPlan, type HallkeeperRoomPlan } from "../../data/hallkeeper-room-plans.js";
-import { roomPosterUrl } from "../../lib/room-posters.js";
+import { roomPosterSources } from "../../lib/room-posters.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import "./hallkeeper-room-plans.css";
 
@@ -20,7 +20,7 @@ function RoomPhotograph({ room }: { readonly room: HallkeeperRoomPlan }): ReactE
   const [failed, setFailed] = useState(false);
   return failed
     ? <span className="hk-room-plans-photo-fallback"><Building2 size={24} aria-hidden="true" /></span>
-    : <img src={roomPosterUrl(room.slug)} alt="" loading="lazy" onError={() => { setFailed(true); }} />;
+    : <img {...roomPosterSources(room.slug)} sizes="66px" alt="" loading="lazy" onError={() => { setFailed(true); }} />;
 }
 
 /** Protected by the router; the current venue is also checked before choosing references. */

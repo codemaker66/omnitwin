@@ -67,7 +67,7 @@ export function DemoShowcasePage(): ReactElement {
         <img className="demo-cover" src={hero} alt="The Grand Hall dressed for dinner, beneath its gilded ceiling and chandeliers" fetchPriority="high" />
         <div className="demo-hero-shade" />
         <div className="demo-hero-content"><h1 id="demo-title-0">Plan your event.<br /><em>See it in the room.</em></h1><button className="demo-cream-button" onClick={() => { move(1); }}>Begin showcase <ArrowRight size={18} /></button></div>
-        <div className="demo-hero-seal"><img src="/images/venues/trades-hall-glasgow-crest.png" alt="Trades Hall crest" /><span>TRADES HALL<br />OF GLASGOW</span></div>
+        <div className="demo-hero-seal"><img src="/images/venues/trades-hall-glasgow-crest-200.webp" alt="Trades Hall crest" /><span>TRADES HALL<br />OF GLASGOW</span></div>
         <span className="demo-photo-caption">THE GRAND HALL / VENUE PHOTOGRAPH</span>
       </section>
 
@@ -93,7 +93,7 @@ export function DemoShowcasePage(): ReactElement {
 
       <section data-slide="5" hidden={active !== 5} className="demo-slide demo-split" aria-labelledby="demo-title-5">
         <div className="demo-copy"><h2 id="demo-title-5">The plan.<br /><em>The handover.</em></h2><p>Give the team the agreed layout and equipment sheet.</p></div>
-        <div className="demo-handover-composition"><div className="demo-handover-sheet"><div className="demo-handover-title"><img src="/images/venues/trades-hall-glasgow-crest.png" alt="" /><div><span>TRADES HALL OF GLASGOW</span><h3>The room, ready.</h3></div></div><div className="demo-sheet-rule"/><div className="demo-sheet-sub"><strong>Grand Hall / Dinner setup</strong><span>EXAMPLE SHEET</span></div><FloorPlan layout="Dinner"/><div className="demo-sheet-items"><div><span>01</span><strong>Agreed layout</strong></div><div><span>02</span><strong>Equipment list</strong></div></div></div><div className="demo-handover-stamp">PLAN<br /><em>to place.</em></div></div>
+        <div className="demo-handover-composition"><div className="demo-handover-sheet"><div className="demo-handover-title"><img src="/images/venues/trades-hall-glasgow-crest-200.webp" alt="" /><div><span>TRADES HALL OF GLASGOW</span><h3>The room, ready.</h3></div></div><div className="demo-sheet-rule"/><div className="demo-sheet-sub"><strong>Grand Hall / Dinner setup</strong><span>EXAMPLE SHEET</span></div><FloorPlan layout="Dinner"/><div className="demo-sheet-items"><div><span>01</span><strong>Agreed layout</strong></div><div><span>02</span><strong>Equipment list</strong></div></div></div><div className="demo-handover-stamp">PLAN<br /><em>to place.</em></div></div>
       </section>
 
       <section data-slide="6" hidden={active !== 6} className="demo-slide demo-opportunity" aria-labelledby="demo-title-6">

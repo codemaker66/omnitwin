@@ -8,6 +8,11 @@ Source attachment: `codex-clipboard-48b2ede5-e73c-473d-8b69-ab7b185e5cf4.png`.
 Dimensions: 864 × 1000. SHA-256:
 `bf6f406aa179de847169390cd3ec48e5c855d49201cda07f0919726fca59e043`.
 
+Pages show `trades-hall-glasgow-crest-200.webp` (173 × 200, 21 KB), a
+display-sized WebP resampled from that PNG with its transparency. The crest is
+never drawn larger than 60 CSS pixels, so the 997 KB original stays the source
+of record rather than the file every planner load downloads.
+
 The founder-requested display name is `Trade's Hall of Glasgow`. Other venue
 names and logos come from the selected venue record; this presentation mapping
 does not rename database records or change their identifiers.
