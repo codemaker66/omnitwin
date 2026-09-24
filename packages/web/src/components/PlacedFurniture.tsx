@@ -32,6 +32,10 @@ import { FurnitureSelectionOutlines } from "./editor/FurnitureSelectionOutlines.
 import { TableClothMesh } from "./meshes/TableClothMesh.js";
 import { AnimatedTableCloth } from "./meshes/AnimatedTableCloth.js";
 import { TableSettingMesh } from "./meshes/TableSettingMesh.js";
+import {
+  TableSettingResourcesContext,
+  useOwnedTableSettingResources,
+} from "./meshes/table-setting-resources.js";
 import { sectionClipPlanes } from "./SectionPlane.js";
 import { ConstraintViolationSkin } from "./ConstraintViolationSkin.js";
 import {
@@ -788,6 +792,9 @@ export function PlacedFurniture(): React.ReactElement {
   const handleFailedVariantIdsChange = useCallback((ids: ReadonlySet<string>): void => {
     setFailedInstancedVariantIds(ids);
   }, []);
+  // One geometry and material per cover part for every dressed table, created
+  // here once and disposed with the layout.
+  const tableSettingResources = useOwnedTableSettingResources(1);
 
   useEffect(() => {
     if (inspectedPlacedItemId === null) return;
@@ -927,6 +934,7 @@ export function PlacedFurniture(): React.ReactElement {
         items={instancedItems}
         onFailedVariantIdsChange={handleFailedVariantIdsChange}
       />
+      <TableSettingResourcesContext.Provider value={tableSettingResources}>
       {placedItems.map((placed) => (
         <PlacedFurnitureItem
           key={placed.id}
@@ -952,6 +960,7 @@ export function PlacedFurniture(): React.ReactElement {
           }
         />
       ))}
+      </TableSettingResourcesContext.Provider>
       <FurnitureSelectionOutlines items={placedItems} selectedIds={selectedIds} />
     </group>
     </group>

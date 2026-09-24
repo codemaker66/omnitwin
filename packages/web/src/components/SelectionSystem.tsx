@@ -125,7 +125,7 @@ function findWallKey(obj: Object3D): WallKey | null {
   return null;
 }
 
-function findFurnitureItemId(obj: Object3D): string | null {
+export function findFurnitureItemId(obj: Object3D): string | null {
   let current: Object3D | null = obj;
   while (current !== null) {
     if (current.name.startsWith("furniture-") && !current.name.endsWith("-mesh")) {
