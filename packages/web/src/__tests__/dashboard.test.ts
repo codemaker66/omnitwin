@@ -172,6 +172,7 @@ describe("Dashboard layout links — source-grep", () => {
       "src/components/dashboard/ClientProfile.tsx",
       "src/components/dashboard/ClientSearchView.tsx",
       "src/components/dashboard/EnquiriesView.tsx",
+      "src/components/dashboard/enquiries/EnquiryPanel.tsx",
       "src/components/dashboard/ReviewsView.tsx",
     ];
     const sources = await Promise.all(files.map((file) => readSource(file)));
@@ -665,9 +666,10 @@ describe("ClientProfile enquiry navigation (#34)", () => {
     // When onDetailClose is provided, the back button should say "Back to
     // profile" so the user knows where they're going.
     expect(codeOnly).toContain("Back to profile");
-    expect(codeOnly).toContain("Back to list");
+    expect(codeOnly).toContain("Back to enquiries");
     // The handler is named, not inlined
-    expect(codeOnly).toContain("handleBack");
+    expect(codeOnly).toMatch(/const close = \(\): void =>/);
+    expect(codeOnly).toContain("onClose: close");
   });
 });
 

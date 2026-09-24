@@ -1,34 +1,48 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import * as enquiriesApi from "../../api/enquiries.js";
-import type { Enquiry, EnquiryListOrder, EnquiryListQuery, StatusHistoryEntry } from "../../api/enquiries.js";
+import type {
+  Enquiry, EnquiryListOrder, EnquiryListQuery, EnquiryStageCounts, StatusHistoryEntry,
+} from "../../api/enquiries.js";
+import { ApiError } from "../../api/client.js";
 import { createOpportunityFromEnquiry } from "../../api/crm.js";
-import { StatusBadge } from "../shared/StatusBadge.js";
-import { ConfirmModal } from "../shared/ConfirmModal.js";
-import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
+import { useMediaQuery } from "../../hooks/use-media-query.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
-import { AIDraftPanel } from "../ai/AIDraftPanel.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import {
   appendEnquiryPage, describeEnquiryCount, ENQUIRY_PAGE_SIZE, firstPageWindow, hasMoreEnquiries,
   nextPageWindow, withoutListedEnquiry, type ListedEnquiries,
 } from "./enquiry-list-paging.js";
+import { EnquiryStages } from "./enquiries/EnquiryStages.js";
+import { EnquiryLedger, enquiryName, type LedgerStamp } from "./enquiries/EnquiryLedger.js";
+import { EnquiryPanel, type TransitionTarget } from "./enquiries/EnquiryPanel.js";
+import { EnquiryOverview } from "./enquiries/EnquiryOverview.js";
+import { useVenueRooms } from "./enquiries/use-venue-rooms.js";
+import { deskGreeting, deskSummary, stageLabel, type DeskFilter } from "./enquiries/enquiry-desk-format.js";
+import "./enquiries/EnquiriesDesk.css";
 
 // ---------------------------------------------------------------------------
-// EnquiriesView — list + detail for enquiry management
-// ---------------------------------------------------------------------------
-
-const STATUSES = ["all", "submitted", "under_review", "approved", "rejected", "withdrawn"] as const;
-
+// EnquiriesView — the staff enquiries desk.
+//
+// The sheet lists enquiries newest first under the pipeline counts, which are
+// also the filters; the decision panel beside it holds the open enquiry, so
+// the list keeps its place while staff work through it. Below 1180px the two
+// take turns, as the list and detail always did.
+//
 // Newest first by creation date. Whether staff would rather see the most
 // recently active enquiries first is Blake's call; that order would need an
 // `updated_desc` option (and index) in the API, which offers only
 // `created_desc` and the default least-recently-updated order.
-const LIST_ORDER: EnquiryListOrder = "created_desc";
+// ---------------------------------------------------------------------------
 
-/** The list for one load of one status filter. */
+const LIST_ORDER: EnquiryListOrder = "created_desc";
+const WIDE_DESK = "(min-width: 1180px)";
+
+/** The list for one load of one stage filter. */
 interface EnquiryListState extends ListedEnquiries {
   /** Identifies the load; a response for an older one is discarded. */
   readonly generation: number;
-  readonly filter: string;
+  readonly filter: DeskFilter;
   readonly status: "loading" | "ready" | "error";
   /** The order the server confirmed; null when an older API did not say. */
   readonly order: EnquiryListOrder | null;
@@ -44,31 +58,57 @@ const UNLOADED_LIST: EnquiryListState = {
   order: null, loadingMore: false, moreFailed: false, interrupted: false,
 };
 
-function listQuery(filter: string): EnquiryListQuery {
+interface CountsState {
+  readonly status: "loading" | "ready" | "error";
+  /** The latest counts; kept while they are refreshed. */
+  readonly value: EnquiryStageCounts | null;
+}
+
+interface HistoryState {
+  readonly id: string | null;
+  readonly entries: readonly StatusHistoryEntry[];
+  readonly status: "loading" | "ready" | "error";
+}
+
+type PendingFocus =
+  | { readonly kind: "panel" }
+  | { readonly kind: "row"; readonly id: string }
+  /** The control that asked for a confirmation the reader then cancelled. */
+  | { readonly kind: "action"; readonly to: TransitionTarget };
+
+function listQuery(filter: DeskFilter): EnquiryListQuery {
   return filter === "all" ? { order: LIST_ORDER } : { status: filter, order: LIST_ORDER };
 }
 
-// Light ink for copy that sits directly on the dashboard's forest ground.
-const listNoteStyle: React.CSSProperties = { margin: "0 0 12px", fontSize: 13, color: "#c9cdbd" };
-const listAlertStyle: React.CSSProperties = { margin: 0, fontSize: 13, color: "#f3b4a6" };
-const listActionStyle = (busy: boolean): React.CSSProperties => ({
-  display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600,
-  background: "#f2edda", color: "#132b25", border: "1px solid #f2edda", borderRadius: 6,
-  cursor: busy ? "default" : "pointer", fontFamily: "inherit",
-});
+type CountedState = (typeof enquiriesApi.COUNTED_ENQUIRY_STATES)[number];
 
-const tabStyle = (active: boolean): React.CSSProperties => ({
-  padding: "8px 16px", fontSize: 13, fontWeight: active ? 600 : 400,
-  background: active ? "#fff" : "none", border: active ? "1px solid #e5e7eb" : "1px solid transparent",
-  borderBottom: active ? "1px solid #fff" : "none", borderRadius: "6px 6px 0 0",
-  cursor: "pointer", color: active ? "#1a1a2e" : "#666",
-});
+function isCountedState(state: string): state is CountedState {
+  return (enquiriesApi.COUNTED_ENQUIRY_STATES as readonly string[]).includes(state);
+}
 
-const cardStyle: React.CSSProperties = {
-  background: "#fff", borderRadius: 8, padding: 16, marginBottom: 8,
-  border: "1px solid #e5e7eb", cursor: "pointer", transition: "box-shadow 0.15s",
-  width: "100%", boxSizing: "border-box", textAlign: "left",
-  color: "inherit", fontFamily: "inherit",
+/** The counts once one enquiry has moved between stages here, until the
+ *  server's own counts replace them. */
+function countsAfterMove(counts: EnquiryStageCounts, enquiryId: string, from: string, to: string): EnquiryStageCounts {
+  const byState = { ...counts.byState };
+  if (isCountedState(from)) byState[from] = Math.max(0, byState[from] - 1);
+  if (isCountedState(to)) byState[to] += 1;
+  return { ...counts, byState, longestWaiting: counts.longestWaiting?.id === enquiryId ? null : counts.longestWaiting };
+}
+
+const ANNOUNCEMENTS: Readonly<Record<string, string>> = {
+  under_review: "Now in review.",
+  approved: "Approved.",
+  rejected: "Declined.",
+};
+
+/** Empty-list words for each stage: an empty "New" is a finished job. */
+const EMPTY_WORDS: Readonly<Record<DeskFilter, readonly [heading: string, detail: string]>> = {
+  submitted: ["Nothing new to answer", "Every new enquiry has had a first look."],
+  under_review: ["No decisions waiting", "Nothing is in review."],
+  approved: ["No approved enquiries", "Approved enquiries appear here."],
+  rejected: ["No declined enquiries", "Declined enquiries appear here."],
+  withdrawn: ["No withdrawn enquiries", "Enquiries a client withdraws appear here."],
+  all: ["No enquiries yet", "Enquiries from the venue’s website and planner arrive here."],
 };
 
 // ---------------------------------------------------------------------------
@@ -77,16 +117,12 @@ const cardStyle: React.CSSProperties = {
 // `initialSelectedId` is set when the user navigates here from a different
 // view (e.g. clicking an enquiry in ClientProfile). The component pre-selects
 // that enquiry on mount AND fetches it independently via `getEnquiry`, so
-// the detail view renders even when the loaded pages of the current status
-// filter don't include it. Without the independent fetch the `find()` call
-// below would return undefined whenever the filter or paging excluded the
-// target enquiry, leaving the user dumped at an unfiltered list with no
-// idea where to scroll.
+// the decision panel renders even when the loaded pages of the current stage
+// filter don't include it.
 //
-// `onDetailClose` is called when the user clicks "Back" from the detail
-// view. When provided, the parent gets to decide where back goes (e.g.
-// restoring the ClientProfile they came from). When omitted, "Back" falls
-// back to the in-component behaviour of returning to the list.
+// `onDetailClose` is called when the user closes the open enquiry. When
+// provided, the parent decides where that goes (e.g. restoring the
+// ClientProfile they came from). When omitted, closing returns to the desk.
 // ---------------------------------------------------------------------------
 
 interface EnquiriesViewProps {
@@ -94,25 +130,50 @@ interface EnquiriesViewProps {
   readonly onDetailClose?: () => void;
 }
 
-export function EnquiriesView({ initialSelectedId = null, onDetailClose }: EnquiriesViewProps = {}): React.ReactElement {
+export function EnquiriesView({ initialSelectedId = null, onDetailClose }: EnquiriesViewProps = {}): ReactElement {
+  const wide = useMediaQuery(WIDE_DESK);
+  const titleId = useId();
   const [list, setList] = useState<EnquiryListState>(UNLOADED_LIST);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<DeskFilter>("all");
   const [reloadCount, setReloadCount] = useState(0);
   const generationRef = useRef(0);
   const loadMoreRef = useRef<AbortController | null>(null);
+  const [counts, setCounts] = useState<CountsState>({ status: "loading", value: null });
+  const [countsVersion, setCountsVersion] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
-  // The enquiry the detail view shows: the clicked card, or the independent
-  // fetch for the cross-view pre-selection case (populated by the effect
-  // below). It survives the list dropping the row after a status change.
+  // The enquiry the panel shows: the opened row, or the independent fetch
+  // for the cross-view pre-selection case. It survives the list dropping the
+  // row after a status change.
   const [openedEnquiry, setOpenedEnquiry] = useState<Enquiry | null>(null);
-  const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
-  const [historyVersion, setHistoryVersion] = useState(0);
   const [preselectionLoading, setPreselectionLoading] = useState(initialSelectedId !== null);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [transitionSaving, setTransitionSaving] = useState(false);
-  const [transition, setTransition] = useState<{ id: string; status: string } | null>(null);
+  const [history, setHistory] = useState<HistoryState>({ id: null, entries: [], status: "ready" });
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [confirming, setConfirming] = useState<TransitionTarget | null>(null);
+  const [saving, setSaving] = useState<TransitionTarget | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [stamp, setStamp] = useState<LedgerStamp | null>(null);
+  const [announcement, setAnnouncement] = useState<string | null>(null);
+  const [moved, setMoved] = useState(0);
   const [creatingOpportunity, setCreatingOpportunity] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const deskRef = useRef<HTMLDivElement>(null);
+  const sheetHeadingRef = useRef<HTMLHeadingElement>(null);
+  const panelHeadingRef = useRef<HTMLHeadingElement>(null);
+  const selectedIdRef = useRef(selectedId);
+  // Where the open enquiry sat in the list, so "next" still means the row
+  // after it once a status change has taken it out of the filter.
+  const [openedIndex, setOpenedIndex] = useState(-1);
+  const pendingFocusRef = useRef<PendingFocus | null>(initialSelectedId === null ? null : { kind: "panel" });
   const addToast = useToastStore((s) => s.addToast);
+  const userName = useAuthStore((s) => s.user?.name ?? null);
+
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+
+  // "2 hours ago" stays true while the desk is open all day.
+  useEffect(() => {
+    const timer = window.setInterval(() => { setNowMs(Date.now()); }, 60_000);
+    return () => { window.clearInterval(timer); };
+  }, []);
 
   // A filter change or reload starts a new list: its first page, and any
   // in-flight first page or "show more" of the previous list, is aborted
@@ -148,7 +209,21 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     };
   }, [statusFilter, reloadCount, addToast]);
 
-  const showMore = (): void => {
+  // The pipeline counts, refreshed after every change made here.
+  useEffect(() => {
+    const controller = new AbortController();
+    setCounts((previous) => ({ ...previous, status: "loading" }));
+    void enquiriesApi.countEnquiryStages(controller.signal)
+      .then((value) => {
+        if (!controller.signal.aborted) setCounts({ status: "ready", value });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCounts((previous) => ({ ...previous, status: "error" }));
+      });
+    return () => { controller.abort(); };
+  }, [countsVersion, reloadCount]);
+
+  const showMore = useCallback((): void => {
     if (list.status !== "ready" || list.loadingMore || !hasMoreEnquiries(list)) return;
     const { generation, filter } = list;
     loadMoreRef.current?.abort();
@@ -180,12 +255,20 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
       .finally(() => {
         if (loadMoreRef.current === controller) loadMoreRef.current = null;
       });
-  };
+  }, [list]);
+
+  // Working through a stage empties its listed rows; when more wait on the
+  // server, they follow without another click.
+  const listRanDry = list.status === "ready" && list.rows.length === 0 && hasMoreEnquiries(list)
+    && !list.loadingMore && !list.moreFailed;
+  useEffect(() => {
+    if (listRanDry) showMore();
+  }, [listRanDry, showMore]);
 
   const reloadList = (): void => { setReloadCount((count) => count + 1); };
 
   // When pre-selected via initialSelectedId, fetch the enquiry directly so
-  // the detail view can render regardless of the active status filter.
+  // the panel can render regardless of the active stage filter.
   useEffect(() => {
     if (initialSelectedId === null) {
       setPreselectionLoading(false);
@@ -207,64 +290,172 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     return () => { controller.abort(); };
   }, [initialSelectedId, addToast]);
 
-  // Prefer the opened enquiry if it matches the currently-selected id;
-  // otherwise fall back to the list lookup. This makes status-filter
-  // mismatches a non-issue for the navigation case.
+  // Prefer the opened enquiry if it matches the selected id; otherwise fall
+  // back to the list lookup.
   const selected = (openedEnquiry !== null && openedEnquiry.id === selectedId)
     ? openedEnquiry
     : list.rows.find((e) => e.id === selectedId);
 
-  // "Back" exits the detail view. If a parent provided `onDetailClose`,
-  // the parent owns the destination (e.g. restore ClientProfile). Else
-  // we just clear the selection and return to the in-component list.
-  const handleBack = (): void => {
-    setSelectedId(null);
-    setOpenedEnquiry(null);
-    setHistory([]);
-    if (onDetailClose !== undefined) onDetailClose();
-  };
-
   useEffect(() => {
-    setHistory([]);
     if (selectedId === null) {
-      setHistoryLoading(false);
+      setHistory({ id: null, entries: [], status: "ready" });
       return;
     }
-
     const controller = new AbortController();
-    setHistoryLoading(true);
+    // A refresh after a status change keeps the timeline it is extending.
+    setHistory((previous) => previous.id === selectedId
+      ? { ...previous, status: "loading" }
+      : { id: selectedId, entries: [], status: "loading" });
     void enquiriesApi.getEnquiryHistory(selectedId, controller.signal)
       .then((entries) => {
-        if (!controller.signal.aborted) setHistory(entries);
+        if (!controller.signal.aborted) setHistory({ id: selectedId, entries, status: "ready" });
       })
-      .catch(() => { /* An absent timeline does not block enquiry review. */ })
-      .finally(() => {
-        if (!controller.signal.aborted) setHistoryLoading(false);
+      .catch(() => {
+        // An absent timeline does not block enquiry review.
+        if (!controller.signal.aborted) setHistory((previous) => ({ ...previous, status: "error" }));
       });
     return () => { controller.abort(); };
   }, [selectedId, historyVersion]);
 
-  const handleTransition = async (note?: string): Promise<void> => {
-    if (transition === null || transitionSaving) return;
-    setTransitionSaving(true);
-    try {
-      const updated = await enquiriesApi.transitionEnquiry(transition.id, transition.status, note);
-      // A status-filtered list drops an enquiry that no longer matches, and
-      // its later pages shift up one; "all" keeps it with its new status.
-      setList((previous) => previous.filter === "all" || updated.state === previous.filter
-        ? { ...previous, rows: previous.rows.map((e) => e.id === updated.id ? updated : e) }
-        : { ...previous, ...withoutListedEnquiry(previous, updated.id) });
-      // The detail view keeps showing the enquiry with its new status.
-      setOpenedEnquiry((opened) => opened !== null && opened.id === updated.id ? updated : opened);
-      addToast(`Enquiry ${transition.status.replace(/_/g, " ")}`, "success");
-      setTransition(null);
-      setHistoryVersion((version) => version + 1);
-    } catch {
-      addToast("Failed to update status", "error");
-      setTransition(null);
-    } finally {
-      setTransitionSaving(false);
+  // Keyboard focus follows the reader: into the panel when an enquiry opens,
+  // back to its row when it closes.
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (pending === null) return;
+    if (pending.kind === "panel") {
+      if (panelHeadingRef.current === null) return;
+      pendingFocusRef.current = null;
+      panelHeadingRef.current.focus();
+      return;
     }
+    pendingFocusRef.current = null;
+    if (pending.kind === "action") {
+      const action = deskRef.current?.querySelector<HTMLButtonElement>(`button[data-transition="${pending.to}"]`);
+      (action ?? panelHeadingRef.current)?.focus();
+      return;
+    }
+    const rows = deskRef.current?.querySelectorAll<HTMLButtonElement>("button[data-enquiry-id]") ?? [];
+    const row = [...rows].find((button) => button.dataset.enquiryId === pending.id);
+    (row ?? sheetHeadingRef.current)?.focus();
+  });
+
+  const roomOf = useVenueRooms([
+    ...list.rows.map((row) => row.venueId),
+    ...(selected === undefined ? [] : [selected.venueId]),
+    ...(counts.value?.longestWaiting === undefined || counts.value.longestWaiting === null ? [] : [counts.value.longestWaiting.venueId]),
+  ]);
+
+  const open = (enquiry: Enquiry): void => {
+    setOpenedIndex(list.rows.findIndex((row) => row.id === enquiry.id));
+    setSelectedId(enquiry.id);
+    setOpenedEnquiry(enquiry);
+    setConfirming(null);
+    setFailure(null);
+    setAnnouncement(null);
+    pendingFocusRef.current = { kind: "panel" };
+  };
+
+  const close = (): void => {
+    const closing = selectedId;
+    setSelectedId(null);
+    setOpenedEnquiry(null);
+    setConfirming(null);
+    setFailure(null);
+    setAnnouncement(null);
+    if (onDetailClose !== undefined) {
+      onDetailClose();
+      return;
+    }
+    if (closing !== null) pendingFocusRef.current = { kind: "row", id: closing };
+  };
+
+  const listedIndex = selectedId === null ? -1 : list.rows.findIndex((row) => row.id === selectedId);
+  const stepTarget = (direction: 1 | -1): Enquiry | undefined => {
+    if (listedIndex >= 0) return list.rows[listedIndex + direction];
+    if (openedIndex < 0) return undefined;
+    // The open enquiry left this filter: the row that took its place is next.
+    return list.rows[direction === 1 ? openedIndex : openedIndex - 1];
+  };
+  const step = (direction: 1 | -1): void => {
+    const target = stepTarget(direction);
+    if (target !== undefined) open(target);
+  };
+
+  const applyUpdated = (updated: Enquiry): void => {
+    // A stage-filtered list drops an enquiry that no longer matches, and its
+    // later pages shift up one; "all" keeps it with its new status.
+    setList((previous) => previous.filter === "all" || updated.state === previous.filter
+      ? { ...previous, rows: previous.rows.map((e) => e.id === updated.id ? updated : e) }
+      : { ...previous, ...withoutListedEnquiry(previous, updated.id) });
+    setOpenedEnquiry((opened) => opened !== null && opened.id === updated.id ? updated : opened);
+  };
+
+  const runTransition = async (enquiry: Enquiry, to: TransitionTarget, note: string | undefined): Promise<void> => {
+    setSaving(to);
+    setFailure(null);
+    const stillOpen = (): boolean => selectedIdRef.current === enquiry.id;
+    try {
+      const updated = await enquiriesApi.transitionEnquiry(enquiry.id, to, note);
+      applyUpdated(updated);
+      setCounts((previous) => previous.value === null ? previous
+        : { ...previous, value: countsAfterMove(previous.value, enquiry.id, enquiry.state, updated.state) });
+      setCountsVersion((version) => version + 1);
+      setHistoryVersion((version) => version + 1);
+      setStamp((previous) => ({ id: updated.id, key: (previous?.key ?? 0) + 1 }));
+      setMoved((count) => count + 1);
+      if (stillOpen()) {
+        setConfirming(null);
+        setAnnouncement(ANNOUNCEMENTS[updated.state] ?? `${stageLabel(updated.state)}.`);
+        panelHeadingRef.current?.focus();
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "INVALID_TRANSITION") {
+        // Someone else moved it on first: show where it really is.
+        try {
+          const current = await enquiriesApi.getEnquiry(enquiry.id);
+          applyUpdated(current);
+          setCountsVersion((version) => version + 1);
+          setHistoryVersion((version) => version + 1);
+          if (stillOpen()) {
+            setConfirming(null);
+            setFailure(`This enquiry had already moved on. It is ${stageLabel(current.state).toLowerCase()} now.`);
+          }
+        } catch {
+          if (stillOpen()) setFailure("The status could not be changed. Reload the list to see where this enquiry is.");
+        }
+      } else if (stillOpen()) {
+        setFailure("The status could not be changed. Try again.");
+      }
+      if (!stillOpen()) addToast(`${enquiryName(enquiry)}’s status could not be changed`, "error");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const requestTransition = (to: TransitionTarget, withNote: boolean): void => {
+    if (selected === undefined || saving !== null) return;
+    setFailure(null);
+    setAnnouncement(null);
+    // Starting a review sends nothing, so it happens at once; a decision
+    // emails the client and is confirmed first.
+    if (to === "under_review" && !withNote) {
+      void runTransition(selected, to, undefined);
+      return;
+    }
+    setConfirming(to);
+  };
+
+  const confirmTransition = (note: string): void => {
+    if (selected === undefined || confirming === null || saving !== null) return;
+    const trimmed = note.trim();
+    void runTransition(selected, confirming, trimmed === "" ? undefined : trimmed);
+  };
+
+  const cancelTransition = (): void => {
+    if (saving !== null || confirming === null) return;
+    pendingFocusRef.current = { kind: "action", to: confirming };
+    setConfirming(null);
+    setFailure(null);
   };
 
   const handleCreateOpportunity = async (enquiry: Enquiry): Promise<void> => {
@@ -280,214 +471,167 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     }
   };
 
-  if (selected !== undefined) {
-    const isGuest = selected.userId === null;
-    return (
-      <div>
-        <button
-          type="button"
-          onClick={handleBack}
-          style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0 }}
-        >
-          &larr; {onDetailClose !== undefined ? "Back to profile" : "Back to list"}
-        </button>
+  const onDeskKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (confirming !== null) {
+      event.preventDefault();
+      cancelTransition();
+      return;
+    }
+    if (selectedId !== null) {
+      event.preventDefault();
+      close();
+    }
+  };
 
-        <div style={{ background: "#fff", borderRadius: 12, padding: 24, border: "1px solid #e5e7eb" }}>
-          {preselectionLoading && <ActivityStatus>Opening enquiry…</ActivityStatus>}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{selected.name}</h2>
-            <StatusBadge status={selected.state} />
-            {isGuest && <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, background: "#fef3c7", color: "#d97706" }}>Guest</span>}
-          </div>
+  const chooseFilter = (filter: DeskFilter): void => {
+    // "Next" follows the open enquiry's place in the new list, if it has one.
+    setOpenedIndex(-1);
+    setStatusFilter(filter);
+  };
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, fontSize: 13, color: "#666", marginBottom: 20 }}>
-            <div>Email: {selected.guestEmail ?? selected.email}</div>
-            {selected.guestPhone !== null && <div>Phone: {selected.guestPhone}</div>}
-            {selected.eventType !== null && <div>Type: {selected.eventType}</div>}
-            {selected.preferredDate !== null && <div>Date: {selected.preferredDate}</div>}
-            {selected.estimatedGuests !== null && <div>Guests: {String(selected.estimatedGuests)}</div>}
-            {selected.message !== null && <div style={{ gridColumn: "1 / -1" }}>Message: {selected.message}</div>}
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <AIDraftPanel
-              title="AI enquiry draft"
-              useCase="enquiry_summary"
-              actionLabel="Draft summary"
-              context={{
-                enquiryId: selected.id,
-                name: selected.guestName ?? selected.name,
-                email: selected.guestEmail ?? selected.email,
-                eventType: selected.eventType,
-                preferredDate: selected.preferredDate,
-                estimatedGuests: selected.estimatedGuests,
-                message: selected.message,
-                currentStatus: selected.state,
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <AIDraftPanel
-              title="AI proposal wording draft"
-              useCase="proposal_draft"
-              actionLabel="Draft proposal copy"
-              context={{
-                enquiryId: selected.id,
-                clientName: selected.guestName ?? selected.name,
-                eventType: selected.eventType,
-                preferredDate: selected.preferredDate,
-                estimatedGuests: selected.estimatedGuests,
-                clientNotes: selected.message,
-                currentStatus: selected.state,
-              }}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            <button
-              type="button"
-              data-testid="create-opportunity-from-enquiry"
-              onClick={() => { void handleCreateOpportunity(selected); }}
-              disabled={creatingOpportunity}
-              aria-busy={creatingOpportunity}
-              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#1a1a2e", color: "#fff", border: "none", borderRadius: 6, cursor: creatingOpportunity ? "default" : "pointer", opacity: creatingOpportunity ? 0.6 : 1 }}
-            >
-              {creatingOpportunity && <ActivityIndicator size={16} />} Create Opportunity
-            </button>
-            {selected.state === "submitted" && (
-              <button type="button" onClick={() => { setTransition({ id: selected.id, status: "under_review" }); }}
-                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#f59e0b", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
-                Start Review
-              </button>
-            )}
-            {selected.state === "under_review" && (
-              <>
-                <button type="button" onClick={() => { setTransition({ id: selected.id, status: "approved" }); }}
-                  style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#22c55e", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
-                  Approve
-                </button>
-                <button type="button" onClick={() => { setTransition({ id: selected.id, status: "rejected" }); }}
-                  style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#ef4444", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
-                  Reject
-                </button>
-              </>
-            )}
-            {selected.configurationId !== null && (
-              <a href={`/plan/${selected.configurationId}`} target="_blank" rel="noreferrer"
-                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#3b82f6", color: "#fff", borderRadius: 6, textDecoration: "none" }}>
-                View Layout
-              </a>
-            )}
-            {/* The legacy per-enquiry hallkeeper PDF was removed. The new flow
-                serves an approved-snapshot PDF at /hallkeeper/:configId/sheet
-                (see Phase 3 for the dashboard-embedded entry point). */}
-          </div>
-
-          {historyLoading && <ActivityStatus>Loading enquiry history…</ActivityStatus>}
-          {history.length > 0 && (
-            <div>
-              <h3 style={{ fontSize: 14, fontWeight: 600, color: "#333", marginBottom: 8 }}>Status Timeline</h3>
-              {history.map((h) => (
-                <div key={h.id} style={{ fontSize: 12, color: "#666", padding: "4px 0", borderLeft: "2px solid #e5e7eb", paddingLeft: 12, marginLeft: 4 }}>
-                  <StatusBadge status={h.fromStatus} /> &rarr; <StatusBadge status={h.toStatus} />
-                  <span style={{ marginLeft: 8, color: "#999" }}>{new Date(h.createdAt).toLocaleString()}</span>
-                  {h.note !== null && <div style={{ marginTop: 2, fontStyle: "italic" }}>{h.note}</div>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {transition !== null && (
-          <ConfirmModal
-            title={`${transition.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} Enquiry`}
-            message={`Are you sure you want to change status to "${transition.status.replace(/_/g, " ")}"?`}
-            confirmLabel={transition.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-            confirmColor={transition.status === "approved" ? "#22c55e" : transition.status === "rejected" ? "#ef4444" : "#f59e0b"}
-            showNoteField
-            inFlight={transitionSaving}
-            onConfirm={(note) => { void handleTransition(note); }}
-            onCancel={() => { setTransition(null); }}
-          />
-        )}
-      </div>
-    );
-  }
+  const opening = selectedId !== null && selected === undefined && preselectionLoading;
+  const panelOpen = selectedId !== null && (selected !== undefined || preselectionLoading);
+  const showSheet = wide || !panelOpen;
+  const showPanel = wide || panelOpen;
+  const backLabel = onDetailClose !== undefined ? "Back to profile" : wide ? "Close enquiry" : "Back to enquiries";
 
   const countNote = list.status === "ready"
     ? describeEnquiryCount({ shown: list.rows.length, total: list.total, filter: list.filter, newestFirst: list.order === "created_desc" })
     : null;
   const moreAvailable = list.status === "ready" && hasMoreEnquiries(list);
   const nextBatch = Math.min(ENQUIRY_PAGE_SIZE, list.total - list.nextOffset);
+  const summary = deskSummary({
+    newCount: counts.value?.byState.submitted ?? null,
+    reviewCount: counts.value?.byState.under_review ?? null,
+    longestWaitingCreatedAt: counts.value?.longestWaiting?.createdAt ?? null,
+    nowMs,
+  });
+  const [emptyHeading, emptyDetail] = EMPTY_WORDS[list.filter];
+  const greeting = deskGreeting(nowMs, userName);
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-        {STATUSES.map((s) => (
-          <button key={s} type="button" style={tabStyle(statusFilter === s)}
-            onClick={() => { setStatusFilter(s); }}>
-            {s === "all" ? "All" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-          </button>
-        ))}
-      </div>
-
-      {/* Stays mounted so a new count is announced when a page lands. */}
-      <p data-testid="enquiry-list-count" aria-live="polite" style={countNote === null ? { margin: 0 } : listNoteStyle}>
-        {countNote}
-      </p>
-      {list.status === "loading" && <ActivityStatus style={{ color: "#999", fontSize: 14 }}>Loading enquiries…</ActivityStatus>}
-      {preselectionLoading && <ActivityStatus>Opening enquiry…</ActivityStatus>}
-
-      {list.status === "error" && (
-        <div role="alert" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <p style={listAlertStyle}>Enquiries could not be loaded.</p>
-          <button type="button" style={listActionStyle(false)} onClick={reloadList}>Try again</button>
-        </div>
-      )}
-
-      {list.status === "ready" && !preselectionLoading && list.rows.length === 0 && (
-        <p style={{ color: "#999", fontSize: 14 }}>No enquiries found.</p>
-      )}
-
-      {list.rows.map((e) => (
-        <button key={e.id} type="button" style={cardStyle} onClick={() => { setSelectedId(e.id); setOpenedEnquiry(e); }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>{e.guestName ?? e.name}</span>
-            <StatusBadge status={e.state} />
-            {e.userId === null && <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "#fef3c7", color: "#d97706" }}>Guest</span>}
+    <div ref={deskRef} className={`enq-desk${wide ? "" : " enq-desk--single"}`} data-calm-controls onKeyDown={onDeskKeyDown}>
+      {showSheet && (
+        <section className="enq-sheet" aria-labelledby={titleId}>
+          <header className="enq-head">
+            <p className="enq-greeting">
+              <span>{greeting.date}</span>
+              <span aria-hidden="true">·</span>
+              <span>{greeting.greeting}</span>
+            </p>
+            <h1 id={titleId} ref={sheetHeadingRef} tabIndex={-1}>Enquiries</h1>
+          </header>
+          <div className="enq-summary">
+            {summary !== null && (
+              <p>
+                {summary.map((part, index) => typeof part === "string" ? part
+                  : <strong key={index} data-tone={part.tone}>{part.strong}</strong>)}
+              </p>
+            )}
+            {summary === null && counts.status === "loading" && <ActivityStatus>Counting enquiries…</ActivityStatus>}
+            {summary === null && counts.status === "error" && (
+              <div className="enq-summary__retry">
+                <p>The stage counts could not be loaded.</p>
+                <button type="button" className="enq-button" onClick={() => { setCountsVersion((version) => version + 1); }}>
+                  Count again
+                </button>
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: 12, color: "#888" }}>
-            {e.guestEmail ?? e.email}
-            {e.eventType !== null && ` · ${e.eventType}`}
-            {e.preferredDate !== null && ` · ${e.preferredDate}`}
-            {e.estimatedGuests !== null && ` · ${String(e.estimatedGuests)} guests`}
-          </div>
-          <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>
-            {new Date(e.createdAt).toLocaleDateString()}
-          </div>
-        </button>
-      ))}
 
-      {list.interrupted && (
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, margin: "4px 0 12px" }}>
-          <p role="status" style={{ ...listNoteStyle, margin: 0 }}>
-            Enquiries changed while this list was open, so it may be incomplete or out of date.
-          </p>
-          <button type="button" style={listActionStyle(false)} onClick={reloadList}>Reload list</button>
-        </div>
+          <EnquiryStages filter={statusFilter} counts={counts.value} onFilter={chooseFilter} />
+
+          {/* Stays mounted so a new count is announced when a page lands. */}
+          <p className="enq-count" data-testid="enquiry-list-count" aria-live="polite">{countNote}</p>
+          {list.status === "loading" && <ActivityStatus className="enq-sheet__activity">Loading enquiries…</ActivityStatus>}
+
+          {list.status === "error" && (
+            <div className="enq-notice enq-notice--alert" role="alert">
+              <p>Enquiries could not be loaded.</p>
+              <button type="button" className="enq-button" onClick={reloadList}>Try again</button>
+            </div>
+          )}
+
+          {list.status === "ready" && list.rows.length === 0 && !moreAvailable && (
+            <div className="enq-empty">
+              <h2>{emptyHeading}</h2>
+              <p>{emptyDetail}</p>
+            </div>
+          )}
+
+          <EnquiryLedger
+            rows={list.rows}
+            selectedId={selectedId}
+            nowMs={nowMs}
+            room={roomOf}
+            complete={list.status === "ready" && !moreAvailable}
+            stamp={stamp}
+            onOpen={open}
+          />
+
+          {list.interrupted && (
+            <div className="enq-notice">
+              <p role="status">Enquiries changed while this list was open, so it may be incomplete or out of date.</p>
+              <button type="button" className="enq-button" onClick={reloadList}>Reload list</button>
+            </div>
+          )}
+
+          {moreAvailable && (
+            <div className="enq-more">
+              <button type="button" className="enq-button" data-testid="enquiry-list-more"
+                onClick={showMore} disabled={list.loadingMore} aria-busy={list.loadingMore}>
+                {list.loadingMore && <ActivityIndicator size={16} />}
+                {list.loadingMore ? "Loading more…" : `Show ${String(nextBatch)} more`}
+              </button>
+              {list.moreFailed && <p role="alert">More enquiries could not be loaded. Try again.</p>}
+            </div>
+          )}
+        </section>
       )}
 
-      {moreAvailable && (
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
-          <button type="button" data-testid="enquiry-list-more" style={listActionStyle(list.loadingMore)}
-            onClick={showMore} disabled={list.loadingMore} aria-busy={list.loadingMore}>
-            {list.loadingMore && <ActivityIndicator size={16} />}
-            {list.loadingMore ? "Loading more…" : `Show ${String(nextBatch)} more`}
-          </button>
-          {list.moreFailed && <p role="alert" style={listAlertStyle}>More enquiries could not be loaded. Try again.</p>}
-        </div>
-      )}
+      {showPanel && (selected !== undefined ? (
+        <EnquiryPanel
+          key={selected.id}
+          enquiry={selected}
+          room={roomOf(selected)}
+          nowMs={nowMs}
+          history={history.id === selected.id ? history.entries : []}
+          historyStatus={history.id === selected.id ? history.status : "loading"}
+          transition={{ confirming, saving, failure }}
+          stampKey={stamp !== null && stamp.id === selected.id ? stamp.key : null}
+          announcement={announcement}
+          creatingOpportunity={creatingOpportunity}
+          navigation={{
+            layout: wide ? "wide" : "single",
+            backLabel,
+            canPrevious: stepTarget(-1) !== undefined,
+            canNext: stepTarget(1) !== undefined,
+            onClose: close,
+            onStep: step,
+          }}
+          headingRef={panelHeadingRef}
+          onRequest={requestTransition}
+          onConfirm={confirmTransition}
+          onCancel={cancelTransition}
+          onCreateOpportunity={() => { void handleCreateOpportunity(selected); }}
+        />
+      ) : opening ? (
+        <section className="enq-panel enq-panel--opening" aria-label="Opening enquiry">
+          <div className="enq-panel__body">
+            <ActivityStatus variant="panel">Opening enquiry…</ActivityStatus>
+          </div>
+        </section>
+      ) : wide ? (
+        <EnquiryOverview
+          counts={counts.value}
+          nowMs={nowMs}
+          moved={moved}
+          room={roomOf}
+          onOpen={open}
+          onFilter={chooseFilter}
+        />
+      ) : null)}
     </div>
   );
 }

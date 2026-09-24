@@ -8,11 +8,13 @@ import { EnquiriesView } from "../EnquiriesView.js";
 const { mocks } = vi.hoisted(() => ({
   mocks: {
     addToast: vi.fn(),
+    countEnquiryStages: vi.fn(),
     createOpportunityFromEnquiry: vi.fn(),
     getClientProfile: vi.fn(),
     getEnquiry: vi.fn(),
     getEnquiryHistory: vi.fn(),
     getLeadProfile: vi.fn(),
+    getVenue: vi.fn(),
     listEnquiryPage: vi.fn(),
     searchClients: vi.fn(),
     transitionEnquiry: vi.fn(),
@@ -20,6 +22,8 @@ const { mocks } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../api/enquiries.js", () => ({
+  COUNTED_ENQUIRY_STATES: ["submitted", "under_review", "approved", "rejected", "withdrawn"],
+  countEnquiryStages: mocks.countEnquiryStages,
   getEnquiry: mocks.getEnquiry,
   getEnquiryHistory: mocks.getEnquiryHistory,
   listEnquiryPage: mocks.listEnquiryPage,
@@ -30,6 +34,10 @@ vi.mock("../../../api/clients.js", () => ({
   getClientProfile: mocks.getClientProfile,
   getLeadProfile: mocks.getLeadProfile,
   searchClients: mocks.searchClients,
+}));
+
+vi.mock("../../../api/spaces.js", () => ({
+  getVenue: mocks.getVenue,
 }));
 
 vi.mock("../../../api/crm.js", () => ({
@@ -103,6 +111,10 @@ beforeEach(() => {
   mocks.getEnquiry.mockResolvedValue(enquiryFixture("enquiry-a", "Alice"));
   mocks.getEnquiryHistory.mockResolvedValue([]);
   mocks.listEnquiryPage.mockResolvedValue(enquiryPage([]));
+  mocks.countEnquiryStages.mockResolvedValue({
+    all: 0, byState: { submitted: 0, under_review: 0, approved: 0, rejected: 0, withdrawn: 0 }, longestWaiting: null,
+  });
+  mocks.getVenue.mockRejectedValue(new Error("Not needed here"));
 });
 
 afterEach(() => {
@@ -116,12 +128,13 @@ describe("EnquiriesView async ownership", () => {
     mocks.listEnquiryPage.mockReturnValue(request.promise);
     render(<EnquiriesView />);
 
-    expect(screen.getByRole("status").textContent).toContain("Loading enquiries…");
-    expect(screen.getByRole("status").querySelector("svg[aria-hidden='true']")).not.toBeNull();
+    const loading = screen.getByText("Loading enquiries…").closest("[role='status']");
+    expect(loading?.querySelector("svg[aria-hidden='true']")).not.toBeNull();
 
     await act(async () => { request.resolve(enquiryPage([])); await request.promise; });
+    expect(screen.queryByText("Loading enquiries…")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.getByText("No enquiries found.")).toBeDefined();
+    expect(screen.getByText("No enquiries yet")).toBeDefined();
   });
 
   it("keeps preselection and its timeline visibly active until their own requests settle", async () => {
@@ -135,25 +148,25 @@ describe("EnquiriesView async ownership", () => {
     expect(screen.getByText("Opening enquiry…")).toBeDefined();
     await act(async () => { enquiry.resolve(enquiryFixture("alice", "Alice")); await enquiry.promise; });
     expect(screen.queryByText("Opening enquiry…")).toBeNull();
-    expect(screen.getByText("Loading enquiry history…")).toBeDefined();
+    expect(screen.getByText("Loading the timeline…")).toBeDefined();
     await act(async () => { timeline.resolve([]); await timeline.promise; });
-    expect(screen.queryByText("Loading enquiry history…")).toBeNull();
+    expect(screen.queryByText("Loading the timeline…")).toBeNull();
   });
 
-  it("animates the confirmation only while the enquiry transition is saving", async () => {
+  it("animates a status change only while it is saving", async () => {
     const transition = deferred<Enquiry>();
     mocks.listEnquiryPage.mockResolvedValue(enquiryPage([enquiryFixture("alice", "Alice")]));
     mocks.transitionEnquiry.mockReturnValue(transition.promise);
     render(<EnquiriesView />);
-    fireEvent.click(await screen.findByRole("button", { name: /Alice/u }));
-    fireEvent.click(screen.getByRole("button", { name: "Start Review" }));
-    fireEvent.click(screen.getByRole("button", { name: "Under Review" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Alice,/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Start review" }));
 
-    const working = screen.getByRole("button", { name: "Working..." });
+    const working = screen.getByRole("button", { name: "Starting review…" });
     expect(working.hasAttribute("disabled")).toBe(true);
     expect(working.querySelector("svg[data-activity-indicator]")).not.toBeNull();
     await act(async () => { transition.resolve(enquiryFixture("alice", "Alice", "under_review")); await transition.promise; });
-    expect(screen.queryByRole("button", { name: "Working..." })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Starting review…" })).toBeNull();
+    expect(screen.queryByText("Starting review…")).toBeNull();
     expect(mocks.transitionEnquiry).toHaveBeenCalledTimes(1);
   });
 
@@ -164,7 +177,7 @@ describe("EnquiriesView async ownership", () => {
 
     await waitFor(() => { expect(mocks.addToast).toHaveBeenCalledWith("Failed to load enquiry", "error"); });
     expect(screen.queryByText("Opening enquiry…")).toBeNull();
-    expect(screen.queryByText("Loading enquiry history…")).toBeNull();
+    expect(screen.queryByText("Loading the timeline…")).toBeNull();
   });
 
   it("aborts and ignores a slower previous filter response", async () => {
@@ -178,17 +191,17 @@ describe("EnquiriesView async ownership", () => {
     render(<EnquiriesView />);
 
     await waitFor(() => { expect(mocks.listEnquiryPage).toHaveBeenCalledTimes(1); });
-    fireEvent.click(screen.getByRole("button", { name: "Submitted" }));
+    fireEvent.click(screen.getByRole("button", { name: /^New(, \d+)?$/u }));
     await waitFor(() => { expect(mocks.listEnquiryPage).toHaveBeenCalledTimes(2); });
     expect(signals[0]?.aborted).toBe(true);
 
     submitted.resolve(enquiryPage([enquiryFixture("new", "New result")]));
-    expect(await screen.findByRole("button", { name: /New result/u })).toBeDefined();
+    expect(await screen.findByRole("button", { name: /^New result,/u })).toBeDefined();
     all.resolve(enquiryPage([enquiryFixture("old", "Stale result")]));
     await act(async () => { await Promise.resolve(); });
 
     expect(screen.queryByText("Stale result")).toBeNull();
-    expect(screen.getByRole("button", { name: /New result/u })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^New result,/u })).toBeDefined();
   });
 
   it("clears history on back and ignores history from the previous enquiry", async () => {
@@ -203,9 +216,9 @@ describe("EnquiriesView async ownership", () => {
     );
     render(<EnquiriesView />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Alice/u }));
-    fireEvent.click(screen.getByRole("button", { name: "← Back to list" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Bob/u }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Alice,/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to enquiries" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Bob,/u }));
 
     bobHistory.resolve([historyFixture("h-bob", "bob", "Bob timeline")]);
     expect(await screen.findByText("Bob timeline")).toBeDefined();

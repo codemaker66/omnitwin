@@ -87,21 +87,25 @@
          route except the homepage (which mounts .fr-root and so escaped).
          Gating on no-preference means there is nothing left to override.
          Do not "fix" a future regression here by adding a more specific
-         override — that is an arms race. Keep the motion opt-in at its source. */
+         override — that is an arms race. Keep the motion opt-in at its source.
+         A work surface whose controls carry their own restrained feedback
+         (the staff Enquiries desk, whose list rows would otherwise swell under
+         the pointer) opts out by marking its root [data-calm-controls]; the
+         :where() keeps these selectors' specificity unchanged. */
       @media (prefers-reduced-motion: no-preference) {
-        body:not(:has(.fr-root)) button,
-        body:not(:has(.fr-root)) [role="button"] {
+        body:not(:has(.fr-root)) button:not(:where([data-calm-controls] *)),
+        body:not(:has(.fr-root)) [role="button"]:not(:where([data-calm-controls] *)) {
           transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
                       box-shadow 0.15s ease,
                       filter 0.15s ease !important;
         }
-        body:not(:has(.fr-root)) button:hover:not(:disabled),
-        body:not(:has(.fr-root)) [role="button"]:hover {
+        body:not(:has(.fr-root)) button:hover:not(:disabled):not(:where([data-calm-controls] *)),
+        body:not(:has(.fr-root)) [role="button"]:hover:not(:where([data-calm-controls] *)) {
           transform: scale(1.06);
           filter: brightness(1.15);
         }
-        body:not(:has(.fr-root)) button:active:not(:disabled),
-        body:not(:has(.fr-root)) [role="button"]:active {
+        body:not(:has(.fr-root)) button:active:not(:disabled):not(:where([data-calm-controls] *)),
+        body:not(:has(.fr-root)) [role="button"]:active:not(:where([data-calm-controls] *)) {
           transform: scale(0.93);
           filter: brightness(0.9);
           transition-duration: 0.06s !important;

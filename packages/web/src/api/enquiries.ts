@@ -116,6 +116,34 @@ export async function listEnquiryPage(query: EnquiryListQuery, signal?: AbortSig
   return api.getEnvelope(enquiryListPath(query), EnquiryPageSchema, signal);
 }
 
+/** The stages the staff desk counts, in pipeline order. */
+export const COUNTED_ENQUIRY_STATES = ["submitted", "under_review", "approved", "rejected", "withdrawn"] as const;
+
+export interface EnquiryStageCounts {
+  /** Every enquiry in the caller's scope. */
+  readonly all: number;
+  readonly byState: Readonly<Record<(typeof COUNTED_ENQUIRY_STATES)[number], number>>;
+  /** The new enquiry left untouched longest (the API's default order is
+   *  least recently updated first), or null when none is waiting. */
+  readonly longestWaiting: Enquiry | null;
+}
+
+/** Totals per stage from one-row pages, which every API version serves. */
+export async function countEnquiryStages(signal?: AbortSignal): Promise<EnquiryStageCounts> {
+  const [all, ...stages] = await Promise.all([
+    listEnquiryPage({ limit: 1 }, signal),
+    ...COUNTED_ENQUIRY_STATES.map((status) => listEnquiryPage({ status, limit: 1 }, signal)),
+  ]);
+  const total = (index: number): number => stages[index]?.total ?? 0;
+  return {
+    all: all.total,
+    byState: {
+      submitted: total(0), under_review: total(1), approved: total(2), rejected: total(3), withdrawn: total(4),
+    },
+    longestWaiting: stages[0]?.rows[0] ?? null,
+  };
+}
+
 export async function getEnquiry(id: string, signal?: AbortSignal): Promise<Enquiry> {
   return api.get(`/enquiries/${id}`, EnquirySchema, signal);
 }

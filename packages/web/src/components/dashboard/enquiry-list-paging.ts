@@ -1,4 +1,5 @@
 import type { Enquiry, EnquiryPage } from "../../api/enquiries.js";
+import { stageNouns } from "./enquiries/enquiry-desk-format.js";
 
 // ---------------------------------------------------------------------------
 // Offset paging for the staff Enquiries list.
@@ -79,15 +80,6 @@ export function withoutListedEnquiry(listed: ListedEnquiries, id: string): Liste
   };
 }
 
-const ENQUIRY_NOUNS = ["enquiry", "enquiries"] as const;
-const FILTER_NOUNS: Readonly<Record<string, readonly [string, string]>> = {
-  submitted: ["submitted enquiry", "submitted enquiries"],
-  under_review: ["enquiry under review", "enquiries under review"],
-  approved: ["approved enquiry", "approved enquiries"],
-  rejected: ["rejected enquiry", "rejected enquiries"],
-  withdrawn: ["withdrawn enquiry", "withdrawn enquiries"],
-};
-
 /** "Showing 20 of 57 enquiries, newest first" — the order only when the
  *  server confirmed it. Null when there is nothing to count. */
 export function describeEnquiryCount(input: {
@@ -98,7 +90,7 @@ export function describeEnquiryCount(input: {
 }): string | null {
   const { shown, total, filter, newestFirst } = input;
   if (total === 0 && shown === 0) return null;
-  const [singular, plural] = FILTER_NOUNS[filter] ?? ENQUIRY_NOUNS;
+  const [singular, plural] = stageNouns(filter);
   const noun = (count: number): string => (count === 1 ? singular : plural);
   const count = shown < total ? `Showing ${String(shown)} of ${String(total)} ${noun(total)}`
     : shown === 1 ? `Showing 1 ${singular}`

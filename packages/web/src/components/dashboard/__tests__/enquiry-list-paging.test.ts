@@ -127,8 +127,8 @@ describe("describeEnquiryCount", () => {
   it.each([
     [{ shown: 20, total: 57, filter: "all", newestFirst: true }, "Showing 20 of 57 enquiries, newest first"],
     [{ shown: 57, total: 57, filter: "all", newestFirst: true }, "Showing all 57 enquiries, newest first"],
-    [{ shown: 1, total: 1, filter: "submitted", newestFirst: true }, "Showing 1 submitted enquiry, newest first"],
-    [{ shown: 3, total: 12, filter: "under_review", newestFirst: false }, "Showing 3 of 12 enquiries under review"],
+    [{ shown: 1, total: 1, filter: "submitted", newestFirst: true }, "Showing 1 new enquiry, newest first"],
+    [{ shown: 3, total: 12, filter: "under_review", newestFirst: false }, "Showing 3 of 12 enquiries in review"],
     [{ shown: 0, total: 1, filter: "withdrawn", newestFirst: true }, "Showing 0 of 1 withdrawn enquiry, newest first"],
     [{ shown: 5, total: 4, filter: "approved", newestFirst: true }, "Showing 5 approved enquiries, newest first"],
   ])("describes %j", (input, expected) => {

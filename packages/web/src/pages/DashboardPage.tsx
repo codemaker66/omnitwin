@@ -245,8 +245,11 @@ export function DashboardPage(): React.ReactElement {
     }
   };
 
+  const showsEnquiryDesk = view === "enquiries" && deniedRequestedView === null
+    && profileUserId === null && profileLeadId === null;
+
   return (
-    <DashboardLayout activeView={view} onViewChange={handleViewChange}>
+    <DashboardLayout activeView={view} onViewChange={handleViewChange} surface={showsEnquiryDesk ? "enquiries" : undefined}>
       {renderContent()}
     </DashboardLayout>
   );

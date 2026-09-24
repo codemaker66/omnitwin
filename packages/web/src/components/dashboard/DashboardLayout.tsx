@@ -29,6 +29,9 @@ interface DashboardLayoutProps {
    *  only <main> on the page, so a wrapped surface hands its name up rather
    *  than keeping a second landmark of its own. */
   readonly mainLabel?: string;
+  /** A view that paints its own full-bleed workspace (the Enquiries desk)
+   *  asks for it here; everything else keeps the padded forest ground. */
+  readonly surface?: "enquiries";
   readonly children: ReactNode;
 }
 
@@ -85,7 +88,7 @@ function LocalSignOutButton(props: { readonly onLocalSignOut: () => void }): Rea
   );
 }
 
-function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }: DashboardLayoutProps): React.ReactElement {
+function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -240,7 +243,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
           </div>
         </div>
       </header>
-      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}`}>
+      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "enquiries" ? " dashboard-layout-main--enquiries" : ""}`}>
         <main className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={mainLabel ?? "Dashboard workspace"}>
           {children}
         </main>
