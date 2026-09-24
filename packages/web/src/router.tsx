@@ -8,7 +8,13 @@ import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 import { RouteArrival } from "./components/shared/RouteArrival.js";
 import { gaussianSplatsAvailable } from "./lib/splat-access.js";
 import { lazyWithPreload, type Preloadable } from "./lib/lazy-with-preload.js";
+import { fontBuildFor, fontStylesheetHrefs, type FontStylesheets } from "./lib/self-hosted-fonts.js";
 import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
+import cockpitFontsHref from "./styles/fonts/cockpit.css?url";
+import cockpitFontsFirefoxWindowsHref from "./styles/fonts/cockpit.firefox-windows.css?url";
+import quizFontsHref from "./styles/fonts/quiz.css?url";
+import quizFontsFirefoxWindowsHref from "./styles/fonts/quiz.firefox-windows.css?url";
+import quizFontsMacosHref from "./styles/fonts/quiz.macos.css?url";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -27,16 +33,20 @@ import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
 // The cockpit and legacy pages set their type in Inter + Playfair Display;
 // the homepage doesn't use either, so that stylesheet must not render-block
 // the front door. cockpitImport() attaches it alongside the first chunk that
-// actually needs it (display=swap keeps the first cockpit paint readable).
-const COCKPIT_FONTS_HREF =
-  "https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&family=Playfair+Display:wght@400;500;600;700&display=swap";
+// actually needs it (font-display: swap keeps the first cockpit paint readable).
+const COCKPIT_FONTS: FontStylesheets = {
+  href: cockpitFontsHref,
+  overrides: { "firefox-windows": cockpitFontsFirefoxWindowsHref },
+};
 // The craft quiz's heraldic faces. Requested here rather than by an @import in
-// its route CSS: a failed @import fails that stylesheet's <link>, Vite then
-// rejects the route import, and the quiz crashed whenever Google Fonts was
-// unreachable. Injected, the stylesheet never blocks the route; display=swap
-// keeps the Georgia fallbacks until the faces arrive.
-const QUIZ_FONTS_HREF =
-  "https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap";
+// its route CSS: an @import failure fails that stylesheet's <link>, Vite then
+// rejects the route import, and the quiz crashed whenever the (then remote)
+// fonts were unreachable. Injected, the stylesheet never blocks the route;
+// font-display: swap keeps the Georgia fallbacks until the faces arrive.
+const QUIZ_FONTS: FontStylesheets = {
+  href: quizFontsHref,
+  overrides: { "firefox-windows": quizFontsFirefoxWindowsHref, macos: quizFontsMacosHref },
+};
 const requestedStylesheets = new Set<string>();
 function requestStylesheet(href: string): void {
   if (requestedStylesheets.has(href)) return;
@@ -46,8 +56,12 @@ function requestStylesheet(href: string): void {
   link.href = href;
   document.head.append(link);
 }
+/** A family's self-hosted faces, with this browser's build appended last. */
+function requestFonts(stylesheets: FontStylesheets): void {
+  for (const href of fontStylesheetHrefs(stylesheets, fontBuildFor(navigator.userAgent))) requestStylesheet(href);
+}
 function cockpitImport<T>(factory: () => Promise<T>): Promise<T> {
-  requestStylesheet(COCKPIT_FONTS_HREF);
+  requestFonts(COCKPIT_FONTS);
   return factory();
 }
 
@@ -115,7 +129,7 @@ const TradesHouseLeafletPage = lazy(() =>
   import("./pages/TradesHouseLeafletPage.js").then((m) => ({ default: m.TradesHouseLeafletPage })),
 );
 const TradesHouseCraftQuizPage = lazy(() => {
-  requestStylesheet(QUIZ_FONTS_HREF);
+  requestFonts(QUIZ_FONTS);
   return import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage }));
 });
 const RoomsHomePage = lazy(() =>

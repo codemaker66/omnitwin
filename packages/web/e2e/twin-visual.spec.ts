@@ -90,6 +90,8 @@ test.describe.configure({ mode: "default" });
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
 const TILE_ROUTE = "**/twin/trades-hall/tiles/**";
 const MESH_ROUTE = "**/twin/trades-hall/mesh/dollhouse.glb";
+// Every webfont file, wherever it is served from (see the route below).
+const SELF_HOSTED_FONT_ROUTE = /\.woff2?(?:\?|$)/u;
 
 /**
  * The validated viewpoints, in id order — derived from the room oracle, never
@@ -250,12 +252,12 @@ test.beforeEach(async ({ page }) => {
   await page.route(MESH_ROUTE, (route) =>
     route.fulfill({ status: 200, contentType: "model/gltf-binary", body: MESH_BYTES }),
   );
-  // Cut the third-party webfont dependency. index.html and router.tsx pull
-  // Geist / Geist Mono / Inter / Newsreader / Fraunces / Playfair from Google
-  // Fonts over the public internet, and that traffic is NOT reliable: during
-  // this spec's bring-up one woff2 came back 404
-  // (…/s/geistmono/…-tkiS.woff2 — a plain curl from the shell reproduces the
-  // 404 while the css2 stylesheet it is named in returns 200). A run that
+  // Hold the webfonts back. When these baselines were taken, index.html and
+  // router.tsx pulled Geist / Geist Mono / Inter / Newsreader / Fraunces /
+  // Playfair from Google Fonts over the public internet, and that traffic was
+  // NOT reliable: during this spec's bring-up one woff2 came back 404
+  // (…/s/geistmono/…-tkiS.woff2 — a plain curl from the shell reproduced the
+  // 404 while the css2 stylesheet it is named in returned 200). A run that
   // gets the face and a run that falls back render every uppercase mono label
   // on the HUD differently: that is where a stable 7,663-pixel disagreement
   // between two identical runs came from.
@@ -264,9 +266,10 @@ test.beforeEach(async ({ page }) => {
   // is stated plainly: THIS SPEC CANNOT SEE A WEBFONT REGRESSION. What it can
   // see — panel geometry, sheet coverage, anchoring, level labels, the whole
   // HUD layout, offline and identically on every run — is what C2 is about,
-  // and a baseline that flips with a CDN is worth less than no baseline.
-  await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
-  await page.route("https://fonts.gstatic.com/**", (route) => route.abort());
+  // and a baseline that flips with a CDN is worth less than no baseline. The
+  // faces are now served from this origin (src/styles/fonts), so they are
+  // blocked there too; re-baseline without this route to see the real type.
+  await page.route(SELF_HOSTED_FONT_ROUTE, (route) => route.abort());
   // Pre-latch the one-time coach hint. It is timer-driven (8 s, then a 500 ms
   // fade) and pointer-events-none decoration; leaving it live would make every
   // baseline a race between the machine and the clock.

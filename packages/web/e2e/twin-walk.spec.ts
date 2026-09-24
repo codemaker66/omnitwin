@@ -165,9 +165,6 @@ async function walkToSaloon(page: Page): Promise<void> {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route("https://fonts.googleapis.com/**", (route) =>
-    route.fulfill({ status: 200, contentType: "text/css", body: "/* Offline functional fixture. */" }),
-  );
   await page.route(MANIFEST_ROUTE, (route) =>
     route.fulfill({
       status: 200,

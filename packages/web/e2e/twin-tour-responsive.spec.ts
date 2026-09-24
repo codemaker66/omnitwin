@@ -213,9 +213,9 @@ interface Rect {
 /**
  * Is this URL something the product serves, as opposed to somebody else's CDN?
  *
- * index.html pulls Geist and Fraunces from fonts.gstatic.com, and that host is
- * not always reachable — on this machine the woff2 answers 404 outright — at
- * which point Chromium logs "Failed to load resource: the server responded with
+ * index.html used to pull Geist and Fraunces from fonts.gstatic.com (they are
+ * self-hosted now), and that host was not always reachable — on this machine the
+ * woff2 answered 404 outright — at which point Chromium logs "Failed to load resource: the server responded with
  * a status of 404 ()" with no URL in the text. That anonymous line is what
  * reddens twin-walk.spec.ts's viewport tests today, and it says nothing about
  * whether the tour works. Third-party failures are therefore excluded BY

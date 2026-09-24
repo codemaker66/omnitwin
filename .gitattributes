@@ -19,3 +19,7 @@ packages/web/public/trades-house-media/voice/*.mp3 -text
 patches/**/*.patch text eol=lf
 # GPU source receipts bind raw Git bytes on both Windows and Linux.
 .github/gpu/** text eol=lf
+# Self-hosted Google Fonts: tests pin the stylesheets, licences and font files
+# to the bytes Google served (provenance.json), so no EOL conversion may
+# rewrite them on either platform.
+packages/web/src/styles/fonts/** -text

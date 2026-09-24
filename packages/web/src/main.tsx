@@ -8,6 +8,8 @@ import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
 import { initBrowserSentry } from "./observability/sentry.js";
 import { isE2EAuthBypassEnabled } from "./lib/e2e-auth-bypass.js";
+import { appendFontBuildStyle, fontBuildFor } from "./lib/self-hosted-fonts.js";
+import siteFontsFirefoxWindows from "./styles/fonts/site.firefox-windows.css?inline";
 import "./global.css";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +62,11 @@ function AppRoot(): React.ReactElement {
     </>
   );
 }
+
+// index.html links the default build of the site's faces. Where Google Fonts
+// served this browser a different build, its rules must win before the app
+// renders (see lib/self-hosted-fonts.ts).
+appendFontBuildStyle({ "firefox-windows": siteFontsFirefoxWindows }, fontBuildFor(navigator.userAgent), document);
 
 const rootElement = document.getElementById("root");
 if (rootElement === null) {

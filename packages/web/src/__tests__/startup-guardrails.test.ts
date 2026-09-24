@@ -1,6 +1,14 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+
+async function sourceFiles(directory: string, extensions: readonly string[]): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(entries.map((entry) => entry.isDirectory()
+    ? sourceFiles(join(directory, entry.name), extensions)
+    : Promise.resolve(extensions.includes(extname(entry.name)) ? [join(directory, entry.name)] : [])));
+  return nested.flat();
+}
 
 describe("web startup guardrails", () => {
   it("mounts React before starting the optional Sentry chunk", async () => {
@@ -28,18 +36,25 @@ describe("web startup guardrails", () => {
   it("keeps external @imports out of stylesheets", async () => {
     // A failed @import fails its stylesheet's <link>; for a lazy route Vite then
     // rejects the import and the page errors (the quiz did whenever Google
-    // Fonts was unreachable). Request remote fonts with an injected link.
-    async function stylesheets(directory: string): Promise<string[]> {
-      const entries = await readdir(directory, { withFileTypes: true });
-      const nested = await Promise.all(entries.map((entry) => entry.isDirectory()
-        ? stylesheets(join(directory, entry.name))
-        : Promise.resolve(entry.name.endsWith(".css") ? [join(directory, entry.name)] : [])));
-      return nested.flat();
-    }
-    const files = await stylesheets(resolve("src"));
+    // Fonts was unreachable). Fonts are self-hosted; see the next checks.
+    const files = await sourceFiles(resolve("src"), [".css"]);
     expect(files.length).toBeGreaterThan(10);
     for (const file of files) {
       expect(await readFile(file, "utf-8"), file).not.toMatch(/@import\s+(?:url\(\s*)?["']?(?:https?:)?\/\//u);
+    }
+  });
+
+  it("sets the type from this origin, with no third-party font stylesheet or connection", async () => {
+    // The Google Fonts stylesheet was render-blocking and cost a DNS/TLS round
+    // trip to two more hosts before first paint. The same files are served from
+    // src/styles/fonts (self-hosted-font-files.test.ts pins them to Google's).
+    const html = await readFile(resolve("index.html"), "utf-8");
+    expect(html).toContain('<link rel="stylesheet" href="/src/styles/fonts/site.css" />');
+    expect(html).not.toMatch(/rel=["']preconnect["']/u);
+    const files = [...await sourceFiles(resolve("src"), [".ts", ".tsx", ".css", ".html"]), resolve("index.html")]
+      .filter((file) => !/[\\/]__tests__[\\/]/u.test(file));
+    for (const file of files) {
+      expect(await readFile(file, "utf-8"), file).not.toMatch(/fonts\.(?:googleapis|gstatic)\.com/u);
     }
   });
 

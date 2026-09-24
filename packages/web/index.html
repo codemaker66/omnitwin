@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/src/components/shared/Activity.css" />
+    <!-- Fraunces, Newsreader, Geist and Geist Mono: Google Fonts' own files,
+         served from this origin (src/styles/fonts, provenance.json there), so
+         no third-party connection stands between the page and its type. The
+         cockpit and quiz families load with their routes (src/router.tsx).
+         Not preloaded: Chrome holds rendering for font preloads in <head>, and
+         on the front door they delayed first paint and the app's own download
+         more than they saved (measured 2026-09-24, docs/sessions). -->
+    <link rel="stylesheet" href="/src/styles/fonts/site.css" />
     <title>Trades Hall of Glasgow — weddings and events</title>
     <script>
       // The front door's largest paint is its Grand Hall photograph, which the
@@ -60,13 +68,6 @@
         }
       }
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Inter + Playfair Display belong to the cockpit and legacy pages;
-         the router attaches their stylesheet with the first chunk that
-         needs it (cockpitImport in src/router.tsx) so the homepage never
-         render-blocks on fonts it doesn't use. -->
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..700,0..100,0..1;1,9..144,300..700,0..100,0..1&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body, #root { width: 100%; height: 100%; }

@@ -201,10 +201,10 @@ const HOP_MS = 8_000;
 /**
  * Is this URL something the product serves, as opposed to somebody else's CDN?
  *
- * The distinction is load-bearing rather than fussy. index.html pulls Geist and
- * Fraunces from fonts.gstatic.com, and that host is not always reachable — on
- * this machine `GET …/geistmono/v6/…woff2` answers 404 outright — at which
- * point Chromium logs "Failed to load resource: the server responded with a
+ * The distinction is load-bearing rather than fussy. index.html used to pull
+ * Geist and Fraunces from fonts.gstatic.com (they are self-hosted now), and that
+ * host was not always reachable — on this machine `GET …/geistmono/v6/…woff2`
+ * answered 404 outright — at which point Chromium logs "Failed to load resource: the server responded with a
  * status of 404 ()" with no URL in the text. That anonymous line is what
  * reddens twin-walk.spec.ts's viewport tests today, and it says nothing about
  * whether the tour works. A console assertion that a third party can flip is

@@ -237,8 +237,8 @@ const BASE_PANO_WIRE_BYTES = 38_807;
  *
  * This is the Vite DEV graph, because that is what CI serves
  * (.github/workflows/ci.yml runs `pnpm dev`), so it is a relative regression
- * guard on what /tour drags in — NOT a production bundle size. Third-party
- * webfonts are excluded because they are blocked; see the route above.
+ * guard on what /tour drags in — NOT a production bundle size. Webfont files
+ * are excluded because they are blocked; see the route below.
  */
 const APP_BYTES_BUDGET = envNumber("TWIN_APP_BYTES_BUDGET", 21_000_000);
 
@@ -553,11 +553,12 @@ test.beforeEach(async ({ page }) => {
   await page.route(MESH_ROUTE, (route) =>
     route.fulfill({ status: 200, contentType: "model/gltf-binary", body: MESH_BYTES }),
   );
-  // Third-party webfonts are blocked, exactly as in twin-visual.spec.ts: a
-  // CDN's byte count is not this repo's regression signal, and one of its
-  // woff2 URLs answers 404 today, which would make the byte ledger flap.
-  await page.route("https://fonts.googleapis.com/**", (route) => route.abort());
-  await page.route("https://fonts.gstatic.com/**", (route) => route.abort());
+  // Webfonts are blocked, exactly as in twin-visual.spec.ts. The byte budgets
+  // were measured when they came from Google's CDN (whose bytes were not this
+  // repo's regression signal, and one of whose woff2 URLs answered 404, which
+  // made the byte ledger flap); they are now served from this origin, and
+  // blocking them keeps the ledger measuring what the budgets were set on.
+  await page.route(/\.woff2?(?:\?|$)/u, (route) => route.abort());
   await page.addInitScript(() => {
     window.localStorage.setItem("vv-twin-coach-seen", "1");
     const tasks: number[] = [];
