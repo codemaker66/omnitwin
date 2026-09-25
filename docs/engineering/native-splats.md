@@ -25,11 +25,17 @@ environment expanded the scene's depth range. Both native backends map depth
 relative to the near bound before applying `log1p`; negative orthographic near
 planes remain supported. Every source record and the original bounds remain.
 This improves the reproduced streaking but does not make approximate buckets
-an exact depth sort. Three's serial GPU prefix loop also grows with bucket count,
-so camera-motion performance requires renewed measurement for this patch.
+an exact depth sort. The T-634 patch retains those bins and replaces the serial
+GPU prefix scan with 256-bin block scans, a block-total scan and offset addition.
+Reset, histogram, the three prefix stages and scatter form one stable six-node
+compute group. Exact camera position, mesh world transform and renderer identity
+invalidate SH computation; pure camera rotation reuses the same SH contribution.
 
-The WebGL2 path dispatches the same first-party CPU CountingSort to one worker
-per native scene. A snapshot's first order completes before compilation and
+The WebGL2 path dispatches an equivalent direct CPU counting-sort kernel to one
+worker per native scene. It retains the existing floating-point operation order,
+`log1p` buckets and stable order within tied bins, and scatters directly into a
+recycled exchange buffer without allocating GPU-oriented worker storage.
+A snapshot's first order completes before compilation and
 activation. There is one in-flight job and at most one coalesced latest pose
 per resident snapshot; completed orders still apply during continuous motion
 so changing cameras cannot starve the sorter. Position data is copied once
@@ -101,9 +107,23 @@ coarsest available level as the minimum. Motion uses a complete resident coarse
 level. This is whole-level switching, not Spark’s continuous LOD. It cannot meet
 a budget below the smallest source level without another reconstruction.
 
-The full Grand Hall SH3 buffer exceeds WebGPU’s default 128 MiB binding size.
-Canvas negotiates supported larger limits; the host validates the actual limit
-before allocating a complete draw. Do not silently remove SH or points to fit.
+The full Grand Hall SH3 band contains 138.038 MiB of packed coefficients and
+exceeds WebGPU's default 128 MiB binding size. The integrated T-634 patch uses two
+contiguous splat ranges when the band exceeds the actual device binding cap.
+Their typed views share the existing CPU coefficient array; at 6,030,980 splats,
+each range is 69.019 MiB and the largest remaining binding is 92.025 MiB. A shader
+branch selects the original six words before unchanged SH decode and arithmetic.
+Larger-limit devices keep the original single binding. Canvas still negotiates
+supported limits, and the host rejects a complete draw that exceeds the remaining
+bounds. No points, bands or packed precision are removed. This implementation is
+qualified on the recorded RTX 4090: sixteen finite, nonzero actual-GPU cases
+produce bit-exact SH output, and eight full-scene matched views pass the image
+guard with an actual 128 MiB device binding cap versus the normal 256 MiB cap.
+The split application shader uses seven storage bindings instead of six. Maximum
+normalized RGB MAE is 0.019127% and minimum SSIM is 0.999728 at 1600×900 capture
+resolution; the drawing buffer remains 3200×1800. Source hashes remain unchanged
+through qualification. Binding-cap arithmetic and this same-device check do not establish
+available aggregate memory, phone frame rate or reversal of existing SH quantization.
 
 The host retains at most two compiled snapshots for complete motion/detail level
 switching. After a larger draw activates successfully, it releases inactive
@@ -113,26 +133,133 @@ pending or fails; distinct named levels remain eligible for the cache. This
 avoids retaining a nearly complete planner snapshot beside the final scene.
 
 Allocation sizes derived from the pinned source are not measured browser memory.
-For SH3, decoded source attributes require 92 bytes per splat. Each WebGPU
-snapshot additionally retains about 176 bytes per splat in CPU typed-array
-backing: merged attributes 92, tile indices 4, native draw copies 52, sort arrays
-12 (including the eagerly allocated CPU fallback bins), and computed SH
-contributions 16. At 6,030,980 splats, source data plus one snapshot accounts for
-about 1.505 GiB before fixed arrays, JavaScript/renderer overhead, GPU storage,
-render targets and decode temporaries. Each additional million-splat snapshot
-adds about 168 MiB of CPU backing. Compiling a replacement can temporarily exceed
-the two-snapshot cache limit. Disposed arrays become reclaimable only after
-references are released and garbage collection runs. These estimates do not
-establish a measured memory limit or an improvement over Spark; compare post-GC
-and peak memory on the same scene, backend, device and workload.
+For SH3, decoded source attributes require 92 bytes per splat. A WebGPU snapshot
+after its first SH compute retains 172 bytes per splat in CPU typed-array backing
+until that draw's first synchronous CPU sort: merged attributes 92, tile indices
+four, native draw copies 52, sort order/bins eight and computed SH contributions
+16. Add 512 KiB for GPU histogram/offset backing and 2 KiB for the parallel
+prefix's totals/offsets. At 6,030,980 splats, source plus one such snapshot is
+about 1.483 GiB before fixed arrays and omitted overhead; another million-splat
+snapshot adds about 164.032 MiB. This replaces the eager-scratch accounting of
+176 bytes per snapshot splat and about 1.505 GiB for source plus one snapshot.
 
-Each initialized WebGL worker registration additionally retains 28 bytes per
-splat (12 for copied centers, 12 for Three's sort arrays and four for the
-exchange order) plus 1 MiB of fixed histogram/offset arrays. A full Grand Hall
-registration therefore adds about 162 MiB of CPU backing, before worker/runtime
-overhead, transients and delayed garbage collection. Synchronous capture saves
-another four bytes per splat temporarily for each nested scope. Moving sorting
-off the interaction thread is not a memory optimization.
+Lazy CPU scratch avoids `4*N + 8*65536` bytes per native draw: 23.506 MiB at the
+full count. This applies to ordinary WebGPU **and worker-managed WebGL** until
+that draw first invokes synchronous `computeCPU`, notably for a WebGL capture.
+Those arrays then remain retained for its CountingSort lifetime. Worker activity
+does not allocate the separate native draw's scratch. The ordinary WebGL-only
+path evaluates SH in its vertex shader and does not allocate the 16-byte-per-splat
+WebGPU contribution. WebGL PBO uploads create padded texture-sized backing and
+can leave original arrays owned by source/merged geometry, so the WebGPU snapshot
+formula must not be presented as an exact WebGL total.
+
+Each initialized direct WebGL worker registration additionally retains 20 bytes
+per splat: copied centers 12, CPU bins four and one exchange order four, plus
+512 KiB of histogram/offset arrays. At 6,030,980 splats this is 115.532 MiB,
+46.513 MiB below the former CountingSort-backed worker's 162.045 MiB. The exchange
+moves between threads; native draw storage stays attached. Synchronous capture
+temporarily saves another four bytes per splat (23.006 MiB at full count) for
+each nested scope and may allocate the native draw scratch described above.
+
+These are retained-backing estimates, excluding JavaScript/worker overhead, GPU
+storage, render targets, decode transients, PBO duplicates and delayed garbage
+collection. The prefix adds another 2 KiB of GPU storage per sort; the SH3 split
+changes binding shape rather than total coefficient bytes. Replacement compilation
+can exceed the two-snapshot cache limit temporarily. Compare peak and post-GC
+memory on the same scene/backend/device before claiming measured memory savings.
+
+Decoder concurrency now uses browser capability hints only for scheduling. It
+allows one fetch/decode worker when positive reported memory is at most 4 GiB or
+positive integral processor count is at most four. With memory unknown, at most
+six reported processors and explicit coarse-pointer/no-hover input also select
+one worker. Other or unknown combinations retain two. The independent scene sort
+worker is unchanged. This bounds overlapping allocations but may lengthen complete
+loading; it changes no source points, SH, pixels, lighting or quality tier, and
+does not identify physical RAM or qualify a phone.
+
+## 25 September runtime iteration evidence (T-634)
+
+Five qualified candidate comparisons each improved the declared overall time by
+less than 5%, meeting the requested numerical stopping rule. Negative reductions
+are regressions. SH caching, combined prefix/batching and lazy scratch are retained;
+the isolated prefix and isolated batching candidates were rejected. Lazy scratch
+was retained for its conditional memory saving, not as a measured time improvement.
+
+| Candidate | Control ms | Candidate ms | Time reduction | Decision | Streak |
+|---|---:|---:|---:|---|---:|
+| SH position cache | 8.522315 | 8.151885 | +4.346590% | Retain | 1/5 |
+| Parallel prefix alone | 8.151885 | 8.574785 | -5.187765% | Reject | 2/5 |
+| Batched submission alone | 7.941793 | 8.661560 | -9.063033% | Reject | 3/5 |
+| Parallel prefix plus batching | 7.941793 | 7.881662 | +0.757146% | Retain | 4/5 |
+| Lazy native CPU scratch | 7.881662 | 7.956244 | -0.946279% | Retain for memory | 5/5 |
+
+The RTX 4090 / Ryzen 7 3800X / approximately 32 GiB Windows host used Chromium
+147 and Three r186. The complete Grand Hall workload contains 6,030,980 original
+room/environment splats, SH3 and no furniture, at 1600×900 CSS and DPR2
+(3200×1800 drawing buffer), with unchanged Gaussian cutoff/clipping. Each arm has
+three 20-second samples of fixed-position rotation and a translated path after
+five-second warmups. The score equally averages the per-workload median elapsed
+time per GPU-acknowledged complete main render. The driver submits one frame then
+awaits GPU queue completion: CPU submission, GPU execution and acknowledgement
+delivery are included; automatic R3F callbacks, compositor presentation and input
+responsiveness are excluded. It is not interactive FPS or a GPU timestamp duration.
+
+Initial-to-selected point reduction is 6.642214% (8.522315 → 7.956244 ms), not an
+additional iteration. Desktop variability means small gains are not guaranteed;
+run values/ranges are descriptive, not confidence intervals. The direct worker,
+device budget and profiler integration are already present in both baseline arms.
+SH3 splitting was integrated after this sequence and passed separate final
+source-bound correctness and image qualification; the earlier timing result
+does not measure that change.
+
+Every scored pair passes its receipt-bound matched-image guard: normalized RGB
+MAE <1% and Gaussian-window RGB SSIM >0.99 with identical source/count, SH, camera
+and canvas. The cumulative four-view comparison has maximum MAE 0.0193034% and
+minimum SSIM 0.999771831. This bounds numerical still-image differences, not motion
+fidelity, reconstruction accuracy or founder aesthetic acceptance. The retained
+CPU-worker experiment separately measured 225.192 → 210.303 ms mean kernel time
+(6.612%) on 6,030,980 seeded positions, two warmups and ten measured alternating
+rounds; twelve complete permutations were identical. It excludes initialization,
+transport, queue wait and browser frame work and is not a physical-phone result.
+
+Initial DPR1, uncapped-browser, HMR-warning, 1 Hz rAF and failed-network attempts
+remain excluded evidence. Completion-driven render progress can coexist with
+approximately 1 Hz or 240 Hz diagnostic rAF cadence. Later contexts route exact
+Google Fonts URLs to cached real CSS/WOFF2 response bytes with recorded user agent
+and hashes; no empty stylesheet or substituted font is used. Earlier failed
+receipts remain unchanged. Raw evidence, hashes, decisions and the HTML-report
+inputs live outside Git under the local task evidence directory recorded in
+[the 25 September session](../sessions/2026-09-25.md).
+
+## Rolling 20-second profiler
+
+The integrated profiler selects the visible main renderer and records successful
+outer main draws, excluding offscreen captures and skipped pacer requests. Open
+with the development Profiler launcher/backquote key, or opt in to a production
+build using `?profiler=1`. It exposes twelve entries: rendered submission FPS;
+frame interval mean, p95 and p99; CPU submission; GPU render plus compute; draw
+calls; triangles; Gaussian splats; Three-tracked memory; sort duration; and sort
+order age. The display uses a rolling 20-second window and reports unavailable
+values explicitly. GPU timestamps are sampled at most once per second and are
+unavailable on WebGL; queue acknowledgement is never presented as a GPU timestamp.
+Memory is renderer-tracked allocation, not physical VRAM or JavaScript heap.
+
+Pause freezes measurement, Play starts a fresh window, Reset clears the window,
+and Copy report writes JSON with device, renderer, window, metrics and definitions.
+Renderer replacement and return from a hidden tab start a fresh window. Hidden or
+paused profiling does not poll or issue timestamp queries. Sort age is the age of
+the applied request's camera pose and can grow while a stationary view needs no
+new sort; backlog is supplementary diagnostics, not a thirteenth headline stat.
+Final-source local development QA passed the actual 20-second windows, twelve
+readable entries, real clipboard, Pause/Reset/Play, idle aging, collection shutdown
+and SPA renderer cleanup with zero console/page errors. Desktop and phone-viewport
+screenshots were inspected; this is UI evidence, not physical-phone performance.
+The session links the retained receipts. Implementation commit `891da44a` is
+local: final WebGL/capture lifecycle checks, production-flow QA and hosted
+checks, release, live verification and the HTML report remain pending. The Gaussian public WIP hold
+and T-632 reconstruction ownership remain unchanged.
+
+## Historical runtime comparisons
 
 The isolated follow-up before the depth-order recovery, with matching Gaussian
 radius, measured 158.72 versus 134.13 FPS (18.33%) on the RTX 4090. That result
@@ -216,8 +343,10 @@ background timer does not impose a frame-rate ceiling. Failure, replacement and
 disposal cancel owned tickets and cannot wake a removed root. Source readiness
 retains its independent completed-work contract.
 
-Public walkthroughs and the internal capture console retain the full captured
-interior. The generated bundle extent can come from the scanner trajectory; it
+When capture access is enabled, walkthroughs and the internal capture console
+retain the full captured interior. The current public Gaussian WIP hold keeps
+those Gaussian routes unavailable in production. The generated bundle extent
+can come from the scanner trajectory; it
 frames the camera and constrains movement but does not guarantee containment of
 walls or ceiling. Do not apply it as a splat clip volume. Previous Spark layers
 had `editable:false`, so their global `RoomClipBox` was inactive. Enabling that
