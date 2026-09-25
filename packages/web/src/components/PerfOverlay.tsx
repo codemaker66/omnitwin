@@ -65,7 +65,9 @@ export function PerfOverlay(): React.ReactElement | null {
     };
   }, [visible, paused, generation]);
 
-  if (!available && !visible) return null;
+  // Keep ordinary routes unobstructed. Development retains the keyboard
+  // shortcut; the closed touch launcher is reserved for explicit URL opt-in.
+  if (!optedIn && !visible) return null;
   if (!visible) return <button type="button" className="perf-launcher" onClick={() => { usePerfStore.getState().toggle(); }} aria-label="Open performance profiler">Profiler</button>;
 
   const copy = async (): Promise<void> => {

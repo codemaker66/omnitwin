@@ -14,16 +14,43 @@ function setMetrics(overrides: Partial<PerfMetrics> = {}): void {
 }
 
 beforeEach(() => {
+  vi.stubEnv("DEV", true);
+  window.history.replaceState(null, "", "/tour");
   usePerfStore.setState({ metrics: INITIAL_PERF_METRICS, visible: false, paused: false, generation: 0 });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); window.history.replaceState(null, "", "/"); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("PerfOverlay", () => {
-  it("offers a touch-accessible launcher without a closed sampling panel", () => {
+  it("leaves normal development routes unobstructed until Backquote opens the panel", () => {
     const view = render(<PerfOverlay />);
+    expect(view.queryByTestId("perf-overlay")).toBeNull();
+    expect(view.queryByRole("button", { name: "Open performance profiler" })).toBeNull();
+    fireEvent.keyDown(document, { code: TOGGLE_KEY });
+    expect(view.getByTestId("perf-overlay")).toBeDefined();
+    fireEvent.click(view.getByRole("button", { name: "Close performance profiler" }));
+    expect(view.container.childElementCount).toBe(0);
+    fireEvent.keyDown(document, { code: TOGGLE_KEY });
+    fireEvent.keyDown(document, { code: "Escape" });
+    expect(view.container.childElementCount).toBe(0);
+  });
+
+  it.each([true, false])("offers the touch launcher after closing an explicitly opted-in panel (DEV=%s)", (dev) => {
+    vi.stubEnv("DEV", dev);
+    window.history.replaceState(null, "", "/tour?profiler=1");
+    const view = render(<PerfOverlay />);
+    expect(view.getByTestId("perf-overlay")).toBeDefined();
+    fireEvent.click(view.getByRole("button", { name: "Close performance profiler" }));
     expect(view.queryByTestId("perf-overlay")).toBeNull();
     fireEvent.click(view.getByRole("button", { name: "Open performance profiler" }));
     expect(view.getByTestId("perf-overlay")).toBeDefined();
+  });
+
+  it("keeps ordinary production routes absent and ignores the development shortcut", () => {
+    vi.stubEnv("DEV", false);
+    const view = render(<PerfOverlay />);
+    fireEvent.keyDown(document, { code: TOGGLE_KEY });
+    expect(view.container.childElementCount).toBe(0);
+    expect(usePerfStore.getState().visible).toBe(false);
   });
 
   it("displays exactly twelve meaningful statistics, averages and missing values", () => {

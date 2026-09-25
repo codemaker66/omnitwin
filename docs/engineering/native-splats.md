@@ -235,8 +235,10 @@ inputs live outside Git under the local task evidence directory recorded in
 
 The integrated profiler selects the visible main renderer and records successful
 outer main draws, excluding offscreen captures and skipped pacer requests. Open
-with the development Profiler launcher/backquote key, or opt in to a production
-build using `?profiler=1`. It exposes twelve entries: rendered submission FPS;
+with the backquote key in development, or load a development or production URL
+using `?profiler=1`. Only that explicit URL opt-in retains a touch-accessible
+Profiler launcher after closing the panel; ordinary routes have no floating
+launcher. It exposes twelve entries: rendered submission FPS;
 frame interval mean, p95 and p99; CPU submission; GPU render plus compute; draw
 calls; triangles; Gaussian splats; Three-tracked memory; sort duration; and sort
 order age. The display uses a rolling 20-second window and reports unavailable
