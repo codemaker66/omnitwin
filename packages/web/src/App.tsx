@@ -4,7 +4,6 @@ import type { SpaceDimensions } from "@omnitwin/types";
 import { SectionSlider } from "./components/SectionSlider.js";
 import { MeasurementOverlay } from "./components/MeasurementOverlay.js";
 import { PlacementHint } from "./components/PlacementHint.js";
-import { PerfOverlay } from "./components/PerfOverlay.js";
 import { MarkupPersistence } from "./components/MarkupPersistence.js";
 import { ChairCountDialog } from "./components/ChairCountDialog.js";
 import { CameraReferenceComposer, CameraReferenceHeightSwitch } from "./components/CameraReferenceComposer.js";
@@ -156,7 +155,6 @@ export function App({ compactDesktop = false }: { readonly compactDesktop?: bool
           useChairDialogStore.getState().clearDialog();
         }}
       />}
-      {import.meta.env.DEV && <PerfOverlay />}
     </div>
   );
 }

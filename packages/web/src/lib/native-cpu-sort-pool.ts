@@ -12,19 +12,39 @@ export interface NativeCpuSortWorker {
 export interface NativeCpuSortHandle {
   readonly firstSort: Promise<void>;
   readonly request: (parameters: GaussianSplatCpuSortRequest) => void;
+  /** Main-thread pose age, measured worker compute duration and queued work. */
+  readonly stats: (now: number) => NativeCpuSortStats | null;
   dispose(): void;
 }
+
+export interface NativeCpuSortStats {
+  readonly sortTimeMs: number | null;
+  readonly sortAgeMs: number | null;
+  /** This registration's in-flight request plus its coalesced pending pose. */
+  readonly sortBacklog: number;
+}
+
+interface PendingSort {
+  readonly parameters: GaussianSplatCpuSortRequest;
+  /** performance.now() in the main thread; never compared with worker clocks. */
+  readonly requestedAtMs: number;
+}
+
+/** Existing consumers may return nothing; guarded scenes return acceptance. */
+type ApplySortOrder = ((order: Uint32Array) => void) | ((order: Uint32Array) => boolean);
 
 interface Registration {
   readonly id: number;
   readonly centers: Float32Array;
-  readonly apply: (order: Uint32Array) => void;
+  readonly apply: ApplySortOrder;
   readonly error: (error: Error) => void;
   readonly resolve: () => void;
   readonly reject: (error: Error) => void;
   initialized: boolean;
-  pending: GaussianSplatCpuSortRequest | null;
+  pending: PendingSort | null;
   recycle: Uint32Array | undefined;
+  appliedRequestAtMs: number | null;
+  durationMs: number | null;
 }
 
 function responseFrom(value: unknown): NativeCpuSortResponse {
@@ -34,7 +54,12 @@ function responseFrom(value: unknown): NativeCpuSortResponse {
   }
   if (value.type === "sorted" && "order" in value && value.order instanceof Uint32Array
     && typeof value.geometryId === "number" && typeof value.requestId === "number") {
-    return { type: "sorted", geometryId: value.geometryId, requestId: value.requestId, order: value.order };
+    const durationMs: unknown = "durationMs" in value ? value.durationMs : undefined;
+    if (durationMs !== undefined && (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0)) {
+      throw new Error("Native sort worker returned an invalid duration");
+    }
+    return { type: "sorted", geometryId: value.geometryId, requestId: value.requestId, order: value.order,
+      ...(typeof durationMs === "number" ? { durationMs } : {}) };
   }
   if (value.type === "error" && "message" in value && typeof value.message === "string"
     && typeof value.geometryId === "number" && typeof value.requestId === "number") {
@@ -50,14 +75,17 @@ export class NativeCpuSortPool {
   private worker: NativeCpuSortWorker | null = null;
   private nextGeometry = 0;
   private nextRequest = 0;
-  private inflight: { readonly registration: Registration; readonly requestId: number } | null = null;
+  private inflight: { readonly registration: Registration; readonly requestId: number; readonly requestedAtMs: number } | null = null;
   private timeout: ReturnType<typeof setTimeout> | null = null;
   private failure: Error | null = null;
   private disposed = false;
 
-  constructor(private readonly createWorker: () => NativeCpuSortWorker = () => new Worker(new URL("./native-cpu-sort-worker.ts", import.meta.url), { type: "module" })) {}
+  constructor(
+    private readonly createWorker: () => NativeCpuSortWorker = () => new Worker(new URL("./native-cpu-sort-worker.ts", import.meta.url), { type: "module" }),
+    private readonly now: () => number = () => performance.now(),
+  ) {}
 
-  register(centers: Float32Array, apply: (order: Uint32Array) => void, onError: (error: Error) => void): NativeCpuSortHandle {
+  register(centers: Float32Array, apply: ApplySortOrder, onError: (error: Error) => void): NativeCpuSortHandle {
     if (this.disposed || this.failure !== null) throw this.failure ?? new Error("Native sort worker is disposed");
     if (this.registrations.size >= NATIVE_CPU_SORT_GEOMETRY_LIMIT) throw new Error("Native sort resident limit exceeded");
     if (centers.length === 0 || centers.length % 3 !== 0) throw new Error("Native sort positions are invalid");
@@ -67,15 +95,24 @@ export class NativeCpuSortPool {
     // promise still rejects for that await, without an unhandled-rejection race.
     void firstSort.catch(() => undefined);
     const registration: Registration = { id: ++this.nextGeometry, centers, apply, error: onError, resolve, reject,
-      initialized: false, pending: null, recycle: undefined };
+      initialized: false, pending: null, recycle: undefined, appliedRequestAtMs: null, durationMs: null };
     this.registrations.set(registration.id, registration);
     return {
       firstSort,
       request: (parameters) => {
         if (this.registrations.get(registration.id) !== registration || this.disposed || this.failure !== null) return;
         if (!validCpuSortParameters(parameters)) { this.fail(new Error("Native sort camera parameters are invalid")); return; }
-        registration.pending = { ...parameters, modelViewMatrix: [...parameters.modelViewMatrix] };
+        registration.pending = { parameters: { ...parameters, modelViewMatrix: [...parameters.modelViewMatrix] }, requestedAtMs: this.now() };
         this.pump();
+      },
+      stats: (now) => {
+        if (this.registrations.get(registration.id) !== registration || this.disposed || this.failure !== null) return null;
+        const requestedAt = registration.appliedRequestAtMs;
+        return {
+          sortTimeMs: registration.durationMs,
+          sortAgeMs: requestedAt !== null && Number.isFinite(now) && Number.isFinite(requestedAt) && now >= requestedAt ? now - requestedAt : null,
+          sortBacklog: (this.inflight?.registration === registration ? 1 : 0) + (registration.pending !== null ? 1 : 0),
+        };
       },
       dispose: () => {
         if (!this.registrations.delete(registration.id)) return;
@@ -93,7 +130,7 @@ export class NativeCpuSortPool {
     if (this.inflight !== null || this.disposed || this.failure !== null) return;
     const registration = [...this.registrations.values()].find((entry) => entry.pending !== null);
     if (registration?.pending === null || registration === undefined) return;
-    const parameters = registration.pending;
+    const { parameters, requestedAtMs } = registration.pending;
     registration.pending = null;
     try {
       if (this.worker === null) {
@@ -103,7 +140,7 @@ export class NativeCpuSortPool {
         this.worker.onmessageerror = () => { this.fail(new Error("Native sort worker response could not be read")); };
       }
       const requestId = ++this.nextRequest;
-      this.inflight = { registration, requestId };
+      this.inflight = { registration, requestId, requestedAtMs };
       const centers = registration.initialized ? undefined : registration.centers.slice();
       const recycle = registration.recycle;
       registration.recycle = undefined;
@@ -133,8 +170,14 @@ export class NativeCpuSortPool {
         if (response.order.length !== registration.centers.length / 3) throw new Error("Native sort worker returned an incomplete order");
         // Apply completed work even when a newer pose is pending; otherwise
         // continuous input can starve sorting indefinitely. The pending pose wins next.
-        registration.apply(response.order);
+        const applied = registration.apply(response.order);
         if (this.registrations.get(registration.id) === registration) {
+          // Stale scene/version guards may refuse an order. Preserve the prior
+          // displayed pose's age without changing readiness or buffer scheduling.
+          if (applied !== false) {
+            registration.appliedRequestAtMs = job.requestedAtMs;
+            registration.durationMs = response.durationMs ?? null;
+          }
           registration.recycle = response.order;
           registration.resolve();
           this.registrations.delete(registration.id);

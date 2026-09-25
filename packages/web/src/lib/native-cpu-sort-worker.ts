@@ -19,8 +19,10 @@ scope.onmessage = (event: MessageEvent<NativeCpuSortCommand>): void => {
       kernel = new NativeCpuSortKernel(message.centers);
       kernels.set(message.geometryId, kernel);
     }
+    const startedAt = performance.now();
     const order = kernel.compute(message.parameters, message.recycle);
-    const response: NativeCpuSortResponse = { type: "sorted", geometryId: message.geometryId, requestId: message.requestId, order };
+    const durationMs = performance.now() - startedAt;
+    const response: NativeCpuSortResponse = { type: "sorted", geometryId: message.geometryId, requestId: message.requestId, order, durationMs };
     scope.postMessage(response, { transfer: [order.buffer] });
   } catch (reason: unknown) {
     const response: NativeCpuSortResponse = { type: "error", geometryId: message.geometryId,

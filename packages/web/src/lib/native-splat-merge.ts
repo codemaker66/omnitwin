@@ -32,6 +32,13 @@ export function nativeSplatCount(geometry: BufferGeometry): number {
   return count;
 }
 
+/** Mirrors GaussianSplat's contiguous SH3 range split; every value is retained. */
+export function nativeSplatLargestStorageBuffer(count: number, degree: number, storageLimit: number | null): number {
+  const shBytes = count * (SH_WORDS[degree] ?? 0) * 4;
+  const splitSh3 = degree === 3 && storageLimit !== null && shBytes > storageLimit;
+  return splitSh3 ? Math.max(count * 16, Math.ceil(count / 2) * 24) : Math.max(count * 16, shBytes);
+}
+
 /** One merged draw is essential: separate native objects sort independently. */
 export function mergeNativeSplatSources(
   sources: readonly NativeSplatSource[],
@@ -49,8 +56,7 @@ export function mergeNativeSplatSources(
       if (source.geometry.hasAttribute(`sphericalHarmonics${String(band)}`)) degree = Math.max(degree, band);
     }
   }
-  // SH3 is 24 bytes per element; other native storage buffers are at most 16.
-  const largestBuffer = count * Math.max(16, (SH_WORDS[degree] ?? 0) * 4);
+  const largestBuffer = nativeSplatLargestStorageBuffer(count, degree, storageLimit);
   if (storageLimit !== null && largestBuffer > storageLimit) {
     throw new Error(`This complete splat level needs a ${String(Math.ceil(largestBuffer / 1048576))} MiB GPU buffer; this device supports ${String(Math.floor(storageLimit / 1048576))} MiB. Select a coarser complete capture level.`);
   }

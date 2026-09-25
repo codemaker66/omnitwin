@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { usePerfStore, type PerfMetrics } from "../perf-store.js";
+import { INITIAL_PERF_METRICS, usePerfStore, type PerfMetrics } from "../perf-store.js";
 
 const MOCK_METRICS: PerfMetrics = {
+  ...INITIAL_PERF_METRICS,
   fps: 60,
   frameTimeMs: 16.67,
   drawCalls: 42,
@@ -10,6 +11,7 @@ const MOCK_METRICS: PerfMetrics = {
 };
 
 const DEGRADED_METRICS: PerfMetrics = {
+  ...INITIAL_PERF_METRICS,
   fps: 18,
   frameTimeMs: 55.5,
   drawCalls: 200,
@@ -19,7 +21,7 @@ const DEGRADED_METRICS: PerfMetrics = {
 
 beforeEach(() => {
   usePerfStore.setState({
-    metrics: { fps: 0, frameTimeMs: 0, drawCalls: 0, triangles: 0, rating: "good" },
+    metrics: { ...INITIAL_PERF_METRICS },
     visible: false,
   });
 });

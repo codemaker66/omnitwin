@@ -38,7 +38,7 @@ patchedDependencies:
     hash: bnjhbpksuwrmlss3xxrdaok5we
     path: patches/@react-three__drei@9.122.0.patch
   three@0.186.0:
-    hash: lwhntbhn6s7cj6d3beo45riw7e
+    hash: dhgqvimpcmeax453ahqkalefgq
     path: patches/three@0.186.0.patch
 
 importers:
@@ -257,10 +257,10 @@ importers:
         version: 10.0.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@react-three/drei':
         specifier: 9.122.0
-        version: 9.122.0(patch_hash=bnjhbpksuwrmlss3xxrdaok5we)(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)))(@types/react@18.3.18)(@types/three@0.186.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))(use-sync-external-store@1.6.0(react@18.3.1))
+        version: 9.122.0(patch_hash=bnjhbpksuwrmlss3xxrdaok5we)(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)))(@types/react@18.3.18)(@types/three@0.186.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))(use-sync-external-store@1.6.0(react@18.3.1))
       '@react-three/fiber':
         specifier: 8.18.0
-        version: 8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+        version: 8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       '@sentry/react':
         specifier: 10.42.0
         version: 10.42.0(react@18.3.1)
@@ -284,7 +284,7 @@ importers:
         version: 7.18.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       three:
         specifier: 0.186.0
-        version: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+        version: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
       zod:
         specifier: 3.24.2
         version: 3.24.2
@@ -327,7 +327,7 @@ importers:
         version: 20.9.0
       three-stdlib:
         specifier: 2.36.1
-        version: 2.36.1(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+        version: 2.36.1(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       typescript:
         specifier: 5.7.3
         version: 5.7.3
@@ -5423,10 +5423,10 @@ snapshots:
 
   '@mediapipe/tasks-vision@0.10.17': {}
 
-  '@monogrid/gainmap-js@3.4.0(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))':
+  '@monogrid/gainmap-js@3.4.0(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))':
     dependencies:
       promise-worker-transferable: 1.0.4
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
   '@neondatabase/serverless@0.10.4':
     dependencies:
@@ -5667,15 +5667,15 @@ snapshots:
       '@react-spring/types': 9.7.5
       react: 18.3.1
 
-  '@react-spring/three@9.7.5(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))':
+  '@react-spring/three@9.7.5(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))':
     dependencies:
       '@react-spring/animated': 9.7.5(react@18.3.1)
       '@react-spring/core': 9.7.5(react@18.3.1)
       '@react-spring/shared': 9.7.5(react@18.3.1)
       '@react-spring/types': 9.7.5
-      '@react-three/fiber': 8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+      '@react-three/fiber': 8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       react: 18.3.1
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
   '@react-spring/types@10.0.3': {}
 
@@ -5690,30 +5690,30 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
-  '@react-three/drei@9.122.0(patch_hash=bnjhbpksuwrmlss3xxrdaok5we)(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)))(@types/react@18.3.18)(@types/three@0.186.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))(use-sync-external-store@1.6.0(react@18.3.1))':
+  '@react-three/drei@9.122.0(patch_hash=bnjhbpksuwrmlss3xxrdaok5we)(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)))(@types/react@18.3.18)(@types/three@0.186.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))(use-sync-external-store@1.6.0(react@18.3.1))':
     dependencies:
       '@babel/runtime': 7.28.6
       '@mediapipe/tasks-vision': 0.10.17
-      '@monogrid/gainmap-js': 3.4.0(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
-      '@react-spring/three': 9.7.5(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
-      '@react-three/fiber': 8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+      '@monogrid/gainmap-js': 3.4.0(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
+      '@react-spring/three': 9.7.5(@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
+      '@react-three/fiber': 8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       '@use-gesture/react': 10.3.1(react@18.3.1)
-      camera-controls: 2.10.1(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+      camera-controls: 2.10.1(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       cross-env: 7.0.3
       detect-gpu: 5.0.70
       glsl-noise: 0.0.0
       hls.js: 1.6.15
-      maath: 0.10.8(@types/three@0.186.0)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
-      meshline: 3.3.1(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+      maath: 0.10.8(@types/three@0.186.0)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
+      meshline: 3.3.1(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       react: 18.3.1
       react-composer: 5.0.3(react@18.3.1)
-      stats-gl: 2.4.2(@types/three@0.186.0)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+      stats-gl: 2.4.2(@types/three@0.186.0)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       stats.js: 0.17.0
       suspend-react: 0.1.3(react@18.3.1)
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
-      three-mesh-bvh: 0.7.8(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
-      three-stdlib: 2.36.1(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
-      troika-three-text: 0.52.4(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
+      three-mesh-bvh: 0.7.8(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
+      three-stdlib: 2.36.1(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
+      troika-three-text: 0.52.4(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       tunnel-rat: 0.1.2(@types/react@18.3.18)(react@18.3.1)
       utility-types: 3.11.0
       zustand: 5.0.3(@types/react@18.3.18)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
@@ -5725,7 +5725,7 @@ snapshots:
       - immer
       - use-sync-external-store
 
-  '@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))':
+  '@react-three/fiber@8.18.0(@types/react@18.3.18)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))':
     dependencies:
       '@babel/runtime': 7.28.6
       '@types/react-reconciler': 0.26.7
@@ -5738,7 +5738,7 @@ snapshots:
       react-use-measure: 2.1.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       scheduler: 0.21.0
       suspend-react: 0.1.3(react@18.3.1)
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
       zustand: 3.7.2(react@18.3.1)
     optionalDependencies:
       react-dom: 18.3.1(react@18.3.1)
@@ -6749,9 +6749,9 @@ snapshots:
 
   camelcase@5.3.1: {}
 
-  camera-controls@2.10.1(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  camera-controls@2.10.1(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
   caniuse-lite@1.0.30001810: {}
 
@@ -7498,10 +7498,10 @@ snapshots:
 
   lz-string@1.5.0: {}
 
-  maath@0.10.8(@types/three@0.186.0)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  maath@0.10.8(@types/three@0.186.0)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
       '@types/three': 0.186.0
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
   magic-string@0.30.21:
     dependencies:
@@ -7515,9 +7515,9 @@ snapshots:
 
   meriyah@6.1.4: {}
 
-  meshline@3.3.1(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  meshline@3.3.1(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
   meshoptimizer@1.1.1: {}
 
@@ -8198,10 +8198,10 @@ snapshots:
       '@stablelib/base64': 1.0.1
       fast-sha256: 1.3.0
 
-  stats-gl@2.4.2(@types/three@0.186.0)(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  stats-gl@2.4.2(@types/three@0.186.0)(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
       '@types/three': 0.186.0
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
   stats.js@0.17.0: {}
 
@@ -8273,11 +8273,11 @@ snapshots:
     dependencies:
       real-require: 0.2.0
 
-  three-mesh-bvh@0.7.8(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  three-mesh-bvh@0.7.8(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
-  three-stdlib@2.36.1(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  three-stdlib@2.36.1(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
       '@types/draco3d': 1.4.10
       '@types/offscreencanvas': 2019.7.3
@@ -8285,9 +8285,9 @@ snapshots:
       draco3d: 1.5.7
       fflate: 0.6.11
       potpack: 1.0.2
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
-  three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e): {}
+  three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq): {}
 
   tiny-inflate@1.0.3: {}
 
@@ -8312,17 +8312,17 @@ snapshots:
 
   tr46@0.0.3: {}
 
-  troika-three-text@0.52.4(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  troika-three-text@0.52.4(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
       bidi-js: 1.0.3
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
-      troika-three-utils: 0.52.4(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e))
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
+      troika-three-utils: 0.52.4(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq))
       troika-worker-utils: 0.52.0
       webgl-sdf-generator: 1.1.1
 
-  troika-three-utils@0.52.4(three@0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)):
+  troika-three-utils@0.52.4(three@0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)):
     dependencies:
-      three: 0.186.0(patch_hash=lwhntbhn6s7cj6d3beo45riw7e)
+      three: 0.186.0(patch_hash=dhgqvimpcmeax453ahqkalefgq)
 
   troika-worker-utils@0.52.0: {}
 
