@@ -18,7 +18,7 @@ import {
   type PerfRating,
 } from "../perf.js";
 import type { DeviceTier } from "../device-tier.js";
-import { usePerfStore } from "../../stores/perf-store.js";
+import { INITIAL_PERF_METRICS, usePerfStore } from "../../stores/perf-store.js";
 
 // ---------------------------------------------------------------------------
 // getPerfBudget
@@ -356,7 +356,7 @@ describe("TOGGLE_KEY", () => {
 describe("usePerfStore", () => {
   beforeEach(() => {
     usePerfStore.setState({
-      metrics: { fps: 0, frameTimeMs: 0, drawCalls: 0, triangles: 0, rating: "good" },
+      metrics: { ...INITIAL_PERF_METRICS },
       visible: false,
     });
   });

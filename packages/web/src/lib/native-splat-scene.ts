@@ -8,6 +8,13 @@ import { NativeCpuSortPool, type NativeCpuSortHandle } from "./native-cpu-sort-p
 
 type NativeGaussianObject = GaussianSplat;
 
+export interface NativeScenePerfStats {
+  readonly splats: number;
+  readonly sortTimeMs: number | null;
+  readonly sortAgeMs: number | null;
+  readonly sortBacklog: number | null;
+}
+
 export interface NativeSourceRegistration {
   readonly anchor: Object3D;
   readonly opacity: () => number;
@@ -88,6 +95,20 @@ export class NativeSplatScene {
   private cpuSortPool: NativeCpuSortPool | null = null;
 
   constructor(private readonly scene: Scene, private readonly createCpuSortPool: () => NativeCpuSortPool = () => new NativeCpuSortPool()) {}
+
+  /** Inspect only the active draw; no source traversal, sorting or allocation of
+   * another runtime. GPU sorting has no completed CPU-worker telemetry. */
+  perfStats(now: number): NativeScenePerfStats | null {
+    const active = this.active;
+    if (active === null || !active.mesh.visible || active.sortFailed || active.completionFailed) return null;
+    const stats = active.cpuSort?.stats(now) ?? null;
+    return {
+      splats: active.mesh.geometry.instanceCount,
+      sortTimeMs: stats?.sortTimeMs ?? null,
+      sortAgeMs: stats?.sortAgeMs ?? null,
+      sortBacklog: stats?.sortBacklog ?? null,
+    };
+  }
 
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
     if (this.renderer !== null && this.renderer !== renderer) throw new Error("A native splat scene must have one active renderer");
@@ -295,7 +316,8 @@ export class NativeSplatScene {
   }
 
   private createSnapshot(sources: readonly ReadySource[], key: string, renderer: WebGPURenderer): Snapshot {
-    const merged = mergeNativeSplatSources(sources.map((source) => ({ geometry: source.geometry, matrix: source.matrix, maxSh: source.maxSh() })), nativeRendererStorageLimit(renderer));
+    const storageLimit = nativeRendererStorageLimit(renderer);
+    const merged = mergeNativeSplatSources(sources.map((source) => ({ geometry: source.geometry, matrix: source.matrix, maxSh: source.maxSh() })), storageLimit);
     const tileAttribute = new StorageBufferAttribute(merged.tileIndices, 1);
     const tileIds = storage(tileAttribute, "uint", merged.tileIndices.length).toReadOnly();
     if ("isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true) tileIds.setPBO(true);
@@ -309,6 +331,7 @@ export class NativeSplatScene {
     let mesh: NativeGaussianObject;
     try {
       mesh = new GaussianSplat(merged.geometry, {
+        maxStorageBufferBindingSize: storageLimit ?? Infinity,
         kernelRadius: this.kernelRadius,
         minSortIntervalMs: this.minSortIntervalMs,
         colorSpace: SRGBColorSpace,
@@ -340,9 +363,10 @@ export class NativeSplatScene {
         if (!(positions instanceof Float32Array)) throw new Error("Native worker sort requires Float32 centers");
         cpuSort = this.cpuSortPool.register(positions, (order) => {
           if (this.hosts === 0 || this.renderer !== renderer || key !== this.key(sources)
-            || sources.some((source) => this.sources.get(source.anchor.uuid) !== source)) return;
+            || sources.some((source) => this.sources.get(source.anchor.uuid) !== source)) return false;
           mesh.applySortOrder(order);
           this.invalidate();
+          return true;
         }, (error) => {
           snapshot.sortFailed = true;
           mesh.visible = false;
@@ -521,6 +545,11 @@ export class NativeSplatScene {
 }
 
 const runtimes = new WeakMap<Scene, NativeSplatScene>();
+/** Profiling must never construct a native runtime for an unrelated scene. */
+export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerfStats | null {
+  return runtimes.get(scene)?.perfStats(now) ?? null;
+}
+
 export function nativeSplatScene(scene: Scene): NativeSplatScene {
   let runtime = runtimes.get(scene);
   if (runtime === undefined) { runtime = new NativeSplatScene(scene); runtimes.set(scene, runtime); }

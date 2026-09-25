@@ -14,6 +14,8 @@ export type NativeCpuSortResponse = {
   readonly geometryId: number;
   readonly requestId: number;
   readonly order: Uint32Array;
+  /** Worker kernel compute time only; omitted by older worker/test producers. */
+  readonly durationMs?: number;
 } | {
   readonly type: "error";
   readonly geometryId: number;

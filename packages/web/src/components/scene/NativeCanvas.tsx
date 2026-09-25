@@ -4,11 +4,17 @@ import {
 } from "react";
 import { Canvas, useFrame, type CanvasProps, type RootState } from "@react-three/fiber";
 import { WebGPURenderer } from "three/webgpu";
+import { Scene } from "three";
 import { ActivityStatus } from "../shared/Activity.js";
 import { installNativeMaterialClipping } from "../../lib/native-material-clipping.js";
 import { registerNativeSceneRenderer, withNativeRenderScope } from "../../lib/native-renderer.js";
 import { createNativeFramePacer, type NativeFramePacer } from "../../lib/native-frame-pacer.js";
 import { createNativeGpuWorkTicket } from "../../lib/native-gpu-completion.js";
+import { nativeScenePerfStats } from "../../lib/native-splat-scene.js";
+import {
+  beginGpuProfile, endGpuProfile, recordRenderedFrame, registerProfilerRenderer,
+  shouldProfileFrames, type GpuProfileToken,
+} from "../../lib/perf-runtime.js";
 import {
   createNativeRendererLifecycle, nativeRendererError, type NativeRendererLifecycle,
 } from "../../lib/native-renderer-lifecycle.js";
@@ -48,6 +54,8 @@ function isNativeGraphicsApi(value: unknown): value is NativeGraphicsApi {
 function hasNativeBackendDisposal(backend: object): backend is { dispose(): Promise<void> | void } {
   return "dispose" in backend && typeof backend.dispose === "function";
 }
+
+function isProfilerScene(value: unknown): value is Scene { return value instanceof Scene; }
 
 interface FailureBoundaryProps {
   readonly children: ReactNode;
@@ -116,19 +124,52 @@ export function NativeCanvas({
     };
     const native = new WebGPURenderer(parameters);
     const draw = native.render.bind(native);
+    let renderDepth = 0;
+    const isCurrentRenderer = (): boolean => mounted.current && renderer.current === native && failedRenderer.current !== native;
     native.render = (...args: Parameters<WebGPURenderer["render"]>): ReturnType<WebGPURenderer["render"]> => {
       const offscreen = native.getRenderTarget() !== null;
       if (!mounted.current || renderer.current !== native || failedRenderer.current === native) {
         if (offscreen) throw new Error("The native renderer is no longer available for capture");
         return;
       }
+      let startedAt: number | null = null;
+      let gpuProfile: GpuProfileToken | null = null;
+      if (!offscreen && renderDepth === 0) {
+        try {
+          if (shouldProfileFrames(native)) {
+            gpuProfile = beginGpuProfile(native, performance.now());
+            startedAt = performance.now();
+          }
+        } catch { /* Diagnostics must never prevent the scene draw. */ }
+      }
+      let successful = false;
+      renderDepth += 1;
       try {
         withNativeRenderScope(native, args[0], args[1], () => { draw(...args); });
+        successful = isCurrentRenderer();
       } catch (cause) {
         // Capture owns its failure result; swallowing this would export a blank
         // image as success. Main-frame errors instead use the recoverable UI.
         if (offscreen) throw cause;
         fail(nativeRendererError(cause));
+      } finally {
+        renderDepth -= 1;
+        if (startedAt !== null) {
+          try {
+            if (successful) {
+              const finishedAt = performance.now();
+              const stats = isProfilerScene(args[0]) ? nativeScenePerfStats(args[0], finishedAt) : null;
+              recordRenderedFrame({
+                timestampMs: startedAt, cpuSubmitMs: finishedAt - startedAt,
+                drawCalls: native.info.render.drawCalls, triangles: native.info.render.triangles,
+                rendererBytes: native.info.memory.total, ...stats,
+              }, native);
+            }
+          } catch { /* Missing diagnostics cannot turn a successful draw into an error. */ }
+        }
+        if (gpuProfile !== null) {
+          try { endGpuProfile(gpuProfile, successful); } catch { /* Preserve renderer failure ownership. */ }
+        }
       }
     };
     let releaseDevice: (() => void) | null = null;
@@ -199,10 +240,12 @@ export function NativeCanvas({
     const initializeNative = initialize.current;
     const disposeNative = dispose.current;
     let unregisterScene: (() => void) | null = null;
+    let unregisterProfiler: (() => void) | null = null;
     lifecycle.current = createNativeRendererLifecycle({
       initialize: async () => { if (initializeNative !== null) await initializeNative(); },
       dispose: async (initialized) => {
         unregisterScene?.();
+        try { unregisterProfiler?.(); } catch { /* Profiling must not prevent GPU resource disposal. */ }
         await disposeNative?.(initialized);
       },
       onReady: () => {
@@ -215,6 +258,10 @@ export function NativeCanvas({
           }
           callbacks.current.onCreated?.(state);
           unregisterScene = registerNativeSceneRenderer(state.scene, native);
+          try {
+            unregisterProfiler = registerProfilerRenderer(native, native.domElement,
+              "isWebGPUBackend" in backend ? "webgpu" : "webgl2");
+          } catch { /* The optional profiler does not own renderer readiness. */ }
           framePacer.current?.pacer.dispose();
           const current = (): boolean => mounted.current && renderer.current === native
             && failedRenderer.current !== native;

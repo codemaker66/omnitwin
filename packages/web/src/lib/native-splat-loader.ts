@@ -1,6 +1,7 @@
 import { nativeValue } from "./native-splat-data.js";
 import type { BufferGeometry } from "three";
 import { nativeDataToGeometry, type NativeSplatData } from "./native-splat-data.js";
+import { browserNativeWorkBudget } from "./native-work-budget.js";
 export interface NativeSplatProgress {
     readonly loaded: number;
     readonly total: number | null;
@@ -22,7 +23,7 @@ type WorkerResult = {
 };
 const queue: (() => void)[] = [];
 let running = 0;
-function pump(): void { while (running < 2 && queue.length > 0)
+function pump(): void { while (running < browserNativeWorkBudget().decodeWorkers && queue.length > 0)
     nativeValue(queue.shift())(); }
 /** Native Three geometry, with source count/degree in userData.nativeSplat. */
 export function loadNativeSplatGeometry(url: string, options: NativeSplatLoadOptions = {}): Promise<BufferGeometry> {
