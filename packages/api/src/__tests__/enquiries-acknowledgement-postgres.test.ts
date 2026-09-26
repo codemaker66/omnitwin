@@ -4,6 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { VENUE_ACCESS_ENQUIRY_TYPE } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
 import { enquiryAcknowledgement, formatEnGbDate } from "../services/email-templates.js";
@@ -270,6 +271,44 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
       expect(row.action_path).toBe("/dashboard?view=enquiries");
     }
     expect(enquiryId).toMatch(/^[0-9a-f-]{36}$/u);
+  });
+
+  // The workspace gate's "Request access" rides this route so the ask reaches
+  // the inbox, but the person wants to be let into the venue's workspace, not
+  // to book a room. The booking acknowledgement ("we will talk you through
+  // dates, rooms and costs", "Occasion: venue-access") would be untrue to
+  // them, so it is not sent, and the team is told what actually arrived.
+  it("answers a venue-access request as one, not as a room booking", async () => {
+    const requester = "uninvited@example.test";
+    const res = await server.inject({
+      method: "POST",
+      url: "/public/enquiries",
+      payload: {
+        venueSlug: VENUE_SLUG,
+        email: requester,
+        eventType: VENUE_ACCESS_ENQUIRY_TYPE,
+        message: `Venue access request from ${requester}.`,
+      },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
+
+    const notifications = await pool.query<{ audience_role: string; title: string; body: string }>(
+      "SELECT audience_role, title, body FROM event_plan_notifications ORDER BY audience_role");
+    expect(notifications.rows.map((row) => row.audience_role)).toContain("admin");
+    for (const row of notifications.rows) {
+      expect(row.title).toBe("Access request");
+      expect(row.body).toBe(`${requester} asked for access to Trades Hall Glasgow's Venviewer workspace. Open Enquiries to read the request.`);
+    }
+
+    // sendEmailAsync queues on setImmediate; give a queued send ample time to
+    // land before asserting that none was queued at all.
+    await new Promise((resolve) => { setTimeout(resolve, 600); });
+    const sent = await pool.query<{ count: string }>(
+      "SELECT count(*) AS count FROM email_sends WHERE idempotency_key = $1 OR recipient = $2",
+      [`enquiry-acknowledged:${enquiryId}`, requester],
+    );
+    expect(sent.rows[0]?.count).toBe("0");
   });
 
   it("does not acknowledge the same enquiry twice", async () => {

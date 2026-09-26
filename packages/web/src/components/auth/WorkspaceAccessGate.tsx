@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useClerk, useUser } from "@clerk/react";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { TRADES_HALL_ENQUIRY_VENUE_SLUG, VENUE_ACCESS_ENQUIRY_TYPE } from "@omnitwin/types";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
@@ -27,7 +27,7 @@ function RequestAccessForm({ email }: { readonly email: string }): React.ReactEl
       await submitGuestEnquiry({
         venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
         email,
-        eventType: "venue-access",
+        eventType: VENUE_ACCESS_ENQUIRY_TYPE,
         message: note.trim().length > 0
           ? `Venue access request from ${email}. ${note.trim()}`
           : `Venue access request from ${email}.`,
