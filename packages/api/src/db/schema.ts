@@ -3387,11 +3387,26 @@ export const turnaroundRules = pgTable("turnaround_rules", {
   name: varchar("name", { length: 200 }).notNull(),
   minutes: integer("minutes").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  /** When a person last saved the rule (migration 0076). Null for a rule
+   *  nobody has confirmed, such as the seed's demo values. */
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  updatedBy: uuid("updated_by"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("turnaround_rules_venue_space_idx").on(table.venueId, table.spaceId),
+  foreignKey({ columns: [table.updatedBy], foreignColumns: [users.id], name: "turnaround_rules_updated_by_fk" })
+    .onDelete("set null"),
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "turnaround_rules_space_venue_fk" }),
+  check("turnaround_rules_minutes_range", sql`${table.minutes} >= 0 AND ${table.minutes} <= 1440`),
+  uniqueIndex("turnaround_rules_one_live_rule")
+    .on(
+      table.venueId,
+      sql`COALESCE(${table.spaceId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      sql`COALESCE(${table.eventType}, '')`,
+    )
+    .where(sql`${table.isActive} AND ${table.deletedAt} IS NULL`),
 ]);
 
 // ---------------------------------------------------------------------------

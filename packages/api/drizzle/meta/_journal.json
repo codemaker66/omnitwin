@@ -519,6 +519,13 @@
       "when": 1790431200000,
       "tag": "0075_workspace_membership_role_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1790434800000,
+      "tag": "0076_turnaround_rules_editable",
+      "breakpoints": true
     }
   ]
 }
