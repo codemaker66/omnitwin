@@ -525,7 +525,7 @@ export function HallkeeperPage(): React.ReactElement {
 function SheetNavigation(): React.ReactElement {
   return <nav className="hk-top-nav" aria-label="Hallkeeper navigation">
     <Link to="/hallkeeper/today" className="hk-brand"><span aria-hidden="true">▥</span><span>VENVIEWER<small>Hallkeeper</small></span></Link>
-    <div><Link to="/hallkeeper/today">Today's rooms</Link><Link to="/hallkeeper/walkthrough">Workflow walkthrough <span aria-hidden="true">↗</span></Link></div>
+    <div><Link to="/hallkeeper/today">Today's rooms</Link><Link to="/hallkeeper/rooms">Room plans</Link></div>
   </nav>;
 }
 
