@@ -1,296 +1,331 @@
-.venue-settings-shell {
-  color: #fff7e8;
+/* Venue settings (N1): ivory sheets in the workspace register, the same
+   family as Changeovers below them. Colours come from the register's --reg-*
+   names, except the venue mark, which sits on the venue's own colour. */
+
+.venue-settings {
   display: grid;
   gap: 18px;
 }
 
-.venue-settings-header,
-.venue-settings-state,
-.venue-settings-form,
-.venue-settings-preview {
-  background:
-    linear-gradient(180deg, rgba(20, 27, 28, 0.96), rgba(11, 13, 13, 0.96)),
-    radial-gradient(circle at 90% 0%, rgba(104, 216, 210, 0.12), transparent 32%);
-  border: 1px solid rgba(201, 138, 91, 0.24);
+.venue-settings__sheet {
+  display: grid;
+  gap: 22px;
+  padding: 24px 26px 26px;
+  border: 1px solid var(--reg-rule);
   border-radius: 8px;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
 }
 
-.venue-settings-header {
-  align-items: flex-start;
+.venue-settings__head {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 22px;
 }
 
-.venue-settings-header h2,
-.venue-settings-state h2 {
-  color: #fff7e8;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 30px;
-  font-weight: 650;
-  letter-spacing: 0;
-  margin: 4px 0 8px;
+.venue-settings__head h2,
+.venue-settings__state h2 {
+  margin: 0 0 6px;
+  font: 400 28px/1.1 var(--house-serif);
+  letter-spacing: -0.01em;
 }
 
-.venue-settings-header p,
-.venue-settings-state p,
-.venue-settings-preview p,
-.venue-settings-meta dd {
-  color: rgba(246, 241, 232, 0.72);
-  line-height: 1.55;
+.venue-settings__head p,
+.venue-settings__state p {
   margin: 0;
+  max-width: 62ch;
+  color: var(--reg-text-2);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
-.venue-settings-kicker {
-  color: #c98a5b;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  margin: 0;
-  text-transform: uppercase;
-}
-
-.venue-settings-status {
-  align-items: center;
-  border: 1px solid rgba(201, 138, 91, 0.28);
-  border-radius: 999px;
-  color: #68d8d2;
+.venue-settings__status {
   display: inline-flex;
   flex: 0 0 auto;
   gap: 8px;
-  min-height: 38px;
-  padding: 0 14px;
-  font-size: 13px;
-  font-weight: 700;
+  align-items: center;
+  margin: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 999px;
+  color: var(--reg-settled);
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
-.venue-settings-status[data-state="dirty"] {
-  color: #f2b35e;
+.venue-settings__status::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
 }
 
-.venue-settings-grid {
+.venue-settings__status[data-state="dirty"] {
+  color: var(--reg-attention);
+}
+
+.venue-settings__grid {
   display: grid;
-  gap: 18px;
-  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.8fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+  gap: 26px;
+  align-items: start;
 }
 
-.venue-settings-form,
-.venue-settings-preview,
-.venue-settings-state {
-  padding: 22px;
-}
-
-.venue-settings-form {
+.venue-settings__form {
   display: grid;
   gap: 16px;
 }
 
-.venue-settings-field {
+.venue-settings__field {
   display: grid;
-  gap: 7px;
-}
-
-.venue-settings-field > span,
-.venue-settings-meta dt {
-  color: rgba(246, 241, 232, 0.62);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.venue-settings-field input {
-  background: rgba(255, 247, 232, 0.08);
-  border: 1px solid rgba(201, 138, 91, 0.24);
-  border-radius: 8px;
-  color: #fff7e8;
-  font: inherit;
-  min-height: 44px;
-  outline: none;
-  padding: 10px 12px;
-}
-
-.venue-settings-field input:focus {
-  border-color: rgba(104, 216, 210, 0.78);
-  box-shadow: 0 0 0 3px rgba(104, 216, 210, 0.13);
-}
-
-.venue-settings-field input[aria-invalid="true"] {
-  border-color: rgba(226, 106, 92, 0.78);
-}
-
-.venue-settings-split {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: minmax(220px, 0.72fr) minmax(260px, 1fr);
-}
-
-.venue-settings-colour-row {
-  align-items: center;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 48px 1fr;
-}
-
-.venue-settings-colour-row input[type="color"] {
-  cursor: pointer;
-  height: 44px;
-  min-height: 44px;
-  padding: 4px;
-  width: 48px;
-}
-
-.venue-settings-error,
-.venue-settings-alert {
-  color: #f1b1a7;
+  gap: 4px;
+  color: var(--reg-text-2);
   font-size: 13px;
+}
+
+.venue-settings__field input {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 6px;
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: 500 15px/1 var(--house-sans);
+}
+
+.venue-settings__field input::placeholder {
+  color: var(--reg-text-3);
+}
+
+.venue-settings__field input[aria-invalid="true"] {
+  border-color: var(--reg-alert);
+}
+
+.venue-settings__split {
+  display: grid;
+  grid-template-columns: minmax(200px, 0.72fr) minmax(240px, 1fr);
+  gap: 14px;
+}
+
+.venue-settings__colour {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.venue-settings__colour input[type="color"] {
+  width: 48px;
+  height: 40px;
+  padding: 3px;
+  cursor: pointer;
+}
+
+.venue-settings__error {
+  color: var(--reg-alert);
+  font-size: 13.5px;
   line-height: 1.45;
 }
 
-.venue-settings-alert {
-  background: rgba(226, 106, 92, 0.12);
-  border: 1px solid rgba(226, 106, 92, 0.35);
-  border-radius: 8px;
+.venue-settings__alert {
   margin: 0;
   padding: 10px 12px;
+  border: 1px solid var(--reg-alert);
+  border-radius: 6px;
+  color: var(--reg-alert);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
-.venue-settings-actions {
+.venue-settings__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
-.venue-settings-button {
-  align-items: center;
-  background: linear-gradient(135deg, #c98a5b, #dca475);
-  border: 1px solid rgba(255, 224, 154, 0.52);
-  border-radius: 8px;
-  color: #0a0b0b;
-  cursor: pointer;
+.venue-settings__primary,
+.venue-settings__quiet {
   display: inline-flex;
-  font-size: 13px;
-  font-weight: 700;
   gap: 8px;
-  min-height: 42px;
-  padding: 0 16px;
-}
-
-.venue-settings-button--secondary {
-  background: rgba(255, 247, 232, 0.08);
-  color: #fff7e8;
-}
-
-.venue-settings-button:disabled {
-  background: rgba(255, 247, 232, 0.07);
-  border-color: rgba(246, 241, 232, 0.14);
-  color: rgba(246, 241, 232, 0.5);
-  cursor: not-allowed;
-  opacity: 1;
-}
-
-.venue-settings-preview {
-  align-content: start;
-  display: grid;
-  gap: 14px;
-}
-
-.venue-settings-preview-card {
-  background:
-    radial-gradient(circle at 78% 18%, rgba(104, 216, 210, 0.14), transparent 30%),
-    rgba(255, 247, 232, 0.06);
-  border: 1px solid rgba(201, 138, 91, 0.3);
-  border-radius: 8px;
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-}
-
-.venue-settings-logo-preview {
   align-items: center;
-  border-radius: 8px;
-  display: flex;
-  height: 74px;
   justify-content: center;
-  overflow: hidden;
-  width: 74px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font: 600 14px/1 var(--house-sans);
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
-.venue-settings-logo-preview img {
+.venue-settings__primary {
+  border: 1px solid var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.venue-settings__primary:hover:not(:disabled) {
+  border-color: var(--reg-primary-hover);
+  background: var(--reg-primary-hover);
+}
+
+.venue-settings__quiet {
+  border: 1px solid var(--reg-edge);
+  background: transparent;
+  color: var(--reg-text-1);
+}
+
+.venue-settings__quiet:hover:not(:disabled) {
+  background: var(--reg-surface-hover);
+}
+
+.venue-settings__primary:active:not(:disabled),
+.venue-settings__quiet:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.venue-settings__primary:disabled,
+.venue-settings__quiet:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.venue-settings__preview {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  padding: 18px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 8px;
+  background: var(--reg-raised);
+}
+
+.venue-settings__card {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.venue-settings__kicker {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.venue-settings__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 8px;
+  font: 600 22px/1 var(--house-sans);
+}
+
+/* The mark sits on the venue's own colour, not on the register's surface, so
+   its letters take whichever house ink reads on that colour. */
+.venue-settings__mark[data-ink="dark"] {
+  color: var(--house-ink-1);
+}
+
+.venue-settings__mark[data-ink="light"] {
+  color: var(--house-paper);
+}
+
+.venue-settings__mark img {
   display: block;
+  width: 100%;
   height: 100%;
   object-fit: contain;
-  width: 100%;
 }
 
-.venue-settings-logo-preview span {
-  color: #080908;
-  font-size: 22px;
-  font-weight: 700;
+.venue-settings__card h3 {
+  margin: 4px 0 0;
+  font: 400 22px/1.2 var(--house-serif);
 }
 
-.venue-settings-preview h3 {
-  color: #fff7e8;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 24px;
-  font-weight: 650;
+.venue-settings__card p {
   margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
 }
 
-.venue-settings-meta {
+.venue-settings__meta {
   display: grid;
   gap: 10px;
   margin: 0;
 }
 
-.venue-settings-meta div {
-  border-top: 1px solid rgba(201, 138, 91, 0.16);
+.venue-settings__meta div {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   padding-top: 10px;
+  border-top: 1px solid var(--reg-rule);
 }
 
-.venue-settings-state {
-  align-items: flex-start;
-  display: grid;
+.venue-settings__meta dt {
+  color: var(--reg-text-2);
+  font-size: 13px;
+}
+
+.venue-settings__meta dd {
+  margin: 0;
+  font-size: 15px;
+}
+
+.venue-settings__state {
   justify-items: start;
-  min-height: 220px;
-  place-content: center;
+  min-height: 200px;
+  place-content: center start;
 }
 
-.venue-settings-state--error {
-  border-color: rgba(226, 106, 92, 0.45);
+.venue-settings__state h2 {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 @media (max-width: 980px) {
-  .venue-settings-header,
-  .venue-settings-grid,
-  .venue-settings-split {
+  .venue-settings__grid,
+  .venue-settings__split {
     grid-template-columns: 1fr;
-  }
-
-  .venue-settings-header {
-    display: grid;
   }
 }
 
-@media (max-width: 640px) {
-  .venue-settings-header,
-  .venue-settings-form,
-  .venue-settings-preview,
-  .venue-settings-state {
-    padding: 16px;
+@media (max-width: 720px) {
+  .venue-settings__sheet {
+    padding: 20px 16px 22px;
   }
 
-  .venue-settings-actions {
+  .venue-settings__actions {
     justify-content: stretch;
   }
 
-  .venue-settings-button {
-    justify-content: center;
-    width: 100%;
+  .venue-settings__primary,
+  .venue-settings__quiet {
+    flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .venue-settings__primary,
+  .venue-settings__quiet {
+    transition: none;
+  }
+
+  .venue-settings__primary:active:not(:disabled),
+  .venue-settings__quiet:active:not(:disabled) {
+    transform: none;
   }
 }

@@ -2405,21 +2405,21 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard?view=settings");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Venue Settings" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Venue settings" })).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: /^Saved$/ })).toBeVisible();
 
-    const save = page.getByRole("button", { name: "Save Changes" });
+    const save = page.getByRole("button", { name: "Save changes" });
     await expect(save).toBeDisabled();
-    await page.getByLabel("Brand Colour").fill("gold");
-    await expect(page.getByText(/six-digit hex colour/u)).toBeVisible();
+    await page.getByLabel("Brand colour").fill("gold");
+    await expect(page.getByText(/six-digit colour code/u)).toBeVisible();
     await expect(save).toBeDisabled();
 
-    await page.getByRole("button", { name: "Reset" }).click();
-    await expect(page.getByText(/six-digit hex colour/u)).toHaveCount(0);
-    await page.getByLabel("Venue Name").fill("Trades Hall Operations");
+    await page.getByRole("button", { name: "Undo changes" }).click();
+    await expect(page.getByText(/six-digit colour code/u)).toHaveCount(0);
+    await page.getByLabel("Venue name").fill("Trades Hall Operations");
     await page.getByLabel("Address").fill("85 Glassford Street, Glasgow");
-    await page.getByLabel("Brand Colour").fill("#68d8d2");
-    await page.getByLabel("Logo URL").fill("https://assets.example/trades-hall.svg");
+    await page.getByLabel("Brand colour").fill("#68d8d2");
+    await page.getByLabel("Logo link").fill("https://assets.example/trades-hall.svg");
     await expect(save).toBeEnabled();
     await save.click();
 
