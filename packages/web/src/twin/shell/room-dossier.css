@@ -191,8 +191,8 @@
 }
 
 .vv-twin-dossier-toggle:focus-visible {
-  outline: var(--vv-focus-ring);
-  outline-offset: var(--vv-focus-ring-offset);
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
 }
 
 .vv-twin-dossier-body {
@@ -294,8 +294,8 @@
 }
 
 .vv-twin-dossier-action:focus-visible {
-  outline: var(--vv-focus-ring);
-  outline-offset: var(--vv-focus-ring-offset);
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
 }
 
 /* The walk has entered a named room. 10px of rise rather than the original 6:

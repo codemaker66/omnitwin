@@ -506,6 +506,11 @@ const GOLD_HANDOFF: Readonly<Record<string, string>> = {
   "twin/tags/tags.css": "Lane 3",
   "twin/tour/tour.css": "Lane 3",
   "twin/twin.css": "Lane 3",
+  // T-635: these import three, so Lane 1's copper for them is GPU-scoped
+  // (.github/gpu/gpu-scope.mjs) and travels with the 3D batch.
+  "components/editor/TimelinePreviewFurniture.tsx": "T-635 3D batch",
+  "pages/SplatFixturePage.tsx": "T-635 3D batch",
+  "pages/TradesHallVisualPage.tsx": "T-635 3D batch",
 };
 
 /** Paths exempt from the 11px floor, each for a reason stated in the PR. */
@@ -533,6 +538,17 @@ const TYPE_FLOOR_EXEMPT: readonly RegExp[] = [
 const REM_FLOOR_HANDOFF: Readonly<Record<string, string>> = {
   "pages/RoomsHomePage.css": "Lane 2 — .rooms__state, 0.68rem = 10.88px on the public rooms home",
 };
+
+/**
+ * T-635: Lane 1 raised these two planner labels to 11px, but both files
+ * import three, so the change is GPU-scoped and travels with the 3D batch.
+ * Frozen like GOLD_HANDOFF: any other sub-floor size fails, and the batch
+ * landing makes this list wrong and fails too.
+ */
+const PX_FLOOR_HANDOFF: readonly string[] = [
+  "components/TapeMeasure.tsx:52 inline fontSize 10px",
+  "components/WallTogglePanel.tsx:107 inline fontSize 10px",
+];
 
 const TYPE_FLOOR_PX = 11;
 
@@ -653,7 +669,7 @@ describe("the register is enforced by value, not by name", () => {
         }
       });
     }
-    expect(tooSmall).toEqual([]);
+    expect([...tooSmall].sort()).toEqual([...PX_FLOOR_HANDOFF].sort());
   });
 
   it("keeps every rem type size at or above the 11px floor too", async () => {

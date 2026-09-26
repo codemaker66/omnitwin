@@ -277,8 +277,8 @@
 }
 
 .vv-twin-tour-btn:focus-visible {
-  outline: var(--vv-focus-ring);
-  outline-offset: var(--vv-focus-ring-offset);
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
 }
 
 /* Play/pause is the one filled control on this surface — the single-primary rule
@@ -358,8 +358,8 @@
 }
 
 .vv-twin-tour-tick:focus-visible {
-  outline: var(--vv-focus-ring);
-  outline-offset: var(--vv-focus-ring-offset);
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 1px;
 }
 
 .vv-twin-tour-icon {
