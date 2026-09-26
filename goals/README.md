@@ -55,6 +55,7 @@ Take goals in the order below unless a goal says it runs in parallel. Never take
 | 08 | The Foundry | Own reconstruction and the research frontier; a parallel lane, money-capped. |
 | 09 | The venue's mind | Intelligence, once 06 gives it dependable facts. |
 | 10 | The platform | Repeatable for a second venue; CI made truthful; the frontier register. |
+| 18 | [Ship Friday — Release 1 by Opus worker sessions](18-ship-friday.md) | Historical: the runnable form of plan 18. Not executed as written; its lanes (PRs #18–#30) are being integrated under T-635. Do not paste its `/goal` block. |
 
 ## The laws binding every goal
 
