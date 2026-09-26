@@ -6,6 +6,8 @@ import {
   COMMERCIAL_ROLES,
   CRM_PIPELINE_ROLES,
   DIARY_ROLES,
+  DIARY_WRITE_ROLES,
+  EVENT_WRITE_ROLES,
   INVENTORY_WRITE_ROLES,
   PLANNER_ROLES,
   REVIEW_QUEUE_ROLES,
@@ -192,6 +194,7 @@ describe("the capability sets themselves", () => {
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES,
       DIARY_ROLES, VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES,
       ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
+      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES,
     ]) {
       expect(hasRole(set, "caterer")).toBe(false);
     }
@@ -203,11 +206,21 @@ describe("the capability sets themselves", () => {
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES, DIARY_ROLES,
       VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES, CRM_PIPELINE_ROLES,
       ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
+      EVENT_WRITE_ROLES, DIARY_WRITE_ROLES,
     ]) {
       for (const role of set) {
         expect(vocabulary.has(role), `${role} is not in USER_ROLES`).toBe(true);
       }
     }
+  });
+
+  it("lets every Diary writer read the Diary, and keeps the hallkeeper a reader", () => {
+    // DIARY_WRITE_ROLES mirrors services/booking-mutations.ts; a writer who
+    // could not open the board would hold half a job.
+    for (const role of DIARY_WRITE_ROLES) expect(hasRole(DIARY_ROLES, role), role).toBe(true);
+    expect(hasRole(DIARY_WRITE_ROLES, "hallkeeper")).toBe(false);
+    // Event writers run the day; sales sells the room.
+    expect([...EVENT_WRITE_ROLES]).toEqual(["admin", "manager", "staff"]);
   });
 
   it("treats a null or unknown role as no capability at all", () => {

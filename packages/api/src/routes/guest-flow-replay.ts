@@ -31,13 +31,16 @@ import {
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { generateGuestFlowReplayV0 } from "../services/guest-flow-replay.js";
+import { isEventWriteRole } from "../utils/query.js";
 
 type GuestFlowReplayRow = typeof guestFlowReplays.$inferSelect;
 type GuestFlowScenarioRow = typeof guestFlowScenarios.$inferSelect;
 type NavmeshVersionRow = typeof navmeshVersions.$inferSelect;
 
+/** Replays are event planning: the roles that write events (manager, staff,
+ *  the venue's admin), still held to the linked venue below. */
 function canUseGuestFlowReplay(user: JwtUser): boolean {
-  return isPlatformAdmin(user) || user.role === "admin" || user.role === "staff";
+  return isEventWriteRole(user);
 }
 
 function dateIso(value: Date): string {

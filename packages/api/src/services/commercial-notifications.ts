@@ -25,12 +25,13 @@ import type { Database } from "../db/client.js";
 // ---------------------------------------------------------------------------
 
 /**
- * Who hears about commercial events. Filtered against the live audience-role
- * vocabulary at module load, so this list can name a role the deployed role
- * set does not have yet ("sales", added by the roles lane) without throwing:
- * the role simply starts being notified the moment it exists.
+ * Who hears about commercial events: every role that works the pipeline
+ * (canManageCommercial), so a manager hears of a new enquiry as sales does.
+ * Filtered against the live audience-role vocabulary at module load, so this
+ * list can name a role the deployed role set does not have yet without
+ * throwing: the role simply starts being notified the moment it exists.
  */
-const COMMERCIAL_AUDIENCE_ROLE_NAMES: readonly string[] = ["staff", "admin", "sales"];
+const COMMERCIAL_AUDIENCE_ROLE_NAMES: readonly string[] = ["staff", "admin", "sales", "manager"];
 
 export const COMMERCIAL_AUDIENCE_ROLES: readonly EventPlanAudienceRole[] =
   COMMERCIAL_AUDIENCE_ROLE_NAMES.filter(

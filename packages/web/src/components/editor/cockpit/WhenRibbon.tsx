@@ -6,6 +6,7 @@ import { ApiError } from "../../../api/client.js";
 import { moveBooking } from "../../../api/diary.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { canReadInternalEventData } from "../../../lib/event-access.js";
+import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import { useLinkedEvent } from "../../../hooks/use-linked-event.js";
 import { useCalendar } from "../../../pages/diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../../../pages/diary/hooks/useDiaryLive.js";
@@ -93,7 +94,8 @@ function VenueWhenRibbon(): ReactElement | null {
   const eventId = searchParams.get("eventId");
   const linked = useLinkedEvent();
   const user = useAuthStore((state) => state.user);
-  const writable = user?.role === "staff" || user?.role === "admin";
+  // Moving the booking is a Diary write (`moveBooking`), whoever does it.
+  const writable = hasRole(DIARY_WRITE_ROLES, user?.role);
 
   const venueId = linked.graph?.event.venueId ?? null;
   const eventStartsAt = linked.graph?.event.startsAt ?? null;

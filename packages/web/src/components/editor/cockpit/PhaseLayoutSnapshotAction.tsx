@@ -6,6 +6,7 @@ import type { AuthUser } from "../../../stores/auth-store.js";
 import { useFreezePhaseLayoutSnapshot } from "../../../hooks/use-freeze-phase-layout-snapshot.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
+import { EVENT_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import "./PhaseLayoutSnapshotAction.css";
 
 interface PhaseLayoutSnapshotActionProps {
@@ -23,7 +24,7 @@ export function canFreezePhaseLayoutForVenue(
 ): boolean {
   if (user === null || venueId === null) return false;
   if (user.platformRole === "admin") return true;
-  return user.venueId === venueId && (user.role === "admin" || user.role === "staff");
+  return user.venueId === venueId && hasRole(EVENT_WRITE_ROLES, user.role);
 }
 
 /** Explicit server-backed action. Eligibility is fail-closed at the dock. */

@@ -145,7 +145,7 @@ describe("PhaseLayoutSnapshotAction", () => {
     expect(screen.getByText("Frozen layout saved.")).toBeTruthy();
   });
 
-  it("authorizes only same-venue staff/admin or platform admin", () => {
+  it("authorizes only the same venue's event writers (staff, manager, admin) or a platform admin", () => {
     const user = (role: string, venueId: string | null, platformRole: "none" | "operator" | "admin" = "none") => ({
       id: `user-${role}`,
       email: `${role}@example.test`,
@@ -156,6 +156,9 @@ describe("PhaseLayoutSnapshotAction", () => {
     });
     expect(canFreezePhaseLayoutForVenue(user("staff", VENUE_ID), VENUE_ID)).toBe(true);
     expect(canFreezePhaseLayoutForVenue(user("admin", VENUE_ID), VENUE_ID)).toBe(true);
+    // The endpoint gates on canWriteEvents, which admits a manager.
+    expect(canFreezePhaseLayoutForVenue(user("manager", VENUE_ID), VENUE_ID)).toBe(true);
+    expect(canFreezePhaseLayoutForVenue(user("sales", VENUE_ID), VENUE_ID)).toBe(false);
     expect(canFreezePhaseLayoutForVenue(user("admin", "other-venue"), VENUE_ID)).toBe(false);
     expect(canFreezePhaseLayoutForVenue(user("planner", VENUE_ID), VENUE_ID)).toBe(false);
     expect(canFreezePhaseLayoutForVenue(user("hallkeeper", VENUE_ID), VENUE_ID)).toBe(false);

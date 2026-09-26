@@ -115,6 +115,30 @@ describe("guest-flow replay API", () => {
     expect(unscopedStaff.json()).toMatchObject({ code: "VENUE_SCOPE_REQUIRED" });
   });
 
+  it("admits exactly the roles that write events, still held to the linked venue", async () => {
+    // A manager is senior to staff and writes events; before the role gate
+    // followed canWriteEvents it was refused a replay staff could run.
+    for (const role of ["manager", "admin"]) {
+      const res = await server.inject({
+        method: "POST",
+        url: "/guest-flow/scenarios",
+        headers: { authorization: `Bearer ${signToken({ id: "00000000-0000-4000-8000-000000003005", email: "m@test.com", role, venueId: "00000000-0000-4000-8000-000000003003" })}` },
+        payload: { name: "Arrival replay", input: INPUT },
+      });
+      expect(res.statusCode, role).toBe(422);
+      expect(res.json(), role).toMatchObject({ code: "VENUE_SCOPE_REQUIRED" });
+    }
+    for (const role of ["sales", "hallkeeper", "caterer", "client"]) {
+      const res = await server.inject({
+        method: "POST",
+        url: "/guest-flow/scenarios",
+        headers: { authorization: `Bearer ${signToken({ id: "00000000-0000-4000-8000-000000003006", email: "r@test.com", role, venueId: "00000000-0000-4000-8000-000000003003" })}` },
+        payload: { name: "Arrival replay", input: INPUT },
+      });
+      expect(res.statusCode, role).toBe(403);
+    }
+  });
+
   it("keeps route source safe and registers persistence endpoints", async () => {
     const source = await readFile(resolve("src/routes/guest-flow-replay.ts"), "utf-8");
 

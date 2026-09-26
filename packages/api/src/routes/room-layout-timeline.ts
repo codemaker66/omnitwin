@@ -27,7 +27,7 @@ import {
   resolveRoomLayoutTimelineKeyframe,
   type LayoutTimelineSnapshotCandidate,
 } from "../services/room-layout-timeline.js";
-import { canAccessResource, canReadVenuePlanningData } from "../utils/query.js";
+import { canManageCommercial, canReadVenuePlanningData } from "../utils/query.js";
 
 const MINUTE_MS = 60_000;
 /**
@@ -359,11 +359,11 @@ export async function roomLayoutTimelineRoutes(
         densityLabel: row.densityLabel,
         staffConflictsStatus: row.staffConflictsStatus,
         staffConflictsLabel: row.staffConflictsLabel,
-        commercialAccess: canAccessResource(
-          request.user,
-          row.eventCreatedBy,
-          query.venueId,
-        ),
+        // A revenue estimate is a price: the event's creator and the roles
+        // that work the pipeline see it; a hallkeeper sees the room's facts
+        // without it (decision 6b).
+        commercialAccess: row.eventCreatedBy === request.user.id
+          || canManageCommercial(request.user, query.venueId),
         keyframe: resolveRoomLayoutTimelineKeyframe({
           venueId: query.venueId,
           spaceId: query.spaceId,

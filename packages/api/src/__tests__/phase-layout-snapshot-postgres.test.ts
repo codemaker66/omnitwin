@@ -36,8 +36,11 @@ import {
   venues,
 } from "../db/schema.js";
 
-const RUN_ENABLED = process.env["RUN_PHASE_LAYOUT_POSTGRES"] === "1";
-const DATABASE_URL = process.env["DATABASE_URL"] ?? "";
+// Opt-in, and only against a disposable local database named for this suite.
+// It never reads DATABASE_URL, which may name a shared or production database:
+// the server it builds is pointed at this validated URL in-process.
+const TEST_DATABASE_URL = process.env["VENVIEWER_PHASE_LAYOUT_TEST_DATABASE_URL"] ?? "";
+const RUN_ENABLED = TEST_DATABASE_URL !== "";
 const SAFE_DATABASE_PREFIX = "omnitwin_timeline_0060_";
 
 function isSafeDisposableDatabaseUrl(databaseUrl: string): boolean {
@@ -53,9 +56,10 @@ function isSafeDisposableDatabaseUrl(databaseUrl: string): boolean {
   }
 }
 
-if (RUN_ENABLED && !isSafeDisposableDatabaseUrl(DATABASE_URL)) {
+if (RUN_ENABLED && !isSafeDisposableDatabaseUrl(TEST_DATABASE_URL)) {
   throw new Error(
-    "RUN_PHASE_LAYOUT_POSTGRES requires a disposable local PostgreSQL database URL.",
+    "VENVIEWER_PHASE_LAYOUT_TEST_DATABASE_URL must name a disposable local PostgreSQL database "
+      + `(localhost or 127.0.0.1, port 54329 or 54339, named ${SAFE_DATABASE_PREFIX}*).`,
   );
 }
 
@@ -509,9 +513,13 @@ async function evidenceRows(configurationId: string) {
 }
 
 describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
+  const shellDatabaseUrl = process.env["DATABASE_URL"];
+
   beforeAll(async () => {
     process.env["NODE_ENV"] = "test";
-    database = createDb(DATABASE_URL);
+    // The server reads DATABASE_URL when it is built; give it the test URL.
+    process.env["DATABASE_URL"] = TEST_DATABASE_URL;
+    database = createDb(TEST_DATABASE_URL);
     await seedFixture(database);
     const { buildServer } = await import("../index.js");
     buildServerForReload = buildServer;
@@ -520,6 +528,8 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
 
   afterAll(async () => {
     if (server !== null) await server.close();
+    if (shellDatabaseUrl === undefined) delete process.env["DATABASE_URL"];
+    else process.env["DATABASE_URL"] = shellDatabaseUrl;
   });
 
   it("applies the exact 0059 → 0060 lineage step and the 0063 immutability trigger", async () => {
@@ -893,7 +903,10 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     const unauthenticated = await requiredServer().inject({ method: "GET", url });
     expect(unauthenticated.statusCode, unauthenticated.body).toBe(401);
 
-    for (const role of ["planner", "staff", "hallkeeper", "admin"] as const) {
+    // The venue floor reads the room's day. A planner reads its own event
+    // through the scoped client schedule instead (04dbd8bb, 15 September), so
+    // it never sees another client's phases in the same room.
+    for (const role of ["manager", "staff", "hallkeeper", "admin"] as const) {
       const allowed = await requiredServer().inject({
         method: "GET",
         url,
@@ -911,6 +924,7 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     }
     for (const denied of [
       { role: "client", venueId: SNAPSHOT.venueId },
+      { role: "planner", venueId: SNAPSHOT.venueId },
       { role: "future_role", venueId: SNAPSHOT.venueId },
       { role: "planner", venueId: null },
       { role: "planner", venueId: "11111111-1111-4111-8111-111111111112" },
@@ -998,7 +1012,7 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
         scope: "day",
         anchorDate: "2026-06-07",
       }).toString()}`,
-      headers: authHeaders({ role: "planner" }),
+      headers: authHeaders({ role: "manager" }),
     });
     expect(response.statusCode, response.body).toBe(200);
     const frame = TimelineEnvelopeSchema.parse(response.json()).data.frames
@@ -1040,7 +1054,6 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     for (const actor of [
       { role: "staff" },
       { role: "admin" },
-      { role: "hallkeeper" },
       { role: "admin", platformRole: "admin" as const, venueId: null },
     ]) {
       const authorized = await requiredServer().inject({
@@ -1062,7 +1075,9 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       });
     }
 
-    const nonOwnerPlanner = await requiredServer().inject({
+    // A hallkeeper reads the room's day, but a revenue estimate is a price:
+    // facts and photos only (decision 6b).
+    const hallkeeper = await requiredServer().inject({
       method: "GET",
       url: `/calendar/layout-timeline?${new URLSearchParams({
         venueId: SNAPSHOT.venueId,
@@ -1072,21 +1087,21 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       }).toString()}`,
       headers: authHeaders({
         id: "44444444-4444-4444-8444-444444444446",
-        role: "planner",
+        role: "hallkeeper",
       }),
     });
-    expect(nonOwnerPlanner.statusCode, nonOwnerPlanner.body).toBe(200);
-    const restricted = TimelineEnvelopeSchema.parse(nonOwnerPlanner.json()).data.frames
+    expect(hallkeeper.statusCode, hallkeeper.body).toBe(200);
+    const restricted = TimelineEnvelopeSchema.parse(hallkeeper.json()).data.frames
       .find((candidate) => candidate.phaseId === PHASE_ID)?.figures.revenue;
     expect(restricted).toEqual({
       state: "restricted",
       reason: "insufficient_commercial_access",
     });
-    expect(nonOwnerPlanner.body).not.toContain(MATCHING_REVENUE_SCENARIO_ID);
-    expect(nonOwnerPlanner.body).not.toContain("Dinner layout planning estimate");
-    expect(nonOwnerPlanner.body).not.toContain("2875000");
-    expect(nonOwnerPlanner.body).not.toContain('"estimatedRevenueMinor"');
-    expect(nonOwnerPlanner.body).not.toContain('"source":"planning_scenario"');
+    expect(hallkeeper.body).not.toContain(MATCHING_REVENUE_SCENARIO_ID);
+    expect(hallkeeper.body).not.toContain("Dinner layout planning estimate");
+    expect(hallkeeper.body).not.toContain("2875000");
+    expect(hallkeeper.body).not.toContain('"estimatedRevenueMinor"');
+    expect(hallkeeper.body).not.toContain('"source":"planning_scenario"');
   });
 
   it("marks seated capacity unavailable when frozen seat metadata is incomplete", async () => {
@@ -1936,8 +1951,8 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       })),
     };
 
-    const locker = new Client({ connectionString: DATABASE_URL });
-    const observer = new Client({ connectionString: DATABASE_URL });
+    const locker = new Client({ connectionString: TEST_DATABASE_URL });
+    const observer = new Client({ connectionString: TEST_DATABASE_URL });
     await Promise.all([locker.connect(), observer.connect()]);
     const lockerPidResult = await locker.query<{ readonly pid: number }>(
       "SELECT pg_backend_pid()::int AS pid",
@@ -2196,8 +2211,8 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     const siblingId = randomUUID();
     await db.insert(spaces).values({ id: siblingId, venueId: SNAPSHOT.venueId, name: "Manual race sibling", slug: `race-${siblingId}`, widthM: "20", lengthM: "10", heightM: "4", floorPlanOutline: SNAPSHOT.venueRuntime.floorPlanOutline });
     const freezeApp = await requiredServerBuilder()();
-    const locker = new Client({ connectionString: DATABASE_URL });
-    const observer = new Client({ connectionString: DATABASE_URL });
+    const locker = new Client({ connectionString: TEST_DATABASE_URL });
+    const observer = new Client({ connectionString: TEST_DATABASE_URL });
     await Promise.all([locker.connect(), observer.connect()]);
     const pending: Promise<unknown>[] = [];
     let released = false;

@@ -57,6 +57,20 @@ export const CLIENT_SEARCH_ROLES = VENUE_FLOOR_ROLES;
  */
 export const REVIEW_QUEUE_ROLES = ["admin", "manager", "staff"] as const;
 
+/**
+ * Mirrors `canWriteEvents` / `isEventWriteRole` (`utils/query.ts`): creating
+ * and changing events, freezing a phase's layout (`routes/phase-layout-
+ * snapshots.ts`) and guest-flow replays. Sales sells the room; the venue team
+ * runs the day.
+ */
+export const EVENT_WRITE_ROLES = ["admin", "manager", "staff"] as const;
+
+/**
+ * Mirrors `DIARY_WRITE_ROLES` (`services/booking-mutations.ts`): creating,
+ * moving and deciding bookings, on the Diary and on the planner's When ribbon.
+ */
+export const DIARY_WRITE_ROLES = ["admin", "manager", "staff", "sales"] as const;
+
 /** Mirrors `canWriteInventory` — adjusting counted stock. */
 export const INVENTORY_WRITE_ROLES = ["admin", "manager"] as const;
 
