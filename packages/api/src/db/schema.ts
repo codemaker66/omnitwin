@@ -3411,6 +3411,168 @@ export const turnaroundRules = pgTable("turnaround_rules", {
 ]);
 
 // ---------------------------------------------------------------------------
+// The staff rota, version 1 (T-637 slice B, migration 0078).
+//
+// People who are rostered, with or without a login; their shifts in draft,
+// published or cancelled; when they cannot work; and every change made after
+// publishing, with the notice given. Every reference to a person, event or
+// room carries the venue too, so a shift cannot name another venue's.
+//
+// The vocabularies below are DB-local on purpose, like the Foundry section's:
+// this file must load without the shared package. They match the CHECK lists
+// in 0078 and the rota vocabulary in @omnitwin/types, and
+// rota-schema.test.ts holds all three together.
+// ---------------------------------------------------------------------------
+
+type StaffEmploymentTypeColumn = "employed" | "casual" | "agency";
+type RotaSkillColumn = "setup" | "bar" | "duty_manager" | "first_aid" | "av";
+type RotaShiftStatusColumn = "draft" | "published" | "cancelled";
+type StaffUnavailabilityReasonColumn = "leave" | "unavailable";
+type RotaShiftChangeKindColumn = "published" | "changed" | "cancelled";
+
+/** A warning someone chose to keep, with their reason (0078 kept_warnings). */
+interface RotaKeptWarningColumn {
+  readonly code: string;
+  readonly reason: string;
+  readonly byUserId: string | null;
+  readonly byName: string | null;
+  readonly at: string;
+}
+
+/** A shift as it stood, in a change record (0078 rota_shift_changes). */
+interface RotaShiftSnapshotColumn {
+  readonly staffMemberId: string | null;
+  readonly role: string;
+  readonly startsAt: string;
+  readonly endsAt: string;
+  readonly breakMinutes: number;
+  readonly spaceId: string | null;
+  readonly eventId: string | null;
+  readonly note: string | null;
+  readonly status: string;
+}
+
+export const staffMembers = pgTable("staff_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  /** The person's own account, when they have one. */
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  displayName: varchar("display_name", { length: 120 }).notNull(),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 40 }),
+  employmentType: varchar("employment_type", { length: 20 }).$type<StaffEmploymentTypeColumn>().notNull(),
+  skills: text("skills").array().$type<RotaSkillColumn[]>().notNull().default(sql`'{}'::text[]`),
+  /** Licensing (Scotland) Act 2005 sch 3: the training before selling alcohol. */
+  barTrainedOn: date("bar_trained_on"),
+  /** Only for someone under 18: the day they turn 18. */
+  turns18On: date("turns_18_on"),
+  rightToWorkCheckedOn: date("right_to_work_checked_on"),
+  rightToWorkExpiresOn: date("right_to_work_expires_on"),
+  /** Opted out of the 48-hour average in writing (Working Time Regulations 1998 reg 5). */
+  workingTimeOptOut: boolean("working_time_opt_out").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  revision: integer("revision").notNull().default(1),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  unique("staff_members_id_venue_unique").on(table.id, table.venueId),
+  uniqueIndex("staff_members_one_per_account").on(table.venueId, table.userId).where(sql`${table.userId} IS NOT NULL`),
+  index("staff_members_venue_name_idx").on(table.venueId, table.displayName),
+  check("staff_members_name", sql`length(btrim(${table.displayName})) > 0`),
+  check("staff_members_employment", sql`${table.employmentType} IN ('employed', 'casual', 'agency')`),
+  check("staff_members_skills", sql`${table.skills} <@ ARRAY['setup', 'bar', 'duty_manager', 'first_aid', 'av']::text[]`),
+  check("staff_members_right_to_work", sql`${table.rightToWorkExpiresOn} IS NULL OR (${table.rightToWorkCheckedOn} IS NOT NULL AND ${table.rightToWorkExpiresOn} >= ${table.rightToWorkCheckedOn})`),
+  check("staff_members_revision", sql`${table.revision} >= 1`),
+]);
+
+// Drizzle 0.45 cannot encode ON DELETE SET NULL for one column of a composite
+// key (0050's precedent), so the event and room keys are declared without an
+// action here; 0078 sets only event_id or space_id to null when those go.
+export const rotaShifts = pgTable("rota_shifts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  /** Null for a need nobody fills yet. */
+  staffMemberId: uuid("staff_member_id"),
+  role: varchar("role", { length: 20 }).$type<RotaSkillColumn>().notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  breakMinutes: integer("break_minutes").notNull().default(0),
+  eventId: uuid("event_id"),
+  spaceId: uuid("space_id"),
+  note: varchar("note", { length: 500 }),
+  status: varchar("status", { length: 20 }).$type<RotaShiftStatusColumn>().notNull().default("draft"),
+  keptWarnings: jsonb("kept_warnings").$type<RotaKeptWarningColumn[]>().notNull().default(sql`'[]'::jsonb`),
+  revision: integer("revision").notNull().default(1),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  /** Whole hours between the cancellation and the shift's start. */
+  cancellationNoticeHours: integer("cancellation_notice_hours"),
+}, (table) => [
+  unique("rota_shifts_id_venue_unique").on(table.id, table.venueId),
+  foreignKey({ columns: [table.staffMemberId, table.venueId], foreignColumns: [staffMembers.id, staffMembers.venueId], name: "rota_shifts_staff_venue_fk" }),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "rota_shifts_event_venue_fk" }),
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "rota_shifts_space_venue_fk" }),
+  index("rota_shifts_venue_starts_idx").on(table.venueId, table.startsAt),
+  index("rota_shifts_staff_starts_idx").on(table.staffMemberId, table.startsAt),
+  index("rota_shifts_event_idx").on(table.eventId),
+  check("rota_shifts_role", sql`${table.role} IN ('setup', 'bar', 'duty_manager', 'first_aid', 'av')`),
+  check("rota_shifts_time", sql`${table.endsAt} > ${table.startsAt} AND ${table.endsAt} - ${table.startsAt} <= interval '24 hours'`),
+  check("rota_shifts_break", sql`${table.breakMinutes} >= 0 AND make_interval(mins => ${table.breakMinutes}) < ${table.endsAt} - ${table.startsAt}`),
+  check("rota_shifts_status", sql`${table.status} IN ('draft', 'published', 'cancelled')`),
+  check("rota_shifts_published", sql`(${table.status} = 'draft') = (${table.publishedAt} IS NULL)`),
+  check("rota_shifts_cancelled", sql`(${table.status} = 'cancelled') = (${table.cancelledAt} IS NOT NULL) AND (${table.cancelledAt} IS NULL) = (${table.cancellationNoticeHours} IS NULL) AND (${table.cancellationNoticeHours} IS NULL OR ${table.cancellationNoticeHours} >= 0)`),
+  check("rota_shifts_note", sql`${table.note} IS NULL OR length(btrim(${table.note})) > 0`),
+  check("rota_shifts_kept_warnings", sql`jsonb_typeof(${table.keptWarnings}) = 'array'`),
+  check("rota_shifts_revision", sql`${table.revision} >= 1`),
+]);
+
+export const staffUnavailability = pgTable("staff_unavailability", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  staffMemberId: uuid("staff_member_id").notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  reason: varchar("reason", { length: 20 }).$type<StaffUnavailabilityReasonColumn>().notNull(),
+  note: varchar("note", { length: 300 }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.staffMemberId, table.venueId], foreignColumns: [staffMembers.id, staffMembers.venueId], name: "staff_unavailability_staff_venue_fk" }),
+  index("staff_unavailability_staff_starts_idx").on(table.staffMemberId, table.startsAt),
+  index("staff_unavailability_venue_starts_idx").on(table.venueId, table.startsAt),
+  check("staff_unavailability_time", sql`${table.endsAt} > ${table.startsAt} AND ${table.endsAt} - ${table.startsAt} <= interval '366 days'`),
+  check("staff_unavailability_reason", sql`${table.reason} IN ('leave', 'unavailable')`),
+  check("staff_unavailability_note", sql`${table.note} IS NULL OR length(btrim(${table.note})) > 0`),
+]);
+
+/** Append-only: 0078's trigger refuses any update or delete. */
+export const rotaShiftChanges = pgTable("rota_shift_changes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull(),
+  shiftId: uuid("shift_id").notNull(),
+  kind: varchar("kind", { length: 20 }).$type<RotaShiftChangeKindColumn>().notNull(),
+  changedBy: uuid("changed_by").references(() => users.id, { onDelete: "set null" }),
+  changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Whole hours between the change and the shift's start as it stood. */
+  noticeHours: integer("notice_hours").notNull(),
+  before: jsonb("before").$type<RotaShiftSnapshotColumn>(),
+  after: jsonb("after").$type<RotaShiftSnapshotColumn>(),
+}, (table) => [
+  foreignKey({ columns: [table.shiftId, table.venueId], foreignColumns: [rotaShifts.id, rotaShifts.venueId], name: "rota_shift_changes_shift_venue_fk" }),
+  index("rota_shift_changes_shift_idx").on(table.shiftId, table.changedAt),
+  index("rota_shift_changes_venue_idx").on(table.venueId, table.changedAt),
+  check("rota_shift_changes_kind", sql`${table.kind} IN ('published', 'changed', 'cancelled')`),
+  check("rota_shift_changes_notice", sql`${table.noticeHours} >= 0`),
+  check("rota_shift_changes_states", sql`(${table.before} IS NULL OR jsonb_typeof(${table.before}) = 'object') AND (${table.after} IS NULL OR jsonb_typeof(${table.after}) = 'object') AND (${table.kind} <> 'published' OR (${table.before} IS NULL AND ${table.after} IS NOT NULL)) AND (${table.kind} <> 'changed' OR (${table.before} IS NOT NULL AND ${table.after} IS NOT NULL)) AND (${table.kind} <> 'cancelled' OR (${table.before} IS NOT NULL AND ${table.after} IS NULL))`),
+]);
+
+// ---------------------------------------------------------------------------
 // 31. OmniTwin Foundry durable execution control (migration 0053).
 //
 // These declarations intentionally use DB-local structural types. The raw
