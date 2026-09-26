@@ -308,12 +308,12 @@ export function needsAction(
     if (options.decisions && entry.decisionAt !== null) {
       const decisionMs = Date.parse(entry.decisionAt);
       if (decisionMs < nowMs) {
-        reasons.push("The decision date has passed — release, extend, or ink.");
+        reasons.push("The decision date has passed — release it, extend it or confirm it.");
         earliestOverdue = Math.min(earliestOverdue, decisionMs);
       }
     }
     if (entry.rank === null) {
-      reasons.push("This pencil is unranked — give it a ladder position.");
+      reasons.push("This provisional hold has no option yet — give it one.");
     }
 
     if (reasons.length > 0) {

@@ -341,10 +341,10 @@ describe("WhenRibbon", () => {
     fireEvent.keyDown(ingot, { key: "Enter" });
 
     const confirm = await screen.findByTestId("when-ribbon-confirm");
-    expect(confirm.textContent).toContain("Move the ink to");
+    expect(confirm.textContent).toContain("Move the confirmed booking to");
     expect(moveBookingMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText("Move the ink"));
+    fireEvent.click(screen.getByText("Move it"));
     await waitFor(() => {
       expect(moveBookingMock).toHaveBeenCalledWith(SELF, {
         startsAt: new Date(NOON + 15 * MIN).toISOString(),
@@ -367,7 +367,7 @@ describe("WhenRibbon", () => {
     fireEvent.keyDown(ingot, { key: "Enter" });
 
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toContain("just inked by someone else");
+      expect(screen.getByRole("alert").textContent).toContain("just confirmed by someone else");
     });
     // The optimistic override rolled back: the label shows the original span.
     expect(screen.getByTestId("when-ribbon-ingot").getAttribute("aria-label")).toContain("13:00");

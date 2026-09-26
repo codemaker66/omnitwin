@@ -163,10 +163,10 @@ describe("hold overlap (advisory ladder)", () => {
     const a = booking({ id: "j1", kind: "hold", rank: 1, jointFlag: true, title: "Kerr wedding" });
     const b = booking({ id: "j2", kind: "hold", rank: 1, jointFlag: true, title: "Nairn wedding" });
     const report = detect({ bookings: [a, b] });
-    expect(report.conflicts[0]?.explanation).toContain("joint 1st option");
+    expect(report.conflicts[0]?.explanation).toContain("(Joint 1st)");
   });
 
-  it("hold-under-ink is a warning that the pencil cannot convert", () => {
+  it("a provisional hold under a confirmed booking is a warning that it cannot be confirmed", () => {
     const ink = booking({ id: "ink-x", title: "Graduation ball" });
     const hold = booking({
       id: "hold-x",

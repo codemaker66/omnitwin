@@ -3,8 +3,8 @@ import { BOARD_COPY } from "../board-copy.js";
 
 // ---------------------------------------------------------------------------
 // Claim guard (house pattern from rite-copy/spotlight-copy): the Board's copy
-// is planning-support language, never compliance vocabulary, and keeps the
-// Canon §18 vocabulary locks.
+// is planning-support language, never compliance vocabulary, and speaks
+// Blake's hold words (26 September 2026), never the internal ones.
 // ---------------------------------------------------------------------------
 
 function allStrings(value: unknown): string[] {
@@ -44,14 +44,21 @@ describe("board copy claim guard", () => {
     expect(BOARD_COPY.disclosure).toContain("Planning support only");
   });
 
-  it("keeps the Canon vocabulary: inked, pencil — never 'strong enquiry'", () => {
+  it("speaks Blake's hold words, and never says 'strong enquiry'", () => {
     expect(corpus.toLowerCase()).not.toContain("strong enquiry");
-    expect(BOARD_COPY.legend.ink.toLowerCase()).toContain("inked");
-    expect(BOARD_COPY.legend.hold.toLowerCase()).toContain("pencil");
+    expect(BOARD_COPY.legend.ink).toBe("Confirmed");
+    expect(BOARD_COPY.legend.hold).toBe("Provisional");
+    expect(BOARD_COPY.decisions.option(1, true)).toBe("Joint 1st");
+    expect(BOARD_COPY.decisions.option(2, false)).toBe("2nd option");
   });
 
-  it("prospects are described as never blocking", () => {
-    expect(BOARD_COPY.legend.prospect.toLowerCase()).toContain("never blocks");
+  it("never shows the internal words: pencil, ink, prospect or ladder", () => {
+    expect(corpus).not.toMatch(/\b(pencil\w*|ink(ed|s)?|prospects?|ladder)\b/iu);
+  });
+
+  it("says plainly that an interest never holds the room", () => {
+    expect(BOARD_COPY.legend.prospect).toBe("Interest only");
+    expect(corpus).toContain("Interest only never holds the room.");
   });
 
   it("turnaround checks admit when they are not checked", () => {

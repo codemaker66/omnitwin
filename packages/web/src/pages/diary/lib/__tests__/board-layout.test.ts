@@ -330,7 +330,7 @@ describe("needsAction (the tray)", () => {
     expect(items[1]?.reasons[0]).toContain("decision");
   });
 
-  it("flags unranked pencils as ladder hygiene work", () => {
+  it("flags a provisional hold with no option yet as work to do", () => {
     const unranked = bookingEntry({
       id: "4".repeat(36),
       kind: "hold",
@@ -341,7 +341,7 @@ describe("needsAction (the tray)", () => {
     });
     const items = needsAction([unranked], NOW);
     expect(items).toHaveLength(1);
-    expect(items[0]?.reasons.join(" ")).toContain("unranked");
+    expect(items[0]?.reasons.join(" ")).toContain("no option yet");
   });
 
   it("ignores inks, prospects, blocks, and exited holds", () => {

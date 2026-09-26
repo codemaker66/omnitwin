@@ -206,7 +206,7 @@ describe("Diary Board render budget", () => {
     expect(renders.overview).toBe(before + 1);
   });
 
-  it("the enquiry chip follows the pointer without re-rendering the board, and the drop opens the pencil-in form at the snapped slot", async () => {
+  it("the enquiry chip follows the pointer without re-rendering the board, and the drop opens the hold form at the snapped slot", async () => {
     renderPage(DATED_URL);
     await settled();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
@@ -226,25 +226,25 @@ describe("Diary Board render budget", () => {
 
     // Week zoom is 18 px an hour and the lane starts at x = 0: x = 99 is 05:30.
     fireEvent.pointerMove(window, { clientX: 99, clientY: 220 });
-    expect(chip.textContent).toContain("Pencil at 05:30");
+    expect(chip.textContent).toContain("Hold at 05:30");
     expect([chip.style.left, chip.style.top]).toEqual(["111px", "230px"]);
     const pageBefore = renders.page;
     for (const [clientX, clientY] of [[98, 240], [101, 250], [97, 255], [100, 260]] as const) {
       fireEvent.pointerMove(window, { clientX, clientY });
     }
-    expect(chip.textContent).toContain("Pencil at 05:30");
+    expect(chip.textContent).toContain("Hold at 05:30");
     expect([chip.style.left, chip.style.top]).toEqual(["112px", "270px"]);
     // Inside one slot the page settles without rendering (React may probe the
     // owner once before bailing out).
     expect(renders.page - pageBefore).toBeLessThanOrEqual(1);
     fireEvent.pointerMove(window, { clientX: 108, clientY: 260 });
-    expect(chip.textContent).toContain("Pencil at 06:00");
+    expect(chip.textContent).toContain("Hold at 06:00");
     // Re-rendering for the new time leaves the pointer-owned position alone.
     expect([chip.style.left, chip.style.top]).toEqual(["120px", "270px"]);
     expect(renders.grid).toBe(gridBefore);
 
     fireEvent.pointerUp(window, { clientX: 108, clientY: 260 });
-    expect(await screen.findByRole("dialog", { name: "Pencil in this enquiry" })).toBeDefined();
+    expect(await screen.findByRole("dialog", { name: "Hold a date for this enquiry" })).toBeDefined();
     expect(screen.getByDisplayValue("2026-09-14T06:00")).toBeDefined();
     expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
   });
@@ -260,6 +260,6 @@ describe("Diary Board render budget", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
     fireEvent.pointerUp(window, { clientX: 300, clientY: 200 });
-    expect(screen.queryByRole("dialog", { name: "Pencil in this enquiry" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Hold a date for this enquiry" })).toBeNull();
   });
 });

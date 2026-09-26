@@ -145,7 +145,7 @@ function fixture(): CalendarResponse {
           spaceId: GRAND_HALL,
           entryIds: [INK_ID, HOLD_ID],
           explanation:
-            '"MacLeod wedding" (1st option) pencils a slot already inked by "Chamber dinner" — the pencil cannot convert while the ink stands; release it or offer another date.',
+            '"MacLeod wedding" (1st option) is provisional for a time "Chamber dinner" has confirmed. It cannot be confirmed while that booking stands; release it or offer another date.',
         },
       ],
       checks: {
@@ -250,7 +250,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockReset().mockReturnValueOnce(first).mockReturnValueOnce(second);
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     const move = (): void => {
       fireEvent.keyDown(block, { key: " " });
       fireEvent.keyDown(block, { key: "ArrowRight" });
@@ -273,7 +273,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockReset().mockResolvedValueOnce({}).mockReturnValueOnce(response);
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: " " });
     fireEvent.keyDown(block, { key: "ArrowRight" });
     fireEvent.keyDown(block, { key: " " });
@@ -381,7 +381,7 @@ describe("DiaryBoardPage", () => {
     expect(screen.getByText("Chamber dinner")).toBeDefined();
     // The hold appears both as a lane block and as a tray item — by design.
     expect(screen.getAllByText("MacLeod wedding").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Inked — confirmed")).toBeDefined();
+    expect(document.querySelector(".diary-legend-item.is-ink")?.textContent).toBe("Confirmed");
     expect(screen.getByText(/Planning support only/)).toBeDefined();
   });
 
@@ -391,7 +391,7 @@ describe("DiaryBoardPage", () => {
     fireEvent.click(warning);
     expect(warning.closest("details")?.open).toBe(true);
     expect(
-      await screen.findByText(/pencils a slot already inked by "Chamber dinner"/),
+      await screen.findByText(/for a time "Chamber dinner" has confirmed/),
     ).toBeDefined();
     fireEvent.click(screen.getByText("What was checked"));
     expect(screen.getByText("Turnaround gaps: not checked").closest("details")?.open).toBe(true);
@@ -428,7 +428,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockResolvedValue({});
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: " " }); // lift (Space; Enter opens the drawer)
     fireEvent.keyDown(block, { key: "ArrowRight" }); // +15 minutes
     fireEvent.keyDown(block, { key: " " }); // drop → commit
@@ -447,7 +447,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockRejectedValue(new Error("boom"));
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: " " });
     fireEvent.keyDown(block, { key: "ArrowRight" });
     fireEvent.keyDown(block, { key: " " });
@@ -456,21 +456,21 @@ describe("DiaryBoardPage", () => {
 
   it("Enter opens the booking drawer prefilled from the block (T-495)", async () => {
     renderPage();
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: "Enter" });
     const drawer = await screen.findByRole("dialog", { name: "Booking details" });
     expect(drawer).toBeDefined();
     expect(screen.getByDisplayValue("MacLeod wedding")).toBeDefined();
     // The pencil's lifecycle actions come from the shared matrix.
-    expect(screen.getByRole("button", { name: "Ink it" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Confirm it" })).toBeDefined();
   });
 
   it("converts an open enquiry through the drawer (T-496)", async () => {
     convertEnquiryMock.mockResolvedValue({ title: "Fiona MacLeod — wedding" });
     renderPage();
-    const convert = await screen.findByRole("button", { name: "Pencil in…" });
+    const convert = await screen.findByRole("button", { name: "Hold a date…" });
     convert.click();
-    const drawer = await screen.findByRole("dialog", { name: "Pencil in this enquiry" });
+    const drawer = await screen.findByRole("dialog", { name: "Hold a date for this enquiry" });
     expect(drawer).toBeDefined();
     expect(screen.getByDisplayValue("Fiona MacLeod — wedding")).toBeDefined();
     expect(screen.getByText(/enquiry stays in review/)).toBeDefined();
@@ -484,7 +484,7 @@ describe("DiaryBoardPage", () => {
   it("retargeting the drawer without closing starts a fresh form (review P1)", async () => {
     renderPage();
     // Open the edit drawer on the pencil…
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: "Enter" });
     expect(await screen.findByDisplayValue("MacLeod wedding")).toBeDefined();
     // …then jump straight to "New booking" without closing. The create form
@@ -503,7 +503,7 @@ describe("DiaryBoardPage", () => {
         }),
     );
     renderPage();
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: "Enter" });
     const title = await screen.findByDisplayValue("MacLeod wedding");
     fireEvent.change(title, { target: { value: "MacLeod ceilidh" } });
@@ -522,7 +522,7 @@ describe("DiaryBoardPage", () => {
     const first = renderPage();
     const panel = await screen.findByRole("dialog", { name: "Using the Diary" });
     expect(panel).toBeDefined();
-    expect(screen.getByText(/Pencils may overlap/)).toBeDefined();
+    expect(screen.getByText(/Provisional holds may overlap/)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Open Diary" }));
     expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
     first.unmount();
@@ -624,7 +624,7 @@ describe("DiaryBoardPage — the tray reads once (T-619)", () => {
   it("reloads the tray after a drawer save", async () => {
     updateBookingMock.mockResolvedValue({ title: "MacLeod ceilidh" });
     renderPage();
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(1); });
     fireEvent.keyDown(block, { key: "Enter" });
     fireEvent.change(await screen.findByDisplayValue("MacLeod wedding"), { target: { value: "MacLeod ceilidh" } });

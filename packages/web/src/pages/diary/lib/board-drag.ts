@@ -96,12 +96,12 @@ export function ghostValidity(
       if (env.isInk) {
         return {
           kind: "blocked",
-          reason: `Overlaps "${ink.title}" — two inked bookings cannot share a room.`,
+          reason: `Overlaps "${ink.title}" — two confirmed bookings cannot share a room.`,
         };
       }
       return {
         kind: "warning",
-        reason: `Lands under "${ink.title}" — a pencil here cannot convert while that ink stands.`,
+        reason: `Lands under "${ink.title}" — a provisional hold here cannot be confirmed while that booking stands.`,
       };
     }
   }
@@ -252,7 +252,7 @@ export function announceDrag(state: DragState): string {
   const validity =
     ghost.validity.kind === "ok" ? "The slot is clear." : ghost.validity.reason;
   if (state.phase === "confirming") {
-    return `Confirm moving the inked booking ${context.title} to ${window}. ${validity} Press Enter to confirm or Escape to cancel.`;
+    return `Move the confirmed booking ${context.title} to ${window}? ${validity} Press Enter to move it or Escape to cancel.`;
   }
   return `${context.title}, ${window}. ${validity} Arrow keys move, Enter drops, Escape cancels.`;
 }

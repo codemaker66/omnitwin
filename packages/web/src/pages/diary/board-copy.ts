@@ -1,16 +1,17 @@
 // ---------------------------------------------------------------------------
 // The Board — copy as data (T-493; Canon §18 copy locks, claim-safety
 // doctrine). Every user-facing string lives here so the claim guard can
-// sweep it: planning-support language only, no compliance vocabulary,
-// INKED — never "strong enquiry".
+// sweep it: planning-support language only, no compliance vocabulary, and a
+// confirmed booking is never a "strong enquiry".
 //
-// Strings added from T-619 on use Blake's hold words (26 September 2026):
-// "Provisional", "1st option", "2nd option", "Joint 1st", "Confirmed". The
-// rest of this file still carries the older Canon vocabulary; the Diary
-// rebuild replaces it in one pass.
+// Every string uses Blake's hold words (26 September 2026): "Provisional",
+// "1st option", "2nd option", "Joint 1st", "Confirmed". The internal words
+// (pencil, ink, prospect, ladder position) never reach the screen: a hold is
+// provisional, an ink is confirmed, and a prospect is "Interest only".
 // ---------------------------------------------------------------------------
 
-function ordinal(rank: number): string {
+/** 1 → "1st", 2 → "2nd", 11 → "11th": the option numbers in Blake's words. */
+export function ordinal(rank: number): string {
   const mod100 = rank % 100;
   if (mod100 >= 11 && mod100 <= 13) return `${String(rank)}th`;
   const suffix = rank % 10 === 1 ? "st" : rank % 10 === 2 ? "nd" : rank % 10 === 3 ? "rd" : "th";
@@ -53,7 +54,7 @@ export const BOARD_COPY = {
       "No matches in this range or open enquiries.",
     kinds: { room: "Room", booking: "Booking", enquiry: "Enquiry" } as const,
     roomDetail: "Jump to lane",
-    enquiryDetail: "Open the pencil-in form",
+    enquiryDetail: "Hold a date for it",
   },
 
   /** Lane rail extras (C1). */
@@ -99,22 +100,22 @@ export const BOARD_COPY = {
   next: "Later",
 
   legend: {
-    ink: "Inked — confirmed",
-    hold: "Pencil — ranked option",
-    prospect: "Prospect — never blocks",
+    ink: "Confirmed",
+    hold: "Provisional",
+    prospect: "Interest only",
     internal_block: "House block",
     phase: "Occupancy footprint",
   } as const,
 
   lane: {
-    inkCount: (count: number): string => `${String(count)} inked`,
-    holdCount: (count: number): string => `${String(count)} pencilled`,
+    inkCount: (count: number): string => `${String(count)} confirmed`,
+    holdCount: (count: number): string => `${String(count)} provisional`,
   },
 
   block: {
-    jointFirst: "joint 1st option",
+    jointFirst: "Joint 1st",
     rank: (ordinal: string): string => `${ordinal} option`,
-    unranked: "unranked pencil",
+    unranked: "Provisional, no option yet",
   },
 
   drag: {
@@ -125,18 +126,18 @@ export const BOARD_COPY = {
   drawer: {
     createTitle: "New booking",
     editTitle: "Booking details",
-    convertTitle: "Pencil in this enquiry",
+    convertTitle: "Hold a date for this enquiry",
     close: "Close",
     cancel: "Discard",
     submit: {
       create: "Add to the diary",
       edit: "Save changes",
-      convert: "Pencil it in",
+      convert: "Hold the date",
     } as const,
     convertNote: (name: string): string =>
-      `Pencil in ${name}. The enquiry stays in review.`,
-    hygieneLegend: "Pencil hygiene",
-    ownerNote: "You will own this pencil.",
+      `A provisional date for ${name}. The enquiry stays in review.`,
+    hygieneLegend: "Keeping the hold current",
+    ownerNote: "You will own this hold.",
     // The edit drawer's facts (T-619). Each absence is stated as an answer
     // rather than left as a blank line to interpret.
     summaryLabel: "Booking summary",
@@ -149,7 +150,7 @@ export const BOARD_COPY = {
     saveFailed: "That change could not be saved — nothing was altered.",
     created: (title: string): string => `Added ${title} to the diary.`,
     saved: (title: string): string => `Saved ${title}.`,
-    converted: (title: string): string => `Pencilled in ${title}.`,
+    converted: (title: string): string => `Held a provisional date for ${title}.`,
     transitioned: (title: string, action: string): string => `${action}: ${title}.`,
     transitionsTitle: "Lifecycle",
     planTitle: "Floor plan",
@@ -173,8 +174,8 @@ export const BOARD_COPY = {
       eventType: "Event type",
       startsAt: "Starts",
       endsAt: "Ends",
-      rank: "Ladder position",
-      jointFlag: "Joint first option",
+      rank: "Option",
+      jointFlag: "Joint 1st",
       decisionAt: "Decision date",
       nextAction: "Next action",
       nextActionDueAt: "Next action due",
@@ -183,13 +184,13 @@ export const BOARD_COPY = {
   },
 
   transitions: {
-    prospect: "Make it a prospect",
-    hold: "Make it a pencil",
-    ink: "Ink it",
+    prospect: "Make it interest only",
+    hold: "Make it provisional",
+    ink: "Confirm it",
     internal_block: "Make it a house block",
     released: "Release",
     expired: "Mark expired",
-    cancelled: "Cancel the ink",
+    cancelled: "Cancel the booking",
     lost: "Mark lost",
   } as const,
 
@@ -201,14 +202,14 @@ export const BOARD_COPY = {
   },
 
   trayEnquiries: {
-    dragHint: "Drag a slip onto a room lane to pencil it in.",
-    dropAt: (time: string): string => `Pencil at ${time}`,
+    dragHint: "Drag a slip onto a room lane to hold its date.",
+    dropAt: (time: string): string => `Hold at ${time}`,
     dropSeeking: "Drop on a room lane",
     title: "Open enquiries",
     empty: "No open enquiries right now.",
     more: (shown: number): string =>
       `Showing the ${String(shown)} newest open enquiries. Older ones are not listed here.`,
-    convert: "Pencil in…",
+    convert: "Hold a date…",
     detail: (eventType: string | null, guests: number | null): string => {
       const parts = [eventType ?? "event", guests === null ? null : `${String(guests)} guests`];
       return parts.filter((part): part is string => part !== null).join(" · ");
@@ -216,9 +217,9 @@ export const BOARD_COPY = {
   },
 
   confirmInk: {
-    title: "Move this inked booking?",
+    title: "Move this confirmed booking?",
     body: "This changes the client's confirmed time or room.",
-    confirm: "Move the ink",
+    confirm: "Move it",
     cancel: "Keep it where it is",
   },
 
@@ -228,19 +229,19 @@ export const BOARD_COPY = {
       "Bookings use four commitment types.",
     entries: [
       {
-        term: "Pencil",
+        term: "Provisional",
         detail:
-          "A ranked option with an owner, decision date and next action. Pencils may overlap.",
+          "A 1st, 2nd or Joint 1st option, with an owner, a decision date and a next action. Provisional holds may overlap.",
       },
       {
-        term: "Ink",
+        term: "Confirmed",
         detail:
-          "Confirmed. Two inked bookings cannot overlap in one room.",
+          "Two confirmed bookings cannot share a room at the same time.",
       },
       {
-        term: "House block & prospect",
+        term: "House block & interest only",
         detail:
-          "House blocks reserve venue time. Prospects never block it.",
+          "A house block reserves venue time. Interest only never holds the room.",
       },
       {
         term: "The tray",
@@ -266,13 +267,14 @@ export const BOARD_COPY = {
     action: "Undo",
     undone: "Move undone.",
     failed: "That move could not be saved — the board has been restored.",
-    slotTaken: "That slot was just inked by someone else — the board has been refreshed.",
+    slotTaken: "That slot was just confirmed by someone else — the board has been refreshed.",
   },
 
   tray: {
     title: "Needs attention",
     empty: "No overdue next actions.",
-    open: (count: number): string => `${String(count)} pencil${count === 1 ? "" : "s"} need attention`,
+    open: (count: number): string =>
+      `${String(count)} provisional ${count === 1 ? "hold needs" : "holds need"} attention`,
   },
 
   conflicts: {
@@ -282,7 +284,7 @@ export const BOARD_COPY = {
     severity: {
       blocking: "Blocking",
       warning: "Warning",
-      info: "Ladder",
+      info: "Options",
     } as const,
     turnaround: {
       checked: "Turnaround gaps: checked",

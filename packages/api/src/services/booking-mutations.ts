@@ -126,7 +126,7 @@ const INK_SLOT_TAKEN: BookingMutationDeny = {
   status: 409,
   code: "INK_SLOT_TAKEN",
   error:
-    "That slot has just been inked for this space — the first to confirm wins. Offer the client the next best available option.",
+    "That slot has just been confirmed for this room — the first to confirm wins. Offer the client the next best available option.",
 };
 
 const INTEGRITY_VIOLATION: BookingMutationDeny = {
@@ -358,7 +358,7 @@ async function updateBookingLocked(
   }
 
   if (patch.rank !== undefined && row.kind !== "hold") {
-    return validationDeny([{ path: ["rank"], message: "Only holds carry an option-ladder rank." }]);
+    return validationDeny([{ path: ["rank"], message: "Only a provisional hold has an option number." }]);
   }
 
   if (patch.eventId !== undefined && patch.eventId !== null) {

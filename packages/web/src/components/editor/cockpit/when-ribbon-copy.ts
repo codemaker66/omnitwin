@@ -23,15 +23,15 @@ export const RIBBON_COPY = {
   bufferWarning: (minutes: number, ruleName: string): string =>
     `Inside the ${ruleName} turnaround guideline (${String(minutes)} minutes). Planning support only — the team judges what is workable.`,
   pencilUnderInk: (title: string): string =>
-    `Lands under "${title}" — a pencil here cannot convert while that ink stands.`,
+    `Lands under "${title}" — a provisional hold here cannot be confirmed while that booking stands.`,
 
-  inkConfirm: (range: string): string => `Move the ink to ${range}?`,
-  inkConfirmYes: "Move the ink",
+  inkConfirm: (range: string): string => `Move the confirmed booking to ${range}?`,
+  inkConfirmYes: "Move it",
   inkConfirmNo: "Leave it",
 
   moved: (range: string): string => `Moved to ${range}.`,
   undo: "Undo",
-  slotTaken: "That slot was just inked by someone else — the ribbon has been refreshed.",
+  slotTaken: "That slot was just confirmed by someone else — the ribbon has been refreshed.",
   moveFailed: "The Diary could not record that change. The booking keeps its previous time.",
 
   dragHint: "Drag to move · pull an end to resize · Shift for minute steps",
@@ -40,5 +40,5 @@ export const RIBBON_COPY = {
 
   announceMove: (range: string): string => `Proposed ${range}. Enter commits, Escape cancels.`,
   announceBlocked: (title: string): string =>
-    `Stopped at "${title}" — two inked bookings cannot share a room.`,
+    `Stopped at "${title}" — two confirmed bookings cannot share a room.`,
 } as const;

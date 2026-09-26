@@ -143,11 +143,19 @@ export type Booking = z.infer<typeof BookingSchema>;
 // is due. Enforced at creation — not reported after death.
 // ---------------------------------------------------------------------------
 
+/** What a provisional hold must carry, in the words the drawer shows. */
+const HOLD_REQUIREMENT_WORDS: Readonly<Record<string, string>> = {
+  decisionAt: "a decision date",
+  ownerUserId: "an owner",
+  nextAction: "a next action",
+  nextActionDueAt: "a date for its next action",
+};
+
 function addRequiredHoldIssue(ctx: z.RefinementCtx, field: string): void {
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
     path: [field],
-    message: `A hold requires ${field} — pencils carry a decision date, an owner, and a dated next action (hold hygiene).`,
+    message: `A provisional hold needs ${HOLD_REQUIREMENT_WORDS[field] ?? field}.`,
   });
 }
 
@@ -189,7 +197,7 @@ export const CreateBookingSchema = CreateBookingBaseSchema.superRefine((value, c
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["rank"],
-      message: "Only holds carry an option-ladder rank.",
+      message: "Only a provisional hold has an option number.",
     });
   }
 });

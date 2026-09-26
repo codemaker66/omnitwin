@@ -363,7 +363,7 @@ describe("BookingDrawer — edit completeness (T-619)", () => {
     renderEdit(booking({ kind: "hold", state: "hold", rank: 1, decisionAt: "2026-09-10T12:00:00.000Z",
       ownerUserId: "00000000-0000-4000-8000-0000000000aa", ownerName: "Elaine Gray",
       nextAction: "Call.", nextActionDueAt: "2026-09-09T09:00:00.000Z" }));
-    expect(screen.queryByText("You will own this pencil.")).toBeNull();
+    expect(screen.queryByText("You will own this hold.")).toBeNull();
   });
 
   it.each(["manager", "sales"])("lets a %s edit, as the API does", (role) => {

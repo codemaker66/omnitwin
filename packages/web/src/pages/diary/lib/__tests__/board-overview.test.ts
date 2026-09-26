@@ -148,10 +148,10 @@ describe("overview exact labels", () => {
   it.each([
     { kind: "ink", rank: null, jointFlag: false, label: "Confirmed" },
     { kind: "internal_block", rank: null, jointFlag: false, label: "House block" },
-    { kind: "prospect", rank: null, jointFlag: false, label: "Prospect · never blocks" },
-    { kind: "hold", rank: null, jointFlag: false, label: "Pencilled · unranked" },
-    { kind: "hold", rank: 1, jointFlag: true, label: "Pencilled · joint first" },
-    { kind: "hold", rank: 2, jointFlag: false, label: "Pencilled · option 2" },
+    { kind: "prospect", rank: null, jointFlag: false, label: "Interest only" },
+    { kind: "hold", rank: null, jointFlag: false, label: "Provisional" },
+    { kind: "hold", rank: 1, jointFlag: true, label: "Provisional · Joint 1st" },
+    { kind: "hold", rank: 2, jointFlag: false, label: "Provisional · 2nd option" },
   ] as const)("keeps the commitment distinction: $label", ({ kind, rank, jointFlag, label }) => {
     expect(bookingStateLabel(booking("state", { kind, state: kind, rank, jointFlag }))).toBe(label);
   });

@@ -6,7 +6,7 @@ import type {
   CalendarRoom,
   ConflictSeverity,
 } from "@omnitwin/types";
-import { BOARD_COPY } from "../board-copy.js";
+import { BOARD_COPY, ordinal } from "../board-copy.js";
 import { diaryRoomPhoto, DIARY_ROOM_PHOTO_SIZES } from "../../../lib/diary-room-photos.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
@@ -74,20 +74,6 @@ export interface BoardGridProps {
   readonly turnaroundRules?: readonly CalendarTurnaroundRule[];
 }
 
-function ordinal(rank: number): string {
-  const mod100 = rank % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${String(rank)}th`;
-  switch (rank % 10) {
-    case 1:
-      return `${String(rank)}st`;
-    case 2:
-      return `${String(rank)}nd`;
-    case 3:
-      return `${String(rank)}rd`;
-    default:
-      return `${String(rank)}th`;
-  }
-}
 
 function rankChip(block: PositionedBlock): string | null {
   const { entry } = block;

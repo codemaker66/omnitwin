@@ -176,22 +176,22 @@ test("a public enquiry becomes a pencil through the tray (T-496)", async () => {
   await openSeededWeek(pageA);
   const enquiryRow = pageA.locator(".diary-tray-enquiry", { hasText: guest });
   await expect(enquiryRow).toBeVisible({ timeout: 15_000 });
-  await enquiryRow.getByRole("button", { name: "Pencil in…" }).click();
+  await enquiryRow.getByRole("button", { name: "Hold a date…" }).click();
 
-  const drawer = pageA.getByRole("dialog", { name: "Pencil in this enquiry" });
+  const drawer = pageA.getByRole("dialog", { name: "Hold a date for this enquiry" });
   await expect(drawer).toBeVisible();
   await expect(
-    pageA.getByText(new RegExp(`Pencil in ${guest}`)),
+    pageA.getByText(new RegExp(`A provisional date for ${guest}`)),
   ).toBeVisible();
 
   await fillDrawerTimes(drawer, starts, ends);
-  await drawer.getByLabel("Ladder position").fill("1");
+  await drawer.getByLabel("Option", { exact: true }).fill("1");
   await drawer.getByLabel("Decision date").fill("2026-08-28T12:00");
   await drawer.getByLabel("Next action", { exact: true }).fill(`Call ${guest} with a quote.`);
   await drawer.getByLabel("Next action due").fill("2026-08-21T09:00");
-  await drawer.getByRole("button", { name: "Pencil it in" }).click();
+  await drawer.getByRole("button", { name: "Hold the date" }).click();
 
-  await expect(pageA.getByText(/^Pencilled in /)).toBeVisible({ timeout: 15_000 });
+  await expect(pageA.getByText(/^Held a provisional date for /)).toBeVisible({ timeout: 15_000 });
   await expect(pageA.getByRole("button", { name: new RegExp(guest) }).first()).toBeVisible();
 });
 
@@ -216,8 +216,8 @@ test("the exclusion constraint arbitrates a live two-coordinator ink race (T-487
     await leftover.focus();
     await pageA.keyboard.press("Enter");
     await expect(pageA.getByRole("dialog", { name: "Booking details" })).toBeVisible();
-    await pageA.getByRole("button", { name: "Cancel the ink" }).click();
-    await expect(pageA.getByText(/^Cancel the ink: /)).toBeVisible({ timeout: 15_000 });
+    await pageA.getByRole("button", { name: "Cancel the booking" }).click();
+    await expect(pageA.getByText(/^Cancel the booking: /)).toBeVisible({ timeout: 15_000 });
     await pageA.waitForTimeout(500); // let the refetch settle before re-checking
   }
 
@@ -229,7 +229,7 @@ test("the exclusion constraint arbitrates a live two-coordinator ink race (T-487
     await page.getByRole("button", { name: "New booking" }).click();
     const drawer = page.getByRole("dialog", { name: "New booking" });
     await expect(drawer).toBeVisible();
-    await drawer.getByLabel("Commitment").selectOption({ label: "Inked — confirmed" });
+    await drawer.getByLabel("Commitment").selectOption({ label: "Confirmed" });
     await drawer.getByLabel("Room").selectOption({ label: "Saloon" });
     await drawer.getByLabel("Title", { exact: true }).fill(title);
     await drawer.getByLabel("Event type").fill("dinner");
@@ -244,7 +244,7 @@ test("the exclusion constraint arbitrates a live two-coordinator ink race (T-487
   // INK_SLOT_TAKEN) refuses the double-book and the drawer says so.
   await pageB.getByRole("button", { name: "Add to the diary" }).click();
   await expect(
-    pageB.getByText("That slot was just inked by someone else — the board has been refreshed."),
+    pageB.getByText("That slot was just confirmed by someone else — the board has been refreshed."),
   ).toBeVisible({ timeout: 15_000 });
   await pageB.getByRole("button", { name: "Discard" }).click();
 
@@ -254,8 +254,8 @@ test("the exclusion constraint arbitrates a live two-coordinator ink race (T-487
   await winner.focus();
   await pageA.keyboard.press("Enter");
   await expect(pageA.getByRole("dialog", { name: "Booking details" })).toBeVisible();
-  await pageA.getByRole("button", { name: "Cancel the ink" }).click();
-  await expect(pageA.getByText(/^Cancel the ink: /)).toBeVisible({ timeout: 15_000 });
+  await pageA.getByRole("button", { name: "Cancel the booking" }).click();
+  await expect(pageA.getByText(/^Cancel the booking: /)).toBeVisible({ timeout: 15_000 });
 });
 
 test("the live channel carries a colleague's booking without a reload (T-497)", async () => {

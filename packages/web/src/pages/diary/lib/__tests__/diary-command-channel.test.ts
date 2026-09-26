@@ -78,7 +78,7 @@ describe("sendViaChannelOrRest", () => {
         replay: false,
         status: 409,
         code: "INK_SLOT_TAKEN",
-        error: "That slot has just been inked",
+        error: "That slot has just been confirmed for this room",
       } satisfies DiaryCommandAck)) as never);
     const rest = vi.fn();
     await expect(
