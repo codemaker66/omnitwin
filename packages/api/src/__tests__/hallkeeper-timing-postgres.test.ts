@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { TurnaroundRuleSettingSchema } from "@omnitwin/types";
 import { Pool as PgPool } from "pg";
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-serverless";
 import { drizzle as nodeDrizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { createDbConnection, type Database, type DatabaseConnection } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { resolveTiming } from "../services/hallkeeper-sheet-v2-data.js";
+import { turnaroundRuleRoutes } from "../routes/turnaround-rules.js";
 
 // ---------------------------------------------------------------------------
 // resolveTiming against real PostgreSQL.
@@ -19,11 +21,13 @@ import { resolveTiming } from "../services/hallkeeper-sheet-v2-data.js";
 // all predicates, so they are exercised here against a disposable database.
 //
 // Never reads DATABASE_URL/.env. Opt in with a separately provisioned,
-// disposable local database and the normal local Neon WebSocket bridge
-// (port 54331):
-//   VENVIEWER_TIMING_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1/venviewer_timing_test
+// disposable local database. The API's own client connects to a loopback URL
+// over plain PostgreSQL, so no WebSocket bridge is needed:
+//   VENVIEWER_TIMING_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55477/venviewer_timing_test
 // ---------------------------------------------------------------------------
 
+// The Changeovers routes below authenticate with the test-mode bearer.
+process.env["NODE_ENV"] = "test";
 const explicitUrl = process.env["VENVIEWER_TIMING_TEST_DATABASE_URL"];
 
 function assertTestTarget(raw: string): void {
@@ -45,9 +49,9 @@ describe("Timing PostgreSQL target guard", () => {
 });
 
 describe.skipIf(explicitUrl === undefined)("resolveTiming reads the right booking", () => {
-  let pool: Pool;
-  let migrationPool: PgPool;
-  let db: ReturnType<typeof drizzle<typeof schema>>;
+  let connection: DatabaseConnection | undefined;
+  let migrationPool: PgPool | undefined;
+  let db: Database;
 
   beforeAll(async () => {
     if (explicitUrl === undefined) throw new Error("Explicit test URL required");
@@ -58,15 +62,13 @@ describe.skipIf(explicitUrl === undefined)("resolveTiming reads the right bookin
     );
     expect(target.rows).toEqual([{ database: "venviewer_timing_test", host: "127.0.0.1" }]);
     await migrate(nodeDrizzle(migrationPool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
-    neonConfig.wsProxy = (host) => `${host}:54331/v1`;
-    neonConfig.useSecureWebSocket = false;
-    neonConfig.pipelineTLS = false;
-    neonConfig.pipelineConnect = false;
-    pool = new Pool({ connectionString: explicitUrl });
-    db = drizzle(pool, { schema });
+    // The production client, on its loopback branch: the same drizzle
+    // queries the API sends, over the local port the guard has admitted.
+    connection = createDbConnection(explicitUrl);
+    db = connection.db;
   }, 120000);
 
-  afterAll(async () => { await pool?.end(); await migrationPool?.end(); });
+  afterAll(async () => { await connection?.close(); await migrationPool?.end(); });
 
   /** One venue, one room, one configuration, linked to `eventCount` events. */
   async function seed(eventCount = 1): Promise<{
@@ -235,6 +237,58 @@ describe.skipIf(explicitUrl === undefined)("resolveTiming reads the right bookin
     const derived = await resolveTiming(db, { id: configId, spaceId: roomId, venueId }, eventId);
     expect(derived?.setupBy).toBe("2026-09-19T06:30:00.000Z");
     expect(derived?.bufferMinutes).toBe(150);
+  });
+
+  it("follows the changeover time staff set in Venue settings, through an edit and a retirement", async () => {
+    // T-637 slice A: staff set a room's changeover time in Venue settings ->
+    // Changeovers. The sheet reads the same live rules as the Diary's conflict
+    // engine, so each save must move the printed set-up time on the next read.
+    // Driven through the editor's own routes, so the 0076 columns, the
+    // one-live-rule index and a retirement's is_active=false are all real.
+    const { venueId, roomId, configId, userId, eventIds } = await seed();
+    const [eventId] = eventIds;
+    if (eventId === undefined) throw new Error("fixture");
+    const config = { id: configId, spaceId: roomId, venueId };
+    await addBooking({ venueId, roomId, eventId, startsAt: "2026-09-19T09:00:00.000Z", eventType: "wedding" });
+    await db.insert(schema.turnaroundRules).values({ venueId, spaceId: null, eventType: null, name: "All rooms", minutes: 60 });
+
+    const server = Fastify();
+    await server.register(turnaroundRuleRoutes, { db, prefix: "/venues/:venueId/turnaround-rules" });
+    await server.ready();
+    const headers = {
+      authorization: `Bearer ${JSON.stringify({ id: userId, email: `${userId}@demo.invalid`, name: "Test keeper", role: "admin", venueId })}`,
+    };
+    try {
+      expect(await resolveTiming(db, config, eventId))
+        .toMatchObject({ setupBy: "2026-09-19T08:00:00.000Z", bufferMinutes: 60 });
+
+      const created = await server.inject({
+        method: "POST", url: `/venues/${venueId}/turnaround-rules`, headers,
+        payload: { spaceId: roomId, eventType: "wedding", minutes: 150 },
+      });
+      expect(created.statusCode).toBe(201);
+      const rule = TurnaroundRuleSettingSchema.parse((JSON.parse(created.body) as { data: unknown }).data);
+      expect(await resolveTiming(db, config, eventId))
+        .toMatchObject({ setupBy: "2026-09-19T06:30:00.000Z", bufferMinutes: 150 });
+
+      const edited = await server.inject({
+        method: "PATCH", url: `/venues/${venueId}/turnaround-rules/${rule.id}`, headers,
+        payload: { minutes: 120, expectedUpdatedAt: rule.updatedAt },
+      });
+      expect(edited.statusCode).toBe(200);
+      expect(await resolveTiming(db, config, eventId))
+        .toMatchObject({ setupBy: "2026-09-19T07:00:00.000Z", bufferMinutes: 120 });
+
+      // Retired, the room falls back to the wider rule, exactly as the Diary does.
+      const retired = await server.inject({
+        method: "DELETE", url: `/venues/${venueId}/turnaround-rules/${rule.id}`, headers,
+      });
+      expect(retired.statusCode).toBe(204);
+      expect(await resolveTiming(db, config, eventId))
+        .toMatchObject({ setupBy: "2026-09-19T08:00:00.000Z", bufferMinutes: 60 });
+    } finally {
+      await server.close();
+    }
   });
 
   it("does not let another day's phase become this sheet's set-up deadline", async () => {
