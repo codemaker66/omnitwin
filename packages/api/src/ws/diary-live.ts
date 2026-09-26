@@ -197,21 +197,18 @@ const IncomingLiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("diary.command"), command: DiaryCommandSchema }),
 ]);
 
-export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
-  const hub = new DiaryLiveHub();
-
-  const unsubscribe = subscribe("diary.changed", {
-    name: "diary-live-hub",
-    handle: (payload) => {
-      hub.broadcast(payload.venueId, { type: "diary.event", ...payload });
-    },
-  });
-
-  // Ship Friday slice 10. Requests ride the SAME venue channel the Diary
-  // already holds open, so a phone that is watching the day is watching the
-  // floor as well — no second connection, no second authentication. The frame
-  // goes only to the roles in the request's own audience; a client sees
-  // nothing. Older clients ignore an unknown frame type by design.
+/**
+ * Ship Friday slice 10. Requests ride the SAME venue channel the Diary already
+ * holds open, so a phone that is watching the day is watching the floor as
+ * well — no second connection, no second authentication. A request frame goes
+ * only to the venue's connections whose role is in the request's OWN stored
+ * audience, and an inbox frame to that audience or to the people it names;
+ * the live channel can never widen what the database narrowed. A frame says
+ * something changed, never what: the client refetches, and the server's
+ * answer is the truth. Older clients ignore an unknown frame type by design.
+ * Returns the unsubscribe for the server's close hook.
+ */
+export function subscribeRequestFrames(hub: DiaryLiveHub): () => void {
   const unsubscribeRequests = subscribe("request.changed", {
     name: "diary-live-requests",
     handle: (payload) => {
@@ -243,6 +240,24 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
       hub.broadcastToUsers(payload.venueId, payload.recipientUserIds, frame);
     },
   });
+
+  return () => {
+    unsubscribeRequests();
+    unsubscribeNotifications();
+  };
+}
+
+export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
+  const hub = new DiaryLiveHub();
+
+  const unsubscribe = subscribe("diary.changed", {
+    name: "diary-live-hub",
+    handle: (payload) => {
+      hub.broadcast(payload.venueId, { type: "diary.event", ...payload });
+    },
+  });
+
+  const unsubscribeRequestFrames = subscribeRequestFrames(hub);
 
   const heartbeat = setInterval(() => {
     hub.pingAll();
@@ -308,8 +323,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
     clearInterval(heartbeat);
     clearInterval(escalationSweep);
     unsubscribe();
-    unsubscribeRequests();
-    unsubscribeNotifications();
+    unsubscribeRequestFrames();
   });
 
   server.get("/ws/diary", { websocket: true }, (socket, _request) => {
