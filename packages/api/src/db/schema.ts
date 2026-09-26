@@ -3387,13 +3387,14 @@ export const turnaroundRules = pgTable("turnaround_rules", {
   name: varchar("name", { length: 200 }).notNull(),
   minutes: integer("minutes").notNull(),
   isActive: boolean("is_active").notNull().default(true),
-  /** When a person last saved the rule (migration 0076). Null for a rule
-   *  nobody has confirmed, such as the seed's demo values. */
-  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
-  updatedBy: uuid("updated_by"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  // Added by 0076's ALTER, so physically last.
+  /** When a person last saved the rule. Null for a rule nobody has
+   *  confirmed, such as the seed's demo values. */
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  updatedBy: uuid("updated_by"),
 }, (table) => [
   index("turnaround_rules_venue_space_idx").on(table.venueId, table.spaceId),
   foreignKey({ columns: [table.updatedBy], foreignColumns: [users.id], name: "turnaround_rules_updated_by_fk" })
