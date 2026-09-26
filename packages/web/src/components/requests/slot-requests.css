@@ -23,7 +23,10 @@
 
 .vv-requests-summary {
   align-items: center;
-  color: var(--hk-paper, #f3efe4);
+  /* The summary stands on the slot's own light ground (the Day Board's
+     ivory block), not on a request card, so it takes the register's ink:
+     paper here measured about 1.1:1 and the words vanished. */
+  color: var(--hk-ink, #2e382e);
   display: flex;
   font-size: 13px;
   font-weight: 600;
@@ -32,7 +35,9 @@
 }
 
 .vv-requests-summary[data-urgent="true"] {
-  color: var(--hk-copper-bright, #d8a179);
+  /* The register's copper for small text on ivory; the bright copper is for
+     the dark cards and measured about 2.2:1 here. */
+  color: var(--hk-copper-ink, #8a5840);
 }
 
 .vv-requests-dot {
