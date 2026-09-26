@@ -888,6 +888,14 @@
   outline-offset: var(--vv-focus-ring-offset);
   border-bottom-color: var(--fr-green);
 }
+/* The date field's calendar button lives inside the input's own shadow tree.
+   Tabbing onto it leaves neither :focus nor :focus-visible on the input, only
+   :focus-within, so without this the last stop in the field showed no ring. */
+.fr-enq-field input[type="date"]:focus-within {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+  border-bottom-color: var(--fr-green);
+}
 .fr-enq-field input[type="number"] {
   width: 110px;
   font-variant-numeric: tabular-nums;
