@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router-dom";
 
 // ---------------------------------------------------------------------------
@@ -53,6 +53,19 @@ describe("a link that goes nowhere", () => {
     // The address stays what the visitor typed: the page answers it.
     expect(router.state.location.pathname).toBe("/an-old-link-that-has-moved");
     expect(document.title).toBe("Page not found — Trades Hall of Glasgow");
+    router.dispose();
+  });
+
+  it("asks search engines not to index it, and only while it is showing", async () => {
+    const robots = (): string | null => document.head.querySelector('meta[name="robots"]')?.getAttribute("content") ?? null;
+    const router = createMemoryRouter(routes, { initialEntries: ["/an-old-link-that-has-moved"] });
+    render(<RouterProvider router={router} />);
+    await screen.findByTestId("not-found", {}, FIRST_RENDER);
+    expect(robots()).toBe("noindex");
+    expect(document.head.querySelectorAll('meta[name="robots"]')).toHaveLength(1);
+    await act(async () => { await router.navigate("/"); });
+    expect(await screen.findByRole("heading", { name: "Grand Hall", level: 1 }, FIRST_RENDER)).toBeTruthy();
+    expect(robots()).toBeNull();
     router.dispose();
   });
 });

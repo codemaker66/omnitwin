@@ -32,6 +32,31 @@
       "permanent": false
     },
     {
+      "source": "/landing",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/welcome",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/living-hall",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/editor",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/venues/:venueSlug/rooms/:roomSlug",
+      "destination": "/",
+      "permanent": false
+    },
+    {
       "source": "/private/brief/trades-hall-2026-04-27",
       "destination": "/",
       "permanent": false

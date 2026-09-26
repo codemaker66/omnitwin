@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarRoom, ConflictSeverity } from "@omnitwin/types";
 import { BoardGrid } from "../BoardGrid.js";
 import type { BlockDragHandlers, BoardDrag, DragBlockDescriptor } from "../../hooks/useBoardDrag.js";
@@ -138,5 +138,53 @@ describe("BoardGrid render scope", () => {
     view.rerender(<BoardGrid {...props} nowMs={Date.parse("2026-09-08T17:00:00Z")} />);
     expect(inked()?.querySelector(".diary-block-countdown")).toBeNull();
     expect(inked()?.getAttribute("aria-label")).not.toContain("Doors in");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A gap's time opens its changeover sheet (T-637). The chip says the gap in
+// Venue settings' words and, beside a gap shorter than the room's time, what
+// the room needs; only the chip takes the pointer, so the rest of the gap
+// still books where it is clicked.
+// ---------------------------------------------------------------------------
+
+describe("BoardGrid gaps", () => {
+  const DAY = boardRange(Date.parse("2026-09-08T12:00:00Z"), "day");
+  const TWO: readonly CalendarBookingEntry[] = [
+    booking("d1", ROOM_A, "2026-09-08T08:00:00Z", "2026-09-08T12:00:00Z", { title: "Chamber lunch", eventType: "lunch" }),
+    booking("d2", ROOM_A, "2026-09-08T13:30:00Z", "2026-09-08T16:00:00Z", { title: "MacLeod wedding", eventType: "wedding" }),
+  ];
+  const RULES = [{ spaceId: ROOM_A, eventType: null, name: "Grand Hall", minutes: 120, isActive: true }];
+  const props = {
+    rooms: ROOMS, entries: TWO, range: DAY, pxPerHour: 96, conflictSeverity: new Map<string, ConflictSeverity>(),
+    writable: true, nowMs: Date.parse("2026-09-01T00:00:00Z"), turnaroundRules: RULES,
+  };
+
+  it("names the gap and what the room needs, and opens the sheet with the room and the gap", () => {
+    const onOpenGap = vi.fn();
+    render(<BoardGrid {...props} drag={dragOf(() => HANDLERS, null, null)} onOpenGap={onOpenGap} />);
+    const chip = screen.getByRole("button", {
+      name: "Changeover in Grand Hall: 1 hour 30 minutes between Chamber lunch and MacLeod wedding, needs 2 hours",
+    });
+    expect(chip.textContent).toBe("1 h 30needs 2 h");
+    fireEvent.click(chip);
+    expect(onOpenGap).toHaveBeenCalledWith(
+      { id: ROOM_A, name: "Grand Hall" },
+      expect.objectContaining({
+        minutes: 90, checked: true, tight: true,
+        before: { id: "d1", title: "Chamber lunch", eventType: "lunch" },
+        after: { id: "d2", title: "MacLeod wedding", eventType: "wedding" },
+      }),
+      chip,
+    );
+  });
+
+  it("leaves the time a plain label, hidden from a screen reader, where no sheet is offered", () => {
+    render(<BoardGrid {...props} drag={dragOf(() => HANDLERS, null, null)} />);
+    expect(screen.queryByRole("button", { name: /^Changeover in/u })).toBeNull();
+    const chip = document.querySelector(".diary-gap-chip");
+    expect(chip?.tagName).toBe("SPAN");
+    expect(chip?.getAttribute("aria-hidden")).toBe("true");
+    expect(chip?.textContent).toBe("1 h 30needs 2 h");
   });
 });
