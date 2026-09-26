@@ -391,7 +391,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           <input type="text" value={form.eventType} onChange={onText("eventType")} />
         </label>
 
-        <div className="diary-field-row">
+        <div className="diary-field-row is-times">
           <label className="diary-field">
             {BOARD_COPY.drawer.fields.startsAt}
             <input

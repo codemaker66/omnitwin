@@ -47,6 +47,9 @@ test.describe("Diary timetable", () => {
     const create = page.getByRole("dialog", { name: "New booking" });
     await expect(create.getByLabel("Room")).toHaveValue(SALOON);
     await expect(create.getByLabel("Starts", { exact: true })).toHaveValue("2026-09-16T17:00");
+    // Every field fits the drawer: nothing runs past its edge to make it
+    // scroll sideways.
+    expect(await create.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
     await create.getByRole("button", { name: "Close" }).click();
 
     // On the timeline, a click on empty lane space books at that time:

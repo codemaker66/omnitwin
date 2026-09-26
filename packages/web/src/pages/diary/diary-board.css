@@ -241,6 +241,9 @@
 .diary-field textarea { min-height: 82px; resize: vertical; }
 .diary-field input[aria-invalid='true'] { border-color: #b86750; }
 .diary-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* Start and end stack: side by side, two date-and-time inputs ran past the
+   drawer's edge (by 34px at 1440 wide) and the drawer scrolled sideways. */
+.diary-field-row.is-times { grid-template-columns: minmax(0,1fr); }
 .diary-field-checkbox { display: flex; align-items: center; gap: 8px; color: #60735d; font-size: 12px; }
 .diary-field-checkbox input { width: 16px; height: 16px; accent-color: #376047; }
 .diary-hygiene, .diary-drawer-plan { border: 1px solid #dce3d1; border-radius: 8px; padding: 15px; background: #f3f6eb; display: flex; flex-direction: column; gap: 12px; }
@@ -300,9 +303,6 @@
   .diary-rail-photo { width: 42px; height: 62px; }
   .diary-rail-name { font-size: 15px; }
   .diary-drawer { width: 100%; padding: 20px; }
-  /* Paired fields stack on a phone: two date-and-time inputs side by side ran
-     past the drawer's edge at 390px, and the drawer scrolled sideways. */
-  .diary-field-row { grid-template-columns: minmax(0,1fr); }
   .diary-toast { bottom: 12px; padding: 12px 15px; }
   .diary-welcome { padding: 22px; }
   .diary-welcome-entries { grid-template-columns: 1fr; gap: 5px; }
