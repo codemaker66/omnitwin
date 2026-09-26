@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import type { CalendarResponse } from "@omnitwin/types";
+import type { CalendarBookingEntry, CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { welcomeStorageKey } from "../lib/welcome.js";
@@ -62,11 +62,21 @@ vi.mock("../../../components/dashboard/NotificationCenter.js", () => ({
 // exercise notifications, so the edge is stubbed like the rest of them.
 vi.mock("../../../api/notifications.js", () => ({ listNotifications: () => Promise.resolve([]) }));
 
+// Presence is mutable so a test can put THIS user in the roster, and the
+// page's live-change callback is kept so a test can deliver a colleague's
+// change (T-619).
+const { liveState } = vi.hoisted(() => ({
+  liveState: {
+    presence: [] as readonly { userId: string; name: string; role: string }[],
+    onChange: null as (() => void) | null,
+  },
+}));
+
 vi.mock("../hooks/useDiaryLive.js", () => ({
-  useDiaryLive: () => ({
-    connected: true,
-    presence: [{ userId: "presence-1", name: "Elaine", role: "hallkeeper" }],
-  }),
+  useDiaryLive: (_enabled: boolean, onChange: () => void) => {
+    liveState.onChange = onChange;
+    return { connected: true, presence: liveState.presence };
+  },
 }));
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
@@ -135,7 +145,7 @@ function fixture(): CalendarResponse {
           spaceId: GRAND_HALL,
           entryIds: [INK_ID, HOLD_ID],
           explanation:
-            '"MacLeod wedding" (1st option) pencils a slot already inked by "Chamber dinner" — the pencil cannot convert while the ink stands; release it or offer another date.',
+            '"MacLeod wedding" (1st option) is provisional for a time "Chamber dinner" has confirmed. It cannot be confirmed while that booking stands; release it or offer another date.',
         },
       ],
       checks: {
@@ -217,6 +227,8 @@ beforeEach(() => {
     },
   ]);
   setUser("staff");
+  liveState.presence = [{ userId: "presence-1", name: "Elaine", role: "hallkeeper" }];
+  liveState.onChange = null;
   // Most tests exercise a returning coordinator — the first-run welcome has
   // its own dedicated tests below.
   window.localStorage.setItem(welcomeStorageKey(STAFF_USER_ID), "1");
@@ -238,7 +250,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockReset().mockReturnValueOnce(first).mockReturnValueOnce(second);
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     const move = (): void => {
       fireEvent.keyDown(block, { key: " " });
       fireEvent.keyDown(block, { key: "ArrowRight" });
@@ -261,7 +273,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockReset().mockResolvedValueOnce({}).mockReturnValueOnce(response);
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: " " });
     fireEvent.keyDown(block, { key: "ArrowRight" });
     fireEvent.keyDown(block, { key: " " });
@@ -296,7 +308,9 @@ describe("DiaryBoardPage", () => {
     let rejectRequest: ((reason: Error) => void) | undefined;
     const response = new Promise<never>((_resolve, reject) => { rejectRequest = reject; });
     listEnquiriesMock.mockReturnValue(response);
-    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+    // The reload is an explicit act — Refresh — not a side effect of moving
+    // the board (T-619).
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByText("Loading open enquiries…");
     expect(screen.getByText("Fiona MacLeod")).toBeTruthy();
     await act(async () => { rejectRequest?.(new Error("Offline")); await response.catch(() => undefined); });
@@ -367,7 +381,7 @@ describe("DiaryBoardPage", () => {
     expect(screen.getByText("Chamber dinner")).toBeDefined();
     // The hold appears both as a lane block and as a tray item — by design.
     expect(screen.getAllByText("MacLeod wedding").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("Inked — confirmed")).toBeDefined();
+    expect(document.querySelector(".diary-legend-item.is-ink")?.textContent).toBe("Confirmed");
     expect(screen.getByText(/Planning support only/)).toBeDefined();
   });
 
@@ -377,7 +391,7 @@ describe("DiaryBoardPage", () => {
     fireEvent.click(warning);
     expect(warning.closest("details")?.open).toBe(true);
     expect(
-      await screen.findByText(/pencils a slot already inked by "Chamber dinner"/),
+      await screen.findByText(/for a time "Chamber dinner" has confirmed/),
     ).toBeDefined();
     fireEvent.click(screen.getByText("What was checked"));
     expect(screen.getByText("Turnaround gaps: not checked").closest("details")?.open).toBe(true);
@@ -414,7 +428,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockResolvedValue({});
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: " " }); // lift (Space; Enter opens the drawer)
     fireEvent.keyDown(block, { key: "ArrowRight" }); // +15 minutes
     fireEvent.keyDown(block, { key: " " }); // drop → commit
@@ -433,7 +447,7 @@ describe("DiaryBoardPage", () => {
     moveBookingMock.mockRejectedValue(new Error("boom"));
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: " " });
     fireEvent.keyDown(block, { key: "ArrowRight" });
     fireEvent.keyDown(block, { key: " " });
@@ -442,21 +456,21 @@ describe("DiaryBoardPage", () => {
 
   it("Enter opens the booking drawer prefilled from the block (T-495)", async () => {
     renderPage();
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: "Enter" });
     const drawer = await screen.findByRole("dialog", { name: "Booking details" });
     expect(drawer).toBeDefined();
     expect(screen.getByDisplayValue("MacLeod wedding")).toBeDefined();
     // The pencil's lifecycle actions come from the shared matrix.
-    expect(screen.getByRole("button", { name: "Ink it" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Confirm it" })).toBeDefined();
   });
 
   it("converts an open enquiry through the drawer (T-496)", async () => {
     convertEnquiryMock.mockResolvedValue({ title: "Fiona MacLeod — wedding" });
     renderPage();
-    const convert = await screen.findByRole("button", { name: "Pencil in…" });
+    const convert = await screen.findByRole("button", { name: "Hold a date…" });
     convert.click();
-    const drawer = await screen.findByRole("dialog", { name: "Pencil in this enquiry" });
+    const drawer = await screen.findByRole("dialog", { name: "Hold a date for this enquiry" });
     expect(drawer).toBeDefined();
     expect(screen.getByDisplayValue("Fiona MacLeod — wedding")).toBeDefined();
     expect(screen.getByText(/enquiry stays in review/)).toBeDefined();
@@ -470,7 +484,7 @@ describe("DiaryBoardPage", () => {
   it("retargeting the drawer without closing starts a fresh form (review P1)", async () => {
     renderPage();
     // Open the edit drawer on the pencil…
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: "Enter" });
     expect(await screen.findByDisplayValue("MacLeod wedding")).toBeDefined();
     // …then jump straight to "New booking" without closing. The create form
@@ -489,7 +503,7 @@ describe("DiaryBoardPage", () => {
         }),
     );
     renderPage();
-    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
     fireEvent.keyDown(block, { key: "Enter" });
     const title = await screen.findByDisplayValue("MacLeod wedding");
     fireEvent.change(title, { target: { value: "MacLeod ceilidh" } });
@@ -508,7 +522,7 @@ describe("DiaryBoardPage", () => {
     const first = renderPage();
     const panel = await screen.findByRole("dialog", { name: "Using the Diary" });
     expect(panel).toBeDefined();
-    expect(screen.getByText(/Pencils may overlap/)).toBeDefined();
+    expect(screen.getByText(/Provisional holds may overlap/)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Open Diary" }));
     expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
     first.unmount();
@@ -566,5 +580,397 @@ describe("DiaryBoardPage", () => {
     renderPage();
     expect(screen.getByText(/no venue assigned/)).toBeDefined();
     expect(getCalendarMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-619 — the timetable (Lane 5) on master's board: the tray reads once,
+// create-in-context, shortcuts that stay off a surface being typed into, a
+// presence count of other people, the retired month board's deep links, the
+// write roles, and the venue-wide decisions list the Diary opens with.
+// ---------------------------------------------------------------------------
+
+/** Pins Date only; timers stay real so the page's own effects still run. */
+function pinDate(iso: string): () => void {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.parse(iso));
+  return () => { vi.useRealTimers(); };
+}
+
+describe("DiaryBoardPage — the tray reads once (T-619)", () => {
+  it("reads open enquiries once and does not re-read them when the board moves", async () => {
+    getCalendarMock.mockImplementation(() => Promise.resolve(fixture()));
+    renderPage();
+    await screen.findByText("Fiona MacLeod");
+    expect(listEnquiriesMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(1); });
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(2); });
+    expect(listEnquiriesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads the board and the tray when a colleague's change arrives live", async () => {
+    getCalendarMock.mockImplementation(() => Promise.resolve(fixture()));
+    renderPage();
+    await screen.findByText("Fiona MacLeod");
+    const calendarCalls = getCalendarMock.mock.calls.length;
+    expect(listEnquiriesMock).toHaveBeenCalledTimes(1);
+    act(() => { liveState.onChange?.(); });
+    await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(2); });
+    expect(getCalendarMock.mock.calls.length).toBe(calendarCalls + 1);
+  });
+
+  it("reloads the tray after a drawer save", async () => {
+    updateBookingMock.mockResolvedValue({ title: "MacLeod ceilidh" });
+    renderPage();
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Provisional/ });
+    await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(1); });
+    fireEvent.keyDown(block, { key: "Enter" });
+    fireEvent.change(await screen.findByDisplayValue("MacLeod wedding"), { target: { value: "MacLeod ceilidh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Saved MacLeod ceilidh.")).toBeDefined();
+    await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(2); });
+  });
+});
+
+describe("DiaryBoardPage — create in context (T-619)", () => {
+  it("seeds New booking with the day being looked at, not the range's first instant", async () => {
+    // The board shows the week of 14 Sep; "now" is inside it, on the 16th.
+    const restore = pinDate("2026-09-16T10:00:00.000Z");
+    try {
+      renderPage();
+      await screen.findByText("Grand Hall");
+      fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+      const drawer = screen.getByRole("dialog", { name: "New booking" });
+      expect(within(drawer).getByDisplayValue("2026-09-16T17:00")).toBeTruthy();
+      expect(within(drawer).getByDisplayValue("Grand Hall")).toBeTruthy();
+    } finally {
+      restore();
+    }
+  });
+
+  it("opens the drawer on an empty overview square's room and day", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    // One control per room-day square, named for what it will make.
+    const cells = screen.getAllByRole("button", { name: /^New booking — Saloon, / });
+    expect(cells).toHaveLength(7);
+    fireEvent.click(cells[0] as HTMLElement);
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    expect(within(drawer).getByDisplayValue("Saloon")).toBeTruthy();
+    expect(within(drawer).getByDisplayValue("2026-09-14T17:00")).toBeTruthy();
+  });
+
+  it("opens the drawer at the instant clicked on an empty lane, snapped to the quarter hour", async () => {
+    render(
+      <MemoryRouter initialEntries={["/diary?view=day&date=2026-09-16"]}>
+        <DiaryBoardPage />
+      </MemoryRouter>,
+    );
+    const lane = await screen.findByRole("button", { name: /^New booking — Saloon, / });
+    // happy-dom lays nothing out, so the lane starts at x = 0; the day view
+    // is 96 px an hour, so x = 980 is 10:12:30, which snaps to 10:15.
+    fireEvent.click(lane, { detail: 1, clientX: 980, clientY: 10 });
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    expect(within(drawer).getByDisplayValue("Saloon")).toBeTruthy();
+    expect(within(drawer).getByDisplayValue("2026-09-16T10:15")).toBeTruthy();
+    // The house window's length (six hours) is kept as the duration.
+    expect(within(drawer).getByDisplayValue("2026-09-16T16:15")).toBeTruthy();
+  });
+
+  it("falls back to the shown day when the lane control is reached from the keyboard", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    const lane = await screen.findByRole("button", { name: /^New booking — Grand Hall, / });
+    // detail 0 is exactly what Enter or Space on a <button> produces; a time
+    // must never come from a clientX the keyboard could not supply.
+    fireEvent.click(lane, { detail: 0 });
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    expect(within(drawer).getByDisplayValue("Grand Hall")).toBeTruthy();
+    expect(within(drawer).getByDisplayValue("2026-09-16T17:00")).toBeTruthy();
+  });
+
+  it("names the day the lane control will pick, not the range it sits in", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    const lane = await screen.findByRole("button", { name: /^New booking — Grand Hall, / });
+    const label = lane.getAttribute("aria-label") ?? "";
+    expect(label).not.toMatch(/Week of|Fortnight of/u);
+    expect(label).toContain("Click the lane for a particular time.");
+  });
+
+  it("offers no create control to a read-only role", async () => {
+    setUser("hallkeeper");
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.queryByRole("button", { name: /^New booking — / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New booking" })).toBeNull();
+  });
+
+  it.each(["manager", "sales"])("offers the %s the controls the API lets them use", async (role) => {
+    setUser(role);
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.getByRole("button", { name: "New booking" })).toBeDefined();
+    expect(screen.getAllByRole("button", { name: /^New booking — / }).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Read-only/)).toBeNull();
+  });
+});
+
+describe("DiaryBoardPage — shortcuts, presence and retired views (T-619)", () => {
+  it("does not re-range the board from a letter typed into the drawer's Room select", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    const room = within(drawer).getByLabelText("Room");
+    room.focus();
+    fireEvent.keyDown(room, { key: "d" });
+    expect(screen.getByRole("dialog", { name: "New booking" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("holds board shortcuts while the drawer is open, even from the page body", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+    fireEvent.keyDown(window, { key: "d" });
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("still re-ranges from a board shortcut once no drawer is open", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.keyDown(window, { key: "d" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Day" }).getAttribute("aria-pressed")).toBe("true");
+    });
+  });
+
+  it("counts other people in the presence chip, never yourself", async () => {
+    liveState.presence = [
+      { userId: STAFF_USER_ID, name: "Test Staff", role: "staff" },
+      { userId: "presence-1", name: "Elaine", role: "hallkeeper" },
+    ];
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.getByText("Live · 1")).toBeTruthy();
+  });
+
+  it("says only Live when you are the only person on the board", async () => {
+    liveState.presence = [{ userId: STAFF_USER_ID, name: "Test Staff", role: "staff" }];
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.getByText("Live")).toBeTruthy();
+    expect(screen.queryByText(/Live · /)).toBeNull();
+  });
+
+  it("lands an old ?view=month deep link on the week that date falls in, and ignores m", async () => {
+    render(
+      <MemoryRouter initialEntries={["/diary?view=month&date=2026-09-16"]}>
+        <DiaryBoardPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Grand Hall");
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("button", { name: "Month" })).toBeNull();
+    const requested = getCalendarMock.mock.calls.at(-1) as [string, string, string] | undefined;
+    expect(requested?.[1]).toBe("2026-09-13T23:00:00.000Z");
+    expect(requested?.[2]).toBe("2026-09-20T23:00:00.000Z");
+    fireEvent.keyDown(window, { key: "m" });
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("DiaryBoardPage — decisions due, venue-wide (T-619)", () => {
+  const OVERDUE_ID = "00000000-0000-4000-8000-0000000000d1";
+  const SOON_ID = "00000000-0000-4000-8000-0000000000d2";
+
+  function decisionHold(overrides: Partial<CalendarBookingEntry> & Pick<CalendarBookingEntry, "id" | "title">): CalendarBookingEntry {
+    return {
+      entryType: "booking",
+      spaceId: SALOON,
+      kind: "hold",
+      status: "active",
+      state: "hold",
+      eventType: "wedding",
+      startsAt: "2027-03-20T15:00:00.000Z",
+      endsAt: "2027-03-20T23:00:00.000Z",
+      rank: 2,
+      jointFlag: false,
+      decisionAt: "2026-09-15T12:00:00.000Z",
+      ownerUserId: "00000000-0000-4000-8000-0000000000aa",
+      ownerName: "Fiona Coordinator",
+      nextAction: "Call the couple.",
+      nextActionDueAt: "2026-10-01T09:00:00.000Z",
+      eventId: null,
+      seriesId: null,
+      ...overrides,
+    };
+  }
+
+  function withDecisions(): CalendarResponse {
+    return {
+      ...fixture(),
+      decisionsDue: {
+        holds: [
+          decisionHold({ id: OVERDUE_ID, title: "Hartley wedding" }),
+          decisionHold({
+            id: SOON_ID,
+            title: "Guild dinner",
+            spaceId: GRAND_HALL,
+            startsAt: "2026-11-14T18:00:00.000Z",
+            endsAt: "2026-11-14T23:00:00.000Z",
+            rank: 1,
+            jointFlag: true,
+            decisionAt: "2026-09-18T12:00:00.000Z",
+            ownerUserId: null,
+            ownerName: null,
+          }),
+        ],
+        total: 2,
+      },
+    };
+  }
+
+  it("lists provisional holds from any week, overdue first, in Blake's words", async () => {
+    getCalendarMock.mockResolvedValue(withDecisions());
+    const restore = pinDate("2026-09-16T10:00:00.000Z");
+    try {
+      renderPage();
+      const panel = await screen.findByRole("region", { name: /Decisions due/ });
+      const overdue = within(panel).getByRole("heading", { name: /Overdue/ }).closest("div");
+      const soon = within(panel).getByRole("heading", { name: /Next 7 days/ }).closest("div");
+      if (overdue === null || soon === null) throw new Error("expected both groups");
+      // A hold next March, whose decision was due yesterday, is on this week's board.
+      expect(within(overdue).getByText("Hartley wedding")).toBeTruthy();
+      expect(within(overdue).getByText("Saloon · Sat 20 Mar 2027")).toBeTruthy();
+      expect(within(overdue).getByText("2nd option · Fiona Coordinator")).toBeTruthy();
+      // ICU's en-GB short September is "Sept" in current data, "Sep" in older.
+      expect(within(overdue).getByText(/^Decision was due Tue 15 Sept?$/u)).toBeTruthy();
+      expect(within(soon).getByText("Guild dinner")).toBeTruthy();
+      expect(within(soon).getByText("Joint 1st · No owner")).toBeTruthy();
+      expect(within(soon).getByText(/^Decide by Fri 18 Sept?$/u)).toBeTruthy();
+      expect(panel.textContent ?? "").not.toMatch(/pencil|ink|ladder|prospect/iu);
+    } finally {
+      restore();
+    }
+  });
+
+  it("opens a listed hold in the drawer without moving the board, and gives focus back", async () => {
+    getCalendarMock.mockResolvedValue(withDecisions());
+    renderPage();
+    const row = await screen.findByRole("button", { name: /Hartley wedding/ });
+    const calendarCalls = getCalendarMock.mock.calls.length;
+    row.focus();
+    fireEvent.click(row);
+    const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+    expect(within(drawer).getByDisplayValue("Hartley wedding")).toBeTruthy();
+    expect(within(drawer).getByText("Fiona Coordinator")).toBeTruthy();
+    expect(getCalendarMock.mock.calls.length).toBe(calendarCalls);
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close" }));
+    await waitFor(() => { expect(document.activeElement).toBe(row); });
+  });
+
+  it("leaves overdue decisions to the list rather than repeating them in Needs attention", async () => {
+    const response = withDecisions();
+    getCalendarMock.mockResolvedValue({
+      ...response,
+      entries: response.entries.map((entry) =>
+        entry.id === HOLD_ID && entry.entryType === "booking" ? { ...entry, decisionAt: "2026-09-01T12:00:00.000Z" } : entry,
+      ),
+    });
+    renderPage();
+    await screen.findByRole("region", { name: /Decisions due/ });
+    const tray = screen.getByRole("region", { name: "Needs attention" });
+    expect(within(tray).getByText(/Overdue next action: Call Fiona MacLeod\./)).toBeTruthy();
+    expect(within(tray).queryByText(/decision date has passed/)).toBeNull();
+  });
+
+  it("keeps the in-range decision reason, and shows no list, for an older API that sends none", async () => {
+    getCalendarMock.mockResolvedValue({
+      ...fixture(),
+      entries: fixture().entries.map((entry) =>
+        entry.id === HOLD_ID && entry.entryType === "booking" ? { ...entry, decisionAt: "2026-09-01T12:00:00.000Z" } : entry,
+      ),
+    });
+    renderPage();
+    const tray = await screen.findByRole("region", { name: "Needs attention" });
+    expect(screen.queryByRole("region", { name: /Decisions due/ })).toBeNull();
+    expect(within(tray).getByText(/decision date has passed/)).toBeTruthy();
+  });
+
+  it("says plainly when no decision is due", async () => {
+    getCalendarMock.mockResolvedValue({ ...fixture(), decisionsDue: { holds: [], total: 0 } });
+    renderPage();
+    const panel = await screen.findByRole("region", { name: /Decisions due/ });
+    expect(within(panel).getByText("No decision dates in the next 7 days.")).toBeTruthy();
+  });
+});
+
+describe("DiaryBoardPage — a finger scrolls the tray, a long press lifts a slip (T-619)", () => {
+  async function timelineSlip(): Promise<HTMLElement> {
+    renderPage();
+    await screen.findByText("Fiona MacLeod");
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    const slip = screen.getByText("Fiona MacLeod").closest("li");
+    if (slip === null) throw new Error("expected the enquiry slip");
+    return slip;
+  }
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("lifts only after the press has rested, holding the scroll from the first touch", async () => {
+    const slip = await timelineSlip();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const add = vi.spyOn(document, "addEventListener");
+    fireEvent.pointerDown(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 200 });
+    // Registered at the touch, non-passive, before anything is lifted.
+    expect(add.mock.calls.find(([type]) => type === "touchmove")?.[2]).toMatchObject({ passive: false });
+    expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
+    act(() => { vi.advanceTimersByTime(399); });
+    expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(document.querySelector(".diary-enquiry-ghost")).not.toBeNull();
+    expect(slip.classList.contains("is-lifted")).toBe(true);
+    add.mockRestore();
+  });
+
+  it("abandons a press that travels, so a scroll never turns into a lift", async () => {
+    const slip = await timelineSlip();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.pointerDown(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 200 });
+    fireEvent.pointerMove(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 230 });
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
+    expect(slip.classList.contains("is-lifted")).toBe(false);
+  });
+
+  it("lifts nothing from a press that stopped the tray gliding: the browser keeps that touch", async () => {
+    const slip = await timelineSlip();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const remove = vi.spyOn(document, "removeEventListener");
+    fireEvent.pointerDown(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 200 });
+    // Chromium dispatches the touchstart of a touch that lands on a glide
+    // uncancelable, and the first touchmove with it.
+    document.dispatchEvent(new Event("touchstart", { cancelable: false, bubbles: true }));
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
+    expect(slip.classList.contains("is-lifted")).toBe(false);
+    expect(remove.mock.calls.some(([type]) => type === "touchmove"), "the press gave the scroll back").toBe(true);
+    remove.mockRestore();
+  });
+
+  it("lets a quick tap go without lifting anything", async () => {
+    const slip = await timelineSlip();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.pointerDown(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 200 });
+    act(() => { vi.advanceTimersByTime(150); });
+    fireEvent.pointerUp(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 200 });
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
   });
 });

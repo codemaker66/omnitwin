@@ -3,15 +3,19 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, sql } from "drizzle-o
 import {
   CalendarQuerySchema,
   CalendarResponseSchema,
+  DECISIONS_DUE_HORIZON_DAYS,
+  DECISIONS_DUE_LIMIT,
   deriveBookingState,
+  type CalendarBookingEntry,
   type CalendarEntry,
   type CalendarQuery,
   type CalendarResponse,
 } from "@omnitwin/types";
-import { bookings, eventPhases, events, spaces, turnaroundRules } from "../db/schema.js";
+import { bookings, eventPhases, events, spaces, turnaroundRules, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canReadDiary } from "../utils/query.js";
+import { userDisplayName } from "../utils/user-display-name.js";
 import {
   detectCalendarConflicts,
   type ConflictBookingInput,
@@ -33,6 +37,97 @@ import {
 // ---------------------------------------------------------------------------
 
 const MINUTE_MS = 60_000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
+
+// Explicit column map, NOT db.select().from(...): adding a join to a bare
+// select() silently changes Drizzle's row shape to nested
+// { bookings: {...}, events: {...} } and every flat row.* read would break.
+// The left joins enrich each booking with its event's card-face fields (name,
+// client, guest count) and its owner's name in the same round-trip — the
+// route's own latency rule. Shared by the range read and the decisions list,
+// so both carry exactly the same entry.
+const BOOKING_ENTRY_COLUMNS = {
+  id: bookings.id,
+  spaceId: bookings.spaceId,
+  kind: bookings.kind,
+  status: bookings.status,
+  title: bookings.title,
+  eventType: bookings.eventType,
+  startsAt: bookings.startsAt,
+  endsAt: bookings.endsAt,
+  rank: bookings.rank,
+  jointFlag: bookings.jointFlag,
+  decisionAt: bookings.decisionAt,
+  ownerUserId: bookings.ownerUserId,
+  nextAction: bookings.nextAction,
+  nextActionDueAt: bookings.nextActionDueAt,
+  eventId: bookings.eventId,
+  seriesId: bookings.seriesId,
+  notes: bookings.notes,
+  deletedAt: bookings.deletedAt,
+  eventName: events.name,
+  eventClientName: events.clientName,
+  eventGuestCount: events.guestCount,
+  ownerName: userDisplayName,
+};
+
+interface BookingEntryRow {
+  readonly id: string;
+  readonly spaceId: string;
+  readonly kind: CalendarBookingEntry["kind"];
+  readonly status: CalendarBookingEntry["status"];
+  readonly title: string;
+  readonly eventType: string | null;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+  readonly rank: number | null;
+  readonly jointFlag: boolean;
+  readonly decisionAt: Date | null;
+  readonly ownerUserId: string | null;
+  readonly nextAction: string | null;
+  readonly nextActionDueAt: Date | null;
+  readonly eventId: string | null;
+  readonly seriesId: string | null;
+  readonly notes: string | null;
+  readonly eventName: string | null;
+  readonly eventClientName: string | null;
+  readonly eventGuestCount: number | null;
+  readonly ownerName: string | null;
+}
+
+function toBookingEntry(row: BookingEntryRow): CalendarBookingEntry {
+  return {
+    entryType: "booking",
+    id: row.id,
+    spaceId: row.spaceId,
+    kind: row.kind,
+    status: row.status,
+    state: deriveBookingState(row.kind, row.status),
+    title: row.title,
+    eventType: row.eventType,
+    startsAt: row.startsAt.toISOString(),
+    endsAt: row.endsAt.toISOString(),
+    rank: row.rank,
+    jointFlag: row.jointFlag,
+    decisionAt: row.decisionAt === null ? null : row.decisionAt.toISOString(),
+    ownerUserId: row.ownerUserId,
+    nextAction: row.nextAction,
+    nextActionDueAt: row.nextActionDueAt === null ? null : row.nextActionDueAt.toISOString(),
+    eventId: row.eventId,
+    seriesId: row.seriesId,
+    // Command Centre card face (C1): the joined event's name/client/guests
+    // (null when the booking has no live event) and the booking's own
+    // margin note. All optional on the schema — older clients strip them.
+    eventName: row.eventName,
+    clientName: row.eventClientName,
+    guestCount: row.eventGuestCount,
+    notes: row.notes,
+    // The owner as a person, not a uuid (T-619). Null when the booking has
+    // no owner or that user row is gone — the drawer then says so rather
+    // than printing an identifier nobody can act on.
+    ownerName: row.ownerName,
+  };
+}
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({
@@ -68,7 +163,7 @@ export async function calendarRoutes(
     if (!parsed.success) return validationError(reply, parsed.error.issues);
     const query: CalendarQuery = parsed.data;
 
-    if (!canManageVenue(request.user, query.venueId)) {
+    if (!canReadDiary(request.user, query.venueId)) {
       return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
     }
 
@@ -107,45 +202,27 @@ export async function calendarRoutes(
         rooms: [],
         entries: [],
         conflicts: detectCalendarConflicts({ bookings: [], phases: [], turnaroundRules: [] }),
+        decisionsDue: { holds: [], total: 0 },
       });
       return { data: emptyResponse };
     }
 
-    // The three reads are independent — one round-trip of latency, not three
+    // The venue-wide decisions list (T-619): every active provisional hold in
+    // the venue's rooms whose decision date has passed or falls within the
+    // horizon, WHATEVER the booking's own date — a hold six months out whose
+    // decision is due on Friday belongs on this week's board. Not narrowed by
+    // `spaceIds`: the list is the venue's, not the lanes'. Served by
+    // bookings_venue_decision_idx.
+    const decisionHorizon = new Date(Date.now() + DECISIONS_DUE_HORIZON_DAYS * DAY_MS);
+
+    // The four reads are independent — one round-trip of latency, not four
     // (review finding: this is the endpoint every calendar view polls).
-    const [bookingRows, phaseRows, ruleRows] = await Promise.all([
-      // Explicit column map, NOT db.select().from(...): adding a join to a
-      // bare select() silently changes Drizzle's row shape to nested
-      // { bookings: {...}, events: {...} } and every flat row.* read below
-      // would break. The left join enriches each booking with its event's
-      // card-face fields (name, client, guest count) in the same
-      // round-trip — the route's own latency rule.
+    const [bookingRows, phaseRows, ruleRows, decisionRows] = await Promise.all([
       db
-        .select({
-          id: bookings.id,
-          spaceId: bookings.spaceId,
-          kind: bookings.kind,
-          status: bookings.status,
-          title: bookings.title,
-          eventType: bookings.eventType,
-          startsAt: bookings.startsAt,
-          endsAt: bookings.endsAt,
-          rank: bookings.rank,
-          jointFlag: bookings.jointFlag,
-          decisionAt: bookings.decisionAt,
-          ownerUserId: bookings.ownerUserId,
-          nextAction: bookings.nextAction,
-          nextActionDueAt: bookings.nextActionDueAt,
-          eventId: bookings.eventId,
-          seriesId: bookings.seriesId,
-          notes: bookings.notes,
-          deletedAt: bookings.deletedAt,
-          eventName: events.name,
-          eventClientName: events.clientName,
-          eventGuestCount: events.guestCount,
-        })
+        .select(BOOKING_ENTRY_COLUMNS)
         .from(bookings)
         .leftJoin(events, and(eq(bookings.eventId, events.id), isNull(events.deletedAt)))
+        .leftJoin(users, eq(bookings.ownerUserId, users.id))
         .where(
           and(
             eq(bookings.venueId, query.venueId),
@@ -198,6 +275,29 @@ export async function calendarRoutes(
         })
         .from(turnaroundRules)
         .where(and(eq(turnaroundRules.venueId, query.venueId), isNull(turnaroundRules.deletedAt))),
+      db
+        .select({
+          ...BOOKING_ENTRY_COLUMNS,
+          // Window functions run before LIMIT, so this is every matching
+          // hold, not just the page that travels.
+          total: sql<number>`count(*) over ()`.mapWith(Number),
+        })
+        .from(bookings)
+        .leftJoin(events, and(eq(bookings.eventId, events.id), isNull(events.deletedAt)))
+        .leftJoin(users, eq(bookings.ownerUserId, users.id))
+        .where(
+          and(
+            eq(bookings.venueId, query.venueId),
+            isNull(bookings.deletedAt),
+            inArray(bookings.spaceId, [...knownSpaceIds]),
+            eq(bookings.kind, "hold"),
+            eq(bookings.status, "active"),
+            isNotNull(bookings.decisionAt),
+            lt(bookings.decisionAt, decisionHorizon),
+          ),
+        )
+        .orderBy(asc(bookings.decisionAt), asc(bookings.id))
+        .limit(DECISIONS_DUE_LIMIT),
     ]);
 
     const conflictBookings: ConflictBookingInput[] = bookingRows.map((row) => ({
@@ -243,33 +343,7 @@ export async function calendarRoutes(
       });
     }
 
-    const bookingEntries: CalendarEntry[] = bookingRows.map((row) => ({
-      entryType: "booking",
-      id: row.id,
-      spaceId: row.spaceId,
-      kind: row.kind,
-      status: row.status,
-      state: deriveBookingState(row.kind, row.status),
-      title: row.title,
-      eventType: row.eventType,
-      startsAt: row.startsAt.toISOString(),
-      endsAt: row.endsAt.toISOString(),
-      rank: row.rank,
-      jointFlag: row.jointFlag,
-      decisionAt: row.decisionAt === null ? null : row.decisionAt.toISOString(),
-      ownerUserId: row.ownerUserId,
-      nextAction: row.nextAction,
-      nextActionDueAt: row.nextActionDueAt === null ? null : row.nextActionDueAt.toISOString(),
-      eventId: row.eventId,
-      seriesId: row.seriesId,
-      // Command Centre card face (C1): the joined event's name/client/guests
-      // (null when the booking has no live event) and the booking's own
-      // margin note. All optional on the schema — older clients strip them.
-      eventName: row.eventName,
-      clientName: row.eventClientName,
-      guestCount: row.eventGuestCount,
-      notes: row.notes,
-    }));
+    const bookingEntries: CalendarEntry[] = bookingRows.map(toBookingEntry);
 
     const entries = [...bookingEntries, ...phaseEntries].sort((a, b) => {
       if (a.startsAt !== b.startsAt) return a.startsAt < b.startsAt ? -1 : 1;
@@ -293,6 +367,10 @@ export async function calendarRoutes(
       // When ribbon). Guidance for the team's judgement, never an enforced
       // gap; the engine's advisory-only stance is unchanged.
       turnaroundRules: ruleRows,
+      decisionsDue: {
+        holds: decisionRows.map(toBookingEntry),
+        total: decisionRows[0]?.total ?? 0,
+      },
     });
     return { data: response };
   });

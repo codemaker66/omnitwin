@@ -66,8 +66,11 @@ export const REVIEW_QUEUE_ROLES = ["admin", "manager", "staff"] as const;
 export const EVENT_WRITE_ROLES = ["admin", "manager", "staff"] as const;
 
 /**
- * Mirrors `DIARY_WRITE_ROLES` (`services/booking-mutations.ts`): creating,
- * moving and deciding bookings, on the Diary and on the planner's When ribbon.
+ * Mirrors `DIARY_WRITE_ROLES` (`services/booking-mutations.ts`, and the
+ * booking state machine's transition roles): creating, moving, editing and
+ * deciding bookings, on the Diary and on the planner's When ribbon. The
+ * hallkeeper reads the Diary but never writes it; a Diary control offered
+ * outside this set ends in a 403.
  */
 export const DIARY_WRITE_ROLES = ["admin", "manager", "staff", "sales"] as const;
 

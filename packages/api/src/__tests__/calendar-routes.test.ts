@@ -28,6 +28,15 @@ function staffToken(venueId: string = VENUE_ID): string {
   });
 }
 
+function roleToken(role: string, venueId: string = VENUE_ID): string {
+  return JSON.stringify({
+    id: "00000000-0000-4000-8000-000000000098",
+    email: `${role}@test.com`,
+    role,
+    venueId,
+  });
+}
+
 function calendarUrl(params: Record<string, string>): string {
   const query = new URLSearchParams(params).toString();
   return `/calendar?${query}`;
@@ -131,6 +140,32 @@ describe("calendar read model — auth and validation boundary", () => {
   });
 });
 
+describe("calendar read model — who reads the Diary", () => {
+  const week = { venueId: VENUE_ID, from: "2026-09-14T00:00:00.000Z", to: "2026-09-21T00:00:00.000Z" };
+
+  it("lets sales read its own venue's Diary: it pencils the holds", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: calendarUrl(week),
+      headers: { authorization: `Bearer ${roleToken("sales")}` },
+    });
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+
+  it("refuses sales at another venue, and the roles that never read the Diary", async () => {
+    const refused = [roleToken("sales", OTHER_VENUE_ID), roleToken("caterer"), roleToken("planner"), roleToken("client")];
+    for (const token of refused) {
+      const res = await server.inject({
+        method: "GET",
+        url: calendarUrl(week),
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode, token).toBe(403);
+    }
+  });
+});
+
 describe("calendar read model — source contract", () => {
   it("computes conflicts from the same fetched data in the same request", async () => {
     const source = await readFile(resolve("src/routes/calendar.ts"), "utf-8");
@@ -156,9 +191,16 @@ describe("calendar read model — source contract", () => {
 
   it("returns every booking kind and status in range — view filtering is a client concern", async () => {
     const source = await readFile(resolve("src/routes/calendar.ts"), "utf-8");
-    expect(source).toContain("isNull(bookings.deletedAt)");
-    expect(source).not.toMatch(/eq\(bookings\.kind/);
-    expect(source).not.toMatch(/eq\(bookings\.status/);
+    // The range read only: the venue-wide decisions list that follows it is
+    // deliberately active holds (api-hot-paths-postgres.test.ts runs both).
+    const start = source.indexOf("const [bookingRows");
+    const end = source.indexOf("// Room-scoped, timed phases");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const rangeRead = source.slice(start, end);
+    expect(rangeRead).toContain("isNull(bookings.deletedAt)");
+    expect(rangeRead).not.toMatch(/eq\(bookings\.kind/);
+    expect(rangeRead).not.toMatch(/eq\(bookings\.status/);
   });
 
   it("validates the full response against the shared schema before sending", async () => {

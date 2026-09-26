@@ -143,11 +143,19 @@ export type Booking = z.infer<typeof BookingSchema>;
 // is due. Enforced at creation — not reported after death.
 // ---------------------------------------------------------------------------
 
+/** What a provisional hold must carry, in the words the drawer shows. */
+const HOLD_REQUIREMENT_WORDS: Readonly<Record<string, string>> = {
+  decisionAt: "a decision date",
+  ownerUserId: "an owner",
+  nextAction: "a next action",
+  nextActionDueAt: "a date for its next action",
+};
+
 function addRequiredHoldIssue(ctx: z.RefinementCtx, field: string): void {
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
     path: [field],
-    message: `A hold requires ${field} — pencils carry a decision date, an owner, and a dated next action (hold hygiene).`,
+    message: `A provisional hold needs ${HOLD_REQUIREMENT_WORDS[field] ?? field}.`,
   });
 }
 
@@ -189,7 +197,7 @@ export const CreateBookingSchema = CreateBookingBaseSchema.superRefine((value, c
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["rank"],
-      message: "Only holds carry an option-ladder rank.",
+      message: "Only a provisional hold has an option number.",
     });
   }
 });
@@ -453,6 +461,11 @@ export const CalendarBookingEntrySchema = z.object({
   clientName: z.string().max(200).nullable().optional(),
   guestCount: z.number().int().nonnegative().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  // The owner as a person (T-619): the user's display name, else their name.
+  // `ownerUserId` alone is a uuid nobody can act on. Optional for the same
+  // reason as the fields above (older servers, recorded fixtures); null when
+  // the booking has no owner or that user row is gone.
+  ownerName: z.string().max(200).nullable().optional(),
 });
 export type CalendarBookingEntry = z.infer<typeof CalendarBookingEntrySchema>;
 
@@ -491,6 +504,36 @@ export const CalendarTurnaroundRuleSchema = z.object({
 });
 export type CalendarTurnaroundRule = z.infer<typeof CalendarTurnaroundRuleSchema>;
 
+/** How far ahead the Diary's venue-wide decisions list looks: the horizon of
+ *  the first hold reminder (T-7), so a provisional hold joins the list on the
+ *  day its owner's first reminder is due. */
+export const DECISIONS_DUE_HORIZON_DAYS = 7;
+
+/** The most provisional holds one calendar read carries on that list. */
+export const DECISIONS_DUE_LIMIT = 50;
+
+/** A hold that belongs on the decisions list: provisional, still active, and
+ *  carrying the decision date the list is ordered by. */
+const DecisionDueHoldSchema = CalendarBookingEntrySchema.refine(
+  (entry) => entry.kind === "hold" && entry.status === "active" && entry.decisionAt !== null,
+  { message: "Only an active hold with a decision date is a decision due." },
+);
+
+/** The venue-wide list of provisional holds whose decision date has passed or
+ *  falls within DECISIONS_DUE_HORIZON_DAYS — whatever the booking's own date,
+ *  so a hold six months out still appears on this week's board. */
+export const CalendarDecisionsDueSchema = z.object({
+  /** Most overdue first. Full calendar entries, so the Diary can open one
+   *  without first moving the board to its week. */
+  holds: z.array(DecisionDueHoldSchema).max(DECISIONS_DUE_LIMIT),
+  /** Every such hold in the venue; larger than `holds.length` when capped. */
+  total: z.number().int().nonnegative(),
+}).refine((list) => list.total >= list.holds.length, {
+  message: "total cannot be smaller than the holds listed.",
+  path: ["total"],
+});
+export type CalendarDecisionsDue = z.infer<typeof CalendarDecisionsDueSchema>;
+
 export const CalendarResponseSchema = z.object({
   venueId: z.string().uuid(),
   range: z.object({ from: IsoInstantSchema, to: IsoInstantSchema }),
@@ -500,5 +543,8 @@ export const CalendarResponseSchema = z.object({
   /** Optional so older servers (and recorded fixtures) stay valid; a client
    *  that needs buffer geometry treats absence as "guidelines unavailable". */
   turnaroundRules: z.array(CalendarTurnaroundRuleSchema).optional(),
+  /** Optional so older servers stay valid; a client treats absence as "the
+   *  venue-wide list is unavailable", never as "nothing is due". */
+  decisionsDue: CalendarDecisionsDueSchema.optional(),
 });
 export type CalendarResponse = z.infer<typeof CalendarResponseSchema>;

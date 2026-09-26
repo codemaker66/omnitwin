@@ -53,9 +53,9 @@ export interface SpotlightNavLink {
 }
 
 export const SPOTLIGHT_NAV_LINKS: readonly SpotlightNavLink[] = [
-  { label: "The hall", href: "/welcome", current: true },
-  { label: "The rooms", href: "/#rooms", current: false },
-  { label: "Weddings", href: "/rooms/grand-hall", current: false },
+  { label: "The hall", href: "/", current: true },
+  { label: "The rooms", href: "/#rooms-rail-title", current: false },
+  { label: "Weddings", href: "/room/grand-hall", current: false },
   { label: "Live tour", href: "/venues/trades-hall/twin", current: false },
 ] as const;
 

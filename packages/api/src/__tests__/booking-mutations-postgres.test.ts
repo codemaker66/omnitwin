@@ -205,6 +205,23 @@ describe.skipIf(target === undefined)("booking mutation concurrency on migrated 
     expect((await stored(row.id)).notes).toBeNull();
   });
 
+  it("lets sales, who pencils the holds, edit and confirm a hold at its own venue", async () => {
+    const f = await fixture("hold"), row = first(f);
+    const sales: MutationActor = { ...f.actor, role: "sales" };
+    expect(await updateBookingCore(db, sales, row.id, { notes: "The client called back" })).toMatchObject({ ok: true });
+    expect(await transitionBookingCore(db, sales, row.id, { toState: "ink" })).toMatchObject({ ok: true });
+    expect(await stored(row.id)).toMatchObject({ kind: "ink", notes: "The client called back" });
+  });
+
+  it("keeps the hallkeeper a reader and sales inside its own venue", async () => {
+    const f = await fixture("hold"), row = first(f);
+    expect(await transitionBookingCore(db, { ...f.actor, role: "hallkeeper" }, row.id, { toState: "ink" }))
+      .toMatchObject({ ok: false, status: 403 });
+    expect(await updateBookingCore(db, { ...f.actor, role: "sales", venueId: randomUUID() }, row.id, { notes: "Forbidden" }))
+      .toMatchObject({ ok: false, status: 403 });
+    expect(await stored(row.id)).toMatchObject({ kind: "hold", notes: null });
+  });
+
   it("clears a hold rank on promotion to ink and records the transition", async () => {
     const f = await fixture("hold"), row = first(f);
     expect(await transitionBookingCore(db, f.actor, row.id, { toState: "ink" })).toMatchObject({ ok: true });

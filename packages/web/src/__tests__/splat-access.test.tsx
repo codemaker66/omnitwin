@@ -17,9 +17,9 @@ afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 describe("production Gaussian splat hold", () => {
   it.each([
     "/room/grand-hall?bare=1", "/room/saloon?renderer=webgpu",
-    "/living-hall", "/captures/grand-hall",
+    "/captures/grand-hall",
     "/venues/trades-hall/captures/grand-hall", "/dev/trades-hall-visual",
-    "/venues/trades-hall/rooms/grand-hall", "/splats/reception/chunk_000.sog",
+    "/splats/reception/chunk_000.sog",
     "/work-in-progress",
   ])("blocks direct entry at %s without mounting a viewer", async (url) => {
     vi.stubEnv("DEV", false);
@@ -30,6 +30,22 @@ describe("production Gaussian splat hold", () => {
     expect(container.querySelector("canvas")).toBeNull();
     router.dispose();
   });
+
+  // T-616 retired these two addresses with the older home pages: they now
+  // forward to the front door, which mounts no viewer either.
+  it.each(["/living-hall", "/venues/trades-hall/rooms/grand-hall"])(
+    "sends the retired %s to the front door without mounting a viewer",
+    async (url) => {
+      vi.stubEnv("DEV", false);
+      const router = createMemoryRouter(routes, { initialEntries: [url] });
+      const { container } = render(<RouterProvider router={router} />);
+      // A cold first render transforms the front door's module graph.
+      expect(await screen.findByRole("heading", { name: "Grand Hall", level: 1 }, { timeout: 15_000 })).toBeTruthy();
+      expect(router.state.location.pathname).toBe("/");
+      expect(container.querySelector("canvas")).toBeNull();
+      router.dispose();
+    },
+  );
 
   it("does not mount a native layer even when a caller supplies an asset URL", () => {
     vi.stubEnv("DEV", false);

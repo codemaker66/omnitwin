@@ -66,6 +66,24 @@ async function seedAuthenticatedPlannerUser(page: Page): Promise<void> {
   }, { venueId: VENUE_ID });
 }
 
+// The Venviewer subscription page is admin-only until billing exists (Blake,
+// 26 September 2026), so its screenshot is taken as a venue admin.
+async function seedAuthenticatedAdminUser(page: Page): Promise<void> {
+  await page.addInitScript(({ venueId }) => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
+      value: {
+        id: "00000000-0000-4000-8000-000000004097",
+        email: "admin@e2e.test",
+        role: "admin",
+        venueId,
+        name: "Admin User",
+      },
+      writable: false,
+    });
+  }, { venueId: VENUE_ID });
+}
+
 async function mockPlannerRoutes(page: Page): Promise<void> {
   await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
     void route.fulfill({
@@ -100,24 +118,6 @@ async function mockPlannerRoutes(page: Page): Promise<void> {
             { x: 21, y: 10.5 },
             { x: 0, y: 10.5 },
           ],
-        },
-      },
-    });
-  });
-}
-
-async function mockPublicRoomVisualRoutes(page: Page): Promise<void> {
-  await page.route(`${API}/assets/runtime-packages/public-room-visual*`, (route) => {
-    void route.fulfill({
-      json: {
-        data: {
-          venueSlug: "trades-hall",
-          roomSlug: "grand-hall",
-          runtimeVisualAvailable: false,
-          visualUrl: null,
-          visualLabel: "Visual preview",
-          safeCopy: "Runtime room visual is not currently available for this public preview. Final details are confirmed by the venue team.",
-          humanReviewRequired: true,
         },
       },
     });
@@ -517,33 +517,39 @@ test.describe("SS++ hardening visual regression", () => {
     expect(pageErrors).toEqual([]);
   });
 
+  // T-616: the room showcase is the front door's rail now — the Rite at
+  // /landing left its public address with the other older home pages.
   test("captures deterministic room showcase screenshot", async ({ page }) => {
     const pageErrors = collectPageErrors(page);
-    await page.goto("/landing");
-    await expect(page.getByRole("heading", { level: 1, name: /^Trades Hall, Glasgow · \d+ years$/ })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Eight rooms, each keeping its own hours/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Explore The Robert Adam Room/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Enquire about Deacon Convener's Room/i })).toBeVisible();
-    await page.getByRole("heading", { name: /Eight rooms, each keeping its own hours/i }).scrollIntoViewIfNeeded();
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "More rooms", exact: true })).toBeVisible();
+    await expect(page.getByTestId("room-card-robert-adam-room")).toBeVisible();
+    await expect(page.getByTestId("room-card-deacon-conveners-room")).toBeVisible();
+    await page.getByRole("heading", { name: "More rooms", exact: true }).scrollIntoViewIfNeeded();
     await attachScreenshotSmoke(page, "sspp-room-showcase.png");
     expect(pageErrors).toEqual([]);
   });
 
+  // The public room route retired with the showcase (T-616): its address
+  // forwards to the front door, where every room keeps its card and its
+  // published capacities.
   test("captures deterministic public room route screenshot", async ({ page }) => {
     const pageErrors = collectPageErrors(page);
-    await mockPublicRoomVisualRoutes(page);
 
     await page.goto("/venues/trades-hall/rooms/grand-hall");
-    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+    await expect(page).toHaveURL((url) => url.pathname === "/");
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "More rooms", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Open The South Gallery room preview/i })).toBeVisible();
-    await expect(page.getByText("Planning estimates. Venue review required before use.", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("room-card-south-gallery")).toBeVisible();
+    await expect(page.getByRole("row", { name: /The South Gallery/u })).toBeAttached();
     await attachScreenshotSmoke(page, "sspp-public-room-route.png");
     expect(pageErrors).toEqual([]);
   });
 
   test("captures deterministic pricing screenshot", async ({ page }) => {
     const pageErrors = collectPageErrors(page);
+    await seedAuthenticatedAdminUser(page);
 
     await page.goto("/pricing");
     await expect(page.getByRole("heading", { level: 1, name: "Pricing", exact: true })).toBeVisible();
@@ -596,12 +602,11 @@ test.describe("SS++ hardening visual regression", () => {
 
 test.describe("SS++ hardening keyboard and mobile operations", () => {
   test("landing CTA is reachable by keyboard", async ({ page }) => {
-    await page.goto("/landing");
-    await expect(page.getByRole("heading", { name: /^Trades Hall, Glasgow · \d+ years$/ })).toBeVisible();
-    // The Rite's nav is visually withheld until Act II but stays in the tab
-    // order (it reveals on :focus-within), so keyboard users reach the
-    // planner CTA within the first few tabs.
-    const primaryCta = page.getByRole("link", { name: /Open the planner/i });
+    // T-616: the landing is the front door at `/`. Its planning door leads
+    // the masthead, so a keyboard reaches it within the first few tabs.
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", exact: true })).toBeVisible();
+    const primaryCta = page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Plan an event" });
 
     let focused = false;
     for (let i = 0; i < 12; i += 1) {
@@ -611,20 +616,19 @@ test.describe("SS++ hardening keyboard and mobile operations", () => {
     }
 
     expect(focused).toBe(true);
-    await expect(primaryCta).toBeVisible(); // focus-within reveals the nav
+    await expect(primaryCta).toBeVisible();
   });
 
+  // T-616: the public room selector is the front door's rail now.
   test("public room selector is keyboard reachable and mobile-safe", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await mockPublicRoomVisualRoutes(page);
 
-    await page.goto("/venues/trades-hall/rooms/grand-hall");
+    await page.goto("/");
     await expect(page.getByRole("heading", { name: "More rooms", exact: true })).toBeVisible();
-    await expect(
-      page.getByLabel("Grand Hall visual preview").getByText(/Final details are confirmed by the venue team/i),
-    ).toBeVisible();
 
-    const nextRoom = page.getByRole("link", { name: /Open Lady Convener's Room room preview/i });
+    // A room that can be walked is a door; the Saloon opens here.
+    const nextRoom = page.getByTestId("room-card-saloon");
+    await expect(nextRoom).toHaveAttribute("href", "/room/saloon");
     await nextRoom.focus();
     await expect(nextRoom).toBeFocused();
 

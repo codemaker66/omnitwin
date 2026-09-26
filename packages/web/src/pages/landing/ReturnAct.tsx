@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useSeen } from "./useSeen.js";
 import { tradesHallVenueImages } from "../../lib/trades-hall-room-showcase.js";
 import {
-  enquiryMailtoHref,
+  enquiryComposerHref,
   FOOTER_ADDRESS_LINES,
   FOOTER_BASELINE,
   FOOTER_BASELINE_RIGHT,
@@ -85,7 +85,7 @@ export function ReturnAct(): ReactElement {
             <span className="rite-footer-contact">
               <a href={FOOTER_PHONE_HREF}>{FOOTER_PHONE_DISPLAY}</a>
               <span aria-hidden> · </span>
-              <a href={enquiryMailtoHref()}>{FOOTER_EMAIL}</a>
+              <a href={enquiryComposerHref()}>{FOOTER_EMAIL}</a>
             </span>
           </address>
           <ul className="rite-footer-legal">

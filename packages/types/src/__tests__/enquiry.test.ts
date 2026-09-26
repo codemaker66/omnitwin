@@ -8,6 +8,7 @@ import {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  GUEST_ENQUIRY_SOURCES,
 } from "../enquiry.js";
 import {
   isBookingEnquiry,
@@ -545,6 +546,22 @@ describe("GuestEnquirySchema", () => {
 
   it("rejects phone exceeding 30 characters", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, phone: "1".repeat(31) }).success).toBe(false);
+  });
+
+  it("accepts where the enquiry was written: the website composer or the walkthrough", () => {
+    for (const source of GUEST_ENQUIRY_SOURCES) {
+      const result = GuestEnquirySchema.safeParse({ ...validGuest, source });
+      expect(result.success, source).toBe(true);
+      if (result.success) expect(result.data.source).toBe(source);
+    }
+    // Absent stays absent: an enquiry that names no source is the walkthrough's.
+    const legacy = GuestEnquirySchema.safeParse(validGuest);
+    expect(legacy.success && legacy.data.source).toBeUndefined();
+  });
+
+  it("rejects a source it does not know", () => {
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, source: "twin" }).success).toBe(false);
+    expect(GuestEnquirySchema.safeParse({ ...validGuest, source: "" }).success).toBe(false);
   });
 
   it("does not include venueId or spaceId (guest schema uses configurationId)", () => {

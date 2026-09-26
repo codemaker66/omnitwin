@@ -106,14 +106,14 @@ describe("VenueSettings", () => {
   it("loads venue details, validates dirty state, and saves the typed venue update", async () => {
     render(<VenueSettings />);
 
-    expect(await screen.findByRole("heading", { name: "Venue Settings" })).toBeTruthy();
-    const save = screen.getByRole("button", { name: "Save Changes" });
+    expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
+    const save = screen.getByRole("button", { name: "Save changes" });
     expect(save.hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Venue Name"), { target: { value: "  Trades Hall Updated  " } });
+    fireEvent.change(screen.getByLabelText("Venue name"), { target: { value: "  Trades Hall Updated  " } });
     fireEvent.change(screen.getByLabelText("Address"), { target: { value: "85 Glassford Street" } });
-    fireEvent.change(screen.getByLabelText("Brand Colour"), { target: { value: "#68d8d2" } });
-    fireEvent.change(screen.getByLabelText("Logo URL"), { target: { value: "https://assets.example/trades-hall.svg" } });
+    fireEvent.change(screen.getByLabelText("Brand colour"), { target: { value: "#68d8d2" } });
+    fireEvent.change(screen.getByLabelText("Logo link"), { target: { value: "https://assets.example/trades-hall.svg" } });
     expect(save.hasAttribute("disabled")).toBe(false);
 
     fireEvent.click(save);
@@ -133,13 +133,13 @@ describe("VenueSettings", () => {
   it("keeps invalid brand colour and logo URL out of the save path", async () => {
     render(<VenueSettings />);
 
-    expect(await screen.findByRole("heading", { name: "Venue Settings" })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Brand Colour"), { target: { value: "gold" } });
-    fireEvent.change(screen.getByLabelText("Logo URL"), { target: { value: "not a url" } });
+    expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Brand colour"), { target: { value: "gold" } });
+    fireEvent.change(screen.getByLabelText("Logo link"), { target: { value: "not a url" } });
 
-    expect(screen.getByText(/six-digit hex colour/u)).toBeTruthy();
-    expect(screen.getByText(/valid http or https URL/u)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Save Changes" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/six-digit colour code/u)).toBeTruthy();
+    expect(screen.getByText(/full link, starting https/u)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(true);
     expect(mocks.updateVenue).not.toHaveBeenCalled();
   });
 
@@ -153,7 +153,7 @@ describe("VenueSettings", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Registry unavailable");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("heading", { name: "Venue Settings" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Venue settings" })).toBeTruthy();
     expect(mocks.getVenue).toHaveBeenCalledTimes(2);
   });
 

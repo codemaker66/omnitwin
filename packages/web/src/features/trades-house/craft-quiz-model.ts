@@ -936,18 +936,14 @@ export function rankCrafts(progress: CraftQuizProgress): readonly CraftRankingEn
       profile,
     }));
 }
-export function buildCraftIntroductionMailto(craftId: CraftId): string {
-  const craftName = CRAFT_PROFILES[craftId].name;
-  const subject = `Craft introduction — ${craftName}`;
-  const body = [
-    "Hello,",
-    "",
-    `I took the Discover Your Craft quiz and my affinity was ${craftName}. I would like to learn more about the Craft and request an introduction.`,
-    "",
-    "My name:",
-    "My trade or profession:",
-    "",
-  ].join("\n");
-
-  return `mailto:info@tradeshallglasgow.co.uk?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+/** Where "Request an introduction" goes.
+ *
+ *  T-616 replaced a mailto here. It handed the visitor a pre-filled message to
+ *  send themselves, which left the Trades House with nothing to answer from and
+ *  no record that anyone had asked. The enquiry composer on the front door
+ *  posts to /public/enquiries, so an introduction request lands in the same
+ *  queue as every other enquiry. The craft rides in the query so the page can
+ *  scroll to the composer and the team can see which craft was drawn. */
+export function craftIntroductionHref(craftId: CraftId): string {
+  return `/?craft=${encodeURIComponent(CRAFT_PROFILES[craftId].name)}#enquire`;
 }

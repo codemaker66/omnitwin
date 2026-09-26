@@ -540,26 +540,32 @@ test.describe("T-469 production-live route pass", () => {
     "Production-live route pass requires an explicit HTTPS E2E_BASE_URL.",
   );
 
+  // T-616: the room showcase pages retired with the older home pages (Blake,
+  // 26 September 2026). Their addresses forward to the front door, where each
+  // room keeps its card, its published capacities and the enquiry form; this
+  // is what a live visitor holding one of those links now reaches.
   test("public room pages stay live, accessible, controlled, and within frame budget", async ({ page }) => {
     test.setTimeout(90_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const roomCases = [
-      { slug: "grand-hall", heading: "Grand Hall", eventType: "Wedding dinner" },
-      { slug: "reception-room", heading: "Reception Room", eventType: "Ceremony" },
-      { slug: "robert-adam-room", heading: "Robert Adam Room", eventType: "Private dining" },
-      { slug: "saloon", heading: "Saloon", eventType: "Dinner" },
+      { slug: "grand-hall", tableName: "The Grand Hall", occasion: "Wedding" },
+      { slug: "reception-room", tableName: "The Reception Room", occasion: "Dinner" },
+      { slug: "robert-adam-room", tableName: "The Robert Adam Room", occasion: "Conference" },
+      { slug: "saloon", tableName: "The Saloon", occasion: "Drinks reception" },
     ] as const;
 
     for (const room of roomCases) {
       const path = `/venues/trades-hall/rooms/${room.slug}?live-route-pass=${String(Date.now())}`;
       const problems = watchPageProblems(page);
       await page.goto(path);
-      await expect(page.getByRole("heading", { level: 1, name: room.heading })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Request layout" })).toHaveAttribute("href", `/plan?space=${room.slug}&intent=request-layout`);
-      await page.getByRole("button", { name: room.eventType }).click();
-      await expect(page.getByRole("button", { name: room.eventType })).toHaveClass(/selected/u);
-      actionProofs.push(`${room.heading}: event type button selects ${room.eventType}; request layout link points to the room-specific planner intent.`);
+      await expect(page).toHaveURL((url) => url.pathname === "/");
+      await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", exact: true })).toBeVisible();
+      await expect(page.getByRole("row", { name: new RegExp(room.tableName, "u") })).toBeAttached();
+      const occasion = page.getByTestId("enquiry-composer").getByRole("button", { name: room.occasion, exact: true });
+      await occasion.click();
+      await expect(occasion).toHaveAttribute("aria-pressed", "true");
+      actionProofs.push(`${room.slug}: the retired room address lands on the front door, which prints ${room.tableName}'s published capacities; the composer takes ${room.occasion} as the occasion.`);
 
       await recordControlAudit(page, `public room ${room.slug}`, path);
       await recordAccessibilityState(page, problems, `public room ${room.slug}`, path, "desktop", 16);

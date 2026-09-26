@@ -212,4 +212,67 @@ describe("allowedTransitionTargets", () => {
     expect(allowedTransitionTargets("hold", "hallkeeper")).toEqual([]);
     expect(allowedTransitionTargets("released", "staff")).toEqual([]);
   });
+
+  it("offers the matrix to every role the API lets move the diary (T-619)", () => {
+    for (const role of ["admin", "manager", "staff", "sales"]) {
+      expect(allowedTransitionTargets("hold", role).length, role).toBeGreaterThan(0);
+    }
+    for (const role of ["hallkeeper", "planner", "client", "caterer", ""]) {
+      expect(allowedTransitionTargets("hold", role), role).toEqual([]);
+    }
+  });
+});
+
+describe("the edit drawer's room and note (T-619)", () => {
+  it("seeds the booking's note, so reopening it is not an edit", () => {
+    const original = { ...bookingEntry(), notes: "Cake table by the north door." };
+    const form = initialDrawerForm({ kind: "edit", booking: original });
+    expect(form.notes).toBe("Cake table by the north door.");
+    const result = formToUpdatePayload(form, original);
+    expect(result.ok && result.changed).toBe(false);
+  });
+
+  it("patches a changed note, and clears it to null", () => {
+    const original = { ...bookingEntry(), notes: "Cake table by the north door." };
+    const form = initialDrawerForm({ kind: "edit", booking: original });
+    const edited = formToUpdatePayload({ ...form, notes: "By the south door." }, original);
+    expect(edited.ok && edited.payload).toEqual({ notes: "By the south door." });
+    const cleared = formToUpdatePayload({ ...form, notes: "  " }, original);
+    expect(cleared.ok && cleared.payload).toEqual({ notes: null });
+  });
+
+  it("treats a note missing from an older server's entry as no note", () => {
+    const original = bookingEntry();
+    const form = initialDrawerForm({ kind: "edit", booking: original });
+    expect(form.notes).toBe("");
+    expect(formToUpdatePayload({ ...form, notes: "New note." }, original)).toMatchObject({
+      ok: true, payload: { notes: "New note." },
+    });
+  });
+
+  it("patches a room change as the drag would", () => {
+    const original = bookingEntry();
+    const other = "00000000-0000-4000-8000-0000000000b2";
+    const moved = formToUpdatePayload({ ...initialDrawerForm({ kind: "edit", booking: original }), spaceId: other }, original);
+    expect(moved.ok && moved.payload).toEqual({ spaceId: other });
+  });
+
+  it("surfaces a room or note error in its own slot rather than as a hidden one", () => {
+    expect(hiddenFieldError({ spaceId: "Choose a room." }, false)).toBeNull();
+    expect(hiddenFieldError({ notes: "Too long." }, false)).toBeNull();
+  });
+});
+
+describe("create at a clicked instant (T-619)", () => {
+  it("starts at the instant and keeps the house window's length", () => {
+    const form = initialDrawerForm({
+      kind: "create",
+      spaceId: SPACE,
+      dayStartMs: Date.parse("2026-09-19T09:15:00.000Z"),
+      startMs: Date.parse("2026-09-19T09:15:00.000Z"), // 10:15 BST
+      ownerUserId: OWNER,
+    });
+    expect(form.startsAt).toBe("2026-09-19T10:15");
+    expect(form.endsAt).toBe("2026-09-19T16:15");
+  });
 });

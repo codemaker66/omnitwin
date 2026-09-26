@@ -4,8 +4,9 @@ import { RIBBON_COPY } from "../when-ribbon-copy.js";
 // ---------------------------------------------------------------------------
 // Claim guard for the When ribbon's copy — same doctrine as the Diary's
 // board-copy guard: planning-support language only. The ribbon may state
-// database truth (two inks cannot share a room) but never a compliance
-// claim, and turnaround is always a guideline the team judges.
+// database truth (two confirmed bookings cannot share a room) but never a
+// compliance claim, and turnaround is always a guideline the team judges.
+// It speaks Blake's hold words; pencil, ink, prospect and ladder never show.
 // ---------------------------------------------------------------------------
 
 /** Every string the ribbon can ever show, with functions exercised. */
@@ -44,11 +45,17 @@ describe("when-ribbon copy — claim safety", () => {
     expect(buffer).not.toMatch(/required|must|enforce/iu);
   });
 
-  it("the only hard wall claimed is the database's own ink exclusion", () => {
-    expect(RIBBON_COPY.announceBlocked("X")).toContain("two inked bookings cannot share a room");
+  it("the only hard wall claimed is the database's own exclusion of confirmed bookings", () => {
+    expect(RIBBON_COPY.announceBlocked("X")).toContain("two confirmed bookings cannot share a room");
   });
 
-  it("ink vocabulary stays inked — a pencil cannot convert under an ink", () => {
-    expect(RIBBON_COPY.pencilUnderInk("X")).toContain("cannot convert while that ink stands");
+  it("a provisional hold cannot be confirmed under a confirmed booking", () => {
+    expect(RIBBON_COPY.pencilUnderInk("X")).toContain("cannot be confirmed while that booking stands");
+  });
+
+  it("speaks Blake's hold words: never pencil, ink, prospect or ladder", () => {
+    for (const line of allCopyStrings()) {
+      expect(line).not.toMatch(/\b(pencil\w*|ink(ed|s)?|prospects?|ladder)\b/iu);
+    }
   });
 });

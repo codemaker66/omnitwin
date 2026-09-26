@@ -28,8 +28,7 @@
   z-index: 1;
 }
 
-.trades-house-leaflet-title span,
-.trades-house-leaflet-review-note {
+.trades-house-leaflet-title span {
   color: #9aa8be;
   font-family: Georgia, serif;
   font-size: 12px;
@@ -89,12 +88,6 @@
   outline-offset: 3px;
 }
 
-.trades-house-leaflet-review-note {
-  grid-column: 1 / -1;
-  letter-spacing: 0.03em;
-  margin: -6px 0 0;
-}
-
 .trades-house-leaflet-frame {
   background: #c7c2b6;
   border: 0;
@@ -112,10 +105,6 @@
   .trades-house-leaflet-toolbar nav {
     display: grid;
     grid-template-columns: 1fr 1fr;
-  }
-
-  .trades-house-leaflet-review-note {
-    margin-top: -2px;
   }
 }
 

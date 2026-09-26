@@ -1,0 +1,73 @@
+/* The page that isn't there.
+ *
+ * One centred panel on the Fresh paper — no masthead, no nav, nothing to get
+ * lost in a second time. Every colour and face comes from the --fr-* tokens
+ * fresh.css defines on .fr-root, so this introduces no register of its own. */
+
+.nf-root {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: clamp(24px, 6vh, 72px) clamp(16px, 4vw, 44px);
+  padding-bottom: calc(clamp(24px, 6vh, 72px) + env(safe-area-inset-bottom));
+}
+
+.nf-panel {
+  position: relative;
+  width: 100%;
+  max-width: 34rem;
+  padding-top: 72px;
+  text-align: left;
+}
+
+/* fresh.css pins .fr-arch against a section's own padding box; this panel has
+ * none of its own, so the arch is pinned to the panel instead. */
+.nf-panel .fr-arch {
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.nf-title {
+  margin: 0;
+  font-family: var(--fr-display, "Fraunces", Georgia, serif);
+  font-size: clamp(1.9rem, 5.4vw, 2.9rem);
+  font-weight: 300;
+  line-height: 1.08;
+  letter-spacing: -0.012em;
+  font-variation-settings: "opsz" 96;
+  color: var(--fr-ink);
+}
+
+.nf-body {
+  margin: 1rem 0 0;
+  font-size: 1.02rem;
+  line-height: 1.65;
+  color: var(--fr-ink-2);
+}
+
+.nf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem 1.4rem;
+  margin-top: 1.9rem;
+}
+
+.nf-call {
+  margin: 1.6rem 0 0;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.85rem;
+  color: var(--fr-ink-2);
+}
+
+.nf-call a {
+  color: var(--fr-green);
+  text-underline-offset: 3px;
+}
+
+.nf-call a:focus-visible,
+.nf-actions a:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+}

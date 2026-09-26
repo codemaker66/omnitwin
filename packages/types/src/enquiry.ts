@@ -116,6 +116,18 @@ export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;
 // server routes from drifting on this security-sensitive anchor choice.
 // ---------------------------------------------------------------------------
 
+/**
+ * Where a guest enquiry was written. The venue path was the walkthrough's
+ * (the twin's) alone, and the API marks those enquiries with a source note so
+ * the events team knows the space is the flagship by default, not the guest's
+ * choice. The venue's own website composer (the front door and /fresh) posts
+ * on the same path, and says "website" so it is not recorded as coming from
+ * the walkthrough. An enquiry that names no source is the walkthrough's: it
+ * predates this field.
+ */
+export const GUEST_ENQUIRY_SOURCES = ["website", "walkthrough"] as const;
+export type GuestEnquirySource = (typeof GUEST_ENQUIRY_SOURCES)[number];
+
 export const GuestEnquirySchema = z
   .object({
     configurationId: ConfigurationIdSchema.optional(),
@@ -127,6 +139,7 @@ export const GuestEnquirySchema = z
     eventType: z.string().trim().max(100).optional(),
     guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
     message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
+    source: z.enum(GUEST_ENQUIRY_SOURCES).optional(),
   })
   .refine(
     (value) => (value.configurationId === undefined) !== (value.venueSlug === undefined),

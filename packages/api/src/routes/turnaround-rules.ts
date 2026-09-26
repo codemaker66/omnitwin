@@ -8,8 +8,8 @@ import {
 } from "@omnitwin/types";
 import { bookings, events, spaces, turnaroundRules, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, type JwtUser } from "../middleware/auth.js";
-import { canAdministerVenue, canManageCommercial, canManageVenue } from "../utils/query.js";
+import { authenticate } from "../middleware/auth.js";
+import { canAdministerVenue, canReadDiary } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
 // Turnaround rules staff can set (T-637, slice A)
@@ -26,10 +26,6 @@ const RuleIdParam = z.object({ venueId: z.string().uuid(), id: z.string().uuid()
 
 /** How many of the venue's event types the editor offers. */
 const EVENT_TYPE_LIMIT = 20;
-
-function canReadTurnarounds(user: JwtUser, venueId: string): boolean {
-  return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
-}
 
 /** A rule's name, from its scope: staff choose a room and a type, not a label. */
 export function turnaroundRuleName(roomName: string | null, eventType: string | null): string {
@@ -124,7 +120,7 @@ export async function turnaroundRuleRoutes(
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
     const { venueId } = params.data;
-    if (!canReadTurnarounds(request.user, venueId)) {
+    if (!canReadDiary(request.user, venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (!await venueExists(venueId)) {

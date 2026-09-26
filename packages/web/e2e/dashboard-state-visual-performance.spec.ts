@@ -783,7 +783,9 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
     const targetBounds: { state: string; name: string; width: number; height: number }[] = [];
     const assertHeaderTargets = async (state: string): Promise<void> => {
       const navigation = page.getByRole("navigation", { name: "Hallkeeper navigation" });
-      for (const [name, href] of [["Today's rooms", "/hallkeeper/today"], ["Workflow walkthrough", "/hallkeeper/walkthrough"]] as const) {
+      // The fictional workflow walkthrough is admin-only under /dev (T-616),
+      // so the sheet's header offers the hallkeeper's own room plans instead.
+      for (const [name, href] of [["Today's rooms", "/hallkeeper/today"], ["Room plans", "/hallkeeper/rooms"]] as const) {
         const link = navigation.getByRole("link", { name, exact: true });
         await expect(link).toBeInViewport();
         await expect(link).toHaveAttribute("href", href);

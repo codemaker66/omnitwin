@@ -152,14 +152,19 @@ export async function publicEnquiryRoutes(
     // screens that send the others already confirm the request in place.
     const accessRequest = parsed.data.eventType === VENUE_ACCESS_ENQUIRY_TYPE;
     const pricingEnquiry = parsed.data.eventType === VENVIEWER_PRICING_ENQUIRY_TYPE;
+    // The venue's website composer (the front door and /fresh) posts on the
+    // venue path too, and says so: its enquiries did not come from the
+    // walkthrough. One that names no source is the walkthrough's, which
+    // predates the field (GUEST_ENQUIRY_SOURCES in @omnitwin/types).
+    const fromWalkthrough = anchor.fromTwin && parsed.data.source !== "website";
 
     // Create enquiry with guest fields, status: submitted (skip draft).
     const displayName = parsed.data.name ?? parsed.data.email;
     // Twin enquiries carry the source note first so it survives even a long
     // message; the input message stays within its 2000-char validation. The
-    // two senders above use the venue path without coming from the twin, so
-    // their stored message must not say they did.
-    const composedMessage = anchor.fromTwin && !accessRequest && !pricingEnquiry
+    // two senders above and the website composer use the venue path without
+    // coming from the twin, so their stored message must not say they did.
+    const composedMessage = fromWalkthrough && !accessRequest && !pricingEnquiry
       ? parsed.data.message !== undefined
         ? `${TWIN_SOURCE_NOTE}\n\n${parsed.data.message}`
         : TWIN_SOURCE_NOTE

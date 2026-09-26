@@ -1,0 +1,221 @@
+# Production receipt: what production is running, read from GitHub's runners.
+#
+# The development containers cannot reach venviewer.com or api.venviewer.com,
+# so a release is confirmed from here, on demand. It changes nothing. For one
+# commit it reads:
+#   - the deployment reports Vercel and Railway post back to GitHub;
+#   - the API's public version probe, which names the commit Railway built,
+#     and whether that build contains the expected commit;
+#   - the API's readiness;
+#   - optional route checks without sign-in: a new route answering 401
+#     rather than 404 shows the deployed API has it;
+#   - the front door's status.
+# It fails when the API does not contain the commit, is not ready, or a route
+# check differs. With browser "true" a second job opens the public pages in
+# Chromium: the production route pass (e2e/production-live-route-pass.spec.ts,
+# which mutates nothing), and photographs of the front door, a retired address,
+# an unknown address and /pricing signed out, kept for 14 days.
+
+name: Production receipt
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit SHA expected in production. Empty means the head of the chosen branch.
+        required: false
+        default: ""
+      routes:
+        description: "Space-separated STATUS:PATH checks on the API, e.g. 401:/venues/00000000-0000-0000-0000-000000000000/turnaround-rules"
+        required: false
+        default: ""
+      wait-minutes:
+        description: Minutes to wait for the API to report a build that contains the commit (0 to 20).
+        required: false
+        default: "10"
+      browser:
+        description: "true to also open the public pages in a browser: the production route pass, and photographs kept as an artifact"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  deployments: read
+  statuses: read
+
+concurrency:
+  group: production-receipt
+  cancel-in-progress: false
+
+jobs:
+  receipt:
+    name: Read production
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Read what production reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_SHA: ${{ inputs.sha || github.sha }}
+          ROUTE_CHECKS: ${{ inputs.routes }}
+          WAIT_MINUTES: ${{ inputs.wait-minutes }}
+          API: https://api.venviewer.com
+          WEB: https://venviewer.com
+        run: |
+          set -euo pipefail
+          note() { printf '%s\n' "$*" | tee -a "$GITHUB_STEP_SUMMARY"; }
+          status_of() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true; }
+          # True when no file changed between a build and the expected commit
+          # matches railway.json's watchPatterns at the expected commit: the
+          # paths Railway rebuilds the API for. Unknown answers count as a
+          # change, so the receipt fails safe.
+          api_unchanged_since() {
+            local patterns files regex
+            patterns=$(gh api "repos/$REPOSITORY/contents/railway.json?ref=$EXPECTED_SHA" --jq '.content' 2>/dev/null \
+              | base64 -d 2>/dev/null | jq -r '.build.watchPatterns[]' 2>/dev/null) || return 1
+            [[ -n "$patterns" ]] || return 1
+            files=$(gh api "repos/$REPOSITORY/compare/$1...$EXPECTED_SHA" --jq '.files | if length >= 300 then error("too many files") else .[].filename end' 2>/dev/null) || return 1
+            regex=$(printf '%s\n' "$patterns" | sed -e 's#^/##' -e 's#[.]#\\.#g' -e 's#[*][*]#.*#g' -e 's#^#^#' -e 's#$#$#' | paste -sd'|' -)
+            [[ -z "$files" ]] && return 0
+            ! printf '%s\n' "$files" | grep -Eq "$regex"
+          }
+          failed=0
+
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full 40-character commit"; exit 1; }
+          [[ "$WAIT_MINUTES" =~ ^[0-9]+$ ]] && (( WAIT_MINUTES <= 20 )) || { echo "::error::wait-minutes must be 0 to 20"; exit 1; }
+
+          note "## Production receipt for \`$EXPECTED_SHA\`"
+          note ""
+          note "### Deployments reported to GitHub for this commit"
+          deployments=$(gh api "repos/$REPOSITORY/deployments?sha=$EXPECTED_SHA&per_page=20")
+          if [[ "$(jq length <<<"$deployments")" == "0" ]]; then note "- none"; fi
+          while IFS=$'\t' read -r id environment creator; do
+            [[ -n "$id" ]] || continue
+            state=$(gh api "repos/$REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state // "no status"')
+            note "- $environment ($creator): $state"
+          done < <(jq -r '.[] | [.id, .environment, .creator.login] | @tsv' <<<"$deployments")
+          gh api "repos/$REPOSITORY/commits/$EXPECTED_SHA/status" \
+            --jq '.statuses[] | "- status \(.context): \(.state) \(.description // "")"' | tee -a "$GITHUB_STEP_SUMMARY"
+
+          note ""
+          note "### API"
+          deadline=$(( $(date +%s) + WAIT_MINUTES * 60 ))
+          while :; do
+            version=$(curl -fsS --max-time 20 "$API/health/version" || true)
+            reported=$(jq -r '.gitSha // empty' <<<"$version" 2>/dev/null || true)
+            relation="unknown"
+            api_state="stale"
+            if [[ "$reported" =~ ^[0-9a-f]{40}$ ]]; then
+              relation=$(gh api "repos/$REPOSITORY/compare/$EXPECTED_SHA...$reported" --jq '.status' 2>/dev/null || echo "unknown")
+            fi
+            if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then api_state="contains"; break; fi
+            # Railway rebuilds only when a watched path changes (railway.json),
+            # so an older build can still be the current one.
+            if [[ "$relation" == "behind" ]] && api_unchanged_since "$reported"; then api_state="unchanged"; break; fi
+            if (( $(date +%s) >= deadline )); then break; fi
+            sleep 30
+          done
+          note "- /health/version: \`${version:-no answer}\`"
+          if [[ "$api_state" == "contains" ]]; then
+            note "- the running build (\`$reported\`) contains the expected commit ($relation)"
+          elif [[ "$api_state" == "unchanged" ]]; then
+            note "- the running build (\`$reported\`) is current: nothing the API is built from changed between it and the expected commit"
+          else
+            note "- the running build does not contain the expected commit (reports \`${reported:-nothing}\`, $relation)"
+            failed=1
+          fi
+          ready=$(status_of "$API/health/ready")
+          note "- /health/ready: $ready"
+          [[ "$ready" == "200" ]] || failed=1
+
+          if [[ -n "$ROUTE_CHECKS" ]]; then
+            note ""
+            note "### API routes without sign-in"
+            for check in $ROUTE_CHECKS; do
+              if [[ ! "$check" =~ ^([0-9]{3}):(/[A-Za-z0-9/_.-]*)$ ]]; then
+                note "- \`$check\` is not STATUS:PATH"
+                failed=1
+                continue
+              fi
+              want=${BASH_REMATCH[1]}
+              path=${BASH_REMATCH[2]}
+              got=$(status_of "$API$path")
+              if [[ "$got" == "$want" ]]; then
+                note "- $path: $got, as expected"
+              else
+                note "- $path: $got, expected $want"
+                failed=1
+              fi
+            done
+          fi
+
+          note ""
+          note "### Web"
+          note "- $WEB/: $(status_of "$WEB/")"
+
+          exit "$failed"
+
+  browser:
+    name: Public pages in a browser
+    if: ${{ inputs.browser == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout the commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Install Chromium
+        run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
+
+      - name: Run the production route pass
+        env:
+          E2E_BASE_URL: https://venviewer.com
+          E2E_START_SERVER: "false"
+        run: pnpm --filter @omnitwin/web exec playwright test e2e/production-live-route-pass.spec.ts --project=chromium --reporter=line
+
+      - name: Photograph the public pages
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          echo "### Public pages" >> "$GITHUB_STEP_SUMMARY"
+          pnpm --filter @omnitwin/web exec node ../../.github/scripts/photograph-production.mjs "$GITHUB_WORKSPACE/production-evidence/photographs" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Gather the route pass report
+        if: ${{ !cancelled() }}
+        run: |
+          # The spec writes under a Windows-shaped path, relative on Linux; an
+          # artifact path may not contain its colon, so copy it out.
+          report="packages/web/C:/Users/blake/omnitwin2/artifacts/t469-production-live-route-pass-2026-06-21"
+          if [[ -d "$report" ]]; then
+            mkdir -p production-evidence/route-pass
+            cp -R "$report"/. production-evidence/route-pass/
+          fi
+
+      - name: Keep the evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-evidence-${{ github.run_id }}
+          path: production-evidence
+          retention-days: 14
+          if-no-files-found: warn

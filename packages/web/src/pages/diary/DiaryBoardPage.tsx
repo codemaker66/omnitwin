@@ -8,10 +8,12 @@ import type {
   ConflictSeverity,
 } from "@omnitwin/types";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { DIARY_WRITE_ROLES, hasRole } from "../../lib/role-capabilities.js";
 import { ApiError } from "../../api/client.js";
 import { moveBooking } from "../../api/diary.js";
 import { BOARD_COPY } from "./board-copy.js";
 import {
+  dayColumns,
   snapMs,
   boardRange,
   rangeTitle,
@@ -30,17 +32,18 @@ import {
 } from "./lib/undo-stack.js";
 import type { DrawerMode } from "./lib/drawer-form.js";
 import { markWelcomeSeen, shouldShowWelcome } from "./lib/welcome.js";
+import { holdScrollWhileLifted, keepTouchesHoldable, type ScrollHold } from "./lib/touch-scroll.js";
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
 import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
-import { BoardGrid } from "./components/BoardGrid.js";
+import { BoardGrid, type BoardCreate } from "./components/BoardGrid.js";
 import { BoardOverview } from "./components/BoardOverview.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
 import {
-  type TrayEnquiry, ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
+  type TrayEnquiry, ConflictRail, DecisionsDuePanel, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
 import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
 import { EnquiryDragGhost } from "./components/EnquiryDragGhost.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
@@ -48,21 +51,27 @@ import "./diary-board.css";
 
 // ---------------------------------------------------------------------------
 // The Diary Board (T-493; Canon §8/§9/§12/§18) — the multi-room timeline over
-// GET /calendar. Lanes, day/week/month zoom, venue-local now-line, pointer +
-// keyboard drag with a live-conflict ghost, ink-move confirmation, undo, the
-// conflict rail with honest checks, and the needs-attention tray.
+// GET /calendar. Lanes, day/week/fortnight zoom, venue-local now-line, pointer
+// + keyboard drag with a live-conflict ghost, ink-move confirmation, undo, the
+// venue-wide decisions list, the conflict rail with honest checks, and the
+// needs-attention tray.
 //
-// Staff/admin move bookings; hallkeeper reads (the API enforces the same
-// split server-side). URL carries ?view=&date= so board positions deep-link.
+// DIARY_WRITE_ROLES create and move bookings; the hallkeeper reads (the API
+// enforces the same split server-side). URL carries ?view=&date= so board
+// positions deep-link.
 // ---------------------------------------------------------------------------
 
-const PX_PER_HOUR: Record<BoardView, number> = { day: 96, week: 18, "2w": 9, month: 3 };
-// The toolbar offers the reference sheet's three zooms. Month stays in the
-// union and URL-reachable (?view=month, the m key) so old deep links keep
-// working — a deliberate compat decision, not an oversight.
+const PX_PER_HOUR: Record<BoardView, number> = { day: 96, week: 18, "2w": 9 };
+// The reference sheet's three zooms — the toolbar's, and now the URL's. The
+// month board is retired (T-619).
 const VIEWS: readonly BoardView[] = ["day", "week", "2w"];
 const TOAST_MS = 7_000;
 const NOW_TICK_MS = 60_000;
+/** How long a finger rests on a slip before it lifts rather than scrolls —
+ *  the same rule as a block's lift in useBoardDrag. */
+const LONG_PRESS_MS = 400;
+/** Travel that proves a ripening press was a scroll after all. */
+const LONG_PRESS_SLOP_PX = 8;
 const SEVERITY_RANK: Record<ConflictSeverity, number> = { blocking: 3, warning: 2, info: 1 };
 // The tray asks for exactly the states it can pencil in, newest first, for
 // this board's venue. One row beyond the limit only reveals that more exist.
@@ -70,7 +79,15 @@ const TRAY_ENQUIRY_STATES: readonly string[] = ["submitted", "under_review"];
 const TRAY_ENQUIRY_LIMIT = 50;
 
 function isBoardView(value: string | null): value is BoardView {
-  return value === "day" || value === "week" || value === "2w" || value === "month";
+  return value === "day" || value === "week" || value === "2w";
+}
+
+/** The retired month board's deep links (`?view=month`) still sit in
+ *  bookmarks and older emails. They land on the week their date falls in —
+ *  a real range, not an error and not a URL that disagrees with the board. */
+function viewFromParam(value: string | null): BoardView {
+  if (isBoardView(value)) return value;
+  return "week";
 }
 
 function anchorFromParam(dateParam: string | null): number {
@@ -90,11 +107,11 @@ interface ToastState {
 export function DiaryBoardPage(): ReactElement {
   const user = useAuthStore((state) => state.user);
   const venueId = user?.venueId ?? null;
-  const writable = user?.role === "staff" || user?.role === "admin";
+  const writable = hasRole(DIARY_WRITE_ROLES, user?.role);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get("view");
-  const view: BoardView = isBoardView(viewParam) ? viewParam : "week";
+  const view: BoardView = viewFromParam(viewParam);
   const anchorMs = anchorFromParam(searchParams.get("date"));
   // A range depends only on the anchor's venue-local date. Without ?date=
   // (the nav's plain /diary link) the anchor is Date.now(), a new instant
@@ -119,8 +136,13 @@ export function DiaryBoardPage(): ReactElement {
   // mount, never per prop change (review P1).
   const [drawer, setDrawer] = useState<{ mode: DrawerMode; nonce: number } | null>(null);
   const drawerNonceRef = useRef(0);
+  /** Where focus goes back to when the drawer closes and no board block can
+   *  take it — a booking opened from the decisions list may sit in a week the
+   *  board is not showing. */
+  const drawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const openDrawer = useCallback((mode: DrawerMode) => {
     drawerNonceRef.current += 1;
+    if (document.activeElement instanceof HTMLElement) drawerReturnFocusRef.current = document.activeElement;
     setDrawer({ mode, nonce: drawerNonceRef.current });
   }, []);
   const [enquiryState, setEnquiryState] = useState<{
@@ -161,8 +183,23 @@ export function DiaryBoardPage(): ReactElement {
     setWelcomeOpen(false);
   }, [userId]);
 
-  const live = useDiaryLive(venueId !== null, refetch);
+  // A colleague's change can be an enquiry turned into a booking, so a live
+  // event reloads the tray along with the board (T-619).
+  const onLiveChange = useCallback(() => {
+    refetch();
+    setEnquiryRetry((value) => value + 1);
+  }, [refetch]);
+  const live = useDiaryLive(venueId !== null, onLiveChange);
+  /** Presence minus yourself: "who else is on this board right now". */
+  const othersPresent = useMemo(
+    () => live.presence.filter((person) => person.userId !== userId),
+    [live.presence, userId],
+  );
 
+  // The tray reloads when the venue changes or something can actually have
+  // changed an enquiry — Refresh, a drawer save, a colleague's live change
+  // (the `enquiryRetry` counter). Not on `data`, which changes on every pan,
+  // zoom and refetch: panning a week used to re-read the whole list (T-619).
   useEffect(() => {
     if (venueId === null) return;
     // Aborted on a venue switch, a newer refresh or unmount, so an older
@@ -193,7 +230,7 @@ export function DiaryBoardPage(): ReactElement {
     return () => {
       controller.abort();
     };
-  }, [venueId, data, enquiryRetry]);
+  }, [venueId, enquiryRetry]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -280,7 +317,13 @@ export function DiaryBoardPage(): ReactElement {
     return map;
   }, [data]);
 
-  const trayItems = useMemo(() => needsAction(entries, nowMs), [entries, nowMs]);
+  // With the venue-wide decisions list on the board, a passed decision date
+  // is its to show; an older API that sends no list keeps it here.
+  const decisionsListed = data?.decisionsDue !== undefined;
+  const trayItems = useMemo(
+    () => needsAction(entries, nowMs, { decisions: !decisionsListed }),
+    [decisionsListed, entries, nowMs],
+  );
 
   const applyMove = useCallback(
     (bookingId: string, patch: MoveSnapshot, undoEntry: UndoEntry | null) => {
@@ -367,16 +410,49 @@ export function DiaryBoardPage(): ReactElement {
     onOpenBlock: openBlock,
   });
 
+  // Create-in-context (T-619). "New booking" used to seed the first room and
+  // the range's first instant — on a week view, Monday in whichever room
+  // sorts first. It now seeds the day being looked at (today when today is
+  // on the board, else the range's first day); an empty overview square
+  // seeds its room and day, and a point on a lane its room and time.
+  const days = useMemo(() => dayColumns(range), [range]);
+  const seededColumn = days.find((day) => nowMs >= day.startMs && nowMs < day.endMs) ?? days[0];
+  const seededDayStartMs = seededColumn?.startMs ?? range.fromMs;
+  const seededDayLabel = seededColumn?.label ?? rangeTitle(range);
+
+  /** A DAY was chosen (the toolbar, an overview square, or the lane from
+   *  the keyboard): the drawer opens on it at the house's evening window. */
+  const openCreateOnDay = useCallback(
+    (spaceId: string, dayStartMs: number) => {
+      if (userId === null) return;
+      openDrawer({ kind: "create", spaceId, dayStartMs, ownerUserId: userId });
+    },
+    [openDrawer, userId],
+  );
+
+  /** An INSTANT was chosen (a point on a lane): the drawer opens at exactly
+   *  that time, keeping the default window's length. */
+  const openCreateAt = useCallback(
+    (spaceId: string, startMs: number) => {
+      if (userId === null) return;
+      openDrawer({ kind: "create", spaceId, dayStartMs: startMs, ownerUserId: userId, startMs });
+    },
+    [openDrawer, userId],
+  );
+
+  // One object per chosen day, so the memoised lanes keep equal props.
+  const boardCreate = useMemo<BoardCreate | undefined>(
+    () => (writable
+      ? { at: openCreateAt, onDay: openCreateOnDay, day: { startMs: seededDayStartMs, label: seededDayLabel } }
+      : undefined),
+    [openCreateAt, openCreateOnDay, seededDayLabel, seededDayStartMs, writable],
+  );
+
   const openCreateDrawer = useCallback(() => {
     const firstRoom = rooms[0];
-    if (user === null || firstRoom === undefined) return;
-    openDrawer({
-      kind: "create",
-      spaceId: firstRoom.id,
-      dayStartMs: range.fromMs,
-      ownerUserId: user.id,
-    });
-  }, [openDrawer, range.fromMs, rooms, user]);
+    if (firstRoom === undefined) return;
+    openCreateOnDay(firstRoom.id, seededDayStartMs);
+  }, [openCreateOnDay, rooms, seededDayStartMs]);
 
   const openConvertDrawer = useCallback(
     (enquiryId: string, drop?: { readonly spaceId: string; readonly startMs: number }) => {
@@ -422,23 +498,92 @@ export function DiaryBoardPage(): ReactElement {
     readonly startMs: number | null;
   } | null>(null);
 
+  // Lifting a slip (T-619). A pointerdown used to call preventDefault() and
+  // lift at once, which on a phone cancels the browser's scroll before it
+  // starts: every attempt to push the tray up picked a slip off it instead.
+  // A finger now scrolls and a deliberate long press lifts; a mouse, which
+  // has no scroll gesture to steal, still lifts on press. Text selection is
+  // suppressed in CSS. A non-passive touchmove listener, registered at
+  // pointerdown, holds the page still once the slip is lifted — a
+  // touch-action change at lift time cannot (lib/touch-scroll.ts). A press
+  // that stopped the tray gliding is the tray's, and lifts nothing.
+  const longPressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+  /** Synchronous mirror of "a slip is lifted": the touchmove listener fires
+   *  far more often than React renders and must read this instant's truth. */
+  const slipLiftedRef = useRef(false);
+  const slipScrollHoldRef = useRef<ScrollHold | null>(null);
+
+  const endSlipPress = useCallback(() => {
+    if (longPressRef.current !== null) {
+      window.clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+    }
+    slipScrollHoldRef.current?.release();
+    slipScrollHoldRef.current = null;
+  }, []);
+
+  // While slips can be lifted, every touch stays holdable from its first
+  // event, which WebKit decides at touchstart (lib/touch-scroll.ts).
+  useEffect(() => (writable ? keepTouchesHoldable() : undefined), [writable]);
+
+  const liftSlip = useCallback((enquiry: TrayEnquiry, x: number, y: number) => {
+    slipLiftedRef.current = true;
+    setEnquiryDrag({ enquiryId: enquiry.id, name: enquiry.name, originX: x, originY: y, laneId: null, startMs: null });
+  }, []);
+
   const beginEnquiryDrag = useCallback(
     (enquiry: TrayEnquiry, event: React.PointerEvent<HTMLElement>) => {
       if (!writable) return;
-      event.preventDefault();
-      setEnquiryDrag({
-        enquiryId: enquiry.id,
-        name: enquiry.name,
-        originX: event.clientX,
-        originY: event.clientY,
-        laneId: null,
-        startMs: null,
-      });
+      const { clientX, clientY } = event;
+      // Only a real finger or pen waits for the press to ripen; anything else
+      // (a mouse, or a synthetic event with no pointerType) lifts at once.
+      if (event.pointerType !== "touch" && event.pointerType !== "pen") {
+        liftSlip(enquiry, clientX, clientY);
+        return;
+      }
+      endSlipPress();
+      // Before the press ripens, deliberately: a listener added at the lift
+      // may never be consulted for a gesture already under way.
+      const scrollHold = holdScrollWhileLifted(() => slipLiftedRef.current);
+      slipScrollHoldRef.current = scrollHold;
+      longPressRef.current = {
+        x: clientX,
+        y: clientY,
+        timer: window.setTimeout(() => {
+          longPressRef.current = null;
+          // A press that landed on the tray still gliding from a flick only
+          // stopped it; the browser will not let the page hold that touch.
+          if (!scrollHold.holdable()) {
+            endSlipPress();
+            return;
+          }
+          liftSlip(enquiry, clientX, clientY);
+        }, LONG_PRESS_MS),
+      };
     },
-    [writable],
+    [endSlipPress, liftSlip, writable],
   );
 
+  /** A finger that travelled while the press was ripening was scrolling. */
+  const moveEnquiryPress = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const press = longPressRef.current;
+    if (press === null) return;
+    if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > LONG_PRESS_SLOP_PX) {
+      window.clearTimeout(press.timer);
+      longPressRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => endSlipPress, [endSlipPress]);
+
   const enquiryDragActive = enquiryDrag !== null;
+  // True is set synchronously in liftSlip, because the touchmove listener
+  // must not miss the instant of the lift; false can follow the render — one
+  // extra held touchmove after a drop costs nothing.
+  useEffect(() => {
+    slipLiftedRef.current = enquiryDragActive;
+    if (!enquiryDragActive) endSlipPress();
+  }, [enquiryDragActive, endSlipPress]);
   const presentationKey = `${String(range.fromMs)}:${String(range.toMs)}:${showingOverview ? "overview" : "timeline"}`;
   const dragPresentationRef = useRef(presentationKey);
   useEffect(() => {
@@ -503,6 +648,9 @@ export function DiaryBoardPage(): ReactElement {
       setDrawer(null);
       setToast({ key: Date.now(), message, showUndo: false });
       refetch();
+      // A save is the moment an enquiry's standing can have moved (a
+      // conversion, a lifecycle step), so the tray reloads here (T-619).
+      setEnquiryRetry((value) => value + 1);
     },
     [refetch],
   );
@@ -515,11 +663,13 @@ export function DiaryBoardPage(): ReactElement {
     applyMove(entry.bookingId, entry.before, null);
   }, [applyMove, undoStack]);
 
+  const drawerOpen = drawer !== null;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return;
       const target = event.target;
-      // Skip only TEXT-entry surfaces — a focused checkbox still gets t/d/w/m.
+      // Text-entry surfaces own their keystrokes; a focused checkbox still
+      // gets t/d/w/f.
       if (target instanceof HTMLTextAreaElement) return;
       if (target instanceof HTMLElement && target.isContentEditable) return;
       if (
@@ -530,6 +680,13 @@ export function DiaryBoardPage(): ReactElement {
       ) {
         return;
       }
+      // A <select> owns its letters: "d" in the Room list is type-ahead, and
+      // taking it to re-range the board loses the keystroke (T-619).
+      if (target instanceof HTMLSelectElement) return;
+      // While the drawer is open it is the surface being worked on: single
+      // letters do not reach past it. Ctrl/Cmd-Z still does — undo is the
+      // board's history, which a drawer never writes to.
+      if (drawerOpen && !event.ctrlKey && !event.metaKey) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         undo();
@@ -546,19 +703,21 @@ export function DiaryBoardPage(): ReactElement {
       else if (event.key === "d") setRange("day", anchorMs);
       else if (event.key === "w") setRange("week", anchorMs);
       else if (event.key === "f") setRange("2w", anchorMs);
-      else if (event.key === "m") setRange("month", anchorMs);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [anchorMs, drag.state.phase, setRange, undo, view]);
+  }, [anchorMs, drag.state.phase, drawerOpen, setRange, undo, view]);
 
-  const focusEntry = useCallback((entryId: string) => {
+  /** Scrolls a booking's block into view and focuses it; false when the
+   *  board is not showing it. */
+  const focusEntry = useCallback((entryId: string): boolean => {
     const element = document.getElementById(`diary-block-${entryId}`);
-    if (element === null) return;
+    if (element === null) return false;
     element.scrollIntoView({ block: "nearest", inline: "center" });
     element.focus({ preventScroll: true });
+    return true;
   }, []);
 
   const pickPaletteResult = useCallback(
@@ -682,7 +841,16 @@ export function DiaryBoardPage(): ReactElement {
             />
             {BOARD_COPY.showExited}
           </label>
-          <button type="button" className="diary-button" onClick={refetch}>
+          {/* Refresh means the whole board, tray included: the one explicit
+              re-read now that panning no longer drags the enquiries along. */}
+          <button
+            type="button"
+            className="diary-button"
+            onClick={() => {
+              refetch();
+              setEnquiryRetry((value) => value + 1);
+            }}
+          >
             {BOARD_COPY.refresh}
           </button>
           <button
@@ -700,16 +868,15 @@ export function DiaryBoardPage(): ReactElement {
             </button>
           ) : null}
           {!writable ? <span className="diary-readonly">{BOARD_COPY.readOnly}</span> : null}
+          {/* The count is OTHER people (T-619): alone on the board it read
+              "Live · 1" and sent a coordinator looking for a colleague who
+              was not there. The tooltip already excluded you. */}
           <span
             className={`diary-live${live.connected ? " is-connected" : ""}`}
-            title={BOARD_COPY.presence.here(
-              live.presence
-                .filter((person) => person.userId !== user?.id)
-                .map((person) => person.name),
-            )}
+            title={BOARD_COPY.presence.here(othersPresent.map((person) => person.name))}
           >
             {live.connected ? BOARD_COPY.presence.live : BOARD_COPY.presence.offline}
-            {live.presence.length > 0 ? ` · ${String(live.presence.length)}` : ""}
+            {othersPresent.length > 0 ? ` · ${String(othersPresent.length)}` : ""}
           </span>
         </div>
         <ul className="diary-legend" aria-label="Legend">
@@ -738,7 +905,7 @@ export function DiaryBoardPage(): ReactElement {
         <div className="diary-layout">
           {showingOverview ? <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
             conflictSeverity={conflictSeverity} onOpenBooking={openBookingFromOverview}
-            onOpenDay={openDayFromOverview} /> : <BoardGrid
+            onOpenDay={openDayFromOverview} onCreateOnDay={writable ? openCreateOnDay : undefined} /> : <BoardGrid
             rooms={rooms}
             entries={entries}
             range={range}
@@ -748,9 +915,18 @@ export function DiaryBoardPage(): ReactElement {
             writable={writable}
             nowMs={nowMs}
             onOpenBlock={openBlock}
+            create={boardCreate}
             turnaroundRules={data.turnaroundRules}
           />}
           <aside className="diary-side">
+            {data.decisionsDue === undefined ? null : (
+              <DecisionsDuePanel
+                decisions={data.decisionsDue}
+                rooms={rooms}
+                nowMs={nowMs}
+                onOpen={openBookingFromOverview}
+              />
+            )}
             <HoldingTray
               items={trayItems}
               onFocusEntry={focusEntry}
@@ -767,6 +943,9 @@ export function DiaryBoardPage(): ReactElement {
               canConvert={writable}
               onConvertEnquiry={openConvertDrawer}
               onBeginEnquiryDrag={writable && !showingOverview ? beginEnquiryDrag : undefined}
+              onEnquiryPressMove={writable && !showingOverview ? moveEnquiryPress : undefined}
+              onEnquiryPressEnd={writable && !showingOverview ? endSlipPress : undefined}
+              liftedEnquiryId={enquiryDrag?.enquiryId ?? null}
             />
             <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />
             {entries.length === 0 ? (
@@ -787,8 +966,14 @@ export function DiaryBoardPage(): ReactElement {
           role={user?.role ?? ""}
           onClose={() => {
             const bookingId = drawer.mode.kind === "edit" ? drawer.mode.booking.id : null;
+            const opener = drawerReturnFocusRef.current;
             setDrawer(null);
-            if (bookingId !== null) requestAnimationFrame(() => { focusEntry(bookingId); });
+            requestAnimationFrame(() => {
+              if (bookingId !== null && focusEntry(bookingId)) return;
+              // Not on the board (a booking opened from the decisions list in
+              // another week): back to whatever opened the drawer.
+              if (opener !== null && opener.isConnected) opener.focus({ preventScroll: true });
+            });
           }}
           onSaved={onDrawerSaved}
         />

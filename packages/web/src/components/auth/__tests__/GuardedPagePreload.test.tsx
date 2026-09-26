@@ -76,6 +76,8 @@ vi.mock("../../../pages/EventArchitectPage.js", () => pageModule("EventArchitect
 vi.mock("../../../pages/TradesHallAssetStatusPage.js", () => pageModule("TradesHallAssetStatusPage"));
 vi.mock("../../../pages/CaptureIntakePage.js", () => pageModule("CaptureIntakePage"));
 vi.mock("../../../pages/EditorPage.js", () => pageModule("EditorPage"));
+vi.mock("../../../pages/PricingPage.js", () => pageModule("PricingPage"));
+vi.mock("../../../pages/demo/DemoShowcasePage.js", () => pageModule("DemoShowcasePage"));
 
 type Access = Pick<AuthUser, "role" | "platformRole">;
 
@@ -93,10 +95,13 @@ interface DeniedRoute extends GuardedRoute {
 
 const client: Access = { role: "client", platformRole: "none" };
 const planner: Access = { role: "planner", platformRole: "none" };
+const venueAdmin: Access = { role: "admin", platformRole: "none" };
+const staff: Access = { role: "staff", platformRole: "none" };
 const DENIED: readonly DeniedRoute[] = [
   { path: "/hallkeeper/today", page: "DayBoardPage", allowed: { role: "hallkeeper", platformRole: "none" }, denied: client, heading: "Access needed" },
   { path: "/hallkeeper/rooms", page: "HallkeeperRoomPlansPage", allowed: planner, denied: client, heading: "Access needed" },
-  { path: "/hallkeeper/walkthrough", page: "HallkeeperWalkthroughPage", allowed: { role: "staff", platformRole: "none" }, denied: client, heading: "Access needed" },
+  // T-616: the fictional workflow walkthrough is admin-only under /dev.
+  { path: "/dev/hallkeeper-walkthrough", page: "HallkeeperWalkthroughPage", allowed: venueAdmin, denied: staff, heading: "Access needed" },
   { path: "/hallkeeper/config-1", page: "HallkeeperPage", allowed: { role: "hallkeeper", platformRole: "none" }, denied: client, heading: "Access needed" },
   { path: "/diary", page: "DiaryBoardPage", allowed: { role: "staff", platformRole: "none" }, denied: planner, heading: "Access needed" },
   { path: "/dashboard", page: "DashboardPage", allowed: { role: "manager", platformRole: "none" }, denied: client, heading: "Access needed" },
@@ -106,6 +111,10 @@ const DENIED: readonly DeniedRoute[] = [
   { path: "/event-architect/runs/run-1", page: "EventArchitectPage", allowed: { role: "client", platformRole: "admin" }, denied: planner, heading: "Access needed" },
   { path: "/dev/assets/rooms", page: "TradesHallAssetStatusPage", allowed: { role: "admin", platformRole: "admin" }, denied: { role: "admin", platformRole: "none" }, heading: "Platform access needed" },
   { path: "/dev/capture-intake", page: "CaptureIntakePage", allowed: { role: "admin", platformRole: "admin" }, denied: { role: "staff", platformRole: "admin" }, heading: "Access needed" },
+  // Blake, 26 September 2026: the Venviewer subscription page is admin-only
+  // until billing exists, and the internal sales deck with it.
+  { path: "/pricing", page: "PricingPage", allowed: venueAdmin, denied: staff, heading: "Access needed" },
+  { path: "/demo", page: "DemoShowcasePage", allowed: venueAdmin, denied: staff, heading: "Access needed" },
 ];
 // Every signed-in account may open its own client event page.
 const GUARDED: readonly GuardedRoute[] = [...DENIED, { path: "/events/event-1", page: "ClientEventPage", allowed: client }];
@@ -202,6 +211,16 @@ describe.each(DENIED)("denied route $path", (route) => {
     expect(screen.getByRole("link", { name: "Back to Venviewer" }).getAttribute("href")).toBe("/");
     expect(probe.rendered).toEqual([]);
     expect(probe.fetched).toEqual([]);
+  });
+});
+
+describe("the walkthrough's old address", () => {
+  it("forwards to its admin-only home rather than opening a hallkeeper sheet called \"walkthrough\"", async () => {
+    authStore.getState().setUser(account(venueAdmin));
+    const memoryRouter = show("/hallkeeper/walkthrough");
+    expect(await screen.findByRole("heading", { name: "HallkeeperWalkthroughPage ready" })).toBeTruthy();
+    expect(memoryRouter.state.location.pathname).toBe("/dev/hallkeeper-walkthrough");
+    expect(probe.loaded).not.toContain("HallkeeperPage");
   });
 });
 

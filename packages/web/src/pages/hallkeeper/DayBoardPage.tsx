@@ -128,7 +128,7 @@ export function DayBoardPage(): ReactElement {
           <label>Day<input type="date" value={msToWallInput(selectedMs).slice(0, 10)} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value); }} /></label>
           <button type="button" onClick={() => { setSelectedDate(null); }}>Today</button>
           <label>Room<select value={roomId} onChange={(event) => { setRoomId(event.target.value); }}><option value="">All rooms</option>{(board?.lanes ?? []).map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
-          <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/walkthrough">Workflow walkthrough</Link>
+          <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/rooms">Room plans</Link>
         </div>
         {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
         {venueId !== null && data === null && status === "loading" && <ActivityStatus variant="panel">Loading the day’s bookings…</ActivityStatus>}

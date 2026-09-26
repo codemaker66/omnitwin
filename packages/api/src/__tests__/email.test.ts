@@ -169,12 +169,18 @@ interface FakeRow {
   sentAt: Date | null;
 }
 
+/** An UPDATE awaited directly, or finished with `.returning()`: the only
+ *  UPDATE ... RETURNING in email.ts reclaims a row whose send failed. */
+interface FakeUpdate extends PromiseLike<void> {
+  returning: (_: unknown) => Promise<{ id: string }[]>;
+}
+
 interface FakeDb {
   rows: FakeRow[];
   insert: (_: unknown) => { values: (v: Partial<FakeRow>) => Promise<void> };
   update: (_: unknown) => {
     set: (patch: Partial<FakeRow>) => {
-      where: (_: unknown) => Promise<void>;
+      where: (_: unknown) => FakeUpdate;
     };
   };
 }
@@ -212,20 +218,32 @@ function makeFakeDb(): FakeDb & { __lastUpdateKey: string | null } {
     }),
     update: (_table: unknown) => ({
       set: (patch: Partial<FakeRow>) => ({
-        where: (_cond: unknown): Promise<void> => {
-          // The only WHERE in email.ts is eq(emailSends.idempotencyKey, ...).
+        where: (_cond: unknown): FakeUpdate => {
+          // Every WHERE in email.ts keys on eq(emailSends.idempotencyKey, ...).
           // We pick the most-recent row — all the tests operate on a
           // single idempotency key at a time, so this is sufficient.
           const target = rows[rows.length - 1];
-          if (target !== undefined) {
+          const apply = (): void => {
+            if (target === undefined) return;
             if (patch.status !== undefined) target.status = patch.status;
             if (patch.providerMessageId !== undefined) target.providerMessageId = patch.providerMessageId;
             if (patch.lastError !== undefined) target.lastError = patch.lastError;
             if (patch.attemptCount !== undefined) target.attemptCount = patch.attemptCount;
             if (patch.sentAt !== undefined) target.sentAt = patch.sentAt;
             lastUpdateKey = target.idempotencyKey;
-          }
-          return Promise.resolve();
+          };
+          return {
+            then: (onFulfilled, onRejected) => {
+              apply();
+              return Promise.resolve().then(onFulfilled, onRejected);
+            },
+            // The reclaim's WHERE also requires status = 'failed'.
+            returning: (_columns: unknown) => {
+              if (target?.status !== "failed") return Promise.resolve([]);
+              apply();
+              return Promise.resolve([{ id: target.idempotencyKey }]);
+            },
+          };
         },
       }),
     }),
@@ -314,6 +332,40 @@ describe("sendEmail — retry behaviour", () => {
     resendSendMock.mockReset();
     process.env["RESEND_API_KEY"] = "re_test_key";
     __resetResendClientForTests();
+  });
+
+  it("a replay of a send that failed tries the provider again", async () => {
+    // A permanent refusal first (no retries within the call), then success.
+    resendSendMock
+      .mockResolvedValueOnce({ error: { statusCode: 422, message: "Invalid recipient" } })
+      .mockResolvedValueOnce({ data: { id: "msg-replayed" }, error: null });
+    const db = makeFakeDb();
+    const logger = makeCaptureLogger();
+    const opts = { db: db as never, idempotencyKey: "hold-reminder:b1:2026-10-03:t-3", logger };
+
+    expect(await sendEmail(basePayload, opts)).toBe(false);
+    expect(db.rows[0]?.status).toBe("failed");
+    expect(await sendEmail(basePayload, opts)).toBe(true);
+
+    expect(db.rows).toHaveLength(1);
+    expect(db.rows[0]).toMatchObject({ status: "sent", providerMessageId: "msg-replayed" });
+    expect(resendSendMock).toHaveBeenCalledTimes(2);
+    expect(logger.logs.some((l) => l.obj["event"] === "email.retry_after_failure")).toBe(true);
+  });
+
+  it("a replay of an email that was sent stays a no-op", async () => {
+    resendSendMock.mockResolvedValueOnce({ data: { id: "msg-once" }, error: null });
+    const db = makeFakeDb();
+    const logger = makeCaptureLogger();
+    const opts = { db: db as never, idempotencyKey: "hold-reminder:b2:2026-10-03:t-1", logger };
+
+    expect(await sendEmail(basePayload, opts)).toBe(true);
+    expect(await sendEmail(basePayload, opts)).toBe(true);
+
+    expect(resendSendMock).toHaveBeenCalledTimes(1);
+    expect(db.rows[0]).toMatchObject({ status: "sent", providerMessageId: "msg-once" });
+    expect(logger.logs.some((l) => l.obj["event"] === "email.dedup_skip")).toBe(true);
+    expect(logger.logs.some((l) => l.obj["event"] === "email.retry_after_failure")).toBe(false);
   });
 
   it("retries transient failures and succeeds on a later attempt", async () => {
