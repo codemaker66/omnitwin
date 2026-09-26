@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
@@ -59,8 +61,11 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     });
     const name = (await pool.query<{ name: string }>("SELECT current_database() AS name")).rows[0]?.name;
     expect(name).toBe("venviewer_lane9_test");
+    // The journal, applied to the confirmed disposable target: a fresh
+    // database (CI's) gets every migration, a migrated one gets nothing.
+    await migrate(drizzle(pool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     db = drizzle(pool, { schema });
-  });
+  }, 120_000);
 
   afterAll(async () => { await pool.end(); });
 
