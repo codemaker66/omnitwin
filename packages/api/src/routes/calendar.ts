@@ -14,7 +14,7 @@ import {
 import { bookings, eventPhases, events, spaces, turnaroundRules, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canReadDiary } from "../utils/query.js";
 import { userDisplayName } from "../utils/user-display-name.js";
 import {
   detectCalendarConflicts,
@@ -163,7 +163,7 @@ export async function calendarRoutes(
     if (!parsed.success) return validationError(reply, parsed.error.issues);
     const query: CalendarQuery = parsed.data;
 
-    if (!canManageVenue(request.user, query.venueId)) {
+    if (!canReadDiary(request.user, query.venueId)) {
       return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
     }
 

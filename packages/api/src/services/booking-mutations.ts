@@ -15,7 +15,7 @@ import {
 import { bookings, bookingStatusHistory, events, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { JwtUser } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canReadDiary } from "../utils/query.js";
 import { canTransitionBooking } from "../state-machines/booking.js";
 import {
   resequenceLaddersAfterExit,
@@ -190,7 +190,11 @@ export async function loadAccessibleBooking(
   if (row === undefined) {
     return { ok: false, status: 404, code: "BOOKING_NOT_FOUND", error: "Booking not found" };
   }
-  if (!canManageVenue(actor, row.venueId)) {
+  // Everyone who reads the Diary may load its bookings, sales included (it
+  // pencils the holds). Writing is gated again by each mutation: update checks
+  // DIARY_WRITE_ROLES, a transition the state machine's roles, so the
+  // hallkeeper still only reads.
+  if (!canReadDiary(actor, row.venueId)) {
     return { ok: false, status: 403, code: "FORBIDDEN", error: "Forbidden" };
   }
   return row;

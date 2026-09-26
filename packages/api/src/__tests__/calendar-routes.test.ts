@@ -28,6 +28,15 @@ function staffToken(venueId: string = VENUE_ID): string {
   });
 }
 
+function roleToken(role: string, venueId: string = VENUE_ID): string {
+  return JSON.stringify({
+    id: "00000000-0000-4000-8000-000000000098",
+    email: `${role}@test.com`,
+    role,
+    venueId,
+  });
+}
+
 function calendarUrl(params: Record<string, string>): string {
   const query = new URLSearchParams(params).toString();
   return `/calendar?${query}`;
@@ -128,6 +137,32 @@ describe("calendar read model — auth and validation boundary", () => {
     expect(res.statusCode).not.toBe(400);
     expect(res.statusCode).not.toBe(401);
     expect(res.statusCode).not.toBe(403);
+  });
+});
+
+describe("calendar read model — who reads the Diary", () => {
+  const week = { venueId: VENUE_ID, from: "2026-09-14T00:00:00.000Z", to: "2026-09-21T00:00:00.000Z" };
+
+  it("lets sales read its own venue's Diary: it pencils the holds", async () => {
+    const res = await server.inject({
+      method: "GET",
+      url: calendarUrl(week),
+      headers: { authorization: `Bearer ${roleToken("sales")}` },
+    });
+    expect(res.statusCode).not.toBe(401);
+    expect(res.statusCode).not.toBe(403);
+  });
+
+  it("refuses sales at another venue, and the roles that never read the Diary", async () => {
+    const refused = [roleToken("sales", OTHER_VENUE_ID), roleToken("caterer"), roleToken("planner"), roleToken("client")];
+    for (const token of refused) {
+      const res = await server.inject({
+        method: "GET",
+        url: calendarUrl(week),
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode, token).toBe(403);
+    }
   });
 });
 
