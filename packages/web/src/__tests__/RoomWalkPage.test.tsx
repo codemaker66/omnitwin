@@ -45,12 +45,18 @@ describe("RoomWalkPage", () => {
     },
   );
 
-  it("provides named dashboard, Hallkeeper and login exits from the tour", () => {
+  // T-616 / gate line 2: this used to pin Dashboard and Hallkeeper into a
+  // PUBLIC room walk. Both bounced an anonymous visitor into a Clerk login
+  // wall, so the page advertised two doors its reader cannot open. What a
+  // visitor standing in a room wants is a date, so the exits are now: plan
+  // this room, ask about a date, log in.
+  it("offers a public visitor only exits they can actually take", () => {
     mount("/room/grand-hall");
     expect(screen.getByRole("navigation", { name: "Planning and workspaces" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Dashboard" }).getAttribute("href")).toBe("/dashboard");
-    expect(screen.getByRole("link", { name: "Hallkeeper" }).getAttribute("href")).toBe("/hallkeeper/today");
+    expect(screen.getByRole("link", { name: "Ask about a date" }).getAttribute("href")).toBe("/#enquire");
     expect(screen.getByRole("link", { name: "Log in" }).getAttribute("href")).toBe("/login");
+    expect(screen.queryByRole("link", { name: "Dashboard" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Hallkeeper" })).toBeNull();
   });
 
   it("keeps capture-only renders free of navigation", () => {
@@ -66,28 +72,33 @@ describe("RoomWalkPage", () => {
     expect(header).not.toMatch(/splats/u);
   });
 
-  it("does not mount a room whose walk has been closed until its alignment is fixed", () => {
+  // The three below pinned "being aligned", "not yet walkable", "Incomplete
+  // scan" and "Alignment is under review" — four phrases about OUR work, on a
+  // page a wedding guest reads. The behaviour they guard is unchanged and is
+  // what they assert now: a closed room mounts no scene and offers a way back,
+  // and a room the scan did not measure cleanly prints no dimensions.
+  it("does not mount a room whose walk is closed, and says so without jargon", () => {
     mount("/room/robert-adam-room");
     expect(screen.queryByTestId("room-splat-scene")).toBeNull();
     const body = document.body.textContent ?? "";
-    expect(body).toMatch(/being aligned/iu);
-    expect(body).toMatch(/not yet walkable/iu);
+    expect(body).toMatch(/not open to walk yet/iu);
+    expect(body).not.toMatch(/aligned|alignment|incomplete scan/iu);
     expect(screen.getByRole("link", { name: /rooms/iu }).getAttribute("href")).toBe("/");
   });
 
-  it("tells a visitor of a review room how far the scan goes and withholds dimensions", () => {
+  it("withholds the dimensions of a room whose scan did not measure cleanly", () => {
     mount("/room/saloon");
     const body = document.body.textContent ?? "";
-    expect(body).toMatch(/Incomplete scan/iu);
-    expect(body).toMatch(/Alignment is under review/iu);
     expect(body).not.toMatch(/\d+\.\d × \d+\.\d × \d+\.\d m/u);
+    expect(body).toMatch(/come from the venue, not this scan/iu);
+    expect(body).not.toMatch(/incomplete scan|alignment/iu);
   });
 
-  it("keeps the working-scan disclaimer and the alignment caveat for a room under review", () => {
-    mount("/room/saloon");
+  it("tells a visitor of a measured room where its dimensions came from", () => {
+    mount("/room/grand-hall");
     const body = document.body.textContent ?? "";
-    expect(body).toMatch(/Incomplete scan/iu);
-    expect(body).toMatch(/Alignment is under review/iu);
+    expect(body).toMatch(/dimensions are taken from the scan/iu);
+    expect(body).toMatch(/confirm them with the venue/iu);
   });
 });
 

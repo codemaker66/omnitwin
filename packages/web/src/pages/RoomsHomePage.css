@@ -1,21 +1,23 @@
-/* The front door — eight rooms of Trades Hall, measured.
+/* The front door — Trades Hall's one public home.
  *
- * Palette and type are the House language, not a new identity: sandstone on
- * warm ink, brass as the only accent, Fraunces for display, Geist Mono for the
- * numbers. The ground is deliberately warm-black rather than neutral — a
- * Georgian interior by candlelight, not a streaming app's void. */
+ * Two grounds, each with a job. The stage (hero and rooms rail) is warm ink:
+ * the photographed hall is the light source, a Georgian interior by
+ * candlelight rather than a streaming app's void. Below it the page settles
+ * onto the ivory sheet a booking is made on — capacities, rates and the
+ * enquiry composer — using the Fresh paper's tokens and grammar (fresh.css,
+ * pinned to its light theme on the root), so the composer here and on /fresh
+ * is one component in one register. Copper is the only accent on the stage;
+ * Fraunces sets display, Geist Mono the numbers. */
 
 .rooms {
   --ink: #14100c;
   --ink-raised: #1b1713;
   --stone: #f2ecdf;
   --stone-dim: #b5aa97;
-  --brass: #c98a5b; /* T-615: copper. Name kept — Lane 2 owns this file. */
+  --copper: #c98a5b;
   --hairline: rgba(242, 236, 223, 0.12);
 
   min-height: 100vh;
-  background: var(--ink);
-  color: var(--stone);
   font-family: var(--fr-body, "Newsreader", Georgia, serif);
 }
 
@@ -27,13 +29,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  /* viewport-fit=cover is on, so the notch insets are real numbers here. */
   padding: 1rem clamp(1rem, 4vw, 3rem);
+  padding-left: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-left));
+  padding-right: max(clamp(1rem, 4vw, 3rem), env(safe-area-inset-right));
   background: #f4efe4;
   color: #203c31;
   border-bottom: 1px solid #d5d0c3;
 }
 
-.rooms__identity { display: grid; gap: 0.25rem; }
+.rooms__identity { display: grid; gap: 0.25rem; line-height: 1.3; }
 
 .rooms__primaryNav {
   display: flex;
@@ -75,7 +80,13 @@
   color: #586658;
 }
 
-/* ── hero ─────────────────────────────────────────────────── */
+/* ── the stage: hero and rail on warm ink ─────────────────── */
+
+.rooms__stage {
+  background: var(--ink);
+  color: var(--stone);
+  padding-bottom: clamp(2.5rem, 6vw, 4rem);
+}
 
 .rooms__hero {
   position: relative;
@@ -111,15 +122,6 @@
   max-width: 46rem;
 }
 
-.rooms__eyebrow {
-  margin: 0 0 0.5rem;
-  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--brass);
-}
-
 .rooms__heroName {
   margin: 0;
   font-family: var(--fr-display, "Fraunces", Georgia, serif);
@@ -127,6 +129,14 @@
   font-weight: 300;
   line-height: 1.02;
   letter-spacing: -0.015em;
+}
+
+.rooms__heroLede {
+  max-width: 34rem;
+  margin: 0.9rem 0 0;
+  font-size: clamp(1rem, 1.9vw, 1.15rem);
+  line-height: 1.55;
+  color: var(--stone);
 }
 
 /* ── the measured line: this page's signature ─────────────── */
@@ -146,36 +156,26 @@
   color: var(--stone);
 }
 
-.rooms__dot { margin: 0 0.5em; color: var(--brass); }
-
 .rooms__enter {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 44px;
   padding: 0.62rem 1.5rem;
-  border: 1px solid var(--brass);
+  border: 1px solid var(--copper);
   border-radius: 999px;
-  color: var(--brass);
+  color: var(--copper);
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.85rem;
+  line-height: 1.3;
   text-decoration: none;
   transition: background-color 180ms ease, color 180ms ease;
 }
 
 .rooms__enter:hover,
-.rooms__enter:focus-visible { background: var(--brass); color: var(--ink); }
+.rooms__enter:focus-visible { background: var(--copper); color: var(--ink); }
 
-.rooms__heroDescription {
-  max-width: 36rem;
-  margin: 1rem 0 0;
-  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
-  font-size: clamp(0.9rem, 1.8vw, 1rem);
-  line-height: 1.6;
-  color: var(--stone);
-}
-
-.rooms__heroActions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.4rem; }
+.rooms__heroActions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1.4rem; }
 .rooms__enter--plan { background: #f4efe4; border-color: #f4efe4; color: #203c31; font-weight: 600; }
 .rooms__enter--plan:hover,
 .rooms__enter--plan:focus-visible { background: #e1e7da; color: #203c31; }
@@ -183,7 +183,7 @@
 
 /* ── rail ─────────────────────────────────────────────────── */
 
-.rooms__rail { padding: clamp(1.75rem, 5vw, 3rem) 0 1rem; }
+.rooms__rail { padding: clamp(1.75rem, 5vw, 3rem) 0 0; }
 
 .rooms__railHead {
   display: flex;
@@ -201,14 +201,6 @@
   font-weight: 400;
 }
 
-.rooms__railNote {
-  margin: 0;
-  font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 0.74rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--stone-dim);
-}
-
 .rooms__track {
   display: grid;
   grid-auto-flow: column;
@@ -217,6 +209,9 @@
   padding: 0 clamp(1rem, 4vw, 3rem) 0.5rem;
   overflow-x: auto;
   scroll-snap-type: x proximity;
+  /* Without this the first card snaps flush to the viewport edge on load,
+   * scrolling the rail by its own gutter before anyone touches it. */
+  scroll-padding-inline: clamp(1rem, 4vw, 3rem);
   scrollbar-width: thin;
   scrollbar-color: var(--hairline) transparent;
 }
@@ -225,6 +220,7 @@
   scroll-snap-align: start;
   display: block;
   color: inherit;
+  line-height: 1.4;
   text-decoration: none;
 }
 
@@ -275,64 +271,9 @@
   font-weight: 400;
 }
 
-/* ── foot ─────────────────────────────────────────────────── */
-
-.rooms__foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 2rem;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-top: 2.5rem;
-  padding: 1.25rem clamp(1rem, 4vw, 3rem) 2.5rem;
-  border-top: 1px solid var(--hairline);
-}
-
-.rooms__footNote {
-  flex: 1 1 26rem;
-  margin: 0;
-  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
-  font-size: 0.75rem;
-  line-height: 1.6;
-  color: var(--stone-dim);
-}
-
-.rooms__footLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 1.25rem;
-  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
-  font-size: 0.8rem;
-}
-
-.rooms__footLinks a { display: inline-flex; align-items: center; min-height: 44px; color: var(--stone-dim); text-decoration: none; }
-.rooms__footLinks a:hover,
-.rooms__footLinks a:focus-visible { color: var(--brass); }
-
-/* ── resolve-in on load ───────────────────────────────────── */
-
-.rooms__hero,
-.rooms__rail { opacity: 0; transition: opacity 620ms ease; }
-.rooms--resolved .rooms__hero,
-.rooms--resolved .rooms__rail { opacity: 1; }
-.rooms--resolved .rooms__rail { transition-delay: 120ms; }
-
-@media (prefers-reduced-motion: reduce) {
-  .rooms__hero,
-  .rooms__rail { opacity: 1; transition: none; }
-  .rooms__poster { transition: none; }
-}
-
-@media (max-width: 640px) {
-  .rooms__primaryNav { width: 100%; }
-  .rooms__primaryNav a { flex: 1 0 auto; }
-  .rooms__hero { min-height: 62vh; }
-  .rooms__track { grid-auto-columns: minmax(13rem, 76vw); }
-}
-
 /* ── typographic plate ────────────────────────────────────── */
-/* Stands in where a scan has no usable still. The room's own measurements,
- * set large — deliberate, not a missing-image apology. */
+/* Stands in where a scan has no usable still: the room's own name or
+ * measurements, set large — deliberate, not a missing-image apology. */
 
 .rooms__plate--type {
   display: grid;
@@ -358,24 +299,198 @@
   color: var(--stone);
 }
 
-.rooms__plateSplats {
-  font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--stone-dim);
-}
-
-.rooms__state--hero {
-  margin-top: 0.9rem;
-  font-size: 0.82rem;
-}
-
 .rooms__state {
   display: block;
   margin-top: 0.3rem;
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   letter-spacing: 0.03em;
-  color: var(--brass);
-  opacity: 0.85;
+  color: var(--copper);
+}
+
+.rooms__state--hero {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+/* ── the sheet: capacities by layout ──────────────────────── */
+/* .fr-rooms (fresh.css) owns the section's width, padding and arch. Numbers
+ * are instruments: tabular figures, a hairline grid, no zebra. The last row is
+ * each layout's range across the rooms, so no single number can be read as
+ * "the" capacity. */
+
+.rooms__capacity {
+  width: 100%;
+  margin-top: 0.4rem;
+  border-collapse: collapse;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.rooms__capacityCaption {
+  margin-bottom: 1rem;
+  text-align: left;
+  font-family: var(--fr-body, "Newsreader", Georgia, serif);
+  font-size: 1.05rem;
+  color: var(--fr-ink-2);
+}
+
+.rooms__capacity th,
+.rooms__capacity td {
+  padding: 0.7rem 0 0.7rem 1rem;
+  text-align: right;
+  border-bottom: 1px solid var(--fr-rule);
+  white-space: nowrap;
+}
+
+.rooms__capacity thead th {
+  font-weight: 500;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fr-ink-2);
+}
+
+.rooms__capacity th:first-child { padding-left: 0; text-align: left; }
+
+.rooms__capacity tbody th {
+  font-weight: 400;
+  font-family: var(--fr-display, "Fraunces", Georgia, serif);
+  font-size: 1.02rem;
+  color: var(--fr-ink);
+  white-space: normal;
+}
+
+.rooms__capacity td { color: var(--fr-ink); }
+
+.rooms__capacity tfoot th,
+.rooms__capacity tfoot td {
+  border-bottom: 0;
+  border-top: 1px solid var(--fr-ink-2);
+  font-weight: 600;
+  color: var(--fr-green);
+}
+
+.rooms__capacity tfoot th { font-family: var(--fr-ui, "Geist", system-ui, sans-serif); font-size: 0.9rem; }
+
+/* Named over each figure on a phone only; the column headers do it here. */
+.rooms__capacityLabel { display: none; }
+
+/* ── foot, on the sheet ───────────────────────────────────── */
+
+.rooms__foot {
+  display: grid;
+  gap: 0.9rem;
+  max-width: 1080px;
+  margin: clamp(56px, 9vh, 104px) auto 0;
+  padding: 1.5rem clamp(16px, 4vw, 44px) calc(2.5rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--fr-rule);
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+}
+
+.rooms__footLinks,
+.rooms__footLegal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+}
+
+.rooms__footLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 0.9rem;
+  color: var(--fr-ink);
+  text-decoration: none;
+}
+
+.rooms__footLegal a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 0.8rem;
+  color: var(--fr-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--fr-rule);
+  text-underline-offset: 4px;
+}
+
+.rooms__footLinks a:hover,
+.rooms__footLegal a:hover { color: var(--fr-green); }
+
+.rooms__footLinks a:focus-visible,
+.rooms__footLegal a:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+
+.rooms__footNote {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--fr-ink-2);
+}
+
+/* ── resolve-in on load ───────────────────────────────────── */
+
+.rooms__hero,
+.rooms__rail { opacity: 0; transition: opacity 620ms ease; }
+.rooms--resolved .rooms__hero,
+.rooms--resolved .rooms__rail { opacity: 1; }
+.rooms--resolved .rooms__rail { transition-delay: 120ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rooms__hero,
+  .rooms__rail { opacity: 1; transition: none; }
+  .rooms__poster { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .rooms__primaryNav { width: 100%; }
+  .rooms__primaryNav a { flex: 1 0 auto; }
+  .rooms__hero { min-height: 62vh; }
+  .rooms__track { grid-auto-columns: minmax(13rem, 76vw); }
+
+  /* Five columns do not fit a phone: each room becomes its own block, its
+   * name above a row of four named figures. The table's roles are explicit in
+   * the markup, so changing how the rows display keeps them a table. */
+  .rooms__capacity,
+  .rooms__capacity tbody,
+  .rooms__capacity tfoot { display: block; }
+  .rooms__capacity caption { display: block; }
+  .rooms__capacity thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .rooms__capacity tr {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.35rem 0.75rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--fr-rule);
+  }
+  .rooms__capacity tfoot tr { border-top: 1px solid var(--fr-ink-2); border-bottom: 0; }
+  .rooms__capacity th,
+  .rooms__capacity td,
+  .rooms__capacity tfoot th,
+  .rooms__capacity tfoot td {
+    padding: 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .rooms__capacity tbody th,
+  .rooms__capacity tfoot th { grid-column: 1 / -1; }
+  .rooms__capacity td { display: grid; gap: 0.1rem; font-size: 1rem; }
+  .rooms__capacityLabel {
+    display: block;
+    font-weight: 500;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--fr-ink-2);
+  }
 }
