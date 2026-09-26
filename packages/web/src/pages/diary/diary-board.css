@@ -10,7 +10,8 @@
   --diary-brass: #426653;
   --diary-brass-bright: #294f40;
   --diary-brass-deep: #345543;
-  --diary-hand: Georgia, 'Times New Roman', serif;
+  /* Newsreader, the house's one serif (Blake, 26 September 2026). */
+  --diary-hand: var(--house-serif);
   --diary-mono: inherit;
   --diary-ease-out: cubic-bezier(.2,.8,.2,1);
   color: #203b31;
