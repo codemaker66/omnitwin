@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
+import {
+  DIARY_ROLES, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
+} from "./lib/role-capabilities.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
@@ -435,7 +438,7 @@ export const router = createBrowserRouter([
     // route ranking would prefer the static segment regardless.
     path: "/hallkeeper/today",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
+      <ProtectedRoute allowedRoles={VENUE_DAY_ROLES}>
         <DayBoardPage />
       </ProtectedRoute>,
       DayBoardPage,
@@ -448,7 +451,7 @@ export const router = createBrowserRouter([
   {
     path: "/hallkeeper/rooms",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <HallkeeperRoomPlansPage />
       </ProtectedRoute>,
       HallkeeperRoomPlansPage,
@@ -457,7 +460,7 @@ export const router = createBrowserRouter([
   {
     path: "/hallkeeper/walkthrough",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <HallkeeperWalkthroughPage />
       </ProtectedRoute>,
       HallkeeperWalkthroughPage,
@@ -470,7 +473,7 @@ export const router = createBrowserRouter([
     // /login rather than hitting the page and getting a 401 from the fetch.
     path: "/hallkeeper/:configId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <HallkeeperPage />
       </ProtectedRoute>,
       HallkeeperPage,
@@ -481,7 +484,7 @@ export const router = createBrowserRouter([
     // The API enforces the same write split server-side.
     path: "/diary",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
+      <ProtectedRoute allowedRoles={DIARY_ROLES}>
         <DiaryBoardPage />
       </ProtectedRoute>,
       DiaryBoardPage,
@@ -490,7 +493,7 @@ export const router = createBrowserRouter([
   {
     path: "/dashboard",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff", "executive"]}>
+      <ProtectedRoute allowedRoles={WORKSPACE_ROLES}>
         <DashboardPage />
       </ProtectedRoute>,
       DashboardPage,
@@ -499,7 +502,7 @@ export const router = createBrowserRouter([
   {
     path: "/ops/handoff/:handoffPackId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
         <OpsHandoffPage />
       </ProtectedRoute>,
       OpsHandoffPage,

@@ -1,4 +1,4 @@
-import { ENQUIRY_STATUSES, type EnquiryStatus } from "@omnitwin/types";
+import { ENQUIRY_STATUSES, type EnquiryStatus, type UserRole } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Enquiry state machine — pure functions, no side effects
@@ -17,7 +17,15 @@ export type EnquiryState = EnquiryStatus;
  * permissions as "client" for backward compatibility with any code that
  * still references "client".
  */
-type TransitionRole = "client" | "planner" | "staff" | "hallkeeper" | "admin";
+type TransitionRole = UserRole;
+
+/** The venue side of the enquiry inbox: who may triage what arrives. Matches
+ *  the roles routes/enquiries.ts admits to the venue inbox, so a role that can
+ *  read an enquiry can also move it. */
+const VENUE_TRIAGE_ROLES: readonly TransitionRole[] = ["staff", "hallkeeper", "manager", "sales", "admin"];
+
+/** The customer's own submit/withdraw, plus the venue side acting for them. */
+const CUSTOMER_ENQUIRY_ROLES: readonly TransitionRole[] = ["client", "planner", "staff", "manager", "sales", "admin"];
 
 // ---------------------------------------------------------------------------
 // Transition rules — keyed by [fromState][toState] → allowed roles
@@ -28,14 +36,14 @@ type TransitionRole = "client" | "planner" | "staff" | "hallkeeper" | "admin";
 // ---------------------------------------------------------------------------
 
 const TRANSITIONS: Record<string, readonly TransitionRole[]> = {
-  "draft→submitted": ["client", "planner", "staff", "admin"],
-  "submitted→under_review": ["staff", "hallkeeper", "admin"],
-  "submitted→withdrawn": ["client", "planner", "staff", "admin"],
-  "under_review→approved": ["staff", "hallkeeper", "admin"],
-  "under_review→rejected": ["staff", "hallkeeper", "admin"],
-  "under_review→withdrawn": ["client", "planner", "staff", "admin"],
-  "approved→archived": ["staff", "hallkeeper", "admin"],
-  "rejected→archived": ["staff", "hallkeeper", "admin"],
+  "draft→submitted": CUSTOMER_ENQUIRY_ROLES,
+  "submitted→under_review": VENUE_TRIAGE_ROLES,
+  "submitted→withdrawn": CUSTOMER_ENQUIRY_ROLES,
+  "under_review→approved": VENUE_TRIAGE_ROLES,
+  "under_review→rejected": VENUE_TRIAGE_ROLES,
+  "under_review→withdrawn": CUSTOMER_ENQUIRY_ROLES,
+  "approved→archived": VENUE_TRIAGE_ROLES,
+  "rejected→archived": VENUE_TRIAGE_ROLES,
 };
 
 /**

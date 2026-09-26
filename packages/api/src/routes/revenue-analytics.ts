@@ -25,7 +25,7 @@ import {
   spaces,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canAccessInternalEvent, canWriteEvents } from "../utils/query.js";
+import { canAccessInternalEvent, canManageCommercial, canWriteEvents } from "../utils/query.js";
 import {
   buildPipelineSummary,
   buildRoomUtilisationRows,
@@ -48,10 +48,23 @@ function toIso(value: Date): string {
   return value.toISOString();
 }
 
+// Two analytics surfaces, two capabilities. A payload carrying money —
+// pipelineValueMinor, quote totals, revenue scenarios — is a price surface,
+// and hallkeepers never see prices (goal 18 §6 decision 6b). Room utilisation
+// carries no money at all (RoomUtilisationRowSchema is room names, counts and
+// a percentage), and reading how busy the rooms are is the hallkeeper's own
+// job, so it keeps the venue-operations policy it has always had. Neither
+// customer role name grants venue-wide analytics authority on either.
+type VenueScopeCapability = (
+  user: FastifyRequest["user"],
+  venueId: string,
+) => boolean;
+
 function resolveVenueScope(
   request: FastifyRequest,
   reply: FastifyReply,
   requestedVenueId: string | undefined,
+  capability: VenueScopeCapability,
 ): string | null {
   const user = request.user;
   if (isPlatformAdmin(user)) {
@@ -68,9 +81,7 @@ function resolveVenueScope(
     void reply.status(403).send({ error: "User has no venue scope", code: "FORBIDDEN" });
     return null;
   }
-  // Preserve existing hallkeeper commercial reads (quotes/event summaries),
-  // but neither customer role name grants venue-wide analytics authority.
-  if (!canAccessInternalEvent(user, user.venueId)) {
+  if (!capability(user, user.venueId)) {
     void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     return null;
   }
@@ -263,7 +274,7 @@ export async function eventRevenueRoutes(server: FastifyInstance, opts: { db: Da
     if (eventRow === undefined) {
       return reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     }
-    if (!canAccessInternalEvent(request.user, eventRow.venueId)) {
+    if (!canManageCommercial(request.user, eventRow.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -281,7 +292,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/pipeline-summary", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, canManageCommercial);
     if (venueId === null) return;
     const pipeline = await loadPipelineSummary(db, venueId);
     return { data: pipeline };
@@ -290,7 +301,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/room-utilisation", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, canAccessInternalEvent);
     if (venueId === null) return;
     const rows = await loadRoomUtilisation(db, venueId);
     return { data: rows };
@@ -299,7 +310,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/venue-dashboard", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, canManageCommercial);
     if (venueId === null) return;
     const [pipeline, roomUtilisation, scenarioRows, constraintRows] = await Promise.all([
       loadPipelineSummary(db, venueId),

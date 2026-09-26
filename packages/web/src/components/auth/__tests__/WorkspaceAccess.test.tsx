@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getToken: vi.fn<() => Promise<string | null>>(),
   signOut: vi.fn<() => Promise<void>>(),
   openUserProfile: vi.fn<() => void>(),
+  submitGuestEnquiry: vi.fn<(input: unknown) => Promise<unknown>>(),
   identity: { isLoaded: true, isSignedIn: true,
     user: { id: "clerk_elaine", primaryEmailAddress: { emailAddress: "elaine@example.test", verification: { status: "verified" as "verified" | "unverified" } },
       publicMetadata: { role: "admin", platformRole: "admin", venueId: "untrusted" } } },
@@ -22,6 +23,7 @@ vi.mock("@clerk/react", () => ({
   useClerk: () => ({ signOut: mocks.signOut, openUserProfile: mocks.openUserProfile }),
 }));
 vi.mock("../../../api/auth.js", () => ({ getCurrentAuthUser: mocks.getCurrentAuthUser }));
+vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.submitGuestEnquiry }));
 
 const venueAdmin: AuthSessionUser = { id: "db-user", email: "elaine@example.test", name: "Elaine",
   role: "admin", platformRole: "none", venueId: "trades-hall" };
@@ -41,6 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.getCurrentAuthUser.mockReset();
   mocks.openUserProfile.mockReset();
+  mocks.submitGuestEnquiry.mockReset();
   mocks.identity.isLoaded = true;
   mocks.identity.isSignedIn = true;
   mocks.identity.user.id = "clerk_elaine";
@@ -77,6 +80,42 @@ describe("authoritative account access", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check my access" }));
     await screen.findByText("Venue operations");
     expect(useAuthStore.getState().user?.venueId).toBe("trades-hall");
+  });
+
+  it("lets an uninvited account ask for access instead of leaving it a dead end", async () => {
+    mocks.getCurrentAuthUser.mockRejectedValueOnce(new ApiError(403, "Invitation required", "INVITATION_REQUIRED"));
+    mocks.submitGuestEnquiry.mockResolvedValueOnce({ id: "enq-1" });
+    render(<Flow />);
+    await screen.findByRole("heading", { name: "Venue access pending" });
+    // A way back to the public site, not only a way out of the account.
+    expect(screen.getByRole("link", { name: "Back to Venviewer" }).getAttribute("href")).toBe("/");
+
+    fireEvent.click(screen.getByRole("button", { name: "Request access" }));
+    fireEvent.change(screen.getByLabelText("Anything the venue should know? (optional)"),
+      { target: { value: "I run the Saturday ceilidh." } });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send request" })); await Promise.resolve(); });
+
+    expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith({
+      venueSlug: "trades-hall-glasgow",
+      email: "elaine@example.test",
+      eventType: "venue-access",
+      message: "Venue access request from elaine@example.test. I run the Saturday ceilidh.",
+    });
+    // The gate's own pending copy is also a status region, so match the text.
+    expect((await screen.findByText(/Request sent/)).textContent)
+      .toContain("The venue will reply to elaine@example.test");
+    expect(screen.queryByRole("button", { name: "Send request" })).toBeNull();
+  });
+
+  it("keeps a failed access request retryable", async () => {
+    mocks.getCurrentAuthUser.mockRejectedValueOnce(new ApiError(403, "Invitation required", "INVITATION_REQUIRED"));
+    mocks.submitGuestEnquiry.mockRejectedValueOnce(new ApiError(500, "Unavailable", "SERVER_ERROR"));
+    render(<Flow />);
+    await screen.findByRole("heading", { name: "Venue access pending" });
+    fireEvent.click(screen.getByRole("button", { name: "Request access" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send request" })); await Promise.resolve(); });
+    expect((await screen.findByText(/did not send/)).textContent).toContain("Please try again");
+    expect(screen.getByRole("button", { name: "Send request" })).toBeDefined();
   });
 
   it("opens account settings for an unverified email and waits for API access after verification", async () => {

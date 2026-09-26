@@ -71,6 +71,8 @@ vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
   useLocation: () => mockLocation,
   Navigate: ({ to }: { to: string }) => `Redirect to ${to}`,
+  // The denial screen's "Back to Venviewer" next action.
+  Link: ({ to, children }: { to: string; children: unknown }) => `Link to ${to}: ${String(children)}`,
   RouterProvider: ({ router }: { router: unknown }) => `Router: ${String(router)}`,
   createBrowserRouter: (routes: unknown) => routes,
 }));

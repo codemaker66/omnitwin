@@ -14,7 +14,7 @@ import {
   CONFIGURATION_REVIEW_STATUSES,
   type ConfigurationReviewStatus,
 } from "@omnitwin/types";
-import { canTransition } from "../state-machines/config-review.js";
+import { canTransition, isVenueReviewRole } from "../state-machines/config-review.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 import { sendEmailAsync } from "../services/email.js";
@@ -1005,10 +1005,15 @@ export async function configurationReviewRoutes(
   // GET /reviews/pending — venue-scoped list of reviews awaiting action
   //
   // Role-scoped results:
-  //   - admin:  all pending reviews across all venues
-  //   - staff:  pending reviews for their venue (submitted, under_review,
-  //             changes_requested)
+  //   - platform admin: all pending reviews across all venues
+  //   - the venue review roles (state-machines/config-review.ts
+  //     VENUE_REVIEW_ROLES — staff, manager, admin): pending reviews for
+  //     their venue (submitted, under_review, changes_requested)
   //   - other:  403 — only approvers can browse the pending queue
+  //
+  // The gate is the transition table's own role set, not a copy of it. When
+  // the widening to manager was made in the state machine alone, a manager
+  // could approve or archive a review it was not allowed to list.
   //
   // "pending" intentionally includes `changes_requested` because from the
   // approver's perspective, a config the planner has revised needs re-review.
@@ -1019,7 +1024,7 @@ export async function configurationReviewRoutes(
   server.get("/reviews/pending", { preHandler: [authenticate] }, async (request, reply) => {
     const user = request.user;
     const platformAdmin = isPlatformAdmin(user);
-    if (!platformAdmin && user.role !== "admin" && user.role !== "staff") {
+    if (!platformAdmin && !isVenueReviewRole(user.role)) {
       return reply.status(403).send({
         error: "Only approvers can list pending reviews",
         code: "FORBIDDEN",

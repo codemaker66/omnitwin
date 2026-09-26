@@ -5,6 +5,7 @@ import {
   VALID_QUOTE_TRANSITIONS,
   type ProposalStatus,
   type QuoteStatus,
+  type UserRole,
 } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -22,30 +23,39 @@ export const PROPOSAL_STATES = PROPOSAL_STATUSES;
 export const QUOTE_STATES = QUOTE_STATUSES;
 
 /** "planner" and "client" are the customer-facing roles (see enquiry.ts). */
-type TransitionRole = "client" | "planner" | "staff" | "hallkeeper" | "admin";
+type TransitionRole = UserRole;
+
+// The venue side of a proposal or quote: exactly the roles routes/proposals.ts
+// and routes/quotes.ts admit through canManageCommercial. A role allowed to
+// create the artefact and then refused the move that makes it useful is a
+// half-granted write, so these two lists are maintained as one idea.
+const VENUE_COMMERCIAL_ROLES: readonly TransitionRole[] = ["staff", "manager", "sales", "admin"];
+
+/** The customer's own decision, plus the venue side acting on their behalf. */
+const CUSTOMER_DECISION_ROLES: readonly TransitionRole[] = ["client", "planner", ...VENUE_COMMERCIAL_ROLES];
 
 const PROPOSAL_TRANSITION_ROLES: Record<string, readonly TransitionRole[]> = {
-  "draft→sent": ["staff", "admin"],
-  "draft→withdrawn": ["staff", "admin"],
-  "sent→accepted": ["client", "planner", "staff", "admin"],
-  "sent→declined": ["client", "planner", "staff", "admin"],
-  "sent→changes_requested": ["client", "planner", "staff", "admin"],
-  "sent→expired": ["staff", "admin"],
-  "sent→withdrawn": ["staff", "admin"],
-  "changes_requested→sent": ["staff", "admin"],
-  "changes_requested→withdrawn": ["staff", "admin"],
-  "accepted→archived": ["staff", "admin"],
-  "declined→archived": ["staff", "admin"],
-  "expired→archived": ["staff", "admin"],
-  "withdrawn→archived": ["staff", "admin"],
+  "draft→sent": VENUE_COMMERCIAL_ROLES,
+  "draft→withdrawn": VENUE_COMMERCIAL_ROLES,
+  "sent→accepted": CUSTOMER_DECISION_ROLES,
+  "sent→declined": CUSTOMER_DECISION_ROLES,
+  "sent→changes_requested": CUSTOMER_DECISION_ROLES,
+  "sent→expired": VENUE_COMMERCIAL_ROLES,
+  "sent→withdrawn": VENUE_COMMERCIAL_ROLES,
+  "changes_requested→sent": VENUE_COMMERCIAL_ROLES,
+  "changes_requested→withdrawn": VENUE_COMMERCIAL_ROLES,
+  "accepted→archived": VENUE_COMMERCIAL_ROLES,
+  "declined→archived": VENUE_COMMERCIAL_ROLES,
+  "expired→archived": VENUE_COMMERCIAL_ROLES,
+  "withdrawn→archived": VENUE_COMMERCIAL_ROLES,
 };
 
 const QUOTE_TRANSITION_ROLES: Record<string, readonly TransitionRole[]> = {
-  "draft→issued": ["staff", "admin"],
-  "issued→accepted": ["client", "planner", "staff", "admin"],
-  "issued→declined": ["client", "planner", "staff", "admin"],
-  "issued→superseded": ["staff", "admin"],
-  "issued→expired": ["staff", "admin"],
+  "draft→issued": VENUE_COMMERCIAL_ROLES,
+  "issued→accepted": CUSTOMER_DECISION_ROLES,
+  "issued→declined": CUSTOMER_DECISION_ROLES,
+  "issued→superseded": VENUE_COMMERCIAL_ROLES,
+  "issued→expired": VENUE_COMMERCIAL_ROLES,
 };
 
 /** Every role-policy key must be a structurally legal transition. Exported so

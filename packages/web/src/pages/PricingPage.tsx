@@ -1,5 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { submitGuestEnquiry } from "../api/configurations.js";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // PricingPage — the public /pricing surface for prospective venues.
@@ -10,10 +13,11 @@ import { Link } from "react-router-dom";
 // Visual language matches the LandingPage (Playfair/Newsreader serif
 // display, oxblood accent, cream on near-black).
 //
-// Phase 1 path: the "Start free trial" CTA routes to account creation until
-// dedicated billing/onboarding lands.
-// (which doesn't exist yet). Once Phase 1.3 ships /api/billing/checkout,
-// the handler will POST to that endpoint and redirect to Stripe.
+// There is no trial. Billing, /api/billing/checkout and the self-serve
+// onboarding that a trial implies are not built, so the page asks for the
+// conversation it can actually have — an enquiry the venue team answers —
+// rather than promising fourteen free days that nothing would deliver
+// (goal 18 §2 line 26).
 // ---------------------------------------------------------------------------
 
 const BG_DARK = "#0a0806";
@@ -229,12 +233,83 @@ function BillingCycleToggle({ cycle, onChange }: BillingCycleToggleProps): React
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The page's one real next action. It posts to the same public enquiry route
+ * the venue's own guest form uses, tagged so the inbox can tell a prospective
+ * venue apart from a booking. Nothing here promises a trial, because there is
+ * no trial to give.
+ */
+function VenueEnquiryForm(): React.ReactElement {
+  const [email, setEmail] = useState("");
+  const [note, setNote] = useState("");
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    setState("sending");
+    try {
+      await submitGuestEnquiry({
+        venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
+        email: email.trim(),
+        eventType: "venue-enquiry",
+        message: note.trim().length > 0 ? note.trim() : "Enquiry from the Venviewer pricing page.",
+      });
+      setState("sent");
+    } catch {
+      setState("error");
+    }
+  };
+
+  if (state === "sent") {
+    return (
+      <p role="status" style={{ marginTop: 32, fontSize: 17, color: CREAM }}>
+        Thank you. We will reply to {email}.
+      </p>
+    );
+  }
+
+  const sending = state === "sending";
+  const fieldStyle = {
+    width: "100%", boxSizing: "border-box" as const, padding: "14px 16px", borderRadius: 12,
+    border: `1px solid ${CREAM_FAINT}`, background: BG_PANEL, color: CREAM, fontFamily: BODY, fontSize: 16,
+  };
+
+  return (
+    <form onSubmit={(event) => { void handleSubmit(event); }}
+      style={{ display: "grid", gap: 12, maxWidth: 480, margin: "32px auto 0", textAlign: "left" }}>
+      <label htmlFor="pricing-enquiry-email" style={{ fontSize: 14, color: CREAM_MUT }}>Your email</label>
+      <input id="pricing-enquiry-email" name="email" type="email" required autoComplete="email"
+        value={email} disabled={sending} style={fieldStyle}
+        onChange={(event) => { setEmail(event.target.value); }} />
+      <label htmlFor="pricing-enquiry-note" style={{ fontSize: 14, color: CREAM_MUT }}>
+        Which rooms do you let? (optional)
+      </label>
+      <textarea id="pricing-enquiry-note" name="note" rows={3} maxLength={500}
+        value={note} disabled={sending} style={{ ...fieldStyle, resize: "vertical" }}
+        onChange={(event) => { setNote(event.target.value); }} />
+      <button type="submit" className="pricing-cta-primary" disabled={sending} aria-busy={sending}
+        style={{
+          display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "center",
+          marginTop: 8, padding: "18px 32px", border: "none", borderRadius: 14,
+          background: `linear-gradient(135deg, ${GOLD}, #d4b65c)`, color: BG_DARK,
+          fontFamily: BODY, fontSize: 17, fontWeight: 700, letterSpacing: 0.5, cursor: "pointer",
+        }}>
+        {sending && <ActivityIndicator size={18} />}
+        {sending ? "Sending…" : "Send enquiry"}
+      </button>
+      {state === "error" && <p role="alert" style={{ color: CREAM, fontSize: 15 }}>
+        That enquiry did not send. Please try again.
+      </p>}
+    </form>
+  );
+}
+
 export function PricingPage(): React.ReactElement {
   const [cycle, setCycle] = useState<"monthly" | "annual">("annual");
 
   const price = cycle === "annual" ? 47.99 : 57.99;
   const billingLabel = cycle === "annual" ? "billed annually · £575.88/yr" : "billed monthly";
-  const trialHref = `/register?tier=pro&cycle=${cycle}`;
+
 
   useEffect(() => {
     document.title = "Pricing — Venviewer";
@@ -437,8 +512,8 @@ export function PricingPage(): React.ReactElement {
             ))}
           </ul>
 
-          <Link
-            to={trialHref}
+          <a
+            href="#enquiry"
             className="pricing-cta-primary"
             style={{
               display: "block",
@@ -460,10 +535,10 @@ export function PricingPage(): React.ReactElement {
               textDecoration: "none",
             }}
           >
-            Start your 14-day free trial
-          </Link>
+            Talk to us about your venue
+          </a>
           <div style={{ textAlign: "center", fontSize: 12, color: CREAM_FAINT, marginTop: 16 }}>
-            No credit card required · Cancel any time
+            We scan your rooms before anything is billed
           </div>
         </div>
       </section>
@@ -722,8 +797,8 @@ export function PricingPage(): React.ReactElement {
             a: "No. We come to your venue with our own lidar + photogrammetry rig, scan everything, and deliver the 3D model as part of our scanning service. No hardware purchase, no separate hosting fees.",
           },
           {
-            q: "What happens after the free trial?",
-            a: "If you like it, you pick a plan and we turn billing on. If you don't, your layouts are archived and nothing charges. No auto-renewal into a paid plan without your consent.",
+            q: "How do we start?",
+            a: "Send an enquiry. We agree a scanning date, capture your rooms, and you see your own venue in the planner before anything is billed. Nothing auto-renews you into a paid plan without your consent.",
           },
           {
             q: "Can my clients plan events themselves without signing up?",
@@ -770,38 +845,15 @@ export function PricingPage(): React.ReactElement {
         ))}
       </section>
 
-      {/* === Final CTA === */}
-      <section style={{ position: "relative", zIndex: 2, padding: "100px 48px 120px", textAlign: "center", maxWidth: 800, margin: "0 auto" }}>
+      {/* === Enquiry === */}
+      <section id="enquiry" style={{ position: "relative", zIndex: 2, padding: "100px 48px 120px", textAlign: "center", maxWidth: 800, margin: "0 auto" }}>
         <h2 style={{ fontFamily: SERIF, fontSize: 56, margin: 0, fontWeight: 400, letterSpacing: 0, lineHeight: 1.05 }}>
-          Start your trial
+          Talk to us about your venue
         </h2>
         <p style={{ fontSize: 18, color: CREAM_MUT, marginTop: 24, lineHeight: 1.6 }}>
-          14 days free · No credit card
+          Tell us which rooms you let and we will come back with a scanning date and a figure.
         </p>
-        <Link
-          to={trialHref}
-          className="pricing-cta-primary"
-          style={{
-            display: "inline-block",
-            marginTop: 32,
-            padding: "22px 48px",
-            background: `linear-gradient(135deg, ${GOLD}, #d4b65c)`,
-            color: BG_DARK,
-            border: "none",
-            borderRadius: 14,
-            fontSize: 17,
-            fontWeight: 700,
-            letterSpacing: 0.5,
-            cursor: "pointer",
-            fontFamily: BODY,
-            transition: "transform 0.2s ease, box-shadow 0.2s ease",
-            boxShadow: "0 12px 32px rgba(201,168,76,0.3)",
-            textAlign: "center",
-            textDecoration: "none",
-          }}
-        >
-          Start free trial →
-        </Link>
+        <VenueEnquiryForm />
       </section>
       </main>
 

@@ -2,9 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   canAccessInternalEvent,
   canAccessResource,
+  canAdministerVenue,
+  canManageCommercial,
   canManageVenue,
+  canReadInventory,
   canReadVenuePlanningData,
   canWriteEvents,
+  canWriteInventory,
   isEventWriteRole,
 } from "../../utils/query.js";
 import type { JwtUser } from "../../middleware/auth.js";
@@ -155,12 +159,16 @@ describe("canAccessResource", () => {
 });
 
 describe("event write policy", () => {
-  it("admits staff/admin roles and refuses read-only roles", () => {
+  it("admits the venue team that runs the day and refuses everyone else", () => {
     expect(isEventWriteRole(makeUser({ role: "staff", venueId: VENUE_A }))).toBe(true);
     expect(isEventWriteRole(makeUser({ role: "admin", venueId: VENUE_A }))).toBe(true);
+    expect(isEventWriteRole(makeUser({ role: "manager", venueId: VENUE_A }))).toBe(true);
     expect(isEventWriteRole(makeUser({ role: "hallkeeper", venueId: VENUE_A }))).toBe(false);
     expect(isEventWriteRole(makeUser({ role: "planner", venueId: VENUE_A }))).toBe(false);
     expect(isEventWriteRole(makeUser({ role: "client", venueId: VENUE_A }))).toBe(false);
+    // Sales sells the room; the venue team runs the day.
+    expect(isEventWriteRole(makeUser({ role: "sales", venueId: VENUE_A }))).toBe(false);
+    expect(isEventWriteRole(makeUser({ role: "caterer", venueId: VENUE_A }))).toBe(false);
   });
 
   it("requires the persisted venue for staff/admin and preserves platform admin scope", () => {
@@ -227,5 +235,116 @@ describe("venue planning-data read policy", () => {
       .toBe(false);
     expect(canReadVenuePlanningData(makeUser({ role: "planner", venueId: VENUE_B }), VENUE_A))
       .toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Capability helpers — canAdministerVenue / canManageCommercial /
+// canReadInventory / canWriteInventory
+//
+// One definition per capability, imported by every route that gates on it.
+// The matrix these pin down (goal 18 §2 line 25, §6 decisions 6a and 6b):
+//
+//   | role at venue A | administer | commercial | inv. read | inv. write |
+//   |-----------------|------------|------------|-----------|------------|
+//   | platform admin  | true       | true       | true      | true       |
+//   | admin           | true       | true       | true      | true       |
+//   | manager         | true       | true       | true      | true       |
+//   | staff           | true       | true       | true      | FALSE      |
+//   | sales           | FALSE      | true       | FALSE     | FALSE      |
+//   | hallkeeper      | FALSE      | FALSE      | true      | FALSE      |
+//   | planner         | FALSE      | FALSE      | true      | FALSE      |
+//   | caterer         | FALSE      | FALSE      | FALSE     | FALSE      |
+//   | client          | FALSE      | FALSE      | FALSE     | FALSE      |
+//
+// Every capability is venue-scoped: the same role at venue B is false for
+// venue A, and a null venueId is false everywhere.
+// ---------------------------------------------------------------------------
+
+interface CapabilityCase {
+  readonly name: string;
+  readonly fn: (user: JwtUser, venueId: string) => boolean;
+  readonly allowed: readonly string[];
+  readonly denied: readonly string[];
+}
+
+const CAPABILITIES: readonly CapabilityCase[] = [
+  { name: "canAdministerVenue", fn: canAdministerVenue,
+    allowed: ["admin", "manager", "staff"],
+    denied: ["sales", "hallkeeper", "planner", "caterer", "client", "future_role"] },
+  { name: "canManageCommercial", fn: canManageCommercial,
+    allowed: ["admin", "manager", "staff", "sales"],
+    denied: ["hallkeeper", "planner", "caterer", "client", "future_role"] },
+  { name: "canReadInventory", fn: canReadInventory,
+    allowed: ["admin", "manager", "staff", "hallkeeper", "planner"],
+    denied: ["sales", "caterer", "client", "future_role"] },
+  { name: "canWriteInventory", fn: canWriteInventory,
+    allowed: ["admin", "manager"],
+    denied: ["staff", "sales", "hallkeeper", "planner", "caterer", "client", "future_role"] },
+];
+
+describe.each(CAPABILITIES)("$name", ({ fn, allowed, denied }) => {
+  it("admits a platform admin for any venue, whatever their own venueId", () => {
+    expect(fn(makeUser({ role: "client", platformRole: "admin", venueId: null }), VENUE_A)).toBe(true);
+    expect(fn(makeUser({ role: "client", platformRole: "admin", venueId: VENUE_B }), VENUE_A)).toBe(true);
+  });
+
+  it.each(allowed)("admits %s at that venue", (role) => {
+    expect(fn(makeUser({ role, venueId: VENUE_A }), VENUE_A)).toBe(true);
+  });
+
+  it.each(allowed)("refuses %s for another venue and with no venue", (role) => {
+    expect(fn(makeUser({ role, venueId: VENUE_B }), VENUE_A)).toBe(false);
+    expect(fn(makeUser({ role, venueId: null }), VENUE_A)).toBe(false);
+  });
+
+  it.each(denied)("refuses %s even at that venue", (role) => {
+    expect(fn(makeUser({ role, venueId: VENUE_A }), VENUE_A)).toBe(false);
+  });
+});
+
+describe("capability helpers as a set", () => {
+  it("keeps hallkeepers off venue, space and pricing edit while leaving room-state read intact", () => {
+    const hallkeeper = makeUser({ role: "hallkeeper", venueId: VENUE_A });
+    expect(canAdministerVenue(hallkeeper, VENUE_A)).toBe(false);
+    expect(canManageCommercial(hallkeeper, VENUE_A)).toBe(false);
+    expect(canReadInventory(hallkeeper, VENUE_A)).toBe(true);
+    expect(canWriteInventory(hallkeeper, VENUE_A)).toBe(false);
+    expect(canManageVenue(hallkeeper, VENUE_A)).toBe(true);
+  });
+
+  it("gives a venue admin the commercial surface its own staff has", () => {
+    const venueAdmin = makeUser({ role: "admin", venueId: VENUE_A });
+    const venueStaff = makeUser({ role: "staff", venueId: VENUE_A });
+    expect(canManageCommercial(venueStaff, VENUE_A)).toBe(true);
+    expect(canManageCommercial(venueAdmin, VENUE_A)).toBe(true);
+  });
+
+  // A manager that could edit the venue record but not read an internal event
+  // a hallkeeper can see would be senior on paper and junior in practice.
+  // canAdministerVenue must be a subset of the venue floor, not beside it.
+  it("puts every administering role on the venue floor as well", () => {
+    for (const role of ["admin", "manager", "staff"]) {
+      const user = makeUser({ role, venueId: VENUE_A });
+      expect(canAdministerVenue(user, VENUE_A), `${role} administers`).toBe(true);
+      expect(canManageVenue(user, VENUE_A), `${role} works the floor`).toBe(true);
+      expect(canAccessInternalEvent(user, VENUE_A), `${role} reads internal events`).toBe(true);
+    }
+  });
+
+  it("keeps sales on the pipeline and off the venue floor", () => {
+    const sales = makeUser({ role: "sales", venueId: VENUE_A });
+    expect(canManageCommercial(sales, VENUE_A)).toBe(true);
+    expect(canManageVenue(sales, VENUE_A)).toBe(false);
+    expect(canAccessInternalEvent(sales, VENUE_A)).toBe(false);
+  });
+
+  it("keeps caterers out of every venue-wide capability", () => {
+    const caterer = makeUser({ role: "caterer", venueId: VENUE_A });
+    expect(canAdministerVenue(caterer, VENUE_A)).toBe(false);
+    expect(canManageCommercial(caterer, VENUE_A)).toBe(false);
+    expect(canReadInventory(caterer, VENUE_A)).toBe(false);
+    expect(canWriteInventory(caterer, VENUE_A)).toBe(false);
+    expect(canManageVenue(caterer, VENUE_A)).toBe(false);
   });
 });

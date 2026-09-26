@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { EventPlanAudienceRoleSchema, UpdateEventSchema, sha256Hex, stableCanonicalJson, type EventPlanChangeSurface, type UpdateEvent } from "@omnitwin/types";
+import { toEventPlanAudienceRole, UpdateEventSchema, sha256Hex, stableCanonicalJson, type EventPlanChangeSurface, type UpdateEvent } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { events } from "../db/schema.js";
 import type { JwtUser } from "../middleware/auth.js";
@@ -114,7 +114,7 @@ export async function updateEventCore(
     const requiresAcknowledgement = affectedSurfaces.some(surface => surface !== "evidence");
     await recordEventPlanChange(tx, {
       eventId: updated.id, venueId: updated.venueId,
-      actorUserId: actor.id, actorRole: EventPlanAudienceRoleSchema.parse(actor.role), actorLabel: actor.email,
+      actorUserId: actor.id, actorRole: toEventPlanAudienceRole(actor.role), actorLabel: actor.email,
       sourceKind: "event", sourceId: updated.id, title: "Event plan updated",
       summary: `${updated.name} changed: ${affectedSurfaces.join(", ").replace(/_/g, " ")}.`,
       beforeSummary: `${String(row.guestCount)} guests`, afterSummary: `${String(updated.guestCount)} guests`,
