@@ -39,8 +39,12 @@ export async function loadPipelineValueMinor(db: Database, venueId: string | nul
   ];
   if (venueId !== null) conditions.push(eq(opportunities.venueId, venueId));
 
+  // sum() of an integer column is a bigint. Read it whole and map it to a
+  // number: a pipeline is many amounts, so the total is bounded by exact
+  // integer precision (AggregateMinorUnitAmountSchema), not by a 32-bit cast
+  // that fails past £21,474,836.47.
   const [row] = await db
-    .select({ total: sql<number>`coalesce(sum(${opportunities.estimatedValueMinor}), 0)::int` })
+    .select({ total: sql<number>`coalesce(sum(${opportunities.estimatedValueMinor}), 0)`.mapWith(Number) })
     .from(opportunities)
     .where(and(...conditions));
 

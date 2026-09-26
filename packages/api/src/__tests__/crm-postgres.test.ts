@@ -206,6 +206,25 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     expect(value.data.totalMinor).toBe(full.data.pipelineValueMinor);
   });
 
+  it("totals a pipeline past a 32-bit sum instead of failing", async () => {
+    // Each opportunity fits in its integer column, but a venue's open pipeline
+    // is their sum: three at £10,000,000 are 3,000,000,000 minor units, past
+    // the 2,147,483,647 an int cast can hold. The dashboard's own totals are
+    // bounded only by exact integer precision, and so is this one.
+    for (let index = 11; index <= 13; index += 1) {
+      await pool.query(
+        `INSERT INTO opportunities (id, venue_id, title, stage, estimated_value_minor, currency, next_action, created_at, updated_at)
+         VALUES ($1, $2, $3, 'qualified', 1000000000, 'GBP', 'Follow up', now(), now())`,
+        [opportunityId(index), VENUE, `Large opportunity ${String(index)}`],
+      );
+    }
+    const expected = 1_000_000 + 3_000_000_000;
+    expect((await pipeline()).data.pipelineValueMinor).toBe(expected);
+    const valueRes = await server.inject({ method: "GET", url: "/crm/pipeline/value", headers: headers("staff") });
+    expect(valueRes.statusCode, valueRes.body).toBe(200);
+    expect((JSON.parse(valueRes.body) as { data: { totalMinor: number } }).data.totalMinor).toBe(expected);
+  });
+
   it("keeps the venue boundary", async () => {
     const body = await pipeline();
     expect(body.data.page.total).toBe(5);
