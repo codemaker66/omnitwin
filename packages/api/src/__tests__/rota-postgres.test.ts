@@ -504,6 +504,28 @@ describe.skipIf(testUrl === undefined)("the staff rota on isolated PostgreSQL", 
       expect((await week()).body?.timeZone).toBe(LONDON);
     });
 
+    it("keeps each record of what people were told as written, even when the account that made it is deleted", async () => {
+      const draft = await addShift({ staffMemberId: MORAG, startsAt: at(SATURDAY, "09:00"), endsAt: at(SATURDAY, "13:00") });
+      const id = draft.shift?.id ?? "";
+      expect((await call("POST", `/venues/${VENUE}/rota/publish`, { weekStart: WEEK, shifts: [{ id, revision: 1 }] })).statusCode).toBe(200);
+
+      interface ChangeRow { readonly kind: string; readonly changed_by: string | null; readonly notice_hours: number; readonly after: unknown }
+      const read = async (): Promise<ChangeRow[]> =>
+        (await pool.query<ChangeRow>("SELECT kind, changed_by, notice_hours, after FROM rota_shift_changes WHERE shift_id = $1", [id])).rows;
+      const [written] = await read();
+      if (written === undefined) throw new Error("publishing wrote no record");
+      expect(written.kind).toBe("published");
+      expect(written.changed_by).toBe(USERS.staff);
+
+      await expect(pool.query("UPDATE rota_shift_changes SET notice_hours = 0 WHERE shift_id = $1", [id])).rejects.toMatchObject({ code: "23514" });
+      await expect(pool.query("UPDATE rota_shift_changes SET changed_by = $2 WHERE shift_id = $1", [id, USERS.admin])).rejects.toMatchObject({ code: "23514" });
+      await expect(pool.query("DELETE FROM rota_shift_changes WHERE shift_id = $1", [id])).rejects.toMatchObject({ code: "23514" });
+
+      // The account's ON DELETE SET NULL clears only who made the change.
+      await pool.query("DELETE FROM users WHERE id = $1", [USERS.staff]);
+      expect(await read()).toEqual([{ ...written, changed_by: null }]);
+    });
+
     it("warns when a shift falls on someone's leave", async () => {
       const leave = await call("POST", `/venues/${VENUE}/rota/unavailability`, {
         staffMemberId: MORAG, reason: "leave", note: null, startsAt: at(SATURDAY, "00:00"), endsAt: at(addRotaDays(SATURDAY, 1), "00:00"),
