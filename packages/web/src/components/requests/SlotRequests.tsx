@@ -11,7 +11,7 @@ import {
   type RequestUrgency,
   type VenueRequest,
 } from "@omnitwin/types";
-import type { SlotRequestsProps } from "../../pages/hallkeeper/DayBoardPage.js";
+import type { SlotRequestsProps } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 import {
   deriveSlotRequestSignal,
   type DayBoardSlotRequest,

@@ -8,11 +8,11 @@ import {
   type ReactNode,
 } from "react";
 import type { RequestTransition, VenueRequest } from "@omnitwin/types";
-import { DayBoardSlotRequestsContext } from "../../pages/hallkeeper/DayBoardPage.js";
+import { DayBoardSlotRequestsContext } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 import { listVenueRequests, makeVenueRequest, moveVenueRequest } from "../../api/requests.js";
 import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
-import { useAuthStore } from "../../stores/auth-store.js";
 import { SlotRequests } from "./SlotRequests.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import {
   SLOT_REQUESTS_UNAVAILABLE,
   SlotRequestsContext,
@@ -23,7 +23,8 @@ import {
 // ---------------------------------------------------------------------------
 // The requests provider (Ship Friday slice 10).
 //
-// Mounted once, above the router, so two things are true everywhere:
+// Mounted around the Day Board by its route (pages/hallkeeper/DayBoardRoute),
+// so two things are true on the board:
 //
 //   1. The Day Board finds a <SlotRequests> in its own context and renders it
 //      in the region Lane 6 reserved. The board never learns anything about

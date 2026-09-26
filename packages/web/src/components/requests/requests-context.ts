@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { RequestKind, RequestTransition, RequestUrgency, VenueRequest } from "@omnitwin/types";
-import type { SlotRequestsProps } from "../../pages/hallkeeper/DayBoardPage.js";
+import type { SlotRequestsProps } from "../../pages/hallkeeper/lib/slot-requests-contract.js";
 
 // ---------------------------------------------------------------------------
 // One store for every slab on the screen (Ship Friday slice 10).
@@ -8,8 +8,8 @@ import type { SlotRequestsProps } from "../../pages/hallkeeper/DayBoardPage.js";
 // The Day Board can hold a dozen slots; each asking the API for its own
 // requests would be a dozen fetches and a dozen sockets. Instead the provider
 // holds ONE snapshot of the venue's open requests and hands each slot the
-// slice that belongs to its booking. The import above is type-only on
-// purpose: this leaf carries no runtime dependency on the board's page module.
+// slice that belongs to its booking. The slot's props come from the Day
+// Board's contract leaf, type-only, so nothing here loads the board's page.
 // ---------------------------------------------------------------------------
 
 export interface AskForSomething {

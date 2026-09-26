@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentType, ReactElement } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { boardRange, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../diary/lib/board-time.js";
@@ -11,6 +11,11 @@ import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/ev
 import { deriveDayBoard, type DayBoardSlot } from "./lib/day-board-state.js";
 import { describeSlotSheet, type SlotSheetState } from "./lib/day-board-sheet.js";
 import { useVenueTimezone } from "./lib/use-venue-timezone.js";
+import {
+  DayBoardSlotRequestsContext,
+  type SlotRequestsComponent,
+  type SlotRequestsProps,
+} from "./lib/slot-requests-contract.js";
 import "../../styles/hallkeeper-register.css";
 import "./day-board.css";
 
@@ -45,34 +50,11 @@ function epochDelaySeconds(): number {
   return -(Date.now() / 1000) % 60;
 }
 
-// ---------------------------------------------------------------------------
-// <SlotRequests> mount point (owned by Lane 9 — requests and the flashing
-// slot). The Day Board reserves the region and supplies the slot's identity;
-// the conversation lane supplies the component. Two ways in, so that lane
-// does not need a router change to land:
-//
-//   1. <DayBoardSlotRequestsContext.Provider value={SlotRequests}> anywhere
-//      above the board, or
-//   2. <DayBoardPage slotRequests={SlotRequests} /> at the route.
-//
-// The prop wins when both are present. The default is null: the region
-// renders nothing at all, so an unmounted lane costs no chrome and no space.
-// The contract is deliberately props-only — no callbacks back into the board
-// — so a request surface can never drive the board's own refetch loop.
-// ---------------------------------------------------------------------------
-
-export interface SlotRequestsProps {
-  readonly bookingId: string;
-  readonly eventId: string | null;
-  readonly roomId: string;
-  readonly roomName: string;
-  readonly startsAtMs: number;
-  readonly endsAtMs: number;
-}
-
-export type SlotRequestsComponent = ComponentType<SlotRequestsProps>;
-
-export const DayBoardSlotRequestsContext = createContext<SlotRequestsComponent | null>(null);
+// The <SlotRequests> mount point: its contract lives in
+// ./lib/slot-requests-contract.ts and is re-exported here, where Lane 9's
+// documented import points.
+export { DayBoardSlotRequestsContext };
+export type { SlotRequestsComponent, SlotRequestsProps };
 
 interface SlotSheetResult {
   readonly status: "loading" | "ready" | "error";
