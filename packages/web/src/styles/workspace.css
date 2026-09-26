@@ -1,0 +1,114 @@
+/* ---------------------------------------------------------------------------
+ * WORKSPACE REGISTERS — T-635, design system §2.2 (docs/design/platform-2026-09-26)
+ *
+ * A surface chooses a register; it never invents a palette. Components read
+ * the `--reg-*` semantics, so one button, field or chip works on every
+ * register:
+ *
+ *   data-register="ivory"   staff tools and what clients work in: ink on the
+ *                           ivory sheet over the sage ground
+ *   data-register="forest"  decision panels, confirmations, dialogs
+ *   .ws-plane               the copper impact plane, inside the ivory register
+ *
+ * Each register also re-declares:
+ *   - the focus ring (ink on ivory, cream on forest; 2px, no halo), so every
+ *     element inside inherits the right ring without a rule of its own;
+ *   - the House semantic names (--house-text-*, --house-bg-*, --house-status-*),
+ *     so a component written for the dark BOH chrome stays legible when it
+ *     sits on ivory or forest.
+ *
+ * Caution: a component that paints its own dark background and reads the
+ * House names for its text (NotificationCenter's panel does, today) turns
+ * dark-on-dark inside a register. Move it onto `--reg-*` before its container
+ * takes a register; that is why the dashboard header has none yet.
+ *
+ * The primitives live in styles/house-tokens.css.
+ * ------------------------------------------------------------------------- */
+
+[data-register="ivory"] {
+  color-scheme: light;
+  --reg-surface: var(--house-sheet);
+  --reg-surface-hover: var(--house-sheet-hover);
+  --reg-surface-selected: var(--house-sheet-selected);
+  --reg-raised: var(--house-paper);
+  --reg-text-1: var(--house-ink-1);
+  --reg-text-2: var(--house-ink-2);
+  --reg-text-3: var(--house-ink-3);
+  --reg-rule: var(--house-rule);
+  --reg-edge: var(--house-edge);
+  --reg-focus: var(--house-ink-1);
+  --reg-primary: var(--house-forest);
+  --reg-primary-ink: var(--house-forest-ink-1);
+  --reg-primary-hover: var(--house-forest-deep);
+  --reg-attention: var(--house-copper-text);
+  --reg-alert: var(--house-brick-strong);
+  --reg-settled: var(--house-sage-text);
+
+  --vv-focus-ring: 2px solid var(--reg-focus);
+  --vv-focus-halo: none;
+
+  --house-bg-0: var(--house-sheet);
+  --house-bg-1: var(--house-sheet);
+  --house-bg-2: var(--house-paper);
+  --house-hairline: var(--house-rule);
+  --house-hairline-hover: var(--house-rule-strong);
+  --house-text-0: var(--house-ink-1);
+  --house-text-1: var(--house-ink-1);
+  --house-text-2: var(--house-ink-2);
+  --house-text-3: var(--house-ink-3);
+  --house-accent-copper: var(--house-copper-text);
+  --house-status-sage: var(--house-sage-text);
+  --house-status-amber: var(--house-amber-text);
+  --house-status-grey: var(--house-ink-3);
+  --house-status-oxblood: var(--house-brick-text);
+}
+
+[data-register="forest"] {
+  /* Native selects, date pickers and scrollbars render dark on forest. */
+  color-scheme: dark;
+  --reg-surface: var(--house-forest);
+  --reg-surface-hover: #ffffff0d;   /* composites to #314d41 */
+  --reg-surface-selected: var(--house-forest-deep);
+  --reg-raised: var(--house-forest-field);
+  --reg-text-1: var(--house-forest-ink-1);
+  --reg-text-2: var(--house-forest-ink-2);
+  --reg-text-3: var(--house-forest-ink-3);
+  --reg-rule: var(--house-forest-rule);
+  --reg-edge: var(--house-forest-edge);
+  --reg-focus: var(--house-cream);
+  --reg-primary: var(--house-cream);
+  --reg-primary-ink: var(--house-ink-1);
+  --reg-primary-hover: var(--house-cream-hover);
+  --reg-attention: var(--house-copper-lit);
+  --reg-alert: var(--house-brick-lit);
+  --reg-settled: var(--house-sage-lit);
+
+  --vv-focus-ring: 2px solid var(--reg-focus);
+  --vv-focus-halo: none;
+
+  --house-bg-0: var(--house-forest-deep);
+  --house-bg-1: var(--house-forest);
+  --house-bg-2: var(--house-forest-field);
+  --house-hairline: var(--house-forest-rule);
+  --house-hairline-hover: var(--house-forest-edge);
+  --house-text-0: var(--house-forest-ink-1);
+  --house-text-1: var(--house-forest-ink-1);
+  --house-text-2: var(--house-forest-ink-2);
+  --house-text-3: var(--house-forest-ink-3);
+  --house-accent-copper: var(--house-copper-lit);
+  --house-status-sage: var(--house-sage-lit);
+  --house-status-amber: var(--house-amber-lit);
+  --house-status-grey: var(--house-forest-ink-3);
+  --house-status-oxblood: var(--house-brick-lit);
+}
+
+/* The copper plane, inside the ivory register: ink-2 and ink-3 fail on it, so
+   the plane has one secondary ink. */
+.ws-plane {
+  --reg-surface: var(--house-plane);
+  --reg-surface-hover: var(--house-plane-hover);
+  --reg-text-2: var(--house-plane-ink);
+  --reg-text-3: var(--house-plane-ink);
+  --reg-attention: var(--house-plane-attention);
+  --reg-alert: var(--house-brick-strong);
+}

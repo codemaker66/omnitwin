@@ -8,7 +8,7 @@
  */
 
 /** Primary brand accent — used for callouts, highlights, primary CTAs. */
-export const GOLD = "#c9a84c";
+export const GOLD = "#c98a5b";
 
 /** Success / completion — checked rows, "Setup complete" state. */
 export const GREEN = "#5ba870";

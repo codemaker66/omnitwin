@@ -10,7 +10,7 @@
   --ink-raised: #1b1713;
   --stone: #f2ecdf;
   --stone-dim: #b5aa97;
-  --brass: #d8a64c;
+  --brass: #c98a5b; /* T-615: copper. Name kept — Lane 2 owns this file. */
   --hairline: rgba(242, 236, 223, 0.12);
 
   min-height: 100vh;
@@ -60,7 +60,7 @@
 .rooms__primaryNav .rooms__navPlan { background: #203c31; color: #fff9ec; }
 .rooms__primaryNav .rooms__navPlan:hover { background: #315344; }
 .rooms__primaryNav .rooms__navLogin { border-color: #839486; }
-.rooms__primaryNav a:focus-visible { outline: 2px solid #203c31; outline-offset: 3px; }
+.rooms__primaryNav a:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 
 .rooms__wordmark {
   font-family: var(--fr-display, "Fraunces", Georgia, serif);
@@ -179,7 +179,7 @@
 .rooms__enter--plan { background: #f4efe4; border-color: #f4efe4; color: #203c31; font-weight: 600; }
 .rooms__enter--plan:hover,
 .rooms__enter--plan:focus-visible { background: #e1e7da; color: #203c31; }
-.rooms__enter:focus-visible { outline: 2px solid var(--stone); outline-offset: 4px; }
+.rooms__enter:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 
 /* ── rail ─────────────────────────────────────────────────── */
 
@@ -253,8 +253,8 @@
 }
 
 .rooms__card:focus-visible .rooms__plate {
-  outline: 2px solid var(--brass);
-  outline-offset: 3px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 /* A closed room is a card, not a door: the pointer never lights it up, and

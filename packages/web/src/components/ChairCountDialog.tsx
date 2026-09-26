@@ -76,8 +76,8 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       100% { transform: scale(1); }
     }
     @keyframes omni-v2-glow {
-      0%, 100% { box-shadow: 0 6px 32px rgba(201,168,76,0.25), inset 0 1px 0 rgba(255,255,255,0.15); }
-      50% { box-shadow: 0 8px 48px rgba(201,168,76,0.4), inset 0 1px 0 rgba(255,255,255,0.2); }
+      0%, 100% { box-shadow: 0 6px 32px rgba(201, 138, 91,0.25), inset 0 1px 0 rgba(255,255,255,0.15); }
+      50% { box-shadow: 0 8px 48px rgba(201, 138, 91,0.4), inset 0 1px 0 rgba(255,255,255,0.2); }
     }
     @keyframes omni-v2-line {
       0% { transform: scaleX(0); opacity: 0; }
@@ -97,26 +97,26 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       }
     }
     .omni-v2-stepper-btn:hover:not(:disabled) {
-      background: rgba(201,168,76,0.12) !important;
-      color: #e8c95a !important;
+      background: rgba(201, 138, 91,0.12) !important;
+      color: #dca475 !important;
     }
     .omni-v2-stepper-btn:active:not(:disabled) {
-      background: rgba(201,168,76,0.22) !important;
+      background: rgba(201, 138, 91,0.22) !important;
       transform: scale(0.92);
     }
     @media (hover: hover) and (pointer: fine) {
       .omni-v2-cta:hover {
         transform: translateY(-2px) scale(1.02) !important;
-        box-shadow: 0 12px 48px rgba(201,168,76,0.5), inset 0 1px 0 rgba(255,255,255,0.2) !important;
+        box-shadow: 0 12px 48px rgba(201, 138, 91,0.5), inset 0 1px 0 rgba(255,255,255,0.2) !important;
       }
     }
     .omni-v2-cta:active {
       transform: translateY(0) scale(0.97) !important;
     }
     .omni-v2-sec:hover {
-      background: rgba(201,168,76,0.08) !important;
-      border-color: rgba(201,168,76,0.35) !important;
-      color: #dfc06a !important;
+      background: rgba(201, 138, 91,0.08) !important;
+      border-color: rgba(201, 138, 91,0.35) !important;
+      color: #dca475 !important;
     }
     .omni-v2-cancel:hover {
       color: #aaa !important;
@@ -126,9 +126,9 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
   document.head.appendChild(s);
 }
 
-const GOLD = "#c9a84c";
-const GOLD_LIGHT = "#dfc06a";
-const GOLD_DARK = "#a8872e";
+const GOLD = "#c98a5b";
+const GOLD_LIGHT = "#dca475";
+const GOLD_DARK = "#7e4620";
 
 export function initialChairCountForCapacity(
   tableShape: ChairCountRequest["tableShape"],
@@ -227,12 +227,12 @@ export function ChairCountDialog({
           padding: "clamp(24px, 5vw, 52px) clamp(24px, 6vw, 64px) clamp(24px, 4vw, 44px)",
           display: "flex", flexDirection: "column", alignItems: "center",
           gap: "clamp(24px, 4vw, 36px)",
-          boxShadow: "0 32px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.12), inset 0 1px 0 rgba(255,255,255,0.05)",
+          boxShadow: "0 32px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(201, 138, 91,0.12), inset 0 1px 0 rgba(255,255,255,0.05)",
           fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
           color: "#fff",
           width: "min(508px, 100%)", minWidth: 0, boxSizing: "border-box",
           maxHeight: "100%", overflowY: "auto",
-          border: "1px solid rgba(201, 168, 76, 0.15)",
+          border: "1px solid rgba(201, 138, 91, 0.15)",
           animation: "omni-v2-panel 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
         onClick={(e) => { e.stopPropagation(); }}
@@ -268,7 +268,7 @@ export function ChairCountDialog({
           display: "flex", alignItems: "center",
           background: "rgba(255,255,255,0.03)",
           borderRadius: 16,
-          border: "1px solid rgba(201, 168, 76, 0.2)",
+          border: "1px solid rgba(201, 138, 91, 0.2)",
           overflow: "hidden",
         }}>
           {/* Minus */}
@@ -277,7 +277,7 @@ export function ChairCountDialog({
             className="omni-v2-stepper-btn"
             style={{
               width: 72, height: 76, border: "none",
-              borderRight: "1px solid rgba(201, 168, 76, 0.12)",
+              borderRight: "1px solid rgba(201, 138, 91, 0.12)",
               background: "transparent",
               color: count <= minChairs ? "#333" : GOLD_LIGHT,
               fontSize: 28, fontWeight: 400, cursor: count <= minChairs ? "default" : "pointer",
@@ -331,7 +331,7 @@ export function ChairCountDialog({
             className="omni-v2-stepper-btn"
             style={{
               width: 72, height: 76, border: "none",
-              borderLeft: "1px solid rgba(201, 168, 76, 0.12)",
+              borderLeft: "1px solid rgba(201, 138, 91, 0.12)",
               background: "transparent",
               color: count >= maxChairs ? "#333" : GOLD_LIGHT,
               fontSize: 28, fontWeight: 400, cursor: count >= maxChairs ? "default" : "pointer",
@@ -370,7 +370,7 @@ export function ChairCountDialog({
             color: "#0e0e0e", fontSize: 17, fontWeight: 700,
             cursor: "pointer", letterSpacing: 0.6,
             transition: "transform 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
-            boxShadow: "0 6px 32px rgba(201,168,76,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
+            boxShadow: "0 6px 32px rgba(201, 138, 91,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
           }}
           onClick={() => { onConfirm(count); }}
         >
@@ -384,7 +384,7 @@ export function ChairCountDialog({
             className="omni-v2-sec"
             style={{
               padding: "10px 24px", borderRadius: 10,
-              border: "1px solid rgba(201, 168, 76, 0.18)",
+              border: "1px solid rgba(201, 138, 91, 0.18)",
               background: "transparent", color: GOLD,
               fontSize: 14, fontWeight: 500, cursor: "pointer",
               letterSpacing: 0.3, transition: "background 0.25s ease, border-color 0.25s ease, color 0.25s ease",

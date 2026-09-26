@@ -11,7 +11,7 @@
   background:
     linear-gradient(180deg, rgba(20, 27, 28, 0.96), rgba(11, 13, 13, 0.96)),
     radial-gradient(circle at 90% 0%, rgba(104, 216, 210, 0.12), transparent 32%);
-  border: 1px solid rgba(215, 181, 109, 0.24);
+  border: 1px solid rgba(201, 138, 91, 0.24);
   border-radius: 8px;
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
 }
@@ -44,9 +44,9 @@
 }
 
 .venue-settings-kicker {
-  color: #d7b56d;
+  color: #c98a5b;
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.11em;
   margin: 0;
   text-transform: uppercase;
@@ -54,7 +54,7 @@
 
 .venue-settings-status {
   align-items: center;
-  border: 1px solid rgba(215, 181, 109, 0.28);
+  border: 1px solid rgba(201, 138, 91, 0.28);
   border-radius: 999px;
   color: #68d8d2;
   display: inline-flex;
@@ -63,7 +63,7 @@
   min-height: 38px;
   padding: 0 14px;
   font-size: 13px;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .venue-settings-status[data-state="dirty"] {
@@ -96,14 +96,14 @@
 .venue-settings-meta dt {
   color: rgba(246, 241, 232, 0.62);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .venue-settings-field input {
   background: rgba(255, 247, 232, 0.08);
-  border: 1px solid rgba(215, 181, 109, 0.24);
+  border: 1px solid rgba(201, 138, 91, 0.24);
   border-radius: 8px;
   color: #fff7e8;
   font: inherit;
@@ -166,14 +166,14 @@
 
 .venue-settings-button {
   align-items: center;
-  background: linear-gradient(135deg, #d7b56d, #f0cf84);
+  background: linear-gradient(135deg, #c98a5b, #dca475);
   border: 1px solid rgba(255, 224, 154, 0.52);
   border-radius: 8px;
   color: #0a0b0b;
   cursor: pointer;
   display: inline-flex;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 700;
   gap: 8px;
   min-height: 42px;
   padding: 0 16px;
@@ -202,7 +202,7 @@
   background:
     radial-gradient(circle at 78% 18%, rgba(104, 216, 210, 0.14), transparent 30%),
     rgba(255, 247, 232, 0.06);
-  border: 1px solid rgba(215, 181, 109, 0.3);
+  border: 1px solid rgba(201, 138, 91, 0.3);
   border-radius: 8px;
   display: grid;
   gap: 10px;
@@ -229,7 +229,7 @@
 .venue-settings-logo-preview span {
   color: #080908;
   font-size: 22px;
-  font-weight: 950;
+  font-weight: 700;
 }
 
 .venue-settings-preview h3 {
@@ -247,7 +247,7 @@
 }
 
 .venue-settings-meta div {
-  border-top: 1px solid rgba(215, 181, 109, 0.16);
+  border-top: 1px solid rgba(201, 138, 91, 0.16);
   display: grid;
   gap: 4px;
   padding-top: 10px;

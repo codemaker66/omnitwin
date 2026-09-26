@@ -7,44 +7,44 @@
    --------------------------------------------------------------------------- */
 
 .enq-desk {
-  --enq-ground: #819087;
-  --enq-sheet: #f2eddd;
-  --enq-sheet-hover: #ebe5d3;
-  --enq-sheet-selected: #e5dec9;
-  --enq-plane: #deb599;
-  --enq-plane-hover: #d7aa8b;
-  --enq-plane-ink: #3e3528;
-  --enq-ink: #14302a;
-  --enq-ink-2: #42584e;
-  --enq-ink-3: #55655c;
-  --enq-rule: #d9d4c2;
-  --enq-rule-strong: #bfc0ac;
-  --enq-copper: #94491f;
-  --enq-copper-dot: #c1703f;
-  --enq-copper-wash: #f3dcc9;
-  --enq-amber: #6f500f;
-  --enq-amber-dot: #c3952b;
-  --enq-amber-wash: #efe0b8;
-  --enq-sage: #2f5a3a;
-  --enq-sage-dot: #5d8963;
-  --enq-sage-wash: #dbe5d3;
-  --enq-brick: #8a3522;
-  --enq-brick-dot: #b4513a;
-  --enq-brick-wash: #f1d8cf;
-  --enq-slate: #545e59;
-  --enq-slate-dot: #8e9992;
-  --enq-slate-wash: #e3e3db;
-  --enq-forest: #264337;
-  --enq-forest-deep: #1f3a2f;
-  --enq-forest-ink: #f2eee1;
-  --enq-forest-ink-2: #d0d9cd;
-  --enq-forest-ink-3: #a9bdb0;
-  --enq-forest-rule: #4d6c5c;
-  --enq-cream: #efe7cf;
-  --enq-cream-hover: #f7f1de;
-  --enq-serif: "Newsreader", Georgia, "Times New Roman", serif;
-  --enq-sans: Inter, ui-sans-serif, system-ui, sans-serif;
-  --enq-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --enq-ground: var(--house-ground);
+  --enq-sheet: var(--house-sheet);
+  --enq-sheet-hover: var(--house-sheet-hover);
+  --enq-sheet-selected: var(--house-sheet-selected);
+  --enq-plane: var(--house-plane);
+  --enq-plane-hover: var(--house-plane-hover);
+  --enq-plane-ink: var(--house-plane-ink);
+  --enq-ink: var(--house-ink-1);
+  --enq-ink-2: var(--house-ink-2);
+  --enq-ink-3: var(--house-ink-3);
+  --enq-rule: var(--house-rule);
+  --enq-rule-strong: var(--house-rule-strong);
+  --enq-copper: var(--house-copper-text);
+  --enq-copper-dot: var(--house-copper-dot);
+  --enq-copper-wash: var(--house-copper-wash);
+  --enq-amber: var(--house-amber-text);
+  --enq-amber-dot: var(--house-amber-dot);
+  --enq-amber-wash: var(--house-amber-wash);
+  --enq-sage: var(--house-sage-text);
+  --enq-sage-dot: var(--house-sage-dot);
+  --enq-sage-wash: var(--house-sage-wash);
+  --enq-brick: var(--house-brick-text);
+  --enq-brick-dot: var(--house-brick-dot);
+  --enq-brick-wash: var(--house-brick-wash);
+  --enq-slate: var(--house-slate-text);
+  --enq-slate-dot: var(--house-slate-dot);
+  --enq-slate-wash: var(--house-slate-wash);
+  --enq-forest: var(--house-forest);
+  --enq-forest-deep: var(--house-forest-deep);
+  --enq-forest-ink: var(--house-forest-ink-1);
+  --enq-forest-ink-2: var(--house-forest-ink-2);
+  --enq-forest-ink-3: var(--house-forest-ink-3);
+  --enq-forest-rule: var(--house-forest-rule);
+  --enq-cream: var(--house-cream);
+  --enq-cream-hover: var(--house-cream-hover);
+  --enq-serif: var(--house-serif);
+  --enq-sans: var(--house-sans);
+  --enq-ease-out: var(--house-ease-out);
 
   position: relative;
   isolation: isolate;
@@ -78,15 +78,9 @@
 
 .enq-desk--single { grid-template-columns: minmax(0, 1fr); }
 
-/* Focus: ink on ivory and copper, cream on forest. The app's cyan ring
-   measures about 1.4:1 on ivory, under the 3:1 a focus indicator needs; the
-   :is() argument lifts these past its [tabindex] selector. */
-.enq-desk :is(button, a, summary, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline: 2px solid var(--enq-ink);
-  outline-offset: 2px;
-  box-shadow: none;
-}
-.enq-desk .enq-panel :is(button, a, summary, textarea, [tabindex]:not([tabindex="-1"])):focus-visible { outline-color: var(--enq-cream); }
+/* Focus comes from the register (styles/workspace.css): ink on the ivory desk,
+   cream in the forest panel, 2px with no halo. Full-width rows draw theirs
+   inside the row so it is never clipped by the sheet. */
 .enq-desk .enq-rows :is(.enq-row[tabindex]:not([tabindex="-1"]), .enq-row):focus-visible { outline-offset: -2px; }
 
 /* ---------------------------------------------------------------------------
@@ -175,7 +169,7 @@
   font-weight: 300;
   line-height: 1.04;
   letter-spacing: -0.045em;
-  font-variant-numeric: tabular-nums lining-nums;
+  font-variant-numeric: tabular-nums;
   color: var(--enq-ink);
   min-height: 1.04em;
 }
@@ -194,7 +188,7 @@
 .enq-stage:first-child[aria-pressed="true"]::after { left: 0; }
 .enq-stage--new .enq-stage__count--has { color: #7e2d1b; }
 .enq-stages .enq-dot[data-tone="new"] { background: #9a4a25; }
-.enq-stages .enq-dot[data-tone="review"] { background: #85651a; }
+.enq-stages .enq-dot[data-tone="review"] { background: var(--house-plane-dot-review); }
 .enq-stages .enq-dot[data-tone="approved"] { background: #3d6b47; }
 .enq-stages .enq-dot[data-tone="declined"] { background: #8a3522; }
 .enq-stages .enq-dot[data-tone="withdrawn"] { background: #5d6862; }
@@ -218,7 +212,7 @@
 }
 .enq-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--enq-slate-dot); }
 .enq-chip[data-tone="new"] { background: var(--enq-copper-wash); color: #8a4119; }
-.enq-chip[data-tone="review"] { background: var(--enq-amber-wash); color: #664a0c; }
+.enq-chip[data-tone="review"] { background: var(--enq-amber-wash); color: var(--house-amber-chip); }
 .enq-chip[data-tone="approved"] { background: var(--enq-sage-wash); color: #2c5537; }
 .enq-chip[data-tone="declined"] { background: var(--enq-brick-wash); color: #83311f; }
 [data-tone="new"] > .enq-dot, .enq-dot[data-tone="new"] { background: var(--enq-copper-dot); }
@@ -299,8 +293,8 @@
   color: var(--enq-ink);
   line-height: 1.1;
 }
-.enq-date__weekday, .enq-date__month { color: var(--enq-ink-3); font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
-.enq-date__day { font: 400 26px/1 var(--enq-serif); font-variant-numeric: lining-nums; }
+.enq-date__weekday, .enq-date__month { color: var(--enq-ink-3); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.enq-date__day { font: 400 26px/1 var(--enq-serif); }
 .enq-date--open { border-style: dashed; background: transparent; }
 .enq-date--past { background: transparent; color: var(--enq-ink-3); }
 .enq-date--open .enq-date__day { font-size: 13px; font-family: var(--enq-sans); color: var(--enq-ink-3); }
@@ -479,7 +473,7 @@
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   margin: 28px 0 8px;
-  font-variant-numeric: tabular-nums lining-nums;
+  font-variant-numeric: tabular-nums;
 }
 .enq-facts > div {
   display: flex;
@@ -622,7 +616,7 @@
 .enq-drafts .ai-draft-panel__meta span { background: #2f5947; color: var(--enq-forest-ink); }
 .enq-drafts .ai-draft-panel label span { color: var(--enq-forest-ink); }
 .enq-drafts .ai-draft-panel textarea { border-color: var(--enq-rule-strong); border-radius: 3px; background: var(--enq-sheet); color: var(--enq-ink); }
-.enq-drafts .ai-draft-panel__note { color: #f0cf8f !important; }
+.enq-drafts .ai-draft-panel__note { color: var(--house-amber-lit) !important; }
 
 .enq-timeline { margin: 0; padding: 0; list-style: none; }
 .enq-timeline li { position: relative; display: grid; gap: 2px; padding: 0 0 16px 22px; }

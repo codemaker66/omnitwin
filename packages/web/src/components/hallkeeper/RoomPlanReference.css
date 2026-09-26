@@ -19,7 +19,7 @@
 .hk-room-reference--compact .hk-room-reference-paper { min-height: 280px; padding: 16px; }
 .hk-room-reference--compact .hk-room-reference-image { max-height: 55vh; }
 .hk-room-reference--compact .hk-room-reference-crop { width: min(100%, 18rem); }
-.hk-room-reference button:focus-visible, .hk-room-reference a:focus-visible { outline: 2px solid #54795c; outline-offset: 3px; }
+.hk-room-reference button:focus-visible, .hk-room-reference a:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 @media (max-width: 600px) {
   .hk-room-reference-paper { padding: 12px; min-height: 260px; }
   .hk-room-reference-tools { gap: 6px; }

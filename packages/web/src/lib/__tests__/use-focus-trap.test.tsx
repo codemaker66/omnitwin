@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from "react";
+import { useRef, useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useFocusTrap } from "../use-focus-trap.js";
@@ -24,6 +24,20 @@ function Harness(): ReactElement {
     <>
       <button type="button" onClick={() => { setOpen(true); }}>Open dialog</button>
       {open ? <Dialog onClose={() => { setOpen(false); }} /> : null}
+    </>
+  );
+}
+
+/** A dialog whose action moves focus on purpose, as the Diary palette does. */
+function PickingHarness(): ReactElement {
+  const [open, setOpen] = useState(false);
+  const picked = useRef<HTMLButtonElement>(null);
+
+  return (
+    <>
+      <button type="button" onClick={() => { setOpen(true); }}>Open dialog</button>
+      <button type="button" ref={picked}>Picked booking</button>
+      {open ? <Dialog onClose={() => { picked.current?.focus(); setOpen(false); }} /> : null}
     </>
   );
 }
@@ -62,6 +76,24 @@ describe("useFocusTrap", () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(opener);
     });
+  });
+
+  it("leaves focus where the dialog's own action put it", async () => {
+    render(<PickingHarness />);
+
+    const opener = screen.getByRole("button", { name: "Open dialog" });
+    opener.focus();
+    fireEvent.click(opener);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "First action" }));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
+    const picked = screen.getByRole("button", { name: "Picked booking" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(document.activeElement).toBe(picked);
   });
 
   it("wraps Tab and Shift+Tab inside the mounted trap", async () => {

@@ -138,7 +138,7 @@ const cardNameStyle: React.CSSProperties = {
 };
 
 const cardDimStyle: React.CSSProperties = {
-  fontSize: 9,
+  fontSize: 11,
   fontFamily: "'SF Mono', 'Consolas', monospace",
   color: "rgba(140, 165, 200, 0.7)",
   textAlign: "center",
@@ -146,7 +146,7 @@ const cardDimStyle: React.CSSProperties = {
 };
 
 const dragHintStyle: React.CSSProperties = {
-  fontSize: 9,
+  fontSize: 11,
   color: "rgba(140, 165, 200, 0.35)",
   textAlign: "center",
   padding: "0 16px 6px",
@@ -197,7 +197,7 @@ const trashZoneHover: React.CSSProperties = {
 };
 
 const trashLabelStyle: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 11,
   fontWeight: 600,
   color: "rgba(255, 140, 140, 0.6)",
   letterSpacing: 0.4,
@@ -270,13 +270,11 @@ function ShopCard({
         const el = e.currentTarget;
         el.style.borderColor = "rgba(100, 160, 255, 0.5)";
         el.style.boxShadow = cardHoverEffect;
-        el.style.transform = "translateY(-2px)";
       }}
       onPointerLeave={(e) => {
         const el = e.currentTarget;
         el.style.borderColor = "rgba(80, 120, 180, 0.2)";
         el.style.boxShadow = "none";
-        el.style.transform = "none";
       }}
       role="button"
       tabIndex={0}

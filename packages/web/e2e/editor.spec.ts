@@ -373,7 +373,7 @@ test.describe("Public Editor", () => {
     ).toBe(true);
     await expect.poll(async () =>
       nameInput.evaluate((input) => getComputedStyle(input, "::selection").backgroundColor),
-    ).toBe("rgba(191, 153, 55, 0.5)");
+    ).toBe("rgba(201, 138, 91, 0.5)");
     const composerBoxBefore = await composer.boundingBox();
     expect(composerBoxBefore).not.toBeNull();
     if (composerBoxBefore === null) return;

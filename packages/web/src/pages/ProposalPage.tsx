@@ -30,8 +30,8 @@ const GRAPHITE = "#16181d";
 const PANEL = "#1e2128";
 const CREAM = "#f2ede3";
 const CREAM_MUT = "#b8b2a6";
-const GOLD = "#c9a96a";
-const HAIRLINE = "rgba(201, 169, 106, 0.25)";
+const GOLD = "#c98a5b";
+const HAIRLINE = "rgba(201, 138, 91, 0.25)";
 
 function formatMinor(minor: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(minor / 100);
@@ -150,7 +150,7 @@ export function ProposalPage(): ReactElement {
         aria-label="Client proposal"
         style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, color: CREAM_MUT, fontFamily: SANS }}
       >
-        <ActivityStatus variant="panel">Loading proposal...</ActivityStatus>
+        <ActivityStatus variant="panel">Loading proposal…</ActivityStatus>
       </main>
     );
   }

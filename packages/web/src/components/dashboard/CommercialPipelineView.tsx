@@ -54,7 +54,7 @@ const STAGE_NEXT: Record<string, string> = {
 const card: React.CSSProperties = {
   background:
     "linear-gradient(180deg, rgba(20, 27, 28, 0.96), rgba(9, 12, 12, 0.96)), radial-gradient(circle at 90% 0%, rgba(104, 216, 210, 0.1), transparent 34%)",
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   borderRadius: 8,
   padding: 16,
   boxShadow: "0 22px 70px rgba(0, 0, 0, 0.3)",
@@ -65,7 +65,7 @@ const label: React.CSSProperties = {
   display: "block",
   fontSize: 12,
   fontWeight: 700,
-  color: "#d7b56d",
+  color: "#c98a5b",
   marginBottom: 4,
 };
 
@@ -73,7 +73,7 @@ const input: React.CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
   minHeight: 40,
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   borderRadius: 6,
   background: "rgba(255, 247, 232, 0.07)",
   color: "#fff7e8",
@@ -85,7 +85,7 @@ const input: React.CSSProperties = {
 const primaryButton: React.CSSProperties = {
   border: "1px solid rgba(255, 224, 154, 0.52)",
   borderRadius: 6,
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
+  background: "linear-gradient(135deg, #c98a5b, #dca475)",
   color: "#090807",
   minHeight: 40,
   padding: "8px 14px",
@@ -95,7 +95,7 @@ const primaryButton: React.CSSProperties = {
 };
 
 const secondaryButton: React.CSSProperties = {
-  border: "1px solid rgba(215, 181, 109, 0.26)",
+  border: "1px solid rgba(201, 138, 91, 0.26)",
   borderRadius: 6,
   background: "rgba(255, 247, 232, 0.07)",
   color: "#f4efe4",
@@ -372,8 +372,8 @@ export function CommercialPipelineView(): ReactElement {
             {busy && <ActivityStatus>Updating the commercial pipeline…</ActivityStatus>}
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 12, color: "#d7b56d", fontWeight: 700 }}>Pipeline value</div>
-            <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 800, color: "#fff7e8" }}>
+            <div style={{ fontSize: 12, color: "#c98a5b", fontWeight: 700 }}>Pipeline value</div>
+            <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 700, color: "#fff7e8" }}>
               {formatMoney(pipelineValue, "GBP")}
             </div>
           </div>
@@ -418,7 +418,7 @@ export function CommercialPipelineView(): ReactElement {
           </div>
         </section>
 
-        {loading && <ActivityStatus variant="panel" style={card}>Loading pipeline...</ActivityStatus>}
+        {loading && <ActivityStatus variant="panel" style={card}>Loading pipeline…</ActivityStatus>}
         {error !== null && (
           <section role="alert" style={{ ...card, color: "#ffb4a2" }}>
             <p style={{ margin: "0 0 10px" }}>{error}</p>
@@ -440,7 +440,7 @@ export function CommercialPipelineView(): ReactElement {
           {stageGroups.map(({ stage, rows }) => (
             <section key={stage} style={{ ...card, minHeight: 150 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4, color: "#d7b56d" }}>
+                <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4, color: "#c98a5b" }}>
                   {stageLabel(stage)}
                 </h3>
                 <span style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>{rows.length}</span>
@@ -458,9 +458,9 @@ export function CommercialPipelineView(): ReactElement {
                     display: "block",
                     width: "100%",
                     textAlign: "left",
-                    border: "1px solid rgba(215, 181, 109, 0.18)",
+                    border: "1px solid rgba(201, 138, 91, 0.18)",
                     borderRadius: 6,
-                    background: selected?.opportunity.id === opportunity.id ? "rgba(215, 181, 109, 0.18)" : "rgba(255, 247, 232, 0.07)",
+                    background: selected?.opportunity.id === opportunity.id ? "rgba(201, 138, 91, 0.18)" : "rgba(255, 247, 232, 0.07)",
                     padding: 10,
                     marginBottom: 8,
                     cursor: busy ? "wait" : "pointer",
@@ -486,7 +486,7 @@ export function CommercialPipelineView(): ReactElement {
           {tasks.length === 0 ? (
             <p style={{ margin: 0, fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>No open follow-ups loaded.</p>
           ) : tasks.map((task) => (
-            <div key={task.id} style={{ borderTop: "1px solid rgba(215, 181, 109, 0.14)", padding: "10px 0" }}>
+            <div key={task.id} style={{ borderTop: "1px solid rgba(201, 138, 91, 0.14)", padding: "10px 0" }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#fff7e8" }}>{task.title}</div>
               <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)", marginTop: 2 }}>{formatDateTime(task.dueAt)}</div>
             </div>
@@ -528,8 +528,8 @@ export function CommercialPipelineView(): ReactElement {
               </div>
             )}
 
-            <div style={{ marginTop: 14, padding: 12, background: "rgba(215, 181, 109, 0.08)", border: "1px solid rgba(215, 181, 109, 0.18)", borderRadius: 6 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#d7b56d" }}>Next action</div>
+            <div style={{ marginTop: 14, padding: 12, background: "rgba(201, 138, 91, 0.08)", border: "1px solid rgba(201, 138, 91, 0.18)", borderRadius: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#c98a5b" }}>Next action</div>
               <div style={{ fontSize: 13, color: "#fff7e8", marginTop: 4 }}>{selected.opportunity.nextAction}</div>
             </div>
 
@@ -547,7 +547,7 @@ export function CommercialPipelineView(): ReactElement {
               {selected.proposals.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>No proposal draft yet.</p>
               ) : selected.proposals.map((proposal) => (
-                <div key={proposal.id} style={{ fontSize: 12, padding: "6px 0", borderTop: "1px solid rgba(215, 181, 109, 0.14)" }}>
+                <div key={proposal.id} style={{ fontSize: 12, padding: "6px 0", borderTop: "1px solid rgba(201, 138, 91, 0.14)" }}>
                   <strong>{proposal.title}</strong> · {proposal.status.replace(/_/g, " ")}
                 </div>
               ))}
@@ -562,7 +562,7 @@ export function CommercialPipelineView(): ReactElement {
               )}
               {selected.tasks.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>No tasks on this opportunity.</p>}
               {selected.tasks.map((task) => (
-                <div key={task.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid rgba(215, 181, 109, 0.14)", padding: "7px 0" }}>
+                <div key={task.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderTop: "1px solid rgba(201, 138, 91, 0.14)", padding: "7px 0" }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 700 }}>{task.title}</div>
                     <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>{task.status} · {formatDateTime(task.dueAt)}</div>
@@ -597,7 +597,7 @@ export function CommercialPipelineView(): ReactElement {
               )}
               {selected.activities.length === 0 && <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>No notes yet.</p>}
               {selected.activities.slice(-4).map((activity) => (
-                <div key={activity.id} style={{ borderTop: "1px solid rgba(215, 181, 109, 0.14)", padding: "7px 0", fontSize: 12, color: "rgba(246, 241, 232, 0.82)" }}>
+                <div key={activity.id} style={{ borderTop: "1px solid rgba(201, 138, 91, 0.14)", padding: "7px 0", fontSize: 12, color: "rgba(246, 241, 232, 0.82)" }}>
                   {activity.body}
                 </div>
               ))}

@@ -9,6 +9,7 @@ import {
 } from "../lib/board-palette.js";
 
 export type { PaletteResult } from "../lib/board-palette.js";
+import { useEscapeToClose, useFocusTrap } from "../../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // The board's finding palette (C1) — Ctrl/Cmd-K. Searches what the board
@@ -36,6 +37,14 @@ export function BoardPalette({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const results = useMemo(() => findPaletteResults(query, data, enquiries), [query, data, enquiries]);
+  // T-615: the palette announced aria-modal but neither trapped Tab nor
+  // answered Escape unless the caret happened to be in the input — Tab walked
+  // straight out onto the board behind it. The trap also returns focus to
+  // whatever opened the palette when it unmounts. The explicit input focus
+  // below still wins: useFocusTrap only moves focus if the container does not
+  // already hold it.
+  const dialogRef = useFocusTrap<HTMLDivElement>();
+  useEscapeToClose(onClose);
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -48,6 +57,7 @@ export function BoardPalette({
       }}
     >
       <div
+        ref={dialogRef}
         className="diary-palette"
         role="dialog"
         aria-modal="true"

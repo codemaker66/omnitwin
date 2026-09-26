@@ -69,7 +69,7 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
         data-testid="search-input"
       />
 
-      {loading && <ActivityStatus style={{ color: "#999", fontSize: 13 }}>Searching...</ActivityStatus>}
+      {loading && <ActivityStatus style={{ color: "#999", fontSize: 13 }}>Searching…</ActivityStatus>}
 
       {!loading && query.length < 2 && results === null && (
         <p style={{ color: "#999", fontSize: 14 }}>Enter at least 2 characters.</p>

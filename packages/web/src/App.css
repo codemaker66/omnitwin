@@ -1,8 +1,8 @@
 .venviewer-planner-shell {
   --vv-cinema-black: #090807;
   --vv-cinema-ink: #12100d;
-  --vv-cinema-amber: #c9a84c;
-  --vv-cinema-amber-soft: rgba(201, 168, 76, 0.18);
+  --vv-cinema-amber: #c98a5b;
+  --vv-cinema-amber-soft: rgba(201, 138, 91, 0.18);
   --vv-cinema-paper: #efe9dc;
   --planner-header-height: 70px;
 
@@ -24,16 +24,50 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* T-615: the shell suppresses selection so a drag across the room never
+   paints a text highlight — but the rule above is `*`, so it also reached
+   every input, textarea and contenteditable in the inspector and the name
+   field. Typing worked; double-click-to-select-a-word, drag-select and
+   select-all-then-retype did not, and there was no highlight to show what was
+   selected. These three restore it, and the ::selection pair below restores
+   the highlight for them only — the blanket transparent ::selection stays for
+   the rest of the shell. */
 .venviewer-planner-shell input,
 .venviewer-planner-shell textarea,
 .venviewer-planner-shell [contenteditable="true"] {
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .venviewer-planner-shell ::selection {
   background: transparent;
   color: inherit;
+}
+
+.venviewer-planner-shell input::selection,
+.venviewer-planner-shell textarea::selection,
+.venviewer-planner-shell [contenteditable="true"]::selection,
+.venviewer-planner-shell [contenteditable="true"] ::selection {
+  background: rgba(201, 138, 91, 0.42);
+  color: var(--vv-cinema-paper);
+}
+
+/* The one place the press spring survives. It used to be a global on every
+   button and [role="button"] in the app (index.html); it is now opt-in here,
+   where the surface is a tool and the feedback answers the user's own finger.
+   Press only — no hover transform — and the global reduced-motion block in
+   global.css still neutralises it. */
+@media (prefers-reduced-motion: no-preference) {
+  .venviewer-planner-shell button:not(:disabled),
+  .venviewer-planner-shell [role="button"]:not([aria-disabled="true"]) {
+    transition: transform 140ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  }
+
+  .venviewer-planner-shell button:not(:disabled):active,
+  .venviewer-planner-shell [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.97);
+  }
 }
 
 .planner-canvas-stage {
@@ -93,10 +127,10 @@
   align-items: center;
   min-height: var(--planner-header-height);
   padding: max(0px, env(safe-area-inset-top)) 0 0 var(--toolbox-offset, 68px);
-  border-bottom: 1px solid rgba(215, 189, 104, 0.2);
+  border-bottom: 1px solid rgba(201, 138, 91, 0.2);
   background:
     linear-gradient(90deg, rgba(3, 4, 5, 0.985), rgba(10, 10, 10, 0.97) 42%, rgba(7, 6, 5, 0.985)),
-    radial-gradient(circle at 14% -60%, rgba(215, 189, 104, 0.2), transparent 34%);
+    radial-gradient(circle at 14% -60%, rgba(201, 138, 91, 0.2), transparent 34%);
   box-shadow:
     0 18px 54px rgba(0, 0, 0, 0.42),
     inset 0 -1px 0 rgba(255, 246, 219, 0.05);
@@ -128,11 +162,11 @@
   background:
     radial-gradient(circle at 35% 28%, rgba(255, 242, 202, 0.18), transparent 45%),
     linear-gradient(145deg, #15120e, #080706);
-  border: 1px solid rgba(201, 168, 76, 0.36);
+  border: 1px solid rgba(201, 138, 91, 0.36);
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  color: #d7bd68;
+  color: #c98a5b;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 16px;
   font-style: italic;
@@ -163,8 +197,8 @@
   display: block;
   min-width: 0;
   color: rgba(244, 239, 230, 0.54);
-  font-size: 10px;
-  font-weight: 780;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: 0.03em;
   line-height: 1.18;
   text-overflow: ellipsis;
@@ -189,7 +223,7 @@
   overflow: hidden;
   color: #fff6e9;
   font-size: 13px;
-  font-weight: 760;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.15;
   text-overflow: ellipsis;
@@ -203,14 +237,14 @@
   min-height: 36px;
   max-width: 330px;
   padding: 0 18px;
-  border: 1px solid rgba(215, 167, 75, 0.48);
+  border: 1px solid rgba(201, 138, 91, 0.48);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 18% 0%, rgba(255, 219, 122, 0.16), transparent 52%),
+    radial-gradient(circle at 18% 0%, rgba(220, 164, 117, 0.16), transparent 52%),
     rgba(104, 65, 16, 0.22);
-  color: #f1ce78;
+  color: #dca475;
   font-size: 12px;
-  font-weight: 860;
+  font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1;
   white-space: nowrap;
@@ -227,7 +261,7 @@
 }
 
 .planner-status-header__cell--runtime strong {
-  color: #f4cc79;
+  color: #dca475;
 }
 
 .planner-status-header__cell--summary strong {
@@ -248,8 +282,8 @@
 
 .planner-status-header[data-save-status="unsaved"] .planner-status-header__dot,
 .planner-status-header[data-save-status="saving"] .planner-status-header__dot {
-  background: #d7bd68;
-  box-shadow: 0 0 0 4px rgba(215, 189, 104, 0.14);
+  background: #c98a5b;
+  box-shadow: 0 0 0 4px rgba(201, 138, 91, 0.14);
 }
 
 .planner-status-header[data-save-status="failed"] .planner-status-header__dot,
@@ -271,11 +305,11 @@
   min-height: 86px;
   padding: 14px 16px 14px 18px;
   overflow: hidden;
-  border: 1px solid rgba(201, 168, 76, 0.3);
+  border: 1px solid rgba(201, 138, 91, 0.3);
   border-radius: 18px;
   background:
     linear-gradient(145deg, rgba(12, 11, 10, 0.94), rgba(28, 24, 18, 0.84)),
-    radial-gradient(circle at 12% 12%, rgba(201, 168, 76, 0.18), transparent 38%);
+    radial-gradient(circle at 12% 12%, rgba(201, 138, 91, 0.18), transparent 38%);
   box-shadow:
     0 28px 70px rgba(0, 0, 0, 0.4),
     0 4px 18px rgba(0, 0, 0, 0.28),
@@ -295,7 +329,7 @@
   inset: auto 12% -64px 12%;
   height: 92px;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, rgba(201, 168, 76, 0.3), transparent 64%);
+  background: radial-gradient(ellipse at center, rgba(201, 138, 91, 0.3), transparent 64%);
   filter: blur(18px);
 }
 
@@ -307,9 +341,9 @@
 
 .planner-command-deck__kicker {
   margin: 0 0 4px;
-  color: #d7bd68;
-  font-size: 10px;
-  font-weight: 850;
+  color: #c98a5b;
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.16em;
   line-height: 1;
   text-transform: uppercase;
@@ -348,12 +382,12 @@
   align-self: start;
   max-width: 180px;
   padding: 6px 10px;
-  border: 1px solid rgba(201, 168, 76, 0.22);
+  border: 1px solid rgba(201, 138, 91, 0.22);
   border-radius: 999px;
   background: rgba(255, 246, 222, 0.07);
   color: rgba(247, 240, 228, 0.72);
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.055em;
   line-height: 1.1;
   text-align: right;
@@ -383,7 +417,7 @@
   color: rgba(247, 240, 228, 0.9);
   cursor: pointer;
   gap: 8px;
-  font: 800 12px/1 "Inter", system-ui, sans-serif;
+  font: 700 12px/1 "Inter", system-ui, sans-serif;
   letter-spacing: 0;
   transition:
     background 160ms ease,
@@ -399,17 +433,11 @@
 
 .planner-command-deck__button:hover:not(:disabled),
 .planner-command-deck__button:focus-visible {
-  border-color: rgba(215, 189, 104, 0.56);
-  background: rgba(215, 189, 104, 0.13);
+  border-color: rgba(201, 138, 91, 0.56);
+  background: rgba(201, 138, 91, 0.13);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
   color: #fff7e8;
   outline: none;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .planner-command-deck__button:hover:not(:disabled) {
-    transform: translateY(-1px);
-  }
 }
 
 .planner-command-deck__button:focus-visible {
@@ -426,17 +454,17 @@
 }
 
 .planner-command-deck__button--primary {
-  border-color: rgba(215, 189, 104, 0.72);
-  background: linear-gradient(180deg, rgba(219, 190, 91, 0.95), rgba(177, 142, 43, 0.95));
+  border-color: rgba(201, 138, 91, 0.72);
+  background: linear-gradient(180deg, rgba(220, 164, 117, 0.95), rgba(126, 70, 32, 0.95));
   box-shadow:
-    0 14px 30px rgba(177, 142, 43, 0.22),
+    0 14px 30px rgba(126, 70, 32, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
   color: #16120b;
 }
 
 .planner-command-deck__button--primary:hover:not(:disabled),
 .planner-command-deck__button--primary:focus-visible {
-  background: linear-gradient(180deg, rgba(238, 209, 105, 1), rgba(190, 152, 43, 1));
+  background: linear-gradient(180deg, rgba(220, 164, 117, 1), rgba(201, 138, 91, 1));
   color: #110e08;
 }
 
@@ -500,10 +528,10 @@
 
 .planner-spatial-hud__panel {
   overflow: hidden;
-  border: 1px solid rgba(201, 168, 76, 0.22);
+  border: 1px solid rgba(201, 138, 91, 0.22);
   border-radius: 18px;
   background:
-    radial-gradient(circle at 20% 0%, rgba(215, 189, 104, 0.15), transparent 42%),
+    radial-gradient(circle at 20% 0%, rgba(201, 138, 91, 0.15), transparent 42%),
     linear-gradient(155deg, rgba(10, 10, 10, 0.9), rgba(18, 17, 15, 0.74));
   box-shadow:
     0 28px 68px rgba(0, 0, 0, 0.36),
@@ -560,7 +588,7 @@
   background: rgba(255, 255, 255, 0.04);
   color: var(--layout-grade-color);
   font-size: 20px;
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
 }
@@ -574,7 +602,7 @@
 .planner-spatial-hud__grade-score {
   color: var(--layout-grade-color);
   font-size: 20px;
-  font-weight: 820;
+  font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
 }
@@ -596,7 +624,7 @@
   overflow: hidden;
   color: rgba(246, 239, 227, 0.84);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.24;
   -webkit-box-orient: vertical;
@@ -608,7 +636,7 @@
   overflow: hidden;
   color: var(--layout-recommendation-color);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.3;
   -webkit-box-orient: vertical;
@@ -645,7 +673,7 @@
   overflow: hidden;
   color: rgba(255, 249, 237, 0.92);
   font-size: 12px;
-  font-weight: 780;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.12;
   text-overflow: ellipsis;
@@ -655,7 +683,7 @@
 .planner-spatial-hud__row-copy span {
   overflow: hidden;
   color: rgba(246, 239, 227, 0.58);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 680;
   letter-spacing: 0;
   line-height: 1.18;
@@ -699,14 +727,14 @@
 .planner-spatial-hud__gauge-inner small {
   color: rgba(246, 239, 227, 0.5);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 600;
 }
 
 .planner-spatial-hud__caption {
   margin-top: 13px;
   color: rgba(246, 239, 227, 0.78);
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 600;
   letter-spacing: 0;
   line-height: 1.25;
   text-align: center;
@@ -714,9 +742,9 @@
 
 .planner-spatial-hud__subcaption {
   margin-top: 7px;
-  color: rgba(215, 189, 104, 0.76);
-  font-size: 10px;
-  font-weight: 820;
+  color: rgba(201, 138, 91, 0.76);
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1;
   text-align: center;

@@ -8,7 +8,7 @@ const OAUTH_CONSENT_REFERRER_POLICY = "strict-origin-when-cross-origin";
 
 const OAUTH_CONSENT_APPEARANCE = {
   variables: {
-    colorPrimary: "#dba64b",
+    colorPrimary: "#c98a5b",
     colorBackground: "#050807",
     colorText: "#fff7e8",
     colorTextSecondary: "rgba(246, 239, 224, 0.72)",
@@ -18,7 +18,7 @@ const OAUTH_CONSENT_APPEARANCE = {
   },
   elements: {
     card: {
-      border: "1px solid rgba(219, 166, 75, 0.28)",
+      border: "1px solid rgba(201, 138, 91, 0.28)",
       boxShadow: "none",
     },
   },

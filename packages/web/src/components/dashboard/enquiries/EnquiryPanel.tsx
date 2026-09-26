@@ -80,7 +80,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
   };
 
   return (
-    <section className="enq-panel" aria-labelledby={headingId} onKeyDown={step}>
+    <section className="enq-panel" data-register="forest" aria-labelledby={headingId} onKeyDown={step}>
       <div className="enq-panel__body">
         <div className="enq-panel__bar">
           {navigation.layout === "single" ? (

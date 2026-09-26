@@ -123,11 +123,45 @@ export function useFocusTrap<T extends HTMLElement>(
     document.addEventListener("keydown", handleKeyDown, true);
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
-      if (previousActive !== null && document.contains(previousActive)) {
+      // Hand focus back to whatever opened the dialog, but only when it would
+      // otherwise be lost: still inside the closing dialog, or dropped on the
+      // page. A dialog whose action has already put focus somewhere on
+      // purpose (the Diary palette focuses the booking it found) keeps it.
+      const current = document.activeElement;
+      const lost = current === null || current === document.body || el.contains(current);
+      if (lost && previousActive !== null && document.contains(previousActive)) {
         previousActive.focus();
       }
     };
   }, [active]);
 
   return containerRef;
+}
+
+// ---------------------------------------------------------------------------
+// useEscapeToClose — the other half of the modal contract
+//
+// T-615: five aria-modal dialogs shipped without either a focus trap or an
+// Escape key, and several more handled Escape with a React onKeyDown on the
+// overlay — which only fires while focus is already inside, so Escape did
+// nothing whenever the opener still held focus. This listens on the document
+// in the capture phase, alongside the trap, so the two always agree.
+//
+// Pass `active: false` (not "omit the hook") while an irreversible write is in
+// flight: the dialog keeps its trap and simply refuses to dismiss.
+// ---------------------------------------------------------------------------
+export function useEscapeToClose(onClose: () => void, active = true): void {
+  const handlerRef = useRef(onClose);
+  handlerRef.current = onClose;
+
+  useEffect(() => {
+    if (!active) return;
+    function handleKeyDown(e: KeyboardEvent): void {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      handlerRef.current();
+    }
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => { document.removeEventListener("keydown", handleKeyDown, true); };
+  }, [active]);
 }

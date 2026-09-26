@@ -1,29 +1,58 @@
 /* ---------------------------------------------------------------------------
  * HOUSE TOKEN LAYER — CARD A3 (G2a) · 02-DESIGN-LANGUAGE §3–§6 · 06 §3.3
+ * T-615 (Ship Friday, Lane 1): ONE REGISTER.
  *
- * CANONICAL: the `--house-*` names. They carry 02's exact BOH values and are
- * the only names new code may consume. No Tailwind — this file extends the
- * custom-property system (06 §3.3).
+ * Blake's 14 September decision: the register is ivory, forest green, copper
+ * and sage. The dark graphite of the BOH surfaces survives only as the ground
+ * inside the 3D viewport and the chrome that floats directly on it; the golden
+ * cursor, the gold scrollbar and the brass accent are retired. Both registers
+ * therefore live here, in one file, so a surface cannot invent a fifth hue:
  *
- * LEGACY: the `--vv-*` names below are compatibility aliases. Root-level
- * tokens are single-sourced here (global.css imports this file and defines
- * none of them); component-scoped `--vv-cinema-*` declarations in App.css
- * remain that subsystem's own. Two classes:
- *   - aliased  → the House value differs from the old value by ≤ 2 units per
- *     channel (invisible to the pixel-diff suites), so the alias adopts the
- *     House canon directly.
- *   - literal  → the House counterpart differs visibly (e.g. --vv-danger
- *     #f19a8f vs oxblood #B25454). These keep today's exact value so the
- *     golden routes stay pixel-identical; each carries a MIGRATION note and
- *     dies when its consuming surfaces move to House names (A4+, C-band).
+ *   FOH (light)  --vv-ivory / --vv-forest / --vv-copper / --vv-sage
+ *   BOH (dark)   --house-bg-* / --house-text-* / --house-accent-copper
  *
- * The dark-theme contrast audit for every value here lives in
- * src/__tests__/house-tokens.test.ts (02 §3: text ≥ 4.5:1, hues ≥ 3:1).
- * FOH (ivory register) tokens are deliberately absent — F2's card.
+ * CANONICAL: the `--house-*` names carry 02's exact BOH values. `--vv-*` are
+ * the register names plus the compatibility aliases; root-level tokens are
+ * single-sourced here (global.css imports this file and defines none of them).
+ * Component-scoped `--vv-cinema-*` declarations in App.css remain that
+ * subsystem's own.
+ *
+ * The contrast audit for every value here — on BOTH grounds — lives in
+ * src/__tests__/house-tokens.test.ts (02 §3: text ≥ 4.5:1, hues ≥ 3:1). That
+ * suite also fails if any `var(--house-*)` consumed anywhere in src/ has no
+ * definition in this file, which is how the four orphan brass/text tokens
+ * (the two brass-variant names, the bare brass name and --house-text-0) were
+ * found; they are renamed onto the copper scale below.
  * ------------------------------------------------------------------------- */
 
 :root {
-  /* -- Surfaces (02 §3 BOH) ------------------------------------------------ */
+  /* == THE REGISTER (FOH, light surfaces) =================================
+   * Values taken from the shipped surfaces of the style Blake selected on
+   * 6–7 September: the inventory composition (InventoryStyle.css), the Diary
+   * (diary-board.css) and the dashboard shell (DashboardLayout.css). Every
+   * light surface draws its ground, ink and accent from this scale.       */
+  --vv-ivory: #F2EDDA;        /* the ground: warm ivory paper              */
+  --vv-ivory-2: #E6E1CF;      /* raised ivory: cards, inputs, rails        */
+  --vv-ivory-3: #FBF8EE;      /* lifted ivory: sheets and dialogs          */
+  --vv-forest: #1B3A2F;       /* the ink: deep forest green (10.6:1)       */
+  --vv-forest-2: #294B3B;     /* forest authority: fills, active nav       */
+  --vv-forest-soft: #4C6055;  /* forest secondary text (5.9:1 on ivory)    */
+  --vv-copper: #A9622F;       /* the one accent on ivory (4.0:1)           */
+  --vv-copper-ink: #7E4620;   /* copper as small text on ivory (6.4:1)     */
+  --vv-sage: #8FAE8B;         /* sage: calm, non-urgent, decorative        */
+  --vv-sage-ink: #4A6650;     /* sage as text on ivory (5.4:1)             */
+  --vv-rule: #BFC4B2;         /* the hairline on ivory                     */
+
+  /* Refusal on ivory. Deliberately NOT --house-status-oxblood: that value
+   * (#B25454) is tuned for the graphite chrome and measures 4.17:1 on
+   * --vv-ivory, so pointing the light surfaces at it would trade a hardcoded
+   * hue for a failing one. This is the register's own pair, audited on ivory
+   * like every other ink. A refusal keeps a hue of its own on purpose —
+   * "delete" must never read as merely quiet. */
+  --vv-oxblood: #8E3A2C;      /* error text and edge on ivory (6.4:1)      */
+  --vv-oxblood-bg: #FBF0EC;   /* its wash                                  */
+
+  /* -- Surfaces (02 §3 BOH) — the viewport ground and the chrome on it ----- */
   --house-bg-0: #0B0A09;            /* canvas behind the scene, Focus mode   */
   --house-bg-1: #131110;            /* panels (blur + scene tint live in 03) */
   --house-bg-2: #1B1917;            /* raised elements, inputs               */
@@ -31,12 +60,18 @@
   --house-hairline-hover: rgba(245, 240, 232, 0.12); /* border on hover      */
 
   /* -- Text (02 §3; never pure white) -------------------------------------- */
+  --house-text-0: #FFFAF0;                      /* emphatic headings         */
   --house-text-1: #F4EFE6;                      /* primary — warm ivory      */
   --house-text-2: rgba(244, 239, 230, 0.62);    /* secondary                 */
   --house-text-3: rgba(244, 239, 230, 0.38);    /* muted, hints (≥ 3:1 tier) */
 
-  /* -- The one accent (02 §2.3) -------------------------------------------- */
-  --house-accent-brass: #C6A15B;
+  /* -- The one accent (02 §2.3; T-615: copper replaces brass) --------------
+   * The brass names are gone, not aliased: an alias would have let the old
+   * hue creep back in behind a new word. The three variants are the pair the
+   * cockpit dial and phase rail gradients need plus the flat accent.      */
+  --house-accent-copper: #C98A5B;         /* accent on BOH grounds (6.9:1)  */
+  --house-accent-copper-bright: #DCA475;  /* lit edge of a dial / knob      */
+  --house-accent-copper-deep: #7E4620;    /* shadowed edge — never text     */
 
   /* -- Status hues (02 §3 — meaning only, never decoration; hue never
    *    carries meaning alone: every status pairs icon + label. "Missing"
@@ -61,6 +96,18 @@
                                             Materialize's 240 ms)            */
   --house-motion-cinematic: 650ms;       /* camera only (500–800 band mid)   */
 
+  /* -- The one focus ring (T-615; T-635 design system §2.10) ---------------
+   * One rule, one shape: a 2px outline at a 2px offset, and no halo. Copper
+   * reads at ≥ 4:1 on ivory AND on every BOH ground, so it is the ring wherever
+   * a surface has not chosen a register. A workspace register re-declares
+   * these tokens in its own ink (styles/workspace.css): ink on ivory, cream on
+   * forest, the desk's approved rings. Components consume the tokens rather
+   * than declaring an outline colour of their own.                         */
+  --vv-focus: #A9622F;
+  --vv-focus-ring: 2px solid var(--vv-focus);
+  --vv-focus-ring-offset: 2px;
+  --vv-focus-halo: none;
+
   /* -- Legacy aliases (sub-threshold: adopt House canon) ------------------- */
   /* Note: --vv-cinema-* stay OUT of this file by design — App.css declares
      them scoped to .venviewer-planner-shell (its own subsystem); they migrate
@@ -69,16 +116,120 @@
   --vv-ink-2: var(--house-bg-1);         /* was #14100d (Δ ≤ 3/channel)      */
   --vv-cream: var(--house-text-1);       /* was #f6f1e8 (Δ ≤ 2/channel)      */
 
+  /* -- Retired gold (T-615) -----------------------------------------------
+   * --vv-gold / --vv-gold-2 were the cockpit's brass-gold pair, consumed by
+   * ~200 sites. Repointing them at copper moves every one of those sites onto
+   * the register in a single edit; the names survive only so that move did
+   * not have to be 200 hand edits. Do not reintroduce a gold literal. */
+  --vv-gold: var(--house-accent-copper);
+  --vv-gold-2: var(--house-accent-copper-deep);
+
   /* -- Legacy literals (visible delta: frozen until surfaces migrate) ------ */
-  --vv-gold: #d7b56d;       /* MIGRATION: --house-accent-brass (#C6A15B)     */
-  --vv-gold-2: #c9a84c;     /* MIGRATION: --house-accent-brass (#C6A15B)     */
   --vv-muted: rgba(246, 241, 232, 0.68);  /* MIGRATION: --house-text-2       */
   --vv-cyan: #6bd9e8;       /* MIGRATION: --house-status-cyan (#6FB7C9)      */
   --vv-danger: #f19a8f;     /* MIGRATION: --house-status-oxblood (#B25454)   */
   --vv-success: #8fd19e;    /* MIGRATION: --house-status-sage (#8FAE8B)      */
-  --vv-focus: #87e7f0;      /* MIGRATION: keep — no House focus token yet;
-                               raise with A4 chip grammar (focus ring law)   */
   --vv-panel: rgba(18, 16, 13, 0.92);        /* MIGRATION: --house-bg-1 @72%
                                                 + blur per 02 §5 depth model */
   --vv-panel-soft: rgba(255, 249, 236, 0.08); /* MIGRATION: --house-hairline */
+}
+
+/* ---------------------------------------------------------------------------
+ * WORKSPACE REGISTER — T-635 (docs/design/platform-2026-09-26/design-system.md §2)
+ *
+ * The values of the Enquiries desk, which Blake judged on 26 September 2026
+ * ("much cleaner … not a slog to the eyes, it is inviting"). They are the
+ * design system's palette: an ivory register (sage ground, ivory sheet, copper
+ * plane) and a forest register (decision panels, confirmations). Components
+ * consume them through the `--reg-*` semantics in styles/workspace.css, which
+ * a surface selects with `data-register="ivory" | "forest"`.
+ *
+ * The T-615 `--vv-*` register above carries the app-wide chrome. The two agree
+ * in family and differ by a few units per channel where the desk was tuned
+ * further (sheet #f2eddd against --vv-ivory #F2EDDA, forest #264337 against
+ * --vv-forest-2 #294B3B); surfaces converge on these values as they move onto
+ * the workspace components, each with its own before-and-after evidence.
+ *
+ * packages/types/src/design-tokens.ts holds the same values for the renderers
+ * that are not CSS (email, PDF); src/__tests__/workspace-tokens.test.ts keeps
+ * the two identical and audits every allowed pairing for contrast.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* -- Planes ------------------------------------------------------------- */
+  --house-ground: #819087;          /* sage ground — never carries text      */
+  --house-ground-plane: #97a597;    /* the pale tilted plane behind sheets   */
+  --house-sheet: #f2eddd;           /* the ivory sheet                        */
+  --house-sheet-hover: #ebe5d3;
+  --house-sheet-selected: #e5dec9;
+  --house-paper: #faf8f1;           /* raised insets: fields, date tiles      */
+  --house-overlay: #f7f3e6;         /* menus, popovers, tooltips              */
+  --house-plane: #deb599;           /* the copper impact plane                */
+  --house-plane-hover: #d7aa8b;
+  --house-forest: #264337;          /* decision surface                       */
+  --house-forest-deep: #1f3a2f;     /* confirmations, nested surfaces         */
+  --house-forest-field: #2b4a3d;    /* a field's well on forest               */
+  --house-cream: #efe7cf;           /* primary on forest; focus on forest     */
+  --house-cream-hover: #f7f1de;
+
+  /* -- Ink ---------------------------------------------------------------- */
+  --house-ink-1: #14302a;
+  --house-ink-2: #42584e;
+  --house-ink-3: #55655c;
+  --house-plane-ink: #3e3528;       /* the only secondary ink on the plane    */
+  --house-forest-ink-1: #f2eee1;
+  --house-forest-ink-2: #d0d9cd;
+  --house-forest-ink-3: #a9bdb0;
+
+  /* -- Lines -------------------------------------------------------------- */
+  --house-rule: #d9d4c2;            /* decorative separators only             */
+  --house-rule-strong: #bfc0ac;     /* decorative tile borders only           */
+  --house-edge: #747f6f;            /* a control's boundary on ivory (3:1+)   */
+  --house-forest-rule: #4d6c5c;     /* decorative separators on forest        */
+  --house-forest-edge: #86a192;     /* a control's boundary on forest (3:1+)  */
+  --house-frame-line: #75948255;    /* the skewed panel frame                 */
+
+  /* -- Tones: every tone appears with a word ------------------------------
+   * text (on sheet) · chip text on its wash · dot beside a label · lit (on
+   * forest). Amber is a status tone — "pending elsewhere" — not decoration:
+   * the register guard admits its mid-tone values only as these named
+   * tokens, never as literals.                                            */
+  --house-copper-text: #94491f;  --house-copper-chip: #8a4119;  --house-copper-wash: #f3dcc9;
+  --house-copper-dot: #c1703f;   --house-copper-lit: #f0b68f;
+  --house-amber-text: #6f500f;   --house-amber-chip: #664a0c;   --house-amber-wash: #efe0b8;
+  --house-amber-dot: #c3952b;    --house-amber-mark: #a07614;   --house-amber-lit: #f0cf8f;
+  --house-sage-text: #2f5a3a;    --house-sage-chip: #2c5537;    --house-sage-wash: #dbe5d3;
+  --house-sage-dot: #5d8963;     --house-sage-lit: #9fc7ae;
+  --house-brick-text: #8a3522;   --house-brick-strong: #6f2616; --house-brick-chip: #83311f;
+  --house-brick-wash: #f1d8cf;   --house-brick-dot: #b4513a;    --house-brick-lit: #ffcdb7;
+  --house-slate-text: #545e59;   --house-slate-wash: #e3e3db;   --house-slate-dot: #8e9992;
+  --house-slate-lit: #c9d1cb;
+
+  /* -- On the copper plane (only these besides ink-1 and plane-ink) ------- */
+  --house-plane-attention: #7e2d1b;
+  --house-plane-dot-new: #9a4a25;
+  --house-plane-dot-review: #77581a;
+  --house-plane-dot-approved: #3d6b47;
+  --house-plane-dot-declined: #8a3522;
+  --house-plane-dot-withdrawn: #5d6862;
+
+  /* -- Type --------------------------------------------------------------- */
+  --house-serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --house-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --house-mono: "Geist Mono", ui-monospace, monospace;
+
+  /* -- Radii, depth and motion -------------------------------------------- */
+  --house-radius-control: 3px;
+  --house-radius-key: 4px;
+  --house-radius-pill: 999px;
+  --house-shadow-overlay: 0 1px 0 #14302a0f, 0 14px 36px #18372a24;
+  --house-shadow-lift: 0 10px 24px #14302a2e;
+  --house-scrim: #14302a5c;
+  --house-motion-press: 120ms;
+  --house-motion-hover: 120ms;
+  --house-motion-reveal: 180ms;
+  --house-motion-stamp: 320ms;
+  --house-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --house-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --house-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }

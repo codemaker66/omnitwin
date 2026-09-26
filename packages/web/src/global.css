@@ -1,24 +1,65 @@
 /* All color/motion tokens are single-sourced in the House layer (CARD A3):
    --house-* is canonical; --vv-* live there as compatibility aliases. */
 @import "./styles/house-tokens.css";
+/* The workspace registers (T-635): data-register="ivory" | "forest". */
+@import "./styles/workspace.css";
 
 :root {
-  color-scheme: light dark;
+  /* T-615: the app's ground is the ivory register. `light` rather than the
+     old `light dark` is deliberate — there is no dark variant of the ivory
+     surfaces to flip to, and `light dark` made UA form controls and
+     scrollbars render dark-on-ivory when the OS asked for dark. The dark
+     subsystems (.venviewer-planner-shell, .vv-twin) declare
+     `color-scheme: dark` on their own root and keep their controls correct. */
+  color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* The Twin paints a black hall. Lane 1 gave it this declaration in twin.css,
+   but the twin's sheets are GPU-scoped (.github/gpu/gpu-scope.mjs), so that
+   change waits for the 3D batch and its operator run (T-635). Until then the
+   declaration lives here, so the hall's UA scrollbars and controls stay dark.
+   Remove it when twin.css carries its own. */
+.vv-twin {
+  color-scheme: dark;
 }
 
 html {
   min-height: 100%;
-  background: var(--vv-ink);
+  background: var(--vv-ivory);
 }
 
 body {
   min-width: 320px;
   min-height: 100%;
   margin: 0;
-  background: var(--vv-ink);
+  background: var(--vv-ivory);
+  color: var(--vv-forest);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+/* The skip link — one per document, ahead of the shell chrome in the tab
+   order. Pages hang the `#main-content` target on their <main> landmark. It
+   translates rather than unhides so the target is measurable while hidden. */
+.vv-skip-link {
+  position: absolute;
+  z-index: 10000;
+  top: 8px;
+  left: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--vv-forest);
+  border-radius: 8px;
+  background: var(--vv-ivory-3);
+  color: var(--vv-forest);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-160%);
+}
+
+.vv-skip-link:focus-visible {
+  transform: translateY(0);
 }
 
 button,
@@ -48,9 +89,15 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
-  outline: 3px solid var(--vv-focus);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 6px rgba(107, 217, 232, 0.16);
+  /* THE focus ring. There is one, and this is it: a 3px copper outline with a
+     2px offset and a soft copper halo. Copper is the only register hue that
+     clears 4:1 on BOTH the ivory ground and every graphite viewport ground,
+     which is why one ring can serve the whole app. A component that needs a
+     tighter ring changes --vv-focus-ring-offset on itself; it does not
+     declare a different colour. */
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+  box-shadow: var(--vv-focus-halo);
 }
 
 button:disabled,
@@ -64,9 +111,9 @@ button:disabled,
   place-items: center;
   padding: 24px;
   background:
-    linear-gradient(135deg, rgba(8, 8, 7, 0.98), rgba(22, 18, 13, 0.94)),
-    var(--vv-ink);
-  color: var(--vv-cream);
+    radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.55), transparent 62%),
+    var(--vv-ivory);
+  color: var(--vv-forest);
 }
 
 .vv-state-panel {
@@ -74,26 +121,25 @@ button:disabled,
   width: min(520px, 100%);
   gap: 12px;
   padding: 28px;
-  border: 1px solid rgba(215, 181, 109, 0.28);
+  border: 1px solid var(--vv-rule);
   border-radius: 8px;
-  background:
-    linear-gradient(150deg, rgba(22, 19, 15, 0.96), rgba(10, 10, 9, 0.92));
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 249, 230, 0.08);
+  background: var(--vv-ivory-3);
+  box-shadow: 0 24px 70px rgba(27, 58, 47, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .vv-state-kicker {
   margin: 0;
-  color: var(--vv-gold);
+  color: var(--vv-copper-ink);
   font-size: 12px;
-  font-weight: 850;
-  letter-spacing: 0;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .vv-state-panel h1,
 .vv-state-panel h2 {
   margin: 0;
-  color: #fff7e8;
+  color: var(--vv-forest);
   font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(28px, 4vw, 42px);
   font-weight: 600;
@@ -103,7 +149,7 @@ button:disabled,
 
 .vv-state-panel p {
   margin: 0;
-  color: var(--vv-muted);
+  color: var(--vv-forest-soft);
   font-size: 15px;
   line-height: 1.6;
 }
@@ -120,15 +166,18 @@ button:disabled,
   min-height: 44px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(246, 241, 232, 0.18);
+  border: 1px solid var(--vv-rule);
   border-radius: 8px;
   padding: 0 16px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--vv-cream);
+  background: var(--vv-ivory-2);
+  color: var(--vv-forest);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
+  /* Press only, and only on this button. The global hover pop is gone (see
+     index.html); a press is a direct response to the user's own finger, so it
+     stays. The reduced-motion block below still neutralises it. */
   transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -137,9 +186,9 @@ button:disabled,
 }
 
 .vv-button.primary {
-  border-color: var(--vv-gold);
-  background: var(--vv-gold);
-  color: #15110d;
+  border-color: var(--vv-forest);
+  background: var(--vv-forest);
+  color: var(--vv-ivory-3);
 }
 
 .vv-status-chip {
@@ -147,25 +196,25 @@ button:disabled,
   min-height: 28px;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(215, 181, 109, 0.32);
+  border: 1px solid rgba(169, 98, 47, 0.38);
   border-radius: 999px;
   padding: 0 10px;
-  background: rgba(215, 181, 109, 0.1);
-  color: #f6d98f;
+  background: rgba(169, 98, 47, 0.12);
+  color: var(--vv-copper-ink);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 700;
 }
 
 .vv-status-chip[data-tone="safe"] {
-  border-color: rgba(143, 209, 158, 0.32);
-  background: rgba(143, 209, 158, 0.1);
-  color: var(--vv-success);
+  border-color: rgba(85, 112, 90, 0.38);
+  background: rgba(143, 174, 139, 0.18);
+  color: var(--vv-sage-ink);
 }
 
 .vv-status-chip[data-tone="review"] {
-  border-color: rgba(107, 217, 232, 0.3);
-  background: rgba(107, 217, 232, 0.1);
-  color: var(--vv-cyan);
+  border-color: rgba(27, 58, 47, 0.32);
+  background: rgba(27, 58, 47, 0.08);
+  color: var(--vv-forest-2);
 }
 
 .vv-sr-only {
