@@ -94,8 +94,13 @@ export function hallCalendar(): CalendarResponse {
       rank: null, jointFlag: false, decisionAt: null, ownerUserId: null, nextAction: null, nextActionDueAt: null,
       eventId: WEDDING_EVENT, seriesId: null, eventName: "Robertson and Kaur wedding", guestCount: 160,
     }, {
-      entryType: "booking", id: "00000000-0000-4000-8000-0000000009b2", spaceId: HALL, kind: "prospect", status: "active", state: "prospect",
+      entryType: "booking", id: "00000000-0000-4000-8000-0000000009b2", spaceId: HALL, kind: "hold", status: "active", state: "hold",
       title: "Charity quiz night", eventType: null, startsAt: "2026-10-08T18:00:00.000Z", endsAt: "2026-10-08T21:30:00.000Z",
+      rank: null, jointFlag: false, decisionAt: "2026-10-01T09:00:00.000Z", ownerUserId: null, nextAction: null, nextActionDueAt: null,
+      eventId: null, seriesId: null,
+    }, {
+      entryType: "booking", id: "00000000-0000-4000-8000-0000000009b3", spaceId: HALL, kind: "prospect", status: "active", state: "prospect",
+      title: "Enquiry for a ceilidh", eventType: null, startsAt: "2026-10-09T18:00:00.000Z", endsAt: "2026-10-09T22:00:00.000Z",
       rank: null, jointFlag: false, decisionAt: null, ownerUserId: null, nextAction: null, nextActionDueAt: null,
       eventId: null, seriesId: null,
     }],

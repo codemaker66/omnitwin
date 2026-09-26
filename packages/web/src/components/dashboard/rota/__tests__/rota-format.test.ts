@@ -275,17 +275,16 @@ describe("functions along the top", () => {
   });
 
   it("uses the Diary's hold words", () => {
-    expect(holdWords(booking({ kind: "prospect", state: "prospect" }))).toBe("Provisional");
+    expect(holdWords(booking({ kind: "hold", state: "hold", rank: null }))).toBe("Provisional");
     expect(holdWords(booking({ kind: "hold", state: "hold", rank: 1 }))).toBe("1st option");
     expect(holdWords(booking({ kind: "hold", state: "hold", rank: 2 }))).toBe("2nd option");
     expect(holdWords(booking({ kind: "hold", state: "hold", rank: 3 }))).toBe("3rd option");
     expect(holdWords(booking({ kind: "hold", state: "hold", rank: 11 }))).toBe("11th option");
     expect(holdWords(booking({ kind: "hold", state: "hold", rank: 22 }))).toBe("22nd option");
     expect(holdWords(booking({ kind: "hold", state: "hold", rank: 1, jointFlag: true }))).toBe("Joint 1st");
-    expect(holdWords(booking({ kind: "hold", state: "hold", rank: null }))).toBe("Option");
   });
 
-  it("puts Confirmed functions first, holds and provisionals quietly, by the day they start on the venue's clock", () => {
+  it("puts Confirmed functions first and holds quietly, by the day they start on the venue's clock, and leaves Interest only off", () => {
     const calendar = CalendarResponseSchema.parse({
       venueId: VENUE, range: { from: "2026-10-04T23:00:00.000Z", to: "2026-10-11T23:00:00.000Z" }, rooms: ROOMS,
       entries: [
@@ -294,13 +293,15 @@ describe("functions along the top", () => {
         booking({ id: "00000000-0000-4000-8000-0000000009b3", title: "Late ceilidh", startsAt: "2026-10-10T23:30:00.000Z", endsAt: "2026-10-11T02:00:00.000Z" }),
         booking({ id: "00000000-0000-4000-8000-0000000009b4", title: "Released", kind: "hold", state: "released", status: "released" }),
         booking({ id: "00000000-0000-4000-8000-0000000009b5", title: "Maintenance", kind: "internal_block", state: "internal_block" }),
+        booking({ id: "00000000-0000-4000-8000-0000000009b6", title: "Enquiry for a ceilidh", kind: "prospect", state: "prospect" }),
+        booking({ id: "00000000-0000-4000-8000-0000000009b7", title: "Charity quiz night", kind: "hold", state: "hold" }),
       ],
       conflicts: { conflicts: [], checks: { inkDoubleBook: { status: "checked" }, holdOverlap: { status: "checked" }, turnaround: { status: "checked", uncoveredPairCount: 0, detail: "" } } },
     });
     const days = functionsByDay(calendar, TZ);
     const saturday = days.get("2026-10-10");
     expect(saturday?.confirmed.map((line) => [line.title, line.room, line.times, line.guests, line.hold])).toEqual([["Robertson and Kaur wedding", "Grand Hall", "12:00–00:30", 160, null]]);
-    expect(saturday?.likely.map((line) => [line.title, line.hold])).toEqual([["Burns supper", "1st option"]]);
+    expect(saturday?.likely.map((line) => [line.title, line.hold])).toEqual([["Burns supper", "1st option"], ["Charity quiz night", "Provisional"]]);
     // 23:30 UTC on the 10th is 00:30 on Sunday in Glasgow.
     expect(days.get("2026-10-11")?.confirmed.map((line) => line.title)).toEqual(["Late ceilidh"]);
   });

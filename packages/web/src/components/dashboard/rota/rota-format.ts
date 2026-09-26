@@ -22,6 +22,7 @@ import {
   type RotaWeek,
   type StaffRecord,
 } from "@omnitwin/types";
+import { BOARD_COPY } from "../../../pages/diary/board-copy.js";
 
 // ---------------------------------------------------------------------------
 // Words and plans for the Rota view (T-637 slice B). Pure: the view renders
@@ -241,7 +242,7 @@ export interface FunctionLine {
   readonly endsAt: string;
   readonly times: string;
   readonly guests: number | null;
-  /** For likely demand: "Provisional", "1st option", "Joint 1st". */
+  /** For likely demand, in the Diary's words: "Provisional", "1st option", "Joint 1st". */
   readonly hold: string | null;
 }
 
@@ -250,23 +251,15 @@ export interface DayFunctions {
   readonly likely: readonly FunctionLine[];
 }
 
-function ordinal(value: number): string {
-  const tens = value % 100;
-  if (tens >= 11 && tens <= 13) return `${String(value)}th`;
-  const suffix = value % 10 === 1 ? "st" : value % 10 === 2 ? "nd" : value % 10 === 3 ? "rd" : "th";
-  return `${String(value)}${suffix}`;
-}
-
-/** Blake's hold words: Provisional, 1st option, 2nd option, Joint 1st. */
-export function holdWords(entry: Extract<CalendarEntry, { entryType: "booking" }>): string {
-  if (entry.state === "prospect") return "Provisional";
-  if (entry.jointFlag && (entry.rank ?? 1) === 1) return "Joint 1st";
-  return entry.rank === null ? "Option" : `${ordinal(entry.rank)} option`;
+/** A hold in Blake's words, as the Diary says it: Provisional, 1st option, Joint 1st. */
+export function holdWords(entry: Pick<Extract<CalendarEntry, { entryType: "booking" }>, "rank" | "jointFlag">): string {
+  return BOARD_COPY.decisions.option(entry.rank, entry.jointFlag);
 }
 
 /**
  * Each day's Confirmed functions, and quietly the Provisional and option
- * holds, by the day they start on the venue's clock.
+ * holds, by the day they start on the venue's clock. Interest only never
+ * holds a room, so it is not demand the rota plans for.
  */
 export function functionsByDay(calendar: CalendarResponse, timeZone: string): ReadonlyMap<string, DayFunctions> {
   const rooms = new Map(calendar.rooms.map((room) => [room.id, room.name]));
@@ -274,7 +267,7 @@ export function functionsByDay(calendar: CalendarResponse, timeZone: string): Re
   for (const entry of calendar.entries) {
     if (entry.entryType !== "booking") continue;
     const confirmed = entry.state === "ink";
-    const likely = entry.state === "hold" || entry.state === "prospect";
+    const likely = entry.state === "hold";
     if (!confirmed && !likely) continue;
     const date = rotaLocalDate(Date.parse(entry.startsAt), timeZone);
     const line: FunctionLine = {

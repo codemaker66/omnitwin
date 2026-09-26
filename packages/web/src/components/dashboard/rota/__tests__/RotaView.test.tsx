@@ -74,8 +74,10 @@ describe("RotaView", () => {
     expect(screen.getByText("Week of 5 October 2026")).toBeDefined();
     expect(lede(container)).toBe("3 shifts for 2 people. 1 still needs someone.");
     expect(await screen.findByText("Robertson and Kaur wedding")).toBeDefined();
-    // Provisional work is only quiet likely demand, never a Confirmed function.
+    // A provisional hold is only quiet likely demand, never a Confirmed
+    // function; Interest only never holds the room, so it is not shown.
     expect(screen.getByText("Provisional").closest(".rota-fn-likely")).not.toBeNull();
+    expect(screen.queryByText(/Enquiry for a ceilidh/u)).toBeNull();
     expect(mocks.calendar).toHaveBeenCalledWith(VENUE, "2026-10-04T23:00:00.000Z", "2026-10-11T23:00:00.000Z", expect.any(AbortSignal));
     expect(screen.queryByRole("status")).toBeNull();
   });
