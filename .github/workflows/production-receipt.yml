@@ -66,6 +66,20 @@ jobs:
           set -euo pipefail
           note() { printf '%s\n' "$*" | tee -a "$GITHUB_STEP_SUMMARY"; }
           status_of() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true; }
+          # True when no file changed between a build and the expected commit
+          # matches railway.json's watchPatterns at the expected commit: the
+          # paths Railway rebuilds the API for. Unknown answers count as a
+          # change, so the receipt fails safe.
+          api_unchanged_since() {
+            local patterns files regex
+            patterns=$(gh api "repos/$REPOSITORY/contents/railway.json?ref=$EXPECTED_SHA" --jq '.content' 2>/dev/null \
+              | base64 -d 2>/dev/null | jq -r '.build.watchPatterns[]' 2>/dev/null) || return 1
+            [[ -n "$patterns" ]] || return 1
+            files=$(gh api "repos/$REPOSITORY/compare/$1...$EXPECTED_SHA" --jq '.files | if length >= 300 then error("too many files") else .[].filename end' 2>/dev/null) || return 1
+            regex=$(printf '%s\n' "$patterns" | sed -e 's#^/##' -e 's#[.]#\\.#g' -e 's#[*][*]#.*#g' -e 's#^#^#' -e 's#$#$#' | paste -sd'|' -)
+            [[ -z "$files" ]] && return 0
+            ! printf '%s\n' "$files" | grep -Eq "$regex"
+          }
           failed=0
 
           [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full 40-character commit"; exit 1; }
@@ -91,16 +105,22 @@ jobs:
             version=$(curl -fsS --max-time 20 "$API/health/version" || true)
             reported=$(jq -r '.gitSha // empty' <<<"$version" 2>/dev/null || true)
             relation="unknown"
+            api_state="stale"
             if [[ "$reported" =~ ^[0-9a-f]{40}$ ]]; then
               relation=$(gh api "repos/$REPOSITORY/compare/$EXPECTED_SHA...$reported" --jq '.status' 2>/dev/null || echo "unknown")
             fi
-            if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then break; fi
+            if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then api_state="contains"; break; fi
+            # Railway rebuilds only when a watched path changes (railway.json),
+            # so an older build can still be the current one.
+            if [[ "$relation" == "behind" ]] && api_unchanged_since "$reported"; then api_state="unchanged"; break; fi
             if (( $(date +%s) >= deadline )); then break; fi
             sleep 30
           done
           note "- /health/version: \`${version:-no answer}\`"
-          if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then
+          if [[ "$api_state" == "contains" ]]; then
             note "- the running build (\`$reported\`) contains the expected commit ($relation)"
+          elif [[ "$api_state" == "unchanged" ]]; then
+            note "- the running build (\`$reported\`) is current: nothing the API is built from changed between it and the expected commit"
           else
             note "- the running build does not contain the expected commit (reports \`${reported:-nothing}\`, $relation)"
             failed=1
