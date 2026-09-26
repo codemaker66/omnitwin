@@ -181,6 +181,27 @@ describe("deriveDayBoard — the countdown ramp", () => {
   });
 });
 
+describe("deriveDayBoard — the house's words for each booking", () => {
+  // Blake's words, the same as the Diary's: Provisional with its option,
+  // Confirmed, House block. Never pencil, ink or prospect.
+  function labelFor(overrides: Record<string, unknown>): string | undefined {
+    const response = baseResponse();
+    response.entries = [booking(120, 240, overrides)];
+    return deriveDayBoard(response, NOW).lanes[0]?.slots[0]?.bookingLabel;
+  }
+
+  it.each([
+    [{ kind: "hold", state: "hold", rank: 1 }, "Provisional · 1st option"],
+    [{ kind: "hold", state: "hold", rank: 2 }, "Provisional · 2nd option"],
+    [{ kind: "hold", state: "hold", rank: 1, jointFlag: true }, "Provisional · Joint 1st"],
+    [{ kind: "hold", state: "hold", rank: null }, "Provisional"],
+    [{ kind: "ink", state: "ink" }, "Confirmed booking"],
+    [{ kind: "internal_block", state: "internal_block" }, "House block"],
+  ])("labels %o as %s", (overrides, expected) => {
+    expect(labelFor(overrides)).toBe(expected);
+  });
+});
+
 describe("deriveDayBoard — exceptions own red", () => {
   it("a turnaround-at-risk pair pulses red at 1.5s and says why", () => {
     const response = baseResponse();

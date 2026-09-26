@@ -8,6 +8,7 @@ import type {
   RequestUrgency,
 } from "@omnitwin/types";
 import { VENUE_TIME_ZONE, formatWallTime } from "../../diary/lib/board-time.js";
+import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board state machine (Day Board S1; plan:
@@ -78,6 +79,10 @@ export interface DayBoardSlot {
   readonly title: string;
   readonly eventType: string | null;
   readonly kind: CalendarBookingEntry["kind"];
+  /** What kind of booking this is, in the house's words. A hold reads as the
+   *  Diary reads it ("Provisional · 1st option"), through the Diary's own
+   *  bookingStateLabel, so the two boards cannot word one hold two ways. */
+  readonly bookingLabel: string;
   readonly startsAtMs: number;
   readonly endsAtMs: number;
   /** Earliest scheduled phase in this room, falling back to booking start.
@@ -369,6 +374,9 @@ export function deriveDayBoard(
           const requestSignal = deriveSlotRequestSignal(slotRequests, nowMs);
           const blocking = blockingByBooking.get(entry.id);
           const timeRange = `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
+          const bookingLabel = entry.kind === "hold"
+            ? bookingStateLabel(entry)
+            : entry.kind === "internal_block" ? "House block" : "Confirmed booking";
 
           const slot: DayBoardSlot =
             blocking !== undefined
@@ -382,6 +390,7 @@ export function deriveDayBoard(
                   title: entry.title,
                   eventType: entry.eventType,
                   kind: entry.kind,
+                  bookingLabel,
                   startsAtMs,
                   endsAtMs,
                   setupStartsAtMs,
@@ -407,6 +416,7 @@ export function deriveDayBoard(
                   title: entry.title,
                   eventType: entry.eventType,
                   kind: entry.kind,
+                  bookingLabel,
                   startsAtMs,
                   endsAtMs,
                   setupStartsAtMs,

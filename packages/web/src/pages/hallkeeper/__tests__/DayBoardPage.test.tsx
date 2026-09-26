@@ -244,7 +244,7 @@ describe("DayBoardPage", () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking(), hold]));
     renderBoard();
     expect(await screen.findByText("Awards lunch")).toBeTruthy();
-    expect(screen.getByText(/^Provisional hold/u)).toBeTruthy();
+    expect(screen.getByText(/^Provisional · 1st option/u)).toBeTruthy();
     expect(screen.getByText(/^Confirmed booking/u)).toBeTruthy();
     expect(screen.queryByText(/pencil|prospect|\bink\b/iu)).toBeNull();
   });
