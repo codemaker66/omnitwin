@@ -50,6 +50,19 @@ describe("vercel.json redirects", () => {
     }
   });
 
+  // T-616: the older home pages left public addresses. The app redirects
+  // them too, but at the edge a stale link skips loading the app first.
+  // Temporary, because a browser keeps a permanent redirect indefinitely,
+  // and robots.txt already keeps crawlers off these paths.
+  it.each(["/landing", "/welcome", "/living-hall", "/editor", "/venues/:venueSlug/rooms/:roomSlug"])(
+    "sends the retired %s to the front door at the edge, temporarily",
+    (source) => {
+      const redirect = internal.find((r) => r.source === source);
+      expect(redirect?.destination).toBe("/");
+      expect(redirect?.permanent).toBe(false);
+    },
+  );
+
   it("only redirects to routes the router declares", () => {
     for (const redirect of internal) {
       expect(routerDeclares(redirect.destination), `${redirect.source} -> ${redirect.destination}`).toBe(true);
