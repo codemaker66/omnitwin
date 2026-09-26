@@ -22,6 +22,7 @@ Nothing in the product changed. Conformance scores are the auditors' judgements,
 | [critique.md](critique.md) | Corrections to the two syntheses. **Where it conflicts with them, the critique wins.** |
 | [design-system.md](design-system.md) | The proposed single design system: principles, tokens, components, patterns and migration. A draft proposal. |
 | [roadmap.md](roadmap.md) | Where every surface stands, the rebuild order (Now / Next / Later), platform capabilities, and questions only Blake can answer. |
+| [n1-foundation.md](n1-foundation.md) | The first N1 increment: the workspace register, the desk on it, calm hover, what waits for the 3D batch, and what remains. Blake's verdict pending. |
 | [research/](research/) | The four research reports with their sources. Some competitor quotes came from search summaries because review sites were blocked; treat those as leads. |
 | [audits.json](audits.json) | Raw findings per surface, with file and line citations. |
 | [sweep/](sweep/) | Screenshots of the app as it stood before this programme, captured against mocked data: the "before" set. |
