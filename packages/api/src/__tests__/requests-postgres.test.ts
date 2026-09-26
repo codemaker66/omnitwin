@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import Fastify from "fastify";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
@@ -7,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
+import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
 import {
   createRequestCore,
   listRequestsForVenue,
@@ -23,6 +25,8 @@ import {
 //
 // Never loads .env and never falls back to DATABASE_URL. The target must be an
 // explicitly named disposable cluster on this machine.
+// The notification routes below authenticate with the test-mode bearer.
+process.env["NODE_ENV"] = "test";
 const target = process.env["VENVIEWER_REQUESTS_TEST_DATABASE_URL"];
 if (target !== undefined) {
   const parsed = new URL(target);
@@ -183,6 +187,53 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
       .from(schema.eventPlanNotifications)
       .where(eq(schema.eventPlanNotifications.venueId, f.venueId));
     expect(inbox.map((row) => row.role).sort()).toEqual(["admin", "hallkeeper", "manager", "staff"]);
+  });
+
+  it("counts exactly the unread the inbox lists, and nothing from another venue", async () => {
+    // The dashboard's one unread number comes from /notifications/unread-count
+    // and the panel lists /notifications. The two queries repeat one
+    // visibility rule, so they are held to the same answer on real rows.
+    const f = await fixture();
+    await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
+    await createRequestCore(db, f.staff, f.venueId, press(f, { urgency: "routine" }));
+
+    const server = Fastify();
+    await server.register(notificationRoutes, { db, prefix: "/notifications" });
+    await server.ready();
+    const as = (actor: RequestActor): { authorization: string } => ({
+      authorization: `Bearer ${JSON.stringify({
+        id: actor.id, email: `${actor.id}@lane9.invalid`, name: actor.name, role: actor.role, venueId: actor.venueId,
+      })}`,
+    });
+    const count = async (actor: RequestActor): Promise<number> => {
+      const res = await server.inject({ method: "GET", url: "/notifications/unread-count", headers: as(actor) });
+      expect(res.statusCode).toBe(200);
+      return (JSON.parse(res.body) as { data: { unread: number } }).data.unread;
+    };
+    const unreadList = async (actor: RequestActor): Promise<readonly string[]> => {
+      const res = await server.inject({ method: "GET", url: "/notifications?status=unread&limit=100", headers: as(actor) });
+      expect(res.statusCode).toBe(200);
+      return (JSON.parse(res.body) as { data: { id: string }[] }).data.map((row) => row.id);
+    };
+
+    try {
+      const listed = await unreadList(f.hallkeeper);
+      expect(listed.length).toBe(2);
+      expect(await count(f.hallkeeper)).toBe(listed.length);
+
+      const first = listed[0];
+      if (first === undefined) throw new Error("expected an unread notification");
+      const read = await server.inject({ method: "PATCH", url: `/notifications/${first}/read`, headers: as(f.hallkeeper) });
+      expect(read.statusCode).toBe(200);
+      expect(await count(f.hallkeeper)).toBe(1);
+      expect(await unreadList(f.hallkeeper)).toHaveLength(1);
+
+      const elsewhere = await unreadList(f.outsider);
+      expect(await count(f.outsider)).toBe(elsewhere.length);
+      expect(elsewhere).not.toContain(first);
+    } finally {
+      await server.close();
+    }
   });
 
   it("returns the SAME request when the same press arrives twice", async () => {

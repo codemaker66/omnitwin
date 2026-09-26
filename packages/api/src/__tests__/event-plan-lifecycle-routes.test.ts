@@ -32,6 +32,7 @@ describe("event plan lifecycle routes", () => {
   it("requires auth for notification and change-feed surfaces", async () => {
     for (const [method, url] of [
       ["GET", "/notifications"],
+      ["GET", "/notifications/unread-count"],
       ["PATCH", "/notifications/00000000-0000-4000-8000-000000004004/read"],
       ["GET", `/events/${EVENT_ID}/change-feed`],
       ["POST", `/events/${EVENT_ID}/change-acknowledgements`],
