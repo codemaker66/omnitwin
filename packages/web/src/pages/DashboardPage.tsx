@@ -58,18 +58,18 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "admin",
 ];
 
-// Pipeline is CommercialPipelineView, which reads api/crm.js — still gated on
-// `user.role === "staff"` server-side until Lane 7 widens routes/crm.ts and
-// routes/opportunities.ts to canManageCommercial. Proposals reads
-// api/proposals.js, which is already on canManageCommercial, so the two
-// cannot share one set. See lib/role-capabilities.ts CRM_PIPELINE_ROLES.
+// Pipeline is CommercialPipelineView, which reads api/crm.js (routes/crm.ts
+// and routes/opportunities.ts); Proposals reads api/proposals.js. Both routes
+// gate on canManageCommercial today, but each view keeps its own set so each
+// tab names the gate it mirrors. See lib/role-capabilities.ts
+// CRM_PIPELINE_ROLES and COMMERCIAL_ROLES.
 const CRM_PIPELINE_VIEWS = new Set<DashboardView>(["pipeline"]);
 const COMMERCIAL_VIEWS = new Set<DashboardView>(["proposals"]);
 // Analytics, Client Search and the review queue each answer to their own API
-// gate, and each is narrower than "commercial" or "workspace": the analytics
-// tab is held back from sales until Lane 7's #24 lands, /clients gates on
-// canManageVenue, and the pending-review queue takes the review state
-// machine's own role set. See lib/role-capabilities.ts for each mirror.
+// gate: the analytics tab mirrors GET /analytics/venue-dashboard
+// (canManageCommercial), /clients gates on canManageVenue, and the
+// pending-review queue takes the review state machine's own role set. See
+// lib/role-capabilities.ts for each mirror.
 const ANALYTICS_VIEWS = new Set<DashboardView>(["analytics"]);
 const CLIENT_SEARCH_VIEWS = new Set<DashboardView>(["search"]);
 const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
