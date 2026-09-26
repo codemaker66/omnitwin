@@ -498,6 +498,27 @@
       "when": 1790276400000,
       "tag": "0072_enquiry_list_order_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1790424000000,
+      "tag": "0073_vocabulary_checks_and_hot_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1790427600000,
+      "tag": "0074_catalogue_reconcile",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790431200000,
+      "tag": "0075_workspace_membership_role_vocabulary",
+      "breakpoints": true
     }
   ]
 }

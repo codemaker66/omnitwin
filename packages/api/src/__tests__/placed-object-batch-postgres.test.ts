@@ -86,7 +86,7 @@ describe.skipIf(target === undefined)("placed-object batch saves on migrated Pos
   async function configuration(options: { guest?: boolean } = {}): Promise<string> {
     const id = randomUUID();
     await db.insert(schema.configurations).values({ id, spaceId, venueId, name: "TEST ONLY batch layout",
-      layoutStyle: "banquet", userId: options.guest === true ? null : ownerId, isPublicPreview: options.guest === true });
+      layoutStyle: "dinner-banquet", userId: options.guest === true ? null : ownerId, isPublicPreview: options.guest === true });
     return id;
   }
 
