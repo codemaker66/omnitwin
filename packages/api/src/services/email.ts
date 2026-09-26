@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Resend } from "resend";
 import { emailSends } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -14,7 +14,10 @@ import type { Database } from "../db/client.js";
 //      we INSERT a row into `email_sends` keyed on that value. The
 //      column has a UNIQUE constraint — a concurrent or replayed attempt
 //      hits PG error 23505, which we treat as "already sent", and the
-//      second send is a no-op. Survives process restarts.
+//      second send is a no-op. Survives process restarts. The exception is
+//      a send that failed: a replay reclaims its row (compare-and-set from
+//      "failed" to "pending", so one concurrent replay wins) and tries the
+//      provider again. The hold-reminder pass replays by design.
 //
 //   2. Bounded retry with exponential backoff. Network errors, 5xx and
 //      429 responses retry (250, 500, 1000, 2000 ms). 4xx responses are
@@ -130,6 +133,14 @@ function getResendClient(): Resend | null {
   return resendClient;
 }
 
+/** True when this process can hand email to the provider. Without it every
+ *  send is recorded as "dev_mode" — and the idempotency key it writes means
+ *  that reminder will never be sent later either. Callers that run
+ *  unattended check this first (POST /admin/diary/hold-reminders, T-619). */
+export function isEmailDeliveryConfigured(): boolean {
+  return (process.env["RESEND_API_KEY"] ?? "") !== "";
+}
+
 /** Test-only: reset the lazy singleton so a fresh RESEND_API_KEY can take effect. */
 export function __resetResendClientForTests(): void {
   resendClient = null;
@@ -211,7 +222,34 @@ export async function sendEmail(
       status: "pending",
     });
   } catch (err) {
-    if (isUniqueViolation(err)) {
+    if (!isUniqueViolation(err)) {
+      logger.error({
+        event: "email.audit_insert_failed",
+        idempotencyKey,
+        recipient: payload.to,
+        error: errorMessage(err),
+      }, "email.audit_insert_failed");
+      return false;
+    }
+    // Sent, still in flight or recorded in dev mode: already handled. A send
+    // that failed is the one state a replay may take over, and only one
+    // replay can: the status is part of the UPDATE's own WHERE.
+    let reclaimed: readonly { id: string }[];
+    try {
+      reclaimed = await db.update(emailSends)
+        .set({ status: "pending", recipient: payload.to, subject: payload.subject, lastError: null, updatedAt: new Date() })
+        .where(and(eq(emailSends.idempotencyKey, idempotencyKey), eq(emailSends.status, "failed")))
+        .returning({ id: emailSends.id });
+    } catch (reclaimError) {
+      logger.error({
+        event: "email.audit_insert_failed",
+        idempotencyKey,
+        recipient: payload.to,
+        error: errorMessage(reclaimError),
+      }, "email.audit_insert_failed");
+      return false;
+    }
+    if (reclaimed.length === 0) {
       logger.info({
         event: "email.dedup_skip",
         idempotencyKey,
@@ -219,13 +257,11 @@ export async function sendEmail(
       }, "email.dedup_skip");
       return true;
     }
-    logger.error({
-      event: "email.audit_insert_failed",
+    logger.info({
+      event: "email.retry_after_failure",
       idempotencyKey,
       recipient: payload.to,
-      error: errorMessage(err),
-    }, "email.audit_insert_failed");
-    return false;
+    }, "email.retry_after_failure");
   }
 
   // 2. Dev mode — no API key set. Audit row records a clear "dev_mode"

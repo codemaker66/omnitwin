@@ -330,7 +330,7 @@ describe("needsAction (the tray)", () => {
     expect(items[1]?.reasons[0]).toContain("decision");
   });
 
-  it("flags unranked pencils as ladder hygiene work", () => {
+  it("flags a provisional hold with no option yet as work to do", () => {
     const unranked = bookingEntry({
       id: "4".repeat(36),
       kind: "hold",
@@ -341,7 +341,7 @@ describe("needsAction (the tray)", () => {
     });
     const items = needsAction([unranked], NOW);
     expect(items).toHaveLength(1);
-    expect(items[0]?.reasons.join(" ")).toContain("unranked");
+    expect(items[0]?.reasons.join(" ")).toContain("no option yet");
   });
 
   it("ignores inks, prospects, blocks, and exited holds", () => {
@@ -355,5 +355,19 @@ describe("needsAction (the tray)", () => {
       nextActionDueAt: "2026-08-01T09:00:00.000Z",
     });
     expect(needsAction([ink, prospect, released], NOW)).toHaveLength(0);
+  });
+
+  it("leaves passed decision dates to the venue-wide list when the board has one (T-619)", () => {
+    const overdueDecision = bookingEntry({
+      id: "8".repeat(36),
+      kind: "hold",
+      state: "hold",
+      rank: 1,
+      nextActionDueAt: "2026-09-10T09:00:00.000Z",
+      decisionAt: "2026-08-30T09:00:00.000Z",
+    });
+    expect(needsAction([overdueDecision], NOW)).toHaveLength(1);
+    expect(needsAction([overdueDecision], NOW, { decisions: true })).toHaveLength(1);
+    expect(needsAction([overdueDecision], NOW, { decisions: false })).toHaveLength(0);
   });
 });

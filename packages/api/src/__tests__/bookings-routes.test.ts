@@ -349,13 +349,14 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
     expect(coreSource).toContain('new Set(["staff", "admin", "manager", "sales"])');
     expect(coreSource).not.toContain('"hallkeeper", "sales"]);');
     expect(coreSource).toContain("canWriteBookings(actor, input.venueId)");
-    // Reads still use the shared venue policy (hallkeeper stays
-    // read-facing) — since the reviewer P2 fold-in, GET /:id routes through
-    // loadAccessibleBooking, the ONE copy of the fetch + canManageVenue
-    // check the mutation cores already use.
+    // Reads use the Diary's read policy, canReadDiary: the venue floor and
+    // sales, who pencils the holds (the hallkeeper stays read-facing through
+    // the write gates above). Since the reviewer P2 fold-in, GET /:id routes
+    // through loadAccessibleBooking, the ONE copy of the fetch + read check
+    // the mutation cores already use.
     const routeSource = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
     expect(routeSource).toContain("loadAccessibleBooking(db, request.user, params.data.id)");
-    expect(coreSource).toContain("canManageVenue(actor, row.venueId)");
+    expect(coreSource).toContain("canReadDiary(actor, row.venueId)");
   });
 
   it("enforces hold hygiene on edits of live holds", async () => {

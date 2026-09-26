@@ -92,10 +92,11 @@ function ordinal(rank: number): string {
   }
 }
 
+/** A hold's standing in Blake's words: "1st option", "Joint 1st", or
+ *  "no option yet". Pencil, ink and ladder never reach the screen. */
 function rankLabel(hold: { rank: number | null; jointFlag: boolean }): string {
-  if (hold.rank === null) return "unranked pencil";
-  const base = `${ordinal(hold.rank)} option`;
-  return hold.jointFlag ? `joint ${base}` : base;
+  if (hold.rank === null) return "no option yet";
+  return hold.jointFlag ? `Joint ${ordinal(hold.rank)}` : `${ordinal(hold.rank)} option`;
 }
 
 function overlaps(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
@@ -250,7 +251,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
           severity: "blocking",
           spaceId,
           entryIds: [a.id, b.id],
-          explanation: `Two inked bookings overlap in this space: "${a.title}" and "${b.title}". The database exclusion constraint normally prevents this — treat it as data needing human review.`,
+          explanation: `Two confirmed bookings overlap in this room: "${a.title}" and "${b.title}". The database normally prevents this — treat it as data needing human review.`,
         });
       }
     }
@@ -268,7 +269,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
           severity: "info",
           spaceId,
           entryIds: [a.id, b.id],
-          explanation: `"${a.title}" (${rankLabel(a)}) and "${b.title}" (${rankLabel(b)}) pencil overlapping times in this space — the option ladder at work.`,
+          explanation: `"${a.title}" (${rankLabel(a)}) and "${b.title}" (${rankLabel(b)}) are both provisional for overlapping times in this room — the earlier option decides first.`,
         });
       }
     }
@@ -282,7 +283,7 @@ export function detectCalendarConflicts(input: DetectCalendarConflictsInput): Co
           severity: "warning",
           spaceId,
           entryIds: [first.id, second.id],
-          explanation: `"${hold.title}" (${rankLabel(hold)}) pencils a slot already inked by "${ink.title}" — the pencil cannot convert while the ink stands; release it or offer another date.`,
+          explanation: `"${hold.title}" (${rankLabel(hold)}) is provisional for a time "${ink.title}" has confirmed. It cannot be confirmed while that booking stands; release it or offer another date.`,
         });
       }
     }

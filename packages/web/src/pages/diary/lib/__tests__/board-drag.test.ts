@@ -106,7 +106,7 @@ describe("moveGhostTo (pointer)", () => {
     if (covered.phase !== "dragging") throw new Error("expected dragging");
     expect(covered.ghost.validity).toEqual({
       kind: "warning",
-      reason: 'Lands under "New ink" — a pencil here cannot convert while that ink stands.',
+      reason: 'Lands under "New ink" — a provisional hold here cannot be confirmed while that booking stands.',
     });
     expect(moveGhostTo(covered, LANE_A, T17 + 20 * 60_000, env({
       inksByLane: new Map([[LANE_A, [{ id: "ink-new", startMs: T18, endMs: T23, title: "New ink" }]]]),

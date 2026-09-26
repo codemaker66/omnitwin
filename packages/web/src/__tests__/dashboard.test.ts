@@ -245,10 +245,10 @@ describe("VenueSettings wiring (#25) — source-grep", () => {
 
   it("VenueSettings has fields for name, address, brandColour, logoUrl", async () => {
     const { codeOnly } = await readSource("src/components/dashboard/VenueSettings.tsx");
-    expect(codeOnly).toContain("Venue Name");
+    expect(codeOnly).toContain("Venue name");
     expect(codeOnly).toContain("Address");
-    expect(codeOnly).toContain("Brand Colour");
-    expect(codeOnly).toContain("Logo URL");
+    expect(codeOnly).toContain("Brand colour");
+    expect(codeOnly).toContain("Logo link");
   });
 
   it("VenueSettings handles the no-venue case gracefully", async () => {

@@ -1,0 +1,173 @@
+# =============================================================================
+# VENVIEWER — Diary hold reminders (T-619)
+# =============================================================================
+# Calls the deployed API's POST /admin/diary/hold-reminders, which emails the
+# member of staff who owns each provisional hold 7, 3 and 1 days before its
+# decision date. Clients are never emailed by it. The pass is idempotent:
+# `email_sends` carries a unique key per (booking, decision day, stage), so a
+# repeated call never sends the same reminder twice.
+#
+# This workflow holds no database credential. It talks to the running API over
+# HTTPS with a service token, so the API's own checks and logs apply.
+#
+# -----------------------------------------------------------------------------
+# THE SCHEDULE IS OFF. Blake approved the reminders on one condition: a dry run
+# he can check before anything is sent (26 September 2026). The `schedule:`
+# trigger below is commented out, and is enabled only after that dry run has
+# been reviewed. GitHub runs a schedule only from the default branch.
+#
+# Operator steps, in order:
+#   1. Generate a token of at least 32 random characters (for example
+#      `openssl rand -base64 48`) and set it, byte for byte, in two places:
+#      the Railway API service's environment variable DIARY_CRON_TOKEN, and
+#      this repository's Actions secret DIARY_CRON_TOKEN. Optionally set the
+#      repository variable VENVIEWER_API_URL (the API origin, no trailing
+#      slash; default https://api.venviewer.com).
+#   2. Run this workflow by hand (Actions → Diary hold reminders → Run
+#      workflow) with dry_run left at true. Nothing is sent.
+#   3. Blake reviews the run's summary: how many reminders are due at each
+#      stage and how each would end, and whether the API can deliver email at
+#      all (RESEND_API_KEY). The holds themselves are in the Diary's Decisions
+#      due list, behind sign-in: see the note on privacy below.
+#   4. Only then uncomment the schedule below.
+#
+# The job fails, and says why, when the secret is missing, the API refuses the
+# token, the API cannot be reached, a real pass is asked of an API that cannot
+# deliver email, or any reminder fails to send.
+#
+# Privacy: this repository is public, so anyone can read a run's log and
+# summary. They carry counts only: no hold title (which often names the
+# client), room, date, person or email address. The Diary's Decisions due list
+# names every hold whose decision falls in the next seven days, with its
+# owner, so every hold a pass can remind about (7, 3 or 1 days out) is there.
+# =============================================================================
+
+name: Diary hold reminders
+
+on:
+  # Enabled only after Blake has reviewed a dry run — see the steps above.
+  # 07:00-10:00 UTC daily: reminders land in the venue's morning. The later
+  # runs cover an API that was unreachable earlier, and retry a reminder the
+  # email provider refused: a replay reclaims its failed email_sends row, for
+  # as long as the reminder is fresh (24 hours; see
+  # docs/operations/diary-first-week-operations.md, "Reminder triage").
+  # schedule:
+  #   - cron: "0 7-10 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be sent, and send nothing"
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  # Overlapping passes would be harmless (the unique keys dedupe), but one at
+  # a time keeps the summaries readable.
+  group: diary-hold-reminders
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    name: Hold-reminder pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Run the hold-reminder pass
+        env:
+          API_URL: ${{ vars.VENVIEWER_API_URL || 'https://api.venviewer.com' }}
+          CRON_TOKEN: ${{ secrets.DIARY_CRON_TOKEN }}
+          # A scheduled run is a real pass. A manual run is a dry run unless
+          # someone deliberately unticks dry_run. Anything else is a dry run.
+          DRY_RUN: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) && 'false' || 'true' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_TOKEN}" ]; then
+            echo "::error title=DIARY_CRON_TOKEN is not set::The repository secret DIARY_CRON_TOKEN is missing, so the pass cannot authenticate. Nothing was sent. Set the same value on the Railway API service and as this repository's Actions secret."
+            exit 1
+          fi
+          if [ "${#CRON_TOKEN}" -lt 32 ]; then
+            echo "::error title=DIARY_CRON_TOKEN is too short::The secret has fewer than 32 characters; the API refuses such a token. Nothing was sent."
+            exit 1
+          fi
+          case "${DRY_RUN}" in
+            true|false) ;;
+            *) echo "::error::Unexpected dry-run value '${DRY_RUN}'. Nothing was sent."; exit 1 ;;
+          esac
+
+          mode="dry run (nothing will be sent)"
+          [ "${DRY_RUN}" = "false" ] && mode="real pass (reminders will be emailed)"
+          echo "Calling ${API_URL}/admin/diary/hold-reminders as a ${mode}"
+
+          # The token travels in a header read from the environment and is
+          # never echoed. The body and the status are captured separately so a
+          # failure can name the API's reason without printing its payload.
+          if ! http_status=$(
+            curl -sS -o response.json -w '%{http_code}' \
+              --max-time 120 \
+              --retry 2 --retry-delay 5 --retry-connrefused \
+              -X POST "${API_URL}/admin/diary/hold-reminders" \
+              -H "Authorization: Bearer ${CRON_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"dryRun\": ${DRY_RUN}}"
+          ); then
+            echo "::error title=API unreachable::Could not reach ${API_URL}. Nothing was sent."
+            exit 1
+          fi
+
+          if [ "${http_status}" != "200" ]; then
+            # Only the API's error code and message: never the raw body.
+            reason=$(jq -r '[.code, .error] | map(select(type == "string")) | join(": ")' response.json 2>/dev/null || true)
+            case "${http_status}" in
+              401) hint="The API did not accept the token. DIARY_CRON_TOKEN must be set on the Railway API service and match this repository's secret exactly." ;;
+              403) hint="The API read the request as a signed-in user without platform-admin rights." ;;
+              503) hint="The API cannot deliver email (RESEND_API_KEY is unset), so it refused a real pass. Nothing was sent or marked as sent." ;;
+              *) hint="The API refused or failed the pass." ;;
+            esac
+            echo "::error title=Hold-reminder pass failed (HTTP ${http_status})::${hint} ${reason:-No reason given.}"
+            exit 1
+          fi
+
+          if ! jq -e '.data | (.reminders | type == "array") and (.scanned | type == "number")' response.json > /dev/null; then
+            echo "::error::The API answered 200 without a pass summary. Treating the run as failed."
+            exit 1
+          fi
+
+          # The receipt is public (see the note on privacy above): counts by
+          # stage and by outcome, never a field from a single reminder.
+          jq -r --arg api "${API_URL}" '
+            def stage: if . == 1 then "1 day before the decision" else "\(.) days before the decision" end;
+            .data as $d
+            | ( if $d.dryRun then "### Diary hold reminders — dry run: nothing was sent"
+                else "### Diary hold reminders — real pass" end ),
+              "",
+              "| | |",
+              "|---|---|",
+              "| Provisional holds scanned | \($d.scanned) |",
+              "| Reminders due | \($d.due) |",
+              ( $d.reminders | group_by(.daysBefore) | sort_by(-(.[0].daysBefore))[]
+                | "| Due \(.[0].daysBefore | stage) | \(length) |" ),
+              "| Sent | \($d.sent) |",
+              "| Failed | \($d.failed) |",
+              "| Due, but nobody owns the hold | \($d.noOwner // 0) |",
+              "| Email delivery on the API | \(if $d.emailDelivery == "configured" then "configured" elif $d.emailDelivery == "not_configured" then "not configured: RESEND_API_KEY is unset, so a real pass would be refused" else "unknown" end) |",
+              "| API | \($api) |",
+              "",
+              "This repository is public, so this summary names no hold, client or person. The holds are in the Diary under Decisions due, which lists every hold whose decision falls in the next seven days, with its owner."
+          ' response.json > summary.md
+
+          cat summary.md
+          cat summary.md >> "${GITHUB_STEP_SUMMARY}"
+
+          if [ "$(jq -r '.data.emailDelivery' response.json)" = "not_configured" ]; then
+            echo "::warning title=Email delivery is off::RESEND_API_KEY is not set on the API. A real pass will be refused until it is."
+          fi
+
+          # A pass that failed to deliver is not a green run.
+          failed=$(jq -r '.data.failed' response.json)
+          if [ "${failed}" != "0" ]; then
+            echo "::error title=Reminders failed::${failed} reminder(s) failed to send. See the summary above and email_sends."
+            exit 1
+          fi

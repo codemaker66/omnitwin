@@ -3,8 +3,8 @@ import { BOARD_COPY } from "../board-copy.js";
 
 // ---------------------------------------------------------------------------
 // Claim guard (house pattern from rite-copy/spotlight-copy): the Board's copy
-// is planning-support language, never compliance vocabulary, and keeps the
-// Canon §18 vocabulary locks.
+// is planning-support language, never compliance vocabulary, and speaks
+// Blake's hold words (26 September 2026), never the internal ones.
 // ---------------------------------------------------------------------------
 
 function allStrings(value: unknown): string[] {
@@ -44,17 +44,61 @@ describe("board copy claim guard", () => {
     expect(BOARD_COPY.disclosure).toContain("Planning support only");
   });
 
-  it("keeps the Canon vocabulary: inked, pencil — never 'strong enquiry'", () => {
+  it("speaks Blake's hold words, and never says 'strong enquiry'", () => {
     expect(corpus.toLowerCase()).not.toContain("strong enquiry");
-    expect(BOARD_COPY.legend.ink.toLowerCase()).toContain("inked");
-    expect(BOARD_COPY.legend.hold.toLowerCase()).toContain("pencil");
+    expect(BOARD_COPY.legend.ink).toBe("Confirmed");
+    expect(BOARD_COPY.legend.hold).toBe("Provisional");
+    expect(BOARD_COPY.decisions.option(1, true)).toBe("Joint 1st");
+    expect(BOARD_COPY.decisions.option(2, false)).toBe("2nd option");
   });
 
-  it("prospects are described as never blocking", () => {
-    expect(BOARD_COPY.legend.prospect.toLowerCase()).toContain("never blocks");
+  it("never shows the internal words: pencil, ink, prospect or ladder", () => {
+    expect(corpus).not.toMatch(/\b(pencil\w*|ink(ed|s)?|prospects?|ladder)\b/iu);
+  });
+
+  it("says plainly that an interest never holds the room", () => {
+    expect(BOARD_COPY.legend.prospect).toBe("Interest only");
+    expect(corpus).toContain("Interest only never holds the room.");
   });
 
   it("turnaround checks admit when they are not checked", () => {
     expect(BOARD_COPY.conflicts.turnaround.not_checked.toLowerCase()).toContain("not checked");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-619: strings added from the timetable on speak Blake's hold words
+// (26 September 2026) — "Provisional", "1st option", "2nd option", "Joint
+// 1st", "Confirmed" — and never the internal ones.
+// ---------------------------------------------------------------------------
+describe("T-619 copy uses Blake's hold words", () => {
+  const INTERNAL = /pencil|\bink|prospect|ladder|hold decision|joint hold/iu;
+  const t619 = [
+    ...allStrings(BOARD_COPY.create),
+    ...allStrings(BOARD_COPY.decisions),
+    BOARD_COPY.drawer.summaryLabel,
+    BOARD_COPY.drawer.ownerLabel,
+    BOARD_COPY.drawer.ownerUnassigned,
+    BOARD_COPY.drawer.clientLabel,
+    BOARD_COPY.drawer.clientNone,
+    BOARD_COPY.drawer.eventLabel,
+    BOARD_COPY.drawer.guestsLabel,
+  ];
+
+  it("never reaches for the internal vocabulary", () => {
+    for (const text of t619) expect(text, text).not.toMatch(INTERNAL);
+  });
+
+  it("names a hold's option as Blake does", () => {
+    expect(BOARD_COPY.decisions.option(1, false)).toBe("1st option");
+    expect(BOARD_COPY.decisions.option(2, false)).toBe("2nd option");
+    expect(BOARD_COPY.decisions.option(3, false)).toBe("3rd option");
+    expect(BOARD_COPY.decisions.option(1, true)).toBe("Joint 1st");
+    expect(BOARD_COPY.decisions.option(null, false)).toBe("Provisional");
+    expect(BOARD_COPY.decisions.option(11, false)).toBe("11th option");
+  });
+
+  it("keeps the toolbar to the three zooms", () => {
+    expect(Object.keys(BOARD_COPY.views)).toEqual(["day", "week", "2w"]);
   });
 });

@@ -98,7 +98,7 @@ export async function openSeededWeek(page: Page): Promise<void> {
   // A fresh browser context is always a first visit, so the first-run
   // welcome (T-519) greets the coordinator — dismiss it exactly as a real
   // first-time user would before working the board.
-  const welcomeDismiss = page.getByRole("button", { name: "Take me to the diary" });
+  const welcomeDismiss = page.getByRole("button", { name: "Open Diary" });
   if (await welcomeDismiss.isVisible().catch(() => false)) {
     await welcomeDismiss.click();
     await expect(welcomeDismiss).toBeHidden();

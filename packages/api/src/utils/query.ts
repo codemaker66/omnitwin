@@ -143,6 +143,19 @@ export function canManageCommercial(
   return holdsVenueRole(user, venueId, COMMERCIAL_ROLES);
 }
 
+/**
+ * Reading the Diary: the venue floor, and sales, who pencils the holds. The
+ * same people as DIARY_READ_ROLES on the live channel (ws/diary-live.ts), and
+ * every role booking-mutations.ts lets write; a writer who could not read the
+ * board would meet a 403 on opening it.
+ */
+export function canReadDiary(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return canManageVenue(user, venueId) || canManageCommercial(user, venueId);
+}
+
 /** Reading venue inventory levels. Never a price. */
 export function canReadInventory(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,

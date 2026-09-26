@@ -58,7 +58,7 @@ describe("findPaletteResults", () => {
     ]);
     expect(findPaletteResults("macleod", DATA, ENQUIRIES)).toEqual([
       { kind: "booking", id: "wedding", label: "MacLeod wedding", detail: "Grand Hall · 19:00" },
-      { kind: "enquiry", id: "enquiry-1", label: "Fiona MacLeod", detail: "Open the pencil-in form" },
+      { kind: "enquiry", id: "enquiry-1", label: "Fiona MacLeod", detail: "Hold a date for it" },
     ]);
     expect(findPaletteResults("wedding", DATA, ENQUIRIES).map((result) => result.id)).toEqual(["wedding", "enquiry-1"]);
   });

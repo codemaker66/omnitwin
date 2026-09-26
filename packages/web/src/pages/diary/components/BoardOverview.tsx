@@ -1,10 +1,11 @@
 import { memo, useMemo, type CSSProperties, type ReactElement } from "react";
-import { AlertTriangle, ArrowRight, CalendarDays } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, Plus } from "lucide-react";
 import type { CalendarBookingEntry, CalendarEntry, CalendarRoom, ConflictSeverity } from "@omnitwin/types";
 import { diaryRoomPhoto, DIARY_ROOM_PHOTO_SIZES } from "../../../lib/diary-room-photos.js";
 import { TRADES_HALL_ROOM_CAPACITIES, type PublishedRoomSlug } from "../../../lib/trades-hall-venue-truth.js";
 import { dayColumns, msToWallInput, type BoardRange } from "../lib/board-time.js";
 import { buildOverviewIndex, type OverviewItem } from "../lib/board-overview.js";
+import { BOARD_COPY } from "../board-copy.js";
 
 export interface BoardOverviewProps {
   readonly rooms: readonly CalendarRoom[];
@@ -14,6 +15,10 @@ export interface BoardOverviewProps {
   readonly conflictSeverity: ReadonlyMap<string, ConflictSeverity>;
   readonly onOpenBooking: (entry: CalendarBookingEntry) => void;
   readonly onOpenDay: (startMs: number) => void;
+  /** Create-in-context (T-619): open the drawer on this room and this DAY —
+   *  a square of the overview is a day, not an instant, so the drawer gives
+   *  it the house's default hours. Undefined for a read-only role. */
+  readonly onCreateOnDay?: (spaceId: string, dayStartMs: number) => void;
 }
 
 const NO_ITEMS: readonly OverviewItem[] = [];
@@ -22,7 +27,7 @@ const NO_ITEMS: readonly OverviewItem[] = [];
  *  enquiry loads, none of which change what the overview shows. The index
  *  is rebuilt only when the entries (or the visible days) change, so a render
  *  costs one pass over the visible cards — no per-cell filtering or Intl. */
-export const BoardOverview = memo(function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay }: BoardOverviewProps): ReactElement {
+export const BoardOverview = memo(function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay, onCreateOnDay }: BoardOverviewProps): ReactElement {
   const days = useMemo(() => dayColumns(range), [range]);
   const columns = useMemo(() => days.map((day) => ({ day, date: msToWallInput(day.startMs).slice(0, 10) })), [days]);
   const index = useMemo(() => buildOverviewIndex(entries, days), [entries, days]);
@@ -75,6 +80,13 @@ export const BoardOverview = memo(function BoardOverview({ rooms, entries, range
                     {severity !== undefined ? <span className={`diary-overview-warning is-${severity}`}><AlertTriangle size={12} />{severity === "blocking" ? "Conflict" : "Review"}</span> : null}</span>
                 </button>;
               })}
+              {/* Create-in-context (T-619): the obvious gesture on an empty
+                  square of a calendar is to click it. A real <button>, after
+                  the day's bookings, taking whatever room they leave. */}
+              {onCreateOnDay === undefined ? null : <button type="button" className="diary-overview-new"
+                aria-label={BOARD_COPY.create.cellLabel(room.name, day.label)}
+                onClick={() => { onCreateOnDay(room.id, day.startMs); }}>
+                <Plus size={13} aria-hidden="true" /><span>{BOARD_COPY.create.cellHint}</span></button>}
             </div>)}
           </div>;
         })}

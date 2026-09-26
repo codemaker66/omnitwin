@@ -395,7 +395,7 @@ describe("dropRibbonDrag", () => {
     expect(drop.effect).toBe("commit");
     if (drop.effect !== "commit") return;
     expect(drop.needsInkConfirm).toBe(false);
-    expect(drop.warning).toContain("cannot convert");
+    expect(drop.warning).toContain("cannot be confirmed");
   });
 
   it("a release inside a buffer commits WITH the guideline copy — the team judges", () => {

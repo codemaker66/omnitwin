@@ -450,7 +450,7 @@ function RibbonBody({
         setAnnouncement(
           next.overshootMs !== 0 && next.mode === "move"
             ? RIBBON_COPY.announceBlocked(
-                day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "an inked booking",
+                day.ghosts.find((ghost) => ghost.exclusion === "hard")?.title ?? "a confirmed booking",
               )
             : RIBBON_COPY.announceMove(rangeLabel(next.proposedStartMs, next.proposedEndMs)),
         );

@@ -11,7 +11,10 @@
 #     rather than 404 shows the deployed API has it;
 #   - the front door's status.
 # It fails when the API does not contain the commit, is not ready, or a route
-# check differs.
+# check differs. With browser "true" a second job opens the public pages in
+# Chromium: the production route pass (e2e/production-live-route-pass.spec.ts,
+# which mutates nothing), and photographs of the front door, a retired address,
+# an unknown address and /pricing signed out, kept for 14 days.
 
 name: Production receipt
 
@@ -30,6 +33,10 @@ on:
         description: Minutes to wait for the API to report a build that contains the commit (0 to 20).
         required: false
         default: "10"
+      browser:
+        description: "true to also open the public pages in a browser: the production route pass, and photographs kept as an artifact"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -59,6 +66,20 @@ jobs:
           set -euo pipefail
           note() { printf '%s\n' "$*" | tee -a "$GITHUB_STEP_SUMMARY"; }
           status_of() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true; }
+          # True when no file changed between a build and the expected commit
+          # matches railway.json's watchPatterns at the expected commit: the
+          # paths Railway rebuilds the API for. Unknown answers count as a
+          # change, so the receipt fails safe.
+          api_unchanged_since() {
+            local patterns files regex
+            patterns=$(gh api "repos/$REPOSITORY/contents/railway.json?ref=$EXPECTED_SHA" --jq '.content' 2>/dev/null \
+              | base64 -d 2>/dev/null | jq -r '.build.watchPatterns[]' 2>/dev/null) || return 1
+            [[ -n "$patterns" ]] || return 1
+            files=$(gh api "repos/$REPOSITORY/compare/$1...$EXPECTED_SHA" --jq '.files | if length >= 300 then error("too many files") else .[].filename end' 2>/dev/null) || return 1
+            regex=$(printf '%s\n' "$patterns" | sed -e 's#^/##' -e 's#[.]#\\.#g' -e 's#[*][*]#.*#g' -e 's#^#^#' -e 's#$#$#' | paste -sd'|' -)
+            [[ -z "$files" ]] && return 0
+            ! printf '%s\n' "$files" | grep -Eq "$regex"
+          }
           failed=0
 
           [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full 40-character commit"; exit 1; }
@@ -84,16 +105,22 @@ jobs:
             version=$(curl -fsS --max-time 20 "$API/health/version" || true)
             reported=$(jq -r '.gitSha // empty' <<<"$version" 2>/dev/null || true)
             relation="unknown"
+            api_state="stale"
             if [[ "$reported" =~ ^[0-9a-f]{40}$ ]]; then
               relation=$(gh api "repos/$REPOSITORY/compare/$EXPECTED_SHA...$reported" --jq '.status' 2>/dev/null || echo "unknown")
             fi
-            if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then break; fi
+            if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then api_state="contains"; break; fi
+            # Railway rebuilds only when a watched path changes (railway.json),
+            # so an older build can still be the current one.
+            if [[ "$relation" == "behind" ]] && api_unchanged_since "$reported"; then api_state="unchanged"; break; fi
             if (( $(date +%s) >= deadline )); then break; fi
             sleep 30
           done
           note "- /health/version: \`${version:-no answer}\`"
-          if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then
+          if [[ "$api_state" == "contains" ]]; then
             note "- the running build (\`$reported\`) contains the expected commit ($relation)"
+          elif [[ "$api_state" == "unchanged" ]]; then
+            note "- the running build (\`$reported\`) is current: nothing the API is built from changed between it and the expected commit"
           else
             note "- the running build does not contain the expected commit (reports \`${reported:-nothing}\`, $relation)"
             failed=1
@@ -128,3 +155,67 @@ jobs:
           note "- $WEB/: $(status_of "$WEB/")"
 
           exit "$failed"
+
+  browser:
+    name: Public pages in a browser
+    if: ${{ inputs.browser == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout the commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Install Chromium
+        run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
+
+      - name: Run the production route pass
+        env:
+          E2E_BASE_URL: https://venviewer.com
+          E2E_START_SERVER: "false"
+        run: pnpm --filter @omnitwin/web exec playwright test e2e/production-live-route-pass.spec.ts --project=chromium --reporter=line
+
+      - name: Photograph the public pages
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          echo "### Public pages" >> "$GITHUB_STEP_SUMMARY"
+          pnpm --filter @omnitwin/web exec node ../../.github/scripts/photograph-production.mjs "$GITHUB_WORKSPACE/production-evidence/photographs" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Gather the route pass report
+        if: ${{ !cancelled() }}
+        run: |
+          # The spec writes under a Windows-shaped path, relative on Linux; an
+          # artifact path may not contain its colon, so copy it out.
+          report="packages/web/C:/Users/blake/omnitwin2/artifacts/t469-production-live-route-pass-2026-06-21"
+          if [[ -d "$report" ]]; then
+            mkdir -p production-evidence/route-pass
+            cp -R "$report"/. production-evidence/route-pass/
+          fi
+
+      - name: Keep the evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-evidence-${{ github.run_id }}
+          path: production-evidence
+          retention-days: 14
+          if-no-files-found: warn

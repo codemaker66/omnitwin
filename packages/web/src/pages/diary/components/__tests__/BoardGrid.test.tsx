@@ -65,7 +65,7 @@ function dragOf(handlersFor: BoardDrag["handlersFor"], ghost: Ghost | null, acti
         context: { blockId: activeBlockId, title: activeBlockId, mode: "pointer", originSpaceId: ROOM_A,
           originStartMs: ghost.startMs, originEndMs: ghost.endMs, isInk: false },
       };
-  return { state, ghost, activeBlockId, confirming: false, announcement: "", handlersFor, confirmDrop: noop, cancel: noop };
+  return { state, ghost, activeBlockId, confirming: false, announcement: "", handlersFor, confirmDrop: noop, cancel: noop, liftedBlockId: null };
 }
 
 function ghostAt(spaceId: string, startsAt: string, hours: number): Ghost {

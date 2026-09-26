@@ -14,6 +14,7 @@ import {
   Text,
 } from "@react-email/components";
 import { render } from "@react-email/render";
+import { WORKSPACE_COLOURS, WORKSPACE_FONTS } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Email templates — react-email JSX
@@ -791,19 +792,37 @@ export async function hallkeeperNotified(
 }
 
 // ---------------------------------------------------------------------------
-// holdDecisionReminder — sent to the hold's owner at T-7 / T-3 / T-1
-// before the decision date (Diary hold hygiene, T-527). Claim-safe copy:
-// planning support, human decision — the email never asserts an outcome.
+// holdDecisionReminder — sent to the member of staff who owns a provisional
+// booking, 7, 3 and 1 days before its decision date (Diary hold hygiene,
+// T-527; wording and House styling T-619). Never sent to the client.
+//
+// Blake's hold words only: "Provisional", "1st option", "2nd option",
+// "Joint 1st", "Confirmed". The internal vocabulary (pencil, ink, prospect,
+// ladder position, "hold decision", "Joint hold") never reaches a person.
+// Plain and factual: no praise, no exclamation marks. It says what the owner
+// can do and what has NOT happened — nothing in the Diary changed and the
+// client was not emailed — because an email that implies an action was
+// taken on someone's behalf is worse than no email.
+//
+// Styled in the House workspace register (WORKSPACE_COLOURS, the values the
+// web declares as --house-*): an ivory sheet, ink text, an amber status chip
+// ("pending elsewhere"), a forest button with its own light ink, and a serif
+// heading with a Georgia fallback for mail clients (design system §5.3).
 // ---------------------------------------------------------------------------
 
 export interface HoldDecisionReminderData {
   readonly holdTitle: string;
   readonly spaceName: string;
-  /** The hold owner's display name; null renders without a salutation. */
+  /** The hold owner's display name; null or empty renders without a salutation. */
   readonly ownerName: string | null;
-  /** en-GB long form, e.g. "Monday, 27 July 2026". */
+  /** The date the provisional booking holds, e.g. "Saturday 14 November 2026". */
+  readonly holdDate: string;
+  /** The decision date, e.g. "Friday 2 October 2026". */
   readonly decisionDate: string;
-  readonly daysBefore: number;
+  /** Whole venue-local days from the day this is sent to the decision date:
+   *  0 is today, 1 tomorrow. Worded from the calendar, not the schedule
+   *  stage, because a daily run can deliver a T-1 reminder on the day. */
+  readonly daysUntilDecision: number;
   readonly rank: number | null;
   readonly jointFlag: boolean;
   readonly diaryUrl: string;
@@ -823,55 +842,190 @@ function ordinalRank(rank: number): string {
   return `${String(rank)}${suffix}`;
 }
 
-export function HoldDecisionReminderEmail(props: HoldDecisionReminderData): ReactElement {
-  const dayWord = props.daysBefore === 1 ? "day" : "days";
+/** The hold's standing in Blake's words: "Provisional · 1st option",
+ *  "Provisional · Joint 1st", or plain "Provisional" when no option is set. */
+export function provisionalStatus(rank: number | null, jointFlag: boolean): string {
+  if (rank === null) return "Provisional";
+  if (rank === 1 && jointFlag) return "Provisional · Joint 1st";
+  return `Provisional · ${ordinalRank(rank)} option`;
+}
+
+/** "today", "tomorrow" or "in 7 days". */
+export function decisionWhen(daysUntilDecision: number): string {
+  if (daysUntilDecision <= 0) return "today";
+  if (daysUntilDecision === 1) return "tomorrow";
+  return `in ${String(daysUntilDecision)} days`;
+}
+
+const HOUSE = WORKSPACE_COLOURS;
+
+const houseBodyStyle: CSSProperties = {
+  margin: 0,
+  padding: "24px 12px",
+  background: HOUSE["ground-plane"],
+  fontFamily: WORKSPACE_FONTS.sans,
+};
+
+const houseSheetStyle: CSSProperties = {
+  maxWidth: 560,
+  width: "100%",
+  margin: "0 auto",
+  background: HOUSE.sheet,
+  border: `1px solid ${HOUSE.rule}`,
+  borderRadius: 10,
+  overflow: "hidden",
+};
+
+const houseBandStyle: CSSProperties = {
+  background: HOUSE.overlay,
+  borderBottom: `1px solid ${HOUSE.rule}`,
+  padding: "16px 24px",
+};
+
+const houseWordmarkStyle: CSSProperties = {
+  margin: 0,
+  display: "inline",
+  fontFamily: WORKSPACE_FONTS.serif,
+  fontSize: 18,
+  letterSpacing: "0.08em",
+  color: HOUSE["ink-1"],
+};
+
+const houseCaptionStyle: CSSProperties = {
+  margin: "0 0 0 12px",
+  display: "inline",
+  fontSize: 13,
+  color: HOUSE["ink-3"],
+};
+
+const houseHeadingStyle: CSSProperties = {
+  margin: "0 0 12px",
+  fontFamily: WORKSPACE_FONTS.serif,
+  fontSize: 24,
+  fontWeight: 500,
+  lineHeight: 1.25,
+  color: HOUSE["ink-1"],
+};
+
+const houseTextStyle: CSSProperties = {
+  margin: "0 0 12px",
+  fontSize: 14,
+  lineHeight: 1.55,
+  color: HOUSE["ink-2"],
+};
+
+const houseFactLabelStyle: CSSProperties = {
+  padding: "6px 12px 6px 0",
+  width: 120,
+  verticalAlign: "top",
+  fontSize: 13,
+  color: HOUSE["ink-3"],
+};
+
+const houseFactValueStyle: CSSProperties = {
+  padding: "6px 0",
+  fontSize: 14,
+  color: HOUSE["ink-1"],
+};
+
+const houseChipStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "2px 8px",
+  borderRadius: 999,
+  background: HOUSE["amber-wash"],
+  color: HOUSE["amber-chip"],
+  fontSize: 13,
+};
+
+const houseButtonStyle: CSSProperties = {
+  padding: "12px 20px",
+  background: HOUSE.forest,
+  color: HOUSE["forest-ink-1"],
+  textDecoration: "none",
+  borderRadius: 8,
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+const houseFooterStyle: CSSProperties = {
+  padding: "14px 24px",
+  borderTop: `1px solid ${HOUSE.rule}`,
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: HOUSE["ink-3"],
+};
+
+/** One row of the facts table: a bare <tr>. react-email's <Row> renders a
+ *  whole <table>, and a table inside a <tbody> is invalid HTML that a
+ *  browser repairs by closing the surrounding tables early — which pushed
+ *  the closing text and button out of the sheet's padding and the footer out
+ *  of the sheet. */
+function HouseFact({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
   return (
-    <Layout
-      label="Diary reminder"
-      preview={`${String(props.daysBefore)} ${dayWord} to the decision date for ${props.holdTitle}`}
-    >
-      <Heading style={h2Style()}>
-        {String(props.daysBefore)} {dayWord} to a hold decision
-      </Heading>
-      {props.ownerName !== null && props.ownerName !== "" && (
-        <Text style={{ fontSize: 13, color: INK_SOFT, margin: "0 0 8px" }}>
-          Hi {props.ownerName},
-        </Text>
-      )}
-      <Section>
-        <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
-          <tbody>
-            <MetaRow label="Hold" value={props.holdTitle} />
-            <MetaRow label="Room" value={props.spaceName} />
-            <MetaRow label="Decision date" value={props.decisionDate} />
-            <MetaRow
-              label="Position"
-              value={props.rank === null ? null : `${ordinalRank(props.rank)} option`}
-            />
-            <MetaRow label="Joint hold" value={props.jointFlag ? "Yes" : null} />
-          </tbody>
-        </table>
-      </Section>
-      <Text style={{ fontSize: 13, color: INK_SOFT, marginTop: 16 }}>
-        This hold reaches its decision date in {String(props.daysBefore)} {dayWord}.
-        Confirm it, release it, or move the decision date — the choice stays with
-        you and the client; this is a planning nudge, nothing has changed on the
-        board.
-      </Text>
-      <Section style={{ marginTop: 20 }}>
-        <Button href={props.diaryUrl} style={buttonStyle}>
-          Open the Diary
-        </Button>
-      </Section>
-    </Layout>
+    <tr>
+      <td style={houseFactLabelStyle}>{label}</td>
+      <td style={houseFactValueStyle}>{children}</td>
+    </tr>
+  );
+}
+
+export function HoldDecisionReminderEmail(props: HoldDecisionReminderData): ReactElement {
+  const when = decisionWhen(props.daysUntilDecision);
+  const name = props.ownerName?.trim() ?? "";
+  return (
+    <Html lang="en-GB">
+      <Head />
+      <Preview>{`${props.holdTitle}, ${props.spaceName}: decision date ${when}.`}</Preview>
+      <Body style={houseBodyStyle}>
+        <Container style={houseSheetStyle}>
+          <Section style={houseBandStyle}>
+            <Text style={houseWordmarkStyle}>VENVIEWER</Text>
+            <Text style={houseCaptionStyle}>The Diary</Text>
+          </Section>
+          <Section style={{ padding: "24px 24px 8px" }}>
+            {/* Whole sentences as single strings, so the HTML carries each
+                one as a single text node rather than fragments separated by
+                React's comment markers. */}
+            {name === "" ? null : <Text style={houseTextStyle}>{`Hi ${name},`}</Text>}
+            <Heading style={houseHeadingStyle}>{`Decision date ${when}`}</Heading>
+            <Text style={houseTextStyle}>
+              {`A provisional booking you own reaches its decision date ${when}.`}
+            </Text>
+            <table cellPadding={0} cellSpacing={0} style={{ width: "100%", margin: "8px 0 16px" }}>
+              <tbody>
+                <HouseFact label="Booking">{props.holdTitle}</HouseFact>
+                <HouseFact label="Room">{props.spaceName}</HouseFact>
+                <HouseFact label="Date">{props.holdDate}</HouseFact>
+                <HouseFact label="Status">
+                  <span style={houseChipStyle}>{provisionalStatus(props.rank, props.jointFlag)}</span>
+                </HouseFact>
+                <HouseFact label="Decision date">{props.decisionDate}</HouseFact>
+              </tbody>
+            </table>
+            <Text style={houseTextStyle}>
+              Confirm it, release it, or agree a new decision date with the client.
+              Nothing in the Diary has changed, and the client has not been emailed.
+            </Text>
+            <Section style={{ margin: "20px 0 16px" }}>
+              <Button href={props.diaryUrl} style={houseButtonStyle}>
+                Open the Diary
+              </Button>
+            </Section>
+          </Section>
+          <Section style={houseFooterStyle}>
+            You receive this because you own this provisional booking in the Diary.
+            Reminders go 7, 3 and 1 days before a decision date.
+          </Section>
+        </Container>
+      </Body>
+    </Html>
   );
 }
 
 export async function holdDecisionReminder(
   data: HoldDecisionReminderData,
 ): Promise<{ subject: string; html: string }> {
-  const dayWord = data.daysBefore === 1 ? "day" : "days";
-  const subject = `${String(data.daysBefore)} ${dayWord} to decide — ${data.holdTitle} (${data.spaceName})`;
+  const subject = `Decision date ${decisionWhen(data.daysUntilDecision)} — ${data.holdTitle}, ${data.spaceName}`;
   const html = await render(<HoldDecisionReminderEmail {...data} />);
   return { subject, html };
 }

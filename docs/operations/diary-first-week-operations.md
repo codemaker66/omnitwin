@@ -63,7 +63,9 @@ deliberately. Rollback: redeploy the previous Vercel deployment.
 2. **Lanes never render** ("Grand Hall" timeout): GET /calendar failing —
    check API logs for 500s (every ≥500 is request-logged); commonest cause
    in rehearsal was a database connectivity blip.
-3. **`Live · N` presence missing**: the websocket channel. The board still
+3. **The chip stays on `Reconnecting…` instead of `Live`**: the websocket
+   channel. (The number after `Live ·` counts other people on the board, so
+   a coordinator alone sees just `Live`, T-619.) The board still
    works without it (snapshot doctrine — data loads via REST); this is
    degraded, not down. Check API logs for /ws/diary upgrade errors. A
    single-replica restart clears a wedged hub.
@@ -82,24 +84,51 @@ you did.
 
 ## 3. Hold-reminder cadence (T-7/3/1 delivery)
 
-The Diary's hold-hygiene reminders now deliver. Two ways to run the pass:
+The pass emails the member of staff who owns each provisional hold 7, 3 and
+1 days before its decision date. Clients are never emailed by it (Blake,
+26 September 2026). Blake's condition: **a dry run he can check before
+anything is sent.**
 
-- **Cron (the standing path):** once daily, venue-morning:
+- **The workflow (the standing path, T-619):**
+  `.github/workflows/diary-hold-reminders.yml` calls
+  `POST /admin/diary/hold-reminders` on the API with the `DIARY_CRON_TOKEN`
+  service token. Its `schedule` trigger is committed **commented out**; it
+  runs only by hand (`workflow_dispatch`) with a `dry_run` input that
+  defaults to `true`. Operator steps, in order:
+  1. Generate a token of at least 32 random characters
+     (`openssl rand -base64 48`) and set it, byte for byte, as
+     `DIARY_CRON_TOKEN` on the Railway API service and as the GitHub
+     Actions repository secret `DIARY_CRON_TOKEN`. Optionally set the
+     repository variable `VENVIEWER_API_URL` (default
+     `https://api.venviewer.com`).
+  2. Run the workflow by hand with `dry_run: true`. The job summary gives
+     counts only, because the repository is public and anyone can read a
+     run's log and summary: holds scanned, reminders due at each stage
+     (7/3/1 days before the decision), how many would send, fail or have no
+     owner, and whether the API can deliver email (`RESEND_API_KEY`). It
+     never names a hold, client, room, date or person.
+  3. Blake reviews that summary beside the Diary's Decisions due list, which
+     names every hold whose decision falls in the next seven days, with its
+     owner, behind sign-in. For the per-reminder detail, use the direct
+     operator path below (`--dry-run`), which prints on the operator's own
+     machine.
+  4. Only then enable the schedule: uncomment the `schedule:` block (GitHub
+     runs schedules only from the default branch).
+  The job fails, with a named reason, when the secret is missing, the API
+  refuses the token, any send fails, or a real pass is asked of an API with
+  no email delivery.
+- **Direct (operator):**
 
   ```
   DATABASE_URL=<production-url> RESEND_API_KEY=<key> FRONTEND_URL=https://venviewer.com \
-  pnpm --filter @omnitwin/api exec tsx src/scripts/run-hold-reminders.ts
+  pnpm --filter @omnitwin/api exec tsx src/scripts/run-hold-reminders.ts --dry-run
   ```
 
   Exit 0 = clean (including "nothing due"); exit 1 = at least one send
-  failed (wire this to cron alerting); exit 2 = setup error. Add
-  `--dry-run` to see what WOULD send. Wire it wherever the team runs
-  scheduled jobs (GitHub Actions schedule with those three secrets, or a
-  Railway cron service) — the script is the unit either way.
-
-- **Manual (signed-in admin):** `POST /admin/diary/hold-reminders` with
-  body `{"dryRun": true}` first if you want the preview. Same service,
-  same summary shape.
+  failed; exit 2 = setup error. Drop `--dry-run` for a real pass.
+- **Manual (signed-in platform admin):** `POST /admin/diary/hold-reminders`
+  with body `{"dryRun": true}` for the preview. Same service, same summary
+  shape.
 
 **Safety properties (rehearsed 2026-07-18):**
 - Idempotent at the database: keys are
@@ -111,10 +140,15 @@ The Diary's hold-hygiene reminders now deliver. Two ways to run the pass:
   reminders for the old date simply stop (the instants no longer match).
 - Reminders are skipped rather than sent late (24h freshness window), and
   nothing sends once the decision moment has passed — no misinformation.
-- Without `RESEND_API_KEY` the pass records `dev_mode` rows instead of
-  sending. **In production that means silence** — seeing `dev_mode` rows
-  in `email_sends` after go-live means the key is missing from the cron
-  environment.
+- Without `RESEND_API_KEY` the service records `dev_mode` rows instead of
+  sending, and those keys then block the real send. The API route
+  therefore refuses a real pass (503 `EMAIL_NOT_CONFIGURED`) until the key
+  is set; the direct script does not, so never run it for real without the
+  key. Seeing `dev_mode` rows in `email_sends` after go-live means the key
+  was missing.
+- A due reminder on a hold with no owner is listed as `no_owner` and sent
+  to no one. (A hold made in the Diary is owned by whoever makes it; the
+  drawer cannot yet reassign an existing hold's owner.)
 
 ### Reminder triage
 
@@ -122,7 +156,9 @@ The Diary's hold-hygiene reminders now deliver. Two ways to run the pass:
   idempotency key. Look up the row in `email_sends` (status, attempts,
   provider id) and the Resend dashboard. 4xx = bad address (fix the
   owner's email); 5xx/429 = provider trouble (the pass already retried
-  with backoff; tomorrow's run re-attempts anything that never recorded).
+  with backoff). Either way, each later run within 24 hours of the
+  reminder retries it: a replay reclaims a `failed` row and sends again,
+  while a `sent` row is never sent twice.
 - An owner reports "no reminder": check `email_sends` for their booking's
   key. No row = the hold missed the scan (was it `active`, with a decision
   date and an owner?). Row with `dev_mode` = the key problem above. Row

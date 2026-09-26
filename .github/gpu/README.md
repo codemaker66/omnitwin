@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 359 cases. Four hosted CPU shards execute
-354 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 361 cases. Four hosted CPU shards execute
+356 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -34,7 +34,10 @@ older home pages left their public addresses, so the Rite's six responsive
 cases give way to six front-door cases at `/` (the same five viewports, and
 every Ask about a date reaching the enquiry form), and the button audit's room
 showcase case is restated on the front door's enquiry composer. Each replaces
-its retired identities one for one, so the totals are unchanged.
+its retired identities one for one, so the totals are unchanged. The fifth adds two ordinary Diary timetable regressions
+(T-619): the week opening with its decisions due and tray and booking where it
+is clicked, and on a phone a finger panning the lane while a long press lifts a
+block that follows the finger.
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and

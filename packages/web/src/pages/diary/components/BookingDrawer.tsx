@@ -11,6 +11,7 @@ import {
 import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
+import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 
 /**
  * The planner link for an attached plan: the event the planner binds from,
@@ -54,6 +55,14 @@ export interface BookingDrawerProps {
 
 const KIND_OPTIONS: readonly BookingKind[] = ["hold", "ink", "internal_block", "prospect"];
 
+/** A detail is only worth a line when it carries a value: the calendar marks
+ *  these optional AND nullable, and a blank string says no more than either. */
+function detailOrNull(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
 function drawerTitle(mode: DrawerMode): string {
   if (mode.kind === "edit") return BOARD_COPY.drawer.editTitle;
   if (mode.kind === "convert") return BOARD_COPY.drawer.convertTitle;
@@ -72,20 +81,20 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
    *  retry finishes the job instead of orphaning another plan. */
   const startedEventRef = useRef<string | null>(null);
 
+  // The same gate the API applies to diary writes (DIARY_WRITE_ROLES): the
+  // hallkeeper reads the diary but never edits it, so a read-only role is
+  // never offered a control whose every path ends in a 403.
+  const canWriteDiary = hasRole(DIARY_WRITE_ROLES, role);
+
   useEffect(() => {
-    if (role === "admin" || role === "staff") titleRef.current?.focus();
+    if (canWriteDiary) titleRef.current?.focus();
     else closeRef.current?.focus();
-  }, [role]);
+  }, [canWriteDiary]);
 
   const transitions = useMemo(
     () => (mode.kind === "edit" ? allowedTransitionTargets(mode.booking.state, role) : []),
     [mode, role],
   );
-
-  // The same staff/admin gate the API applies to diary writes (hallkeeper
-  // reads the diary but never edits it) — a read-only role must not be
-  // offered a control whose every path ends in a 403.
-  const canWriteDiary = role === "staff" || role === "admin";
 
   const isHold = form.kind === "hold";
   // COUPLED to drawer-form.ts ERROR_SLOTTED_HOLD: the hygiene fieldset is
@@ -300,10 +309,27 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         <p className="diary-drawer-note">{BOARD_COPY.drawer.convertNote(mode.enquiry.name)}</p>
       ) : null}
 
-      {mode.kind === "edit" ? <section className="diary-booking-detail" aria-label="Booking details">
+      {/* "Booking summary", not "Booking details": the drawer itself answers
+          to "Booking details", and two landmarks with one name are a maze for
+          anyone navigating by label (T-619). */}
+      {mode.kind === "edit" ? <section className="diary-booking-detail" aria-label={BOARD_COPY.drawer.summaryLabel}>
         <h3>{mode.booking.title}</h3>
-        {mode.booking.clientName !== undefined && mode.booking.clientName !== null && mode.booking.clientName.length > 0 ? <p>{mode.booking.clientName}</p> : null}
-        {mode.booking.guestCount === null || mode.booking.guestCount === undefined ? null : <p>{mode.booking.guestCount} guests</p>}
+        {/* Who owns it and whose event it is, by name, with each absence
+            said out loud rather than left as a gap (T-619). */}
+        <dl className="diary-booking-facts">
+          <dt>{BOARD_COPY.drawer.ownerLabel}</dt>
+          <dd>{detailOrNull(mode.booking.ownerName) ?? BOARD_COPY.drawer.ownerUnassigned}</dd>
+          <dt>{BOARD_COPY.drawer.clientLabel}</dt>
+          <dd>{detailOrNull(mode.booking.clientName) ?? BOARD_COPY.drawer.clientNone}</dd>
+          {detailOrNull(mode.booking.eventName) === null ? null : <>
+            <dt>{BOARD_COPY.drawer.eventLabel}</dt>
+            <dd>{detailOrNull(mode.booking.eventName)}</dd>
+          </>}
+          {mode.booking.guestCount === null || mode.booking.guestCount === undefined ? null : <>
+            <dt>{BOARD_COPY.drawer.guestsLabel}</dt>
+            <dd>{String(mode.booking.guestCount)}</dd>
+          </>}
+        </dl>
       </section> : null}
       {!canWriteDiary ? <p className="diary-drawer-note">Read-only booking details. A venue coordinator can make changes.</p> : null}
 
@@ -328,12 +354,16 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           </label>
         ) : null}
 
+        {/* A room change is a cross-lane move, which the board has always
+            allowed by dragging. Withholding it here left a coordinator on a
+            phone, where dragging is hardest, unable to move a booking at all
+            (T-619). The server applies the same exclusion constraint. */}
         <label className="diary-field">
           {BOARD_COPY.drawer.fields.room}
           <select
             value={form.spaceId}
             onChange={onText("spaceId")}
-            disabled={mode.kind === "edit"}
+            aria-invalid={fieldErrors["spaceId"] !== undefined}
           >
             {rooms.map((room) => (
               <option key={room.id} value={room.id}>
@@ -341,6 +371,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
               </option>
             ))}
           </select>
+          {fieldError("spaceId")}
         </label>
 
         <label className="diary-field">
@@ -360,7 +391,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           <input type="text" value={form.eventType} onChange={onText("eventType")} />
         </label>
 
-        <div className="diary-field-row">
+        <div className="diary-field-row is-times">
           <label className="diary-field">
             {BOARD_COPY.drawer.fields.startsAt}
             <input
@@ -439,17 +470,28 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
               />
               {fieldError("nextActionDueAt")}
             </label>
-            <p className="diary-drawer-note">{BOARD_COPY.drawer.ownerNote}</p>
+            {/* True when making one; an existing booking already has its
+                owner, named in the summary above (T-619). */}
+            {mode.kind === "edit" ? null : (
+              <p className="diary-drawer-note">{BOARD_COPY.drawer.ownerNote}</p>
+            )}
             {fieldError("ownerUserId")}
           </fieldset>
         ) : null}
 
-        {mode.kind !== "edit" ? (
-          <label className="diary-field">
-            {BOARD_COPY.drawer.fields.notes}
-            <textarea value={form.notes} onChange={onText("notes")} rows={2} />
-          </label>
-        ) : null}
+        {/* Notes in every mode. On edit they were rendered nowhere and never
+            saved, so a note written at creation vanished for the rest of the
+            booking's life (T-619). */}
+        <label className="diary-field">
+          {BOARD_COPY.drawer.fields.notes}
+          <textarea
+            value={form.notes}
+            onChange={onText("notes")}
+            rows={3}
+            aria-invalid={fieldErrors["notes"] !== undefined}
+          />
+          {fieldError("notes")}
+        </label>
 
         </fieldset>
         {submitError !== null ? (
