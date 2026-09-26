@@ -59,7 +59,7 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
     return () => { cancel.current = true; };
   }, [userId, leadId, addToast]);
 
-  if (loading) return <ActivityStatus style={{ color: "#999" }}>Loading profile...</ActivityStatus>;
+  if (loading) return <ActivityStatus style={{ color: "#999" }}>Loading profile…</ActivityStatus>;
 
   if (error !== null) {
     return (
@@ -101,7 +101,7 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
           {lead?.phone !== undefined && lead.phone !== null && <div>Phone: {lead.phone}</div>}
           {user?.role !== undefined && <div>Role: {user.role}</div>}
           <div>Since: {new Date(user?.createdAt ?? lead?.createdAt ?? "").toLocaleDateString()}</div>
-          {isLead && lead?.convertedToUserId === null && <div style={{ color: "#f59e0b" }}>Not yet registered</div>}
+          {isLead && lead?.convertedToUserId === null && <div style={{ color: "#c98a5b" }}>Not yet registered</div>}
         </div>
       </div>
 

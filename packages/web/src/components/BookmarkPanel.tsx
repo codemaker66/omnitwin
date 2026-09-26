@@ -33,7 +33,7 @@ const bookmarkButtonBase: React.CSSProperties = {
 };
 
 const keyHintStyle: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 11,
   opacity: 0.5,
   marginLeft: 4,
   fontFamily: "monospace",

@@ -3,8 +3,11 @@
   --rail-width: 88px;
   --right-panel-width: 360px;
   --bottom-height: 210px;
-  --gold: #d7aa49;
-  --gold-soft: rgba(215, 170, 73, 0.18);
+  /* T-615: copper. The names stay so the consumers below do not move; this is
+     a Trades Hall internal page, not Trades House collateral, so it takes the
+     register like every other live surface. */
+  --gold: #c98a5b;
+  --gold-soft: rgba(201, 138, 91, 0.18);
   --cyan: #6bd9e8;
   --graphite: #07090b;
   --panel: rgba(13, 15, 17, 0.88);
@@ -19,7 +22,7 @@
   grid-template-rows: var(--topbar-height) minmax(0, 1fr) var(--bottom-height);
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 0%, rgba(215, 170, 73, 0.16), transparent 32%),
+    radial-gradient(circle at 50% 0%, rgba(201, 138, 91, 0.16), transparent 32%),
     linear-gradient(135deg, #040506 0%, #0b1014 48%, #050607 100%);
   color: var(--text);
   font-family: Inter, system-ui, sans-serif;
@@ -68,7 +71,7 @@
   height: 30px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(215, 170, 73, 0.62);
+  border: 1px solid rgba(201, 138, 91, 0.62);
   color: var(--gold);
   transform: rotate(45deg);
 }
@@ -105,7 +108,7 @@
   overflow: hidden;
   color: var(--text);
   font-size: 14px;
-  font-weight: 720;
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -118,12 +121,12 @@
   gap: 8px;
   min-height: 34px;
   padding: 0 18px;
-  border: 1px solid rgba(215, 170, 73, 0.58);
+  border: 1px solid rgba(201, 138, 91, 0.58);
   border-radius: 8px;
   background: rgba(96, 57, 16, 0.38);
-  color: #f3c86a;
+  color: #dca475;
   font-size: 13px;
-  font-weight: 780;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -185,15 +188,15 @@
 
 .visual-rail-button:hover,
 .visual-rail-button:focus-visible {
-  border-color: rgba(215, 170, 73, 0.34);
-  background: rgba(215, 170, 73, 0.1);
+  border-color: rgba(201, 138, 91, 0.34);
+  background: rgba(201, 138, 91, 0.1);
   outline: none;
 }
 
 .visual-rail-button.is-active {
-  border-color: rgba(215, 170, 73, 0.58);
-  background: linear-gradient(180deg, rgba(215, 170, 73, 0.21), rgba(215, 170, 73, 0.08));
-  color: #f3ca69;
+  border-color: rgba(201, 138, 91, 0.58);
+  background: linear-gradient(180deg, rgba(201, 138, 91, 0.21), rgba(201, 138, 91, 0.08));
+  color: #dca475;
   box-shadow: inset 3px 0 0 var(--gold), 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
@@ -206,7 +209,7 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 50%;
   color: #f1e2c5;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-stage {
@@ -215,7 +218,7 @@
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 44%, rgba(215, 170, 73, 0.08), transparent 44%),
+    radial-gradient(circle at 50% 44%, rgba(201, 138, 91, 0.08), transparent 44%),
     #0b0e10;
 }
 
@@ -243,7 +246,7 @@
   color: #c9c0b3;
   font: inherit;
   font-size: 13px;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .visual-layer-controls button,
@@ -256,8 +259,8 @@
 }
 
 .visual-layer-controls button.is-active {
-  background: rgba(215, 170, 73, 0.2);
-  color: #f3c86a;
+  background: rgba(201, 138, 91, 0.2);
+  color: #dca475;
 }
 
 .visual-stage-overlay {
@@ -336,7 +339,7 @@
   height: 96px;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 54% 48%, rgba(216, 47, 59, 0.82), rgba(242, 167, 47, 0.56) 28%, rgba(80, 210, 196, 0.32) 54%, transparent 72%);
+    radial-gradient(circle at 54% 48%, rgba(216, 47, 59, 0.82), rgba(201, 138, 91, 0.56) 28%, rgba(80, 210, 196, 0.32) 54%, transparent 72%);
   filter: blur(3px);
   opacity: 0.78;
 }
@@ -352,13 +355,13 @@
 }
 
 .visual-density-cell.medium {
-  background: radial-gradient(circle, rgba(242, 167, 47, 0.72), rgba(107, 217, 232, 0.2) 58%, transparent 76%);
+  background: radial-gradient(circle, rgba(201, 138, 91, 0.72), rgba(107, 217, 232, 0.2) 58%, transparent 76%);
 }
 
 .visual-density-cell.high {
   width: 56px;
   height: 56px;
-  background: radial-gradient(circle, rgba(230, 67, 74, 0.78), rgba(242, 167, 47, 0.48) 48%, transparent 76%);
+  background: radial-gradient(circle, rgba(230, 67, 74, 0.78), rgba(201, 138, 91, 0.48) 48%, transparent 76%);
 }
 
 .visual-route-conflict-marker {
@@ -413,7 +416,7 @@
 }
 
 .visual-callout-widget--gold {
-  border-color: rgba(215, 170, 73, 0.5);
+  border-color: rgba(201, 138, 91, 0.5);
 }
 
 .visual-callout-widget--danger {
@@ -449,8 +452,8 @@
   height: 12px;
   border-radius: 50%;
   border: 1px solid rgba(255, 234, 182, 0.95);
-  background: rgba(215, 170, 73, 0.36);
-  box-shadow: 0 0 16px rgba(255, 211, 116, 0.68);
+  background: rgba(201, 138, 91, 0.36);
+  box-shadow: 0 0 16px rgba(220, 164, 117, 0.68);
 }
 
 .probe-a { left: 34%; top: 26%; }
@@ -517,7 +520,7 @@
   margin: 0 0 2px;
   color: #eaf9fb;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-replay-metrics span {
@@ -526,7 +529,7 @@
 
 .visual-replay-metrics small {
   margin-top: 2px;
-  color: #e4b662;
+  color: #dca475;
   font-size: 11px;
   line-height: 1.25;
 }
@@ -546,8 +549,8 @@
   border-radius: 5px;
   background: rgba(18, 28, 31, 0.9);
   color: #dffbff;
-  font-size: 10px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -581,7 +584,7 @@
 
 .visual-replay-strip span:first-child {
   color: #8fe7f1;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-view-tool {
@@ -647,11 +650,11 @@
   min-height: 24px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid rgba(215, 170, 73, 0.46);
+  border: 1px solid rgba(201, 138, 91, 0.46);
   border-radius: 50%;
-  color: #f4c66e;
+  color: #dca475;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-truth-targets {
@@ -668,7 +671,7 @@
   background: rgba(255, 255, 255, 0.06);
   color: #d9d1c4;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   text-align: center;
 }
 
@@ -727,7 +730,7 @@
   margin: 0;
   color: #f4ead9;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -739,9 +742,9 @@
 }
 
 .visual-state-chip {
-  color: #f4c66e;
+  color: #dca475;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-state-chip.current {
@@ -756,7 +759,7 @@
 .visual-state-chip.not_checked,
 .visual-state-chip.review_due,
 .visual-state-chip.unknown {
-  color: #e8b55e;
+  color: #dca475;
 }
 
 .visual-state-chip.loaded {
@@ -793,19 +796,19 @@
 }
 
 .visual-url-input:focus {
-  border-color: rgba(215, 170, 73, 0.62);
-  box-shadow: 0 0 0 3px rgba(215, 170, 73, 0.14);
+  border-color: rgba(201, 138, 91, 0.62);
+  box-shadow: 0 0 0 3px rgba(201, 138, 91, 0.14);
 }
 
 .visual-load-button {
   min-height: 38px;
-  border: 1px solid rgba(215, 170, 73, 0.58);
+  border: 1px solid rgba(201, 138, 91, 0.58);
   border-radius: 8px;
-  background: #cba13d;
+  background: #c98a5b;
   color: #16130c;
   padding: 0 14px;
   font: inherit;
-  font-weight: 820;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -845,7 +848,7 @@
 .visual-runtime-details span {
   color: #9f927f;
   font-size: 12px;
-  font-weight: 740;
+  font-weight: 600;
   line-height: 1.25;
 }
 
@@ -912,7 +915,7 @@
   right: 18px;
   top: 12px;
   height: 2px;
-  background: linear-gradient(90deg, rgba(107, 217, 232, 0.35), rgba(215, 170, 73, 0.75), rgba(255, 255, 255, 0.16));
+  background: linear-gradient(90deg, rgba(107, 217, 232, 0.35), rgba(201, 138, 91, 0.75), rgba(255, 255, 255, 0.16));
 }
 
 .visual-phase-card {
@@ -937,8 +940,8 @@
 }
 
 .visual-phase-card.is-selected {
-  border-color: rgba(215, 170, 73, 0.72);
-  background: rgba(215, 170, 73, 0.11);
+  border-color: rgba(201, 138, 91, 0.72);
+  background: rgba(201, 138, 91, 0.11);
 }
 
 .visual-phase-node {
@@ -954,20 +957,20 @@
   background: #111416;
   color: #f2e3c7;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-phase-card.is-selected .visual-phase-node {
-  border-color: rgba(215, 170, 73, 0.85);
-  background: rgba(215, 170, 73, 0.25);
-  color: #ffd782;
+  border-color: rgba(201, 138, 91, 0.85);
+  background: rgba(201, 138, 91, 0.25);
+  color: #dca475;
 }
 
 .visual-phase-title {
   margin: 0;
   color: #f4ead9;
   font-size: 13px;
-  font-weight: 820;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -978,7 +981,7 @@
 }
 
 .visual-phase-review {
-  color: #f3b856;
+  color: #dca475;
 }
 
 .visual-phase-ok {
@@ -1036,7 +1039,7 @@
   margin: 0;
   color: #fff1d8;
   font-size: 24px;
-  font-weight: 760;
+  font-weight: 600;
   line-height: 1.08;
 }
 

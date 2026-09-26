@@ -36,7 +36,7 @@ const FLAME_FAVICON =
   "data:image/svg+xml," +
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
-      '<path d="M16 3c3 5.5 7 8.5 7 14a7 7 0 1 1-14 0c0-3 1.2-5 3-7.5.6 1.8 1.6 3 3 3.5-.6-3.4-.2-7 1-10z" fill="#d7a64b"/>' +
+      '<path d="M16 3c3 5.5 7 8.5 7 14a7 7 0 1 1-14 0c0-3 1.2-5 3-7.5.6 1.8 1.6 3 3 3.5-.6-3.4-.2-7 1-10z" fill="#c98a5b"/>' +
       "</svg>",
   );
 

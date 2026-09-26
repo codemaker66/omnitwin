@@ -23,7 +23,7 @@
   max-width: 190px;
   text-align: center;
   color: #aaa293;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -36,11 +36,11 @@
 }
 
 .cockpit-minimap__title {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #e2c15d;
+  color: #dca475;
 }
 
 .cockpit-minimap__plate {
@@ -48,23 +48,23 @@
   display: block;
   padding: 0;
   border-radius: 6px;
-  border: 1px solid rgba(201, 168, 76, 0.45);
+  border: 1px solid rgba(201, 138, 91, 0.45);
   background:
-    linear-gradient(0deg, rgba(201, 168, 76, 0.05), rgba(201, 168, 76, 0.05)),
-    repeating-linear-gradient(0deg, transparent 0 11px, rgba(201, 168, 76, 0.08) 11px 12px),
-    repeating-linear-gradient(90deg, transparent 0 11px, rgba(201, 168, 76, 0.08) 11px 12px),
+    linear-gradient(0deg, rgba(201, 138, 91, 0.05), rgba(201, 138, 91, 0.05)),
+    repeating-linear-gradient(0deg, transparent 0 11px, rgba(201, 138, 91, 0.08) 11px 12px),
+    repeating-linear-gradient(90deg, transparent 0 11px, rgba(201, 138, 91, 0.08) 11px 12px),
     #0c0b09;
   cursor: crosshair;
   overflow: hidden;
 }
 .cockpit-minimap__plate:focus-visible {
-  outline: 2px solid rgba(226, 193, 93, 0.75);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .cockpit-minimap__heritage {
   position: absolute;
-  border: 1px dashed rgba(201, 168, 76, 0.55);
+  border: 1px dashed rgba(201, 138, 91, 0.55);
   border-radius: 3px;
   pointer-events: none;
 }
@@ -97,7 +97,7 @@
 
 .cockpit-minimap__note {
   margin: 0;
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1.3;
   color: rgba(244, 239, 230, 0.62);
   letter-spacing: 0.02em;
@@ -111,11 +111,11 @@
   margin: 0;
   min-width: 132px;
   padding: 18px 12px;
-  border: 1px dashed rgba(201, 168, 76, 0.34);
+  border: 1px dashed rgba(201, 138, 91, 0.34);
   border-radius: 6px;
   color: rgba(244, 239, 230, 0.74);
   background: #0c0b09;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.35;
   text-align: center;
 }

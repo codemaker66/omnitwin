@@ -1,6 +1,6 @@
 .hk-walkthrough { color: #302c24; background: #faf8f3; min-height: 100%; padding: 18px 24px 0; }
 .hk-walkthrough-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 12px 18px; }
-.hk-walkthrough-eyebrow { color: #53654b; text-transform: uppercase; letter-spacing: .16em; font-size: 10px; margin: 0 0 5px; }
+.hk-walkthrough-eyebrow { color: #53654b; text-transform: uppercase; letter-spacing: .16em; font-size: 11px; margin: 0 0 5px; }
 .hk-walkthrough h1 { font: 400 30px/1.2 Georgia, serif; margin: 0 0 7px; }
 .hk-walkthrough-header p:last-child { color: #665f54; font-size: 12px; margin: 0; max-width: 580px; line-height: 1.5; }
 .hk-walkthrough nav { display: flex; gap: 8px; flex-wrap: wrap; }

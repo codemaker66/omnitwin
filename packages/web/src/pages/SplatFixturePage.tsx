@@ -178,11 +178,11 @@ export function SplatFixturePage(): React.ReactElement {
         top: 24,
         maxWidth: 360,
         padding: "14px 16px",
-        border: "1px solid rgba(216, 173, 74, 0.38)",
+        border: "1px solid rgba(201, 138, 91, 0.38)",
         background: "rgba(16, 18, 23, 0.72)",
         backdropFilter: "blur(14px)",
       }}>
-        <div style={{ fontSize: 13, letterSpacing: 0, color: "#d8ad4a", marginBottom: 6 }}>
+        <div style={{ fontSize: 13, letterSpacing: 0, color: "#c98a5b", marginBottom: 6 }}>
           Native Gaussian fixture
         </div>
         <div style={{ fontSize: 15, lineHeight: 1.45 }}>

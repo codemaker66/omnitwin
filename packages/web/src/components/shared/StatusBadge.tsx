@@ -1,15 +1,38 @@
 // ---------------------------------------------------------------------------
-// StatusBadge — colour-coded status pill
+// StatusBadge — status pill
+//
+// T-615 (one register): the seven states were Tailwind grey/blue/amber/green/
+// red/slate — six hue families on an ivory app. They now read as one family:
+// ivory ground, forest ink, and a copper or sage cast only where the state is
+// actually in motion or actually settled. The label is always the state's own
+// word, so hue is never the sole carrier of meaning; `rejected` keeps a
+// distinct oxblood because a refusal must not read as merely quiet.
+//
+// 11px is the app's small-text floor; the pill sits at that floor deliberately
+// and must not go below it.
 // ---------------------------------------------------------------------------
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  draft: { bg: "#f3f4f6", text: "#6b7280" },
-  submitted: { bg: "#dbeafe", text: "#2563eb" },
-  under_review: { bg: "#fef3c7", text: "#d97706" },
-  approved: { bg: "#d1fae5", text: "#059669" },
-  rejected: { bg: "#fee2e2", text: "#dc2626" },
-  withdrawn: { bg: "#e2e8f0", text: "#475569" },
-  archived: { bg: "#f1f5f9", text: "#94a3b8" },
+interface StatusTone {
+  readonly bg: string;
+  readonly text: string;
+  readonly border: string;
+}
+
+const NEUTRAL: StatusTone = {
+  bg: "var(--vv-ivory-2)", text: "var(--vv-forest-soft)", border: "var(--vv-rule)",
+};
+const COPPER: StatusTone = {
+  bg: "rgba(169, 98, 47, 0.12)", text: "var(--vv-copper-ink)", border: "rgba(169, 98, 47, 0.38)",
+};
+
+const STATUS_COLORS: Record<string, StatusTone> = {
+  draft: NEUTRAL,
+  submitted: COPPER,
+  under_review: COPPER,
+  approved: { bg: "rgba(143, 174, 139, 0.22)", text: "var(--vv-sage-ink)", border: "rgba(85, 112, 90, 0.4)" },
+  rejected: { bg: "var(--vv-oxblood-bg)", text: "var(--vv-oxblood)", border: "color-mix(in srgb, var(--vv-oxblood) 38%, transparent)" },
+  withdrawn: NEUTRAL,
+  archived: NEUTRAL,
 };
 
 interface StatusBadgeProps {
@@ -17,12 +40,13 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status }: StatusBadgeProps): React.ReactElement {
-  const colors = STATUS_COLORS[status] ?? { bg: "#f3f4f6", text: "#6b7280" };
+  const colors = STATUS_COLORS[status] ?? NEUTRAL;
   return (
     <span style={{
-      display: "inline-block", padding: "2px 8px", borderRadius: 9999,
+      display: "inline-block", padding: "2px 9px", borderRadius: 9999,
       fontSize: 11, fontWeight: 600, textTransform: "capitalize",
       background: colors.bg, color: colors.text,
+      border: `1px solid ${colors.border}`,
     }}>
       {status.replace(/_/g, " ")}
     </span>

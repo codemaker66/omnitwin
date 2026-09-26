@@ -7,7 +7,7 @@
   padding: 20px 18px 18px;
   overflow-y: auto;
   background:
-    radial-gradient(circle at 82% 0%, rgba(201, 168, 76, 0.12), transparent 34%),
+    radial-gradient(circle at 82% 0%, rgba(201, 138, 91, 0.12), transparent 34%),
     linear-gradient(180deg, rgba(10, 10, 10, 0.97), rgba(16, 14, 12, 0.99));
   color: var(--house-text-1, #f4efe6);
 }
@@ -32,9 +32,9 @@
 
 .furniture-inspection__eyebrow,
 .furniture-inspection__card-label {
-  color: var(--house-accent-brass, #d7bd68);
+  color: var(--house-accent-copper, #dca475);
   font-size: 12px;
-  font-weight: 850;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -69,7 +69,7 @@
 .furniture-inspection__card dt {
   color: var(--house-text-3, rgba(244, 239, 230, 0.48));
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -89,20 +89,20 @@
   min-height: 44px;
   border-radius: 9px;
   cursor: pointer;
-  font: 800 12px/1 "Inter", system-ui, sans-serif;
+  font: 700 12px/1 "Inter", system-ui, sans-serif;
   letter-spacing: 0.045em;
 }
 
 .furniture-inspection__primary {
   border: 1px solid rgba(255, 239, 177, 0.55);
-  background: linear-gradient(145deg, #e0c66c, var(--house-accent-brass, #aa842d));
+  background: linear-gradient(145deg, #dca475, var(--house-accent-copper, #c98a5b));
   color: var(--house-bg-0, #14110b);
 }
 
 .furniture-inspection__secondary {
-  border: 1px solid rgba(201, 168, 76, 0.35);
-  background: rgba(201, 168, 76, 0.1);
-  color: var(--house-accent-brass, #f1d888);
+  border: 1px solid rgba(201, 138, 91, 0.35);
+  background: rgba(201, 138, 91, 0.1);
+  color: var(--house-accent-copper, #dca475);
 }
 
 .furniture-inspection__quiet {
@@ -115,8 +115,8 @@
 .furniture-inspection__secondary:focus-visible,
 .furniture-inspection__quiet:focus-visible,
 .furniture-inspection__controls input:focus-visible {
-  outline: 2px solid var(--house-accent-brass, #e2c15d);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .furniture-inspection__controls {
@@ -130,18 +130,18 @@
   gap: 12px;
   color: var(--house-text-1, #f7edda);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .furniture-inspection__control-label output {
-  color: var(--house-accent-brass, #e0c66c);
+  color: var(--house-accent-copper, #dca475);
   font-variant-numeric: tabular-nums;
 }
 
 .furniture-inspection__controls input[type="range"] {
   width: 100%;
   min-height: 24px;
-  accent-color: var(--house-accent-brass, #c9a84c);
+  accent-color: var(--house-accent-copper, #c98a5b);
 }
 
 .furniture-inspection__camera-help {
@@ -163,11 +163,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 8px 12px;
-  border: 1px solid rgba(201, 168, 76, 0.42);
+  border: 1px solid rgba(201, 138, 91, 0.42);
   border-radius: 999px;
   background: rgba(10, 9, 8, 0.92);
-  color: var(--house-accent-brass, rgba(244, 226, 176, 0.92));
-  font: 800 12px/1.25 "Inter", system-ui, sans-serif;
+  color: var(--house-accent-copper, rgba(244, 226, 176, 0.92));
+  font: 700 12px/1.25 "Inter", system-ui, sans-serif;
   letter-spacing: 0.06em;
   text-align: center;
   text-transform: uppercase;

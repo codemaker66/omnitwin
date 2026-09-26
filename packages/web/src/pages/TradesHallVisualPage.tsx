@@ -271,7 +271,7 @@ function statusTone(status: LoadStatus): string {
     case "loaded":
       return "#8fd69d";
     case "loading":
-      return "#e6bc63";
+      return "#dca475";
     case "invalid":
     case "error":
       return "#ef9c91";

@@ -17,7 +17,7 @@
   --ink: #fbf2df;
   --ink-2: #e7d8bb;
   --ink-3: #b9aa8b;
-  --gold: #d7a64b;
+  --gold: #c98a5b;
   --gold-2: #f0c66b;
   --stone: #9fb4b6;
   --rule: rgba(216, 174, 91, 0.28);
@@ -87,7 +87,7 @@ html:has(.vv-rite)::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, var(--gold-2), var(--gold));
   border-radius: 2px;
 }
-html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
+html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #c98a5b #030707; }
 
 /* ————————————————————————— the carried light ————————————————————————— */
 /* One fixed layer of warm light at the (spring-lagged) cursor. Visible only
@@ -190,7 +190,7 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
 .vv-rite .rite-lockup small {
   display: block;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -627,7 +627,7 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
 .vv-rite .rite-chapter-disclosure {
   margin: 0;
   font-family: var(--ui);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.5;
   color: var(--ink-3);
   opacity: 0.95;
@@ -715,7 +715,7 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   cursor: pointer;
   color: var(--ink-3);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   opacity: 0;
@@ -947,7 +947,7 @@ html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
   bottom: 22px;
   z-index: 30;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   text-decoration: none;

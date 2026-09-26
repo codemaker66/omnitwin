@@ -9,7 +9,7 @@ type LoadState =
   | { readonly status: "error"; readonly message: string };
 
 const cardStyle: React.CSSProperties = {
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   borderRadius: 8,
   background:
     "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
@@ -19,17 +19,17 @@ const cardStyle: React.CSSProperties = {
 
 const metricValueStyle: React.CSSProperties = {
   margin: "8px 0 0",
-  color: "#f1c978",
+  color: "#dca475",
   fontSize: 28,
   lineHeight: 1,
-  fontWeight: 800,
+  fontWeight: 700,
 };
 
 const labelStyle: React.CSSProperties = {
   margin: 0,
   color: "#8ff8f2",
   fontSize: 12,
-  fontWeight: 850,
+  fontWeight: 700,
   letterSpacing: 0,
   textTransform: "uppercase",
 };
@@ -189,7 +189,7 @@ const primaryButtonStyle: React.CSSProperties = {
   minHeight: 40,
   border: "1px solid rgba(255,224,154,0.52)",
   borderRadius: 8,
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84), #d7b56d",
+  background: "linear-gradient(135deg, #c98a5b, #dca475), #c98a5b",
   color: "#0a0b0b",
   padding: "0 14px",
   fontWeight: 700,

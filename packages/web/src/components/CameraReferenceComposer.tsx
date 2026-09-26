@@ -19,7 +19,7 @@ import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { usePlacementStore } from "../stores/placement-store.js";
 import "./CameraReferenceComposer.css";
 
-const GOLD = "#c9a84c";
+const GOLD = "#c98a5b";
 const DIALOG_MARGIN_PX = 16;
 const PANEL_WIDTH_PX = 340;
 const PANEL_FALLBACK_HEIGHT_PX = 324;
@@ -97,7 +97,7 @@ const panelStyle: CSSProperties = {
   maxWidth: "calc(100vw - 32px)",
   padding: 14,
   borderRadius: 16,
-  border: "1px solid rgba(201,168,76,0.22)",
+  border: "1px solid rgba(201, 138, 91,0.22)",
   background: "linear-gradient(145deg, rgba(17,17,17,0.96), rgba(28,28,28,0.96))",
   boxShadow: "0 22px 70px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)",
   color: "#f4f0e8",
@@ -120,10 +120,10 @@ function heightButtonStyle(active: boolean): CSSProperties {
     minHeight: 48,
     borderRadius: 12,
     border: active ? `1px solid ${GOLD}` : "1px solid rgba(255,255,255,0.12)",
-    background: active ? "rgba(201,168,76,0.2)" : "rgba(255,255,255,0.04)",
+    background: active ? "rgba(201, 138, 91,0.2)" : "rgba(255,255,255,0.04)",
     color: active ? "#fff7df" : "rgba(255,255,255,0.72)",
     fontSize: 12,
-    fontWeight: 750,
+    fontWeight: 600,
     cursor: "pointer",
     transition: "background 0.16s, border-color 0.16s, color 0.16s",
     ...nonSelectableChromeStyle,
@@ -356,18 +356,18 @@ export function CameraReferenceComposer(): React.ReactElement | null {
             height: 46,
             borderRadius: 14,
             background: cameraControlsVisible
-              ? "radial-gradient(circle at 45% 35%, rgba(255,237,176,0.34), rgba(201,168,76,0.18) 55%, rgba(201,168,76,0.12))"
-              : "rgba(201,168,76,0.12)",
+              ? "radial-gradient(circle at 45% 35%, rgba(255,237,176,0.34), rgba(201, 138, 91,0.18) 55%, rgba(201, 138, 91,0.12))"
+              : "rgba(201, 138, 91,0.12)",
             border: cameraControlsVisible
-              ? "1px solid rgba(222,190,88,0.78)"
-              : "1px solid rgba(201,168,76,0.25)",
+              ? "1px solid rgba(201,138,91,0.78)"
+              : "1px solid rgba(201, 138, 91,0.25)",
             display: "grid",
             placeItems: "center",
             color: cameraControlsVisible ? "#ffe8a1" : GOLD,
             flex: "0 0 auto",
             cursor: activeDraft.source === "floor" ? "default" : "pointer",
             boxShadow: cameraControlsVisible
-              ? "0 0 0 4px rgba(201,168,76,0.12), 0 12px 26px rgba(201,168,76,0.22)"
+              ? "0 0 0 4px rgba(201, 138, 91,0.12), 0 12px 26px rgba(201, 138, 91,0.22)"
               : "none",
             ...nonSelectableChromeStyle,
           }}
@@ -400,13 +400,13 @@ export function CameraReferenceComposer(): React.ReactElement | null {
           <div style={{ minWidth: 0, flex: 1, ...nonSelectableChromeStyle }}>
             <div
               data-testid="camera-reference-eyebrow"
-              style={{ color: GOLD, fontSize: 10, fontWeight: 800, letterSpacing: 1.8, textTransform: "uppercase", ...nonSelectableChromeStyle }}
+              style={{ color: GOLD, fontSize: 11, fontWeight: 700, letterSpacing: 1.8, textTransform: "uppercase", ...nonSelectableChromeStyle }}
             >
               {labelEyebrow(activeDraft.source, furnitureCategory)}
             </div>
             <div
               data-testid="camera-reference-title"
-              style={{ fontSize: 18, lineHeight: 1.15, fontWeight: 850, marginTop: 3, ...nonSelectableChromeStyle }}
+              style={{ fontSize: 18, lineHeight: 1.15, fontWeight: 700, marginTop: 3, ...nonSelectableChromeStyle }}
             >
               {labelTitle(activeDraft.source, furnitureCategory)}
             </div>
@@ -440,7 +440,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
       </div>
 
       <label style={{ display: "block", marginTop: 14 }}>
-        <span style={{ display: "block", fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 7, ...nonSelectableChromeStyle }}>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: 7, ...nonSelectableChromeStyle }}>
           Name
         </span>
         <input
@@ -470,7 +470,7 @@ export function CameraReferenceComposer(): React.ReactElement | null {
       {cameraControlsVisible && (
         <div style={{ marginTop: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", ...nonSelectableChromeStyle }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.6, textTransform: "uppercase", color: "rgba(255,255,255,0.5)", ...nonSelectableChromeStyle }}>
               Eye height
             </span>
             <span style={{ fontSize: 12, color: "rgba(255,255,255,0.52)", ...nonSelectableChromeStyle }}>
@@ -530,17 +530,17 @@ export function CameraReferenceComposer(): React.ReactElement | null {
           minHeight: 48,
           marginTop: 14,
           borderRadius: 12,
-          border: "1px solid rgba(201,168,76,0.35)",
-          background: "linear-gradient(145deg, #d3b35f, #ad8b2b)",
+          border: "1px solid rgba(201, 138, 91,0.35)",
+          background: "linear-gradient(145deg, #c98a5b, #c98a5b)",
           color: "#111",
-          fontWeight: 850,
+          fontWeight: 700,
           fontSize: 14,
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           gap: 8,
-          boxShadow: "0 10px 26px rgba(201,168,76,0.22)",
+          boxShadow: "0 10px 26px rgba(201, 138, 91,0.22)",
           ...nonSelectableChromeStyle,
         }}
       >
@@ -584,7 +584,7 @@ export function CameraReferenceHeightSwitch(): React.ReactElement | null {
         gap: 8,
         padding: 8,
         borderRadius: 16,
-        border: "1px solid rgba(201,168,76,0.22)",
+        border: "1px solid rgba(201, 138, 91,0.22)",
         background: "linear-gradient(145deg, rgba(17,17,17,0.92), rgba(28,28,28,0.92))",
         color: "#f5f0e8",
         fontFamily: "'Inter', system-ui, sans-serif",
@@ -595,7 +595,7 @@ export function CameraReferenceHeightSwitch(): React.ReactElement | null {
       }}
     >
       <div style={{ padding: "0 6px", minWidth: 0 }}>
-        <div style={{ fontSize: 10, fontWeight: 850, letterSpacing: 1.5, color: GOLD, textTransform: "uppercase", ...nonSelectableChromeStyle }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.5, color: GOLD, textTransform: "uppercase", ...nonSelectableChromeStyle }}>
           POV height
         </div>
         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...nonSelectableChromeStyle }}>
@@ -614,10 +614,10 @@ export function CameraReferenceHeightSwitch(): React.ReactElement | null {
             minHeight: 44,
             borderRadius: 12,
             border: activeMode === mode ? `1px solid ${GOLD}` : "1px solid rgba(255,255,255,0.12)",
-            background: activeMode === mode ? "rgba(201,168,76,0.2)" : "rgba(255,255,255,0.04)",
+            background: activeMode === mode ? "rgba(201, 138, 91,0.2)" : "rgba(255,255,255,0.04)",
             color: activeMode === mode ? "#fff7df" : "rgba(255,255,255,0.72)",
             fontSize: 12,
-            fontWeight: 800,
+            fontWeight: 700,
             cursor: "pointer",
             ...nonSelectableChromeStyle,
           }}

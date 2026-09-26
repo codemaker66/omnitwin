@@ -124,14 +124,14 @@ describe("ReviewsView", () => {
     mocks.listPendingReviews.mockReturnValueOnce(request.promise);
     render(<ReviewsView />);
     const activity = screen.getByRole("status");
-    expect(activity.textContent).toContain("Loading reviews...");
+    expect(activity.textContent).toContain("Loading reviews…");
     expect(activity.querySelector("svg[data-activity-indicator]")).not.toBeNull();
     await act(async () => {
       if (outcome === "resolve") request.resolve([pendingReview()]);
       else request.reject(new Error("Review list unavailable"));
       await request.promise.catch(() => undefined);
     });
-    expect(screen.queryByText("Loading reviews...")).toBeNull();
+    expect(screen.queryByText("Loading reviews…")).toBeNull();
     expect(screen.getByRole("button", { name: "Refresh" }).querySelector("svg[data-activity-indicator]")).toBeNull();
     if (outcome === "resolve") expect(screen.getByRole("button", { name: "Open review for Reception Room review pack" })).toBeTruthy();
     else expect(screen.getByTestId("reviews-load-error").textContent).toContain("Review list unavailable");

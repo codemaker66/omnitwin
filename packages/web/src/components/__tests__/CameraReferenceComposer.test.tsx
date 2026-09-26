@@ -196,16 +196,20 @@ describe("CameraReferenceComposer dialog placement", () => {
     expect(drop.defaultPrevented).toBe(true);
   });
 
-  it("scopes a muted gold text-selection style to the POV dialog", async () => {
+  // T-615: the dialog's selection and caret followed the register off gold and
+  // onto copper (#c98a5b / rgba(201, 138, 91, …)). The assertion still guards
+  // the same property — the POV dialog scopes its own selection style rather
+  // than inheriting the browser's blue — it just reads the register's hue now.
+  it("scopes a muted copper text-selection style to the POV dialog", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
     const source = await fs.readFile(path.resolve("src/components/CameraReferenceComposer.css"), "utf-8");
 
     expect(source).toContain(".camera-reference-composer ::selection");
     expect(source).toContain(".camera-reference-composer input::selection");
-    expect(source).toContain("rgba(191, 153, 55, 0.5)");
+    expect(source).toContain("rgba(201, 138, 91, 0.5)");
     expect(source).toContain("-webkit-user-drag: none");
-    expect(source).toContain("caret-color: #d6b85d");
+    expect(source).toContain("caret-color: #c98a5b");
   });
 
   it("moves by dragging the header without selecting dialog text", () => {

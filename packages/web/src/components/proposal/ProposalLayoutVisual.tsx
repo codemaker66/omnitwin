@@ -14,14 +14,14 @@ const FALLBACK_FILL = "rgba(140, 140, 140, 0.4)";
 const FALLBACK_STROKE = "#888888";
 
 const KIND_FILL: Record<ProposalLayoutItemKind, string> = {
-  table: "rgba(201, 169, 106, 0.55)",
+  table: "rgba(201, 138, 91, 0.55)",
   chair: "rgba(178, 178, 166, 0.40)",
   stage: "rgba(120, 140, 180, 0.50)",
   other: FALLBACK_FILL,
 };
 
 const KIND_STROKE: Record<ProposalLayoutItemKind, string> = {
-  table: "#c9a96a",
+  table: "#c98a5b",
   chair: "#8b8b80",
   stage: "#7d8cb4",
   other: FALLBACK_STROKE,
@@ -62,7 +62,7 @@ export function ProposalLayoutVisual({
         height={roomH}
         rx={8}
         fill="rgba(255, 255, 255, 0.02)"
-        stroke="rgba(201, 169, 106, 0.45)"
+        stroke="rgba(201, 138, 91, 0.45)"
         strokeWidth={1.5}
       />
       {snapshot.items.map((item, index) => {

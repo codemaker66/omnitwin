@@ -59,7 +59,7 @@ export function SectionSlider({ embedded = false }: { readonly embedded?: boolea
       <span style={{ color: "#c9b993", fontVariantNumeric: "tabular-nums" }}>{displayHeight} m / {maxHeight.toFixed(1)} m</span>
       <input type="range" min={0} max={100} step={0.5} value={percent} onChange={handleChange}
         aria-label="Section plane height" aria-valuetext={`${displayHeight} metres of ${maxHeight.toFixed(1)} metres`}
-        style={{ width: "100%", margin: 0, accentColor: "#c8a464", cursor: "ew-resize" }} />
+        style={{ width: "100%", margin: 0, accentColor: "#c98a5b", cursor: "ew-resize" }} />
       <button type="button" onClick={() => { if (!isLayoutTimelineMutationLocked()) setHeight(maxHeight); }}
         style={{ padding: "6px 8px", borderRadius: 4, background: "#29251e", border: "1px solid #514633", color: "#e5d5b5", font: "inherit", cursor: "pointer" }}>
         Show full model height
@@ -116,7 +116,7 @@ export function SectionSlider({ embedded = false }: { readonly embedded?: boolea
       </span>
       <span
         style={{
-          fontSize: 10,
+          fontSize: 11,
           fontFamily: "monospace",
           color: "#999",
           marginTop: 2,
