@@ -595,7 +595,10 @@ describe("EnquiriesView pipeline", () => {
 
     const headings = await screen.findAllByRole("heading", { level: 2 });
     expect(headings.map((heading) => heading.textContent)).toEqual(["Today, 1", "Yesterday, 1", "August 2026, 1"]);
-    expect(row("Client 3").getAttribute("aria-label")).toBe("Client 3, New, event date to be confirmed, Grand Hall, received 5 hours ago");
+    // The room name arrives with the venue's rooms, after the rows.
+    await waitFor(() => {
+      expect(row("Client 3").getAttribute("aria-label")).toBe("Client 3, New, event date to be confirmed, Grand Hall, received 5 hours ago");
+    });
   });
 });
 
