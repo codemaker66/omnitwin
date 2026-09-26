@@ -9,9 +9,9 @@ import {
   type AccessibilityViewport,
 } from "./support/accessibility-audit.js";
 
-// Derived the same way as THRESHOLD_LINE in rite-copy.ts — ages with the
-// calendar instead of rotting in a fixture.
-const LANDING_THRESHOLD_LINE = `Trades Hall, Glasgow · ${String(new Date().getFullYear() - 1791)} years`;
+// T-616: the landing is the one front door at `/` (Blake, 26 September 2026).
+// It opens on the Grand Hall, named in its h1.
+const FRONT_DOOR_HEADING = "Grand Hall";
 
 const SAMPLE_MS = Number.parseInt(process.env.FRAME_BUDGET_SAMPLE_MS ?? "1200", 10);
 const TARGET_FRAME_MS = 16.7;
@@ -224,21 +224,20 @@ async function recordFrameAndVisualState(
   expect(interactionSummary.sustainedOverPassBudget, `${name} interaction sustained pass-budget misses`).toBeLessThanOrEqual(MAX_SUSTAINED_OVER_BUDGET);
 }
 
+/** The venue's own photographs, each from its display-sized WebP ladder. */
 async function expectUpdatedPublicPhotoSet(page: Page): Promise<void> {
   const imageSources = await page.evaluate(() => Array.from(document.querySelectorAll("img"))
-    .map((image) => image.getAttribute("src") ?? "")
-    .filter((src) => src.startsWith("/images/venue/")));
+    .map((image) => image.getAttribute("src") ?? ""));
 
-  expect(imageSources).toContain("/images/venue/grand-hall-room.jpg");
-  expect(imageSources).toContain("/images/venue/reception-room.jpg");
-  expect(imageSources).toContain("/images/venue/robert-adam-room.jpg");
-  expect(imageSources).toContain("/images/venue/saloon-room.jpg");
-  expect(imageSources).toContain("/images/venue/trades-hall-exterior.jpg");
+  expect(imageSources).toContain("/images/venue/ladder/grand-hall-room-1535.webp");
+  expect(imageSources).toContain("/images/venue/ladder/reception-room-1536.webp");
+  expect(imageSources).toContain("/images/venue/ladder/saloon-room-1535.webp");
+  expect(imageSources).toContain("/images/rooms/supplied/ladder/robert-adam-room-1120.webp");
 }
 
-async function expectRitePrimaryActionsInsideViewport(page: Page): Promise<void> {
+async function expectFrontDoorActionsInsideViewport(page: Page): Promise<void> {
   const escaped = await page.evaluate(() => Array.from(
-    document.querySelectorAll<HTMLElement>(".rite-threshold-line, .rite-enter, .rite-cta, .rite-return-stage"),
+    document.querySelectorAll<HTMLElement>(".rooms__primaryNav a, .rooms__heroName, .rooms__enter"),
   )
     .map((element) => {
       const rect = element.getBoundingClientRect();
@@ -251,7 +250,26 @@ async function expectRitePrimaryActionsInsideViewport(page: Page): Promise<void>
     })
     .filter((rect) => rect.width > 0 && (rect.left < -1 || rect.right > window.innerWidth + 1)));
 
-  expect(escaped, "rite primary layout elements should stay inside the mobile viewport").toEqual([]);
+  expect(escaped, "the front door's primary actions should stay inside the mobile viewport").toEqual([]);
+}
+
+async function seedAdmin(page: Page): Promise<void> {
+  // The Venviewer subscription page is admin-only until billing exists
+  // (Blake, 26 September 2026).
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
+    Object.defineProperty(window, "__OMNITWIN_SEED_USER__", {
+      value: {
+        id: "00000000-0000-4000-8000-000000004094",
+        email: "admin@public-acquisition.test",
+        role: "admin",
+        platformRole: "none",
+        venueId: "00000000-0000-4000-8000-000000004001",
+        name: "Admin Audit",
+      },
+      writable: false,
+    });
+  });
 }
 
 test.describe.configure({ mode: "default" });
@@ -275,19 +293,17 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
 
-    await page.goto("/landing");
-    await expect(page.getByRole("heading", { name: LANDING_THRESHOLD_LINE })).toBeVisible();
-    // Reduced motion renders The Rite's first-class static variant.
-    await expect(page.locator(".vv-rite")).toHaveClass(/is-static/);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1, name: FRONT_DOOR_HEADING, exact: true })).toBeVisible();
     await expectUpdatedPublicPhotoSet(page);
 
     await recordFrameAndVisualState(page, "landing-updated-photos", "desktop", async () => {
-      await page.getByRole("heading", { name: "The Grand Hall", exact: true }).scrollIntoViewIfNeeded();
-      await expect(page.getByText("Beneath the dome.")).toBeVisible();
+      await page.getByRole("heading", { name: "What each room holds", exact: true }).scrollIntoViewIfNeeded();
+      await expect(page.getByRole("row", { name: /The Grand Hall/u })).toBeVisible();
       await page.mouse.wheel(0, 540);
       await page.mouse.wheel(0, -220);
     });
-    await recordAccessibilityState(page, problems, "public landing updated photo route", "/landing", "desktop");
+    await recordAccessibilityState(page, problems, "public landing updated photo route", "/", "desktop");
   });
 
   test("landing page remains contained and smooth on mobile", async ({ page }) => {
@@ -295,15 +311,13 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
 
-    await page.goto("/landing");
-    await expect(page.getByRole("heading", { name: LANDING_THRESHOLD_LINE })).toBeVisible();
-    // Reduced motion renders The Rite's first-class static variant.
-    await expect(page.locator(".vv-rite")).toHaveClass(/is-static/);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1, name: FRONT_DOOR_HEADING, exact: true })).toBeVisible();
     await expectUpdatedPublicPhotoSet(page);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "public landing mobile should not horizontally overflow").toBeLessThanOrEqual(1);
-    await expectRitePrimaryActionsInsideViewport(page);
+    await expectFrontDoorActionsInsideViewport(page);
 
     await recordFrameAndVisualState(page, "landing-mobile-updated-photos", "mobile", async () => {
       await page.mouse.wheel(0, 620);
@@ -316,6 +330,7 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
+    await seedAdmin(page);
 
     await page.goto("/pricing");
     await expect(page.getByRole("heading", { level: 1, name: "Pricing", exact: true })).toBeVisible();
@@ -338,6 +353,7 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
+    await seedAdmin(page);
 
     await page.goto("/pricing");
     await expect(page.getByRole("heading", { level: 1, name: "Pricing", exact: true })).toBeVisible();
