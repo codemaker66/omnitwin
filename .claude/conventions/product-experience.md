@@ -2,6 +2,31 @@
 
 # Venviewer product experience
 
+## The supreme principle: make everyone's life easier (founder, 26 September 2026)
+
+Blake asked for this to be hard-baked into every design decision, verbatim:
+
+> we want people to feel good about themselves and work because the tools they are using are so beautiful and intuitive and streamline their work flow and makes them feel good to complete tasks, it must look highly polished and professional while being a joy to work and navigate and go through, so all information is easily communicated to them in a visually satisfying way -- this is the supreme key element we must achieve, perhaps game design or psychology will help us, please do deep thinking and research on how to best achieve this, it must look luxurious and well planned, custom designed for veteran venue bookers and sales executives of venues, must look and also feel like intelligent design choices were made. it is absolutely imperative that people feel proud to use our platform because it feels so polished and complete, they are energised by it, and feel good and uplifted using it simply because it is so easy to use and visually inviting and relaxing and encouraging, i say encouraging meaning only design wise, colour wise, no need for heavy handed encouraging words as that is belittling, we want pure production value that makes everyone's life easier and make people feel great using our platform, we must never daunt any user or client by making things look like hard work, this philosophy will steer all of our design choices to think as deeply as possible on how to ensure we do not tire or frustrate our users who may use the platform 8 hours a day every day, we want them to tell their colleagues and friends of our platform of how much of a joy it is to use. we want industry veterans of 50 years who are stuck with salesforce and cvent to move to our platform because we offer everything these companies offer, and we also offer everything they wish those companies offered, we are essentially a dream app for every professional connected to events and venue ecosystems, all the little problem areas that people don't bother to create a solution to -- we will solve all of that because our core philosophy is to "MAKE EVERYONE'S LIFE EASIER".
+
+It governs every surface, working state and feature choice, ahead of any other preference in this file. In practice:
+
+- **Proud, not daunted.** Every screen must feel finished, calm and luxurious to someone using it eight hours a day. Nothing may look like hard work: no walls of identical cards, no dense grey text, no generic library colours, no dead ends, no modal-on-modal.
+- **Encouragement lives in design, never in words.** Colour, light, rhythm, finish and the feeling of progress do the lifting. No praise, cheerleading, badges, points or "Great job!" copy; Blake calls heavy-handed encouraging words belittling. Plain, factual language only.
+- **Production value makes life easier.** Choose what removes a step, a click, a doubt or a wait over what decorates. Solve the small problems other platforms ignore.
+- **Built for veterans.** Venue bookers and sales executives with decades of experience should recognise their own way of working: lead with the facts that decide (date, guests, room, stage, money), in their vocabulary, venue-local and British.
+- **Intelligent design choices, visibly.** Say real consequences before acting (who is emailed, what is sent, what changes). Confirm only consequential external actions; routine internal steps are one action. Keep context: open detail beside the list rather than replacing it.
+- **Ambition.** Everything Salesforce and Cvent offer, plus what their users wish they offered, so a 50-year industry veteran would move. Every professional in the events and venue ecosystem is a user worth designing for.
+
+The Enquiries desk (T-633, [design record](../../docs/design/enquiries-desk-2026-09-24/README.md)) is the first surface Blake has judged "much cleaner", "not a slog to the eyes" and "inviting". Treat its patterns as the reference for all other surfaces:
+
+- the selected style's ivory sheet, forest decision panel, copper plane for the numbers that matter, sage ground, and editorial serif with light large numerals;
+- one clear next step, always in the same place;
+- visible progress and closure (counts that tick down, a restrained status stamp, a calm "All caught up");
+- keyboard triage for high-frequency work;
+- calm motion (press feedback only, no hover swell, reduced motion honoured);
+- WCAG AA text and a visible focus ring on every surface;
+- real, sourced venue photography as the moment of scale.
+
 ### Selected Diary direction — 7 September 2026
 
 The founder rejected the old dark Diary and selected a light ivory/forest workspace and an airy room-photo timetable as the interim direction. Preserve readable booking titles and exact times, clear status and conflict distinctions, recognizable sourced room photos, and direct access to booking details. The full-week overview and precise timeline have distinct purposes; summary-card width must not falsely imply duration. [Current scoped design QA](../../design-qa.md) records the adaptation and remaining dense-week limitations. The founder's attachment references remain private and their sample names, rooms and quantities are not operational data.

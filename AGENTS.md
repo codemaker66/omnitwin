@@ -89,9 +89,13 @@ All visible loading/working states use
 `packages/web/src/components/shared/Activity.tsx`; read
 [the activity convention](.claude/conventions/loading-and-working-motion.md).
 Preserve honest progress, accessible status, cancellation/error paths and reduced
-motion. For visible work, also read
-[the product experience brief](.claude/conventions/product-experience.md):
-beauty and Burke's sublime with clear agency remain required. Preserve current
+motion. The founder's supreme principle is **make everyone's life easier**. Every
+design and feature choice must leave veteran venue professionals proud, calm and
+unburdened after eight-hour days. Encouragement lives in design and colour, never
+in praise copy. For visible work, read
+[the product experience brief](.claude/conventions/product-experience.md), which
+records Blake's words verbatim: beauty and Burke's sublime with clear agency remain
+required. Preserve current
 device-quality and reconstruction targets; rejected or generated designs are not
 aesthetic acceptance. Blake judges the result.
 
