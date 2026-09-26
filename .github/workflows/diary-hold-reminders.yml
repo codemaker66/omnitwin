@@ -25,16 +25,21 @@
 #      slash; default https://api.venviewer.com).
 #   2. Run this workflow by hand (Actions → Diary hold reminders → Run
 #      workflow) with dry_run left at true. Nothing is sent.
-#   3. Blake reviews the run's summary: the counts, and for each due reminder
-#      the booking, room, date, decision date, stage and owner's name. It also
-#      says whether the API can deliver email at all (RESEND_API_KEY).
+#   3. Blake reviews the run's summary: how many reminders are due at each
+#      stage and how each would end, and whether the API can deliver email at
+#      all (RESEND_API_KEY). The holds themselves are in the Diary's Decisions
+#      due list, behind sign-in: see the note on privacy below.
 #   4. Only then uncomment the schedule below.
 #
 # The job fails, and says why, when the secret is missing, the API refuses the
 # token, the API cannot be reached, a real pass is asked of an API that cannot
-# deliver email, or any reminder fails to send. It never prints an email
-# address: its summary is readable by anyone with read access to this
-# repository.
+# deliver email, or any reminder fails to send.
+#
+# Privacy: this repository is public, so anyone can read a run's log and
+# summary. They carry counts only: no hold title (which often names the
+# client), room, date, person or email address. The Diary's Decisions due list
+# names every hold whose decision falls in the next seven days, with its
+# owner, so every hold a pass can remind about (7, 3 or 1 days out) is there.
 # =============================================================================
 
 name: Diary hold reminders
@@ -129,15 +134,10 @@ jobs:
             exit 1
           fi
 
-          # The receipt: counts, then one row per due reminder. Fields are
-          # picked by name, so an email address can never reach this output
-          # even if a future response carried one.
+          # The receipt is public (see the note on privacy above): counts by
+          # stage and by outcome, never a field from a single reminder.
           jq -r --arg api "${API_URL}" '
-            def cell: tostring | gsub("[\r\n]+"; " ") | gsub("\\|"; "\\|");
-            def stage: if . == 1 then "1 day before" else "\(.) days before" end;
-            def outcome:
-              {"dry_run": "Would be sent", "sent": "Sent", "failed": "Failed",
-               "no_owner": "Not sent: nobody owns this hold"}[.] // "Unknown";
+            def stage: if . == 1 then "1 day before the decision" else "\(.) days before the decision" end;
             .data as $d
             | ( if $d.dryRun then "### Diary hold reminders — dry run: nothing was sent"
                 else "### Diary hold reminders — real pass" end ),
@@ -146,19 +146,15 @@ jobs:
               "|---|---|",
               "| Provisional holds scanned | \($d.scanned) |",
               "| Reminders due | \($d.due) |",
+              ( $d.reminders | group_by(.daysBefore) | sort_by(-(.[0].daysBefore))[]
+                | "| Due \(.[0].daysBefore | stage) | \(length) |" ),
               "| Sent | \($d.sent) |",
               "| Failed | \($d.failed) |",
               "| Due, but nobody owns the hold | \($d.noOwner // 0) |",
               "| Email delivery on the API | \(if $d.emailDelivery == "configured" then "configured" elif $d.emailDelivery == "not_configured" then "not configured: RESEND_API_KEY is unset, so a real pass would be refused" else "unknown" end) |",
               "| API | \($api) |",
               "",
-              ( if ($d.reminders | length) == 0 then "No reminder is due today."
-                else
-                  "| Stage | Booking | Room | Date | Decision date | Owner | Outcome |",
-                  "|---|---|---|---|---|---|---|",
-                  ( $d.reminders[]
-                    | "| \(.daysBefore | stage) | \(.holdTitle // "(untitled)" | cell) | \(.spaceName // "" | cell) | \(.holdDate // "" | cell) | \(.decisionDate // "" | cell) | \(.ownerName // "Nobody" | cell) | \(.outcome | outcome) |" )
-                end )
+              "This repository is public, so this summary names no hold, client or person. The holds are in the Diary under Decisions due, which lists every hold whose decision falls in the next seven days, with its owner."
           ' response.json > summary.md
 
           cat summary.md

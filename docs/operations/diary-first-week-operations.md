@@ -101,12 +101,17 @@ anything is sent.**
      Actions repository secret `DIARY_CRON_TOKEN`. Optionally set the
      repository variable `VENVIEWER_API_URL` (default
      `https://api.venviewer.com`).
-  2. Run the workflow by hand with `dry_run: true`. The job summary lists
-     the counts and, for each due reminder, the booking, room, date,
-     decision date, stage (7/3/1) and owner's name — never an email
-     address — plus any due reminder on a hold nobody owns. It also says
-     whether the API can deliver email (`RESEND_API_KEY`).
-  3. Blake reviews that summary.
+  2. Run the workflow by hand with `dry_run: true`. The job summary gives
+     counts only, because the repository is public and anyone can read a
+     run's log and summary: holds scanned, reminders due at each stage
+     (7/3/1 days before the decision), how many would send, fail or have no
+     owner, and whether the API can deliver email (`RESEND_API_KEY`). It
+     never names a hold, client, room, date or person.
+  3. Blake reviews that summary beside the Diary's Decisions due list, which
+     names every hold whose decision falls in the next seven days, with its
+     owner, behind sign-in. For the per-reminder detail, use the direct
+     operator path below (`--dry-run`), which prints on the operator's own
+     machine.
   4. Only then enable the schedule: uncomment the `schedule:` block (GitHub
      runs schedules only from the default branch).
   The job fails, with a named reason, when the secret is missing, the API
