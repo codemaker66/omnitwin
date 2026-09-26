@@ -123,7 +123,13 @@ export function useFocusTrap<T extends HTMLElement>(
     document.addEventListener("keydown", handleKeyDown, true);
     return () => {
       document.removeEventListener("keydown", handleKeyDown, true);
-      if (previousActive !== null && document.contains(previousActive)) {
+      // Hand focus back to whatever opened the dialog, but only when it would
+      // otherwise be lost: still inside the closing dialog, or dropped on the
+      // page. A dialog whose action has already put focus somewhere on
+      // purpose (the Diary palette focuses the booking it found) keeps it.
+      const current = document.activeElement;
+      const lost = current === null || current === document.body || el.contains(current);
+      if (lost && previousActive !== null && document.contains(previousActive)) {
         previousActive.focus();
       }
     };

@@ -7,6 +7,8 @@ import {
   TRUTH_MODE_TOKENS,
   SHEET_TYPE,
   SHEET_SPACING,
+  WORKSPACE_COLOURS,
+  WORKSPACE_FONTS,
 } from "../design-tokens.js";
 import { TRUTH_MODE_TOKEN_CATEGORIES } from "../truth-mode.js";
 
@@ -168,5 +170,26 @@ describe("SHEET_SPACING", () => {
     expect(md).toBeLessThan(lg);
     expect(lg).toBeLessThan(xl);
     expect(xl).toBeLessThan(xxl);
+  });
+});
+
+describe("WORKSPACE_COLOURS", () => {
+  it("every workspace colour is a 6-char hex string", () => {
+    for (const [key, value] of Object.entries(WORKSPACE_COLOURS)) {
+      expect(value, key).toMatch(HEX);
+    }
+  });
+
+  it("carries a word-bearing set for every tone: text, wash and dot, plus a lit form for forest", () => {
+    for (const tone of ["copper", "amber", "sage", "brick", "slate"] as const) {
+      for (const part of ["text", "wash", "dot", "lit"] as const) {
+        expect(WORKSPACE_COLOURS, `${tone}-${part}`).toHaveProperty(`${tone}-${part}`);
+      }
+    }
+  });
+
+  it("names the house serif first in the serif stack and the house sans first in the sans stack", () => {
+    expect(WORKSPACE_FONTS.serif.startsWith("\"Newsreader\"")).toBe(true);
+    expect(WORKSPACE_FONTS.sans.startsWith("Inter")).toBe(true);
   });
 });

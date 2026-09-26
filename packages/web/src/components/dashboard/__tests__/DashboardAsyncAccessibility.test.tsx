@@ -239,7 +239,7 @@ describe("dashboard result controls", () => {
     mocks.getClientProfile.mockRejectedValue(new Error("Unavailable"));
     render(<ClientProfile userId="user-1" onBack={vi.fn()} onViewEnquiry={vi.fn()} />);
 
-    expect(screen.getByRole("status").textContent).toContain("Loading profile...");
+    expect(screen.getByRole("status").textContent).toContain("Loading profile…");
     expect(await screen.findByText("Failed to load profile")).toBeDefined();
     expect(screen.queryByRole("status")).toBeNull();
   });

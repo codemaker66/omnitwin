@@ -1,6 +1,8 @@
 /* All color/motion tokens are single-sourced in the House layer (CARD A3):
    --house-* is canonical; --vv-* live there as compatibility aliases. */
 @import "./styles/house-tokens.css";
+/* The workspace registers (T-635): data-register="ivory" | "forest". */
+@import "./styles/workspace.css";
 
 :root {
   /* T-615: the app's ground is the ivory register. `light` rather than the

@@ -511,7 +511,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   const greeting = deskGreeting(nowMs, userName);
 
   return (
-    <div ref={deskRef} className={`enq-desk${wide ? "" : " enq-desk--single"}`} data-calm-controls onKeyDown={onDeskKeyDown}>
+    <div ref={deskRef} className={`enq-desk${wide ? "" : " enq-desk--single"}`} data-register="ivory" onKeyDown={onDeskKeyDown}>
       {showSheet && (
         <section className="enq-sheet" aria-labelledby={titleId}>
           <header className="enq-head">
@@ -617,7 +617,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
           onCreateOpportunity={() => { void handleCreateOpportunity(selected); }}
         />
       ) : opening ? (
-        <section className="enq-panel enq-panel--opening" aria-label="Opening enquiry">
+        <section className="enq-panel enq-panel--opening" data-register="forest" aria-label="Opening enquiry">
           <div className="enq-panel__body">
             <ActivityStatus variant="panel">Opening enquiry…</ActivityStatus>
           </div>

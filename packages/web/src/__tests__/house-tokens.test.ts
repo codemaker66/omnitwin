@@ -218,12 +218,14 @@ const LEGACY_ALIASES: Readonly<Record<string, string>> = {
   "--vv-gold-2": "var(--house-accent-copper-deep)",
 };
 
-// One focus ring, expressed as three tokens so a component can tighten the
-// offset without inventing a colour.
+// One focus ring, expressed as tokens so a component can tighten the offset
+// without inventing a colour: 2px, offset 2px, no halo (design system §2.10).
+// A workspace register re-declares the ring in its own ink (workspace.css).
 const FOCUS_RING: Readonly<Record<string, string>> = {
   "--vv-focus": "#A9622F",
-  "--vv-focus-ring": "3px solid var(--vv-focus)",
+  "--vv-focus-ring": "2px solid var(--vv-focus)",
   "--vv-focus-ring-offset": "2px",
+  "--vv-focus-halo": "none",
 };
 
 describe("house-tokens.css — canon", () => {
@@ -473,6 +475,12 @@ const REGISTER_EXEMPT: readonly RegExp[] = [
   /MeasurementTool\.tsx/,
   /CockpitSceneOverlays\.tsx/,
   /LayoutPlanThumbnail\.tsx/,
+  // T-629 split the ornament description out of GrandHallOrnaments.tsx into
+  // data; the same gilt, avodire and oak, so the same rule.
+  /grand-hall-ornament-parts\.ts/,
+  // T-634's twenty-second profiler: an instrument launched on demand, not
+  // chrome, and its warning hue is the instrument's own.
+  /PerfOverlay\.css/,
   // Disclosed exceptions: a minified sheet on an admin-gated route, and the
   // print stylesheet, which works in its own mm scale.
   /demo-showcase\.css/,
@@ -503,6 +511,7 @@ const GOLD_HANDOFF: Readonly<Record<string, string>> = {
 /** Paths exempt from the 11px floor, each for a reason stated in the PR. */
 const TYPE_FLOOR_EXEMPT: readonly RegExp[] = [
   /__tests__/,
+  /PerfOverlay\.css/,     // T-634's profiler: a dense instrument, launched on demand
   /features[\\/]trades-house/,
   /pages[\\/]TradesHouse/,
   /demo-showcase\.css/,    // minified, admin-gated, not visually verifiable here
@@ -550,6 +559,20 @@ function hslOf([r, g, b]: Rgb): readonly [number, number, number] {
 }
 
 /**
+ * Amber is a status tone — "pending elsewhere": in review, a 1st option,
+ * awaiting the client — not decoration (design system §2.3). Its mid-tone
+ * values sit inside the gold band, so the register admits them only as these
+ * named tokens in house-tokens.css; written as a literal anywhere else they
+ * fail like any gold. workspace-tokens.test.ts pins their exact values.
+ */
+const STATUS_AMBER_TOKENS = ["--house-amber-dot", "--house-amber-mark", "--house-amber-lit", "--house-plane-dot-review"] as const;
+
+function withoutStatusAmberTokens(path: string, text: string): string {
+  if (path !== "styles/house-tokens.css") return text;
+  return text.replace(new RegExp(`(?:${STATUS_AMBER_TOKENS.join("|")})\\s*:\\s*#[0-9a-fA-F]{6}\\s*;`, "g"), "");
+}
+
+/**
  * Gold as a region of colour space, not a list of hexes. The copper scale sits
  * at hue 24–27 and the House amber at 34, so the band opens at 36.
  *
@@ -588,7 +611,7 @@ describe("the register is enforced by value, not by name", () => {
     const offenders = new Set<string>();
     for (const [path, text] of await readSrcFiles()) {
       if (REGISTER_EXEMPT.some((rule) => rule.test(path))) continue;
-      if (colourLiterals(text).some(isGoldFamily)) offenders.add(path);
+      if (colourLiterals(withoutStatusAmberTokens(path, text)).some(isGoldFamily)) offenders.add(path);
     }
     expect([...offenders].sort()).toEqual(Object.keys(GOLD_HANDOFF).sort());
   });

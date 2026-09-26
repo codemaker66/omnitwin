@@ -268,3 +268,77 @@ export const TRUTH_MODE_TOKENS: Readonly<Record<TruthModeTokenCategory, TruthMod
     label: "Known unknown",
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Workspace register — T-635 (docs/design/platform-2026-09-26/design-system.md §2)
+//
+// The colours of the Enquiries desk Blake judged on 26 September 2026: the
+// ivory register (sage ground, ivory sheet, copper plane) and the forest
+// register (decision panels, confirmations). The web app declares each one as
+// `--house-<key>` in packages/web/src/styles/house-tokens.css, and
+// packages/web/src/__tests__/workspace-tokens.test.ts keeps the two identical
+// and audits every allowed pairing for contrast. Renderers that are not CSS —
+// email, PDF — read the same values from here, so a client's documents are in
+// the same family as the tools that made them.
+//
+// Tones appear with a word, never as colour alone: `*-text` sits on the ivory
+// sheet, `*-chip` on its own `*-wash`, `*-dot` beside a label, `*-lit` on
+// forest. Amber means "pending elsewhere" (in review, a 1st option, awaiting
+// the client); it is a status tone, not decoration.
+// ---------------------------------------------------------------------------
+
+export const WORKSPACE_COLOURS = {
+  // Planes
+  "ground": "#819087",
+  "ground-plane": "#97a597",
+  "sheet": "#f2eddd",
+  "sheet-hover": "#ebe5d3",
+  "sheet-selected": "#e5dec9",
+  "paper": "#faf8f1",
+  "overlay": "#f7f3e6",
+  "plane": "#deb599",
+  "plane-hover": "#d7aa8b",
+  "forest": "#264337",
+  "forest-deep": "#1f3a2f",
+  "forest-field": "#2b4a3d",
+  "cream": "#efe7cf",
+  "cream-hover": "#f7f1de",
+  // Ink
+  "ink-1": "#14302a",
+  "ink-2": "#42584e",
+  "ink-3": "#55655c",
+  "plane-ink": "#3e3528",
+  "forest-ink-1": "#f2eee1",
+  "forest-ink-2": "#d0d9cd",
+  "forest-ink-3": "#a9bdb0",
+  // Lines
+  "rule": "#d9d4c2",
+  "rule-strong": "#bfc0ac",
+  "edge": "#747f6f",
+  "forest-rule": "#4d6c5c",
+  "forest-edge": "#86a192",
+  // Tones
+  "copper-text": "#94491f", "copper-chip": "#8a4119", "copper-wash": "#f3dcc9", "copper-dot": "#c1703f", "copper-lit": "#f0b68f",
+  "amber-text": "#6f500f", "amber-chip": "#664a0c", "amber-wash": "#efe0b8", "amber-dot": "#c3952b", "amber-mark": "#a07614", "amber-lit": "#f0cf8f",
+  "sage-text": "#2f5a3a", "sage-chip": "#2c5537", "sage-wash": "#dbe5d3", "sage-dot": "#5d8963", "sage-lit": "#9fc7ae",
+  "brick-text": "#8a3522", "brick-strong": "#6f2616", "brick-chip": "#83311f", "brick-wash": "#f1d8cf", "brick-dot": "#b4513a", "brick-lit": "#ffcdb7",
+  "slate-text": "#545e59", "slate-wash": "#e3e3db", "slate-dot": "#8e9992", "slate-lit": "#c9d1cb",
+  // On the copper plane
+  "plane-attention": "#7e2d1b",
+  "plane-dot-new": "#9a4a25",
+  "plane-dot-review": "#77581a",
+  "plane-dot-approved": "#3d6b47",
+  "plane-dot-declined": "#8a3522",
+  "plane-dot-withdrawn": "#5d6862",
+} as const;
+
+export type WorkspaceColour = keyof typeof WORKSPACE_COLOURS;
+
+export const WORKSPACE_FONTS = {
+  /** Meaning: titles, names, lede sentences, quotations, date numerals. */
+  serif: "\"Newsreader\", Georgia, \"Times New Roman\", serif",
+  /** Operation: UI text, labels, numerals, controls. */
+  sans: "Inter, ui-sans-serif, system-ui, sans-serif",
+  /** Reference codes only. */
+  mono: "\"Geist Mono\", ui-monospace, monospace",
+} as const;
