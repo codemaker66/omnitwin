@@ -19,6 +19,7 @@ import { EnquiryPanel, type TransitionTarget } from "./enquiries/EnquiryPanel.js
 import { EnquiryOverview } from "./enquiries/EnquiryOverview.js";
 import { useVenueRooms } from "./enquiries/use-venue-rooms.js";
 import { deskGreeting, deskSummary, stageLabel, type DeskFilter } from "./enquiries/enquiry-desk-format.js";
+import { pendingFocusReady, type PendingFocus } from "./enquiries/desk-focus.js";
 import "./enquiries/EnquiriesDesk.css";
 
 // ---------------------------------------------------------------------------
@@ -69,12 +70,6 @@ interface HistoryState {
   readonly entries: readonly StatusHistoryEntry[];
   readonly status: "loading" | "ready" | "error";
 }
-
-type PendingFocus =
-  | { readonly kind: "panel" }
-  | { readonly kind: "row"; readonly id: string }
-  /** The control that asked for a confirmation the reader then cancelled. */
-  | { readonly kind: "action"; readonly to: TransitionTarget };
 
 function listQuery(filter: DeskFilter): EnquiryListQuery {
   return filter === "all" ? { order: LIST_ORDER } : { status: filter, order: LIST_ORDER };
@@ -163,7 +158,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   // Where the open enquiry sat in the list, so "next" still means the row
   // after it once a status change has taken it out of the filter.
   const [openedIndex, setOpenedIndex] = useState(-1);
-  const pendingFocusRef = useRef<PendingFocus | null>(initialSelectedId === null ? null : { kind: "panel" });
+  const pendingFocusRef = useRef<PendingFocus | null>(initialSelectedId === null ? null : { kind: "panel", id: initialSelectedId });
   const addToast = useToastStore((s) => s.addToast);
   const userName = useAuthStore((s) => s.user?.name ?? null);
 
@@ -318,10 +313,11 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   }, [selectedId, historyVersion]);
 
   // Keyboard focus follows the reader: into the panel when an enquiry opens,
-  // back to its row when it closes.
+  // back to its row when it closes. A request waits for the render that shows
+  // its target (desk-focus.ts explains why).
   useEffect(() => {
     const pending = pendingFocusRef.current;
-    if (pending === null) return;
+    if (pending === null || !pendingFocusReady(pending, { shownId: selected?.id ?? null, confirming })) return;
     if (pending.kind === "panel") {
       if (panelHeadingRef.current === null) return;
       pendingFocusRef.current = null;
@@ -352,7 +348,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     setConfirming(null);
     setFailure(null);
     setAnnouncement(null);
-    pendingFocusRef.current = { kind: "panel" };
+    pendingFocusRef.current = { kind: "panel", id: enquiry.id };
   };
 
   const close = (): void => {
