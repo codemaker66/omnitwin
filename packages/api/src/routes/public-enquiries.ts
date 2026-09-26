@@ -143,11 +143,23 @@ export async function publicEnquiryRoutes(
       };
     }
 
+    // Two senders ride this route without booking this venue's rooms: the
+    // workspace gate's "Request access" (someone asking to be let into the
+    // venue's Venviewer workspace) and the pricing page's "Talk to us about
+    // your venue" (a venue asking about Venviewer for its own rooms). Each is
+    // stored and announced as what it is, and the booking acknowledgement
+    // below (rooms, dates, costs) is sent only for a real room enquiry; both
+    // screens that send the others already confirm the request in place.
+    const accessRequest = parsed.data.eventType === VENUE_ACCESS_ENQUIRY_TYPE;
+    const pricingEnquiry = parsed.data.eventType === VENVIEWER_PRICING_ENQUIRY_TYPE;
+
     // Create enquiry with guest fields, status: submitted (skip draft).
     const displayName = parsed.data.name ?? parsed.data.email;
     // Twin enquiries carry the source note first so it survives even a long
-    // message; the input message stays within its 2000-char validation.
-    const composedMessage = anchor.fromTwin
+    // message; the input message stays within its 2000-char validation. The
+    // two senders above use the venue path without coming from the twin, so
+    // their stored message must not say they did.
+    const composedMessage = anchor.fromTwin && !accessRequest && !pricingEnquiry
       ? parsed.data.message !== undefined
         ? `${TWIN_SOURCE_NOTE}\n\n${parsed.data.message}`
         : TWIN_SOURCE_NOTE
@@ -212,16 +224,6 @@ export async function publicEnquiryRoutes(
       .where(eq(venues.id, anchor.venueId))
       .limit(1);
     const venueName = venueRow?.name ?? "our venue";
-
-    // Two senders ride this route without booking this venue's rooms: the
-    // workspace gate's "Request access" (someone asking to be let into the
-    // venue's Venviewer workspace) and the pricing page's "Talk to us about
-    // your venue" (a venue asking about Venviewer for its own rooms). Each is
-    // announced as what it is, and the booking acknowledgement below (rooms,
-    // dates, costs) is sent only for a real room enquiry; both screens that
-    // send the others already confirm the request in place.
-    const accessRequest = parsed.data.eventType === VENUE_ACCESS_ENQUIRY_TYPE;
-    const pricingEnquiry = parsed.data.eventType === VENVIEWER_PRICING_ENQUIRY_TYPE;
 
     // In-app notification for the commercial team (staff, venue admin, sales).
     // Email alone was the whole announcement path: a hallkeeper who never

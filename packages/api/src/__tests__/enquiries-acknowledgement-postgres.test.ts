@@ -247,6 +247,17 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     throw new Error(`no email_sends row for ${key}`);
   }
 
+  /** The message the Enquiries desk shows for an enquiry, as stored. */
+  async function storedMessage(enquiryId: string): Promise<string | null | undefined> {
+    const rows = await pool.query<{ message: string | null }>("SELECT message FROM enquiries WHERE id = $1", [enquiryId]);
+    return rows.rows[0]?.message;
+  }
+
+  it("marks a room enquiry from the walkthrough as coming from the twin", async () => {
+    const enquiryId = await submitEnquiry();
+    expect(await storedMessage(enquiryId)).toBe("Sent from the venue's virtual walkthrough (the twin).");
+  });
+
   it("acknowledges the organiser by email", async () => {
     const enquiryId = await submitEnquiry();
     const sent = await waitForEmail(`enquiry-acknowledged:${enquiryId}`);
@@ -292,6 +303,8 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     });
     expect(res.statusCode, res.body).toBe(201);
     const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
+    // It did not come from the walkthrough, so the desk must not say it did.
+    expect(await storedMessage(enquiryId)).toBe(`Venue access request from ${requester}.`);
 
     const notifications = await pool.query<{ audience_role: string; title: string; body: string }>(
       "SELECT audience_role, title, body FROM event_plan_notifications ORDER BY audience_role");
@@ -329,6 +342,7 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     });
     expect(res.statusCode, res.body).toBe(201);
     const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
+    expect(await storedMessage(enquiryId)).toBe("We let three rooms and a courtyard.");
 
     const notifications = await pool.query<{ title: string; body: string }>(
       "SELECT title, body FROM event_plan_notifications");
