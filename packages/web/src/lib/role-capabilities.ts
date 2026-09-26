@@ -79,7 +79,8 @@ export const WORKSPACE_ROLES = ["admin", "manager", "staff", "sales", "hallkeepe
  * The CRM pipeline: `GET /crm/pipeline`, `/crm/pipeline/value`,
  * `POST /crm/from-enquiry/:id` and the `/opportunities` routes all read
  * `canManageCommercial` (`routes/crm.ts`, `routes/opportunities.ts`), so the
- * Pipeline tab is offered to exactly that set: admin, manager, staff and sales.
+ * Pipeline tab, and the Enquiries desk's "Create opportunity", are offered to
+ * exactly that set: admin, manager, staff and sales.
  */
 export const CRM_PIPELINE_ROLES = COMMERCIAL_ROLES;
 

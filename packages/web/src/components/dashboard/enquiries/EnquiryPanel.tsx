@@ -49,6 +49,9 @@ interface EnquiryPanelProps {
   readonly transition: PanelTransition;
   readonly stampKey: number | null;
   readonly announcement: string | null;
+  /** Only the commercial team may create an opportunity; for anyone else the
+   *  control is not offered at all, rather than offered and refused. */
+  readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
@@ -120,7 +123,8 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
           <h3>Next step</h3>
           <StagePath state={enquiry.state} />
           {transition.confirming === null ? (
-            <NextStep enquiry={enquiry} transition={transition} creatingOpportunity={props.creatingOpportunity}
+            <NextStep enquiry={enquiry} transition={transition} canCreateOpportunity={props.canCreateOpportunity}
+              creatingOpportunity={props.creatingOpportunity}
               onRequest={props.onRequest} onCreateOpportunity={props.onCreateOpportunity} />
           ) : (
             <ConfirmStep enquiry={enquiry} to={transition.confirming} saving={transition.saving !== null}
@@ -146,8 +150,8 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
           </section>
         )}
 
-        <EnquiryTools enquiry={enquiry} creatingOpportunity={props.creatingOpportunity}
-          onCreateOpportunity={props.onCreateOpportunity} />
+        <EnquiryTools enquiry={enquiry} canCreateOpportunity={props.canCreateOpportunity}
+          creatingOpportunity={props.creatingOpportunity} onCreateOpportunity={props.onCreateOpportunity} />
 
         <EnquiryDrafts enquiry={enquiry} />
 
@@ -239,9 +243,10 @@ function StagePath({ state }: { readonly state: string }): ReactElement | null {
   );
 }
 
-function NextStep({ enquiry, transition, creatingOpportunity, onRequest, onCreateOpportunity }: {
+function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportunity, onRequest, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
   readonly transition: PanelTransition;
+  readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
   readonly onCreateOpportunity: () => void;
@@ -289,13 +294,15 @@ function NextStep({ enquiry, transition, creatingOpportunity, onRequest, onCreat
     case "approved":
       return (
         <>
-          <div className="enq-actions">
-            <button type="button" className="enq-cta" data-testid="create-opportunity-from-enquiry"
-              onClick={onCreateOpportunity} disabled={creatingOpportunity} aria-busy={creatingOpportunity}>
-              {creatingOpportunity && <ActivityIndicator size={18} />}
-              Create opportunity
-            </button>
-          </div>
+          {canCreateOpportunity && (
+            <div className="enq-actions">
+              <button type="button" className="enq-cta" data-testid="create-opportunity-from-enquiry"
+                onClick={onCreateOpportunity} disabled={creatingOpportunity} aria-busy={creatingOpportunity}>
+                {creatingOpportunity && <ActivityIndicator size={18} />}
+                Create opportunity
+              </button>
+            </div>
+          )}
           <p className="enq-next__hint">Approved. An opportunity carries it on to a proposal.</p>
           {failure}
         </>
@@ -393,13 +400,15 @@ function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
 // Tools, drafts, timeline
 // ---------------------------------------------------------------------------
 
-function EnquiryTools({ enquiry, creatingOpportunity, onCreateOpportunity }: {
+function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
+  readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
   readonly onCreateOpportunity: () => void;
 }): ReactElement | null {
-  // An approved enquiry offers the opportunity as its next step instead.
-  const offersOpportunity = enquiry.state !== "approved";
+  // An approved enquiry offers the opportunity as its next step instead, and
+  // only the commercial team is offered it at all.
+  const offersOpportunity = canCreateOpportunity && enquiry.state !== "approved";
   if (!offersOpportunity && enquiry.configurationId === null) return null;
   return (
     <section className="enq-section">

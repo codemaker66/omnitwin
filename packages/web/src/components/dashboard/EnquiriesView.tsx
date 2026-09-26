@@ -128,9 +128,26 @@ const EMPTY_WORDS: Readonly<Record<DeskFilter, readonly [heading: string, detail
 interface EnquiriesViewProps {
   readonly initialSelectedId?: string | null;
   readonly onDetailClose?: () => void;
+  /** Whether this actor may turn an enquiry into an opportunity. The API
+   *  grants that to the venue's commercial team only, so offering the button
+   *  to anyone else was an invitation to a 403. Passed down from the dashboard
+   *  rather than re-derived here, so the client keeps ONE definition of who
+   *  may reach the commercial surface.
+   *
+   *  Defaults to FALSE. It is a permission flag, and a permission flag that
+   *  defaults to "allowed" fails open: a future mount that forgets to pass it
+   *  would silently offer the control to every role. The cost of the safe
+   *  default is a missing button on a surface that forgot to ask — a visible
+   *  bug. The cost of the unsafe one is a role seeing a control it must not,
+   *  which is invisible until someone presses it. */
+  readonly canCreateOpportunity?: boolean;
 }
 
-export function EnquiriesView({ initialSelectedId = null, onDetailClose }: EnquiriesViewProps = {}): ReactElement {
+export function EnquiriesView({
+  initialSelectedId = null,
+  onDetailClose,
+  canCreateOpportunity = false,
+}: EnquiriesViewProps = {}): ReactElement {
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
   const [list, setList] = useState<EnquiryListState>(UNLOADED_LIST);
@@ -601,6 +618,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
           transition={{ confirming, saving, failure }}
           stampKey={stamp !== null && stamp.id === selected.id ? stamp.key : null}
           announcement={announcement}
+          canCreateOpportunity={canCreateOpportunity}
           creatingOpportunity={creatingOpportunity}
           navigation={{
             layout: wide ? "wide" : "single",

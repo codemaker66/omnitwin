@@ -262,6 +262,10 @@ export function DashboardPage(): React.ReactElement {
           <EnquiriesView
             initialSelectedId={enquiryReturnContext?.enquiryId ?? null}
             onDetailClose={enquiryReturnContext !== null ? handleEnquiryDetailClose : undefined}
+            // The commercial API refuses anyone outside the venue's commercial
+            // team, and "pipeline" is the view that capability already gates,
+            // so the button and the tab agree by construction.
+            canCreateOpportunity={canOpenDashboardView("pipeline", userRole, userPlatformRole)}
           />
         );
       case "pipeline":
