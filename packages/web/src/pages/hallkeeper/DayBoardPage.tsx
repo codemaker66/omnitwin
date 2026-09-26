@@ -202,7 +202,7 @@ function SlotCard({ slot, room, timeZone, slotRequests: SlotRequests }: {
         <span className="dayboard-slot-state">{slot.stateLabel}</span>
         {slot.eventType !== null ? <span> · {slot.eventType}</span> : null}
       </p>
-      <p className="dayboard-slot-meta">{slot.kind === "hold" ? "Pencilled hold" : slot.kind === "internal_block" ? "House block" : "Confirmed booking"}{slot.guestCount !== null ? ` · ${String(slot.guestCount)} guests` : ""}</p>
+      <p className="dayboard-slot-meta">{slot.kind === "hold" ? "Provisional hold" : slot.kind === "internal_block" ? "House block" : "Confirmed booking"}{slot.guestCount !== null ? ` · ${String(slot.guestCount)} guests` : ""}</p>
       {slot.phases.length > 0 && <ol className="dayboard-phases" aria-label="Planned event phases">
         {slot.phases.map((phase, index) => <li key={phase.id} data-colour={index % 6}>
           <strong>{phase.name}</strong><span>{formatWallTime(Date.parse(phase.startsAt), timeZone)} – {formatWallTime(Date.parse(phase.endsAt), timeZone)}</span>

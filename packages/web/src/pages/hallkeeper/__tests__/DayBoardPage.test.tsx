@@ -234,6 +234,21 @@ describe("DayBoardPage", () => {
     expect(screen.getByText("Nothing scheduled.")).toBeTruthy();
   });
 
+  it("names each kind of booking in the house's own words", async () => {
+    // Screens say Provisional and Confirmed; the Diary's internal words
+    // (pencil, ink, prospect) never reach a hallkeeper's board.
+    const hold = {
+      ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b2", spaceId: SALOON,
+      kind: "hold", state: "hold", rank: 1, title: "Awards lunch",
+    } as CalendarResponse["entries"][number];
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking(), hold]));
+    renderBoard();
+    expect(await screen.findByText("Awards lunch")).toBeTruthy();
+    expect(screen.getByText(/^Provisional hold/u)).toBeTruthy();
+    expect(screen.getByText(/^Confirmed booking/u)).toBeTruthy();
+    expect(screen.queryByText(/pencil|prospect|\bink\b/iu)).toBeNull();
+  });
+
   it("teaches the colour system: the legend names every meaning in words", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();

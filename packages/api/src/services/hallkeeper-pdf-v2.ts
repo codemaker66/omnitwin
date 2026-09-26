@@ -212,15 +212,15 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
       doc.text(
         data.timing.setupBy === null
           ? "Set-up time not set"
-          : `Setup by ${fmtTime(data.timing.setupBy, data.venue.timezone)}`,
+          : `Set up by ${fmtTime(data.timing.setupBy, data.venue.timezone)}`,
         MARGIN + 12, boxY + 8,
       );
       doc.font("Helvetica").fontSize(9).fillColor(INK_DIM);
-      // A missing set-up deadline gets its REASON, not a fabricated number.
-      // The venue's turnaround rules are what would derive it.
+      // A missing set-up deadline gets its REASON, not a fabricated number:
+      // the room's changeover time (Venue settings, Changeovers) derives it.
       doc.text(
         data.timing.setupBy === null || data.timing.bufferMinutes === null
-          ? `Event starts ${fmtTime(data.timing.eventStart, data.venue.timezone)}  ·  ${data.venue.timezone}  ·  the venue's turnaround rules are not recorded`
+          ? `Event starts ${fmtTime(data.timing.eventStart, data.venue.timezone)}  ·  ${data.venue.timezone}  ·  no changeover time is recorded for this room`
           : `Event starts ${fmtTime(data.timing.eventStart, data.venue.timezone)}  ·  ${String(data.timing.bufferMinutes)} min buffer  ·  ${data.venue.timezone}`,
         MARGIN + 160, boxY + 9,
       );

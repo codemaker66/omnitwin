@@ -230,7 +230,7 @@ describe("HallkeeperWorkspace event time", () => {
     mount({ data: { ...sheet, timing: { ...diaryTiming, setupBy: null, bufferMinutes: null } } });
     expect(screen.getByText("Event starts")).toBeTruthy();
     expect(screen.getByText("09:00")).toBeTruthy();
-    expect(screen.getByText(/turnaround rules are not recorded/u)).toBeTruthy();
+    expect(screen.getByText(/no changeover time is recorded for this room/u)).toBeTruthy();
     expect(screen.queryByText(/Set up by/u)).toBeNull();
   });
 });

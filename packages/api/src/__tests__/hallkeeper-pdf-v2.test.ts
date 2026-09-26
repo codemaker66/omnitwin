@@ -578,7 +578,7 @@ describe("generateSheetPdfV2 — metrics emission", () => {
 // The PDF renders on a server whose zone is an accident of deployment. Before
 // this, `toLocaleTimeString` with no `timeZone` printed UTC on the API host
 // and Europe/London on a developer laptop — the same sheet, two different
-// "Setup by" times, and no way to tell from the paper which one you held.
+// "Set up by" times, and no way to tell from the paper which one you held.
 //
 // The instant below is deliberately chosen to differ by clock face across the
 // three zones under test, so a regression cannot pass by coincidence:
@@ -602,13 +602,13 @@ describe("PDF times are pinned to the venue's timezone", () => {
 
   it("prints the venue's wall clock for the event start and the setup deadline", async () => {
     const text = await facesFor("Europe/London");
-    expect(text).toContain("Setup by 17:00");
+    expect(text).toContain("Set up by 17:00");
     expect(text).toContain("Event starts 18:30");
   });
 
   it("prints a different venue's wall clock for the same instant", async () => {
     const text = await facesFor("America/New_York");
-    expect(text).toContain("Setup by 12:00");
+    expect(text).toContain("Set up by 12:00");
     expect(text).toContain("Event starts 13:30");
   });
 
@@ -627,7 +627,7 @@ describe("PDF times are pinned to the venue's timezone", () => {
     })).flat().map((line) => line.text).join(" | ");
     expect(text).toContain("Set-up time not set");
     expect(text).toContain("Event starts 18:30");
-    expect(text).toMatch(/turnaround rules are not recorded/u);
+    expect(text).toMatch(/no changeover time is recorded for this room/u);
     expect(text).not.toMatch(/90 min buffer/u);
   });
 
