@@ -27,6 +27,14 @@ The Enquiries desk (T-633, [design record](../../docs/design/enquiries-desk-2026
 - WCAG AA text and a visible focus ring on every surface;
 - real, sourced venue photography as the moment of scale.
 
+### Founder decisions on reach and priorities — 26 September 2026
+
+Blake answered four scoping questions:
+- **Visual identity reach.** The desk's look covers every staff tool and everything clients receive or work in: proposals, contracts, the client portal and the planner's chrome. The public homepage and marketing pages keep their own editorial voice, tuned to read as the same family. The calm, polished principles apply everywhere.
+- **Hover motion.** Remove the global springy hover pop (scale 1.06 and brightening) everywhere. Hovers become quiet colour changes, and presses a small press-down.
+- **What the platform replaces.** The Trades Hall team uses Salesforce, Cvent, venue sales-and-catering software, and email, spreadsheets and paper today. Import paths and parity must cover all four.
+- **Next surfaces.** After Enquiries, rebuild the Diary with its holds, and the hallkeeper and event-day tools, to the same standard.
+
 ### Selected Diary direction — 7 September 2026
 
 The founder rejected the old dark Diary and selected a light ivory/forest workspace and an airy room-photo timetable as the interim direction. Preserve readable booking titles and exact times, clear status and conflict distinctions, recognizable sourced room photos, and direct access to booking details. The full-week overview and precise timeline have distinct purposes; summary-card width must not falsely imply duration. [Current scoped design QA](../../design-qa.md) records the adaptation and remaining dense-week limitations. The founder's attachment references remain private and their sample names, rooms and quantities are not operational data.
