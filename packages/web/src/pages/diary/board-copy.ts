@@ -42,8 +42,46 @@ export const BOARD_COPY = {
     doorsIn: (label: string): string => `Doors in ${label}`,
     guests: (count: number): string => `${String(count)} guests`,
     segments: { setup: "Setup", live: "Live", teardown: "Teardown" } as const,
-    tightGap: (guidelineMinutes: number): string =>
-      `under the ${String(guidelineMinutes)}m guideline`,
+    /** Beside a gap shorter than its room's changeover time (T-637). */
+    tightGap: (needed: string): string => `needs ${needed}`,
+  },
+
+  /** The changeover sheet (T-637): a gap between two functions, the time the
+   *  room needs, who set it, and, for the venue's administrators, the change.
+   *  Durations arrive formatted as Venue settings shows them ("1 h 30"). */
+  changeover: {
+    title: "Changeover",
+    close: "Close",
+    gapLabel: (room: string, gap: string, before: string, after: string): string =>
+      `Changeover in ${room}: ${gap} between ${before} and ${after}`,
+    between: (before: string, endsAt: string, after: string, startsAt: string): string =>
+      `${before} ends at ${endsAt}. ${after} starts at ${startsAt}.`,
+    loading: "Reading the changeover times…",
+    loadFailed: "The changeover times could not be read.",
+    retry: "Try again",
+    ruleHeading: "The time this room needs",
+    noRule: (room: string): string =>
+      `${room} has no changeover time yet, so the Diary does not check this gap.`,
+    everyRoom: "This time is for every room without its own.",
+    enough: "Enough time",
+    short: (by: string): string => `${by} short`,
+    unchecked: "Checked once both functions are confirmed",
+    keep: (duration: string): string => `Keep ${duration}`,
+    change: "Change",
+    changeLabel: (scope: string): string => `Change the time for ${scope}`,
+    setForRoom: (room: string): string => `Set a time for ${room}`,
+    minutes: "Minutes",
+    minutesFor: (scope: string): string => `Minutes for ${scope}`,
+    minutesHint: "Enter 0 to 1,440 minutes",
+    save: "Save",
+    saving: "Saving…",
+    cancel: "Cancel",
+    saved: (scope: string, duration: string): string => `${scope} now needs ${duration}.`,
+    stale: (duration: string): string => `Someone changed this a moment ago. It now says ${duration}.`,
+    exists: (duration: string): string => `This room already has its own time: ${duration}. It is shown above.`,
+    saveFailed: "The time could not be saved. Try again.",
+    allTimes: "All changeover times",
+    readOnly: "The venue's administrators set changeover times.",
   },
 
   /** Ctrl/Cmd-K finding palette (C1). */

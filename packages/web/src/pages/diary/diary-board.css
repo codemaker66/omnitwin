@@ -212,6 +212,14 @@
 .diary-gap-line { position: absolute; height: 1px; width: 100%; background: #bdcdb2; }
 .diary-gap-label { background: #fffef9; padding: 1px 5px; position: relative; }
 .diary-gap-note { background: #fff6dc; padding: 1px 4px; position: relative; color: #93652d; }
+/* A gap's time opens the changeover sheet (T-637). The strip lies over the
+   lane's create control and still lets every click through; only the chip
+   takes the pointer, and its hit area reaches 24px and more around it. */
+.diary-gap { z-index: 2; }
+.diary-gap-chip { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; line-height: inherit; }
+button.diary-gap-chip { pointer-events: auto; }
+button.diary-gap-chip::before { content: ""; position: absolute; inset: -6px -6px; }
+button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(--house-ink-1); }
 /* The ghost passes under the sticky room rail and time axis, as blocks do, and
    its time stays readable beside the rail while its start is scrolled out of
    view: on a phone a lifted evening booking is wider than the lane (T-619).
@@ -250,6 +258,28 @@
 .diary-hygiene legend { font: 500 20px var(--diary-hand); padding: 0 7px; }
 .diary-field-error, .diary-drawer-error { font-size: 12px; line-height: 1.5; }
 .diary-drawer-note { font-size: 12px; line-height: 1.55; color: #70806a; }
+/* The changeover sheet (T-637): the gap in light serif numerals, the room's
+   time on an ivory card, the fit in sage or, when short, copper. */
+.diary-changeover-gap { display: grid; gap: 4px; }
+.diary-changeover-room, .diary-changeover-kicker { margin: 0; color: var(--house-ink-3); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.diary-changeover-figure { margin: 0; color: var(--house-ink-1); font: 300 56px/1.05 var(--house-serif); letter-spacing: -.02em; font-variant-numeric: lining-nums; }
+.diary-changeover-between { margin: 4px 0 0; color: var(--house-ink-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.diary-changeover-rule { display: grid; gap: 6px; padding: 16px 18px; border: 1px solid #d5dfca; border-radius: 10px; background: #fffef9; }
+.diary-changeover-time { margin: 2px 0 0; color: var(--house-ink-1); font: 400 34px/1.1 var(--house-serif); font-variant-numeric: lining-nums; }
+.diary-changeover-scope, .diary-changeover-confirmation, .diary-changeover-note, .diary-changeover-none { margin: 0; color: var(--house-ink-2); font-size: 13px; line-height: 1.5; }
+.diary-changeover-fit { margin: 6px 0 0; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
+.diary-changeover-fit::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.diary-changeover-rule[data-fit="enough"] .diary-changeover-fit { color: var(--house-sage-text); }
+.diary-changeover-rule[data-fit="short"] { border-color: var(--house-copper-dot); background: #fffaf3; }
+.diary-changeover-rule[data-fit="short"] .diary-changeover-fit { color: var(--house-copper-text); }
+.diary-changeover-rule[data-fit="unchecked"] .diary-changeover-fit { color: var(--house-ink-3); font-weight: 500; }
+.diary-changeover-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.diary-changeover-edit { display: grid; gap: 10px; }
+.diary-changeover-edit .diary-field { max-width: 180px; }
+.diary-changeover-preview { color: var(--house-ink-2); font-size: 13px; }
+.diary-changeover-notice { margin: 0; padding: 10px 12px; border-radius: 8px; background: #edf2e6; color: var(--house-ink-1); font-size: 13px; line-height: 1.5; }
+.diary-changeover-failed { display: grid; gap: 10px; justify-items: start; }
+.diary-changeover-link { align-self: flex-start; color: var(--diary-brass-bright); font-size: 13.5px; font-weight: 600; text-underline-offset: 3px; }
 .diary-drawer-transitions { border-top: 1px solid #dde4d2; padding-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
 .diary-welcome-overlay, .diary-palette-backdrop { position: fixed; inset: 0; z-index: 115; display: grid; place-items: center; background: #1b342b55; padding: 20px; }
 .diary-welcome, .diary-palette { width: min(660px,100%); max-height: calc(100dvh - 40px); overflow: auto; background: #fffdf4; color: #284431; border: 1px solid #d9dfca; border-radius: 15px; box-shadow: 0 20px 60px #152d3330; padding: 30px; }

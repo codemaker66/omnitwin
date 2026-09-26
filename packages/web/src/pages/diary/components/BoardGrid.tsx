@@ -23,7 +23,8 @@ import {
   type BoardRange,
   type DayColumn,
 } from "../lib/board-time.js";
-import { laneGaps, laneUtilisation, layoutLane, type LaneLayout, type PositionedBlock } from "../lib/board-layout.js";
+import { laneGaps, laneUtilisation, layoutLane, type LaneGap, type LaneLayout, type PositionedBlock } from "../lib/board-layout.js";
+import { changeoverDuration, changeoverDurationWords } from "../../../components/dashboard/changeovers/changeover-format.js";
 import type { Ghost } from "../lib/board-drag.js";
 import type { BoardDrag, DragBlockDescriptor } from "../hooks/useBoardDrag.js";
 
@@ -72,7 +73,12 @@ export interface BoardGridProps {
   /** The venue's turnaround rules (optional on the wire) — gap dimensions
    *  degrade to plain durations when an older server omits them. */
   readonly turnaroundRules?: readonly CalendarTurnaroundRule[];
+  /** Opens the changeover sheet for a gap (T-637); undefined leaves a gap's
+   *  time as a plain label. `opener` takes focus back when the sheet closes. */
+  readonly onOpenGap?: OpenGap;
 }
+
+export type OpenGap = (room: { readonly id: string; readonly name: string }, gap: LaneGap, opener: HTMLElement) => void;
 
 
 function rankChip(block: PositionedBlock): string | null {
@@ -309,6 +315,7 @@ interface BoardLaneProps {
   /** The ghost only while it is over THIS lane, so a drag move re-renders
    *  the lanes it leaves and enters and no others. */
   readonly ghost: Ghost | null;
+  readonly onOpenGap: OpenGap | undefined;
 }
 
 /** One room: its rail and its lane of columns, gaps, phases, blocks, ghost. */
@@ -329,6 +336,7 @@ const BoardLane = memo(function BoardLane({
   liftedBlockId,
   create,
   ghost,
+  onOpenGap,
 }: BoardLaneProps): ReactElement {
   const photo = diaryRoomPhoto(room.slug);
   const laneHeight = Math.max(118, lane.subRowCount * SUB_ROW_HEIGHT + LANE_PADDING * 2);
@@ -437,20 +445,40 @@ const BoardLane = memo(function BoardLane({
           const gapLeft = msToX(gapStart, range, pxPerHour);
           const gapWidth = widthPx(gapStart, gapEnd, pxPerHour);
           if (gapWidth < GAP_LABEL_MIN_PX) return null;
+          // The time, in Venue settings' words ("2 h 30"), and beside a gap
+          // shorter than the room's changeover time, what the room needs.
+          const chip = (
+            <>
+              <span className="diary-gap-label">{changeoverDuration(gap.minutes)}</span>
+              {gap.tight && gap.guidelineMinutes !== null && gapWidth >= GAP_NOTE_MIN_PX ? (
+                <span className="diary-gap-note">
+                  {BOARD_COPY.card.tightGap(changeoverDuration(gap.guidelineMinutes))}
+                </span>
+              ) : null}
+            </>
+          );
+          const needs = gap.tight && gap.guidelineMinutes !== null
+            ? `, ${BOARD_COPY.card.tightGap(changeoverDurationWords(gap.guidelineMinutes))}`
+            : "";
           return (
             <span
               key={gap.id}
               className={`diary-gap${gap.tight ? " is-tight" : ""}`}
               style={{ left: gapLeft, width: gapWidth }}
-              aria-hidden="true"
             >
-              <span className="diary-gap-line" />
-              <span className="diary-gap-label">{countdownLabel(gap.endMs - gap.startMs)}</span>
-              {gap.tight && gap.guidelineMinutes !== null && gapWidth >= GAP_NOTE_MIN_PX ? (
-                <span className="diary-gap-note">
-                  {BOARD_COPY.card.tightGap(gap.guidelineMinutes)}
-                </span>
-              ) : null}
+              <span className="diary-gap-line" aria-hidden="true" />
+              {onOpenGap === undefined ? (
+                <span className="diary-gap-chip" aria-hidden="true">{chip}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="diary-gap-chip"
+                  aria-label={`${BOARD_COPY.changeover.gapLabel(room.name, changeoverDurationWords(gap.minutes), gap.before.title, gap.after.title)}${needs}`}
+                  onClick={(event) => { onOpenGap({ id: room.id, name: room.name }, gap, event.currentTarget); }}
+                >
+                  {chip}
+                </button>
+              )}
             </span>
           );
         })}
@@ -534,7 +562,7 @@ const BoardLane = memo(function BoardLane({
 /** Memoised: the page re-renders for toasts, presence and enquiry loads that
  *  leave the board untouched; `drag` keeps one identity per drag state. */
 export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactElement {
-  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock, create } = props;
+  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock, create, onOpenGap } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
   const columns = useMemo(() => dayColumns(range), [range]);
   const ticks = useMemo(() => (range.view === "day" ? hourTicks(range) : []), [range]);
@@ -600,6 +628,7 @@ export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactEl
               liftedBlockId={liftedBlockId}
               create={create}
               ghost={ghost !== null && ghost.spaceId === room.id ? ghost : null}
+              onOpenGap={onOpenGap}
             />
           ))}
 

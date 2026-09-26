@@ -158,6 +158,13 @@ export function layoutLane(entries: readonly CalendarEntry[], spaceId: string): 
 // short of the guideline. Guidance, never a ruling.
 // ---------------------------------------------------------------------------
 
+/** A function either side of a gap, as the changeover sheet names it. */
+export interface GapNeighbour {
+  readonly id: string;
+  readonly title: string;
+  readonly eventType: string | null;
+}
+
 export interface LaneGap {
   readonly id: string;
   readonly startMs: number;
@@ -167,6 +174,17 @@ export interface LaneGap {
   readonly guidelineMinutes: number | null;
   readonly guidelineName: string | null;
   readonly tight: boolean;
+  /** Both neighbours confirmed: the only gaps the Diary checks against a
+   *  changeover time, as the server engine does. */
+  readonly checked: boolean;
+  /** The function that ends, and the one that follows; the incoming side's
+   *  event type chooses the rule. */
+  readonly before: GapNeighbour;
+  readonly after: GapNeighbour;
+}
+
+function gapNeighbour(block: PositionedBlock): GapNeighbour {
+  return { id: block.entry.id, title: block.entry.title, eventType: block.entry.eventType };
 }
 
 /** A block's occupancy extent: booking window stretched over its attached
@@ -214,11 +232,34 @@ export function laneGaps(
       guidelineMinutes: guideline?.minutes ?? null,
       guidelineName: guideline?.name ?? null,
       tight: guideline !== null && minutes < guideline.minutes,
+      checked: inkPair,
+      before: gapNeighbour(previous.block),
+      after: gapNeighbour(next.block),
     });
   }
   return result;
 }
 
+
+/** How a gap measures against the changeover time that applies to it: the
+ *  changeover sheet's one line of judgement (T-637). Only a gap between two
+ *  confirmed functions is checked, as the lane's copper note is. */
+export type GapFit =
+  | { readonly kind: "enough" }
+  | { readonly kind: "short"; readonly byMinutes: number }
+  | { readonly kind: "unchecked" }
+  | { readonly kind: "none" };
+
+export function gapFit(
+  gap: Pick<LaneGap, "minutes" | "checked">,
+  rule: { readonly minutes: number } | null,
+): GapFit {
+  if (rule === null) return { kind: "none" };
+  if (!gap.checked) return { kind: "unchecked" };
+  return gap.minutes >= rule.minutes
+    ? { kind: "enough" }
+    : { kind: "short", byMinutes: rule.minutes - gap.minutes };
+}
 
 /** Booked share of a range on one lane: the union of active, non-prospect
  *  occupancy extents clipped to the range, over the range's length. Pure
