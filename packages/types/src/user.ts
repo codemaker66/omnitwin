@@ -10,13 +10,25 @@ export const UserIdSchema = z.string().uuid();
 export type UserId = z.infer<typeof UserIdSchema>;
 
 // ---------------------------------------------------------------------------
-// User Role — the five user types in OMNITWIN
+// User Role — the Venviewer role vocabulary
 //
 // "planner" is the default role for users created via Clerk auth.
 // "client" is a legacy alias — both have identical permissions.
+//
+// "caterer" is supplier-class and event-scoped: it holds no venue-wide
+// capability. "sales" works the commercial surface without touching the venue
+// record. "manager" is senior venue authority and holds every venue
+// capability short of Venviewer platform administration.
+//
+// This list is the single definition of the vocabulary. Every gate derives
+// from it — the capability sets in packages/api/src/utils/query.ts, auth.ts
+// ALLOWED_ROLES, the diary read/write sets, EVENT_PLAN_AUDIENCE_ROLES and the
+// router's allowedRoles literals — so a new role is added here first.
 // ---------------------------------------------------------------------------
 
-export const USER_ROLES = ["client", "planner", "staff", "hallkeeper", "admin"] as const;
+export const USER_ROLES = [
+  "client", "planner", "staff", "hallkeeper", "admin", "caterer", "sales", "manager",
+] as const;
 
 export const UserRoleSchema = z.enum(USER_ROLES);
 

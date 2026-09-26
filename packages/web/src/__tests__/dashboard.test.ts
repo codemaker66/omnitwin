@@ -302,10 +302,13 @@ describe("AdminPanel wiring (#27) — source-grep", () => {
   });
 
   it("DashboardLayout shows admin nav only for platform admin role", async () => {
+    // The boolean flags (adminOnly/staffOnly/venueAdminOnly) became a named
+    // `capability` per entry, so each nav item states which API gate it
+    // mirrors. The platform-admin rule itself is unchanged.
     const { codeOnly } = await readSource("src/components/dashboard/DashboardLayout.tsx");
-    expect(codeOnly).toContain("adminOnly");
+    expect(codeOnly).toContain("platformAdmin");
     expect(codeOnly).toContain("canShowNavItem");
-    expect(codeOnly).toMatch(/item\.adminOnly\s*===\s*true[\s\S]*?platformRole\s*===\s*["']admin["']/);
+    expect(codeOnly).toMatch(/capability\s*===\s*["']platformAdmin["'][\s\S]*?platformRole\s*===\s*["']admin["']/);
   });
 
   it("DashboardPage imports and renders AdminPanel", async () => {
@@ -402,36 +405,61 @@ describe("DashboardPage", () => {
     expect(canOpenDashboardView("pipeline", "staff")).toBe(true);
     expect(canOpenDashboardView("pipeline", "planner", "admin")).toBe(true);
     expect(canOpenDashboardView("pipeline", "hallkeeper")).toBe(false);
-    expect(canOpenDashboardView("analytics", "executive")).toBe(true);
+    // Pipeline, Proposals and Analytics read routes that gate on
+    // canManageCommercial (routes/crm.ts, routes/proposals.ts and the priced
+    // analytics), so each is offered to admin, manager, staff and sales.
+    expect(canOpenDashboardView("pipeline", "sales")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "manager")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "admin")).toBe(true);
+    expect(canOpenDashboardView("proposals", "sales")).toBe(true);
+    expect(canOpenDashboardView("proposals", "manager")).toBe(true);
+    expect(canOpenDashboardView("analytics", "sales")).toBe(true);
+    expect(canOpenDashboardView("analytics", "manager")).toBe(true);
+    expect(canOpenDashboardView("analytics", "hallkeeper")).toBe(false);
+    // Client Search and the review queue take their own API gates: /clients
+    // is canManageVenue, the pending queue is the review state machine's set.
+    expect(canOpenDashboardView("search", "sales")).toBe(false);
+    expect(canOpenDashboardView("search", "hallkeeper")).toBe(true);
+    expect(canOpenDashboardView("reviews", "manager")).toBe(true);
+    expect(canOpenDashboardView("reviews", "hallkeeper")).toBe(false);
+    // A caterer is event-scoped: no venue dashboard surface at all.
+    expect(canOpenDashboardView("analytics", "caterer")).toBe(false);
+    expect(canOpenDashboardView("settings", "caterer")).toBe(false);
+    // The retired role names are now unknown roles, and an unknown role
+    // reaches no capability set at all — not even the analytics view it used
+    // to have a bespoke branch for.
+    expect(canOpenDashboardView("analytics", "executive")).toBe(false);
     expect(canOpenDashboardView("pipeline", "executive")).toBe(false);
     expect(canOpenDashboardView("admin", "executive")).toBe(false);
-    expect(canOpenDashboardView("analytics", "supplier")).toBe(false);
+    expect(canOpenDashboardView("settings", "executive")).toBe(false);
     expect(canOpenDashboardView("settings", "hallkeeper")).toBe(true);
     expect(canOpenDashboardView("settings", null)).toBe(false);
     expect(canOpenDashboardView("inventory", "admin", "none")).toBe(true);
+    expect(canOpenDashboardView("inventory", "manager", "none")).toBe(true);
     expect(canOpenDashboardView("inventory", "staff", "admin")).toBe(false);
     expect(canOpenDashboardView("inventory", "hallkeeper", "admin")).toBe(false);
     expect(canOpenDashboardView("inventory", "planner", "admin")).toBe(false);
+    expect(canOpenDashboardView("inventory", "sales", "admin")).toBe(false);
     expect(canOpenDashboardView("inventory", null, "admin")).toBe(false);
   });
 
-  it("uses a permitted default dashboard surface for restricted roles", async () => {
+  it("opens every role on a surface it is permitted to see", async () => {
     const { canOpenDashboardView, defaultDashboardViewForRole } = await import("../pages/DashboardPage.js");
-    expect(defaultDashboardViewForRole("executive")).toBe("analytics");
-    expect(canOpenDashboardView(defaultDashboardViewForRole("executive"), "executive")).toBe(true);
-    expect(defaultDashboardViewForRole("staff")).toBe("enquiries");
-    expect(defaultDashboardViewForRole("hallkeeper")).toBe("enquiries");
+    for (const role of ["admin", "manager", "staff", "sales", "hallkeeper", "planner"]) {
+      expect(defaultDashboardViewForRole(role)).toBe("enquiries");
+      expect(canOpenDashboardView(defaultDashboardViewForRole(role), role)).toBe(true);
+    }
   });
 
   it("resolves the first rendered dashboard surface from the requested view and role", async () => {
     const { initialDashboardViewForRole } = await import("../pages/DashboardPage.js");
-    expect(initialDashboardViewForRole("analytics", "executive")).toBe("analytics");
+    expect(initialDashboardViewForRole("analytics", "manager")).toBe("analytics");
     expect(initialDashboardViewForRole("reviews", "staff")).toBe("reviews");
-    expect(initialDashboardViewForRole("pipeline", "executive")).toBe("analytics");
+    expect(initialDashboardViewForRole("pipeline", "hallkeeper")).toBe("enquiries");
     expect(initialDashboardViewForRole("admin", "admin", "none")).toBe("enquiries");
     expect(initialDashboardViewForRole("admin", "admin", "admin")).toBe("admin");
     expect(initialDashboardViewForRole("admin", "hallkeeper")).toBe("enquiries");
-    expect(initialDashboardViewForRole(null, "executive")).toBe("analytics");
+    expect(initialDashboardViewForRole(null, "sales")).toBe("enquiries");
   });
 });
 

@@ -63,7 +63,9 @@ describe.skipIf(explicitUrl === undefined)("persisted event phases in Ops", () =
     await db.insert(schema.venues).values({ id: venueId, name: "DEMO ONLY venue", slug: venueId, address: "Local test" });
     await db.insert(schema.spaces).values({ id: roomId, venueId, name: "Test room", slug: "test-room", widthM: "10", lengthM: "10", heightM: "3", floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] });
     await db.insert(schema.users).values({ id: userId, venueId, email: `${userId}@demo.invalid`, name: "Test reviewer", role: "admin" });
-    await db.insert(schema.configurations).values({ id: configId, venueId, spaceId: roomId, userId, name: "DEMO ONLY plan", layoutStyle: "custom", slug: "test-plan", reviewStatus: "approved" });
+    // Approval stamps the plan and its sheet together (sheet-snapshot.ts), and
+    // an approved sheet is served only while the two agree.
+    await db.insert(schema.configurations).values({ id: configId, venueId, spaceId: roomId, userId, name: "DEMO ONLY plan", layoutStyle: "custom", slug: "test-plan", reviewStatus: "approved", approvedAt: now, approvedBy: userId });
     const [event] = await db.insert(schema.events).values({ id: eventId, venueId, createdBy: userId, name: "DEMO ONLY event", startsAt: now }).returning();
     if (event === undefined) throw new Error("Event fixture was not persisted");
     await db.insert(schema.eventPhases).values({ id: phaseId, eventId, spaceId: assigned ? roomId : null, name: "Dinner", templateKey: "dinner", sortOrder: 0, startsAt: now, durationMinutes: 60 });

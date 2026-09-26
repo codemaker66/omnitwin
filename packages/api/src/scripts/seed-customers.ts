@@ -4,7 +4,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq, and, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { UsernameSchema } from "@omnitwin/types";
+import { UserRoleSchema, UsernameSchema } from "@omnitwin/types";
 import { createDb } from "../db/client.js";
 import { validateEnv } from "../env.js";
 import { users, venues } from "../db/schema.js";
@@ -32,12 +32,12 @@ import { users, venues } from "../db/schema.js";
 // Usage: `pnpm --filter @omnitwin/api tsx src/scripts/seed-customers.ts`
 // ---------------------------------------------------------------------------
 
-const ALLOWED_ROLES = ["client", "planner", "staff", "hallkeeper", "admin"] as const;
+
 
 const CustomerSchema = z.object({
   email: z.string().email("email must be a valid address"),
   name: z.string().min(1).max(200),
-  role: z.enum(ALLOWED_ROLES),
+  role: UserRoleSchema,
   username: UsernameSchema.optional(),
   venueSlug: z.string().min(1).max(100),
   phone: z.string().min(1).max(50).optional(),

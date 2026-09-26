@@ -53,6 +53,8 @@ vi.mock("../api/event-day-ops.js", () => ({
 vi.mock("../api/notifications.js", () => ({
   getEventChangeFeed: mockGetEventChangeFeed,
   acknowledgeEventPlanChange: mockAcknowledgeEventPlanChange,
+  // The dashboard shell reads the unread count for its nav chip.
+  listNotifications: () => Promise.resolve([]),
 }));
 
 vi.mock("../lib/event-day-offline-queue.js", () => ({

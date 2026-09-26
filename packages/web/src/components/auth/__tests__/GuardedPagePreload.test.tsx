@@ -55,6 +55,12 @@ vi.mock("../ClerkRouteProvider.js", () => ({
     };
   },
 }));
+// The provider is stubbed above, so the denial screen's "Use another account"
+// needs Clerk's hook stubbed with it; everything else stays the real package.
+vi.mock("@clerk/react", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@clerk/react")>(),
+  useClerk: () => ({ signOut: vi.fn() }),
+}));
 vi.mock("../../../lib/clerk-session-hint.js", () => ({ hasLikelyClerkSession: () => probe.sessionHint }));
 vi.mock("../../../pages/LoginPage.js", () => ({ LoginPage: () => <div>Sign in page</div> }));
 vi.mock("../../../pages/hallkeeper/DayBoardPage.js", () => pageModule("DayBoardPage"));
@@ -93,7 +99,7 @@ const DENIED: readonly DeniedRoute[] = [
   { path: "/hallkeeper/walkthrough", page: "HallkeeperWalkthroughPage", allowed: { role: "staff", platformRole: "none" }, denied: client, heading: "Access needed" },
   { path: "/hallkeeper/config-1", page: "HallkeeperPage", allowed: { role: "hallkeeper", platformRole: "none" }, denied: client, heading: "Access needed" },
   { path: "/diary", page: "DiaryBoardPage", allowed: { role: "staff", platformRole: "none" }, denied: planner, heading: "Access needed" },
-  { path: "/dashboard", page: "DashboardPage", allowed: { role: "executive", platformRole: "none" }, denied: client, heading: "Access needed" },
+  { path: "/dashboard", page: "DashboardPage", allowed: { role: "manager", platformRole: "none" }, denied: client, heading: "Access needed" },
   { path: "/ops/handoff/pack-1", page: "OpsHandoffPage", allowed: { role: "admin", platformRole: "none" }, denied: client, heading: "Access needed" },
   { path: "/ops/events/event-1", page: "EventDayOpsPage", allowed: { role: "hallkeeper", platformRole: "none" }, denied: planner, heading: "Access needed" },
   { path: "/event-architect", page: "EventArchitectPage", allowed: { role: "staff", platformRole: "none" }, denied: client, heading: "Access needed" },
@@ -191,6 +197,9 @@ describe.each(DENIED)("denied route $path", (route) => {
     expect((await screen.findByRole("alert")).textContent).toContain(route.heading);
     await vi.waitFor(() => { expect(probe.loaded).toContain(route.page); });
     expect(screen.getByRole("alert").textContent).toContain(route.heading);
+    // A refusal is never a dead end: both ways out stand on every guard.
+    expect(screen.getByRole("button", { name: "Use another account" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to Venviewer" }).getAttribute("href")).toBe("/");
     expect(probe.rendered).toEqual([]);
     expect(probe.fetched).toEqual([]);
   });

@@ -12,7 +12,7 @@ import {
   EventMissionReplaySchema,
   EventMissionTimelineQuerySchema,
   EventMissionTimelineSchema,
-  EventPlanAudienceRoleSchema,
+  toEventPlanAudienceRole,
   StartEventMissionInputSchema,
   TransitionEventMissionInputSchema,
   TransitionEventMissionPhaseInputSchema,
@@ -66,7 +66,7 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
 function actorForRequest(request: FastifyRequest): EventMissionActor {
   return {
     userId: request.user.id,
-    role: EventPlanAudienceRoleSchema.parse(request.user.role),
+    role: toEventPlanAudienceRole(request.user.role),
     label: request.user.email,
   };
 }

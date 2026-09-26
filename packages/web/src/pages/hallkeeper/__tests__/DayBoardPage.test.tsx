@@ -38,6 +38,9 @@ vi.mock("../../../api/spaces.js", () => ({
 vi.mock("../../../components/dashboard/NotificationCenter.js", () => ({
   NotificationCenter: () => null,
 }));
+// The shell reads the unread count for the nav chip; this suite does not
+// exercise notifications, so the edge is stubbed like the rest of them.
+vi.mock("../../../api/notifications.js", () => ({ listNotifications: () => Promise.resolve([]) }));
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
 const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";

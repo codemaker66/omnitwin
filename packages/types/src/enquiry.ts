@@ -164,3 +164,19 @@ export const TRADES_HALL_ENQUIRY_VENUE_SLUG = "trades-hall-glasgow";
 
 /** The asset/twin-bundle namespace. NOT valid as an enquiry anchor. */
 export const TRADES_HALL_ASSET_SLUG = "trades-hall";
+
+/**
+ * The `eventType` a signed-in but uninvited person's "Request access" sends.
+ * It rides the public enquiry route so the ask reaches the venue's inbox, but
+ * it is a request to be let into the venue's workspace, never a room booking:
+ * the API announces it as one and sends no booking acknowledgement.
+ */
+export const VENUE_ACCESS_ENQUIRY_TYPE = "venue-access";
+
+/**
+ * The `eventType` the pricing page's "Talk to us about your venue" sends: a
+ * venue asking about Venviewer for its own rooms. Like an access request it
+ * rides the public enquiry route, and like one it is not a booking of this
+ * venue's rooms, so no booking acknowledgement is sent.
+ */
+export const VENVIEWER_PRICING_ENQUIRY_TYPE = "venue-enquiry";

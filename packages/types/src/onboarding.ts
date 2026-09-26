@@ -6,7 +6,7 @@ import {
   VenueIdSchema,
   VenueSlugSchema,
 } from "./venue.js";
-import { EmailSchema, UserIdSchema } from "./user.js";
+import { EmailSchema, USER_ROLES, UserIdSchema } from "./user.js";
 
 // ---------------------------------------------------------------------------
 // Organisation / workspace onboarding foundation
@@ -22,9 +22,13 @@ export const ONBOARDING_SCHEMA_VERSION = "venviewer.onboarding.v1";
 
 export const ORGANISATION_STATUSES = ["prospect", "onboarding", "active", "suspended", "archived"] as const;
 export const WORKSPACE_STATUSES = ["onboarding", "active", "suspended", "archived"] as const;
-export const WORKSPACE_MEMBER_ROLES = ["owner", "admin", "staff", "hallkeeper", "planner", "client"] as const;
-export const STAFF_WORKSPACE_MEMBER_ROLES = ["admin", "staff", "hallkeeper", "planner", "client"] as const;
-export const VENUE_INVITATION_ROLES = ["admin", "staff", "hallkeeper", "planner", "client"] as const;
+// A workspace membership names a venue role plus the workspace-only "owner".
+// Every venue role in USER_ROLES can be invited, so these lists derive from
+// the vocabulary rather than restating it — a new role was previously
+// invitable nowhere until someone remembered these three lines.
+export const WORKSPACE_MEMBER_ROLES = ["owner", ...USER_ROLES] as const;
+export const STAFF_WORKSPACE_MEMBER_ROLES = USER_ROLES;
+export const VENUE_INVITATION_ROLES = USER_ROLES;
 export const WORKSPACE_MEMBERSHIP_STATUSES = ["invited", "active", "suspended", "removed"] as const;
 export const ONBOARDING_PROJECT_STATUSES = [
   "intake",

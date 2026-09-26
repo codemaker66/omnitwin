@@ -11,6 +11,9 @@ const { mountTool, getProjection } = vi.hoisted(() => ({ mountTool: vi.fn(), get
 vi.mock("../ClerkRouteProvider.js", () => ({
   ClerkRouteProvider: ({ children }: { readonly children: ReactNode }) => children,
 }));
+// The provider is stubbed above, so the denial screen's "Use another account"
+// needs Clerk's hook stubbed with it.
+vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: vi.fn() }) }));
 vi.mock("../../../pages/EventArchitectPage.js", () => ({
   EventArchitectPage: () => { mountTool(); return <div>Event Architect engine</div>; },
 }));
@@ -67,7 +70,7 @@ describe("client event page route admission", () => {
 
   it.each([
     { role: "client", platformRole: "none" }, { role: "planner", platformRole: "none" },
-    { role: "executive", platformRole: "admin" }, { role: "supplier", platformRole: "admin" },
+    { role: "manager", platformRole: "admin" }, { role: "caterer", platformRole: "admin" },
   ] as const)("admits $role with platform role $platformRole to its server projection", async actor => {
     seed(actor.role, actor.platformRole);
     getProjection.mockResolvedValue(schedule);
@@ -78,7 +81,7 @@ describe("client event page route admission", () => {
   });
 
   it("uses the unavailable state when the server denies an unsupported role", async () => {
-    seed("supplier");
+    seed("caterer");
     getProjection.mockRejectedValue(new ApiError(404, "Event unavailable", "NOT_FOUND"));
     show(path);
     expect((await screen.findByRole("alert")).textContent).toContain("This event is not available to your account");

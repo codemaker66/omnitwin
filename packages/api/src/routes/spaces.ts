@@ -5,7 +5,7 @@ import { type FloorPlanPoint, polygonBoundingBox } from "@omnitwin/types";
 import { spaces, venues, referenceLoadouts } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canAdministerVenue } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -150,7 +150,7 @@ export async function spaceRoutes(
       return reply.status(400).send({ error: "Invalid venue ID", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, params.data.venueId)) {
+    if (!canAdministerVenue(request.user, params.data.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -203,7 +203,7 @@ export async function spaceRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, params.data.venueId)) {
+    if (!canAdministerVenue(request.user, params.data.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -254,7 +254,7 @@ export async function spaceRoutes(
       return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
     }
 
-    if (!canManageVenue(request.user, params.data.venueId)) {
+    if (!canAdministerVenue(request.user, params.data.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 

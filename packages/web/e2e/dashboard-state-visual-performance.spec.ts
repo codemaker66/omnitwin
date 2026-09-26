@@ -32,7 +32,7 @@ const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "1
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
 const artifactDir = (): string => test.info().outputPath("dashboard-state");
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "manager" | "supplier";
 type DashboardViewportName = "desktop" | "mobile";
 
 interface PageProblems {
@@ -122,7 +122,7 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       hallkeeper: "93",
       admin: "94",
       "platform-admin": "97",
-      executive: "95",
+      manager: "95",
       supplier: "96",
     };
     const isPlatformAdmin = seedRole === "platform-admin";
@@ -682,10 +682,12 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
-    await seedAuthenticatedUser(page, "executive");
+    await seedAuthenticatedUser(page, "manager");
     await mockDashboardRoutes(page);
 
-    await page.goto("/dashboard");
+    // No role lands on analytics any more (every role opens on Enquiries),
+    // so the case asks for the view it measures.
+    await page.goto("/dashboard?view=analytics");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
 
@@ -694,14 +696,14 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
       await page.mouse.wheel(0, 340);
       await page.mouse.wheel(0, -180);
     });
-    await recordAccessibilityState(page, problems, "executive analytics success", "/dashboard", "desktop", 16);
+    await recordAccessibilityState(page, problems, "executive analytics success", "/dashboard?view=analytics", "desktop", 16);
   });
 
   test("executive analytics API failure state stays readable and within frame budget", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
-    await seedAuthenticatedUser(page, "executive");
+    await seedAuthenticatedUser(page, "manager");
     await mockDashboardRoutes(page, { failAnalytics: true });
 
     await page.goto("/dashboard?view=analytics");

@@ -38,6 +38,20 @@ export const EVENT_PLAN_AUDIENCE_ROLES = [
 export const EventPlanAudienceRoleSchema = z.enum(EVENT_PLAN_AUDIENCE_ROLES);
 export type EventPlanAudienceRole = z.infer<typeof EventPlanAudienceRoleSchema>;
 
+/**
+ * Label a provenance row's actor without letting the label fail the request.
+ *
+ * The audit trail is a record of a decision already made: authorisation is
+ * settled by the capability helpers before any row is written. An unrecognised
+ * role string — a vocabulary entry added ahead of the database CHECK, or a
+ * stale token — used to throw out of a working mutation and surface as a 500.
+ * It now records as the least-privileged audience instead.
+ */
+export function toEventPlanAudienceRole(role: string): EventPlanAudienceRole {
+  const parsed = EventPlanAudienceRoleSchema.safeParse(role);
+  return parsed.success ? parsed.data : "client";
+}
+
 export const EVENT_PLAN_CHANGE_SURFACES = [
   "layout",
   "guest_count",

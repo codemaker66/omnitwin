@@ -84,6 +84,26 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     expect((await stored(f)).quote?.deletedAt).toBeInstanceOf(Date);
   });
 
+
+  // The venue-scoped list must admit exactly who the create/mutate gate
+  // admits (routes/quotes.ts canManageCommercial). A role that may manage a
+  // quote but cannot find it in its own list has been granted nothing.
+  it.each(["manager", "sales"])("lets %s discover a colleague's venue quote", async role => {
+    const f = await fixture(role);
+    const response = await server.inject({ method: "GET", url: "/quotes", headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: [expect.objectContaining({ id: f.quote.id, venueId: f.venueId })] });
+  });
+
+  // A quote is money on a page, and hallkeepers never see prices (goal 18 6b).
+  // The list falls back to "rows I created", which is empty for a role that
+  // cannot create one.
+  it("keeps the venue's quotes out of a hallkeeper's list", async () => {
+    const f = await fixture("hallkeeper");
+    const response = await server.inject({ method: "GET", url: "/quotes", headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ data: [] });
+  });
   it("lets a venue admin discover a colleague's venue quote", async () => {
     const f = await fixture("admin");
     const response = await server.inject({ method: "GET", url: "/quotes", headers: f.headers });

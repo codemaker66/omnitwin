@@ -69,12 +69,25 @@ describe("UserRoleSchema", () => {
     expect(UserRoleSchema.safeParse(role).success).toBe(true);
   });
 
-  it("has exactly 5 roles (client, planner, staff, hallkeeper, admin)", () => {
-    expect(USER_ROLES).toHaveLength(5);
+  it("has exactly 8 roles", () => {
+    expect(USER_ROLES).toHaveLength(8);
   });
 
   it("contains the expected roles", () => {
-    expect(USER_ROLES).toEqual(["client", "planner", "staff", "hallkeeper", "admin"]);
+    expect(USER_ROLES).toEqual([
+      "client", "planner", "staff", "hallkeeper", "admin", "caterer", "sales", "manager",
+    ]);
+  });
+
+  it("accepts the roles added by goal 18 §6 decision 6a", () => {
+    for (const role of ["caterer", "sales", "manager"]) {
+      expect(UserRoleSchema.safeParse(role).success).toBe(true);
+    }
+  });
+
+  it("still rejects the retired role names", () => {
+    expect(UserRoleSchema.safeParse("executive").success).toBe(false);
+    expect(UserRoleSchema.safeParse("supplier").success).toBe(false);
   });
 
   it("accepts 'planner' (default Clerk role)", () => {
@@ -117,7 +130,9 @@ describe("PlatformRoleSchema", () => {
 
   it("keeps platform authority separate from customer workspace roles", () => {
     expect(PLATFORM_ROLES).toEqual(["none", "operator", "admin"]);
-    expect(USER_ROLES).toEqual(["client", "planner", "staff", "hallkeeper", "admin"]);
+    expect(USER_ROLES).toEqual([
+      "client", "planner", "staff", "hallkeeper", "admin", "caterer", "sales", "manager",
+    ]);
   });
 
   it("rejects user/workspace role names that are not platform authority", () => {

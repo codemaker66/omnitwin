@@ -85,14 +85,24 @@ describe("RoleAwareRedirect", () => {
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
   });
 
-  it("redirects an executive straight to /dashboard", () => {
+  it("redirects a venue manager straight to /dashboard", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
-      user: { id: "u6", email: "e@x.com", role: "executive", platformRole: "none", venueId: "v1", name: "Exec" },
+      user: { id: "u6", email: "m@x.com", role: "manager", platformRole: "none", venueId: "v1", name: "Manager" },
     });
     const { container } = render(<RoleAwareRedirect />);
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
+  });
+
+  it("sends a caterer to /plan — it holds no venue-wide surface", () => {
+    setAuth({
+      isAuthenticated: true,
+      isLoading: false,
+      user: { id: "u7", email: "c@x.com", role: "caterer", platformRole: "none", venueId: "v1", name: "Caterer" },
+    });
+    const { container } = render(<RoleAwareRedirect />);
+    expect(container.textContent).toBe("Navigate->/plan(replace)");
   });
 
   it("sends a logged-in client to /plan (their working surface)", () => {

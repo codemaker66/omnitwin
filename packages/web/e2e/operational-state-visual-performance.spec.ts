@@ -45,7 +45,7 @@ const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "1
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
 const artifactDir = (): string => test.info().outputPath("operational-state");
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "manager" | "supplier";
 type OperationalViewportName = "desktop" | "tablet" | "mobile";
 
 interface PageProblems {
@@ -128,7 +128,7 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       hallkeeper: "93",
       admin: "94",
       "platform-admin": "97",
-      executive: "95",
+      manager: "95",
       supplier: "96",
     };
     const isPlatformAdmin = seedRole === "platform-admin";

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import {
+  ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
+  EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
+  WORKSPACE_ROLES,
+} from "../lib/role-capabilities.js";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
 import { ReviewsView } from "../components/dashboard/ReviewsView.js";
@@ -53,7 +58,21 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "admin",
 ];
 
-const STAFF_ONLY_VIEWS = new Set<DashboardView>(["pipeline", "proposals"]);
+// Pipeline is CommercialPipelineView, which reads api/crm.js (routes/crm.ts
+// and routes/opportunities.ts); Proposals reads api/proposals.js. Both routes
+// gate on canManageCommercial today, but each view keeps its own set so each
+// tab names the gate it mirrors. See lib/role-capabilities.ts
+// CRM_PIPELINE_ROLES and COMMERCIAL_ROLES.
+const CRM_PIPELINE_VIEWS = new Set<DashboardView>(["pipeline"]);
+const COMMERCIAL_VIEWS = new Set<DashboardView>(["proposals"]);
+// Analytics, Client Search and the review queue each answer to their own API
+// gate: the analytics tab mirrors GET /analytics/venue-dashboard
+// (canManageCommercial), /clients gates on canManageVenue, and the
+// pending-review queue takes the review state machine's own role set. See
+// lib/role-capabilities.ts for each mirror.
+const ANALYTICS_VIEWS = new Set<DashboardView>(["analytics"]);
+const CLIENT_SEARCH_VIEWS = new Set<DashboardView>(["search"]);
+const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 type PlatformRole = "none" | "operator" | "admin";
 
@@ -62,17 +81,38 @@ export function dashboardViewFromSearchValue(value: string | null): DashboardVie
   return DASHBOARD_VIEW_VALUES.find((candidate) => candidate === value) ?? null;
 }
 
-export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
-  if (role === "supplier") return false;
-  if (role === "executive") return view === "analytics";
-  if (view === "inventory") return role === "admin";
-  if (ADMIN_ONLY_VIEWS.has(view)) return platformRole === "admin";
-  if (STAFF_ONLY_VIEWS.has(view)) return platformRole === "admin" || role === "admin" || role === "staff";
-  return role !== null;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** The `config` deep-link parameter, validated. A view that pre-selects a
+ *  record from a URL must not accept arbitrary text: an id the list cannot
+ *  match is simply no selection, not an error state for the reviewer. */
+export function configIdFromSearchValue(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return UUID_PATTERN.test(trimmed) ? trimmed : null;
 }
 
-export function defaultDashboardViewForRole(role: string | null): DashboardView {
-  return role === "executive" ? "analytics" : "enquiries";
+export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
+  if (role === null) return false;
+  // Caterers are event-scoped: they reach an event through a share, never the
+  // venue dashboard (goal 18 §6 decision 6a).
+  if (hasRole(EVENT_SCOPED_ROLES, role)) return false;
+  if (ADMIN_ONLY_VIEWS.has(view)) return platformRole === "admin";
+  // Venue stock is checked BEFORE the platform-admin shortcut: a Venviewer
+  // platform admin is not a member of this venue and holds no stock
+  // authority over it. Putting the shortcut first silently granted it.
+  if (view === "inventory") return hasRole(INVENTORY_WRITE_ROLES, role);
+  if (platformRole === "admin") return true;
+  if (CRM_PIPELINE_VIEWS.has(view)) return hasRole(CRM_PIPELINE_ROLES, role);
+  if (COMMERCIAL_VIEWS.has(view)) return hasRole(COMMERCIAL_ROLES, role);
+  if (ANALYTICS_VIEWS.has(view)) return hasRole(ANALYTICS_ROLES, role);
+  if (CLIENT_SEARCH_VIEWS.has(view)) return hasRole(CLIENT_SEARCH_ROLES, role);
+  if (REVIEW_QUEUE_VIEWS.has(view)) return hasRole(REVIEW_QUEUE_ROLES, role);
+  return hasRole(WORKSPACE_ROLES, role);
+}
+
+export function defaultDashboardViewForRole(_role: string | null): DashboardView {
+  return "enquiries";
 }
 
 export function initialDashboardViewForRole(
@@ -116,6 +156,13 @@ export function DashboardPage(): React.ReactElement {
   const userPlatformRole = useAuthStore((state) => state.user?.platformRole ?? "none");
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
+    [searchParams],
+  );
+  // The reviewer email's "Open Review" button deep-links here as
+  // /dashboard?view=reviews&config=:id. Anything that is not a uuid is
+  // ignored rather than handed to the reviews list as a selection.
+  const requestedConfigId = useMemo(
+    () => configIdFromSearchValue(searchParams.get("config")),
     [searchParams],
   );
   const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole, userPlatformRole));
@@ -215,12 +262,16 @@ export function DashboardPage(): React.ReactElement {
           <EnquiriesView
             initialSelectedId={enquiryReturnContext?.enquiryId ?? null}
             onDetailClose={enquiryReturnContext !== null ? handleEnquiryDetailClose : undefined}
+            // The commercial API refuses anyone outside the venue's commercial
+            // team, and "pipeline" is the view that capability already gates,
+            // so the button and the tab agree by construction.
+            canCreateOpportunity={canOpenDashboardView("pipeline", userRole, userPlatformRole)}
           />
         );
       case "pipeline":
         return <CommercialPipelineView />;
       case "reviews":
-        return <ReviewsView />;
+        return <ReviewsView initialSelectedId={requestedConfigId} />;
       case "analytics":
         return <ExecutiveAnalyticsView />;
       case "proposals":

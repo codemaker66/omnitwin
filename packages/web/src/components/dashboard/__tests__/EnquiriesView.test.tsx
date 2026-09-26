@@ -620,7 +620,7 @@ describe("EnquiriesView decisions", () => {
     const enquiryInReview = reviewing();
     mocks.listEnquiryPage.mockResolvedValue(page([enquiryInReview], {}));
     mocks.transitionEnquiry.mockResolvedValue({ ...enquiryInReview, state: "approved" });
-    render(<EnquiriesView />);
+    render(<EnquiriesView canCreateOpportunity />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^Client 5,/u }));
     expect(screen.getByText("5 Nov 2026")).toBeDefined();

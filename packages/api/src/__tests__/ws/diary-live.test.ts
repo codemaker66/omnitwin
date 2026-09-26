@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { DiaryLiveHub, type DiaryLiveSocket } from "../../ws/diary-live.js";
+import { USER_ROLES } from "@omnitwin/types";
+import { DIARY_READ_ROLES, DiaryLiveHub, type DiaryLiveSocket } from "../../ws/diary-live.js";
+import { DIARY_WRITE_ROLES } from "../../services/booking-mutations.js";
 
 // ---------------------------------------------------------------------------
 // Diary live hub (T-497; Canon §9/§15) — per-venue connection registry:
@@ -168,5 +170,45 @@ describe("registerDiaryLive — source contract", () => {
     const join = source.indexOf("hub.join(");
     expect(livenessGuard).toBeGreaterThan(-1);
     expect(join).toBeGreaterThan(livenessGuard);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The diary read set (goal 18 §2 line 25, §6 decision 6a)
+//
+// Three role sets govern the diary and they are maintained in three files:
+// this read set, DIARY_WRITE_ROLES in services/booking-mutations.ts, and
+// DIARY_COMMAND_WRITE_ROLES in services/diary-commands.ts. The read set must
+// be the widest — a role that may ink the diary but not watch it, or watch a
+// slot change it cannot make, is a surface that half works.
+// ---------------------------------------------------------------------------
+
+describe("DIARY_READ_ROLES", () => {
+  it("admits everyone who works the venue's day or its pipeline", () => {
+    for (const role of ["staff", "admin", "manager", "hallkeeper", "sales"]) {
+      expect(DIARY_READ_ROLES.has(role), `${role} may watch the diary`).toBe(true);
+    }
+  });
+
+  it("refuses the customer roles and the event-scoped caterer", () => {
+    for (const role of ["client", "planner", "caterer"]) {
+      expect(DIARY_READ_ROLES.has(role), `${role} may not watch the diary`).toBe(false);
+    }
+  });
+
+  it("refuses names outside the vocabulary", () => {
+    for (const role of ["executive", "supplier", "future_role", ""]) {
+      expect(DIARY_READ_ROLES.has(role)).toBe(false);
+    }
+  });
+
+  it("is at least as wide as every role that may write the diary", () => {
+    for (const role of USER_ROLES) {
+      if (!DIARY_WRITE_ROLES.has(role)) continue;
+      expect(
+        DIARY_READ_ROLES.has(role),
+        `${role} may ink the diary but could not watch it`,
+      ).toBe(true);
+    }
   });
 });

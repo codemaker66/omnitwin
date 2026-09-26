@@ -168,9 +168,14 @@ export function resolveFurnitureMeshKind(
         case "laptop":
           return "laptop";
         case "microphone":
+        case "handheld-microphone":
+        case "lapel-microphone":
           return "microphone";
         case "mic-stand":
           return "mic-stand";
+        // A flat panel on a stand reads as a screen, not a projector body.
+        case "hisense-television":
+          return "projector-screen";
         default:
           return "projector";
       }

@@ -508,7 +508,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
               <label style={{ flexBasis: "100%", fontSize: 13 }}>
                 <input type="checkbox" checked={notifyTeam} disabled={inFlight}
                   onChange={event => { setNotifyTeam(event.target.checked); }} /> Notify team
-                <span style={{ display: "block" }}>DEMO ONLY: uncheck to approve internally without planner or hallkeeper emails.</span>
+                <span style={{ display: "block" }}>Uncheck to record this decision internally, without emailing the planner or the hallkeeper. Offered only on rehearsal plans.</span>
               </label>
             )}
             {can("approved") && (
@@ -604,12 +604,23 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 // ReviewsView — top-level list + detail router
 // ---------------------------------------------------------------------------
 
-export function ReviewsView(): React.ReactElement {
+export interface ReviewsViewProps {
+  /** Configuration id from the reviewer email's deep link
+   *  (/dashboard?view=reviews&config=:id). Selected once the list has loaded,
+   *  and only if it is actually in the reviewer's pending set — a link to a
+   *  review that has since been actioned lands on the list, not on an error. */
+  readonly initialSelectedId?: string | null;
+}
+
+export function ReviewsView({ initialSelectedId = null }: ReviewsViewProps = {}): React.ReactElement {
   const addToast = useToastStore((s) => s.addToast);
   const [entries, setEntries] = useState<PendingReviewEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Honoured once per deep link, so a reviewer who clicks Back to the list is
+  // not dragged into the detail again by the next render.
+  const appliedDeepLink = useRef<string | null>(null);
 
   const refresh = useCallback((): void => {
     setLoading(true);
@@ -627,6 +638,14 @@ export function ReviewsView(): React.ReactElement {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (initialSelectedId === null) return;
+    if (appliedDeepLink.current === initialSelectedId) return;
+    if (!entries.some((entry) => entry.id === initialSelectedId)) return;
+    appliedDeepLink.current = initialSelectedId;
+    setSelectedId(initialSelectedId);
+  }, [entries, initialSelectedId]);
 
   const handleStatusChange = (id: string, next: ConfigurationReviewStatus): void => {
     // If the entry transitioned out of the "pending" set, drop it from
