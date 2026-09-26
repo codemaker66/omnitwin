@@ -494,7 +494,6 @@ const REGISTER_EXEMPT: readonly RegExp[] = [
  * makes this list wrong and fails too. Neither can pass quietly.
  */
 const GOLD_HANDOFF: Readonly<Record<string, string>> = {
-  "components/dashboard/NotificationCenter.tsx": "Lane 9",
   "pages/landing/rite.css": "Lane 2 (retired page, redirected in R1)",
   "pages/living-hall/living-hall.css": "Lane 2 (retired page, redirected in R1)",
   "twin/measure/measure.css": "Lane 3",
