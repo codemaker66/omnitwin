@@ -63,6 +63,14 @@ export const INVENTORY_WRITE_ROLES = ["admin", "manager"] as const;
 /** Mirrors `DIARY_READ_ROLES` in `ws/diary-live.ts`. */
 export const DIARY_ROLES = ["admin", "manager", "staff", "hallkeeper", "sales"] as const;
 
+/**
+ * Mirrors `DIARY_WRITE_ROLES` in `services/booking-mutations.ts` (and the
+ * booking state machine's transition roles): who may create, move, edit and
+ * confirm or release a booking. The hallkeeper reads the Diary but never
+ * writes it; a Diary control offered outside this set ends in a 403.
+ */
+export const DIARY_WRITE_ROLES = ["admin", "manager", "staff", "sales"] as const;
+
 /** The hallkeeper's day: `/hallkeeper/today`, the Day Board. */
 export const VENUE_DAY_ROLES = ["admin", "manager", "staff", "hallkeeper"] as const;
 

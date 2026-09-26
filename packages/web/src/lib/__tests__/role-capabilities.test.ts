@@ -6,6 +6,7 @@ import {
   COMMERCIAL_ROLES,
   CRM_PIPELINE_ROLES,
   DIARY_ROLES,
+  DIARY_WRITE_ROLES,
   INVENTORY_WRITE_ROLES,
   PLANNER_ROLES,
   REVIEW_QUEUE_ROLES,
@@ -158,6 +159,14 @@ describe("route gates and their landing surfaces agree", () => {
     expect(hasRole(VENUE_DAY_ROLES, "sales")).toBe(false);
   });
 
+  it("offers Diary writes to exactly the roles booking-mutations.ts DIARY_WRITE_ROLES admits", () => {
+    // A manager or sales member was shown a read-only Diary the API would
+    // have let them write; a hallkeeper must never be offered a write.
+    expect([...DIARY_WRITE_ROLES]).toEqual(["admin", "manager", "staff", "sales"]);
+    for (const role of DIARY_WRITE_ROLES) expect(hasRole(DIARY_ROLES, role), `${role} writes what it can read`).toBe(true);
+    expect(hasRole(DIARY_WRITE_ROLES, "hallkeeper")).toBe(false);
+  });
+
   it("mirrors the API's canAccessInternalEvent for internal event readers", () => {
     for (const role of USER_ROLES) {
       const allowed = canReadInternalEventData({
@@ -201,7 +210,7 @@ describe("the capability sets themselves", () => {
     const vocabulary = new Set<string>(USER_ROLES);
     for (const set of [
       VENUE_FLOOR_ROLES, COMMERCIAL_ROLES, INVENTORY_WRITE_ROLES, DIARY_ROLES,
-      VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES, CRM_PIPELINE_ROLES,
+      DIARY_WRITE_ROLES, VENUE_DAY_ROLES, PLANNER_ROLES, WORKSPACE_ROLES, CRM_PIPELINE_ROLES,
       ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, REVIEW_QUEUE_ROLES,
     ]) {
       for (const role of set) {
