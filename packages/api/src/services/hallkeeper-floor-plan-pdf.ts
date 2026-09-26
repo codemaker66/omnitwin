@@ -36,7 +36,9 @@ export function renderHallkeeperFloorPlan(doc: PDFKit.PDFDocument, plan: Hallkee
   const otherCount = plan.objects.length - tableCount - chairCount;
   doc.font("Helvetica").fontSize(7).fillColor("#555555");
   doc.text(`${String(tableCount)} tables · ${String(chairCount)} chairs${otherCount > 0 ? ` · ${String(otherCount)} other objects` : ""}`, box.x + 10, box.y + box.height - 20, { width: box.width / 2, height: 10 });
-  doc.text("Room coordinates: +X right, +Z down", box.x + 10, box.y + box.height - 10, { width: box.width / 2, height: 9 });
+  // A hallkeeper reads a plan, not an axis convention. "+X right, +Z down"
+  // is the renderer's vocabulary and means nothing on a printed sheet.
+  doc.text("Plan drawn looking down on the room", box.x + 10, box.y + box.height - 10, { width: box.width / 2, height: 9 });
   // A measured scale bar stays meaningful even if the printed page is resized.
   const maxBarMetres = 90 / drawing.pointsPerMetre;
   const magnitude = 10 ** Math.floor(Math.log10(maxBarMetres));

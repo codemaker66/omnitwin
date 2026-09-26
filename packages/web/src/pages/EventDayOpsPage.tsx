@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { useParams } from "react-router-dom";
-import { AlertCircle, Bell, Check, CircleDashed, Clock, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
-import type { ChangeFeedItem, EventDayIssueSeverity, EventDayOpsBoard, OpsTask, OpsTaskStatus } from "@omnitwin/types";
+import { AlertCircle, Bell, Check, CircleDashed, Clock, NotebookPen, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
+import type {
+  ChangeFeedItem, EventDayIssue, EventDayIssueSeverity, EventDayIssueStatus,
+  EventDayOpsBoard, OpsTask, OpsTaskStatus, SupplierInstruction,
+} from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
-import { createEventDayIssue, getEventDayOpsBoard, updateOpsTaskStatus } from "../api/event-day-ops.js";
+import { createEventDayIssue, getEventDayOpsBoard, updateEventDayIssue, updateOpsTaskStatus } from "../api/event-day-ops.js";
 import { acknowledgeEventPlanChange, getEventChangeFeed } from "../api/notifications.js";
 import {
   ackEventDayOp,
@@ -12,10 +15,40 @@ import {
   listPendingEventDayOps,
 } from "../lib/event-day-offline-queue.js";
 import { EventMissionControl } from "../components/mission-control/EventMissionControl.js";
+import "../styles/hallkeeper-register.css";
 import "./EventDayOpsPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 import { HallkeeperEventLinks } from "../components/hallkeeper/HallkeeperEventLinks.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
+import { getCalendar } from "../api/diary.js";
+import { useAuthStore } from "../stores/auth-store.js";
+import { isBoardWorthy } from "./hallkeeper/lib/day-board-state.js";
+import { useVenueTimezone } from "./hallkeeper/lib/use-venue-timezone.js";
+
+// ---------------------------------------------------------------------------
+// The event-day board — the hallkeeper's surface while an event is running
+// (Ship Friday, gate line 21; decision 7).
+//
+// Three properties this page owes a hallkeeper who is holding a tablet in a
+// room, and did not have before:
+//
+//   LIVE. Ops state (task status, issues, acknowledgements) does not travel
+//   on the diary websocket, so the board polls every 10s behind an in-flight
+//   guard and pauses while the tab is hidden — a wall tablet left on overnight
+//   must not hammer the API. Every mutation refetches immediately, so the
+//   board a second hallkeeper sees is never more than one tick stale.
+//
+//   ACTIONABLE. An issue can be assigned, resolved and closed here. A board
+//   that can only CREATE problems is a list that grows all evening.
+//
+//   SINGLE AUTHORITY. Tasks and issues are managed here and only here;
+//   Mission Control renders alongside as the live phase/timeline record with
+//   its own incident form and task grid suppressed. Two forms writing to two
+//   different tables, side by side, is how a room ends up with two truths.
+// ---------------------------------------------------------------------------
+
+/** Ops state has no push channel of its own; this is the honest interval. */
+const POLL_INTERVAL_MS = 10_000;
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -34,7 +67,10 @@ const EMPTY_ISSUE_DRAFT: IssueDraft = {
   severity: "attention",
 };
 
-function formatEventDate(iso: string | null): string {
+// Every clock face on this page is the VENUE's wall clock. An un-pinned
+// toLocaleString reads the tablet's zone, which is whatever the device was
+// last set to — not a property of the event.
+function formatEventDate(iso: string | null, timeZone: string): string {
   if (iso === null) return "Date not set";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Date not set";
@@ -42,17 +78,18 @@ function formatEventDate(iso: string | null): string {
     weekday: "short",
     day: "2-digit",
     month: "short",
+    timeZone,
   });
 }
 
-function formatTime(iso: string | null): string {
+function formatTime(iso: string | null, timeZone: string): string {
   if (iso === null) return "--:--";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "--:--";
-  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone });
 }
 
-function formatChangeTime(iso: string): string {
+function formatChangeTime(iso: string, timeZone: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Time unknown";
   return date.toLocaleString("en-GB", {
@@ -60,7 +97,27 @@ function formatChangeTime(iso: string): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   });
+}
+
+function issueStatusLabel(status: EventDayIssueStatus): string {
+  switch (status) {
+    case "open": return "Open";
+    case "in_progress": return "Being handled";
+    case "resolved": return "Resolved";
+    case "closed": return "Closed";
+  }
+}
+
+/**
+ * The compiler emits two kinds of supplier row: an arrival somebody captured
+ * (a named supplier or an arrival window) and a prompt derived from the
+ * approved snapshot. Only the first is an arrival; the rest are notes, and
+ * they are labelled as notes rather than quietly dropped.
+ */
+function isHandoffNote(instruction: SupplierInstruction): boolean {
+  return instruction.supplierId === null && instruction.arrivalWindow === null;
 }
 
 function isRetriableError(err: unknown): boolean {
@@ -142,7 +199,17 @@ export function EventDayOpsPage(): ReactElement {
   const [changeFeed, setChangeFeed] = useState<readonly ChangeFeedItem[]>([]);
   const [acknowledgedChanges, setAcknowledgedChanges] = useState<ReadonlySet<string>>(new Set());
   const [ackBusyId, setAckBusyId] = useState<string | null>(null);
-  const [missionActive, setMissionActive] = useState(false);
+  const [issueBusyId, setIssueBusyId] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  // The hour this room is actually booked for. `events.starts_at` is planning
+  // metadata that drifts from the Diary — on the seeded wedding the event row
+  // says 13:00 while the booking says 09:00 — and a board that disagrees with
+  // the sheet printed from it is worse than a board with no time at all.
+  const [bookedStartsAt, setBookedStartsAt] = useState<string | null>(null);
+  const currentUserId = useAuthStore((store) => store.user?.id ?? null);
+  // One request at a time. Without this guard a slow API turns a 10s tick
+  // into a queue of overlapping reads that each overwrite the last.
+  const refreshInFlight = useRef(false);
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
@@ -161,6 +228,7 @@ export function EventDayOpsPage(): ReactElement {
       const changes = await getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []);
       setState({ kind: "ready", board });
       setChangeFeed(changes);
+      setLastSyncedAt(new Date().toISOString());
     })()
       .catch(() => {
         setState({
@@ -169,6 +237,39 @@ export function EventDayOpsPage(): ReactElement {
         });
       });
   }, [eventId]);
+
+  /**
+   * A background refresh: it never shows the full-page loading state and
+   * never clears the board on failure, so a tablet that loses the network
+   * mid-event keeps showing the last good truth instead of an error screen.
+   */
+  const refreshBoard = useCallback(() => {
+    if (eventId === undefined || eventId.length === 0) return;
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    void Promise.all([
+      getEventDayOpsBoard(eventId),
+      getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
+    ])
+      .then(([board, changes]) => {
+        setState({ kind: "ready", board });
+        setChangeFeed(changes);
+        setLastSyncedAt(new Date().toISOString());
+      })
+      .catch(() => {
+        // Keep the last good board; the next tick retries.
+      })
+      .finally(() => { refreshInFlight.current = false; });
+  }, [eventId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      // A wall tablet left on overnight must not poll a hidden tab.
+      if (typeof document !== "undefined" && document.hidden) return;
+      refreshBoard();
+    }, POLL_INTERVAL_MS);
+    return () => { window.clearInterval(timer); };
+  }, [refreshBoard]);
 
   const flushQueue = useCallback(() => {
     if (syncing) return;
@@ -216,11 +317,52 @@ export function EventDayOpsPage(): ReactElement {
   }, [flushQueue]);
 
   const board = state.kind === "ready" ? state.board : null;
+  const timeZone = useVenueTimezone(board?.event.venueId ?? null);
+
+  // One read of the Diary for the event's own day, so the hero shows the
+  // booked hour rather than the event record's planned one.
+  const eventVenueId = board?.event.venueId ?? null;
+  const eventPlannedStart = board?.event.startsAt ?? null;
+  const boardEventId = board?.event.id ?? null;
+  useEffect(() => {
+    if (eventVenueId === null || eventPlannedStart === null || boardEventId === null) return;
+    const anchor = Date.parse(eventPlannedStart);
+    if (!Number.isFinite(anchor)) return;
+    let current = true;
+    const from = new Date(anchor - 36 * 3_600_000).toISOString();
+    const to = new Date(anchor + 36 * 3_600_000).toISOString();
+    void getCalendar(eventVenueId, from, to)
+      .then((calendar) => {
+        if (!current) return;
+        // Same predicate the Day Board uses, so the two boards and the sheet
+        // cannot disagree about which bookings count; and compared as
+        // instants, because lexicographic ISO ordering only holds while every
+        // string carries the same offset and precision.
+        const candidates = calendar.entries
+          .flatMap((entry) => entry.entryType === "booking"
+            && entry.eventId === boardEventId
+            && isBoardWorthy(entry)
+            ? [{ iso: entry.startsAt, ms: Date.parse(entry.startsAt) }]
+            : [])
+          .filter((entry) => Number.isFinite(entry.ms))
+          .sort((a, b) => a.ms - b.ms);
+        setBookedStartsAt(candidates[0]?.iso ?? null);
+      })
+      .catch(() => {
+        // No Diary read: the hero falls back to the event record and says so.
+        if (current) setBookedStartsAt(null);
+      });
+    return () => { current = false; };
+  }, [boardEventId, eventPlannedStart, eventVenueId]);
   const tasks = board?.handoffPack?.opsTasks ?? [];
   const setupTasks = useMemo(() => tasks.filter((task) => task.kind === "setup"), [tasks]);
   const roomFlipTasks = useMemo(() => tasks.filter((task) => task.kind === "room_flip"), [tasks]);
   const taskList = useMemo(() => [...setupTasks, ...roomFlipTasks], [setupTasks, roomFlipTasks]);
   const openIssues = useMemo(() => board?.issues.filter((issue) => issue.status !== "closed") ?? [], [board]);
+  const handoffNotes = useMemo(
+    () => board?.handoffPack?.supplierInstructions.filter(isHandoffNote) ?? [],
+    [board],
+  );
   const syncLabel = pendingCount === 0 ? "Synced" : `${String(pendingCount)} pending sync`;
   const requiredAcknowledgements = useMemo(
     () => changeFeed
@@ -239,6 +381,7 @@ export function EventDayOpsPage(): ReactElement {
       .then((updated) => {
         setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, updated) } : prev);
         setNotice("Task status updated.");
+        refreshBoard();
       })
       .catch((err: unknown) => {
         if (isRetriableError(err)) {
@@ -256,7 +399,7 @@ export function EventDayOpsPage(): ReactElement {
         setNotice("Task could not be saved on this device. Please try again.");
       })
       .finally(() => { setPendingWrites((count) => count - 1); });
-  }, [refreshPendingCount]);
+  }, [refreshBoard, refreshPendingCount]);
 
   const submitIssue = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -274,6 +417,7 @@ export function EventDayOpsPage(): ReactElement {
         setState((prev) => prev.kind === "ready"
           ? { kind: "ready", board: { ...prev.board, issues: [issue, ...prev.board.issues] } }
           : prev);
+        refreshBoard();
       })
       .catch((err: unknown) => {
         if (isRetriableError(err)) {
@@ -289,7 +433,7 @@ export function EventDayOpsPage(): ReactElement {
       })
       .catch(() => { setNotice("Issue could not be saved on this device. Please try again."); })
       .finally(() => { setPendingIssues((count) => count - 1); });
-  }, [eventId, issueDraft, refreshPendingCount]);
+  }, [eventId, issueDraft, refreshBoard, refreshPendingCount]);
 
   const acknowledgeChange = useCallback((change: ChangeFeedItem) => {
     if (eventId === undefined || ackBusyId !== null) return;
@@ -298,10 +442,35 @@ export function EventDayOpsPage(): ReactElement {
       .then(() => {
         setAcknowledgedChanges((prev) => new Set([...prev, change.id]));
         setNotice("Change acknowledged.");
+        refreshBoard();
       })
       .catch(() => { setNotice("Change acknowledgement could not be saved."); })
       .finally(() => { setAckBusyId(null); });
-  }, [ackBusyId, eventId]);
+  }, [ackBusyId, eventId, refreshBoard]);
+
+  /**
+   * Issue lifecycle. A board that can only create issues is a list that grows
+   * all evening; resolving, closing and taking ownership are what let a
+   * hallkeeper clear the deck before handback, and the sheet's "Keep in view"
+   * strip reads the same `issues` array, so a resolved issue leaves it too.
+   */
+  const changeIssue = useCallback((issue: EventDayIssue, patch: {
+    readonly status?: EventDayIssueStatus;
+    readonly assignedTo?: string | null;
+  }, doneNotice: string) => {
+    if (eventId === undefined || issueBusyId !== null) return;
+    setIssueBusyId(issue.id);
+    void updateEventDayIssue(eventId, issue.id, patch)
+      .then((updated) => {
+        setState((prev) => prev.kind === "ready"
+          ? { kind: "ready", board: { ...prev.board, issues: prev.board.issues.map((row) => row.id === updated.id ? updated : row) } }
+          : prev);
+        setNotice(doneNotice);
+        refreshBoard();
+      })
+      .catch(() => { setNotice("That issue change could not be saved. Try again."); })
+      .finally(() => { setIssueBusyId(null); });
+  }, [eventId, issueBusyId, refreshBoard]);
 
   if (state.kind === "loading") {
     return (
@@ -344,10 +513,16 @@ export function EventDayOpsPage(): ReactElement {
         <div>
           <p className="event-day-kicker">Today&apos;s event</p>
           <h1>{readyBoard.event.name}</h1>
-          <p>{formatEventDate(readyBoard.event.startsAt)} · {formatTime(readyBoard.event.startsAt)} · {readyBoard.event.guestCount} guests</p>
+          <p>
+            {formatEventDate(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
+            {" · "}{formatTime(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
+            {bookedStartsAt === null ? " (planned)" : ""}
+            {" · "}{timeZone}{" · "}{readyBoard.event.guestCount} guests
+          </p>
         </div>
         <div className="event-day-sync">
           <span data-pending={pendingCount > 0}>{syncLabel}</span>
+          <span className="event-day-live">{lastSyncedAt === null ? "Checking for changes…" : `Updated ${formatTime(lastSyncedAt, timeZone)}`}</span>
           <button type="button" className="event-day-icon-button" onClick={flushQueue} aria-label="Sync pending event-day changes" aria-busy={syncing}>
             {syncing ? <ActivityIndicator /> : <RefreshCw aria-hidden="true" />}
           </button>
@@ -359,10 +534,13 @@ export function EventDayOpsPage(): ReactElement {
       {notice !== null && <p className="event-day-notice">{notice}</p>}
       {pendingWrites > 0 && <ActivityStatus>Saving event-day changes…</ActivityStatus>}
 
+      {/* Decision 7: this board owns tasks and issues. Mission Control keeps
+          the live phase and timeline record, with its own incident form and
+          task grid suppressed so there is one place to act. */}
       <EventMissionControl
         eventId={readyBoard.event.id}
         handoffPackId={readyBoard.handoffPack?.pack.id ?? null}
-        onMissionActiveChange={setMissionActive}
+        ownsExecutionControls={false}
       />
 
       {readyBoard.sourceStatus === "missing_handoff" && (
@@ -386,7 +564,7 @@ export function EventDayOpsPage(): ReactElement {
                   <span>{change.riskLevel}</span>
                   <h3>{change.title}</h3>
                   <p>{change.summary}</p>
-                  <small>{formatChangeTime(change.createdAt)} · {change.affectedSurfaces.join(", ")}</small>
+                  <small>{formatChangeTime(change.createdAt, timeZone)} · {change.affectedSurfaces.join(", ")}</small>
                 </div>
                 <button
                   type="button"
@@ -435,9 +613,7 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Task checklist"
-        subtitle={missionActive
-          ? "Manage tasks in Mission Control."
-          : "Before mission start."}
+        subtitle="Tasks are managed here for the whole event."
         icon={<CircleDashed aria-hidden="true" />}
       >
         {taskList.length === 0 ? (
@@ -451,21 +627,17 @@ export function EventDayOpsPage(): ReactElement {
                   <h3>{task.title}</h3>
                   <p>{task.detail}</p>
                 </div>
-                {missionActive ? (
-                  <p className="event-day-task-authority">Managed in Mission Control.</p>
-                ) : (
-                  <div className="event-day-task-actions" aria-label={`${task.title} status actions`}>
-                    <button type="button" onClick={() => { setTaskStatus(task, "in_progress"); }}>
-                      Start
-                    </button>
-                    <button type="button" onClick={() => { setTaskStatus(task, "done"); }}>
-                      Done
-                    </button>
-                    <button type="button" onClick={() => { setTaskStatus(task, "blocked"); }}>
-                      Block
-                    </button>
-                  </div>
-                )}
+                <div className="event-day-task-actions" aria-label={`${task.title} status actions`}>
+                  <button type="button" onClick={() => { setTaskStatus(task, "in_progress"); }}>
+                    Start
+                  </button>
+                  <button type="button" onClick={() => { setTaskStatus(task, "done"); }}>
+                    Done
+                  </button>
+                  <button type="button" onClick={() => { setTaskStatus(task, "blocked"); }}>
+                    Block
+                  </button>
+                </div>
               </article>
             ))}
           </div>
@@ -512,6 +684,57 @@ export function EventDayOpsPage(): ReactElement {
             Log issue
           </button>
         </form>
+        {openIssues.length === 0 ? (
+          <p className="event-day-muted">No open issues on this event.</p>
+        ) : (
+          <ul className="event-day-issue-list">
+            {openIssues.map((issue) => (
+              <li key={issue.id} data-severity={issue.severity}>
+                <div>
+                  <span>{issue.severity} · {issueStatusLabel(issue.status)}</span>
+                  <h3>{issue.title}</h3>
+                  <p>{issue.detail}</p>
+                  <small>
+                    {formatChangeTime(issue.createdAt, timeZone)}
+                    {issue.assignedTo === null
+                      ? " · unassigned"
+                      : issue.assignedTo === currentUserId ? " · with you" : " · assigned"}
+                  </small>
+                </div>
+                <div className="event-day-issue-actions" aria-label={`${issue.title} actions`}>
+                  {currentUserId !== null && issue.assignedTo !== currentUserId && (
+                    <button
+                      type="button"
+                      disabled={issueBusyId !== null}
+                      aria-busy={issueBusyId === issue.id}
+                      onClick={() => { changeIssue(issue, { assignedTo: currentUserId, status: "in_progress" }, "Issue assigned to you."); }}
+                    >
+                      Take it
+                    </button>
+                  )}
+                  {issue.status !== "resolved" && (
+                    <button
+                      type="button"
+                      disabled={issueBusyId !== null}
+                      aria-busy={issueBusyId === issue.id}
+                      onClick={() => { changeIssue(issue, { status: "resolved" }, "Issue resolved."); }}
+                    >
+                      Resolve
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={issueBusyId !== null}
+                    aria-busy={issueBusyId === issue.id}
+                    onClick={() => { changeIssue(issue, { status: "closed" }, "Issue closed."); }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
       <Section
@@ -537,10 +760,11 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Supplier arrivals"
+        subtitle="Only suppliers or arrival windows someone captured."
         icon={<Truck aria-hidden="true" />}
       >
         {readyBoard.supplierArrivals.length === 0 ? (
-          <p className="event-day-muted">No supplier arrivals recorded.</p>
+          <p className="event-day-muted">No supplier arrival has been captured for this event.</p>
         ) : (
           <div className="event-day-arrivals">
             {readyBoard.supplierArrivals.map((arrival) => (
@@ -548,11 +772,30 @@ export function EventDayOpsPage(): ReactElement {
                 <span>{arrival.category}</span>
                 <h3>{arrival.title}</h3>
                 <p>{arrival.statusLabel}</p>
+                <p>{arrival.detail}</p>
               </article>
             ))}
           </div>
         )}
       </Section>
+
+      {handoffNotes.length > 0 && (
+        <Section
+          title="Handoff notes"
+          subtitle="Compiled from the approved layout. Notes to check — not booked arrivals."
+          icon={<NotebookPen aria-hidden="true" />}
+        >
+          <ul className="event-day-handoff-notes">
+            {handoffNotes.map((note) => (
+              <li key={note.id}>
+                <span>Note · {note.category}</span>
+                <h3>{note.title}</h3>
+                <p>{note.detail}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Section
         title="Escalation notes"

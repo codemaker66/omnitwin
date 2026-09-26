@@ -161,6 +161,20 @@ describe("TimingSchema", () => {
       bufferMinutes: -30,
     }).success).toBe(false);
   });
+
+  it("accepts a known hour with no set-up deadline", () => {
+    // The venue records no turnaround rule and the planner scheduled no
+    // earlier phase: the sheet says so rather than inventing a constant.
+    expect(TimingSchema.safeParse({
+      eventStart: "2026-06-15T18:00:00.000Z",
+      setupBy: null,
+      bufferMinutes: null,
+    }).success).toBe(true);
+  });
+
+  it("still rejects a missing field — nullable is not optional", () => {
+    expect(TimingSchema.safeParse({ eventStart: "2026-06-15T18:00:00.000Z" }).success).toBe(false);
+  });
 });
 
 describe("HallkeeperSheetV2Schema — full roundtrip", () => {

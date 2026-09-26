@@ -222,15 +222,35 @@ function buildSetupProgress(tasks: readonly OpsTask[]): EventDaySetupProgress {
   return EventDaySetupProgressSchema.parse({ totalTasks, doneTasks, blockedTasks, activeTasks, percent });
 }
 
+/**
+ * An "arrival" is a supplier someone actually captured: a named supplier, an
+ * arrival window, or both. The compiler also emits prompts derived from the
+ * approved snapshot ("Decor supplier handoff", "Supplier coordination check")
+ * which carry neither — those are notes about what to check, not people
+ * turning up at a door, and listing them under Supplier arrivals told a
+ * hallkeeper vans were booked when none were. They stay on the board as
+ * handoff notes (rendered from `handoffPack.supplierInstructions`) so nothing
+ * is hidden; they are simply not counted as arrivals.
+ */
+export function isCapturedSupplierArrival(
+  instruction: { readonly supplierId: string | null; readonly arrivalWindow: string | null },
+): boolean {
+  return instruction.supplierId !== null || instruction.arrivalWindow !== null;
+}
+
 function buildSupplierArrivals(bundle: NonNullable<EventDayOpsBoard["handoffPack"]>): readonly EventDaySupplierArrival[] {
-  return bundle.supplierInstructions.map((instruction) => EventDaySupplierArrivalSchema.parse({
-    instructionId: instruction.id,
-    title: instruction.title,
-    category: instruction.category,
-    arrivalWindow: instruction.arrivalWindow,
-    detail: instruction.detail,
-    statusLabel: instruction.arrivalWindow === null ? "Arrival window not captured" : `Expected ${instruction.arrivalWindow}`,
-  }));
+  return bundle.supplierInstructions
+    .filter(isCapturedSupplierArrival)
+    .map((instruction) => EventDaySupplierArrivalSchema.parse({
+      instructionId: instruction.id,
+      title: instruction.title,
+      category: instruction.category,
+      arrivalWindow: instruction.arrivalWindow,
+      detail: instruction.detail,
+      statusLabel: instruction.arrivalWindow === null
+        ? "Supplier named · arrival window not captured"
+        : `Expected ${instruction.arrivalWindow}`,
+    }));
 }
 
 function buildChanges(bundle: EventDayOpsBoard["handoffPack"]): EventDayChangesSinceLastHandoff {

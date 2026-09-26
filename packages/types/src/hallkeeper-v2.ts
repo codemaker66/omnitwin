@@ -120,10 +120,17 @@ export type Phase = z.infer<typeof PhaseSchema>;
 export const TimingSchema = z.object({
   /** ISO-8601 datetime the event is scheduled to begin. */
   eventStart: z.string().datetime(),
-  /** ISO-8601 datetime setup must be complete. Default = eventStart - 90min. */
-  setupBy: z.string().datetime(),
-  /** Minutes between setupBy and eventStart for a "buffer" chip on the sheet. */
-  bufferMinutes: z.number().int().nonnegative(),
+  /**
+   * ISO-8601 datetime setup must be complete, or null when the venue has not
+   * recorded a turnaround rule for this room and the planner has scheduled no
+   * earlier phase. Null is the honest absence: a set-up deadline invented from
+   * a constant is an hour a hallkeeper can act on and be wrong about.
+   * Widening from required to nullable is backward compatible — every stored
+   * snapshot still validates.
+   */
+  setupBy: z.string().datetime().nullable(),
+  /** Real minutes between setupBy and eventStart; null whenever setupBy is. */
+  bufferMinutes: z.number().int().nonnegative().nullable(),
 });
 export type Timing = z.infer<typeof TimingSchema>;
 
