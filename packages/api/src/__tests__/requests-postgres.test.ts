@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { STAFF_AUDIENCE_ROLES } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import {
   createRequestCore,
@@ -170,6 +171,13 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     expect(history).toHaveLength(1);
     expect(history[0]?.fromState).toBeNull();
     expect(history[0]?.toState).toBe("sent");
+
+    // The inbox copy: one row per floor role, and none for a role that works
+    // the pipeline or reaches the venue only through an event share.
+    const inbox = await db.select({ role: schema.eventPlanNotifications.audienceRole })
+      .from(schema.eventPlanNotifications)
+      .where(eq(schema.eventPlanNotifications.venueId, f.venueId));
+    expect(inbox.map((row) => row.role).sort()).toEqual(["admin", "hallkeeper", "manager", "staff"]);
   });
 
   it("returns the SAME request when the same press arrives twice", async () => {
@@ -208,8 +216,10 @@ describe.skipIf(target === undefined)("requests on migrated PostgreSQL", () => {
     const made = await createRequestCore(db, f.hallkeeper, f.venueId, press(f));
     if (!("request" in made)) throw new Error("expected a request");
     const audienceAtCreation = [...made.request.audienceRoles].sort();
-    expect(audienceAtCreation).toContain("hallkeeper");
-    expect(audienceAtCreation).not.toContain("client");
+    expect(audienceAtCreation).toEqual([...STAFF_AUDIENCE_ROLES].sort());
+    for (const offFloor of ["client", "planner", "sales", "caterer"]) {
+      expect(audienceAtCreation).not.toContain(offFloor);
+    }
 
     await transitionRequestCore(db, f.staff, made.request.id, { to: "acknowledged" });
     const after = await transitionRequestCore(db, f.admin, made.request.id, { to: "accepted" });

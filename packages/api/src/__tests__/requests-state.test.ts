@@ -11,6 +11,7 @@ import {
   summariseRequest,
 } from "@omnitwin/types";
 import { selectDueRequestEscalations, type EscalationCandidate } from "../services/requests.js";
+import { canManageVenue } from "../utils/query.js";
 
 // The rules that do not need a database: the ladder, the audience derivation,
 // and which unanswered request is due to reach the venue administrator.
@@ -57,22 +58,25 @@ describe("the request ladder", () => {
 });
 
 describe("the audience", () => {
-  it("is derived from the product's role list, not a second copy of it", () => {
+  it("is exactly the roles that may work the venue's floor", () => {
+    // The request API admits a caller through canManageVenue before it reads
+    // the stored audience, so an audience role the floor refuses can never
+    // open the request it was told about. Role by role, the two agree.
+    const venueId = "00000000-0000-4000-8000-00000000f100";
     for (const role of USER_ROLES) {
-      const isClientSide = role === "client" || role === "planner";
-      expect(STAFF_AUDIENCE_ROLES.includes(role)).toBe(!isClientSide);
+      const onTheFloor = canManageVenue({ role, venueId, platformRole: "none" }, venueId);
+      expect(STAFF_AUDIENCE_ROLES.includes(role), role).toBe(onTheFloor);
     }
   });
 
-  it("never includes the client's side of the table", () => {
-    expect(STAFF_AUDIENCE_ROLES).not.toContain("client");
-    expect(STAFF_AUDIENCE_ROLES).not.toContain("planner");
+  it("never includes the client's side, the pipeline or an event-scoped caterer", () => {
+    for (const role of ["client", "planner", "sales", "caterer"] as const) {
+      expect(STAFF_AUDIENCE_ROLES).not.toContain(role);
+    }
   });
 
-  it("carries every staff role the product currently knows", () => {
-    expect(STAFF_AUDIENCE_ROLES).toContain("staff");
-    expect(STAFF_AUDIENCE_ROLES).toContain("hallkeeper");
-    expect(STAFF_AUDIENCE_ROLES).toContain("admin");
+  it("carries every role that works the floor today", () => {
+    expect([...STAFF_AUDIENCE_ROLES].sort()).toEqual(["admin", "hallkeeper", "manager", "staff"]);
   });
 });
 

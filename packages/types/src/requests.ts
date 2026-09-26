@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { USER_ROLES, UserRoleSchema, type UserRole } from "./user.js";
+import { UserRoleSchema, type UserRole } from "./user.js";
 import { VenueIdSchema } from "./venue.js";
 
 // ---------------------------------------------------------------------------
@@ -17,8 +17,9 @@ import { VenueIdSchema } from "./venue.js";
 //   decided once, when it is made, and stored on the row. It is never widened
 //   afterwards — a request made in front of a client's caterer does not later
 //   become visible to the whole house because somebody's role changed. The
-//   staff audience is DERIVED from USER_ROLES, so when the role list grows
-//   the derivation grows with it rather than a hand-maintained copy drifting.
+//   audience is the roles that work the venue's floor, and a test in the API
+//   holds it to exactly the roles canManageVenue admits, so the two cannot
+//   drift apart when the role list grows.
 //
 //   THE LADDER ONLY CLIMBS. sent → acknowledged → accepted → resolved, never
 //   backwards, and a resolved request is finished. `nextRequestState` is the
@@ -58,16 +59,16 @@ export const REQUEST_OUTCOMES = ["done", "not_possible", "no_longer_needed"] as 
 export const RequestOutcomeSchema = z.enum(REQUEST_OUTCOMES);
 export type RequestOutcome = z.infer<typeof RequestOutcomeSchema>;
 
-/** Roles that belong to the client's side of the table. Everything else in
- *  USER_ROLES is house staff, so a widened role list widens the audience
- *  without a second list to keep in step. */
-export const CLIENT_SIDE_ROLES: readonly UserRole[] = ["client", "planner"];
-
-/** The default audience of a request made by house staff: every staff role
- *  the product knows about at the moment of creation. */
-export const STAFF_AUDIENCE_ROLES: readonly UserRole[] = USER_ROLES.filter(
-  (role) => !CLIENT_SIDE_ROLES.includes(role),
-);
+/**
+ * The audience of a request made on the floor: the roles that work a venue's
+ * floor, the same roles the API's canManageVenue admits and the Day Board lets
+ * in. It is a list someone chose rather than "every role but the client's",
+ * because a role joins the floor by decision, not by existing: when sales and
+ * the event-scoped caterer joined the role list, "everyone but the client"
+ * would have told them about requests they can neither open nor act on.
+ * requests-state.test.ts holds this list to canManageVenue, role by role.
+ */
+export const STAFF_AUDIENCE_ROLES: readonly UserRole[] = ["admin", "manager", "staff", "hallkeeper"];
 
 export function isStaffAudienceRole(role: string): boolean {
   return STAFF_AUDIENCE_ROLES.some((staffRole) => staffRole === role);
