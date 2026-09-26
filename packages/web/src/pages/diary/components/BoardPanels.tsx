@@ -1,16 +1,96 @@
 import { useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
-import type { CalendarConflict, ConflictReport, ConflictSeverity } from "@omnitwin/types";
+import type {
+  CalendarBookingEntry,
+  CalendarConflict,
+  CalendarDecisionsDue,
+  CalendarRoom,
+  ConflictReport,
+  ConflictSeverity,
+} from "@omnitwin/types";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
 import type { NeedsActionItem } from "../lib/board-layout.js";
+import { formatInlineDay } from "../lib/board-time.js";
 
 // ---------------------------------------------------------------------------
-// Board side panels (T-493): the conflict rail (explanations + honest checks),
-// the needs-attention holding tray, the undo toast, and the ink-move
-// confirmation. All crisp and opaque — no blur where information lives
-// (the Hallkeeper Test, Canon §18).
+// Board side panels (T-493): the venue-wide decisions list (T-619), the
+// conflict rail (explanations + honest checks), the needs-attention holding
+// tray, the undo toast, and the ink-move confirmation. All crisp and opaque —
+// no blur where information lives (the Hallkeeper Test, Canon §18).
 // ---------------------------------------------------------------------------
+
+export interface DecisionsDuePanelProps {
+  readonly decisions: CalendarDecisionsDue;
+  readonly rooms: readonly CalendarRoom[];
+  readonly nowMs: number;
+  readonly onOpen: (entry: CalendarBookingEntry) => void;
+}
+
+/** The quiet, venue-wide list the Diary opens with (Blake, 26 September
+ *  2026): provisional holds whose decision date has passed or falls within
+ *  the next seven days, whatever the booking's own date. Overdue first, in
+ *  copper; each opens its booking where it stands, without moving the board. */
+export function DecisionsDuePanel({ decisions, rooms, nowMs, onOpen }: DecisionsDuePanelProps): ReactElement {
+  const roomNames = new Map(rooms.map((room) => [room.id, room.name]));
+  const overdue = decisions.holds.filter((hold) => hold.decisionAt !== null && Date.parse(hold.decisionAt) < nowMs);
+  const soon = decisions.holds.filter((hold) => hold.decisionAt === null || Date.parse(hold.decisionAt) >= nowMs);
+  const copy = BOARD_COPY.decisions;
+
+  const group = (label: string, holds: readonly CalendarBookingEntry[], isOverdue: boolean): ReactElement | null => {
+    if (holds.length === 0) return null;
+    return (
+      <div className={`diary-decisions-group${isOverdue ? " is-overdue" : ""}`}>
+        <h3 className="diary-decisions-heading">{label}{" "}<span className="diary-decisions-count">{holds.length}</span></h3>
+        <ul className="diary-decisions-list">
+          {holds.map((hold) => {
+            const decisionDay = hold.decisionAt === null ? "" : formatInlineDay(Date.parse(hold.decisionAt), nowMs);
+            return (
+              <li key={hold.id}>
+                <button
+                  type="button"
+                  className="diary-tray-item diary-decision"
+                  onClick={() => { onOpen(hold); }}
+                >
+                  <span className="diary-decision-title">{hold.title}</span>
+                  <span className="diary-decision-meta">
+                    {`${roomNames.get(hold.spaceId) ?? copy.roomUnknown} · ${formatInlineDay(Date.parse(hold.startsAt), nowMs)}`}
+                  </span>
+                  <span className="diary-decision-meta">
+                    {`${copy.option(hold.rank, hold.jointFlag)} · ${hold.ownerName ?? copy.noOwner}`}
+                  </span>
+                  <span className="diary-decision-when">
+                    {isOverdue ? copy.wasDue(decisionDay) : copy.decideBy(decisionDay)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  };
+
+  return (
+    <section className="diary-panel diary-decisions" aria-label={copy.title}>
+      <h2 className="diary-panel-title">
+        {copy.title}
+        {decisions.total > 0 ? <>{" "}<span className="diary-tray-count">{decisions.total}</span></> : null}
+      </h2>
+      {decisions.holds.length === 0 ? (
+        <p className="diary-panel-empty">{copy.empty}</p>
+      ) : (
+        <>
+          {group(copy.overdue, overdue, true)}
+          {group(copy.soon, soon, false)}
+        </>
+      )}
+      {decisions.total > decisions.holds.length ? (
+        <p className="diary-tray-more">{copy.more(decisions.holds.length, decisions.total)}</p>
+      ) : null}
+    </section>
+  );
+}
 
 const SEVERITY_ORDER: readonly ConflictSeverity[] = ["blocking", "warning", "info"];
 
@@ -99,6 +179,14 @@ export interface HoldingTrayProps {
     enquiry: TrayEnquiry,
     event: React.PointerEvent<HTMLElement>,
   ) => void;
+  /** A press that travelled was a scroll, not a lift — the page abandons the
+   *  ripening long press (T-619). */
+  readonly onEnquiryPressMove?: (event: React.PointerEvent<HTMLElement>) => void;
+  /** The finger left, or the platform took the gesture back. */
+  readonly onEnquiryPressEnd?: () => void;
+  /** The slip being carried. Only THAT slip stops the page scrolling; every
+   *  other keeps `touch-action: pan-x pan-y`. */
+  readonly liftedEnquiryId?: string | null;
 }
 
 export function HoldingTray({
@@ -112,6 +200,9 @@ export function HoldingTray({
   canConvert,
   onConvertEnquiry,
   onBeginEnquiryDrag,
+  onEnquiryPressMove,
+  onEnquiryPressEnd,
+  liftedEnquiryId = null,
 }: HoldingTrayProps): ReactElement {
   return (
     <section className="diary-panel diary-tray" aria-label={BOARD_COPY.tray.title}>
@@ -159,12 +250,19 @@ export function HoldingTray({
           {enquiries.map((enquiry) => (
             <li
               key={enquiry.id}
-              className={`diary-tray-enquiry${canConvert && onBeginEnquiryDrag !== undefined ? " is-draggable" : ""}`}
+              className={[
+                "diary-tray-enquiry",
+                canConvert && onBeginEnquiryDrag !== undefined ? "is-draggable" : "",
+                liftedEnquiryId === enquiry.id ? "is-lifted" : "",
+              ].filter(Boolean).join(" ")}
               onPointerDown={
                 canConvert && onBeginEnquiryDrag !== undefined
                   ? (event) => { onBeginEnquiryDrag(enquiry, event); }
                   : undefined
               }
+              onPointerMove={onEnquiryPressMove}
+              onPointerUp={onEnquiryPressEnd}
+              onPointerCancel={onEnquiryPressEnd}
             >
               <span className="diary-tray-item-title">{enquiry.name}</span>
               <span className="diary-tray-item-reason">

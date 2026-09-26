@@ -3,6 +3,7 @@ import {
   VENUE_TIME_ZONE,
   boardRange,
   dayColumns,
+  formatInlineDay,
   formatWallDay,
   formatWallTime,
   hourTicks,
@@ -72,10 +73,13 @@ describe("boardRange", () => {
     expect(fall.toMs - fall.fromMs).toBe(337 * HOUR);
   });
 
-  it("month view spans the 1st to the 1st", () => {
-    const range = boardRange(Date.parse("2026-09-16T09:00:00.000Z"), "month");
-    expect(new Date(range.fromMs).toISOString()).toBe("2026-08-31T23:00:00.000Z");
-    expect(new Date(range.toMs).toISOString()).toBe("2026-09-30T23:00:00.000Z");
+  // The month board was retired in T-619. What its cases carried — a window
+  // crossing a month boundary and one crossing a year boundary without
+  // drifting — is kept on the fortnight, now the widest zoom.
+  it("crosses a month boundary on the fortnight without drifting", () => {
+    const range = boardRange(Date.parse("2026-10-01T12:00:00.000Z"), "2w");
+    expect(new Date(range.fromMs).toISOString()).toBe("2026-09-27T23:00:00.000Z");
+    expect(range.toMs - range.fromMs).toBe(336 * HOUR);
   });
 });
 
@@ -104,10 +108,12 @@ describe("shiftRange", () => {
     expect(rangeTitle(range)).toMatch(/^Fortnight of /u);
   });
 
-  it("moves months across the year boundary", () => {
-    const december = boardRange(Date.parse("2026-12-10T12:00:00.000Z"), "month");
+  it("pages a fortnight across the year boundary", () => {
+    const december = boardRange(Date.parse("2026-12-24T12:00:00.000Z"), "2w");
     const january = shiftRange(december, 1);
-    expect(new Date(january.fromMs).toISOString()).toBe("2027-01-01T00:00:00.000Z");
+    expect(january.fromMs).toBe(december.toMs);
+    expect(new Date(january.fromMs).toISOString()).toBe("2027-01-04T00:00:00.000Z");
+    expect(january.toMs - january.fromMs).toBe(336 * HOUR);
   });
 });
 
@@ -194,5 +200,19 @@ describe("datetime-local wall inputs (the drawer)", () => {
     const gap = wallInputToMs("2026-03-29T01:30");
     expect(gap).not.toBeNull();
     expect(msToWallInput(gap ?? 0)).toMatch(/^2026-03-29T0[02]:30$/);
+  });
+});
+
+describe("formatInlineDay (T-619)", () => {
+  const NOW = Date.parse("2026-09-16T10:00:00.000Z");
+
+  it("drops the year inside the current year and keeps it outside, never with a comma", () => {
+    expect(formatInlineDay(Date.parse("2026-11-14T18:00:00.000Z"), NOW)).toBe("Sat 14 Nov");
+    expect(formatInlineDay(Date.parse("2027-03-20T15:00:00.000Z"), NOW)).toBe("Sat 20 Mar 2027");
+  });
+
+  it("reads the day in the venue's zone", () => {
+    // 23:30 UTC on 13 June is already Sunday 14 June in London (BST).
+    expect(formatInlineDay(Date.parse("2026-06-13T23:30:00.000Z"), NOW)).toBe("Sun 14 Jun");
   });
 });

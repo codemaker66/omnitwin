@@ -200,7 +200,7 @@ describe("Diary Board render budget", () => {
     const enquiryCalls = listEnquiriesMock.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(calendarCalls + 1); });
-    // The enquiry tray still reloads whenever the calendar data changes.
+    // Refresh re-reads the tray too (T-619); panning and zooming do not.
     await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(enquiryCalls + 1); });
     await settled();
     expect(renders.overview).toBe(before + 1);

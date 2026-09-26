@@ -31,10 +31,14 @@
 .diary-booking-detail { padding: 14px 16px; background: #edf2e6; border: 1px solid #d5dfca; border-radius: 8px; }
 .diary-booking-detail h3 { font: 500 21px/1.3 var(--diary-hand); margin: 0 0 8px; overflow-wrap: anywhere; }
 .diary-booking-detail p { margin: 5px 0 0; font-size: 13px; color: #536b54; }
+/* Owner, client, event, guests as a labelled list (T-619): a bare line made
+   the reader guess which fact it was. */
+.diary-booking-facts { margin: 0; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 14px; font-size: 13px; }
+.diary-booking-facts dt { color: var(--house-ink-3); font-size: 12px; align-self: baseline; }
+.diary-booking-facts dd { margin: 0; color: var(--house-ink-1); overflow-wrap: anywhere; }
 .diary-page button:focus-visible, .diary-page a:focus-visible, .diary-page input:focus-visible, .diary-page select:focus-visible, .diary-page textarea:focus-visible, .diary-page [tabindex]:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .diary-heading { display: flex; align-items: baseline; gap: 22px; }
 .diary-title { margin: 0; color: #183c30; font: 500 clamp(32px,3vw,46px)/1.13 var(--diary-hand); letter-spacing: -.035em; }
-.diary-subtitle { color: #627066; font-size: 14px; margin: 0; }
 .diary-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; }
 .diary-button { border: 1px solid #d7dcce; background: #fffef8; color: #254235; border-radius: 7px; min-height: 38px; padding: 8px 13px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background-color 160ms ease,border-color 160ms ease; }
 .diary-button:hover { background: #ebf0e6; border-color: #95ad9a; }
@@ -82,6 +86,14 @@
 .diary-overview-room span, .diary-overview-room small { display: block; font-size: 12px; color: #4d604e; margin-top: 4px; }
 .diary-overview-cell { min-width: 0; padding: 10px 6px; border-left: 1px solid #eff0e9; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .diary-overview-cell.is-weekend { background: #fafbf6; }
+/* Create-in-context (T-619): the empty part of a room-day square is a quiet
+   dashed target that fills the room the day's bookings leave. With a pointer
+   that hovers it appears on the row's hover or on focus; on touch screens,
+   which have no hover, it is always shown. Colour only — nothing moves. */
+.diary-overview-new { flex: 1 1 auto; min-height: 34px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px dashed var(--house-rule-strong); border-radius: 6px; background: transparent; color: var(--house-ink-2); font-size: 12px; cursor: cell; opacity: 0; transition: opacity 140ms ease,border-color 140ms ease,background-color 140ms ease; }
+.diary-overview-row:hover .diary-overview-new, .diary-overview-new:focus-visible { opacity: 1; }
+.diary-overview-new:hover { border-color: var(--house-edge); background: var(--house-sheet-hover); }
+@media (hover: none) { .diary-overview-new { opacity: 1; } }
 .diary-overview-booking { width: 100%; min-height: 88px; border: 1px solid #bacbb0; border-radius: 7px; background: #d9e4cf; color: #294431; padding: 9px; text-align: left; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; transition: border-color 160ms ease,box-shadow 160ms ease; }
 .diary-overview-booking:hover { border-color: #6c8d65; box-shadow: 0 3px 8px #24452a18; }
 .diary-overview-booking strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13px; line-height: 1.35; font-weight: 650; }
@@ -113,7 +125,24 @@
 .diary-tray-enquiry .diary-button { align-self: flex-start; background: #335b45; color: #fff; border-color: #335b45; min-height: 32px; font-size: 11px; padding: 6px 10px; margin-top: 3px; }
 .diary-tray-drag-hint { font-size: 11px; color: #6a786a; }
 .diary-tray-more { font-size: 11px; line-height: 1.45; color: #6a786a; margin: 10px 0 0; }
-.diary-tray-enquiry.is-draggable { cursor: grab; touch-action: none; }
+/* A finger scrolls the tray; a long press lifts the slip (T-619). The page
+   keeps pan-x pan-y until the press ripens, and only the slip being carried
+   takes the gesture from the browser. */
+.diary-tray-enquiry.is-draggable { cursor: grab; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.diary-tray-enquiry.is-lifted { cursor: grabbing; touch-action: none; }
+/* Decisions due (T-619): the quiet venue-wide list the Diary opens with.
+   Overdue decisions carry the copper tone and the word; the rest are ink. */
+.diary-decisions-group + .diary-decisions-group { margin-top: 14px; }
+.diary-decisions-heading { display: flex; align-items: center; gap: 8px; margin: 0 0 9px; color: var(--house-ink-2); font-size: 12px; font-weight: 600; }
+.diary-decisions-group.is-overdue .diary-decisions-heading { color: var(--house-copper-text); }
+.diary-decisions-count { font-size: 11px; font-weight: 600; background: var(--house-sage-wash); color: var(--house-sage-chip); border-radius: 16px; padding: 2px 7px; }
+.diary-decisions-group.is-overdue .diary-decisions-count { background: var(--house-copper-wash); color: var(--house-copper-chip); }
+.diary-decisions-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.diary-decision { gap: 3px; padding: 10px 12px; color: var(--house-ink-1); }
+.diary-decision-title { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.diary-decision-meta { font-size: 12px; color: var(--house-ink-2); }
+.diary-decision-when { font-size: 12px; font-weight: 600; color: var(--house-ink-2); }
+.diary-decisions-group.is-overdue .diary-decision-when { color: var(--house-copper-text); }
 .diary-conflicts { background: #f6e8de; border-color: #e6d2c2; }
 .diary-conflict-heading { display: flex; align-items: center; gap: 8px; color: #9e6132; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; cursor: pointer; padding: 10px 0; }
 .diary-conflict-heading > span:last-child { margin-left: auto; font-size: 11px; text-transform: none; letter-spacing: 0; }
@@ -143,11 +172,23 @@
 .diary-rail-name { font: 500 17px/1.2 var(--diary-hand); }
 .diary-rail-capacity, .diary-rail-counts, .diary-rail-utilisation { font-size: 11px; color: #77816e; }
 .diary-rail-counts { display: flex; flex-wrap: wrap; gap: 7px; }
-.diary-rail-dial { display: none; }
 .diary-lane { position: relative; flex: 0 0 auto; }
 .diary-lane-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid #e7ecdf; pointer-events: none; }
+/* Create-in-context (T-619): the whole empty lane is the target, UNDER the
+   blocks so it is only hit where the lane is genuinely free. It shows only
+   under the pointer or with focus — an always-visible "+" on every lane
+   would be noise across every room and hour. */
+.diary-lane-new { position: absolute; inset: 0; z-index: 1; width: 100%; border: 0; border-radius: 6px; background: transparent; padding: 0; cursor: cell; transition: background-color 140ms ease; }
+.diary-lane-new:hover { background: var(--house-sheet-hover); }
+.diary-page .diary-lane-new:focus-visible { outline-offset: -3px; background: var(--house-sheet-hover); }
 .diary-lane-col.is-weekend, .diary-axis-day.is-weekend { background: #f6f8f0; }
-.diary-block { position: absolute; border: 0; background: transparent; padding: 0; text-align: left; color: #2e4c37; touch-action: none; border-radius: 7px; z-index: 2; }
+/* The lane pans under a finger until a long press lifts a block, and only the
+   lifted block claims the gesture (T-619). */
+.diary-block { position: absolute; border: 0; background: transparent; padding: 0; text-align: left; color: #2e4c37; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; border-radius: 7px; z-index: 2; }
+.diary-block.is-lifted { touch-action: none; }
+/* What the finger picked up casts a shadow. No transform: a block's position
+   on the timeline is data. */
+.diary-block.is-lifted .diary-block-card { box-shadow: 0 6px 16px rgb(20 48 42 / 28%); }
 .diary-block-card { display: flex; flex-direction: column; gap: 5px; height: 100%; overflow: hidden; padding: 9px; background: #d8e4cc; border: 1px solid #b5caa5; border-radius: 7px; }
 .diary-block.is-hold .diary-block-card { background: #f5e8b9; border-color: #dca475; color: #6a542e; }
 .diary-block.is-prospect .diary-block-card { background: #f6f8ef; border-style: dashed; }
@@ -171,9 +212,14 @@
 .diary-gap-line { position: absolute; height: 1px; width: 100%; background: #bdcdb2; }
 .diary-gap-label { background: #fffef9; padding: 1px 5px; position: relative; }
 .diary-gap-note { background: #fff6dc; padding: 1px 4px; position: relative; color: #93652d; }
-.diary-ghost { position: absolute; top: 5px; height: 65px; border: 2px solid #547d43; border-radius: 7px; background: #deebd5; pointer-events: none; z-index: 8; padding: 5px; overflow: hidden; }
+/* The ghost passes under the sticky room rail and time axis, as blocks do, and
+   its time stays readable beside the rail while its start is scrolled out of
+   view: on a phone a lifted evening booking is wider than the lane (T-619).
+   `clip`, not `hidden`, so the ghost is no scroll container and its labels
+   stick to the lane's own scrollport. */
+.diary-ghost { position: absolute; top: 5px; height: 65px; border: 2px solid #547d43; border-radius: 7px; background: #deebd5; pointer-events: none; z-index: 3; padding: 5px; overflow: clip; }
 .diary-ghost.is-blocked { border-color: #ae4f3b; background: #f8dfd6; }
-.diary-ghost-time, .diary-ghost-reason { display: block; font-size: 11px; }
+.diary-ghost-time, .diary-ghost-reason { display: block; width: fit-content; position: sticky; left: calc(var(--diary-rail-width) + 6px); font-size: 11px; }
 .diary-now { position: absolute; top: 0; bottom: 0; width: 1px; background: #7a9b64; pointer-events: none; z-index: 3; }
 .diary-now-plaque { position: absolute; top: 0; left: -17px; background: #638350; color: #fff; font-size: 11px; padding: 3px 6px; border-radius: 4px; }
 /* Real booking and approval surfaces. */
@@ -202,7 +248,6 @@
 .diary-field-error, .diary-drawer-error { font-size: 12px; line-height: 1.5; }
 .diary-drawer-note { font-size: 12px; line-height: 1.55; color: #70806a; }
 .diary-drawer-transitions { border-top: 1px solid #dde4d2; padding-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
-.diary-return { color: #3b6548; text-underline-offset: 4px; font-size: 13px; }
 .diary-welcome-overlay, .diary-palette-backdrop { position: fixed; inset: 0; z-index: 115; display: grid; place-items: center; background: #1b342b55; padding: 20px; }
 .diary-welcome, .diary-palette { width: min(660px,100%); max-height: calc(100dvh - 40px); overflow: auto; background: #fffdf4; color: #284431; border: 1px solid #d9dfca; border-radius: 15px; box-shadow: 0 20px 60px #152d3330; padding: 30px; }
 .diary-welcome-body { font-size: 14px; line-height: 1.65; }
@@ -255,6 +300,9 @@
   .diary-rail-photo { width: 42px; height: 62px; }
   .diary-rail-name { font-size: 15px; }
   .diary-drawer { width: 100%; padding: 20px; }
+  /* Paired fields stack on a phone: two date-and-time inputs side by side ran
+     past the drawer's edge at 390px, and the drawer scrolled sideways. */
+  .diary-field-row { grid-template-columns: minmax(0,1fr); }
   .diary-toast { bottom: 12px; padding: 12px 15px; }
   .diary-welcome { padding: 22px; }
   .diary-welcome-entries { grid-template-columns: 1fr; gap: 5px; }

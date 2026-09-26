@@ -3,7 +3,19 @@
 // doctrine). Every user-facing string lives here so the claim guard can
 // sweep it: planning-support language only, no compliance vocabulary,
 // INKED — never "strong enquiry".
+//
+// Strings added from T-619 on use Blake's hold words (26 September 2026):
+// "Provisional", "1st option", "2nd option", "Joint 1st", "Confirmed". The
+// rest of this file still carries the older Canon vocabulary; the Diary
+// rebuild replaces it in one pass.
 // ---------------------------------------------------------------------------
+
+function ordinal(rank: number): string {
+  const mod100 = rank % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${String(rank)}th`;
+  const suffix = rank % 10 === 1 ? "st" : rank % 10 === 2 ? "nd" : rank % 10 === 3 ? "rd" : "th";
+  return `${String(rank)}${suffix}`;
+}
 
 export const BOARD_COPY = {
   title: "The Diary",
@@ -19,7 +31,9 @@ export const BOARD_COPY = {
   emptyRange: "No bookings in this range.",
   showExited: "Show released & cancelled",
 
-  views: { day: "Day", week: "Week", "2w": "2W", month: "Month" } as const,
+  // Three zooms, and only three (T-619). The month board was retired; an old
+  // `?view=month` link lands on the week its date falls in.
+  views: { day: "Day", week: "Week", "2w": "2W" } as const,
 
   /** The Command Centre card face (C1). Doors language, never compliance;
    *  the countdown is minute-granular on the shared board clock. */
@@ -48,12 +62,37 @@ export const BOARD_COPY = {
       "Booked share of this range.",
   },
 
-  /** The drawing-sheet title block (C1). Labels only — no claims. */
-  titleBlock: {
-    sheet: "The Diary",
-    drawnBy: "Drawn from",
-    drawnByValue: "the live diary",
-    rangeLabel: "Sheet",
+  /** Create-in-context (T-619): the controls that open the drawer at the
+   *  room and time the coordinator pointed at. */
+  create: {
+    cellLabel: (room: string, day: string): string => `New booking — ${room}, ${day}`,
+    cellHint: "New",
+    // A pointer picks a TIME on the lane; the keyboard, which has no
+    // position to offer, picks the DAY the board is showing. The name says
+    // the day, because the keyboard is who hears it.
+    laneLabel: (room: string, day: string): string =>
+      `New booking — ${room}, ${day}. Click the lane for a particular time.`,
+  },
+
+  /** The venue-wide list the Diary opens with (T-619, Blake's decision of
+   *  26 September 2026): provisional holds whose decision date has passed or
+   *  falls within the next seven days, whatever the booking's own date. */
+  decisions: {
+    title: "Decisions due",
+    overdue: "Overdue",
+    soon: "Next 7 days",
+    empty: "No decision dates in the next 7 days.",
+    option: (rank: number | null, jointFlag: boolean): string => {
+      if (rank === null) return "Provisional";
+      if (rank === 1 && jointFlag) return "Joint 1st";
+      return `${ordinal(rank)} option`;
+    },
+    decideBy: (day: string): string => `Decide by ${day}`,
+    wasDue: (day: string): string => `Decision was due ${day}`,
+    noOwner: "No owner",
+    roomUnknown: "Room not listed",
+    more: (shown: number, total: number): string =>
+      `Showing the ${String(shown)} most urgent of ${String(total)}.`,
   },
   today: "Today",
   previous: "Earlier",
@@ -98,6 +137,15 @@ export const BOARD_COPY = {
       `Pencil in ${name}. The enquiry stays in review.`,
     hygieneLegend: "Pencil hygiene",
     ownerNote: "You will own this pencil.",
+    // The edit drawer's facts (T-619). Each absence is stated as an answer
+    // rather than left as a blank line to interpret.
+    summaryLabel: "Booking summary",
+    ownerLabel: "Owner",
+    ownerUnassigned: "Nobody yet",
+    clientLabel: "Client",
+    clientNone: "No client linked",
+    eventLabel: "Event",
+    guestsLabel: "Guests",
     saveFailed: "That change could not be saved — nothing was altered.",
     created: (title: string): string => `Added ${title} to the diary.`,
     saved: (title: string): string => `Saved ${title}.`,

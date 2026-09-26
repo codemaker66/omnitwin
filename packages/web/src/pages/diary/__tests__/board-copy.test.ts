@@ -58,3 +58,40 @@ describe("board copy claim guard", () => {
     expect(BOARD_COPY.conflicts.turnaround.not_checked.toLowerCase()).toContain("not checked");
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-619: strings added from the timetable on speak Blake's hold words
+// (26 September 2026) — "Provisional", "1st option", "2nd option", "Joint
+// 1st", "Confirmed" — and never the internal ones.
+// ---------------------------------------------------------------------------
+describe("T-619 copy uses Blake's hold words", () => {
+  const INTERNAL = /pencil|\bink|prospect|ladder|hold decision|joint hold/iu;
+  const t619 = [
+    ...allStrings(BOARD_COPY.create),
+    ...allStrings(BOARD_COPY.decisions),
+    BOARD_COPY.drawer.summaryLabel,
+    BOARD_COPY.drawer.ownerLabel,
+    BOARD_COPY.drawer.ownerUnassigned,
+    BOARD_COPY.drawer.clientLabel,
+    BOARD_COPY.drawer.clientNone,
+    BOARD_COPY.drawer.eventLabel,
+    BOARD_COPY.drawer.guestsLabel,
+  ];
+
+  it("never reaches for the internal vocabulary", () => {
+    for (const text of t619) expect(text, text).not.toMatch(INTERNAL);
+  });
+
+  it("names a hold's option as Blake does", () => {
+    expect(BOARD_COPY.decisions.option(1, false)).toBe("1st option");
+    expect(BOARD_COPY.decisions.option(2, false)).toBe("2nd option");
+    expect(BOARD_COPY.decisions.option(3, false)).toBe("3rd option");
+    expect(BOARD_COPY.decisions.option(1, true)).toBe("Joint 1st");
+    expect(BOARD_COPY.decisions.option(null, false)).toBe("Provisional");
+    expect(BOARD_COPY.decisions.option(11, false)).toBe("11th option");
+  });
+
+  it("keeps the toolbar to the three zooms", () => {
+    expect(Object.keys(BOARD_COPY.views)).toEqual(["day", "week", "2w"]);
+  });
+});
