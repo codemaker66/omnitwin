@@ -190,12 +190,13 @@ async function loadProposalEventContext(db: Database, proposal: ProposalRow): Pr
  * lane widens `USER_ROLES`, while the deployed CHECK constraints
  * (`event_plan_changes_audience_json_check` and
  * `event_plan_notifications_role_check`, migration 0042) still admit only the
- * original seven values until the inventory lane's 0072 widens them to ten.
- * In that window every insert here raises SQLSTATE 23514. Unwrapped, that
- * turned a staff member saving a proposal version into a 500.
+ * original seven values until migration 0073 (the inventory lane's vocabulary
+ * migration) widens them to ten. In that window every insert here raises
+ * SQLSTATE 23514. Unwrapped, that turned a staff member saving a proposal
+ * version into a 500.
  *
- * The long-term answer is the migration, not a narrower audience: this lane
- * must not run against a database without 0072. The isolation below keeps the
+ * The long-term answer is the migration, not a narrower audience: this code
+ * must not run against a database without 0073. The isolation below keeps the
  * failure proportionate meanwhile — and is correct in general, since no
  * announcement should ever be able to fail a save.
  */

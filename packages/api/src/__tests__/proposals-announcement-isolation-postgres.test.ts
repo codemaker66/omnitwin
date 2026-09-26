@@ -11,17 +11,18 @@ import { proposalRoutes } from "../routes/proposals.js";
 // An announcement must never be able to fail a save.
 //
 // The audience vocabulary and the database disagree across a deploy boundary.
-// `COMMERCIAL_AUDIENCE_ROLES` gains `sales` the moment the roles lane widens
-// `USER_ROLES`, while the deployed CHECK constraints from migration 0042 admit
-// only the original seven values until the inventory lane's 0072 widens them
-// to ten. In that window every announcement insert raises SQLSTATE 23514 — and
-// before this fix that turned a staff member saving a proposal version into a
-// 500 on work that had already committed.
+// `COMMERCIAL_AUDIENCE_ROLES` includes `sales` now that the roles lane has
+// widened `USER_ROLES`, while the CHECK constraints from migration 0042 admit
+// only the original seven values until migration 0073 (the inventory lane's
+// vocabulary migration) widens them to ten. In that window every announcement
+// insert raises SQLSTATE 23514 — and before this fix that turned a staff member
+// saving a proposal version into a 500 on work that had already committed.
 //
 // The other PostgreSQL fixtures in this repo build tables from
 // `column.getSQLType()` alone, so they carry NO CHECK constraints and cannot
-// see this class of failure at all. This one copies the real constraints out
-// of 0042 verbatim.
+// see this class of failure at all. This one copies the real constraints
+// verbatim: 0073's, which are in force once this release's migrations apply,
+// and 0042's, which production holds until they do.
 //
 // Opt-in, isolated PostgreSQL only. Never consults DATABASE_URL or .env.
 // ---------------------------------------------------------------------------
@@ -44,9 +45,11 @@ const EVENT = "77777777-7777-4777-8777-777777777777";
 const PROPOSAL = "66666666-6666-4666-8666-666666666666";
 const STAFF = "33333333-3333-4333-8333-333333333333";
 
-/** Copied verbatim from drizzle/0042_event_plan_lifecycle.sql:100-113. */
-const DEPLOYED_AUDIENCE_VALUES = '["client", "planner", "staff", "hallkeeper", "admin", "supplier", "executive"]';
-const DEPLOYED_ROLE_VALUES = "'client', 'planner', 'staff', 'hallkeeper', 'admin', 'supplier', 'executive'";
+/** Copied verbatim from drizzle/0073_vocabulary_checks_and_hot_path_indexes.sql, section 3. */
+const DEPLOYED_AUDIENCE_VALUES = '["client", "planner", "staff", "hallkeeper", "admin", "caterer", "sales", "manager", "supplier", "executive"]';
+const DEPLOYED_ROLE_VALUES = "'client', 'planner', 'staff', 'hallkeeper', 'admin', 'caterer', 'sales', 'manager', 'supplier', 'executive'";
+/** Copied verbatim from drizzle/0042_event_plan_lifecycle.sql:100-113: what production holds before 0073. */
+const PRE_0073_AUDIENCE_VALUES = '["client", "planner", "staff", "hallkeeper", "admin", "supplier", "executive"]';
 
 function audienceCheckSql(allowed: string): string {
   return `
@@ -180,19 +183,17 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
   it("announces normally when the audience is inside the deployed CHECK", async () => {
     const res = await createVersion();
     expect(res.statusCode).toBe(201);
-    // staff and admin are both among the deployed seven, so it lands.
+    // staff, admin and sales are all inside the deployed ten, so it lands.
     expect(await changeCount()).toBe(1);
   });
 
   it("still saves the version when the announcement violates the CHECK", async () => {
-    // Narrow the REAL constraint by values the code actually emits. At this
-    // base `sales` cannot be used to trigger it — `sales` is not yet in
-    // USER_ROLES, so it never reaches the audience array — but the mechanism
-    // reproduced here is identical: an audience value the deployed CHECK does
-    // not admit, raising SQLSTATE 23514 on this exact insert. That is the
-    // state of production between the roles lane merging and 0072 applying.
+    // Put back 0042's real seven-value constraint: the state of production
+    // between the roles lane deploying and 0073 applying. `sales` is in the
+    // commercial audience and not in those seven, so this exact insert raises
+    // SQLSTATE 23514.
     await pool.query("ALTER TABLE event_plan_changes DROP CONSTRAINT event_plan_changes_audience_json_check");
-    await pool.query(audienceCheckSql('["client", "planner", "hallkeeper", "supplier", "executive"]'));
+    await pool.query(audienceCheckSql(PRE_0073_AUDIENCE_VALUES));
     try {
       const res = await createVersion();
 
