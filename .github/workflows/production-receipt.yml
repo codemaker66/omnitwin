@@ -1,0 +1,130 @@
+# Production receipt: what production is running, read from GitHub's runners.
+#
+# The development containers cannot reach venviewer.com or api.venviewer.com,
+# so a release is confirmed from here, on demand. It changes nothing. For one
+# commit it reads:
+#   - the deployment reports Vercel and Railway post back to GitHub;
+#   - the API's public version probe, which names the commit Railway built,
+#     and whether that build contains the expected commit;
+#   - the API's readiness;
+#   - optional route checks without sign-in: a new route answering 401
+#     rather than 404 shows the deployed API has it;
+#   - the front door's status.
+# It fails when the API does not contain the commit, is not ready, or a route
+# check differs.
+
+name: Production receipt
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit SHA expected in production. Empty means the head of the chosen branch.
+        required: false
+        default: ""
+      routes:
+        description: "Space-separated STATUS:PATH checks on the API, e.g. 401:/venues/00000000-0000-0000-0000-000000000000/turnaround-rules"
+        required: false
+        default: ""
+      wait-minutes:
+        description: Minutes to wait for the API to report a build that contains the commit (0 to 20).
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+  deployments: read
+  statuses: read
+
+concurrency:
+  group: production-receipt
+  cancel-in-progress: false
+
+jobs:
+  receipt:
+    name: Read production
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Read what production reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EXPECTED_SHA: ${{ inputs.sha || github.sha }}
+          ROUTE_CHECKS: ${{ inputs.routes }}
+          WAIT_MINUTES: ${{ inputs.wait-minutes }}
+          API: https://api.venviewer.com
+          WEB: https://venviewer.com
+        run: |
+          set -euo pipefail
+          note() { printf '%s\n' "$*" | tee -a "$GITHUB_STEP_SUMMARY"; }
+          status_of() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$1" || true; }
+          failed=0
+
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full 40-character commit"; exit 1; }
+          [[ "$WAIT_MINUTES" =~ ^[0-9]+$ ]] && (( WAIT_MINUTES <= 20 )) || { echo "::error::wait-minutes must be 0 to 20"; exit 1; }
+
+          note "## Production receipt for \`$EXPECTED_SHA\`"
+          note ""
+          note "### Deployments reported to GitHub for this commit"
+          deployments=$(gh api "repos/$REPOSITORY/deployments?sha=$EXPECTED_SHA&per_page=20")
+          if [[ "$(jq length <<<"$deployments")" == "0" ]]; then note "- none"; fi
+          while IFS=$'\t' read -r id environment creator; do
+            [[ -n "$id" ]] || continue
+            state=$(gh api "repos/$REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state // "no status"')
+            note "- $environment ($creator): $state"
+          done < <(jq -r '.[] | [.id, .environment, .creator.login] | @tsv' <<<"$deployments")
+          gh api "repos/$REPOSITORY/commits/$EXPECTED_SHA/status" \
+            --jq '.statuses[] | "- status \(.context): \(.state) \(.description // "")"' | tee -a "$GITHUB_STEP_SUMMARY"
+
+          note ""
+          note "### API"
+          deadline=$(( $(date +%s) + WAIT_MINUTES * 60 ))
+          while :; do
+            version=$(curl -fsS --max-time 20 "$API/health/version" || true)
+            reported=$(jq -r '.gitSha // empty' <<<"$version" 2>/dev/null || true)
+            relation="unknown"
+            if [[ "$reported" =~ ^[0-9a-f]{40}$ ]]; then
+              relation=$(gh api "repos/$REPOSITORY/compare/$EXPECTED_SHA...$reported" --jq '.status' 2>/dev/null || echo "unknown")
+            fi
+            if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then break; fi
+            if (( $(date +%s) >= deadline )); then break; fi
+            sleep 30
+          done
+          note "- /health/version: \`${version:-no answer}\`"
+          if [[ "$relation" == "identical" || "$relation" == "ahead" ]]; then
+            note "- the running build (\`$reported\`) contains the expected commit ($relation)"
+          else
+            note "- the running build does not contain the expected commit (reports \`${reported:-nothing}\`, $relation)"
+            failed=1
+          fi
+          ready=$(status_of "$API/health/ready")
+          note "- /health/ready: $ready"
+          [[ "$ready" == "200" ]] || failed=1
+
+          if [[ -n "$ROUTE_CHECKS" ]]; then
+            note ""
+            note "### API routes without sign-in"
+            for check in $ROUTE_CHECKS; do
+              if [[ ! "$check" =~ ^([0-9]{3}):(/[A-Za-z0-9/_.-]*)$ ]]; then
+                note "- \`$check\` is not STATUS:PATH"
+                failed=1
+                continue
+              fi
+              want=${BASH_REMATCH[1]}
+              path=${BASH_REMATCH[2]}
+              got=$(status_of "$API$path")
+              if [[ "$got" == "$want" ]]; then
+                note "- $path: $got, as expected"
+              else
+                note "- $path: $got, expected $want"
+                failed=1
+              fi
+            done
+          fi
+
+          note ""
+          note "### Web"
+          note "- $WEB/: $(status_of "$WEB/")"
+
+          exit "$failed"
