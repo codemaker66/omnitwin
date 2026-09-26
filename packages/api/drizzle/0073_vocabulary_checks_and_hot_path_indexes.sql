@@ -13,6 +13,17 @@
 -- supplier and executive, which are audiences rather than user roles.
 
 -- ---------------------------------------------------------------------------
+-- 0. A bounded lock wait. The tables are small, but ADD CONSTRAINT and ADD
+--    COLUMN take ACCESS EXCLUSIVE locks that are held until the migration
+--    transaction commits, and users is read on every authenticated request.
+--    Queued behind a long-running transaction, this migration would hold
+--    every later request behind it; with a bounded wait it fails instead,
+--    and the rollback leaves the schema exactly as it was. SET LOCAL lasts
+--    until that transaction ends.
+-- ---------------------------------------------------------------------------
+SET LOCAL lock_timeout = '5s';
+
+-- ---------------------------------------------------------------------------
 -- 1. Assertions. Every CHECK below is only added once the data satisfies it.
 -- ---------------------------------------------------------------------------
 DO $assertions$
