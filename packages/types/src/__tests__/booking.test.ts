@@ -12,6 +12,8 @@ import {
   CalendarResponseSchema,
   ConflictReportSchema,
   CreateBookingSchema,
+  DECISIONS_DUE_HORIZON_DAYS,
+  DECISIONS_DUE_LIMIT,
   MAX_CALENDAR_RANGE_DAYS,
   TransitionBookingSchema,
   TurnaroundRuleSchema,
@@ -594,6 +596,93 @@ describe("Calendar entries and conflicts", () => {
     expect(
       CalendarBookingEntrySchema.safeParse({ ...entry, guestCount: -1 }).success,
     ).toBe(false);
+  });
+
+  it("names the owner when the server knows them, and stays valid when it does not (T-619)", () => {
+    const entry = {
+      entryType: "booking",
+      id: BOOKING_ID,
+      spaceId: SPACE_ID,
+      kind: "hold",
+      status: "active",
+      state: "hold",
+      title: "MacLeod wedding",
+      eventType: "wedding",
+      startsAt: "2026-11-14T15:00:00.000Z",
+      endsAt: "2026-11-14T23:00:00.000Z",
+      rank: 1,
+      jointFlag: false,
+      decisionAt: "2026-10-02T12:00:00.000Z",
+      ownerUserId: "00000000-0000-4000-8000-0000000000aa",
+      nextAction: "Call the couple.",
+      nextActionDueAt: "2026-09-30T09:00:00.000Z",
+      eventId: null,
+      seriesId: null,
+    };
+    expect(CalendarBookingEntrySchema.parse({ ...entry, ownerName: "Fiona Coordinator" }).ownerName)
+      .toBe("Fiona Coordinator");
+    // Absent: an older server. Null: no owner, or the user row is gone.
+    expect(CalendarBookingEntrySchema.safeParse(entry).success).toBe(true);
+    expect(CalendarBookingEntrySchema.safeParse({ ...entry, ownerName: null }).success).toBe(true);
+    expect(CalendarBookingEntrySchema.safeParse({ ...entry, ownerName: "x".repeat(201) }).success).toBe(false);
+  });
+
+  it("carries the venue-wide decisions list only as active holds with a decision date (T-619)", () => {
+    const hold = {
+      entryType: "booking",
+      id: BOOKING_ID,
+      spaceId: SPACE_ID,
+      kind: "hold",
+      status: "active",
+      state: "hold",
+      title: "MacLeod wedding",
+      eventType: "wedding",
+      startsAt: "2027-03-20T15:00:00.000Z",
+      endsAt: "2027-03-20T23:00:00.000Z",
+      rank: 2,
+      jointFlag: false,
+      decisionAt: "2026-09-25T12:00:00.000Z",
+      ownerUserId: null,
+      nextAction: null,
+      nextActionDueAt: null,
+      eventId: null,
+      seriesId: null,
+      ownerName: null,
+    };
+    const base = {
+      venueId: VENUE_ID,
+      range: { from: "2026-09-21T00:00:00.000Z", to: "2026-09-28T00:00:00.000Z" },
+      rooms: [],
+      entries: [],
+      conflicts: {
+        conflicts: [],
+        checks: {
+          inkDoubleBook: { status: "checked" },
+          holdOverlap: { status: "checked" },
+          turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
+        },
+      },
+    };
+    // Absent: an older server, which says nothing about decisions.
+    expect(CalendarResponseSchema.safeParse(base).success).toBe(true);
+    const parsed = CalendarResponseSchema.parse({ ...base, decisionsDue: { holds: [hold], total: 3 } });
+    expect(parsed.decisionsDue?.holds[0]?.title).toBe("MacLeod wedding");
+    expect(parsed.decisionsDue?.total).toBe(3);
+    // A confirmed booking, a released hold or a hold with no decision date
+    // has no decision due, and the contract refuses to carry one.
+    for (const wrong of [
+      { ...hold, kind: "ink", state: "ink", rank: null },
+      { ...hold, status: "released", state: "released" },
+      { ...hold, decisionAt: null },
+    ]) {
+      expect(CalendarResponseSchema.safeParse({ ...base, decisionsDue: { holds: [wrong], total: 1 } }).success).toBe(false);
+    }
+    expect(CalendarResponseSchema.safeParse({ ...base, decisionsDue: { holds: [hold], total: 0 } }).success).toBe(false);
+    expect(DECISIONS_DUE_HORIZON_DAYS).toBe(7);
+    expect(CalendarResponseSchema.safeParse({
+      ...base,
+      decisionsDue: { holds: Array.from({ length: DECISIONS_DUE_LIMIT + 1 }, () => hold), total: 60 },
+    }).success).toBe(false);
   });
 
   it("turnaroundRules are optional (older servers) and carry the rule wire shape when present", () => {

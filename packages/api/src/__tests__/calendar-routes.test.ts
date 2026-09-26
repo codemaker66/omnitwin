@@ -156,9 +156,16 @@ describe("calendar read model — source contract", () => {
 
   it("returns every booking kind and status in range — view filtering is a client concern", async () => {
     const source = await readFile(resolve("src/routes/calendar.ts"), "utf-8");
-    expect(source).toContain("isNull(bookings.deletedAt)");
-    expect(source).not.toMatch(/eq\(bookings\.kind/);
-    expect(source).not.toMatch(/eq\(bookings\.status/);
+    // The range read only: the venue-wide decisions list that follows it is
+    // deliberately active holds (api-hot-paths-postgres.test.ts runs both).
+    const start = source.indexOf("const [bookingRows");
+    const end = source.indexOf("// Room-scoped, timed phases");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const rangeRead = source.slice(start, end);
+    expect(rangeRead).toContain("isNull(bookings.deletedAt)");
+    expect(rangeRead).not.toMatch(/eq\(bookings\.kind/);
+    expect(rangeRead).not.toMatch(/eq\(bookings\.status/);
   });
 
   it("validates the full response against the shared schema before sending", async () => {
