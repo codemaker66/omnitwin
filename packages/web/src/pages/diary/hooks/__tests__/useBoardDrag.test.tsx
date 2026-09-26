@@ -168,13 +168,70 @@ describe("touch: a finger scrolls, a long press lifts", () => {
   // emulation. What IS pinnable here is the contract: a non-passive listener
   // registered at pointerdown that decides per event.
   it("registers a non-passive touchmove listener at pointerdown, not at the lift", () => {
-    const addSpy = vi.spyOn(document, "addEventListener");
     render(<Harness />);
+    const addSpy = vi.spyOn(document, "addEventListener");
     const button = screen.getByRole("button", { name: "Booking" });
     fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
     const registration = addSpy.mock.calls.find(([type]) => type === "touchmove");
     expect(registration, "touchmove must be registered before the press ripens").toBeDefined();
     expect(registration?.[2]).toMatchObject({ passive: false });
+  });
+
+  // WebKit settles at touchstart whether it will wait for the page, so the
+  // board's non-passive listener has to be there before any finger lands.
+  it("keeps every touch holdable while the board can be dragged, and not when it is read-only", () => {
+    const addSpy = vi.spyOn(document, "addEventListener");
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    const { unmount } = render(<Harness />);
+    const kept = addSpy.mock.calls.filter(([type]) => type === "touchmove");
+    expect(kept, "one listener from mount, before any press").toHaveLength(1);
+    expect(kept[0]?.[2]).toMatchObject({ passive: false });
+    unmount();
+    expect(removeSpy.mock.calls.some(([type, listener]) => type === "touchmove" && listener === kept[0]?.[1])).toBe(true);
+
+    addSpy.mockClear();
+    render(<Harness writable={false} />);
+    expect(addSpy.mock.calls.some(([type]) => type === "touchmove")).toBe(false);
+  });
+
+  // A flick leaves the lane gliding; a finger that lands on it stops it. The
+  // browser dispatches that touchstart uncancelable and will not let the page
+  // hold the touch, so a lift would die on the first movement (Chromium 147,
+  // which flings emulated swipes too). The press is the lane's.
+  it("lifts nothing from a press that stopped a gliding lane, and gives the scroll back", () => {
+    const onCommit = vi.fn();
+    let lifted: string | null = "unset";
+    function Probe() {
+      const drag = useBoardDrag({ laneOrder: ["room"], inksByLane: new Map(), pxPerHour: 96, writable: true, onCommit, onRejected: vi.fn() });
+      lifted = drag.liftedBlockId;
+      return <button type="button" {...drag.handlersFor(block)}>Booking</button>;
+    }
+    render(<Probe />);
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    document.dispatchEvent(new Event("touchstart", { cancelable: false, bubbles: true }));
+    act(() => { vi.advanceTimersByTime(400); });
+    expect(lifted).toBeNull();
+    expect(removeSpy.mock.calls.some(([type]) => type === "touchmove"), "the press stood down").toBe(true);
+    const move = new Event("touchmove", { cancelable: true, bubbles: true });
+    document.dispatchEvent(move);
+    expect(move.defaultPrevented).toBe(false);
+    fireEvent.pointerMove(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 20 });
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 20 });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("still lifts from a press whose touchstart the page may cancel", () => {
+    const onCommit = vi.fn();
+    render(<Harness onCommit={onCommit} />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    document.dispatchEvent(new Event("touchstart", { cancelable: true, bubbles: true }));
+    act(() => { vi.advanceTimersByTime(400); });
+    fireEvent.pointerMove(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 20 });
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 20 });
+    expect(onCommit).toHaveBeenCalledTimes(1);
   });
 
   it("lets the page scroll before the lift and holds it only after", () => {
@@ -202,8 +259,8 @@ describe("touch: a finger scrolls, a long press lifts", () => {
   });
 
   it("takes no scroll listener for a mouse, which has no scroll to take", () => {
-    const addSpy = vi.spyOn(document, "addEventListener");
     render(<Harness />);
+    const addSpy = vi.spyOn(document, "addEventListener");
     const button = screen.getByRole("button", { name: "Booking" });
     fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "mouse", clientX: 20, clientY: 20 });
     expect(addSpy.mock.calls.some(([type]) => type === "touchmove")).toBe(false);

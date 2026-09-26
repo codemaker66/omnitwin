@@ -133,6 +133,17 @@ test.describe("Diary timetable on a phone", () => {
     expect(await cancels(page)).toBe(1);
     await page.evaluate(() => { if (window.__diaryPointerCounts !== undefined) window.__diaryPointerCounts.cancel = 0; });
 
+    // The swipe can leave the lane gliding: Chromium 147 flings an emulated
+    // swipe as it would a finger's. A touch that lands on a glide only stops
+    // it — the browser keeps that touch, so the board lifts nothing from it
+    // (lib/touch-scroll.ts) — and a deliberate press starts from a lane at
+    // rest. Wait for the lane to stand still before pressing.
+    await expect.poll(async () => {
+      const first = await scroller.evaluate((element) => element.scrollLeft);
+      await page.waitForTimeout(100);
+      return (await scroller.evaluate((element) => element.scrollLeft)) === first;
+    }).toBe(true);
+
     // A long press lifts it; the finger then carries it an hour later (96 px
     // an hour on the day view) without the browser taking the gesture back.
     // Its start stays scrolled out of view, as on a phone it usually is.

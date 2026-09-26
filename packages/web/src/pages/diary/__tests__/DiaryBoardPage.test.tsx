@@ -949,6 +949,21 @@ describe("DiaryBoardPage — a finger scrolls the tray, a long press lifts a sli
     expect(slip.classList.contains("is-lifted")).toBe(false);
   });
 
+  it("lifts nothing from a press that stopped the tray gliding: the browser keeps that touch", async () => {
+    const slip = await timelineSlip();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const remove = vi.spyOn(document, "removeEventListener");
+    fireEvent.pointerDown(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 200 });
+    // Chromium dispatches the touchstart of a touch that lands on a glide
+    // uncancelable, and the first touchmove with it.
+    document.dispatchEvent(new Event("touchstart", { cancelable: false, bubbles: true }));
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
+    expect(slip.classList.contains("is-lifted")).toBe(false);
+    expect(remove.mock.calls.some(([type]) => type === "touchmove"), "the press gave the scroll back").toBe(true);
+    remove.mockRestore();
+  });
+
   it("lets a quick tap go without lifting anything", async () => {
     const slip = await timelineSlip();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });

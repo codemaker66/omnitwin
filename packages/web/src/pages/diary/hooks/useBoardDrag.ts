@@ -14,7 +14,7 @@ import {
   type InkSpan,
   type NudgeDirection,
 } from "../lib/board-drag.js";
-import { suppressScrollWhileLifted } from "../lib/touch-scroll.js";
+import { holdScrollWhileLifted, keepTouchesHoldable, type ScrollHold } from "../lib/touch-scroll.js";
 
 // ---------------------------------------------------------------------------
 // useBoardDrag (T-493; Canon §8) — the DOM-aware shell around the pure drag
@@ -22,6 +22,7 @@ import { suppressScrollWhileLifted } from "../lib/touch-scroll.js";
 // the 1-minute fine step, lane hit-testing via data-diary-lane elements.
 // Touch and pen (T-619): a finger scrolls the board; a 400ms press lifts the
 // block, and only then is the pointer captured and the page's scroll held.
+// A press that stopped a gliding lane is the lane's, and lifts nothing.
 // Keyboard path: Space lifts, arrows nudge, Enter drops, Escape cancels — no
 // animation on keyboard commits (they repeat all day).
 // ---------------------------------------------------------------------------
@@ -90,9 +91,10 @@ interface PointerSession {
   /** The pending long-press timer, cleared the moment the gesture proves
    *  itself a scroll or the pointer leaves. */
   longPressTimer: number | null;
-  /** Releases the non-passive touchmove listener that holds the page's
-   *  scroll once this session lifts (lib/touch-scroll.ts). Null for a mouse. */
-  releaseScroll: (() => void) | null;
+  /** The non-passive touchmove listener that holds the page's scroll once
+   *  this session lifts, and the browser's word on whether it can
+   *  (lib/touch-scroll.ts). Null for a mouse. */
+  scrollHold: ScrollHold | null;
 }
 
 function laneFromPoint(clientX: number, clientY: number): string | null {
@@ -150,7 +152,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   const endPointerSession = useCallback((): void => {
     const session = pointerRef.current;
     clearLongPress(session);
-    session?.releaseScroll?.();
+    session?.scrollHold?.release();
     pointerRef.current = null;
     setLiftedBlockId(null);
   }, [clearLongPress]);
@@ -159,8 +161,13 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   useEffect(() => () => {
     const session = pointerRef.current;
     clearLongPress(session);
-    session?.releaseScroll?.();
+    session?.scrollHold?.release();
   }, [clearLongPress]);
+
+  // A board that can be dragged keeps every touch holdable from its first
+  // event, which WebKit decides at touchstart (lib/touch-scroll.ts).
+  const { writable } = args;
+  useEffect(() => (writable ? keepTouchesHoldable() : undefined), [writable]);
 
   const envFor = useCallback(
     (isInk: boolean, fine: boolean): DragEnv => ({
@@ -205,7 +212,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
           lifted: false,
           needsLongPress,
           longPressTimer: null,
-          releaseScroll: null,
+          scrollHold: null,
         };
         pointerRef.current = session;
         if (!needsLongPress) {
@@ -216,12 +223,21 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         // scroll with it. The scroll hold is registered NOW and decides per
         // event — a touch-action change at lift time cannot affect a gesture
         // the browser has already classified as a pan (lib/touch-scroll.ts).
-        session.releaseScroll = suppressScrollWhileLifted(() => session.lifted);
+        const scrollHold = holdScrollWhileLifted(() => session.lifted);
+        session.scrollHold = scrollHold;
         const target = event.currentTarget;
         const pointerId = event.pointerId;
         session.longPressTimer = window.setTimeout(() => {
           if (pointerRef.current !== session) return;
           session.longPressTimer = null;
+          // A press that landed on a lane still gliding from a flick only
+          // stopped it: the browser has given that touch to the scroll and
+          // will not let the page hold it, so a lift would die on the first
+          // movement. Stand down, as a phone does, and let the next press lift.
+          if (!scrollHold.holdable()) {
+            endPointerSession();
+            return;
+          }
           // A live refetch can have replaced the element by now; a failed
           // capture must not throw the lift away.
           try {

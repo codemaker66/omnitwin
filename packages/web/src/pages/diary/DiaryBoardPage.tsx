@@ -32,7 +32,7 @@ import {
 } from "./lib/undo-stack.js";
 import type { DrawerMode } from "./lib/drawer-form.js";
 import { markWelcomeSeen, shouldShowWelcome } from "./lib/welcome.js";
-import { suppressScrollWhileLifted } from "./lib/touch-scroll.js";
+import { holdScrollWhileLifted, keepTouchesHoldable, type ScrollHold } from "./lib/touch-scroll.js";
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
@@ -505,21 +505,26 @@ export function DiaryBoardPage(): ReactElement {
   // has no scroll gesture to steal, still lifts on press. Text selection is
   // suppressed in CSS. A non-passive touchmove listener, registered at
   // pointerdown, holds the page still once the slip is lifted — a
-  // touch-action change at lift time cannot (lib/touch-scroll.ts).
+  // touch-action change at lift time cannot (lib/touch-scroll.ts). A press
+  // that stopped the tray gliding is the tray's, and lifts nothing.
   const longPressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
   /** Synchronous mirror of "a slip is lifted": the touchmove listener fires
    *  far more often than React renders and must read this instant's truth. */
   const slipLiftedRef = useRef(false);
-  const releaseSlipScrollRef = useRef<(() => void) | null>(null);
+  const slipScrollHoldRef = useRef<ScrollHold | null>(null);
 
   const endSlipPress = useCallback(() => {
     if (longPressRef.current !== null) {
       window.clearTimeout(longPressRef.current.timer);
       longPressRef.current = null;
     }
-    releaseSlipScrollRef.current?.();
-    releaseSlipScrollRef.current = null;
+    slipScrollHoldRef.current?.release();
+    slipScrollHoldRef.current = null;
   }, []);
+
+  // While slips can be lifted, every touch stays holdable from its first
+  // event, which WebKit decides at touchstart (lib/touch-scroll.ts).
+  useEffect(() => (writable ? keepTouchesHoldable() : undefined), [writable]);
 
   const liftSlip = useCallback((enquiry: TrayEnquiry, x: number, y: number) => {
     slipLiftedRef.current = true;
@@ -539,12 +544,19 @@ export function DiaryBoardPage(): ReactElement {
       endSlipPress();
       // Before the press ripens, deliberately: a listener added at the lift
       // may never be consulted for a gesture already under way.
-      releaseSlipScrollRef.current = suppressScrollWhileLifted(() => slipLiftedRef.current);
+      const scrollHold = holdScrollWhileLifted(() => slipLiftedRef.current);
+      slipScrollHoldRef.current = scrollHold;
       longPressRef.current = {
         x: clientX,
         y: clientY,
         timer: window.setTimeout(() => {
           longPressRef.current = null;
+          // A press that landed on the tray still gliding from a flick only
+          // stopped it; the browser will not let the page hold that touch.
+          if (!scrollHold.holdable()) {
+            endSlipPress();
+            return;
+          }
           liftSlip(enquiry, clientX, clientY);
         }, LONG_PRESS_MS),
       };
