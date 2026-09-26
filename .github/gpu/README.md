@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 359 cases. Four hosted CPU shards execute
-354 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 361 cases. Four hosted CPU shards execute
+356 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -29,6 +29,10 @@ the button audit's `executive` case one for one: that role was never in the
 vocabulary, and no role now has only the analytics cockpit, so the case asserts
 that a manager is offered and can open the cockpit, Pipeline and Proposals, and
 that platform-only views fail closed on a typed URL. The totals are unchanged.
+The third adds two ordinary Diary timetable regressions (T-619): the week
+opening with its decisions due and tray and booking where it is clicked, and
+on a phone a finger panning the lane while a long press lifts a block that
+follows the finger.
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and
