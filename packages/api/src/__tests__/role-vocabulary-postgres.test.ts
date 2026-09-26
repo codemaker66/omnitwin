@@ -260,6 +260,8 @@ describe.skipIf(target === undefined)("the vocabulary migrations against data pr
       named: "CONFIGURATIONS_LAYOUT_STYLE_VOCABULARY: configurations.layout_style holds unlisted values: 'classroom'" },
     { label: "an unlisted review status", poison: "INSERT INTO configurations (review_status, layout_style) VALUES ('pending', 'custom')",
       named: "CONFIGURATIONS_REVIEW_STATUS_VOCABULARY: configurations.review_status holds unlisted values: 'pending'" },
+    { label: "an unlisted visibility", poison: "INSERT INTO configurations (visibility, layout_style) VALUES ('unlisted', 'custom')",
+      named: "CONFIGURATIONS_VISIBILITY_VOCABULARY: configurations.visibility holds unlisted values: 'unlisted'" },
     { label: "an unlisted enquiry state", poison: "INSERT INTO enquiries (state) VALUES ('pondering')",
       named: "ENQUIRIES_STATE_VOCABULARY: enquiries.state holds unlisted values: 'pondering'" },
     { label: "an audience role no constraint ever validated",

@@ -269,7 +269,9 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
 
   it.each([
     { role: "planner" }, { public: true }, { name: "Real event DEMO ONLY - text" },
-    { eventName: "Real event" }, { linked: false }, { visibility: "public" }, { visibility: "unlisted" },
+    // Every persisted visibility but private: migration 0073's CHECK admits
+    // only private, staff and public, so no other value can reach this route.
+    { eventName: "Real event" }, { linked: false }, { visibility: "public" }, { visibility: "staff" },
   ])("rejects suppression outside its persisted role/scope: %j", async options => {
     const f = await fixture(options);
     const response = await post(f, "submit", { notifyTeam: false });
