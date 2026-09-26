@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { TRADES_HALL_ENQUIRY_VENUE_SLUG, VENVIEWER_PRICING_ENQUIRY_TYPE } from "@omnitwin/types";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 
@@ -251,7 +251,7 @@ function VenueEnquiryForm(): React.ReactElement {
       await submitGuestEnquiry({
         venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
         email: email.trim(),
-        eventType: "venue-enquiry",
+        eventType: VENVIEWER_PRICING_ENQUIRY_TYPE,
         message: note.trim().length > 0 ? note.trim() : "Enquiry from the Venviewer pricing page.",
       });
       setState("sent");

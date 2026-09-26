@@ -172,3 +172,11 @@ export const TRADES_HALL_ASSET_SLUG = "trades-hall";
  * the API announces it as one and sends no booking acknowledgement.
  */
 export const VENUE_ACCESS_ENQUIRY_TYPE = "venue-access";
+
+/**
+ * The `eventType` the pricing page's "Talk to us about your venue" sends: a
+ * venue asking about Venviewer for its own rooms. Like an access request it
+ * rides the public enquiry route, and like one it is not a booking of this
+ * venue's rooms, so no booking acknowledgement is sent.
+ */
+export const VENVIEWER_PRICING_ENQUIRY_TYPE = "venue-enquiry";

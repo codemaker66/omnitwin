@@ -1,5 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { GuestEnquirySchema, TRADES_HALL_ENQUIRY_VENUE_SLUG, VENUE_ACCESS_ENQUIRY_TYPE } from "@omnitwin/types";
+import {
+  GuestEnquirySchema,
+  TRADES_HALL_ENQUIRY_VENUE_SLUG,
+  VENUE_ACCESS_ENQUIRY_TYPE,
+  VENVIEWER_PRICING_ENQUIRY_TYPE,
+} from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -208,12 +213,15 @@ export async function publicEnquiryRoutes(
       .limit(1);
     const venueName = venueRow?.name ?? "our venue";
 
-    // The workspace gate's "Request access" rides this route so the ask
-    // reaches the venue's inbox, but the person wants to be let into the
-    // venue's Venviewer workspace, not to book a room. It is announced as
-    // exactly that, and the booking acknowledgement below (rooms, dates,
-    // costs) is not sent to them.
+    // Two senders ride this route without booking this venue's rooms: the
+    // workspace gate's "Request access" (someone asking to be let into the
+    // venue's Venviewer workspace) and the pricing page's "Talk to us about
+    // your venue" (a venue asking about Venviewer for its own rooms). Each is
+    // announced as what it is, and the booking acknowledgement below (rooms,
+    // dates, costs) is sent only for a real room enquiry; both screens that
+    // send the others already confirm the request in place.
     const accessRequest = parsed.data.eventType === VENUE_ACCESS_ENQUIRY_TYPE;
+    const pricingEnquiry = parsed.data.eventType === VENVIEWER_PRICING_ENQUIRY_TYPE;
 
     // In-app notification for the commercial team (staff, venue admin, sales).
     // Email alone was the whole announcement path: a hallkeeper who never
@@ -228,6 +236,9 @@ export async function publicEnquiryRoutes(
         ...(accessRequest ? {
           title: "Access request",
           body: `${displayName} asked for access to ${venueName}'s Venviewer workspace. Open Enquiries to read the request.`,
+        } : pricingEnquiry ? {
+          title: "Venviewer enquiry",
+          body: `${displayName} asked about Venviewer for their own venue, from the pricing page. Open Enquiries to read it.`,
         } : {
           title: `New enquiry — ${spaceName}`,
           body: `${displayName} enquired about ${spaceName}${
@@ -257,9 +268,8 @@ export async function publicEnquiryRoutes(
 
     // The venue's own acknowledgement to the organiser. Until this existed a
     // guest got a 201 and silence. Idempotent per enquiry, so a retried POST
-    // or a replayed webhook cannot thank the same person twice. An access
-    // request already reads "Request sent." on the screen that sent it.
-    if (!accessRequest) {
+    // or a replayed webhook cannot thank the same person twice.
+    if (!accessRequest && !pricingEnquiry) {
       const acknowledgement = await enquiryAcknowledgement({
         venueName,
         spaceName,

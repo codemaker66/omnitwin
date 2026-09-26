@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { VENUE_ACCESS_ENQUIRY_TYPE } from "@omnitwin/types";
+import { VENUE_ACCESS_ENQUIRY_TYPE, VENVIEWER_PRICING_ENQUIRY_TYPE } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
 import { enquiryAcknowledgement, formatEnGbDate } from "../services/email-templates.js";
@@ -307,6 +307,41 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     const sent = await pool.query<{ count: string }>(
       "SELECT count(*) AS count FROM email_sends WHERE idempotency_key = $1 OR recipient = $2",
       [`enquiry-acknowledged:${enquiryId}`, requester],
+    );
+    expect(sent.rows[0]?.count).toBe("0");
+  });
+
+  // The pricing page's "Talk to us about your venue" is a venue asking about
+  // Venviewer for its own rooms. The booking acknowledgement would thank them
+  // "for thinking of" this venue and promise to talk through its rooms and
+  // costs; the pricing page already says "Thank you. We will reply to ...".
+  it("tells the team what a pricing-page enquiry is, and sends no booking acknowledgement", async () => {
+    const prospect = "operations@other-venue.example";
+    const res = await server.inject({
+      method: "POST",
+      url: "/public/enquiries",
+      payload: {
+        venueSlug: VENUE_SLUG,
+        email: prospect,
+        eventType: VENVIEWER_PRICING_ENQUIRY_TYPE,
+        message: "We let three rooms and a courtyard.",
+      },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
+
+    const notifications = await pool.query<{ title: string; body: string }>(
+      "SELECT title, body FROM event_plan_notifications");
+    expect(notifications.rows.length).toBeGreaterThan(0);
+    for (const row of notifications.rows) {
+      expect(row.title).toBe("Venviewer enquiry");
+      expect(row.body).toBe(`${prospect} asked about Venviewer for their own venue, from the pricing page. Open Enquiries to read it.`);
+    }
+
+    await new Promise((resolve) => { setTimeout(resolve, 600); });
+    const sent = await pool.query<{ count: string }>(
+      "SELECT count(*) AS count FROM email_sends WHERE idempotency_key = $1 OR recipient = $2",
+      [`enquiry-acknowledged:${enquiryId}`, prospect],
     );
     expect(sent.rows[0]?.count).toBe("0");
   });
