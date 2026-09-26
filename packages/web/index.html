@@ -2,8 +2,15 @@
 <html lang="en" style="scroll-behavior: smooth;">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: iOS exposes the notch and home-indicator insets to
+         CSS as env(safe-area-inset-*) only under `cover`. Without it they
+         resolve to 0 and full-bleed chrome sits beneath the phone's own
+         furniture. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- Both minted from favicon.svg by scripts/prepare-web-app-icons.mjs. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="stylesheet" href="/src/components/shared/Activity.css" />
     <!-- Fraunces, Newsreader, Geist and Geist Mono: Google Fonts' own files,
          served from this origin (src/styles/fonts, provenance.json there), so
@@ -48,8 +55,11 @@
     <meta property="og:image:alt" content="Trades Hall and its dome from above, amid the rooftops of Glasgow's Merchant City" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://venviewer.com/images/venue/trades-hall-exterior-og.jpg" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ede7db" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b1713" />
+    <!-- One register (T-615): the ivory ground is the app's page colour in both
+         schemes, so the browser chrome takes the same single value. The old
+         pair painted the iOS status bar near-black under a dark system theme
+         while the page underneath stayed ivory. -->
+    <meta name="theme-color" content="#f2edda" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",

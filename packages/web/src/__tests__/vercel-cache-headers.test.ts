@@ -88,7 +88,8 @@ describe("vercel.json static caching", () => {
   it("only lets unhashed files be reused briefly", () => {
     for (const path of ["/trades-house-media/voice/manifest.json", "/images/rooms/supplied/grand-hall.jpeg",
       "/images/venue/ladder/grand-hall-room-1535.webp", "/rooms/grand-hall.jpg", "/room-plans/grand-hall.png",
-      "/demo/cover.webp", "/trades-house-media/assets/achievement.png", "/th-building.png", "/favicon.svg"]) {
+      "/demo/cover.webp", "/trades-house-media/assets/achievement.png", "/th-building.png", "/favicon.svg",
+      "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png", "/site.webmanifest"]) {
       expect(cacheControl(path), path).toEqual([REVALIDATING]);
     }
     expect(cacheControl("/models/furniture/README.md")).toEqual([]);
