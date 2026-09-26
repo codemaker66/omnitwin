@@ -35,6 +35,7 @@ describe("event plan lifecycle routes", () => {
       ["PATCH", "/notifications/00000000-0000-4000-8000-000000004004/read"],
       ["GET", `/events/${EVENT_ID}/change-feed`],
       ["POST", `/events/${EVENT_ID}/change-acknowledgements`],
+      ["GET", `/events/${EVENT_ID}/change-acknowledgements`],
     ] as const) {
       const res = await server.inject({ method, url, payload: method === "POST" || method === "PATCH" ? {} : undefined });
       expect(res.statusCode).toBe(401);
@@ -58,6 +59,33 @@ describe("event plan lifecycle routes", () => {
       payload: { changeId: "not-a-uuid" },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("validates the acknowledgement list query before event lookup", async () => {
+    for (const query of ["?limit=0", "?limit=501", "?status=unread"]) {
+      const res = await server.inject({
+        method: "GET",
+        url: `/events/${EVENT_ID}/change-acknowledgements${query}`,
+        headers: { authorization: `Bearer ${hallkeeperToken()}` },
+      });
+      expect(res.statusCode, query).toBe(400);
+    }
+  });
+
+  it("reads acknowledgements behind the same venue gate as the write", async () => {
+    // Lane 6's board reads this route, so its tenancy gate must be the POST's
+    // gate and not a looser one: both go through requireEventAccess, which
+    // authorizes against the loaded event row's venue.
+    const source = await readFile(resolve("src/routes/event-plan-lifecycle.ts"), "utf-8");
+    const read = source.slice(
+      source.indexOf('server.get("/:eventId/change-acknowledgements"'),
+      source.indexOf('server.post("/:eventId/change-acknowledgements"'),
+    );
+    expect(read.length).toBeGreaterThan(0);
+    expect(read).toContain("requireEventAccess(db, request, reply, params.data.eventId)");
+    expect(read).toContain("eq(eventPlanChangeAcknowledgements.eventId, eventRow.id)");
+    expect(read).toContain("HallkeeperAcknowledgementSchema");
+    expect(read).toContain("private, no-store");
   });
 
   it("registers lifecycle routes and keeps public claims honest", async () => {

@@ -96,6 +96,7 @@ export {
   UpdateEventPhaseSchema,
   CreateEventScenarioSchema,
   CreateLayoutVariantSchema,
+  CreateEventConfigurationLinkSchema,
   EventPhaseGraphSchema,
   defaultEventPhaseInputs,
   type EventStatus,
@@ -124,6 +125,7 @@ export {
   type UpdateEventPhase,
   type CreateEventScenario,
   type CreateLayoutVariant,
+  type CreateEventConfigurationLink,
   type EventPhaseGraph,
 } from "./event-phase-graph.js";
 

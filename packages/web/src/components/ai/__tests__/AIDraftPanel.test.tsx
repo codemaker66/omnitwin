@@ -65,8 +65,9 @@ describe("AIDraftPanel", () => {
       fail = reject;
     }));
     render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ targetId: "room" }} />);
-    const generate = screen.getByRole<HTMLButtonElement>("button", { name: "Generate draft" });
-    await waitFor(() => { expect(generate.disabled).toBe(false); });
+    // The panel only appears once /ai/status confirms a configured provider.
+    const generate = await screen.findByRole<HTMLButtonElement>("button", { name: "Generate draft" });
+    expect(generate.disabled).toBe(false);
     fireEvent.click(generate);
     const busy = screen.getByRole<HTMLButtonElement>("button", { name: "Generating draft" });
     expect(busy.disabled).toBe(true);
@@ -84,9 +85,9 @@ describe("AIDraftPanel", () => {
     else expect(screen.getByDisplayValue(draft().body)).toBeDefined();
   });
 
-  it("shows disabled state and does not call draft generation", async () => {
+  it("renders nothing and never offers generation when no provider is configured", async () => {
     getAIAssistantStatusMock.mockResolvedValue(disabledStatus());
-    render(
+    const { container } = render(
       <AIDraftPanel
         title="AI Truth Mode draft"
         useCase="truth_mode_explanation"
@@ -94,12 +95,24 @@ describe("AIDraftPanel", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("AI drafts are disabled until provider environment is configured.")).toBeDefined();
-    });
-    const button = screen.getByRole<HTMLButtonElement>("button", { name: "Generate draft" });
-    expect(button.disabled).toBe(true);
-    fireEvent.click(button);
+    await waitFor(() => { expect(getAIAssistantStatusMock).toHaveBeenCalled(); });
+    await waitFor(() => { expect(container.innerHTML).toBe(""); });
+    expect(screen.queryByRole("button", { name: "Generate draft" })).toBeNull();
+    expect(screen.queryByText("AI drafts are disabled until provider environment is configured.")).toBeNull();
+    expect(createAIDraftMock).not.toHaveBeenCalled();
+  });
+
+  it("renders nothing when the status check itself fails, rather than a dead control", async () => {
+    getAIAssistantStatusMock.mockRejectedValue(new Error("network"));
+    const { container } = render(
+      <AIDraftPanel
+        title="AI Truth Mode draft"
+        useCase="truth_mode_explanation"
+        context={{ targetId: "room" }}
+      />,
+    );
+
+    await waitFor(() => { expect(container.innerHTML).toBe(""); });
     expect(createAIDraftMock).not.toHaveBeenCalled();
   });
 

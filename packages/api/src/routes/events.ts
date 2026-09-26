@@ -4,6 +4,7 @@ import {
   CreateEventPhaseSchema,
   CreateEventScenarioSchema,
   CreateEventSchema,
+  CreateEventConfigurationLinkSchema,
   CreateLayoutVariantSchema,
   EventConfigurationLinkSchema,
   EventPhaseGraphSchema,
@@ -13,6 +14,7 @@ import {
   EventSchema,
   LayoutVariantSchema,
   PhaseLayoutSnapshotSchema,
+  PlatformRoleSchema,
   UpdateEventPhaseSchema,
   UpdateEventSchema,
   defaultEventPhaseInputs,
@@ -35,10 +37,11 @@ import {
   layoutVariants,
   phaseLayoutSnapshots,
   spaces,
+  users,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAccessInternalEvent, canAccessResource, canWriteEvents, isEventWriteRole } from "../utils/query.js";
+import { canAccessInternalEvent, canAccessResource, canManageVenue, canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { updateEventCore } from "../services/event-mutations.js";
 
@@ -58,6 +61,25 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
     code: "VALIDATION_ERROR",
     details,
   });
+}
+
+/**
+ * Would an event↔configuration link hand the configuration's OWNER a view of
+ * the event? Mirrors the participation test in
+ * services/client-event-schedule.ts, which admits only a client or planner who
+ * does not already manage the venue. An unreadable platform role is treated as
+ * "none", so an unexpected value refuses the link rather than widening it.
+ */
+function grantsCustomerParticipation(
+  owner: { readonly role: string; readonly venueId: string | null; readonly platformRole: string },
+  venueId: string,
+): boolean {
+  if (owner.role !== "client" && owner.role !== "planner") return false;
+  const platformRole = PlatformRoleSchema.safeParse(owner.platformRole);
+  return !canManageVenue(
+    { role: owner.role, venueId: owner.venueId, platformRole: platformRole.success ? platformRole.data : "none" },
+    venueId,
+  );
 }
 
 function toIso(value: Date): string {
@@ -541,6 +563,86 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
       return reply.status(500).send({ error: "Failed to create layout variant", code: "LAYOUT_VARIANT_CREATE_FAILED" });
     }
     return reply.status(201).send({ data: serializeLayoutVariant(created) });
+  });
+
+  // The planner corridor: compiling an Ops handoff pack against an event link
+  // records the binding the Ops compiler requires before a pack can carry an
+  // eventId. Idempotent by the (event, configuration, link_type) unique
+  // constraint rather than a read-then-write precheck, so two compiles racing
+  // each other still leave exactly one row.
+  //
+  // TENANCY: a source_configuration link with no layout variant is also the
+  // sole participation grant that admits a client or planner to an event's
+  // schedule (services/client-event-schedule.ts). Linking a customer-owned
+  // layout would therefore widen who can read the event, so it is refused
+  // below. A distinct "compiled from this layout" link type would keep the two
+  // meanings apart, but the link_type CHECK constraint (migration 0027) cannot
+  // take a new value without a migration, and this lane owns no migration.
+  server.post("/:id/configuration-links", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = EventIdParam.safeParse(request.params);
+    if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
+    const parsed = CreateEventConfigurationLinkSchema.safeParse(request.body);
+    if (!parsed.success) return validationError(reply, parsed.error.issues);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
+    if (eventRow === null) return;
+
+    const [config] = await db.select().from(configurations)
+      .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
+      .limit(1);
+    if (config === undefined) {
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    }
+    if (!canAccessResource(request.user, config.userId, config.venueId)) {
+      return forbidden(reply);
+    }
+    if (config.venueId !== eventRow.venueId) {
+      return reply.status(409).send({
+        error: "A linked configuration must belong to the event venue",
+        code: "CONFIGURATION_VENUE_MISMATCH",
+      });
+    }
+    if (config.userId !== null) {
+      const [owner] = await db.select({
+        role: users.role,
+        venueId: users.venueId,
+        platformRole: users.platformRole,
+      }).from(users).where(eq(users.id, config.userId)).limit(1);
+      if (owner !== undefined && grantsCustomerParticipation(owner, eventRow.venueId)) {
+        return reply.status(409).send({
+          error: "This layout belongs to a client account, and linking it would give that client access to the event schedule",
+          code: "CONFIGURATION_OWNER_IS_CUSTOMER",
+        });
+      }
+    }
+
+    const [inserted] = await db.insert(eventConfigurationLinks).values({
+      eventId: eventRow.id,
+      configurationId: config.id,
+      linkType: parsed.data.linkType,
+    }).onConflictDoNothing({
+      target: [
+        eventConfigurationLinks.eventId,
+        eventConfigurationLinks.configurationId,
+        eventConfigurationLinks.linkType,
+      ],
+    }).returning();
+
+    if (inserted !== undefined) {
+      return reply.status(201).send({ data: serializeConfigurationLink(inserted) });
+    }
+
+    const [existing] = await db.select().from(eventConfigurationLinks)
+      .where(and(
+        eq(eventConfigurationLinks.eventId, eventRow.id),
+        eq(eventConfigurationLinks.configurationId, config.id),
+        eq(eventConfigurationLinks.linkType, parsed.data.linkType),
+      ))
+      .limit(1);
+    if (existing === undefined) {
+      return reply.status(500).send({ error: "Failed to link configuration", code: "EVENT_CONFIGURATION_LINK_FAILED" });
+    }
+    return { data: serializeConfigurationLink(existing) };
   });
 
   server.get("/:id/phase-graph", { preHandler: [authenticate] }, async (request, reply) => {
