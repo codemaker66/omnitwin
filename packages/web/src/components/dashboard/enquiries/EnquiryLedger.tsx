@@ -1,10 +1,11 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { Building2, KeyRound } from "lucide-react";
 import type { Enquiry } from "../../../api/enquiries.js";
 import { StageChip } from "./EnquiryStages.js";
 import type { RoomLookup } from "./use-venue-rooms.js";
 import {
-  eventDateParts, eventLead, groupByReceived, guestsPhrase, messageExcerpt, relativeAge, stageLabel, stageTone,
-  venueYear,
+  eventDateParts, eventLead, groupByReceived, guestsPhrase, messageExcerpt, relativeAge, requestKind, requestWords,
+  stageLabel, stageTone, venueYear,
 } from "./enquiry-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -44,8 +45,20 @@ export function enquiryName(enquiry: Enquiry): string {
   return enquiry.guestName ?? enquiry.name;
 }
 
-/** What a booker qualifies a request by, in the order they weigh it. */
+/** The name as a title or heading. A request usually arrives with only an
+ *  email address, which may then break before its "@" rather than mid-word. */
+export function EnquiryNameText({ enquiry }: { readonly enquiry: Enquiry }): ReactElement {
+  const name = enquiryName(enquiry);
+  const at = name.indexOf("@");
+  return at <= 0 ? <>{name}</> : <>{name.slice(0, at)}<wbr />{name.slice(at)}</>;
+}
+
+/** What a booker qualifies a request by, in the order they weigh it. An access
+ *  request or Venviewer enquiry names itself instead: it asks for no date or
+ *  room, and the room it was filed under is only where the inbox keeps it. */
 export function enquiryDetails(enquiry: Enquiry, roomName: string | null | undefined): string[] {
+  const request = requestKind(enquiry.eventType);
+  if (request !== null) return [requestWords(request).label];
   const details: string[] = [];
   if (enquiry.eventType !== null && enquiry.eventType.trim() !== "") details.push(enquiry.eventType.trim());
   if (enquiry.estimatedGuests !== null) details.push(guestsPhrase(enquiry.estimatedGuests));
@@ -122,6 +135,7 @@ interface LedgerRowProps {
 }
 
 function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKey, onOpen, onFocus }: LedgerRowProps): ReactElement {
+  const request = requestKind(enquiry.eventType);
   const date = eventDateParts(enquiry.preferredDate);
   const passed = eventLead(enquiry.preferredDate, nowMs) === "date has passed";
   const name = enquiryName(enquiry);
@@ -130,8 +144,9 @@ function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKe
   const age = relativeAge(enquiry.createdAt, nowMs);
   const label = [
     name,
-    stageLabel(enquiry.state),
-    date === null ? "event date to be confirmed" : `event ${date.full}${passed ? ", date has passed" : ""}`,
+    stageLabel(enquiry.state, request !== null),
+    request !== null ? null
+      : date === null ? "event date to be confirmed" : `event ${date.full}${passed ? ", date has passed" : ""}`,
     ...details,
     age === null ? null : `received ${age}`,
   ].filter((part): part is string => part !== null).join(", ");
@@ -148,7 +163,11 @@ function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKe
       onClick={() => { onOpen(enquiry); }}
       onFocus={() => { onFocus(enquiry.id); }}
     >
-      {date === null ? (
+      {request !== null ? (
+        <span className="enq-date enq-date--request" aria-hidden="true">
+          {request === "access" ? <KeyRound size={20} strokeWidth={1.5} /> : <Building2 size={20} strokeWidth={1.5} />}
+        </span>
+      ) : date === null ? (
         <span className="enq-date enq-date--open" aria-hidden="true">
           <span className="enq-date__weekday">Date</span>
           <span className="enq-date__day">TBC</span>
@@ -163,12 +182,12 @@ function LedgerRow({ enquiry, selected, tabbable, nowMs, year, roomName, stampKe
         </span>
       )}
       <span className="enq-row__main" aria-hidden="true">
-        <span className="enq-row__title">{name}</span>
+        <span className="enq-row__title"><EnquiryNameText enquiry={enquiry} /></span>
         {details.length > 0 && <span className="enq-row__meta">{details.join(" · ")}</span>}
         {quote !== null && <span className="enq-row__quote">“{quote}”</span>}
       </span>
       <span className="enq-row__side" aria-hidden="true">
-        <StageChip key={stampKey ?? "still"} state={enquiry.state} stamped={stampKey !== null} />
+        <StageChip key={stampKey ?? "still"} state={enquiry.state} stamped={stampKey !== null} request={request !== null} />
         {age !== null && <span className="enq-row__age">{age}</span>}
       </span>
     </button>

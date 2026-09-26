@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   canTransition,
+  enquiryKind,
   getAvailableTransitions,
   ENQUIRY_STATES,
 } from "../state-machines/enquiry.js";
@@ -135,5 +136,50 @@ describe("getAvailableTransitions", () => {
   it("client in withdrawn has no transitions", () => {
     const transitions = getAvailableTransitions("withdrawn", "client");
     expect(transitions).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Requests — an access request, or an enquiry about Venviewer itself
+// ---------------------------------------------------------------------------
+
+describe("requests", () => {
+  it("tells a request from a booking by its type", () => {
+    expect(enquiryKind("venue-access")).toBe("request");
+    expect(enquiryKind(" venue-enquiry ")).toBe("request");
+    expect(enquiryKind("Wedding")).toBe("booking");
+    expect(enquiryKind(null)).toBe("booking");
+  });
+
+  it("never takes a booking decision, whoever asks", () => {
+    for (const role of ["client", "planner", "staff", "hallkeeper", "manager", "sales", "admin"]) {
+      for (const from of ["submitted", "under_review"]) {
+        expect(canTransition(from, "approved", role, "request"), `${role} ${from} approve`).toBe(false);
+        expect(canTransition(from, "rejected", role, "request"), `${role} ${from} decline`).toBe(false);
+      }
+    }
+    expect(getAvailableTransitions("under_review", "admin", "request")).not.toContain("approved");
+    expect(getAvailableTransitions("under_review", "admin", "request")).not.toContain("rejected");
+  });
+
+  it("is marked done and reopened by the venue's triage roles only", () => {
+    for (const role of ["staff", "hallkeeper", "manager", "sales"]) {
+      expect(canTransition("submitted", "archived", role, "request"), role).toBe(true);
+      expect(canTransition("under_review", "archived", role, "request"), role).toBe(true);
+      expect(canTransition("archived", "submitted", role, "request"), role).toBe(true);
+    }
+    for (const role of ["client", "planner", "caterer"]) {
+      expect(canTransition("submitted", "archived", role, "request"), role).toBe(false);
+      expect(canTransition("archived", "submitted", role, "request"), role).toBe(false);
+    }
+    // The sender can still withdraw what they sent.
+    expect(canTransition("submitted", "withdrawn", "planner", "request")).toBe(true);
+    expect(getAvailableTransitions("submitted", "staff", "request")).toEqual(["withdrawn", "archived"]);
+  });
+
+  it("leaves a booking's own path unchanged", () => {
+    expect(canTransition("submitted", "archived", "staff")).toBe(false);
+    expect(canTransition("archived", "submitted", "staff")).toBe(false);
+    expect(canTransition("under_review", "approved", "staff", "booking")).toBe(true);
   });
 });

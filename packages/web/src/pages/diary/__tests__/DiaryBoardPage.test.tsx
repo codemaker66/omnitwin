@@ -321,6 +321,17 @@ describe("DiaryBoardPage", () => {
     expect(screen.queryByText(/newest open enquiries/)).toBeNull();
   });
 
+  it("leaves access requests and Venviewer enquiries out of the tray: they ask for no room", async () => {
+    listEnquiriesMock.mockResolvedValue([
+      trayEnquiry(1, "submitted"),
+      { ...trayEnquiry(2, "submitted"), name: "Access ask", eventType: "venue-access" },
+      { ...trayEnquiry(3, "under_review"), name: "Pricing ask", eventType: "venue-enquiry" },
+      trayEnquiry(4, "under_review"),
+    ]);
+    renderPage();
+    await waitFor(() => { expect(trayEnquiryNames()).toEqual(["Enquiry 1", "Enquiry 4"]); });
+  });
+
   it("keeps the server's newest-first order and says when more open enquiries exist", async () => {
     listEnquiriesMock.mockResolvedValue(Array.from({ length: 51 }, (_, index) => trayEnquiry(index, "submitted")));
     renderPage();

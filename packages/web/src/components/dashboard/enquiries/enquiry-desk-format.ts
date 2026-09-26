@@ -1,3 +1,4 @@
+import { VENUE_ACCESS_ENQUIRY_TYPE, VENVIEWER_PRICING_ENQUIRY_TYPE } from "@omnitwin/types";
 import { VENUE_TIME_ZONE } from "../../../pages/diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
@@ -37,12 +38,56 @@ function stageWords(state: string): StageWords {
   return STAGE_WORDS[state] ?? { label: label.charAt(0).toUpperCase() + label.slice(1), tone: "other", count: [`${label} enquiry`, `${label} enquiries`] };
 }
 
-export function stageLabel(state: string): string {
-  return stageWords(state).label;
+/** A request marked done is stored as "archived", and reads as "Done". */
+export function stageLabel(state: string, request = false): string {
+  return request && state === "archived" ? "Done" : stageWords(state).label;
 }
 
 export function stageTone(state: string): StageTone {
   return stageWords(state).tone;
+}
+
+// ---------------------------------------------------------------------------
+// Requests: an access request, or an enquiry about Venviewer itself. They
+// arrive with the bookings but ask for no date or room, so the desk names
+// them, decides nothing on their behalf, and files them as done.
+// ---------------------------------------------------------------------------
+
+export type RequestKind = "access" | "venviewer";
+
+export interface RequestWords {
+  /** The eyebrow and the list's detail line; the team's notification uses it too. */
+  readonly label: string;
+  /** What the sender asks for, in the panel's large type. */
+  readonly ask: string;
+  /** What happens next, under the actions. */
+  readonly next: string;
+}
+
+const REQUEST_WORDS: Readonly<Record<RequestKind, RequestWords>> = {
+  access: {
+    label: "Access request",
+    ask: "Asks to join this venue’s workspace on Venviewer.",
+    next: "Venviewer administrators send workspace invitations, from Clients & access. Nothing is emailed from here.",
+  },
+  venviewer: {
+    label: "Venviewer enquiry",
+    ask: "Asks about Venviewer for their own venue.",
+    next: "It asks about Venviewer itself, not a date here. Nothing is emailed from here.",
+  },
+};
+
+/** What a request asks for, or null for a booking enquiry. */
+export function requestKind(eventType: string | null): RequestKind | null {
+  switch (eventType?.trim()) {
+    case VENUE_ACCESS_ENQUIRY_TYPE: return "access";
+    case VENVIEWER_PRICING_ENQUIRY_TYPE: return "venviewer";
+    default: return null;
+  }
+}
+
+export function requestWords(kind: RequestKind): RequestWords {
+  return REQUEST_WORDS[kind];
 }
 
 /** The singular and plural nouns a count of one stage (or of all) takes. */

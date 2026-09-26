@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import type { Enquiry, EnquiryStageCounts } from "../../../api/enquiries.js";
-import { enquiryDetails, enquiryName } from "./EnquiryLedger.js";
-import { countPhrase, eventDateParts, relativeAge, type DeskFilter } from "./enquiry-desk-format.js";
+import { EnquiryNameText, enquiryDetails } from "./EnquiryLedger.js";
+import { countPhrase, eventDateParts, relativeAge, requestKind, type DeskFilter } from "./enquiry-desk-format.js";
 import { RoomPhotoBand } from "./EnquiryPanel.js";
 import type { RoomLookup } from "./use-venue-rooms.js";
 
@@ -53,13 +53,16 @@ function NextMove({ counts, nowMs, room, onOpen, onFilter }: Omit<EnquiryOvervie
 
   if (newCount > 0 && next !== null) {
     const age = relativeAge(next.createdAt, nowMs);
-    const nextRoom = room(next);
-    const details = [eventDateParts(next.preferredDate)?.full ?? "Date to be confirmed", ...enquiryDetails(next, nextRoom?.name)];
+    // A request asks for no date or room, and names itself instead.
+    const request = requestKind(next.eventType) !== null;
+    const nextRoom = request ? null : room(next);
+    const details = request ? enquiryDetails(next, null)
+      : [eventDateParts(next.preferredDate)?.full ?? "Date to be confirmed", ...enquiryDetails(next, nextRoom?.name)];
     return (
       <>
         {nextRoom?.photo !== undefined && nextRoom.photo !== null && <RoomPhotoBand photo={nextRoom.photo} />}
         <p className="enq-eyebrow">Next up{age === null ? "" : ` · arrived ${age}`}</p>
-        <h2>{enquiryName(next)}</h2>
+        <h2><EnquiryNameText enquiry={next} /></h2>
         <p>{details.join(" · ")}</p>
         <div className="enq-actions">
           <button type="button" className="enq-cta" onClick={() => { onOpen(next); }}>Open the longest-waiting enquiry</button>

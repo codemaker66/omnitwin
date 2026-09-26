@@ -1025,6 +1025,8 @@ export {
   TRADES_HALL_ASSET_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
   VENVIEWER_PRICING_ENQUIRY_TYPE,
+  NON_BOOKING_ENQUIRY_TYPES,
+  isBookingEnquiry,
   type EnquiryId,
   type EnquiryStatus,
   type Enquiry,

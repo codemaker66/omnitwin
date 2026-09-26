@@ -15,10 +15,10 @@ import {
 } from "./enquiry-list-paging.js";
 import { EnquiryStages } from "./enquiries/EnquiryStages.js";
 import { EnquiryLedger, enquiryName, type LedgerStamp } from "./enquiries/EnquiryLedger.js";
-import { EnquiryPanel, type TransitionTarget } from "./enquiries/EnquiryPanel.js";
+import { EnquiryPanel, type ConfirmTarget, type TransitionTarget } from "./enquiries/EnquiryPanel.js";
 import { EnquiryOverview } from "./enquiries/EnquiryOverview.js";
 import { useVenueRooms } from "./enquiries/use-venue-rooms.js";
-import { deskGreeting, deskSummary, stageLabel, type DeskFilter } from "./enquiries/enquiry-desk-format.js";
+import { deskGreeting, deskSummary, requestKind, stageLabel, type DeskFilter } from "./enquiries/enquiry-desk-format.js";
 import { pendingFocusReady, type PendingFocus } from "./enquiries/desk-focus.js";
 import "./enquiries/EnquiriesDesk.css";
 
@@ -94,6 +94,9 @@ const ANNOUNCEMENTS: Readonly<Record<string, string>> = {
   under_review: "Now in review.",
   approved: "Approved.",
   rejected: "Declined.",
+  // The desk files only requests: they are marked done, and reopened.
+  archived: "Marked done.",
+  submitted: "Reopened.",
 };
 
 /** Empty-list words for each stage: an empty "New" is a finished job. */
@@ -160,7 +163,7 @@ export function EnquiriesView({
   const [preselectionLoading, setPreselectionLoading] = useState(initialSelectedId !== null);
   const [history, setHistory] = useState<HistoryState>({ id: null, entries: [], status: "ready" });
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [confirming, setConfirming] = useState<TransitionTarget | null>(null);
+  const [confirming, setConfirming] = useState<ConfirmTarget | null>(null);
   const [saving, setSaving] = useState<TransitionTarget | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [stamp, setStamp] = useState<LedgerStamp | null>(null);
@@ -422,8 +425,9 @@ export function EnquiriesView({
         panelHeadingRef.current?.focus();
       }
     } catch (error) {
-      if (error instanceof ApiError && error.code === "INVALID_TRANSITION") {
-        // Someone else moved it on first: show where it really is.
+      if (error instanceof ApiError && (error.code === "INVALID_TRANSITION" || error.code === "NOT_A_BOOKING")) {
+        // Someone else moved it on first, or it turned out to be a request:
+        // show where it really is, and the steps it really has.
         try {
           const current = await enquiriesApi.getEnquiry(enquiry.id);
           applyUpdated(current);
@@ -431,7 +435,9 @@ export function EnquiriesView({
           setHistoryVersion((version) => version + 1);
           if (stillOpen()) {
             setConfirming(null);
-            setFailure(`This enquiry had already moved on. It is ${stageLabel(current.state).toLowerCase()} now.`);
+            setFailure(error.code === "NOT_A_BOOKING"
+              ? "This is a request, not a booking, so it is marked done rather than approved or declined."
+              : `This enquiry had already moved on. It is ${stageLabel(current.state, requestKind(current.eventType) !== null).toLowerCase()} now.`);
           }
         } catch {
           if (stillOpen()) setFailure("The status could not be changed. Reload the list to see where this enquiry is.");
@@ -449,9 +455,10 @@ export function EnquiriesView({
     if (selected === undefined || saving !== null) return;
     setFailure(null);
     setAnnouncement(null);
-    // Starting a review sends nothing, so it happens at once; a decision
-    // emails the client and is confirmed first.
-    if (to === "under_review" && !withNote) {
+    // A decision emails the client and is confirmed first. Anything else sends
+    // nothing and happens at once, unless a note is wanted; reopening a
+    // request takes none.
+    if (to === "submitted" || (!withNote && to !== "approved" && to !== "rejected")) {
       void runTransition(selected, to, undefined);
       return;
     }

@@ -5,11 +5,12 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { AIDraftPanel } from "../../ai/AIDraftPanel.js";
 import { useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
 import { StageChip } from "./EnquiryStages.js";
-import { enquiryName } from "./EnquiryLedger.js";
+import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
 import type { VenueRoom } from "./use-venue-rooms.js";
 import {
-  eventDateParts, eventLead, eventWeekday, relativeAge, stageLabel, stageTone, venueMoment,
+  eventDateParts, eventLead, eventWeekday, relativeAge, requestKind, requestWords, stageLabel, stageTone, venueMoment,
+  type RequestKind,
 } from "./enquiry-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -18,13 +19,20 @@ import {
 // time. Approving or declining emails the client, so both ask once, inline,
 // and say what will be sent; starting a review sends nothing and needs no
 // confirmation.
+//
+// An access request or a Venviewer enquiry asks to book nothing, so it is
+// never approved or declined (the API refuses both): it says what it asks
+// for, and is marked done, or reopened, without an email.
 // ---------------------------------------------------------------------------
 
-export type TransitionTarget = "under_review" | "approved" | "rejected";
+/** A change the panel may ask the reader to confirm. */
+export type ConfirmTarget = "under_review" | "approved" | "rejected" | "archived";
+/** Every change the panel makes; reopening a request is never confirmed. */
+export type TransitionTarget = ConfirmTarget | "submitted";
 
 export interface PanelTransition {
   /** The decision being confirmed, or null. */
-  readonly confirming: TransitionTarget | null;
+  readonly confirming: ConfirmTarget | null;
   /** The change being saved, or null. */
   readonly saving: TransitionTarget | null;
   readonly failure: string | null;
@@ -70,10 +78,11 @@ function isEditable(target: EventTarget): boolean {
 export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
   const { enquiry, room, nowMs, transition, navigation, headingRef } = props;
   const headingId = useId();
-  const name = enquiryName(enquiry);
   const received = relativeAge(enquiry.createdAt, nowMs);
+  const request = requestKind(enquiry.eventType);
   const eventType = enquiry.eventType?.trim() ?? "";
-  const eyebrow = `${eventType === "" ? "Enquiry" : eventType}${received === null ? "" : ` · received ${received}`}`;
+  const kindLabel = request !== null ? requestWords(request).label : eventType === "" ? "Enquiry" : eventType;
+  const eyebrow = `${kindLabel}${received === null ? "" : ` · received ${received}`}`;
 
   const step = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
@@ -110,26 +119,31 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
           )}
         </div>
 
-        {room?.photo !== undefined && room.photo !== null && <RoomPhotoBand photo={room.photo} />}
+        {request === null && room?.photo !== undefined && room.photo !== null && <RoomPhotoBand photo={room.photo} />}
         <p className="enq-eyebrow">{eyebrow}</p>
-        <h2 className="enq-panel__name" id={headingId} ref={headingRef} tabIndex={-1}>{name}</h2>
+        <h2 className="enq-panel__name" id={headingId} ref={headingRef} tabIndex={-1}><EnquiryNameText enquiry={enquiry} /></h2>
         <div className="enq-panel__status">
-          <StageChip key={props.stampKey ?? "still"} state={enquiry.state} stamped={props.stampKey !== null} />
+          <StageChip key={props.stampKey ?? "still"} state={enquiry.state} stamped={props.stampKey !== null}
+            request={request !== null} />
         </div>
         <p className="vv-sr-only" role="status">{props.announcement}</p>
 
-        <EnquiryFacts enquiry={enquiry} roomName={room === undefined ? undefined : room?.name ?? null} nowMs={nowMs} />
+        {request === null
+          ? <EnquiryFacts enquiry={enquiry} roomName={room === undefined ? undefined : room?.name ?? null} nowMs={nowMs} />
+          : <p className="enq-request">{requestWords(request).ask}</p>}
 
         <section className="enq-section">
           <h3>Next step</h3>
-          <StagePath state={enquiry.state} />
-          {transition.confirming === null ? (
+          <StagePath state={enquiry.state} request={request !== null} />
+          {transition.confirming !== null ? (
+            <ConfirmStep enquiry={enquiry} to={transition.confirming} saving={transition.saving !== null}
+              failure={transition.failure} onConfirm={props.onConfirm} onCancel={props.onCancel} />
+          ) : request === null ? (
             <NextStep enquiry={enquiry} transition={transition} canCreateOpportunity={props.canCreateOpportunity}
               creatingOpportunity={props.creatingOpportunity}
               onRequest={props.onRequest} onCreateOpportunity={props.onCreateOpportunity} />
           ) : (
-            <ConfirmStep enquiry={enquiry} to={transition.confirming} saving={transition.saving !== null}
-              failure={transition.failure} onConfirm={props.onConfirm} onCancel={props.onCancel} />
+            <RequestNextStep enquiry={enquiry} kind={request} transition={transition} onRequest={props.onRequest} />
           )}
         </section>
 
@@ -140,7 +154,10 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
             {enquiry.guestPhone !== null && enquiry.guestPhone.trim() !== "" && (
               <a href={`tel:${enquiry.guestPhone.replace(/[^\d+]/gu, "")}`}>{enquiry.guestPhone}</a>
             )}
-            {enquiry.userId === null && <span className="enq-contact__note">Sent without a Venviewer account</span>}
+            {/* An access request comes from someone signed in but not invited, so
+                requests leave the note off. */}
+            {enquiry.userId === null && request === null
+              && <span className="enq-contact__note">Sent without a Venviewer account</span>}
           </div>
         </section>
 
@@ -151,14 +168,18 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
           </section>
         )}
 
-        <EnquiryTools enquiry={enquiry} canCreateOpportunity={props.canCreateOpportunity}
-          creatingOpportunity={props.creatingOpportunity} onCreateOpportunity={props.onCreateOpportunity} />
-
-        <EnquiryDrafts enquiry={enquiry} />
+        {/* An opportunity, a layout and proposal wording belong to bookings. */}
+        {request === null && (
+          <>
+            <EnquiryTools enquiry={enquiry} canCreateOpportunity={props.canCreateOpportunity}
+              creatingOpportunity={props.creatingOpportunity} onCreateOpportunity={props.onCreateOpportunity} />
+            <EnquiryDrafts enquiry={enquiry} />
+          </>
+        )}
 
         <section className="enq-section">
           <h3>Timeline</h3>
-          <EnquiryTimeline enquiry={enquiry} history={props.history} status={props.historyStatus} />
+          <EnquiryTimeline enquiry={enquiry} history={props.history} status={props.historyStatus} request={request !== null} />
         </section>
       </div>
     </section>
@@ -221,7 +242,9 @@ function EnquiryFacts({ enquiry, roomName, nowMs }: {
 // Where the enquiry is, and what can happen next
 // ---------------------------------------------------------------------------
 
-const PATH: Readonly<Record<string, readonly (readonly [label: string, state: "done" | "current" | "todo"])[]>> = {
+type Path = Readonly<Record<string, readonly (readonly [label: string, state: "done" | "current" | "todo"])[]>>;
+
+const PATH: Path = {
   submitted: [["New", "current"], ["In review", "todo"], ["Decision", "todo"]],
   under_review: [["New", "done"], ["In review", "current"], ["Decision", "todo"]],
   approved: [["New", "done"], ["In review", "done"], ["Approved", "current"]],
@@ -229,8 +252,17 @@ const PATH: Readonly<Record<string, readonly (readonly [label: string, state: "d
   withdrawn: [["New", "done"], ["Withdrawn", "current"]],
 };
 
-function StagePath({ state }: { readonly state: string }): ReactElement | null {
-  const path = PATH[state];
+/** A request is read and marked done; one moved into review before requests
+ *  had their own path shows that step. */
+const REQUEST_PATH: Path = {
+  submitted: [["New", "current"], ["Done", "todo"]],
+  under_review: [["New", "done"], ["In review", "current"], ["Done", "todo"]],
+  archived: [["New", "done"], ["Done", "current"]],
+  withdrawn: [["New", "done"], ["Withdrawn", "current"]],
+};
+
+function StagePath({ state, request }: { readonly state: string; readonly request: boolean }): ReactElement | null {
+  const path = (request ? REQUEST_PATH : PATH)[state];
   if (path === undefined) return null;
   return (
     <ol className="enq-path" aria-label="Progress">
@@ -317,6 +349,58 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
   }
 }
 
+/** A request's next step: marked done without an email, or reopened. */
+function RequestNextStep({ enquiry, kind, transition, onRequest }: {
+  readonly enquiry: Enquiry;
+  readonly kind: RequestKind;
+  readonly transition: PanelTransition;
+  readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
+}): ReactElement {
+  const busy = transition.saving !== null;
+  const failure = transition.failure === null ? null
+    : <p className="enq-confirm__error" role="alert">{transition.failure}</p>;
+
+  switch (enquiry.state) {
+    case "submitted":
+    case "under_review":
+      return (
+        <>
+          <div className="enq-actions">
+            <button type="button" className="enq-cta" onClick={() => { onRequest("archived", false); }}
+              disabled={busy} aria-busy={transition.saving === "archived"}>
+              {transition.saving === "archived" && <ActivityIndicator size={18} />}
+              {transition.saving === "archived" ? "Marking done…" : "Mark done"}
+            </button>
+            <button type="button" className="enq-quiet" data-transition="archived"
+              onClick={() => { onRequest("archived", true); }} disabled={busy}>
+              Mark done with a note
+            </button>
+          </div>
+          <p className="enq-next__hint">{requestWords(kind).next}</p>
+          {failure}
+        </>
+      );
+    case "archived":
+      return (
+        <>
+          <div className="enq-actions">
+            <button type="button" className="enq-quiet" data-transition="submitted"
+              onClick={() => { onRequest("submitted", false); }} disabled={busy} aria-busy={transition.saving === "submitted"}>
+              {transition.saving === "submitted" && <ActivityIndicator size={16} />}
+              {transition.saving === "submitted" ? "Reopening…" : "Reopen"}
+            </button>
+          </div>
+          <p className="enq-next__hint">Done. Reopening returns it to New.</p>
+          {failure}
+        </>
+      );
+    case "withdrawn":
+      return <><p className="enq-next__hint">Withdrawn. There is nothing more to do here.</p>{failure}</>;
+    default:
+      return <><p className="enq-next__hint">{stageLabel(enquiry.state, true)}. There is no next step from here.</p>{failure}</>;
+  }
+}
+
 interface ConfirmWords {
   readonly question: (name: string) => string;
   readonly consequence: (enquiry: Enquiry) => string;
@@ -325,7 +409,7 @@ interface ConfirmWords {
   readonly saving: string;
 }
 
-const CONFIRM_WORDS: Readonly<Record<TransitionTarget, ConfirmWords>> = {
+const CONFIRM_WORDS: Readonly<Record<ConfirmTarget, ConfirmWords>> = {
   under_review: {
     question: (name) => `Start reviewing ${name}’s enquiry?`,
     consequence: () => "Only your team sees this stage and the note. Nothing is sent to the client.",
@@ -347,11 +431,18 @@ const CONFIRM_WORDS: Readonly<Record<TransitionTarget, ConfirmWords>> = {
     confirm: "Decline and email",
     saving: "Declining…",
   },
+  archived: {
+    question: (name) => `Mark ${name}’s request done?`,
+    consequence: () => "Only your team sees the note. Nothing is emailed.",
+    noteLabel: "Note for the timeline (optional)",
+    confirm: "Mark done",
+    saving: "Marking done…",
+  },
 };
 
 function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
   readonly enquiry: Enquiry;
-  readonly to: TransitionTarget;
+  readonly to: ConfirmTarget;
   readonly saving: boolean;
   readonly failure: string | null;
   readonly onConfirm: (note: string) => void;
@@ -491,23 +582,30 @@ const TIMELINE_WORDS: Readonly<Record<string, string>> = {
   archived: "Archived",
 };
 
-function EnquiryTimeline({ enquiry, history, status }: {
+function timelineWords(entry: StatusHistoryEntry, request: boolean): string {
+  if (entry.fromStatus === "archived" && entry.toStatus === "submitted") return "Reopened";
+  if (request && entry.toStatus === "archived") return "Marked done";
+  return TIMELINE_WORDS[entry.toStatus] ?? stageLabel(entry.toStatus);
+}
+
+function EnquiryTimeline({ enquiry, history, status, request }: {
   readonly enquiry: Enquiry;
   readonly history: readonly StatusHistoryEntry[];
   readonly status: "loading" | "ready" | "error";
+  readonly request: boolean;
 }): ReactElement {
   return (
     <>
       <ol className="enq-timeline">
         <li>
           <span className="enq-dot" data-tone="new" aria-hidden="true" />
-          <strong>Enquiry received</strong>
+          <strong>{request ? "Request received" : "Enquiry received"}</strong>
           <time dateTime={enquiry.createdAt}>{venueMoment(enquiry.createdAt) ?? enquiry.createdAt}</time>
         </li>
         {history.map((entry) => (
           <li key={entry.id}>
             <span className="enq-dot" data-tone={stageTone(entry.toStatus)} aria-hidden="true" />
-            <strong>{TIMELINE_WORDS[entry.toStatus] ?? stageLabel(entry.toStatus)}</strong>
+            <strong>{timelineWords(entry, request)}</strong>
             <time dateTime={entry.createdAt}>{venueMoment(entry.createdAt) ?? entry.createdAt}</time>
             {entry.note !== null && entry.note.trim() !== "" && <q>{entry.note.trim()}</q>}
           </li>

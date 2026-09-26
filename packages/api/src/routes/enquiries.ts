@@ -3,10 +3,10 @@ import { z } from "zod";
 import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canAccessResource, canManageCommercial, canManageVenue } from "../utils/query.js";
-import { canTransition, ENQUIRY_STATES } from "../state-machines/enquiry.js";
+import { canTransition, enquiryKind, ENQUIRY_STATES } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
@@ -67,6 +67,17 @@ const StatusFilterQuery = z.object({
   message: "Use either status or states, not both",
   path: ["states"],
 });
+
+/**
+ * Who may open an enquiry, read its timeline and move it: its
+ * owner, or anyone the venue inbox admits for its venue (the floor, and the
+ * commercial roles that own the pipeline). Kept equal to the list's scope, so
+ * a role that can list an enquiry can open and move it; sales could list the
+ * inbox and was then refused each enquiry in it.
+ */
+function canWorkEnquiry(user: JwtUser, enquiry: { readonly userId: string | null; readonly venueId: string }): boolean {
+  return canAccessResource(user, enquiry.userId, enquiry.venueId) || canManageCommercial(user, enquiry.venueId);
+}
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -149,7 +160,7 @@ export async function enquiryRoutes(
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
 
-    if (!canAccessResource(request.user, enquiry.userId, enquiry.venueId)) {
+    if (!canWorkEnquiry(request.user, enquiry)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -266,12 +277,22 @@ export async function enquiryRoutes(
     }
 
     // Check access: owner, venue hallkeeper/staff, or admin
-    if (!canAccessResource(request.user, enquiry.userId, enquiry.venueId)) {
+    if (!canWorkEnquiry(request.user, enquiry)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
+    // An access request or an enquiry about Venviewer asked to book nothing,
+    // and both decisions email the sender a booking outcome.
+    const kind = enquiryKind(enquiry.eventType);
+    if (kind === "request" && (parsed.data.status === "approved" || parsed.data.status === "rejected")) {
+      return reply.status(422).send({
+        error: "This request is not a booking, so it cannot be approved or declined. Mark it done instead.",
+        code: "NOT_A_BOOKING",
+      });
+    }
+
     // Check transition is valid for this role
-    if (!canTransition(enquiry.state, parsed.data.status, request.user.role)) {
+    if (!canTransition(enquiry.state, parsed.data.status, request.user.role, kind)) {
       return reply.status(422).send({
         error: `Cannot transition from '${enquiry.state}' to '${parsed.data.status}' with role '${request.user.role}'`,
         code: "INVALID_TRANSITION",
@@ -345,7 +366,7 @@ export async function enquiryRoutes(
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
 
-    if (!canAccessResource(request.user, enquiry.userId, enquiry.venueId)) {
+    if (!canWorkEnquiry(request.user, enquiry)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -372,7 +393,9 @@ export async function enquiryRoutes(
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
 
-    if (!canAccessResource(request.user, enquiry.userId, enquiry.venueId)) {
+    // A quote is a price: the enquirer and the roles that work the pipeline
+    // see it; a hallkeeper, who can open the enquiry, does not (decision 6b).
+    if (enquiry.userId !== request.user.id && !canManageCommercial(request.user, enquiry.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 

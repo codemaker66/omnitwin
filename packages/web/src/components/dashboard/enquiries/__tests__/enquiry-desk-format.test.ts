@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NON_BOOKING_ENQUIRY_TYPES } from "@omnitwin/types";
 import {
   countPhrase,
   deskGreeting,
@@ -11,6 +12,8 @@ import {
   messageExcerpt,
   receivedGroup,
   relativeAge,
+  requestKind,
+  requestWords,
   stageLabel,
   stageNouns,
   stageTone,
@@ -24,12 +27,18 @@ const NOW = Date.parse("2026-09-24T14:00:00.000Z");
 
 describe("stage words", () => {
   it("names each stage as venue sales staff say it", () => {
-    expect(["submitted", "under_review", "approved", "rejected", "withdrawn"].map(stageLabel))
+    expect(["submitted", "under_review", "approved", "rejected", "withdrawn"].map((state) => stageLabel(state)))
       .toEqual(["New", "In review", "Approved", "Declined", "Withdrawn"]);
     expect(stageTone("submitted")).toBe("new");
     expect(stageTone("rejected")).toBe("declined");
     expect(stageLabel("on_hold")).toBe("On hold");
     expect(stageTone("on_hold")).toBe("other");
+  });
+
+  it("names a filed request done, and a filed booking archived", () => {
+    expect(stageLabel("archived")).toBe("Archived");
+    expect(stageLabel("archived", true)).toBe("Done");
+    expect(stageLabel("submitted", true)).toBe("New");
   });
 
   it("counts with the right noun for one and many", () => {
@@ -152,5 +161,25 @@ describe("desk greeting", () => {
     expect(deskGreeting(NOW, "Elaine MacGregor")).toEqual({ date: "Thursday 24 September", greeting: "Good afternoon, Elaine" });
     expect(deskGreeting(Date.parse("2026-09-24T07:30:00.000Z"), null).greeting).toBe("Good morning");
     expect(deskGreeting(Date.parse("2026-12-31T19:00:00.000Z"), "  ")).toEqual({ date: "Thursday 31 December", greeting: "Good evening" });
+  });
+});
+
+describe("requests", () => {
+  it("knows every type the API refuses a booking decision for", () => {
+    // The API's list and the desk's words must not drift apart: a type the API
+    // treats as a request but the desk does not would offer Approve and fail.
+    for (const type of NON_BOOKING_ENQUIRY_TYPES) expect(requestKind(type), type).not.toBeNull();
+    expect(requestKind(" venue-access ")).toBe("access");
+    expect(requestKind("venue-enquiry")).toBe("venviewer");
+    expect(requestKind("Wedding")).toBeNull();
+    expect(requestKind(null)).toBeNull();
+  });
+
+  it("names each request as the team's notification does, and says nothing is emailed", () => {
+    expect(requestWords("access").label).toBe("Access request");
+    expect(requestWords("venviewer").label).toBe("Venviewer enquiry");
+    for (const kind of ["access", "venviewer"] as const) {
+      expect(requestWords(kind).next).toContain("Nothing is emailed from here.");
+    }
   });
 });

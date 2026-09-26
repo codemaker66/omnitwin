@@ -9,6 +9,12 @@ import {
   CreateEnquirySchema,
   GuestEnquirySchema,
 } from "../enquiry.js";
+import {
+  isBookingEnquiry,
+  NON_BOOKING_ENQUIRY_TYPES,
+  VENUE_ACCESS_ENQUIRY_TYPE,
+  VENVIEWER_PRICING_ENQUIRY_TYPE,
+} from "../enquiry.js";
 import type { EnquiryStatus } from "../enquiry.js";
 
 // ---------------------------------------------------------------------------
@@ -548,5 +554,24 @@ describe("GuestEnquirySchema", () => {
     if (result.success) {
       expect("venueId" in result.data).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isBookingEnquiry — which enquiries may take a booking decision
+// ---------------------------------------------------------------------------
+
+describe("isBookingEnquiry", () => {
+  it("treats an access request and a Venviewer enquiry as requests, not bookings", () => {
+    expect([...NON_BOOKING_ENQUIRY_TYPES]).toEqual([VENUE_ACCESS_ENQUIRY_TYPE, VENVIEWER_PRICING_ENQUIRY_TYPE]);
+    expect(isBookingEnquiry(VENUE_ACCESS_ENQUIRY_TYPE)).toBe(false);
+    expect(isBookingEnquiry(` ${VENVIEWER_PRICING_ENQUIRY_TYPE} `)).toBe(false);
+  });
+
+  it("treats any other type, or none, as a booking", () => {
+    expect(isBookingEnquiry("Wedding")).toBe(true);
+    expect(isBookingEnquiry("")).toBe(true);
+    expect(isBookingEnquiry(null)).toBe(true);
+    expect(isBookingEnquiry(undefined)).toBe(true);
   });
 });

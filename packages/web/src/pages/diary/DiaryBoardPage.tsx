@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
+import { isBookingEnquiry } from "@omnitwin/types";
 import type {
   CalendarBookingEntry,
   CalendarEntry,
@@ -177,8 +178,10 @@ export function DiaryBoardPage(): ReactElement {
       .then((page) => {
         if (controller.signal.aborted) return;
         // The server already filters by state; this also covers an API that
-        // predates the `states` parameter.
-        const open = page.filter((enquiry) => TRAY_ENQUIRY_STATES.includes(enquiry.state));
+        // predates the `states` parameter. An access request or Venviewer
+        // enquiry asks for no room, so there is nothing to place on a day.
+        const open = page.filter((enquiry) => TRAY_ENQUIRY_STATES.includes(enquiry.state)
+          && isBookingEnquiry(enquiry.eventType));
         setEnquiryState({ venueId, status: "ready", error: null,
           rows: open.slice(0, TRAY_ENQUIRY_LIMIT), more: page.length > TRAY_ENQUIRY_LIMIT });
       })

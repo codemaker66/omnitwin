@@ -1,4 +1,4 @@
-import { ENQUIRY_STATUSES, type EnquiryStatus, type UserRole } from "@omnitwin/types";
+import { ENQUIRY_STATUSES, isBookingEnquiry, type EnquiryStatus, type UserRole } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Enquiry state machine — pure functions, no side effects
@@ -46,21 +46,54 @@ const TRANSITIONS: Record<string, readonly TransitionRole[]> = {
   "rejected→archived": VENUE_TRIAGE_ROLES,
 };
 
+// ---------------------------------------------------------------------------
+// Requests — an access request or an enquiry about Venviewer itself
+//
+// They reach the venue's inbox by the enquiry route but ask to book nothing,
+// so they never take a decision: approving or declining emails the sender a
+// booking outcome. Staff answer them from their own email and mark them done
+// (stored as "archived"), and can reopen one marked done by mistake.
+// ---------------------------------------------------------------------------
+
+/** A booking asks for the venue's rooms and ends in a decision; a request is
+ *  answered and marked done. */
+export type EnquiryKind = "booking" | "request";
+
+export function enquiryKind(eventType: string | null | undefined): EnquiryKind {
+  return isBookingEnquiry(eventType) ? "booking" : "request";
+}
+
+const REQUEST_TRANSITIONS: Record<string, readonly TransitionRole[]> = {
+  "draft→submitted": CUSTOMER_ENQUIRY_ROLES,
+  "submitted→archived": VENUE_TRIAGE_ROLES,
+  "under_review→archived": VENUE_TRIAGE_ROLES,
+  "archived→submitted": VENUE_TRIAGE_ROLES,
+  "submitted→withdrawn": CUSTOMER_ENQUIRY_ROLES,
+  "under_review→withdrawn": CUSTOMER_ENQUIRY_ROLES,
+};
+
+/** The two states that email the sender a booking outcome. */
+const BOOKING_DECISIONS: readonly string[] = ["approved", "rejected"];
+
 /**
  * Returns true if the given role can perform a transition from
- * currentState to nextState.
+ * currentState to nextState on an enquiry of this kind.
  *
- * Admin can perform ANY transition (override).
+ * Admin can perform ANY transition (override), except a booking decision on
+ * a request: no role may email a booking outcome for something that never
+ * asked to book.
  */
 export function canTransition(
   currentState: string,
   nextState: string,
   role: string,
+  kind: EnquiryKind = "booking",
 ): boolean {
+  if (kind === "request" && BOOKING_DECISIONS.includes(nextState)) return false;
   if (role === "admin") return true;
 
   const key = `${currentState}→${nextState}`;
-  const allowed = TRANSITIONS[key];
+  const allowed = (kind === "request" ? REQUEST_TRANSITIONS : TRANSITIONS)[key];
   if (allowed === undefined) return false;
   return allowed.includes(role as TransitionRole);
 }
@@ -71,20 +104,7 @@ export function canTransition(
 export function getAvailableTransitions(
   currentState: string,
   role: string,
+  kind: EnquiryKind = "booking",
 ): readonly EnquiryState[] {
-  if (role === "admin") {
-    // Admin can go to any state from any state
-    return ENQUIRY_STATES.filter((s) => s !== currentState);
-  }
-
-  const result: EnquiryState[] = [];
-  for (const key of Object.keys(TRANSITIONS)) {
-    const [from, to] = key.split("→");
-    if (from !== currentState || to === undefined) continue;
-    const allowed = TRANSITIONS[key];
-    if (allowed !== undefined && allowed.includes(role as TransitionRole)) {
-      result.push(to as EnquiryState);
-    }
-  }
-  return result;
+  return ENQUIRY_STATES.filter((state) => state !== currentState && canTransition(currentState, state, role, kind));
 }

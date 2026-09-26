@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { VENUE_ACCESS_ENQUIRY_TYPE, VENVIEWER_PRICING_ENQUIRY_TYPE } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { publicEnquiryRoutes } from "../routes/public-enquiries.js";
+import { enquiryRoutes } from "../routes/enquiries.js";
 import { enquiryAcknowledgement, formatEnGbDate } from "../services/email-templates.js";
 import {
   DEFAULT_EMAIL_FROM,
@@ -162,7 +163,7 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
   const tables: PgTable[] = [
     schema.venues, schema.spaces, schema.configurations, schema.enquiries,
     schema.enquiryStatusHistory, schema.guestLeads, schema.users,
-    schema.eventPlanNotifications, schema.emailSends,
+    schema.eventPlanNotifications, schema.emailSends, schema.pricingRules,
   ];
   const savedTwinSlugs = process.env["TWIN_PUBLIC_VENUE_SLUGS"];
 
@@ -190,11 +191,12 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+    await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
     await server.ready();
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends");
+    await pool.query("TRUNCATE venues, spaces, configurations, enquiries, enquiry_status_history, guest_leads, users, event_plan_notifications, email_sends, pricing_rules");
     await pool.query(
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', $2, '85 Glassford Street')",
       [VENUE, VENUE_SLUG],
@@ -273,9 +275,8 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
 
     expect(rows.rows.length).toBeGreaterThan(0);
     const roles = rows.rows.map((row) => row.audience_role);
-    // Staff and the venue admin both hear; the enquiry has no event.
-    expect(roles).toContain("staff");
-    expect(roles).toContain("admin");
+    // Everyone who works the pipeline hears; the enquiry has no event.
+    expect([...roles].sort()).toEqual(["admin", "manager", "sales", "staff"]);
     for (const row of rows.rows) {
       expect(row.venue_id).toBe(VENUE);
       expect(row.event_id).toBeNull();
@@ -358,6 +359,124 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
       [`enquiry-acknowledged:${enquiryId}`, prospect],
     );
     expect(sent.rows[0]?.count).toBe("0");
+  });
+
+  // A request reaches the same inbox as a booking, but approving or declining
+  // it would email the sender a booking outcome they never asked for. Staff
+  // mark it done instead, and can reopen it.
+  describe("a request in the venue's inbox", () => {
+    const staff = { id: randomUUID(), email: "events@example.test", role: "staff", venueId: VENUE };
+
+    async function submitAccessRequest(): Promise<string> {
+      const res = await server.inject({
+        method: "POST",
+        url: "/public/enquiries",
+        payload: { venueSlug: VENUE_SLUG, email: "uninvited@example.test", eventType: VENUE_ACCESS_ENQUIRY_TYPE },
+      });
+      expect(res.statusCode, res.body).toBe(201);
+      return (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
+    }
+
+    async function transition(
+      enquiryId: string,
+      status: string,
+      actor: Record<string, string | null> = staff,
+    ): Promise<{ statusCode: number; code: string | undefined; state: string | undefined }> {
+      const res = await server.inject({
+        method: "POST",
+        url: `/enquiries/${enquiryId}/transition`,
+        headers: { authorization: `Bearer ${JSON.stringify(actor)}` },
+        payload: { status },
+      });
+      const body = JSON.parse(res.body) as { code?: string; data?: { state: string } };
+      return { statusCode: res.statusCode, code: body.code, state: body.data?.state };
+    }
+
+    async function storedState(enquiryId: string): Promise<string | undefined> {
+      const rows = await pool.query<{ state: string }>("SELECT state FROM enquiries WHERE id = $1", [enquiryId]);
+      return rows.rows[0]?.state;
+    }
+
+    it("takes neither booking decision, whoever asks, and emails nobody", async () => {
+      const enquiryId = await submitAccessRequest();
+      const platformAdmin = { ...staff, id: randomUUID(), role: "admin", platformRole: "admin" };
+      for (const actor of [staff, platformAdmin]) {
+        for (const status of ["approved", "rejected"]) {
+          const refused = await transition(enquiryId, status, actor);
+          expect(refused.statusCode, `${actor.role} ${status}`).toBe(422);
+          expect(refused.code).toBe("NOT_A_BOOKING");
+        }
+      }
+      // One moved into review before requests had their own path is refused too.
+      await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [enquiryId]);
+      expect((await transition(enquiryId, "approved")).code).toBe("NOT_A_BOOKING");
+      expect(await storedState(enquiryId)).toBe("under_review");
+
+      const history = await pool.query("SELECT 1 FROM enquiry_status_history WHERE enquiry_id = $1", [enquiryId]);
+      expect(history.rowCount).toBe(1);
+      await new Promise((resolve) => { setTimeout(resolve, 600); });
+      const sent = await pool.query<{ count: string }>("SELECT count(*) AS count FROM email_sends");
+      expect(sent.rows[0]?.count).toBe("0");
+    });
+
+    it("is marked done by the venue's team, and reopened, without an email", async () => {
+      const enquiryId = await submitAccessRequest();
+      expect(await transition(enquiryId, "archived")).toMatchObject({ statusCode: 200, state: "archived" });
+      expect(await transition(enquiryId, "submitted")).toMatchObject({ statusCode: 200, state: "submitted" });
+      // The sender cannot file it on the venue's behalf.
+      const sender = { id: randomUUID(), email: "uninvited@example.test", role: "planner", venueId: null };
+      expect((await transition(enquiryId, "archived", sender)).statusCode).toBe(403);
+
+      const history = await pool.query<{ from_status: string; to_status: string; changed_by: string | null }>(
+        "SELECT from_status, to_status, changed_by FROM enquiry_status_history WHERE enquiry_id = $1 ORDER BY created_at",
+        [enquiryId],
+      );
+      expect(history.rows.slice(1)).toEqual([
+        { from_status: "submitted", to_status: "archived", changed_by: staff.id },
+        { from_status: "archived", to_status: "submitted", changed_by: staff.id },
+      ]);
+      await new Promise((resolve) => { setTimeout(resolve, 600); });
+      const sent = await pool.query<{ count: string }>("SELECT count(*) AS count FROM email_sends");
+      expect(sent.rows[0]?.count).toBe("0");
+    });
+
+    it("lets sales open, follow and move what the inbox lists it, and keeps a caterer out", async () => {
+      const enquiryId = await submitEnquiry();
+      const sales = { ...staff, id: randomUUID(), role: "sales" };
+      const caterer = { ...staff, id: randomUUID(), role: "caterer" };
+      for (const url of [`/enquiries/${enquiryId}`, `/enquiries/${enquiryId}/history`]) {
+        const opened = await server.inject({ method: "GET", url, headers: { authorization: `Bearer ${JSON.stringify(sales)}` } });
+        expect(opened.statusCode, `sales ${url}`).toBe(200);
+        const refused = await server.inject({ method: "GET", url, headers: { authorization: `Bearer ${JSON.stringify(caterer)}` } });
+        expect(refused.statusCode, `caterer ${url}`).toBe(403);
+      }
+      expect(await transition(enquiryId, "under_review", sales)).toMatchObject({ statusCode: 200, state: "under_review" });
+      expect((await transition(enquiryId, "approved", caterer)).statusCode).toBe(403);
+    });
+
+    it("shows an enquiry's quote to sales but not to a hallkeeper, who may open the enquiry", async () => {
+      const enquiryId = await submitEnquiry();
+      const as = (role: string): { authorization: string } => ({
+        authorization: `Bearer ${JSON.stringify({ ...staff, id: randomUUID(), role })}`,
+      });
+      const hallkeeperOpens = await server.inject({ method: "GET", url: `/enquiries/${enquiryId}`, headers: as("hallkeeper") });
+      expect(hallkeeperOpens.statusCode).toBe(200);
+      const hallkeeperQuote = await server.inject({ method: "GET", url: `/enquiries/${enquiryId}/quote`, headers: as("hallkeeper") });
+      expect(hallkeeperQuote.statusCode).toBe(403);
+      for (const role of ["sales", "manager", "staff"]) {
+        const quote = await server.inject({ method: "GET", url: `/enquiries/${enquiryId}/quote`, headers: as(role) });
+        expect(quote.statusCode, `${role}: ${quote.body}`).toBe(200);
+      }
+    });
+
+    it("leaves a booking's decisions as they were: an approval still emails the client", async () => {
+      const enquiryId = await submitEnquiry();
+      expect((await transition(enquiryId, "archived")).code).toBe("INVALID_TRANSITION");
+      expect(await transition(enquiryId, "under_review")).toMatchObject({ statusCode: 200, state: "under_review" });
+      expect(await transition(enquiryId, "approved")).toMatchObject({ statusCode: 200, state: "approved" });
+      const sent = await waitForEmail(`enquiry-approved:${enquiryId}`);
+      expect(sent.recipient).toBe(ORGANISER);
+    });
   });
 
   it("does not acknowledge the same enquiry twice", async () => {

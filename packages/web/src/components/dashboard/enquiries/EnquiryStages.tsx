@@ -13,13 +13,15 @@ interface StageChipProps {
   readonly state: string;
   /** Replays the stamp that marks a status the reader has just set. */
   readonly stamped?: boolean;
+  /** An access request or Venviewer enquiry, which reads "Done" once filed. */
+  readonly request?: boolean;
 }
 
-export function StageChip({ state, stamped = false }: StageChipProps): ReactElement {
+export function StageChip({ state, stamped = false, request = false }: StageChipProps): ReactElement {
   return (
     <span className={`enq-chip${stamped ? " enq-chip--stamped" : ""}`} data-tone={stageTone(state)}>
       <span className="enq-dot" aria-hidden="true" />
-      {stageLabel(state)}
+      {stageLabel(state, request)}
     </span>
   );
 }

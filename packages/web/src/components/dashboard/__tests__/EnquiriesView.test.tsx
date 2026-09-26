@@ -802,6 +802,124 @@ describe("EnquiriesView decisions", () => {
   });
 });
 
+describe("EnquiriesView requests", () => {
+  // "Request access" and the pricing page's enquiry reach the same inbox but
+  // ask to book nothing: approving or declining one would email its sender a
+  // booking outcome. They say what they ask for and are marked done instead.
+  function accessRequest(state = "submitted"): Enquiry {
+    return {
+      ...enquiry(9, state), userId: null, guestEmail: "uninvited@example.test", name: "uninvited@example.test",
+      eventType: "venue-access", message: "Venue access request from uninvited@example.test.",
+    };
+  }
+
+  function historyEntry(fromStatus: string, toStatus: string, minute: number): unknown {
+    return {
+      id: `history-${toStatus}-${String(minute)}`, enquiryId: "enquiry-9", fromStatus, toStatus, changedBy: "user-2",
+      note: null, createdAt: `2026-09-24T13:${String(minute).padStart(2, "0")}:00.000Z`,
+    };
+  }
+
+  it("names an access request, offers no booking decision, and marks it done and reopens it without an email", async () => {
+    const request = accessRequest();
+    mocks.listEnquiryPage.mockResolvedValue(page([request], {}));
+    mocks.transitionEnquiry.mockResolvedValueOnce({ ...request, state: "archived" });
+    render(<EnquiriesView canCreateOpportunity />);
+
+    const listed = await screen.findByRole("button", { name: /^uninvited@example\.test,/u });
+    expect(listed.getAttribute("aria-label")).toMatch(/^uninvited@example\.test, New, Access request, received /u);
+    expect(listed.textContent).not.toContain("Grand Hall");
+    expect(listed.querySelector(".enq-date--request svg")).not.toBeNull();
+
+    fireEvent.click(listed);
+    expect(screen.getByText(/^Access request · received /u)).toBeDefined();
+    expect(screen.getByText("Asks to join this venue’s workspace on Venviewer.")).toBeDefined();
+    expect(screen.getByText(/^Venviewer administrators send workspace invitations, from Clients & access\./u)).toBeDefined();
+    for (const name of ["Start review", "Approve…", "Decline…", "Create opportunity"]) {
+      expect(screen.queryByRole("button", { name }), name).toBeNull();
+    }
+    expect(screen.queryByText("Draft with AI")).toBeNull();
+    expect(document.querySelector(".enq-room-photo")).toBeNull();
+    expect(document.querySelector(".enq-facts")).toBeNull();
+    // The sender is signed in, just not invited; the note would be untrue.
+    expect(screen.queryByText("Sent without a Venviewer account")).toBeNull();
+    expect(screen.getByText("Request received")).toBeDefined();
+    // An address as a name breaks before its "@", not mid-word. (jsdom names
+    // a <wbr> as a space; a browser does not, which the browser run checks.)
+    const heading = document.querySelector(".enq-panel__name");
+    expect(heading?.textContent).toBe("uninvited@example.test");
+    expect(heading?.innerHTML).toBe("uninvited<wbr>@example.test");
+
+    mocks.getEnquiryHistory.mockResolvedValue([historyEntry("submitted", "archived", 5)]);
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-9", "archived", undefined); });
+    expect(await screen.findByText("Marked done.")).toBeDefined();
+    expect(document.querySelector(".enq-panel .enq-chip")?.textContent).toBe("Done");
+    expect(await screen.findByText("Marked done")).toBeDefined();
+
+    mocks.transitionEnquiry.mockResolvedValueOnce({ ...request, state: "submitted" });
+    mocks.getEnquiryHistory.mockResolvedValue([historyEntry("submitted", "archived", 5), historyEntry("archived", "submitted", 7)]);
+    fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
+    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenLastCalledWith("enquiry-9", "submitted", undefined); });
+    expect(await screen.findByText("Reopened.")).toBeDefined();
+    expect(await screen.findByText("Reopened")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Mark done" })).toBeDefined();
+  });
+
+  it("asks once before filing a request with a note, and says nothing is emailed", async () => {
+    const request = { ...accessRequest(), eventType: "venue-enquiry", message: "We let three rooms." };
+    mocks.listEnquiryPage.mockResolvedValue(page([request], {}));
+    mocks.transitionEnquiry.mockResolvedValue({ ...request, state: "archived" });
+    render(<EnquiriesView />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^uninvited@example\.test, New, Venviewer enquiry,/u }));
+    expect(screen.getByText("Asks about Venviewer for their own venue.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Mark done with a note" }));
+    const confirm = screen.getByRole("group", { name: "Mark uninvited@example.test’s request done?" });
+    expect(within(confirm).getByText("Only your team sees the note. Nothing is emailed.")).toBeDefined();
+
+    fireEvent.keyDown(within(confirm).getByRole("textbox"), { key: "Escape" });
+    expect(screen.queryByRole("group", { name: /request done\?$/u })).toBeNull();
+    expect(activeElement()).toBe(screen.getByRole("button", { name: "Mark done with a note" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark done with a note" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Note for the timeline (optional)" }),
+      { target: { value: "Passed to Blake." } });
+    fireEvent.click(within(screen.getByRole("group", { name: /request done\?$/u })).getByRole("button", { name: "Mark done" }));
+    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-9", "archived", "Passed to Blake."); });
+  });
+
+  it("shows a request's own steps when the API says an enquiry is not a booking", async () => {
+    const listedAsBooking = { ...accessRequest("under_review"), eventType: "Wedding" };
+    mocks.listEnquiryPage.mockResolvedValue(page([listedAsBooking], {}));
+    mocks.transitionEnquiry.mockRejectedValue(new ApiError(422, "Not a booking", "NOT_A_BOOKING"));
+    mocks.getEnquiry.mockResolvedValue(accessRequest("under_review"));
+    render(<EnquiriesView />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^uninvited@example\.test,/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve and email" }));
+
+    expect((await screen.findByRole("alert")).textContent)
+      .toBe("This is a request, not a booking, so it is marked done rather than approved or declined.");
+    expect(screen.getByRole("button", { name: "Mark done" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Approve…" })).toBeNull();
+  });
+
+  it("offers the longest-waiting request by what it asks, not by a room", async () => {
+    wideDesk();
+    const oldest = { ...accessRequest(), createdAt: "2026-09-18T07:55:00.000Z" };
+    mocks.countEnquiryStages.mockResolvedValue(stageCounts({ submitted: 1 }, oldest));
+    mocks.listEnquiryPage.mockResolvedValue(page([oldest], {}));
+    render(<EnquiriesView />);
+
+    const overview = await screen.findByRole("complementary", { name: "Desk overview" });
+    expect(await within(overview).findByText("Access request")).toBeDefined();
+    expect(within(overview).queryByText(/Date to be confirmed/u)).toBeNull();
+    expect(overview.querySelector(".enq-room-photo")).toBeNull();
+  });
+});
+
 describe("EnquiriesView keyboard triage", () => {
   it("moves through the list with the arrow keys, j and k, Home and End", async () => {
     mocks.listEnquiryPage.mockResolvedValue(page(serverList(4), {}));

@@ -180,3 +180,19 @@ export const VENUE_ACCESS_ENQUIRY_TYPE = "venue-access";
  * venue's rooms, so no booking acknowledgement is sent.
  */
 export const VENVIEWER_PRICING_ENQUIRY_TYPE = "venue-enquiry";
+
+/**
+ * The `eventType`s that ride the enquiry route without asking to book the
+ * venue's rooms. Staff answer them and mark them done; they are never
+ * approved or declined, because both decisions email a booking outcome.
+ */
+export const NON_BOOKING_ENQUIRY_TYPES: readonly string[] = [
+  VENUE_ACCESS_ENQUIRY_TYPE,
+  VENVIEWER_PRICING_ENQUIRY_TYPE,
+];
+
+/** Whether an enquiry asks to book the venue's rooms: any type but the two
+ *  requests above, including none at all. */
+export function isBookingEnquiry(eventType: string | null | undefined): boolean {
+  return eventType === null || eventType === undefined || !NON_BOOKING_ENQUIRY_TYPES.includes(eventType.trim());
+}
