@@ -7,10 +7,10 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { STAFF_AUDIENCE_ROLES, type RequestTransition, type VenueRequest } from "@omnitwin/types";
+import type { RequestTransition, VenueRequest } from "@omnitwin/types";
 import { DayBoardSlotRequestsContext } from "../../pages/hallkeeper/DayBoardPage.js";
 import { listVenueRequests, makeVenueRequest, moveVenueRequest } from "../../api/requests.js";
-import { subscribeRequestsLive } from "../../lib/requests-live.js";
+import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { SlotRequests } from "./SlotRequests.js";
 import {
@@ -66,7 +66,7 @@ function messageFor(cause: unknown): string {
 export function RequestsProvider({ children }: { readonly children: ReactNode }): ReactElement {
   const user = useAuthStore((state) => state.user);
   const venueId = user?.venueId ?? null;
-  const isStaff = user !== null && STAFF_AUDIENCE_ROLES.some((role) => role === user.role);
+  const isStaff = listensForFloorRequests(user);
   const enabled = venueId !== null && isStaff;
 
   const [requests, setRequests] = useState<readonly VenueRequest[]>([]);

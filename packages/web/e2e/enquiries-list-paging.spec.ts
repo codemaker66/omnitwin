@@ -128,6 +128,10 @@ async function mockApi(page: Page, legacy: boolean): Promise<MockedApi> {
       void route.fulfill({ json: { data: url.pathname === "/venues" ? [venue] : venue } });
       return;
     }
+    if (url.pathname === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: 0 } } });
+      return;
+    }
     if (url.pathname.startsWith("/notifications")) {
       void route.fulfill({ json: { data: [] } });
       return;

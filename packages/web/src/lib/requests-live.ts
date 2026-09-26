@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isStaffAudienceRole } from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
 import { isE2EAuthBypassEnabled } from "./e2e-auth-bypass.js";
@@ -192,6 +193,20 @@ function teardown(): void {
   attempt = 0;
   current?.close();
   closing = false;
+}
+
+/**
+ * Whether this person can receive anything on the channel at all. Request
+ * frames go to a request's stored audience, the floor's roles, and escalation
+ * frames to the venue's administrators by name, who are on the floor too; the
+ * server refuses /ws/diary to the client's side and the event-scoped caterer.
+ * Anybody else would open a socket that carries nothing for them, or one the
+ * server closes and the backoff reopens, so surfaces ask this first.
+ */
+export function listensForFloorRequests(
+  user: { readonly role: string; readonly venueId: string | null } | null,
+): boolean {
+  return user !== null && user.venueId !== null && isStaffAudienceRole(user.role);
 }
 
 /**

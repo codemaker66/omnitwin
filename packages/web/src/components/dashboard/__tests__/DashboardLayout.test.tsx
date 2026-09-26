@@ -6,13 +6,29 @@ import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
 import { DashboardLayout, type DashboardView } from "../DashboardLayout.js";
 import { InventoryNavigationGuard } from "../inventory/InventoryNavigationGuard.js";
 
-const mocks = vi.hoisted(() => ({ venue: vi.fn(), signOut: vi.fn(), bypass: vi.fn(), notifications: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  venue: vi.fn(), signOut: vi.fn(), bypass: vi.fn(), unreadCount: vi.fn(), subscribe: vi.fn(),
+}));
 vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: mocks.signOut }) }));
 vi.mock("../../../api/spaces.js", () => ({ getVenue: mocks.venue }));
-vi.mock("../../../api/notifications.js", () => ({ listNotifications: mocks.notifications }));
+vi.mock("../../../api/notifications.js", () => ({ getUnreadNotificationCount: mocks.unreadCount }));
+// The live channel is the real gate with a recorded subscription, so a spec
+// can push an inbox frame and see who was ever subscribed.
+vi.mock("../../../lib/requests-live.js", async () => {
+  const actual = await vi.importActual<typeof import("../../../lib/requests-live.js")>("../../../lib/requests-live.js");
+  return { listensForFloorRequests: actual.listensForFloorRequests, subscribeRequestsLive: mocks.subscribe };
+});
 vi.mock("../../../lib/e2e-auth-bypass.js", () => ({ isE2EAuthBypassEnabled: mocks.bypass }));
 vi.mock("../../shared/ToastContainer.js", () => ({ ToastContainer: () => null }));
-vi.mock("../NotificationCenter.js", () => ({ NotificationCenter: () => <button type="button">No unread notifications</button> }));
+// The stub says the number it was handed, so a spec can prove the popover
+// states the shell's count rather than fetching one of its own.
+vi.mock("../NotificationCenter.js", () => ({
+  NotificationCenter: ({ unreadCount, onUnreadChanged }: {
+    readonly unreadCount: number | null; readonly onUnreadChanged: () => void;
+  }) => <button type="button" onClick={onUnreadChanged}>
+    {unreadCount === null ? "Notifications" : unreadCount === 0 ? "No unread notifications" : `${String(unreadCount)} unread notifications`}
+  </button>,
+}));
 
 const admin: AuthUser = {
   id: "admin-1", name: "Elaine Campbell", email: "elaine@example.test",
@@ -65,7 +81,8 @@ function renderShell({ path = "/dashboard?view=inventory", onViewChange }: {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.venue.mockResolvedValue({ name: "Trades Hall" });
-  mocks.notifications.mockResolvedValue([]);
+  mocks.unreadCount.mockResolvedValue(0);
+  mocks.subscribe.mockReturnValue(() => undefined);
   mocks.signOut.mockResolvedValue(undefined);
   mocks.bypass.mockReturnValue(false);
   useAuthStore.getState().setUser(admin);
@@ -84,7 +101,7 @@ describe("DashboardLayout navigation", () => {
     expect(screen.queryByRole("button", { name: "Enquiries" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Messages" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("button", { name: "No unread notifications" })).toBeDefined();
+    expect(await screen.findByRole("button", { name: "No unread notifications" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Venue Settings" }));
     expect(onViewChange).toHaveBeenCalledWith("settings");
     expect(screen.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
@@ -283,11 +300,6 @@ describe("DashboardLayout navigation", () => {
 // ---------------------------------------------------------------------------
 describe("unread notifications on the visible nav", () => {
   const widths = [390, 1366];
-  const unread = [
-    { id: "n-1", readAt: null },
-    { id: "n-2", readAt: null },
-    { id: "n-3", readAt: "2026-09-16T08:00:00.000Z" },
-  ];
 
   function atWidth(width: number, run: () => Promise<void>): Promise<void> {
     const previous = Object.getOwnPropertyDescriptor(window, "innerWidth");
@@ -301,41 +313,59 @@ describe("unread notifications on the visible nav", () => {
 
   for (const width of widths) {
     it(`shows the unread count in the nav row at ${String(width)}px, without opening anything`, async () => {
-      mocks.notifications.mockResolvedValue(unread);
+      mocks.unreadCount.mockResolvedValue(2);
       await atWidth(width, async () => {
         renderShell();
         const chip = await screen.findByRole("button", { name: "Notifications: 2 unread" });
         const navigation = screen.getByRole("navigation", { name: "Staff dashboard" });
         expect(navigation.contains(chip)).toBe(true);
         expect(chip.getAttribute("aria-expanded")).toBe("false");
-        // The popover — and the badge inside it — is still closed.
-        expect(screen.queryByRole("button", { name: "No unread notifications" })).toBeNull();
-        expect(mocks.notifications).toHaveBeenCalledWith("unread", 20);
+        // The popover — and the count it states — is still closed.
+        expect(screen.queryByRole("button", { name: "2 unread notifications" })).toBeNull();
+        expect(mocks.unreadCount).toHaveBeenCalledTimes(1);
       });
     });
   }
 
   it("opens the notifications popover from the chip and leaves its contents alone", async () => {
-    mocks.notifications.mockResolvedValue(unread);
+    mocks.unreadCount.mockResolvedValue(2);
     renderShell();
     const chip = await screen.findByRole("button", { name: "Notifications: 2 unread" });
     fireEvent.click(chip);
-    expect(screen.getByRole("button", { name: "No unread notifications" })).toBeDefined();
+    // One number from one source: the panel says the chip's count.
+    expect(screen.getByRole("button", { name: "2 unread notifications" })).toBeDefined();
     expect(screen.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(chip);
-    expect(screen.queryByRole("button", { name: "No unread notifications" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "2 unread notifications" })).toBeNull();
   });
 
   it("re-reads the count when the popover closes, because reading happens inside it", async () => {
-    mocks.notifications.mockResolvedValue(unread);
+    mocks.unreadCount.mockResolvedValue(2);
     renderShell();
     await screen.findByRole("button", { name: "Notifications: 2 unread" });
-    expect(mocks.notifications).toHaveBeenCalledTimes(1);
+    expect(mocks.unreadCount).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    mocks.notifications.mockResolvedValue([]);
+    mocks.unreadCount.mockResolvedValue(0);
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     await waitFor(() => { expect(screen.queryByRole("button", { name: /^Notifications:/u })).toBeNull(); });
-    expect(mocks.notifications).toHaveBeenCalledTimes(2);
+    expect(mocks.unreadCount).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads the count the moment the panel reads a notification", async () => {
+    mocks.unreadCount.mockResolvedValue(2);
+    renderShell();
+    fireEvent.click(await screen.findByRole("button", { name: "Notifications: 2 unread" }));
+    mocks.unreadCount.mockResolvedValue(1);
+    fireEvent.click(screen.getByRole("button", { name: "2 unread notifications" }));
+    expect(await screen.findByRole("button", { name: "Notifications: 1 unread" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "1 unread notifications" })).toBeDefined();
+  });
+
+  it("counts past a page: the exact number in its name, 99+ on the chip", async () => {
+    mocks.unreadCount.mockResolvedValue(123);
+    renderShell();
+    const chip = await screen.findByRole("button", { name: "Notifications: 123 unread" });
+    expect(chip.textContent).toBe("99+");
   });
 
   it("shows no chip when there is nothing unread, and none when the call fails", async () => {
@@ -343,10 +373,38 @@ describe("unread notifications on the visible nav", () => {
     await screen.findByText("Trades Hall");
     expect(screen.queryByRole("button", { name: /^Notifications:/u })).toBeNull();
     cleanup();
-    mocks.notifications.mockRejectedValue(new Error("notifications unavailable"));
+    mocks.unreadCount.mockRejectedValue(new Error("notifications unavailable"));
     renderShell();
     await screen.findByText("Trades Hall");
     expect(screen.queryByRole("button", { name: /^Notifications:/u })).toBeNull();
     expect(screen.getByRole("button", { name: "More" })).toBeDefined();
+    // An unread number nobody could read is not stated anywhere.
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(await screen.findByRole("button", { name: "Notifications" })).toBeDefined();
+  });
+
+  it("re-reads the count when an inbox frame arrives for someone on the floor", async () => {
+    let listener: ((event: { readonly kind: string }) => void) | null = null;
+    mocks.subscribe.mockImplementation((next: (event: { readonly kind: string }) => void) => {
+      listener = next;
+      return () => { listener = null; };
+    });
+    renderShell();
+    await screen.findByText("Trades Hall");
+    await waitFor(() => { expect(mocks.unreadCount).toHaveBeenCalledTimes(1); });
+    expect(listener).not.toBeNull();
+    mocks.unreadCount.mockResolvedValue(3);
+    act(() => { listener?.({ kind: "notification" }); });
+    expect(await screen.findByRole("button", { name: "Notifications: 3 unread" })).toBeDefined();
+  });
+
+  it("opens no live channel for someone it could carry nothing to", async () => {
+    useAuthStore.getState().setUser({ ...admin, id: "sales-1", role: "sales" });
+    renderShell();
+    await screen.findByText("Trades Hall");
+    await waitFor(() => { expect(mocks.unreadCount).toHaveBeenCalled(); });
+    // The count is still read, because the inbox belongs to everybody; the
+    // socket is not opened, because no request frame is ever addressed here.
+    expect(mocks.subscribe).not.toHaveBeenCalled();
   });
 });

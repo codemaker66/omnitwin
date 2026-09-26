@@ -851,6 +851,10 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
       void route.fulfill({ json: { data: [notificationFixture()] } });
       return;
     }
+    if (path === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: 1 } } });
+      return;
+    }
 
     if (path === "/configurations/reviews/pending") {
       void route.fulfill({ json: { data: { entries: [pendingReviewFixture()] } } });

@@ -1,4 +1,4 @@
-import { type ReactNode, useState, useEffect, useId, useRef } from "react";
+import { type ReactNode, useCallback, useState, useEffect, useId, useRef } from "react";
 import { useClerk } from "@clerk/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Bell, ChevronDown } from "lucide-react";
@@ -6,7 +6,8 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
 import { NotificationCenter } from "./NotificationCenter.js";
-import { listNotifications } from "../../api/notifications.js";
+import { getUnreadNotificationCount } from "../../api/notifications.js";
+import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
@@ -70,8 +71,8 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   { view: "admin", label: "Admin", capability: "platformAdmin" },
 ];
 
-/** How many unread notifications the nav chip counts before it stops counting. */
-const UNREAD_CHIP_LIMIT = 20;
+/** The count is exact; past this the chip reads "99+" so it keeps its size. */
+const UNREAD_CHIP_DISPLAY_LIMIT = 99;
 
 // What the account menu calls the signed-in person. A role with no entry is a
 // workspace member, which is also what an unknown future role reads as.
@@ -219,43 +220,50 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   // -------------------------------------------------------------------------
   // Unread notifications on the VISIBLE nav row
   //
-  // The NotificationCenter lives inside the More popover, so its badge is only
-  // readable once the popover is open — which means "unread count on the nav"
-  // was not actually met: a hallkeeper never learns a change landed until they
-  // go looking. The count is therefore lifted onto the always-visible row as a
-  // chip, and the popover's own content is left exactly as it was
-  // (NotificationCenter.tsx belongs to the notifications lane).
+  // The NotificationCenter lives inside the More popover, so anything it shows
+  // is only readable once the popover is open — which means "unread count on
+  // the nav" was not actually met: a hallkeeper never learns a change landed
+  // until they go looking. The count is therefore lifted onto the
+  // always-visible row as a chip.
   //
-  // GET /notifications is scoped by recipient and audience rather than by
-  // role, so every signed-in identity that may receive one is covered; a role
-  // the API refuses simply reads zero and shows no chip.
+  // ONE number from ONE source: GET /notifications/unread-count, which counts
+  // rather than measuring a capped page, so a busy day reads "23". The chip
+  // shows it and the popover's NotificationCenter says the same number in
+  // words; neither asks for its own. Unknown (a failed read) is null: no chip,
+  // and no count stated anywhere.
   //
-  // The count is re-read whenever the More popover closes, because marking a
-  // notification read happens inside it.
+  // The count is re-read when the More popover closes and when a notification
+  // is read inside it, and on a live inbox frame for the people the requests
+  // channel can reach (lib/requests-live.ts).
   // -------------------------------------------------------------------------
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadNotifications, setUnreadNotifications] = useState<number | null>(null);
   const [unreadReadAt, setUnreadReadAt] = useState(0);
+  const rereadUnread = useCallback(() => { setUnreadReadAt((tick) => tick + 1); }, []);
   useEffect(() => {
     if (openMenu !== "more") return;
-    return () => { setUnreadReadAt((tick) => tick + 1); };
-  }, [openMenu]);
+    return rereadUnread;
+  }, [openMenu, rereadUnread]);
   const identityId = user?.id ?? null;
   useEffect(() => {
     if (identityId === null) {
-      setUnreadNotifications(0);
+      setUnreadNotifications(null);
       return;
     }
     const request = { current: true };
-    void listNotifications("unread", UNREAD_CHIP_LIMIT)
-      .then((rows) => {
-        if (request.current) {
-          setUnreadNotifications(rows.filter((row) => row.readAt === null).length);
-        }
-      })
-      .catch(() => { if (request.current) setUnreadNotifications(0); });
+    void getUnreadNotificationCount()
+      .then((unread) => { if (request.current) setUnreadNotifications(unread); })
+      .catch(() => { if (request.current) setUnreadNotifications(null); });
     return () => { request.current = false; };
   }, [identityId, unreadReadAt]);
-  const unreadLabel = `Notifications: ${String(unreadNotifications)} unread`;
+  const listensForInbox = listensForFloorRequests(user);
+  useEffect(() => {
+    if (!listensForInbox) return;
+    return subscribeRequestsLive((event) => {
+      if (event.kind === "notification" || event.kind === "reconnected") rereadUnread();
+    });
+  }, [listensForInbox, rereadUnread]);
+  const unreadShown = unreadNotifications ?? 0;
+  const unreadLabel = `Notifications: ${String(unreadShown)} unread`;
 
   const platformRole = user?.platformRole ?? "none";
   // One flag per ROUTE, not one flag per neighbourhood: /diary and
@@ -299,14 +307,14 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
             aria-current={activeView === "inventory" ? "page" : undefined}
             onClick={() => { selectView("inventory"); }}>Inventory</button>}
           <div className="dashboard-layout-disclosure dashboard-layout-more" ref={moreRef}>
-            {unreadNotifications > 0 && <button type="button"
+            {unreadShown > 0 && <button type="button"
               className="dashboard-layout-nav-item dashboard-layout-unread"
               data-testid="nav-unread-notifications"
               aria-label={unreadLabel} aria-expanded={openMenu === "more"} aria-controls={`${menuId}-more`}
               onClick={() => { setOpenMenu((current) => current === "more" ? null : "more"); }}>
               <Bell aria-hidden="true" size={16} />
               <span aria-hidden="true" className="dashboard-layout-unread-count">
-                {unreadNotifications >= UNREAD_CHIP_LIMIT ? `${String(UNREAD_CHIP_LIMIT)}+` : unreadNotifications}
+                {unreadShown > UNREAD_CHIP_DISPLAY_LIMIT ? `${String(UNREAD_CHIP_DISPLAY_LIMIT)}+` : unreadShown}
               </span>
             </button>}
             <button type="button" ref={moreButtonRef} className={`dashboard-layout-nav-item${moreActive ? " dashboard-layout-nav-item--active" : ""}`}
@@ -326,7 +334,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
                 {platformRole === "admin" && <Link className="dashboard-layout-menu-link" to="/dev/capture-intake"
                   aria-current={isRouteActive("/dev/capture-intake") ? "page" : undefined}>Capture Factory</Link>}
               </div>
-              <div className="dashboard-layout-notifications"><p className="dashboard-layout-menu-label">Notifications</p><NotificationCenter /></div>
+              <div className="dashboard-layout-notifications"><p className="dashboard-layout-menu-label">Notifications</p><NotificationCenter unreadCount={unreadNotifications} onUnreadChanged={rereadUnread} /></div>
             </div>
           </div>
         </nav>

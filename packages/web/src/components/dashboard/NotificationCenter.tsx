@@ -2,12 +2,9 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck, ExternalLink, RefreshCw } from "lucide-react";
 import type { Notification } from "@omnitwin/types";
-import {
-  getUnreadNotificationCount,
-  listNotifications,
-  markNotificationRead,
-} from "../../api/notifications.js";
-import { subscribeRequestsLive } from "../../lib/requests-live.js";
+import { listNotifications, markNotificationRead } from "../../api/notifications.js";
+import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
+import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 
 type LoadState =
@@ -31,19 +28,6 @@ const triggerStyle: CSSProperties = {
   fontWeight: 700,
   minHeight: 38,
   padding: "0 12px",
-};
-
-const badgeStyle: CSSProperties = {
-  alignItems: "center",
-  background: "#c98a5b",
-  borderRadius: 999,
-  color: "#15110c",
-  display: "inline-flex",
-  fontSize: 11,
-  fontWeight: 700,
-  justifyContent: "center",
-  minWidth: 22,
-  padding: "3px 7px",
 };
 
 const panelStyle: CSSProperties = {
@@ -80,39 +64,52 @@ function notificationTone(notification: Notification): CSSProperties {
   return { color: "#8fd8d2" };
 }
 
-export function NotificationCenter(): ReactElement {
+export interface NotificationCenterProps {
+  /**
+   * The one unread number. The dashboard shell owns it, reads it from
+   * GET /notifications/unread-count and shows it on the nav row's chip; this
+   * panel says the same number in words rather than showing a second chip.
+   * Null while it is not known, so the panel never states a count it has not
+   * read.
+   */
+  readonly unreadCount: number | null;
+  /** Called when something here changed what is unread. */
+  readonly onUnreadChanged: () => void;
+}
+
+export function NotificationCenter({ unreadCount, onUnreadChanged }: NotificationCenterProps): ReactElement {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [busyId, setBusyId] = useState<string | null>(null);
-  // The count is asked for separately from the list: the panel shows the
-  // newest twelve, the nav must be able to say "23".
-  const [unreadCount, setUnreadCount] = useState(0);
+  const listens = useAuthStore((store) => listensForFloorRequests(store.user));
 
   const load = useCallback((): void => {
     setState({ kind: "loading" });
     void listNotifications("unread", 12)
       .then((notifications) => { setState({ kind: "ready", notifications }); })
       .catch(() => { setState({ kind: "error" }); });
-    void getUnreadNotificationCount()
-      .then(setUnreadCount)
-      .catch(() => { /* the badge simply does not change */ });
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Something landing in the inbox — a request from the floor included —
-  // updates the number without anybody reloading the page.
-  useEffect(() => subscribeRequestsLive((event) => {
-    if (event.kind === "notification" || event.kind === "reconnected") load();
-  }), [load]);
+  // Something landing in the inbox, a request from the floor included,
+  // refreshes the list without anybody reloading the page. Only people the
+  // channel can carry something to open it.
+  useEffect(() => {
+    if (!listens) return;
+    return subscribeRequestsLive((event) => {
+      if (event.kind === "notification" || event.kind === "reconnected") load();
+    });
+  }, [listens, load]);
 
   const notifications = state.kind === "ready" ? state.notifications : [];
   const summary = useMemo(() => {
     if (state.kind === "loading") return "Loading notifications";
     if (state.kind === "error") return "Notifications unavailable";
+    if (unreadCount === null) return "Notifications";
     if (unreadCount === 0) return "No unread notifications";
     return `${String(unreadCount)} unread notification${unreadCount === 1 ? "" : "s"}`;
   }, [state.kind, unreadCount]);
@@ -121,7 +118,7 @@ export function NotificationCenter(): ReactElement {
     setBusyId(notification.id);
     void markNotificationRead(notification.id)
       .then((updated) => {
-        setUnreadCount((current) => Math.max(0, current - 1));
+        onUnreadChanged();
         setState((prev) => prev.kind === "ready"
           ? {
               kind: "ready",
@@ -153,7 +150,6 @@ export function NotificationCenter(): ReactElement {
       >
         {state.kind === "loading" ? <ActivityIndicator size={16} /> : <Bell aria-hidden="true" size={16} />}
         <span>{summary}</span>
-        {unreadCount > 0 && <span style={badgeStyle}>{unreadCount}</span>}
       </button>
 
       {open && (

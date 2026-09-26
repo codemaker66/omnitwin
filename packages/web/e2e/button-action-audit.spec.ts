@@ -1268,9 +1268,16 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   await page.route(`${API}/enquiries**`, (route) => {
     void route.fulfill({ json: { data: [], meta: { total: 0, limit: 20, offset: 0 } } });
   });
+  let unreadNotifications = 1;
   await page.route(`${API}/notifications**`, (route) => {
     if (route.request().method() === "PATCH") {
+      unreadNotifications = 0;
       void route.fulfill({ json: { data: notificationFixture(NOW) } });
+      return;
+    }
+    // The shell's nav chip reads /notifications/unread-count, as the API serves it.
+    if (new URL(route.request().url()).pathname === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: unreadNotifications } } });
       return;
     }
     void route.fulfill({ json: { data: [notificationFixture()] } });
