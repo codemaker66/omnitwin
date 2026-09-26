@@ -464,6 +464,26 @@ describe("EventDayOpsPage", () => {
     expect(screen.queryByRole("button", { name: /Acknowledge change/i })).toBeNull();
   });
 
+  it("shows the board while acknowledgements are still being read, and waits to list changes", async () => {
+    // The acknowledgement read runs beside the board, never in front of it: a
+    // slow read must not hold the whole board on its loading state, and until
+    // it settles the page says it is checking rather than listing a change the
+    // room may already have acknowledged.
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+    let settle: (rows: []) => void = () => undefined;
+    mockListEventChangeAcknowledgements.mockReturnValue(new Promise<[]>((resolve) => { settle = resolve; }));
+    renderPage();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
+    expect(screen.getByText("Checking what the room has acknowledged…")).toBeTruthy();
+    expect(screen.queryByText("Guest count changed")).toBeNull();
+
+    await act(async () => { settle([]); await Promise.resolve(); });
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+    expect(screen.queryByText("Checking what the room has acknowledged…")).toBeNull();
+  });
+
   it("keeps a required change in view when its acknowledgements cannot be read", async () => {
     // Failing towards "still needs acknowledging" is safe: acknowledging twice
     // is harmless, and a change that silently vanishes is not.

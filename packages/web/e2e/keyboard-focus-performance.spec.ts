@@ -1031,6 +1031,23 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
       void route.fulfill({ json: { data: [changeFeedFixture()] } });
       return;
     }
+    if (path === `/events/${EVENT_ID}/change-acknowledgements` && method === "GET") {
+      // What the room has already acknowledged, as the API would list it.
+      void route.fulfill({
+        json: {
+          data: state.acknowledgements.map((changeId) => ({
+            id: "00000000-0000-4000-8000-000000004017",
+            changeId,
+            eventId: EVENT_ID,
+            acknowledgedBy: "00000000-0000-4000-8000-000000004093",
+            acknowledgedByRole: "hallkeeper",
+            note: null,
+            createdAt: NOW,
+          })),
+        },
+      });
+      return;
+    }
     if (path === `/events/${EVENT_ID}/change-acknowledgements`) {
       const body = request.postDataJSON() as { readonly changeId?: string };
       if (body.changeId !== undefined) state.acknowledgements.push(body.changeId);

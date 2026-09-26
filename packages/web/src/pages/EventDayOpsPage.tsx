@@ -213,6 +213,10 @@ export function EventDayOpsPage(): ReactElement {
   const [notice, setNotice] = useState<string | null>(null);
   const [changeFeed, setChangeFeed] = useState<readonly ChangeFeedItem[]>([]);
   const [acknowledgedChanges, setAcknowledgedChanges] = useState<ReadonlySet<string>>(new Set());
+  // Until the first read of the room's acknowledgements settles, the page does
+  // not know which changes are still waiting, and says so rather than listing
+  // a change the room may already have acknowledged.
+  const [acknowledgementsKnown, setAcknowledgementsKnown] = useState(false);
   const [ackBusyId, setAckBusyId] = useState<string | null>(null);
   const [issueBusyId, setIssueBusyId] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -226,13 +230,27 @@ export function EventDayOpsPage(): ReactElement {
   // into a queue of overlapping reads that each overwrite the last.
   const refreshInFlight = useRef(false);
 
-  // Acknowledgements are append-only, so the server's list is merged into what
-  // this page already knows: a poll that set out before an acknowledgement was
-  // saved cannot bring the change back.
-  const mergeAcknowledged = useCallback((acknowledged: ReadonlySet<string> | null) => {
-    if (acknowledged === null) return;
-    setAcknowledgedChanges((previous) => new Set([...previous, ...acknowledged]));
-  }, []);
+  // The room's acknowledgements are read beside the board, never in front of
+  // it: a slow read must not hold the board on its loading state. They are
+  // append-only, so the server's list is merged into what this page already
+  // knows, and a poll that set out before an acknowledgement was saved cannot
+  // bring the change back. A read for an event this page has left is dropped.
+  const currentEventRef = useRef(eventId);
+  currentEventRef.current = eventId;
+  const readAcknowledgements = useCallback(() => {
+    if (eventId === undefined || eventId.length === 0) return;
+    void readAcknowledgedChangeIds(eventId).then((acknowledged) => {
+      if (currentEventRef.current !== eventId) return;
+      if (acknowledged !== null) {
+        setAcknowledgedChanges((previous) => new Set([...previous, ...acknowledged]));
+      }
+      setAcknowledgementsKnown(true);
+    });
+  }, [eventId]);
+  useEffect(() => {
+    setAcknowledgedChanges(new Set());
+    setAcknowledgementsKnown(false);
+  }, [eventId]);
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
@@ -246,15 +264,12 @@ export function EventDayOpsPage(): ReactElement {
       return;
     }
     setState({ kind: "loading" });
+    readAcknowledgements();
     void (async () => {
       const board = await getEventDayOpsBoard(eventId);
-      const [changes, acknowledged] = await Promise.all([
-        getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
-        readAcknowledgedChangeIds(eventId),
-      ]);
+      const changes = await getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []);
       setState({ kind: "ready", board });
       setChangeFeed(changes);
-      mergeAcknowledged(acknowledged);
       setLastSyncedAt(new Date().toISOString());
     })()
       .catch(() => {
@@ -263,7 +278,7 @@ export function EventDayOpsPage(): ReactElement {
           message: "This event-day board could not be loaded. Check the event link or try again.",
         });
       });
-  }, [eventId, mergeAcknowledged]);
+  }, [eventId, readAcknowledgements]);
 
   /**
    * A background refresh: it never shows the full-page loading state and
@@ -274,22 +289,21 @@ export function EventDayOpsPage(): ReactElement {
     if (eventId === undefined || eventId.length === 0) return;
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
+    readAcknowledgements();
     void Promise.all([
       getEventDayOpsBoard(eventId),
       getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
-      readAcknowledgedChangeIds(eventId),
     ])
-      .then(([board, changes, acknowledged]) => {
+      .then(([board, changes]) => {
         setState({ kind: "ready", board });
         setChangeFeed(changes);
-        mergeAcknowledged(acknowledged);
         setLastSyncedAt(new Date().toISOString());
       })
       .catch(() => {
         // Keep the last good board; the next tick retries.
       })
       .finally(() => { refreshInFlight.current = false; });
-  }, [eventId, mergeAcknowledged]);
+  }, [eventId, readAcknowledgements]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -321,21 +335,20 @@ export function EventDayOpsPage(): ReactElement {
       }
       refreshPendingCount();
       if (eventId !== undefined) {
-        const [board, changes, acknowledged] = await Promise.all([
+        readAcknowledgements();
+        const [board, changes] = await Promise.all([
           getEventDayOpsBoard(eventId),
           getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
-          readAcknowledgedChangeIds(eventId),
         ]);
         setState({ kind: "ready", board });
         setChangeFeed(changes);
-        mergeAcknowledged(acknowledged);
       }
       setSyncing(false);
     })().catch(() => {
       setSyncing(false);
       refreshPendingCount();
     });
-  }, [eventId, mergeAcknowledged, refreshPendingCount, syncing]);
+  }, [eventId, readAcknowledgements, refreshPendingCount, syncing]);
 
   useEffect(() => {
     loadBoard();
@@ -585,7 +598,9 @@ export function EventDayOpsPage(): ReactElement {
         title="Required acknowledgements"
         icon={<Bell aria-hidden="true" />}
       >
-        {requiredAcknowledgements.length === 0 ? (
+        {!acknowledgementsKnown && changeFeed.some((change) => change.requiresHallkeeperAcknowledgement) ? (
+          <ActivityStatus>Checking what the room has acknowledged…</ActivityStatus>
+        ) : requiredAcknowledgements.length === 0 ? (
           <p className="event-day-muted">No changes awaiting acknowledgement.</p>
         ) : (
           <div className="event-day-change-feed">
