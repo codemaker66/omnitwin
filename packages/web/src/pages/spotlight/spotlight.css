@@ -335,7 +335,6 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .vv-spotlight .sp-cta:hover {
-    transform: translateY(-1px) scale(1.03);
     box-shadow: 0 12px 32px rgba(201, 138, 91, 0.35);
   }
 }

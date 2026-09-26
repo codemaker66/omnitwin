@@ -304,8 +304,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               transition: "transform 0.2s ease, box-shadow 0.2s ease",
             }}
             onClick={onClose}
-            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 6px 28px rgba(201, 138, 91,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 20px rgba(201, 138, 91,0.25)`; e.currentTarget.style.transform = ""; }}
+            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 6px 28px rgba(201, 138, 91,0.4)`; }}
+            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 20px rgba(201, 138, 91,0.25)`; }}
           >
             Back to layout
           </button>
@@ -581,8 +581,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               boxShadow: `0 4px 24px rgba(201, 138, 91,0.25)`,
               transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
             }}
-            onMouseEnter={(e) => { if (!isSubmitting) { e.currentTarget.style.boxShadow = `0 6px 32px rgba(201, 138, 91,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 24px rgba(201, 138, 91,0.25)`; e.currentTarget.style.transform = ""; }}
+            onMouseEnter={(e) => { if (!isSubmitting) { e.currentTarget.style.boxShadow = `0 6px 32px rgba(201, 138, 91,0.4)`; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 24px rgba(201, 138, 91,0.25)`; }}
           >
             {isSubmitting && <ActivityIndicator size={20} />}
             {isSubmitting ? "Sending your layout\u2026" : "Send to Events Team"}

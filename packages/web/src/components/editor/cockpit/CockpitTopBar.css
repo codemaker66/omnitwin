@@ -154,9 +154,6 @@
   transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 .cockpit-topbar__layers-btn:hover { background: rgba(201, 138, 91, 0.14); }
-@media (hover: hover) and (pointer: fine) {
-  .cockpit-topbar__layers-btn:hover { transform: translateY(-1px); }
-}
 .cockpit-topbar__layers-btn:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .cockpit-topbar__layers-btn:active { transform: translateY(0) scale(0.97); }
 .cockpit-topbar__layers-btn.is-open {

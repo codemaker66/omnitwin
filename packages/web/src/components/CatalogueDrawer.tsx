@@ -270,13 +270,11 @@ function ShopCard({
         const el = e.currentTarget;
         el.style.borderColor = "rgba(100, 160, 255, 0.5)";
         el.style.boxShadow = cardHoverEffect;
-        el.style.transform = "translateY(-2px)";
       }}
       onPointerLeave={(e) => {
         const el = e.currentTarget;
         el.style.borderColor = "rgba(80, 120, 180, 0.2)";
         el.style.boxShadow = "none";
-        el.style.transform = "none";
       }}
       role="button"
       tabIndex={0}

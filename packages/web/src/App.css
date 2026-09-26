@@ -440,12 +440,6 @@
   outline: none;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .planner-command-deck__button:hover:not(:disabled) {
-    transform: translateY(-1px);
-  }
-}
-
 .planner-command-deck__button:focus-visible {
   transform: translateY(-1px);
 }

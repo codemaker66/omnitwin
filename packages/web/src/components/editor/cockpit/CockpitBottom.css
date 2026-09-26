@@ -414,7 +414,6 @@
 
 .layout-phase:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--house-accent-copper, #c98a5b) 35%, transparent);
-  transform: translateY(-1px);
 }
 
 .layout-phase.is-active {
@@ -750,7 +749,6 @@
 
 .layout-filmstrip__card:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--house-accent-copper, #c98a5b) 42%, transparent);
-  transform: translateY(-1px);
 }
 
 .layout-filmstrip__card.is-active {
