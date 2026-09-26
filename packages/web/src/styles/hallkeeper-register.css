@@ -68,10 +68,11 @@
   --hk-copper-bright: #d8a179;
   --hk-sage-deep: #6b8963;
 
-  /* Signal. One red; one amber. Both readable on either ground. */
+  /* Signal. One red, readable on either ground. There is no register amber:
+     amber is a status tone the House admits only as its named tokens
+     (house-tokens.css), and nothing on these surfaces needed one. */
   --hk-alert: #c2503e;
   --hk-alert-light: #e0917a;
-  --hk-warn: #b07a1f;
 
   /* Type. The sheet's serif for headings, the app's sans for everything
      else — the same pairing on all six surfaces. */
