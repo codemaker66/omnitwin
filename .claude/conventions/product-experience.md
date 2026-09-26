@@ -45,6 +45,14 @@ Blake's second round of answers (same day):
 - **House type.** Newsreader is the one serif everywhere, including the VENVIEWER wordmark. Inter sets all interface text.
 - **Shipping.** Blake: "you handle everything, make sure all our good work is implemented and not lost on stray branches, make sure all our improvements and new work go live, you have full permission to do everything and anything."
 
+Blake's third round (same day, evening):
+- **The public front door.** Take Dashboard, Diary and Hallkeeper off the public pages; staff use Log in. One home page carries the Grand Hall photographs, capacities by layout, wedding prices and the enquiry form. The older home page designs leave public addresses; their code stays.
+- **The Venviewer subscription page (`/pricing`).** Admin-only until billing exists.
+- **Hold reminders.** Email the staff member who owns each provisional hold 7, 3 and 1 days before its decision date, after a dry run he can check. Clients are never emailed by it.
+- **Turnarounds, staffing and completeness**, verbatim: "Allow staff to set the time it will take but i want you to plan the best way how we can make it automatic, and it will also depend on how much staff is available so we will need staff rota also to be part of our platform which you will need to construct now too and anything else we may of missed to be the most amazing venue and events business platform ever"
+
+Not asked, because plan 16 already rules: the 3D planner keeps full sharpness while the camera moves, and phones get the full room rather than a lighter tier, until measurements on real devices justify a founder decision.
+
 ### Selected Diary direction — 7 September 2026
 
 The founder rejected the old dark Diary and selected a light ivory/forest workspace and an airy room-photo timetable as the interim direction. Preserve readable booking titles and exact times, clear status and conflict distinctions, recognizable sourced room photos, and direct access to booking details. The full-week overview and precise timeline have distinct purposes; summary-card width must not falsely imply duration. [Current scoped design QA](../../design-qa.md) records the adaptation and remaining dense-week limitations. The founder's attachment references remain private and their sample names, rooms and quantities are not operational data.

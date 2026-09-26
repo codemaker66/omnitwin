@@ -41,6 +41,7 @@ Four corrections from the critique apply now:
 - **Hover bounce:** remove it everywhere.
 - **What we replace:** Salesforce, Cvent, venue sales-and-catering software, and email, spreadsheets and paper.
 - **Next surfaces:** the Diary with holds, then hallkeeper and event day.
+- **Third round (evening):** one public front door; `/pricing` admin-only; hold reminders by email after a dry run; staff-set turnarounds, a staff rota, automatic turnaround estimates, and a completeness sweep (T-637, T-638). Verbatim in the product experience brief.
 
 ## Order of work
 
