@@ -72,11 +72,11 @@
     {
       "date": "2026-09-26",
       "reason": "The Diary timetable (T-619, Lane 5): the week opens with the decisions due and the open-enquiry tray, and books on the room and time that is clicked; on a phone a finger pans the lane while a long press lifts a block that follows the finger, its ghost passing under the room rail.",
-      "sourceCommit": "b732fd4b5a30cd3ad08ca7a4f6259b5519e26d0a",
+      "sourceCommit": "a9ea8e96169ebd3f286be981e39ca0949a3b5544",
       "sourceFile": "packages/web/e2e/diary-timetable.spec.ts",
-      "sourceFileGitBlobSha256": "b8d5d443ee8e92187dcbec4c28582e919be2487e92afa6ce5a430ee58a2ab9c4",
+      "sourceFileGitBlobSha256": "d4871f0de7820699509491683e6f493eec5049b8ef830a2b9bae55de448a10b6",
       "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
-      "inventorySha256": "78ccbdbba8722017140ee9ac432117fd70ea8f3f18f7c4fad33d01dc239f107a",
+      "inventorySha256": "88c36189f88a65fc64d1a423963f96f449e9411baf526e8593be69dca2976fb4",
       "caseIds": [
         "7bffe49ce87053aabb53-0c089f96b25fad709433",
         "7bffe49ce87053aabb53-e28d53e66163015b7bc1"
