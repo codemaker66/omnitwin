@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react
 import type { Enquiry, StatusHistoryEntry } from "../../../api/enquiries.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { AIDraftPanel } from "../../ai/AIDraftPanel.js";
+import { useAIDraftsAvailable } from "../../../hooks/use-ai-drafts-available.js";
 import { StageChip } from "./EnquiryStages.js";
 import { enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
@@ -423,10 +424,13 @@ function EnquiryTools({ enquiry, creatingOpportunity, onCreateOpportunity }: {
   );
 }
 
-function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement {
-  // The drafting panels ask whether AI is available when they mount, so they
-  // mount only once someone opens this section.
+function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement | null {
+  // AI drafting is offered only where a provider is configured: the panels
+  // render nothing without one, so the section would open onto an empty body.
+  // The panels still mount only once someone opens the section.
+  const available = useAIDraftsAvailable();
   const [open, setOpen] = useState(false);
+  if (available !== true) return null;
   return (
     <section className="enq-section">
       <details className="enq-drafts" onToggle={(event) => { setOpen(event.currentTarget.open); }}>

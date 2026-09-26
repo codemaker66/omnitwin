@@ -54,6 +54,10 @@ vi.mock("../../ai/AIDraftPanel.js", () => ({
   AIDraftPanel: () => <div>AI draft</div>,
 }));
 
+vi.mock("../../../hooks/use-ai-drafts-available.js", () => ({
+  useAIDraftsAvailable: () => false,
+}));
+
 function enquiryFixture(id: string, name: string, state = "submitted"): Enquiry {
   return {
     id,

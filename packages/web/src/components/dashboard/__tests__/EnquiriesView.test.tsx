@@ -15,6 +15,7 @@ import { EnquiriesView } from "../EnquiriesView.js";
 const { mocks } = vi.hoisted(() => ({
   mocks: {
     addToast: vi.fn(),
+    aiDraftsAvailable: vi.fn<() => boolean | undefined>(),
     countEnquiryStages: vi.fn(),
     createOpportunityFromEnquiry: vi.fn(),
     getEnquiry: vi.fn(),
@@ -56,6 +57,10 @@ vi.mock("../../../stores/auth-store.js", () => ({
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({
   AIDraftPanel: () => <div>AI draft</div>,
+}));
+
+vi.mock("../../../hooks/use-ai-drafts-available.js", () => ({
+  useAIDraftsAvailable: () => mocks.aiDraftsAvailable(),
 }));
 
 // Thursday 24 September 2026, 15:00 in Glasgow.
@@ -195,6 +200,7 @@ beforeEach(() => {
   mocks.getEnquiryHistory.mockResolvedValue([]);
   mocks.countEnquiryStages.mockResolvedValue(stageCounts({ submitted: 57 }));
   mocks.getVenue.mockResolvedValue(venue("trades-hall"));
+  mocks.aiDraftsAvailable.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -741,6 +747,18 @@ describe("EnquiriesView decisions", () => {
     drafts.open = true;
     fireEvent(drafts, new Event("toggle"));
     expect(screen.getAllByText("AI draft")).toHaveLength(2);
+  });
+
+  it("offers AI drafting only where a provider is configured", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3)], {}));
+    for (const answer of [false, undefined]) {
+      mocks.aiDraftsAvailable.mockReturnValue(answer);
+      render(<EnquiriesView />);
+      fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+      expect(await screen.findByRole("heading", { name: "Client 3" })).toBeTruthy();
+      expect(screen.queryByText("Draft with AI")).toBeNull();
+      cleanup();
+    }
   });
 
   it("names the room from the venue's rooms, read once, and says when it is not known", async () => {
