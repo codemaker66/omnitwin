@@ -35,9 +35,6 @@ export function TradesHouseLeafletPage(): ReactElement {
             Open printable leaflet
           </a>
         </nav>
-        <p className="trades-house-leaflet-review-note">
-          Venue-supplied campaign preview · final copy and image-rights review required before print.
-        </p>
       </header>
       <iframe
         className="trades-house-leaflet-frame"

@@ -75,9 +75,21 @@ const VENUE_PHONE_HREF = "tel:+441415522418";
  *  place it is written down. */
 const LAST_UPDATED = "15 August 2026";
 
+// T-616 / gate line 4 replaced every "Enquire" mailto on the public site with
+// the composer, because a mailto leaves no row in `enquiries` and the events
+// team cannot answer what it never received. This one stays, deliberately.
+//
+// It is not an Enquire. It is the data controller's contact, which UK GDPR
+// Article 13(1)(a)–(b) requires these documents to publish so a data subject
+// can exercise their rights — and an access, rectification or erasure request
+// is not a venue enquiry: routing it into the booking queue would misfile a
+// statutory request and start its one-month clock in the wrong place. The
+// composer link beside it is the booking route, so a reader who came here
+// wanting a date still reaches the form, without the two being confused.
 const CONTACT_LINKS: readonly LegalLink[] = [
   { label: "Email", text: VENUE_EMAIL, href: `mailto:${VENUE_EMAIL}`, external: false },
   { label: "Phone", text: VENUE_PHONE, href: VENUE_PHONE_HREF, external: false },
+  { label: "Asking about a date", text: "Send an enquiry", href: "/#enquire", external: false },
 ];
 
 const POSTAL_ADDRESS_DEFS: readonly LegalDefinition[] = [

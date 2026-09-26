@@ -4,7 +4,6 @@ import {
   FOOTER_PHONE_DISPLAY,
   FOOTER_PHONE_HREF,
   HALL_LIT_YEARS,
-  enquiryMailtoHref,
 } from "../landing/rite-copy.js";
 
 // -----------------------------------------------------------------------------
@@ -276,7 +275,6 @@ export const FRESH_CONTACT_VISIT_LABEL = "Visit";
 export const FRESH_CONTACT_PHONE_DISPLAY = FOOTER_PHONE_DISPLAY;
 export const FRESH_CONTACT_PHONE_HREF = FOOTER_PHONE_HREF;
 export const FRESH_CONTACT_EMAIL = FOOTER_EMAIL;
-export const freshEnquiryHref = (): string => enquiryMailtoHref();
 
 export const FRESH_ADDRESS = "85 Glassford Street, Glasgow G1 1UH";
 export const FRESH_MAPS_HREF = "https://maps.google.com/?q=Trades+Hall+of+Glasgow,+85+Glassford+Street,+Glasgow+G1+1UH";

@@ -362,7 +362,10 @@ export function PricingPage(): React.ReactElement {
         </Link>
         <div className="pricing-nav-links" style={{ display: "flex", gap: 28, alignItems: "center", fontSize: 14 }}>
           <Link to="/" style={{ color: CREAM_MUT, textDecoration: "none" }}>Home</Link>
-          <a href="/#how-it-works" style={{ color: CREAM_MUT, textDecoration: "none" }}>How it works</a>
+          {/* Used to be "How it works" at /#how-it-works, an anchor no page has.
+              The next step here is this page's own enquiry, not the venue's
+              wedding composer on the front door. */}
+          <a href="#enquiry" style={{ color: CREAM_MUT, textDecoration: "none" }}>Talk to us</a>
           <Link to="/pricing" style={{ color: CREAM, textDecoration: "none", fontWeight: 600 }}>Pricing</Link>
           <Link
             to="/login"

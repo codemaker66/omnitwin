@@ -243,17 +243,20 @@ export const FOOTER_PHONE_DISPLAY = "0141 552 2418";
 export const FOOTER_PHONE_HREF = "tel:+441415522418";
 export const FOOTER_EMAIL = "info@tradeshallglasgow.co.uk";
 
-/** Mailto for the events team, with the room carried in the subject so
- *  per-room "Enquire" links keep their context instead of dead-ending. An
- *  optional draft note travels in the body — the Living Hall attaches the
- *  visitor's planning-draft facts so the enquiry arrives warm. */
-export function enquiryMailtoHref(roomName?: string, draftNote?: string): string {
-  const subject =
-    roomName === undefined
-      ? "Event enquiry — Trades Hall Glasgow"
-      : `Event enquiry — ${roomName}, Trades Hall Glasgow`;
-  const body = draftNote === undefined ? "" : `&body=${encodeURIComponent(draftNote)}`;
-  return `mailto:${FOOTER_EMAIL}?subject=${encodeURIComponent(subject)}${body}`;
+/** Where an "Enquire" goes: the composer on the front door.
+ *
+ *  T-616 replaced a mailto here. Handing the visitor a pre-filled message in
+ *  their own mail client looked helpful and mostly worked, but it left no row
+ *  in `enquiries`, so nothing reached the team's queue, nothing could be
+ *  chased and no acknowledgement could be sent. The composer posts to
+ *  /public/enquiries instead.
+ *
+ *  The old signature carried a room name and a draft note into the subject and
+ *  body. Neither survives the move: the composer asks for the occasion and the
+ *  guest count itself, and writes a better message from published figures than
+ *  a query string could. */
+export function enquiryComposerHref(): string {
+  return "/#enquire";
 }
 
 export const FOOTER_BASELINE =
