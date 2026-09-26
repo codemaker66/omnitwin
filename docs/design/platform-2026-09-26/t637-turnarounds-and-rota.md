@@ -46,6 +46,12 @@ The estimate is a pure function: fixed allowances, plus the work in crew-minutes
 | **E. Learning** | Changeover capture on the Day Board (device time, offline queue, confirmed crew). A room factor with a range and rule suggestions. The timeline's staffing figure filled from the rota. | D |
 | Later | Shift offers to casual staff through a signed link; timesheets with a payroll CSV (holiday pay on its own line); swaps; SMS. | B |
 
+**Status, 26 September:**
+- Slice A's migration (0076) and API are built.
+- So is the Changeovers section in Venue settings.
+- Still to come in slice A: opening a rule from a Diary gap (after Lane 5), and the sheet's set-up time
+  from the rule (after Lane 6).
+
 Every slice follows the shipping contract. A migration ships **before** the code that reads it: Railway and Vercel deploy on push, and the Deploy workflow migrates only after CI. The migration takes the next free number; Lane 9's request model was earmarked 0076. Its journal `when` must be later than the last applied one, because drizzle silently skips an older timestamp.
 
 ## Defaults chosen, which Blake may overrule

@@ -973,6 +973,26 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 | 35 | Operational change acknowledgement | 9 | Wish | **Exists** | — | Ahead of the market; surface it in X4 |
 | 36 | Bedroom blocks and PMS | — | Parity (hotels) | Out of scope (inferred: Trades Hall has no bedrooms) | — | Confirm with Blake |
 
+**Tier D: what else a venue lacks (T-637 and the T-638 completeness sweep, 26 September)**
+
+Evidence and sources: [research/completeness.md](research/completeness.md), [research/rota.md](research/rota.md) and [research/turnarounds.md](research/turnarounds.md). Outside sources were read through search summaries, because pages were blocked. The Tier A items stay first; these run alongside or straight after. Money handling (one unbroken invoice series, advance payments kept apart from damage deposits, VAT at each tax point and on cancellation fees, no consumer surcharges, data ready for Making Tax Digital and e-invoicing) belongs **inside** Tier A #5 and #7, before payments ship.
+
+| # | Capability | Stage | Type | Status and evidence | Effort | Why it ranks here |
+|---|---|---|---|---|---|---|
+| 37 | Staff-set changeover times per room and event type, confirmed by a person | 3, 9 | Blake's ask | **Exists** (slice A: `routes/turnaround-rules.ts`, Venue settings → Changeovers; migration 0076) | — | Every Diary gap warning rests on it |
+| 38 | Staff rota: people without logins, skills, shifts, availability, UK working-time warnings, publishing with notice recorded | Cross-cutting | Blake's ask + Wish | **Missing** (T-637 slice B) | L | Crew decides whether a room can be turned, and items 40–45 and G14 need it |
+| 39 | Changeover estimates from the layouts and the crew on shift, learning from real changeovers | 3, 9, 11 | Blake's ask + Wish | **Missing** (T-637 slices C–E) | L | Replaces guesswork; the rule stays the planning figure |
+| 40 | Menu library with the 14 allergens per dish, feeding kitchen production | 8–9 | Parity + Wish | **Missing** (`types/src/event-requirements.ts` holds counts only) | L | "Table 7, seat 4: sesame in the starter" instead of "3 nut allergies" |
+| 41 | Named guests on the real floor plan: RSVP, meal, seat, place cards, kitchen sheet by table, check-in | 8–9, 11 | Differentiator | **Partial**: the real placed tables exist; guests do not | M–L | Nothing retyped; generic diagram tools only approximate it |
+| 42 | Occupancy limits per room, layout and building, checked across events at the same time; each guest's access needs carried to seat, route and evacuation list | 1, 3, 9 | Parity + Wish | **Missing / Partial** (`types/src/space.ts`; access needs are event-level) | S–M | "Can we fit 220?" answered without claiming compliance |
+| 43 | Messages and calls on the record (SMS, WhatsApp Business, call logs), drafts only | 1–13 | Parity | **Missing**; extends #2 | M–L | Conversations stop living off the record |
+| 44 | Building care and a compliance calendar: work orders from issues and damage, rooms out of service, inspections, licence, insurance and fire-assessment reviews, Martyn's Law duties | Cross-cutting | Parity + Wish | **Partial** (`internal_block` bookings; issues) | M–L | Dated obligations stop living in someone's head |
+| 45 | Custom fields the venue controls; a real API with webhooks | Cross-cutting | Parity | **Missing**; the webhook is a stub (`routes/integrations.ts`) | M–L | The venue adapts the tool without asking us |
+| 46 | Data-protection operations: retention per record type, subject access pack within a month, erasure that keeps VAT records, marketing consent | Cross-cutting | Obligation | **Missing** | M | Must precede the Tier A history import |
+| 47 | Supplier purchase orders and resold services with cost and margin | 5, 10, 12 | Parity | **Missing** | M | Margins leave spreadsheets |
+| 48 | Small-print safeguards: accident book with a RIDDOR prompt, heritage house rules in packs, drinks-package prompts, host-approved bar-tab caps, marriage-schedule reminders | 8–11 | Wish | **Partial** | S each | Small problems nobody solves |
+| 49 | Each new enquiry owned by whoever is on the rota | 1 | Wish | **Partial**: a role is notified, not a person | S (after #38) | Nothing waits for someone to notice it |
+
 ---
 
 ## 4. Cross-cutting engineering work
@@ -1066,6 +1086,8 @@ Grouped by theme, with the themes that block the most work first. Every question
 | A5 | What exactly does the team use: Salesforce edition (or Delphi on Salesforce), Cvent products (Supplier Network RFP inbox?) and monthly RFP volume, which sales-and-catering system, Microsoft 365 or Google? Can we have sample exports, anonymised? How much history must come across? | Import future bookings and contacts first; history read-only later; start with the Salesforce weekly export ZIP if the edition supports it | Importer design; mailbox integration; whether CSN intake is worth building |
 | A6 | Where do enquiries come from, in rough shares? Who should own a new enquiry (the code currently emails hallkeepers)? Send an instant acknowledgement? What reply time can we promise? | A named sales owner by rota; a factual acknowledgement within a minute; "within one working day" | Intake parsers; response clocks; public copy |
 | A7 | Pipeline value: raw total of open deals, or weighted by stage? Must every lost deal carry a reason? Should approving an enquiry create the deal automatically? | Raw open value plus "Won this month"; reason required from presets; keep deal creation as the one-click next step | X1; analytics |
+| A8 | Will quotes carry a service charge? (If so, the 2024 tips law applies: a written policy and records per worker.) Should Trades Hall run ticketed or shared nights (a Christmas party night sold by the table)? Should small standard bookings be bookable instantly, against the default of no public live availability? | No service charge until the policy exists; no ticketing; no instant booking until turnaround estimates can say which slots are really free | Quote engine; items 38 and 39; public pages |
+| A9 | The rota (T-637): which roles does the Hall employ itself, and which do the caterers supply? Which payroll system? How are casual staff contacted today? | The Hall's own team named; caterer staff as headcount lines; email and in-app, no SMS yet; payroll export later | Item 38 (rota), timesheets |
 
 ### B. The team's own words (blocks every relabelling pass in N3–N5)
 
