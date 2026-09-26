@@ -166,3 +166,47 @@ describe("VerticalToolbox undo buttons", () => {
     expect([...useSelectionStore.getState().selectedIds]).toEqual([id]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Exit animations — a panel stays mounted for its exit, and a panel that was
+// never open starts no timer. A stray timer outlives a test that leaves the
+// planner mounted and fires after the test environment is gone.
+// ---------------------------------------------------------------------------
+
+describe("VerticalToolbox panel exits", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("starts no exit timers for panels that were never open", () => {
+    vi.useFakeTimers();
+    renderToolbox();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps a closing panel for its exit, then removes it", () => {
+    useBookmarkStore.setState({
+      bookmarks: [{
+        id: "bookmark-entrance",
+        name: "Entrance view",
+        kind: "custom",
+        position: [0, 1.7, 5],
+        target: [0, 1.2, 0],
+      }],
+    });
+    vi.useFakeTimers();
+    renderToolbox();
+
+    fireEvent.click(screen.getByRole("button", { name: "Camera Views" }));
+    expect(screen.queryByTestId("camera-views-panel")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Camera Views" }));
+    act(() => { vi.advanceTimersByTime(249); });
+    expect(screen.queryByTestId("camera-views-panel")).not.toBeNull();
+
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(screen.queryByTestId("camera-views-panel")).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

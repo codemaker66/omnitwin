@@ -630,14 +630,17 @@ function useDelayedUnmount(isOpen: boolean, delayMs: number): boolean {
   // React 18 silently discards state updates on truly unmounted components,
   // making the guard unnecessary. The cleanup return already handles the
   // timeout lifecycle correctly via clearTimeout.
+  // Only a panel that is still mounted waits out its exit. A panel that was
+  // never open starts no timer, so nothing is left running when the planner
+  // mounts with every panel closed.
   useEffect(() => {
     if (isOpen) {
       setMounted(true);
-    } else {
+    } else if (mounted) {
       const t = setTimeout(() => { setMounted(false); }, delayMs);
       return () => { clearTimeout(t); };
     }
-  }, [isOpen, delayMs]);
+  }, [isOpen, delayMs, mounted]);
   return mounted;
 }
 
