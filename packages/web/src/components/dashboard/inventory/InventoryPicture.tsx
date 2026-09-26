@@ -47,6 +47,16 @@ export function inventoryPictureSizes(aspect: number, hero: boolean): string {
   return `${String(Math.ceil((hero ? 360 : 96) * aspect))}px`;
 }
 
+/**
+ * The image this item would show, or null when it has none. Exported so the
+ * panel can open on an item there is something to look at, without rendering
+ * every candidate first.
+ */
+export function inventoryPictureSource(name: string, assetId?: string): string | null {
+  const modelPreview = assetId === undefined ? undefined : getCanonicalAssetById(assetId)?.thumbnailUrl;
+  return modelPreview ?? illustration(name)?.src ?? null;
+}
+
 export function InventoryPicture({ name, assetId, hero = false }: {
   readonly name: string; readonly assetId?: string; readonly hero?: boolean;
 }): ReactElement {

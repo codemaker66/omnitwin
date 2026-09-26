@@ -49,6 +49,22 @@ const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
   "round-cafe-table-white": "round-table",
   "square-cafe-table-white": "trestle-table",
   "servery-unit": "platform",
+  // Trades Hall equipment intake: no supplied models yet, so each falls to the
+  // procedural mesh for its kind. The two microphones and the television are
+  // dispatched by slug — without that the television would render as a
+  // projector body, which is the `av` default.
+  "chiavari-chair": "chair",
+  "gallery-chair-red-gold": "chair",
+  "pink-chair": "chair",
+  "highchair-white": "chair",
+  "highchair-green": "chair",
+  "highchair-blue": "chair",
+  "highchair-wooden": "chair",
+  "staging-deck-6x4": "platform",
+  "staging-deck-6x3": "platform",
+  "hisense-television": "projector-screen",
+  "handheld-microphone": "microphone",
+  "lapel-microphone": "microphone",
 };
 
 describe("furniture mesh dispatch", () => {

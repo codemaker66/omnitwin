@@ -7,6 +7,7 @@ import { InventoryEditor, type InventoryEditorHandle } from "./InventoryEditor.j
 import { InventoryDemand } from "./InventoryDemand.js";
 import { InventoryImpact, InventoryRemedyShortcut } from "./InventoryImpact.js";
 import { InventoryPicture } from "./InventoryPicture.js";
+import { openingInventoryItemId } from "./inventory-opening-item.js";
 import { ActivityStatus } from "../../shared/Activity.js";
 import { inventoryErrorMessage } from "./inventory-form.js";
 import "./InventoryPanel.css";
@@ -35,8 +36,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
     void listVenueInventory(venueId, controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       setData(result);
-      setSelectedId((current) => result.items.some((item) => item.catalogue.id === current) ? current :
-        (result.items.find((item) => item.stock !== null)?.catalogue.id ?? result.items[0]?.catalogue.id ?? null));
+      setSelectedId((current) => openingInventoryItemId(result.items, current));
     }).catch((failure: unknown) => {
       if (!controller.signal.aborted) setError(inventoryErrorMessage(failure));
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -87,8 +87,9 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
                     <option value="">All storage</option>{locations.map((location) => <option key={location}>{location}</option>)}</select></label>
                   <button type="button" className="inventory-button" onClick={() => { setFilter("all"); setStorage(""); setQuery(""); }}>Clear filters</button></div></details></div>
             {loading ? <ActivityStatus>Refreshing stock…</ActivityStatus> : null}
-            {selected === null ? <section className="inventory-state"><h2>Your catalogue is empty</h2>
-              <p>Add catalogue items to record stock.</p></section> : <>
+            {selected === null ? <section className="inventory-state"><h2>No equipment to record yet</h2>
+              <p>Stock is recorded against the shared furniture catalogue, which ships with Venviewer rather than
+                being edited here. Ask the Venviewer team to add an item and it will appear on this screen.</p></section> : <>
               <div className="inventory-featured-item"><InventoryPicture name={selected.catalogue.name} assetId={selected.catalogue.id} hero />
                 <div className="inventory-featured-copy"><h2>{selected.catalogue.name}</h2>
                   <p className="inventory-location"><MapPin size={16} />{selected.stock?.storageLocation ?? "Storage not recorded"}</p>
