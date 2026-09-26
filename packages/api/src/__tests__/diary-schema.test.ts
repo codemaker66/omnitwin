@@ -64,12 +64,17 @@ describe("diary schema contract", () => {
       "enquiry_id",
       "fixture_source",
     ]);
-    for (const table of [bookingStatusHistory, turnaroundRules]) {
-      const tableName = getTableName(table);
-      expect(extractCreatedTableColumns(sql, tableName), tableName).toEqual(
-        drizzleColumnNames(table),
-      );
-    }
+    // turnaround_rules gained confirmed_at and updated_by via 0076's ALTER
+    // (T-637: staff set the rules), after 0050's CREATE.
+    expect(drizzleColumnNames(turnaroundRules)).toEqual([
+      ...extractCreatedTableColumns(sql, getTableName(turnaroundRules)),
+      "confirmed_at",
+      "updated_by",
+    ]);
+    const statusHistoryName = getTableName(bookingStatusHistory);
+    expect(extractCreatedTableColumns(sql, statusHistoryName), statusHistoryName).toEqual(
+      drizzleColumnNames(bookingStatusHistory),
+    );
   });
 
   it("migration 0051 adds the enquiry provenance link additively (T-496)", async () => {
