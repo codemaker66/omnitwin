@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
-  WORKSPACE_ROLES,
+  ROTA_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
@@ -18,6 +18,7 @@ import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyti
 import { ProposalsView } from "../components/dashboard/ProposalsView.js";
 import { CommercialPipelineView } from "../components/dashboard/CommercialPipelineView.js";
 import { OnboardingView } from "../components/dashboard/OnboardingView.js";
+import { RotaView } from "../components/dashboard/rota/RotaView.js";
 import { useAuthStore } from "../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "loadouts",
   "settings",
   "inventory",
+  "rota",
   "onboarding",
   "admin",
 ];
@@ -73,6 +75,10 @@ const COMMERCIAL_VIEWS = new Set<DashboardView>(["proposals"]);
 const ANALYTICS_VIEWS = new Set<DashboardView>(["analytics"]);
 const CLIENT_SEARCH_VIEWS = new Set<DashboardView>(["search"]);
 const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
+// The Rota mirrors routes/rota.ts: the venue's whole team is answered (the
+// week for the floor, their own shifts for everyone else in it). See
+// lib/role-capabilities.ts ROTA_TAB_ROLES.
+const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 type PlatformRole = "none" | "operator" | "admin";
 
@@ -108,6 +114,7 @@ export function canOpenDashboardView(view: DashboardView, role: string | null, p
   if (ANALYTICS_VIEWS.has(view)) return hasRole(ANALYTICS_ROLES, role);
   if (CLIENT_SEARCH_VIEWS.has(view)) return hasRole(CLIENT_SEARCH_ROLES, role);
   if (REVIEW_QUEUE_VIEWS.has(view)) return hasRole(REVIEW_QUEUE_ROLES, role);
+  if (ROTA_VIEWS.has(view)) return hasRole(ROTA_TAB_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 
@@ -289,6 +296,8 @@ export function DashboardPage(): React.ReactElement {
         return <VenueSettings />;
       case "inventory":
         return <InventoryPanel />;
+      case "rota":
+        return <RotaView />;
       case "onboarding":
         return <OnboardingView />;
       case "admin":
@@ -296,11 +305,11 @@ export function DashboardPage(): React.ReactElement {
     }
   };
 
-  const showsEnquiryDesk = view === "enquiries" && deniedRequestedView === null
-    && profileUserId === null && profileLeadId === null;
+  const showsOwnSurface = deniedRequestedView === null && profileUserId === null && profileLeadId === null;
+  const surface = !showsOwnSurface ? undefined : view === "enquiries" ? "enquiries" as const : view === "rota" ? "rota" as const : undefined;
 
   return (
-    <DashboardLayout activeView={view} onViewChange={handleViewChange} surface={showsEnquiryDesk ? "enquiries" : undefined}>
+    <DashboardLayout activeView={view} onViewChange={handleViewChange} surface={surface}>
       {renderContent()}
     </DashboardLayout>
   );

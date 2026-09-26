@@ -104,6 +104,9 @@
 .dashboard-layout-main--diary .dashboard-layout-content { padding: 0; }
 .dashboard-layout-main--enquiries { background: #819087; }
 .dashboard-layout-main--enquiries .dashboard-layout-content { padding: 0; }
+/* The Rota paints its own ivory sheet on the same sage ground (T-637). */
+.dashboard-layout-main--rota { background: var(--house-ground); }
+.dashboard-layout-main--rota .dashboard-layout-content { padding: 0; }
 .dashboard-layout-skip {
   position: fixed; z-index: 200; top: 8px; left: 12px; transform: translateY(-180%);
   padding: 12px 16px; background: #f7f3e6; color: #123829; border: 1px solid #123829; text-decoration: none;

@@ -104,3 +104,24 @@ export const EVENT_SCOPED_ROLES = ["caterer"] as const;
 export function hasRole(roles: readonly string[], role: string | null | undefined): boolean {
   return role !== null && role !== undefined && roles.includes(role);
 }
+
+// ---------------------------------------------------------------------------
+// The staff rota (T-637 slice B). A block of its own, with its own drift test
+// (__tests__/rota-capabilities.test.ts), because the rota answers three ways
+// and each way mirrors a different gate in `routes/rota.ts`.
+// ---------------------------------------------------------------------------
+
+/** Mirrors `canAdministerVenue` on the rota's writes: people, shifts, leave, publishing. */
+export const ROTA_MANAGE_ROLES = VENUE_ADMIN_ROLES;
+
+/** Mirrors `canManageVenue` on `GET /venues/:venueId/rota/week`: the published week. */
+export const ROTA_READ_ROLES = VENUE_FLOOR_ROLES;
+
+/**
+ * Who is offered the Rota tab: the venue's own team, its floor and its
+ * commercial side, the API's `isVenueTeamRole`. The API answers every one of
+ * them: the floor reads the week, and anyone else in the team reads their own
+ * shifts, which is what a person linked to an account always sees. Customers
+ * and caterers are not offered it; they are never linked to a person on it.
+ */
+export const ROTA_TAB_ROLES: readonly string[] = [...new Set<string>([...VENUE_FLOOR_ROLES, ...COMMERCIAL_ROLES])];
