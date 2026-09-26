@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   CreateActivitySchema,
   CreateFollowUpTaskSchema,
@@ -24,6 +24,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
+import { canManageCommercial } from "../utils/query.js";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const TaskParam = z.object({ id: z.string().uuid(), taskId: z.string().uuid() });
@@ -33,14 +34,17 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-function canManageCommercial(user: JwtUser, venueId: string): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return user.role === "staff" && user.venueId === venueId;
-}
-
+/**
+ * Resolve the venue this actor may list opportunities for: null means
+ * platform-wide. The local predicate this replaces admitted `staff` only, so
+ * a venue's own ADMIN was 403'd on their own opportunities. Authority now
+ * comes from the shared capability helper in utils/query.ts.
+ */
 function commercialScope(user: JwtUser): { ok: true; venueId: string | null } | { ok: false } {
   if (isPlatformAdmin(user)) return { ok: true, venueId: null };
-  if (user.role === "staff" && user.venueId !== null) return { ok: true, venueId: user.venueId };
+  if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
+    return { ok: true, venueId: user.venueId };
+  }
   return { ok: false };
 }
 
@@ -117,7 +121,7 @@ export async function opportunityRoutes(
   server.get("/", { preHandler: [authenticate] }, async (request, reply) => {
     const scope = commercialScope(request.user);
     if (!scope.ok) {
-      return reply.status(403).send({ error: "Only venue staff or admin can view opportunities", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Only the venue commercial team can view opportunities", code: "FORBIDDEN" });
     }
     const parsed = ListQuery.safeParse(request.query);
     if (!parsed.success) {
@@ -130,12 +134,14 @@ export async function opportunityRoutes(
     const where = and(...conditions);
 
     const [countRow] = await db.select({ count: sql<number>`count(*)::int` }).from(opportunities).where(where);
+    // Newest first with a total order (see enquiries.ts): `createdAt` ties are
+    // broken by id so limit/offset paging cannot repeat or drop a row.
     const rows = await db.select()
       .from(opportunities)
       .where(where)
       .limit(parsed.data.limit)
       .offset(parsed.data.offset)
-      .orderBy(opportunities.updatedAt);
+      .orderBy(desc(opportunities.createdAt), desc(opportunities.id));
 
     return paginate(rows, countRow?.count ?? 0, { limit: parsed.data.limit, offset: parsed.data.offset });
   });
@@ -146,7 +152,7 @@ export async function opportunityRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
     if (!canManageCommercial(request.user, parsed.data.venueId)) {
-      return reply.status(403).send({ error: "Only venue staff or admin can create opportunities for this venue", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Only the venue commercial team can create opportunities for this venue", code: "FORBIDDEN" });
     }
 
     for (const [kind, value] of [
@@ -222,15 +228,18 @@ export async function opportunityRoutes(
       .where(eq(activities.opportunityId, opportunity.id))
       .orderBy(activities.createdAt)
       .limit(100);
+    // Follow-ups and linked proposals are newest-first under a total order,
+    // matching the list endpoints so a staff member never sees one surface
+    // ordered oldest-first and another newest-first for the same records.
     const tasks = await db.select()
       .from(followUpTasks)
       .where(eq(followUpTasks.opportunityId, opportunity.id))
-      .orderBy(followUpTasks.createdAt)
+      .orderBy(desc(followUpTasks.createdAt), desc(followUpTasks.id))
       .limit(100);
     const linkedProposals = await db.select()
       .from(proposals)
       .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))
-      .orderBy(proposals.updatedAt)
+      .orderBy(desc(proposals.createdAt), desc(proposals.id))
       .limit(50);
 
     return { data: { opportunity, activities: opportunityActivities, tasks, proposals: linkedProposals } };

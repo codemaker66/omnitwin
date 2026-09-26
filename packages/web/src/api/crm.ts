@@ -95,9 +95,34 @@ const PipelineSchema = z.object({
   opportunities: z.array(OpportunitySchema),
   todayTasks: z.array(FollowUpTaskSchema),
   stageCounts: z.record(z.number().int()),
+  // Served by the API, never summed from `opportunities` here: that array is
+  // one PAGE of the board, and a page total is not a pipeline total. It is
+  // the same figure Executive Analytics shows, so the two agree by
+  // construction (packages/api/src/services/commercial-pipeline.ts).
+  //
+  // Optional so a web build that is briefly ahead of the deployed API does
+  // not fail the whole board on a missing field. The view shows no figure at
+  // all in that case rather than a confident zero — hiding an unknown beats
+  // printing a wrong one.
+  pipelineValueMinor: z.number().int().optional(),
+  currency: z.string().optional(),
+  // What makes the board's paging honest. `stageCounts` spans the WHOLE
+  // pipeline, so without the unpaged total the header reads "qualified 312"
+  // above fifty cards and offers no way to reach the rest. Optional for the
+  // same reason as the fields above: a web build briefly ahead of the API
+  // renders without paging controls rather than failing to load.
+  page: z.object({
+    total: z.number().int(),
+    limit: z.number().int(),
+    offset: z.number().int(),
+    taskTotal: z.number().int(),
+    taskLimit: z.number().int(),
+    taskOffset: z.number().int(),
+  }).optional(),
 });
 
 export type PipelineSummary = z.infer<typeof PipelineSchema>;
+export type PipelinePage = NonNullable<PipelineSummary["page"]>;
 
 const OpportunityCreateResultSchema = z.object({
   opportunity: OpportunitySchema,
@@ -140,8 +165,21 @@ export async function createOpportunityFromEnquiry(enquiryId: string): Promise<F
   return api.post(`/crm/from-enquiry/${enquiryId}`, {}, undefined, FromEnquiryResultSchema);
 }
 
-export async function getPipeline(): Promise<PipelineSummary> {
-  return api.get("/crm/pipeline", PipelineSchema);
+export interface PipelineQuery {
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
+export async function getPipeline(query: PipelineQuery = {}): Promise<PipelineSummary> {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  // `offset` only appears once it says something the server does not already
+  // assume, so an ordinary first load stays byte-identical to the request
+  // this client has always made — including for the e2e route mocks that
+  // stand in for the API and match an exact path.
+  if (query.offset !== undefined && query.offset > 0) params.set("offset", String(query.offset));
+  const search = params.toString();
+  return api.get(search === "" ? "/crm/pipeline" : `/crm/pipeline?${search}`, PipelineSchema);
 }
 
 export async function listOpportunities(stage?: string): Promise<Opportunity[]> {

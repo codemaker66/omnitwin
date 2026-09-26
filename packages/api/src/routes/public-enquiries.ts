@@ -3,8 +3,9 @@ import { GuestEnquirySchema, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/ty
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { sendEmailAsync } from "../services/email.js";
-import { newEnquiryNotification } from "../services/email-templates.js";
+import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
+import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
+import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -201,6 +202,63 @@ export async function publicEnquiryRoutes(
 
     // Notify hallkeeper(s) of the venue
     const spaceName = anchor.spaceName;
+
+    // In-app notification for the commercial team (staff, venue admin, sales).
+    // Email alone was the whole announcement path: a hallkeeper who never
+    // opened their inbox had no signal at all, and staff and sales were never
+    // told. This is venue-scoped and carries no event, which the notification
+    // list route already supports. A failure here must not fail the guest's
+    // submission — the enquiry row is already committed and is the record of
+    // truth — so it is logged loudly instead.
+    try {
+      const notified = await notifyCommercialTeam(db, {
+        venueId: anchor.venueId,
+        title: `New enquiry — ${spaceName}`,
+        body: `${displayName} enquired about ${spaceName}${
+          parsed.data.eventType === undefined ? "" : ` for a ${parsed.data.eventType}`
+        }${
+          parsed.data.eventDate === undefined ? "" : ` on ${parsed.data.eventDate}`
+        }. Open Enquiries to respond.`,
+        severity: "attention",
+        actionPath: "/dashboard?view=enquiries",
+      });
+      request.log.info(
+        { event: "enquiry.notified", enquiryId: enquiry.id, venueId: anchor.venueId, notified },
+        "enquiry.notified",
+      );
+    } catch (err) {
+      request.log.error(
+        {
+          event: "enquiry.notification_failed",
+          enquiryId: enquiry.id,
+          venueId: anchor.venueId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        "enquiry stored but the in-app notification could not be written",
+      );
+    }
+
+    // The venue's own acknowledgement to the organiser. Until this existed a
+    // guest got a 201 and silence. Idempotent per enquiry, so a retried POST
+    // or a replayed webhook cannot thank the same person twice.
+    const [venueRow] = await db.select({ name: venues.name })
+      .from(venues)
+      .where(eq(venues.id, anchor.venueId))
+      .limit(1);
+    const acknowledgement = await enquiryAcknowledgement({
+      venueName: venueRow?.name ?? "our venue",
+      spaceName,
+      organiserName: parsed.data.name ?? parsed.data.email,
+      eventType: parsed.data.eventType ?? null,
+      eventDate: parsed.data.eventDate ?? null,
+      guestCount: parsed.data.guestCount ?? null,
+      replyToEmail: resolveEmailReplyTo(),
+    });
+    sendEmailAsync({ to: parsed.data.email, ...acknowledgement }, {
+      db,
+      idempotencyKey: `enquiry-acknowledged:${enquiry.id}`,
+      logger: request.log,
+    });
 
     const hallkeepers = await db.select({ id: users.id, email: users.email })
       .from(users)

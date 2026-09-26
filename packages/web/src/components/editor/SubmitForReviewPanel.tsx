@@ -334,7 +334,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
         <label className="submit-review__notification-choice">
           <input type="checkbox" checked={notifyTeam} disabled={inFlight || timelinePreviewActive}
             onChange={event => { setNotifyTeam(event.target.checked); }} /> Notify team
-          <span>DEMO ONLY: uncheck to record an internal review without team emails.</span>
+          <span>Uncheck to record an internal review without emailing the team. Offered only on rehearsal plans.</span>
         </label>
       )}
       {completion !== null && <span className="submit-review__message" role="status">{completion}</span>}

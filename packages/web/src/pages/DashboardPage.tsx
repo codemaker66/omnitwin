@@ -81,6 +81,17 @@ export function dashboardViewFromSearchValue(value: string | null): DashboardVie
   return DASHBOARD_VIEW_VALUES.find((candidate) => candidate === value) ?? null;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** The `config` deep-link parameter, validated. A view that pre-selects a
+ *  record from a URL must not accept arbitrary text: an id the list cannot
+ *  match is simply no selection, not an error state for the reviewer. */
+export function configIdFromSearchValue(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return UUID_PATTERN.test(trimmed) ? trimmed : null;
+}
+
 export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
   if (role === null) return false;
   // Caterers are event-scoped: they reach an event through a share, never the
@@ -145,6 +156,13 @@ export function DashboardPage(): React.ReactElement {
   const userPlatformRole = useAuthStore((state) => state.user?.platformRole ?? "none");
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
+    [searchParams],
+  );
+  // The reviewer email's "Open Review" button deep-links here as
+  // /dashboard?view=reviews&config=:id. Anything that is not a uuid is
+  // ignored rather than handed to the reviews list as a selection.
+  const requestedConfigId = useMemo(
+    () => configIdFromSearchValue(searchParams.get("config")),
     [searchParams],
   );
   const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole, userPlatformRole));
@@ -249,7 +267,7 @@ export function DashboardPage(): React.ReactElement {
       case "pipeline":
         return <CommercialPipelineView />;
       case "reviews":
-        return <ReviewsView />;
+        return <ReviewsView initialSelectedId={requestedConfigId} />;
       case "analytics":
         return <ExecutiveAnalyticsView />;
       case "proposals":

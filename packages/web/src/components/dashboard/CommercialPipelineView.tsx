@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import {
   addFollowUpTask,
   addOpportunityActivity,
@@ -12,6 +12,7 @@ import {
   type FollowUpTask,
   type Opportunity,
   type OpportunityDetail,
+  type PipelinePage,
 } from "../../api/crm.js";
 import { createProposal, type StaffProposal } from "../../api/proposals.js";
 import { parsePoundsToMinor } from "../../lib/money-input.js";
@@ -142,6 +143,12 @@ export function CommercialPipelineView(): ReactElement {
   const addToast = useToastStore((state) => state.addToast);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [tasks, setTasks] = useState<FollowUpTask[]>([]);
+  const [pipelineValue, setPipelineValue] = useState<number | null>(null);
+  const [pipelineCurrency, setPipelineCurrency] = useState("GBP");
+  // The board shows one page. Without these the window silently shrank from
+  // 200 rows to 50 and a venue past that had no way to reach the rest.
+  const [pageOffset, setPageOffset] = useState(0);
+  const [page, setPage] = useState<PipelinePage | null>(null);
   const [selected, setSelected] = useState<DetailState | null>(null);
   const [detailRequests, setDetailRequests] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -166,16 +173,19 @@ export function CommercialPipelineView(): ReactElement {
     const ownsRequest = pipelineRequest.begin();
     setLoading(true);
     setError(null);
-    getPipeline()
+    getPipeline({ offset: pageOffset })
       .then((summary) => {
         if (!ownsRequest()) return;
         setOpportunities(summary.opportunities);
         setTasks(summary.todayTasks);
+        setPipelineValue(summary.pipelineValueMinor ?? null);
+        setPipelineCurrency(summary.currency ?? "GBP");
+        setPage(summary.page ?? null);
         setError(null);
       })
       .catch(() => { if (ownsRequest()) setError("Could not load the commercial pipeline. Refresh or try again later."); })
       .finally(() => { if (ownsRequest()) setLoading(false); });
-  }, [pipelineRequest]);
+  }, [pageOffset, pipelineRequest]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -201,10 +211,11 @@ export function CommercialPipelineView(): ReactElement {
       .finally(() => { if (ownsRequest()) setDetailRequests(0); });
   }, [addToast, detailRequest]);
 
-  const pipelineValue = useMemo(
-    () => opportunities.reduce((sum, opportunity) => sum + opportunity.estimatedValueMinor, 0),
-    [opportunities],
-  );
+  // `pipelineValue` is SERVED, not summed here. `opportunities` is one page of
+  // the board, so adding it up produced a "pipeline value" that shrank as you
+  // paged and disagreed with Executive Analytics. Both surfaces now read the
+  // same server figure (services/commercial-pipeline.ts), which counts open
+  // stages only — a won or lost deal is not pipeline.
 
   const handleFromEnquiry = (): void => {
     if (enquiryId.trim().length === 0 || busy) return;
@@ -363,6 +374,19 @@ export function CommercialPipelineView(): ReactElement {
     rows: opportunities.filter((opportunity) => opportunity.stage === stage),
   }));
 
+  // Paging, stated rather than implied. `page.total` counts the whole
+  // pipeline; the cards below are one window onto it, so the counts beside
+  // each stage are labelled as this page's when there is more to see.
+  const hasMorePages = page !== null && page.total > opportunities.length;
+  const firstShown = opportunities.length === 0 ? 0 : pageOffset + 1;
+  const lastShown = pageOffset + opportunities.length;
+  const canPageBack = pageOffset > 0;
+  const canPageForward = page !== null && lastShown < page.total;
+  const goToPage = (nextOffset: number): void => {
+    setSelected(null);
+    setPageOffset(Math.max(0, nextOffset));
+  };
+
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 360px", gap: 20, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -374,8 +398,9 @@ export function CommercialPipelineView(): ReactElement {
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 12, color: "#d7b56d", fontWeight: 700 }}>Pipeline value</div>
             <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 800, color: "#fff7e8" }}>
-              {formatMoney(pipelineValue, "GBP")}
+              {pipelineValue === null ? "—" : formatMoney(pipelineValue, pipelineCurrency)}
             </div>
+            <div style={{ fontSize: 11, color: "rgba(246,241,232,0.62)" }}>Open opportunities only</div>
           </div>
         </section>
 
@@ -436,6 +461,41 @@ export function CommercialPipelineView(): ReactElement {
           </section>
         )}
 
+        {page !== null && (
+          <section
+            style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+            aria-label="Pipeline paging"
+          >
+            <span data-testid="pipeline-page-summary" style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.78)" }}>
+              {page.total === 0
+                ? "No opportunities yet"
+                : `Showing ${String(firstShown)}–${String(lastShown)} of ${String(page.total)} opportunities`}
+            </span>
+            {(canPageBack || canPageForward) && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  data-testid="pipeline-prev-page"
+                  style={{ ...secondaryButton, opacity: canPageBack && !busy ? 1 : 0.5 }}
+                  disabled={!canPageBack || busy}
+                  onClick={() => { goToPage(pageOffset - page.limit); }}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  data-testid="pipeline-next-page"
+                  style={{ ...secondaryButton, opacity: canPageForward && !busy ? 1 : 0.5 }}
+                  disabled={!canPageForward || busy}
+                  onClick={() => { goToPage(pageOffset + page.limit); }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(180px, 1fr))", gap: 12 }}>
           {stageGroups.map(({ stage, rows }) => (
             <section key={stage} style={{ ...card, minHeight: 150 }}>
@@ -443,7 +503,9 @@ export function CommercialPipelineView(): ReactElement {
                 <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0.4, color: "#d7b56d" }}>
                   {stageLabel(stage)}
                 </h3>
-                <span style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>{rows.length}</span>
+                <span style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)" }}>
+                  {hasMorePages ? `${String(rows.length)} on this page` : rows.length}
+                </span>
               </div>
               {rows.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 12, color: "rgba(246, 241, 232, 0.55)" }}>{STAGE_NEXT[stage]}</p>
