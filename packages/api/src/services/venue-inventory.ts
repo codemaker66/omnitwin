@@ -25,6 +25,17 @@ function assertAdmin(actor: InventoryActor, venueId: string): void {
   }
 }
 
+// Reads are open to every inventory-reading role — which roles those are is
+// the route's decision, from Lane 8's single role set in utils/query. What
+// must never relax is the tenancy boundary, so this re-asserts venue scope
+// here too: a caller with no venue, or another venue's, reads nothing.
+function assertVenueScope(actor: InventoryActor, venueId: string): void {
+  const parsed = InventoryActorSchema.parse(actor);
+  if (parsed.venueId !== venueId) {
+    throw new VenueInventoryError(403, "FORBIDDEN", "Inventory belongs to the venue you are assigned to");
+  }
+}
+
 function stockFromRow(row: StockRow): InventoryStock {
   const { updatedBy: _updatedBy, ...stock } = row;
   return InventoryStockSchema.parse({ ...stock, effectiveAt: row.effectiveAt.toISOString() });
@@ -43,7 +54,7 @@ async function assertVenueExists(db: Database, venueId: string): Promise<void> {
 }
 
 export async function listVenueInventory(db: Database, actor: InventoryActor, venueId: string): Promise<VenueInventoryListResponse> {
-  assertAdmin(actor, venueId);
+  assertVenueScope(actor, venueId);
   await assertVenueExists(db, venueId);
   const rows = await db.select({ catalogue: { id: assetDefinitions.id, name: assetDefinitions.name, category: assetDefinitions.category },
     stock: venueInventoryStock }).from(assetDefinitions).leftJoin(venueInventoryStock,
@@ -56,7 +67,7 @@ export async function listVenueInventory(db: Database, actor: InventoryActor, ve
 
 export async function readVenueInventoryHistory(db: Database, actor: InventoryActor, venueId: string,
   assetDefinitionId: string, query: { limit: number; offset: number }): Promise<VenueInventoryHistoryResponse> {
-  assertAdmin(actor, venueId);
+  assertVenueScope(actor, venueId);
   await assertVenueExists(db, venueId);
   const [asset] = await db.select({ id: assetDefinitions.id }).from(assetDefinitions)
     .where(eq(assetDefinitions.id, assetDefinitionId)).limit(1);

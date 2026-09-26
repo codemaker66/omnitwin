@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 2);
+  assert.equal(baseline.inventoryAdmissions.length, 3);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -144,6 +144,29 @@ for (const id of enquiriesDeskAdditions) {
     spec.tests[0].status = 'skipped';
   }, /policy changed/);
 }
+const managerRestatement = '2a7be7d54f62686846cb-58cc5679eec69ffec6a7';
+const retiredExecutiveCase = '2a7be7d54f62686846cb-8265ef7314e9066c80fb';
+test('the role vocabulary admission replaces the retired executive case one for one', () => {
+  const admission = baseline.inventoryAdmissions[2];
+  assert.equal(admission.date, '2026-09-26');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/button-action-audit.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.deepEqual(admission.caseIds, [managerRestatement]);
+  assert.equal(baseline.cases.some((entry) => entry.id === retiredExecutiveCase), false);
+  const row = baseline.cases.find((entry) => entry.id === managerRestatement);
+  assert.equal(row?.file, 'button-action-audit.spec.ts');
+  assert.equal(row?.expectedStatus, 'passed');
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('the manager restatement cannot become a skip', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === managerRestatement);
+  spec.tests[0].expectedStatus = 'skipped';
+  spec.tests[0].results[0].status = 'skipped';
+  spec.tests[0].status = 'skipped';
+}, /policy changed/);
+rejected('the retired executive identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === managerRestatement).id = retiredExecutiveCase;
+}, /missing or extra/);
 rejected('missing CPU shard cannot pass', (input) => input.cpuShards.pop(), /four CPU/);
 rejected('full inventory cannot silently omit a case', (input) => input.inventory.suites.shift(), /missing or extra/);
 rejected('new test identity requires reviewed baseline update', (input) => specs(input.inventory)[0].id = 'new-case', /missing or extra/);

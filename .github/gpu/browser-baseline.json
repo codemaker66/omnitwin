@@ -54,6 +54,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These three cases were absent from sourceRunId, sourceReports and the 2026-09-24 admission; every current case still requires execution in the hosted browser gate."
+    },
+    {
+      "date": "2026-09-26",
+      "reason": "Role vocabulary (PR #19) retired the executive seed: no role has only the analytics cockpit, because analytics and the CRM pipeline both take the commercial roles. The button-audit case 2a7be7d54f62686846cb-8265ef7314e9066c80fb ('executive users get only the analytics cockpit and direct commercial surfaces fail closed') is restated for the manager, who replaced it: the cockpit, Pipeline and Proposals are offered and open, and platform-only views fail closed on a typed URL.",
+      "sourceCommit": "46b1fdc64ed74643833ed4bd156fee99dc3a718b",
+      "sourceFile": "packages/web/e2e/button-action-audit.spec.ts",
+      "sourceFileGitBlobSha256": "0105bd1bd08b664dd0e0bc49af81c5d768004728f2924972ec918fb0a095fce6",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "952dbd50723511c4796ddfdf89c061e3cefd8a65f5e385220bc14635e9c2f6f0",
+      "caseIds": [
+        "2a7be7d54f62686846cb-58cc5679eec69ffec6a7"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 2a7be7d54f62686846cb-8265ef7314e9066c80fb one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate."
     }
   ],
   "cases": [
@@ -886,9 +900,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "2a7be7d54f62686846cb-8265ef7314e9066c80fb",
+      "id": "2a7be7d54f62686846cb-58cc5679eec69ffec6a7",
       "file": "button-action-audit.spec.ts",
-      "title": "executive users get only the analytics cockpit and direct commercial surfaces fail closed",
+      "title": "managers get the analytics cockpit and the commercial surfaces, and platform-only views fail closed",
       "suitePath": [
         "button-action-audit.spec.ts",
         "SS++ deep modal, drawer, role, disabled, and error states"

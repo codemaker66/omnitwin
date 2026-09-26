@@ -12,6 +12,7 @@ import {
   updateBookingCore,
   type BookingDbConn,
   type BookingMutationResult,
+  DIARY_WRITE_ROLES,
   type BookingRow,
   type MutationActor,
 } from "./booking-mutations.js";
@@ -100,7 +101,12 @@ class CoreDenySignal extends Error {
   }
 }
 
-const DIARY_COMMAND_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
+// The third diary write set. It must equal DIARY_WRITE_ROLES in
+// booking-mutations.ts: the REST surface and this command channel ink the same
+// diary, so a role admitted by one and refused by the other can see a slot
+// change on the live read channel and be unable to make one.
+// booking.test.ts drift-guards the two against each other.
+export const DIARY_COMMAND_WRITE_ROLES: ReadonlySet<string> = DIARY_WRITE_ROLES;
 
 function rejectedAck(
   command: DiaryCommand,

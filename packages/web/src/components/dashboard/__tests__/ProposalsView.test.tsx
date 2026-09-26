@@ -463,6 +463,44 @@ describe("ProposalsView", () => {
     expect(screen.queryByTestId("quote-desc-0")).toBeNull();
   });
 
+  it("gives a SENT proposal a way to get the client a link", async () => {
+    // The dead end this closes: the share-code fallback was removed, tokens
+    // are stored hashed and cannot be reprinted, and the control rendered
+    // only for draft/changes_requested. A staff member whose client rang to
+    // say they had lost the email had nothing at all to offer them.
+    mocks.listProposals.mockResolvedValue([draftProposal({ status: "sent", currentVersion: 2, sentAt: NOW })]);
+    mocks.createProposalShareToken.mockResolvedValue({
+      token: "fresh-token",
+      shareUrl: "/proposal-share/fresh-token",
+      tokenPrefix: "fresh-to",
+      proposal: draftProposal({ status: "sent", currentVersion: 2, sentAt: NOW }),
+    });
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    // It says why no link is on screen rather than simply showing none.
+    expect(await screen.findByTestId("share-link-unavailable")).toBeTruthy();
+
+    const issue = await screen.findByTestId("send-button");
+    expect(issue.textContent).toContain("Issue a new client link");
+    expect((issue as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(issue);
+
+    await waitFor(() => { expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1"); });
+    const link = await screen.findByTestId("share-link");
+    expect(link.getAttribute("href")).toContain("/proposal-share/fresh-token");
+  });
+
+  it("offers no link control where a client link makes no sense", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal({ status: "accepted", currentVersion: 3, sentAt: NOW })]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    await screen.findByTestId("archive-button");
+    expect(screen.queryByTestId("send-button")).toBeNull();
+    expect(screen.queryByTestId("share-link-unavailable")).toBeNull();
+  });
+
   it("hides the composer and shows archive for concluded proposals", async () => {
     mocks.listProposals.mockResolvedValue([draftProposal({ status: "accepted", currentVersion: 3, shareCode: "abcdef", sentAt: NOW })]);
     render(<ProposalsView />);

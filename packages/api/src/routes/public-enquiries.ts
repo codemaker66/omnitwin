@@ -1,10 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import { GuestEnquirySchema, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import {
+  GuestEnquirySchema,
+  TRADES_HALL_ENQUIRY_VENUE_SLUG,
+  VENUE_ACCESS_ENQUIRY_TYPE,
+  VENVIEWER_PRICING_ENQUIRY_TYPE,
+} from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
-import { sendEmailAsync } from "../services/email.js";
-import { newEnquiryNotification } from "../services/email-templates.js";
+import { resolveEmailReplyTo, sendEmailAsync } from "../services/email.js";
+import { enquiryAcknowledgement, newEnquiryNotification } from "../services/email-templates.js";
+import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -137,11 +143,23 @@ export async function publicEnquiryRoutes(
       };
     }
 
+    // Two senders ride this route without booking this venue's rooms: the
+    // workspace gate's "Request access" (someone asking to be let into the
+    // venue's Venviewer workspace) and the pricing page's "Talk to us about
+    // your venue" (a venue asking about Venviewer for its own rooms). Each is
+    // stored and announced as what it is, and the booking acknowledgement
+    // below (rooms, dates, costs) is sent only for a real room enquiry; both
+    // screens that send the others already confirm the request in place.
+    const accessRequest = parsed.data.eventType === VENUE_ACCESS_ENQUIRY_TYPE;
+    const pricingEnquiry = parsed.data.eventType === VENVIEWER_PRICING_ENQUIRY_TYPE;
+
     // Create enquiry with guest fields, status: submitted (skip draft).
     const displayName = parsed.data.name ?? parsed.data.email;
     // Twin enquiries carry the source note first so it survives even a long
-    // message; the input message stays within its 2000-char validation.
-    const composedMessage = anchor.fromTwin
+    // message; the input message stays within its 2000-char validation. The
+    // two senders above use the venue path without coming from the twin, so
+    // their stored message must not say they did.
+    const composedMessage = anchor.fromTwin && !accessRequest && !pricingEnquiry
       ? parsed.data.message !== undefined
         ? `${TWIN_SOURCE_NOTE}\n\n${parsed.data.message}`
         : TWIN_SOURCE_NOTE
@@ -201,6 +219,74 @@ export async function publicEnquiryRoutes(
 
     // Notify hallkeeper(s) of the venue
     const spaceName = anchor.spaceName;
+    const [venueRow] = await db.select({ name: venues.name })
+      .from(venues)
+      .where(eq(venues.id, anchor.venueId))
+      .limit(1);
+    const venueName = venueRow?.name ?? "our venue";
+
+    // In-app notification for the commercial team (staff, venue admin, sales).
+    // Email alone was the whole announcement path: a hallkeeper who never
+    // opened their inbox had no signal at all, and staff and sales were never
+    // told. This is venue-scoped and carries no event, which the notification
+    // list route already supports. A failure here must not fail the guest's
+    // submission — the enquiry row is already committed and is the record of
+    // truth — so it is logged loudly instead.
+    try {
+      const notified = await notifyCommercialTeam(db, {
+        venueId: anchor.venueId,
+        ...(accessRequest ? {
+          title: "Access request",
+          body: `${displayName} asked for access to ${venueName}'s Venviewer workspace. Open Enquiries to read the request.`,
+        } : pricingEnquiry ? {
+          title: "Venviewer enquiry",
+          body: `${displayName} asked about Venviewer for their own venue, from the pricing page. Open Enquiries to read it.`,
+        } : {
+          title: `New enquiry — ${spaceName}`,
+          body: `${displayName} enquired about ${spaceName}${
+            parsed.data.eventType === undefined ? "" : ` for a ${parsed.data.eventType}`
+          }${
+            parsed.data.eventDate === undefined ? "" : ` on ${parsed.data.eventDate}`
+          }. Open Enquiries to respond.`,
+        }),
+        severity: "attention",
+        actionPath: "/dashboard?view=enquiries",
+      });
+      request.log.info(
+        { event: "enquiry.notified", enquiryId: enquiry.id, venueId: anchor.venueId, notified },
+        "enquiry.notified",
+      );
+    } catch (err) {
+      request.log.error(
+        {
+          event: "enquiry.notification_failed",
+          enquiryId: enquiry.id,
+          venueId: anchor.venueId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        "enquiry stored but the in-app notification could not be written",
+      );
+    }
+
+    // The venue's own acknowledgement to the organiser. Until this existed a
+    // guest got a 201 and silence. Idempotent per enquiry, so a retried POST
+    // or a replayed webhook cannot thank the same person twice.
+    if (!accessRequest && !pricingEnquiry) {
+      const acknowledgement = await enquiryAcknowledgement({
+        venueName,
+        spaceName,
+        organiserName: parsed.data.name ?? parsed.data.email,
+        eventType: parsed.data.eventType ?? null,
+        eventDate: parsed.data.eventDate ?? null,
+        guestCount: parsed.data.guestCount ?? null,
+        replyToEmail: resolveEmailReplyTo(),
+      });
+      sendEmailAsync({ to: parsed.data.email, ...acknowledgement }, {
+        db,
+        idempotencyKey: `enquiry-acknowledged:${enquiry.id}`,
+        logger: request.log,
+      });
+    }
 
     const hallkeepers = await db.select({ id: users.id, email: users.email })
       .from(users)

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   ComfortConstraintSchema,
@@ -14,6 +14,7 @@ import {
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
+  bookings,
   comfortConstraints,
   configurations,
   enquiries,
@@ -25,8 +26,10 @@ import {
   spaces,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canAccessInternalEvent, canWriteEvents } from "../utils/query.js";
+import { canAccessInternalEvent, canManageCommercial, canWriteEvents } from "../utils/query.js";
+import { loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 import {
+  ROOM_UTILISATION_WINDOW_DAYS,
   buildPipelineSummary,
   buildRoomUtilisationRows,
   buildVenueDashboardAnalytics,
@@ -48,10 +51,23 @@ function toIso(value: Date): string {
   return value.toISOString();
 }
 
+// Two analytics surfaces, two capabilities. A payload carrying money —
+// pipelineValueMinor, quote totals, revenue scenarios — is a price surface,
+// and hallkeepers never see prices (goal 18 §6 decision 6b). Room utilisation
+// carries no money at all (RoomUtilisationRowSchema is room names, counts and
+// a percentage), and reading how busy the rooms are is the hallkeeper's own
+// job, so it keeps the venue-operations policy it has always had. Neither
+// customer role name grants venue-wide analytics authority on either.
+type VenueScopeCapability = (
+  user: FastifyRequest["user"],
+  venueId: string,
+) => boolean;
+
 function resolveVenueScope(
   request: FastifyRequest,
   reply: FastifyReply,
   requestedVenueId: string | undefined,
+  capability: VenueScopeCapability,
 ): string | null {
   const user = request.user;
   if (isPlatformAdmin(user)) {
@@ -68,9 +84,7 @@ function resolveVenueScope(
     void reply.status(403).send({ error: "User has no venue scope", code: "FORBIDDEN" });
     return null;
   }
-  // Preserve existing hallkeeper commercial reads (quotes/event summaries),
-  // but neither customer role name grants venue-wide analytics authority.
-  if (!canAccessInternalEvent(user, user.venueId)) {
+  if (!capability(user, user.venueId)) {
     void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     return null;
   }
@@ -263,7 +277,7 @@ export async function eventRevenueRoutes(server: FastifyInstance, opts: { db: Da
     if (eventRow === undefined) {
       return reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     }
-    if (!canAccessInternalEvent(request.user, eventRow.venueId)) {
+    if (!canManageCommercial(request.user, eventRow.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -281,7 +295,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/pipeline-summary", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, canManageCommercial);
     if (venueId === null) return;
     const pipeline = await loadPipelineSummary(db, venueId);
     return { data: pipeline };
@@ -290,7 +304,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/room-utilisation", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, canAccessInternalEvent);
     if (venueId === null) return;
     const rows = await loadRoomUtilisation(db, venueId);
     return { data: rows };
@@ -299,7 +313,7 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   server.get("/venue-dashboard", { preHandler: [authenticate] }, async (request, reply) => {
     const query = AnalyticsQuery.safeParse(request.query);
     if (!query.success) return validationError(reply, query.error.issues);
-    const venueId = resolveVenueScope(request, reply, query.data.venueId);
+    const venueId = resolveVenueScope(request, reply, query.data.venueId, canManageCommercial);
     if (venueId === null) return;
     const [pipeline, roomUtilisation, scenarioRows, constraintRows] = await Promise.all([
       loadPipelineSummary(db, venueId),
@@ -324,32 +338,52 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
   });
 }
 
-// Counted and summed in PostgreSQL: the dashboard needs a venue's totals, not
-// every quote, proposal, enquiry and layout row it used to read.
+// Counted in PostgreSQL: the dashboard needs a venue's totals, not every
+// proposal and enquiry row. Pipeline value comes from the SHARED definition
+// (services/commercial-pipeline.ts, open opportunities), the same figure the
+// Pipeline tab reads, rather than from quote totals.
 async function loadPipelineSummary(db: Database, venueId: string) {
-  const [[quoteTotal], proposalRows, [enquiryTotal]] = await Promise.all([
-    db.select({ totalMinor: sql<number>`coalesce(sum(${quotes.totalMinor}), 0)`.mapWith(Number) })
-      .from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
+  const [pipelineValueMinor, proposalRows, [enquiryTotal]] = await Promise.all([
+    loadPipelineValueMinor(db, venueId),
     db.select({ status: proposals.status, count: sql<number>`count(*)`.mapWith(Number) })
       .from(proposals).where(and(eq(proposals.venueId, venueId), isNull(proposals.deletedAt)))
       .groupBy(proposals.status).orderBy(proposals.status),
     db.select({ count: sql<number>`count(*)`.mapWith(Number) }).from(enquiries).where(eq(enquiries.venueId, venueId)),
   ]);
   return buildPipelineSummary({
-    pipelineValueMinor: quoteTotal?.totalMinor ?? 0,
+    pipelineValueMinor,
     enquiryCount: enquiryTotal?.count ?? 0,
     proposalStatusCounts: Object.fromEntries(proposalRows.map((row) => [row.status, row.count])),
   });
 }
 
 async function loadRoomUtilisation(db: Database, venueId: string): Promise<readonly z.infer<typeof RoomUtilisationRowSchema>[]> {
-  const [roomRows, quoteRows, bottleneckRows] = await Promise.all([
+  // The window the utilisation figure is measured over. Anchored to UTC
+  // midnight so the same request made twice in one day returns the same
+  // denominator.
+  const windowStart = new Date(Date.UTC(
+    new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate(),
+  ));
+  const windowEnd = new Date(windowStart.getTime() + ROOM_UTILISATION_WINDOW_DAYS * 86_400_000);
+
+  const [roomRows, bookingRows, bottleneckRows] = await Promise.all([
     db.select({ spaceId: spaces.id, roomName: spaces.name }).from(spaces).where(and(eq(spaces.venueId, venueId), isNull(spaces.deletedAt))),
+    // Only ACTIVE bookings overlapping the window. A released hold or a
+    // cancelled booking is not demand, and a booking that ended last year is
+    // not this quarter's utilisation. The window bounds the rows read; the
+    // distinct-day count needs each booking's span, so it is taken here.
     db.select({
-      spaceId: quotes.spaceId,
-      proposed: sql<number>`count(*)`.mapWith(Number),
-      booked: sql<number>`count(*) filter (where ${quotes.status} = 'accepted')`.mapWith(Number),
-    }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))).groupBy(quotes.spaceId),
+      spaceId: bookings.spaceId,
+      kind: bookings.kind,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+    }).from(bookings).where(and(
+      eq(bookings.venueId, venueId),
+      eq(bookings.status, "active"),
+      isNull(bookings.deletedAt),
+      lt(bookings.startsAt, windowEnd),
+      gte(bookings.endsAt, windowStart),
+    )),
     // A scenario's review gates count against its layout's room; the layout
     // must belong to this venue (a soft-deleted layout still counts).
     db.select({
@@ -366,7 +400,9 @@ async function loadRoomUtilisation(db: Database, venueId: string): Promise<reado
 
   return buildRoomUtilisationRows({
     rooms: roomRows.length > 0 ? roomRows : [{ spaceId: null, roomName: "Unassigned room" }],
-    quotesBySpaceId: new Map(quoteRows.map((row) => [row.spaceId, { proposed: row.proposed, booked: row.booked }])),
+    bookings: bookingRows,
+    windowStart,
+    windowEnd,
     reviewBottlenecksBySpaceId: new Map(bottleneckRows.map((row) => [row.spaceId, row.reviewGateCount])),
   });
 }

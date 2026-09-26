@@ -118,7 +118,56 @@ afterEach(() => {
   cleanup();
 });
 
+describe("ReviewsView deep link from the reviewer email", () => {
+  it("opens the review named by ?config=", async () => {
+    render(<ReviewsView initialSelectedId={CONFIG_ID} />);
+    // The detail, not the list: the reviewer clicked "Open Review" in the
+    // submission email and expects to land on that submission.
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open review for Reception Room review pack" })).toBeNull();
+  });
+
+  it("lands on the list when the linked review is no longer pending", async () => {
+    mocks.listPendingReviews.mockResolvedValue([
+      pendingReview({ id: "00000000-0000-4000-8000-0000000070ff", name: "Someone else's review" }),
+    ]);
+    render(<ReviewsView initialSelectedId={CONFIG_ID} />);
+
+    // No detail and no error — another reviewer actioned it, and the list is
+    // the honest destination.
+    expect(await screen.findByRole("button", { name: "Open review for Someone else's review" })).toBeTruthy();
+    expect(screen.queryByTestId("reviews-load-error")).toBeNull();
+  });
+
+  it("lets the reviewer return to the list without being pulled straight back in", async () => {
+    render(<ReviewsView initialSelectedId={CONFIG_ID} />);
+    await screen.findByRole("button", { name: "Approve" });
+
+    fireEvent.click(screen.getByRole("button", { name: /back/iu }));
+    expect(await screen.findByRole("button", { name: "Open review for Reception Room review pack" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
+  it("ignores a deep link when none is given", async () => {
+    render(<ReviewsView />);
+    expect(await screen.findByRole("button", { name: "Open review for Reception Room review pack" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+});
+
 describe("ReviewsView", () => {
+  it("does not label the internal-review toggle as a demo", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({
+      currentStatus: "under_review", availableTransitions: ["approved"], internalDemoReviewEligible: true,
+    });
+    render(<ReviewsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    await screen.findByRole("checkbox", { name: /Notify team/u });
+    // The control is real and stays; the copy that called the product a demo
+    // does not ship to a venue.
+    expect(document.body.textContent ?? "").not.toContain("DEMO ONLY");
+  });
+
   it.each(["resolve", "reject"] as const)("stops the review loading animation when the list request %s", async outcome => {
     const request = deferred<PendingReviewEntry[]>();
     mocks.listPendingReviews.mockReturnValueOnce(request.promise);

@@ -319,13 +319,16 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
 
     await page.goto("/pricing");
     await expect(page.getByRole("heading", { level: 1, name: "Pricing", exact: true })).toBeVisible();
-    await expect(page.locator("a[href='/register?tier=pro&cycle=annual']")).toHaveCount(2);
+    // No trial is offered: nothing exists to bill or onboard one. The page's
+    // next action is the enquiry form that replaced the trial links.
+    await expect(page.locator("a[href='/register?tier=pro&cycle=annual']")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Send enquiry" })).toBeVisible();
 
     await recordFrameAndVisualState(page, "pricing-desktop", "desktop", async () => {
       await page.getByRole("button", { name: "Monthly" }).click();
-      await expect(page.locator("a[href='/register?tier=pro&cycle=monthly']")).toHaveCount(2);
+      await expect(page.locator("a[href='/register?tier=pro&cycle=monthly']")).toHaveCount(0);
       await page.getByRole("button", { name: "Annual" }).click();
-      await expect(page.locator("a[href='/register?tier=pro&cycle=annual']")).toHaveCount(2);
+      await expect(page.locator("a[href='/register?tier=pro&cycle=annual']")).toHaveCount(0);
       await page.mouse.wheel(0, 560);
     });
     await recordAccessibilityState(page, problems, "public pricing route", "/pricing", "desktop");

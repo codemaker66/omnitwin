@@ -9,7 +9,7 @@ const sampleData: ConfigSubmittedData = {
   spaceName: "Grand Hall",
   snapshotVersion: 1,
   submittedByName: "Sarah Anderson",
-  reviewUrl: "http://localhost:5173/dashboard/reviews/cfg-001",
+  reviewUrl: "http://localhost:5173/dashboard?view=reviews&config=cfg-001",
 };
 
 export default function Preview() {

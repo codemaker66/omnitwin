@@ -34,13 +34,22 @@ describe("getDefaultRoute", () => {
 
   it("routes staff to /dashboard (now in the dashboard-default group)", () => {
     // staff was promoted into the dashboard-default group alongside
-    // admin/hallkeeper/planner/executive; client and unknown roles still
-    // fall through to /plan.
+    // admin/hallkeeper/planner; client and unknown roles still fall through
+    // to /plan.
     expect(getDefaultRoute("staff")).toBe("/dashboard");
   });
 
-  it("routes executive to /dashboard", () => {
-    expect(getDefaultRoute("executive")).toBe("/dashboard");
+  it("routes manager and sales to /dashboard (goal 18 §6 decision 6a)", () => {
+    expect(getDefaultRoute("manager")).toBe("/dashboard");
+    expect(getDefaultRoute("sales")).toBe("/dashboard");
+  });
+
+  it("routes a caterer to /plan — it holds no venue-wide surface", () => {
+    expect(getDefaultRoute("caterer")).toBe("/plan");
+  });
+
+  it("routes the retired executive name to /plan with every other unknown role", () => {
+    expect(getDefaultRoute("executive")).toBe("/plan");
   });
 
   it("routes unknown roles to /plan (fail-soft default)", () => {

@@ -47,6 +47,9 @@ vi.mock("../../../api/spaces.js", () => ({
   getVenue: vi.fn().mockResolvedValue({ id: "venue-1", name: "Trades Hall" }),
 }));
 vi.mock("../../../components/dashboard/NotificationCenter.js", () => ({ NotificationCenter: () => null }));
+// The shell reads the unread count for the nav chip; this suite does not
+// exercise notifications, so the edge is stubbed like the rest of them.
+vi.mock("../../../api/notifications.js", () => ({ listNotifications: () => Promise.resolve([]) }));
 // The page calls useDiaryLive exactly once per render: a page render counter.
 vi.mock("../hooks/useDiaryLive.js", () => ({
   useDiaryLive: () => {
