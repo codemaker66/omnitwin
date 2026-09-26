@@ -512,6 +512,13 @@
       "when": 1790427600000,
       "tag": "0074_catalogue_reconcile",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790431200000,
+      "tag": "0075_workspace_membership_role_vocabulary",
+      "breakpoints": true
     }
   ]
 }

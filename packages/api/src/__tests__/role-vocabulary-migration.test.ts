@@ -1,4 +1,4 @@
-import { EVENT_PLAN_AUDIENCE_ROLES, USER_ROLES } from "@omnitwin/types";
+import { EVENT_PLAN_AUDIENCE_ROLES, USER_ROLES, VENUE_INVITATION_ROLES, WORKSPACE_MEMBER_ROLES } from "@omnitwin/types";
 import { describe, expect, it } from "vitest";
 import { checkListValues, migrationText, sqlWithoutComments } from "./migration-text.js";
 
@@ -30,6 +30,7 @@ const AUDIENCE_CHECKS = [
 ];
 
 const VOCABULARY = "_vocabulary_checks_and_hot_path_indexes";
+const WORKSPACE_VOCABULARY = "_workspace_membership_role_vocabulary";
 
 describe("the migration's role vocabulary is pinned to @omnitwin/types", () => {
   it("gives every user-role CHECK exactly USER_ROLES", async () => {
@@ -60,6 +61,18 @@ describe("the migration's role vocabulary is pinned to @omnitwin/types", () => {
     expect(containment, "the jsonb audience check should declare a containment array").toBeDefined();
     const declared = [...(containment ?? "").matchAll(/"([^"]+)"/gu)].map((match) => match[1] ?? "");
     expect([...declared].sort()).toEqual([...EVENT_PLAN_AUDIENCE_ROLES].sort());
+  });
+
+  it("gives the workspace membership CHECKs exactly the onboarding vocabulary", async () => {
+    // Onboarding invites every venue role and stores it on the membership, so
+    // a CHECK narrower than these lists turns an offered invitation into a
+    // PostgreSQL refusal. The workspace role adds "owner" to the venue roles.
+    const sql = await migrationText(WORKSPACE_VOCABULARY);
+    expect([...checkListValues(sql, "workspace_memberships_venue_role_check")].sort())
+      .toEqual([...VENUE_INVITATION_ROLES].sort());
+    expect([...checkListValues(sql, "workspace_memberships_role_check")].sort())
+      .toEqual([...WORKSPACE_MEMBER_ROLES].sort());
+    expect([...VENUE_INVITATION_ROLES].sort()).toEqual([...USER_ROLES].sort());
   });
 
   it("keeps supplier and executive as audiences, though neither is a user role", async () => {
