@@ -1,0 +1,122 @@
+# =============================================================================
+# Record visual baselines on the CI runner
+# =============================================================================
+# Triggered on demand ("Run workflow" on the Actions tab, or the API).
+#
+# Some pages render differently on a developer machine than on the E2E CPU
+# shards: Playwright's pinned headless shell under xvfb draws their text with a
+# different anti-aliasing mode than a local Chromium, so a baseline recorded
+# locally fails in CI although nothing changed. This workflow re-records the
+# named cases on the same runner image, browser build and display the shards
+# use, and commits ONLY the changed PNGs under packages/web/e2e/*-snapshots/ to
+# the named branch.
+#
+# It never writes to master or main. A person reviews the committed images on
+# the branch (fetch it and look) before anything merges, and the ordinary CI run
+# on the branch still has to pass: this records evidence, it approves nothing.
+# A push made with GITHUB_TOKEN does not start CI by itself, so the next push by
+# a person runs the full gate on the recorded images.
+# =============================================================================
+
+name: Record visual baselines
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to record on and commit to (never master or main)"
+        required: true
+      specs:
+        description: "Space-separated cases, each e2e/<file>.spec.ts or e2e/<file>.spec.ts:<line>"
+        required: true
+
+concurrency:
+  group: record-baselines-${{ inputs.branch }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Validate the request
+        env:
+          BRANCH: ${{ inputs.branch }}
+          SPECS: ${{ inputs.specs }}
+        run: |
+          set -euo pipefail
+          if [[ "$BRANCH" == "master" || "$BRANCH" == "main" || "$BRANCH" == *".."* || ! "$BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+            echo "::error::Refusing to record on branch '$BRANCH'."
+            exit 1
+          fi
+          case_re='e2e/[A-Za-z0-9._-]+\.spec\.ts(:[0-9]+)?'
+          if [[ ! "$SPECS" =~ ^${case_re}( ${case_re})*$ ]]; then
+            echo "::error::Cases must be e2e/<file>.spec.ts or e2e/<file>.spec.ts:<line>, separated by single spaces."
+            exit 1
+          fi
+
+      - name: Checkout the branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
+
+      - name: Record the named cases
+        working-directory: packages/web
+        env:
+          SPECS: ${{ inputs.specs }}
+        run: |
+          set -euo pipefail
+          read -ra cases <<< "$SPECS"
+          # Same display and headless shell as the E2E CPU shards. A case that
+          # fails for any reason other than its screenshot fails this step, and
+          # nothing is committed.
+          xvfb-run --auto-servernum pnpm exec playwright test "${cases[@]}" --update-snapshots=changed --reporter=line
+
+      - name: Commit the changed baselines
+        env:
+          BRANCH: ${{ inputs.branch }}
+          SPECS: ${{ inputs.specs }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # -uall lists a new snapshot file by name, not its new directory.
+          changed="$(git status --porcelain -uall -- 'packages/web/e2e/*-snapshots/*.png')"
+          other="$(git status --porcelain -uall | grep -v -E '^.. packages/web/e2e/[^ ]+-snapshots/[^ ]+\.png$' || true)"
+          if [ -n "$other" ]; then
+            echo "$other"
+            echo "::error::Recording changed files other than screenshot baselines; nothing was committed."
+            exit 1
+          fi
+          if [ -z "$changed" ]; then
+            echo "No baseline changed; nothing to commit."
+            exit 0
+          fi
+          echo "$changed"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- 'packages/web/e2e/*-snapshots/*.png'
+          git commit -m "test(web): record baselines on the CI runner" -m "Cases: $SPECS" -m "Recorded by $RUN_URL for review on this branch before merge."
+          git push origin "HEAD:refs/heads/$BRANCH"
