@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "createdOn": "2026-09-26",
+  "purpose": "Rights record for venue photographs in this folder whose embedded metadata restricts use. Files not listed here are not covered by this record.",
+  "photos": [
+    {
+      "path": "/images/venue/grand-hall-facade-3.jpg",
+      "bytes": 2723505,
+      "sha256": "cfe61807deb0dbae2bdeaee7abf4617d6fd7523c004e6763914c0c7c47d69601",
+      "embeddedRights": "This image can only be used with prior permission and/or agreement of fees with Arcaid and/or our representatives. We assert our",
+      "embeddedRightsSource": "XMP dc:rights, quoted as stored; the notice is truncated in the file itself.",
+      "decision": {
+        "on": "2026-09-26",
+        "by": "Blake, founder",
+        "decision": "Licensed for this use; the photograph stays on the site.",
+        "evidenceHeld": "The founder's statement only. The licence terms are not held in this repository."
+      }
+    }
+  ]
+}
