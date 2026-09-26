@@ -13,6 +13,7 @@ import { publicConfigRoutes } from "../routes/public-configs.js";
 import { analyticsRoutes } from "../routes/revenue-analytics.js";
 import { calendarRoutes } from "../routes/calendar.js";
 import { formatVenueDay, runHoldReminderPass } from "../services/hold-reminders.js";
+import { __resetResendClientForTests, sendEmail, type EmailLogger } from "../services/email.js";
 
 // ---------------------------------------------------------------------------
 // API hot paths on the migrated platform database: configuration reads that
@@ -594,6 +595,47 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
         [`hold-reminder:${f.id("In range, decision in 3 days")}:%`, `hold-reminder:${f.id("Nobody owns this, decision tomorrow")}:%`],
       );
       expect(sends.rows[0]?.count).toBe(0);
+    });
+
+    it("lets one replay retry a failed reminder send, dedupes the others, and never reclaims a sent one", async () => {
+      // No provider in this gate: a reclaimed send ends as dev_mode, which is
+      // how the test sees that the provider step was reached again.
+      const savedKey = process.env["RESEND_API_KEY"];
+      delete process.env["RESEND_API_KEY"];
+      __resetResendClientForTests();
+      try {
+        const failedKey = `hold-reminder:${randomUUID()}:2030-01-01:t-3`;
+        const sentKey = `hold-reminder:${randomUUID()}:2030-01-01:t-1`;
+        await pool.query(
+          `INSERT INTO email_sends (idempotency_key, recipient, subject, status, attempt_count, last_error)
+           VALUES ($1, 'owner@hot-paths.invalid', 'Hold decision', 'failed', 5, 'provider refused'),
+                  ($2, 'owner@hot-paths.invalid', 'Hold decision', 'sent', 1, NULL)`,
+          [failedKey, sentKey],
+        );
+        const events: string[] = [];
+        const record = (entry: Record<string, unknown>): void => { events.push(String(entry["event"])); };
+        const logger: EmailLogger = { info: record, warn: record, error: record };
+        const payload = { to: "owner@hot-paths.invalid", subject: "Hold decision", html: "<p>Decide</p>" };
+
+        const replays = await Promise.all([1, 2, 3].map(() => sendEmail(payload, { db, idempotencyKey: failedKey, logger })));
+        expect(replays).toEqual([true, true, true]);
+        expect(events.filter((event) => event === "email.retry_after_failure")).toHaveLength(1);
+        expect(events.filter((event) => event === "email.dedup_skip")).toHaveLength(2);
+
+        expect(await sendEmail(payload, { db, idempotencyKey: sentKey, logger })).toBe(true);
+        const rows = await pool.query<{ idempotency_key: string; status: string; last_error: string | null }>(
+          "SELECT idempotency_key, status, last_error FROM email_sends WHERE idempotency_key = ANY($1) ORDER BY idempotency_key",
+          [[failedKey, sentKey]],
+        );
+        expect(Object.fromEntries(rows.rows.map((row) => [row.idempotency_key, [row.status, row.last_error]]))).toEqual({
+          [failedKey]: ["dev_mode", null],
+          [sentKey]: ["sent", null],
+        });
+      } finally {
+        if (savedKey === undefined) delete process.env["RESEND_API_KEY"];
+        else process.env["RESEND_API_KEY"] = savedKey;
+        __resetResendClientForTests();
+      }
     });
   });
 });

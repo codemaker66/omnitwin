@@ -156,7 +156,9 @@ anything is sent.**
   idempotency key. Look up the row in `email_sends` (status, attempts,
   provider id) and the Resend dashboard. 4xx = bad address (fix the
   owner's email); 5xx/429 = provider trouble (the pass already retried
-  with backoff; tomorrow's run re-attempts anything that never recorded).
+  with backoff). Either way, each later run within 24 hours of the
+  reminder retries it: a replay reclaims a `failed` row and sends again,
+  while a `sent` row is never sent twice.
 - An owner reports "no reminder": check `email_sends` for their booking's
   key. No row = the hold missed the scan (was it `active`, with a decision
   date and an owner?). Row with `dev_mode` = the key problem above. Row

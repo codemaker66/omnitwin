@@ -47,9 +47,10 @@ name: Diary hold reminders
 on:
   # Enabled only after Blake has reviewed a dry run — see the steps above.
   # 07:00-10:00 UTC daily: reminders land in the venue's morning. The later
-  # runs cover an API that was unreachable earlier; a reminder the email
-  # provider refused is not retried by them (email_sends keeps it as failed —
-  # see docs/operations/diary-first-week-operations.md, "Reminder triage").
+  # runs cover an API that was unreachable earlier, and retry a reminder the
+  # email provider refused: a replay reclaims its failed email_sends row, for
+  # as long as the reminder is fresh (24 hours; see
+  # docs/operations/diary-first-week-operations.md, "Reminder triage").
   # schedule:
   #   - cron: "0 7-10 * * *"
   workflow_dispatch:
