@@ -1,0 +1,274 @@
+/* ---------------------------------------------------------------------------
+   The request slab (Ship Friday slice 10, gate line 22).
+
+   It lives inside the Day Board's reserved region, so it inherits the
+   hallkeeper register declared on `.dayboard` — ivory, forest, copper, sage.
+   Every colour here is one of those four through its token, with a literal
+   fallback for the day a slab appears on a surface that has not adopted the
+   register yet. No gold: the old #d7b56d / #c9a84c pair appears nowhere.
+
+   Motion is one spring-shaped pulse when a request ARRIVES, then a steady
+   copper dot for as long as it is open. Never a repeat, never a strobe,
+   never a sound. The arrival animation is a one-shot on a freshly mounted
+   element, so there is no interval to leak and nothing to stop.
+--------------------------------------------------------------------------- */
+
+.vv-requests {
+  display: grid;
+  gap: 8px;
+  font-family: var(--hk-sans, Inter, system-ui, sans-serif);
+}
+
+/* --- The summary line: dot, then the words that carry the meaning. ------ */
+
+.vv-requests-summary {
+  align-items: center;
+  color: var(--hk-paper, #f3efe4);
+  display: flex;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 8px;
+  margin: 0;
+}
+
+.vv-requests-summary[data-urgent="true"] {
+  color: var(--hk-copper-bright, #d8a179);
+}
+
+.vv-requests-dot {
+  background: var(--hk-copper, #986246);
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(152, 98, 70, 0.18);
+  display: inline-block;
+  flex: none;
+  height: 9px;
+  width: 9px;
+}
+
+/* One pulse. The overshoot-and-settle curve is the house spring shape, run
+   exactly once on the element that has just appeared. */
+.vv-requests-dot[data-motion="pulse-once"] {
+  animation: vv-request-arrive 620ms cubic-bezier(0.22, 1.2, 0.36, 1) 1;
+}
+
+@keyframes vv-request-arrive {
+  0% { box-shadow: 0 0 0 0 rgba(152, 98, 70, 0.55); transform: scale(0.72); }
+  55% { box-shadow: 0 0 0 9px rgba(152, 98, 70, 0); transform: scale(1.18); }
+  100% { box-shadow: 0 0 0 3px rgba(152, 98, 70, 0.18); transform: scale(1); }
+}
+
+/* --- One slab per open request. ---------------------------------------- */
+
+.vv-request-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vv-request {
+  background: var(--hk-forest-raised, #263028);
+  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  border-left: 3px solid var(--hk-copper, #986246);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.vv-request[data-state="accepted"],
+.vv-request[data-state="acknowledged"] {
+  border-left-color: var(--hk-sage, #a9c3a4);
+}
+
+.vv-request-what {
+  color: var(--hk-paper, #f3efe4);
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.vv-request-urgent {
+  background: var(--hk-copper, #986246);
+  border-radius: 999px;
+  color: var(--hk-ivory, #f4f1e9);
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 8px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.vv-request-who {
+  color: var(--hk-paper-faint, rgba(243, 239, 228, 0.52));
+  font-size: 12px;
+  margin: 0;
+}
+
+.vv-request-detail {
+  color: var(--hk-paper-dim, rgba(243, 239, 228, 0.7));
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 2px 0 0;
+}
+
+.vv-request-error {
+  color: var(--hk-alert-light, #e0917a);
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+/* --- Actions: one press each, at a size a thumb can hit. ---------------- */
+
+.vv-request-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.vv-request-action,
+.vv-request-ask,
+.vv-request-choice {
+  background: transparent;
+  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  border-radius: 8px;
+  color: var(--hk-paper, #f3efe4);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  min-height: 44px;
+  padding: 0 14px;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.vv-request-action:hover,
+.vv-request-ask:hover,
+.vv-request-choice:hover {
+  background: rgba(243, 239, 228, 0.07);
+  border-color: var(--hk-copper-light, #c98a5e);
+}
+
+.vv-request-action:focus-visible,
+.vv-request-ask:focus-visible,
+.vv-request-choice:focus-visible {
+  outline: 2px solid var(--hk-copper-light, #c98a5e);
+  outline-offset: 2px;
+}
+
+.vv-request-action--take {
+  align-items: center;
+  border-color: var(--hk-copper, #986246);
+  color: var(--hk-copper-bright, #d8a179);
+  display: inline-flex;
+  font-weight: 600;
+  gap: 8px;
+}
+
+.vv-request-action[disabled] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* "Ask for something" is the one control that stands on the slot's own IVORY
+   card rather than inside a forest slab, so it cannot inherit the paper-on-
+   forest colours above — that reads as an invisible button on a light ground.
+   It takes the register's ink and line instead. */
+.vv-request-ask {
+  border-color: var(--hk-line, #e4dcd0);
+  color: var(--hk-ink, #2e382e);
+  justify-self: start;
+}
+
+.vv-request-ask:hover {
+  background: var(--hk-ivory-sunk, #f3f0e5);
+  border-color: var(--hk-copper, #986246);
+  color: var(--hk-copper, #986246);
+}
+
+.vv-request-ask:focus-visible {
+  outline-color: var(--hk-copper, #986246);
+}
+
+/* --- The composer: what, how soon, how many, anything to add. ----------- */
+
+.vv-request-composer {
+  background: var(--hk-forest-raised, #263028);
+  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.vv-request-choices {
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+
+.vv-request-choices legend {
+  color: var(--hk-paper-faint, rgba(243, 239, 228, 0.52));
+  font-size: 12px;
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.vv-request-choice[aria-pressed="true"] {
+  background: var(--hk-copper, #986246);
+  border-color: var(--hk-copper, #986246);
+  color: var(--hk-ivory, #f4f1e9);
+  font-weight: 600;
+}
+
+.vv-request-field {
+  color: var(--hk-paper-dim, rgba(243, 239, 228, 0.7));
+  display: grid;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.vv-request-field input {
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--hk-line-dark, rgba(243, 239, 228, 0.12));
+  border-radius: 8px;
+  color: var(--hk-paper, #f3efe4);
+  font: inherit;
+  font-size: 14px;
+  min-height: 44px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.vv-request-field input:focus-visible {
+  border-color: var(--hk-copper-light, #c98a5e);
+  outline: none;
+}
+
+/* The board is read on a 390px phone: nothing here may push it wider. */
+@media (max-width: 420px) {
+  .vv-request-action,
+  .vv-request-ask,
+  .vv-request-choice {
+    flex: 1 1 auto;
+    padding: 0 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-requests-dot[data-motion="pulse-once"] {
+    animation: none;
+  }
+
+  .vv-request-action,
+  .vv-request-ask,
+  .vv-request-choice {
+    transition: none;
+  }
+}
