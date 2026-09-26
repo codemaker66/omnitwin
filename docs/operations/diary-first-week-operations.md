@@ -63,7 +63,9 @@ deliberately. Rollback: redeploy the previous Vercel deployment.
 2. **Lanes never render** ("Grand Hall" timeout): GET /calendar failing —
    check API logs for 500s (every ≥500 is request-logged); commonest cause
    in rehearsal was a database connectivity blip.
-3. **`Live · N` presence missing**: the websocket channel. The board still
+3. **The chip stays on `Reconnecting…` instead of `Live`**: the websocket
+   channel. (The number after `Live ·` counts other people on the board, so
+   a coordinator alone sees just `Live`, T-619.) The board still
    works without it (snapshot doctrine — data loads via REST); this is
    degraded, not down. Check API logs for /ws/diary upgrade errors. A
    single-replica restart clears a wedged hub.
