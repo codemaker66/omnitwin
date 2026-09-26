@@ -285,7 +285,7 @@ const primaryButtonStyle: React.CSSProperties = {
 
 const selectStyle: React.CSSProperties = {
   minHeight: 40,
-  border: "1px solid rgba(215, 181, 109, 0.4)",
+  border: "1px solid rgba(201, 138, 91, 0.4)",
   borderRadius: 8,
   background: "rgba(7,12,14,0.92)",
   color: "#fff7e8",
