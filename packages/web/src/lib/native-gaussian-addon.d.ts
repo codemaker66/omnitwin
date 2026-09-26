@@ -16,6 +16,8 @@ declare module "three/addons/objects/GaussianSplat.js" {
     readonly binCount: number;
   }
   interface GaussianSplatOptions {
+    /** Actual device binding cap; oversized SH3 uses two exact contiguous views. */
+    maxStorageBufferBindingSize?: number;
     opacityNode?: (index: Node<"uint">, center: Node<"vec3">) => Node<"float">;
     sphericalHarmonicsDirectionNode?: (index: Node<"uint">, direction: Node<"vec3">) => Node<"vec3">;
     colorSpace?: ColorSpace;

@@ -4,7 +4,7 @@
 
 Status: implemented and verified in the browser. On 26 September Blake judged it
 "much cleaner and … not a slog to the eyes, it is inviting", and asked for its
-design preferences to reach every aspect of the app (T-634). He also decided:
+design preferences to reach every aspect of the app (T-635). He also decided:
 keep the first-name greeting and the session tally; remove the keyboard legend
 from the empty panel (the keys still work and are announced on their buttons).
 

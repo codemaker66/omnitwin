@@ -1,13 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
   configurations,
-  configurationSheetSnapshots,
   hallkeeperProgress,
 } from "../db/schema.js";
-import { assembleSheetDataV2 } from "../services/hallkeeper-sheet-v2-data.js";
+import { assembleSheetDataV2, ApprovedSnapshotUnavailableError } from "../services/hallkeeper-sheet-v2-data.js";
 import { generateSheetPdfV2 } from "../services/hallkeeper-pdf-v2.js";
 import { authenticate } from "../middleware/auth.js";
 import type { JwtUser } from "../middleware/auth.js";
@@ -67,31 +66,6 @@ async function loadConfigAuthPivot(
   return row === undefined ? null : row;
 }
 
-/**
- * Look up the pre-rendered `pdfUrl` on the latest approved snapshot
- * for a config, or null if none exists. Powers the CDN-redirect
- * fast-path on the /sheet route.
- *
- * Ordered by version DESC so a re-approved config uses the newest
- * pre-rendered artifact, not a stale one. The partial index added in
- * migration 0014 covers this query: `configuration_id, version DESC
- * WHERE approved_at IS NOT NULL`.
- */
-async function findPrerenderedPdfUrl(
-  db: Database,
-  configId: string,
-): Promise<string | null> {
-  const [row] = await db.select({ pdfUrl: configurationSheetSnapshots.pdfUrl })
-    .from(configurationSheetSnapshots)
-    .where(and(
-      eq(configurationSheetSnapshots.configurationId, configId),
-      isNotNull(configurationSheetSnapshots.approvedAt),
-    ))
-    .orderBy(desc(configurationSheetSnapshots.version))
-    .limit(1);
-  return row?.pdfUrl ?? null;
-}
-
 async function requireConfigAccess(
   db: Database,
   configId: string,
@@ -141,7 +115,20 @@ export async function hallkeeperSheetRoutes(
 
     const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
 
-    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    // Deny foreign access before revealing whether approved evidence is damaged.
+    const gate = await requireConfigAccess(db, params.data.configId, request.user);
+    if (!gate.ok) {
+      return reply.status(gate.status).send({ error: gate.error, code: gate.code });
+    }
+
+    let result;
+    try {
+      result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    } catch (error) {
+      if (!(error instanceof ApprovedSnapshotUnavailableError)) throw error;
+      return reply.status(503).header("Cache-Control", "private, no-store")
+        .send({ error: error.message, code: error.code });
+    }
     if (result === null) {
       return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
     }
@@ -150,14 +137,14 @@ export async function hallkeeperSheetRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    // Fast-path: pre-rendered CDN URL on the latest approved snapshot.
+    // Fast-path: PDF from the same validated approved snapshot as the payload.
     // The `download` query param is NOT honoured on the redirect path
     // because Content-Disposition must be set by the CDN response;
     // browsers opening the redirected URL render inline. To preserve
     // download-mode for admin-triggered exports, we fall through to
     // on-demand rendering when the caller asked for a download.
     if (!isDownload) {
-      const cdn = await findPrerenderedPdfUrl(db, params.data.configId);
+      const cdn = result.approvedPdfUrl;
       if (cdn !== null) {
         return reply.redirect(cdn, 302);
       }
@@ -182,7 +169,20 @@ export async function hallkeeperSheetRoutes(
 
     const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
 
-    const result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    // Deny foreign access before revealing whether approved evidence is damaged.
+    const gate = await requireConfigAccess(db, params.data.configId, request.user);
+    if (!gate.ok) {
+      return reply.status(gate.status).send({ error: gate.error, code: gate.code });
+    }
+
+    let result;
+    try {
+      result = await assembleSheetDataV2(db, params.data.configId, baseUrl);
+    } catch (error) {
+      if (!(error instanceof ApprovedSnapshotUnavailableError)) throw error;
+      return reply.status(503).header("Cache-Control", "private, no-store")
+        .send({ error: error.message, code: error.code });
+    }
     if (result === null) {
       return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
     }

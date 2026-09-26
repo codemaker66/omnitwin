@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PerspectiveCamera, RenderTarget, Scene, type Camera, type Object3D } from "three";
 import { useFrame } from "@react-three/fiber";
 import type { NativeGpuWorkResult } from "../../../lib/native-gpu-completion.js";
+import type { GpuProfileToken } from "../../../lib/perf-runtime.js";
+import type { RenderedFrameSample } from "../../../lib/perf-profiler.js";
 
 interface FiberState {
   readonly gl: object;
@@ -18,6 +20,19 @@ const fiber = vi.hoisted(() => ({
   invalidate: vi.fn(),
   frames: new Set<{ callback: (state: FiberState) => void; priority: number }>(),
 }));
+
+const profiling = vi.hoisted(() => ({
+  enabled: vi.fn(() => false), begin: vi.fn((): GpuProfileToken | null => null), end: vi.fn(),
+  record: vi.fn<(sample: RenderedFrameSample, renderer: object) => void>(),
+  release: vi.fn(), register: vi.fn(),
+  sceneStats: vi.fn(() => ({ splats: 123, sortTimeMs: 4, sortAgeMs: 20, sortBacklog: 1 })),
+}));
+vi.mock("../../../lib/perf-runtime.js", () => ({
+  shouldProfileFrames: profiling.enabled, beginGpuProfile: profiling.begin,
+  endGpuProfile: profiling.end, recordRenderedFrame: profiling.record,
+  registerProfilerRenderer: profiling.register,
+}));
+vi.mock("../../../lib/native-splat-scene.js", () => ({ nativeScenePerfStats: profiling.sceneStats }));
 
 const gpuCompletion = vi.hoisted(() => {
   class Ticket {
@@ -50,6 +65,7 @@ const native = vi.hoisted(() => {
   const instances: Renderer[] = [];
   class Renderer {
     readonly domElement: HTMLCanvasElement;
+    readonly info = { render: { drawCalls: 3, triangles: 8 }, memory: { total: 4096 } };
     readonly backend: {
       isWebGPUBackend: boolean;
       parameters: { canvas: HTMLCanvasElement; device?: object };
@@ -138,6 +154,12 @@ beforeEach(() => {
   fiber.invalidate.mockReset();
   gpuCompletion.tickets.length = 0;
   gpuCompletion.create.mockClear();
+  profiling.enabled.mockReset().mockReturnValue(false);
+  profiling.begin.mockReset().mockReturnValue(null);
+  profiling.end.mockReset();
+  profiling.record.mockReset();
+  profiling.release.mockReset();
+  profiling.register.mockReset().mockReturnValue(profiling.release);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -150,6 +172,77 @@ function automaticFrame(): void {
 }
 
 describe("NativeCanvas", () => {
+  it("profiles successful main draws, including native telemetry, but never skipped callbacks or exports", async () => {
+    profiling.enabled.mockReturnValue(true);
+    const view = render(<NativeCanvas />);
+    const instance = native.instances[0];
+    if (instance === undefined) throw new Error("Missing renderer");
+    await act(() => { instance.resolve(); return Promise.resolve(); });
+    expect(profiling.register).toHaveBeenCalledExactlyOnceWith(instance, instance.domElement, "webgpu");
+    automaticFrame(); automaticFrame(); automaticFrame();
+    expect(profiling.record).toHaveBeenCalledTimes(2);
+    expect(profiling.record).toHaveBeenLastCalledWith(expect.objectContaining({
+      drawCalls: 3, triangles: 8, rendererBytes: 4096, splats: 123, sortTimeMs: 4,
+    }), instance);
+    expect(profiling.record.mock.calls[0]?.[0].cpuSubmitMs).toBeGreaterThanOrEqual(0);
+    instance.renderTarget = new RenderTarget(1, 1);
+    instance.render(new Scene(), new PerspectiveCamera());
+    expect(profiling.record).toHaveBeenCalledTimes(2);
+    instance.renderTarget.dispose();
+    instance.renderTarget = null;
+    view.unmount();
+    await act(() => Promise.resolve());
+    expect(profiling.release).toHaveBeenCalledOnce();
+  });
+
+  it("counts a nested main render only once and isolates diagnostic failures", async () => {
+    profiling.enabled.mockReturnValue(true);
+    render(<NativeCanvas />);
+    const instance = native.instances[0];
+    if (instance === undefined) throw new Error("Missing renderer");
+    await act(() => { instance.resolve(); return Promise.resolve(); });
+    instance.rawRender.mockImplementationOnce((scene, camera) => { instance.render(scene, camera); });
+    instance.render(new Scene(), new PerspectiveCamera());
+    expect(instance.rawRender).toHaveBeenCalledTimes(2);
+    expect(profiling.record).toHaveBeenCalledOnce();
+    profiling.record.mockImplementationOnce(() => { throw new Error("Sampler unavailable"); });
+    expect(() => { instance.render(new Scene(), new PerspectiveCamera()); }).not.toThrow();
+    expect(screen.queryByRole("alert")).toBeNull();
+    profiling.begin.mockImplementationOnce(() => { throw new Error("Timestamp unavailable"); });
+    expect(() => { instance.render(new Scene(), new PerspectiveCamera()); }).not.toThrow();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("does not publish a failed draw as a profiled frame", async () => {
+    profiling.enabled.mockReturnValue(true);
+    const token: GpuProfileToken = {
+      backend: { trackTimestamp: true, hasTimestamp: true, timestampQueryPool: {}, resolveTimestampsAsync: () => Promise.resolve() },
+      owner: { pending: true, sampledAt: 0 }, timestampMs: 0, generation: 0,
+    };
+    profiling.begin.mockReturnValue(token);
+    render(<NativeCanvas />);
+    const instance = native.instances[0];
+    if (instance === undefined) throw new Error("Missing renderer");
+    await act(() => { instance.resolve(); return Promise.resolve(); });
+    instance.rawRender.mockImplementationOnce(() => { throw new Error("Draw failed"); });
+    automaticFrame();
+    expect(profiling.record).not.toHaveBeenCalled();
+    expect(profiling.end).toHaveBeenCalledExactlyOnceWith(token, false);
+    expect(screen.getByRole("alert").textContent).toContain("Draw failed");
+  });
+
+  it("does not publish a draw which reports an error without throwing", async () => {
+    profiling.enabled.mockReturnValue(true);
+    render(<NativeCanvas />);
+    const instance = native.instances[0];
+    if (instance === undefined) throw new Error("Missing renderer");
+    await act(() => { instance.resolve(); return Promise.resolve(); });
+    instance.rawRender.mockImplementationOnce(() => { instance.onError({ message: "Backend reported failure" }); });
+    automaticFrame();
+    expect(profiling.record).not.toHaveBeenCalled();
+    expect(gpuCompletion.create).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("Backend reported failure");
+  });
   it.each([
     [134_217_728, 268_435_456, 134_217_728, 268_435_456],
     [536_870_912, 1_073_741_824, 268_435_456, 536_870_912],

@@ -47,6 +47,17 @@ export interface SheetDataV2Internal {
     readonly configUserId: string | null;
   };
   readonly payload: HallkeeperSheetV2;
+  /** Only the validated approved snapshot's PDF; live sheets never reuse it. */
+  readonly approvedPdfUrl: string | null;
+}
+
+export class ApprovedSnapshotUnavailableError extends Error {
+  readonly code = "APPROVED_SNAPSHOT_UNAVAILABLE";
+
+  constructor() {
+    super("The approved setup sheet is unavailable. Contact venue staff before using a replacement.");
+    this.name = "ApprovedSnapshotUnavailableError";
+  }
 }
 
 export async function assembleSheetDataV2(
@@ -61,22 +72,22 @@ export async function assembleSheetDataV2(
     .limit(1);
   if (config === undefined) return null;
 
-  // Step 2: fire all remaining queries in parallel. Five of the six are
-  // independent given `config`:
-  //   - space              (needs config.spaceId)
-  //   - venue              (needs config.venueId)
-  //   - placed objects     (needs configId — already have it)
-  //   - accessory rules    (global; no config dependency at all)
-  //   - approval           (needs config.{id, reviewStatus})
-  // Asset-definition rows depend on the set of assetIds inside `objects`
-  // and therefore wait for that — second stage, below.
-  //
-  // Wall-clock: before this refactor an approved /v2 request paid 5–6
-  // serial round-trips. Now it pays at most 2 (the object fan-in, then
-  // the asset fan-out). For the approved-frozen branch — which is the
-  // common hallkeeper-tablet path — the manifest work is skipped
-  // entirely so only step 1 + approval run.
-  const [spaceRows, venueRows, objects, accessoryRows, approval] = await Promise.all([
+  const nowIso = new Date().toISOString();
+  const webViewUrl = `${baseUrl}/hallkeeper/${configId}`;
+  if (config.reviewStatus === "approved") {
+    // Read the content, approval and PDF from one version. Missing or damaged
+    // evidence must never replace the approved layout with current live edits.
+    const snapshot = await loadLatestApprovedSnapshot(db, configId);
+    const frozen = resolveApprovedSnapshotPayload(configId, snapshot);
+    return {
+      authPivot: { venueId: config.venueId, configUserId: config.userId },
+      payload: { ...frozen, generatedAt: nowIso, webViewUrl },
+      approvedPdfUrl: snapshot?.pdfUrl ?? null,
+    };
+  }
+
+  // Live sheets only: independent reads, then the asset-definition fan-out.
+  const [spaceRows, venueRows, objects, accessoryRows] = await Promise.all([
     db.select().from(spaces).where(eq(spaces.id, config.spaceId)).limit(1),
     db.select().from(venues).where(eq(venues.id, config.venueId)).limit(1),
     db.select({
@@ -101,31 +112,12 @@ export async function assembleSheetDataV2(
     })
       .from(assetAccessories)
       .innerJoin(assetDefinitions, eq(assetAccessories.parentAssetId, assetDefinitions.id)),
-    resolveApproval(db, config),
   ]);
 
   const [space] = spaceRows;
   const [venue] = venueRows;
   if (space === undefined) return null;
   if (venue === undefined) return null;
-
-  const nowIso = new Date().toISOString();
-  const webViewUrl = `${baseUrl}/hallkeeper/${configId}`;
-
-  // Short-circuit for the approved-frozen branch BEFORE doing any of
-  // the manifest work below. See the big comment block further down
-  // for the semantic rationale; what matters here is that on the hot
-  // hallkeeper path we skip asset-definition fan-out, manifest gen,
-  // timing/instructions resolution entirely.
-  if (approval !== null) {
-    const frozen = await loadLatestApprovedSnapshotPayload(db, configId);
-    if (frozen !== null) {
-      return {
-        authPivot: { venueId: venue.id, configUserId: config.userId },
-        payload: { ...frozen, approval, generatedAt: nowIso, webViewUrl },
-      };
-    }
-  }
 
   // Live branch: resolve asset-definition cache for THIS config's
   // placed objects (second DB fan-out — only runs when we aren't
@@ -186,24 +178,8 @@ export async function assembleSheetDataV2(
   const roomDims = { widthM: Number(space.widthM), lengthM: Number(space.lengthM) };
   const manifest = generateManifestV2(manifestObjects, roomDims, accessoryMap);
 
-  // Live branch: runs only when we didn't short-circuit to a frozen
-  // snapshot above. The snapshot-vs-live decision is documented at the
-  // top of this function. `resolveTiming` is deferred until here
-  // because an approved request never needs it (the snapshot carries
-  // its own `timing`), saving one round-trip on the hot path.
-  //
-  // Immutability boundary rationale (for the approved path short-
-  // circuit further up): once a config is approved, the hallkeeper
-  // must see the FROZEN state captured at submission, not any post-
-  // approval drift (admin override, late edits). The snapshot.payload
-  // is that frozen record. We overlay three dynamic fields:
-  //   - `approval`    — recomputed from live DB so a re-approval shows
-  //                     the current approver + timestamp + version
-  //   - `generatedAt` — reflects THIS render, not the snapshot write
-  //   - `webViewUrl`  — rebuilt against the request's baseUrl, which
-  //                     varies between environments (localhost / preview /
-  //                     prod) and is NOT an intrinsic property of the
-  //                     frozen payload
+  // Approved snapshots carry their own timing and instructions; only live
+  // sheets reach this branch.
   const timing = await resolveTiming(db, configId);
   const instructions = resolveInstructions(config.metadata);
 
@@ -234,55 +210,83 @@ export async function assembleSheetDataV2(
     floorPlan: buildHallkeeperFloorPlan(space.floorPlanOutline, objects, assetCache),
     webViewUrl,
     generatedAt: nowIso,
-    approval,
+    approval: null,
   };
 
   return {
     authPivot: { venueId: venue.id, configUserId: config.userId },
     payload: livePayload,
+    approvedPdfUrl: null,
   };
 }
 
-/**
- * Load the payload of the latest APPROVED snapshot for a config, or
- * null if none exists or the stored jsonb does not parse as a valid
- * `HallkeeperSheetV2`. Sorted by version descending — the most recent
- * approval wins if the config was re-approved (version increments on
- * each submit + approve cycle).
- *
- * Why Zod-validate on read: `payload` is a jsonb column (Drizzle
- * types it as `unknown`). The schema has evolved at least once (the
- * `approval` field was added in Phase 4c), and can evolve again. A
- * corrupted row, a manual DB patch, or a future-schema snapshot would
- * otherwise silently produce an invalid payload the consumers (PDF,
- * tablet) must then defensively handle. Validating here means the
- * assembly function hands back either a known-good payload or falls
- * through to live data — never garbage.
- *
- * For the `approval` field specifically: the caller overlays it from
- * live DB after this read, so a pre-4c snapshot missing the key is
- * tolerated via the overlay. That is why the stored schema uses
- * `.nullable()` rather than `.nullable().optional()` — the overlay is
- * mandatory; we validate against the full schema regardless.
- */
-async function loadLatestApprovedSnapshotPayload(
+interface ApprovedSnapshot {
+  readonly payload: unknown;
+  readonly coordinateSpace: LayoutCoordinateSpace;
+  readonly version: number;
+  readonly approvedAt: Date | null;
+  readonly approver: { name: string; displayName: string | null } | null;
+}
+
+/** A single row binds the payload, stamp and optional PDF to the same version. */
+async function loadLatestApprovedSnapshot(
   db: Database,
   configId: string,
-): Promise<HallkeeperSheetV2 | null> {
+): Promise<(ApprovedSnapshot & { pdfUrl: string | null }) | null> {
   const [snap] = await db.select({
     payload: configurationSheetSnapshots.payload,
     coordinateSpace: configurationSheetSnapshots.coordinateSpace,
+    version: configurationSheetSnapshots.version,
+    approvedAt: configurationSheetSnapshots.approvedAt,
+    currentApprovedAt: configurations.approvedAt,
+    pdfUrl: configurationSheetSnapshots.pdfUrl,
+    approver: { name: users.name, displayName: users.displayName },
   })
     .from(configurationSheetSnapshots)
+    .innerJoin(configurations, eq(configurations.id, configurationSheetSnapshots.configurationId))
+    .leftJoin(users, eq(users.id, configurationSheetSnapshots.approvedBy))
     .where(and(
       eq(configurationSheetSnapshots.configurationId, configId),
       isNotNull(configurationSheetSnapshots.approvedAt),
+      eq(configurations.reviewStatus, "approved"),
+      isNull(configurations.deletedAt),
     ))
     .orderBy(desc(configurationSheetSnapshots.version))
     .limit(1);
 
   if (snap === undefined) return null;
-  return parseStoredSnapshotPayload(snap.payload, snap.coordinateSpace);
+  // Approval writes update these timestamps together in one transaction.
+  // A missing newest row must not silently resurrect an older approval.
+  if (snap.approvedAt === null || snap.currentApprovedAt === null
+    || snap.approvedAt.getTime() !== snap.currentApprovedAt.getTime()) {
+    throw new ApprovedSnapshotUnavailableError();
+  }
+  return snap;
+}
+
+/** Validate frozen evidence without depending on the approving account's lifetime. */
+export function resolveApprovedSnapshotPayload(
+  configId: string,
+  snapshot: ApprovedSnapshot | null,
+): HallkeeperSheetV2 {
+  if (snapshot === null || snapshot.approvedAt === null) throw new ApprovedSnapshotUnavailableError();
+  const frozen = parseStoredSnapshotPayload(snapshot.payload, snapshot.coordinateSpace);
+  if (frozen === null || frozen.config.id !== configId) throw new ApprovedSnapshotUnavailableError();
+
+  const approvedAt = snapshot.approvedAt.toISOString();
+  if (frozen.approval !== null) {
+    if (frozen.approval.version !== snapshot.version
+      || Date.parse(frozen.approval.approvedAt) !== snapshot.approvedAt.getTime()) {
+      throw new ApprovedSnapshotUnavailableError();
+    }
+    return frozen;
+  }
+
+  // Submission-era payloads may lack a stamp. Preserve their frozen contents
+  // and derive only the stamp from this exact row, without rewriting history.
+  const approval = buildSheetApproval({ version: snapshot.version, approvedAt: snapshot.approvedAt }, snapshot.approver)
+    ?? { version: snapshot.version, approvedAt, approverName: "Historical approver unavailable" };
+  return { ...frozen, approval };
 }
 
 /**
@@ -299,7 +303,7 @@ async function loadLatestApprovedSnapshotPayload(
  * Pre-4c snapshots (written before the schema gained the required
  * `approval` key) are tolerated by backfilling `approval: null`
  * before validation. The upstream caller overlays a real approval
- * from live DB, so the placeholder never reaches consumers.
+ * from the same snapshot row, so the placeholder never reaches consumers.
  */
 export function parseStoredSnapshotPayload(
   raw: unknown,
@@ -321,77 +325,7 @@ function resolveInstructions(raw: unknown): EventInstructions | null {
   return instructions;
 }
 
-/**
- * Populate the approval audit block when the configuration is in the
- * `approved` review state. Two DB reads:
- *   - latest approved snapshot for this config (gives version +
- *     authoritative approvedAt)
- *   - the approving user's `displayName` (preferred) or `name` (always
- *     populated per schema; `users.name` is NOT NULL varchar(200))
- *
- * Returns null unless ALL of the following hold:
- *   - config.reviewStatus === "approved"
- *   - at least one approved snapshot row exists
- *   - the approving user is still resolvable (row might be gone after
- *     a user deletion; we do not surface a stale stamp in that case —
- *     the sheet renders without an approval banner)
- *
- * The config's own `approvedAt` column mirrors the latest approval so
- * we prefer the snapshot's own timestamp — a user re-approving a new
- * version updates the snapshot but may race the config mirror.
- */
-async function resolveApproval(
-  db: Database,
-  config: { id: string; reviewStatus: string },
-): Promise<SheetApproval | null> {
-  if (config.reviewStatus !== "approved") return null;
-
-  const [snap] = await db.select({
-    version: configurationSheetSnapshots.version,
-    approvedAt: configurationSheetSnapshots.approvedAt,
-    approvedBy: configurationSheetSnapshots.approvedBy,
-  })
-    .from(configurationSheetSnapshots)
-    .where(and(
-      eq(configurationSheetSnapshots.configurationId, config.id),
-      isNotNull(configurationSheetSnapshots.approvedAt),
-    ))
-    .orderBy(desc(configurationSheetSnapshots.version))
-    .limit(1);
-
-  if (snap === undefined || snap.approvedAt === null || snap.approvedBy === null) {
-    return null;
-  }
-
-  const [approver] = await db.select({
-    name: users.name,
-    displayName: users.displayName,
-  })
-    .from(users)
-    .where(eq(users.id, snap.approvedBy))
-    .limit(1);
-
-  return buildSheetApproval(
-    { version: snap.version, approvedAt: snap.approvedAt },
-    approver ?? null,
-  );
-}
-
-/**
- * Pure "snapshot row + approver row → SheetApproval | null" step.
- * Extracted out of `resolveApproval` so the null-handling contract
- * (deleted user, missing approver record) is unit-testable without a
- * DB. Matches the `parseStoredSnapshotPayload` split: the DB function
- * becomes I/O-only; the validation/build lives here.
- *
- * Returns null when the approver is null (user row deleted after
- * approval — we do not surface a stale stamp in that case; the sheet
- * renders without the approval banner).
- *
- * `approverName` prefers `displayName` but falls back to `name`, which
- * is `NOT NULL varchar(200)` in the schema so the fallback always
- * resolves to a real string.
- */
+/** Build a legacy stamp when its approving account can still be resolved. */
 export function buildSheetApproval(
   snap: { version: number; approvedAt: Date },
   approver: { name: string; displayName: string | null } | null,

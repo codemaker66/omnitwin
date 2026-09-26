@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router-dom";
 import { router } from "./router.js";
 import { JackieLarkinHeart } from "./components/JackieLarkinHeart.js";
+import { PerfOverlay } from "./components/PerfOverlay.js";
 import { useAuthStore, type AuthUser } from "./stores/auth-store.js";
 import { setTokenGetter } from "./api/auth-bridge.js";
 import { AppErrorBoundary } from "./error-boundary.js";
@@ -59,6 +60,7 @@ function AppRoot(): React.ReactElement {
     <>
       <RouterProvider router={router} />
       <JackieLarkinHeart />
+      <PerfOverlay />
     </>
   );
 }

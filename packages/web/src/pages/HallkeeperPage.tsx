@@ -64,6 +64,18 @@ interface DownloadNotice {
   readonly message: string;
 }
 
+const APPROVED_SNAPSHOT_UNAVAILABLE = "The approved setup sheet is unavailable.";
+const ApprovedSnapshotErrorSchema = z.object({ code: z.literal("APPROVED_SNAPSHOT_UNAVAILABLE") });
+
+async function isApprovedSnapshotUnavailable(response: Response): Promise<boolean> {
+  if (response.status !== 503) return false;
+  try {
+    return ApprovedSnapshotErrorSchema.safeParse(await response.json()).success;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Set-or-clear a row's checked state without dynamic `delete`, which is
  * banned by @typescript-eslint/no-dynamic-delete. We rebuild the map
@@ -120,6 +132,7 @@ export function HallkeeperPage(): React.ReactElement {
     };
   }, []);
   const fetchCountRef = useRef(0);
+  const downloadOperationRef = useRef(0);
   const activeConfigRef = useRef(configId);
   activeConfigRef.current = configId;
   const checksRef = useRef<CheckMap>({});
@@ -130,6 +143,10 @@ export function HallkeeperPage(): React.ReactElement {
   // --- Fetch sheet data + progress in parallel ---
   const loadData = useCallback(() => {
     if (configId === undefined) return;
+    // A retry or route change retires PDF work, including A → B → A responses.
+    downloadOperationRef.current += 1;
+    setDownloadBusy(false);
+    setDownloadNotice(null);
     setLoading(true);
     setError(null);
     setData(null);
@@ -141,23 +158,31 @@ export function HallkeeperPage(): React.ReactElement {
     setPendingCount(0);
     fetchCountRef.current += 1;
     const thisFetch = fetchCountRef.current;
+    const isCurrent = (): boolean => mountedRef.current
+      && thisFetch === fetchCountRef.current && activeConfigRef.current === configId;
     void (async () => {
       try {
         const token = await getAuthToken();
+        if (!isCurrent()) return;
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
 
         const sheetRes = await fetch(`${API_URL}/hallkeeper/${configId}/v2`, { headers });
 
         // Stale-request guard
-        if (thisFetch !== fetchCountRef.current) return;
+        if (!isCurrent()) return;
 
         if (sheetRes.status === 403) { setError("You don't have permission to view this events sheet."); return; }
         if (sheetRes.status === 404) { setError("Configuration not found."); return; }
-        if (!sheetRes.ok) throw new Error(`Failed to load (${String(sheetRes.status)})`);
+        if (!sheetRes.ok) {
+          const snapshotUnavailable = await isApprovedSnapshotUnavailable(sheetRes);
+          if (!isCurrent()) return;
+          if (snapshotUnavailable) { setError(APPROVED_SNAPSHOT_UNAVAILABLE); return; }
+          throw new Error(`Failed to load (${String(sheetRes.status)})`);
+        }
 
         const sheetJson = z.object({ data: HallkeeperSheetV2Schema }).parse(await sheetRes.json());
-        if (thisFetch !== fetchCountRef.current || activeConfigRef.current !== configId) return;
+        if (!isCurrent()) return;
         if (sheetJson.data.config.id !== configId) throw new Error("The returned sheet does not match this layout. Reload the current handoff link.");
         setData(sheetJson.data);
 
@@ -165,33 +190,36 @@ export function HallkeeperPage(): React.ReactElement {
           const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
           if (progressRes.ok) {
             const progressJson = z.object({ data: z.object({ checked: z.record(z.string()) }) }).parse(await progressRes.json());
-            if (thisFetch !== fetchCountRef.current || activeConfigRef.current !== configId) return;
+            if (!isCurrent()) return;
             const loaded: Record<string, boolean> = {};
             for (const key of Object.keys(progressJson.data.checked)) {
               loaded[key] = true;
             }
             checksRef.current = loaded;
             setChecks(loaded);
-          } else if (thisFetch === fetchCountRef.current) {
+          } else if (isCurrent()) {
             setProgressUnavailable(true);
           }
         } catch {
-          if (thisFetch === fetchCountRef.current) setProgressUnavailable(true);
+          if (isCurrent()) setProgressUnavailable(true);
           // Progress is an enhancement over the sheet payload. A failed
           // progress fetch must not mask a valid sheet or its 403/404 status.
         }
       } catch (err: unknown) {
-        if (thisFetch !== fetchCountRef.current) return;
+        if (!isCurrent()) return;
         setError(err instanceof Error ? err.message : "Failed to load");
       } finally {
-        if (thisFetch === fetchCountRef.current) setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
     })();
   }, [configId]);
 
   useEffect(() => {
     loadData();
-    return () => { fetchCountRef.current += 1; };
+    return () => {
+      fetchCountRef.current += 1;
+      downloadOperationRef.current += 1;
+    };
   }, [loadData]);
 
   // --- Toggle with optimistic UI + offline-resilient server PATCH ---
@@ -364,36 +392,57 @@ export function HallkeeperPage(): React.ReactElement {
 
   const handleDownload = useCallback(() => {
     if (configId === undefined || downloadBusy) return;
+    const operation = ++downloadOperationRef.current;
+    const isCurrent = (): boolean => mountedRef.current
+      && activeConfigRef.current === configId && downloadOperationRef.current === operation;
     void (async () => {
       setDownloadBusy(true);
       setDownloadNotice(null);
       try {
         const token = await getAuthToken();
+        if (!isCurrent()) return;
         const headers: Record<string, string> = {};
         if (token !== null) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${API_URL}/hallkeeper/${configId}/sheet?download=true`, { headers });
+        if (!isCurrent()) return;
         if (!res.ok) {
+          const snapshotUnavailable = await isApprovedSnapshotUnavailable(res);
+          if (!isCurrent()) return;
+          if (snapshotUnavailable) {
+            // The current authority has failed: retire both screen and print copies.
+            setData(null);
+            setError(APPROVED_SNAPSHOT_UNAVAILABLE);
+            return;
+          }
           setDownloadNotice({
             kind: "error",
             message: "PDF could not be downloaded. Try again or use Print.",
           });
           return;
         }
+        if (res.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/pdf") {
+          throw new Error("The download response is not a PDF.");
+        }
         const blob = await res.blob();
+        if (!isCurrent()) return;
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `hallkeeper-${configId}.pdf`;
-        a.click();
-        URL.revokeObjectURL(url);
+        try {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `hallkeeper-${configId}.pdf`;
+          a.click();
+        } finally {
+          URL.revokeObjectURL(url);
+        }
         setDownloadNotice({ kind: "success", message: "PDF download started." });
       } catch {
+        if (!isCurrent()) return;
         setDownloadNotice({
           kind: "error",
           message: "PDF could not be downloaded. Try again or use Print.",
         });
       } finally {
-        setDownloadBusy(false);
+        if (isCurrent()) setDownloadBusy(false);
       }
     })();
   }, [configId, downloadBusy]);
@@ -420,6 +469,8 @@ export function HallkeeperPage(): React.ReactElement {
         <h1 id="hallkeeper-error-title" role="alert">{error ?? "Configuration not found"}</h1>
         <p>{isPermissionError
           ? "Ask the event manager to share this sheet or open it with a hallkeeper-approved account."
+          : error === APPROVED_SNAPSHOT_UNAVAILABLE
+            ? "Contact venue staff before using a replacement. You can try again once the approved sheet is available."
           : "Check that the handoff link is current, then try again."}</p>
         <button type="button" className="hk-button hk-button-primary hk-retry-btn" onClick={loadData}>Try Again</button>
       </section>

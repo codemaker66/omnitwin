@@ -1,6 +1,6 @@
-**Read this when:** planning or reviewing any surface rebuild, design-system change or platform capability under T-634.
+**Read this when:** planning or reviewing any surface rebuild, design-system change or platform capability under T-635.
 
-# Venviewer platform audit and design programme — 26 September 2026 (T-634)
+# Venviewer platform audit and design programme — 26 September 2026 (T-635)
 
 Blake asked for the design preferences behind the Enquiries desk to reach every aspect of the app, guided by his supreme principle: **make everyone's life easier**. The principle is recorded verbatim in [the product experience brief](../../../.claude/conventions/product-experience.md), which governs everything here.
 

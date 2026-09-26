@@ -1,17 +1,12 @@
 import { create } from "zustand";
-import type { PerfRating } from "../lib/perf.js";
+import { INITIAL_PERF_METRICS, type PerfMetrics } from "../lib/perf-profiler.js";
+export type { PerfMetrics } from "../lib/perf-profiler.js";
+export { INITIAL_PERF_METRICS } from "../lib/perf-profiler.js";
 
 // ---------------------------------------------------------------------------
 // Metrics snapshot
 // ---------------------------------------------------------------------------
 
-export interface PerfMetrics {
-  readonly fps: number;
-  readonly frameTimeMs: number;
-  readonly drawCalls: number;
-  readonly triangles: number;
-  readonly rating: PerfRating;
-}
 
 // ---------------------------------------------------------------------------
 // Store interface
@@ -22,33 +17,40 @@ export interface PerfState {
   readonly metrics: PerfMetrics;
   /** Whether the overlay is visible. */
   readonly visible: boolean;
+  readonly paused: boolean;
+  /** Invalidates queued GPU results and starts a fresh window. */
+  readonly generation: number;
   /** Update metrics from the sampler. */
-  readonly update: (metrics: PerfMetrics) => void;
+  readonly update: (metrics: Pick<PerfMetrics, "fps" | "frameTimeMs" | "drawCalls" | "triangles" | "rating"> & Partial<PerfMetrics>) => void;
   /** Toggle overlay visibility (backtick key). */
   readonly toggle: () => void;
+  readonly togglePaused: () => void;
+  readonly reset: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
-const INITIAL_METRICS: PerfMetrics = {
-  fps: 0,
-  frameTimeMs: 0,
-  drawCalls: 0,
-  triangles: 0,
-  rating: "good",
-};
-
 export const usePerfStore = create<PerfState>()((set) => ({
-  metrics: INITIAL_METRICS,
+  metrics: INITIAL_PERF_METRICS,
   visible: false,
+  paused: false,
+  generation: 0,
 
-  update: (metrics: PerfMetrics) => {
-    set({ metrics });
+  update: (metrics) => {
+    set({ metrics: { ...INITIAL_PERF_METRICS, ...metrics } });
   },
 
   toggle: () => {
-    set((state) => ({ visible: !state.visible }));
+    set((state) => ({
+      visible: !state.visible, paused: false, generation: state.generation + 1,
+      metrics: state.visible ? state.metrics : INITIAL_PERF_METRICS,
+    }));
   },
+  togglePaused: () => { set((state) => ({
+    paused: !state.paused, generation: state.generation + 1,
+    metrics: state.paused ? INITIAL_PERF_METRICS : state.metrics,
+  })); },
+  reset: () => { set((state) => ({ metrics: INITIAL_PERF_METRICS, generation: state.generation + 1 })); },
 }));

@@ -21,6 +21,25 @@
       "sha256": "0c4b7b3d176c6c10c46e6b815c8601b07ccf3080ccf158cf3c4969363fd3aeb7"
     }
   ],
+  "sourceRunScope": "sourceRunId, sourceCommit and sourceReports describe the original 353 cases only; later additions are documented separately in inventoryAdmissions.",
+  "inventoryAdmissions": [
+    {
+      "date": "2026-09-24",
+      "reason": "Approved setup-sheet failure handling: unavailable JSON load and retry, unavailable approved PDF, and non-PDF success response rejection.",
+      "sourceCommit": "9791102b7f0231bb253148f1e455d3a6c94d2b82",
+      "sourceFile": "packages/web/e2e/hallkeeper.spec.ts",
+      "sourceFileGitBlobSha256": "b448859437cb2a4fe3bd1367e68bbaff0b72cf2d042502e427c6eb362caf9316",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "49bc9c112121c723b5e0bf41cca4c3d6c929e9ffe49271e30403234f8a340301",
+      "caseIds": [
+        "d04ac5b0eb52f15c1dda-3381bf636d92993e3b62",
+        "d04ac5b0eb52f15c1dda-78f7a968c6554c1a7848",
+        "d04ac5b0eb52f15c1dda-b7dfb525a73709529c30"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These three cases were absent from sourceRunId and sourceReports; every current case still requires execution in the hosted browser gate."
+    }
+  ],
   "cases": [
     {
       "id": "0352f4f91b15d572d91d-4051a485a86f0b69392b",
@@ -2784,6 +2803,17 @@
       "expectedStatus": "passed"
     },
     {
+      "id": "d04ac5b0eb52f15c1dda-3381bf636d92993e3b62",
+      "file": "hallkeeper.spec.ts",
+      "title": "removes stale approval and printable contents when the approved PDF is unavailable",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 authorized error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
       "id": "d04ac5b0eb52f15c1dda-4604c98379c977681f41",
       "file": "hallkeeper.spec.ts",
       "title": "Download PDF button is present",
@@ -2861,6 +2891,17 @@
       "expectedStatus": "passed"
     },
     {
+      "id": "d04ac5b0eb52f15c1dda-78f7a968c6554c1a7848",
+      "file": "hallkeeper.spec.ts",
+      "title": "shows an unavailable approved sheet and retries with visible activity",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 authorized error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
       "id": "d04ac5b0eb52f15c1dda-880f90733950ff789f9d",
       "file": "hallkeeper.spec.ts",
       "title": "renders the approval banner when approval is populated",
@@ -2908,6 +2949,17 @@
       "id": "d04ac5b0eb52f15c1dda-ad07fbc9ea8a81a53827",
       "file": "hallkeeper.spec.ts",
       "title": "renders the room heading and config name together",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-b7dfb525a73709529c30",
+      "file": "hallkeeper.spec.ts",
+      "title": "rejects JSON returned as a successful PDF download",
       "suitePath": [
         "hallkeeper.spec.ts",
         "Hallkeeper Page"
