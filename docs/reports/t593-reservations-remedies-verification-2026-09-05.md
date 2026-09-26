@@ -1,5 +1,8 @@
 # T-593: event reservations and admin-approved remedy requests
 
+> Brought into master on 2026-09-26 from `codex/inventory-reservations-and-remedies` (T-635 branch recovery).
+> The code it verifies reached master as `5376a4bc`. Its migration 0065 is `0066_inventory_reservations` in master.
+
 Local functional scope complete at implementation commit `e6bc73e63ee5549c2c1f4a7b9a564ca20ac24652` (47 files, 3,456 insertions and 26 deletions). This report records the local implementation and its evidence; it does not certify production, aesthetic acceptance or physical-device performance.
 
 ## Scope and source

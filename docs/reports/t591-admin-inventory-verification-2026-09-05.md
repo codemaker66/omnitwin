@@ -1,5 +1,9 @@
 # T-591 — venue-admin inventory, local integration evidence
 
+> Brought into master on 2026-09-26 from `codex/venue-inventory-admin` (T-635 branch recovery). The code it
+> verifies reached master as `a39df9a7` and `ff754a8d`. Its migration `0064_venue_inventory` is
+> `0065_venue_inventory` in master, and "all 63 journal entries through 0064" describes the branch's journal.
+
 Date: 2026-09-05. Product: Venviewer. Implementation commit: `bdc15bc3` on `codex/venue-inventory-admin`, worktree `D:/claude/venviewer-inventory-admin-20260905`. Base: `150e9d3d`; inventory domain foundation cherry-picked as `63e3b45b`. This report documents the tested source in that implementation commit.
 
 ## Delivered behavior
