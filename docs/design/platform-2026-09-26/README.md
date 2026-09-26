@@ -23,7 +23,8 @@ Nothing in the product changed. Conformance scores are the auditors' judgements,
 | [design-system.md](design-system.md) | The proposed single design system: principles, tokens, components, patterns and migration. A draft proposal. |
 | [roadmap.md](roadmap.md) | Where every surface stands, the rebuild order (Now / Next / Later), platform capabilities, and questions only Blake can answer. |
 | [n1-foundation.md](n1-foundation.md) | The first N1 increment: the workspace register, the desk on it, calm hover, what waits for the 3D batch, and what remains. Blake's verdict pending. |
-| [research/](research/) | The four research reports with their sources. Some competitor quotes came from search summaries because review sites were blocked; treat those as leads. |
+| [t637-turnarounds-and-rota.md](t637-turnarounds-and-rota.md) | Staff-set turnarounds, the staff rota and automatic changeover estimates: what exists, the model, five slices, defaults and Blake's questions. |
+| [research/](research/) | The research reports with their sources: competitors, workflows, psychology and craft, then turnarounds, the rota and a completeness sweep (T-637, T-638). Web pages were blocked, so outside figures come from search summaries; treat those as leads. |
 | [audits.json](audits.json) | Raw findings per surface, with file and line citations. |
 | [sweep/](sweep/) | Screenshots of the app as it stood before this programme, captured against mocked data: the "before" set. |
 
