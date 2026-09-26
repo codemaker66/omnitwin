@@ -32,6 +32,7 @@ const {
   mockGetEventChangeFeed,
   mockGetCalendar,
   mockAcknowledgeEventPlanChange,
+  mockListEventChangeAcknowledgements,
   mockAckEventDayOp,
   mockEnqueueEventDayIssueCreate,
   mockEnqueueEventDayTaskStatus,
@@ -44,6 +45,7 @@ const {
   mockGetEventChangeFeed: vi.fn(),
   mockGetCalendar: vi.fn(),
   mockAcknowledgeEventPlanChange: vi.fn(),
+  mockListEventChangeAcknowledgements: vi.fn(),
   mockAckEventDayOp: vi.fn(),
   mockEnqueueEventDayIssueCreate: vi.fn(),
   mockEnqueueEventDayTaskStatus: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock("../api/diary.js", () => ({
 vi.mock("../api/notifications.js", () => ({
   getEventChangeFeed: mockGetEventChangeFeed,
   acknowledgeEventPlanChange: mockAcknowledgeEventPlanChange,
+  listEventChangeAcknowledgements: mockListEventChangeAcknowledgements,
   // The dashboard shell reads the unread count for its nav chip.
   listNotifications: () => Promise.resolve([]),
 }));
@@ -323,6 +326,8 @@ beforeEach(() => {
     } },
   });
   mockAcknowledgeEventPlanChange.mockReset();
+  mockListEventChangeAcknowledgements.mockReset();
+  mockListEventChangeAcknowledgements.mockResolvedValue([]);
   mockAckEventDayOp.mockReset();
   mockEnqueueEventDayIssueCreate.mockReset();
   mockEnqueueEventDayTaskStatus.mockReset();
@@ -432,6 +437,58 @@ describe("EventDayOpsPage", () => {
       expect(mockAcknowledgeEventPlanChange).toHaveBeenCalledWith(EVENT_ID, { changeId: change.id });
     });
     expect(await screen.findByText("Change acknowledged.")).toBeTruthy();
+  });
+
+  it("does not ask again for a change the room already acknowledged on another device", async () => {
+    // Acknowledgements used to live in this component's state, so a reload or
+    // a second tablet showed an acknowledged change as still waiting. They are
+    // read from the event's persisted acknowledgements now.
+    const change = requiredChangeFixture();
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockResolvedValue([change]);
+    mockListEventChangeAcknowledgements.mockResolvedValue([{
+      id: "00000000-0000-4000-8000-000000003040",
+      changeId: change.id,
+      eventId: EVENT_ID,
+      acknowledgedBy: "00000000-0000-4000-8000-000000003041",
+      acknowledgedByRole: "hallkeeper",
+      note: null,
+      createdAt: NOW,
+    }]);
+    renderPage();
+
+    expect(await screen.findByText("No changes awaiting acknowledgement.")).toBeTruthy();
+    expect(mockListEventChangeAcknowledgements).toHaveBeenCalledWith(EVENT_ID);
+    expect(screen.queryByText("Guest count changed")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Acknowledge change/i })).toBeNull();
+  });
+
+  it("keeps a required change in view when its acknowledgements cannot be read", async () => {
+    // Failing towards "still needs acknowledging" is safe: acknowledging twice
+    // is harmless, and a change that silently vanishes is not.
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+    mockListEventChangeAcknowledgements.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    renderPage();
+
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Acknowledge change/i })).toBeTruthy();
+  });
+
+  it("keeps an acknowledged change gone when a read that set out earlier returns without it", async () => {
+    const change = requiredChangeFixture();
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockResolvedValue([change]);
+    // The server's list lags the POST: it never includes this change here.
+    mockListEventChangeAcknowledgements.mockResolvedValue([]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Acknowledge change/i }));
+    expect(await screen.findByText("Change acknowledged.")).toBeTruthy();
+    // The acknowledgement refetches; the lagging list must not resurrect it.
+    await waitFor(() => { expect(mockListEventChangeAcknowledgements.mock.calls.length).toBeGreaterThan(1); });
+    expect(await screen.findByText("No changes awaiting acknowledgement.")).toBeTruthy();
+    expect(screen.queryByText("Guest count changed")).toBeNull();
   });
 
   it("renders a blocker-risk change, and keeps its label above AA", async () => {

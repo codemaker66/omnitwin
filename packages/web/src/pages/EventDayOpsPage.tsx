@@ -7,7 +7,7 @@ import type {
 } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { createEventDayIssue, getEventDayOpsBoard, updateEventDayIssue, updateOpsTaskStatus } from "../api/event-day-ops.js";
-import { acknowledgeEventPlanChange, getEventChangeFeed } from "../api/notifications.js";
+import { acknowledgeEventPlanChange, getEventChangeFeed, listEventChangeAcknowledgements } from "../api/notifications.js";
 import {
   ackEventDayOp,
   enqueueEventDayIssueCreate,
@@ -120,6 +120,21 @@ function isHandoffNote(instruction: SupplierInstruction): boolean {
   return instruction.supplierId === null && instruction.arrivalWindow === null;
 }
 
+/**
+ * The changes the room has already acknowledged, read from the server so a
+ * reload or a second tablet agrees with the first. Null when the read fails:
+ * the caller keeps what it last knew, so an unacknowledged change stays in
+ * front of the hallkeeper rather than disappearing.
+ */
+async function readAcknowledgedChangeIds(eventId: string): Promise<ReadonlySet<string> | null> {
+  try {
+    const rows = await listEventChangeAcknowledgements(eventId);
+    return new Set(rows.map((row) => row.changeId));
+  } catch {
+    return null;
+  }
+}
+
 function isRetriableError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return true;
   if (err.status === 0 || err.status >= 500 || err.status === 408 || err.status === 429) return true;
@@ -211,6 +226,14 @@ export function EventDayOpsPage(): ReactElement {
   // into a queue of overlapping reads that each overwrite the last.
   const refreshInFlight = useRef(false);
 
+  // Acknowledgements are append-only, so the server's list is merged into what
+  // this page already knows: a poll that set out before an acknowledgement was
+  // saved cannot bring the change back.
+  const mergeAcknowledged = useCallback((acknowledged: ReadonlySet<string> | null) => {
+    if (acknowledged === null) return;
+    setAcknowledgedChanges((previous) => new Set([...previous, ...acknowledged]));
+  }, []);
+
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
       .then((ops) => { setPendingCount(ops.length); })
@@ -225,9 +248,13 @@ export function EventDayOpsPage(): ReactElement {
     setState({ kind: "loading" });
     void (async () => {
       const board = await getEventDayOpsBoard(eventId);
-      const changes = await getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []);
+      const [changes, acknowledged] = await Promise.all([
+        getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
+        readAcknowledgedChangeIds(eventId),
+      ]);
       setState({ kind: "ready", board });
       setChangeFeed(changes);
+      mergeAcknowledged(acknowledged);
       setLastSyncedAt(new Date().toISOString());
     })()
       .catch(() => {
@@ -236,7 +263,7 @@ export function EventDayOpsPage(): ReactElement {
           message: "This event-day board could not be loaded. Check the event link or try again.",
         });
       });
-  }, [eventId]);
+  }, [eventId, mergeAcknowledged]);
 
   /**
    * A background refresh: it never shows the full-page loading state and
@@ -250,17 +277,19 @@ export function EventDayOpsPage(): ReactElement {
     void Promise.all([
       getEventDayOpsBoard(eventId),
       getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
+      readAcknowledgedChangeIds(eventId),
     ])
-      .then(([board, changes]) => {
+      .then(([board, changes, acknowledged]) => {
         setState({ kind: "ready", board });
         setChangeFeed(changes);
+        mergeAcknowledged(acknowledged);
         setLastSyncedAt(new Date().toISOString());
       })
       .catch(() => {
         // Keep the last good board; the next tick retries.
       })
       .finally(() => { refreshInFlight.current = false; });
-  }, [eventId]);
+  }, [eventId, mergeAcknowledged]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -292,19 +321,21 @@ export function EventDayOpsPage(): ReactElement {
       }
       refreshPendingCount();
       if (eventId !== undefined) {
-        const [board, changes] = await Promise.all([
+        const [board, changes, acknowledged] = await Promise.all([
           getEventDayOpsBoard(eventId),
           getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
+          readAcknowledgedChangeIds(eventId),
         ]);
         setState({ kind: "ready", board });
         setChangeFeed(changes);
+        mergeAcknowledged(acknowledged);
       }
       setSyncing(false);
     })().catch(() => {
       setSyncing(false);
       refreshPendingCount();
     });
-  }, [eventId, refreshPendingCount, syncing]);
+  }, [eventId, mergeAcknowledged, refreshPendingCount, syncing]);
 
   useEffect(() => {
     loadBoard();
