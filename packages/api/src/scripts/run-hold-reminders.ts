@@ -7,10 +7,11 @@ import { runHoldReminderPass } from "../services/hold-reminders.js";
 // CRON-RUN: the hold-reminder delivery pass (T-527, Slice 7).
 // Runbook: docs/operations/diary-first-week-operations.md §reminders.
 //
-// The admin endpoint (POST /admin/diary/hold-reminders) requires a signed-in
-// platform admin — a scheduler cannot be one, so this script is the cron
-// path: it calls the same service directly with DATABASE_URL from the
-// environment. Safe to run repeatedly — sends dedupe on the email_sends
+// The scheduled path is the Diary hold reminders workflow
+// (.github/workflows/diary-hold-reminders.yml), which calls
+// POST /admin/diary/hold-reminders with DIARY_CRON_TOKEN (T-619). This script
+// is the operator's direct path: it calls the same service with DATABASE_URL
+// from the environment. Safe to run repeatedly — sends dedupe on the email_sends
 // unique idempotency key (hold-reminder:{bookingId}:t-{n}), so overlapping
 // or repeated crons cannot double-send.
 //
@@ -54,6 +55,7 @@ try {
       due: summary.due,
       sent: summary.sent,
       failed: summary.failed,
+      noOwner: summary.noOwner,
       reminders: summary.reminders,
     }),
   );
