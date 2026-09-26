@@ -121,7 +121,8 @@ test("a live create travels as a command envelope, not REST (T-537; Canon §9)",
   const [starts, ends] = slot("16", 2, 60);
 
   // The channel must be up — the command path only engages while connected.
-  await expect(pageA.getByText(/Live · \d/)).toBeVisible({ timeout: 15_000 });
+  // The count is other people (T-619): "Live" alone, "Live · n" with company.
+  await expect(pageA.getByText(/^Live( · \d+)?$/)).toBeVisible({ timeout: 15_000 });
 
   const restMutations: string[] = [];
   const recorder = (request: import("@playwright/test").Request): void => {
@@ -180,7 +181,7 @@ test("a public enquiry becomes a pencil through the tray (T-496)", async () => {
   const drawer = pageA.getByRole("dialog", { name: "Pencil in this enquiry" });
   await expect(drawer).toBeVisible();
   await expect(
-    pageA.getByText(new RegExp(`Turning ${guest}'s enquiry into a pencil`)),
+    pageA.getByText(new RegExp(`Pencil in ${guest}`)),
   ).toBeVisible();
 
   await fillDrawerTimes(drawer, starts, ends);
@@ -264,9 +265,10 @@ test("the live channel carries a colleague's booking without a reload (T-497)", 
   await openSeededWeek(pageA);
   await openSeededWeek(pageB);
 
-  // Presence: two distinct coordinators on the same venue channel.
-  await expect(pageA.getByText("Live · 2")).toBeVisible({ timeout: 20_000 });
-  await expect(pageB.getByText("Live · 2")).toBeVisible({ timeout: 20_000 });
+  // Presence: two distinct coordinators on the same venue channel, and each
+  // board counts the other one (the count excludes you, T-619).
+  await expect(pageA.getByText("Live · 1")).toBeVisible({ timeout: 20_000 });
+  await expect(pageB.getByText("Live · 1")).toBeVisible({ timeout: 20_000 });
 
   // A creates; B must see it arrive with NO navigation — diary.changed over
   // /ws/diary triggers the refetch (snapshot doctrine).

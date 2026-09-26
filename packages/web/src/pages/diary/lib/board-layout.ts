@@ -270,12 +270,21 @@ export interface NeedsActionItem {
   readonly overdueSinceMs: number | null;
 }
 
+export interface NeedsActionOptions {
+  /** Whether a passed decision date is a reason here. False when the
+   *  venue-wide decisions list is on the board (T-619) — it already carries
+   *  every overdue decision, whatever the booking's date, and saying it twice
+   *  is noise. True for an older server that sends no such list. */
+  readonly decisions: boolean;
+}
+
 /** The holding tray (Canon §3 "Open Tentatives" aging): live pencils whose
  *  hygiene has gone stale — overdue next action, overdue decision date, or
  *  no ladder position. Most overdue first. */
 export function needsAction(
   entries: readonly CalendarEntry[],
   nowMs: number,
+  options: NeedsActionOptions = { decisions: true },
 ): readonly NeedsActionItem[] {
   const items: NeedsActionItem[] = [];
   for (const entry of entries) {
@@ -296,7 +305,7 @@ export function needsAction(
         earliestOverdue = Math.min(earliestOverdue, dueMs);
       }
     }
-    if (entry.decisionAt !== null) {
+    if (options.decisions && entry.decisionAt !== null) {
       const decisionMs = Date.parse(entry.decisionAt);
       if (decisionMs < nowMs) {
         reasons.push("The decision date has passed — release, extend, or ink.");

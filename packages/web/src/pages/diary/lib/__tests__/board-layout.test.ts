@@ -356,4 +356,18 @@ describe("needsAction (the tray)", () => {
     });
     expect(needsAction([ink, prospect, released], NOW)).toHaveLength(0);
   });
+
+  it("leaves passed decision dates to the venue-wide list when the board has one (T-619)", () => {
+    const overdueDecision = bookingEntry({
+      id: "8".repeat(36),
+      kind: "hold",
+      state: "hold",
+      rank: 1,
+      nextActionDueAt: "2026-09-10T09:00:00.000Z",
+      decisionAt: "2026-08-30T09:00:00.000Z",
+    });
+    expect(needsAction([overdueDecision], NOW)).toHaveLength(1);
+    expect(needsAction([overdueDecision], NOW, { decisions: true })).toHaveLength(1);
+    expect(needsAction([overdueDecision], NOW, { decisions: false })).toHaveLength(0);
+  });
 });

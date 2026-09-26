@@ -95,7 +95,7 @@ async function signIn(page: Page): Promise<void> {
 async function openDiary(page: Page): Promise<void> {
   await page.goto("/diary");
   await expect(page.getByText("Grand Hall").first()).toBeVisible({ timeout: 25_000 });
-  const welcomeDismiss = page.getByRole("button", { name: "Take me to the diary" });
+  const welcomeDismiss = page.getByRole("button", { name: "Open Diary" });
   if (await welcomeDismiss.isVisible().catch(() => false)) {
     await welcomeDismiss.click();
     await expect(welcomeDismiss).toBeHidden();
@@ -129,8 +129,9 @@ test("a signed-in coordinator reaches the Diary: live calendar, presence, welcom
   // Lanes come from GET /calendar over the venue's REAL spaces; the
   // first-run welcome greets this fresh context and is dismissed inside.
   await openDiary(page);
-  // The live channel authenticates and reports presence (at least you).
-  await expect(page.getByText(/Live · \d/)).toBeVisible({ timeout: 25_000 });
+  // The live channel authenticates. The count is other people (T-619), so
+  // alone on the board the chip reads just "Live".
+  await expect(page.getByText(/^Live( · \d+)?$/)).toBeVisible({ timeout: 25_000 });
   // The claim-safe disclosure stands on the live board.
   await expect(page.getByText(/Planning support only/).first()).toBeVisible();
 });

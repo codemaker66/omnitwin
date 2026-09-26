@@ -130,6 +130,14 @@ function getResendClient(): Resend | null {
   return resendClient;
 }
 
+/** True when this process can hand email to the provider. Without it every
+ *  send is recorded as "dev_mode" — and the idempotency key it writes means
+ *  that reminder will never be sent later either. Callers that run
+ *  unattended check this first (POST /admin/diary/hold-reminders, T-619). */
+export function isEmailDeliveryConfigured(): boolean {
+  return (process.env["RESEND_API_KEY"] ?? "") !== "";
+}
+
 /** Test-only: reset the lazy singleton so a fresh RESEND_API_KEY can take effect. */
 export function __resetResendClientForTests(): void {
   resendClient = null;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { BookingDrawer } from "../BookingDrawer.js";
 
@@ -43,9 +43,12 @@ const VENUE = "00000000-0000-4000-8000-000000000001";
 const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";
 const BOOKING_ID = "00000000-0000-4000-8000-0000000000c1";
 const EVENT_ID = "00000000-0000-4000-8000-0000000000e1";
+const SALOON = "00000000-0000-4000-8000-0000000000a2";
 
 const ROOMS: readonly CalendarRoom[] = [
   { id: GRAND_HALL, name: "Grand Hall", slug: "grand-hall", sortOrder: 0 },
+  // A second room, so a room change has somewhere to go (T-619).
+  { id: SALOON, name: "Saloon", slug: "saloon", sortOrder: 1 },
 ];
 
 function booking(overrides: Partial<CalendarBookingEntry> = {}): CalendarBookingEntry {
@@ -79,13 +82,14 @@ type SavedSpy = ReturnType<typeof vi.fn<(message: string) => void>>;
 function renderEdit(
   entry: CalendarBookingEntry,
   onSaved: SavedSpy = vi.fn<(message: string) => void>(),
+  role = "staff",
 ): { onSaved: SavedSpy } {
   render(
     <BookingDrawer
       mode={{ kind: "edit", booking: entry }}
       rooms={ROOMS}
       venueId={VENUE}
-      role="staff"
+      role={role}
       onClose={vi.fn<() => void>()}
       onSaved={onSaved}
     />,
@@ -274,5 +278,103 @@ describe("BookingDrawer — floor plan section", () => {
     );
     expect(screen.queryByText("Floor plan")).toBeNull();
     expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edit-drawer completeness (T-619). An existing booking showed a title, times
+// and a DISABLED room select; its note was rendered nowhere and dropped on
+// save, and its owner was a uuid the drawer never printed. Each is a fact a
+// coordinator needs before answering a phone call about the booking.
+// ---------------------------------------------------------------------------
+describe("BookingDrawer — edit completeness (T-619)", () => {
+  it("names the owner and the linked client instead of leaving them implicit", () => {
+    renderEdit(booking({
+      ownerName: "Elaine Gray",
+      clientName: "Mackenzie & Ross",
+      eventName: "Mackenzie–Ross wedding",
+      guestCount: 120,
+    }));
+    const detail = screen.getByLabelText("Booking summary");
+    expect(within(detail).getByText("Elaine Gray")).toBeTruthy();
+    expect(within(detail).getByText("Mackenzie & Ross")).toBeTruthy();
+    expect(within(detail).getByText("Mackenzie–Ross wedding")).toBeTruthy();
+    // The label says "Guests"; the value is the number alone.
+    expect(within(detail).getByText("Guests")).toBeTruthy();
+    expect(within(detail).getByText("120")).toBeTruthy();
+  });
+
+  it("says the absence out loud when there is no owner and no client", () => {
+    renderEdit(booking());
+    const detail = screen.getByLabelText("Booking summary");
+    expect(within(detail).getByText("Nobody yet")).toBeTruthy();
+    expect(within(detail).getByText("No client linked")).toBeTruthy();
+  });
+
+  it("shows the existing note and saves an edit to it", async () => {
+    updateBookingMock.mockResolvedValue({ title: "Chamber dinner" });
+    const { onSaved } = renderEdit(booking({ notes: "Cake table by the north door." }));
+    const notes = screen.getByLabelText("Notes");
+    expect(screen.getByDisplayValue("Cake table by the north door.")).toBe(notes);
+    fireEvent.change(notes, { target: { value: "Cake table by the south door." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalled(); });
+    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { notes: "Cake table by the south door." });
+  });
+
+  it("clears a note to null rather than leaving the old text on the server", async () => {
+    updateBookingMock.mockResolvedValue({ title: "Chamber dinner" });
+    const { onSaved } = renderEdit(booking({ notes: "Cake table by the north door." }));
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalled(); });
+    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { notes: null });
+  });
+
+  it("allows a room change from the drawer, not only by dragging the block", async () => {
+    updateBookingMock.mockResolvedValue({ title: "Chamber dinner" });
+    const { onSaved } = renderEdit(booking());
+    const room = screen.getByLabelText("Room");
+    expect(room.hasAttribute("disabled")).toBe(false);
+    fireEvent.change(room, { target: { value: SALOON } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalled(); });
+    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { spaceId: SALOON });
+  });
+
+  it("sends nothing when nothing changed — a reopened note is not an edit", async () => {
+    const onClose = vi.fn<() => void>();
+    render(
+      <BookingDrawer
+        mode={{ kind: "edit", booking: booking({ notes: "Unchanged." }) }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={onClose}
+        onSaved={vi.fn<(message: string) => void>()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(onClose).toHaveBeenCalled(); });
+    expect(updateBookingMock).not.toHaveBeenCalled();
+  });
+
+  it("promises ownership only when making a booking, never on an existing one", () => {
+    renderEdit(booking({ kind: "hold", state: "hold", rank: 1, decisionAt: "2026-09-10T12:00:00.000Z",
+      ownerUserId: "00000000-0000-4000-8000-0000000000aa", ownerName: "Elaine Gray",
+      nextAction: "Call.", nextActionDueAt: "2026-09-09T09:00:00.000Z" }));
+    expect(screen.queryByText("You will own this pencil.")).toBeNull();
+  });
+
+  it.each(["manager", "sales"])("lets a %s edit, as the API does", (role) => {
+    renderEdit(booking(), vi.fn<(message: string) => void>(), role);
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
+    expect(screen.queryByText(/Read-only booking details/)).toBeNull();
+  });
+
+  it("keeps the hallkeeper read-only", () => {
+    renderEdit(booking(), vi.fn<(message: string) => void>(), "hallkeeper");
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.getByText(/Read-only booking details/)).toBeTruthy();
   });
 });

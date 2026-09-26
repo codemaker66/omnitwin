@@ -110,12 +110,15 @@ describe("overview focus anchors", () => {
     expect(firstVisibleDay(booking("outside", interval), week)).toBeNull();
   });
 
+  // Same span and assertions, carried to the fortnight when the month board
+  // was retired (T-619): the fortnight anchored on 1 October runs Mon 28 Sep
+  // to Sun 11 Oct, so it still holds the whole eight days across the month.
   it("retains a spanning booking across eight days at a month boundary without adding the end day", () => {
-    const month = boardRange(Date.parse("2026-10-15T12:00:00Z"), "month");
+    const fortnight = boardRange(Date.parse("2026-10-01T12:00:00Z"), "2w");
     const spanning = booking("eight-days", { startsAt: "2026-09-30T23:00:00Z", endsAt: "2026-10-08T23:00:00Z" });
-    const visibleDays = dayColumns(month).filter((day) => entriesForDay([spanning], SPACE, day).length > 0);
+    const visibleDays = dayColumns(fortnight).filter((day) => entriesForDay([spanning], SPACE, day).length > 0);
     expect(visibleDays).toHaveLength(8);
-    expect(firstVisibleDay(spanning, month)).toBe(Date.parse("2026-09-30T23:00:00Z"));
+    expect(firstVisibleDay(spanning, fortnight)).toBe(Date.parse("2026-09-30T23:00:00Z"));
     expect(visibleDays.at(-1)?.endMs).toBe(Date.parse("2026-10-08T23:00:00Z"));
   });
 });
@@ -269,7 +272,9 @@ describe("overview index", () => {
     { name: "a fortnight", range: boardRange(Date.parse("2026-09-09T12:00:00Z"), "2w") },
     { name: "the 169-hour clock-change week", range: boardRange(Date.parse("2026-10-22T12:00:00Z"), "week") },
     { name: "the 167-hour clock-change week", range: boardRange(Date.parse("2026-03-26T12:00:00Z"), "week") },
-    { name: "a month", range: boardRange(Date.parse("2026-10-15T12:00:00Z"), "month") },
+    // Mon 19 Oct to Mon 2 Nov: into a new month, and over the clock change
+    // (it stands in for the retired month board, T-619).
+    { name: "a fortnight across a month boundary", range: boardRange(Date.parse("2026-10-22T12:00:00Z"), "2w") },
     { name: "a single day", range: boardRange(Date.parse("2026-09-07T12:00:00Z"), "day") },
   ])("matches the per-cell membership, order, anchors and labels over $name", ({ range }) => {
     expectPerCellEquivalence(EDGE_CASES, range);

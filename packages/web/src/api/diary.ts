@@ -47,6 +47,8 @@ export interface EditBookingPatch extends MoveBookingPatch {
   readonly ownerUserId?: string;
   readonly nextAction?: string;
   readonly nextActionDueAt?: string;
+  /** The booking's own note; null erases it (T-619). */
+  readonly notes?: string | null;
   /** The floor plan attached to this booking, or null to detach it. The API
    *  has always accepted this (UpdateBookingSchema → updateBookingCore, which
    *  verifies the event belongs to the booking's venue); nothing in the client

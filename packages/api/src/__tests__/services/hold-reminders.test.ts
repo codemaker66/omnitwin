@@ -1,10 +1,15 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { WORKSPACE_COLOURS } from "@omnitwin/types";
 import {
   HOLD_REMINDER_STALE_WINDOW_MS,
+  daysUntilDecision,
+  formatVenueDay,
   selectDueHoldReminders,
+  selectOwnerlessDueReminders,
   runHoldReminderPassOnHolds,
   type ReminderHold,
 } from "../../services/hold-reminders.js";
+import { decisionWhen, holdDecisionReminder, provisionalStatus } from "../../services/email-templates.js";
 import type { Database } from "../../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -24,6 +29,7 @@ function hold(overrides: Partial<ReminderHold> & { decisionAt: Date }): Reminder
     id: "00000000-0000-4000-8000-000000000001",
     title: "The Hartley wedding",
     spaceName: "Grand Hall",
+    startsAt: new Date("2026-11-14T15:00:00.000Z"),
     rank: 1,
     jointFlag: false,
     ownerEmail: "fiona@tradeshall.example",
@@ -230,5 +236,196 @@ describe("runHoldReminderPassOnHolds", () => {
     expect(send).not.toHaveBeenCalled();
     expect(summary).toMatchObject({ scanned: 1, due: 0, sent: 0, failed: 0 });
     expect(summary.reminders).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-619 — the dry run Blake checks before the schedule is switched on, the
+// holds nobody owns, and the email in his hold words.
+// ---------------------------------------------------------------------------
+
+describe("the pass summary a dry run prints (T-619)", () => {
+  const NOW = new Date("2026-07-20T10:00:00.000Z");
+  const DB = {} as Database;
+
+  it("names the hold, room, dates, stage and owner — and carries no email address", async () => {
+    const send = vi.fn().mockResolvedValue(true);
+    const summary = await runHoldReminderPassOnHolds(
+      [hold({
+        id: "00000000-0000-4000-8000-000000000020",
+        decisionAt: new Date(NOW.getTime() + 3 * DAY_MS - HOUR_MS),
+        ownerName: "Fiona Coordinator",
+        ownerEmail: "fiona@tradeshall.example",
+      })],
+      { db: DB, now: NOW, send, dryRun: true },
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ scanned: 1, due: 1, sent: 0, failed: 0, noOwner: 0, dryRun: true });
+    expect(summary.reminders).toEqual([{
+      bookingId: "00000000-0000-4000-8000-000000000020",
+      holdTitle: "The Hartley wedding",
+      spaceName: "Grand Hall",
+      holdDate: "Saturday 14 November 2026",
+      decisionDate: "Thursday 23 July 2026",
+      daysBefore: 3,
+      ownerName: "Fiona Coordinator",
+      idempotencyKey: "hold-reminder:00000000-0000-4000-8000-000000000020:2026-07-23:t-3",
+      outcome: "dry_run",
+    }]);
+    // The workflow prints this summary to a log anyone with read access to
+    // the repository can open.
+    expect(JSON.stringify(summary)).not.toContain("@");
+  });
+
+  it("keeps a real pass's records free of addresses too", async () => {
+    const send = vi.fn().mockResolvedValue(true);
+    const summary = await runHoldReminderPassOnHolds(
+      [hold({ decisionAt: new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS) })],
+      { db: DB, now: NOW, send },
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(summary.reminders[0]?.outcome).toBe("sent");
+    expect(JSON.stringify(summary)).not.toContain("@");
+  });
+
+  it("lists a due reminder on a hold nobody owns, and sends it to no one", async () => {
+    const send = vi.fn().mockResolvedValue(true);
+    const summary = await runHoldReminderPassOnHolds(
+      [
+        hold({ id: "00000000-0000-4000-8000-000000000021", decisionAt: new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS) }),
+        hold({
+          id: "00000000-0000-4000-8000-000000000022",
+          title: "Ownerless dinner",
+          decisionAt: new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS),
+          ownerEmail: null,
+          ownerName: null,
+        }),
+      ],
+      { db: DB, now: NOW, send },
+    );
+    // Only the owned hold is emailed; the client is never the fallback.
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(summary).toMatchObject({ scanned: 2, due: 1, sent: 1, failed: 0, noOwner: 1 });
+    expect(summary.reminders.find((reminder) => reminder.outcome === "no_owner")).toMatchObject({
+      bookingId: "00000000-0000-4000-8000-000000000022",
+      holdTitle: "Ownerless dinner",
+      ownerName: null,
+      daysBefore: 7,
+    });
+  });
+
+  it("selects ownerless reminders by the same schedule as owned ones", () => {
+    const ownerless = hold({ decisionAt: new Date(NOW.getTime() + 12 * HOUR_MS), ownerEmail: null });
+    expect(selectDueHoldReminders([ownerless], NOW)).toHaveLength(0);
+    expect(selectOwnerlessDueReminders([ownerless], NOW).map((due) => due.daysBefore)).toEqual([1]);
+    expect(selectOwnerlessDueReminders([hold({ decisionAt: new Date(NOW.getTime() + 12 * HOUR_MS) })], NOW)).toHaveLength(0);
+  });
+});
+
+describe("the reminder email (T-619)", () => {
+  const NOW = new Date("2026-07-20T10:00:00.000Z");
+  const DB = {} as Database;
+  const FRONTEND_BEFORE = process.env["FRONTEND_URL"];
+  afterEach(() => {
+    if (FRONTEND_BEFORE === undefined) delete process.env["FRONTEND_URL"];
+    else process.env["FRONTEND_URL"] = FRONTEND_BEFORE;
+  });
+
+  async function sentEmail(overrides: Partial<ReminderHold> & { decisionAt: Date }, now = NOW): Promise<{ subject: string; html: string }> {
+    const send = vi.fn().mockResolvedValue(true);
+    await runHoldReminderPassOnHolds([hold(overrides)], { db: DB, now, send });
+    const [payload] = send.mock.calls[0] as [{ subject: string; html: string }];
+    return payload;
+  }
+
+  function visibleText(html: string): string {
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gu, " ")
+      .replace(/<[^>]+>/gu, " ")
+      .replace(/&nbsp;/gu, " ")
+      .replace(/\s+/gu, " ");
+  }
+
+  it("says the hold's standing in Blake's words and none of the internal ones", async () => {
+    const { subject, html } = await sentEmail({ decisionAt: new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS) });
+    const text = `${subject} ${visibleText(html)}`;
+    expect(subject).toBe("Decision date in 7 days — The Hartley wedding, Grand Hall");
+    expect(text).toContain("Provisional · 1st option");
+    expect(text).toContain("Saturday 14 November 2026");
+    expect(text).toContain("Monday 27 July 2026");
+    expect(text).toContain("the client has not been emailed");
+    for (const internal of [/pencil/iu, /\bink/iu, /prospect/iu, /ladder/iu, /hold decision/iu, /joint hold/iu, /\bhold\b/iu]) {
+      expect(text, `internal word ${String(internal)}`).not.toMatch(internal);
+    }
+    // Plain and factual: no exclamation marks, no praise.
+    expect(text).not.toContain("!");
+    for (const praise of [/great/iu, /well done/iu, /congrat/iu, /amazing/iu, /awesome/iu]) {
+      expect(text).not.toMatch(praise);
+    }
+  });
+
+  it("uses the House workspace colours and a serif heading", async () => {
+    const { html } = await sentEmail({ decisionAt: new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS) });
+    for (const key of ["sheet", "ink-1", "ink-2", "forest", "forest-ink-1", "amber-wash", "amber-chip"] as const) {
+      expect(html.toLowerCase(), key).toContain(WORKSPACE_COLOURS[key].toLowerCase());
+    }
+    expect(html).toContain("Newsreader");
+    expect(html).toContain("Georgia");
+    // The retired platform navy and blue are gone from this email.
+    expect(html.toLowerCase()).not.toContain("#1a1a2e");
+    expect(html.toLowerCase()).not.toContain("#3b82f6");
+  });
+
+  it("is valid table markup, so a mail client keeps the text, button and footer inside the sheet", async () => {
+    const { html } = await sentEmail({ decisionAt: new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS) });
+    // A <table> opened straight inside a <tbody> is a parse error that
+    // browsers repair by closing the enclosing tables early; the rendered
+    // email then lost its padding and its footer fell out of the sheet.
+    expect(html).not.toMatch(/<tbody[^>]*>\s*<table/iu);
+    expect(html).toMatch(/<tbody[^>]*>\s*<tr[^>]*>\s*<td[^>]*>Booking<\/td>/iu);
+  });
+
+  it("names Joint 1st and an unnumbered hold in the same words", () => {
+    expect(provisionalStatus(1, true)).toBe("Provisional · Joint 1st");
+    expect(provisionalStatus(2, false)).toBe("Provisional · 2nd option");
+    expect(provisionalStatus(null, false)).toBe("Provisional");
+  });
+
+  it("says today, not tomorrow, when a morning run delivers the last reminder on the day", async () => {
+    // Decision at 23:30 BST; the T-1 instant is 23:30 the evening before,
+    // and the next morning's run (09:00 BST) is still inside the window.
+    const decisionAt = new Date("2026-07-27T22:30:00.000Z");
+    const morning = new Date("2026-07-27T08:00:00.000Z");
+    expect(daysUntilDecision(morning, decisionAt)).toBe(0);
+    const { subject } = await sentEmail({ decisionAt }, morning);
+    expect(subject).toBe("Decision date today — The Hartley wedding, Grand Hall");
+    expect(decisionWhen(1)).toBe("tomorrow");
+    expect(decisionWhen(3)).toBe("in 3 days");
+  });
+
+  it("links to the week the booking sits in", async () => {
+    process.env["FRONTEND_URL"] = "https://venviewer.example";
+    const { html } = await sentEmail({ decisionAt: new Date(NOW.getTime() + 7 * DAY_MS - HOUR_MS) });
+    expect(html).toContain("https://venviewer.example/diary?view=week&amp;date=2026-11-14");
+  });
+
+  it("greets the owner by name, and simply omits the greeting without one", async () => {
+    const named = await holdDecisionReminder({
+      holdTitle: "The Hartley wedding", spaceName: "Grand Hall", ownerName: "Fiona",
+      holdDate: "Saturday 14 November 2026", decisionDate: "Monday 27 July 2026",
+      daysUntilDecision: 7, rank: 1, jointFlag: false, diaryUrl: "https://venviewer.example/diary",
+    });
+    expect(visibleText(named.html)).toContain("Hi Fiona,");
+    const unnamed = await holdDecisionReminder({
+      holdTitle: "The Hartley wedding", spaceName: "Grand Hall", ownerName: "  ",
+      holdDate: "Saturday 14 November 2026", decisionDate: "Monday 27 July 2026",
+      daysUntilDecision: 7, rank: 1, jointFlag: false, diaryUrl: "https://venviewer.example/diary",
+    });
+    expect(visibleText(unnamed.html)).not.toContain("Hi ");
+  });
+
+  it("formats the house long date in the venue's zone, without a comma", () => {
+    // 23:30 UTC on the 13th is already the 14th in London (BST).
+    expect(formatVenueDay(new Date("2026-06-13T23:30:00.000Z"))).toBe("Sunday 14 June 2026");
   });
 });

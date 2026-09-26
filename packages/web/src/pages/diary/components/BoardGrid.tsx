@@ -18,6 +18,7 @@ import {
   formatWallTime,
   hourTicks,
   msToX,
+  snapMs,
   widthPx,
   type BoardRange,
   type DayColumn,
@@ -44,6 +45,17 @@ const COUNTDOWN_WINDOW_MS = 4 * 3_600_000;
 const SEGMENT_LABEL_MIN_PX = 46;
 const GAP_LABEL_MIN_PX = 56;
 const GAP_NOTE_MIN_PX = 120;
+const CREATE_SNAP_MINUTES = 15;
+
+/** Create-in-context on the timeline (T-619). A pointer says WHERE and the
+ *  instant is read from it; a keyboard cannot, so it falls back to `day` —
+ *  the day the board is showing — whose label is also what the control
+ *  announces, so what a screen reader hears is what the control does. */
+export interface BoardCreate {
+  readonly at: (spaceId: string, startMs: number) => void;
+  readonly onDay: (spaceId: string, dayStartMs: number) => void;
+  readonly day: { readonly startMs: number; readonly label: string };
+}
 
 export interface BoardGridProps {
   readonly rooms: readonly CalendarRoom[];
@@ -55,6 +67,8 @@ export interface BoardGridProps {
   readonly writable: boolean;
   readonly nowMs: number;
   readonly onOpenBlock?: (blockId: string) => void;
+  /** Undefined for a read-only role — there is then no create control. */
+  readonly create?: BoardCreate;
   /** The venue's turnaround rules (optional on the wire) — gap dimensions
    *  degrade to plain durations when an older server omits them. */
   readonly turnaroundRules?: readonly CalendarTurnaroundRule[];
@@ -129,6 +143,8 @@ interface BoardBlockProps {
    *  when its text changes, not on every minute tick. */
   readonly countdown: string | null;
   readonly beingDragged: boolean;
+  /** A finger or pen is carrying this block: only it stops the page scrolling. */
+  readonly lifted: boolean;
   readonly handlersFor: BoardDrag["handlersFor"];
   readonly onOpenBlock: ((blockId: string) => void) | undefined;
 }
@@ -144,6 +160,7 @@ const BoardBlock = memo(function BoardBlock({
   writable,
   countdown,
   beingDragged,
+  lifted,
   handlersFor,
   onOpenBlock,
 }: BoardBlockProps): ReactElement {
@@ -184,6 +201,7 @@ const BoardBlock = memo(function BoardBlock({
         stateClass,
         severity !== undefined ? `has-conflict-${severity}` : "",
         beingDragged ? "is-dragging" : "",
+        lifted ? "is-lifted" : "",
         block.startMs < range.fromMs ? "is-clipped-start" : "",
         block.endMs > range.toMs ? "is-clipped-end" : "",
       ]
@@ -299,6 +317,9 @@ interface BoardLaneProps {
   readonly onOpenBlock: ((blockId: string) => void) | undefined;
   /** The lifted block, if any — constant for the whole drag. */
   readonly activeBlockId: string | null;
+  /** The block a finger or pen carries, if any — constant for the drag. */
+  readonly liftedBlockId: string | null;
+  readonly create: BoardCreate | undefined;
   /** The ghost only while it is over THIS lane, so a drag move re-renders
    *  the lanes it leaves and enters and no others. */
   readonly ghost: Ghost | null;
@@ -319,6 +340,8 @@ const BoardLane = memo(function BoardLane({
   handlersFor,
   onOpenBlock,
   activeBlockId,
+  liftedBlockId,
+  create,
   ghost,
 }: BoardLaneProps): ReactElement {
   const photo = diaryRoomPhoto(room.slug);
@@ -381,6 +404,34 @@ const BoardLane = memo(function BoardLane({
         data-diary-lane={room.id}
         style={{ width: canvasWidth, height: laneHeight }}
       >
+        {/* Create-in-context (T-619). Empty lane space is the natural place
+            to say "put something here". The control sits UNDER the blocks
+            (z-index 1 against their 2), so it is only reached where the lane
+            is genuinely free, and it is a <button> so the keyboard and a
+            screen reader reach it too. A keyboard activation reports
+            detail 0 and no position of its own, so it takes the day the
+            board is showing rather than a time derived from a meaningless
+            clientX. */}
+        {create === undefined ? null : (
+          <button
+            type="button"
+            className="diary-lane-new"
+            aria-label={BOARD_COPY.create.laneLabel(room.name, create.day.label)}
+            onClick={(event) => {
+              if (event.detail === 0) {
+                create.onDay(room.id, create.day.startMs);
+                return;
+              }
+              const bounds = event.currentTarget.getBoundingClientRect();
+              const offsetMs = ((event.clientX - bounds.left) / pxPerHour) * 3_600_000;
+              const clicked = snapMs(range.fromMs + offsetMs, CREATE_SNAP_MINUTES);
+              create.at(
+                room.id,
+                Math.min(Math.max(clicked, range.fromMs), range.toMs - CREATE_SNAP_MINUTES * 60_000),
+              );
+            }}
+          />
+        )}
         {columns.map((column) => (
           <div
             key={column.startMs}
@@ -461,6 +512,7 @@ const BoardLane = memo(function BoardLane({
               writable={writable}
               countdown={countdown}
               beingDragged={activeBlockId === block.entry.id}
+              lifted={liftedBlockId === block.entry.id}
               handlersFor={handlersFor}
               onOpenBlock={onOpenBlock}
             />
@@ -496,12 +548,12 @@ const BoardLane = memo(function BoardLane({
 /** Memoised: the page re-renders for toasts, presence and enquiry loads that
  *  leave the board untouched; `drag` keeps one identity per drag state. */
 export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactElement {
-  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock } = props;
+  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock, create } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
   const columns = useMemo(() => dayColumns(range), [range]);
   const ticks = useMemo(() => (range.view === "day" ? hourTicks(range) : []), [range]);
   const nowVisible = nowMs >= range.fromMs && nowMs < range.toMs;
-  const { ghost, activeBlockId, handlersFor } = drag;
+  const { ghost, activeBlockId, liftedBlockId, handlersFor } = drag;
   // Packing depends only on the entries — never recompute it per pointermove
   // while the drag prop churns (review P2).
   const lanes = useMemo(
@@ -559,6 +611,8 @@ export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactEl
               handlersFor={handlersFor}
               onOpenBlock={onOpenBlock}
               activeBlockId={activeBlockId}
+              liftedBlockId={liftedBlockId}
+              create={create}
               ghost={ghost !== null && ghost.spaceId === room.id ? ghost : null}
             />
           ))}

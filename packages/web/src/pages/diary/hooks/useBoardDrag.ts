@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   announceDrag,
@@ -14,13 +14,16 @@ import {
   type InkSpan,
   type NudgeDirection,
 } from "../lib/board-drag.js";
+import { suppressScrollWhileLifted } from "../lib/touch-scroll.js";
 
 // ---------------------------------------------------------------------------
 // useBoardDrag (T-493; Canon §8) — the DOM-aware shell around the pure drag
-// reducer. Pointer path: 5px activation threshold, pointer capture, Shift for
+// reducer. Mouse path: 5px activation threshold, pointer capture, Shift for
 // the 1-minute fine step, lane hit-testing via data-diary-lane elements.
-// Keyboard path: Enter/Space lifts, arrows nudge, Enter drops, Escape
-// cancels — no animation on keyboard commits (they repeat all day).
+// Touch and pen (T-619): a finger scrolls the board; a 400ms press lifts the
+// block, and only then is the pointer captured and the page's scroll held.
+// Keyboard path: Space lifts, arrows nudge, Enter drops, Escape cancels — no
+// animation on keyboard commits (they repeat all day).
 // ---------------------------------------------------------------------------
 
 export interface DragBlockDescriptor {
@@ -61,9 +64,18 @@ export interface BoardDrag {
   readonly handlersFor: (block: DragBlockDescriptor) => BlockDragHandlers;
   readonly confirmDrop: () => void;
   readonly cancel: () => void;
+  /** The block a finger or pen is carrying, or null. Only that block takes
+   *  `touch-action: none`; every other block keeps the page scrolling. */
+  readonly liftedBlockId: string | null;
 }
 
 const ACTIVATION_PX = 5;
+/** How long a finger rests on a block before it lifts. Below it the gesture
+ *  is a scroll, and the board must not take it: a day lane that could not be
+ *  panned on a phone was the whole T-619 touch finding. */
+const LONG_PRESS_MS = 400;
+/** Travel that proves a ripening press was a scroll after all. */
+const LONG_PRESS_SLOP_PX = 8;
 const MS_PER_HOUR = 3_600_000;
 
 interface PointerSession {
@@ -72,6 +84,15 @@ interface PointerSession {
   readonly startClientY: number;
   readonly block: DragBlockDescriptor;
   lifted: boolean;
+  /** Touch and pen wait for the long press; a mouse lifts on movement,
+   *  because a mouse has no scroll gesture to take away. */
+  readonly needsLongPress: boolean;
+  /** The pending long-press timer, cleared the moment the gesture proves
+   *  itself a scroll or the pointer leaves. */
+  longPressTimer: number | null;
+  /** Releases the non-passive touchmove listener that holds the page's
+   *  scroll once this session lifts (lib/touch-scroll.ts). Null for a mouse. */
+  releaseScroll: (() => void) | null;
 }
 
 function laneFromPoint(clientX: number, clientY: number): string | null {
@@ -97,6 +118,49 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   useLayoutEffect(() => {
     argsRef.current = args;
   });
+  /** Which block a finger is carrying. Rendered as a class, so it is state,
+   *  not a ref — and it is only ever set for touch and pen lifts. */
+  const [liftedBlockId, setLiftedBlockId] = useState<string | null>(null);
+
+  const clearLongPress = useCallback((session: PointerSession | null): void => {
+    if (session === null || session.longPressTimer === null) return;
+    window.clearTimeout(session.longPressTimer);
+    session.longPressTimer = null;
+  }, []);
+
+  /** Begin the drag for a session that has earned it: 5px of mouse travel,
+   *  or a ripened long press. One door into the reducer for both. */
+  const liftSession = useCallback((session: PointerSession): void => {
+    session.lifted = true;
+    suppressClickRef.current = true;
+    if (session.needsLongPress) setLiftedBlockId(session.block.id);
+    setState(
+      beginDrag({
+        blockId: session.block.id,
+        title: session.block.title,
+        mode: "pointer",
+        originSpaceId: session.block.spaceId,
+        originStartMs: session.block.startMs,
+        originEndMs: session.block.endMs,
+        isInk: session.block.isInk,
+      }),
+    );
+  }, []);
+
+  const endPointerSession = useCallback((): void => {
+    const session = pointerRef.current;
+    clearLongPress(session);
+    session?.releaseScroll?.();
+    pointerRef.current = null;
+    setLiftedBlockId(null);
+  }, [clearLongPress]);
+
+  // Unmounting mid-press must not leave a timer or a document listener behind.
+  useEffect(() => () => {
+    const session = pointerRef.current;
+    clearLongPress(session);
+    session?.releaseScroll?.();
+  }, [clearLongPress]);
 
   const envFor = useCallback(
     (isInk: boolean, fine: boolean): DragEnv => ({
@@ -128,14 +192,45 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         suppressClickRef.current = false;
         if (!argsRef.current.writable || event.button !== 0) return;
         if (stateRef.current.phase !== "idle" || pointerRef.current !== null) return;
-        pointerRef.current = {
+        // Only a real finger or pen waits. An unknown pointerType (some
+        // synthetic events leave it empty) takes the mouse path: demanding a
+        // long press from a device that cannot express one would make the
+        // board undraggable.
+        const needsLongPress = event.pointerType === "touch" || event.pointerType === "pen";
+        const session: PointerSession = {
           pointerId: event.pointerId,
           startClientX: event.clientX,
           startClientY: event.clientY,
           block,
           lifted: false,
+          needsLongPress,
+          longPressTimer: null,
+          releaseScroll: null,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
+        pointerRef.current = session;
+        if (!needsLongPress) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          return;
+        }
+        // Capture waits for the lift: taking it on touch-down takes the
+        // scroll with it. The scroll hold is registered NOW and decides per
+        // event — a touch-action change at lift time cannot affect a gesture
+        // the browser has already classified as a pan (lib/touch-scroll.ts).
+        session.releaseScroll = suppressScrollWhileLifted(() => session.lifted);
+        const target = event.currentTarget;
+        const pointerId = event.pointerId;
+        session.longPressTimer = window.setTimeout(() => {
+          if (pointerRef.current !== session) return;
+          session.longPressTimer = null;
+          // A live refetch can have replaced the element by now; a failed
+          // capture must not throw the lift away.
+          try {
+            target.setPointerCapture(pointerId);
+          } catch {
+            // Capture is an optimisation here, not a precondition.
+          }
+          liftSession(session);
+        }, LONG_PRESS_MS);
       },
       onPointerMove: (event) => {
         const session = pointerRef.current;
@@ -143,20 +238,15 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         const dx = event.clientX - session.startClientX;
         const dy = event.clientY - session.startClientY;
         if (!session.lifted) {
-          if (Math.hypot(dx, dy) < ACTIVATION_PX) return;
-          session.lifted = true;
-          suppressClickRef.current = true;
-          setState(
-            beginDrag({
-              blockId: session.block.id,
-              title: session.block.title,
-              mode: "pointer",
-              originSpaceId: session.block.spaceId,
-              originStartMs: session.block.startMs,
-              originEndMs: session.block.endMs,
-              isInk: session.block.isInk,
-            }),
-          );
+          const travel = Math.hypot(dx, dy);
+          if (session.needsLongPress) {
+            // The finger moved before the press ripened: a scroll. Stand down
+            // completely — no late lift, no half-armed session.
+            if (travel > LONG_PRESS_SLOP_PX) endPointerSession();
+            return;
+          }
+          if (travel < ACTIVATION_PX) return;
+          liftSession(session);
         }
         const env = envFor(session.block.isInk, event.shiftKey);
         const current = stateRef.current;
@@ -172,15 +262,19 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
       onPointerUp: (event) => {
         const session = pointerRef.current;
         if (session === null || session.pointerId !== event.pointerId) return;
-        pointerRef.current = null;
-        if (!session.lifted) return; // plain click — focus behaviour, no drag
+        const { lifted } = session;
+        endPointerSession();
+        if (!lifted) return; // a click, or a press released early — open, don't drag
         settle(envFor(session.block.isInk, event.shiftKey));
       },
       onPointerCancel: (event) => {
         const session = pointerRef.current;
         if (session === null || session.pointerId !== event.pointerId) return;
-        pointerRef.current = null;
-        setState(cancelDrag(stateRef.current));
+        const { lifted } = session;
+        endPointerSession();
+        // An unlifted press cancelled is the platform taking its scroll
+        // back; there is no drag to unwind.
+        if (lifted) setState(cancelDrag(stateRef.current));
       },
       onKeyDown: (event) => {
         const current = stateRef.current;
@@ -236,7 +330,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         }
       },
     }),
-    [envFor, settle],
+    [endPointerSession, envFor, liftSession, settle],
   );
 
   const confirmDrop = useCallback(() => {
@@ -246,10 +340,10 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   }, [envFor, settle]);
 
   const cancel = useCallback(() => {
-    pointerRef.current = null;
+    endPointerSession();
     suppressClickRef.current = false;
     setState(cancelDrag(stateRef.current));
-  }, []);
+  }, [endPointerSession]);
 
   // One object per drag state, so a memoised board skips page renders that
   // leave the drag untouched.
@@ -263,7 +357,8 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
       handlersFor,
       confirmDrop,
       cancel,
+      liftedBlockId,
     }),
-    [state, handlersFor, confirmDrop, cancel],
+    [state, handlersFor, confirmDrop, cancel, liftedBlockId],
   );
 }

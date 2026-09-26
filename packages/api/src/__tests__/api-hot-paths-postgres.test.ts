@@ -11,13 +11,17 @@ import { eventRoutes } from "../routes/events.js";
 import { placedObjectRoutes } from "../routes/placed-objects.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { analyticsRoutes } from "../routes/revenue-analytics.js";
+import { calendarRoutes } from "../routes/calendar.js";
+import { formatVenueDay, runHoldReminderPass } from "../services/hold-reminders.js";
 
 // ---------------------------------------------------------------------------
 // API hot paths on the migrated platform database: configuration reads that
 // skip the stored thumbnail, the Diary tray's enquiry query, the staff
 // dashboard's newest-first enquiry pages and their indexes (migration 0072),
 // batched layout summaries, phase graphs without snapshot payloads, dashboard
-// aggregates computed in SQL, and the foreign-key indexes of migration 0071.
+// aggregates computed in SQL, the foreign-key indexes of migration 0071, and
+// the Diary's calendar read (owners by name, the venue-wide decisions list)
+// and hold-reminder pass (T-619).
 // ---------------------------------------------------------------------------
 
 const target = process.env["VENVIEWER_PLATFORM_TEST_DATABASE_URL"];
@@ -60,6 +64,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
     await server.register(enquiryRoutes, { db, prefix: "/enquiries" });
     await server.register(eventRoutes, { db, prefix: "/events" });
     await server.register(analyticsRoutes, { db, prefix: "/analytics" });
+    await server.register(calendarRoutes, { db, prefix: "/calendar" });
     await server.ready();
   });
   beforeEach(() => { statements.length = 0; statementParams.length = 0; });
@@ -486,5 +491,109 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       await client.query("ROLLBACK");
       client.release();
     }
+  });
+
+  describe("the Diary's calendar read and hold reminders (T-619)", () => {
+    const DAY = 86_400_000;
+    const HOUR = 3_600_000;
+
+    async function diaryFixture() {
+      const a = await venue("diary A");
+      const b = await venue("diary B");
+      const staff = await a.actor("staff");
+      const otherStaff = await b.actor("staff");
+      const now = Date.now();
+      const fiona = randomUUID();
+      const elaine = randomUUID();
+      await db.insert(schema.users).values([
+        { id: fiona, email: `${fiona}@hot-paths.invalid`, name: "Fiona Coordinator", displayName: "Fiona", role: "staff", venueId: a.venueId },
+        // A blank display name falls back to the account's name.
+        { id: elaine, email: `${elaine}@hot-paths.invalid`, name: "Elaine Gray", displayName: "  ", role: "staff", venueId: a.venueId },
+      ]);
+      const [roomA0, roomA1] = [a.rooms[0] ?? "", a.rooms[1] ?? ""];
+      const hold = (venueId: string, spaceId: string, title: string, startsInDays: number, decisionInDays: number,
+        extra: Partial<typeof schema.bookings.$inferInsert> = {}): typeof schema.bookings.$inferInsert => ({
+        venueId, spaceId, kind: "hold", title, rank: 1, ownerUserId: fiona, nextAction: "Call the client.",
+        nextActionDueAt: new Date(now + DAY), decisionAt: new Date(now + decisionInDays * DAY),
+        startsAt: new Date(now + startsInDays * DAY), endsAt: new Date(now + startsInDays * DAY + 4 * HOUR), ...extra,
+      });
+      const rows = await db.insert(schema.bookings).values([
+        hold(a.venueId, roomA0, "In range, decision in 3 days", 2, 3),
+        hold(a.venueId, roomA1, "Six months out, decision overdue", 180, -1, { ownerUserId: elaine, rank: 2 }),
+        hold(a.venueId, roomA1, "Nobody owns this, decision tomorrow", 60, 1, { ownerUserId: null, jointFlag: true }),
+        hold(a.venueId, roomA0, "Decision next month", 200, 30),
+        hold(a.venueId, roomA0, "Released, decision overdue", 190, -2, { status: "released" }),
+        hold(a.venueId, roomA0, "Deleted, decision overdue", 191, -3, { deletedAt: new Date(now) }),
+        { venueId: a.venueId, spaceId: roomA1, kind: "ink", title: "Confirmed dinner",
+          startsAt: new Date(now + 3 * DAY), endsAt: new Date(now + 3 * DAY + 4 * HOUR), decisionAt: new Date(now - DAY) },
+        hold(b.venueId, b.rooms[0] ?? "", "Other venue, decision overdue", 30, -1, { ownerUserId: null }),
+      ]).returning({ id: schema.bookings.id, title: schema.bookings.title });
+      const id = (title: string): string => rows.find((row) => row.title === title)?.id ?? "";
+      return { a, b, staff, otherStaff, now, id, roomA0, roomA1 };
+    }
+
+    type CalendarPayload = { data: {
+      entries: { id: string; ownerName?: string | null }[];
+      decisionsDue: { holds: { id: string; title: string; ownerName?: string | null; decisionAt: string }[]; total: number };
+    } };
+    const calendarUrl = (venueId: string, now: number, extra = "") =>
+      `/calendar?venueId=${venueId}&from=${new Date(now - DAY).toISOString()}&to=${new Date(now + 7 * DAY).toISOString()}${extra}`;
+
+    it("names owners and lists the venue's decisions due, whatever the booking's date", async () => {
+      const f = await diaryFixture();
+      const response = await server.inject({ method: "GET", url: calendarUrl(f.a.venueId, f.now), headers: bearer(f.staff) });
+      expect(response.statusCode, response.body).toBe(200);
+      const { data } = response.json<CalendarPayload>();
+      expect(data.entries.find((row) => row.id === f.id("In range, decision in 3 days"))?.ownerName).toBe("Fiona");
+      // Overdue first, then by decision date; out-of-range holds included;
+      // released, deleted, confirmed and far-off decisions left out.
+      expect(data.decisionsDue.holds.map((row) => row.title)).toEqual([
+        "Six months out, decision overdue",
+        "Nobody owns this, decision tomorrow",
+        "In range, decision in 3 days",
+      ]);
+      expect(data.decisionsDue.total).toBe(3);
+      expect(data.decisionsDue.holds.map((row) => row.ownerName ?? null)).toEqual(["Elaine Gray", null, "Fiona"]);
+    });
+
+    it("keeps the list to the caller's venue, and to the venue rather than the lanes asked for", async () => {
+      const f = await diaryFixture();
+      const lanes = await server.inject({ method: "GET", url: calendarUrl(f.a.venueId, f.now, `&spaceIds=${f.roomA0}`), headers: bearer(f.staff) });
+      expect(lanes.statusCode, lanes.body).toBe(200);
+      expect(lanes.json<CalendarPayload>().data.decisionsDue.total).toBe(3);
+      const foreign = await server.inject({ method: "GET", url: calendarUrl(f.b.venueId, f.now), headers: bearer(f.staff) });
+      expect(foreign.statusCode).toBe(403);
+      const other = await server.inject({ method: "GET", url: calendarUrl(f.b.venueId, f.now), headers: bearer(f.otherStaff) });
+      expect(other.json<CalendarPayload>().data.decisionsDue.holds.map((row) => row.title)).toEqual(["Other venue, decision overdue"]);
+    });
+
+    it("dry-runs the reminder pass from the database: who is told, about what, and never an address", async () => {
+      const f = await diaryFixture();
+      // One minute after the T-3 instant of the 3-day decision (and the T-1
+      // instant of tomorrow's); the overdue decision earns nothing.
+      const summary = await runHoldReminderPass({ db, dryRun: true, now: new Date(f.now + 60_000) });
+      const mine = summary.reminders.filter((row) => [
+        f.id("In range, decision in 3 days"), f.id("Nobody owns this, decision tomorrow"), f.id("Six months out, decision overdue"),
+      ].includes(row.bookingId));
+      expect(mine).toEqual([
+        {
+          bookingId: f.id("In range, decision in 3 days"), holdTitle: "In range, decision in 3 days", spaceName: "Room 0",
+          holdDate: formatVenueDay(new Date(f.now + 2 * DAY)), decisionDate: formatVenueDay(new Date(f.now + 3 * DAY)),
+          daysBefore: 3, ownerName: "Fiona", idempotencyKey: expect.stringMatching(/:t-3$/u), outcome: "dry_run",
+        },
+        {
+          bookingId: f.id("Nobody owns this, decision tomorrow"), holdTitle: "Nobody owns this, decision tomorrow", spaceName: "Room 1",
+          holdDate: formatVenueDay(new Date(f.now + 60 * DAY)), decisionDate: formatVenueDay(new Date(f.now + DAY)),
+          daysBefore: 1, ownerName: null, idempotencyKey: expect.stringMatching(/:t-1$/u), outcome: "no_owner",
+        },
+      ]);
+      expect(JSON.stringify(summary)).not.toContain("@hot-paths.invalid");
+      // A dry run writes nothing: no send row exists for these reminders.
+      const sends = await pool.query<{ count: number }>(
+        "SELECT count(*)::int AS count FROM email_sends WHERE idempotency_key LIKE $1 OR idempotency_key LIKE $2",
+        [`hold-reminder:${f.id("In range, decision in 3 days")}:%`, `hold-reminder:${f.id("Nobody owns this, decision tomorrow")}:%`],
+      );
+      expect(sends.rows[0]?.count).toBe(0);
+    });
   });
 });

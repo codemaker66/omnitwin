@@ -11,6 +11,7 @@ import {
   type UpdateBookingInput,
 } from "@omnitwin/types";
 import { msToWallInput, wallInputToMs } from "./board-time.js";
+import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 
 // ---------------------------------------------------------------------------
 // Drawer form mapping (T-495/T-496).
@@ -51,6 +52,11 @@ export type DrawerMode =
       readonly spaceId: string;
       readonly dayStartMs: number;
       readonly ownerUserId: string;
+      /** Set when the coordinator opened the drawer at a POSITION — a point
+       *  on a day lane — rather than on a day. That instant becomes the start
+       *  and the default evening window's length becomes the duration, so the
+       *  drawer says back exactly what was clicked (T-619). */
+      readonly startMs?: number;
     }
   | { readonly kind: "edit"; readonly booking: CalendarBookingEntry }
   | {
@@ -98,7 +104,10 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
         booking.nextActionDueAt === null
           ? ""
           : msToWallInput(Date.parse(booking.nextActionDueAt)),
-      notes: "",
+      // The booking's own note, seeded from the calendar entry so the edit
+      // drawer shows what is already written instead of an empty box that
+      // silently discarded it on save (T-619).
+      notes: booking.notes ?? "",
     };
   }
 
@@ -131,13 +140,18 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
     };
   }
 
+  // A clicked position wins over the day's default evening window: the
+  // coordinator pointed at a time, so the drawer opens at that time and keeps
+  // the default window's length as the duration.
+  const createStartMs = mode.startMs ?? mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
+  const createEndMs = createStartMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
   return {
     kind: "hold",
     spaceId: mode.spaceId,
     title: "",
     eventType: "",
-    startsAt: msToWallInput(mode.dayStartMs + DEFAULT_START_HOUR_OFFSET * HOUR_MS),
-    endsAt: msToWallInput(mode.dayStartMs + DEFAULT_END_HOUR_OFFSET * HOUR_MS),
+    startsAt: msToWallInput(createStartMs),
+    endsAt: msToWallInput(createEndMs),
     rank: "1",
     jointFlag: false,
     decisionAt: "",
@@ -189,7 +203,7 @@ function issuesToFieldErrors(
  *  BookingDrawer.tsx: the always-set mirrors its unconditional fieldError()
  *  calls, the hold-set mirrors the `showHygiene` fieldset — if a field gains
  *  or loses an inline slot there, update these lists in the same change. */
-const ERROR_SLOTTED_ALWAYS: readonly string[] = ["title", "startsAt", "endsAt"];
+const ERROR_SLOTTED_ALWAYS: readonly string[] = ["spaceId", "title", "startsAt", "endsAt", "notes"];
 const ERROR_SLOTTED_HOLD: readonly string[] = [
   "rank",
   "decisionAt",
@@ -254,6 +268,11 @@ export function formToUpdatePayload(
   if (Object.keys(times.errors).length > 0) return { ok: false, fieldErrors: times.errors };
 
   const patch: Record<string, unknown> = {};
+  // A booking may change room without being dragged (T-619) — the same
+  // cross-lane move the board makes, as a field. The server re-checks that
+  // the room belongs to the venue and re-runs the exclusion constraint, so
+  // this grants nothing the drag did not already have.
+  if (form.spaceId !== original.spaceId) patch["spaceId"] = form.spaceId;
   if (form.title !== original.title) patch["title"] = form.title;
   const eventType = emptyToUndefined(form.eventType);
   if ((eventType ?? null) !== original.eventType) patch["eventType"] = eventType ?? null;
@@ -286,6 +305,11 @@ export function formToUpdatePayload(
   ) {
     patch["nextActionDueAt"] = times.values["nextActionDueAt"];
   }
+  // Notes are nullable on the wire, so clearing the box sends `null` (erase
+  // the note), not `undefined` (leave it alone). An older server may omit
+  // the field entirely; that reads as "no note", the same as null.
+  const notes = emptyToUndefined(form.notes) ?? null;
+  if (notes !== (original.notes ?? null)) patch["notes"] = notes;
 
   const parsed = UpdateBookingSchema.safeParse(patch);
   if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };
@@ -321,11 +345,11 @@ export function formToConvertPayload(
 }
 
 /** Lifecycle moves the drawer may offer: the structural matrix gated by the
- *  same write roles the API enforces. */
+ *  same write roles the API enforces (DIARY_WRITE_ROLES). */
 export function allowedTransitionTargets(
   state: BookingState,
   role: string,
 ): readonly BookingState[] {
-  if (role !== "staff" && role !== "admin") return [];
+  if (!hasRole(DIARY_WRITE_ROLES, role)) return [];
   return VALID_BOOKING_TRANSITIONS[state];
 }
