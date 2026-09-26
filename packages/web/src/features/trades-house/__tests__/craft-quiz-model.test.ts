@@ -14,7 +14,7 @@ import {
   worldAffinity,
   type CraftQuizProgress,
   applyCraftQuizAnswer,
-  buildCraftIntroductionMailto,
+  craftIntroductionHref,
   craftAffinity,
   rankCrafts,
 } from "../craft-quiz-model.js";
@@ -96,12 +96,14 @@ describe("craft quiz model", () => {
     }
   });
 
-  it("builds an encoded introduction email for the selected Craft", () => {
-    const href = buildCraftIntroductionMailto("hammermen");
+  // T-616: this used to build a mailto the visitor sent themselves, which left
+  // the Trades House nothing to answer from. It now points at the composer.
+  it("sends an introduction request to the composer, carrying the Craft", () => {
+    const href = craftIntroductionHref("hammermen");
 
-    expect(href).toMatch(/^mailto:info@tradeshallglasgow\.co\.uk\?/u);
-    expect(decodeURIComponent(href)).toContain("Craft introduction — THE HAMMERMEN");
-    expect(decodeURIComponent(href)).toContain("My trade or profession:");
+    expect(href).not.toContain("mailto:");
+    expect(href.endsWith("#enquire")).toBe(true);
+    expect(decodeURIComponent(href)).toContain("THE HAMMERMEN");
   });
 });
 

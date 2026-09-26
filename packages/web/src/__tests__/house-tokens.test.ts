@@ -530,14 +530,12 @@ const TYPE_FLOOR_EXEMPT: readonly RegExp[] = [
  * debt. Round 1's own list of that debt said 26 declarations; it was wrong,
  * because its grep only matched a leading `0.` — the true figure by the same
  * rule is 30, the four extra being `.66rem`/`.65rem` in OnboardingView.css
- * and `.66rem`/`.68rem` in CaptureIntakePage.css. 29 are swept; the one below
- * is in a file this lane may not edit, and is frozen in both directions like
- * GOLD_HANDOFF: another sub-floor rem anywhere fails, and Lane 2 fixing this
- * one makes the list wrong and fails too.
+ * and `.66rem`/`.68rem` in CaptureIntakePage.css. 29 were swept; the thirtieth,
+ * `.rooms__state` at 0.68rem on the public rooms home, waited for Lane 2 and
+ * is 0.75rem now (T-616). The list stays, frozen in both directions like
+ * GOLD_HANDOFF: another sub-floor rem anywhere fails.
  */
-const REM_FLOOR_HANDOFF: Readonly<Record<string, string>> = {
-  "pages/RoomsHomePage.css": "Lane 2 — .rooms__state, 0.68rem = 10.88px on the public rooms home",
-};
+const REM_FLOOR_HANDOFF: Readonly<Record<string, string>> = {};
 
 /**
  * T-635: Lane 1 raised these two planner labels to 11px, but both files

@@ -923,24 +923,6 @@ async function mockPlannerRoutes(page: Page): Promise<void> {
   });
 }
 
-async function mockPublicRoomRoutes(page: Page): Promise<void> {
-  await page.route(`${API}/assets/runtime-packages/public-room-visual**`, (route) => {
-    void route.fulfill({
-      json: {
-        data: {
-          venueSlug: "trades-hall",
-          roomSlug: "reception-room",
-          runtimeVisualAvailable: false,
-          visualUrl: null,
-          visualLabel: "Visual preview",
-          safeCopy: "Runtime room visual is not currently available for this public preview. Final details are confirmed by the venue team.",
-          humanReviewRequired: true,
-        },
-      },
-    });
-  });
-}
-
 async function mockProposalRoutes(page: Page): Promise<void> {
   await page.route(`${API}/public/proposals/${SHARE_CODE}`, (route) => {
     void route.fulfill({ json: { data: publicProposalFixture() } });
@@ -1833,8 +1815,9 @@ async function setupRouteMocks(page: Page, routeName: string): Promise<void> {
     });
     return;
   }
-  if (routeName === "public room") {
-    await mockPublicRoomRoutes(page);
+  if (routeName === "pricing") {
+    // Admin-only until billing exists (Blake, 26 September 2026).
+    await seedAuthenticatedUser(page, "admin");
     return;
   }
   if (routeName === "proposal") {
@@ -1992,10 +1975,12 @@ test.describe("SS++ button and action inventory", () => {
       },
     },
     {
+      // T-616: /landing forwards to the front door; this audits what a stale
+      // link reaches. The name is kept: it names the address.
       name: "the rite (previous landing)",
       path: "/landing",
       waitFor: async (page) => {
-        await expect(page.getByRole("heading", { level: 1, name: /Trades Hall, Glasgow · \d+ years/ })).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", exact: true })).toBeVisible();
       },
     },
     {
@@ -2020,10 +2005,12 @@ test.describe("SS++ button and action inventory", () => {
       },
     },
     {
+      // T-616 retired the room showcase: its address forwards to the front
+      // door, whose rail and capacity table now carry every room.
       name: "public room",
       path: "/venues/trades-hall/rooms/reception-room",
       waitFor: async (page) => {
-        await expect(page.getByRole("heading", { level: 1, name: "Reception Room" })).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", exact: true })).toBeVisible();
       },
     },
     {
@@ -2117,15 +2104,23 @@ test.describe("SS++ representative button behavior", () => {
     await expect(page.getByRole("button", { name: "Ops", exact: true })).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("public room buttons select event context and preserve safe runtime copy", async ({ page }) => {
-    await mockPublicRoomRoutes(page);
-    await page.goto("/venues/trades-hall/rooms/reception-room");
-    await expect(page.getByRole("heading", { level: 1, name: "Reception Room" })).toBeVisible();
-    await expect(page.getByLabel("Reception Room visual preview").getByText(/Runtime room visual is not currently available/i)).toBeVisible();
+  // T-616: the room showcase's event buttons retired with it. The occasion
+  // is chosen in the enquiry composer on the front door now, and the draft
+  // the visitor reads before sending follows every choice.
+  test("front door enquiry buttons choose the occasion and keep the draft in step", async ({ page }) => {
+    await page.goto("/#enquire");
+    const composer = page.getByTestId("enquiry-composer");
+    await expect(composer.getByText("Enquiry — Wedding for 100")).toBeVisible();
 
-    const eventType = page.locator(".room-showcase-event-types button").first();
-    await eventType.click();
-    await expect(eventType).toHaveClass(/selected/u);
+    const conference = composer.getByRole("button", { name: "Conference" });
+    await conference.click();
+    await expect(conference).toHaveAttribute("aria-pressed", "true");
+    await expect(composer.getByRole("button", { name: "Wedding" })).toHaveAttribute("aria-pressed", "false");
+    await expect(composer.getByText("Enquiry — Conference for 100")).toBeVisible();
+
+    await composer.getByLabel("Guests").fill("40");
+    await expect(composer.getByText("Enquiry — Conference for 40")).toBeVisible();
+    await expect(composer.getByRole("button", { name: "Send enquiry" })).toBeEnabled();
   });
 
   test("proposal controls approve, reveal change request, and post token comments", async ({ page }) => {

@@ -43,20 +43,24 @@ export function measuredLine(bundle: GeneratedRoomSplatBundle, walkable: boolean
     return `${footprint(bundle)} · ${splatLine(bundle)}`;
   }
   if (!walkable) return splatLine(bundle);
-  return `${splatLine(bundle)} · alignment in review`;
+  return splatLine(bundle);
 }
 
 /**
  * What a card says under its name when the room is not simply ready.
  *
- * Closed rooms say so and offer no door; rooms under review can be walked but
- * their dimensions are withheld until the alignment is settled. Neither state
- * is a failure to hide: the honest line IS the product here.
+ * T-616 / gate line 3: this used to print a "not yet walkable, alignment in
+ * review" and a dimensions-under-review line to every visitor on the front
+ * door. Both were true and both were OUR vocabulary — a couple looking for a
+ * wedding venue does not know what an alignment is, and it read as a building
+ * site rather than as a room they cannot open yet.
+ *
+ * The honesty is unchanged, because it never lived in the jargon: a closed
+ * room still offers no door, and a room whose scan did not measure cleanly
+ * still prints no dimensions (measuredLine and the card both withhold them).
+ * Only the words a visitor reads have changed.
  */
-export function stateLine(bundle: GeneratedRoomSplatBundle, walkable: boolean): string | null {
-  if (!walkable) return "Not yet walkable · alignment in review";
-  if (bundle.alignmentConfidence !== "confident") {
-    return "Dimensions under review";
-  }
+export function stateLine(_bundle: GeneratedRoomSplatBundle, walkable: boolean): string | null {
+  if (!walkable) return "Photographs only for now";
   return null;
 }

@@ -8,6 +8,7 @@ vi.mock("../FreshWalk.js", () => ({
 }));
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { FreshPage } from "../FreshPage.js";
+import { craftFromQuery } from "../FreshEnquiry.js";
 import { FRESH_ROOMS, FRESH_TOUR_ENABLED, allFreshCopy } from "../fresh-copy.js";
 import { HALL_LIT_YEARS } from "../../landing/rite-copy.js";
 import {
@@ -28,17 +29,21 @@ afterEach(() => {
 });
 
 describe("the hero", () => {
-  it("links directly to planning, login and the venue workspaces without an auth or router provider", () => {
+  // T-616 gate line 2: Dashboard, Diary and Hallkeeper each bounced an
+  // anonymous visitor into a Clerk login wall, so this page advertised three
+  // doors its readers cannot open. Rooms, planning and Log in are what remains.
+  it("links to planning, the rooms and login without an auth or router provider", () => {
     render(<FreshPage />);
     const nav = within(screen.getByRole("navigation", { name: "Primary" }));
     for (const [name, destination] of [
       ["Plan an event", "/plan?space=grand-hall"],
-      ["Dashboard", "/dashboard"],
-      ["Diary", "/diary"],
-      ["Hallkeeper", "/hallkeeper/today"],
+      ["Rooms", "/"],
       ["Log in", "/login"],
     ]) {
       expect(nav.getByRole("link", { name }).getAttribute("href")).toBe(destination);
+    }
+    for (const staff of ["Dashboard", "Diary", "Hallkeeper"]) {
+      expect(nav.queryByRole("link", { name: staff }), staff).toBeNull();
     }
     expect(document.querySelector('.fr-header-cta')?.getAttribute("href")).toBe("#enquire");
   });
@@ -154,14 +159,17 @@ describe("the enquiry composer", () => {
     expect(screen.getByText(/The North Gallery holds exactly/)).toBeTruthy();
   });
 
-  it("composes the visible email from the draft, still openable via mailto", () => {
+  it("composes the visible enquiry from the draft, and offers no way out by mail", () => {
     render(<FreshPage />);
     expect(screen.getByText("Enquiry — Wedding for 100")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Conference" }));
     expect(screen.getByText("Enquiry — Conference for 100")).toBeTruthy();
-    // The mailto survives, demoted from primary CTA to fallback: if the POST
-    // fails the visitor must still have a working way to reach the hall.
-    expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
+    // T-616 gate line 4: the mailto is gone. It reached a person but wrote no
+    // row in `enquiries`, so nothing could be chased and no acknowledgement
+    // could be sent. The telephone number is the fallback when the POST fails,
+    // and it stays on screen throughout.
+    expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
   });
 
   it("makes sending the enquiry the primary action, with the phone beside it", () => {
@@ -196,6 +204,24 @@ describe("the enquiry composer", () => {
     for (const cta of ctas) {
       expect(cta.getAttribute("href")).toBe("#enquire");
     }
+  });
+});
+
+describe("the composer's Craft, from the Discover Your Craft quiz", () => {
+  it("reads the quiz's Craft and sets it as words", () => {
+    expect(craftFromQuery("?craft=THE%20HAMMERMEN")).toBe("The Hammermen");
+    expect(craftFromQuery("?craft=THE%20SKINNERS%20%26%20GLOVERS")).toBe("The Skinners & Glovers");
+    expect(craftFromQuery("?craft=%20%20the%20%20maltmen%20")).toBe("The Maltmen");
+    // One line, always: a line break cannot add structure to the message.
+    expect(craftFromQuery("?craft=THE%20HAMMERMEN%0ADear%20team")).toBe("The Hammermen Dear Team");
+  });
+
+  it("drops anything that is not shaped like a Craft's name", () => {
+    expect(craftFromQuery("")).toBeNull();
+    expect(craftFromQuery("?craft=")).toBeNull();
+    expect(craftFromQuery("?craft=Call%20me%20on%200141%20000%200000")).toBeNull();
+    expect(craftFromQuery("?craft=https%3A%2F%2Fexample.com")).toBeNull();
+    expect(craftFromQuery(`?craft=${"A".repeat(81)}`)).toBeNull();
   });
 });
 
@@ -307,10 +333,13 @@ describe("the walkthrough — wired from the front door", () => {
 });
 
 describe("contact — real destinations", () => {
-  it("offers phone, email, and a map link under their labels", () => {
+  it("offers phone, the enquiry composer, and a map link under their labels", () => {
     render(<FreshPage />);
     expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
-    expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
+    // The address stays legible for anyone who prefers to write it themselves;
+    // the link beside it goes to the composer rather than to a mail client.
+    expect(document.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(screen.getByText("info@tradeshallglasgow.co.uk")).toBeTruthy();
     expect(document.querySelector('a[href*="maps.google.com"]')).toBeTruthy();
     expect(screen.getByText("Telephone")).toBeTruthy();
     expect(screen.getByText("Email")).toBeTruthy();

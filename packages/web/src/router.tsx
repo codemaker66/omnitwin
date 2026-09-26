@@ -89,15 +89,8 @@ const ClientEventPage = lazyWithPreload(() =>
 const BlueprintPage = lazy(() =>
   cockpitImport(() => import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage }))),
 );
-const SpotlightLandingPage = lazy(() =>
-  cockpitImport(() => import("./pages/spotlight/SpotlightLandingPage.js").then((m) => ({
-    default: m.SpotlightLandingPage,
-  }))),
-);
-const LandingPage = lazy(() =>
-  cockpitImport(() => import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage }))),
-);
-const DemoShowcasePage = lazy(() => import("./pages/demo/DemoShowcasePage.js").then(m => ({ default: m.DemoShowcasePage })));
+const DemoShowcasePage = lazyWithPreload(() => import("./pages/demo/DemoShowcasePage.js").then(m => ({ default: m.DemoShowcasePage })));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage.js").then((m) => ({ default: m.NotFoundPage })));
 const DashboardPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage }))),
 );
@@ -122,7 +115,7 @@ const TermsPage = lazy(() =>
 const AccessibilityPage = lazy(() =>
   cockpitImport(() => import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "accessibility" }) }))),
 );
-const PricingPage = lazy(() =>
+const PricingPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage }))),
 );
 const TradesHallVisualPage = lazy(() =>
@@ -136,7 +129,8 @@ const TradesHouseCraftQuizPage = lazy(() => {
   return import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage }));
 });
 const RoomsHomePage = lazy(() =>
-  cockpitImport(() => import("./pages/RoomsHomePage.js").then((m) => ({ default: m.RoomsHomePage }))),
+  // Fraunces, Newsreader and Geist (site.css): never the cockpit faces.
+  import("./pages/RoomsHomePage.js").then((m) => ({ default: m.RoomsHomePage })),
 );
 const RoomWalkPage = lazy(() =>
   cockpitImport(() => import("./pages/RoomWalkPage.js").then((m) => ({ default: m.RoomWalkPage }))),
@@ -165,17 +159,9 @@ const EventDayOpsPage = lazyWithPreload(() =>
 const EventArchitectPage = lazyWithPreload(() =>
   import("./pages/EventArchitectPage.js").then((m) => ({ default: m.EventArchitectPage })),
 );
-const RoomShowcasePage = lazy(() =>
-  cockpitImport(() => import("./pages/RoomShowcasePage.js").then((m) => ({ default: m.RoomShowcasePage }))),
-);
 const FreshPage = lazy(() =>
-  // The homepage: never triggers the cockpit font load.
+  // The about-and-enquiry page: never triggers the cockpit font load.
   import("./pages/fresh/FreshPage.js").then((m) => ({ default: m.FreshPage })),
-);
-const LivingHallPage = lazy(() =>
-  cockpitImport(() => import("./pages/living-hall/LivingHallPage.js").then((m) => ({
-    default: m.LivingHallPage,
-  }))),
 );
 // Living Hall preview/preflight routes return WITH their pages when that
 // feature commits (in flight; see docs/sessions/2026-07-17.md, T-526).
@@ -330,36 +316,36 @@ export const router = createBrowserRouter([
     element: <SplatsWorkInProgressPage />,
   },
   {
-    // The Rite (the previous scroll-dramaturgy homepage) lives on here for
-    // comparison and stale bookmarks. The homepage at `/` is now the
-    // spotlight-reveal hero (see the bottom of this route list).
+    // T-616, Blake's decision of 26 September 2026: the older home page
+    // designs leave public addresses and their code stays. The Rite (/landing),
+    // Spotlight (/welcome) and the Living Hall (/living-hall) redirect to the
+    // one front door at `/`, so a stale bookmark still lands on a real page.
     path: "/landing",
-    element: withSuspense(<LandingPage />),
+    element: <Navigate to="/" replace />,
   },
   {
+    // An internal sales deck that was public and crawlable: admin-only now.
     path: "/demo",
-    element: withSuspense(<DemoShowcasePage />),
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <DemoShowcasePage />
+      </ProtectedRoute>,
+      DemoShowcasePage,
+    ),
   },
   {
-    // Alias of `/` from the spotlight page's first review round — links
-    // already shared to /welcome keep working.
     path: "/welcome",
-    element: withSuspense(<SpotlightLandingPage />),
+    element: <Navigate to="/" replace />,
   },
   {
-    // /fresh — pictures-only prototype (2026 grammar: kinetic variable type,
-    // organic shapes, light/dark theming, a11y-first). Preview route for
-    // Blake's verdict; not linked from anywhere.
+    // /fresh survives as the about-and-enquiry page the front door links to;
+    // it renders the same composer as `/` (pages/fresh/FreshEnquiry.tsx).
     path: "/fresh",
     element: withSuspense(<FreshPage />),
   },
   {
-    // The Living Hall — P0 DOM-first document (spec:
-    // docs/superpowers/specs/2026-07-09-living-hall-landing-plan.md).
-    // Dev/preview route while the 3D tiers are built; intended to take `/`
-    // when the minimum-viable narrative ships.
     path: "/living-hall",
-    element: withSplatAccess(<LivingHallPage />),
+    element: <Navigate to="/" replace />,
   },
   {
     path: "/login",
@@ -384,15 +370,15 @@ export const router = createBrowserRouter([
   },
   {
     // `/editor` is the URL Trades Hall already shares publicly (on flyers,
-    // on their own website, in email signatures). It renders the current
-    // marketing homepage so visitors see the new design, not the planner
-    // app's login wall. The actual planner moved to `/plan` (below).
+    // on their own website, in email signatures), so it must land somewhere
+    // real: the front door, rather than a second copy of it (T-616). The
+    // planner itself moved to `/plan` (below).
     path: "/editor",
-    element: withSuspense(<FreshPage />),
+    element: <Navigate to="/" replace />,
   },
   {
     // `/plan` is the new home of the planner app. `/editor` used to live
-    // here; it now renders the landing page. Takes optional configId for
+    // here; it now redirects to the front door. Takes optional configId for
     // deep-link.
     path: "/plan",
     element: withPlannerAuth(<EditorPage />, EditorPage),
@@ -458,9 +444,18 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    // The workflow walkthrough is a FICTIONAL demonstration (Hillside House),
+    // so it moved under /dev, admin-only (Lane 6's hand-off, PR #21; Blake's
+    // decision of 26 September 2026). The old address forwards there, so a
+    // link Blake presented from still opens it for an admin, and nobody lands
+    // on a hallkeeper sheet for a configuration called "walkthrough".
     path: "/hallkeeper/walkthrough",
+    element: <Navigate to="/dev/hallkeeper-walkthrough" replace />,
+  },
+  {
+    path: "/dev/hallkeeper-walkthrough",
     element: withClerk(
-      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
+      <ProtectedRoute allowedRoles={["admin"]}>
         <HallkeeperWalkthroughPage />
       </ProtectedRoute>,
       HallkeeperWalkthroughPage,
@@ -545,10 +540,16 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    // Public SaaS pricing page. Entry point for prospective venues;
-    // CTAs route to registration until the Stripe+onboarding phases ship.
+    // The Venviewer subscription page. Admin-only until billing exists
+    // (Blake, 26 September 2026): it sells a tier nothing can yet bill, so it
+    // is off the public site, the sitemap and the crawl (robots.txt).
     path: "/pricing",
-    element: withSuspense(<PricingPage />),
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin"]}>
+        <PricingPage />
+      </ProtectedRoute>,
+      PricingPage,
+    ),
   },
   {
     // T-483 campaign preview. This is venue collateral and deliberately
@@ -610,7 +611,7 @@ export const router = createBrowserRouter([
     // from the public: /room/:roomSlug below is public and opens a room only
     // when data/room-walk-exposure.ts says its walk box can hold it.
     // Placed above /venues/:venueSlug/rooms/:roomSlug so it can never fall
-    // through to the public showcase matcher.
+    // through to the retired showcase address.
     path: "/venues/:venueSlug/captures/:roomSlug?",
     element: withSplatAccess(<RoomCapturesPage />),
   },
@@ -643,10 +644,12 @@ export const router = createBrowserRouter([
     element: withSuspense(<TwinPage />),
   },
   {
-    // Public room showcase. Uses only the client-safe room visual endpoint and
-    // planning-grade copy; internal package/debug data stays out of the route.
+    // The old public room showcase, retired with the older home pages (T-616):
+    // it was linked from nowhere and only ever rendered the API's fallback
+    // copy. The rooms live on `/` (the rail, the capacity table and the
+    // composer) and at /room/:roomSlug. RoomShowcasePage's code stays.
     path: "/venues/:venueSlug/rooms/:roomSlug",
-    element: withSplatAccess(<RoomShowcasePage />),
+    element: <Navigate to="/" replace />,
   },
   {
     // Client-facing proposal share link (T-427 phase 3). Public — the share
@@ -691,9 +694,10 @@ export const router = createBrowserRouter([
     element: withSuspense(<AccessibilityPage />),
   },
   {
-    // Public front door — the eight captured rooms, poster first. Prior
-    // designs stay reachable: the photography page at /fresh, spotlight at
-    // /welcome, the Rite at /landing, the Living Hall at /living-hall.
+    // The one public front door (T-616): the Grand Hall and the captured
+    // rooms, then capacities by layout, the wedding rates and the enquiry
+    // composer. /fresh is its about-and-enquiry sibling; the older designs
+    // redirect here.
     path: "/",
     element: withSuspense(<RoomsHomePage />),
   },
@@ -706,7 +710,9 @@ export const router = createBrowserRouter([
     element: withClerk(<RoleAwareRedirect />),
   },
   {
+    // A wrong or expired link meets a designed page that says so, with the
+    // ways on, instead of silently becoming the homepage (T-616).
     path: "*",
-    element: <Navigate to="/" replace />,
+    element: withSuspense(<NotFoundPage />),
   },
 ]);

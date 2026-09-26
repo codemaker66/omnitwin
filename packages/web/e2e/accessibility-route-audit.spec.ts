@@ -3,7 +3,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
   Notification,
-  PublicRoomRuntimeVisual,
   VenueDashboardAnalytics,
 } from "@omnitwin/types";
 import type { PublicProposal } from "../src/api/proposals.js";
@@ -224,18 +223,6 @@ function supplierPackFixture(): SupplierSafePackView {
   };
 }
 
-function publicRoomVisualFixture(): PublicRoomRuntimeVisual {
-  return {
-    venueSlug: "trades-hall",
-    roomSlug: "reception-room",
-    runtimeVisualAvailable: false,
-    visualUrl: null,
-    visualLabel: "Runtime asset staged internally",
-    safeCopy: "Runtime asset loaded, not yet verified/signed.",
-    humanReviewRequired: true,
-  };
-}
-
 async function mockDashboardRoutes(page: Page): Promise<void> {
   await page.route(`${API}/venues/${VENUE_ID}`, (route) => {
     void route.fulfill({
@@ -333,12 +320,6 @@ async function mockSupplierUnavailableRoutes(page: Page): Promise<void> {
   });
 }
 
-async function mockPublicRoomRoutes(page: Page): Promise<void> {
-  await page.route(`${API}/assets/runtime-packages/public-room-visual**`, (route) => {
-    void route.fulfill({ json: { data: publicRoomVisualFixture() } });
-  });
-}
-
 function mockNoRoutes(_page: Page): Promise<void> {
   return Promise.resolve();
 }
@@ -381,21 +362,25 @@ const routeSpecs: readonly RouteSpec[] = [
     mockRoutes: mockNoRoutes,
   },
   {
+    // T-616: the Rite left its public address (Blake, 26 September 2026) and
+    // /landing now forwards to the front door, which is what a stale link
+    // reaches and what this audits. The name is kept: it names the address.
     routeName: "the rite (previous landing)",
     path: "/landing",
-    // Derived the same way as THRESHOLD_LINE in rite-copy.ts — the count
-    // ages with the calendar instead of rotting in a fixture.
-    readyText: `Trades Hall, Glasgow · ${String(new Date().getFullYear() - 1791)} years`,
+    readyText: "Grand Hall",
     readyRole: "heading",
     mockRoutes: mockNoRoutes,
   },
   {
+    // Admin-only until billing exists (Blake, 26 September 2026), so the
+    // audit reads it as an admin does. The name is kept: it names the page.
     routeName: "public pricing",
     path: "/pricing",
     // The trial CTA is gone by design (no billing exists to honour it); the
     // page's own heading is what says it is ready.
     readyText: "Pricing",
     readyRole: "heading",
+    seedRole: "admin",
     mockRoutes: mockNoRoutes,
   },
   {
@@ -438,15 +423,21 @@ const routeSpecs: readonly RouteSpec[] = [
     mockRoutes: mockSupplierUnavailableRoutes,
   },
   {
+    // T-616 retired the room showcase: its address forwards to the front
+    // door, whose rail and capacity table now carry the Reception Room.
     routeName: "public Reception Room",
     path: "/venues/trades-hall/rooms/reception-room",
-    readyText: "Reception Room",
-    mockRoutes: mockPublicRoomRoutes,
+    readyText: "Grand Hall",
+    readyRole: "heading",
+    mockRoutes: mockNoRoutes,
   },
   {
+    // A room address that does not exist meets the designed not-found page
+    // (T-616) rather than silently becoming the homepage.
     routeName: "public room unavailable",
-    path: "/venues/trades-hall/rooms/not-a-room",
-    readyText: "Room preview unavailable",
+    path: "/rooms/not-a-room",
+    readyText: "That link has expired or moved",
+    readyRole: "heading",
     mockRoutes: mockNoRoutes,
   },
 ];

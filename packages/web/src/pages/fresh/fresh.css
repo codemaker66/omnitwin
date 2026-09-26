@@ -717,6 +717,24 @@
 .fr-contact-way a:hover {
   text-decoration-color: var(--fr-green);
 }
+/* The address is for reading and copying, set like the other two ways in;
+   the composer link beside it is the action, so it takes the quieter voice. */
+.fr-contact-address {
+  font-family: var(--fr-display);
+  font-weight: 460;
+  font-variation-settings: "opsz" 40;
+  font-size: clamp(19px, 2.6vw, 27px);
+  color: var(--fr-ink);
+  overflow-wrap: anywhere;
+}
+.fr-contact-way .fr-contact-address + a {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  font-variation-settings: normal;
+  text-underline-offset: 4px;
+}
 .fr-colophon {
   display: flex;
   align-items: center;
@@ -862,10 +880,21 @@
 .fr-enq-field input:hover {
   border-color: var(--fr-ink-2);
 }
+/* The public enquiry form is the one place a keyboard visitor must never lose
+   themselves, so its fields take the app's shared focus ring rather than a
+   private 2px underline that read as a hover state (Lane 1 review, T-615). */
 .fr-enq-field input:focus-visible {
-  outline: none;
-  border-bottom: 2px solid var(--fr-green);
-  margin-bottom: -1px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+  border-bottom-color: var(--fr-green);
+}
+/* The date field's calendar button lives inside the input's own shadow tree.
+   Tabbing onto it leaves neither :focus nor :focus-visible on the input, only
+   :focus-within, so without this the last stop in the field showed no ring. */
+.fr-enq-field input[type="date"]:focus-within {
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
+  border-bottom-color: var(--fr-green);
 }
 .fr-enq-field input[type="number"] {
   width: 110px;
@@ -1414,6 +1443,10 @@
   text-decoration: underline;
   text-decoration-color: var(--fr-rule);
   text-underline-offset: 3px;
+  /* The 13px sentence left this link a 17px-tall target. Vertical padding on
+     an inline link widens what a finger or pointer can hit without moving the
+     sentence: the line box keeps its height. */
+  padding-block: 4px;
 }
 
 /* ——— footer legal links ——— */

@@ -56,7 +56,14 @@ describe("router.tsx — lazy route loading (#16)", () => {
     expect(codeOnly).toMatch(/\blazy(?:WithPreload)?\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/SplatFixturePage\.js["']/);
     expect(codeOnly).toMatch(/\blazy(?:WithPreload)?\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/TradesHallVisualPage\.js["']/);
     expect(codeOnly).toMatch(/\blazy(?:WithPreload)?\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/TradesHallAssetStatusPage\.js["']/);
-    expect(codeOnly).toMatch(/\blazy(?:WithPreload)?\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/RoomShowcasePage\.js["']/);
+    // The designed not-found page replaced the `*` → `/` redirect (T-616), so
+    // it is a route chunk like any other and must not ride in the main bundle.
+    expect(codeOnly).toMatch(/\blazy(?:WithPreload)?\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/NotFoundPage\.js["']/);
+    expect(codeOnly).toMatch(/\blazy(?:WithPreload)?\(\(\)\s*=>\s*(?:cockpitImport\(\(\)\s*=>\s*)?import\(["']\.\/pages\/PricingPage\.js["']/);
+    // RoomShowcasePage left this list in T-616: its address redirects to `/`,
+    // so the router imports the page nowhere and there is no chunk to split.
+    // The component and its own suite stay, and the negative assertion below
+    // still guards against a static import coming back.
   });
 
   it("builds preloadable pages on React.lazy, sharing one import with the early request", async () => {
@@ -88,6 +95,8 @@ describe("router.tsx — lazy route loading (#16)", () => {
       "TradesHallVisualPage",
       "TradesHallAssetStatusPage",
       "RoomShowcasePage",
+      "NotFoundPage",
+      "PricingPage",
     ] as const;
     for (const pageName of pages) {
       expect(codeOnly).not.toMatch(

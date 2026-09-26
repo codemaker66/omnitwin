@@ -68,6 +68,39 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 2a7be7d54f62686846cb-8265ef7314e9066c80fb one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate."
+    },
+    {
+      "date": "2026-09-26",
+      "reason": "The front door (T-616, Lane 2; Blake's decisions of 26 September 2026): the older home page designs left public addresses, so the Rite's six responsive cases at /landing retire, and six front-door cases replace them one for one at `/`: its composition at the same five viewports (hero, rooms, capacities by layout, wedding rates, the enquiry form and the legal links beside it, no horizontal overflow, no runtime errors), and every Ask about a date reaching the composer from the front door and from the designed not-found page.",
+      "sourceCommit": "9d0d4a446e2721bb41ee227152296f303fbcc7a6",
+      "sourceFile": "packages/web/e2e/front-door-responsive.spec.ts",
+      "sourceFileGitBlobSha256": "2368b7e4309be6357a8c32672542a0a483bdfa957c539e0ccde8566628a44125",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "80f147c232913018e0a7f044050bb21e4c638fd49c68081efe7841f5c19a6006",
+      "caseIds": [
+        "87761e13124b3ec60b88-54331050a4e4e5daa3ad",
+        "87761e13124b3ec60b88-5dafcbe99c38ba7d6fa4",
+        "87761e13124b3ec60b88-5ef777fb2ff1af133fa7",
+        "87761e13124b3ec60b88-b156cb90e948bf3e6bb0",
+        "87761e13124b3ec60b88-b366ac1306fa98f80f89",
+        "87761e13124b3ec60b88-cfc541647b682352b7b0"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These six cases replace the six retired landing-rite-responsive.spec.ts identities (9c15d4faad25ce62ae44-292eb8734eeaf3aa8b29, 9c15d4faad25ce62ae44-47b818eb1a47a7096fef, 9c15d4faad25ce62ae44-59443cffc153ce0d39b9, 9c15d4faad25ce62ae44-5a8986d3b416c37c0306, 9c15d4faad25ce62ae44-9e802feeec6712050fbb, 9c15d4faad25ce62ae44-a1d49f20f71860af2d42) one for one, so the totals are unchanged; they were absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate."
+    },
+    {
+      "date": "2026-09-26",
+      "reason": "The room showcase retired with the older home pages (T-616, Lane 2): its address forwards to the front door, so the button-audit case 2a7be7d54f62686846cb-86e7512f5819faee972d ('public room buttons select event context and preserve safe runtime copy') has no page. It is restated where a visitor now chooses the occasion: the enquiry composer on `/`, whose draft follows every choice.",
+      "sourceCommit": "9d0d4a446e2721bb41ee227152296f303fbcc7a6",
+      "sourceFile": "packages/web/e2e/button-action-audit.spec.ts",
+      "sourceFileGitBlobSha256": "8e53f5b5e21d316e7a09422bf52f7dde16b8e585152c5dd1b45be32e7e3b1663",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "80f147c232913018e0a7f044050bb21e4c638fd49c68081efe7841f5c19a6006",
+      "caseIds": [
+        "2a7be7d54f62686846cb-b5882cfaa717d60c4bb7"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 2a7be7d54f62686846cb-86e7512f5819faee972d one for one, so the totals are unchanged; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate."
     }
   ],
   "cases": [
@@ -911,9 +944,9 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "2a7be7d54f62686846cb-86e7512f5819faee972d",
+      "id": "2a7be7d54f62686846cb-b5882cfaa717d60c4bb7",
       "file": "button-action-audit.spec.ts",
-      "title": "public room buttons select event context and preserve safe runtime copy",
+      "title": "front door enquiry buttons choose the occasion and keep the draft in step",
       "suitePath": [
         "button-action-audit.spec.ts",
         "SS++ representative button behavior"
@@ -2087,61 +2120,61 @@
       "expectedStatus": "passed"
     },
     {
-      "id": "9c15d4faad25ce62ae44-292eb8734eeaf3aa8b29",
-      "file": "landing-rite-responsive.spec.ts",
-      "title": "the rite holds its composition at 2048x1000 desktop",
+      "id": "87761e13124b3ec60b88-54331050a4e4e5daa3ad",
+      "file": "front-door-responsive.spec.ts",
+      "title": "the front door holds its composition at 320x568 phone",
       "suitePath": [
-        "landing-rite-responsive.spec.ts"
+        "front-door-responsive.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
     },
     {
-      "id": "9c15d4faad25ce62ae44-47b818eb1a47a7096fef",
-      "file": "landing-rite-responsive.spec.ts",
-      "title": "the rite holds its composition at 768x1024 tablet portrait",
+      "id": "87761e13124b3ec60b88-5dafcbe99c38ba7d6fa4",
+      "file": "front-door-responsive.spec.ts",
+      "title": "the front door holds its composition at 768x1024 tablet portrait",
       "suitePath": [
-        "landing-rite-responsive.spec.ts"
+        "front-door-responsive.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
     },
     {
-      "id": "9c15d4faad25ce62ae44-59443cffc153ce0d39b9",
-      "file": "landing-rite-responsive.spec.ts",
-      "title": "the rite holds its composition at 1280x800 desktop",
+      "id": "87761e13124b3ec60b88-5ef777fb2ff1af133fa7",
+      "file": "front-door-responsive.spec.ts",
+      "title": "every Ask about a date reaches the composer, from the front door and from a link that went nowhere",
       "suitePath": [
-        "landing-rite-responsive.spec.ts"
+        "front-door-responsive.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
     },
     {
-      "id": "9c15d4faad25ce62ae44-5a8986d3b416c37c0306",
-      "file": "landing-rite-responsive.spec.ts",
-      "title": "the enter control descends into the dark",
+      "id": "87761e13124b3ec60b88-b156cb90e948bf3e6bb0",
+      "file": "front-door-responsive.spec.ts",
+      "title": "the front door holds its composition at 390x844 phone",
       "suitePath": [
-        "landing-rite-responsive.spec.ts"
+        "front-door-responsive.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
     },
     {
-      "id": "9c15d4faad25ce62ae44-9e802feeec6712050fbb",
-      "file": "landing-rite-responsive.spec.ts",
-      "title": "the rite holds its composition at 390x844 phone",
+      "id": "87761e13124b3ec60b88-b366ac1306fa98f80f89",
+      "file": "front-door-responsive.spec.ts",
+      "title": "the front door holds its composition at 1280x800 desktop",
       "suitePath": [
-        "landing-rite-responsive.spec.ts"
+        "front-door-responsive.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
     },
     {
-      "id": "9c15d4faad25ce62ae44-a1d49f20f71860af2d42",
-      "file": "landing-rite-responsive.spec.ts",
-      "title": "the rite holds its composition at 320x568 phone",
+      "id": "87761e13124b3ec60b88-cfc541647b682352b7b0",
+      "file": "front-door-responsive.spec.ts",
+      "title": "the front door holds its composition at 2048x1000 desktop",
       "suitePath": [
-        "landing-rite-responsive.spec.ts"
+        "front-door-responsive.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 3);
+  assert.equal(baseline.inventoryAdmissions.length, 5);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -166,6 +166,71 @@ rejected('the manager restatement cannot become a skip', (input) => {
 }, /policy changed/);
 rejected('the retired executive identity cannot come back', (input) => {
   specs(input.inventory).find((row) => row.id === managerRestatement).id = retiredExecutiveCase;
+}, /missing or extra/);
+const frontDoorAdditions = [
+  '87761e13124b3ec60b88-54331050a4e4e5daa3ad',
+  '87761e13124b3ec60b88-5dafcbe99c38ba7d6fa4',
+  '87761e13124b3ec60b88-5ef777fb2ff1af133fa7',
+  '87761e13124b3ec60b88-b156cb90e948bf3e6bb0',
+  '87761e13124b3ec60b88-b366ac1306fa98f80f89',
+  '87761e13124b3ec60b88-cfc541647b682352b7b0',
+];
+const retiredRiteCases = [
+  '9c15d4faad25ce62ae44-292eb8734eeaf3aa8b29',
+  '9c15d4faad25ce62ae44-47b818eb1a47a7096fef',
+  '9c15d4faad25ce62ae44-59443cffc153ce0d39b9',
+  '9c15d4faad25ce62ae44-5a8986d3b416c37c0306',
+  '9c15d4faad25ce62ae44-9e802feeec6712050fbb',
+  '9c15d4faad25ce62ae44-a1d49f20f71860af2d42',
+];
+test('the front door admission replaces the Rite responsive cases one for one', () => {
+  const admission = baseline.inventoryAdmissions[3];
+  assert.equal(admission.date, '2026-09-26');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/front-door-responsive.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.deepEqual(admission.caseIds, [...frontDoorAdditions].sort());
+  for (const id of frontDoorAdditions) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'front-door-responsive.spec.ts');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+  for (const id of retiredRiteCases) assert.equal(baseline.cases.some((entry) => entry.id === id), false);
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'landing-rite-responsive.spec.ts').length, 0);
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+for (const id of frontDoorAdditions) {
+  rejected(`new front door case ${id} cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}
+rejected('a retired Rite identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === frontDoorAdditions[0]).id = retiredRiteCases[0];
+}, /missing or extra/);
+const composerRestatement = '2a7be7d54f62686846cb-b5882cfaa717d60c4bb7';
+const retiredShowcaseCase = '2a7be7d54f62686846cb-86e7512f5819faee972d';
+test('the composer restatement replaces the retired room showcase case one for one', () => {
+  const admission = baseline.inventoryAdmissions[4];
+  assert.equal(admission.date, '2026-09-26');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/button-action-audit.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.deepEqual(admission.caseIds, [composerRestatement]);
+  assert.equal(baseline.cases.some((entry) => entry.id === retiredShowcaseCase), false);
+  const row = baseline.cases.find((entry) => entry.id === composerRestatement);
+  assert.equal(row?.file, 'button-action-audit.spec.ts');
+  assert.equal(row?.expectedStatus, 'passed');
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('the composer restatement cannot become a skip', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === composerRestatement);
+  spec.tests[0].expectedStatus = 'skipped';
+  spec.tests[0].results[0].status = 'skipped';
+  spec.tests[0].status = 'skipped';
+}, /policy changed/);
+rejected('the retired room showcase identity cannot come back', (input) => {
+  specs(input.inventory).find((row) => row.id === composerRestatement).id = retiredShowcaseCase;
 }, /missing or extra/);
 rejected('missing CPU shard cannot pass', (input) => input.cpuShards.pop(), /four CPU/);
 rejected('full inventory cannot silently omit a case', (input) => input.inventory.suites.shift(), /missing or extra/);

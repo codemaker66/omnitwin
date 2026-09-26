@@ -20,20 +20,31 @@ describe("room card copy", () => {
     expect(measuredLine(reception, true)).toMatch(/ m · /u);
   });
 
+  // T-616 / gate line 3: these two used to pin the WORDS "alignment in review",
+  // "not yet walkable" and "Dimensions under review" — our vocabulary for our
+  // problems, printed to a couple looking for a wedding venue. The guarantee
+  // they were written to protect is asserted here instead: a closed or
+  // unmeasured room still publishes no dimensions. Only the reader-facing
+  // string changed, so the withholding stays pinned and the jargon does not.
   it("withholds dimensions from a closed room even when its mesh alignment is confident", () => {
     const reception = bundle("reception-room");
     const line = measuredLine(reception, false);
     expect(line).not.toMatch(/ m(\s|·|$)/u);
     expect(line).toContain(splatLine(reception));
-    expect(stateLine(reception, false)).toMatch(/alignment in review/iu);
-    expect(stateLine(reception, false)).toMatch(/not yet walkable/iu);
+    const state = stateLine(reception, false);
+    // A closed room still says so — in words a visitor owns.
+    expect(state).not.toBeNull();
+    expect(state).not.toMatch(/alignment|walkable|scan/iu);
   });
 
-  it("marks a walkable room under review and withholds its dimensions", () => {
+  it("withholds the dimensions of a walkable room whose scan did not measure cleanly", () => {
     const saloon = bundle("saloon");
     expect(saloon.alignmentConfidence).toBe("review");
-    expect(measuredLine(saloon, true)).toBe(`${splatLine(saloon)} · alignment in review`);
-    expect(stateLine(saloon, true)).toBe("Dimensions under review");
+    expect(measuredLine(saloon, true)).toBe(splatLine(saloon));
+    expect(measuredLine(saloon, true)).not.toMatch(/ m(\s|·|$)/u);
+    expect(measuredLine(saloon, true)).not.toContain(footprint(saloon));
+    // And no caption of ours explaining why: the absence is the whole message.
+    expect(stateLine(saloon, true)).toBeNull();
   });
 
   it("has nothing to add for a room that is confident and walkable", () => {
