@@ -31,26 +31,15 @@ export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
 export const COMMERCIAL_ROLES = ["admin", "manager", "staff", "sales"] as const;
 
 /**
- * The Analytics tab — narrower than the route that serves it, on purpose.
- *
- * What the tab opens is `ExecutiveAnalyticsView`, whose only call is
- * `getVenueDashboardAnalytics()` → `GET /analytics/venue-dashboard`. At this
- * head that route reads `canManageCommercial`
- * (`routes/revenue-analytics.ts:313`, changed by #19), so it admits admin,
- * manager, staff AND sales, and refuses the hallkeeper — the priced half of
- * decision 6b. Lane 7's #24 makes the same split by payload ("priced" →
- * `canManageCommercial`, room utilisation → `canManageVenue`), so the two
- * branches agree on the answer.
- *
- * `sales` is nevertheless held back until #24 lands, at Lane 7's request on
- * its re-review of this branch. A narrower offer is never a dead end — the
- * rule is nav-offer ⊆ route-admit — so the hold costs a sales user one tab
- * between #19 and #24 and nothing else. The un-hide is one line, below.
- *
- * No web surface calls `/analytics/room-utilisation` on its own; the rows
- * arrive inside the venue-dashboard payload, so it needs no nav gate.
+ * The Analytics tab. What it opens is `ExecutiveAnalyticsView`, whose only
+ * call is `getVenueDashboardAnalytics()` → `GET /analytics/venue-dashboard`,
+ * and that route reads `canManageCommercial` (`routes/revenue-analytics.ts`):
+ * admin, manager, staff and sales, never the hallkeeper — the priced half of
+ * decision 6b. Room utilisation keeps `canManageVenue`, but no web surface
+ * calls `/analytics/room-utilisation` on its own; its rows arrive inside the
+ * venue-dashboard payload, so it needs no nav gate.
  */
-export const ANALYTICS_ROLES = ["admin", "manager", "staff"] as const;
+export const ANALYTICS_ROLES = COMMERCIAL_ROLES;
 
 /**
  * Client search and the client profile behind it. All four `/clients` routes
@@ -87,36 +76,12 @@ export const PLANNER_ROLES = ["admin", "manager", "staff", "planner"] as const;
 export const WORKSPACE_ROLES = ["admin", "manager", "staff", "sales", "hallkeeper", "planner"] as const;
 
 /**
- * The CRM pipeline is NOT yet `canManageCommercial`.
- *
- * This module states the DEPLOYED route truth, and on release/r1 today
- * `routes/crm.ts:31` and `routes/opportunities.ts:38` still read
- * `user.role === "staff"` — they refuse a venue's own admin, and manager and
- * sales with it. So the Pipeline tab is offered to `staff` alone: a missing
- * tab is a better R1 than a tab that answers 403.
- *
- * Lane 7 (PR #24) widens both routes to `canManageCommercial` and merges
- * straight after this branch.
- *
- * PATCH TO APPLY WHEN #24 LANDS — two lines, and the values are exactly what
- * the routes admit once it has:
- *
- *     export const CRM_PIPELINE_ROLES = COMMERCIAL_ROLES;
- *       // routes/crm.ts and routes/opportunities.ts move from
- *       // `user.role === "staff"` to canManageCommercial:
- *       // admin, manager, staff, sales.
- *     export const ANALYTICS_ROLES = COMMERCIAL_ROLES;
- *       // the priced analytics routes (/analytics/pipeline-summary and
- *       // /analytics/venue-dashboard) admit canManageCommercial: admin,
- *       // manager, staff, sales. /analytics/room-utilisation stays on
- *       // canManageVenue (admin, manager, staff, hallkeeper) and has no tab.
- *
- * Nothing else moves: Proposals is already COMMERCIAL_ROLES, Client Search
- * stays on canManageVenue, and the review queue stays on REVIEW_QUEUE_ROLES.
- * `role-capabilities.test.ts` keeps nav-offer ⊆ route-admit honest either way,
- * so the change is safe to make the moment #24 lands.
+ * The CRM pipeline: `GET /crm/pipeline`, `/crm/pipeline/value`,
+ * `POST /crm/from-enquiry/:id` and the `/opportunities` routes all read
+ * `canManageCommercial` (`routes/crm.ts`, `routes/opportunities.ts`), so the
+ * Pipeline tab is offered to exactly that set: admin, manager, staff and sales.
  */
-export const CRM_PIPELINE_ROLES = ["staff"] as const;
+export const CRM_PIPELINE_ROLES = COMMERCIAL_ROLES;
 
 /** A caterer is event-scoped: it reaches an event through a share, never a venue surface. */
 export const EVENT_SCOPED_ROLES = ["caterer"] as const;

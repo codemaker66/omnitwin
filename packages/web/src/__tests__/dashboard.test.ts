@@ -405,18 +405,17 @@ describe("DashboardPage", () => {
     expect(canOpenDashboardView("pipeline", "staff")).toBe(true);
     expect(canOpenDashboardView("pipeline", "planner", "admin")).toBe(true);
     expect(canOpenDashboardView("pipeline", "hallkeeper")).toBe(false);
-    // Pipeline reads api/crm.js, and routes/crm.ts is still staff-only on
-    // release/r1 — Lane 7 (PR #24) widens it. Offering it to sales or manager
-    // now would be offering a 403. Proposals and Analytics read routes this
-    // branch already widened, so they follow canManageCommercial.
-    expect(canOpenDashboardView("pipeline", "sales")).toBe(false);
-    expect(canOpenDashboardView("pipeline", "manager")).toBe(false);
+    // Pipeline, Proposals and Analytics read routes that gate on
+    // canManageCommercial (routes/crm.ts, routes/proposals.ts and the priced
+    // analytics), so each is offered to admin, manager, staff and sales.
+    expect(canOpenDashboardView("pipeline", "sales")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "manager")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "admin")).toBe(true);
     expect(canOpenDashboardView("proposals", "sales")).toBe(true);
     expect(canOpenDashboardView("proposals", "manager")).toBe(true);
-    // Analytics is held back from sales until #24 lands, one line narrower
-    // than /analytics/venue-dashboard admits (lib/role-capabilities.ts).
-    expect(canOpenDashboardView("analytics", "sales")).toBe(false);
+    expect(canOpenDashboardView("analytics", "sales")).toBe(true);
     expect(canOpenDashboardView("analytics", "manager")).toBe(true);
+    expect(canOpenDashboardView("analytics", "hallkeeper")).toBe(false);
     // Client Search and the review queue take their own API gates: /clients
     // is canManageVenue, the pending queue is the review state machine's set.
     expect(canOpenDashboardView("search", "sales")).toBe(false);

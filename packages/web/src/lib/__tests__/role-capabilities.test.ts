@@ -48,15 +48,19 @@ describe("nav offers are reachable", () => {
     }
   });
 
-  it("offers the Pipeline tab only to the roles routes/crm.ts still admits", () => {
-    // Lane 7 has not landed: crm.ts and opportunities.ts read
-    // `user.role === "staff"`. Until then a venue admin seeing a Pipeline tab
-    // would be walking into a 403. When Lane 7 lands, widen CRM_PIPELINE_ROLES
-    // to COMMERCIAL_ROLES and this expectation moves with it.
+  it("offers the Pipeline tab to exactly the roles routes/crm.ts admits", () => {
+    // crm.ts and opportunities.ts gate on canManageCommercial, so the venue's
+    // own admin, manager and sales work the pipeline alongside staff, and the
+    // hallkeeper, planner, client and caterer are not offered a tab that
+    // would answer 403.
+    expect([...CRM_PIPELINE_ROLES]).toEqual([...COMMERCIAL_ROLES]);
     for (const role of USER_ROLES) {
       expect(canOpenDashboardView("pipeline", role, "none"), `pipeline for ${role}`)
-        .toBe(hasRole(CRM_PIPELINE_ROLES, role));
+        .toBe(hasRole(COMMERCIAL_ROLES, role));
     }
+    expect(canOpenDashboardView("pipeline", "admin", "none")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "sales", "none")).toBe(true);
+    expect(canOpenDashboardView("pipeline", "hallkeeper", "none")).toBe(false);
   });
 
   it("offers Proposals to the whole commercial set, because /proposals admits it", () => {
@@ -66,25 +70,17 @@ describe("nav offers are reachable", () => {
     }
   });
 
-  it("offers Analytics no wider than /analytics/venue-dashboard admits", () => {
-    // Route truth at this head: routes/revenue-analytics.ts:313 gates the
-    // venue-dashboard payload on canManageCommercial — admin, manager, staff,
-    // sales — and refuses the hallkeeper, the priced half of decision 6b.
-    // The offer is deliberately NARROWER: sales is held back until Lane 7's
-    // #24 lands (see ANALYTICS_ROLES). Narrower is safe, wider is a dead end,
-    // so the assertion is the subset, plus the two named cases.
+  it("offers Analytics to exactly the roles /analytics/venue-dashboard admits", () => {
+    // routes/revenue-analytics.ts gates the venue-dashboard payload on
+    // canManageCommercial — admin, manager, staff, sales — and refuses the
+    // hallkeeper, the priced half of decision 6b.
+    expect([...ANALYTICS_ROLES]).toEqual([...COMMERCIAL_ROLES]);
     for (const role of USER_ROLES) {
-      const offered = canOpenDashboardView("analytics", role, "none");
-      expect(offered, `analytics for ${role}`).toBe(hasRole(ANALYTICS_ROLES, role));
-      if (offered) {
-        expect(hasRole(COMMERCIAL_ROLES, role), `${role} is admitted by the analytics route`).toBe(true);
-      }
+      expect(canOpenDashboardView("analytics", role, "none"), `analytics for ${role}`)
+        .toBe(hasRole(COMMERCIAL_ROLES, role));
     }
     expect(canOpenDashboardView("analytics", "hallkeeper", "none")).toBe(false);
-    expect(canOpenDashboardView("analytics", "sales", "none")).toBe(false);
-    // The un-hide when #24 lands is ANALYTICS_ROLES = COMMERCIAL_ROLES, and
-    // that is the only difference between the two.
-    expect([...COMMERCIAL_ROLES].filter((role) => !hasRole(ANALYTICS_ROLES, role))).toEqual(["sales"]);
+    expect(canOpenDashboardView("analytics", "sales", "none")).toBe(true);
   });
 
   it("offers Client Search only to the roles /clients admits", () => {

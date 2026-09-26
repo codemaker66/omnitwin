@@ -147,19 +147,17 @@ describe("DashboardLayout navigation", () => {
     expect(screen.getByRole("button", { name: "Inventory" })).toBeDefined();
   });
 
-  it("offers sales the tabs its APIs admit, and neither stock nor the CRM pipeline", async () => {
+  it("offers sales the commercial tabs its APIs admit, and not stock", async () => {
     useAuthStore.getState().setUser({ ...admin, role: "sales" });
     renderShell();
     await screen.findByText("Trades Hall");
     expect(screen.queryByRole("button", { name: "Inventory" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    // Proposals reads routes this branch widened to canManageCommercial, so
-    // sales can open it.
+    // Proposals, the CRM pipeline and the priced analytics all gate on
+    // canManageCommercial, which admits sales.
     expect(screen.getByRole("button", { name: "Proposals" })).toBeDefined();
-    // Pipeline reads api/crm.js, still staff-only until Lane 7 (PR #24).
-    expect(screen.queryByRole("button", { name: "Pipeline" })).toBeNull();
-    // Analytics is held back from sales until #24 lands (ANALYTICS_ROLES).
-    expect(screen.queryByRole("button", { name: "Executive Analytics" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Pipeline" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Executive Analytics" })).toBeDefined();
     // Client Search reads /clients, which gates on canManageVenue — sales is
     // refused there, so the tab is not offered.
     expect(screen.queryByRole("button", { name: "Client Search" })).toBeNull();
