@@ -11,7 +11,10 @@
 #     rather than 404 shows the deployed API has it;
 #   - the front door's status.
 # It fails when the API does not contain the commit, is not ready, or a route
-# check differs.
+# check differs. With browser "true" a second job opens the public pages in
+# Chromium: the production route pass (e2e/production-live-route-pass.spec.ts,
+# which mutates nothing), and photographs of the front door, a retired address,
+# an unknown address and /pricing signed out, kept for 14 days.
 
 name: Production receipt
 
@@ -30,6 +33,10 @@ on:
         description: Minutes to wait for the API to report a build that contains the commit (0 to 20).
         required: false
         default: "10"
+      browser:
+        description: "true to also open the public pages in a browser: the production route pass, and photographs kept as an artifact"
+        required: false
+        default: "false"
 
 permissions:
   contents: read
@@ -128,3 +135,67 @@ jobs:
           note "- $WEB/: $(status_of "$WEB/")"
 
           exit "$failed"
+
+  browser:
+    name: Public pages in a browser
+    if: ${{ inputs.browser == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout the commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4.4.0
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @omnitwin/types
+        run: pnpm --filter @omnitwin/types build
+
+      - name: Install Chromium
+        run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
+
+      - name: Run the production route pass
+        env:
+          E2E_BASE_URL: https://venviewer.com
+          E2E_START_SERVER: "false"
+        run: pnpm --filter @omnitwin/web exec playwright test e2e/production-live-route-pass.spec.ts --project=chromium --reporter=line
+
+      - name: Photograph the public pages
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          echo "### Public pages" >> "$GITHUB_STEP_SUMMARY"
+          pnpm --filter @omnitwin/web exec node ../../.github/scripts/photograph-production.mjs "$GITHUB_WORKSPACE/production-evidence/photographs" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Gather the route pass report
+        if: ${{ !cancelled() }}
+        run: |
+          # The spec writes under a Windows-shaped path, relative on Linux; an
+          # artifact path may not contain its colon, so copy it out.
+          report="packages/web/C:/Users/blake/omnitwin2/artifacts/t469-production-live-route-pass-2026-06-21"
+          if [[ -d "$report" ]]; then
+            mkdir -p production-evidence/route-pass
+            cp -R "$report"/. production-evidence/route-pass/
+          fi
+
+      - name: Keep the evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-evidence-${{ github.run_id }}
+          path: production-evidence
+          retention-days: 14
+          if-no-files-found: warn
