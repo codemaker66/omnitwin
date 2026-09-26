@@ -292,6 +292,51 @@ export const TurnaroundRuleSchema = z.object({
 export type TurnaroundRule = z.infer<typeof TurnaroundRuleSchema>;
 
 // ---------------------------------------------------------------------------
+// Turnaround rules as staff set them (T-637 slice A)
+//
+// Staff choose a room (or all rooms), an event type (or any) and the minutes;
+// the rule's name is derived from that scope. A rule nobody has confirmed,
+// such as a seeded demo value, has no confirmedAt and reads "Not confirmed".
+// ---------------------------------------------------------------------------
+
+/** The longest changeover one rule may hold: a day. */
+export const TURNAROUND_MAX_MINUTES = 1440;
+
+export const TurnaroundMinutesSchema = z.number().int().min(0).max(TURNAROUND_MAX_MINUTES);
+
+export const TurnaroundRuleSettingSchema = TurnaroundRuleSchema.extend({
+  /** When a person last saved the rule; null for one nobody has confirmed. */
+  confirmedAt: IsoInstantSchema.nullable(),
+  /** Who last saved it, when known. */
+  updatedByName: z.string().nullable(),
+});
+export type TurnaroundRuleSetting = z.infer<typeof TurnaroundRuleSettingSchema>;
+
+export const TurnaroundRulesResponseSchema = z.object({
+  rules: z.array(TurnaroundRuleSettingSchema),
+  /** The venue's rooms, in the venue's own order. */
+  rooms: z.array(z.object({ id: z.string().uuid(), name: z.string() })),
+  /** Event types the venue's bookings and events use, most used first. */
+  eventTypes: z.array(z.string()),
+});
+export type TurnaroundRulesResponse = z.infer<typeof TurnaroundRulesResponseSchema>;
+
+export const CreateTurnaroundRuleSchema = z.object({
+  spaceId: z.string().uuid().nullable(),
+  eventType: z.string().trim().min(1).max(80).nullable(),
+  minutes: TurnaroundMinutesSchema,
+});
+export type CreateTurnaroundRule = z.infer<typeof CreateTurnaroundRuleSchema>;
+
+export const UpdateTurnaroundRuleSchema = z.object({
+  minutes: TurnaroundMinutesSchema,
+  /** The rule's updatedAt as the editor last saw it: a newer change wins,
+   *  and the editor is shown it rather than silently overwriting it. */
+  expectedUpdatedAt: IsoInstantSchema,
+});
+export type UpdateTurnaroundRule = z.infer<typeof UpdateTurnaroundRuleSchema>;
+
+// ---------------------------------------------------------------------------
 // Conflict engine v0 output (Canon §4). Severity is graded, explanations are
 // plain English, and unchecked things say `not_checked` — never OK.
 // ---------------------------------------------------------------------------

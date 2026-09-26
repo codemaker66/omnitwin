@@ -26,6 +26,16 @@ vi.mock("../../../api/spaces.js", () => ({
   updateVenue: mocks.updateVenue,
 }));
 
+// The Changeovers section below the form has its own tests
+// (changeovers/__tests__); here it only needs a venue with no rules.
+vi.mock("../../../api/turnaround-rules.js", () => ({
+  listTurnaroundRules: vi.fn().mockResolvedValue({ rules: [], rooms: [], eventTypes: [] }),
+  createTurnaroundRule: vi.fn(),
+  updateTurnaroundRule: vi.fn(),
+  retireTurnaroundRule: vi.fn(),
+  ruleFromRefusal: vi.fn().mockReturnValue(null),
+}));
+
 vi.mock("../../../stores/auth-store.js", () => ({
   useAuthStore: (selector: (state: typeof mocks.authState) => unknown): unknown =>
     selector(mocks.authState),

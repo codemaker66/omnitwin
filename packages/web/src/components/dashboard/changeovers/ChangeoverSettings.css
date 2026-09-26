@@ -1,0 +1,257 @@
+/* Changeovers (T-637, slice A): an ivory sheet in the workspace register.
+   Colours come from the register's --reg-* names only. */
+
+.changeovers {
+  display: grid;
+  gap: 18px;
+  padding: 24px 26px 26px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 8px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+}
+
+.changeovers__head h3 {
+  margin: 0 0 6px;
+  font: 400 28px/1.1 var(--house-serif);
+  letter-spacing: -0.01em;
+}
+
+.changeovers__head p,
+.changeovers__empty {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--reg-text-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.changeovers__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--reg-rule);
+}
+
+.changeovers__row {
+  display: grid;
+  /* Fixed tracks, so the times and actions line up from row to row. */
+  grid-template-columns: minmax(0, 1.3fr) 112px minmax(0, 1fr) 312px;
+  gap: 6px 18px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--reg-rule);
+}
+
+.changeovers__scope {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.changeovers__room {
+  font: 400 19px/1.2 var(--house-serif);
+}
+
+.changeovers__kind,
+.changeovers__confirmation {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 13.5px;
+}
+
+.changeovers__row[data-state="unconfirmed"] .changeovers__confirmation {
+  color: var(--reg-attention);
+  font-weight: 600;
+}
+
+.changeovers__time {
+  margin: 0;
+  font: 400 24px/1 var(--house-serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.changeovers__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.changeovers__edit,
+.changeovers__confirm,
+.changeovers__row-notice {
+  grid-column: 1 / -1;
+}
+
+.changeovers__edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: flex-end;
+}
+
+.changeovers__confirm {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 6px;
+  background: var(--reg-raised);
+}
+
+.changeovers__confirm p,
+.changeovers__row-notice,
+.changeovers__hint {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.changeovers__confirm .changeovers__actions {
+  justify-content: flex-start;
+}
+
+.changeovers label {
+  display: grid;
+  gap: 4px;
+  color: var(--reg-text-2);
+  font-size: 13px;
+}
+
+.changeovers input,
+.changeovers select {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 6px;
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: 500 15px/1 var(--house-sans);
+}
+
+.changeovers input[type="number"] {
+  width: 112px;
+  font-variant-numeric: tabular-nums;
+}
+
+.changeovers__preview {
+  min-width: 96px;
+  padding-bottom: 10px;
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.changeovers__add {
+  display: grid;
+  gap: 10px;
+}
+
+.changeovers__add h4 {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.changeovers__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: flex-end;
+}
+
+.changeovers__primary,
+.changeovers__quiet {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font: 600 14px/1 var(--house-sans);
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.changeovers__primary {
+  border: 1px solid var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.changeovers__primary:hover:not(:disabled) {
+  border-color: var(--reg-primary-hover);
+  background: var(--reg-primary-hover);
+}
+
+.changeovers__quiet {
+  border: 1px solid var(--reg-edge);
+  background: transparent;
+  color: var(--reg-text-1);
+}
+
+.changeovers__quiet:hover:not(:disabled) {
+  background: var(--reg-surface-hover);
+}
+
+.changeovers__primary:active:not(:disabled),
+.changeovers__quiet:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.changeovers__primary:disabled,
+.changeovers__quiet:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.changeovers__notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.changeovers__notice p {
+  margin: 0;
+  color: var(--reg-alert);
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .changeovers {
+    padding: 20px 16px 22px;
+  }
+
+  .changeovers__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .changeovers__confirmation {
+    grid-column: 1 / -1;
+  }
+
+  .changeovers__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .changeovers__primary,
+  .changeovers__quiet {
+    transition: none;
+  }
+
+  .changeovers__primary:active:not(:disabled),
+  .changeovers__quiet:active:not(:disabled) {
+    transform: none;
+  }
+}

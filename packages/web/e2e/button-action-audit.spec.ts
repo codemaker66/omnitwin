@@ -1153,6 +1153,10 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     }
     void route.fulfill({ json: { data: [pricingRuleFixture()] } });
   });
+  // Venue settings also lists the venue's changeover times (T-637).
+  await page.route(`${API}/venues/${VENUE_ID}/turnaround-rules`, (route) => {
+    void route.fulfill({ json: { data: { rules: [], rooms: [], eventTypes: [] } } });
+  });
   await page.route(`${API}/venues/${VENUE_ID}/pricing/${pricingRuleFixture().id}`, (route) => {
     deletedPricingRules.push(pricingRuleFixture().id);
     void route.fulfill({ status: 204 });

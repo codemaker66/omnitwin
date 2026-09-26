@@ -5,6 +5,7 @@ import type { VenueDetail } from "../../api/spaces.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { ActivityIndicator } from "../shared/Activity.js";
+import { ChangeoverSettings } from "./changeovers/ChangeoverSettings.js";
 import "./VenueSettings.css";
 
 type LoadState = "loading" | "loaded" | "error";
@@ -319,6 +320,8 @@ export function VenueSettings(): ReactElement {
           </dl>
         </aside>
       </div>
+
+      <ChangeoverSettings venueId={venueId} />
     </section>
   );
 }
