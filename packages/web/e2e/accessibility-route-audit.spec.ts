@@ -29,7 +29,7 @@ const HASH = "b".repeat(64);
 // Fresh fixtures per case; a failure must not skip other routes or viewports.
 test.describe.configure({ mode: "default" });
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "manager" | "supplier";
 
 interface RouteSpec {
   readonly routeName: string;
@@ -56,7 +56,7 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       hallkeeper: "93",
       admin: "94",
       "platform-admin": "97",
-      executive: "95",
+      manager: "95",
       supplier: "96",
     };
     const isPlatformAdmin = seedRole === "platform-admin";
@@ -392,7 +392,10 @@ const routeSpecs: readonly RouteSpec[] = [
   {
     routeName: "public pricing",
     path: "/pricing",
-    readyText: "Start your 14-day free trial",
+    // The trial CTA is gone by design (no billing exists to honour it); the
+    // page's own heading is what says it is ready.
+    readyText: "Pricing",
+    readyRole: "heading",
     mockRoutes: mockNoRoutes,
   },
   {
@@ -400,14 +403,14 @@ const routeSpecs: readonly RouteSpec[] = [
     path: "/dashboard?view=analytics",
     readyText: "Executive analytics",
     readyRole: "heading",
-    seedRole: "executive",
+    seedRole: "manager",
     mockRoutes: mockDashboardRoutes,
   },
   {
     routeName: "dashboard analytics error",
     path: "/dashboard?view=analytics",
     readyText: "Analytics unavailable",
-    seedRole: "executive",
+    seedRole: "manager",
     mockRoutes: mockDashboardErrorRoutes,
   },
   {

@@ -136,7 +136,7 @@ function watchPageProblems(page: Page): PageProblems {
   return { pageErrors, consoleErrors };
 }
 
-type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
+type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "manager" | "supplier";
 
 async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> {
   await page.addInitScript(({ seedRole, venueId }) => {
@@ -146,7 +146,7 @@ async function seedAuthenticatedUser(page: Page, role: SeedRole): Promise<void> 
       hallkeeper: "93",
       admin: "94",
       "platform-admin": "97",
-      executive: "95",
+      manager: "95",
       supplier: "96",
     };
     const isPlatformAdmin = seedRole === "platform-admin";
@@ -2280,8 +2280,8 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("button", { name: "Proposals" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Clients & access" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Admin", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Pending Reviews" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Executive Analytics" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pending Reviews" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Executive Analytics" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Venue Settings" })).toBeVisible();
   });
 
@@ -2298,24 +2298,31 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page).toHaveURL(/\/dashboard\?view=enquiries$/u);
   });
 
-  test("executive users get only the analytics cockpit and direct commercial surfaces fail closed", async ({ page }) => {
-    await seedAuthenticatedUser(page, "executive");
+  test("managers get the analytics cockpit and the commercial surfaces, and platform-only views fail closed", async ({ page }) => {
+    await seedAuthenticatedUser(page, "manager");
     await mockDashboardRoutes(page);
 
-    await page.goto("/dashboard");
+    // Every role opens on Enquiries; the cockpit is asked for by name.
+    await page.goto("/dashboard?view=analytics");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
     await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByRole("button", { name: "Executive Analytics" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Pipeline" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Proposals" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pipeline" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Proposals" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Clients & access" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Admin", exact: true })).toHaveCount(0);
 
+    // What the nav offers, the route opens.
     await page.goto("/dashboard?view=pipeline");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Commercial pipeline" })).toBeVisible();
+
+    // What it withholds stays closed when the URL is typed in.
+    await page.goto("/dashboard?view=onboarding");
+    await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: /not available for this role/u })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Commercial pipeline" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Clients & access", exact: true })).toHaveCount(0);
   });
 
   test("supplier users are denied internal dashboard routes before any staff data loads", async ({ page }) => {
@@ -2328,7 +2335,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
   });
 
   test("executive analytics failure exposes a branded retry path", async ({ page }) => {
-    await seedAuthenticatedUser(page, "executive");
+    await seedAuthenticatedUser(page, "manager");
     await mockDashboardRoutes(page, { failAnalyticsOnce: true });
 
     await page.goto("/dashboard?view=analytics");
