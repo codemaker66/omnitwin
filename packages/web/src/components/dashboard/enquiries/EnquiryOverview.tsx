@@ -32,12 +32,6 @@ export function EnquiryOverview({ counts, nowMs, moved, room, onOpen, onFilter }
             {moved === 1 ? "enquiry" : "enquiries"} moved forward this session
           </p>
         )}
-        <dl className="enq-keys">
-          <dt><kbd>↑</kbd><kbd>↓</kbd></dt><dd>Move through the list</dd>
-          <dt><kbd>Enter</kbd></dt><dd>Open an enquiry</dd>
-          <dt><kbd>j</kbd><kbd>k</kbd></dt><dd>Next or previous enquiry</dd>
-          <dt><kbd>Esc</kbd></dt><dd>Close it</dd>
-        </dl>
       </div>
     </aside>
   );

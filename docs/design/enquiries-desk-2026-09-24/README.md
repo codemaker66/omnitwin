@@ -2,8 +2,11 @@
 
 # The Enquiries desk — 24 September 2026 (T-633)
 
-Status: implemented on `claude/cool-tesla-90zlcp` and verified in the browser.
-**Blake's aesthetic verdict is pending**; agent review does not replace it.
+Status: implemented and verified in the browser. On 26 September Blake judged it
+"much cleaner and … not a slog to the eyes, it is inviting", and asked for its
+design preferences to reach every aspect of the app (T-634). He also decided:
+keep the first-name greeting and the session tally; remove the keyboard legend
+from the empty panel (the keys still work and are announced on their buttons).
 
 ## What Blake asked for
 
@@ -65,7 +68,7 @@ The old screen was a stack of identical white cards on dark green.
   - **Approve…** and **Decline…** open an inline confirmation that names the address the email goes to. The note field says whether the note stays on the timeline (approval) or is quoted to the client (decline).
   - If someone else moved the enquiry first (HTTP 422), the panel re-reads it and says where it now is.
   - An approved enquiry offers **Create opportunity** as its next step. "Open their layout", the AI drafts (mounted only when opened) and the timeline follow.
-- **Nothing open:** the panel proposes the next move. It shows the longest-waiting new enquiry, or the enquiries waiting for a decision, or a sealed "All caught up", with the keyboard legend and a quiet count of status changes made this session.
+- **Nothing open:** the panel proposes the next move. It shows the longest-waiting new enquiry, or the enquiries waiting for a decision, or a sealed "All caught up", with a quiet count of status changes made this session. (The keyboard legend was removed on Blake's decision of 26 September.)
 - **Widths:**
   - At 1180 px and wider, the list and panel sit side by side.
   - Below that they take turns, with "Back to enquiries".

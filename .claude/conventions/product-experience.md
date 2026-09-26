@@ -35,6 +35,16 @@ Blake answered four scoping questions:
 - **What the platform replaces.** The Trades Hall team uses Salesforce, Cvent, venue sales-and-catering software, and email, spreadsheets and paper today. Import paths and parity must cover all four.
 - **Next surfaces.** After Enquiries, rebuild the Diary with its holds, and the hallkeeper and event-day tools, to the same standard.
 
+Blake's second round of answers (same day):
+- **Hold words.** Screens say "Provisional", "1st option", "2nd option", "Joint 1st" and "Confirmed". Internal words such as pencil, ink, prospect and ladder position do not appear.
+- **What the Diary opens on.** This week, with a quiet venue-wide list of holds whose decision date is due or overdue.
+- **When a 1st option lapses or is released and the 2nd moves up.** The 2nd option's owner is told in the app and given a drafted email to their client to review and send. Nothing is sent automatically.
+- **Diary composition.** The Diary takes the full desk composition: sage ground, tilted ivory sheet, copper count plane and forest panel.
+- **Event day.** Hallkeeper and event-day tools serve hallkeepers on phones and on tablets, a duty manager at a desk, and printed function sheets. Design for all four.
+- **Enquiries desk.** Keep the first-name greeting and the session tally; remove the keyboard legend from the empty panel.
+- **House type.** Newsreader is the one serif everywhere, including the VENVIEWER wordmark. Inter sets all interface text.
+- **Shipping.** Blake: "you handle everything, make sure all our good work is implemented and not lost on stray branches, make sure all our improvements and new work go live, you have full permission to do everything and anything."
+
 ### Selected Diary direction — 7 September 2026
 
 The founder rejected the old dark Diary and selected a light ivory/forest workspace and an airy room-photo timetable as the interim direction. Preserve readable booking titles and exact times, clear status and conflict distinctions, recognizable sourced room photos, and direct access to booking details. The full-week overview and precise timeline have distinct purposes; summary-card width must not falsely imply duration. [Current scoped design QA](../../design-qa.md) records the adaptation and remaining dense-week limitations. The founder's attachment references remain private and their sample names, rooms and quantities are not operational data.

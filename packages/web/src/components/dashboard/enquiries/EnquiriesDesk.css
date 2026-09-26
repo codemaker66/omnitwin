@@ -641,19 +641,6 @@
 .enq-seal { width: 64px; height: 64px; color: #f0b68f; }
 .enq-overview__tally { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 0; color: var(--enq-forest-ink-2); font-size: 14.5px; }
 .enq-overview__tally span { color: var(--enq-forest-ink); font-size: 30px; font-weight: 300; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.enq-keys { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 18px 0 0; padding-top: 20px; border-top: 1px solid var(--enq-forest-rule); color: var(--enq-forest-ink-2); font-size: 13.5px; }
-.enq-keys dt { display: flex; gap: 4px; }
-.enq-keys dd { margin: 0; align-self: center; }
-.enq-keys kbd {
-  min-width: 22px;
-  padding: 1px 6px;
-  border: 1px solid var(--enq-forest-rule);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  color: var(--enq-forest-ink);
-  font: 500 12px/1.6 var(--enq-sans);
-  text-align: center;
-}
 
 /* ---------------------------------------------------------------------------
    Pointer-only hover, reduced motion, narrow screens
