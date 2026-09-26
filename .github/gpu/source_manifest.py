@@ -21,7 +21,7 @@ import unicodedata
 
 REPOSITORY = "codemaker66/omnitwin"
 BENCHMARK_PATH = "packages/web/e2e/twin-performance.spec.ts"
-BENCHMARK_SHA256 = "7d1a8adf56775ffb5ad8d94763841c32d8c7fb6b52fd7fe8cb3325a57b7eadde"
+BENCHMARK_SHA256 = "3560350f52bc0db11331a545d07df87d55ba86cdef9426b719b4a0a6fa3a2d15"
 REQUIRED_SOURCES = (
     "package.json", "pnpm-lock.yaml", "packages/web/package.json",
     "packages/web/playwright.config.ts", BENCHMARK_PATH,

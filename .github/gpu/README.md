@@ -1,15 +1,40 @@
 # Browser release verification
 
-The reviewed browser inventory has 356 cases. Four hosted CPU shards execute
-351 cases; the five Twin performance cases execute on the existing RTX 4090
-through WSL D3D12. The final hosted job requires both paths and reconciles every
-case against the reviewed inventory, including the original skips and expected
-failures. A missing GPU result is a failed gate, never an exemption.
+The reviewed browser inventory has 359 cases. Four hosted CPU shards execute
+354 cases; the five Twin performance cases execute on the existing RTX 4090
+through WSL D3D12. The final hosted job reconciles every case against the
+reviewed inventory, including the original skips and expected failures.
+
+**GPU scope (Blake, 26 September 2026).** The GPU run is required only when a
+change can reach what it measures: the renderer, the tour, the benchmark and
+the toolchain that serves them. `gpu-scope.mjs` holds the rules; its tests list
+examples on both sides. A change it cannot compare with a base commit is always
+in scope. Inside the scope, the final job requires both paths, and a missing GPU
+result is a failed gate, never an exemption. Outside it, the GPU job is skipped
+and the final job requires the complete CPU partition. It records the five GPU
+cases as not in scope, never as passed (`cpu-browser-gate-passed-gpu-not-in-scope`).
+The final job makes the scope decision again on its own and fails if it
+disagrees with the scope job. Shared code outside these rules, such as the
+application shell and global styles, can still move the Twin byte budgets. Such
+a regression surfaces at the next in-scope run.
 
 The original 353 identities, 42 skips and four expected failures are retained.
 The 2026-09-24 admission adds three ordinary Hallkeeper regressions: approved
 sheet load failure and retry, approved PDF failure invalidating printable
-contents, and a successful non-PDF response being rejected. The baseline's
+contents, and a successful non-PDF response being rejected. The 2026-09-26
+admission adds three ordinary staff Enquiries regressions (T-632, T-633):
+newest-first paging with its total, the pre-ordering API fallback, and triage
+beside the list.
+
+**Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
+SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and
+`fixtures/pinned-twin-performance.spec.ts` holds the same bytes. Any benchmark
+change needs a reviewed re-pin of all three. On 26 September 2026 Blake approved
+the re-pin to `3560350f52bc0db11331a545d07df87d55ba86cdef9426b719b4a0a6fa3a2d15`.
+The self-hosted fonts change (`777e3985`) had replaced the benchmark's blocks on
+Google's font hosts with a block on the self-hosted `.woff` and `.woff2` files,
+so the byte budgets keep measuring what they were set on. This benchmark version
+has no GPU evidence yet; the next in-scope run supplies it. The baseline's
 `inventoryAdmissions` records their exact source and listing provenance;
 the historical `sourceRunId` and `sourceReports` do not claim to have executed
 these additions. A listing enumerates identities only: test-body `test.fail`

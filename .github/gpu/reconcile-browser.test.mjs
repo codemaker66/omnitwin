@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { BROWSER_POLICY, finalGpuExpectations, reconcileBrowser, requireSuccessfulJobs } from './reconcile-browser.mjs';
+import { BROWSER_POLICY, finalGpuExpectations, readGpuScope, reconcileBrowser, requireSuccessfulJobs } from './reconcile-browser.mjs';
 import { makeRequest, validateRequest } from './hosted-gate.mjs';
 
 const baseline = JSON.parse(readFileSync(new URL('./browser-baseline.json', import.meta.url), 'utf8'));
@@ -60,12 +60,41 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full356 union requires351 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
+test('full359 union requires354 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
-  assert.deepEqual(result.totals, { inventory: 356, cpu: 351, gpu: 5, ordinaryPasses: 310,
+  assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
+  assert.deepEqual(result.totals, { inventory: 359, cpu: 354, gpu: 5, ordinaryPasses: 313,
     expectedFailures: 4, originalSkips: 42, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
+});
+
+test('outside the GPU scope the complete CPU partition passes and the five GPU cases are not in scope, not passed', () => {
+  const input = fixture();
+  const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
+  assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
+  assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
+  assert.equal(result.totals.cpu, 354);
+  assert.equal(result.totals.gpu, 0);
+  assert.equal(result.totals.ordinaryPasses, 308);
+  assert.match(result.limits.at(-1), /not in scope, not passed/);
+});
+rejected('outside the GPU scope a missing CPU case still fails', (input) => {
+  input.gpuReport = null; input.gpuRequired = false;
+  input.cpuShards[0].inventory.suites.shift();
+}, /missing or extra/);
+rejected('outside the GPU scope a GPU report cannot stand in for the decision', (input) => { input.gpuRequired = false; }, /cannot stand in/);
+rejected('inside the GPU scope a missing GPU report fails', (input) => { input.gpuReport = null; }, /authenticated GPU report is required/);
+rejected('a missing GPU scope decision fails', (input) => { input.gpuRequired = 'false'; }, /GPU scope decision missing/);
+
+test('the GPU scope decision must be well formed, for this commit and consistent with its reasons', () => {
+  const scope = { schemaVersion: 1, policy: 'venviewer-gpu-scope-v1', head: expected.commitSha, required: false, reasons: [] };
+  assert.equal(readGpuScope(scope, expected), false);
+  assert.equal(readGpuScope({ ...scope, required: true, reasons: [{ path: 'packages/web/src/twin/TwinViewer.tsx', rule: 'tour' }] }, expected), true);
+  assert.throws(() => readGpuScope({ ...scope, policy: 'other' }, expected), /invalid GPU scope/);
+  assert.throws(() => readGpuScope({ ...scope, head: 'e'.repeat(40) }, expected), /another commit/);
+  assert.throws(() => readGpuScope({ ...scope, reasons: [{ path: 'x', rule: 'tour' }] }, expected), /inconsistent/);
+  assert.throws(() => readGpuScope({ ...scope, required: true }, expected), /inconsistent/);
 });
 
 const approvedSheetAdditions = [
@@ -74,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 1);
+  assert.equal(baseline.inventoryAdmissions.length, 2);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -84,6 +113,31 @@ test('the approved-sheet inventory admission adds exactly three ordinary Hallkee
 });
 for (const id of approvedSheetAdditions) {
   rejected(`new approved-sheet case ${id} cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}
+const enquiriesDeskAdditions = [
+  '56d246b2b7e3b26e1a5b-a722a3056e8d7fb868a8',
+  '56d246b2b7e3b26e1a5b-d947bd593a7261e63c26',
+  '56d246b2b7e3b26e1a5b-2ee24d7db2e8644a450f',
+];
+test('the Enquiries desk inventory admission adds exactly three ordinary paging and triage cases', () => {
+  const admission = baseline.inventoryAdmissions[1];
+  assert.equal(admission.date, '2026-09-26');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/enquiries-list-paging.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.deepEqual(admission.caseIds, [...enquiriesDeskAdditions].sort());
+  for (const id of enquiriesDeskAdditions) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'enquiries-list-paging.spec.ts');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+});
+for (const id of enquiriesDeskAdditions) {
+  rejected(`new Enquiries desk case ${id} cannot become a skip`, (input) => {
     const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
     spec.tests[0].expectedStatus = 'skipped';
     spec.tests[0].results[0].status = 'skipped';
@@ -132,13 +186,26 @@ rejected('global browser error rejects otherwise green cases', (input) => input.
 rejected('a second browser project cannot silently enlarge scope', (input) => input.inventory.config.projects.push({ id: 'webkit' }), /browser project/);
 rejected('inventory that already contains result attempts is not independent listing', (input) => specs(input.inventory)[0].tests[0].results.push({ status: 'passed' }), /inventory contains/);
 
-test('final gate requires successful tooling, every CPU shard group and GPU job', () => {
-  const green = { TOOLING_JOB_RESULT: 'success', CPU_JOB_RESULT: 'success', GPU_JOB_RESULT: 'success' };
-  assert.doesNotThrow(() => requireSuccessfulJobs(green));
-  for (const key of Object.keys(green)) {
+test('final gate requires successful tooling, every CPU shard group, the scope job and the GPU job in scope', () => {
+  const green = { TOOLING_JOB_RESULT: 'success', CPU_JOB_RESULT: 'success', GPU_SCOPE_JOB_RESULT: 'success',
+    GPU_SCOPE_OUTPUT: 'true', GPU_JOB_RESULT: 'success' };
+  assert.doesNotThrow(() => requireSuccessfulJobs(green, true));
+  for (const key of ['TOOLING_JOB_RESULT', 'CPU_JOB_RESULT', 'GPU_SCOPE_JOB_RESULT', 'GPU_JOB_RESULT']) {
     for (const status of ['skipped', 'failure', 'cancelled', undefined])
-      assert.throws(() => requireSuccessfulJobs({ ...green, [key]: status }), /all required upstream/);
+      assert.throws(() => requireSuccessfulJobs({ ...green, [key]: status }, true), /all required upstream/);
   }
+  assert.throws(() => requireSuccessfulJobs({ ...green, GPU_SCOPE_OUTPUT: 'false' }, true), /disagree/);
+});
+
+test('outside the GPU scope the GPU job must have been skipped, and the scope job must agree', () => {
+  const quiet = { TOOLING_JOB_RESULT: 'success', CPU_JOB_RESULT: 'success', GPU_SCOPE_JOB_RESULT: 'success',
+    GPU_SCOPE_OUTPUT: 'false', GPU_JOB_RESULT: 'skipped' };
+  assert.doesNotThrow(() => requireSuccessfulJobs(quiet, false));
+  for (const status of ['success', 'failure', 'cancelled', undefined])
+    assert.throws(() => requireSuccessfulJobs({ ...quiet, GPU_JOB_RESULT: status }, false), /must be skipped/);
+  assert.throws(() => requireSuccessfulJobs({ ...quiet, GPU_SCOPE_OUTPUT: 'true' }, false), /disagree/);
+  for (const key of ['TOOLING_JOB_RESULT', 'CPU_JOB_RESULT', 'GPU_SCOPE_JOB_RESULT'])
+    assert.throws(() => requireSuccessfulJobs({ ...quiet, [key]: 'failure' }, false), /all required upstream/);
 });
 
 function gpuIdentityFixture() {

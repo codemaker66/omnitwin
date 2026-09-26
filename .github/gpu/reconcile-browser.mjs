@@ -4,11 +4,12 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseJson, sha256 } from './verify-receipt.mjs';
 import { validateProfile } from './hosted-gate.mjs';
+import { GPU_SCOPE_POLICY } from './gpu-scope.mjs';
 
 // A reviewed inventory is deliberately explicit. Changes to the suite or its
 // skip/expected-failure policy require an equally reviewable baseline update.
 export const BROWSER_POLICY = Object.freeze({ version: 'venviewer-browser-partition-v1',
-  playwright: '1.59.1', project: 'chromium', total: 356, cpu: 351, gpu: 5,
+  playwright: '1.59.1', project: 'chromium', total: 359, cpu: 354, gpu: 5,
   skipped: 42, expectedFailures: 4, gpuFile: 'twin-performance.spec.ts' });
 const HERE = dirname(fileURLToPath(import.meta.url));
 const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
@@ -98,7 +99,10 @@ function executionRows(report, shard, baseline, label) {
   return rows;
 }
 
-export function reconcileBrowser({ inventory, cpuShards, gpuReport, baseline, expected }) {
+// A change outside the GPU scope (gpu-scope.mjs) is reconciled on the complete
+// CPU partition alone; its five GPU cases are recorded as not in scope, never
+// as passed. Inside the scope, the authenticated GPU report remains required.
+export function reconcileBrowser({ inventory, cpuShards, gpuReport, baseline, expected, gpuRequired = true }) {
   requireThat(baseline.schemaVersion === 1 && baseline.policyVersion === BROWSER_POLICY.version, 'baseline policy mismatch');
   requireThat(Array.isArray(baseline.cases) && baseline.cases.length === BROWSER_POLICY.total, 'baseline count changed');
   const original = mapUnique(baseline.cases, 'baseline');
@@ -136,23 +140,47 @@ export function reconcileBrowser({ inventory, cpuShards, gpuReport, baseline, ex
   }
   mapUnique(scheduled, 'CPU scheduled union'); mapUnique(executed, 'CPU executed union');
   exactSet(scheduled.map((row) => row.id), cpuIds, 'CPU partition');
-  const gpu = executionRows(gpuReport, null, original, 'authenticated GPU report');
-  exactSet(gpu.map((row) => row.id), gpuIds, 'GPU partition');
-  const union = mapUnique([...executed, ...gpu], 'complete execution union');
-  exactSet(union.keys(), original.keys(), 'complete execution union');
-  return { schemaVersion: 1, policyVersion: BROWSER_POLICY.version, verdict: 'complete-browser-gate-passed',
+  requireThat(typeof gpuRequired === 'boolean', 'GPU scope decision missing');
+  let gpu = [];
+  if (gpuRequired) {
+    requireThat(object(gpuReport), 'an authenticated GPU report is required inside the GPU scope');
+    gpu = executionRows(gpuReport, null, original, 'authenticated GPU report');
+    exactSet(gpu.map((row) => row.id), gpuIds, 'GPU partition');
+    const union = mapUnique([...executed, ...gpu], 'complete execution union');
+    exactSet(union.keys(), original.keys(), 'complete execution union');
+  } else {
+    requireThat(gpuReport === null, 'a GPU report cannot stand in for a change outside the GPU scope');
+    exactSet(executed.map((row) => row.id), cpuIds, 'complete CPU execution');
+  }
+  const ran = [...executed, ...gpu];
+  const limits = ['This browser gate does not assert overall CI, deployment, physical-device performance, or aesthetic acceptance.'];
+  if (!gpuRequired) limits.push('No renderer, tour or benchmark file changed, so the five GPU benchmark cases did not run for this change; they are not in scope, not passed.');
+  return { schemaVersion: 1, policyVersion: BROWSER_POLICY.version,
+    verdict: gpuRequired ? 'complete-browser-gate-passed' : 'cpu-browser-gate-passed-gpu-not-in-scope',
     source: { commitSha: expected.commitSha, treeSha: expected.treeSha },
     run: { repository: expected.repository, runId: expected.runId, runAttempt: expected.runAttempt },
+    gpuScope: { required: gpuRequired, cases: gpuIds.length, executed: gpu.length },
     totals: { inventory: complete.length, cpu: executed.length, gpu: gpu.length,
-      ordinaryPasses: BROWSER_POLICY.total - BROWSER_POLICY.skipped - BROWSER_POLICY.expectedFailures,
+      ordinaryPasses: ran.filter((row) => original.get(row.id).expectedStatus === 'passed').length,
       expectedFailures: BROWSER_POLICY.expectedFailures, originalSkips: BROWSER_POLICY.skipped,
       failed: 0, flaky: 0, retries: 0, missing: 0, duplicated: 0, interrupted: 0, unrun: 0 }, shards,
-    limits: ['This browser gate does not assert overall CI, deployment, physical-device performance, or aesthetic acceptance.'] };
+    limits };
 }
 
-export function requireSuccessfulJobs(env) {
+export function requireSuccessfulJobs(env, gpuRequired = true) {
   requireThat(env.TOOLING_JOB_RESULT === 'success' && env.CPU_JOB_RESULT === 'success'
-    && env.GPU_JOB_RESULT === 'success', 'all required upstream browser jobs must succeed');
+    && env.GPU_SCOPE_JOB_RESULT === 'success', 'all required upstream browser jobs must succeed');
+  requireThat(env.GPU_SCOPE_OUTPUT === String(gpuRequired), 'the GPU scope job and the independent scope decision disagree');
+  requireThat(env.GPU_JOB_RESULT === (gpuRequired ? 'success' : 'skipped'),
+    gpuRequired ? 'all required upstream browser jobs must succeed' : 'a GPU job outside the GPU scope must be skipped');
+}
+
+export function readGpuScope(scope, expected) {
+  requireThat(object(scope) && scope.schemaVersion === 1 && scope.policy === GPU_SCOPE_POLICY
+    && typeof scope.required === 'boolean' && Array.isArray(scope.reasons), 'invalid GPU scope decision');
+  requireThat(scope.head === expected.commitSha, 'GPU scope decision is for another commit');
+  requireThat(scope.required === (scope.reasons.length > 0), 'GPU scope decision is inconsistent with its reasons');
+  return scope.required;
 }
 
 export function finalGpuExpectations({ env, profile, trusted }) {
@@ -212,11 +240,29 @@ async function main() {
   const inventory = read(resolve(option(values, '--inventory')));
   const gpuDirectory = resolve(option(values, '--gpu-directory'));
   const source = read(resolve(option(values, '--source'))).value;
+  const scopeFile = read(resolve(option(values, '--gpu-scope')));
   const output = resolve(option(values, '--output'));
   requireThat(values.size === 0, 'unknown verification options');
-  requireSuccessfulJobs(process.env);
+  const gpuRequired = readGpuScope(scopeFile.value, expected);
+  requireSuccessfulJobs(process.env, gpuRequired);
   requireThat(source.repository === expected.repository && source.commitSha === expected.commitSha
     && source.treeSha === expected.treeSha, 'independent source manifest differs from checkout');
+  const cpuShards = [1, 2, 3, 4].map((shard) => {
+    const base = resolve(directory, `playwright-results-${expected.runId}-${expected.runAttempt}-shard-${shard}`, 'playwright-report');
+    const listed = read(resolve(base, 'inventory.json')), results = read(resolve(base, 'results.json'));
+    return { inventory: listed.value, results: results.value, identity: read(resolve(base, 'identity.json')).value,
+      inventorySha256: sha256(listed.bytes), resultsSha256: sha256(results.bytes) };
+  });
+  const baselineBytes = readFileSync(resolve(HERE, 'browser-baseline.json'));
+  if (!gpuRequired) {
+    const report = reconcileBrowser({ inventory: inventory.value, cpuShards, gpuReport: null,
+      baseline: parseJson(baselineBytes, 'browser-baseline.json'), expected, gpuRequired });
+    report.evidence = { fullInventorySha256: sha256(inventory.bytes), gpuScopeSha256: sha256(scopeFile.bytes),
+      baselineSha256: sha256(baselineBytes) };
+    writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    return;
+  }
   const { validateRequest, verifyEvidenceBundle } = await import('./hosted-gate.mjs');
   const request = read(resolve(gpuDirectory, 'request.json')), trusted = read(resolve(gpuDirectory, 'trusted.json'));
   const profile = read(resolve(HERE, 'worker-profile.json'));
@@ -231,16 +277,10 @@ async function main() {
     trusted: trusted.value, status: status.value, bundleBytes: bundle.bytes, nowMs: Date.now() });
   const resultFile = read(resolve(gpuDirectory, 'results.json'));
   requireThat(resultFile.bytes.equals(verifiedGpu.resultsBytes), 'GPU artifact raw report differs from authenticated bundle');
-  const cpuShards = [1, 2, 3, 4].map((shard) => {
-    const base = resolve(directory, `playwright-results-${expected.runId}-${expected.runAttempt}-shard-${shard}`, 'playwright-report');
-    const listed = read(resolve(base, 'inventory.json')), results = read(resolve(base, 'results.json'));
-    return { inventory: listed.value, results: results.value, identity: read(resolve(base, 'identity.json')).value,
-      inventorySha256: sha256(listed.bytes), resultsSha256: sha256(results.bytes) };
-  });
   const report = reconcileBrowser({ inventory: inventory.value, cpuShards, gpuReport: resultFile.value,
-    baseline: read(resolve(HERE, 'browser-baseline.json')).value, expected });
-  report.evidence = { fullInventorySha256: sha256(inventory.bytes), gpuBundleSha256: verifiedGpu.bundleSha256,
-    gpuResultsSha256: sha256(resultFile.bytes), baselineSha256: sha256(readFileSync(resolve(HERE, 'browser-baseline.json'))) };
+    baseline: parseJson(baselineBytes, 'browser-baseline.json'), expected, gpuRequired });
+  report.evidence = { fullInventorySha256: sha256(inventory.bytes), gpuScopeSha256: sha256(scopeFile.bytes),
+    gpuBundleSha256: verifiedGpu.bundleSha256, gpuResultsSha256: sha256(resultFile.bytes), baselineSha256: sha256(baselineBytes) };
   writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }

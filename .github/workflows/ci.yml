@@ -11,7 +11,9 @@
 #   test       — required migrated PostgreSQL regressions and workspace Vitest
 #   e2e        — four CPU shards, with the exact GPU file excluded before sharding
 #   gate-tooling — receipt, inventory, source and worker boundary regressions
-#   gpu-required — authenticated, bounded hardware run of all five Twin cases
+#   gpu-scope    — decides whether the change reaches the renderer, tour or benchmark
+#   gpu-required — authenticated, bounded hardware run of all five Twin cases,
+#                  only for changes in the GPU scope (Blake, 26 September 2026)
 #   browser-gate — independently collected full inventory and required CPU/GPU union
 #
 # Each job is fully isolated and reproducible: pnpm version is pinned to
@@ -432,9 +434,49 @@ jobs:
           sys.exit(0 if result.wasSuccessful() else 1)
           PY
 
+  gpu-scope:
+    name: GPU scope
+    # The operator-run GPU benchmark is required only when a change can reach
+    # what it measures: the renderer, the tour, the benchmark and the toolchain
+    # that serves them. .github/gpu/gpu-scope.mjs holds the rules; a change it
+    # cannot compare with a base commit is always in scope.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+    steps:
+      - name: Checkout with the history the comparison needs
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Decide whether this change needs the GPU run
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output gpu-scope.json
+
+      - name: Preserve the scope decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-scope-${{ github.run_id }}-${{ github.run_attempt }}
+          path: gpu-scope.json
+          if-no-files-found: error
+          retention-days: 14
+
   gpu-required:
     name: GPU performance (required)
-    needs: gate-tooling
+    needs: [gate-tooling, gpu-scope]
+    if: needs.gpu-scope.outputs.required == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -484,7 +526,7 @@ jobs:
 
   browser-gate:
     name: Browser release gate
-    needs: [gate-tooling, e2e, gpu-required]
+    needs: [gate-tooling, e2e, gpu-scope, gpu-required]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -494,6 +536,8 @@ jobs:
     steps:
       - name: Checkout independently for complete inventory
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4.4.0
@@ -518,6 +562,12 @@ jobs:
           pnpm --filter @omnitwin/web exec playwright test --list --update-snapshots=none --reporter=json > browser-gate-evidence/full-inventory.json
           python3 .github/gpu/source_manifest.py --repo "$GITHUB_WORKSPACE" --commit "$GITHUB_SHA" > browser-gate-evidence/source.json
 
+      - name: Independently decide the GPU scope
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node .github/gpu/gpu-scope.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --output browser-gate-evidence/gpu-scope.json
+
       - name: Download all CPU shard receipts from this run attempt
         uses: actions/download-artifact@v4
         with:
@@ -525,6 +575,7 @@ jobs:
           path: browser-artifacts
 
       - name: Download required GPU evidence from this run attempt
+        if: steps.scope.outputs.required == 'true'
         uses: actions/download-artifact@v4
         with:
           name: gpu-results-${{ github.run_id }}-${{ github.run_attempt }}
@@ -534,12 +585,15 @@ jobs:
         env:
           TOOLING_JOB_RESULT: ${{ needs.gate-tooling.result }}
           CPU_JOB_RESULT: ${{ needs.e2e.result }}
+          GPU_SCOPE_JOB_RESULT: ${{ needs.gpu-scope.result }}
+          GPU_SCOPE_OUTPUT: ${{ needs.gpu-scope.outputs.required }}
           GPU_JOB_RESULT: ${{ needs.gpu-required.result }}
         run: >-
           node .github/gpu/reconcile-browser.mjs verify
           --artifacts-root browser-artifacts
           --inventory browser-gate-evidence/full-inventory.json
           --source browser-gate-evidence/source.json
+          --gpu-scope browser-gate-evidence/gpu-scope.json
           --gpu-directory browser-gate-evidence/gpu
           --output browser-gate-evidence/reconciliation.json
 

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 export const POLICY = Object.freeze({
   version: 'venviewer-twin-gpu-v2',
   repository: 'codemaker66/omnitwin',
-  benchmarkSha256: '7d1a8adf56775ffb5ad8d94763841c32d8c7fb6b52fd7fe8cb3325a57b7eadde',
+  benchmarkSha256: '3560350f52bc0db11331a545d07df87d55ba86cdef9426b719b4a0a6fa3a2d15',
   budgets: Object.freeze({ appBytes: 21000000, arrivalImageryBytes: 140000,
     arrivalPanoRequests: 7, hopImageryBytes: 360000, hopPanoRequests: 18,
     hopLongTaskMs: 150, p95Ms: 20, sustainedStalls: 1, droppedFrameMs: 33.4,
