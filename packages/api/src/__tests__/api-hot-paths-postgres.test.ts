@@ -376,18 +376,29 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
     expect((await server.inject({ method: "GET", url: `/events/${event.id}/phase-graph?snapshotPayloads=omit`, headers: bearer(outsider) })).statusCode).toBe(403);
   });
 
-  it("computes the venue dashboard's totals and room figures in SQL with unchanged results", async () => {
+  it("computes the venue dashboard's totals in SQL, with pipeline value from open opportunities and room figures from the diary", async () => {
     const a = await venue("dashboard A");
     const b = await venue("dashboard B");
     const staff = await a.actor("staff");
     const [roomOne, roomTwo] = a.rooms;
     if (roomOne === undefined || roomTwo === undefined) throw new Error("Room fixtures missing");
+    // Quotes stay in the fixture on purpose: they total 700, and none of it is
+    // pipeline. Pipeline value is the one shared definition the Pipeline tab
+    // also reads (services/commercial-pipeline.ts): open opportunities.
     const quote = (spaceId: string | null, status: string, totalMinor: number, deleted = false) => ({
       venueId: a.venueId, name: `Quote ${status}`, spaceId, status, subtotalMinor: totalMinor, totalMinor, deletedAt: deleted ? new Date() : null,
     });
     await db.insert(schema.quotes).values([
       quote(roomOne, "issued", 100), quote(roomOne, "accepted", 250), quote(roomTwo, "accepted", 300),
       quote(null, "draft", 50), quote(roomOne, "accepted", 999, true),
+    ]);
+    const opportunity = (venueId: string, stage: string, estimatedValueMinor: number, deleted = false) => ({
+      venueId, title: `Opportunity ${stage}`, stage, estimatedValueMinor, deletedAt: deleted ? new Date() : null,
+    });
+    await db.insert(schema.opportunities).values([
+      opportunity(a.venueId, "new", 1_200), opportunity(a.venueId, "negotiation", 3_400),
+      opportunity(a.venueId, "won", 9_000), opportunity(a.venueId, "lost", 4_000),
+      opportunity(a.venueId, "qualified", 800, true), opportunity(b.venueId, "new", 5_000),
     ]);
     const proposal = (status: string, deleted = false) => ({
       venueId: a.venueId, title: `Proposal ${status}`, status, sentAt: status === "draft" ? null : new Date(), deletedAt: deleted ? new Date() : null,
@@ -396,6 +407,25 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
     await db.insert(schema.enquiries).values(Array.from({ length: 4 }, (_, index) => ({
       venueId: a.venueId, spaceId: roomOne, name: `Enquiry ${String(index)}`, email: "d@hot-paths.invalid",
     })));
+    // Utilisation reads the diary over the route's 90-day window from today's
+    // UTC midnight: active confirmed ("ink") days, with prospects and holds
+    // beside them as demand. Released, cancelled, deleted and out-of-window
+    // bookings are none of these.
+    const now = new Date();
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const at = (day: number, hour: number) => new Date(today + day * 86_400_000 + hour * 3_600_000);
+    const booking = (spaceId: string, kind: "prospect" | "hold" | "ink", from: Date, to: Date,
+      status: "active" | "released" | "cancelled" = "active", deleted = false) => ({
+      venueId: a.venueId, spaceId, kind, status, title: `Booking ${kind}`, startsAt: from, endsAt: to, deletedAt: deleted ? new Date() : null,
+    });
+    await db.insert(schema.bookings).values([
+      booking(roomOne, "ink", at(1, 10), at(1, 18)),
+      booking(roomOne, "prospect", at(3, 10), at(3, 18)), booking(roomOne, "hold", at(4, 10), at(4, 18)),
+      booking(roomOne, "ink", at(5, 10), at(5, 18), "released"), booking(roomOne, "hold", at(6, 10), at(6, 18), "cancelled"),
+      booking(roomOne, "ink", at(7, 10), at(7, 18), "active", true), booking(roomOne, "ink", at(200, 10), at(200, 18)),
+      booking(roomTwo, "ink", at(10, 9), at(11, 17)), booking(roomTwo, "hold", at(12, 10), at(12, 18)),
+      booking(roomTwo, "ink", at(-3, 9), at(-2, 17)),
+    ]);
     const layoutOne = await configuration({ venueId: a.venueId, spaceId: roomOne, userId: null });
     const layoutTwo = await configuration({ venueId: a.venueId, spaceId: roomTwo, userId: null, deleted: true });
     const foreignLayout = await configuration({ venueId: b.venueId, spaceId: b.rooms[0] ?? "", userId: null });
@@ -405,25 +435,31 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       { venueId: a.venueId, configurationId: null, name: "Unplaced", reviewGateCount: 3 },
       { venueId: a.venueId, configurationId: foreignLayout.id, name: "Foreign layout", reviewGateCount: 5 },
     ]);
+    statements.length = 0;
 
     const pipeline = await server.inject({ method: "GET", url: "/analytics/pipeline-summary", headers: bearer(staff) });
     expect(pipeline.statusCode, pipeline.body).toBe(200);
     expect(pipeline.json()).toEqual({ data: {
-      currency: "GBP", pipelineValueMinor: 700, enquiryCount: 4, proposalCount: 4, acceptedProposalCount: 2,
+      currency: "GBP", pipelineValueMinor: 4_600, enquiryCount: 4, proposalCount: 4, acceptedProposalCount: 2,
       conversionPercent: 50, proposalStatusCounts: { accepted: 2, draft: 1, sent: 1 },
     } });
     const rooms = await server.inject({ method: "GET", url: "/analytics/room-utilisation", headers: bearer(staff) });
+    expect(rooms.statusCode, rooms.body).toBe(200);
     const byName = (rows: { roomName: string }[]) => [...rows].sort((left, right) => left.roomName.localeCompare(right.roomName));
+    // One confirmed day of 90 is 1%; a booking over two calendar days is 2%.
     expect(byName(rooms.json<{ data: { roomName: string }[] }>().data)).toEqual([
-      { spaceId: roomOne, roomName: "Room 0", bookedEvents: 1, proposedEvents: 2, utilisationPercent: 50, reviewBottlenecks: 2 },
-      { spaceId: roomTwo, roomName: "Room 1", bookedEvents: 1, proposedEvents: 1, utilisationPercent: 100, reviewBottlenecks: 1 },
+      { spaceId: roomOne, roomName: "Room 0", bookedEvents: 1, proposedEvents: 2, utilisationPercent: 1, reviewBottlenecks: 2 },
+      { spaceId: roomTwo, roomName: "Room 1", bookedEvents: 1, proposedEvents: 1, utilisationPercent: 2, reviewBottlenecks: 1 },
     ]);
     const dashboard = await server.inject({ method: "GET", url: "/analytics/venue-dashboard", headers: bearer(staff) });
+    expect(dashboard.statusCode, dashboard.body).toBe(200);
     expect(dashboard.json<{ data: Record<string, unknown> }>().data).toMatchObject({
-      pipelineValueMinor: 700, enquiryConversionPercent: 50, proposalStatusCounts: { accepted: 2, draft: 1, sent: 1 },
+      pipelineValueMinor: 4_600, enquiryConversionPercent: 50, proposalStatusCounts: { accepted: 2, draft: 1, sent: 1 },
     });
-    // Aggregated in SQL: no statement reads the venue's rows one by one.
-    expect(statements.filter((sql) => /select "id" from "enquiries"|select "status" from "proposals"|select "total_minor" from "quotes"/.test(sql))).toEqual([]);
+    // Aggregated in SQL: no statement reads the venue's rows one by one, and
+    // no quote total is read at all, so no quote can leak into the pipeline.
+    expect(statements.filter((sql) => /select "id" from "enquiries"|select "status" from "proposals"|select "estimated_value_minor" from "opportunities"/.test(sql))).toEqual([]);
+    expect(statements.filter((sql) => sql.includes('from "quotes"'))).toEqual([]);
   });
 
   it("indexes enquiries and proposals by configuration for their real lookups (migration 0071)", async () => {
