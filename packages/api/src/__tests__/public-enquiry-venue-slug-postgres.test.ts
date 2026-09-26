@@ -117,9 +117,11 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
     }
   }, 30000);
 
+  /** What the website composer (pages/fresh/FreshEnquiry.tsx) posts. */
   function payload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
+      source: "website",
       email: GUEST_EMAIL,
       name: "A Fixture Guest",
       phone: "0141 000 0000",
@@ -149,7 +151,19 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
     expect(row?.state).toBe("submitted");
     expect(row?.email).toBe(GUEST_EMAIL);
     expect(row?.estimated_guests).toBe(120);
-    expect(row?.message ?? "").toContain("a Saturday in May");
+    // The visitor's own words, exactly: a website enquiry is not stamped as
+    // having come from the walkthrough.
+    expect(row?.message).toBe("We are looking at a Saturday in May.");
+  });
+
+  it("still marks an enquiry from the walkthrough, which names no source, as the twin's", async () => {
+    const { source: _source, ...walkthrough } = payload();
+    const response = await server.inject({ method: "POST", url: "/public/enquiries", payload: walkthrough });
+    expect(response.statusCode, response.body).toBe(201);
+    const stored = await pool.query<{ message: string | null }>("SELECT message FROM enquiries");
+    expect(stored.rows[0]?.message).toBe(
+      "Sent from the venue's virtual walkthrough (the twin).\n\nWe are looking at a Saturday in May.",
+    );
   });
 
   it("writes the submission into status history and opens a guest lead", async () => {

@@ -164,6 +164,9 @@ export function FreshEnquiry(): ReactElement {
         // The DATABASE slug, never the asset slug: the two namespaces differ
         // and posting the asset slug 404s the enquiry. See TRADES_HALL_ASSET_SLUG.
         venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
+        // The venue path was the walkthrough's; without this the enquiry is
+        // recorded as having come from the twin.
+        source: "website",
         email: emailTrimmed,
         name: name.trim() !== "" ? name.trim() : undefined,
         phone: phone.trim() !== "" ? phone.trim() : undefined,
