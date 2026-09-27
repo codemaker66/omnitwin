@@ -56,7 +56,7 @@
 .vv-activity-status__content { display: inline-flex; flex-direction: column; min-width: 0; gap: 0.5em; }
 .vv-activity-status__label { overflow-wrap: anywhere; }
 .vv-activity-status--panel {
-  font-family: ui-monospace, "Geist Mono", "Cascadia Code", monospace;
+  font-family: var(--house-sans);
   font-size: 0.875rem;
   padding: 1rem 1.5rem;
   gap: 1rem;

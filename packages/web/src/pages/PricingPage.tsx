@@ -84,12 +84,11 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
     .pricing-nav-sign-in:focus-visible,
     .pricing-footer-inner a:focus-visible,
     .pricing-faq-item summary:focus-visible {
-      outline: 3px solid #87e7f0;
-      outline-offset: 4px;
-      box-shadow: 0 0 0 7px rgba(135,231,240,0.16);
+      outline: 2px solid var(--house-cream);
+      outline-offset: 3px;
     }
     .pricing-cycle-button:focus-visible {
-      outline: 3px solid #87e7f0;
+      outline: 2px solid var(--house-cream);
       outline-offset: 3px;
     }
     @media (prefers-reduced-motion: reduce) {

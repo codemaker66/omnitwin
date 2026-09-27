@@ -198,32 +198,6 @@ button:disabled,
   color: var(--vv-ivory-3);
 }
 
-.vv-status-chip {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(169, 98, 47, 0.38);
-  border-radius: 999px;
-  padding: 0 10px;
-  background: rgba(169, 98, 47, 0.12);
-  color: var(--vv-copper-ink);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.vv-status-chip[data-tone="safe"] {
-  border-color: rgba(85, 112, 90, 0.38);
-  background: rgba(143, 174, 139, 0.18);
-  color: var(--vv-sage-ink);
-}
-
-.vv-status-chip[data-tone="review"] {
-  border-color: rgba(27, 58, 47, 0.32);
-  background: rgba(27, 58, 47, 0.08);
-  color: var(--vv-forest-2);
-}
-
 .vv-sr-only {
   position: absolute;
   width: 1px;
