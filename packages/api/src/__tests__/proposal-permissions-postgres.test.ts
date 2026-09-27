@@ -18,6 +18,9 @@ if (target !== undefined) {
 }
 const versionPayload = ProposalVersionPayloadSchema.parse({ schemaVersion: "venviewer.proposal-version.v1", title: "Fixture proposal",
   clientMessage: null, configurationId: null, layoutRevision: null, capacityNote: null, quote: null });
+// A version is saved with the event's facts as the venue holds them; this
+// fixture's proposal has no deal, enquiry or layout, so all are unknown.
+const savedPayload = { ...versionPayload, facts: { eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null } };
 
 describe.skipIf(target === undefined)("proposal permissions through real routes and PostgreSQL", () => {
   let pool: Pool;
@@ -77,7 +80,7 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     expect((await edit(f)).statusCode).toBe(200);
     expect((await append(f)).statusCode).toBe(201);
     expect(await stored(f)).toMatchObject({ proposal: { title: "Reviewed title", currentVersion: 1 },
-      versions: [expect.objectContaining({ version: 1, payload: versionPayload, sourceHash: proposalVersionPayloadDigest(versionPayload) })] });
+      versions: [expect.objectContaining({ version: 1, payload: savedPayload, sourceHash: proposalVersionPayloadDigest(savedPayload) })] });
     expect((await remove(f)).statusCode).toBe(204);
     expect((await stored(f)).proposal?.deletedAt).toBeInstanceOf(Date);
   });
