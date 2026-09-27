@@ -467,6 +467,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   start and the room's set-up time, so the acceptance's June and December pair tests those
   ([session log](../../sessions/2026-09-27.md)).
 - The calendar and ops projection returns the approved configuration id and the checked count, for Day Board links.
+  Revised on 27 September: `GET /hallkeeper/:configId/summary` returns a sheet's ready-by time and rows
+  checked, counted by the sheet's own builder behind the sheet's own gates. The board already resolves each
+  slot's layouts, so the calendar read stays as it was ([session log](../../sessions/2026-09-27.md)).
 
 *Hallkeeper sheet*
 - Expand the minified `hallkeeper-workspace.css:2` into readable rules.
@@ -523,8 +526,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - "Updated 14:02 · reconnecting…" with a Refresh action.
   Done on 27 September.
 - "Open setup sheet" becomes the primary action.
-  Partly done by Lane 6: each slot's first action opens its sheet, resolved from the booking's event. Its
-  ready-by hour and checked count wait for the calendar projection named under *API* above.
+  Done: Lane 6 made each slot's first action open its sheet, resolved from the booking's event, and since
+  27 September it says under the door when setup must be done and how far the checklist has got ("Ready by
+  16:00 · 12 of 43 checked"), refreshed each minute the board is in view.
 - The venue time zone comes from data (`DayBoardPage.tsx:117`).
   Already done by Lane 6; since 27 September it is named in words, and only for a device on another clock.
 - Delete the dead dark block.
@@ -546,6 +550,10 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Done on 27 September: Go live only on the first phase still to come and only once nothing is live, with
   Skip after one question so an evening that drops a phase need not invent it.
 - Mission Control writes join the offline queue (`lib/event-day-offline-queue.ts`).
+  Revised on 27 September: not as written. The server stamps a phase's start and end, an acknowledgement and
+  a resolution with the time it receives the write, so one replayed at 19:30 would record a 19:00 phase as
+  starting at 19:30. Queueing them needs the API to accept, bound and audit the time the action happened;
+  until then a failed write says so beside its card.
 - Remove success notices, and put errors beside their card.
   Done on 27 September; a pressed button also keeps focus while it works, and hands it to its section's
   heading when a write removes it ([session log](../../sessions/2026-09-27.md)).
