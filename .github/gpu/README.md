@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 385 cases. Four hosted CPU shards execute
-380 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 388 cases. Four hosted CPU shards execute
+383 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -65,7 +65,11 @@ adds three: the Clients desk, finding the Hendersons from the keyboard, opening
 one onto a reload and closing it with the browser's Back onto the same results;
 a name spelt as it was heard reaching the search as typed, under the
 accessibility audit; and a phone, where the client replaces the list with no
-sideways scroll (`clients-desk.spec.ts`).
+sideways scroll (`clients-desk.spec.ts`). A twenty-first adds three: the
+Pipeline desk, opening the overdue deal from its row and closing it as won
+with its reason; the open deal surviving a reload through its
+address, under the accessibility audit; and a phone, where the deal replaces the
+ledger with no sideways scroll (`pipeline-desk.spec.ts`).
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and

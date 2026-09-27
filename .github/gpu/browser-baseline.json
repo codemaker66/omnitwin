@@ -428,6 +428,22 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Pipeline desk (T-635 X1): a ledger of deals grouped by when their next step is due, the live stages on a copper plane with their counts and worth, and a forest panel holding the deal, open in the address (?opportunity=). The /crm/pipeline and /opportunities routes answer as the API does on real PostgreSQL in crm-postgres.test.ts and opportunities-postgres.test.ts, moving a deal only as OPPORTUNITY_STAGE_TRANSITIONS allows and refusing a close without a reason (REASON_REQUIRED). One case opens the overdue deal with Enter on its row, marks it won with a reason chosen and added to in place, finds the move and its reason in the timeline, and moves to the deal before it with k. One reloads onto the open deal and runs the accessibility audit with it open. One, at 390 by 844, has the deal replace the ledger with no sideways scroll and Back to the pipeline return focus to its row.",
+      "sourceCommit": "5076e1a6e2c5bf81af6e957437348e42a4441a44",
+      "sourceFile": "packages/web/e2e/pipeline-desk.spec.ts",
+      "sourceFileGitBlobSha256": "60ed6e7b5ea875e57eb9144526d3151bcc2bbaaec0ecb9da6914c4f771056d8c",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "861f4dfc0f055ceb4007297131bf5093c0753cab33670d17cc29a5b2aae5bcd3",
+      "caseIds": [
+        "67f30a9724b64d86d09f-323b4fbf0e740285809a",
+        "67f30a9724b64d86d09f-8fb152b8a91570f92f2e",
+        "67f30a9724b64d86d09f-ad667d25db293381c83e"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -2803,6 +2819,39 @@
       "suitePath": [
         "performance.spec.ts",
         "Performance"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "67f30a9724b64d86d09f-8fb152b8a91570f92f2e",
+      "file": "pipeline-desk.spec.ts",
+      "title": "a booker works what is owed from the keyboard, closing the overdue deal as won with its reason",
+      "suitePath": [
+        "pipeline-desk.spec.ts",
+        "Pipeline desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "67f30a9724b64d86d09f-ad667d25db293381c83e",
+      "file": "pipeline-desk.spec.ts",
+      "title": "the open deal survives a reload through its address, and the desk reads cleanly with it open",
+      "suitePath": [
+        "pipeline-desk.spec.ts",
+        "Pipeline desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "67f30a9724b64d86d09f-323b4fbf0e740285809a",
+      "file": "pipeline-desk.spec.ts",
+      "title": "on a phone the deal replaces the ledger, Back to the pipeline returns to it, and nothing scrolls sideways",
+      "suitePath": [
+        "pipeline-desk.spec.ts",
+        "Pipeline desk"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
