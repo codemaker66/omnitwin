@@ -144,6 +144,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Diary stays steady while it loads (T-635 N3): each step to another week replaced the whole board, rooms and tray included, with a loader, and a refresh that failed replaced bookings already on screen with an error. The case holds the next week's read open and requires the rooms, the new week's status line, the decisions due and an unmoved board with no new-booking squares or conflicts panel; then requires this week to reopen at once, a failed refresh to keep its bookings under \"Couldn't refresh at 09:00.\", and Try again to clear it.",
+      "sourceCommit": "987a50391f00abab8efbb83f5176acdd89ae296c",
+      "sourceFile": "packages/web/e2e/diary-timetable.spec.ts",
+      "sourceFileGitBlobSha256": "34fafc5fa9f9eb84b9f61af3bef628469d0e42a9e4ace0e65ae3b5e1998f8c4f",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "365205a4411fa423eba57a40b57dd7e35335eb94e9518b5f8119c8da648a1c14",
+      "caseIds": [
+        "7bffe49ce87053aabb53-e85128afb7e7ef756469"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3968,6 +3982,17 @@
       "suitePath": [
         "enquiries-list-paging.spec.ts",
         "Staff enquiries list paging"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7bffe49ce87053aabb53-e85128afb7e7ef756469",
+      "file": "diary-timetable.spec.ts",
+      "title": "keeps its rooms while a week is on its way, and its bookings when a refresh fails",
+      "suitePath": [
+        "diary-timetable.spec.ts",
+        "Diary timetable"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
