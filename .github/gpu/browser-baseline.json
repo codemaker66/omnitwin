@@ -444,6 +444,22 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Proposals desk (T-635 X1): a ledger of proposals grouped as a booker works them (what the client sent back, drafts, with the client, accepted, closed), the groups on a copper plane with their counts over the whole list, and a forest panel holding the proposal, open in the address (?proposal=). GET /proposals/desk and GET /proposals/:id answer as the API does on real PostgreSQL in proposals-desk-postgres.test.ts; a quote is worked out from its lines in whole pence, a new version takes the next number, and making a link sends a draft or a proposal the client asked to change. One case opens the proposal the client asked to change with Enter on its row, finds version 2 starting from version 1 and saying what the changed price does to the quote, saves it, and sends it only after the question asked in place. One reloads onto a sent proposal, offered a new link, and runs the accessibility audit with it open. One, at 390 by 844, has the proposal replace the ledger with no sideways scroll and Back to proposals return focus to its row.",
+      "sourceCommit": "b17b965a86ff0d511cf8696ad1304d3a6d6ba31c",
+      "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
+      "sourceFileGitBlobSha256": "c14a84502e853db11fa125634c48d769a3d97087d481c83f2d14996e844db835",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "b90107083c693e29b7379efdab8ba5d9eb6843bf6257c4ff7bb589308dcd4d5d",
+      "caseIds": [
+        "3d60696039542bd5f8df-7ee0a30779e97cef074d",
+        "3d60696039542bd5f8df-d7ae8773cfedf792d352",
+        "3d60696039542bd5f8df-d8c8ae0c14d4217057eb"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -935,6 +951,39 @@
       "suitePath": [
         "proposal-share-link.spec.ts",
         "proposal share link"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-d8c8ae0c14d4217057eb",
+      "file": "proposals-desk.spec.ts",
+      "title": "a booker answers the client who asked for changes: the next version starts from the last and is sent after asking",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-7ee0a30779e97cef074d",
+      "file": "proposals-desk.spec.ts",
+      "title": "the open proposal survives a reload through its address, and the desk reads cleanly with it open",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-d7ae8773cfedf792d352",
+      "file": "proposals-desk.spec.ts",
+      "title": "on a phone the proposal replaces the ledger, Back to proposals returns to it, and nothing scrolls sideways",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
