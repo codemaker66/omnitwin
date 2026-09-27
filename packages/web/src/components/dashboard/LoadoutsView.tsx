@@ -200,7 +200,7 @@ export function LoadoutsView(): React.ReactElement {
   if (venueId === "") {
     return (
       <section style={{ ...panelStyle, padding: 24 }} role="status">
-        <h2 style={{ margin: "8px 0", fontSize: 24, fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>No venue assigned</h2>
+        <h2 style={{ margin: "8px 0", fontSize: 24, fontFamily: "var(--house-serif)", letterSpacing: 0 }}>No venue assigned</h2>
         <p style={{ margin: 0, color: "rgba(246,241,232,0.72)", lineHeight: 1.55 }}>
           Ask an admin to assign your account to a venue.
         </p>
@@ -228,11 +228,11 @@ export function LoadoutsView(): React.ReactElement {
 
       <div style={{ ...panelStyle, padding: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
-          <h3 style={{ fontSize: 22, fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 650, margin: "4px 0 0", letterSpacing: 0 }}>Reference Loadouts</h3>
+          <h3 style={{ fontSize: 22, fontFamily: "var(--house-serif)", fontWeight: 650, margin: "4px 0 0", letterSpacing: 0 }}>Reference loadouts</h3>
         </div>
         <button type="button" style={{ ...btnStyle, opacity: selectedSpaceId === null ? 0.5 : 1 }}
           disabled={selectedSpaceId === null}
-          onClick={() => { setCreateError(null); setShowCreate(true); }}>New Loadout</button>
+          onClick={() => { setCreateError(null); setShowCreate(true); }}>New loadout</button>
       </div>
 
       {loading && <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>Loading room list…</ActivityStatus>}
@@ -305,7 +305,7 @@ export function LoadoutsView(): React.ReactElement {
           tabIndex={-1}
         >
           <div ref={createModalRef} style={{ ...panelStyle, padding: 24, width: 420, maxWidth: "90vw" }} onClick={(e) => { e.stopPropagation(); }}>
-            <h3 id="loadout-create-title" style={{ fontSize: 20, fontWeight: 700, margin: "0 0 16px", color: "#fff7e8" }}>New Reference Loadout</h3>
+            <h3 id="loadout-create-title" style={{ fontSize: 20, fontWeight: 700, margin: "0 0 16px", color: "#fff7e8" }}>New reference loadout</h3>
             {createError !== null && (
               <div role="alert" data-testid="loadout-create-error" style={{ ...alertStyle, marginBottom: 12 }}>
                 {createError}

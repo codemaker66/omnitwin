@@ -1,0 +1,129 @@
+/* ---------------------------------------------------------------------------
+ * Notifications, inside the dashboard's More popover (NotificationCenter.tsx).
+ *
+ * Everything here reads the register around it (--reg-*, styles/workspace.css)
+ * rather than painting a palette of its own: ink on the ivory popover, with
+ * the list separated by hairlines instead of dark cards.
+ * ------------------------------------------------------------------------- */
+
+.vv-notifications { display: grid; gap: 10px; }
+
+.vv-notifications-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: var(--house-radius-control);
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--house-motion-hover) ease;
+}
+.vv-notifications-summary { flex: 1 1 auto; min-width: 0; }
+.vv-notifications-chevron {
+  flex: 0 0 auto;
+  color: var(--reg-text-2);
+  transition: transform var(--house-motion-reveal) var(--house-ease-out);
+}
+.vv-notifications-trigger[aria-expanded="true"] .vv-notifications-chevron { transform: rotate(180deg); }
+
+.vv-notifications-panel { display: grid; gap: 4px; }
+.vv-notifications-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.vv-notifications-order { margin: 0; color: var(--reg-text-2); font-size: 0.8rem; }
+
+/* The small actions: Refresh, View, Mark read. 44px tall for a finger. */
+.vv-notifications-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--house-radius-control);
+  background: transparent;
+  color: var(--reg-text-1);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--reg-text-1) 35%, transparent);
+  text-underline-offset: 4px;
+  cursor: pointer;
+  transition: background-color var(--house-motion-hover) ease, text-decoration-color var(--house-motion-hover) ease;
+}
+.vv-notifications-button:disabled { color: var(--reg-text-3); }
+
+@media (hover: hover) and (pointer: fine) {
+  .vv-notifications-trigger:hover { background: var(--reg-surface-hover); }
+  .vv-notifications-button:hover:not(:disabled) {
+    background: var(--reg-surface-hover);
+    text-decoration-color: currentColor;
+  }
+}
+
+.vv-notifications-note { margin: 10px 0; color: var(--reg-text-2); font-size: 0.88rem; line-height: 1.45; }
+.vv-notifications-note--alert { color: var(--reg-alert); }
+
+.vv-notifications-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.vv-notification {
+  display: grid;
+  gap: 3px;
+  padding: 12px 0 6px;
+  border-top: 1px solid var(--reg-rule);
+}
+.vv-notification-tone {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.vv-notification-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--house-radius-pill);
+  background: var(--house-slate-dot);
+}
+.vv-notification[data-severity="urgent"] .vv-notification-tone { color: var(--reg-alert); }
+.vv-notification[data-severity="urgent"] .vv-notification-dot { background: var(--house-brick-dot); }
+.vv-notification[data-severity="attention"] .vv-notification-tone { color: var(--reg-attention); }
+.vv-notification[data-severity="attention"] .vv-notification-dot { background: var(--house-copper-dot); }
+
+.vv-notification-title {
+  margin: 0;
+  color: var(--reg-text-1);
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.vv-notification-body {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.vv-notification-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: -10px; }
+.vv-notification-failed { margin: 0 0 6px; color: var(--reg-alert); font-size: 0.84rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-notifications-trigger,
+  .vv-notifications-button,
+  .vv-notifications-chevron { transition: none; }
+}

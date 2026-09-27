@@ -17,7 +17,7 @@
 .inventory-panel { min-height: 70vh; padding: clamp(22px, 3vw, 46px); border: 1px solid var(--inventory-rule); border-radius: 5px; }
 .inventory-panel *, .inventory-editor * { box-sizing: border-box; }
 .inventory-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 35px; }
-.inventory-header h1 { font: 400 clamp(38px, 4vw, 56px)/1.1 Georgia, "Times New Roman", serif; letter-spacing: -.03em; margin: 0 0 13px; }
+.inventory-header h1 { font: 400 clamp(38px, 4vw, 56px)/1.1 var(--house-serif); letter-spacing: -.03em; margin: 0 0 13px; }
 .inventory-header p, .inventory-editor-header p { color: var(--inventory-muted); margin: 0; }
 .inventory-button, .inventory-icon-button { display: inline-flex; justify-content: center; align-items: center; gap: 9px; min-height: 46px; padding: 10px 17px; border: 1px solid var(--inventory-rule); border-radius: 4px; color: var(--inventory-text); background: transparent; font: inherit; font-size: 14px; cursor: pointer; transition: background 160ms ease, border-color 160ms ease; }
 .inventory-button--primary { background: var(--inventory-accent); border-color: var(--inventory-accent); color: #192117; font-weight: 550; }
@@ -48,23 +48,23 @@
 .inventory-availability-note svg { flex-shrink: 0; margin-top: 3px; }
 .inventory-availability-note p { margin: 0; }
 .inventory-state { min-height: 270px; display: flex; align-items: flex-start; justify-content: center; flex-direction: column; }
-.inventory-state h2 { margin: 0; font: 400 28px/1.25 Georgia, serif; }
+.inventory-state h2 { margin: 0; font: 400 28px/1.25 var(--house-serif); }
 .inventory-state p { color: var(--inventory-muted); max-width: 56ch; }
 .inventory-overlay { position: fixed; inset: 0; display: flex; justify-content: flex-end; z-index: 420; background: rgb(11 14 11 / 58%); }
 .inventory-editor { width: min(490px, 100%); height: 100%; overflow-y: auto; overscroll-behavior: contain; border-left: 1px solid var(--inventory-rule); padding: 30px 30px max(28px, env(safe-area-inset-bottom)); box-shadow: -24px 0 70px rgb(0 0 0 / 20%); animation: inventory-enter 200ms cubic-bezier(.2,.7,.2,1); }
 .inventory-editor-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 15px; margin-bottom: 28px; }
-.inventory-editor-header h2 { font: 400 31px/1.15 Georgia, serif; margin: 3px 0 8px; }
+.inventory-editor-header h2 { font: 400 31px/1.15 var(--house-serif); margin: 3px 0 8px; }
 .inventory-editor-header p { font-size: 14px; }
 .inventory-count-fields { display: grid; grid-template-columns: 1fr; }
 .inventory-field { display: grid; gap: 8px; margin-bottom: 19px; color: var(--inventory-text); font-size: 14px; }
 .inventory-field input, .inventory-field select, .inventory-field textarea { width: 100%; min-height: 47px; border: 1px solid var(--inventory-rule); border-radius: 4px; background: #222620; color: var(--inventory-text); padding: 10px 13px; font: inherit; font-size: 16px; }
 .inventory-field textarea { resize: vertical; min-height: 88px; }
-.inventory-field--quantity input { font: 400 30px/1.1 Georgia, serif; font-variant-numeric: tabular-nums; min-height: 56px; }
+.inventory-field--quantity input { font: 400 30px/1.1 var(--house-serif); font-variant-numeric: tabular-nums; min-height: 56px; }
 .inventory-field input:disabled, .inventory-field textarea:disabled, .inventory-field select:disabled { opacity: .7; }
 .inventory-field-help { margin: -6px 0 23px; color: var(--inventory-muted); font-size: 12px; }
 .inventory-serviceable { border-top: 1px solid var(--inventory-rule); padding-top: 16px; margin: 25px 0 22px; }
 .inventory-serviceable p { margin: 0 0 4px; }
-.inventory-serviceable strong { margin-right: 10px; color: var(--inventory-accent); font: 400 34px/1.2 Georgia, serif; }
+.inventory-serviceable strong { margin-right: 10px; color: var(--inventory-accent); font: 400 34px/1.2 var(--house-serif); }
 .inventory-serviceable span { display: block; color: var(--inventory-muted); font-size: 13px; }
 .inventory-editor-actions, .inventory-actions { display: flex; gap: 10px; margin-top: 20px; }
 .inventory-editor-actions .inventory-button--primary { flex: 1; }

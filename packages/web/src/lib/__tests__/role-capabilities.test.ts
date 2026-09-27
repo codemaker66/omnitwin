@@ -85,7 +85,7 @@ describe("nav offers are reachable", () => {
     expect(canOpenDashboardView("analytics", "sales", "none")).toBe(true);
   });
 
-  it("offers Client Search only to the roles /clients admits", () => {
+  it("offers Client search only to the roles /clients admits", () => {
     // routes/clients.ts:36,145,231,293 all gate on canManageVenue, so sales
     // and planner were being offered a tab that answers 403.
     expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper"]);
@@ -97,7 +97,7 @@ describe("nav offers are reachable", () => {
     expect(canOpenDashboardView("search", "planner", "none")).toBe(false);
   });
 
-  it("offers Pending Reviews only to the roles the review queue admits", () => {
+  it("offers Pending reviews only to the roles the review queue admits", () => {
     // GET /configurations/reviews/pending now takes its role set from the
     // review state machine itself (VENUE_REVIEW_ROLES: staff, manager,
     // admin), so approving and listing are one gate.

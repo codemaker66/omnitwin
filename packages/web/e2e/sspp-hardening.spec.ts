@@ -584,7 +584,7 @@ test.describe("SS++ hardening visual regression", () => {
     // Readiness is the rendered dashboard, independent of external font load.
     await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("button", { name: "Executive Analytics" }).click();
+    await page.getByRole("button", { name: "Executive analytics" }).click();
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
     await expect(page.getByText("Pipeline value")).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-dashboard-pipeline.png");

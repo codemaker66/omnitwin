@@ -1441,9 +1441,9 @@ test("review request-changes dialog traps keyboard focus and closes cleanly", as
 test("loadout create and delete dialogs trap focus without keyboard leaks", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const problems = await openDashboardView(page, "staff", "loadouts");
-  await page.getByRole("button", { name: "New Loadout" }).click();
+  await page.getByRole("button", { name: "New loadout" }).click();
 
-  const createDialog = page.getByRole("dialog", { name: "New Reference Loadout" });
+  const createDialog = page.getByRole("dialog", { name: "New reference loadout" });
   await expect(createDialog).toBeVisible();
   await expect(createDialog).toHaveAttribute("aria-modal", "true");
   await page.waitForTimeout(50);

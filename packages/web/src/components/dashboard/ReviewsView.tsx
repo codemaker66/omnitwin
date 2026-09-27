@@ -677,8 +677,8 @@ export function ReviewsView({ initialSelectedId = null }: ReviewsViewProps = {})
   return (
     <div style={{ display: "grid", gap: 16, color: "#fff7e8" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 24, color: "#fff7e8", fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>
-          Pending Reviews {entries.length > 0 && (
+        <h2 style={{ margin: 0, fontSize: 24, color: "#fff7e8", fontFamily: "var(--house-serif)", letterSpacing: 0 }}>
+          Pending reviews {entries.length > 0 && (
             <span style={{ color: "rgba(246,241,232,0.56)", fontWeight: 400 }}>({String(entries.length)})</span>
           )}
         </h2>

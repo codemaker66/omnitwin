@@ -223,13 +223,13 @@ describe("LoadoutsView", () => {
 
     render(<LoadoutsView />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "New Loadout" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New loadout" }));
     fireEvent.change(screen.getByLabelText("Name *"), { target: { value: "Wedding reset" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     const error = await screen.findByTestId("loadout-create-error");
     expect(error.textContent).toContain("create rejected");
-    expect(screen.getByRole("dialog", { name: "New Reference Loadout" })).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "New reference loadout" })).toBeTruthy();
   });
 });
 

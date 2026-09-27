@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useState, useEffect, useId, useRef } from "react";
+import { type ReactNode, useCallback, useState, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useClerk } from "@clerk/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Bell, ChevronDown } from "lucide-react";
@@ -57,16 +57,16 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   // routes/crm.ts and routes/opportunities.ts, which gate on
   // canManageCommercial: admin, manager, staff and sales.
   { view: "pipeline", label: "Pipeline", capability: "crmPipeline" },
-  { view: "reviews", label: "Pending Reviews", capability: "reviewQueue" },
-  { view: "analytics", label: "Executive Analytics", capability: "analytics" },
+  { view: "reviews", label: "Pending reviews", capability: "reviewQueue" },
+  { view: "analytics", label: "Executive analytics", capability: "analytics" },
   // Proposals is ProposalsView, which reads api/proposals.js — already on
   // canManageCommercial, so the whole commercial set can open it.
   { view: "proposals", label: "Proposals", capability: "commercial" },
-  // Client Search is ClientSearchView, reading api/clients.js — every
+  // Client search is ClientSearchView, reading api/clients.js — every
   // /clients route gates on canManageVenue, so sales and planner are refused.
-  { view: "search", label: "Client Search", capability: "clientSearch" },
-  { view: "loadouts", label: "Reference Loadouts", capability: "workspace" },
-  { view: "settings", label: "Venue Settings", capability: "workspace" },
+  { view: "search", label: "Client search", capability: "clientSearch" },
+  { view: "loadouts", label: "Reference loadouts", capability: "workspace" },
+  { view: "settings", label: "Venue settings", capability: "workspace" },
   { view: "inventory", label: "Inventory", capability: "venueAdmin" },
   // The Rota is RotaView, reading api/rota.js — routes/rota.ts answers the
   // venue's whole team: the week for the floor, their own shifts for sales.
@@ -242,6 +242,22 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   // channel can reach (lib/requests-live.ts).
   // -------------------------------------------------------------------------
   const [unreadNotifications, setUnreadNotifications] = useState<number | null>(null);
+  // The bell opens More with the list already showing; More opens on its
+  // links. Either way the list folds away when the popover closes.
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const morePopoverRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const notificationsShown = openMenu === "more" && notificationsOpen;
+  // The list sits below More's links. When it opens, bring it to the top of
+  // the menu, so the bell shows notifications on a phone without a scroll.
+  // Before paint, so the menu never shows its links and then jumps.
+  useLayoutEffect(() => {
+    if (!notificationsShown) return;
+    const popover = morePopoverRef.current;
+    const block = notificationsRef.current;
+    if (popover === null || block === null) return;
+    popover.scrollTop = Math.max(0, block.offsetTop - parseFloat(getComputedStyle(popover).paddingTop));
+  }, [notificationsShown]);
   const [unreadReadAt, setUnreadReadAt] = useState(0);
   const rereadUnread = useCallback(() => { setUnreadReadAt((tick) => tick + 1); }, []);
   useEffect(() => {
@@ -295,7 +311,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   return (
     <>
       <a className="dashboard-layout-skip" href="#dashboard-main">Skip to workspace</a>
-      <header className="dashboard-layout-header">
+      <header className="dashboard-layout-header" data-register="ivory">
         <div className="dashboard-layout-identity">
           <Link className="dashboard-layout-brand-name" to="/dashboard">Venviewer</Link>
           <div className="dashboard-layout-venue">
@@ -323,7 +339,11 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
               className="dashboard-layout-nav-item dashboard-layout-unread"
               data-testid="nav-unread-notifications"
               aria-label={unreadLabel} aria-expanded={openMenu === "more"} aria-controls={`${menuId}-more`}
-              onClick={() => { setOpenMenu((current) => current === "more" ? null : "more"); }}>
+              onClick={() => {
+                if (openMenu === "more") { setOpenMenu(null); return; }
+                setNotificationsOpen(true);
+                setOpenMenu("more");
+              }}>
               <Bell aria-hidden="true" size={16} />
               <span aria-hidden="true" className="dashboard-layout-unread-count">
                 {unreadShown > UNREAD_CHIP_DISPLAY_LIMIT ? `${String(UNREAD_CHIP_DISPLAY_LIMIT)}+` : unreadShown}
@@ -331,10 +351,14 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
             </button>}
             <button type="button" ref={moreButtonRef} className={`dashboard-layout-nav-item${moreActive ? " dashboard-layout-nav-item--active" : ""}`}
               aria-expanded={openMenu === "more"} aria-controls={`${menuId}-more`}
-              onClick={() => { setOpenMenu((current) => current === "more" ? null : "more"); }}>
+              onClick={() => {
+                if (openMenu === "more") { setOpenMenu(null); return; }
+                setNotificationsOpen(false);
+                setOpenMenu("more");
+              }}>
               More <ChevronDown aria-hidden="true" size={16} />
             </button>
-            <div className="dashboard-layout-popover" id={`${menuId}-more`} hidden={openMenu !== "more"}>
+            <div className="dashboard-layout-popover" id={`${menuId}-more`} hidden={openMenu !== "more"} ref={morePopoverRef}>
               <div className="dashboard-layout-more-links">
                 {moreItems.map((item) => <button key={item.view} type="button"
                   className={`dashboard-layout-menu-link${activeView === item.view ? " dashboard-layout-menu-link--active" : ""}`}
@@ -346,7 +370,11 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
                 {platformRole === "admin" && <Link className="dashboard-layout-menu-link" to="/dev/capture-intake"
                   aria-current={isRouteActive("/dev/capture-intake") ? "page" : undefined}>Capture Factory</Link>}
               </div>
-              <div className="dashboard-layout-notifications"><p className="dashboard-layout-menu-label">Notifications</p><NotificationCenter unreadCount={unreadNotifications} onUnreadChanged={rereadUnread} /></div>
+              <div className="dashboard-layout-notifications" ref={notificationsRef}>
+                <h2 className="dashboard-layout-menu-label">Notifications</h2>
+                <NotificationCenter unreadCount={unreadNotifications} onUnreadChanged={rereadUnread}
+                  expanded={notificationsShown} onExpandedChange={setNotificationsOpen} />
+              </div>
             </div>
           </div>
         </nav>

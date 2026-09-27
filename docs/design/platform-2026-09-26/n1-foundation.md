@@ -72,19 +72,19 @@ Lane 1 moved the root colour scheme to `light`, so the Twin must declare its own
 | Calm hover and press as the global default | Partly. Hover no longer moves any control, and a guard enforces that (see [Hover](#hover)). The 120 ms fine-pointer colour timing and the 0.97 press are still per surface. |
 | Remove `[data-calm-controls]` | Done |
 | Focus: ink on ivory, cream on forest, 2px, offset 2, no halo | Done inside registers. Outside a register, the app's ring is Lane 1's copper. |
-| Remove the per-surface focus patches | The desk's patch is gone. The shell's is kept until the header takes a register. |
+| Remove the per-surface focus patches | Done. The desk's went first; the shell's went on 27 September, once the header took the ivory register (its ring measured unchanged: 2 px ink, no halo). |
 | Register blocks, control edge, forest edge, forest field, review dot | Done |
 | Heather (AI drafts) and loch (estimates) tones | Not yet |
 | Radii, the two shadows, scrim, motion tokens | Done |
 | 4px spacing scale | Not yet |
 | `color-scheme` per register; ivory ground | Done |
 | Activity capsule in Inter | Not yet |
-| Newsreader and Inter; literal Georgia replaced in the shell and shared states | The wordmark is done. `Georgia` still appears 164 times in 55 source files, outside tests. The staff and client ones need replacing, across the dashboard, inventory, onboarding, hallkeeper, client schedule and planner cockpit. Public marketing pages keep their own voice. |
+| Newsreader and Inter; literal Georgia replaced in the shell and shared states | Done for the shell and shared states: the wordmark, the shared state panel, the route arrival and notifications. The dashboard's views, inventory, onboarding and admin followed on 27 September. `Georgia` now appears 125 times in 42 source files outside tests, some only as a fallback inside a stack. Still to replace: the hallkeeper sheet and walkthrough, the client schedule, the access gate and the planner cockpit. Public marketing pages keep their own voice. |
 | Component kit v1 (StatusChip, ConsequenceConfirm, Notice, UndoToast, EmptyState, DateTile, buttons, Field, `venue-time`, `describeFailure`) | Not yet |
 | Delete `.vv-status-chip` | Not yet |
 | Acceptance: the hover probe on 12 staff routes, and sampled ring contrast | Not yet. The token pairings are asserted. |
 
-The dashboard header takes no register yet. NotificationCenter paints its own dark panel and reads the House names for its text, so inside a register it would turn dark-on-dark. It moves onto `--reg-*` in N2, and then the header can take the ivory register.
+The dashboard header takes the ivory register (27 September). NotificationCenter moved onto `--reg-*` first, so nothing in it turns dark-on-dark: it is ink on the ivory menu, with the tone named beside each dot. See the [27 September log](../../sessions/2026-09-27.md).
 
 ## Evidence
 

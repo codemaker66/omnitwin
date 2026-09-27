@@ -127,6 +127,18 @@ describe("ExecutiveAnalyticsView", () => {
     expect(bodyText).not.toMatch(/guaranteed accessible/i);
   });
 
+  it("counts a room's holds in the house's words, and one bottleneck as one", async () => {
+    const data = dashboardData();
+    getVenueDashboardAnalyticsMock.mockResolvedValue({
+      ...data,
+      roomUtilisation: data.roomUtilisation.map((room) => ({ ...room, reviewBottlenecks: 1 })),
+    });
+    render(<ExecutiveAnalyticsView />);
+
+    expect(await screen.findByText("2 confirmed · 5 provisional · 1 review bottleneck")).toBeDefined();
+    expect(document.body.textContent ?? "").not.toMatch(/pencil/iu);
+  });
+
   it("asks a platform admin which venue before reporting anyone's numbers", async () => {
     authState.user = { ...authState.user, platformRole: "admin", venueId: null };
     getVenueDashboardAnalyticsMock.mockResolvedValue(dashboardData());

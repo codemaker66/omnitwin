@@ -2176,12 +2176,46 @@ test.describe("SS++ representative button behavior", () => {
     await page.getByRole("button", { name: /unread notification/i }).click();
     await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
     await page.getByRole("button", { name: "Refresh notifications" }).click();
-    await page.getByRole("button", { name: /Mark Guest count updated read/i }).click();
-    await expect(page.getByText("No unread notifications.")).toBeVisible();
+    await page.getByRole("button", { name: "Mark read: Guest count updated" }).click();
+    await expect(page.getByText("Nothing waiting on you.")).toBeVisible();
 
-    await page.getByRole("button", { name: "Executive Analytics" }).click();
+    await page.getByRole("button", { name: "Executive analytics" }).click();
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
     await expect(page.getByText("Pipeline value")).toBeVisible();
+  });
+
+  test("on a phone the header menus open on screen and the bell opens the list", async ({ page }) => {
+    // The smallest phone in common use, where the menu is shortest.
+    const phone = { width: 375, height: 667 };
+    await page.setViewportSize(phone);
+    await seedAuthenticatedUser(page, "staff");
+    await mockDashboardRoutes(page);
+    await page.goto("/dashboard");
+    await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+
+    // The wrapped row puts the bell and More at its left edge; a menu anchored
+    // to More's right edge opened almost entirely off the screen.
+    const onScreen = async (id: string | null): Promise<void> => {
+      if (id === null) throw new Error("expected the menu's id");
+      const box = await page.locator(`[id="${id}"]`).boundingBox();
+      if (box === null) throw new Error("expected the menu on screen");
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(phone.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(phone.height);
+    };
+    const bell = page.getByRole("button", { name: "Notifications: 1 unread" });
+    await bell.click();
+    await onScreen(await bell.getAttribute("aria-controls"));
+    // The bell was pressed to read notifications, so they are already showing,
+    // brought to the top of the menu rather than left below its links.
+    await expect(page.getByRole("heading", { level: 3, name: "Guest count updated" })).toBeInViewport({ ratio: 1 });
+    await page.getByRole("button", { name: "Mark read: Guest count updated" }).click();
+    await expect(page.getByText("Nothing waiting on you.")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    const account = page.getByRole("button", { name: /^Account: / });
+    await account.click();
+    await onScreen(await account.getAttribute("aria-controls"));
   });
 
   test("event-day controls acknowledge changes, update tasks, and log issues", async ({ page }) => {
@@ -2304,9 +2338,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("button", { name: "Proposals" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Clients & access" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Admin", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Pending Reviews" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Executive Analytics" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Venue Settings" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pending reviews" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Executive analytics" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Venue settings" })).toBeVisible();
   });
 
   test("dashboard direct admin-view URLs fail closed for hallkeepers", async ({ page }) => {
@@ -2331,7 +2365,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Executive Analytics" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Executive analytics" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Pipeline" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Proposals" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Clients & access" })).toHaveCount(0);
@@ -2462,7 +2496,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: /unread notification/i }).click();
-    await page.getByRole("button", { name: "View Guest count updated" }).click();
+    await page.getByRole("button", { name: "View: Guest count updated" }).click();
     await expect(page).toHaveURL(new RegExp(`/ops/events/${EVENT_ID}$`, "u"));
     await expect(page.getByRole("heading", { level: 1, name: "Wilson wedding" })).toBeVisible();
   });
@@ -2652,8 +2686,8 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("button", { name: "Pending Reviews" }).click();
-    await expect(page.getByRole("heading", { name: /Pending Reviews/u })).toBeVisible();
+    await page.getByRole("button", { name: "Pending reviews" }).click();
+    await expect(page.getByRole("heading", { name: /Pending reviews/u })).toBeVisible();
 
     await page.getByRole("button", { name: "Open review for Reception Room dinner review" }).click();
     await expect(page.getByRole("heading", { name: "Reception Room dinner review" })).toBeVisible();
@@ -2704,12 +2738,12 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("button", { name: "Reference Loadouts" }).click();
-    await expect(page.getByRole("heading", { name: "Reference Loadouts" })).toBeVisible();
+    await page.getByRole("button", { name: "Reference loadouts" }).click();
+    await expect(page.getByRole("heading", { name: "Reference loadouts" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open reference loadout Ceremony reference setup" })).toBeVisible();
 
-    await page.getByRole("button", { name: "New Loadout" }).click();
-    const dialog = page.getByRole("dialog", { name: "New Reference Loadout" });
+    await page.getByRole("button", { name: "New loadout" }).click();
+    const dialog = page.getByRole("dialog", { name: "New reference loadout" });
     await expect(dialog).toBeVisible();
     const create = dialog.getByRole("button", { name: "Create" });
     await expect(create).toBeDisabled();
@@ -2732,8 +2766,8 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByRole("button", { name: "Retry loadouts" }).click();
     await expect(page.getByRole("button", { name: "Open reference loadout Ceremony reference setup" })).toBeVisible();
 
-    await page.getByRole("button", { name: "New Loadout" }).click();
-    const dialog = page.getByRole("dialog", { name: "New Reference Loadout" });
+    await page.getByRole("button", { name: "New loadout" }).click();
+    const dialog = page.getByRole("dialog", { name: "New reference loadout" });
     await dialog.getByLabel("Name *").fill("Dinner retry reference");
     const create = dialog.getByRole("button", { name: "Create" });
     await create.click();
@@ -2770,7 +2804,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("button", { name: "Reference Loadouts" }).click();
+    await page.getByRole("button", { name: "Reference loadouts" }).click();
     await page.getByRole("button", { name: "Open reference loadout Ceremony reference setup" }).click();
     await expect(page.getByRole("heading", { name: "Ceremony reference setup" })).toBeVisible();
 
@@ -2808,7 +2842,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(deleteDialog).toBeVisible();
     await deleteDialog.getByRole("button", { name: "Delete" }).click();
     await expect.poll(() => mock.deletedLoadouts).toContain(LOADOUT_ID);
-    await expect(page.getByRole("heading", { name: "Reference Loadouts" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Reference loadouts" })).toBeVisible();
   });
 
   test("proposal conversation and client-link controls call the staff proposal APIs", async ({ page }) => {

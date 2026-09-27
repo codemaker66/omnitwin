@@ -14,7 +14,7 @@
 .inventory-equipment-sheet { padding: 24px 42px 24px 32px; }
 .inventory-equipment-sheet::before { background: #f0ebd9; clip-path: polygon(0 0, 100% 0, 97% 96%, 0 100%); }
 .inventory-header { margin: 0 0 12px; align-items: center; }
-.inventory-header h1 { margin: 0; font: 400 clamp(36px, 3.5vw, 52px)/1.1 Georgia, serif; letter-spacing: -.025em; }
+.inventory-header h1 { margin: 0; font: 400 clamp(36px, 3.5vw, 52px)/1.1 var(--house-serif); letter-spacing: -.025em; }
 .inventory-header .inventory-button { font-size: 16px; white-space: nowrap; }
 .inventory-tools { position: relative; margin: 0 0 12px; gap: 14px; }
 .inventory-search { flex: 1; width: auto; background: #f6f2e5; border-color: #c0c4b4; }
@@ -29,7 +29,7 @@
 .inventory-picture figcaption { color: #5c685a; font-size: 11px; text-align: center; }
 .inventory-picture--hero img { height: clamp(260px, 23vw, 360px); }
 .inventory-featured-copy { min-width: 0; padding-top: 6px; grid-column: 2; grid-row: 1; }
-.inventory-featured-copy h2 { margin: 0 0 8px; font: 400 clamp(26px, 2.5vw, 40px)/1.13 Georgia, serif; letter-spacing: -.018em; overflow-wrap: anywhere; }
+.inventory-featured-copy h2 { margin: 0 0 8px; font: 400 clamp(26px, 2.5vw, 40px)/1.13 var(--house-serif); letter-spacing: -.018em; overflow-wrap: anywhere; }
 .inventory-location { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 17px; }
 .inventory-stock-status { display: inline-block; font-size: 13px; border-bottom: 1px solid currentColor; }
 .inventory-hero-numbers { display: grid; grid-template-columns: 1fr 1fr 1.2fr; margin: 40px 0 16px; font-variant-numeric: tabular-nums; }
@@ -41,7 +41,7 @@
 .inventory-equipment-choice { display: flex; align-items: center; gap: 12px; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 4px; text-align: left; color: inherit; cursor: pointer; min-width: 0; font: inherit; transition: background 150ms ease; }
 .inventory-equipment-choice:hover { background: #dce0cc; }
 .inventory-equipment-choice > .inventory-picture { flex: 0 0 45%; }
-.inventory-equipment-choice strong { display: block; font: 400 22px/1.2 Georgia, serif; }
+.inventory-equipment-choice strong { display: block; font: 400 22px/1.2 var(--house-serif); }
 .inventory-equipment-choice > span > span { display: block; font-size: 13px; margin-top: 8px; }
 .inventory-catalogue { margin-top: 24px; padding-top: 15px; border-top: 1px solid var(--inventory-rule); }
 .inventory-catalogue[hidden] { display: none; }
@@ -74,7 +74,7 @@
 .inventory-editor { --inventory-bg: #264337; --inventory-surface: #365447; --inventory-text: #f2eee1; --inventory-muted: #d0d9cd; --inventory-rule: #799383; --inventory-accent: #eae2ca; --inventory-error: #ffccb4; background: var(--inventory-bg); color: var(--inventory-text); color-scheme: dark; }
 .inventory-editor--inline, .inventory-editor--rest { width: 100%; height: auto; overflow: visible; border: 0; padding: 14px 18px 14px; box-shadow: none; animation: none; background: transparent; }
 .inventory-editor--inline .inventory-editor-header { margin-bottom: 28px; }
-.inventory-editor--inline .inventory-editor-header h2, .inventory-editor--rest h2 { font: 400 clamp(30px, 2.7vw, 44px)/1.14 Georgia, serif; margin: 0 0 10px; letter-spacing: -.015em; }
+.inventory-editor--inline .inventory-editor-header h2, .inventory-editor--rest h2 { font: 400 clamp(30px, 2.7vw, 44px)/1.14 var(--house-serif); margin: 0 0 10px; letter-spacing: -.015em; }
 .inventory-editor--inline .inventory-editor-header p { font-size: 16px; }
 .inventory-editor--inline .inventory-count-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .inventory-editor--inline .inventory-field--quantity > span { white-space: nowrap; font-size: 13px; }
@@ -107,7 +107,7 @@
 .inventory-editor :focus-visible { outline-color: #eee1b4; }
 .inventory-demand { background: #f0ebd9; margin: 28px 0 0; padding: 24px 36px 36px; border: 0; }
 .inventory-demand .inventory-section-heading:first-child { margin-top: 0; }
-.inventory-demand .inventory-section-heading h2 { font: 400 32px/1.2 Georgia, serif; }
+.inventory-demand .inventory-section-heading h2 { font: 400 32px/1.2 var(--house-serif); }
 .inventory-panel .inventory-notice { background: #f0dcc0; border-color: #a28a64; color: #4b381f; }
 .inventory-editor .inventory-notice { background: #3d4d38; color: #fae5b5; border-color: #a49b76; }
 .inventory-success { background: #365746; border-color: #91ad8a; }

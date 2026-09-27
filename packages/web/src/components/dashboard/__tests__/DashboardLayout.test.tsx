@@ -21,11 +21,12 @@ vi.mock("../../../lib/requests-live.js", async () => {
 vi.mock("../../../lib/e2e-auth-bypass.js", () => ({ isE2EAuthBypassEnabled: mocks.bypass }));
 vi.mock("../../shared/ToastContainer.js", () => ({ ToastContainer: () => null }));
 // The stub says the number it was handed, so a spec can prove the popover
-// states the shell's count rather than fetching one of its own.
+// states the shell's count rather than fetching one of its own, and it says
+// whether the shell asked for its list to be showing.
 vi.mock("../NotificationCenter.js", () => ({
-  NotificationCenter: ({ unreadCount, onUnreadChanged }: {
-    readonly unreadCount: number | null; readonly onUnreadChanged: () => void;
-  }) => <button type="button" onClick={onUnreadChanged}>
+  NotificationCenter: ({ unreadCount, onUnreadChanged, expanded }: {
+    readonly unreadCount: number | null; readonly onUnreadChanged: () => void; readonly expanded: boolean;
+  }) => <button type="button" onClick={onUnreadChanged} data-expanded={String(expanded)}>
     {unreadCount === null ? "Notifications" : unreadCount === 0 ? "No unread notifications" : `${String(unreadCount)} unread notifications`}
   </button>,
 }));
@@ -102,7 +103,7 @@ describe("DashboardLayout navigation", () => {
     expect(screen.queryByRole("link", { name: "Messages" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(await screen.findByRole("button", { name: "No unread notifications" })).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Venue Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Venue settings" }));
     expect(onViewChange).toHaveBeenCalledWith("settings");
     expect(screen.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
   });
@@ -174,12 +175,12 @@ describe("DashboardLayout navigation", () => {
     // canManageCommercial, which admits sales.
     expect(screen.getByRole("button", { name: "Proposals" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Pipeline" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "Executive Analytics" })).toBeDefined();
-    // Client Search reads /clients, which gates on canManageVenue — sales is
+    expect(screen.getByRole("button", { name: "Executive analytics" })).toBeDefined();
+    // Client search reads /clients, which gates on canManageVenue — sales is
     // refused there, so the tab is not offered.
-    expect(screen.queryByRole("button", { name: "Client Search" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Client search" })).toBeNull();
     // The pending-review queue takes the review state machine's role set.
-    expect(screen.queryByRole("button", { name: "Pending Reviews" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pending reviews" })).toBeNull();
   });
 
   it("preserves platform tools without granting venue stock authority", async () => {
@@ -327,16 +328,29 @@ describe("unread notifications on the visible nav", () => {
     });
   }
 
-  it("opens the notifications popover from the chip and leaves its contents alone", async () => {
+  it("opens the popover from the chip with the list showing, and More on its links", async () => {
     mocks.unreadCount.mockResolvedValue(2);
     renderShell();
     const chip = await screen.findByRole("button", { name: "Notifications: 2 unread" });
     fireEvent.click(chip);
     // One number from one source: the panel says the chip's count.
-    expect(screen.getByRole("button", { name: "2 unread notifications" })).toBeDefined();
+    const panel = screen.getByRole("button", { name: "2 unread notifications" });
     expect(screen.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("true");
+    // The bell was pressed to read notifications, so they are already showing.
+    expect(panel.getAttribute("data-expanded")).toBe("true");
     fireEvent.click(chip);
     expect(screen.queryByRole("button", { name: "2 unread notifications" })).toBeNull();
+
+    // More was pressed to go somewhere: its links, with the list folded away.
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("button", { name: "2 unread notifications" }).getAttribute("data-expanded")).toBe("false");
+    expect(screen.getByRole("heading", { level: 2, name: "Notifications" })).toBeDefined();
+  });
+
+  it("gives the header the ivory register its notifications read", async () => {
+    renderShell();
+    await screen.findByText("Trades Hall");
+    expect(screen.getByRole("banner").getAttribute("data-register")).toBe("ivory");
   });
 
   it("re-reads the count when the popover closes, because reading happens inside it", async () => {

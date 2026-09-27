@@ -18,9 +18,9 @@
  *     sits on ivory or forest.
  *
  * Caution: a component that paints its own dark background and reads the
- * House names for its text (NotificationCenter's panel does, today) turns
- * dark-on-dark inside a register. Move it onto `--reg-*` before its container
- * takes a register; that is why the dashboard header has none yet.
+ * House names for its text turns dark-on-dark inside a register. Move it onto
+ * `--reg-*` before its container takes a register, as NotificationCenter was
+ * before the dashboard header took the ivory one.
  *
  * The primitives live in styles/house-tokens.css.
  * ------------------------------------------------------------------------- */

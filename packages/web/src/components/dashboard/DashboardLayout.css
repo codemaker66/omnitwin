@@ -38,8 +38,6 @@
 }
 .dashboard-layout-nav-item:hover { background: #e7e5d5; }
 .dashboard-layout-nav-item--active { border-bottom-color: var(--workspace-ink); font-weight: 650; }
-.dashboard-layout-header :is(button, a):focus-visible,
-.dashboard-layout-skip:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .dashboard-layout-disclosure { position: relative; }
 .dashboard-layout-more { display: flex; align-items: center; gap: 2px; }
 .dashboard-layout-unread { gap: 5px; padding-right: 6px; padding-left: 6px; }
@@ -72,7 +70,7 @@
 }
 .dashboard-layout-popover[hidden] { display: none; }
 .dashboard-layout-menu-label {
-  margin: 0 0 10px; color: #54675c; font-size: 0.72rem; font-weight: 600;
+  margin: 0 0 10px; color: #54675c; font-size: 0.72rem; font-weight: 600; line-height: 1.4;
   letter-spacing: 0.07em; text-transform: uppercase;
 }
 .dashboard-layout-more-links { display: grid; gap: 2px; }
@@ -86,16 +84,9 @@
 .dashboard-layout-account-panel { width: min(310px, calc(100vw - 32px)); }
 .dashboard-layout-account-email { margin: 0 0 14px; font-size: 0.92rem; overflow-wrap: anywhere; }
 .dashboard-layout-signout { border-top: 1px solid #d3d8c7; }
+/* NotificationCenter reads the header's ivory register (--reg-*), so it needs
+   no overrides here. */
 .dashboard-layout-notifications { margin-top: 14px; padding-top: 16px; border-top: 1px solid #d3d8c7; }
-/* Keep the existing real notification feed within the disclosure on narrow screens. */
-.dashboard-layout-notifications > div > button {
-  width: 100%; min-height: 44px !important; justify-content: flex-start;
-  border-color: #a3b29f !important; border-radius: 2px !important; color: #183d2e !important;
-  background: #e3e9d9 !important; font-weight: 500 !important;
-}
-.dashboard-layout-notifications > div > section {
-  position: static !important; width: 100% !important; min-width: 0 !important; margin-top: 10px; box-sizing: border-box;
-}
 .dashboard-layout-main { min-height: calc(100dvh - 80px); background: #132b25; font-family: Inter, sans-serif; }
 .dashboard-layout-content { padding: 24px; }
 .dashboard-layout-main--inventory { background: #7f9182; }
@@ -137,8 +128,17 @@
      one control that holds the rest of the workspace. */
   .dashboard-layout-navigation { grid-area: navigation; flex-wrap: wrap; justify-content: space-between; gap: 2px; margin-top: 8px; }
   .dashboard-layout-nav-item { min-height: 48px; padding: 10px 9px; font-size: 0.9rem; }
-  .dashboard-layout-popover { top: calc(100% + 8px); max-height: calc(100dvh - 160px); }
-  .dashboard-layout-account-panel { max-height: calc(100dvh - 80px); }
+  /* The wrapped row can put More at its left edge, where a menu anchored to
+     its trigger's right edge opened mostly off-screen. Below 960px both menus
+     anchor to the sticky header instead: a sheet under it, inset like the
+     page, and never taller than the screen left below the header (100% here
+     is the header's own height). */
+  .dashboard-layout-disclosure { position: static; }
+  .dashboard-layout-popover,
+  .dashboard-layout-account-panel {
+    top: calc(100% + 8px); right: 16px; left: 16px; width: auto;
+    max-height: calc(100dvh - 100% - 24px);
+  }
   .dashboard-layout-content { padding: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .dashboard-layout-nav-item { transition: none; } }

@@ -160,7 +160,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
       <div style={{ display: "grid", gap: 18 }}>
         <section style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
           <div>
-            <h2 style={{ margin: "6px 0", color: "#fff7e8", fontSize: 28, fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>Executive analytics</h2>
+            <h2 style={{ margin: "6px 0", color: "#fff7e8", fontSize: 28, fontFamily: "var(--house-serif)", letterSpacing: 0 }}>Executive analytics</h2>
             <p style={{ margin: 0, maxWidth: 760, color: "rgba(246,241,232,0.88)", lineHeight: 1.5 }}>
               {data.disclosure}.
             </p>
@@ -221,8 +221,11 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
                       <span style={{ display: "block", width: `${String(room.utilisationPercent)}%`, height: "100%", background: "#68d8d2" }} />
                     </div>
                     <p style={{ margin: 0, color: "rgba(246,241,232,0.62)", fontSize: 12 }}>
-                      {room.bookedEvents} confirmed · {room.proposedEvents} pencilled
-                      {room.reviewBottlenecks > 0 ? ` · ${String(room.reviewBottlenecks)} review bottlenecks` : ""}
+                      {/* Blake's hold words: provisional, never the Diary's internal "pencil". */}
+                      {room.bookedEvents} confirmed · {room.proposedEvents} provisional
+                      {room.reviewBottlenecks > 0
+                        ? ` · ${String(room.reviewBottlenecks)} review bottleneck${room.reviewBottlenecks === 1 ? "" : "s"}`
+                        : ""}
                     </p>
                   </div>
                 ))}

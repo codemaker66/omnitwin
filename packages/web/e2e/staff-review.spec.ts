@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 // ---------------------------------------------------------------------------
-// E2E: Staff review flow — dashboard More → Pending Reviews → approve
+// E2E: Staff review flow — dashboard More → Pending reviews → approve
 //
 // Covers the staff-side happy path that complements hallkeeper.spec.ts
 // (hallkeeper view) and the planner's SubmitForReviewPanel (editor).
@@ -148,10 +148,10 @@ async function openPendingReviews(page: Page): Promise<void> {
   const more = navigation.getByRole("button", { name: "More", exact: true });
   await more.click({ timeout: 8_000 });
   await expect(more).toHaveAttribute("aria-expanded", "true");
-  await navigation.getByRole("button", { name: "Pending Reviews", exact: true }).click({ timeout: 8_000 });
+  await navigation.getByRole("button", { name: "Pending reviews", exact: true }).click({ timeout: 8_000 });
   await expect(page).toHaveURL(/\/dashboard\?view=reviews$/u);
   await expect(more).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByRole("heading", { name: "Pending Reviews (1)", exact: true }))
+  await expect(page.getByRole("heading", { name: "Pending reviews (1)", exact: true }))
     .toBeVisible({ timeout: 8_000 });
 }
 

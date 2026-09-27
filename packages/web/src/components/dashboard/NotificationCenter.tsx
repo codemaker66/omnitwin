@@ -1,68 +1,37 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, CheckCheck, ExternalLink, RefreshCw } from "lucide-react";
+import { Bell, ChevronDown, RefreshCw } from "lucide-react";
 import type { Notification } from "@omnitwin/types";
 import { listNotifications, markNotificationRead } from "../../api/notifications.js";
 import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
+import "./NotificationCenter.css";
+
+// The notifications block inside the dashboard's More popover. It reads the
+// register it sits in (--reg-*, styles/workspace.css): ink on the ivory
+// popover, where it used to paint its own near-black panel.
+
+/** The newest unread, which is what fits the popover. */
+const NOTIFICATION_PAGE = 12;
 
 type LoadState =
   | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly notifications: readonly Notification[] }
+  | {
+      readonly kind: "ready";
+      readonly notifications: readonly Notification[];
+      readonly refreshing: boolean;
+      /** A reload failed, so the list on screen is the one from before. */
+      readonly refreshFailed: boolean;
+    }
   | { readonly kind: "error" };
 
-const shellStyle: CSSProperties = {
-  position: "relative",
+/** Every tone carries a word; the dot beside it is never the only signal. */
+const SEVERITY_WORDS: Readonly<Record<Notification["severity"], string>> = {
+  urgent: "Urgent",
+  attention: "Needs attention",
+  info: "Update",
 };
-
-const triggerStyle: CSSProperties = {
-  alignItems: "center",
-  background: "rgba(143,216,210,0.1)",
-  border: "1px solid rgba(143,216,210,0.28)",
-  borderRadius: 8,
-  color: "#eaf9f6",
-  cursor: "pointer",
-  display: "inline-flex",
-  gap: 8,
-  fontWeight: 700,
-  minHeight: 38,
-  padding: "0 12px",
-};
-
-const panelStyle: CSSProperties = {
-  background: "linear-gradient(180deg, rgba(15,23,24,0.98), rgba(8,10,10,0.98))",
-  border: "1px solid rgba(201, 138, 91,0.3)",
-  borderRadius: 8,
-  boxShadow: "0 24px 70px rgba(0,0,0,0.42)",
-  color: "var(--house-text-1, #f6f1e8)",
-  minWidth: 340,
-  padding: 12,
-  position: "absolute",
-  right: 0,
-  top: 46,
-  width: "min(420px, calc(100vw - 32px))",
-  zIndex: 80,
-};
-
-const iconButtonStyle: CSSProperties = {
-  alignItems: "center",
-  background: "rgba(255,255,255,0.08)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  borderRadius: 8,
-  color: "var(--house-text-1, #f6f1e8)",
-  cursor: "pointer",
-  display: "inline-flex",
-  height: 34,
-  justifyContent: "center",
-  width: 34,
-};
-
-function notificationTone(notification: Notification): CSSProperties {
-  if (notification.severity === "urgent") return { color: "#ff9b82" };
-  if (notification.severity === "attention") return { color: "#c98a5b" };
-  return { color: "#8fd8d2" };
-}
 
 export interface NotificationCenterProps {
   /**
@@ -75,25 +44,65 @@ export interface NotificationCenterProps {
   readonly unreadCount: number | null;
   /** Called when something here changed what is unread. */
   readonly onUnreadChanged: () => void;
+  /**
+   * Whether the list is showing. The shell owns it, so the bell on the nav
+   * row opens the popover with the list already showing, and More opens it on
+   * its links.
+   */
+  readonly expanded: boolean;
+  readonly onExpandedChange: (expanded: boolean) => void;
 }
 
-export function NotificationCenter({ unreadCount, onUnreadChanged }: NotificationCenterProps): ReactElement {
+export function NotificationCenter({
+  unreadCount, onUnreadChanged, expanded, onExpandedChange,
+}: NotificationCenterProps): ReactElement {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const panelId = useId();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [failedIds, setFailedIds] = useState<ReadonlySet<string>>(() => new Set());
   const listens = useAuthStore((store) => listensForFloorRequests(store.user));
+  // Only the newest request may write the list: an older answer landing late
+  // would put back what a newer one had already replaced.
+  const latestLoad = useRef(0);
+  // Read here, so a list asked for before the read landed cannot bring it back.
+  const readIds = useRef(new Set<string>());
 
+  // A reload keeps the list on screen while it asks again; only a first load,
+  // or one after a failure, has nothing to show but the working state.
   const load = useCallback((): void => {
-    setState({ kind: "loading" });
-    void listNotifications("unread", 12)
-      .then((notifications) => { setState({ kind: "ready", notifications }); })
-      .catch(() => { setState({ kind: "error" }); });
+    latestLoad.current += 1;
+    const request = latestLoad.current;
+    setState((prev) => prev.kind === "ready" ? { ...prev, refreshing: true } : { kind: "loading" });
+    void listNotifications("unread", NOTIFICATION_PAGE)
+      .then((notifications) => {
+        if (request !== latestLoad.current) return;
+        setState({
+          kind: "ready",
+          notifications: notifications.filter((item) => !readIds.current.has(item.id)),
+          refreshing: false,
+          refreshFailed: false,
+        });
+      })
+      .catch(() => {
+        if (request !== latestLoad.current) return;
+        setState((prev) => prev.kind === "ready"
+          ? { ...prev, refreshing: false, refreshFailed: true }
+          : { kind: "error" });
+      });
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Opening the list asks again, so what it shows is current rather than
+  // whatever was true when the dashboard loaded.
+  const wasExpanded = useRef(expanded);
+  useEffect(() => {
+    if (expanded && !wasExpanded.current) load();
+    wasExpanded.current = expanded;
+  }, [expanded, load]);
 
   // Something landing in the inbox, a request from the floor included,
   // refreshes the list without anybody reloading the page. Only people the
@@ -115,109 +124,132 @@ export function NotificationCenter({ unreadCount, onUnreadChanged }: Notificatio
   }, [state.kind, unreadCount]);
 
   const markRead = (notification: Notification): void => {
-    setBusyId(notification.id);
-    void markNotificationRead(notification.id)
-      .then((updated) => {
+    const { id } = notification;
+    setBusyIds((prev) => new Set(prev).add(id));
+    setFailedIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    void markNotificationRead(id)
+      .then(() => {
+        readIds.current.add(id);
         onUnreadChanged();
         setState((prev) => prev.kind === "ready"
-          ? {
-              kind: "ready",
-              notifications: prev.notifications
-                .map((item) => item.id === updated.id ? updated : item)
-                .filter((item) => item.readAt === null),
-            }
+          ? { ...prev, notifications: prev.notifications.filter((item) => item.id !== id) }
           : prev);
       })
-      .finally(() => { setBusyId(null); });
+      .catch(() => {
+        // Said beside the notification it belongs to; the notification stays
+        // unread and in the list, so trying again is the same button.
+        setFailedIds((prev) => new Set(prev).add(id));
+      })
+      .finally(() => {
+        setBusyIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      });
   };
 
   const viewNotification = (notification: Notification): void => {
     markRead(notification);
     if (notification.actionPath !== null) {
       void navigate(notification.actionPath);
-      setOpen(false);
+      onExpandedChange(false);
     }
   };
 
   return (
-    <div style={shellStyle}>
+    <div className="vv-notifications">
       <button
         type="button"
-        style={triggerStyle}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={() => { setOpen((value) => !value); }}
+        className="vv-notifications-trigger"
+        aria-expanded={expanded}
+        aria-controls={expanded ? panelId : undefined}
+        onClick={() => { onExpandedChange(!expanded); }}
       >
         {state.kind === "loading" ? <ActivityIndicator size={16} /> : <Bell aria-hidden="true" size={16} />}
-        <span>{summary}</span>
+        <span className="vv-notifications-summary">{summary}</span>
+        <ChevronDown aria-hidden="true" size={16} className="vv-notifications-chevron" />
       </button>
 
-      {open && (
-        <section style={panelStyle} aria-label="Notifications">
-          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-            <div>
-              <h2 style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 20, margin: 0 }}>Notifications</h2>
-            </div>
-            <button type="button" style={iconButtonStyle} aria-label="Refresh notifications" onClick={load}>
-              <RefreshCw aria-hidden="true" size={16} />
+      {expanded && (
+        <section id={panelId} className="vv-notifications-panel" aria-label="Notifications">
+          <div className="vv-notifications-bar">
+            <p className="vv-notifications-order">Unread, newest first</p>
+            {/* Each name starts with the words on the button, then says what it
+                acts on, so a spoken command and a screen reader agree. */}
+            <button
+              type="button"
+              className="vv-notifications-button"
+              aria-label="Refresh notifications"
+              aria-busy={state.kind === "ready" && state.refreshing}
+              onClick={load}
+            >
+              {state.kind === "ready" && state.refreshing
+                ? <ActivityIndicator size={14} />
+                : <RefreshCw aria-hidden="true" size={14} />}
+              Refresh
             </button>
           </div>
 
           {state.kind === "loading" && (
-            <ActivityStatus style={{ color: "#c9d2cc", margin: "18px 0" }}>Loading notifications…</ActivityStatus>
+            <ActivityStatus className="vv-notifications-note">Loading notifications…</ActivityStatus>
           )}
           {state.kind === "error" && (
-            <p style={{ color: "#ffbc9d", margin: "18px 0" }}>Notifications could not be loaded.</p>
+            <p className="vv-notifications-note vv-notifications-note--alert">Notifications could not be loaded.</p>
+          )}
+          {state.kind === "ready" && state.refreshFailed && (
+            <p className="vv-notifications-note vv-notifications-note--alert">Could not refresh; this list may be out of date.</p>
           )}
           {state.kind === "ready" && notifications.length === 0 && (
-            <p style={{ color: "#c9d2cc", margin: "18px 0" }}>No unread notifications.</p>
+            <p className="vv-notifications-note">Nothing waiting on you.</p>
           )}
-          {state.kind === "ready" && notifications.length > 0 && (
-            <div style={{ display: "grid", gap: 8 }}>
-              {notifications.map((notification) => (
-                <article
-                  key={notification.id}
-                  style={{
-                    background: "rgba(255,255,255,0.055)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: 8,
-                    padding: 12,
-                  }}
-                >
-                  <div style={{ alignItems: "start", display: "grid", gap: 10, gridTemplateColumns: "minmax(0, 1fr) auto auto" }}>
-                    <div>
-                      <p style={{ ...notificationTone(notification), fontSize: 12, fontWeight: 700, margin: "0 0 4px", textTransform: "uppercase" }}>
-                        {notification.severity}
-                      </p>
-                      <h3 style={{ fontSize: 14, margin: 0 }}>{notification.title}</h3>
-                      <p style={{ color: "rgba(246,241,232,0.68)", fontSize: 13, lineHeight: 1.42, margin: "5px 0 0" }}>
-                        {notification.body}
-                      </p>
-                    </div>
-                    {notification.actionPath !== null && (
+          {notifications.length > 0 && (
+            <ul className="vv-notifications-list">
+              {notifications.map((notification) => {
+                const busy = busyIds.has(notification.id);
+                return (
+                  <li key={notification.id} className="vv-notification" data-severity={notification.severity}>
+                    <p className="vv-notification-tone">
+                      <span className="vv-notification-dot" aria-hidden="true" />
+                      {SEVERITY_WORDS[notification.severity]}
+                    </p>
+                    <h3 className="vv-notification-title">{notification.title}</h3>
+                    <p className="vv-notification-body">{notification.body}</p>
+                    <div className="vv-notification-actions">
+                      {notification.actionPath !== null && (
+                        <button
+                          type="button"
+                          className="vv-notifications-button"
+                          aria-label={`View: ${notification.title}`}
+                          onClick={() => { viewNotification(notification); }}
+                        >
+                          View
+                        </button>
+                      )}
                       <button
                         type="button"
-                        style={iconButtonStyle}
-                        aria-label={`View ${notification.title}`}
-                        onClick={() => { viewNotification(notification); }}
+                        className="vv-notifications-button"
+                        aria-label={`Mark read: ${notification.title}`}
+                        disabled={busy}
+                        aria-busy={busy}
+                        onClick={() => { markRead(notification); }}
                       >
-                        <ExternalLink aria-hidden="true" size={15} />
+                        {busy && <ActivityIndicator size={14} />}
+                        Mark read
                       </button>
+                    </div>
+                    {failedIds.has(notification.id) && (
+                      <p className="vv-notification-failed" role="alert">Could not mark this read. Try again.</p>
                     )}
-                    <button
-                      type="button"
-                      style={iconButtonStyle}
-                      aria-label={`Mark ${notification.title} read`}
-                      disabled={busyId === notification.id}
-                      aria-busy={busyId === notification.id}
-                      onClick={() => { markRead(notification); }}
-                    >
-                      {busyId === notification.id ? <ActivityIndicator size={15} /> : <CheckCheck aria-hidden="true" size={15} />}
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </section>
       )}

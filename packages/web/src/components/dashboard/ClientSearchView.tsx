@@ -81,7 +81,7 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
 
       {results !== null && results.users.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Registered Users</h3>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Registered users</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {results.users.map((u) => (
               <button key={u.id} type="button" style={cardStyle} onClick={() => { onViewProfile(u.id); }}>
@@ -98,7 +98,7 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
 
       {results !== null && results.guestLeads.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Guest Leads</h3>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Guest leads</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {results.guestLeads.map((l) => (
               <button key={l.id} type="button" style={cardStyle} onClick={() => { onViewLeadProfile(l.id); }}>
