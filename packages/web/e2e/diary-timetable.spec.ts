@@ -61,6 +61,7 @@ test.describe("Diary timetable", () => {
 
     // A refresh that fails keeps the bookings and says so beside the legend.
     emulated.calendarPlan.set("2026-09-13T23:00:00.000Z", "fail");
+    await page.getByRole("button", { name: "View", exact: true }).click();
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(page.getByText("Couldn't refresh at 09:00.")).toBeVisible();
     await expect(hammermen).toBeVisible();
@@ -78,8 +79,11 @@ test.describe("Diary timetable", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await emulate(page);
     await openDiary(page);
+    await page.getByRole("button", { name: "View", exact: true }).click();
     await page.getByLabel("Show released & cancelled").check();
-    const found = await unreadableText(page, ".diary-page", "overview");
+    const found = await unreadableText(page, ".diary-view-menu", "view menu");
+    await page.keyboard.press("Escape");
+    found.push(...await unreadableText(page, ".diary-page", "overview"));
     await page.getByRole("button", { name: "Timeline" }).click();
     await expect(page.locator(".diary-lane").first()).toBeVisible();
     found.push(...await unreadableText(page, ".diary-page", "timeline"));
@@ -130,6 +134,13 @@ test.describe("Diary timetable", () => {
   test("opens on this week with the decisions due and the tray, and books where it is clicked", async ({ page }) => {
     const emulated = await emulate(page);
     await openDiary(page);
+
+    // New booking keeps its place beside the title, and the toolbar keeps
+    // one row at a desktop's width (roadmap N3's reduced toolbar).
+    await expect(page.locator(".diary-heading").getByRole("button", { name: "New booking", exact: true })).toBeVisible();
+    const toolbarRows = await page.locator(".diary-controls .diary-button:visible")
+      .evaluateAll((buttons) => new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().top))).size);
+    expect(toolbarRows).toBe(1);
 
     // This week, with a quiet venue-wide list of decisions due or overdue —
     // a hold next March whose decision was due yesterday included.

@@ -198,6 +198,13 @@ function trayEnquiryNames(): string[] {
   return [...document.querySelectorAll(".diary-tray-enquiry .diary-tray-item-title")].map((node) => node.textContent ?? "");
 }
 
+/** Opens the View menu (roadmap N3's reduced toolbar) and presses one of
+ *  its buttons. */
+function pressInViewMenu(name: string): void {
+  fireEvent.click(screen.getByRole("button", { name: "View" }));
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
 function renderPage(): ReturnType<typeof render> {
   return render(
     <MemoryRouter initialEntries={["/diary?view=week&date=2026-09-16"]}>
@@ -314,7 +321,7 @@ describe("DiaryBoardPage", () => {
     listEnquiriesMock.mockReturnValue(response);
     // The reload is an explicit act — Refresh — not a side effect of moving
     // the board (T-619).
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    pressInViewMenu("Refresh");
     await screen.findByText("Loading open enquiries…");
     expect(screen.getByText("Fiona MacLeod")).toBeTruthy();
     await act(async () => { rejectRequest?.(new Error("Offline")); await response.catch(() => undefined); });
@@ -564,7 +571,7 @@ describe("DiaryBoardPage", () => {
     renderPage();
     await screen.findByText("Grand Hall");
     expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "How the Diary works" }));
+    pressInViewMenu("How the Diary works");
     const panel = screen.getByRole("dialog", { name: "Using the Diary" });
     fireEvent.keyDown(panel, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
@@ -1056,7 +1063,7 @@ describe("DiaryBoardPage — the board stays steady (roadmap N3)", () => {
     await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(3); });
     now += 3 * 60_000;
     getCalendarMock.mockRejectedValueOnce(new Error("offline"));
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    pressInViewMenu("Refresh");
 
     // Venue time: 08:00 UTC is 09:00 in Glasgow in September.
     const notice = await screen.findByText("Couldn't refresh at 09:03. Showing the Diary as it was at 09:00.");
@@ -1117,6 +1124,45 @@ describe("DiaryBoardPage — ending a booking asks first (roadmap N3)", () => {
 
     expect(await screen.findByText("Cancelled Chamber dinner. MacLeod wedding, 1st option, can now be confirmed.")).toBeDefined();
     expect(transitionBookingMock).toHaveBeenCalledWith(INK_ID, "cancelled", undefined);
+  });
+});
+
+describe("DiaryBoardPage — the reduced toolbar (roadmap N3)", () => {
+  it("keeps New booking beside the title, and what changes how the board is read in View", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    const heading = screen.getByRole("heading", { level: 1, name: "The Diary" }).parentElement as HTMLElement;
+    expect(within(heading).getByRole("button", { name: "New booking" }).getAttribute("aria-keyshortcuts")).toBe("N");
+    expect(screen.getByRole("button", { name: "Earlier" }).getAttribute("title")).toBe("Earlier ([)");
+    expect(screen.getByRole("button", { name: "Later" }).getAttribute("title")).toBe("Later (])");
+    expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+    expect(screen.queryByRole("checkbox", { name: "Show released & cancelled" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    expect(screen.getByRole("checkbox", { name: "Show released & cancelled" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDefined();
+  });
+
+  it("answers o, ? and n, and no letter reaches behind the guide", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.keyDown(window, { key: "o" });
+    expect(screen.getByRole("button", { name: "Timeline" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.keyDown(window, { key: "o" });
+    expect(screen.getByRole("button", { name: "Overview" }).getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.keyDown(window, { key: "?" });
+    const guide = screen.getByRole("dialog", { name: "Using the Diary" });
+    expect(within(guide).getByText("Go to a date")).toBeDefined();
+    // Behind the guide, n neither opens a booking nor moves the board.
+    fireEvent.keyDown(window, { key: "n" });
+    fireEvent.keyDown(window, { key: "]" });
+    expect(screen.queryByRole("dialog", { name: "New booking" })).toBeNull();
+    expect(screen.getByText("Week of Mon, 14 Sept 2026")).toBeDefined();
+    fireEvent.keyDown(guide, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
+
+    fireEvent.keyDown(window, { key: "n" });
+    expect(await screen.findByRole("dialog", { name: "New booking" })).toBeDefined();
   });
 });
 

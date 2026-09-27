@@ -201,6 +201,8 @@ describe("Diary Board render budget", () => {
     const before = renders.overview;
     const calendarCalls = getCalendarMock.mock.calls.length;
     const enquiryCalls = listEnquiriesMock.mock.calls.length;
+    // Refresh sits in the View menu; opening it renders only the menu.
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(calendarCalls + 1); });
     // Refresh re-reads the tray too (T-619); panning and zooming do not.

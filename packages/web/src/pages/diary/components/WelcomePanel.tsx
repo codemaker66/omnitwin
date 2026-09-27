@@ -59,6 +59,15 @@ export function WelcomePanel({ onDismiss }: WelcomePanelProps): ReactElement {
               </div>
             ))}
           </dl>
+          <h3 className="diary-welcome-keys-title">{BOARD_COPY.welcome.keysTitle}</h3>
+          <dl className="diary-welcome-keys">
+            {BOARD_COPY.welcome.keys.map((entry) => (
+              <div key={entry.does} className="diary-welcome-key">
+                <dt>{entry.keys.map((key) => <kbd key={key}>{key}</kbd>)}</dt>
+                <dd>{entry.does}</dd>
+              </div>
+            ))}
+          </dl>
           <p className="diary-welcome-disclosure">{BOARD_COPY.disclosure}</p>
         </div>
         <button

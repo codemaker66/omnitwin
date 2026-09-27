@@ -57,6 +57,11 @@ export const BOARD_COPY = {
   readOnly: "Read-only · Sales team edits bookings.",
   emptyRange: "No bookings in this range.",
   showExited: "Show released & cancelled",
+  /** The reduced toolbar (roadmap N3): what changes how the board is read,
+   *  rather than where it looks, sits one step away. */
+  viewMenu: { open: "View" } as const,
+  /** A key printed beside its control's name, as its tooltip. */
+  withKey: (name: string, key: string): string => `${name} (${key})`,
 
   // Three zooms, and only three (T-619). The month board was retired; an old
   // `?view=month` link lands on the week its date falls in.
@@ -385,6 +390,19 @@ export const BOARD_COPY = {
         detail:
           "Colleagues' changes appear automatically.",
       },
+    ],
+    /** The board's keys (design system 4.4), printed as a legend. */
+    keysTitle: "Keys",
+    keys: [
+      { keys: ["T"], does: "Today" },
+      { keys: ["[", "]"], does: "Earlier and later" },
+      { keys: ["G"], does: "Go to a date" },
+      { keys: ["D", "W", "F"], does: "Day, week and fortnight" },
+      { keys: ["O"], does: "Overview or timeline" },
+      { keys: ["N"], does: "New booking" },
+      { keys: ["Ctrl", "K"], does: "Find on the board" },
+      { keys: ["Ctrl", "Z"], does: "Undo" },
+      { keys: ["?"], does: "This guide" },
     ],
     dismiss: "Open Diary",
     reopen: "How the Diary works",

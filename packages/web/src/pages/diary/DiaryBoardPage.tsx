@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { isBookingEnquiry } from "@omnitwin/types";
 import type {
   CalendarBookingEntry,
@@ -48,6 +49,7 @@ import { BoardOverview } from "./components/BoardOverview.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
+import { ViewMenu } from "./components/ViewMenu.js";
 import {
   type TrayEnquiry, ConflictRail, DecisionsDuePanel, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
 import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
@@ -71,6 +73,8 @@ const PX_PER_HOUR: Record<BoardView, number> = { day: 96, week: 18, "2w": 9 };
 // The reference sheet's three zooms — the toolbar's, and now the URL's. The
 // month board is retired (T-619).
 const VIEWS: readonly BoardView[] = ["day", "week", "2w"];
+/** Each zoom's key, printed in its tooltip. */
+const VIEW_KEYS: Readonly<Record<BoardView, string>> = { day: "D", week: "W", "2w": "F" };
 const TOAST_MS = 7_000;
 const NOW_TICK_MS = 60_000;
 /** How long a finger rests on a slip before it lifts rather than scrolls —
@@ -764,6 +768,13 @@ export function DiaryBoardPage(): ReactElement {
     applyMove(entry.bookingId, entry.before, null);
   }, [applyMove, undoStack]);
 
+  const cancelTimelineDrag = drag.cancel;
+  const showTimeline = useCallback((on: boolean) => {
+    cancelTimelineDrag();
+    setEnquiryDrag(null);
+    setTimeline(on);
+  }, [cancelTimelineDrag]);
+
   const drawerOpen = drawer !== null;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -799,6 +810,8 @@ export function DiaryBoardPage(): ReactElement {
         return;
       }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
+      // A dialog over the board takes the letters; none reach behind it.
+      if (welcomeOpen || paletteOpen) return;
       if (drag.state.phase !== "idle") return;
       if (event.key === "t") setRange(view, Date.now());
       else if (event.key === "d") setRange("day", anchorMs);
@@ -810,13 +823,20 @@ export function DiaryBoardPage(): ReactElement {
         // Held back, or the letter would land in the field it opens.
         event.preventDefault();
         openGoTo();
+      } else if (event.key === "o" && view !== "day") showTimeline(!timeline);
+      else if (event.key === "n" && writable) {
+        event.preventDefault();
+        openCreateDrawer();
+      } else if (event.key === "?") {
+        event.preventDefault();
+        setWelcomeOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [anchorMs, drag.state.phase, drawerOpen, openGoTo, range, setRange, undo, view]);
+  }, [anchorMs, drag.state.phase, drawerOpen, openCreateDrawer, openGoTo, paletteOpen, range, setRange, showTimeline, timeline, undo, view, welcomeOpen, writable]);
 
   /** Scrolls a booking's block into view and focuses it; false when the
    *  board is not showing it. */
@@ -884,118 +904,119 @@ export function DiaryBoardPage(): ReactElement {
       <header className="diary-header">
         <div className="diary-heading">
           <h1 className="diary-title">{BOARD_COPY.title}</h1>
+          {/* New booking keeps one place, whatever the toolbar holds (roadmap N3). */}
+          <div className="diary-heading-actions">
+            {/* The count is OTHER people (T-619): alone on the board it read
+                "Live · 1" and sent a coordinator looking for a colleague who
+                was not there. The tooltip already excluded you. */}
+            <span
+              className={`diary-live${live.connected ? " is-connected" : ""}`}
+              title={BOARD_COPY.presence.here(othersPresent.map((person) => person.name))}
+            >
+              {live.connected ? BOARD_COPY.presence.live : BOARD_COPY.presence.offline}
+              {othersPresent.length > 0 ? ` · ${String(othersPresent.length)}` : ""}
+            </span>
+            {writable ? (
+              <button type="button" className="diary-button is-primary" aria-keyshortcuts="N"
+                title={BOARD_COPY.withKey(BOARD_COPY.drawer.createTitle, "N")} onClick={openCreateDrawer}>
+                {BOARD_COPY.drawer.createTitle}
+              </button>
+            ) : <span className="diary-readonly">{BOARD_COPY.readOnly}</span>}
+          </div>
         </div>
+        {/* Where the board looks, then how it is shown (roadmap N3). */}
         <div className="diary-controls">
-          <div className="diary-view-switch" role="group" aria-label="Zoom">
-            {VIEWS.map((candidate) => (
+          <div className="diary-controls-where">
+            <div className="diary-range-nav" role="group" aria-label="Range">
               <button
-                key={candidate}
                 type="button"
-                className={`diary-button${candidate === view ? " is-active" : ""}`}
-                aria-pressed={candidate === view}
+                className="diary-button is-icon"
+                aria-label={BOARD_COPY.previous}
+                aria-keyshortcuts="["
+                title={BOARD_COPY.withKey(BOARD_COPY.previous, "[")}
                 onClick={() => {
-                  setRange(candidate, anchorMs);
+                  const previous = shiftRange(range, -1);
+                  setRange(view, previous.fromMs + 12 * 3_600_000);
                 }}
               >
-                {BOARD_COPY.views[candidate]}
+                <ChevronLeft size={18} aria-hidden="true" />
               </button>
-            ))}
+              <button
+                type="button"
+                className="diary-button"
+                aria-keyshortcuts="T"
+                title={BOARD_COPY.withKey(BOARD_COPY.today, "T")}
+                onClick={() => {
+                  setRange(view, Date.now());
+                }}
+              >
+                {BOARD_COPY.today}
+              </button>
+              <button
+                type="button"
+                className="diary-button is-icon"
+                aria-label={BOARD_COPY.next}
+                aria-keyshortcuts="]"
+                title={BOARD_COPY.withKey(BOARD_COPY.next, "]")}
+                onClick={() => {
+                  const next = shiftRange(range, 1);
+                  setRange(view, next.fromMs + 12 * 3_600_000);
+                }}
+              >
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+              <button
+                ref={goToButtonRef}
+                type="button"
+                className="diary-button"
+                aria-expanded={goTo.open}
+                aria-keyshortcuts="G"
+                title={BOARD_COPY.withKey(BOARD_COPY.goTo.open, "G")}
+                onClick={() => { if (goTo.open) closeGoTo(); else openGoTo(); }}
+              >
+                {BOARD_COPY.goTo.open}
+              </button>
+            </div>
+            <span className="diary-range-title">{rangeTitle(range)}</span>
           </div>
-          <div className="diary-range-nav" role="group" aria-label="Range">
-            <button
-              type="button"
-              className="diary-button"
-              onClick={() => {
-                const previous = shiftRange(range, -1);
-                setRange(view, previous.fromMs + 12 * 3_600_000);
+          <div className="diary-controls-how">
+            <div className="diary-view-switch" role="group" aria-label="Zoom">
+              {VIEWS.map((candidate) => (
+                <button
+                  key={candidate}
+                  type="button"
+                  className={`diary-button${candidate === view ? " is-active" : ""}`}
+                  aria-pressed={candidate === view}
+                  aria-keyshortcuts={VIEW_KEYS[candidate]}
+                  title={BOARD_COPY.withKey(BOARD_COPY.views[candidate], VIEW_KEYS[candidate])}
+                  onClick={() => {
+                    setRange(candidate, anchorMs);
+                  }}
+                >
+                  {BOARD_COPY.views[candidate]}
+                </button>
+              ))}
+            </div>
+            {view !== "day" ? <div className="diary-view-switch" role="group" aria-label="Board presentation">
+              <button type="button" className={`diary-button${!timeline ? " is-active" : ""}`} aria-pressed={!timeline}
+                aria-keyshortcuts="O" title={BOARD_COPY.withKey("Overview", "O")}
+                onClick={() => { showTimeline(false); }}>Overview</button>
+              <button type="button" className={`diary-button${timeline ? " is-active" : ""}`} aria-pressed={timeline}
+                aria-keyshortcuts="O" title={BOARD_COPY.withKey("Timeline", "O")}
+                onClick={() => { showTimeline(true); }}>Timeline</button>
+            </div> : null}
+            {/* Refresh means the whole board, tray included: the one explicit
+                re-read now that panning no longer drags the enquiries along. */}
+            <ViewMenu
+              showExited={showExited}
+              onShowExited={setShowExited}
+              onRefresh={() => {
+                refetch();
+                setEnquiryRetry((value) => value + 1);
               }}
-            >
-              {BOARD_COPY.previous}
-            </button>
-            <button
-              type="button"
-              className="diary-button"
-              onClick={() => {
-                setRange(view, Date.now());
-              }}
-            >
-              {BOARD_COPY.today}
-            </button>
-            <button
-              type="button"
-              className="diary-button"
-              onClick={() => {
-                const next = shiftRange(range, 1);
-                setRange(view, next.fromMs + 12 * 3_600_000);
-              }}
-            >
-              {BOARD_COPY.next}
-            </button>
-            <button
-              ref={goToButtonRef}
-              type="button"
-              className="diary-button"
-              aria-expanded={goTo.open}
-              aria-keyshortcuts="G"
-              onClick={() => { if (goTo.open) closeGoTo(); else openGoTo(); }}
-            >
-              {BOARD_COPY.goTo.open}
-            </button>
-          </div>
-          <span className="diary-range-title">{rangeTitle(range)}</span>
-          {view !== "day" ? <div className="diary-view-switch" role="group" aria-label="Board presentation">
-            <button type="button" className={`diary-button${!timeline ? " is-active" : ""}`} aria-pressed={!timeline}
-              onClick={() => { drag.cancel(); setEnquiryDrag(null); setTimeline(false); }}>Overview</button>
-            <button type="button" className={`diary-button${timeline ? " is-active" : ""}`} aria-pressed={timeline}
-              onClick={() => { drag.cancel(); setEnquiryDrag(null); setTimeline(true); }}>Timeline</button>
-          </div> : null}
-          <label className="diary-toggle">
-            <input
-              type="checkbox"
-              checked={showExited}
-              onChange={(event) => {
-                setShowExited(event.target.checked);
-              }}
+              onHowItWorks={() => { setWelcomeOpen(true); }}
             />
-            {BOARD_COPY.showExited}
-          </label>
-          {/* Refresh means the whole board, tray included: the one explicit
-              re-read now that panning no longer drags the enquiries along. */}
-          <button
-            type="button"
-            className="diary-button"
-            onClick={() => {
-              refetch();
-              setEnquiryRetry((value) => value + 1);
-            }}
-          >
-            {BOARD_COPY.refresh}
-          </button>
-          <button
-            type="button"
-            className="diary-button"
-            onClick={() => {
-              setWelcomeOpen(true);
-            }}
-          >
-            {BOARD_COPY.welcome.reopen}
-          </button>
-          {writable ? (
-            <button type="button" className="diary-button is-primary" onClick={openCreateDrawer}>
-              {BOARD_COPY.drawer.createTitle}
-            </button>
-          ) : null}
-          {!writable ? <span className="diary-readonly">{BOARD_COPY.readOnly}</span> : null}
-          {/* The count is OTHER people (T-619): alone on the board it read
-              "Live · 1" and sent a coordinator looking for a colleague who
-              was not there. The tooltip already excluded you. */}
-          <span
-            className={`diary-live${live.connected ? " is-connected" : ""}`}
-            title={BOARD_COPY.presence.here(othersPresent.map((person) => person.name))}
-          >
-            {live.connected ? BOARD_COPY.presence.live : BOARD_COPY.presence.offline}
-            {othersPresent.length > 0 ? ` · ${String(othersPresent.length)}` : ""}
-          </span>
+          </div>
         </div>
         {goTo.open ? (
           <form
