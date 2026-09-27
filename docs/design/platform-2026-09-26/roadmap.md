@@ -409,7 +409,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - Enquiry slips carry a date tile.
     Revised on 27 September: pressing a slip's tile opens Go to date on its date, which shows the board there and what each room holds that day ([session log](../../sessions/2026-09-27.md)).
 - A "Contested dates" list offers inline Confirm, Extend and Release.
-    Revised on 27 September: the list comes first, for the whole venue and the year ahead, each date with its ladder and each booking opening where it stands. Confirm, Extend and Release follow as the next step ([session log](../../sessions/2026-09-27.md)).
+    Revised on 27 September: the list comes first, for the whole venue and the year ahead, each date with its ladder and each booking opening where it stands. Confirm, Extend and Release sit in the booking drawer's next step, directly under its facts, one press from the list; Extend offers a week on, never past the day before the event ([session log](../../sessions/2026-09-27.md)).
 
 *The booking drawer*
 - Facts come first, and the next step always sits in the same place.
