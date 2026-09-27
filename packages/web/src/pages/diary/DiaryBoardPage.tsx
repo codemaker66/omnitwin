@@ -406,13 +406,22 @@ export function DiaryBoardPage(): ReactElement {
   const goToInputRef = useRef<HTMLInputElement | null>(null);
   const goToButtonRef = useRef<HTMLButtonElement | null>(null);
   const goToHintId = useId();
+  // Where focus returns when Go to date closes: the enquiry slip's date it
+  // was opened from, else the toolbar's button.
+  const goToReturnRef = useRef<HTMLElement | null>(null);
   const openGoTo = useCallback(() => {
+    goToReturnRef.current = null;
     setGoTo((previous) => ({ ...previous, open: true }));
     requestAnimationFrame(() => { goToInputRef.current?.focus(); goToInputRef.current?.select(); });
   }, []);
   const closeGoTo = useCallback(() => {
+    const opener = goToReturnRef.current;
+    goToReturnRef.current = null;
     setGoTo(GO_TO_CLOSED);
-    requestAnimationFrame(() => { goToButtonRef.current?.focus(); });
+    requestAnimationFrame(() => {
+      if (opener !== null && opener.isConnected) opener.focus();
+      else goToButtonRef.current?.focus();
+    });
   }, []);
   const soughtDay = useMemo(
     () => (goTo.sought === null ? null : boardRange(Date.parse(`${goTo.sought}T12:00:00.000Z`), "day")),
@@ -438,6 +447,15 @@ export function DiaryBoardPage(): ReactElement {
       })),
     };
   }, [data, nowMs, range.fromMs, range.toMs, soughtDay]);
+  // An enquiry slip's date (roadmap N3): the board goes there and Go to date
+  // answers for it, as if the booker had typed it. Focus moves to the field,
+  // which brings the answer into view, and returns to the slip on closing.
+  const showDateOnBoard = useCallback((sought: string, typed: string, from: HTMLElement) => {
+    goToReturnRef.current = from;
+    setGoTo({ open: true, text: typed, sought, unread: false, otherWeekday: null });
+    setRange(view, Date.parse(`${sought}T12:00:00.000Z`));
+    requestAnimationFrame(() => { goToInputRef.current?.focus(); goToInputRef.current?.select(); });
+  }, [setRange, view]);
   const goToNote = goTo.unread
     ? BOARD_COPY.goTo.notADate
     : goTo.otherWeekday === null ? null : BOARD_COPY.goTo.otherWeekday(goTo.otherWeekday.actual, goTo.otherWeekday.said);
@@ -1180,6 +1198,7 @@ export function DiaryBoardPage(): ReactElement {
                 name: enquiry.name,
                 eventType: enquiry.eventType,
                 estimatedGuests: enquiry.estimatedGuests,
+                preferredDate: enquiry.preferredDate,
               }))}
               enquiriesLoading={enquiriesLoading}
               enquiriesMore={moreEnquiries}
@@ -1187,6 +1206,7 @@ export function DiaryBoardPage(): ReactElement {
               onRetryEnquiries={() => { setEnquiryRetry((value) => value + 1); }}
               canConvert={writable}
               onConvertEnquiry={openConvertDrawer}
+              onShowDate={showDateOnBoard}
               onBeginEnquiryDrag={writable && !showingOverview ? beginEnquiryDrag : undefined}
               onEnquiryPressMove={writable && !showingOverview ? moveEnquiryPress : undefined}
               onEnquiryPressEnd={writable && !showingOverview ? endSlipPress : undefined}

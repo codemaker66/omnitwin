@@ -1397,4 +1397,70 @@ describe("DiaryBoardPage — Go to date (roadmap N3)", () => {
     fireEvent.keyDown(window, { key: "[" });
     expect(await screen.findByText("Week of Mon, 7 Sept 2026")).toBeDefined();
   });
+
+  it("opens on an enquiry slip's date from its tile, and gives focus back to the tile on closing", async () => {
+    listEnquiriesMock.mockResolvedValue([{ ...trayEnquiry(2, "submitted"), name: "Law Society", preferredDate: "2027-06-05" }]);
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    const tile = await screen.findByRole("button", { name: "Show Saturday 5 June 2027 on the board" });
+    tile.focus();
+    fireEvent.click(tile);
+
+    await waitFor(() => {
+      expect(getCalendarMock.mock.calls.some((call) => call[1] === "2027-05-30T23:00:00.000Z")).toBe(true);
+    });
+    expect(await screen.findByText("Week of Mon, 31 May 2027")).toBeDefined();
+    const field = screen.getByRole<HTMLInputElement>("textbox", { name: "Go to date" });
+    expect(field.value).toBe("Sat 5 Jun 2027");
+    await waitFor(() => { expect(document.activeElement).toBe(field); });
+    await waitFor(() => {
+      expect(goToAnswer()).toEqual({ day: "Sat, 5 Jun 2027", rooms: [["Grand Hall", ["Free"]], ["Saloon", ["Free"]]] });
+    });
+
+    fireEvent.keyDown(field, { key: "Escape" });
+    await waitFor(() => { expect(document.activeElement).toBe(tile); });
+    expect(screen.queryByRole("textbox", { name: "Go to date" })).toBeNull();
+  });
+});
+
+describe("DiaryBoardPage — enquiry slips carry their date (roadmap N3)", () => {
+  /** Each slip as read: its tile's words, whether the tile can be pressed,
+   *  and the line under the name. */
+  function slips(): { readonly name: string; readonly tile: string; readonly pressable: boolean; readonly past: boolean; readonly line: string }[] {
+    return Array.from(document.querySelectorAll(".diary-tray-enquiry")).map((slip) => {
+      const tile = slip.querySelector(".diary-slip-date");
+      return {
+        name: slip.querySelector(".diary-tray-item-title")?.textContent ?? "",
+        tile: Array.from(tile?.children ?? []).map((part) => part.textContent ?? "").join(" "),
+        pressable: tile?.tagName === "BUTTON",
+        past: tile?.classList.contains("is-past") ?? false,
+        line: slip.querySelector(".diary-tray-item-reason")?.textContent ?? "",
+      };
+    });
+  }
+
+  it("shows each enquiry's date as a tile, the year only when it is not this one, and how far off it is", async () => {
+    const restore = pinDate("2026-09-16T09:00:00.000Z");
+    try {
+      listEnquiriesMock.mockResolvedValue([
+        { ...trayEnquiry(1, "submitted"), name: "Fiona MacLeod", preferredDate: "2026-09-19", eventType: "wedding", estimatedGuests: 120 },
+        { ...trayEnquiry(2, "submitted"), name: "Law Society", preferredDate: "2027-06-05" },
+        { ...trayEnquiry(3, "submitted"), name: "Kerr anniversary", preferredDate: null, estimatedGuests: null },
+        { ...trayEnquiry(4, "submitted"), name: "Spring ceilidh", preferredDate: "2026-04-11" },
+      ]);
+      renderPage();
+      await screen.findByText("Law Society");
+      expect(slips()).toEqual([
+        { name: "Fiona MacLeod", tile: "Sat 19 Sep", pressable: true, past: false, line: "wedding · 120 guests · in 3 days" },
+        { name: "Law Society", tile: "Sat 5 Jun \u201927", pressable: true, past: false, line: "dinner · 40 guests · in 8 months" },
+        { name: "Kerr anniversary", tile: "Date TBC", pressable: false, past: false, line: "dinner · date to be confirmed" },
+        { name: "Spring ceilidh", tile: "Sat 11 Apr", pressable: true, past: true, line: "dinner · 40 guests · date has passed" },
+      ]);
+      // The tile's words are read as one date, not as "Sat", "19", "Sep".
+      expect(screen.getByRole("button", { name: "Show Saturday 19 September 2026 on the board" })).toBeDefined();
+      expect(document.querySelector(".diary-slip-date.is-open")?.getAttribute("aria-hidden")).toBe("true");
+    } finally {
+      restore();
+    }
+  });
 });

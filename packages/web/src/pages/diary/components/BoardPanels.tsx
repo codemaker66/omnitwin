@@ -11,6 +11,7 @@ import type {
 } from "@omnitwin/types";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
+import { eventDateLong, eventDateParts, eventLead, venueYear } from "../../../components/dashboard/enquiries/enquiry-desk-format.js";
 import type { NeedsActionItem } from "../lib/board-layout.js";
 import { formatInlineDay } from "../lib/board-time.js";
 
@@ -161,6 +162,8 @@ export interface TrayEnquiry {
   readonly name: string;
   readonly eventType: string | null;
   readonly estimatedGuests: number | null;
+  /** The date the client asked for, "YYYY-MM-DD", or null when open. */
+  readonly preferredDate: string | null;
 }
 
 export interface HoldingTrayProps {
@@ -185,6 +188,10 @@ export interface HoldingTrayProps {
   readonly onRetryEnquiries?: () => void;
   readonly canConvert: boolean;
   readonly onConvertEnquiry: (enquiryId: string) => void;
+  /** Shows the date a slip asks for on the board, with Go to date's answer
+   *  for it: `sought` is "YYYY-MM-DD", `typed` how Go to date words it, and
+   *  `from` the tile, where focus returns. */
+  readonly onShowDate?: (sought: string, typed: string, from: HTMLElement) => void;
   /** Pointer drag from a slip onto a board lane (C1). The Pencil-in button
    *  stays the keyboard/screen-reader path; the drag is an accelerator. */
   readonly onBeginEnquiryDrag?: (
@@ -216,6 +223,7 @@ export function HoldingTray({
   onRetryEnquiries,
   canConvert,
   onConvertEnquiry,
+  onShowDate,
   onBeginEnquiryDrag,
   onEnquiryPressMove,
   onEnquiryPressEnd,
@@ -257,21 +265,25 @@ export function HoldingTray({
               onPointerUp={onEnquiryPressEnd}
               onPointerCancel={onEnquiryPressEnd}
             >
-              <span className="diary-tray-item-title">{enquiry.name}</span>
-              <span className="diary-tray-item-reason">
-                {BOARD_COPY.trayEnquiries.detail(enquiry.eventType, enquiry.estimatedGuests)}
-              </span>
-              {canConvert ? (
-                <button
-                  type="button"
-                  className="diary-button"
-                  onClick={() => {
-                    onConvertEnquiry(enquiry.id);
-                  }}
-                >
-                  {BOARD_COPY.trayEnquiries.convert}
-                </button>
-              ) : null}
+              <SlipDate preferredDate={enquiry.preferredDate} nowMs={nowMs} onShowDate={onShowDate} />
+              <div className="diary-slip-main">
+                <span className="diary-tray-item-title">{enquiry.name}</span>
+                <span className="diary-tray-item-reason">
+                  {BOARD_COPY.trayEnquiries.detail(enquiry.eventType, enquiry.estimatedGuests,
+                    eventLead(enquiry.preferredDate, nowMs) ?? BOARD_COPY.trayEnquiries.noDate)}
+                </span>
+                {canConvert ? (
+                  <button
+                    type="button"
+                    className="diary-button"
+                    onClick={() => {
+                      onConvertEnquiry(enquiry.id);
+                    }}
+                  >
+                    {BOARD_COPY.trayEnquiries.convert}
+                  </button>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
@@ -280,6 +292,52 @@ export function HoldingTray({
         <p className="diary-tray-more">{BOARD_COPY.trayEnquiries.more(enquiries.length)}</p>
       ) : null}
     </section>
+  );
+}
+
+/** The date an enquiry asks for (roadmap N3), as the enquiries desk shows
+ *  it: weekday, day and month, with the year only when it is not this one.
+ *  Pressing it opens Go to date on that date, so the board and what each
+ *  room holds that day are one press from the slip. */
+function SlipDate({ preferredDate, nowMs, onShowDate }: {
+  readonly preferredDate: string | null;
+  readonly nowMs: number;
+  readonly onShowDate?: (sought: string, typed: string, from: HTMLElement) => void;
+}): ReactElement {
+  const date = eventDateParts(preferredDate);
+  const spoken = eventDateLong(preferredDate);
+  if (preferredDate === null || date === null || spoken === null) {
+    // The slip's own line says "date to be confirmed" in words.
+    return (
+      <span className="diary-slip-date is-open" aria-hidden="true">
+        <span className="diary-slip-date-caps">{BOARD_COPY.trayEnquiries.openDate.word}</span>
+        <span className="diary-slip-date-tbc">{BOARD_COPY.trayEnquiries.openDate.tbc}</span>
+      </span>
+    );
+  }
+  const className = `diary-slip-date${eventLead(preferredDate, nowMs) === "date has passed" ? " is-past" : ""}`;
+  const year = Number(date.year) === venueYear(nowMs) ? "" : ` ’${date.year.slice(2)}`;
+  const face = (
+    <>
+      <span className="diary-slip-date-caps" aria-hidden="true">{date.weekday}</span>
+      <span className="diary-slip-date-day" aria-hidden="true">{date.day}</span>
+      <span className="diary-slip-date-caps" aria-hidden="true">{`${date.month}${year}`}</span>
+    </>
+  );
+  if (onShowDate === undefined) return <span className={className} role="img" aria-label={spoken}>{face}</span>;
+  const sought = preferredDate.trim().slice(0, 10);
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={BOARD_COPY.trayEnquiries.showDate(spoken)}
+      title={BOARD_COPY.trayEnquiries.showDate(date.full)}
+      onClick={(event) => {
+        onShowDate(sought, date.full, event.currentTarget);
+      }}
+    >
+      {face}
+    </button>
   );
 }
 

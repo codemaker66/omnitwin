@@ -161,6 +161,20 @@
 .diary-tray-item-title { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .diary-tray-item-reason { color: var(--house-ink-3); font-size: 12px; line-height: 1.4; }
 .diary-tray-enquiry .diary-button { align-self: flex-start; background: #335b45; color: #fff; border-color: #335b45; min-height: 32px; font-size: 12px; padding: 6px 10px; margin-top: 3px; }
+/* An enquiry slip leads with the date it asks for (roadmap N3), in the
+   enquiries desk's tile; the caps keep the Diary's 12 px floor. Pressing a
+   dated tile shows that date on the board. */
+.diary-tray-enquiry { display: grid; grid-template-columns: 58px minmax(0,1fr); align-items: start; gap: 0 10px; }
+.diary-slip-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.diary-slip-date { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 60px; padding: 6px 0; border: 1px solid var(--house-rule-strong); border-radius: 3px; background: var(--house-paper); color: var(--house-ink-1); font-family: inherit; line-height: 1.1; }
+button.diary-slip-date { width: 100%; cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease, transform 100ms ease-out; }
+button.diary-slip-date:hover { border-color: var(--house-ink-3); background: var(--house-sheet-hover); }
+button.diary-slip-date:active { transform: scale(0.97); }
+.diary-slip-date-caps { color: var(--house-ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.diary-slip-date-day { font: 400 26px/1 var(--house-serif); }
+.diary-slip-date.is-past { background: transparent; color: var(--house-ink-3); }
+.diary-slip-date.is-open { border-style: dashed; background: transparent; }
+.diary-slip-date-tbc { font-size: 13px; color: var(--house-ink-3); }
 .diary-tray-drag-hint { font-size: 12px; color: var(--house-ink-3); }
 .diary-tray-more { font-size: 12px; line-height: 1.45; color: var(--house-ink-3); margin: 10px 0 0; }
 /* A finger scrolls the tray; a long press lifts the slip (T-619). The page
@@ -397,6 +411,9 @@ button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(-
   .diary-goto-field { flex: 1 1 100%; }
   .diary-goto-rooms { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .diary-goto-room dd { grid-column: 1; margin-bottom: 8px; }
+  .diary-tray-enquiry { grid-template-columns: 52px minmax(0,1fr); }
+  .diary-slip-date { min-height: 56px; }
+  .diary-slip-date-day { font-size: 22px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .diary-page *, .diary-page *::before, .diary-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

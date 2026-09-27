@@ -4,6 +4,7 @@ import {
   countPhrase,
   deskGreeting,
   deskSummary,
+  eventDateLong,
   eventDateParts,
   eventLead,
   eventWeekday,
@@ -61,6 +62,8 @@ describe("event dates", () => {
   it("reads a calendar date without shifting it across a time zone", () => {
     expect(eventDateParts("2027-06-06")).toEqual({ weekday: "Sun", day: "6", month: "Jun", year: "2027", full: "Sun 6 Jun 2027" });
     expect(eventDateParts("2027-01-01T00:00:00.000Z")?.full).toBe("Fri 1 Jan 2027");
+    expect(eventDateLong("2027-06-05")).toBe("Saturday 5 June 2027");
+    expect(eventDateLong("2027-01-01T00:00:00.000Z")).toBe("Friday 1 January 2027");
   });
 
   it("returns nothing for a missing or impossible date", () => {
@@ -68,6 +71,8 @@ describe("event dates", () => {
     expect(eventDateParts("soon")).toBeNull();
     expect(eventDateParts("2027-02-30")).toBeNull();
     expect(eventWeekday("2027-02-30")).toBeNull();
+    expect(eventDateLong("2027-02-30")).toBeNull();
+    expect(eventDateLong(null)).toBeNull();
     expect(eventLead(null, NOW)).toBeNull();
   });
 

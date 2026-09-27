@@ -226,6 +226,15 @@ export function eventWeekday(preferredDate: string | null): string | null {
   return date === null ? null : WEEKDAYS_LONG[weekdayIndex(date.dayNumber)] ?? null;
 }
 
+/** "Saturday 5 June 2027" for a preferred event date, or null: the words a
+ *  date tile is read out as. */
+export function eventDateLong(preferredDate: string | null): string | null {
+  const date = parseCalendarDate(preferredDate);
+  if (date === null) return null;
+  const weekday = WEEKDAYS_LONG[weekdayIndex(date.dayNumber)] ?? "";
+  return `${weekday} ${String(date.day)} ${MONTHS_LONG[date.month - 1] ?? ""} ${String(date.year)}`;
+}
+
 /** How far off the event is from the venue's today: "today", "tomorrow",
  *  "in 5 days", "in 3 weeks", "in 8 months", "in 2 years", or
  *  "date has passed". Null when there is no date. */

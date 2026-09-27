@@ -389,10 +389,17 @@ export const BOARD_COPY = {
     more: (shown: number): string =>
       `Showing the ${String(shown)} newest open enquiries. Older ones are not listed here.`,
     convert: "Hold a date…",
-    detail: (eventType: string | null, guests: number | null): string => {
-      const parts = [eventType ?? "event", guests === null ? null : `${String(guests)} guests`];
+    /** "wedding · 120 guests · in 8 months": the lead is the enquiries
+     *  desk's own ("today", "date has passed"), or `noDate`. */
+    detail: (eventType: string | null, guests: number | null, when: string): string => {
+      const parts = [eventType ?? "event", guests === null ? null : `${String(guests)} guests`, when];
       return parts.filter((part): part is string => part !== null).join(" · ");
     },
+    noDate: "date to be confirmed",
+    /** The tile of an enquiry with no date, as the enquiries desk shows it. */
+    openDate: { word: "Date", tbc: "TBC" },
+    /** The date tile's name: pressing it shows that date on the board. */
+    showDate: (spoken: string): string => `Show ${spoken} on the board`,
   },
 
   confirmInk: {
