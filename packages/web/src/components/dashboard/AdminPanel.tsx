@@ -45,16 +45,23 @@ function labelize(value: string): string {
   return value.replace(/_/g, " ");
 }
 
+function counted(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 interface FormModalProps {
   readonly title: string;
   readonly description?: string;
   readonly onClose: () => void;
+  /** Something is entered: a click beside the form then leaves it open.
+   *  Cancel and Escape still close it on purpose. */
+  readonly dirty?: boolean;
   readonly children: ReactNode;
   readonly footer: ReactNode;
   readonly wide?: boolean;
 }
 
-function FormModal({ title, description, onClose, children, footer, wide = false }: FormModalProps): ReactElement {
+function FormModal({ title, description, onClose, dirty = false, children, footer, wide = false }: FormModalProps): ReactElement {
   const trapRef = useFocusTrap<HTMLDivElement>();
   const titleId = `${slugify(title)}-modal-title`;
   const descriptionId = `${slugify(title)}-modal-description`;
@@ -67,7 +74,7 @@ function FormModal({ title, description, onClose, children, footer, wide = false
       aria-labelledby={titleId}
       aria-describedby={description === undefined ? undefined : descriptionId}
       tabIndex={-1}
-      onClick={onClose}
+      onClick={() => { if (!dirty) onClose(); }}
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
       }}
@@ -208,6 +215,9 @@ export function AdminPanel(): ReactElement {
   const [showCreateRule, setShowCreateRule] = useState(false);
   const [creatingRule, setCreatingRule] = useState(false);
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
+  // The rule just deleted, offered back until the next delete or venue.
+  const [deletedRule, setDeletedRule] = useState<PricingRule | null>(null);
+  const [restoringRule, setRestoringRule] = useState(false);
   const [ruleName, setRuleName] = useState("");
   const [ruleType, setRuleType] = useState<PricingRule["type"]>("flat_rate");
   const [ruleAmount, setRuleAmount] = useState("");
@@ -225,7 +235,7 @@ export function AdminPanel(): ReactElement {
     editSpaceOutline.length < MIN_POLYGON_POINTS;
   const createRuleDisabled = creatingRule || ruleName.trim() === "" || ruleAmount.trim() === "";
   const venueMutationPending = creatingSpace || updatingSpace || deletingSpace
-    || deletingVenue || creatingRule || deletingRuleId !== null;
+    || deletingVenue || creatingRule || deletingRuleId !== null || restoringRule;
 
   const loadVenues = useCallback((): void => {
     setLoading(true);
@@ -273,6 +283,7 @@ export function AdminPanel(): ReactElement {
     setLoadingVenueId(venueId);
     setPricingRules([]);
     setPricingError(null);
+    setDeletedRule(null);
     void spacesApi.getVenue(venueId)
       .then((venue) => {
         if (!ownsRequest()) return;
@@ -436,17 +447,32 @@ export function AdminPanel(): ReactElement {
     }
   };
 
-  const handleDeleteRule = async (ruleId: string): Promise<void> => {
+  const handleDeleteRule = async (rule: PricingRule): Promise<void> => {
     if (selectedVenue === null || deletingRuleId !== null) return;
-    setDeletingRuleId(ruleId);
+    setDeletingRuleId(rule.id);
     try {
-      await pricingApi.deletePricingRule(selectedVenue.id, ruleId);
-      addToast("Pricing rule deleted", "success");
+      await pricingApi.deletePricingRule(selectedVenue.id, rule.id);
+      setDeletedRule(rule);
       loadPricingRules(selectedVenue.id);
     } catch (error: unknown) {
       addToast(actionError(error, "Failed to delete pricing rule"), "error");
     } finally {
       setDeletingRuleId(null);
+    }
+  };
+
+  const handleRestoreRule = async (): Promise<void> => {
+    if (selectedVenue === null || deletedRule === null || restoringRule) return;
+    setRestoringRule(true);
+    try {
+      await pricingApi.restorePricingRule(selectedVenue.id, deletedRule.id, deletedRule.isActive);
+      addToast(`Pricing rule "${deletedRule.name}" is back`, "success");
+      setDeletedRule(null);
+      loadPricingRules(selectedVenue.id);
+    } catch (error: unknown) {
+      addToast(actionError(error, "Could not bring the pricing rule back. It is still deleted."), "error");
+    } finally {
+      setRestoringRule(false);
     }
   };
 
@@ -602,6 +628,23 @@ export function AdminPanel(): ReactElement {
             </div>
           ) : null}
 
+          {deletedRule !== null && (
+            <div className="admin-panel-undo" role="status">
+              <span>Deleted &ldquo;{deletedRule.name}&rdquo;.</span>
+              <button
+                type="button"
+                className="admin-panel-button admin-panel-button--secondary"
+                disabled={restoringRule}
+                aria-busy={restoringRule}
+                aria-label={`Undo: bring back ${deletedRule.name}`}
+                onClick={() => {
+                  void handleRestoreRule();
+                }}
+              >
+                {restoringRule && <ActivityIndicator size={16} />} Undo
+              </button>
+            </div>
+          )}
           {pricingRequests > 0 && <ActivityStatus>Loading pricing rules…</ActivityStatus>}
           {pricingRules.length === 0 ? (
             pricingRequests === 0 && <div className="admin-panel-empty">No pricing rules configured.</div>
@@ -636,7 +679,7 @@ export function AdminPanel(): ReactElement {
                           disabled={deletingRuleId !== null}
                           aria-busy={deletingRuleId === rule.id}
                           onClick={() => {
-                            void handleDeleteRule(rule.id);
+                            void handleDeleteRule(rule);
                           }}
                         >
                           {deletingRuleId === rule.id && <ActivityIndicator size={16} />} {deletingRuleId === rule.id ? "Deleting" : "Delete"}
@@ -655,6 +698,7 @@ export function AdminPanel(): ReactElement {
             title="New Space"
             description="Use the room’s actual floor outline."
             wide
+            dirty={spaceName !== "" || spaceHeight !== "" || spaceOutline.length > 0}
             onClose={() => {
               if (creatingSpace) return;
               setShowCreateSpace(false);
@@ -698,6 +742,7 @@ export function AdminPanel(): ReactElement {
         {showCreateRule ? (
           <FormModal
             title="New Pricing Rule"
+            dirty={ruleName !== "" || ruleAmount !== ""}
             onClose={() => {
               if (!creatingRule) setShowCreateRule(false);
             }}
@@ -743,7 +788,8 @@ export function AdminPanel(): ReactElement {
               <option value="flat_rate">Flat Rate</option>
               <option value="per_hour">Per Hour</option>
               <option value="per_head">Per Head</option>
-              <option value="tiered">Tiered</option>
+              {/* No Tiered: tiers cannot be entered here, and a tiered rule
+                  without them prices at nothing (services/price-calculator.ts). */}
             </SelectField>
             <TextField label="Amount (GBP)" value={ruleAmount} onChange={setRuleAmount} type="number" step="0.01" min="0" placeholder="500" />
           </FormModal>
@@ -752,7 +798,7 @@ export function AdminPanel(): ReactElement {
         {showDeleteVenue ? (
           <ConfirmModal
             title="Delete Venue"
-            message={`Delete "${selectedVenue.name}"? Spaces, pricing rules, configurations, and linked loadout references will be permanently removed.`}
+            message={`Delete "${selectedVenue.name}"? It stops showing in Venviewer. Its ${counted(selectedVenue.spaces.length, "space")}, ${counted(pricingRules.length, "pricing rule")} and saved layouts are kept, not erased.`}
             confirmLabel={deletingVenue ? "Deleting" : "Delete"}
             inFlight={deletingVenue}
             onConfirm={() => {
@@ -767,7 +813,7 @@ export function AdminPanel(): ReactElement {
         {deletingSpaceId !== null ? (
           <ConfirmModal
             title="Delete Space"
-            message="Delete this space? Associated configurations and loadouts will be removed."
+            message={`Delete "${selectedVenue.spaces.find((space) => space.id === deletingSpaceId)?.name ?? "this space"}"? It stops showing in Venviewer. Its saved layouts and loadouts are kept, not erased.`}
             confirmLabel={deletingSpace ? "Deleting" : "Delete"}
             inFlight={deletingSpace}
             onConfirm={() => {
@@ -784,6 +830,8 @@ export function AdminPanel(): ReactElement {
             title="Edit Space"
             description="Match geometry to the reviewed floor plan."
             wide
+            dirty={editSpaceName !== editingSpace.name || editSpaceHeight !== editingSpace.heightM
+              || !polygonsEqual(editSpaceOutline, editingSpace.floorPlanOutline)}
             onClose={() => {
               if (!updatingSpace) setEditingSpace(null);
             }}
@@ -876,6 +924,7 @@ export function AdminPanel(): ReactElement {
       {showCreateVenue ? (
         <FormModal
           title="New Venue"
+          dirty={venueName !== "" || venueAddress !== ""}
           onClose={() => {
             if (!creatingVenue) setShowCreateVenue(false);
           }}

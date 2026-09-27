@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   listPricingRules: vi.fn(),
   createPricingRule: vi.fn(),
   deletePricingRule: vi.fn(),
+  restorePricingRule: vi.fn(),
   addToast: vi.fn(),
 }));
 
@@ -36,6 +37,7 @@ vi.mock("../../../api/pricing.js", () => ({
   listPricingRules: mocks.listPricingRules,
   createPricingRule: mocks.createPricingRule,
   deletePricingRule: mocks.deletePricingRule,
+  restorePricingRule: mocks.restorePricingRule,
 }));
 
 vi.mock("../../../stores/toast-store.js", () => ({
@@ -117,6 +119,7 @@ beforeEach(() => {
   mocks.listPricingRules.mockReset();
   mocks.createPricingRule.mockReset();
   mocks.deletePricingRule.mockReset();
+  mocks.restorePricingRule.mockReset();
   mocks.addToast.mockReset();
 
   mocks.listVenues.mockResolvedValue([venueFixture()]);
@@ -343,5 +346,82 @@ describe("AdminPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("button", { name: /Trades Hall Glasgow/u })).toBeTruthy();
     expect(mocks.listVenues).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-635 N5, item 14: a delete only marks the record, so the words say so; a
+// deleted pricing rule can be brought back; Tiered, which cannot be priced
+// from here, is not offered; a stray click does not throw a form away.
+// ---------------------------------------------------------------------------
+describe("AdminPanel says what a delete does, and gives a way back", () => {
+  it("says a deleted venue's spaces, rules and layouts are kept, with counts", async () => {
+    await renderOpenedVenue();
+    await screen.findByText("Grand Hall Half Day");
+    fireEvent.click(screen.getByRole("button", { name: "Delete Venue" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Venue" });
+    expect(dialog.textContent).toContain(
+      "Delete \"Trades Hall Glasgow\"? It stops showing in Venviewer. Its 1 space, 1 pricing rule and saved layouts are kept, not erased.",
+    );
+    expect(dialog.textContent).not.toMatch(/permanently/u);
+  });
+
+  it("names the space being deleted and says its layouts are kept", async () => {
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Delete space Grand Hall" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Space" });
+    expect(dialog.textContent).toContain(
+      "Delete \"Grand Hall\"? It stops showing in Venviewer. Its saved layouts and loadouts are kept, not erased.",
+    );
+    expect(dialog.textContent).not.toContain("will be removed");
+  });
+
+  it("offers a deleted pricing rule back, and Undo restores it", async () => {
+    mocks.restorePricingRule.mockResolvedValue(pricingRuleFixture());
+    await renderOpenedVenue();
+    await screen.findByText("Grand Hall Half Day");
+    mocks.listPricingRules.mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByRole("button", { name: "Delete pricing rule Grand Hall Half Day" }));
+
+    const offer = await screen.findByText(/Deleted .Grand Hall Half Day.\./u);
+    expect(offer.closest("[role='status']")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Undo: bring back Grand Hall Half Day" }));
+    await waitFor(() => { expect(mocks.restorePricingRule).toHaveBeenCalledWith(VENUE_ID, RULE_ID, true); });
+    await waitFor(() => {
+      expect(mocks.addToast).toHaveBeenCalledWith("Pricing rule \"Grand Hall Half Day\" is back", "success");
+    });
+    expect(screen.queryByRole("button", { name: "Undo: bring back Grand Hall Half Day" })).toBeNull();
+  });
+
+  it("keeps the way back when Undo fails, and says the rule is still deleted", async () => {
+    mocks.restorePricingRule.mockRejectedValue(new Error(""));
+    await renderOpenedVenue();
+    await screen.findByText("Grand Hall Half Day");
+    fireEvent.click(screen.getByRole("button", { name: "Delete pricing rule Grand Hall Half Day" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo: bring back Grand Hall Half Day" }));
+    await waitFor(() => {
+      expect(mocks.addToast).toHaveBeenCalledWith("Could not bring the pricing rule back. It is still deleted.", "error");
+    });
+    expect(screen.getByRole("button", { name: "Undo: bring back Grand Hall Half Day" })).toBeTruthy();
+  });
+
+  it("does not offer Tiered, which cannot be priced from this form", async () => {
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Rule" }));
+    const type = screen.getByLabelText<HTMLSelectElement>("Type");
+    expect([...type.options].map((option) => option.value)).toEqual(["flat_rate", "per_hour", "per_head"]);
+  });
+
+  it("keeps a half-written form open when the space beside it is clicked", async () => {
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "New Rule" }));
+    fireEvent.change(screen.getByLabelText("Rule Name"), { target: { value: "Reception Room Evening" } });
+    fireEvent.click(screen.getByRole("dialog", { name: "New Pricing Rule" }));
+    expect(screen.getByRole("dialog", { name: "New Pricing Rule" })).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>("Rule Name").value).toBe("Reception Room Evening");
+
+    fireEvent.change(screen.getByLabelText("Rule Name"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("dialog", { name: "New Pricing Rule" }));
+    expect(screen.queryByRole("dialog", { name: "New Pricing Rule" })).toBeNull();
   });
 });

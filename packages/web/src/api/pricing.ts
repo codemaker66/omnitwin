@@ -75,6 +75,12 @@ export async function deletePricingRule(venueId: string, ruleId: string): Promis
   await api.delete(`/venues/${venueId}/pricing/${ruleId}`);
 }
 
+/** Undo a delete. A delete only marks the rule, so it comes back as it was,
+ *  on or off as `isActive` says. */
+export async function restorePricingRule(venueId: string, ruleId: string, isActive: boolean): Promise<PricingRule> {
+  return api.post(`/venues/${venueId}/pricing/${ruleId}/restore`, { isActive }, undefined, PricingRuleResponseSchema);
+}
+
 export async function estimatePrice(venueId: string, data: PriceEstimateInput): Promise<PriceEstimate> {
   return api.post(`/venues/${venueId}/pricing/estimate`, data, undefined, PriceEstimateResponseSchema);
 }

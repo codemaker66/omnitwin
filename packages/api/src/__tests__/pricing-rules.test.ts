@@ -145,3 +145,33 @@ describe("DELETE /venues/:venueId/pricing/:id", () => {
     expect(res.statusCode).toBe(403);
   });
 });
+
+describe("POST /venues/:venueId/pricing/:id/restore", () => {
+  const url = `/venues/${VENUE_ID}/pricing/${RULE_ID}/restore`;
+
+  it("returns 401 without auth", async () => {
+    const res = await server.inject({ method: "POST", url, payload: {} });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns 403 for a client and for another venue's staff", async () => {
+    for (const token of [clientToken(), otherStaff()]) {
+      const res = await server.inject({
+        method: "POST", url, headers: { authorization: `Bearer ${token}` }, payload: {},
+      });
+      expect(res.statusCode).toBe(403);
+    }
+  });
+
+  it("returns 400 for an invalid rule id or body", async () => {
+    const badId = await server.inject({
+      method: "POST", url: `/venues/${VENUE_ID}/pricing/not-a-uuid/restore`,
+      headers: { authorization: `Bearer ${adminToken()}` }, payload: {},
+    });
+    expect(badId.statusCode).toBe(400);
+    const badBody = await server.inject({
+      method: "POST", url, headers: { authorization: `Bearer ${adminToken()}` }, payload: { isActive: "yes" },
+    });
+    expect(badBody.statusCode).toBe(400);
+  });
+});

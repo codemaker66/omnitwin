@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNotNull, isNull } from "drizzle-orm";
 import { pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
@@ -44,6 +44,10 @@ const CreateRuleBody = z.object({
 });
 
 const UpdateRuleBody = CreateRuleBody.partial();
+
+// A delete marks the rule and switches it off; the admin's Undo sends back
+// whether it was on.
+const RestoreRuleBody = z.object({ isActive: z.boolean().default(true) });
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -238,6 +242,38 @@ export async function pricingRuleRoutes(
       .where(eq(pricingRules.id, params.data.id));
 
     return reply.status(204).send();
+  });
+
+  // POST /venues/:venueId/pricing/:id/restore — undo a delete. Only a rule
+  // this venue deleted comes back; a live rule or another venue's is 404.
+  server.post("/:id/restore", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = RuleIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid params", code: "VALIDATION_ERROR" });
+    }
+
+    if (!canAdministerVenue(request.user, params.data.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const parsed = RestoreRuleBody.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
+    }
+
+    const [restored] = await db.update(pricingRules)
+      .set({ deletedAt: null, isActive: parsed.data.isActive, updatedAt: new Date() })
+      .where(and(
+        eq(pricingRules.id, params.data.id),
+        eq(pricingRules.venueId, params.data.venueId),
+        isNotNull(pricingRules.deletedAt),
+      ))
+      .returning();
+    if (restored === undefined) {
+      return reply.status(404).send({ error: "Deleted pricing rule not found", code: "NOT_FOUND" });
+    }
+
+    return { data: restored };
   });
 
   // POST /venues/:venueId/pricing/estimate — public price calculator

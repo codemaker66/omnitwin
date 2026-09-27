@@ -265,6 +265,22 @@
   background: rgba(255, 181, 82, 0.09);
 }
 
+/* A deleted pricing rule, offered back. Quiet: it is a way back, not an alarm. */
+.admin-panel-undo {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(244, 239, 228, 0.86);
+  line-height: 1.5;
+}
+
 .admin-panel-table-wrap {
   overflow-x: auto;
 }
