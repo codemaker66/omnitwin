@@ -11,6 +11,7 @@ import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/reques
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
   ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
@@ -74,6 +75,18 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   { view: "onboarding", label: "Clients & access", capability: "platformAdmin" },
   { view: "admin", label: "Admin", capability: "platformAdmin" },
 ];
+
+/** Venue names already read, by venue. Every page wears its own copy of the
+ *  shell, so without this each move between Enquiries, the Diary and the
+ *  Hallkeeper read the name again and the header showed "Your venue" and
+ *  "Opening venue…" each time. Read once, then shown at once; each page
+ *  still re-reads it quietly in case it was renamed. */
+const knownVenueNames = new Map<string, string>();
+
+/** Test seam: forget the names read so far. */
+export function forgetKnownVenueNames(): void {
+  knownVenueNames.clear();
+}
 
 /** The count is exact; past this the chip reads "99+" so it keeps its size. */
 const UNREAD_CHIP_DISPLAY_LIMIT = 99;
@@ -199,28 +212,82 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   // Fetch venue name dynamically so the header reflects the actual venue,
   // not the hardcoded placeholder (F28). Admin users without a venueId see
   // "Admin Dashboard" instead.
-  const [venueName, setVenueName] = useState("Dashboard");
+  const cachedVenueName = user?.venueId === undefined || user.venueId === null
+    ? undefined
+    : knownVenueNames.get(user.venueId);
+  const [venueName, setVenueName] = useState(cachedVenueName ?? "Dashboard");
+  // The name is known (read by this page or an earlier one), so the header
+  // can say it; until then it says what it is waiting for.
+  const [venueKnown, setVenueKnown] = useState(cachedVenueName !== undefined);
   const [venueLoading, setVenueLoading] = useState(false);
   useEffect(() => {
     if (user?.venueId === undefined || user.venueId === null) {
       setVenueName(user?.platformRole === "admin" ? "Venviewer Platform" : "Dashboard");
+      setVenueKnown(false);
       setVenueLoading(false);
       return;
     }
+    const venueId = user.venueId;
     const request = { current: true };
-    setVenueName("Your venue");
-    setVenueLoading(true);
-    void spacesApi.getVenue(user.venueId)
-      .then((v) => { if (request.current) setVenueName(v.name); })
-      .catch(() => { /* non-critical — keep default */ })
+    const known = knownVenueNames.get(venueId);
+    if (known === undefined) {
+      setVenueName("Your venue");
+      setVenueKnown(false);
+      setVenueLoading(true);
+    } else {
+      setVenueName(known);
+      setVenueKnown(true);
+    }
+    void spacesApi.getVenue(venueId)
+      .then((v) => {
+        knownVenueNames.set(venueId, v.name);
+        if (!request.current) return;
+        setVenueName(v.name);
+        setVenueKnown(true);
+      })
+      .catch(() => {
+        // A name already shown stays; one never read is said to be missing,
+        // rather than a placeholder that reads like a name.
+        if (request.current && known === undefined) setVenueName("Venue name unavailable");
+      })
       .finally(() => { if (request.current) setVenueLoading(false); });
     return () => { request.current = false; };
   }, [user?.platformRole, user?.venueId]);
 
   const handleLocalSignOut = (): void => {
     setOpenMenu(null);
+    // Whoever signs in next on this browser reads their own venue afresh.
+    forgetKnownVenueNames();
     logoutLocal();
   };
+
+  // What this page is called: its own name when it gives one, else the
+  // dashboard view's label, so <main> and the tab both say where you are.
+  const viewLabel = activeView === undefined ? undefined : NAV_ITEMS.find((item) => item.view === activeView)?.label;
+  const workspaceName = mainLabel ?? viewLabel ?? "Dashboard workspace";
+  useEffect(() => {
+    const previous = document.title;
+    document.title = venueKnown
+      ? `${workspaceName} · ${venueName} — Venviewer`
+      : `${workspaceName} — Venviewer`;
+    return () => { document.title = previous; };
+  }, [venueKnown, venueName, workspaceName]);
+
+  // Choosing another view moves focus to the workspace, which is named after
+  // the view, so a keyboard or screen-reader user starts in the new view
+  // ("Proposals, main") rather than on a menu that has closed. Not the
+  // view's first heading: several views open with a card's ("New
+  // proposal"). Not over a view that placed focus itself, and not on first
+  // arrival, which keeps the browser's own start.
+  const mainRef = useRef<HTMLElement>(null);
+  const previousView = useRef(activeView);
+  useEffect(() => {
+    if (previousView.current === activeView) return;
+    previousView.current = activeView;
+    const main = mainRef.current;
+    if (main === null || main.contains(document.activeElement)) return;
+    main.focus({ preventScroll: true });
+  }, [activeView]);
 
   // -------------------------------------------------------------------------
   // Unread notifications on the VISIBLE nav row
@@ -313,7 +380,9 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
       <a className="dashboard-layout-skip" href="#dashboard-main">Skip to workspace</a>
       <header className="dashboard-layout-header" data-register="ivory">
         <div className="dashboard-layout-identity">
-          <Link className="dashboard-layout-brand-name" to="/dashboard">Venviewer</Link>
+          {/* Home is the role's own first page: a hallkeeper's day, a platform
+              admin's clients, everyone else's dashboard. */}
+          <Link className="dashboard-layout-brand-name" to={user === null ? "/dashboard" : getDefaultRoute(user.role, user.platformRole)}>Venviewer</Link>
           <div className="dashboard-layout-venue">
             <p className="dashboard-layout-title" title={venueName}>{venueName}</p>
             {venueLoading && <ActivityStatus>Opening venue…</ActivityStatus>}
@@ -395,7 +464,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
         </div>
       </header>
       <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "enquiries" ? " dashboard-layout-main--enquiries" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
-        <main className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={mainLabel ?? "Dashboard workspace"}>
+        <main ref={mainRef} className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
           {children}
         </main>
       </div>

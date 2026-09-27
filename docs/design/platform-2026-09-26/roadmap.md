@@ -351,6 +351,7 @@ Every item below must also meet this checklist. The acceptance criteria in 2.3â€
 - **Orientation.**
   - Set `document.title` for each view.
   - On a view change, move focus to the view's h1, and set main's `aria-label` to the view name.
+    Revised on 27 September: focus goes to `main`, which carries the view's name, because not every view opens with its own heading ([session log](../../sessions/2026-09-27.md)).
   - Point the wordmark at `getDefaultRoute` (`lib/role-routing.ts:7-12`).
   - Use sentence-case labels that match the page headings.
 - **Denied and arrival states.**

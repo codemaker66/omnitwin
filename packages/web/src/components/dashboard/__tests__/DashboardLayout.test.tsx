@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
-import { DashboardLayout, type DashboardView } from "../DashboardLayout.js";
+import { DashboardLayout, forgetKnownVenueNames, type DashboardView } from "../DashboardLayout.js";
 import { InventoryNavigationGuard } from "../inventory/InventoryNavigationGuard.js";
 
 const mocks = vi.hoisted(() => ({
@@ -81,6 +81,7 @@ function renderShell({ path = "/dashboard?view=inventory", onViewChange }: {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  forgetKnownVenueNames();
   mocks.venue.mockResolvedValue({ name: "Trades Hall" });
   mocks.unreadCount.mockResolvedValue(0);
   mocks.subscribe.mockReturnValue(() => undefined);
@@ -420,5 +421,103 @@ describe("unread notifications on the visible nav", () => {
     // The count is still read, because the inbox belongs to everybody; the
     // socket is not opened, because no request frame is ever addressed here.
     expect(mocks.subscribe).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-635 N2, orientation: every page wears its own shell, so the header read
+// the venue again on each move and showed "Your venue" and "Opening venue…";
+// the tab said nothing of where you were; choosing a view left focus on a
+// menu that had closed; and the wordmark sent a hallkeeper to the dashboard.
+// ---------------------------------------------------------------------------
+describe("DashboardLayout orientation", () => {
+  function renderView(view: DashboardView, onViewChange?: (view: DashboardView) => void): ReturnType<typeof render> {
+    return render(<MemoryRouter initialEntries={[`/dashboard?view=${view}`]}>
+      <DashboardLayout activeView={view} onViewChange={onViewChange}><h2>{view} heading</h2></DashboardLayout>
+    </MemoryRouter>);
+  }
+
+  it("shows a venue name already read at once on the next page, and still re-reads it", async () => {
+    const first = renderView("proposals");
+    expect(await screen.findByText("Trades Hall")).toBeDefined();
+    first.unmount();
+
+    mocks.venue.mockReturnValue(new Promise(() => undefined));
+    render(<MemoryRouter initialEntries={["/diary"]}><DashboardLayout mainLabel="Diary"><h1>Diary</h1></DashboardLayout></MemoryRouter>);
+    expect(screen.getByText("Trades Hall")).toBeDefined();
+    expect(screen.queryByText("Your venue")).toBeNull();
+    expect(screen.queryByText("Opening venue…")).toBeNull();
+    expect(mocks.venue).toHaveBeenCalledTimes(2);
+  });
+
+  it("says the venue name is unavailable when it cannot be read, rather than a placeholder", async () => {
+    mocks.venue.mockRejectedValue(new Error("offline"));
+    renderView("proposals");
+    expect(await screen.findByText("Venue name unavailable")).toBeDefined();
+  });
+
+  it("names the workspace and the tab after the view", async () => {
+    renderView("proposals");
+    expect(screen.getByRole("main", { name: "Proposals" })).toBeDefined();
+    await screen.findByText("Trades Hall");
+    await waitFor(() => { expect(document.title).toBe("Proposals · Trades Hall — Venviewer"); });
+  });
+
+  it("names the tab after a page's own name outside the dashboard", async () => {
+    render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DashboardLayout mainLabel="The Day Board"><h1>Today</h1></DashboardLayout></MemoryRouter>);
+    await screen.findByText("Trades Hall");
+    await waitFor(() => { expect(document.title).toBe("The Day Board · Trades Hall — Venviewer"); });
+  });
+
+  it("moves focus to the workspace, named after the new view, when the view changes, not on arrival", async () => {
+    const { rerender } = renderView("proposals");
+    await screen.findByText("Trades Hall");
+    expect(document.activeElement).toBe(document.body);
+
+    // A card's heading first, as Proposals has: focus is not sent to it.
+    rerender(<MemoryRouter initialEntries={["/dashboard?view=pipeline"]}>
+      <DashboardLayout activeView="pipeline"><h2>New deal</h2></DashboardLayout>
+    </MemoryRouter>);
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("main", { name: "Pipeline" })); });
+  });
+
+  it("leaves focus where a new view placed it", async () => {
+    function FindAClient(): React.ReactElement {
+      const input = useRef<HTMLInputElement>(null);
+      useEffect(() => { input.current?.focus(); }, []);
+      return <input ref={input} aria-label="Find a client" />;
+    }
+    const { rerender } = renderView("proposals");
+    await screen.findByText("Trades Hall");
+
+    rerender(<MemoryRouter initialEntries={["/dashboard?view=search"]}>
+      <DashboardLayout activeView="search"><FindAClient /></DashboardLayout>
+    </MemoryRouter>);
+    expect(document.activeElement).toBe(screen.getByLabelText("Find a client"));
+    // Past the frame a moved focus would have waited for.
+    await new Promise((resolve) => { setTimeout(resolve, 30); });
+    expect(document.activeElement).toBe(screen.getByLabelText("Find a client"));
+  });
+
+  it("forgets the venue names read once someone signs out", async () => {
+    mocks.bypass.mockReturnValue(true);
+    const first = renderView("proposals");
+    await screen.findByText("Trades Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Account: Elaine Campbell" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    first.unmount();
+
+    useAuthStore.getState().setUser(admin);
+    mocks.venue.mockReturnValue(new Promise(() => undefined));
+    renderView("proposals");
+    expect(screen.getByText("Your venue")).toBeDefined();
+    expect(screen.queryByText("Trades Hall")).toBeNull();
+  });
+
+  it("takes a hallkeeper home to their day from the wordmark", async () => {
+    useAuthStore.getState().setUser({ ...admin, role: "hallkeeper" });
+    render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DashboardLayout mainLabel="The Day Board"><h1>Today</h1></DashboardLayout></MemoryRouter>);
+    await screen.findByText("Trades Hall");
+    expect(screen.getByRole("link", { name: "Venviewer" }).getAttribute("href")).toBe("/hallkeeper/today");
   });
 });
