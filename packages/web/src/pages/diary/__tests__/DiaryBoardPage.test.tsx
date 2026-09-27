@@ -1217,6 +1217,29 @@ describe("DiaryBoardPage — Needs attention, venue-wide (roadmap N3)", () => {
   });
 });
 
+describe("DiaryBoardPage — a new hold's place on its ladder (roadmap N3)", () => {
+  it("gives a new hold the next place on the date's ladder, and says what already holds the time", async () => {
+    render(
+      <MemoryRouter initialEntries={["/diary?view=day&date=2026-09-18"]}>
+        <DiaryBoardPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("button", { name: /^MacLeod wedding — / });
+    fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    // The Grand Hall's evening, where MacLeod wedding is 1st option.
+    expect(within(drawer).getByDisplayValue("2026-09-18T17:00")).toBeTruthy();
+    expect(within(drawer).getByRole<HTMLInputElement>("spinbutton", { name: "Option" }).value).toBe("2");
+    expect(within(drawer).getByText(
+      "Chamber dinner is confirmed then; a hold cannot be confirmed while it stands. Held then: MacLeod wedding (1st option).",
+    )).toBeDefined();
+    // A free room takes the 1st place.
+    fireEvent.change(within(drawer).getByLabelText("Room"), { target: { value: SALOON } });
+    expect(within(drawer).getByRole<HTMLInputElement>("spinbutton", { name: "Option" }).value).toBe("1");
+    expect(within(drawer).getByText("Nothing else holds the Saloon then.")).toBeDefined();
+  });
+});
+
 describe("DiaryBoardPage — the reduced toolbar (roadmap N3)", () => {
   it("keeps New booking beside the title, and what changes how the board is read in View", async () => {
     renderPage();

@@ -207,6 +207,16 @@ export const BOARD_COPY = {
       `A provisional date for ${name}. The enquiry stays in review.`,
     hygieneLegend: "Keeping the hold current",
     ownerNote: "You will own this hold.",
+    /** What already holds the room and time a new hold is placed in (roadmap
+     *  N3); its option follows this ladder until the booker sets one. */
+    ladder: {
+      open: (room: string): string => `Nothing else holds the ${room} then.`,
+      held: (holds: readonly { readonly title: string; readonly place: string }[]): string =>
+        `Held then: ${listNames(holds.map((hold) => `${hold.title} (${hold.place.toLowerCase()})`))}.`,
+      confirmed: (titles: readonly string[]): string =>
+        `${listNames(titles)} ${titles.length === 1 ? "is" : "are"} confirmed then; a hold cannot be confirmed while ${titles.length === 1 ? "it stands" : "they stand"}.`,
+      unread: "The board has not read that date, so no option is suggested.",
+    },
     // The edit drawer's facts (T-619). Each absence is stated as an answer
     // rather than left as a blank line to interpret.
     summaryLabel: "Booking summary",

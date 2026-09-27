@@ -27,6 +27,7 @@ import {
 import { filterBoardEntries, needsAction, type LaneGap } from "./lib/board-layout.js";
 import { bookingTimeLabel } from "./lib/board-overview.js";
 import { contestedHolds } from "./lib/lifecycle-ending.js";
+import { ladderPlace } from "./lib/ladder-place.js";
 import { parseGoToDate, roomsOnDay, saidWeekday } from "./lib/go-to-date.js";
 import type { CommitPayload, InkSpan } from "./lib/board-drag.js";
 import {
@@ -388,6 +389,15 @@ export function DiaryBoardPage(): ReactElement {
   );
   const drawerLadderRead = drawerBooking !== null && data !== null
     && Date.parse(drawerBooking.startsAt) >= range.fromMs && Date.parse(drawerBooking.endsAt) <= range.toMs;
+
+  // Where a new hold would stand on its ladder (roadmap N3), read only from
+  // a range the board has read whole: while one is on its way, nothing is
+  // suggested it cannot vouch for.
+  const placeOnLadder = useCallback(
+    (spaceId: string, startMs: number, endMs: number) =>
+      ladderPlace(data?.entries ?? [], data === null ? null : range, spaceId, startMs, endMs),
+    [data, range],
+  );
 
   // Go to date (roadmap N3): the words typed, the day they named, whether
   // they could be read, and a weekday said with them that the date does not
@@ -1212,6 +1222,7 @@ export function DiaryBoardPage(): ReactElement {
             });
           }}
           onSaved={onDrawerSaved}
+          ladderPlace={placeOnLadder}
           contested={drawerContested}
           ladderRead={drawerLadderRead}
         />

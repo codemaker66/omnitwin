@@ -167,6 +167,10 @@ test.describe("Diary timetable", () => {
     const create = page.getByRole("dialog", { name: "New booking" });
     await expect(create.getByLabel("Room")).toHaveValue(SALOON);
     await expect(create.getByLabel("Starts", { exact: true })).toHaveValue("2026-09-16T17:00");
+    // Its option follows the ladder the board has read: nothing else holds
+    // the Saloon that evening, so it is 1st.
+    await expect(create.getByRole("spinbutton", { name: "Option" })).toHaveValue("1");
+    await expect(create.getByText("Nothing else holds the Saloon then.")).toBeVisible();
     // Every field fits the drawer: nothing runs past its edge to make it
     // scroll sideways.
     expect(await create.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);

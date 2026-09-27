@@ -12,8 +12,9 @@ import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
 import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
-import { formatWallDay, formatWallTime } from "../lib/board-time.js";
+import { formatWallDay, formatWallTime, wallInputToMs } from "../lib/board-time.js";
 import { isEndingTransition, ladderAfterExit, type EndingTransition } from "../lib/lifecycle-ending.js";
+import type { LadderPlace } from "../lib/ladder-place.js";
 
 /**
  * The planner link for an attached plan: the event the planner binds from,
@@ -59,6 +60,43 @@ export interface BookingDrawerProps {
   /** False when the board has not read the booking's dates (a booking
    *  opened from the decisions list in another week). */
   readonly ladderRead?: boolean;
+  /** Where a new hold in this room and time would stand on its ladder, as
+   *  the board has read it (roadmap N3). A new hold's option follows it
+   *  until the booker sets one. */
+  readonly ladderPlace?: (spaceId: string, startMs: number, endMs: number) => LadderPlace;
+}
+
+/** The ladder where the form places a new hold; null while its times do
+ *  not yet make a span. */
+function formPlace(
+  form: DrawerForm,
+  ladderPlace: (spaceId: string, startMs: number, endMs: number) => LadderPlace,
+): LadderPlace | null {
+  const startMs = wallInputToMs(form.startsAt);
+  const endMs = wallInputToMs(form.endsAt);
+  if (startMs === null || endMs === null || endMs <= startMs) return null;
+  return ladderPlace(form.spaceId, startMs, endMs);
+}
+
+function followLadder(
+  form: DrawerForm,
+  ladderPlace: (spaceId: string, startMs: number, endMs: number) => LadderPlace,
+): DrawerForm {
+  const place = formPlace(form, ladderPlace);
+  return place === null || place.kind === "unread" ? form : { ...form, rank: String(place.rank) };
+}
+
+/** What already holds the room and time, in one line. */
+function ladderNote(place: LadderPlace, room: string): string {
+  if (place.kind === "unread") return BOARD_COPY.drawer.ladder.unread;
+  const sentences: string[] = [];
+  if (place.confirmed.length > 0) sentences.push(BOARD_COPY.drawer.ladder.confirmed(place.confirmed.map((booking) => booking.title)));
+  if (place.holds.length > 0) {
+    sentences.push(BOARD_COPY.drawer.ladder.held(place.holds.map((hold) => ({
+      title: hold.title, place: BOARD_COPY.decisions.option(hold.rank, hold.jointFlag),
+    }))));
+  }
+  return sentences.length === 0 ? BOARD_COPY.drawer.ladder.open(room) : sentences.join(" ");
 }
 
 const NO_CONTESTED: readonly CalendarBookingEntry[] = [];
@@ -102,8 +140,14 @@ function drawerTitle(mode: DrawerMode): string {
 }
 
 export function BookingDrawer(props: BookingDrawerProps): ReactElement {
-  const { mode, rooms, venueId, role, onClose, onSaved, contested = NO_CONTESTED, ladderRead = true } = props;
-  const [form, setForm] = useState<DrawerForm>(() => initialDrawerForm(mode));
+  const { mode, rooms, venueId, role, onClose, onSaved, contested = NO_CONTESTED, ladderRead = true, ladderPlace } = props;
+  // A new hold takes the next place on its ladder, and keeps following the
+  // room and time it is placed in until the booker sets an option.
+  const followsLadder = mode.kind !== "edit" ? ladderPlace : undefined;
+  const [form, setForm] = useState<DrawerForm>(() =>
+    (followsLadder === undefined ? initialDrawerForm(mode) : followLadder(initialDrawerForm(mode), followsLadder)));
+  const [optionChosen, setOptionChosen] = useState(false);
+  const ladderNoteId = useId();
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -158,12 +202,18 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   );
 
   const isHold = form.kind === "hold";
+  const place = followsLadder !== undefined && isHold ? formPlace(form, followsLadder) : null;
   // COUPLED to drawer-form.ts ERROR_SLOTTED_HOLD: the hygiene fieldset is
   // exactly the set of hold-only inline error slots.
   const showHygiene = isHold;
 
   function set<Key extends keyof DrawerForm>(key: Key, value: DrawerForm[Key]): void {
-    setForm((previous) => ({ ...previous, [key]: value }));
+    setForm((previous) => {
+      const next = { ...previous, [key]: value };
+      const moved = key === "spaceId" || key === "startsAt" || key === "endsAt";
+      return followsLadder !== undefined && !optionChosen && moved ? followLadder(next, followsLadder) : next;
+    });
+    if (key === "rank") setOptionChosen(true);
   }
 
   function onText(key: keyof DrawerForm) {
@@ -522,6 +572,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
                   value={form.rank}
                   onChange={onText("rank")}
                   aria-invalid={fieldErrors["rank"] !== undefined}
+                  aria-describedby={place === null ? undefined : ladderNoteId}
                 />
                 {fieldError("rank")}
               </label>
@@ -536,6 +587,11 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
                 {BOARD_COPY.drawer.fields.jointFlag}
               </label>
             </div>
+            {place !== null ? (
+              <p id={ladderNoteId} className="diary-drawer-note diary-ladder-note">
+                {ladderNote(place, rooms.find((room) => room.id === form.spaceId)?.name ?? BOARD_COPY.drawer.fields.room)}
+              </p>
+            ) : null}
             <label className="diary-field">
               {BOARD_COPY.drawer.fields.decisionAt}
               <input

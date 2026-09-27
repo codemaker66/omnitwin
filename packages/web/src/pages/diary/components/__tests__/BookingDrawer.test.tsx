@@ -489,3 +489,80 @@ describe("BookingDrawer — ending a booking asks first (roadmap N3)", () => {
     expect(screen.getByText("Grand Hall, Fri 18 Sept 18:00–23:00: the confirmed booking ends. Nothing is sent to the client.")).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// A new hold's option follows the ladder (roadmap N3). The drawer used to
+// default every new hold to 1st, so a hold placed where a 1st option stood
+// made two 1st options. It now takes the next place the board has read, says
+// what already holds the time, and follows the room and time until the booker
+// sets an option.
+// ---------------------------------------------------------------------------
+
+describe("BookingDrawer — a new hold's option follows the ladder (roadmap N3)", () => {
+  // Friday 18 September at the venue: its evening window is 17:00–23:00 BST.
+  const FRIDAY = Date.parse("2026-09-17T23:00:00.000Z");
+  const EVENING = Date.parse("2026-09-18T19:00:00.000Z");
+  const fraser = booking({ id: "00000000-0000-4000-8000-0000000000f1", spaceId: SALOON, kind: "hold", state: "hold", title: "Fraser wedding", rank: 1 });
+  const chamber = booking({ spaceId: SALOON, title: "Chamber dinner" });
+  type Ladder = NonNullable<Parameters<typeof BookingDrawer>[0]["ladderPlace"]>;
+
+  function renderCreate(ladder: Ladder): void {
+    render(
+      <BookingDrawer
+        mode={{ kind: "create", spaceId: SALOON, dayStartMs: FRIDAY, ownerUserId: VENUE }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+        ladderPlace={ladder}
+      />,
+    );
+  }
+
+  it("takes the next place, says what holds the time, and follows the time until an option is set", () => {
+    // Fraser wedding holds the early evening; later, the Saloon is free.
+    renderCreate((_spaceId, startMs) => (startMs < EVENING
+      ? { kind: "read", rank: 2, holds: [fraser], confirmed: [chamber] }
+      : { kind: "read", rank: 1, holds: [], confirmed: [] }));
+    const option = screen.getByRole("spinbutton", { name: "Option" });
+    expect((option as HTMLInputElement).value).toBe("2");
+    const note = document.getElementById(option.getAttribute("aria-describedby") ?? "");
+    expect(note?.textContent).toBe(
+      "Chamber dinner is confirmed then; a hold cannot be confirmed while it stands. Held then: Fraser wedding (1st option).",
+    );
+
+    fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-09-18T21:00" } });
+    expect((option as HTMLInputElement).value).toBe("1");
+    expect(screen.getByText("Nothing else holds the Saloon then.")).toBeDefined();
+
+    // Once the booker sets an option, the ladder no longer moves it.
+    fireEvent.change(option, { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-09-18T18:00" } });
+    expect((option as HTMLInputElement).value).toBe("3");
+    expect(document.getElementById(option.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/Held then: Fraser wedding \(1st option\)\.$/u);
+  });
+
+  it("suggests nothing for a date the board has not read, and says so", () => {
+    renderCreate(() => ({ kind: "unread" }));
+    expect(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Option" }).value).toBe("1");
+    expect(screen.getByText("The board has not read that date, so no option is suggested.")).toBeDefined();
+  });
+
+  it("leaves an existing booking's option alone", () => {
+    const ladder = vi.fn<Ladder>(() => ({ kind: "read", rank: 4, holds: [], confirmed: [] }));
+    render(
+      <BookingDrawer
+        mode={{ kind: "edit", booking: fraser }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+        ladderPlace={ladder}
+      />,
+    );
+    expect(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Option" }).value).toBe("1");
+    expect(ladder).not.toHaveBeenCalled();
+  });
+});
