@@ -5,7 +5,7 @@ import type {
   Notification,
   VenueDashboardAnalytics,
 } from "@omnitwin/types";
-import type { PublicProposal } from "../src/api/proposals.js";
+import type { PublicProposalPayload } from "../src/api/proposals.js";
 import type { SupplierSafePackView } from "../src/api/supplier-coordination.js";
 import {
   collectAccessibilityAudit,
@@ -139,7 +139,7 @@ function analyticsFixture(): VenueDashboardAnalytics {
   };
 }
 
-function publicProposalFixture(): PublicProposal {
+function publicProposalFixture(): PublicProposalPayload {
   return {
     title: "Reception Room wedding proposal",
     status: "sent",

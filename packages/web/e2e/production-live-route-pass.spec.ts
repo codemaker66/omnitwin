@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { PublicProposal } from "../src/api/proposals.js";
+import type { PublicProposal, PublicProposalPayload } from "../src/api/proposals.js";
 import type { SupplierAcknowledgement, SupplierSafePackView } from "../src/api/supplier-coordination.js";
 import {
   collectAccessibilityAudit,
@@ -350,7 +350,7 @@ async function recordFrameAndVisualState(
   expect(interactionSummary.sustainedOverPassBudget, `${name} interaction sustained pass-budget misses`).toBeLessThanOrEqual(MAX_SUSTAINED_OVER_BUDGET);
 }
 
-function proposalFixture(status: PublicProposal["status"] = "sent", extraComment?: string): PublicProposal {
+function proposalFixture(status: PublicProposal["status"] = "sent", extraComment?: string): PublicProposalPayload {
   const comments = [
     { kind: "comment" as const, authorName: "Venue team", body: "We can adjust the arrival time.", createdAt: NOW },
   ];

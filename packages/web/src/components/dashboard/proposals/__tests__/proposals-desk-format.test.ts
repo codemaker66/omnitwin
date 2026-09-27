@@ -18,7 +18,7 @@ function row(overrides: Partial<DeskProposal> = {}): DeskProposal {
     id: "p1", venueId: "v1", opportunityId: null, enquiryId: null, configurationId: null, title: "Autumn gala", status: "draft",
     currentVersion: 0, shareCode: null, sentAt: null, createdBy: "u1", createdAt: "2026-09-20T09:00:00.000Z",
     updatedAt: "2026-10-01T09:00:00.000Z", deletedAt: null, dealTitle: null, clientName: null, eventDate: null, guestCount: null,
-    eventType: null, latestTotalMinor: null, latestCurrency: null, ...overrides,
+    eventType: null, latestTotalMinor: null, latestCurrency: null, clientOpenedAt: null, ...overrides,
   };
 }
 

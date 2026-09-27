@@ -11,7 +11,7 @@ import type {
   OpsTask,
   RoomAssetStatus,
 } from "@omnitwin/types";
-import type { PublicProposal } from "../src/api/proposals.js";
+import type { PublicProposalPayload } from "../src/api/proposals.js";
 import type { Space, Venue, VenueDetail } from "../src/api/spaces.js";
 import type { SupplierSafePackView } from "../src/api/supplier-coordination.js";
 import {
@@ -301,7 +301,7 @@ function roomAssetStatusFixtures(): readonly RoomAssetStatus[] {
   ];
 }
 
-function publicProposalFixture(): PublicProposal {
+function publicProposalFixture(): PublicProposalPayload {
   return {
     title: "Reception Room wedding proposal",
     status: "sent",

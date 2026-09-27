@@ -43,9 +43,22 @@ export const PublicProposalSchema = z.object({
     status: z.string(),
   })).optional(),
   layoutSnapshot: ProposalLayoutSnapshotSchema.nullable().optional(),
+  /** The event it is for, as the venue holds it (roadmap X1). Empty from an
+   *  API before it, so the page never breaks against one a deploy behind. */
+  facts: z.object({
+    eventDate: z.string().nullable(),
+    guestCount: z.number().int().nullable(),
+    occasion: z.string().nullable(),
+    roomName: z.string().nullable(),
+    roomSlug: z.string().nullable(),
+  }).default({ eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null }),
+  /** Who accepted it (the name they gave, if any) and when. */
+  accepted: z.object({ by: z.string().nullable(), at: z.string() }).nullable().default(null),
 });
 
 export type PublicProposal = z.infer<typeof PublicProposalSchema>;
+/** The proposal as the API sends it, before the defaults above fill it. */
+export type PublicProposalPayload = z.input<typeof PublicProposalSchema>;
 
 export type ProposalResponseAction = "accept" | "request_changes";
 
@@ -245,6 +258,8 @@ export const DeskProposalSchema = StaffProposalSchema.extend({
   eventType: z.string().nullable().default(null),
   latestTotalMinor: z.number().int().nullable().default(null),
   latestCurrency: z.string().nullable().default(null),
+  /** When any of its links was last opened; the team's previews never count. */
+  clientOpenedAt: z.string().nullable().default(null),
 });
 
 export type DeskProposal = z.infer<typeof DeskProposalSchema>;
@@ -271,6 +286,12 @@ export async function listProposalDesk(query: { readonly limit: number; readonly
   const params = new URLSearchParams({ limit: String(query.limit), offset: String(query.offset) });
   if (query.group !== undefined) params.set("group", query.group);
   return api.getEnvelope(`/proposals/desk?${params.toString()}`, ProposalDeskPageSchema);
+}
+
+/** The proposal exactly as its client reads it, for the venue team. Never
+ *  counted as the link being opened. */
+export async function getProposalPreview(id: string): Promise<PublicProposal> {
+  return api.get(`/proposals/${encodeURIComponent(id)}/preview`, PublicProposalSchema);
 }
 
 /** One proposal with the same facts as its row on the desk. */

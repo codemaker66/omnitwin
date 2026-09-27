@@ -34,6 +34,8 @@ function fixtureProposal(overrides: Partial<PublicProposal> = {}): PublicProposa
   return {
     title: "Summer wedding — Grand Hall",
     status: "sent",
+    facts: { eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null },
+    accepted: null,
     sentAt: "2026-06-11T09:00:00.000Z",
     venueName: "Trades Hall of Glasgow",
     clientMessage: "Planning-grade draft for your review.",

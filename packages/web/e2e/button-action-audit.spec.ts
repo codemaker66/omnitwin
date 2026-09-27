@@ -20,7 +20,7 @@ import type { PendingReviewEntry, ReviewHistoryEntry } from "../src/api/configur
 import type { Activity, FollowUpTask, Opportunity, OpportunityDetail, PipelineSummary } from "../src/api/crm.js";
 import type { Loadout, LoadoutDetail, LoadoutPhoto } from "../src/api/loadouts.js";
 import type { PricingRule } from "../src/api/pricing.js";
-import type { PublicProposal } from "../src/api/proposals.js";
+import type { PublicProposal, PublicProposalPayload } from "../src/api/proposals.js";
 import type { ProposalCommentRow, ProposalHistoryEntry, StaffProposal, StaffProposalVersion } from "../src/api/proposals.js";
 import type { Space } from "../src/api/spaces.js";
 
@@ -235,7 +235,7 @@ function publicConfigurationFixture() {
   };
 }
 
-function publicProposalFixture(status: PublicProposal["status"] = "sent"): PublicProposal {
+function publicProposalFixture(status: PublicProposal["status"] = "sent"): PublicProposalPayload {
   return {
     title: "Reception Room wedding proposal",
     status,

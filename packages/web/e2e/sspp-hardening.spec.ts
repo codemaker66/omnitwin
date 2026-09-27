@@ -5,7 +5,7 @@ import {
   type OpsTask,
   type VenueDashboardAnalytics,
 } from "@omnitwin/types";
-import type { PublicProposal } from "../src/api/proposals.js";
+import type { PublicProposalPayload } from "../src/api/proposals.js";
 
 const API = "http://localhost:3001";
 const NOW = "2026-06-12T09:00:00.000Z";
@@ -124,7 +124,7 @@ async function mockPlannerRoutes(page: Page): Promise<void> {
   });
 }
 
-function publicProposalFixture(): PublicProposal {
+function publicProposalFixture(): PublicProposalPayload {
   return {
     title: "North Gallery reception proposal",
     status: "sent",
