@@ -398,6 +398,7 @@ function opportunityDetailFixture(overrides: Partial<OpportunityDetail> = {}): O
     history: [],
     contact: null,
     room: null,
+    latestQuote: null,
     ...overrides,
   };
 }
