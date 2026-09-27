@@ -1444,10 +1444,11 @@ export async function publicProposalRoutes(
 
     const fromStatus = proposal.status;
     const [updated] = await db.update(proposals)
-      // This path takes no name, so no earlier acceptance's name stands.
+      // This path takes no name, so no earlier acceptance's name stands. The
+      // answer is on the version the link showed: its current one.
       .set(toStatus === "accepted"
-        ? { status: toStatus, acceptedName: null, updatedAt: new Date() }
-        : { status: toStatus, updatedAt: new Date() })
+        ? { status: toStatus, acceptedName: null, sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() }
+        : { status: toStatus, sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() })
       .where(eq(proposals.id, proposal.id))
       .returning({ status: proposals.status });
 
@@ -1543,8 +1544,9 @@ export async function proposalShareRoutes(
       if (comment === undefined) throw new Error("proposal comment insert returned no row");
 
       if (kind === "request_changes" && resolved.proposal.status === "sent") {
+        // The answer is on the version the link showed: its current one.
         await tx.update(proposals)
-          .set({ status: "changes_requested", updatedAt: new Date() })
+          .set({ status: "changes_requested", sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() })
           .where(eq(proposals.id, resolved.proposal.id));
         await tx.insert(proposalStatusHistory).values({
           proposalId: resolved.proposal.id,
@@ -1609,7 +1611,13 @@ export async function proposalShareRoutes(
     const acceptedName = parsed.data.authorName?.trim() ?? "";
     await db.transaction(async (tx) => {
       await tx.update(proposals)
-        .set({ status: "accepted", acceptedName: acceptedName === "" ? null : acceptedName, updatedAt: new Date() })
+        .set({
+          status: "accepted",
+          acceptedName: acceptedName === "" ? null : acceptedName,
+          // The answer is on the version the link showed: its current one.
+          sentVersion: sql`${proposals.currentVersion}`,
+          updatedAt: new Date(),
+        })
         .where(eq(proposals.id, resolved.proposal.id));
       await tx.insert(proposalStatusHistory).values({
         proposalId: resolved.proposal.id,

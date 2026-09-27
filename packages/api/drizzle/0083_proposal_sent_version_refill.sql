@@ -4,22 +4,25 @@
 --
 -- 0082 added proposals.sent_version and proposals.accepted_name and filled
 -- them, but the API running then wrote neither. The release carrying this
--- migration writes both and still shows every link its current version, as
--- before; the release that makes a link show its sent_version follows only
--- once this migration has run. So no running code reads a column the old API
--- left behind, and nothing written after this release needs filling.
+-- migration writes both: each send records the version sent, and each client
+-- answer the version its link showed. It still shows every link its current
+-- version, as before; the release that makes a link show its sent_version
+-- follows only once this migration has run. So no running code reads a column
+-- the old API left behind, and nothing written after this release needs
+-- filling.
 --
--- sent_version, for a proposal with none:
--- - sent: its current version, which its link showed;
--- - accepted, declined or expired: the newest version saved no later than
---   the move into that status, the version the answer was given on (else its
+-- sent_version is only ever filled or raised, never lowered:
+-- - sent, with none: its current version, which its link showed;
+-- - accepted, declined, expired or changes asked for: the version the answer
+--   was given on, the newest saved no later than the move into that status (a
+--   link showed its current version until the release after this one), or the
+--   newest saved no later than its latest send if later (else, with none, its
 --   current version, as 0082 took for rows from before history was kept);
--- - otherwise, as 0082: the newest version saved no later than its latest send.
--- For a proposal with one, it is only ever raised, to the newest version saved
--- no later than its latest send. A send is its latest move to "sent", or a new
--- link made while it stayed sent, which the old API recorded only as the link.
--- Never to the current version: a version saved while a proposal is out is a
--- draft until it is sent.
+-- - otherwise: the newest version saved no later than its latest send. A send
+--   is its latest move to "sent", or a new link made while it stayed sent,
+--   which the old API recorded only as the link.
+-- An unanswered proposal is never raised to its current version: a version
+-- saved while a proposal is out is a draft until it is sent.
 --
 -- accepted_name: a name 0082 took is cleared when a later acceptance, which
 -- the old API recorded without it, is not the one that name was given with.
@@ -53,25 +56,32 @@ sent_at AS (
   )) AS at
   FROM sends s
 ),
-sent AS (
-  SELECT p.id,
-    CASE
-      WHEN p.current_version < 1 THEN NULL
-      WHEN p.sent_version IS NULL AND p.status = 'sent' THEN p.current_version
-      WHEN p.sent_version IS NULL AND p.status IN ('accepted', 'declined', 'expired') THEN COALESCE(
-        (SELECT max(v.version) FROM proposal_versions v
-          WHERE v.proposal_id = p.id
-            AND v.created_at <= (
-              SELECT max(h.created_at) FROM proposal_status_history h
-              WHERE h.proposal_id = p.id AND h.to_status = p.status)),
-        p.current_version)
-      ELSE COALESCE(
-        (SELECT max(v.version) FROM proposal_versions v
-          WHERE v.proposal_id = p.id AND v.created_at <= sent_at.at),
-        CASE WHEN p.sent_version IS NULL AND p.status = 'changes_requested' THEN p.current_version END)
-    END AS version
+rules AS (
+  SELECT p.id, p.status, p.current_version, p.sent_version,
+    -- The newest version saved no later than the latest send.
+    (SELECT max(v.version) FROM proposal_versions v
+      WHERE v.proposal_id = p.id AND v.created_at <= sent_at.at) AS by_send,
+    -- The newest version saved no later than the move into its status: for
+    -- an answer, the version the link showed as it was given.
+    (SELECT max(v.version) FROM proposal_versions v
+      WHERE v.proposal_id = p.id
+        AND v.created_at <= (
+          SELECT max(h.created_at) FROM proposal_status_history h
+          WHERE h.proposal_id = p.id AND h.to_status = p.status)) AS by_answer
   FROM proposals p
   JOIN sent_at ON sent_at.id = p.id
+),
+sent AS (
+  SELECT r.id,
+    CASE
+      WHEN r.current_version < 1 THEN NULL
+      WHEN r.sent_version IS NULL AND r.status = 'sent' THEN r.current_version
+      WHEN r.status IN ('accepted', 'declined', 'expired', 'changes_requested') THEN COALESCE(
+        GREATEST(r.by_send, r.by_answer),
+        CASE WHEN r.sent_version IS NULL THEN r.current_version END)
+      ELSE r.by_send
+    END AS version
+  FROM rules r
 )
 UPDATE proposals p
 SET sent_version = sent.version

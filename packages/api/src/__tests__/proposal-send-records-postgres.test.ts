@@ -159,6 +159,31 @@ describe.skipIf(testUrl === undefined)("what a send and an acceptance record, on
     expect(await row()).toMatchObject({ status: "accepted", sent_version: 1 });
   });
 
+  it("records the version each client answer was given on, the one its link showed", async () => {
+    expect(await makeLink()).toBe(201);
+    await pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix) VALUES ($1, $2, 'sendReco')",
+      [PROPOSAL, createHash("sha256").update(TOKEN, "utf8").digest("hex")]);
+    // A platform administrator saves version 2 while version 1 is out; the
+    // link shows the current version until the release after this one.
+    await saveVersion(2);
+    expect((await row()).sent_version).toBe(1);
+    const changes = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/comment`, payload: { body: "A later finish?", kind: "request_changes" } });
+    expect(changes.statusCode, changes.body).toBe(201);
+    expect(await row()).toMatchObject({ status: "changes_requested", sent_version: 2 });
+
+    await pool.query("UPDATE proposals SET status = 'sent' WHERE id = $1", [PROPOSAL]);
+    await saveVersion(3);
+    const accepted = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford" } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect(await row()).toMatchObject({ status: "accepted", sent_version: 3 });
+
+    await pool.query("UPDATE proposals SET status = 'sent' WHERE id = $1", [PROPOSAL]);
+    await saveVersion(4);
+    const legacy = await server.inject({ method: "POST", url: `/public/proposals/${SHARE_CODE}/respond`, payload: { action: "request_changes", note: "Seats?" } });
+    expect(legacy.statusCode, legacy.body).toBe(200);
+    expect(await row()).toMatchObject({ status: "changes_requested", sent_version: 4 });
+  });
+
   it("keeps the name given with an acceptance, and no earlier name for one given without", async () => {
     expect(await makeLink()).toBe(201);
     await pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix) VALUES ($1, $2, 'sendReco')",

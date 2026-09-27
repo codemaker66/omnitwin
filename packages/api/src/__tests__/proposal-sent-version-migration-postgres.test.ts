@@ -79,6 +79,7 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     acceptedAgainByTeam: randomUUID(),
     linkMadeWhileSent: randomUUID(),
     draftAtFillThenAccepted: randomUUID(),
+    answeredAfterAdminSave: randomUUID(),
   };
 
   async function proposal(id: string, status: string, currentVersion: number): Promise<void> {
@@ -216,6 +217,11 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     await moved(ids.linkMadeWhileSent, "draft", "sent", "2026-09-01T10:05:00Z");
     // A draft when 0082 ran; afterwards sent, accepted, and saved again.
     await proposal(ids.draftAtFillThenAccepted, "draft", 0);
+    // Sent once; after 0082 an administrator saves version 2 while it is out,
+    // and the client accepts what the link then showed.
+    await proposal(ids.answeredAfterAdminSave, "sent", 1);
+    await version(ids.answeredAfterAdminSave, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.answeredAfterAdminSave, "draft", "sent", "2026-09-01T10:05:00Z");
 
     // Exactly as it ships, in one transaction as the migrator runs it.
     await applyMigration(pool);
@@ -299,6 +305,11 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     await moved(ids.draftAtFillThenAccepted, "draft", "sent", "2026-09-28T09:05:00Z");
     await moved(ids.draftAtFillThenAccepted, "sent", "accepted", "2026-09-28T10:00:00Z");
     await version(ids.draftAtFillThenAccepted, 2, "2026-09-28T11:00:00Z");
+    // The link showed version 2 when the client accepted.
+    await pool.query("UPDATE proposals SET status = 'accepted', current_version = 2 WHERE id = $1", [ids.answeredAfterAdminSave]);
+    await version(ids.answeredAfterAdminSave, 2, "2026-09-28T09:00:00Z");
+    await moved(ids.answeredAfterAdminSave, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await note(ids.answeredAfterAdminSave, "Carol Reid", "2026-09-28T10:00:00Z");
 
     await applyMigration(pool, "0083_proposal_sent_version_refill.sql");
 
@@ -306,6 +317,7 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     expect(await stored(ids.acceptedAgainByTeam)).toEqual({ sent_version: 1, accepted_name: null });
     expect((await stored(ids.linkMadeWhileSent)).sent_version).toBe(2);
     expect((await stored(ids.draftAtFillThenAccepted)).sent_version).toBe(1);
+    expect(await stored(ids.answeredAfterAdminSave)).toEqual({ sent_version: 2, accepted_name: "Carol Reid" });
     expect((await stored(ids.changesAskedThenSaved)).sent_version).toBe(2);
     expect((await stored(ids.draft)).sent_version).toBe(1);
     expect(await stored(ids.sentOnce)).toEqual({ sent_version: 1, accepted_name: "Moira Kerr" });
@@ -313,6 +325,7 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     const settled: readonly string[] = [
       ids.changesAskedThenSaved, ids.draft, ids.sentOnce,
       ids.acceptedAgainByAnother, ids.acceptedAgainByTeam, ids.linkMadeWhileSent, ids.draftAtFillThenAccepted,
+      ids.answeredAfterAdminSave,
     ];
     const after = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
     const unchanged = (rows: readonly (Stored & { id: string })[]) => rows.filter((row) => !settled.includes(row.id));
