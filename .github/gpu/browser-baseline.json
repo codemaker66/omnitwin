@@ -214,6 +214,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The setup sheet on a phone takes turns (T-635 N4, the hallkeeper's checklist first): at 390 x 844 the sheet opens on its checklist with the plan hidden, the Plan button brings the plan forward and hides the checklist, a stage brings its work back, and the stage's content flows with the page rather than scrolling in a box, with no sideways scroll.",
+      "sourceCommit": "57f5d7ac24294807076d22643ceab7423887bb62",
+      "sourceFile": "packages/web/e2e/hallkeeper.spec.ts",
+      "sourceFileGitBlobSha256": "994b39f912b3add4474802f1505a03e8d3043cedb58f2892ff8dd39bcfe4625a",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "dd6b2a495f986d8f3520c76132e7d304a65fcf782d036df95c3859ee37a04862",
+      "caseIds": [
+        "d04ac5b0eb52f15c1dda-b094ea32fb1c7d2f42d1"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -2960,6 +2974,17 @@
       "id": "d04ac5b0eb52f15c1dda-3671875dd8bd93721565",
       "file": "hallkeeper.spec.ts",
       "title": "reads at arm's length: 16 px rows and fields, 3:1 checkboxes, nothing under 12 px",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-b094ea32fb1c7d2f42d1",
+      "file": "hallkeeper.spec.ts",
+      "title": "opens on the checklist, shows the plan on request, and lets a stage's content flow",
       "suitePath": [
         "hallkeeper.spec.ts",
         "Hallkeeper Page \u2014 on a phone"
