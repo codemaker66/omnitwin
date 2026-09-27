@@ -428,6 +428,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 *Keyboard*
 - `[` and `]` move the range; `g`, `n`, `o` and `?` work as described above.
 - Arrow keys move around the grid with a roving tab stop.
+  Revised on 27 September: done on the week and fortnight overview, which is one Tab stop; ← → cross the
+  days, ↓ ↑ walk a day's bookings and then the rooms, Home and End reach a row's ends, with Ctrl the
+  overview's. The timeline keeps its arrows for moving a lifted booking ([session log](../../sessions/2026-09-27.md)).
 - `<select>` elements are excluded from the global key handler (`DiaryBoardPage.tsx:520-529`).
 
 *Other changes*
