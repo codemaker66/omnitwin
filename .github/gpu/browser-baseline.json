@@ -355,6 +355,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "One staff header that stays while the pages beneath it change (T-635 N2): the staff pages share a parent route that draws the header once for the venue's workspace members. At 1440 by 900 a staff member moves from the Enquiries desk to the Diary to the Day Board by the header's own links; the header stays the same element, its unread count is read once and never leaves the row, the venue's name never goes back to Your venue or Opening venue, and each workspace and tab is named after its page.",
+      "sourceCommit": "4df4c2b8d390a25239e61ce69b430ba1423eb10f",
+      "sourceFile": "packages/web/e2e/staff-shell.spec.ts",
+      "sourceFileGitBlobSha256": "6a85f26123720e4785b0ed9ca45563347ac9f8bb8379a4aee08423e2c0f44e57",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "916bd19db02ade5f2dd115f4e707693798846de8f8acacc4ae3d4d0f91cd8335",
+      "caseIds": [
+        "a7170f42603661c54e53-e871335c788cdc8a4191"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -835,6 +849,17 @@
       "suitePath": [
         "staff-review.spec.ts",
         "Staff review \u2014 approve action"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "a7170f42603661c54e53-e871335c788cdc8a4191",
+      "file": "staff-shell.spec.ts",
+      "title": "keeps one header from the Enquiries desk to the Diary and the Day Board, and never waits for the venue again",
+      "suitePath": [
+        "staff-shell.spec.ts",
+        "Staff shell"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
