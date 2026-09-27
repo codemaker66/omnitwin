@@ -155,6 +155,36 @@ describe("HallkeeperWorkspace compact working views", () => {
     expect(screen.getByRole("dialog", { name: "Brief & contacts" })).toBeTruthy();
   });
 
+  it("on a phone gives the work and the plan turns, the work first (roadmap N4)", () => {
+    const { container, props } = mount();
+    const area = container.querySelector(".hkf-work-area");
+    const phone = within(screen.getByRole("group", { name: "Show on this phone" }));
+    expect(area?.getAttribute("data-phone-view")).toBe("work");
+    expect(phone.getByRole("button", { name: "Checklist", pressed: true })).toBeTruthy();
+    fireEvent.click(phone.getByRole("button", { name: "Plan" }));
+    expect(area?.getAttribute("data-phone-view")).toBe("plan");
+    // A marker on the plan leads back to its row, in the work.
+    fireEvent.click(screen.getByRole("button", { name: "Find Linen 07 in the manifest" }));
+    expect(area?.getAttribute("data-phone-view")).toBe("work");
+    expect(props.onHighlight).toHaveBeenCalledWith("dress|Centre|Linen 07|1");
+    // The first turn is named after the stage's own work, and a stage brings it back.
+    fireEvent.click(phone.getByRole("button", { name: "Plan" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Event workflow views" })).getByRole("button", { name: /Hosting/u }));
+    expect(area?.getAttribute("data-phone-view")).toBe("work");
+    expect(phone.getByRole("button", { name: "Hosting", pressed: true })).toBeTruthy();
+  });
+
+  it("brings the plan forward for a row's Locate and keeps the reader's filters", () => {
+    const located = { ...sheet, phases: sheet.phases.map((entry) => ({ ...entry, zones: entry.zones.map((zone) => ({ ...zone,
+      rows: zone.rows.map((row) => row.key === rowKey(3) ? { ...row, positions: [{ objectId: "00000000-0000-4000-8000-0000000000aa", x: 2, z: 3, rotationY: 0 }] } : row) })) })) };
+    const { container, props } = mount({ data: located });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find a setup item" }), { target: { value: "Table 03" } });
+    fireEvent.click(screen.getByRole("button", { name: "Locate Table 03 on floor plan" }));
+    expect(container.querySelector(".hkf-work-area")?.getAttribute("data-phone-view")).toBe("plan");
+    expect(props.onHighlight).toHaveBeenCalledExactlyOnceWith(rowKey(3));
+    expect(screen.getByRole("searchbox", { name: "Find a setup item" })).toHaveProperty("value", "Table 03");
+  });
+
   it("keeps real setup checks usable when the optional event context fails", () => {
     const retry = vi.fn();
     vi.mocked(useHallkeeperContext).mockReturnValue({ status: "error", context: null, error: "Event context could not be verified", retry });
@@ -253,5 +283,42 @@ describe("HallkeeperWorkspace event time", () => {
     expect(screen.getByText("09:00")).toBeTruthy();
     expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Ready byNot setStarts09:00");
     expect(screen.getByText("No changeover time is recorded for this room.")).toBeTruthy();
+  });
+});
+
+
+describe("HallkeeperWorkspace other rooms", () => {
+  it("offers the event's other rooms from the header, for the screens that hide the room rail", () => {
+    const graph: EventPhaseGraph = EventPhaseGraphSchema.parse({
+      event: {
+        id: EVENT_ID, venueId: VENUE_ID, createdBy: null, name: "Trust dinner", eventType: "dinner", status: "ready_for_ops",
+        startsAt: "2026-09-19T17:00:00.000Z", endsAt: null, guestCount: 120, clientName: null, notes: null,
+        createdAt: "2026-09-01T09:00:00.000Z", updatedAt: "2026-09-01T09:00:00.000Z",
+      },
+      phases: [], scenarios: [], layoutVariants: [], configurationLinks: [], phaseLayoutSnapshots: [],
+    });
+    const saloon = "00000000-0000-4000-8000-000000000009";
+    vi.mocked(useHallkeeperContext).mockReturnValue({ status: "ready", error: null, retry: vi.fn(), context: {
+      configId: CONFIG_ID,
+      venue: { id: VENUE_ID, slug: "trades-hall-glasgow", name: "Test venue" },
+      room: { id: ROOM_ID, slug: "north-gallery", name: "North Gallery" },
+      graph, board: null, unavailableLayoutCount: 0, opsError: null,
+      layouts: [
+        { configurationId: CONFIG_ID, name: "Trust dinner — room setup", spaceId: ROOM_ID, spaceName: "North Gallery", spaceSlug: "north-gallery" },
+        { configurationId: saloon, name: "Drinks reception", spaceId: "00000000-0000-4000-8000-00000000000a", spaceName: "Saloon", spaceSlug: "saloon" },
+      ],
+    } });
+    const { container } = mount();
+    const switcher = container.querySelector("details.hkf-room-switch");
+    expect(switcher?.querySelector("summary")?.textContent).toBe("1 other room in this event");
+    const links = within(switcher as HTMLElement).getAllByRole("link");
+    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["SaloonDrinks reception", `/hallkeeper/${saloon}?eventId=${EVENT_ID}`],
+    ]);
+  });
+
+  it("offers no switcher when the event has no other room", () => {
+    const { container } = mount();
+    expect(container.querySelector("details.hkf-room-switch")).toBeNull();
   });
 });

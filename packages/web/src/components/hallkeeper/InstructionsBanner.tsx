@@ -55,7 +55,7 @@ export function InstructionsBanner({ instructions, timezone }: InstructionsBanne
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 14, color: GOLD }}>★</span>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
               From the Planner
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, color: "#2e382e", marginTop: 1 }}>
@@ -104,7 +104,7 @@ export function InstructionsBanner({ instructions, timezone }: InstructionsBanne
                       title={d.reason.length > 0 ? d.reason : undefined}
                       style={{
                         padding: "3px 10px", borderRadius: 100,
-                        fontSize: 11, fontWeight: 600,
+                        fontSize: 12, fontWeight: 600,
                         background: "rgba(255,255,255,0.04)",
                         border: `1px solid ${BORDER}`,
                         color: "#2e382e",
@@ -170,7 +170,7 @@ function AccessCard({ text }: { text: string }): React.ReactElement {
 }
 
 const instructionLabelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: TEXT_MUT, textTransform: "uppercase",
+  fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: TEXT_MUT, textTransform: "uppercase",
 };
 
 /**

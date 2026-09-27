@@ -304,6 +304,30 @@ test.describe("Hallkeeper Page — on a phone", () => {
     expect(await edgeContrast(page, ".hkf-checkbox")).toBeGreaterThanOrEqual(3);
     expect(await unreadableText(page, ".hkf-app", "sheet on a phone")).toEqual([]);
   });
+
+  test("opens on the checklist, shows the plan on request, and lets a stage's content flow", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedAuthenticatedPlanner(page);
+    await mockSheetData(page);
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    const plan = page.getByRole("region", { name: "Room plan" });
+    const setup = page.getByRole("region", { name: "Setup workspace" });
+    await expect(setup.getByRole("checkbox", { name: /Stage Platform/u })).toBeVisible();
+    await expect(plan).toBeHidden();
+
+    await page.getByRole("group", { name: "Show on this phone" }).getByRole("button", { name: "Plan" }).click();
+    await expect(plan.getByText("Saved event layout")).toBeVisible();
+    await expect(setup).toBeHidden();
+
+    // A stage brings its work back, and its content flows with the page:
+    // no scroll box inside the scrolling page.
+    await page.getByRole("navigation", { name: "Event workflow views" }).getByRole("button", { name: /Prepare/u }).click();
+    const prepare = page.getByRole("region", { name: "Prepare workspace" });
+    await expect(prepare).toBeVisible();
+    await expect(plan).toBeHidden();
+    expect(await prepare.locator(".hkf-stage-content").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  });
 });
 
 // A dinner on Saturday 3 October 2026 whose planner recorded the facts a

@@ -436,6 +436,71 @@
   box-shadow: 0 1px 4px #46513a14;
   border-radius: 4px;
 }
+/* On a phone the work and the plan take turns (roadmap N4); wider screens
+   show both, so the switch is a phone's alone. */
+.hkf-phone-switch {
+  display: none;
+}
+/* The event's other rooms, from the header when the room rail is hidden. */
+.hkf-room-switch {
+  display: none;
+  margin-top: 10px;
+}
+.hkf-room-switch summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #cbd8c3;
+  border-radius: 999px;
+  background: #f7f9f3;
+  color: #3f5f46;
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.hkf-room-switch summary::-webkit-details-marker {
+  display: none;
+}
+.hkf-room-switch summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-top: -3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.hkf-room-switch[open] summary::after {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+.hkf-room-switch ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.hkf-room-switch a {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fffefa;
+  font-size: 15px;
+  font-weight: 600;
+}
+.hkf-room-switch a small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
 .hkf-drawing {
   padding: 0 15px;
   display: flex;
@@ -986,6 +1051,9 @@ a.hkf-keep-action {
   .hkf-room-rail {
     display: none;
   }
+  .hkf-room-switch {
+    display: block;
+  }
   .hkf-topbar {
     flex-wrap: wrap;
     padding: 15px;
@@ -1142,8 +1210,38 @@ a.hkf-keep-action {
     width: auto;
     font-size: 12px;
   }
+  .hkf-phone-switch {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 12px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #f1f3ec;
+  }
+  .hkf-phone-switch button {
+    flex: 1;
+    min-height: 44px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .hkf-phone-switch button[aria-pressed="true"] {
+    background: #fffefa;
+    color: var(--ink);
+    box-shadow: 0 1px 4px #46513a1f;
+  }
+  .hkf-work-area[data-phone-view="work"] > .hkf-plan,
+  .hkf-work-area[data-phone-view="plan"] > .hkf-work-panel {
+    display: none;
+  }
+  /* No scroll box inside the scrolling page: the stage's content flows. */
   .hkf-stage-content {
-    height: 340px;
+    height: auto;
+    overflow: visible;
   }
   .hkf-keep {
     padding: 13px 13px 14px;

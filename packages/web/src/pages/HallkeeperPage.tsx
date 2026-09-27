@@ -654,7 +654,7 @@ function AccessibilityCallouts(
           }}
         >
           <div style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+            fontSize: 12, fontWeight: 700, letterSpacing: 0.4,
             textTransform: "uppercase",
             color: SEVERITY_PALETTE.critical.border,
             marginBottom: 6,
@@ -682,7 +682,7 @@ function AccessibilityCallouts(
           }}
         >
           <div style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+            fontSize: 12, fontWeight: 700, letterSpacing: 0.4,
             textTransform: "uppercase", color: TEXT_SEC, marginBottom: 6,
           }}>
             Accessibility
@@ -739,7 +739,7 @@ function DietarySummaryBlock(
       }}
     >
       <div style={{
-        fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+        fontSize: 12, fontWeight: 700, letterSpacing: 0.4,
         textTransform: "uppercase", color: TEXT_SEC, marginBottom: 6,
       }}>
         Dietary — <span style={{ color: GOLD }}>{String(total)}</span> special meals
@@ -802,7 +802,7 @@ function DoorScheduleBlock(
       }}
     >
       <div style={{
-        fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+        fontSize: 12, fontWeight: 700, letterSpacing: 0.4,
         textTransform: "uppercase", color: TEXT_SEC, marginBottom: 8,
       }}>
         Door schedule
@@ -814,7 +814,7 @@ function DoorScheduleBlock(
               {door.label}
             </div>
             {door.events.length === 0 ? (
-              <div style={{ fontSize: 11, color: TEXT_MUT, paddingLeft: 12 }}>
+              <div style={{ fontSize: 12, color: TEXT_MUT, paddingLeft: 12 }}>
                 No events scheduled
               </div>
             ) : (
@@ -844,7 +844,7 @@ function DoorScheduleBlock(
                     <span style={{ color: INK, fontVariantNumeric: "tabular-nums" }}>
                       {fmtTime(ev.at)}
                     </span>
-                    <span style={{ textTransform: "uppercase", letterSpacing: 0.3, fontSize: 11, fontWeight: 700, color: ev.kind === "open" ? GREEN : TEXT_MUT }}>
+                    <span style={{ textTransform: "uppercase", letterSpacing: 0.3, fontSize: 12, fontWeight: 700, color: ev.kind === "open" ? GREEN : TEXT_MUT }}>
                       {ev.kind}
                     </span>
                     <span>{ev.note}</span>
@@ -987,7 +987,7 @@ function OfflinePendingBadge({ count }: { count: number }): React.ReactElement {
         }}
       />
       <span>{label}</span>
-      <span style={{ marginLeft: "auto", fontSize: 11, opacity: 0.75 }}>
+      <span style={{ marginLeft: "auto", fontSize: 12 }}>
         will sync when WiFi returns
       </span>
     </div>

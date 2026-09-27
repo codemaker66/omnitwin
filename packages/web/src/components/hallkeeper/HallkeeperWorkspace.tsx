@@ -52,6 +52,8 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
   const [remaining, setRemaining] = useState(false);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
+  // On a phone the work and the plan take turns (roadmap N4): the work first.
+  const [phoneView, setPhoneView] = useState<"work" | "plan">("work");
   // The next deadline moves on as the day does; a sheet stays open for hours.
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -68,6 +70,8 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
   const board = context?.board;
   const roomPhases = context?.graph?.phases.filter((entry) => entry.spaceId === context.room.id) ?? [];
   const slug = context?.room.slug;
+  const otherRooms = (context?.layouts ?? []).filter((layout) => layout.configurationId !== data.config.id);
+  const roomLink = (configurationId: string): string => `/hallkeeper/${configurationId}?eventId=${encodeURIComponent(context?.graph?.event.id ?? "")}`;
   const roomReference = context?.venue.slug === HALLKEEPER_PLAN_VENUE_SLUG ? getHallkeeperRoomPlan(slug) : null;
   // The Diary booking is the only authority on when an event starts; the sheet
   // carries that reading in `data.timing` (hallkeeper-sheet-v2-data.ts). The
@@ -86,8 +90,12 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
     const selected = data.phases.find((entry) => entry.zones.some((zone) => zone.rows.some((row) => row.key === key)));
     if (selected === undefined) return;
     const index = selected.zones.flatMap((zone) => zone.rows).findIndex((row) => row.key === key);
-    setStage("setup"); setCategory(selected.phase); setRemaining(false); setSearch(""); setPage(Math.floor(index / 5)); setReference(false); onHighlight(key);
+    setStage("setup"); setCategory(selected.phase); setRemaining(false); setSearch(""); setPage(Math.floor(index / 5)); setReference(false); onHighlight(key); setPhoneView("work");
   };
+  /** A row's Locate: the row is already in view, so its filters stay; the
+   *  plan comes forward on a phone. */
+  const showOnPlan = (key: string): void => { setReference(false); onHighlight(key); setPhoneView("plan"); };
+  const workLabel = stage === "setup" || (stage === "checks" && phase?.phase === "final") ? "Checklist" : STAGES.find((item) => item.id === stage)?.name ?? "Checklist";
 
   return <div className="hkf-app">
     <header className="hkf-topbar">
@@ -99,12 +107,12 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
       <aside className="hkf-room-rail" aria-label="Rooms linked to this event">
         <span className="hkf-overline">Your room</span>
         <div className="hkf-room-current">{slug !== undefined && <img {...roomPosterSources(slug)} sizes="160px" alt="" />}<strong>{data.space.name}</strong><span>Selected layout</span></div>
-        {(context?.layouts ?? []).filter((layout) => layout.configurationId !== data.config.id).map((layout) => <Link className="hkf-room-link" key={layout.configurationId} to={`/hallkeeper/${layout.configurationId}?eventId=${encodeURIComponent(context?.graph?.event.id ?? "")}`}><img {...roomPosterSources(layout.spaceSlug)} sizes="48px" alt="" /><span>{layout.spaceName}<small>{layout.name}</small></span></Link>)}
+        {otherRooms.map((layout) => <Link className="hkf-room-link" key={layout.configurationId} to={roomLink(layout.configurationId)}><img {...roomPosterSources(layout.spaceSlug)} sizes="48px" alt="" /><span>{layout.spaceName}<small>{layout.name}</small></span></Link>)}
         <Link className="hkf-library-link" to="/hallkeeper/rooms"><MapPin size={16} /> Room references <ArrowRight size={14} /></Link>
         <div className="hkf-rail-bottom"><span className="hkf-overline">Layout record</span><p>{data.space.widthM} × {data.space.lengthM} m</p><p>{data.totals.totalItems} manifest items</p><span className="hkf-muted">{data.config.layoutStyle.replace(/[-_]/g, " ")}</span></div>
       </aside>
       <div className="hkf-main">
-        <header className="hkf-heading"><div><span className="hkf-overline">Hallkeeper sheet</span><h1>{data.space.name}</h1><p className="hkf-event-name" title={data.config.name}>{data.config.name}</p><div className="hkf-facts"><span><Users size={15} /> {data.config.guestCount} guests</span><span>{data.totals.totalItems} manifest items</span>{data.approval !== null && <span>Sheet v{data.approval.version}</span>}<button type="button" onClick={() => { setShowDetails(true); }}>Brief & contacts</button></div></div>
+        <header className="hkf-heading"><div><span className="hkf-overline">Hallkeeper sheet</span><h1>{data.space.name}</h1><p className="hkf-event-name" title={data.config.name}>{data.config.name}</p>{otherRooms.length > 0 && <details className="hkf-room-switch"><summary>{otherRooms.length === 1 ? "1 other room" : `${String(otherRooms.length)} other rooms`} in this event</summary><ul>{otherRooms.map((layout) => <li key={layout.configurationId}><Link to={roomLink(layout.configurationId)}>{layout.spaceName}<small>{layout.name}</small></Link></li>)}</ul></details>}<div className="hkf-facts"><span><Users size={15} /> {data.config.guestCount} guests</span><span>{data.totals.totalItems} manifest items</span>{data.approval !== null && <span>Sheet v{data.approval.version}</span>}<button type="button" onClick={() => { setShowDetails(true); }}>Brief & contacts</button></div></div>
           {/* The hour the room must be ready beside the hour the event starts
               (roadmap N4): the deadline the whole setup works to. */}
           <div className="hkf-time-card">
@@ -120,8 +128,12 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
         </header>
         <div className="hkf-provenance"><HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} compact />{data.approval !== null && <span className="hkf-approved-by">Sheet v{data.approval.version} · approved by {data.approval.approverName}</span>}{notices}</div>
         <KeepInView instructions={data.instructions} timeZone={data.venue.timezone} eventDay={eventDay} nowMs={nowMs} context={result} />
-        <nav className="hkf-stages" aria-label="Event workflow views">{STAGES.map((item, index) => <button key={item.id} type="button" className={`hkf-stage hkf-${item.id}`} aria-pressed={stage === item.id} onClick={() => { setStage(item.id); if (item.id === "checks" && data.phases.some((entry) => entry.phase === "final")) { setCategory("final"); setPage(0); setSearch(""); } }}><span className="hkf-stage-index">{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><small>{item.caption}</small></button>)}</nav>
-        <div className="hkf-work-area">
+        <nav className="hkf-stages" aria-label="Event workflow views">{STAGES.map((item, index) => <button key={item.id} type="button" className={`hkf-stage hkf-${item.id}`} aria-pressed={stage === item.id} onClick={() => { setStage(item.id); setPhoneView("work"); if (item.id === "checks" && data.phases.some((entry) => entry.phase === "final")) { setCategory("final"); setPage(0); setSearch(""); } }}><span className="hkf-stage-index">{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><small>{item.caption}</small></button>)}</nav>
+        <div className="hkf-phone-switch" role="group" aria-label="Show on this phone">
+          <button type="button" aria-pressed={phoneView === "work"} onClick={() => { setPhoneView("work"); }}>{workLabel}</button>
+          <button type="button" aria-pressed={phoneView === "plan"} onClick={() => { setPhoneView("plan"); }}>Plan</button>
+        </div>
+        <div className="hkf-work-area" data-phone-view={phoneView}>
           <section className="hkf-plan" aria-label="Room plan">
             <div className="hkf-panel-heading"><div><span className="hkf-overline">{reference ? "Room reference" : "Saved event layout"}</span><h2>{data.space.name}</h2></div><div className="hkf-segment" aria-label="Plan view"><button type="button" aria-pressed={!reference} onClick={() => { setReference(false); }}>Event layout</button><button type="button" aria-pressed={reference} onClick={() => { setReference(true); }}>Room plan</button></div></div>
             {reference ? (roomReference !== null ? <RoomPlanReference room={roomReference} compact /> : <div className="hkf-reference-preview"><MapPin size={30} /><h3>{result.status === "loading" ? "Room reference" : result.status === "error" ? "Room reference unavailable" : "No room reference linked"}</h3><p>{result.status === "loading" ? "Verifying the selected room." : "No supplied architectural drawing is linked to this verified room."}</p><Link className="hkf-primary" to="/hallkeeper/rooms">Open room library <ArrowRight size={16} /></Link></div>) : <div className="hkf-drawing"><InteractiveFloorPlan floorPlan={data.floorPlan} room={data.space} phases={data.phases} highlightedRowKey={highlightedRowKey} onMarkerClick={locate} /></div>}
@@ -135,7 +147,7 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
               <input className="hkf-search" type="search" aria-label="Find a setup item" placeholder="Find an item or zone…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} />
               <div className="hkf-task-list">{visibleRows.map((row) => <div key={row.key} className={`hkf-task ${highlightedRowKey === row.key ? "hkf-highlighted" : ""}`}>
                 <button type="button" role="checkbox" aria-checked={checks[row.key] === true} aria-disabled={disabled} disabled={disabled} data-row-key={row.key} className="hkf-check-task" onClick={() => { onToggle(row.key); }}><span className="hkf-checkbox">{checks[row.key] === true && <Check size={15} />}</span><span><strong>{row.name}</strong><small>{row.zone}{row.afterDepth > 0 ? " · after preceding items" : ""}</small>{row.notes.length > 0 && <small>{row.notes}</small>}</span><b>×{row.qty}</b></button>
-                {(row.positions.length) > 0 && <button className="hkf-locate" type="button" aria-label={`Locate ${row.name} on floor plan`} onClick={() => { locate(row.key); }}><MapPin size={16} /></button>}
+                {(row.positions.length) > 0 && <button className="hkf-locate" type="button" aria-label={`Locate ${row.name} on floor plan`} onClick={() => { showOnPlan(row.key); }}><MapPin size={16} /></button>}
               </div>)}{visibleRows.length === 0 && <div className="hkf-empty"><Check size={24} /><h3>{rows.length === 0 && remaining ? "Nothing remaining in this view" : "No setup items in this view"}</h3><p>{allRows.length === 0 ? "The planner has not placed any items in this layout." : "Choose another category or adjust the filter."}</p></div>}</div>
               <div className="hkf-pagination"><span>{rows.length === 0 ? "0 items" : `${String(currentPage * 5 + 1)}–${String(Math.min((currentPage + 1) * 5, rows.length))} of ${String(rows.length)} checks`}</span><button type="button" aria-label="Previous setup items" disabled={currentPage === 0} onClick={() => { setPage(currentPage - 1); }}><ArrowLeft size={16} /></button><button type="button" aria-label="Next setup items" disabled={(currentPage + 1) * 5 >= rows.length} onClick={() => { setPage(currentPage + 1); }}><ArrowRight size={16} /></button></div>
               <p className="hkf-footnote">{disabled ? "Shared checks unavailable. Reload checks before making changes." : done === allRows.length && allRows.length > 0 ? "Every setup row is checked. Room release remains a separate decision." : "Checks record setup work. Approval and room release remain separate."}</p>
