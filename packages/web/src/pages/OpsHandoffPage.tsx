@@ -9,22 +9,29 @@ import "../styles/hallkeeper-register.css";
 import "./OpsHandoffPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 import { ActivityIndicator } from "../components/shared/Activity.js";
+import { deviceZone, zoneNote } from "../components/hallkeeper/sheet-facts.js";
+import { useAuthStore } from "../stores/auth-store.js";
+import { useVenueTimezone } from "./hallkeeper/lib/use-venue-timezone.js";
 
 type LoadState =
   | { readonly kind: "loading" }
   | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "ready"; readonly bundle: OpsHandoffPackBundle };
 
-function formatDateTime(iso: string): string {
+/** On the venue's clock, which is named only for a device on another. */
+function formatDateTime(iso: string, timeZone: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString("en-GB", {
+  const when = date.toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   });
+  const zone = zoneNote(timeZone, deviceZone());
+  return zone === null ? when : `${when} ${zone}`;
 }
 
 function groupTasks(groups: readonly TaskGroup[], tasks: readonly OpsTask[]): readonly {
@@ -96,6 +103,11 @@ export function OpsHandoffPage(): ReactElement {
     window.print();
   }, []);
 
+  // A pack belongs to its venue; staff work at one, so their venue's clock
+  // is the pack's.
+  const venueId = useAuthStore((store) => store.user?.venueId ?? null);
+  const timeZone = useVenueTimezone(venueId);
+
   const readyBundle = state.kind === "ready" ? state.bundle : null;
   const taskGroups = useMemo(
     () => readyBundle === null ? [] : groupTasks(readyBundle.taskGroups, readyBundle.opsTasks),
@@ -159,7 +171,7 @@ export function OpsHandoffPage(): ReactElement {
         <Metric label="Pick lines" value={bundle.pickListItems.length} />
         <Metric label="Tasks" value={bundle.opsTasks.length} />
         <Metric label="Supplier notes" value={bundle.supplierInstructions.length} />
-        <Metric label="Compiled" value={formatDateTime(bundle.pack.compiledAt)} />
+        <Metric label="Compiled" value={formatDateTime(bundle.pack.compiledAt, timeZone)} />
       </section>
 
       <section className="ops-handoff-section">

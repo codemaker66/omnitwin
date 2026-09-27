@@ -147,3 +147,10 @@
   .dashboard-layout-content { padding: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .dashboard-layout-nav-item { transition: none; } }
+/* Paper carries the page's own work, never the app around it. */
+@media print {
+  .dashboard-layout-skip,
+  .dashboard-layout-header { display: none !important; }
+  .dashboard-layout-main { background: none; min-height: 0; }
+  .dashboard-layout-content { padding: 0; }
+}

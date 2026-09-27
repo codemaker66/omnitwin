@@ -412,7 +412,9 @@
   }
 }
 
-@media (max-width: 820px) {
+/* Screens only: an A4 page is narrower than 820 px too, and the phone layout
+   stacked each pick-list line into three rows on paper. */
+@media screen and (max-width: 820px) {
   .ops-handoff-page {
     padding: 18px;
   }
@@ -441,28 +443,70 @@
   }
 }
 
+/* On paper the pack is a function sheet: the desktop columns at the page's
+   width, no panels or shadows, and page breaks between rows rather than
+   through them. A long section may break; a heading stays with its rows. */
 @media print {
   .ops-handoff-page {
     background: white;
     color: black;
+    min-height: 0;
     padding: 0;
   }
 
-  .ops-handoff-page::before {
-    display: none;
-  }
-
+  .ops-handoff-page::before,
   .ops-handoff-primary,
   .ops-handoff-ai-draft {
     display: none;
   }
 
+  .ops-handoff-hero {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+  }
+
+  .ops-handoff-hero h1 {
+    font-size: 26pt;
+  }
+
+  .ops-handoff-metrics {
+    margin-bottom: 14px;
+  }
+
   .ops-handoff-section,
-  .ops-handoff-metric {
+  .ops-handoff-metric,
+  .ops-handoff-note,
+  .ops-handoff-beo {
     background: white;
     box-shadow: none;
-    break-inside: avoid;
     color: black;
+  }
+
+  .ops-handoff-metric {
+    min-height: 0;
+    padding: 8px 10px;
+  }
+
+  .ops-handoff-section {
+    margin-bottom: 12px;
+    padding: 12px 14px;
+  }
+
+  .ops-handoff-section-head {
+    break-after: avoid;
+    margin-bottom: 10px;
+  }
+
+  .ops-handoff-row,
+  .ops-handoff-task-list li,
+  .ops-handoff-sequences li,
+  .ops-handoff-note,
+  .ops-handoff-metric {
+    break-inside: avoid;
+  }
+
+  .ops-handoff-beo {
+    overflow: visible;
   }
 }
 

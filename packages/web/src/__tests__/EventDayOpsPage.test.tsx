@@ -739,6 +739,24 @@ describe("EventDayOpsPage", () => {
     expect(heroLine()).not.toContain("10:00");
   });
 
+  it("names the event's day against the venue's calendar, and its zone in words", async () => {
+    // Midday on the 11th in Glasgow; the event is on the 12th. The device
+    // reads UTC, so the venue's clock is named, in words.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-06-11T11:00:00.000Z"));
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      renderPage();
+      await screen.findByText("Blake event day");
+      expect(screen.getByText("Tomorrow's event")).toBeTruthy();
+      expect(screen.queryByText("Today's event")).toBeNull();
+      expect(heroLine()).toContain(" · UK time · ");
+      expect(heroLine()).not.toContain("Europe/London");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("marks the time as planned when the Diary cannot be read", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
     mockGetCalendar.mockRejectedValue(new Error("offline"));

@@ -298,6 +298,14 @@ describe("OpsHandoffPage", () => {
     expect(screen.getByText("BEO internal operations handoff from approved planning data.")).toBeTruthy();
   });
 
+  it("gives the compile time on the venue's clock, and names it for a device on another", async () => {
+    // 09:00 UTC is 10:00 in Glasgow in June; this device reads UTC.
+    mockGetOpsHandoffPack.mockResolvedValue(fixtureBundle());
+    renderPage();
+
+    expect(await screen.findByText("12 Jun 2026, 10:00 UK time")).toBeTruthy();
+  });
+
   it("prints the pack for export", async () => {
     mockGetOpsHandoffPack.mockResolvedValue(fixtureBundle());
     const print = vi.fn();

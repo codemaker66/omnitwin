@@ -24,6 +24,8 @@ import { getCalendar } from "../api/diary.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { isBoardWorthy } from "./hallkeeper/lib/day-board-state.js";
 import { useVenueTimezone } from "./hallkeeper/lib/use-venue-timezone.js";
+import { deviceZone, zoneNote } from "../components/hallkeeper/sheet-facts.js";
+import { eventDayKicker } from "../lib/event-day-words.js";
 
 // ---------------------------------------------------------------------------
 // The event-day board — the hallkeeper's surface while an event is running
@@ -367,6 +369,14 @@ export function EventDayOpsPage(): ReactElement {
 
   const board = state.kind === "ready" ? state.board : null;
   const timeZone = useVenueTimezone(board?.event.venueId ?? null);
+  // The zone is named only for a device on another clock, and the kicker
+  // follows the venue's calendar as the day turns.
+  const zone = useMemo(() => zoneNote(timeZone, deviceZone()), [timeZone]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => { setNowMs(Date.now()); }, 60_000);
+    return () => { window.clearInterval(timer); };
+  }, []);
 
   // One read of the Diary for the event's own day, so the hero shows the
   // booked hour rather than the event record's planned one.
@@ -613,13 +623,13 @@ export function EventDayOpsPage(): ReactElement {
       <div className="event-day-page">
       <header className="event-day-hero">
         <div>
-          <p className="event-day-kicker">Today&apos;s event</p>
+          <p className="event-day-kicker">{eventDayKicker(bookedStartsAt ?? readyBoard.event.startsAt, timeZone, nowMs)}</p>
           <h1>{readyBoard.event.name}</h1>
           <p>
             {formatEventDate(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
             {" · "}{formatTime(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
             {bookedStartsAt === null ? " (planned)" : ""}
-            {" · "}{timeZone}{" · "}{readyBoard.event.guestCount} guests
+            {zone === null ? "" : ` · ${zone}`}{" · "}{readyBoard.event.guestCount} guests
           </p>
         </div>
         <div className="event-day-sync">

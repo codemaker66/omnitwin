@@ -14,7 +14,19 @@ import type { Page } from "@playwright/test";
  * its ancestors' opacity; hidden and aria-hidden text is not a label.
  */
 export async function unreadableText(page: Page, scope: string, state: string): Promise<string[]> {
-  return page.evaluate(({ scope, state }) => {
+  return unreadable(page, scope, state, false);
+}
+
+/**
+ * The same reading for paper: each label against white, as a printer that
+ * leaves backgrounds out puts it. Call it with print media emulated.
+ */
+export async function unreadableOnPaper(page: Page, scope: string, state: string): Promise<string[]> {
+  return unreadable(page, scope, state, true);
+}
+
+async function unreadable(page: Page, scope: string, state: string, paper: boolean): Promise<string[]> {
+  return page.evaluate(({ scope, state, paper }) => {
     const parse = (value: string): number[] => {
       const parts = (/rgba?\(([^)]+)\)/u.exec(value)?.[1] ?? "0 0 0 0").split(/[ ,/]+/u).filter(Boolean).map(Number);
       return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0, parts[3] ?? 1];
@@ -58,7 +70,7 @@ export async function unreadableText(page: Page, scope: string, state: string): 
       const box = element.getBoundingClientRect();
       if (box.width === 0 || box.height === 0 || style.visibility === "hidden" || opacity(element) === 0) continue;
       if (element.closest("[aria-hidden='true'], option, select") !== null) continue;
-      const background = behind(element);
+      const background = paper ? [255, 255, 255, 1] : behind(element);
       const ink = parse(style.color);
       const colour = over([ink[0] ?? 0, ink[1] ?? 0, ink[2] ?? 0, (ink[3] ?? 1) * opacity(element)], background);
       const lighter = Math.max(luminance(colour), luminance(background));
@@ -71,7 +83,7 @@ export async function unreadableText(page: Page, scope: string, state: string): 
       }
     }
     return found;
-  }, { scope, state });
+  }, { scope, state, paper });
 }
 
 /**
