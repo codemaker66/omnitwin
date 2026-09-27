@@ -214,83 +214,88 @@ export async function opportunityRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const opportunityActivities = await db.select()
-      .from(activities)
-      .where(eq(activities.opportunityId, opportunity.id))
-      .orderBy(activities.createdAt)
-      .limit(100);
-    // Follow-ups and linked proposals are newest-first under a total order,
-    // matching the list endpoints so a staff member never sees one surface
-    // ordered oldest-first and another newest-first for the same records.
-    const tasks = await db.select()
-      .from(followUpTasks)
-      .where(eq(followUpTasks.opportunityId, opportunity.id))
-      .orderBy(desc(followUpTasks.createdAt), desc(followUpTasks.id))
-      .limit(100);
-    const linkedProposals = await db.select()
-      .from(proposals)
-      .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))
-      .orderBy(desc(proposals.createdAt), desc(proposals.id))
-      .limit(50);
-    // Every move between stages, newest first, with who made it and why.
-    const history = await db.select({
-      id: opportunityStatusHistory.id,
-      fromStage: opportunityStatusHistory.fromStage,
-      toStage: opportunityStatusHistory.toStage,
-      note: opportunityStatusHistory.note,
-      changedByName: sql<string | null>`COALESCE(${users.displayName}, ${users.name})`,
-      createdAt: opportunityStatusHistory.createdAt,
-    })
-      .from(opportunityStatusHistory)
-      .leftJoin(users, eq(users.id, opportunityStatusHistory.changedBy))
-      .where(eq(opportunityStatusHistory.opportunityId, opportunity.id))
-      .orderBy(desc(opportunityStatusHistory.createdAt), desc(opportunityStatusHistory.id))
-      .limit(100);
-    // Who the deal is with, at this venue.
-    const [contact] = opportunity.primaryContactId === null ? [] : await db.select({
-      id: contacts.id,
-      name: contacts.name,
-      email: contacts.email,
-      phone: contacts.phone,
-      accountName: clientAccounts.name,
-    })
-      .from(contacts)
-      .leftJoin(clientAccounts, and(eq(clientAccounts.id, contacts.clientAccountId), isNull(clientAccounts.deletedAt)))
-      .where(and(eq(contacts.id, opportunity.primaryContactId), eq(contacts.venueId, opportunity.venueId), isNull(contacts.deletedAt)))
-      .limit(1);
-    // The room the guest asked for; none where they named none (roomChosen
-    // false files an enquiry under the venue's first room).
-    const [source] = opportunity.sourceEnquiryId === null ? [] : await db.select({
-      roomName: spaces.name,
-      roomChosen: enquiries.roomChosen,
-    })
-      .from(enquiries)
-      .leftJoin(spaces, eq(spaces.id, enquiries.spaceId))
-      .where(and(eq(enquiries.id, opportunity.sourceEnquiryId), eq(enquiries.venueId, opportunity.venueId)))
-      .limit(1);
-    // The deal's newest live quote, made for the deal itself or for one of
-    // its proposals: what its value can be filled from.
-    const [latestQuote] = await db.select({
-      id: quotes.id,
-      name: quotes.name,
-      status: quotes.status,
-      currency: quotes.currency,
-      totalMinor: quotes.totalMinor,
-      createdAt: quotes.createdAt,
-    })
-      .from(quotes)
-      .where(and(
-        eq(quotes.venueId, opportunity.venueId),
-        isNull(quotes.deletedAt),
-        inArray(quotes.status, LIVE_QUOTE_STATUSES),
-        or(
-          eq(quotes.opportunityId, opportunity.id),
-          inArray(quotes.proposalId, db.select({ id: proposals.id }).from(proposals)
-            .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))),
-        ),
-      ))
-      .orderBy(desc(quotes.createdAt), desc(quotes.id))
-      .limit(1);
+    // The deal's venue is checked above, before anything of it is read. What
+    // follows are its parts, none needing another, so they are read at once
+    // rather than one round trip after another.
+    const [opportunityActivities, tasks, linkedProposals, history, [contact], [source], [latestQuote]] = await Promise.all([
+      db.select()
+        .from(activities)
+        .where(eq(activities.opportunityId, opportunity.id))
+        .orderBy(activities.createdAt)
+        .limit(100),
+      // Follow-ups and linked proposals are newest-first under a total order,
+      // matching the list endpoints so a staff member never sees one surface
+      // ordered oldest-first and another newest-first for the same records.
+      db.select()
+        .from(followUpTasks)
+        .where(eq(followUpTasks.opportunityId, opportunity.id))
+        .orderBy(desc(followUpTasks.createdAt), desc(followUpTasks.id))
+        .limit(100),
+      db.select()
+        .from(proposals)
+        .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))
+        .orderBy(desc(proposals.createdAt), desc(proposals.id))
+        .limit(50),
+      // Every move between stages, newest first, with who made it and why.
+      db.select({
+        id: opportunityStatusHistory.id,
+        fromStage: opportunityStatusHistory.fromStage,
+        toStage: opportunityStatusHistory.toStage,
+        note: opportunityStatusHistory.note,
+        changedByName: sql<string | null>`COALESCE(${users.displayName}, ${users.name})`,
+        createdAt: opportunityStatusHistory.createdAt,
+      })
+        .from(opportunityStatusHistory)
+        .leftJoin(users, eq(users.id, opportunityStatusHistory.changedBy))
+        .where(eq(opportunityStatusHistory.opportunityId, opportunity.id))
+        .orderBy(desc(opportunityStatusHistory.createdAt), desc(opportunityStatusHistory.id))
+        .limit(100),
+      // Who the deal is with, at this venue.
+      opportunity.primaryContactId === null ? [] : db.select({
+        id: contacts.id,
+        name: contacts.name,
+        email: contacts.email,
+        phone: contacts.phone,
+        accountName: clientAccounts.name,
+      })
+        .from(contacts)
+        .leftJoin(clientAccounts, and(eq(clientAccounts.id, contacts.clientAccountId), isNull(clientAccounts.deletedAt)))
+        .where(and(eq(contacts.id, opportunity.primaryContactId), eq(contacts.venueId, opportunity.venueId), isNull(contacts.deletedAt)))
+        .limit(1),
+      // The room the guest asked for; none where they named none (roomChosen
+      // false files an enquiry under the venue's first room).
+      opportunity.sourceEnquiryId === null ? [] : db.select({
+        roomName: spaces.name,
+        roomChosen: enquiries.roomChosen,
+      })
+        .from(enquiries)
+        .leftJoin(spaces, eq(spaces.id, enquiries.spaceId))
+        .where(and(eq(enquiries.id, opportunity.sourceEnquiryId), eq(enquiries.venueId, opportunity.venueId)))
+        .limit(1),
+      // The deal's newest live quote, made for the deal itself or for one of
+      // its proposals: what its value can be filled from.
+      db.select({
+        id: quotes.id,
+        name: quotes.name,
+        status: quotes.status,
+        currency: quotes.currency,
+        totalMinor: quotes.totalMinor,
+        createdAt: quotes.createdAt,
+      })
+        .from(quotes)
+        .where(and(
+          eq(quotes.venueId, opportunity.venueId),
+          isNull(quotes.deletedAt),
+          inArray(quotes.status, LIVE_QUOTE_STATUSES),
+          or(
+            eq(quotes.opportunityId, opportunity.id),
+            inArray(quotes.proposalId, db.select({ id: proposals.id }).from(proposals)
+              .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))),
+          ),
+        ))
+        .orderBy(desc(quotes.createdAt), desc(quotes.id))
+        .limit(1),
+    ]);
 
     return {
       data: {

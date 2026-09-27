@@ -267,6 +267,110 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     expect(await latest()).toMatchObject({ name: "Accepted", status: "accepted" });
   });
 
+  /** Clients the pool hands out while `work` runs: how many in all, and the
+   *  most at once. Each query outside a transaction takes one. */
+  async function poolUse(work: () => Promise<void>): Promise<{ readonly acquired: number; readonly peak: number }> {
+    let active = 0;
+    let acquired = 0;
+    let peak = 0;
+    const acquire = (): void => { active += 1; acquired += 1; peak = Math.max(peak, active); };
+    const release = (): void => { active -= 1; };
+    pool.on("acquire", acquire);
+    pool.on("release", release);
+    try {
+      await work();
+    } finally {
+      pool.off("acquire", acquire);
+      pool.off("release", release);
+    }
+    return { acquired, peak };
+  }
+
+  it("answers a deal's detail whole and in one shape, reading its parts at once and only after its venue is checked", async () => {
+    const account = randomUUID();
+    const contact = randomUUID();
+    const room = randomUUID();
+    const enquiry = randomUUID();
+    const proposal = randomUUID();
+    await pool.query("INSERT INTO users (id, email, name, display_name, role) VALUES ($1, 'catherine@example.test', 'C Tait', 'Catherine Tait', 'staff')", [STAFF]);
+    await pool.query("INSERT INTO client_accounts (id, venue_id, name, account_type) VALUES ($1, $2, 'Henderson Family', 'individual')", [account, VENUE]);
+    await pool.query(
+      "INSERT INTO contacts (id, venue_id, client_account_id, name, email, phone) VALUES ($1, $2, $3, 'Ailsa Henderson', 'ailsa@example.test', '0141 555 0100')",
+      [contact, VENUE, account],
+    );
+    await pool.query("INSERT INTO spaces (id, venue_id, name, slug) VALUES ($1, $2, 'Grand Hall', 'grand-hall')", [room, VENUE]);
+    await pool.query(
+      "INSERT INTO enquiries (id, venue_id, space_id, name, email, state, room_chosen) VALUES ($1, $2, $3, 'Ailsa Henderson', 'ailsa@example.test', 'approved', true)",
+      [enquiry, VENUE, room],
+    );
+    await pool.query("UPDATE opportunities SET primary_contact_id = $2, source_enquiry_id = $3 WHERE id = $1", [opportunityId(1), contact, enquiry]);
+    await pool.query(
+      `INSERT INTO activities (opportunity_id, type, body, created_by, created_at)
+       VALUES ($1, 'call', 'First call', $2, '2026-09-02T09:00:00Z'), ($1, 'note', 'Site visit booked', NULL, '2026-09-03T09:00:00Z')`,
+      [opportunityId(1), STAFF],
+    );
+    await pool.query(
+      `INSERT INTO follow_up_tasks (opportunity_id, title, status, created_at, updated_at)
+       VALUES ($1, 'Send the menus', 'open', '2026-09-02T12:00:00Z', '2026-09-02T12:00:00Z'),
+              ($1, 'Book the tasting', 'open', '2026-09-04T12:00:00Z', '2026-09-04T12:00:00Z')`,
+      [opportunityId(1)],
+    );
+    await pool.query(
+      "INSERT INTO proposals (id, venue_id, opportunity_id, title, status, current_version) VALUES ($1, $2, $3, 'Henderson wedding', 'draft', 1)",
+      [proposal, VENUE, opportunityId(1)],
+    );
+    await pool.query(
+      `INSERT INTO opportunity_status_history (opportunity_id, from_stage, to_stage, changed_by, note, created_at)
+       VALUES ($1, 'new', 'qualified', $2, 'Date and numbers confirmed', '2026-09-03T10:00:00Z')`,
+      [opportunityId(1), STAFF],
+    );
+    await pool.query(
+      `INSERT INTO quotes (venue_id, proposal_id, name, status, currency, subtotal_minor, total_minor, created_at, updated_at)
+       VALUES ($1, $2, 'Wedding quote', 'issued', 'GBP', 1840000, 1840000, '2026-09-05T10:00:00Z', '2026-09-05T10:00:00Z')`,
+      [VENUE, proposal],
+    );
+
+    let res: LightMyRequestResponse | undefined;
+    const use = await poolUse(async () => {
+      res = await server.inject({ method: "GET", url: `/opportunities/${opportunityId(1)}`, headers: headers() });
+    });
+    expect(res?.statusCode).toBe(200);
+    const data = (JSON.parse(res?.body ?? "{}") as { data: Record<string, unknown> }).data;
+    expect(Object.keys(data)).toEqual(["opportunity", "activities", "tasks", "proposals", "history", "contact", "room", "latestQuote"]);
+    expect(data["opportunity"]).toMatchObject({ id: opportunityId(1), venueId: VENUE, title: "Opportunity 1", primaryContactId: contact, sourceEnquiryId: enquiry });
+    // Activities oldest first; follow-ups and proposals newest first.
+    expect((data["activities"] as { body: string; type: string }[]).map((row) => `${row.type}: ${row.body}`))
+      .toEqual(["call: First call", "note: Site visit booked"]);
+    expect((data["tasks"] as { title: string }[]).map((row) => row.title)).toEqual(["Book the tasting", "Send the menus"]);
+    expect((data["proposals"] as { id: string }[]).map((row) => row.id)).toEqual([proposal]);
+    expect(data["history"]).toEqual([expect.objectContaining({
+      fromStage: "new", toStage: "qualified", note: "Date and numbers confirmed", changedByName: "Catherine Tait", createdAt: "2026-09-03T10:00:00.000Z",
+    })]);
+    expect(data["contact"]).toEqual({
+      id: contact, name: "Ailsa Henderson", email: "ailsa@example.test", phone: "0141 555 0100", accountName: "Henderson Family",
+    });
+    expect(data["room"]).toBe("Grand Hall");
+    expect(data["latestQuote"]).toEqual({
+      id: expect.any(String) as unknown, name: "Wedding quote", status: "issued", currency: "GBP", totalMinor: 1_840_000, createdAt: "2026-09-05T10:00:00.000Z",
+    });
+    // The deal itself, then its seven parts, some of them at the same time.
+    expect(use.acquired).toBe(8);
+    expect(use.peak).toBeGreaterThan(1);
+
+    // Another venue's deal is refused, and nothing of it is read past the
+    // deal's own row; a deleted one is not found.
+    let refused: LightMyRequestResponse | undefined;
+    const refusal = await poolUse(async () => {
+      refused = await server.inject({ method: "GET", url: `/opportunities/${opportunityId(90)}`, headers: headers() });
+    });
+    expect(refused?.statusCode).toBe(403);
+    expect(JSON.parse(refused?.body ?? "{}")).toEqual({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    expect(refusal.acquired).toBe(1);
+    await pool.query("UPDATE opportunities SET deleted_at = now() WHERE id = $1", [opportunityId(2)]);
+    const gone = await server.inject({ method: "GET", url: `/opportunities/${opportunityId(2)}`, headers: headers() });
+    expect(gone.statusCode).toBe(404);
+  });
+
   it("closes a deal as won or lost only with the reason it was", async () => {
     await pool.query("INSERT INTO users (id, email, name, role) VALUES ($1, 'catherine@example.test', 'Catherine Tait', 'staff')", [STAFF]);
     await pool.query("UPDATE opportunities SET stage = 'proposal_sent' WHERE id = $1", [opportunityId(1)]);
