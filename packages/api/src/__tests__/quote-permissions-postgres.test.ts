@@ -121,6 +121,35 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     expect(await db.select().from(schema.quotes).where(eq(schema.quotes.venueId, f.venueId))).toHaveLength(1);
   });
 
+  // A deal's value is filled from its first quote (roadmap X1), whether the
+  // quote names the deal or only its proposal. A value already set is the
+  // booker's and stays; the deal panel offers the newer total instead.
+  it("fills a deal with no value from its first quote, and leaves a value already set", async () => {
+    const f = await fixture("sales");
+    const [empty, valued] = await db.insert(schema.opportunities).values([
+      { venueId: f.venueId, title: "Henderson wedding", stage: "qualified", estimatedValueMinor: 0, currency: "GBP", nextAction: "Draft" },
+      { venueId: f.venueId, title: "Merchants' dinner", stage: "qualified", estimatedValueMinor: 900_000, currency: "GBP", nextAction: "Draft" },
+    ]).returning();
+    if (empty === undefined || valued === undefined) throw new Error("Missing deal fixtures");
+    const [proposal] = await db.insert(schema.proposals).values({ venueId: f.venueId, opportunityId: empty.id, title: "Henderson wedding" }).returning();
+    if (proposal === undefined) throw new Error("Missing proposal fixture");
+    const quote = (link: Record<string, string>, unitAmountMinor: number) => server.inject({
+      method: "POST", url: "/quotes", headers: f.headers,
+      payload: { venueId: f.venueId, name: "Wedding quote", currency: "GBP", ...link,
+        lineItems: [{ description: "Dinner", quantity: 120, unitAmountMinor }, { description: "Room hire", quantity: 1, unitAmountMinor: 440_000 }] },
+    });
+    const value = async (id: string) => (await db.select({ minor: schema.opportunities.estimatedValueMinor })
+      .from(schema.opportunities).where(eq(schema.opportunities.id, id)))[0]?.minor;
+
+    expect((await quote({ proposalId: proposal.id }, 9_500)).statusCode).toBe(201);
+    expect(await value(empty.id)).toBe(1_580_000);
+    // A second quote does not overwrite the figure the first one filled.
+    expect((await quote({ opportunityId: empty.id }, 10_000)).statusCode).toBe(201);
+    expect(await value(empty.id)).toBe(1_580_000);
+    expect((await quote({ opportunityId: valued.id }, 9_500)).statusCode).toBe(201);
+    expect(await value(valued.id)).toBe(900_000);
+  });
+
   it("retains issued-record protection for venue admins and the existing platform override", async () => {
     for (const platformRole of ["none", "admin"] as const) {
       const f = await fixture("admin", platformRole === "admin", platformRole);

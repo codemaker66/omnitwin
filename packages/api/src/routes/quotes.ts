@@ -142,8 +142,9 @@ export async function quoteRoutes(
       return reply.status(422).send({ error: "Opportunity belongs to a different venue", code: "VENUE_MISMATCH" });
     }
 
+    let proposalDealId: string | null = null;
     if (parsed.data.proposalId !== undefined && parsed.data.proposalId !== null) {
-      const [proposal] = await db.select({ venueId: proposals.venueId })
+      const [proposal] = await db.select({ venueId: proposals.venueId, opportunityId: proposals.opportunityId })
         .from(proposals)
         .where(and(eq(proposals.id, parsed.data.proposalId), isNull(proposals.deletedAt)))
         .limit(1);
@@ -153,6 +154,7 @@ export async function quoteRoutes(
       if (proposal.venueId !== parsed.data.venueId) {
         return reply.status(422).send({ error: "Proposal belongs to a different venue", code: "VENUE_MISMATCH" });
       }
+      proposalDealId = proposal.opportunityId;
     }
     if (parsed.data.enquiryId !== undefined && parsed.data.enquiryId !== null) {
       const [enquiry] = await db.select({ venueId: enquiries.venueId })
@@ -209,6 +211,22 @@ export async function quoteRoutes(
           sortOrder: index,
         })),
       ).returning();
+
+      // A deal with no value yet takes its first quote's total, so nobody
+      // types the figure twice (roadmap X1). A value already set is left
+      // alone: the deal panel offers a newer quote's total instead.
+      const dealId = parsed.data.opportunityId ?? proposalDealId;
+      if (dealId !== null) {
+        await tx.update(opportunities)
+          .set({ estimatedValueMinor: totalMinor, updatedAt: new Date() })
+          .where(and(
+            eq(opportunities.id, dealId),
+            eq(opportunities.venueId, parsed.data.venueId),
+            isNull(opportunities.deletedAt),
+            eq(opportunities.estimatedValueMinor, 0),
+            eq(opportunities.currency, parsed.data.currency),
+          ));
+      }
 
       return { quote, lineItems: lineRows };
     });

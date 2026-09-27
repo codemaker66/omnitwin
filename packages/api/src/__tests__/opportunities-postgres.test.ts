@@ -66,7 +66,7 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
   const tables: PgTable[] = [
     schema.opportunities, schema.followUpTasks, schema.activities,
     schema.opportunityStatusHistory, schema.proposals,
-    schema.users, schema.contacts, schema.clientAccounts, schema.enquiries, schema.spaces,
+    schema.users, schema.contacts, schema.clientAccounts, schema.enquiries, schema.spaces, schema.quotes,
   ];
 
   beforeAll(async () => {
@@ -95,7 +95,7 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, proposals, users, contacts, client_accounts, enquiries, spaces");
+    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, proposals, users, contacts, client_accounts, enquiries, spaces, quotes");
     for (let index = 1; index <= 4; index += 1) {
       await pool.query(
         `INSERT INTO opportunities (id, venue_id, title, stage, estimated_value_minor, currency, next_action, created_at, updated_at)
@@ -227,6 +227,44 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     // Nor is another venue's contact, whatever the deal points at.
     await pool.query("UPDATE contacts SET venue_id = $2 WHERE id = $1", [contact, OTHER_VENUE]);
     expect((await detail()).contact).toBeNull();
+  });
+
+  it("offers the deal's newest live quote, made for it or for one of its proposals, and no other", async () => {
+    const proposal = randomUUID();
+    await pool.query(
+      "INSERT INTO proposals (id, venue_id, opportunity_id, title, status, current_version) VALUES ($1, $2, $3, 'Henderson wedding', 'draft', 1)",
+      [proposal, VENUE, opportunityId(1)],
+    );
+    const quote = async (name: string, day: number, link: { deal?: string; proposal?: string }, status = "draft", venueId = VENUE, deleted = false): Promise<void> => {
+      await pool.query(
+        `INSERT INTO quotes (venue_id, opportunity_id, proposal_id, name, status, currency, subtotal_minor, total_minor, created_at, updated_at, deleted_at)
+         VALUES ($1, $2, $3, $4, $5, 'GBP', $6, $6, $7, $7, $8)`,
+        [venueId, link.deal ?? null, link.proposal ?? null, name, status, 1_000_000 + day, `2026-09-${String(day).padStart(2, "0")}T10:00:00.000Z`, deleted ? new Date() : null],
+      );
+    };
+    const latest = async (): Promise<{ name: string; totalMinor: number; currency: string; status: string } | null> => {
+      const res = await server.inject({ method: "GET", url: `/opportunities/${opportunityId(1)}`, headers: headers() });
+      expect(res.statusCode).toBe(200);
+      return (JSON.parse(res.body) as { data: { latestQuote: { name: string; totalMinor: number; currency: string; status: string } | null } }).data.latestQuote;
+    };
+
+    expect(await latest()).toBeNull();
+    await quote("First quote", 1, { deal: opportunityId(1) });
+    expect(await latest()).toMatchObject({ name: "First quote", totalMinor: 1_000_001, currency: "GBP", status: "draft" });
+    // A later one made for the deal's proposal alone is the latest.
+    await quote("Revised quote", 5, { proposal });
+    expect(await latest()).toMatchObject({ name: "Revised quote", totalMinor: 1_000_005 });
+    // Replaced, declined, run out or deleted, another deal's, and another
+    // venue's are all passed over, however new.
+    await quote("Replaced", 6, { deal: opportunityId(1) }, "superseded");
+    await quote("Declined", 7, { deal: opportunityId(1) }, "declined");
+    await quote("Run out", 8, { deal: opportunityId(1) }, "expired");
+    await quote("Deleted", 9, { deal: opportunityId(1) }, "draft", VENUE, true);
+    await quote("Another deal", 10, { deal: opportunityId(2) });
+    await quote("Elsewhere", 11, { deal: opportunityId(1) }, "draft", OTHER_VENUE);
+    expect(await latest()).toMatchObject({ name: "Revised quote" });
+    await quote("Accepted", 12, { deal: opportunityId(1) }, "accepted");
+    expect(await latest()).toMatchObject({ name: "Accepted", status: "accepted" });
   });
 
   it("closes a deal as won or lost only with the reason it was", async () => {

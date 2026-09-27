@@ -44,6 +44,7 @@ import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snaps
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam } from "../services/commercial-notifications.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
+import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
 
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
@@ -177,6 +178,26 @@ async function loadProposalEventContext(db: Database, proposal: ProposalRow): Pr
     venueId: linkedEvent.venueId,
     handoffPackId: pack?.id ?? null,
   };
+}
+
+/**
+ * A proposal's move moves its deal (services/deal-stage-from-proposal.ts):
+ * sent to Proposal sent, changes asked for to Negotiation, accepted or
+ * declined to won or lost. Like an announcement, a deal that cannot be moved
+ * never fails the proposal's own change; it is logged.
+ */
+async function moveDealFor(
+  db: Database,
+  proposal: ProposalRow,
+  toStatus: string,
+  actorUserId: string | null,
+  logger: FastifyBaseLogger,
+): Promise<void> {
+  try {
+    await moveDealWithProposal(db, proposal, toStatus, actorUserId);
+  } catch (error) {
+    logger.warn({ err: error, proposalId: proposal.id, toStatus }, "The deal did not move with its proposal");
+  }
 }
 
 /**
@@ -630,8 +651,8 @@ export async function proposalRoutes(
       changedBy: request.user.id,
       note: parsed.data.note ?? null,
     });
-
     if (updated !== undefined) {
+      await moveDealFor(db, updated, parsed.data.status, request.user.id, request.log);
       await recordProposalLifecycleChange(db, updated, {
         actorUserId: request.user.id,
         actorRole: toEventPlanAudienceRole(request.user.role),
@@ -853,6 +874,9 @@ export async function proposalRoutes(
 
       return { shareToken, proposal: updated };
     });
+    if (result.proposal.status !== proposal.status) {
+      await moveDealFor(db, result.proposal, result.proposal.status, request.user.id, request.log);
+    }
 
     return reply.status(201).send({
       data: {
@@ -1312,6 +1336,7 @@ export async function publicProposalRoutes(
       changedBy: null,
       note: parsed.data.note ?? null,
     });
+    await moveDealFor(db, proposal, toStatus, null, request.log);
 
     await recordProposalLifecycleChange(db, proposal, {
       actorUserId: null,
@@ -1410,6 +1435,9 @@ export async function proposalShareRoutes(
 
       return comment;
     });
+    if (kind === "request_changes" && resolved.proposal.status === "sent") {
+      await moveDealFor(db, resolved.proposal, "changes_requested", null, request.log);
+    }
 
     await recordProposalLifecycleChange(db, resolved.proposal, {
       actorUserId: null,
@@ -1476,6 +1504,7 @@ export async function proposalShareRoutes(
         isClientVisible: true,
       });
     });
+    await moveDealFor(db, resolved.proposal, "accepted", null, request.log);
 
     await recordProposalLifecycleChange(db, resolved.proposal, {
       actorUserId: null,

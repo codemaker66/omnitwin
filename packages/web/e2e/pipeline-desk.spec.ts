@@ -82,9 +82,22 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
       [GALA, deal(GALA, "Spring gala", "new", null,
         { eventType: "gala", preferredDate: null, guestCount: null, estimatedValueMinor: 0, contactName: null, nextAction: "Confirm the date" })],
     ]),
-    history: new Map(),
+    // Before today, the client asked for changes on the Hendersons' first
+    // version, and Catherine sent the second: a move nobody at the venue made
+    // sits beside one she did.
+    history: new Map([[HENDERSON, [
+      { id: "00000000-0000-4000-8000-00000000c001", fromStage: "proposal_sent", toStage: "negotiation",
+        note: "The client asked for changes to the proposal (version 1).", changedByName: null, createdAt: "2026-09-24T15:00:00.000Z" },
+      { id: "00000000-0000-4000-8000-00000000c002", fromStage: "negotiation", toStage: "proposal_sent",
+        note: "The proposal (version 2) was sent.", changedByName: "Catherine Tait", createdAt: "2026-09-26T10:00:00.000Z" },
+    ]]]),
     moves: [],
   };
+  // The Merchants' dinner was quoted at more than its estimate.
+  const quotes = new Map([[MERCHANTS, {
+    id: "00000000-0000-4000-8000-00000000b001", name: "Merchants' dinner proposal quote", status: "draft", currency: "GBP",
+    totalMinor: 645_000, createdAt: "2026-10-05T16:00:00.000Z",
+  }]]);
 
   const summary = (stage: string | null): Record<string, unknown> => {
     const all = [...emulator.deals.values()];
@@ -126,11 +139,12 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         void route.fulfill({ json: { data: {
           opportunity: current, activities: [], tasks: [], proposals: [],
           history: [...(emulator.history.get(id) ?? [])].reverse(), contact: null, room: "Grand Hall",
+          latestQuote: quotes.get(id) ?? null,
         } } });
         return;
       }
       if (request.method() === "PATCH") {
-        const body = request.postDataJSON() as { stage?: OpportunityStage; note?: string | null };
+        const body = request.postDataJSON() as { stage?: OpportunityStage; note?: string | null; estimatedValueMinor?: number };
         const to = body.stage;
         if (to !== undefined && to !== current.stage) {
           if (!OPPORTUNITY_STAGE_TRANSITIONS[current.stage as OpportunityStage].includes(to)) {
@@ -150,6 +164,7 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         const next: PipelineOpportunity = {
           ...current,
           ...(to === undefined ? {} : { stage: to, closedAt: CLOSED.has(to) ? NOW.toISOString() : current.closedAt }),
+          ...(body.estimatedValueMinor === undefined ? {} : { estimatedValueMinor: body.estimatedValueMinor }),
           updatedAt: NOW.toISOString(),
         };
         emulator.deals.set(id, next);
@@ -198,6 +213,9 @@ test.describe("Pipeline desk", () => {
     await expect(panel.getByRole("heading", { level: 2, name: "Henderson wedding" })).toBeFocused();
     await expect(page).toHaveURL(new RegExp(`[?&]opportunity=${HENDERSON}`, "u"));
     await expect(panel.getByText("Overdue by 4 days")).toBeVisible();
+    // The client's own act is told in its words; Catherine's names her.
+    await expect(panel.getByText("The client asked for changes to the proposal (version 1).")).toBeVisible();
+    await expect(panel.getByText("Catherine Tait moved it to Proposal sent.")).toBeVisible();
 
     // Won asks why before it moves, and offers the common reasons.
     await panel.getByRole("button", { name: "Mark won…" }).click();
@@ -238,6 +256,9 @@ test.describe("Pipeline desk", () => {
     // Only the moves Qualified allows: draft a proposal, or mark it lost.
     await expect(panel.getByRole("button", { name: "Draft a proposal" })).toBeVisible();
     await expect(panel.getByRole("button", { name: "Mark won…" })).toHaveCount(0);
+    // Its latest quote is offered where its value is, for the audit to read.
+    await expect(panel.getByText("The latest quote comes to £6,450.")).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Use £6,450" })).toBeVisible();
 
     const result = await collectAccessibilityAudit(page, {
       name: "pipeline desk with a deal open", path: "/dashboard?view=pipeline", problems, maxFocusSteps: 16,

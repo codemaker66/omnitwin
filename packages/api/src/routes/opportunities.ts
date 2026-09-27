@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   CreateActivitySchema,
   CreateFollowUpTaskSchema,
@@ -20,6 +20,7 @@ import {
   opportunities,
   opportunityStatusHistory,
   proposals,
+  quotes,
   spaces,
   users,
 } from "../db/schema.js";
@@ -27,6 +28,7 @@ import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canManageCommercial } from "../utils/query.js";
+import { nextActionForStage } from "../services/deal-next-action.js";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const TaskParam = z.object({ id: z.string().uuid(), taskId: z.string().uuid() });
@@ -50,26 +52,9 @@ function commercialScope(user: JwtUser): { ok: true; venueId: string | null } | 
   return { ok: false };
 }
 
-function nextActionForStage(stage: OpportunityStage): string {
-  switch (stage) {
-    case "new":
-      return "Qualify the enquiry and confirm the client, date, room, and rough guest count.";
-    case "qualified":
-      return "Prepare a proposal draft with planning-grade assumptions for review.";
-    case "proposal_drafting":
-      return "Save a proposal version and prepare the client share link.";
-    case "proposal_sent":
-      return "Wait for the client response and log any requested changes.";
-    case "negotiation":
-      return "Resolve quote or package changes before confirming the opportunity.";
-    case "won":
-      return "Prepare the handoff path after proposal acceptance.";
-    case "lost":
-      return "Record the reason and archive when follow-up is complete.";
-    case "archived":
-      return "No next action.";
-  }
-}
+/** A quote a deal's value can be filled from: not replaced by another, and
+ *  not declined or run out. */
+const LIVE_QUOTE_STATUSES = ["draft", "issued", "accepted"];
 
 /** A deal closes as won or lost only with the reason it did: the pipeline's
  *  history is what a team learns from (roadmap X1). */
@@ -283,6 +268,29 @@ export async function opportunityRoutes(
       .leftJoin(spaces, eq(spaces.id, enquiries.spaceId))
       .where(and(eq(enquiries.id, opportunity.sourceEnquiryId), eq(enquiries.venueId, opportunity.venueId)))
       .limit(1);
+    // The deal's newest live quote, made for the deal itself or for one of
+    // its proposals: what its value can be filled from.
+    const [latestQuote] = await db.select({
+      id: quotes.id,
+      name: quotes.name,
+      status: quotes.status,
+      currency: quotes.currency,
+      totalMinor: quotes.totalMinor,
+      createdAt: quotes.createdAt,
+    })
+      .from(quotes)
+      .where(and(
+        eq(quotes.venueId, opportunity.venueId),
+        isNull(quotes.deletedAt),
+        inArray(quotes.status, LIVE_QUOTE_STATUSES),
+        or(
+          eq(quotes.opportunityId, opportunity.id),
+          inArray(quotes.proposalId, db.select({ id: proposals.id }).from(proposals)
+            .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))),
+        ),
+      ))
+      .orderBy(desc(quotes.createdAt), desc(quotes.id))
+      .limit(1);
 
     return {
       data: {
@@ -293,6 +301,7 @@ export async function opportunityRoutes(
         history,
         contact: contact ?? null,
         room: source === undefined || !source.roomChosen ? null : source.roomName,
+        latestQuote: latestQuote ?? null,
       },
     };
   });

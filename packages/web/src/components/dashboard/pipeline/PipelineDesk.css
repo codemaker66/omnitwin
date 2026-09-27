@@ -76,6 +76,7 @@
 .pl-value__figure { margin: 0; color: var(--enq-forest-ink); font-size: clamp(26px, 2.2vw, 32px); font-weight: 300; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .pl-value__none { color: var(--enq-forest-ink-3); font-size: 18px; letter-spacing: 0; }
 .pl-value__form { display: grid; gap: 10px; width: 100%; }
+.pl-value__quote { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; width: 100%; margin: 0; color: var(--enq-forest-ink-2); font-size: 14px; }
 
 /* Forms inside the forest panel read as the confirmation's fields do. */
 .pl-panel label { display: grid; gap: 6px; color: var(--enq-forest-ink-2); font-size: 13px; }

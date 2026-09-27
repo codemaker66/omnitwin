@@ -48,7 +48,7 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     const [proposal] = await db.insert(schema.proposals).values({ venueId, title: "Colleague's draft", createdBy: colleagueId,
       status: "draft", currentVersion: 0 }).returning();
     if (proposal === undefined) throw new Error("Missing proposal fixture");
-    return { venueId, otherVenueId, proposal, headers: { authorization: `Bearer ${JSON.stringify(actor)}` } };
+    return { venueId, otherVenueId, actorId, proposal, headers: { authorization: `Bearer ${JSON.stringify(actor)}` } };
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>;
   function create(f: Fixture, links: Record<string, string> = {}) {
@@ -86,6 +86,26 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
   // The venue-scoped list must admit exactly who the create/mutate gate
   // admits (routes/proposals.ts canManageCommercial). A role that may manage
   // a proposal but cannot find it in its own list has been granted nothing.
+  // Sending a proposal moves its deal to Proposal sent (roadmap X1), by the
+  // transition and by the share link alike, with who sent it on the move.
+  it.each(["transition", "share-token"])("moves the proposal's deal to Proposal sent when staff send it by its %s", async path => {
+    const f = await fixture("staff");
+    const [deal] = await db.insert(schema.opportunities).values({ venueId: f.venueId, title: "Henderson wedding", stage: "qualified",
+      estimatedValueMinor: 0, currency: "GBP", nextAction: "Draft the proposal" }).returning();
+    if (deal === undefined) throw new Error("Missing deal fixture");
+    await db.update(schema.proposals).set({ opportunityId: deal.id }).where(eq(schema.proposals.id, f.proposal.id));
+    expect((await append(f)).statusCode).toBe(201);
+    const sent = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/${path}`, headers: f.headers,
+      ...(path === "transition" ? { payload: { status: "sent" } } : {}) });
+    expect(sent.statusCode).toBe(path === "transition" ? 200 : 201);
+    const [moved] = await db.select().from(schema.opportunities).where(eq(schema.opportunities.id, deal.id));
+    expect(moved).toMatchObject({ stage: "proposal_sent", nextAction: "Wait for the client response and log any requested changes." });
+    expect(await db.select({ fromStage: schema.opportunityStatusHistory.fromStage, toStage: schema.opportunityStatusHistory.toStage,
+      changedBy: schema.opportunityStatusHistory.changedBy, note: schema.opportunityStatusHistory.note })
+      .from(schema.opportunityStatusHistory).where(eq(schema.opportunityStatusHistory.opportunityId, deal.id)))
+      .toEqual([{ fromStage: "qualified", toStage: "proposal_sent", changedBy: f.actorId, note: "The proposal (version 1) was sent." }]);
+  });
+
   it.each(["manager", "sales"])("lets %s discover a colleague's venue proposal", async role => {
     const f = await fixture(role);
     const response = await server.inject({ method: "GET", url: "/proposals", headers: f.headers });

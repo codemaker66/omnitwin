@@ -113,7 +113,24 @@ describe("the timeline", () => {
       ["Catherine Tait marked it won.", "Accepted the proposal"],
       ["Note", "Prefers a later start."],
       // The old board's automatic "Moved to X" says nothing, so it is not quoted.
-      ["The team moved it to Qualified.", null],
+      ["It moved to Qualified.", null],
+      ["The deal was opened.", null],
+    ]);
+  });
+
+  it("tells a move nobody at the venue made in its own words", () => {
+    const moments = dealTimeline({ createdAt: "2026-09-20T10:00:00.000Z" }, [
+      move({ id: "a", toStage: "won", note: "The client accepted the proposal (version 2).", changedByName: null, createdAt: "2026-09-30T10:00:00.000Z" }),
+      move({ id: "b", toStage: "negotiation", note: "The client asked for changes to the proposal (version 1).", changedByName: null, createdAt: "2026-09-28T10:00:00.000Z" }),
+      move({ id: "c", toStage: "proposal_sent", note: "The proposal (version 1) was sent.", createdAt: "2026-09-25T10:00:00.000Z" }),
+      move({ id: "d", toStage: "lost", note: "  ", changedByName: null, createdAt: "2026-09-22T10:00:00.000Z" }),
+    ], []);
+    expect(moments.map((moment) => [moment.sentence, moment.quote])).toEqual([
+      ["The client accepted the proposal (version 2).", null],
+      ["The client asked for changes to the proposal (version 1).", null],
+      // A person's move names them, with what happened beneath.
+      ["Catherine Tait moved it to Proposal sent.", "The proposal (version 1) was sent."],
+      ["It was marked lost.", null],
       ["The deal was opened.", null],
     ]);
   });

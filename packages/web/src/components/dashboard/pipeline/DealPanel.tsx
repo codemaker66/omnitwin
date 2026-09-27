@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { occasionLabel } from "@omnitwin/types";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
-import type { Activity, DealContact, FollowUpTask, Opportunity, StageMove } from "../../../api/crm.js";
+import type { Activity, DealContact, DealQuote, FollowUpTask, Opportunity, StageMove } from "../../../api/crm.js";
 import type { StaffProposal } from "../../../api/proposals.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
@@ -27,6 +27,8 @@ export interface DealDetail {
   readonly history: readonly StageMove[];
   readonly contact: DealContact | null;
   readonly room: string | null;
+  /** The newest live quote, which the value can be filled from. */
+  readonly latestQuote: DealQuote | null;
 }
 
 /** What the panel is saving, so only that control waits. */
@@ -158,6 +160,10 @@ function DealFacts({ detail, nowMs, saving, failure, onSaveValue }: DealPanelPro
   const [invalid, setInvalid] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const value = deal.estimatedValueMinor > 0 ? formatMinorAsCurrency(deal.estimatedValueMinor, deal.currency).replace(/\.00$/u, "") : null;
+  // The value follows the quote only when the booker says so; a figure they
+  // set is theirs. A quote in another currency is not offered.
+  const quote = detail.latestQuote !== null && detail.latestQuote.currency === deal.currency ? detail.latestQuote : null;
+  const quoted = quote === null ? null : formatMinorAsCurrency(quote.totalMinor, quote.currency).replace(/\.00$/u, "");
 
   useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
 
@@ -219,6 +225,18 @@ function DealFacts({ detail, nowMs, saving, failure, onSaveValue }: DealPanelPro
               {value ?? <span className="pl-value__none">No value yet</span>}
             </p>
             <button type="button" className="enq-quiet pl-value__edit" onClick={open}>{value === null ? "Add a value" : "Change the value"}</button>
+            {quote !== null && quoted !== null && (quote.totalMinor === deal.estimatedValueMinor ? (
+              <p className="pl-value__quote">The latest quote's total.</p>
+            ) : (
+              <p className="pl-value__quote">
+                <span>The latest quote comes to {quoted}.</span>
+                <button type="button" className="enq-quiet" disabled={saving === "value"} aria-busy={saving === "value"}
+                  onClick={() => { void onSaveValue(quote.totalMinor); }}>
+                  {saving === "value" && <ActivityIndicator size={18} />}
+                  {saving === "value" ? "Saving…" : `Use ${quoted}`}
+                </button>
+              </p>
+            ))}
           </>
         )}
         {failure?.where === "value" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}

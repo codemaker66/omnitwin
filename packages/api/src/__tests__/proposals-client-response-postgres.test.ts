@@ -76,6 +76,7 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
     schema.proposalComments, schema.packageSelections, schema.venues,
     schema.configurations, schema.events, schema.eventConfigurationLinks,
     schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications,
+    schema.opportunities, schema.opportunityStatusHistory,
   ];
 
   beforeAll(async () => {
@@ -102,7 +103,7 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE proposals, proposal_versions, proposal_status_history, event_plan_changes, event_plan_notifications, venues");
+    await pool.query("TRUNCATE proposals, proposal_versions, proposal_status_history, event_plan_changes, event_plan_notifications, venues, opportunities, opportunity_status_history");
     await pool.query(
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', 'trades-hall-glasgow', '85 Glassford Street')",
       [VENUE],
@@ -176,6 +177,36 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
     );
     expect(status.rows[0]?.to_status).toBe("changes_requested");
     expect(status.rows[0]?.note).toBe("Could we move the bar to the north wall?");
+  });
+
+  it("wins the proposal's deal when the client accepts, and moves it to Negotiation when they ask for changes", async () => {
+    const deal = randomUUID();
+    await pool.query(
+      `INSERT INTO opportunities (id, venue_id, title, stage, estimated_value_minor, currency, next_action)
+       VALUES ($1, $2, 'Autumn gala', 'proposal_sent', 250000, 'GBP', 'Chase their answer')`,
+      [deal, VENUE],
+    );
+    await pool.query("UPDATE proposals SET opportunity_id = $2 WHERE id = $1", [PROPOSAL, deal]);
+
+    await respond("request_changes", "Could we start later?");
+    const asked = await pool.query<{ stage: string }>("SELECT stage FROM opportunities WHERE id = $1", [deal]);
+    expect(asked.rows[0]?.stage).toBe("negotiation");
+
+    // Sent again, then accepted: the deal is won, with the client's act as its reason.
+    await pool.query("UPDATE proposals SET status = 'sent' WHERE id = $1", [PROPOSAL]);
+    await pool.query("UPDATE opportunities SET stage = 'proposal_sent' WHERE id = $1", [deal]);
+    await respond("accept");
+    const won = await pool.query<{ stage: string; closed: boolean }>(
+      "SELECT stage, closed_at IS NOT NULL AS closed FROM opportunities WHERE id = $1", [deal],
+    );
+    expect(won.rows[0]).toEqual({ stage: "won", closed: true });
+    const history = await pool.query<{ to_stage: string; changed_by: string | null; note: string }>(
+      "SELECT to_stage, changed_by, note FROM opportunity_status_history WHERE opportunity_id = $1 ORDER BY created_at", [deal],
+    );
+    expect(history.rows).toEqual([
+      { to_stage: "negotiation", changed_by: null, note: "The client asked for changes to the proposal (version 1)." },
+      { to_stage: "won", changed_by: null, note: "The client accepted the proposal (version 1)." },
+    ]);
   });
 
   it("still serves the legacy share-code link inside the retirement window", async () => {

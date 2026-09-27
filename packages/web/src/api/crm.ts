@@ -181,17 +181,30 @@ export const DealContactSchema = z.object({
 
 export type DealContact = z.infer<typeof DealContactSchema>;
 
+/** The deal's newest live quote: what its value can be filled from. */
+export const DealQuoteSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  currency: z.string(),
+  totalMinor: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+
+export type DealQuote = z.infer<typeof DealQuoteSchema>;
+
 const OpportunityDetailSchema = z.object({
   opportunity: OpportunitySchema,
   activities: z.array(ActivitySchema),
   tasks: z.array(FollowUpTaskSchema),
   proposals: z.array(StaffProposalSchema),
   // Every move between stages with who made it and why, who the deal is
-  // with, and the room the guest asked for (null where they named none).
-  // Defaulted for an API from before them.
+  // with, the room the guest asked for (null where they named none) and the
+  // newest live quote. Defaulted for an API from before them.
   history: z.array(StageMoveSchema).default([]),
   contact: DealContactSchema.nullable().default(null),
   room: z.string().nullable().default(null),
+  latestQuote: DealQuoteSchema.nullable().default(null),
 });
 
 export type OpportunityDetail = z.infer<typeof OpportunityDetailSchema>;

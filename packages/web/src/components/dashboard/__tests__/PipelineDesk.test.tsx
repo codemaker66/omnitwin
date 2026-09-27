@@ -101,7 +101,15 @@ function detail(overrides: Record<string, unknown> = {}, dealOverrides: Record<s
     history: [],
     contact: { id: "contact1", name: "Ailsa Henderson", email: "ailsa@example.test", phone: "0141 555 0100", accountName: "Henderson Family" },
     room: "Grand Hall",
+    latestQuote: null,
     ...overrides,
+  };
+}
+
+function quote(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "quote1", name: "Henderson wedding proposal quote", status: "draft", currency: "GBP", totalMinor: 1_580_000,
+    createdAt: "2026-09-30T09:00:00.000Z", ...overrides,
   };
 }
 
@@ -353,6 +361,29 @@ describe("the open deal", () => {
     fireEvent.click(panel.getByRole("button", { name: "Save the value" }));
     await waitFor(() => { expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", { estimatedValueMinor: 12_050 }); });
     expect(await screen.findByText("£120.50")).toBeDefined();
+  });
+
+  it("offers the latest quote's total as the value, and says so once the value is the quote's", async () => {
+    mocks.updateOpportunity.mockResolvedValue(deal({ estimatedValueMinor: 1_580_000 }));
+    mocks.getOpportunity.mockResolvedValueOnce(detail({ latestQuote: quote() }))
+      .mockResolvedValue(detail({ latestQuote: quote() }, { estimatedValueMinor: 1_580_000 }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    expect(panel.getByText("£18,400")).toBeDefined();
+    expect(panel.getByText("The latest quote comes to £15,800.")).toBeDefined();
+    fireEvent.click(panel.getByRole("button", { name: "Use £15,800" }));
+    await waitFor(() => { expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", { estimatedValueMinor: 1_580_000 }); });
+    expect(await screen.findByText("The latest quote's total.")).toBeDefined();
+    expect(panel.getByText("£15,800")).toBeDefined();
+    expect(panel.queryByRole("button", { name: /^Use / })).toBeNull();
+  });
+
+  it("offers no quote in another currency, and none where there is none", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({ latestQuote: quote({ currency: "EUR" }) }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    expect(panel.getByText("£18,400")).toBeDefined();
+    expect(panel.queryByText(/latest quote/u)).toBeNull();
   });
 
   it("sets what is owed next and the day it is due", async () => {

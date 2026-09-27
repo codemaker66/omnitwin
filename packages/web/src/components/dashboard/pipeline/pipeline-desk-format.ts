@@ -216,13 +216,13 @@ export function stageSteps(stage: string): StageSteps {
         hint: "Drafting a proposal moves the deal to Proposal drafting." };
     case "proposal_drafting":
       return { primary: move("proposal_sent", "Mark the proposal sent"), secondary: present([move("qualified", "Back to qualified"), lost]),
-        hint: "Mark it sent once the client has the proposal." };
+        hint: "Sending the proposal moves the deal on by itself. Mark it sent if it went another way." };
     case "proposal_sent":
       return { primary: move("won", CLOSE_WORDS.won), secondary: present([move("negotiation", "They asked for changes"), lost]),
-        hint: "The client has the proposal. Record their answer when it comes." };
+        hint: "The client has the proposal. Their answer on it moves the deal; record one given another way." };
     case "negotiation":
       return { primary: move("proposal_sent", "Mark the revised proposal sent"), secondary: present([move("won", CLOSE_WORDS.won), lost]),
-        hint: "Send the revised proposal once the changes are agreed." };
+        hint: "Sending the revised proposal moves the deal back to Proposal sent." };
     case "won":
       return { primary: null, secondary: present([move("archived", "Archive")]), hint: "Won. The booking and the handoff take it from here." };
     case "lost":
@@ -274,22 +274,35 @@ export interface TimelineMoment {
 }
 
 function moveSentence(move: StageMove): string {
-  const who = move.changedByName ?? "The team";
+  const who = move.changedByName;
+  if (who === null) {
+    if (move.toStage === "won") return "It was marked won.";
+    if (move.toStage === "lost") return "It was marked lost.";
+    if (move.toStage === "archived") return "It was archived.";
+    return `It moved to ${dealStageWords(move.toStage)}.`;
+  }
   if (move.toStage === "won") return `${who} marked it won.`;
   if (move.toStage === "lost") return `${who} marked it lost.`;
   if (move.toStage === "archived") return `${who} archived it.`;
   return `${who} moved it to ${dealStageWords(move.toStage)}.`;
 }
 
+/** A move nobody at the venue made (the client's own act on a proposal, say)
+ *  is told in its note's words: "The client accepted the proposal (version
+ *  2)." A move a person made names them, with their reason beneath. */
+function moveMoment(move: StageMove): { sentence: string; quote: string | null } {
+  const note = move.note === null ? "" : move.note.trim();
+  // The old board wrote "Moved to X" as every move's note; it says nothing.
+  const said = note === "" || /^Moved to /u.test(note) ? null : note;
+  if (move.changedByName === null && said !== null) return { sentence: said, quote: null };
+  return { sentence: moveSentence(move), quote: said };
+}
+
 /** What happened to the deal, newest first: its stage moves with who made
  *  them and why, its notes, and when it was opened. */
 export function dealTimeline(deal: Pick<Opportunity, "createdAt">, history: readonly StageMove[], notes: readonly Activity[]): TimelineMoment[] {
   const moments: TimelineMoment[] = [
-    ...history.map((move) => ({
-      key: `move:${move.id}`, at: move.createdAt, sentence: moveSentence(move),
-      // The old board wrote "Moved to X" as every move's note; it says nothing.
-      quote: move.note === null || move.note.trim() === "" || /^Moved to /u.test(move.note) ? null : move.note,
-    })),
+    ...history.map((move) => ({ key: `move:${move.id}`, at: move.createdAt, ...moveMoment(move) })),
     ...notes.map((note) => ({ key: `note:${note.id}`, at: note.createdAt, sentence: "Note", quote: note.body })),
     { key: "opened", at: deal.createdAt, sentence: "The deal was opened.", quote: null },
   ];
