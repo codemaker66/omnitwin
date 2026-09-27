@@ -16,6 +16,8 @@ import {
   canWriteBookings,
   createBookingCore,
   loadAccessibleBooking,
+  OWNER_VENUE_MISMATCH,
+  ownerWorksAtVenue,
   pgErrorCode,
   PG_CHECK_VIOLATION,
   serializeBooking,
@@ -275,6 +277,9 @@ export async function bookingRoutes(
         error: "The space does not belong to this venue",
         code: "SPACE_VENUE_MISMATCH",
       });
+    }
+    if (!(await ownerWorksAtVenue(db, input.ownerUserId, enquiry.venueId))) {
+      return reply.status(OWNER_VENUE_MISMATCH.status).send({ error: OWNER_VENUE_MISMATCH.error, code: OWNER_VENUE_MISMATCH.code });
     }
 
     const fallbackTitle = `${enquiry.name}${enquiry.eventType === null ? "" : ` — ${enquiry.eventType}`}`;

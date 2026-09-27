@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   BookingSchema,
   bookingStateToColumns,
@@ -12,7 +12,7 @@ import {
   type TransitionBookingInput,
   type UpdateBookingInput,
 } from "@omnitwin/types";
-import { bookings, bookingStatusHistory, events, spaces } from "../db/schema.js";
+import { bookings, bookingStatusHistory, events, spaces, users } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { canReadDiary } from "../utils/query.js";
@@ -120,6 +120,25 @@ export const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin",
 export function canWriteBookings(actor: MutationActor, venueId: string): boolean {
   return DIARY_WRITE_ROLES.has(actor.role) && actor.venueId === venueId;
 }
+
+/** A hold's owner is told about it (hold reminders email them), so the owner
+ *  must be someone who works the Diary at the booking's venue. A crafted
+ *  request must not name another venue's user, a hallkeeper or a client. */
+export async function ownerWorksAtVenue(conn: BookingDbConn, ownerUserId: string, venueId: string): Promise<boolean> {
+  const [owner] = await conn
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, ownerUserId), eq(users.venueId, venueId), inArray(users.role, [...DIARY_WRITE_ROLES])))
+    .limit(1);
+  return owner !== undefined;
+}
+
+export const OWNER_VENUE_MISMATCH: BookingMutationDeny = {
+  ok: false,
+  status: 400,
+  code: "OWNER_VENUE_MISMATCH",
+  error: "Choose an owner who works at this venue.",
+};
 
 const INK_SLOT_TAKEN: BookingMutationDeny = {
   ok: false,
@@ -259,6 +278,10 @@ export async function createBookingCore(
     }
   }
 
+  if (input.ownerUserId !== undefined && !(await ownerWorksAtVenue(conn, input.ownerUserId, input.venueId))) {
+    return OWNER_VENUE_MISMATCH;
+  }
+
   try {
     const [created] = await conn
       .insert(bookings)
@@ -375,6 +398,13 @@ async function updateBookingLocked(
         error: "The event does not belong to this venue",
       };
     }
+  }
+
+  // A new owner must work at this venue; keeping the owner it has is not
+  // re-checked, so a hold whose owner moved on can still be edited.
+  if (patch.ownerUserId !== undefined && patch.ownerUserId !== row.ownerUserId
+    && !(await ownerWorksAtVenue(conn, patch.ownerUserId, row.venueId))) {
+    return OWNER_VENUE_MISMATCH;
   }
 
   // Cross-lane move (the Board): the target room must belong to the same

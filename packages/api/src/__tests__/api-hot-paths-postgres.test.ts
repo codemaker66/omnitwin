@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 import { actionLogRoutes } from "../routes/action-log.js";
@@ -12,6 +13,7 @@ import { placedObjectRoutes } from "../routes/placed-objects.js";
 import { publicConfigRoutes } from "../routes/public-configs.js";
 import { analyticsRoutes } from "../routes/revenue-analytics.js";
 import { calendarRoutes } from "../routes/calendar.js";
+import { bookingRoutes } from "../routes/bookings.js";
 import { formatVenueDay, runHoldReminderPass } from "../services/hold-reminders.js";
 import { __resetResendClientForTests, sendEmail, type EmailLogger } from "../services/email.js";
 
@@ -66,6 +68,7 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
     await server.register(eventRoutes, { db, prefix: "/events" });
     await server.register(analyticsRoutes, { db, prefix: "/analytics" });
     await server.register(calendarRoutes, { db, prefix: "/calendar" });
+    await server.register(bookingRoutes, { db, prefix: "/bookings" });
     await server.ready();
   });
   beforeEach(() => { statements.length = 0; statementParams.length = 0; });
@@ -607,6 +610,49 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       // The list is the venue's, not the lanes asked for.
       const lanes = await server.inject({ method: "GET", url: `${url}&spaceIds=${room0}`, headers: bearer(staff) });
       expect(lanes.json<AttentionPayload>().data.nextActionsDue.total).toBe(2);
+    });
+
+    it("keeps a hold's owner inside its venue: create, edit and conversion refuse another venue's user or a hallkeeper", async () => {
+      const a = await venue("owners A");
+      const b = await venue("owners B");
+      const staff = await a.actor("staff");
+      const colleague = await a.actor("sales");
+      const hallkeeper = await a.actor("hallkeeper");
+      const elsewhere = await b.actor("staff");
+      const now = Date.now();
+      const hold = (ownerUserId: string) => ({
+        venueId: a.venueId, spaceId: a.rooms[0] ?? "", kind: "hold", title: "Owner check", rank: 1,
+        startsAt: new Date(now + 30 * DAY).toISOString(), endsAt: new Date(now + 30 * DAY + 4 * HOUR).toISOString(),
+        decisionAt: new Date(now + 10 * DAY).toISOString(), ownerUserId, nextAction: "Call the client.",
+        nextActionDueAt: new Date(now + 2 * DAY).toISOString(),
+      });
+      for (const owner of [elsewhere, hallkeeper]) {
+        const refused = await server.inject({ method: "POST", url: "/bookings", headers: bearer(staff), payload: hold(owner.id) });
+        expect(refused.statusCode, refused.body).toBe(400);
+        expect(refused.json<{ code: string; error: string }>()).toMatchObject({ code: "OWNER_VENUE_MISMATCH", error: "Choose an owner who works at this venue." });
+      }
+      const created = await server.inject({ method: "POST", url: "/bookings", headers: bearer(staff), payload: hold(colleague.id) });
+      expect(created.statusCode, created.body).toBe(201);
+      const bookingId = created.json<{ data: { id: string } }>().data.id;
+
+      // A new owner is checked; keeping the owner it has is not.
+      const moved = await server.inject({ method: "PATCH", url: `/bookings/${bookingId}`, headers: bearer(staff), payload: { ownerUserId: elsewhere.id } });
+      expect(moved.statusCode, moved.body).toBe(400);
+      expect(moved.json<{ code: string }>().code).toBe("OWNER_VENUE_MISMATCH");
+      const kept = await server.inject({ method: "PATCH", url: `/bookings/${bookingId}`, headers: bearer(staff), payload: { ownerUserId: colleague.id, title: "Owner kept" } });
+      expect(kept.statusCode, kept.body).toBe(200);
+
+      const [enquiry] = await db.insert(schema.enquiries).values({
+        venueId: a.venueId, spaceId: a.rooms[0] ?? "", state: "submitted", name: "Owner check enquiry", email: "o@hot-paths.invalid",
+      }).returning({ id: schema.enquiries.id });
+      const { venueId: _venue, kind: _kind, ...convert } = hold(elsewhere.id);
+      const conversion = await server.inject({
+        method: "POST", url: "/bookings/from-enquiry", headers: bearer(staff), payload: { ...convert, enquiryId: enquiry?.id },
+      });
+      expect(conversion.statusCode, conversion.body).toBe(400);
+      expect(conversion.json<{ code: string }>().code).toBe("OWNER_VENUE_MISMATCH");
+      const [written] = await db.select({ count: sql<number>`count(*)::int` }).from(schema.bookings).where(eq(schema.bookings.venueId, a.venueId));
+      expect(written?.count).toBe(1);
     });
 
     it("dry-runs the reminder pass from the database: who is told, about what, and never an address", async () => {
