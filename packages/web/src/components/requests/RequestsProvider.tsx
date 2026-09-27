@@ -69,11 +69,13 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
   const sequenceRef = useRef(0);
   const debounceRef = useRef<number | null>(null);
 
-  const refresh = useCallback((): void => {
-    if (venueId === null || !isStaff) return;
+  // Resolves once the answer, or the failure, has landed, so a slot's
+  // "Try again" shows work for exactly as long as there is work.
+  const refresh = useCallback((): Promise<void> => {
+    if (venueId === null || !isStaff) return Promise.resolve();
     sequenceRef.current += 1;
     const sequence = sequenceRef.current;
-    void listVenueRequests(venueId, { status: "open" })
+    return listVenueRequests(venueId, { status: "open" })
       .then((snapshot) => {
         if (sequence !== sequenceRef.current) return;
         setRequests(snapshot);
@@ -94,7 +96,7 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
       setStatus("loading");
       return;
     }
-    refresh();
+    void refresh();
   }, [enabled, refresh]);
 
   // The live channel. Every frame is a nudge to refetch, debounced so a burst
@@ -105,7 +107,7 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
       debounceRef.current = window.setTimeout(() => {
         debounceRef.current = null;
-        refresh();
+        void refresh();
       }, REFETCH_DEBOUNCE_MS);
     };
     const unsubscribe = subscribeRequestsLive((event) => {
@@ -200,16 +202,16 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
       .catch((cause: unknown) => {
         setFailure({ on: "request", requestId: request.id, message: messageFor(cause) });
         // Somebody else may have moved it — take the server's word for it.
-        refresh();
+        void refresh();
       })
       .finally(() => { setBusyId(null); });
   }, [merge, refresh]);
 
   const value = useMemo<SlotRequestsApi>(
     () => enabled
-      ? { status, nowMs, requestsFor, ask, move, busyId, askingKeys, failure }
+      ? { status, nowMs, requestsFor, retry: refresh, ask, move, busyId, askingKeys, failure }
       : SLOT_REQUESTS_UNAVAILABLE,
-    [enabled, status, nowMs, requestsFor, ask, move, busyId, askingKeys, failure],
+    [enabled, status, nowMs, requestsFor, refresh, ask, move, busyId, askingKeys, failure],
   );
 
   return (

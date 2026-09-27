@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
 // ground. Written for the dark tablet arrangement it was paper on ivory (about
 // 1.1:1) and bright copper on ivory (about 2.2:1), which a rendered-board check
 // found and no unit test could. This reads the three stylesheets that decide
-// it and holds both summary colours to AA on every ground a slot can take.
+// it and holds both summary colours, and the line that says the requests
+// could not be loaded, to AA on every ground a slot can take.
 // A failure is said on the dark grounds, on a request card or in the composer
 // beside "Send it", so its words are held to AA there too.
 // ---------------------------------------------------------------------------
@@ -91,13 +92,14 @@ function slotGrounds(): readonly (readonly [string, Rgb])[] {
   });
 }
 
-describe("the request slab's summary line on the Day Board", () => {
+describe("the request slab's words on a Day Board slot's own ground", () => {
   const tokens = registerTokens();
   const slab = css("src/components/requests/slot-requests.css");
 
   it.each([
     [".vv-requests-summary", "quiet"],
     ['.vv-requests-summary[data-urgent="true"]', "urgent"],
+    [".vv-requests-unavailable", "could not be loaded"],
   ])("keeps the %s words (%s) at AA on every slot ground", (selector) => {
     const ink = colourOf(colourRule(slab, selector), tokens);
     for (const [ground, colour] of slotGrounds()) {

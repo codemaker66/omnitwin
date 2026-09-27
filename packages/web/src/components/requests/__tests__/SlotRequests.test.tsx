@@ -121,7 +121,8 @@ function sentKey(call: number): string {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // Reset, not clear: an answer queued for one case must never reach the next.
+  vi.resetAllMocks();
   mocks.list.mockResolvedValue([]);
   mocks.subscribe.mockReturnValue(() => undefined);
   useAuthStore.getState().setUser(hallkeeper);
@@ -190,6 +191,34 @@ describe("asking for something from a Day Board slot", () => {
       expect(within(hall).getByRole("button", { name: "Ask for something" })).toBeTruthy();
     });
     expect(within(saloon).getByRole("button", { name: "Send it" })).toBeTruthy();
+  });
+});
+
+describe("when the venue's requests cannot be loaded", () => {
+  it("says so on every slot rather than showing rooms where nothing was asked, and tries again", async () => {
+    let answer: (snapshot: readonly VenueRequest[]) => void = () => undefined;
+    mocks.list
+      .mockRejectedValueOnce(new Error("Network error — check your connection"))
+      .mockImplementationOnce(() => new Promise<readonly VenueRequest[]>((resolve) => { answer = resolve; }));
+    renderBoard();
+
+    const said = await screen.findAllByText("This room’s requests could not be loaded just now.");
+    expect(said).toHaveLength(2);
+    const hall = region(GRAND_HALL);
+
+    fireEvent.click(within(hall).getByRole("button", { name: "Try again" }));
+    expect(within(hall).getByRole("status").textContent).toBe("Loading requests…");
+    expect(mocks.list).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      answer([venueRequest({ id: "00000000-0000-4000-8000-0000000000f1", bookingId: GRAND_HALL.bookingId })]);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("This room’s requests could not be loaded just now.")).toBeNull();
+    });
+    expect(within(hall).queryByRole("status")).toBeNull();
+    expect(within(hall).getByText("Refreshments")).toBeTruthy();
   });
 });
 

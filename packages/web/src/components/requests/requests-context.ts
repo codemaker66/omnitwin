@@ -48,6 +48,9 @@ export interface SlotRequestsApi {
    *  arrival is always judged against a current instant. */
   readonly nowMs: number;
   readonly requestsFor: (bookingId: string) => readonly VenueRequest[];
+  /** Ask for the venue's open requests again after a failed load. Resolves
+   *  once the answer, or the failure, has landed. */
+  readonly retry: () => Promise<void>;
   /** Resolves true once the request is made; false when it could not be
    *  sent, with the reason in `failure`, keyed to this ask. */
   readonly ask: (slot: SlotRequestsProps, input: AskForSomething) => Promise<boolean>;
@@ -69,6 +72,7 @@ export const SLOT_REQUESTS_UNAVAILABLE: SlotRequestsApi = {
   status: "loading",
   nowMs: 0,
   requestsFor: () => EMPTY,
+  retry: () => Promise.resolve(),
   ask: () => Promise.resolve(false),
   move: () => { /* no provider mounted — nothing to send */ },
   busyId: null,

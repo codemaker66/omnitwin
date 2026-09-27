@@ -253,7 +253,7 @@ function Composer({ slot, onClose }: {
       </label>
 
       <div className="vv-request-actions">
-        <button type="submit" className="vv-request-action vv-request-action--take" disabled={asking}>
+        <button type="submit" className="vv-request-action vv-request-action--take" disabled={asking} aria-busy={asking}>
           {asking ? <ActivityIndicator size={16} /> : null}
           {asking ? "Sending…" : "Send it"}
         </button>
@@ -269,8 +269,9 @@ function Composer({ slot, onClose }: {
  * reserved mount point; props only, and it never calls back into the board.
  */
 export function SlotRequests(props: SlotRequestsProps): ReactElement | null {
-  const { requestsFor, status, nowMs } = useSlotRequests();
+  const { requestsFor, status, nowMs, retry } = useSlotRequests();
   const [composing, setComposing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const requests = requestsFor(props.bookingId);
 
   const signal = useMemo(
@@ -284,6 +285,30 @@ export function SlotRequests(props: SlotRequestsProps): ReactElement | null {
 
   return (
     <section className="vv-requests" aria-label={`Requests for ${props.roomName}`}>
+      {/* A load that failed is said, never shown as a room with nothing
+          asked: an empty slab would claim that nobody wants anything. */}
+      {status === "error" ? (
+        <div className="vv-requests-unavailable">
+          {retrying ? (
+            <ActivityStatus>Loading requests…</ActivityStatus>
+          ) : (
+            <>
+              <p>This room’s requests could not be loaded just now.</p>
+              <button
+                type="button"
+                className="vv-request-ask"
+                onClick={() => {
+                  setRetrying(true);
+                  void retry().finally(() => { setRetrying(false); });
+                }}
+              >
+                Try again
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
+
       {signal === null ? null : (
         <p className="vv-requests-summary" data-urgent={signal.urgent} aria-live="polite">
           <span

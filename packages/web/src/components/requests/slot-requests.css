@@ -40,6 +40,21 @@
   color: var(--hk-copper-ink, #8a5840);
 }
 
+/* When the venue's requests could not be loaded, each slot says so on its
+   own light ground, in the register's ink, with a way to try again. */
+.vv-requests-unavailable {
+  align-items: center;
+  color: var(--hk-ink, #2e382e);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 8px;
+}
+
+.vv-requests-unavailable p {
+  margin: 0;
+}
+
 .vv-requests-dot {
   background: var(--hk-copper, #986246);
   border-radius: 999px;
