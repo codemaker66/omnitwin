@@ -725,6 +725,15 @@ export function EventArchitectPage(): ReactElement {
             />
           )}
 
+          {selectionLocked ? null : (
+            // The API keeps one selection per set of options: once a layout
+            // is used, the other two can no longer be (409 on a second).
+            <p className="event-architect-choice-note">
+              You can use one of the three. That choice is final for this set: the layout is saved as a
+              draft, and the other two stay here to compare.
+            </p>
+          )}
+
           <div className="event-architect-candidates">
             {persisted.run.candidates.map((candidate) => (
               <CandidateCard

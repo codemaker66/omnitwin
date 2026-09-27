@@ -763,6 +763,13 @@
   color: #06100e;
 }
 
+.event-architect-choice-note {
+  color: var(--ea-muted);
+  line-height: 1.55;
+  margin: 0 0 18px;
+  max-width: 68ch;
+}
+
 .event-architect-disclosure {
   align-items: flex-start;
   border-top: 1px solid var(--ea-line);

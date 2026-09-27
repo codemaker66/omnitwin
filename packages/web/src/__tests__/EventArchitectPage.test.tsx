@@ -338,6 +338,9 @@ describe("EventArchitectPage", () => {
     await completeRequiredBrief();
     fireEvent.click(screen.getByRole("button", { name: "Generate three options" }));
 
+    // Said before the press: the choice is final for this set of options.
+    expect((await screen.findByText(/That choice is final for this set/u)).textContent)
+      .toContain("the layout is saved as a draft, and the other two stay here to compare.");
     fireEvent.click(await screen.findByRole("button", { name: "Select Balanced" }));
     await waitFor(() => { expect(mockSelectEventArchitectCandidate).toHaveBeenCalledTimes(1); });
     expect(mockSelectEventArchitectCandidate.mock.calls[0]?.[0]).toBe(candidate.candidateId);
@@ -351,6 +354,8 @@ describe("EventArchitectPage", () => {
     expect(plannerLink.getAttribute("href")).toBe(selection.plannerPath);
     expect(screen.getByText("Layout saved as a draft.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Balanced selected" })).toHaveProperty("disabled", true);
+    // Once chosen, the note has done its work.
+    expect(screen.queryByText(/That choice is final for this set/u)).toBeNull();
     expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
     expect(screen.getByText("Only venue staff, hallkeepers or administrators can record a review.")).toBeTruthy();
     expect(mockGetEventArchitectOpsReview).toHaveBeenCalledWith(

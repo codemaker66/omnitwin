@@ -86,6 +86,11 @@ test.describe("proposal share link", () => {
 
     await expect(page.getByText("Proposal accepted")).toBeVisible();
     await expect(page.getByRole("button", { name: "Approve proposal" })).toHaveCount(0);
+    // The client answered at the foot of the page, and the button they
+    // pressed is gone: the result takes focus and comes into view.
+    const result = page.getByRole("status").filter({ hasText: "Proposal accepted" });
+    await expect(result).toBeFocused();
+    await expect(result).toBeInViewport();
   });
 
   test("request changes is note-gated and sends the note", async ({ page }) => {

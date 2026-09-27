@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { useParams } from "react-router-dom";
 import {
   approveProposalShare,
@@ -48,6 +48,15 @@ function formatSentDate(iso: string | null): string | null {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
+/** A quote's number column: a gap from its neighbour, amounts kept whole,
+ *  and figures of one width so the columns line up. */
+const NUMBER_CELL: React.CSSProperties = {
+  textAlign: "right",
+  paddingLeft: 14,
+  whiteSpace: "nowrap",
+  fontVariantNumeric: "tabular-nums",
+};
+
 type LoadState =
   | { kind: "loading" }
   | { kind: "error" }
@@ -83,6 +92,11 @@ export function ProposalPage(): ReactElement {
   const [commentText, setCommentText] = useState("");
   const [commentPosting, setCommentPosting] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  const resultRef = useRef<HTMLElement | null>(null);
+  // Set when the client's own response lands. The buttons they pressed are
+  // gone by then, so the result takes focus, which also brings it into view
+  // from the foot of the page where they answered.
+  const focusResult = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +134,7 @@ export function ProposalPage(): ReactElement {
           : Promise.reject(new Error("Missing proposal share reference"));
 
       actionPromise.then((result) => {
+        focusResult.current = true;
         setState({ kind: "ready", proposal: { ...state.proposal, status: result.status } });
         setShowChangesForm(false);
       }).catch(() => {
@@ -128,6 +143,12 @@ export function ProposalPage(): ReactElement {
     },
     [shareCode, state, submitting, token],
   );
+
+  useLayoutEffect(() => {
+    if (!focusResult.current) return;
+    focusResult.current = false;
+    resultRef.current?.focus();
+  }, [state]);
 
   // Standalone comment (token share only) — posts a message into the thread
   // without changing the proposal status, then re-fetches so the new comment
@@ -205,7 +226,7 @@ export function ProposalPage(): ReactElement {
         </header>
 
         {banner !== undefined && (
-          <section role="status" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "18px 22px", marginBottom: 28 }}>
+          <section ref={resultRef} tabIndex={-1} role="status" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 10, padding: "18px 22px", marginBottom: 28 }}>
             <div style={{ color: GOLD, fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{banner.heading}</div>
             <div style={{ color: CREAM_MUT, fontSize: 14, lineHeight: 1.6 }}>{banner.body}</div>
           </section>
@@ -232,31 +253,33 @@ export function ProposalPage(): ReactElement {
         )}
 
         {proposal.quote !== null && (
+          // Number columns keep a gap and never break an amount: on a phone
+          // they had no padding, so "1" and "£2,500.00" ran together.
           <section aria-label="Quote" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 12, padding: "26px 28px", marginBottom: 28 }}>
             <h2 style={{ ...SERIF_TYPE, fontWeight: 400, fontSize: 24, margin: "0 0 18px" }}>Your quote</h2>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ color: CREAM_MUT, textAlign: "left" }}>
                   <th style={{ fontWeight: 500, padding: "6px 0" }}>Item</th>
-                  <th style={{ fontWeight: 500, padding: "6px 0", textAlign: "right" }}>Qty</th>
-                  <th style={{ fontWeight: 500, padding: "6px 0", textAlign: "right" }}>Unit</th>
-                  <th style={{ fontWeight: 500, padding: "6px 0", textAlign: "right" }}>Total</th>
+                  <th style={{ fontWeight: 500, padding: "6px 0", ...NUMBER_CELL }}>Qty</th>
+                  <th style={{ fontWeight: 500, padding: "6px 0", ...NUMBER_CELL }}>Unit</th>
+                  <th style={{ fontWeight: 500, padding: "6px 0", ...NUMBER_CELL }}>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {proposal.quote.lineItems.map((item, index) => (
                   <tr key={index} style={{ borderTop: `1px solid ${HAIRLINE}` }}>
                     <td style={{ padding: "10px 0", paddingRight: 12 }}>{item.description}</td>
-                    <td style={{ padding: "10px 0", textAlign: "right" }}>{item.quantity}</td>
-                    <td style={{ padding: "10px 0", textAlign: "right" }}>{formatMinor(item.unitAmountMinor, proposal.quote?.currency ?? "GBP")}</td>
-                    <td style={{ padding: "10px 0", textAlign: "right" }}>{formatMinor(item.lineTotalMinor, proposal.quote?.currency ?? "GBP")}</td>
+                    <td style={{ padding: "10px 0", ...NUMBER_CELL }}>{item.quantity}</td>
+                    <td style={{ padding: "10px 0", ...NUMBER_CELL }}>{formatMinor(item.unitAmountMinor, proposal.quote?.currency ?? "GBP")}</td>
+                    <td style={{ padding: "10px 0", ...NUMBER_CELL }}>{formatMinor(item.lineTotalMinor, proposal.quote?.currency ?? "GBP")}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: `1px solid ${GOLD}` }}>
                   <td colSpan={3} style={{ padding: "12px 0", fontWeight: 600 }}>Total</td>
-                  <td style={{ padding: "12px 0", textAlign: "right", fontWeight: 600, color: GOLD, fontSize: 16 }}>
+                  <td style={{ padding: "12px 0", ...NUMBER_CELL, fontWeight: 600, color: GOLD, fontSize: 16 }}>
                     {formatMinor(proposal.quote.totalMinor, proposal.quote.currency)}
                   </td>
                 </tr>

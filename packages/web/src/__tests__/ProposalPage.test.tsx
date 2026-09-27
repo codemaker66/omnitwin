@@ -114,6 +114,9 @@ describe("ProposalPage", () => {
     });
     expect(await screen.findByText("Proposal accepted")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Approve proposal" })).toBeNull();
+    // The button that was pressed is gone; the result the client is waiting
+    // for takes focus instead of the page.
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByText("Proposal accepted").closest("section")); });
   });
 
   it("approves a token-based proposal without exposing internal identifiers", async () => {
@@ -165,6 +168,13 @@ describe("ProposalPage", () => {
       });
     });
     expect(await screen.findByText("Changes requested")).toBeTruthy();
+  });
+
+  it("does not take focus for a proposal that was already answered when it opened", async () => {
+    mockGetPublicProposal.mockResolvedValue(fixtureProposal({ status: "accepted" }));
+    renderPage();
+    expect(await screen.findByText("Proposal accepted")).toBeTruthy();
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("hides actions for non-actionable statuses", async () => {
