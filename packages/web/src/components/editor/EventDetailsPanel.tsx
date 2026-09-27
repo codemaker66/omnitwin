@@ -138,6 +138,13 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
   if (!open || timelinePreviewActive) return null;
 
+  // Edits not yet saved: the draft, as it would be sent, differs from what
+  // the server holds (both keep emptyEventInstructions()'s key order). A
+  // click beside the sheet then leaves it open; Close, × and Escape still
+  // close it on purpose. It used to discard the edits silently.
+  const unsaved = state !== null && serverStateRef.current !== null
+    && JSON.stringify(normalizeForSave(state)) !== JSON.stringify(serverStateRef.current);
+
   const handleSave = async (): Promise<void> => {
     if (configId === null || state === null || isLayoutTimelineMutationLocked()) return;
     setSaving(true);
@@ -394,7 +401,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
         display: "flex", alignItems: "flex-start", justifyContent: "center",
         overflowY: "auto",
       }}
-      onClick={onClose}
+      onClick={() => { if (!unsaved) onClose(); }}
     >
       <div
         ref={dialogRef}
@@ -607,7 +614,9 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
         <footer style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 18, borderTop: `1px solid ${BORDER}`, background: "#17171a" }}>
           <div style={{ fontSize: 11, color: TEXT_SEC }}>
-            {savedAt !== null ? `Saved at ${savedAt.toLocaleTimeString()}` : "Not saved yet"}
+            {unsaved
+              ? "Unsaved changes"
+              : savedAt !== null ? `Saved at ${savedAt.toLocaleTimeString()}` : "No unsaved changes"}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" onClick={onClose} style={secondaryBtnStyle}>Close</button>

@@ -50,6 +50,24 @@ describe("ChairCountDialog scaled capacity", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("presses the focused button on Enter instead of placing chairs", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("Round table fixture missing");
+    const onConfirm = vi.fn<(count: number) => void>();
+    render(<ChairCountDialog request={{ catalogueItemId: table.id, x: 0, z: 0, rotationY: 0, tableShape: "round" }} onConfirm={onConfirm} onCancel={vi.fn()} />);
+
+    for (const name of ["Cancel", "Table Only"]) {
+      const button = screen.getByRole("button", { name });
+      button.focus();
+      fireEvent.keyDown(button, { code: "Enter", key: "Enter" });
+    }
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    // Enter from the count still places the chairs.
+    fireEvent.keyDown(screen.getByLabelText("Chair count"), { code: "Enter", key: "Enter" });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
   it("submits table-only instead of inventing a seat for a tiny scaled table", () => {
     vi.useFakeTimers();
     const table = getCatalogueItemBySlug("trestle-6ft");

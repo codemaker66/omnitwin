@@ -210,3 +210,45 @@ describe("VerticalToolbox panel exits", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-635 N5, item 9: the rail's Delete switched to a "delete" tool that nothing
+// read, so it did nothing; the Select button promised a V shortcut that no
+// handler answered.
+// ---------------------------------------------------------------------------
+describe("VerticalToolbox Delete and the V shortcut", () => {
+  function placed(id: string, groupId: string | null): import("../../../lib/placement.js").PlacedItem {
+    return {
+      id, catalogueItemId: "round-table-6ft", x: 0, y: 0, z: 0, rotationY: 0,
+      clothed: false, clothStyle: null, tableSetting: null, groupId,
+    };
+  }
+
+  it("deletes the selection and its attached chairs, and waits for a selection", () => {
+    usePlacementStore.setState({
+      placedItems: [placed("table", "g1"), placed("chair-1", "g1"), placed("chair-2", "g1"), placed("other", null)],
+    });
+    renderToolbox();
+    const remove = screen.getByRole("button", { name: /^Delete/u });
+    expect(remove).toHaveProperty("disabled", true);
+
+    act(() => { useSelectionStore.getState().select("table"); });
+    expect(remove).toHaveProperty("disabled", false);
+    fireEvent.click(remove);
+
+    expect(usePlacementStore.getState().placedItems.map((item) => item.id)).toEqual(["other"]);
+    expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+  });
+
+  it("returns to Select on V, and leaves Ctrl+V and typing alone", () => {
+    renderToolbox();
+    fireEvent.keyDown(window, { code: "KeyD" });
+    expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).not.toBe("true");
+
+    fireEvent.keyDown(window, { code: "KeyV", ctrlKey: true });
+    expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).not.toBe("true");
+
+    fireEvent.keyDown(window, { code: "KeyV" });
+    expect(screen.getByRole("button", { name: /^Select & Move/u }).getAttribute("aria-pressed")).toBe("true");
+  });
+});

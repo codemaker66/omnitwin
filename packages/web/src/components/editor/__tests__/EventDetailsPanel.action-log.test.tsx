@@ -126,3 +126,33 @@ describe("event details save actions", () => {
     expect(loggedIntents()).toEqual([]);
   });
 });
+
+// T-635 N5, item 9: a click beside the sheet closed it and threw away edits
+// that had not been saved.
+describe("event details keep unsaved edits", () => {
+  it("stays open when the space beside it is clicked with unsaved edits, and says so", async () => {
+    const onClose = vi.fn();
+    render(<EventDetailsPanel open onClose={onClose} />);
+    const textarea = await screen.findByDisplayValue("Old text");
+    expect(screen.getByText("No unsaved changes")).toBeTruthy();
+
+    fireEvent.change(textarea, { target: { value: "New text" } });
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+    fireEvent.click(screen.getByRole("dialog", { name: "Event details" }));
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => { expect(screen.queryByText("Unsaved changes")).toBeNull(); });
+    expect(screen.getByText(/^Saved at /u)).toBeTruthy();
+    fireEvent.click(screen.getByRole("dialog", { name: "Event details" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("still closes on the Close button with unsaved edits", async () => {
+    const onClose = vi.fn();
+    render(<EventDetailsPanel open onClose={onClose} />);
+    fireEvent.change(await screen.findByDisplayValue("Old text"), { target: { value: "New text" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0] ?? document.body);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

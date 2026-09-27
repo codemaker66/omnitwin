@@ -188,6 +188,9 @@ export function ChairCountDialog({
         else if (e.code === "Escape") { e.preventDefault(); onCancel(); }
         return;
       }
+      // Enter on a focused button presses that button: Cancel, Table only
+      // or a stepper. It used to place the chairs whatever was focused.
+      if ((e.code === "Enter" || e.code === "NumpadEnter") && e.target instanceof HTMLButtonElement) return;
       if (e.code === "Enter" || e.code === "NumpadEnter") { e.preventDefault(); onConfirm(count); }
       else if (e.code === "Escape") { e.preventDefault(); onCancel(); }
       else if (e.code === "ArrowUp" || e.code === "ArrowRight") { e.preventDefault(); setCount((c) => Math.min(c + 1, maxChairs)); setAnimKey((k) => k + 1); }
@@ -399,7 +402,8 @@ export function ChairCountDialog({
             style={{
               padding: "10px 24px", borderRadius: 10,
               border: "1px solid rgba(255,255,255,0.06)",
-              background: "transparent", color: "#555",
+              // Quiet but readable: #555 read 2.6:1 on the panel; this is 5.6:1.
+              background: "transparent", color: "rgba(246, 241, 232, 0.55)",
               fontSize: 14, fontWeight: 500, cursor: "pointer",
               letterSpacing: 0.3, transition: "color 0.25s ease, border-color 0.25s ease",
             }}

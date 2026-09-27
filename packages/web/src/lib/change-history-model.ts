@@ -84,6 +84,8 @@ function titleAndTone(item: AuditLogEntry): { title: string; tone: ChangeHistory
       return { title: "Markup erased", tone: "remove" };
     case "markup.clear":
       return { title: "Markup cleared", tone: "remove" };
+    case "markup.restore":
+      return { title: "Cleared markup brought back", tone: "add" };
     case "event.details.update":
       return { title: "Event details updated", tone: "edit" };
     default:

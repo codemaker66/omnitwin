@@ -14,7 +14,16 @@ function resetStore(): void {
     selectedColor: "gold",
     selectedWidth: 0.034,
     nextStrokeIndex: 1,
+    clearedStrokes: null,
   });
+}
+
+function drawStroke(from: number): void {
+  const store = useMarkupStore.getState();
+  store.setActive(true);
+  store.beginStroke({ x: from, z: 0 });
+  useMarkupStore.getState().appendPoint({ x: from + 0.5, z: 0.5 });
+  useMarkupStore.getState().commitStroke();
 }
 
 beforeEach(resetStore);
@@ -94,5 +103,40 @@ describe("markup store", () => {
     useMarkupStore.getState().beginStroke({ x: 2, z: 2 });
 
     expect(useMarkupStore.getState().draftStroke?.id).toBe("markup-13");
+  });
+});
+
+// T-635 N5, item 9: "Clear" could not be undone; the drawing was gone.
+describe("markup store Clear", () => {
+  it("brings a cleared drawing back on Undo", () => {
+    drawStroke(0);
+    drawStroke(2);
+    const drawing = useMarkupStore.getState().strokes;
+    useMarkupStore.getState().clearStrokes();
+    expect(useMarkupStore.getState().strokes).toEqual([]);
+
+    useMarkupStore.getState().undoStroke();
+    expect(useMarkupStore.getState().strokes).toEqual(drawing);
+    expect(useMarkupStore.getState().clearedStrokes).toBeNull();
+  });
+
+  it("undoes strokes drawn after a Clear first, then brings the cleared drawing back", () => {
+    drawStroke(0);
+    const drawing = useMarkupStore.getState().strokes;
+    useMarkupStore.getState().clearStrokes();
+    drawStroke(4);
+
+    useMarkupStore.getState().undoStroke();
+    expect(useMarkupStore.getState().strokes).toEqual([]);
+    useMarkupStore.getState().undoStroke();
+    expect(useMarkupStore.getState().strokes).toEqual(drawing);
+  });
+
+  it("forgets a cleared drawing when another layout's markup loads", () => {
+    drawStroke(0);
+    useMarkupStore.getState().clearStrokes();
+    useMarkupStore.getState().loadStrokes([]);
+    useMarkupStore.getState().undoStroke();
+    expect(useMarkupStore.getState().strokes).toEqual([]);
   });
 });

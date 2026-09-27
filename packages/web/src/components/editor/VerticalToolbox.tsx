@@ -383,8 +383,9 @@ function MarkupToolPanel({
   const selectedWidth = useMarkupStore((state) => state.selectedWidth);
   const strokes = useMarkupStore((state) => state.strokes);
   const draftStroke = useMarkupStore((state) => state.draftStroke);
+  const hasClearedDrawing = useMarkupStore((state) => state.clearedStrokes !== null);
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
-  const canUndoMarkup = draftStroke !== null || strokes.length > 0;
+  const canUndoMarkup = draftStroke !== null || strokes.length > 0 || hasClearedDrawing;
   const widthLabel = selectedWidth < 0.024 ? "Fine" : selectedWidth > 0.052 ? "Bold" : "Signature";
 
   return (
@@ -823,6 +824,10 @@ if (typeof document !== "undefined" && document.getElementById(TOOLTIP_ANIM_ID) 
 
 interface ToolBtnProps {
   readonly active: boolean;
+  /** For a mode or a switch (Select, Furniture, Rotate, Draw, Snap, Walls):
+   *  exposed as pressed, so the active one is announced. One-off actions such
+   *  as Undo leave it out. */
+  readonly pressed?: boolean;
   readonly disabled?: boolean;
   readonly label: string;
   readonly description: string;
@@ -839,6 +844,7 @@ interface ToolBtnProps {
 
 function ToolBtn({
   active,
+  pressed,
   disabled = false,
   label,
   description,
@@ -884,6 +890,7 @@ function ToolBtn({
       <button
         type="button"
         aria-label={label}
+        aria-pressed={pressed}
         style={btnStyle(active, disabled, compact)}
         onClick={handleClick}
         disabled={disabled}
@@ -1866,7 +1873,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   const cameraMounted = useDelayedUnmount(cameraOpen, 250);
   const markupMounted = useDelayedUnmount(activeTool === "markup", 220);
 
-  // F key opens furniture panel
+  // F opens the furniture panel, D the drawing tools, and V returns to
+  // Select, as the Select button's hint says.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -1881,6 +1889,8 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
       } else if (e.code === "KeyD" && !e.ctrlKey && !e.metaKey) {
         if (useCatalogueStore.getState().selectedItemId !== null) return;
         handleToolClick("markup");
+      } else if (e.code === "KeyV" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        handleToolClick("select");
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -1983,15 +1993,15 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
         scrollbarWidth: "none" as const,
         fontFamily: "'Inter', sans-serif",
       } : toolbarStyle}>
-        <ToolBtn active={activeTool === "select"} compact={isNarrow} subLabel="Select" label="Select & Move" description={selectDescription} shortcut="V" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("select"); }}>
+        <ToolBtn active={activeTool === "select"} pressed={activeTool === "select"} compact={isNarrow} subLabel="Select" label="Select & Move" description={selectDescription} shortcut="V" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("select"); }}>
           <MousePointer2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "add"} compact={isNarrow} subLabel={isNarrow ? "Place" : "Furniture"} label="Add Furniture" description={addDescription} shortcut="F" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("add"); }}>
+        <ToolBtn active={activeTool === "add"} pressed={activeTool === "add"} compact={isNarrow} subLabel={isNarrow ? "Place" : "Furniture"} label="Add Furniture" description={addDescription} shortcut="F" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("add"); }}>
           <Armchair size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "rotate"} compact={isNarrow} subLabel="Rotate" label="Rotate" description={rotateDescription} shortcut="Q / E" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("rotate"); }}>
+        <ToolBtn active={activeTool === "rotate"} pressed={activeTool === "rotate"} compact={isNarrow} subLabel="Rotate" label="Rotate" description={rotateDescription} shortcut="Q / E" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("rotate"); }}>
           <RotateCw size={ICON_SIZE} />
         </ToolBtn>
 
@@ -1999,7 +2009,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           {isSaving ? <ActivityIndicator size={ICON_SIZE} /> : <Save size={ICON_SIZE} />}
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "delete"} compact={isNarrow} subLabel="Delete" label="Delete" description="Delete selected furniture and attached chairs." shortcut="Del" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("delete"); }}>
+        {/* Deletes the selection, as Del does. It used to switch to a
+            "delete" tool nothing read, so the press did nothing. */}
+        <ToolBtn active={false} compact={isNarrow} subLabel="Delete" label="Delete" disabled={selectedIds.size === 0} description={selectedIds.size === 0 ? "Select furniture to delete it and its attached chairs." : "Delete selected furniture and attached chairs."} shortcut="Del" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleDeleteSelected}>
           <Trash2 size={ICON_SIZE} />
         </ToolBtn>
 
@@ -2019,15 +2031,15 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "markup"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("markup"); }}>
+        <ToolBtn active={activeTool === "markup"} pressed={activeTool === "markup"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("markup"); }}>
           <PenLine size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Snap furniture to a 1-metre grid." shortcut="G" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleSnapToggle}>
+        <ToolBtn active={snapEnabled} pressed={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Snap furniture to a 1-metre grid." shortcut="G" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleSnapToggle}>
           <Grid3X3 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle room walls." : "Show all walls. Click a wall to toggle it."} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
+        <ToolBtn active={allWallsUp} pressed={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle room walls." : "Show all walls. Click a wall to toggle it."} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 

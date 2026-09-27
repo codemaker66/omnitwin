@@ -138,6 +138,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
   const drawerOpen = useCatalogueStore((s) => s.drawerOpen);
   const markupActive = useMarkupStore((s) => s.active);
   const markupStrokeCount = useMarkupStore((s) => s.strokes.length);
+  const hasClearedDrawing = useMarkupStore((s) => s.clearedStrokes !== null);
   const activeReferenceId = useBookmarkStore((s) => s.activeReferenceId);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const allPlacedItems = usePlacementStore((s) => s.placedItems);
@@ -230,7 +231,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
             ariaLabel: "Undo last laser stroke",
             icon: <Ungroup size={16} aria-hidden="true" />,
             onClick: () => { useMarkupStore.getState().undoStroke(); },
-            disabled: markupStrokeCount === 0,
+            disabled: markupStrokeCount === 0 && !hasClearedDrawing,
           },
           {
             id: "clear-drawing",
@@ -440,6 +441,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     drawerOpen,
     diningTableCount,
     history,
+    hasClearedDrawing,
     markupActive,
     markupStrokeCount,
     linenTableCount,

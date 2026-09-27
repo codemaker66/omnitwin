@@ -25,6 +25,9 @@ export interface MarkupState {
   readonly selectedColor: MarkupColor;
   readonly selectedWidth: number;
   readonly nextStrokeIndex: number;
+  /** The drawing the last Clear took away. Undo brings it back once the
+   *  strokes drawn since have been undone; a new layout forgets it. */
+  readonly clearedStrokes: readonly MarkupStroke[] | null;
   readonly setActive: (active: boolean) => void;
   readonly setColor: (color: MarkupColor) => void;
   readonly setWidth: (width: number) => void;
@@ -112,6 +115,7 @@ export const useMarkupStore = create<MarkupState>()((set, get) => ({
   selectedColor: "gold",
   selectedWidth: 0.034,
   nextStrokeIndex: 1,
+  clearedStrokes: null,
 
   setActive: (active) => {
     set((state) => ({
@@ -192,6 +196,19 @@ export const useMarkupStore = create<MarkupState>()((set, get) => ({
       set({ draftStroke: null });
       return;
     }
+    // Nothing drawn since a Clear: Undo brings the cleared drawing back. It
+    // used to do nothing, so a Clear could not be undone.
+    if (state.strokes.length === 0 && state.clearedStrokes !== null) {
+      const restored = state.clearedStrokes;
+      set({ strokes: restored, clearedStrokes: null });
+      logPlannerAction({
+        intent: "markup.restore",
+        tool: "markup",
+        payload: { count: restored.length, via: "clear-undo" },
+        inverse: { clear: true },
+      });
+      return;
+    }
     const removed = state.strokes[state.strokes.length - 1];
     // set() runs unconditionally (the pre-slice-2 behaviour, and the
     // pattern every other guard in this slice follows) — only the LOG is
@@ -214,7 +231,7 @@ export const useMarkupStore = create<MarkupState>()((set, get) => ({
       set({ strokes: [], draftStroke: null });
       return;
     }
-    set({ strokes: [], draftStroke: null });
+    set({ strokes: [], draftStroke: null, clearedStrokes: state.strokes });
     logPlannerAction({
       intent: "markup.clear",
       tool: "markup",
@@ -230,6 +247,7 @@ export const useMarkupStore = create<MarkupState>()((set, get) => ({
       strokes: loaded,
       draftStroke: null,
       nextStrokeIndex: nextIndexAfter(loaded),
+      clearedStrokes: null,
     });
   },
 }));
