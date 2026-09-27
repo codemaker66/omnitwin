@@ -665,14 +665,22 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   taken out of every stored message ([session log](../../sessions/2026-09-27.md)). The route has written
   the source since N6's second slice, and 0080 settles the rows written between the two releases ([session log](../../sessions/2026-09-27.md)).
 - A shared, human-labelled occasion list, used by the twin, `/fresh`, the planner and the desk. Today the desk prints raw slugs (`EnquiryLedger.tsx:50`).
+  Partly done on 27 September: `occasionLabel` and `occasionPhrase` in `@omnitwin/types` give each occasion
+  the forms offer its words ("Corporate event", "for a corporate event"), and keep an occasion a guest typed
+  as typed. The desk, the team's notice and email, a deal's title and the Diary's hold title read them. The
+  planner's and `/fresh`'s own lists are still to take them, and the twin's waits for the 3D batch ([session log](../../sessions/2026-09-27.md)).
 
 *Desk*
 - Show "Room not chosen" instead of the flagship room's name and photo, plus a quiet source chip.
   Done on 27 September: the room reads "Not chosen", with no photograph in the list, the panel or the
   overview, and a quiet outlined chip says where the enquiry came from, wherever that is known ([session log](../../sessions/2026-09-27.md)).
 - "Create opportunity" opens `?view=pipeline&opportunity=<id>` with the list beside it; remove the misleading toast (`EnquiriesView.tsx:461-472`).
+  Done on 27 September: it opens the pipeline on the deal, selected, with the board beside it, and a failure
+  is said beside the button. The route makes one deal per enquiry under an advisory lock, so presses that
+  arrive together land on the same deal ([session log](../../sessions/2026-09-27.md)).
 - A secondary "Pencil in the Diary" action, using the existing conversion (`bookings.ts:250`).
 - On phones, the facts line wraps rather than truncating.
+  Done on 27 September ([session log](../../sessions/2026-09-27.md)).
 
 *Twin*
 - Wire `onCompose` in the room dossier (`TwinViewer.tsx:1898`) so the room is preselected.
@@ -683,6 +691,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - An enquiry from the `/fresh` composer is stored with `source = website`.
   Held since 27 September by `public-enquiry-venue-slug-postgres.test.ts`.
 - Pressing Create opportunity twice lands on the same deal, selected in the pipeline, both times.
+  Held since 27 September by `enquiries-hand-offs.spec.ts` and the concurrent case in `crm-postgres.test.ts`.
 - Pencilling from the desk creates a hold with the enquiry's date and room, visible in the Diary.
 
 ### 2.4 Next
