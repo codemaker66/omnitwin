@@ -1,6 +1,10 @@
+/* The setup sheet is read at arm's length on the floor, often on a phone
+   (roadmap N4): nothing operational under 12 px; rows and fields at 16 px, since
+   a phone zooms into a smaller field when it takes focus; muted text at 6:1;
+   a checkbox's edge at 3.8:1 against its row. */
 .hkf-app {
   --ink: #354337;
-  --muted: #75796d;
+  --muted: #55655c;
   --line: #e7e5db;
   background: #fdfcf9;
   color: var(--ink);
@@ -82,11 +86,11 @@
 .hkf-brand small {
   display: block;
   font:
-    11px/1.7 Inter,
+    12px/1.7 Inter,
     system-ui,
     sans-serif;
   letter-spacing: 0.22em;
-  color: #8c8a7e;
+  color: var(--muted);
 }
 .hkf-topbar nav {
   display: flex;
@@ -129,7 +133,7 @@
 }
 .hkf-overline {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -166,8 +170,8 @@
   font-weight: 400;
 }
 .hkf-room-current > span {
-  font-size: 11px;
-  color: #66805c;
+  font-size: 12px;
+  color: #476349;
 }
 .hkf-room-link {
   display: flex;
@@ -186,14 +190,14 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .hkf-library-link {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   padding: 10px 0;
 }
 .hkf-rail-bottom {
@@ -205,7 +209,7 @@
   margin-top: 8px;
 }
 .hkf-muted {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .hkf-main {
@@ -254,7 +258,7 @@
   border: 0;
   background: transparent;
   padding: 0;
-  color: #64805a;
+  color: #4a6650;
   text-decoration: underline;
   text-underline-offset: 4px;
 }
@@ -267,15 +271,15 @@
   flex-shrink: 0;
 }
 .hkf-time-card > span {
-  font-size: 11px;
-  color: #5d7958;
+  font-size: 12px;
+  color: #476349;
 }
 .hkf-time-card strong {
   display: block;
   font: 27px/1.5 var(--house-serif);
 }
 .hkf-time-card small {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .hkf-provenance {
@@ -284,14 +288,14 @@
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 17px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .hkf-provenance .hk-notice {
   width: 100%;
   margin: 0;
 }
 .hkf-approved-by {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .hkf-stages {
@@ -328,8 +332,8 @@
   border-bottom: 1px solid #798369;
 }
 .hkf-stage-index {
-  font-size: 11px;
-  opacity: 0.65;
+  font-size: 12px;
+  color: var(--muted);
   display: block;
   margin-bottom: 3px;
 }
@@ -339,7 +343,7 @@
   font-weight: 500;
 }
 .hkf-stage small {
-  font-size: 11px;
+  font-size: 12px;
   display: block;
   margin-top: 3px;
   opacity: 0.8;
@@ -399,7 +403,7 @@
   border: 0;
   background: transparent;
   padding: 5px 8px;
-  font-size: 11px;
+  font-size: 12px;
   min-height: 31px;
   white-space: nowrap;
 }
@@ -426,7 +430,7 @@
   max-height: 355px;
 }
 .hkf-drawing > div > p {
-  font-size: 11px !important;
+  font-size: 12px !important;
   margin: 10px 14px 0 !important;
 }
 .hkf-plan-footer {
@@ -434,7 +438,7 @@
   align-items: center;
   gap: 10px;
   padding: 16px 18px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   border-top: 1px solid var(--line);
   margin-top: 14px;
@@ -470,7 +474,7 @@
 }
 .hkf-progress > div {
   height: 100%;
-  background: #8aa277;
+  background: #5d8963;
 }
 .hkf-category {
   display: flex;
@@ -480,7 +484,7 @@
   padding: 0 19px;
 }
 .hkf-category > label:first-child {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -488,7 +492,7 @@
 .hkf-category select {
   display: block;
   width: 100%;
-  font-size: 13px;
+  font-size: 16px;
   padding: 8px 30px 8px 0;
   background: transparent;
   border: 0;
@@ -500,7 +504,7 @@
   display: flex;
   gap: 5px;
   align-items: center;
-  font-size: 11px;
+  font-size: 13px;
   padding-bottom: 9px;
   white-space: nowrap;
 }
@@ -515,7 +519,7 @@
   border-radius: 6px;
   background: #fafaf5;
   padding: 8px 10px;
-  font-size: 11px !important;
+  font-size: 16px !important;
 }
 .hkf-task-list {
   min-height: 250px;
@@ -551,9 +555,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: 1px solid #b7bfae;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #7d8573;
   border-radius: 5px;
   flex-shrink: 0;
 }
@@ -567,21 +571,22 @@
   min-width: 0;
 }
 .hkf-check-task strong {
-  font-size: 12px;
+  font-size: 16px;
+  line-height: 1.3;
   font-weight: 500;
   display: block;
 }
 .hkf-check-task small {
   display: block;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .hkf-check-task b {
-  font-size: 11px;
-  font-weight: 500;
-  margin-left: 5px;
+  font: 300 22px/1 var(--house-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+  margin-left: 8px;
   white-space: nowrap;
 }
 .hkf-locate {
@@ -599,7 +604,7 @@
 }
 .hkf-pagination > span {
   margin-right: auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .hkf-pagination button {
@@ -608,7 +613,7 @@
   border-radius: 5px;
 }
 .hkf-footnote {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   padding: 0 19px 15px;
   line-height: 1.5;
@@ -628,7 +633,7 @@
   margin: 10px 0;
 }
 .hkf-stage-content .hkf-overline {
-  font-size: 11px;
+  font-size: 12px;
 }
 .hkf-primary {
   display: inline-flex;
@@ -639,7 +644,7 @@
   background: #e9efdf;
   border: 1px solid #d9e1cd;
   border-radius: 7px;
-  font-size: 11px;
+  font-size: 12px;
   margin-top: 14px;
 }
 .hkf-summary {
@@ -664,7 +669,7 @@
 }
 .hkf-schedule-row small {
   grid-column: 2;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .hkf-ops-tasks article {
@@ -677,12 +682,12 @@
 }
 .hkf-ops-tasks p {
   white-space: pre-wrap;
-  font-size: 11px;
+  font-size: 12px;
   color: #61685b;
 }
 .hkf-task-status {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   padding: 2px 7px;
@@ -702,14 +707,14 @@
 .hkf-reference-preview {
   padding: 36px 22px;
   text-align: center;
-  color: #707768;
+  color: var(--muted);
 }
 .hkf-empty h3 {
   font: 19px var(--house-serif);
   margin: 12px 0;
 }
 .hkf-empty p {
-  font-size: 11px;
+  font-size: 12px;
 }
 .hkf-reference-preview {
   display: flex;
@@ -728,7 +733,7 @@
   font: 24px var(--house-serif);
 }
 .hkf-reference-preview small {
-  font-size: 11px;
+  font-size: 12px;
 }
 .hkf-attention-strip {
   display: flex;
@@ -749,7 +754,7 @@
   font-weight: 500;
 }
 .hkf-attention-copy {
-  font-size: 11px;
+  font-size: 12px;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -771,8 +776,8 @@
   display: flex;
   gap: 18px;
   justify-content: space-between;
-  font-size: 11px;
-  color: #85897b;
+  font-size: 12px;
+  color: var(--muted);
   margin-top: 15px;
 }
 .hkf-detail-backdrop {
@@ -883,7 +888,7 @@
     font-size: 16px;
   }
   .hkf-plan-footer > span {
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 @media (max-width: 860px) {
@@ -956,14 +961,17 @@
   }
   .hkf-brand {
     min-width: 0;
+    gap: 9px;
     font-size: 16px;
   }
   .hkf-brand > span:first-child {
     font-size: 33px;
   }
+  /* At 12 px the links and the venue's name share one line only with a
+     little less space between them. */
   .hkf-topbar nav {
-    font-size: 11px;
-    gap: 12px;
+    font-size: 12px;
+    gap: 10px;
   }
   .hkf-main {
     padding: 18px 13px;
@@ -988,17 +996,17 @@
     font-size: 19px;
   }
   .hkf-time-card > span {
-    font-size: 11px;
+    font-size: 12px;
   }
   .hkf-time-card small {
-    font-size: 11px;
+    font-size: 12px;
   }
   .hkf-facts {
-    font-size: 11px;
+    font-size: 12px;
     gap: 8px 12px;
   }
   .hkf-heading .hkf-overline {
-    font-size: 11px;
+    font-size: 12px;
   }
   .hkf-provenance {
     gap: 6px;
@@ -1013,10 +1021,10 @@
     padding: 9px 5px;
   }
   .hkf-stage-index {
-    font-size: 11px;
+    font-size: 12px;
   }
   .hkf-stage strong {
-    font-size: 11px;
+    font-size: 12px;
   }
   .hkf-work-area {
     display: flex;
@@ -1045,7 +1053,7 @@
   }
   .hkf-plan-footer > span {
     width: auto;
-    font-size: 11px;
+    font-size: 12px;
   }
   .hkf-stage-content {
     height: 340px;
@@ -1063,7 +1071,7 @@
   .hkf-footer {
     flex-wrap: wrap;
     gap: 7px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .hkf-task-list {
     min-height: 0;
@@ -1122,13 +1130,13 @@
 .hkf-plan .hk-room-reference--compact .hk-room-reference-switch button {
   min-height: 32px;
   padding: 5px 10px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .hkf-plan .hk-room-reference-download {
-  font-size: 11px;
+  font-size: 12px;
 }
 .hkf-plan .hk-room-reference-caption {
-  font-size: 11px;
+  font-size: 12px;
 }
 .hkf-plan .hk-room-reference--compact .hk-room-reference-crop {
   width: min(100%, 160px);

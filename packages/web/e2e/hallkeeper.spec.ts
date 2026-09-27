@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
+import { edgeContrast, unreadableText } from "./support/readability.js";
 
 // ---------------------------------------------------------------------------
 // E2E: Hallkeeper page — events sheet web view
@@ -279,6 +280,31 @@ test.describe("Hallkeeper Page", () => {
 // ---------------------------------------------------------------------------
 // Route protection — unauthenticated users redirect to /login
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// On a phone (roadmap N4): the sheet is read at arm's length on the floor, so
+// nothing operational is under 12 px, rows and fields are 16 px (a phone zooms
+// into a smaller field when it takes focus), a checkbox's edge is 3:1 against
+// its row, and every label reads at 4.5:1.
+// ---------------------------------------------------------------------------
+
+test.describe("Hallkeeper Page — on a phone", () => {
+  test("reads at arm's length: 16 px rows and fields, 3:1 checkboxes, nothing under 12 px", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await seedAuthenticatedPlanner(page);
+    await mockSheetData(page);
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /Stage Platform/u })).toBeVisible();
+    const px = (selector: string): Promise<number[]> => page.locator(selector).evaluateAll((elements) =>
+      elements.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)));
+    expect(Math.min(...await px(".hkf-check-task strong"))).toBeGreaterThanOrEqual(16);
+    expect(Math.min(...await px(".hkf-search, .hkf-category select"))).toBeGreaterThanOrEqual(16);
+    expect(await edgeContrast(page, ".hkf-checkbox")).toBeGreaterThanOrEqual(3);
+    expect(await unreadableText(page, ".hkf-app", "sheet on a phone")).toEqual([]);
+  });
+});
 
 test.describe("Hallkeeper Page — route protection", () => {
   test("unauthenticated navigation redirects to /login", async ({ page }) => {

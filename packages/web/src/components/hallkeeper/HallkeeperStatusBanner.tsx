@@ -194,11 +194,12 @@ export function HallkeeperStatusBanner(
         color: meta.color,
         borderRadius: "0 6px 6px 0",
         fontFamily: "inherit",
-        fontSize: compact ? 10 : 13,
+        // Nothing operational under 12 px (roadmap N4).
+        fontSize: compact ? 12 : 13,
         lineHeight: 1.4,
       }}
     >
-      <div style={{ fontSize: compact ? 9 : 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", opacity: 0.85 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase" }}>
         {meta.label}
       </div>
       <div style={{ marginTop: 2 }}>{meta.detail}</div>
