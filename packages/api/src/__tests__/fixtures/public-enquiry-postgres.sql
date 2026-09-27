@@ -71,7 +71,11 @@ CREATE TABLE enquiries (
   updated_at timestamptz NOT NULL DEFAULT now(),
   -- 0073: seed-fixture marker and the state vocabulary, as schema.ts declares.
   fixture_source varchar(40),
-  CONSTRAINT enquiries_state_check CHECK (state IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived'))
+  -- 0079: how the enquiry arrived, and whether the guest chose its room.
+  source varchar(20),
+  room_chosen boolean NOT NULL DEFAULT true,
+  CONSTRAINT enquiries_state_check CHECK (state IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')),
+  CONSTRAINT enquiries_source_check CHECK (source IS NULL OR source IN ('website', 'walkthrough', 'planner', 'phone', 'email'))
 );
 
 CREATE TABLE enquiry_status_history (

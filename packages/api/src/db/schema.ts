@@ -705,6 +705,12 @@ export const enquiries = pgTable("enquiries", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   // Seed fixtures only; see events.fixtureSource (0073).
   fixtureSource: varchar("fixture_source", { length: 40 }),
+  // Migration 0079: how the enquiry reached the venue (ENQUIRY_SOURCES in
+  // @omnitwin/types), NULL where that is not known; and whether the guest
+  // chose the room it is filed under. A venue-path enquiry that names no room
+  // is filed against the venue's first room with roomChosen false.
+  source: varchar("source", { length: 20 }),
+  roomChosen: boolean("room_chosen").notNull().default(true),
 }, (table) => [
   index("enquiries_venue_state_idx").on(table.venueId, table.state),
   index("enquiries_user_id_idx").on(table.userId),
@@ -718,6 +724,7 @@ export const enquiries = pgTable("enquiries", {
   // Migration 0073: seed fixtures and the state vocabulary.
   index("enquiries_fixture_source_idx").on(table.fixtureSource).where(sql`${table.fixtureSource} IS NOT NULL`),
   check("enquiries_state_check", sql`${table.state} IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn', 'archived')`),
+  check("enquiries_source_check", sql`${table.source} IS NULL OR ${table.source} IN ('website', 'walkthrough', 'planner', 'phone', 'email')`),
 ]);
 
 // ---------------------------------------------------------------------------

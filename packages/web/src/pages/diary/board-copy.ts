@@ -308,6 +308,9 @@ export const BOARD_COPY = {
     // nothing about the created plan would be dishonest. Retrying re-uses
     // the plan that was already made rather than creating a second one.
     planLinkFailed: "Plan created but not attached. Try again to attach it.",
+    /** The room list's first line while no room is chosen: an enquiry
+     *  whose guest named none is not held on the room it is filed under. */
+    chooseRoom: "Choose a room",
     fields: {
       kind: "Commitment",
       room: "Room",

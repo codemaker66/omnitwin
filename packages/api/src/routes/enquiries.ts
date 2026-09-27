@@ -319,16 +319,20 @@ export async function enquiryRoutes(
     // Send notification emails on approval/rejection
     if (parsed.data.status === "approved" || parsed.data.status === "rejected") {
       const recipientEmail = enquiry.guestEmail ?? enquiry.email;
-      const [space] = await db.select({ name: spaces.name }).from(spaces).where(eq(spaces.id, enquiry.spaceId)).limit(1);
+      // A guest who named no room is never told they asked for the room the
+      // enquiry is filed under; nor for a room that can no longer be read.
+      const [space] = enquiry.roomChosen
+        ? await db.select({ name: spaces.name }).from(spaces).where(eq(spaces.id, enquiry.spaceId)).limit(1)
+        : [];
       const [venue] = await db.select({ name: venues.name }).from(venues).where(eq(venues.id, enquiry.venueId)).limit(1);
-      const spaceName = space?.name ?? "Unknown space";
+      const roomName = space?.name ?? null;
       const venueName = venue?.name ?? "Unknown venue";
 
       if (parsed.data.status === "approved") {
         const configUrl = enquiry.configurationId !== null
           ? `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/plan/${enquiry.configurationId}`
           : null;
-        const emailData = await enquiryApproved({ venueName, spaceName, eventDate: enquiry.preferredDate, configUrl });
+        const emailData = await enquiryApproved({ venueName, roomName, eventDate: enquiry.preferredDate, configUrl });
         // Idempotency: one approved notification per enquiry, regardless
         // of how many times the transition handler re-fires. An accidental
         // double-click, a client retry, or a replayed webhook all converge
@@ -339,7 +343,7 @@ export async function enquiryRoutes(
           logger: request.log,
         });
       } else {
-        const emailData = await enquiryRejected({ venueName, spaceName, eventDate: enquiry.preferredDate, note: parsed.data.note ?? null });
+        const emailData = await enquiryRejected({ venueName, roomName, eventDate: enquiry.preferredDate, note: parsed.data.note ?? null });
         sendEmailAsync({ to: recipientEmail, ...emailData }, {
           db,
           idempotencyKey: `enquiry-rejected:${enquiry.id}`,

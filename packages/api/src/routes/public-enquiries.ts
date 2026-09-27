@@ -4,6 +4,7 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
   VENVIEWER_PRICING_ENQUIRY_TYPE,
+  type EnquirySource,
 } from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
@@ -17,10 +18,6 @@ import { notifyCommercialTeam } from "../services/commercial-notifications.js";
 // ---------------------------------------------------------------------------
 
 const GuestEnquiryBody = GuestEnquirySchema;
-
-/** Marks a venue-wide twin enquiry so the events team can re-scope the space
- *  (a twin enquiry has no config and is anchored to the venue's flagship). */
-const TWIN_SOURCE_NOTE = "Sent from the venue's virtual walkthrough (the twin).";
 
 /**
  * Venues whose public twin is published and may therefore receive walkthrough
@@ -43,6 +40,15 @@ function twinPublicVenueSlugs(): readonly string[] {
     .map((slug) => slug.trim())
     .filter((slug) => slug.length > 0);
 }
+
+/** How a notice says where an enquiry came from, when it names no room. */
+const SOURCE_PHRASE: Readonly<Record<EnquirySource, string>> = {
+  website: "from the website",
+  walkthrough: "from the walkthrough",
+  planner: "from the planner",
+  phone: "by phone",
+  email: "by email",
+};
 
 // ---------------------------------------------------------------------------
 // Plugin — public guest enquiry submission
@@ -70,12 +76,15 @@ export async function publicEnquiryRoutes(
     // attach enquiries to another user's workspace); the venue path only
     // resolves a live venue by its already-public slug and never trusts a
     // client-supplied venueId.
+    // `roomName` is the room the guest chose, or null when they named none:
+    // the enquiry is then filed against the venue's first room, and nothing
+    // sent or shown may call that room their choice.
     let anchor: {
       venueId: string;
       spaceId: string;
       configurationId: string | null;
-      spaceName: string;
-      fromTwin: boolean;
+      roomName: string | null;
+      venuePath: boolean;
     };
 
     if (parsed.data.configurationId !== undefined) {
@@ -101,15 +110,15 @@ export async function publicEnquiryRoutes(
         venueId: space.venueId,
         spaceId: config.spaceId,
         configurationId: parsed.data.configurationId,
-        spaceName: space.name,
-        fromTwin: false,
+        roomName: space.name,
+        venuePath: false,
       };
     } else {
-      // venueSlug path. Anchor the venue-wide enquiry to the venue's flagship
-      // space (lowest sortOrder) — venueId is the routing key; the message marks
-      // the twin source so the events team can re-scope the space. Every miss
-      // below returns the SAME 404 so status codes can't be used to enumerate
-      // tenants (security review).
+      // venueSlug path. A room the guest names (roomSlug) is filed as their
+      // choice; otherwise the venue-wide enquiry is filed against the venue's
+      // flagship space (lowest sortOrder) and recorded as naming no room.
+      // venueId is the routing key. Every miss below returns the SAME 404 so
+      // status codes can't be used to enumerate tenants (security review).
       const slug = parsed.data.venueSlug ?? "";
       // Opt-in gate first (before any DB hit): unpublished slugs are 404, so a
       // non-twin tenant is indistinguishable from a non-existent one.
@@ -134,13 +143,20 @@ export async function publicEnquiryRoutes(
       if (flagship === undefined) {
         return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
       }
-      anchor = {
-        venueId: venue.id,
-        spaceId: flagship.id,
-        configurationId: null,
-        spaceName: flagship.name,
-        fromTwin: true,
-      };
+      // A named room must be one of this venue's live rooms. One it does not
+      // have (a renamed room in an older page) is filed as naming none rather
+      // than refused: the guest's enquiry matters more than the room.
+      const roomSlug = parsed.data.roomSlug;
+      const [named] = roomSlug === undefined ? [] : await db.select({ id: spaces.id, name: spaces.name })
+        .from(spaces)
+        .where(and(eq(spaces.venueId, venue.id), eq(spaces.slug, roomSlug), isNull(spaces.deletedAt)))
+        .limit(1);
+      if (roomSlug !== undefined && named === undefined) {
+        request.log.warn({ event: "enquiry.room_unknown", venueId: venue.id, roomSlug }, "enquiry named a room the venue does not have");
+      }
+      anchor = named === undefined
+        ? { venueId: venue.id, spaceId: flagship.id, configurationId: null, roomName: null, venuePath: true }
+        : { venueId: venue.id, spaceId: named.id, configurationId: null, roomName: named.name, venuePath: true };
     }
 
     // Two senders ride this route without booking this venue's rooms: the
@@ -152,23 +168,18 @@ export async function publicEnquiryRoutes(
     // screens that send the others already confirm the request in place.
     const accessRequest = parsed.data.eventType === VENUE_ACCESS_ENQUIRY_TYPE;
     const pricingEnquiry = parsed.data.eventType === VENVIEWER_PRICING_ENQUIRY_TYPE;
-    // The venue's website composer (the front door and /fresh) posts on the
-    // venue path too, and says so: its enquiries did not come from the
-    // walkthrough. One that names no source is the walkthrough's, which
-    // predates the field (GUEST_ENQUIRY_SOURCES in @omnitwin/types).
-    const fromWalkthrough = anchor.fromTwin && parsed.data.source !== "website";
+    // How it reached the venue, kept in its own column rather than written
+    // into the guest's message. The planner sends a configuration. On the
+    // venue path the website's own form (the front door and /fresh) says it
+    // is the website's, and the workspace gate and the pricing page are the
+    // website's whatever they send. One that names no source is the
+    // walkthrough's, which predates the field (GUEST_ENQUIRY_SOURCES).
+    const source: EnquirySource = !anchor.venuePath ? "planner"
+      : accessRequest || pricingEnquiry ? "website"
+        : parsed.data.source ?? "walkthrough";
 
     // Create enquiry with guest fields, status: submitted (skip draft).
     const displayName = parsed.data.name ?? parsed.data.email;
-    // Twin enquiries carry the source note first so it survives even a long
-    // message; the input message stays within its 2000-char validation. The
-    // two senders above and the website composer use the venue path without
-    // coming from the twin, so their stored message must not say they did.
-    const composedMessage = fromWalkthrough && !accessRequest && !pricingEnquiry
-      ? parsed.data.message !== undefined
-        ? `${TWIN_SOURCE_NOTE}\n\n${parsed.data.message}`
-        : TWIN_SOURCE_NOTE
-      : parsed.data.message ?? null;
     const [enquiry] = await db.insert(enquiries).values({
       configurationId: anchor.configurationId,
       venueId: anchor.venueId,
@@ -183,7 +194,9 @@ export async function publicEnquiryRoutes(
       preferredDate: parsed.data.eventDate ?? null,
       eventType: parsed.data.eventType ?? null,
       estimatedGuests: parsed.data.guestCount ?? null,
-      message: composedMessage,
+      message: parsed.data.message ?? null,
+      source,
+      roomChosen: anchor.roomName !== null,
     }).returning();
 
     if (enquiry === undefined) {
@@ -223,7 +236,7 @@ export async function publicEnquiryRoutes(
     }
 
     // Notify hallkeeper(s) of the venue
-    const spaceName = anchor.spaceName;
+    const roomName = anchor.roomName;
     const [venueRow] = await db.select({ name: venues.name })
       .from(venues)
       .where(eq(venues.id, anchor.venueId))
@@ -247,12 +260,12 @@ export async function publicEnquiryRoutes(
           title: "Venviewer enquiry",
           body: `${displayName} asked about Venviewer for their own venue, from the pricing page. Open Enquiries to read it.`,
         } : {
-          title: `New enquiry — ${spaceName}`,
-          body: `${displayName} enquired about ${spaceName}${
+          title: roomName === null ? "New enquiry" : `New enquiry — ${roomName}`,
+          body: `${displayName} ${roomName === null ? `enquired ${SOURCE_PHRASE[source]}` : `enquired about ${roomName}`}${
             parsed.data.eventType === undefined ? "" : ` for a ${parsed.data.eventType}`
           }${
             parsed.data.eventDate === undefined ? "" : ` on ${parsed.data.eventDate}`
-          }. Open Enquiries to respond.`,
+          }${roomName === null ? ", without choosing a room" : ""}. Open Enquiries to respond.`,
         }),
         severity: "attention",
         actionPath: "/dashboard?view=enquiries",
@@ -279,7 +292,7 @@ export async function publicEnquiryRoutes(
     if (!accessRequest && !pricingEnquiry) {
       const acknowledgement = await enquiryAcknowledgement({
         venueName,
-        spaceName,
+        roomName,
         organiserName: parsed.data.name ?? parsed.data.email,
         eventType: parsed.data.eventType ?? null,
         eventDate: parsed.data.eventDate ?? null,
@@ -319,14 +332,15 @@ export async function publicEnquiryRoutes(
 
     for (const hk of recipients) {
       const emailData = await newEnquiryNotification({
-        spaceName,
+        roomName,
+        source,
         eventType: parsed.data.eventType ?? null,
         contactName: displayName,
         contactEmail: parsed.data.email,
         contactPhone: parsed.data.phone ?? null,
         eventDate: parsed.data.eventDate ?? null,
         guestCount: parsed.data.guestCount ?? null,
-        message: composedMessage,
+        message: parsed.data.message ?? null,
         dashboardUrl: `${process.env["FRONTEND_URL"] ?? "http://localhost:5173"}/dashboard`,
       });
       // Idempotency key scoped to (enquiry, recipient) so a webhook replay

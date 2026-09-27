@@ -9,8 +9,13 @@ export interface VenueRoom {
 }
 
 /** The room an enquiry asks for; undefined while its venue is being read,
- *  null when the venue could not be read or the room is not among its rooms. */
-export type RoomLookup = (enquiry: { readonly venueId: string; readonly spaceId: string }) => VenueRoom | null | undefined;
+ *  null when the guest chose none, the venue could not be read or the room is
+ *  not among its rooms. */
+export type RoomLookup = (enquiry: {
+  readonly venueId: string;
+  readonly spaceId: string;
+  readonly roomChosen?: boolean | undefined;
+}) => VenueRoom | null | undefined;
 
 /**
  * The rooms of the venues on the desk, from one read of each venue. A venue
@@ -46,6 +51,9 @@ export function useVenueRooms(venueIds: readonly string[]): RoomLookup {
   }, [key]);
 
   return useCallback((enquiry) => {
+    // An enquiry that named no room is filed under the venue's first room,
+    // which is not the guest's choice: it is neither named nor pictured.
+    if (enquiry.roomChosen === false) return null;
     const rooms = venues.get(enquiry.venueId);
     return rooms === undefined ? undefined : rooms?.get(enquiry.spaceId) ?? null;
   }, [venues]);

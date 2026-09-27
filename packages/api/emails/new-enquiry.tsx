@@ -13,7 +13,8 @@ import { NewEnquiryEmail, type NewEnquiryData } from "../src/services/email-temp
 // ---------------------------------------------------------------------------
 
 const sampleData: NewEnquiryData = {
-  spaceName: "Grand Hall",
+  roomName: "Grand Hall",
+  source: "walkthrough",
   eventType: "Wedding Reception",
   contactName: "Sarah Anderson",
   contactEmail: "sarah@example.com",

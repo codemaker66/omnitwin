@@ -26,6 +26,8 @@ function RequestAccessForm({ email }: { readonly email: string }): React.ReactEl
     try {
       await submitGuestEnquiry({
         venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
+        // Sent from the website, not the walkthrough.
+        source: "website",
         email,
         eventType: VENUE_ACCESS_ENQUIRY_TYPE,
         message: note.trim().length > 0

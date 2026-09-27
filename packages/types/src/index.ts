@@ -1022,6 +1022,8 @@ export {
   CreateEnquirySchema,
   GuestEnquirySchema,
   GUEST_ENQUIRY_SOURCES,
+  ENQUIRY_SOURCES,
+  EnquirySourceSchema,
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   TRADES_HALL_ASSET_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
@@ -1034,6 +1036,7 @@ export {
   type CreateEnquiry,
   type GuestEnquiry,
   type GuestEnquirySource,
+  type EnquirySource,
 } from "./enquiry.js";
 
 export {

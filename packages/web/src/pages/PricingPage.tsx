@@ -253,6 +253,8 @@ function VenueEnquiryForm(): React.ReactElement {
     try {
       await submitGuestEnquiry({
         venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
+        // Sent from the website, not the walkthrough.
+        source: "website",
         email: email.trim(),
         eventType: VENVIEWER_PRICING_ENQUIRY_TYPE,
         message: note.trim().length > 0 ? note.trim() : "Enquiry from the Venviewer pricing page.",

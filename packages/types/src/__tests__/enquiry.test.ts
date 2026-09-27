@@ -9,6 +9,7 @@ import {
   CreateEnquirySchema,
   GuestEnquirySchema,
   GUEST_ENQUIRY_SOURCES,
+  ENQUIRY_SOURCES,
 } from "../enquiry.js";
 import {
   isBookingEnquiry,
@@ -47,6 +48,8 @@ const validEnquiry = {
   preferredDate: "2025-06-15",
   estimatedGuests: 150,
   state: "submitted" as const,
+  source: "planner" as const,
+  roomChosen: true,
   createdAt: VALID_DATETIME,
   updatedAt: VALID_DATETIME,
 };
@@ -299,6 +302,19 @@ describe("EnquirySchema", () => {
 
   it("accepts null message", () => {
     expect(EnquirySchema.safeParse({ ...validEnquiry, message: null }).success).toBe(true);
+  });
+
+  it("accepts an enquiry whose source is not known, and every source the venue records", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, source: null }).success).toBe(true);
+    for (const source of ENQUIRY_SOURCES) {
+      expect(EnquirySchema.safeParse({ ...validEnquiry, source }).success, source).toBe(true);
+    }
+  });
+
+  it("rejects a source it does not know, and an enquiry that does not say whether its room was chosen", () => {
+    expect(EnquirySchema.safeParse({ ...validEnquiry, source: "fax" }).success).toBe(false);
+    const { roomChosen: _, ...noRoomChosen } = validEnquiry;
+    expect(EnquirySchema.safeParse(noRoomChosen).success).toBe(false);
   });
 
   it("trims whitespace from name", () => {
@@ -562,6 +578,16 @@ describe("GuestEnquirySchema", () => {
   it("rejects a source it does not know", () => {
     expect(GuestEnquirySchema.safeParse({ ...validGuest, source: "twin" }).success).toBe(false);
     expect(GuestEnquirySchema.safeParse({ ...validGuest, source: "" }).success).toBe(false);
+  });
+
+  it("takes a room named on the venue path, and refuses one beside a configuration", () => {
+    const { configurationId: _, ...noConfig } = validGuest;
+    const named = GuestEnquirySchema.safeParse({ ...noConfig, venueSlug: "trades-hall-glasgow", roomSlug: " saloon " });
+    expect(named.success && named.data.roomSlug).toBe("saloon");
+    const beside = GuestEnquirySchema.safeParse({ ...validGuest, roomSlug: "saloon" });
+    expect(beside.success).toBe(false);
+    if (!beside.success) expect(beside.error.issues.map((issue) => issue.path)).toEqual([["roomSlug"]]);
+    expect(GuestEnquirySchema.safeParse({ ...noConfig, venueSlug: "trades-hall-glasgow", roomSlug: "  " }).success).toBe(false);
   });
 
   it("does not include venueId or spaceId (guest schema uses configurationId)", () => {

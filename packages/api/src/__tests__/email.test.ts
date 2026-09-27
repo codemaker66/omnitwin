@@ -13,7 +13,8 @@ import {
 
 describe("newEnquiryNotification", () => {
   const baseData = {
-    spaceName: "Grand Hall",
+    roomName: "Grand Hall",
+    source: "planner",
     eventType: "Wedding",
     contactName: "Jane Smith",
     contactEmail: "jane@example.com",
@@ -67,12 +68,26 @@ describe("newEnquiryNotification", () => {
     const { html } = await newEnquiryNotification({ ...baseData, message: null });
     expect(html).not.toContain("reception here");
   });
+
+  it("says no room was chosen, and where the enquiry came from, when the guest named none", async () => {
+    const { subject, html } = await newEnquiryNotification({ ...baseData, roomName: null, source: "walkthrough" });
+    expect(subject).toBe("New enquiry — Wedding");
+    expect(html).toContain("Not chosen");
+    expect(html).toContain("The walkthrough");
+    expect(html).not.toContain("Grand Hall");
+  });
+
+  it("leaves the source out where it is not known", async () => {
+    const { html } = await newEnquiryNotification({ ...baseData, source: null });
+    expect(html).not.toContain("The planner");
+    expect(html).toContain("Grand Hall");
+  });
 });
 
 describe("enquiryApproved", () => {
   const baseData = {
     venueName: "Trades Hall Glasgow",
-    spaceName: "Grand Hall",
+    roomName: "Grand Hall",
     eventDate: "2026-06-15",
     configUrl: "http://localhost:5173/plan/config-123",
   } as const;
@@ -102,6 +117,12 @@ describe("enquiryApproved", () => {
     const { html } = await enquiryApproved({ ...baseData, configUrl: null });
     expect(html).not.toContain("View Your Layout");
   });
+
+  it("names the venue, not a room, for a guest who chose none", async () => {
+    const { subject, html } = await enquiryApproved({ ...baseData, roomName: null, configUrl: null });
+    expect(subject).toBe("Your enquiry at Trades Hall Glasgow has been approved");
+    expect(html).not.toContain("Grand Hall");
+  });
 });
 
 describe("email preview URLs", () => {
@@ -122,7 +143,7 @@ describe("email preview URLs", () => {
 describe("enquiryRejected", () => {
   const baseData = {
     venueName: "Trades Hall Glasgow",
-    spaceName: "Grand Hall",
+    roomName: "Grand Hall",
     eventDate: "2026-06-15",
     note: "Space is booked for that date",
   } as const;
@@ -146,6 +167,12 @@ describe("enquiryRejected", () => {
   it("includes venue name", async () => {
     const { html } = await enquiryRejected(baseData);
     expect(html).toContain("Trades Hall Glasgow");
+  });
+
+  it("names the venue, not a room, for a guest who chose none", async () => {
+    const { subject, html } = await enquiryRejected({ ...baseData, roomName: null });
+    expect(subject).toBe("Update on your enquiry at Trades Hall Glasgow");
+    expect(html).not.toContain("Grand Hall");
   });
 });
 

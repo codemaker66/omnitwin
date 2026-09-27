@@ -14,7 +14,7 @@ import {
   Text,
 } from "@react-email/components";
 import { render } from "@react-email/render";
-import { WORKSPACE_COLOURS, WORKSPACE_FONTS } from "@omnitwin/types";
+import { WORKSPACE_COLOURS, WORKSPACE_FONTS, type EnquirySource } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Email templates — react-email JSX
@@ -240,8 +240,21 @@ function MetaRow({
 // newEnquiryNotification — sent to hallkeeper
 // ---------------------------------------------------------------------------
 
+/** How the events team is told where an enquiry came from. */
+const ENQUIRY_SOURCE_WORDS: Readonly<Record<EnquirySource, string>> = {
+  website: "The website",
+  walkthrough: "The walkthrough",
+  planner: "The planner",
+  phone: "A telephone call",
+  email: "An email",
+};
+
 export interface NewEnquiryData {
-  readonly spaceName: string;
+  /** The room the guest chose; null when they named none, so the room the
+   *  enquiry is filed under is never presented as their choice. */
+  readonly roomName: string | null;
+  /** How it reached the venue; null where that is not known. */
+  readonly source: EnquirySource | null;
   readonly eventType: string | null;
   readonly contactName: string;
   readonly contactEmail: string;
@@ -254,7 +267,7 @@ export interface NewEnquiryData {
 
 export function NewEnquiryEmail(props: NewEnquiryData): ReactElement {
   return (
-    <Layout label="New Enquiry" preview={`New enquiry for ${props.spaceName}`}>
+    <Layout label="New Enquiry" preview={props.roomName === null ? "New enquiry" : `New enquiry for ${props.roomName}`}>
       <Heading style={h2Style()}>New Enquiry Received</Heading>
       <Section>
         <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
@@ -262,7 +275,8 @@ export function NewEnquiryEmail(props: NewEnquiryData): ReactElement {
             <MetaRow label="Contact" value={props.contactName} />
             <MetaRow label="Email" value={props.contactEmail} />
             <MetaRow label="Phone" value={props.contactPhone} />
-            <MetaRow label="Space" value={props.spaceName} />
+            <MetaRow label="Room" value={props.roomName ?? "Not chosen"} />
+            <MetaRow label="From" value={props.source === null ? null : ENQUIRY_SOURCE_WORDS[props.source]} />
             <MetaRow label="Event type" value={props.eventType} />
             <MetaRow label="Date" value={props.eventDate} />
             <MetaRow
@@ -296,9 +310,8 @@ export function NewEnquiryEmail(props: NewEnquiryData): ReactElement {
 export async function newEnquiryNotification(
   data: NewEnquiryData,
 ): Promise<{ subject: string; html: string }> {
-  const subject = data.eventType !== null
-    ? `New enquiry for ${data.spaceName} — ${data.eventType}`
-    : `New enquiry for ${data.spaceName}`;
+  const about = data.roomName === null ? "New enquiry" : `New enquiry for ${data.roomName}`;
+  const subject = data.eventType !== null ? `${about} — ${data.eventType}` : about;
   const html = await render(<NewEnquiryEmail {...data} />);
   return { subject, html };
 }
@@ -371,7 +384,9 @@ function VenueLayout({
 
 export interface EnquiryAcknowledgementData {
   readonly venueName: string;
-  readonly spaceName: string;
+  /** The room the guest chose; null when they named none, so the reply never
+   *  tells them they asked for the room the enquiry is filed under. */
+  readonly roomName: string | null;
   /** The organiser's own name, as they gave it. */
   readonly organiserName: string;
   readonly eventType: string | null;
@@ -395,15 +410,15 @@ export function EnquiryAcknowledgementEmail(props: EnquiryAcknowledgementData): 
       <Heading style={h2Style()}>Thank you — we have your enquiry</Heading>
       <Text style={paragraphStyle}>Dear {props.organiserName},</Text>
       <Text style={paragraphStyle}>
-        Thank you for thinking of {props.venueName}. Your enquiry about{" "}
-        <strong>{props.spaceName}</strong> is with our events team, and one of us
-        will come back to you personally — normally within one working day.
+        Thank you for thinking of {props.venueName}. Your enquiry
+        {props.roomName === null ? null : <>{" about "}<strong>{props.roomName}</strong></>}
+        {" is with our events team, and one of us will come back to you personally — normally within one working day."}
       </Text>
       <Text style={paragraphStyle}>Here is what you told us:</Text>
       <Section>
         <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
           <tbody>
-            <MetaRow label="Room" value={props.spaceName} />
+            <MetaRow label="Room" value={props.roomName} />
             <MetaRow label="Occasion" value={props.eventType} />
             <MetaRow label="Date" value={formattedDate} />
             <MetaRow
@@ -449,9 +464,15 @@ export async function enquiryAcknowledgement(
 // enquiryApproved — sent to planner/guest
 // ---------------------------------------------------------------------------
 
+/** "for the Saloon" when the guest chose the room, else "at Trades Hall". */
+function enquiryPlace(data: { readonly roomName: string | null; readonly venueName: string }): string {
+  return data.roomName === null ? `at ${data.venueName}` : `for ${data.roomName}`;
+}
+
 export interface EnquiryApprovedData {
   readonly venueName: string;
-  readonly spaceName: string;
+  /** The room the guest chose; null when they named none. */
+  readonly roomName: string | null;
   readonly eventDate: string | null;
   readonly configUrl: string | null;
 }
@@ -460,11 +481,12 @@ export function EnquiryApprovedEmail(props: EnquiryApprovedData): ReactElement {
   return (
     <Layout
       label="Approved"
-      preview={`Your enquiry for ${props.spaceName} has been approved`}
+      preview={`Your enquiry ${enquiryPlace(props)} has been approved`}
     >
       <Heading style={h2Style("#059669")}>Enquiry Approved</Heading>
       <Text style={paragraphStyle}>
-        Great news! Your enquiry for <strong>{props.spaceName}</strong> at{" "}
+        Great news! Your enquiry{" "}
+        {props.roomName === null ? "at " : <>for <strong>{props.roomName}</strong> at </>}
         <strong>{props.venueName}</strong>
         {props.eventDate !== null ? (
           <>
@@ -490,7 +512,7 @@ export function EnquiryApprovedEmail(props: EnquiryApprovedData): ReactElement {
 export async function enquiryApproved(
   data: EnquiryApprovedData,
 ): Promise<{ subject: string; html: string }> {
-  const subject = `Your enquiry for ${data.spaceName} has been approved`;
+  const subject = `Your enquiry ${enquiryPlace(data)} has been approved`;
   const html = await render(<EnquiryApprovedEmail {...data} />);
   return { subject, html };
 }
@@ -501,17 +523,19 @@ export async function enquiryApproved(
 
 export interface EnquiryRejectedData {
   readonly venueName: string;
-  readonly spaceName: string;
+  /** The room the guest chose; null when they named none. */
+  readonly roomName: string | null;
   readonly eventDate: string | null;
   readonly note: string | null;
 }
 
 export function EnquiryRejectedEmail(props: EnquiryRejectedData): ReactElement {
   return (
-    <Layout label="Update" preview={`Update on your enquiry for ${props.spaceName}`}>
+    <Layout label="Update" preview={`Update on your enquiry ${enquiryPlace(props)}`}>
       <Heading style={h2Style()}>Enquiry Update</Heading>
       <Text style={paragraphStyle}>
-        Thank you for your interest in <strong>{props.spaceName}</strong> at{" "}
+        Thank you for your interest in{" "}
+        {props.roomName === null ? null : <><strong>{props.roomName}</strong> at </>}
         <strong>{props.venueName}</strong>
         {props.eventDate !== null ? (
           <>
@@ -533,7 +557,7 @@ export function EnquiryRejectedEmail(props: EnquiryRejectedData): ReactElement {
 export async function enquiryRejected(
   data: EnquiryRejectedData,
 ): Promise<{ subject: string; html: string }> {
-  const subject = `Update on your enquiry for ${data.spaceName}`;
+  const subject = `Update on your enquiry ${enquiryPlace(data)}`;
   const html = await render(<EnquiryRejectedEmail {...data} />);
   return { subject, html };
 }

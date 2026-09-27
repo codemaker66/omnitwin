@@ -543,6 +543,37 @@ describe("BookingDrawer — a new hold's option follows the ladder (roadmap N3)"
     expect(document.getElementById(option.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/Held then: Fraser wedding \(1st option\)\.$/u);
   });
 
+  it("asks for a room when an enquiry's guest chose none, and holds no date until one is chosen", () => {
+    const ladder = vi.fn<Ladder>(() => ({ kind: "read", rank: 1, holds: [], confirmed: [] }));
+    render(
+      <BookingDrawer
+        mode={{
+          kind: "convert",
+          enquiry: { id: "00000000-0000-4000-8000-0000000000e1", spaceId: SALOON, roomChosen: false, name: "Elaine Fraser", eventType: "wedding", preferredDate: "2026-09-18" },
+          ownerUserId: VENUE,
+        }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+        ladderPlace={ladder}
+      />,
+    );
+    const room = screen.getByRole<HTMLSelectElement>("combobox", { name: "Room" });
+    expect(room.value).toBe("");
+    expect(room.selectedOptions[0]?.textContent).toBe("Choose a room");
+    // No ladder is read for a room nobody has chosen.
+    expect(ladder).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Hold the date" }));
+    expect(screen.getByText("Choose a room.")).toBeDefined();
+    expect(convertEnquiryMock).not.toHaveBeenCalled();
+
+    fireEvent.change(room, { target: { value: SALOON } });
+    expect(ladder).toHaveBeenCalled();
+    expect(screen.queryByRole("option", { name: "Choose a room" })).toBeNull();
+  });
+
   it("suggests nothing for a date the board has not read, and says so", () => {
     renderCreate(() => ({ kind: "unread" }));
     expect(screen.getByRole<HTMLInputElement>("spinbutton", { name: "Option" }).value).toBe("1");

@@ -800,6 +800,49 @@ describe("EnquiriesView decisions", () => {
     expect(await screen.findByText("Grand Hall")).toBeDefined();
     expect(document.querySelector(".enq-room-photo")).toBeNull();
   });
+
+  // Roadmap N6: an enquiry from the venue's own pages names no room, but is
+  // filed under the venue's first. The desk never presents that room as the
+  // guest's choice, quotes the guest's own words and says where it came from.
+  it("names and pictures no room for a guest who chose none, and says where the enquiry came from", async () => {
+    const roomless: Enquiry = { ...enquiry(3), roomChosen: false, source: "walkthrough", message: "Is Saturday 14 May free?" };
+    const chosen: Enquiry = { ...enquiry(2), roomChosen: true, source: "planner" };
+    mocks.listEnquiryPage.mockResolvedValue(page([roomless, chosen], {}));
+    render(<EnquiriesView />);
+    // The rooms are read: the planner's enquiry names the room it chose.
+    await waitFor(() => { expect(screen.getByRole("button", { name: /^Client 2,/u }).textContent).toContain("Grand Hall"); });
+    const listed = screen.getByRole("button", { name: /^Client 3,/u });
+    expect(listed.textContent).not.toContain("Grand Hall");
+    expect(listed.getAttribute("aria-label")).not.toContain("Grand Hall");
+    expect(listed.textContent).toContain("“Is Saturday 14 May free?”");
+
+    fireEvent.click(listed);
+    expect(await screen.findByText("Not chosen")).toBeDefined();
+    expect(screen.getByText("From the walkthrough").className).toBe("enq-source");
+    expect(document.querySelector(".enq-room-photo")).toBeNull();
+    expect(within(screen.getByRole("region", { name: /Client 3/u })).queryByText("Grand Hall")).toBeNull();
+  });
+
+  it("shows no source where it is not known", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(3), source: null, roomChosen: true }], {}));
+    render(<EnquiriesView />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+    expect(await screen.findByText("Grand Hall")).toBeDefined();
+    expect(document.querySelector(".enq-source")).toBeNull();
+  });
+
+  it("offers the longest-waiting roomless enquiry without its filed room's name or photograph", async () => {
+    wideDesk();
+    const oldest: Enquiry = { ...enquiry(4), roomChosen: false, source: "website", createdAt: "2026-09-18T07:55:00.000Z" };
+    mocks.countEnquiryStages.mockResolvedValue(stageCounts({ submitted: 1 }, oldest));
+    mocks.listEnquiryPage.mockResolvedValue(page([oldest], {}));
+    render(<EnquiriesView />);
+    const overview = await screen.findByRole("complementary", { name: "Desk overview" });
+    expect(await within(overview).findByText(/Date to be confirmed/u)).toBeDefined();
+    await waitFor(() => { expect(mocks.getVenue).toHaveBeenCalledWith("venue-1"); });
+    expect(within(overview).queryByText(/Grand Hall/u)).toBeNull();
+    expect(overview.querySelector(".enq-room-photo")).toBeNull();
+  });
 });
 
 describe("EnquiriesView requests", () => {

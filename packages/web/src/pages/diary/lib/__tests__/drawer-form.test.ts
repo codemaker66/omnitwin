@@ -194,6 +194,16 @@ describe("initialDrawerForm", () => {
     expect(form.ownerUserId).toBe(OWNER);
   });
 
+  it("convert mode asks for a room when the guest chose none, unless the enquiry was dropped on one", () => {
+    const roomless = { id: ENQUIRY, spaceId: SPACE, roomChosen: false, name: "Elaine Fraser", eventType: "wedding", preferredDate: "2026-09-19" };
+    expect(initialDrawerForm({ kind: "convert", enquiry: roomless, ownerUserId: OWNER }).spaceId).toBe("");
+    const dropped = initialDrawerForm({ kind: "convert", enquiry: roomless, ownerUserId: OWNER, drop: { spaceId: "room-dropped", startMs: Date.UTC(2026, 8, 19, 16) } });
+    expect(dropped.spaceId).toBe("room-dropped");
+    // An enquiry from an older API says nothing of its room, and keeps it.
+    const { roomChosen: _roomChosen, ...unsaid } = roomless;
+    expect(initialDrawerForm({ kind: "convert", enquiry: unsaid, ownerUserId: OWNER }).spaceId).toBe(SPACE);
+  });
+
   it("create mode seeds a sensible evening window", () => {
     const form = initialDrawerForm({
       kind: "create",

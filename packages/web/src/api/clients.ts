@@ -80,6 +80,9 @@ const ClientProfileSchema = z.object({
     eventType: z.string().nullable(),
     preferredDate: z.string().nullable(),
     spaceName: z.string(),
+    /** False when the guest named no room: spaceName is then only where the
+     *  enquiry is filed. Absent from an API that predates it. */
+    roomChosen: z.boolean().optional(),
   })),
 });
 export type ClientProfile = z.infer<typeof ClientProfileSchema>;
@@ -99,6 +102,7 @@ const LeadProfileSchema = z.object({
     eventType: z.string().nullable(),
     preferredDate: z.string().nullable(),
     spaceName: z.string(),
+    roomChosen: z.boolean().optional(),
     createdAt: z.string(),
   })),
 });

@@ -132,7 +132,8 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
                   {e.eventType !== null && <span>{e.eventType}</span>}
                   {e.preferredDate !== null && <span style={{ color: "#999" }}>{e.preferredDate}</span>}
                 </div>
-                <div style={{ color: "#999", marginTop: 4 }}>{e.spaceName}</div>
+                {/* The room a roomless enquiry is filed under is not the guest's choice. */}
+                <div style={{ color: "#999", marginTop: 4 }}>{e.roomChosen === false ? "Room not chosen" : e.spaceName}</div>
               </button>
             ))}
           </div>

@@ -205,6 +205,9 @@ export async function clientRoutes(
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
       spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      // False when the guest named no room: spaceName is then where the
+      // enquiry is filed, not what they asked for (migration 0079).
+      roomChosen: enquiries.roomChosen,
     })
       .from(enquiries)
       .where(and(
@@ -272,6 +275,7 @@ export async function clientRoutes(
       eventType: enquiries.eventType,
       preferredDate: enquiries.preferredDate,
       spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${enquiries.spaceId})`,
+      roomChosen: enquiries.roomChosen,
       createdAt: enquiries.createdAt,
     })
       .from(enquiries)

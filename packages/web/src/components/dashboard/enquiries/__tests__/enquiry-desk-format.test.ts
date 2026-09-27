@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NON_BOOKING_ENQUIRY_TYPES } from "@omnitwin/types";
+import { ENQUIRY_SOURCES, NON_BOOKING_ENQUIRY_TYPES } from "@omnitwin/types";
 import {
   countPhrase,
   deskGreeting,
@@ -15,6 +15,7 @@ import {
   relativeAge,
   requestKind,
   requestWords,
+  sourceWords,
   stageLabel,
   stageNouns,
   stageTone,
@@ -186,5 +187,21 @@ describe("requests", () => {
     for (const kind of ["access", "venviewer"] as const) {
       expect(requestWords(kind).next).toContain("Nothing is emailed from here.");
     }
+  });
+});
+
+describe("where an enquiry came from", () => {
+  it("names every source the venue records, in the desk's words", () => {
+    expect(ENQUIRY_SOURCES.map((source) => sourceWords(source))).toEqual([
+      "From the website", "From the walkthrough", "From the planner", "By phone", "By email",
+    ]);
+  });
+
+  it("names nothing where the source is not known, rather than a guess", () => {
+    expect(sourceWords(null)).toBeNull();
+    expect(sourceWords(undefined)).toBeNull();
+    // A source a newer API adds is not guessed at either.
+    expect(sourceWords("fax")).toBeNull();
+    expect(sourceWords("constructor")).toBeNull();
   });
 });

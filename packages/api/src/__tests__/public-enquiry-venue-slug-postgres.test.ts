@@ -141,8 +141,8 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
 
     const stored = await pool.query<{
       venue_id: string; space_id: string; state: string; email: string;
-      estimated_guests: number | null; message: string | null;
-    }>("SELECT venue_id, space_id, state, email, estimated_guests, message FROM enquiries");
+      estimated_guests: number | null; message: string | null; source: string | null; room_chosen: boolean;
+    }>("SELECT venue_id, space_id, state, email, estimated_guests, message, source, room_chosen FROM enquiries");
     expect(stored.rowCount).toBe(1);
     const row = stored.rows[0];
     expect(row?.venue_id).toBe(VENUE);
@@ -151,19 +151,27 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
     expect(row?.state).toBe("submitted");
     expect(row?.email).toBe(GUEST_EMAIL);
     expect(row?.estimated_guests).toBe(120);
-    // The visitor's own words, exactly: a website enquiry is not stamped as
-    // having come from the walkthrough.
+    // The visitor's own words, exactly, and where they came from beside them.
     expect(row?.message).toBe("We are looking at a Saturday in May.");
+    expect(row?.source).toBe("website");
+    // Filed against the flagship, but not as the guest's choice.
+    expect(row?.room_chosen).toBe(false);
   });
 
-  it("still marks an enquiry from the walkthrough, which names no source, as the twin's", async () => {
+  it("records an enquiry from the walkthrough, which names no source, as the walkthrough's, beside the guest's words", async () => {
     const { source: _source, ...walkthrough } = payload();
     const response = await server.inject({ method: "POST", url: "/public/enquiries", payload: walkthrough });
     expect(response.statusCode, response.body).toBe(201);
-    const stored = await pool.query<{ message: string | null }>("SELECT message FROM enquiries");
-    expect(stored.rows[0]?.message).toBe(
-      "Sent from the venue's virtual walkthrough (the twin).\n\nWe are looking at a Saturday in May.",
-    );
+    const stored = await pool.query<{ message: string | null; source: string | null; room_chosen: boolean }>(
+      "SELECT message, source, room_chosen FROM enquiries");
+    expect(stored.rows[0]).toEqual({ message: "We are looking at a Saturday in May.", source: "walkthrough", room_chosen: false });
+  });
+
+  it("files a room the guest names as their choice", async () => {
+    const response = await server.inject({ method: "POST", url: "/public/enquiries", payload: payload({ roomSlug: "saloon" }) });
+    expect(response.statusCode, response.body).toBe(201);
+    const stored = await pool.query<{ space_id: string; room_chosen: boolean }>("SELECT space_id, room_chosen FROM enquiries");
+    expect(stored.rows[0]).toEqual({ space_id: SECOND_SPACE, room_chosen: true });
   });
 
   it("writes the submission into status history and opens a guest lead", async () => {
@@ -230,11 +238,18 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
     // enquiry, and the notice to the venue's hallkeeper, keyed to (enquiry,
     // recipient). Whether an email is deliverable is not something a mock can
     // tell anyone.
-    const sends = sendEmailAsyncSpy.mock.calls.map((call) => call as [{ to: string }, { idempotencyKey: string }]);
+    const sends = sendEmailAsyncSpy.mock.calls.map((call) => call as [{ to: string; subject: string; html: string }, { idempotencyKey: string }]);
     expect(sends.map(([message, options]) => [message.to, options.idempotencyKey])).toEqual([
       [GUEST_EMAIL, `enquiry-acknowledged:${enquiryId}`],
       ["hallkeeper@example.test", `enquiry-new:${enquiryId}:${HALLKEEPER}`],
     ]);
+    // The guest named no room, so neither email says they asked for the
+    // flagship the enquiry is filed under.
+    expect(sends.map(([message]) => message.subject)).toEqual([
+      "We have your enquiry — Trades Hall fixture",
+      "New enquiry — wedding",
+    ]);
+    for (const [message] of sends) expect(message.html).not.toContain("The Grand Hall");
     expect(notifyCommercialTeamSpy).toHaveBeenCalledTimes(1);
     expect(notifyCommercialTeamSpy.mock.calls[0]?.[1]).toMatchObject({
       venueId: VENUE, actionPath: "/dashboard?view=enquiries",

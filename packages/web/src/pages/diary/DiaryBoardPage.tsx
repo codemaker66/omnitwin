@@ -623,6 +623,7 @@ export function DiaryBoardPage(): ReactElement {
         enquiry: {
           id: enquiry.id,
           spaceId: enquiry.spaceId,
+          roomChosen: enquiry.roomChosen,
           name: enquiry.name,
           eventType: enquiry.eventType,
           preferredDate: enquiry.preferredDate,

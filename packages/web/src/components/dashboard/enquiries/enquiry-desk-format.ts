@@ -90,6 +90,20 @@ export function requestWords(kind: RequestKind): RequestWords {
   return REQUEST_WORDS[kind];
 }
 
+const SOURCE_WORDS: Readonly<Record<string, string>> = {
+  website: "From the website",
+  walkthrough: "From the walkthrough",
+  planner: "From the planner",
+  phone: "By phone",
+  email: "By email",
+};
+
+/** How an enquiry reached the venue, in the desk's words; null where that is
+ *  not known, so the desk shows nothing rather than a guess. */
+export function sourceWords(source: string | null | undefined): string | null {
+  return source !== null && source !== undefined && Object.hasOwn(SOURCE_WORDS, source) ? SOURCE_WORDS[source] ?? null : null;
+}
+
 /** The singular and plural nouns a count of one stage (or of all) takes. */
 export function stageNouns(filter: string): readonly [singular: string, plural: string] {
   return filter === "all" ? ["enquiry", "enquiries"] : stageWords(filter).count;

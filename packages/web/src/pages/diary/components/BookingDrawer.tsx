@@ -81,12 +81,13 @@ function bookingWhen(booking: CalendarBookingEntry, nowMs: number): string {
   return sameDay ? `${formatInlineDay(startMs, nowMs)} · ${bookingTimeLabel(booking)}` : bookingTimeLabel(booking);
 }
 
-/** The ladder where the form places a new hold; null while its times do
- *  not yet make a span. */
+/** The ladder where the form places a new hold; null while no room is
+ *  chosen or its times do not yet make a span. */
 function formPlace(
   form: DrawerForm,
   ladderPlace: (spaceId: string, startMs: number, endMs: number) => LadderPlace,
 ): LadderPlace | null {
+  if (form.spaceId === "") return null;
   const startMs = wallInputToMs(form.startsAt);
   const endMs = wallInputToMs(form.endsAt);
   if (startMs === null || endMs === null || endMs <= startMs) return null;
@@ -770,6 +771,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
             onChange={onText("spaceId")}
             aria-invalid={fieldErrors["spaceId"] !== undefined}
           >
+            {form.spaceId === "" && <option value="" disabled>{BOARD_COPY.drawer.chooseRoom}</option>}
             {rooms.map((room) => (
               <option key={room.id} value={room.id}>
                 {room.name}

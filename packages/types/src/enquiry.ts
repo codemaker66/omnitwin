@@ -58,6 +58,22 @@ export function isValidEnquiryTransition(
 }
 
 // ---------------------------------------------------------------------------
+// Enquiry source — how an enquiry reached the venue (migration 0079)
+//
+// The walkthrough (the twin's own enquiry form), the website's enquiry form,
+// the planner (a guest who laid out a room), or a telephone call or email the
+// staff enter themselves. An enquiry whose source is not known has none:
+// before 26 September the website's form wrote the walkthrough's note too, so
+// older enquiries cannot be told apart and are never given a guessed source.
+// ---------------------------------------------------------------------------
+
+export const ENQUIRY_SOURCES = ["website", "walkthrough", "planner", "phone", "email"] as const;
+
+export const EnquirySourceSchema = z.enum(ENQUIRY_SOURCES);
+
+export type EnquirySource = z.infer<typeof EnquirySourceSchema>;
+
+// ---------------------------------------------------------------------------
 // Enquiry — the full persisted entity (matches DB columns)
 // ---------------------------------------------------------------------------
 
@@ -80,6 +96,11 @@ export const EnquirySchema = z.object({
   guestEmail: z.string().email().nullable(),
   guestPhone: z.string().max(30).nullable(),
   guestName: z.string().max(200).nullable(),
+  /** How it reached the venue; null where that is not known. */
+  source: EnquirySourceSchema.nullable(),
+  /** False when the guest named no room: spaceId is then only where the
+   *  enquiry is filed (the venue's first room), never what they asked for. */
+  roomChosen: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -114,16 +135,19 @@ export type CreateEnquiry = z.infer<typeof CreateEnquirySchema>;
 // `preferredDate`/`estimatedGuests`. Exactly one of configurationId / venueSlug
 // is required. Keeping the xor in the shared contract prevents API clients and
 // server routes from drifting on this security-sensitive anchor choice.
+//
+// On the venue path a guest may name one of the venue's rooms by its slug
+// (`roomSlug`); the API files the enquiry against that room and records it as
+// the guest's choice. Without one the enquiry is filed against the venue's
+// first room and recorded as naming none. A configuration already names its
+// room, so `roomSlug` is refused beside one.
 // ---------------------------------------------------------------------------
 
 /**
- * Where a guest enquiry was written. The venue path was the walkthrough's
- * (the twin's) alone, and the API marks those enquiries with a source note so
- * the events team knows the space is the flagship by default, not the guest's
- * choice. The venue's own website composer (the front door and /fresh) posts
- * on the same path, and says "website" so it is not recorded as coming from
- * the walkthrough. An enquiry that names no source is the walkthrough's: it
- * predates this field.
+ * Where a guest enquiry on the venue path was written: the walkthrough (the
+ * twin's form) or the website's own form (the front door and /fresh). An
+ * enquiry that names no source is the walkthrough's, which predates this
+ * field. The API records the enquiry's full source (ENQUIRY_SOURCES).
  */
 export const GUEST_ENQUIRY_SOURCES = ["website", "walkthrough"] as const;
 export type GuestEnquirySource = (typeof GUEST_ENQUIRY_SOURCES)[number];
@@ -140,12 +164,20 @@ export const GuestEnquirySchema = z
     guestCount: z.number().int().nonnegative().max(MAX_GUEST_COUNT).optional(),
     message: z.string().max(MAX_MESSAGE_LENGTH).optional(),
     source: z.enum(GUEST_ENQUIRY_SOURCES).optional(),
+    roomSlug: z.string().trim().min(1).max(100).optional(),
   })
   .refine(
     (value) => (value.configurationId === undefined) !== (value.venueSlug === undefined),
     {
       message: "Provide exactly one of configurationId or venueSlug",
       path: ["configurationId"],
+    },
+  )
+  .refine(
+    (value) => value.roomSlug === undefined || value.venueSlug !== undefined,
+    {
+      message: "A configuration already names its room",
+      path: ["roomSlug"],
     },
   );
 

@@ -9,7 +9,7 @@ import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
 import type { VenueRoom } from "./use-venue-rooms.js";
 import {
-  eventDateParts, eventLead, eventWeekday, relativeAge, requestKind, requestWords, stageLabel, stageTone, venueMoment,
+  eventDateParts, eventLead, eventWeekday, relativeAge, requestKind, requestWords, sourceWords, stageLabel, stageTone, venueMoment,
   type RequestKind,
 } from "./enquiry-desk-format.js";
 
@@ -83,6 +83,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
   const eventType = enquiry.eventType?.trim() ?? "";
   const kindLabel = request !== null ? requestWords(request).label : eventType === "" ? "Enquiry" : eventType;
   const eyebrow = `${kindLabel}${received === null ? "" : ` · received ${received}`}`;
+  const source = sourceWords(enquiry.source);
 
   const step = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
@@ -125,6 +126,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
         <div className="enq-panel__status">
           <StageChip key={props.stampKey ?? "still"} state={enquiry.state} stamped={props.stampKey !== null}
             request={request !== null} />
+          {request === null && source !== null && <span className="enq-source">{source}</span>}
         </div>
         <p className="vv-sr-only" role="status">{props.announcement}</p>
 
@@ -230,9 +232,11 @@ function EnquiryFacts({ enquiry, roomName, nowMs }: {
       </div>
       <div>
         <dt>room</dt>
-        {roomName === undefined ? <dd aria-hidden="true" />
-          : roomName === null ? <dd className="enq-facts__muted">Not known</dd>
-            : <dd className="enq-facts__room">{roomName}</dd>}
+        {/* The room a roomless enquiry is filed under is not the guest's choice. */}
+        {enquiry.roomChosen === false ? <dd className="enq-facts__muted">Not chosen</dd>
+          : roomName === undefined ? <dd aria-hidden="true" />
+            : roomName === null ? <dd className="enq-facts__muted">Not known</dd>
+              : <dd className="enq-facts__room">{roomName}</dd>}
       </div>
     </dl>
   );

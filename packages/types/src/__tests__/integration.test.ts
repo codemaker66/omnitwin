@@ -292,6 +292,8 @@ describe("cross-module ID consistency", () => {
       preferredDate: "2025-12-01",
       estimatedGuests: 100,
       state: "submitted",
+      source: "website",
+      roomChosen: false,
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -756,6 +758,8 @@ describe("type-level compatibility", () => {
       preferredDate: null,
       estimatedGuests: null,
       state: "submitted",
+      source: "planner",
+      roomChosen: true,
       createdAt: NOW,
       updatedAt: NOW,
     });

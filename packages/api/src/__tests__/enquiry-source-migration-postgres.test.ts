@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
-// Migration 0079 on isolated PostgreSQL (T-635, roadmap N6).
+// Migrations 0079 and 0080 on isolated PostgreSQL (T-635, roadmap N6).
 //
 // A venue-path enquiry named no room but was filed against the venue's first,
 // and the route wrote the walkthrough's note in front of the guest's words.
@@ -15,7 +15,10 @@ import * as schema from "../db/schema.js";
 // a row proves them, and takes the note out of every message. Here every kind
 // of row the enquiry routes have written, before and after the website's form
 // stopped writing the note, meets 0079 exactly as it ships, on a table built
-// as the running release defines it.
+// as the release before it defined it. Then the rows the previous API wrote
+// after 0079 (no source, the default room_chosen, the note) and a row this
+// release writes meet 0080, which must settle the first and change nothing
+// else.
 //
 // Opt-in, isolated PostgreSQL only. Never consults DATABASE_URL or .env.
 // ---------------------------------------------------------------------------
@@ -51,7 +54,24 @@ interface Written {
   readonly fixture?: string;
 }
 
-describe.skipIf(testUrl === undefined)("migration 0079 on isolated PostgreSQL", () => {
+/** The two columns 0079 adds, which the release before it did not have. */
+const ADDED = ["source", "room_chosen"];
+
+async function applyMigration(pool: Pool, file: string): Promise<void> {
+  const migration = await readFile(resolve("drizzle", file), "utf8");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      if (statement.trim() !== "") await client.query(statement);
+    }
+    await client.query("COMMIT");
+  } finally {
+    client.release();
+  }
+}
+
+describe.skipIf(testUrl === undefined)("migrations 0079 and 0080 on isolated PostgreSQL", () => {
   const fixtureSchema = `enquiry_source_${randomUUID().replaceAll("-", "")}`;
   let pool: Pool;
   const ids = {
@@ -66,14 +86,22 @@ describe.skipIf(testUrl === undefined)("migration 0079 on isolated PostgreSQL", 
     olderPricing: randomUUID(),
     fixture: randomUUID(),
   };
+  // Written after 0079 applied: by the previous API, then by this release.
+  const between = {
+    walkthrough: randomUUID(),
+    website: randomUUID(),
+    planner: randomUUID(),
+    thisRelease: randomUUID(),
+  };
+  let afterFirst: Row[] = [];
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: testUrl, application_name: fixtureSchema, max: 2, options: `-c search_path=${fixtureSchema}` });
     await pool.query(`CREATE SCHEMA "${fixtureSchema}"`);
-    // The table as the running release defines it, before 0079.
+    // The table as the release before 0079 defined it.
     const config = getTableConfig(schema.enquiries);
-    expect(config.columns.map((column) => column.name)).not.toContain("source");
-    const columns = config.columns.map((column) => {
+    expect(config.columns.map((column) => column.name)).toEqual(expect.arrayContaining(ADDED));
+    const columns = config.columns.filter((column) => !ADDED.includes(column.name)).map((column) => {
       let defaultSql = "";
       if (column.name === "id") defaultSql = " primary key default gen_random_uuid()";
       else if (column.name === "created_at" || column.name === "updated_at") defaultSql = " default now()";
@@ -102,18 +130,28 @@ describe.skipIf(testUrl === undefined)("migration 0079 on isolated PostgreSQL", 
     await insert(ids.olderPricing, { eventType: "venue-enquiry", message: `${NOTE}\n\nWe run a hall in Leith.`, createdAt: BEFORE_FIX });
     await insert(ids.fixture, { eventType: "wedding", message: `${NOTE}\n\nA seeded question.`, createdAt: AFTER_FIX, fixture: "demo-seed" });
 
-    // Migration 0079 exactly as it ships, in one transaction as the migrator runs it.
-    const migration = await readFile(resolve("drizzle", "0079_enquiry_source_and_room_choice.sql"), "utf8");
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const statement of migration.split("--> statement-breakpoint")) {
-        if (statement.trim() !== "") await client.query(statement);
-      }
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
+    // Each migration exactly as it ships, in one transaction as the migrator runs it.
+    await applyMigration(pool, "0079_enquiry_source_and_room_choice.sql");
+    afterFirst = (await pool.query<Row>("SELECT id, source, room_chosen, message FROM enquiries ORDER BY id")).rows;
+
+    // The previous API, still running once 0079 applied, wrote neither column
+    // and still wrote the note; this release writes both and no note.
+    const previousApi = async (id: string, configurationId: string | null, message: string | null): Promise<void> => {
+      await pool.query(
+        `INSERT INTO enquiries (id, venue_id, space_id, configuration_id, name, email, event_type, message)
+         VALUES ($1, $2, $3, $4, 'Fixture guest', 'guest@example.test', 'wedding', $5)`,
+        [id, venue, flagship, configurationId, message],
+      );
+    };
+    await previousApi(between.walkthrough, null, `${NOTE}\n\nCould we see the Saloon?`);
+    await previousApi(between.website, null, "A Friday in June, about 90.");
+    await previousApi(between.planner, randomUUID(), "Our layout is attached.");
+    await pool.query(
+      `INSERT INTO enquiries (id, venue_id, space_id, name, email, message, source, room_chosen)
+       VALUES ($1, $2, $3, 'Fixture guest', 'guest@example.test', $4, 'walkthrough', false)`,
+      [between.thisRelease, venue, flagship, `${NOTE} is what the guest typed first.`],
+    );
+    await applyMigration(pool, "0080_enquiry_source_refill.sql");
   }, 120_000);
 
   afterAll(async () => {
@@ -154,6 +192,35 @@ describe.skipIf(testUrl === undefined)("migration 0079 on isolated PostgreSQL", 
   it("names no source for a seed fixture, and takes out only the note the route wrote first", async () => {
     expect(await row(ids.fixture)).toMatchObject({ source: null, room_chosen: false, message: "A seeded question." });
     expect(await row(ids.quoted)).toMatchObject({ source: "website", message: `Your page said: ${NOTE}` });
+  });
+
+  it("0080 settles what the previous API wrote after 0079: the source, the room and the guest's words", async () => {
+    expect(await row(between.walkthrough)).toMatchObject({ source: "walkthrough", room_chosen: false, message: "Could we see the Saloon?" });
+    expect(await row(between.website)).toMatchObject({ source: "website", room_chosen: false, message: "A Friday in June, about 90." });
+    expect(await row(between.planner)).toMatchObject({ source: "planner", room_chosen: true, message: "Our layout is attached." });
+  });
+
+  it("0080 changes nothing 0079 settled, nothing it left without a source, and nothing this release wrote", async () => {
+    const { rows } = await pool.query<Row>("SELECT id, source, room_chosen, message FROM enquiries WHERE id = ANY($1) ORDER BY id", [afterFirst.map((settled) => settled.id)]);
+    expect(rows).toEqual(afterFirst);
+    expect(await row(between.thisRelease)).toMatchObject({ source: "walkthrough", room_chosen: false, message: `${NOTE} is what the guest typed first.` });
+  });
+
+  it("leaves the table as the Drizzle schema declares it", async () => {
+    const { rows } = await pool.query<{ column_name: string; data_type: string; is_nullable: string; column_default: string | null }>(
+      `SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns
+        WHERE table_schema = $1 AND table_name = 'enquiries' AND column_name = ANY($2) ORDER BY column_name`,
+      [fixtureSchema, ADDED],
+    );
+    expect(rows).toEqual([
+      { column_name: "room_chosen", data_type: "boolean", is_nullable: "NO", column_default: "true" },
+      { column_name: "source", data_type: "character varying", is_nullable: "YES", column_default: null },
+    ]);
+    const declared = getTableConfig(schema.enquiries).columns.filter((column) => ADDED.includes(column.name));
+    expect(declared.map((column) => [column.name, column.getSQLType(), column.notNull, column.default])).toEqual([
+      ["source", "varchar(20)", false, undefined],
+      ["room_chosen", "boolean", true, true],
+    ]);
   });
 
   it("keeps a new enquiry's room as chosen unless it says otherwise, and holds source to its words", async () => {

@@ -73,7 +73,7 @@ describe("the venue's acknowledgement copy", () => {
   it("greets the organiser by name, in the venue's voice, with no unsubscribe", async () => {
     const { subject, html } = await enquiryAcknowledgement({
       venueName: "Trades Hall Glasgow",
-      spaceName: "Grand Hall",
+      roomName: "Grand Hall",
       organiserName: "Elaine Fraser",
       eventType: "Wedding",
       eventDate: "2026-10-02",
@@ -99,7 +99,7 @@ describe("the venue's acknowledgement copy", () => {
   it("omits fields the organiser did not give", async () => {
     const { html } = await enquiryAcknowledgement({
       venueName: "Trades Hall Glasgow",
-      spaceName: "Saloon",
+      roomName: "Saloon",
       organiserName: ORGANISER,
       eventType: null,
       eventDate: null,
@@ -109,6 +109,24 @@ describe("the venue's acknowledgement copy", () => {
     expect(html).not.toContain("Occasion");
     expect(html).not.toContain("Guests");
     expect(html).toContain("Saloon");
+  });
+
+  // "Here is what you told us" must be what they told us: a guest who named
+  // no room is never told they asked for the room the enquiry is filed under.
+  it("names no room to a guest who chose none", async () => {
+    const { html } = await enquiryAcknowledgement({
+      venueName: "Trades Hall Glasgow",
+      roomName: null,
+      organiserName: ORGANISER,
+      eventType: "Wedding",
+      eventDate: null,
+      guestCount: 80,
+      replyToEmail: null,
+    });
+    const text = readableText(html);
+    expect(text).toContain("Your enquiry is with our events team");
+    expect(text).not.toContain("Room");
+    expect(text).toContain("Wedding");
   });
 });
 
@@ -255,9 +273,68 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     return rows.rows[0]?.message;
   }
 
-  it("marks a room enquiry from the walkthrough as coming from the twin", async () => {
+  /** Where the enquiry says it came from, and the room it is filed under. */
+  async function storedSource(enquiryId: string): Promise<{ source: string | null; room_chosen: boolean; space_id: string } | undefined> {
+    const rows = await pool.query<{ source: string | null; room_chosen: boolean; space_id: string }>(
+      "SELECT source, room_chosen, space_id FROM enquiries WHERE id = $1", [enquiryId]);
+    return rows.rows[0];
+  }
+
+  it("records a walkthrough enquiry's source in its own column, with no room chosen and no note", async () => {
     const enquiryId = await submitEnquiry();
-    expect(await storedMessage(enquiryId)).toBe("Sent from the venue's virtual walkthrough (the twin).");
+    expect(await storedMessage(enquiryId)).toBeNull();
+    expect(await storedSource(enquiryId)).toEqual({ source: "walkthrough", room_chosen: false, space_id: SPACE });
+  });
+
+  it("files a room the guest names as their choice, and names it to the team", async () => {
+    const saloon = randomUUID();
+    await pool.query("INSERT INTO spaces (id, venue_id, name, slug, sort_order) VALUES ($1, $2, 'Saloon', 'saloon', 1)", [saloon, VENUE]);
+    const res = await server.inject({
+      method: "POST",
+      url: "/public/enquiries",
+      payload: { venueSlug: VENUE_SLUG, roomSlug: "saloon", source: "website", email: ORGANISER, name: "Elaine Fraser", message: "A Friday in June." },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
+    expect(await storedSource(enquiryId)).toEqual({ source: "website", room_chosen: true, space_id: saloon });
+    expect(await storedMessage(enquiryId)).toBe("A Friday in June.");
+    const notices = await pool.query<{ title: string; body: string }>("SELECT DISTINCT title, body FROM event_plan_notifications");
+    expect(notices.rows).toEqual([{ title: "New enquiry — Saloon", body: "Elaine Fraser enquired about Saloon. Open Enquiries to respond." }]);
+  });
+
+  it("files a room the venue does not have as no room chosen, and keeps the enquiry", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/public/enquiries",
+      payload: { venueSlug: VENUE_SLUG, roomSlug: "ballroom", email: ORGANISER },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
+    expect(await storedSource(enquiryId)).toEqual({ source: "walkthrough", room_chosen: false, space_id: SPACE });
+  });
+
+  it("tells the team where a roomless enquiry came from, and that no room was chosen", async () => {
+    await submitEnquiry();
+    const notices = await pool.query<{ title: string; body: string }>("SELECT DISTINCT title, body FROM event_plan_notifications");
+    expect(notices.rows).toEqual([{
+      title: "New enquiry",
+      body: "Elaine Fraser enquired from the walkthrough for a Wedding on 2026-10-02, without choosing a room. Open Enquiries to respond.",
+    }]);
+  });
+
+  it("approves a roomless enquiry at the venue, never for the room it is filed under", async () => {
+    const enquiryId = await submitEnquiry();
+    await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [enquiryId]);
+    const staff = { id: randomUUID(), email: "events@example.test", role: "staff", venueId: VENUE };
+    const res = await server.inject({
+      method: "POST",
+      url: `/enquiries/${enquiryId}/transition`,
+      headers: { authorization: `Bearer ${JSON.stringify(staff)}` },
+      payload: { status: "approved" },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const sent = await waitForEmail(`enquiry-approved:${enquiryId}`);
+    expect(sent.subject).toBe("Your enquiry at Trades Hall Glasgow has been approved");
   });
 
   it("acknowledges the organiser by email", async () => {
@@ -306,6 +383,7 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
     // It did not come from the walkthrough, so the desk must not say it did.
     expect(await storedMessage(enquiryId)).toBe(`Venue access request from ${requester}.`);
+    expect(await storedSource(enquiryId)).toMatchObject({ source: "website", room_chosen: false });
 
     const notifications = await pool.query<{ audience_role: string; title: string; body: string }>(
       "SELECT audience_role, title, body FROM event_plan_notifications ORDER BY audience_role");
@@ -344,6 +422,7 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     expect(res.statusCode, res.body).toBe(201);
     const enquiryId = (JSON.parse(res.body) as { data: { enquiryId: string } }).data.enquiryId;
     expect(await storedMessage(enquiryId)).toBe("We let three rooms and a courtyard.");
+    expect(await storedSource(enquiryId)).toMatchObject({ source: "website", room_chosen: false });
 
     const notifications = await pool.query<{ title: string; body: string }>(
       "SELECT title, body FROM event_plan_notifications");

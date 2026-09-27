@@ -26,6 +26,13 @@ const EnquirySchema = z.object({
   eventType: z.string().nullable(),
   estimatedGuests: z.number().nullable(),
   message: z.string().nullable(),
+  /** How it reached the venue (ENQUIRY_SOURCES in @omnitwin/types); null
+   *  where that is not known. Optional, like roomChosen, while an API that
+   *  sends neither may still be answering. */
+  source: z.string().nullable().optional(),
+  /** False when the guest named no room: spaceId is then only where the
+   *  enquiry is filed, never what they asked for. */
+  roomChosen: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

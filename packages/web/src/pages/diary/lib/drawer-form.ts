@@ -44,6 +44,9 @@ export interface DrawerForm {
 export interface ConvertSource {
   readonly id: string;
   readonly spaceId: string;
+  /** False when the guest named no room: spaceId is then only where the
+   *  enquiry is filed, so the hold asks for a room rather than taking it. */
+  readonly roomChosen?: boolean | undefined;
   readonly name: string;
   readonly eventType: string | null;
   readonly preferredDate: string | null; // "YYYY-MM-DD"
@@ -128,7 +131,7 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
         : mode.drop.startMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
     return {
       kind: "hold",
-      spaceId: mode.drop?.spaceId ?? enquiry.spaceId,
+      spaceId: mode.drop?.spaceId ?? (enquiry.roomChosen === false ? "" : enquiry.spaceId),
       title: `${enquiry.name}${enquiry.eventType === null ? "" : ` — ${enquiry.eventType}`}`.slice(0, 200),
       eventType: enquiry.eventType ?? "",
       startsAt: msToWallInput(startMs),

@@ -5,7 +5,7 @@ import {
 
 const sampleData: EnquiryApprovedData = {
   venueName: "Trades Hall Glasgow",
-  spaceName: "Grand Hall",
+  roomName: "Grand Hall",
   eventDate: "Saturday, 15 June 2026",
   configUrl: "http://localhost:5173/plan/abc-123",
 };
