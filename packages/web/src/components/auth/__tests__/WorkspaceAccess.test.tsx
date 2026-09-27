@@ -97,6 +97,7 @@ describe("authoritative account access", () => {
 
     expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith({
       venueSlug: "trades-hall-glasgow",
+      source: "website",
       email: "elaine@example.test",
       eventType: "venue-access",
       message: "Venue access request from elaine@example.test. I run the Saturday ceilidh.",

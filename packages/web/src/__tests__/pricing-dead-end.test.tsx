@@ -54,6 +54,7 @@ describe("PricingPage", () => {
 
     expect(submitGuestEnquiry).toHaveBeenCalledWith({
       venueSlug: "trades-hall-glasgow",
+      source: "website",
       email: "venue@example.test",
       eventType: "venue-enquiry",
       message: "We let the Grand Hall and the Saloon.",
