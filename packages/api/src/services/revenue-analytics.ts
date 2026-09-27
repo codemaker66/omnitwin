@@ -171,7 +171,7 @@ export function buildVenueDashboardAnalytics(input: {
   const reviewBottlenecks = [
     ...input.revenueScenarios
       .filter((scenario) => scenario.reviewGateCount > 0)
-      .map((scenario) => `${scenario.name}: ${String(scenario.reviewGateCount)} review gate(s)`),
+      .map((scenario) => `${scenario.name}: ${String(scenario.reviewGateCount)} review gate${scenario.reviewGateCount === 1 ? "" : "s"}`),
     ...input.comfortConstraints
       .filter((constraint) => constraint.reviewRequired)
       .map((constraint) => constraint.label),

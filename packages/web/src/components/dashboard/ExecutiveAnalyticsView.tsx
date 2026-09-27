@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { formatMinorUnitMoney, type VenueDashboardAnalytics } from "@omnitwin/types";
+import type { ComfortConstraintStatus, VenueDashboardAnalytics } from "@omnitwin/types";
 import { getVenueDashboardAnalytics } from "../../api/revenue-analytics.js";
 import { listVenues, type Venue } from "../../api/spaces.js";
 import { useAuthStore } from "../../stores/auth-store.js";
@@ -47,6 +47,25 @@ function statusCount(data: VenueDashboardAnalytics, status: string): number {
 
 /** Callers render this only when there is something to list — a card saying
  *  "none recorded" reads as reassurance the data cannot support. */
+/** "£4,750", with pence only when there are some. A dashboard figure is
+ *  read at a glance; it used to read "GBP 4,750.00". */
+function formatReadingMoney(amountMinor: number, currency: string): string {
+  const whole = amountMinor % 100 === 0;
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amountMinor / 100);
+}
+
+const COMFORT_WORDS: Readonly<Record<ComfortConstraintStatus, string>> = {
+  ok: "Comfortable",
+  warning: "Tight in places",
+  review_required: "Needs a review",
+  not_checked: "Not checked yet",
+};
+
 function warningList(items: readonly string[]): React.ReactElement {
   return (
     <ul style={{ margin: 0, paddingLeft: 18, color: "rgba(246,241,232,0.82)", fontSize: 13, lineHeight: 1.55 }}>
@@ -182,12 +201,15 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
             {/* Same definition and same figure as the Pipeline tab: open
                 opportunities only, computed server-side. */}
             <p style={labelStyle}>Pipeline value</p>
-            <p style={metricValueStyle}>{formatMinorUnitMoney(data.pipelineValueMinor, data.currency)}</p>
+            <p style={metricValueStyle}>{formatReadingMoney(data.pipelineValueMinor, data.currency)}</p>
             <p style={{ margin: "8px 0 0", color: "rgba(246,241,232,0.62)", fontSize: 12 }}>Open opportunities only</p>
           </div>
           <div style={cardStyle}>
-            <p style={labelStyle}>Enquiry conversion</p>
+            {/* Named for what it measures (services/revenue-analytics.ts):
+                accepted proposals divided by enquiries, not a funnel stage. */}
+            <p style={labelStyle}>Accepted per enquiry</p>
             <p style={metricValueStyle}>{data.enquiryConversionPercent}%</p>
+            <p style={{ margin: "8px 0 0", color: "rgba(246,241,232,0.62)", fontSize: 12 }}>Accepted proposals as a share of enquiries</p>
           </div>
           <div style={cardStyle}>
             <p style={labelStyle}>Proposal status</p>
@@ -239,10 +261,10 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
               <div style={{ marginTop: 12 }}>
                 <h3 style={{ margin: "0 0 8px", color: "#fff7e8", fontSize: 18 }}>{scenario.name}</h3>
                 <p style={{ margin: "0 0 8px", color: "rgba(246,241,232,0.82)", fontWeight: 700 }}>
-                  {formatMinorUnitMoney(scenario.estimatedRevenueMinor, scenario.currency)} revenue · {formatMinorUnitMoney(scenario.estimatedMarginMinor, scenario.currency)} margin
+                  {formatReadingMoney(scenario.estimatedRevenueMinor, scenario.currency)} revenue · {formatReadingMoney(scenario.estimatedMarginMinor, scenario.currency)} margin
                 </p>
                 <p style={{ margin: 0, color: "#f2b35e", fontSize: 13 }}>
-                  Comfort status {scenario.comfortStatus}; {scenario.reviewGateCount} review gate(s).
+                  {COMFORT_WORDS[scenario.comfortStatus]} · {scenario.reviewGateCount} review gate{scenario.reviewGateCount === 1 ? "" : "s"}
                 </p>
               </div>
             </div>

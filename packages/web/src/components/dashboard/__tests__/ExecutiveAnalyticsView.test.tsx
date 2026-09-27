@@ -89,7 +89,7 @@ function dashboardData(): VenueDashboardAnalytics {
       updatedAt: "2026-06-12T11:00:00.000Z",
     }],
     comfortFloorWarnings: ["Aisle spacing needs review."],
-    reviewBottlenecks: ["Dinner upsell option: 2 review gate(s)"],
+    reviewBottlenecks: ["Dinner upsell option: 2 review gates"],
     disclosure: "Commercial planning insight - review constraints preserved",
   };
 }
@@ -104,12 +104,27 @@ describe("ExecutiveAnalyticsView", () => {
       expect(screen.getByText("Executive analytics")).toBeDefined();
     });
 
-    expect(screen.getByText("GBP 12,500.00")).toBeDefined();
+    expect(screen.getByText("£12,500")).toBeDefined();
     expect(screen.getByText("42%")).toBeDefined();
     expect(screen.getByText("Grand Hall")).toBeDefined();
     expect(screen.getByText("Dinner upsell option")).toBeDefined();
     expect(screen.getByText("Aisle spacing needs review.")).toBeDefined();
-    expect(screen.getByText("Dinner upsell option: 2 review gate(s)")).toBeDefined();
+    expect(screen.getByText("Dinner upsell option: 2 review gates")).toBeDefined();
+  });
+
+  it("names the conversion figure for what it measures, and reads money and comfort in words", async () => {
+    getVenueDashboardAnalyticsMock.mockResolvedValue(dashboardData());
+    render(<ExecutiveAnalyticsView />);
+    await screen.findByText("Executive analytics");
+
+    expect(screen.getByText("Accepted per enquiry")).toBeDefined();
+    expect(screen.getByText("Accepted proposals as a share of enquiries")).toBeDefined();
+    expect(screen.queryByText("Enquiry conversion")).toBeNull();
+    // Whole pounds read without pence; a raw enum never reaches the page.
+    expect(screen.getByText("£12,500 revenue · £8,300 margin")).toBeDefined();
+    expect(screen.getByText("Tight in places · 2 review gates")).toBeDefined();
+    const bodyText = document.body.textContent ?? "";
+    expect(bodyText).not.toMatch(/GBP \d|Comfort status|review gate\(s\)/u);
   });
 
   it("keeps dashboard copy inside safe planning language", async () => {
@@ -189,7 +204,7 @@ describe("ExecutiveAnalyticsView", () => {
     expect(bodyText).not.toContain("No review bottlenecks recorded.");
     expect(bodyText).not.toContain("Create a revenue scenario");
     // The figures that ARE real stay.
-    expect(screen.getByText("GBP 12,500.00")).toBeDefined();
+    expect(screen.getByText("£12,500")).toBeDefined();
     expect(screen.getByText("Grand Hall")).toBeDefined();
   });
 
