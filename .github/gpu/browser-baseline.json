@@ -270,6 +270,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The ops handoff pack prints as a function sheet (T-635 N4): printed at A4 width with print media, the app's navigation and the Print button are hidden, each pick-list line is one row of three columns, the overview is one row, every label reads at 4.5:1 or better against white paper, and Chromium's own PDF of a twelve-line pack is at most two A4 sheets.",
+      "sourceCommit": "dd394086609933bbe5a948da4ea668fba0d63a8d",
+      "sourceFile": "packages/web/e2e/ops-handoff-print.spec.ts",
+      "sourceFileGitBlobSha256": "476115bb10c13db02fb5e093ae1405e7ceb62cefb87f55e358d17a133afadc4f",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "2c5399465abec8e6751a0f00e89272f3f6929a46eed4870544eac25f6429d041",
+      "caseIds": [
+        "5c1048b22e59bfa551de-71d5d61e86d22ce7f309"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -2953,6 +2967,17 @@
       "suitePath": [
         "operational-state-visual-performance.spec.ts",
         "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "5c1048b22e59bfa551de-71d5d61e86d22ce7f309",
+      "file": "ops-handoff-print.spec.ts",
+      "title": "prints as a function sheet at A4 width: no app chrome, one row per pick-list line, and every label legible on white",
+      "suitePath": [
+        "ops-handoff-print.spec.ts",
+        "Ops handoff pack on paper"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
