@@ -470,7 +470,10 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *Hallkeeper sheet*
 - Expand the minified `hallkeeper-workspace.css:2` into readable rules.
+  Done on 27 September, with no rendered change ([session log](../../sessions/2026-09-27.md)).
 - Type floor: item names 16 px, zones 13 px, quantities as Newsreader light numerals, inputs 16 px.
+  Done on 27 September, with nothing operational under 12 px and a browser case at 390 × 844 holding it
+  ([session log](../../sessions/2026-09-27.md)).
 - Colours:
 
   | Element | New value | Measured |
@@ -478,6 +481,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   | muted text | `#55655c` | 6.02:1 |
   | checkbox border | `#8b927f` or darker | at least 3:1 |
   | progress fill | `#5d8963` | — |
+
+  Done on 27 September; the checkbox edge is `#7d8573` (3.8:1).
 
 - "Ready by" appears next to the start time.
 - Approval state: a full-width band (brick for rejected, amber for awaiting) and an approval stamp, instead of three separate version mentions.
@@ -488,6 +493,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - 403 copy without "Try Again".
   Done on 27 September: a denied sheet offers its own navigation instead ([session log](../../sessions/2026-09-27.md)).
 - Delete the dead `.hk-*` rules.
+  Done on 27 September: 82 rules and selectors for 26 classes nothing names ([session log](../../sessions/2026-09-27.md)).
 
 *Day Board*
 - Remove the endless pulses (`day-board.css:244-267`); a single stamp plays when a room's state changes.
