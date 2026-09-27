@@ -1464,3 +1464,100 @@ describe("DiaryBoardPage — enquiry slips carry their date (roadmap N3)", () =>
     }
   });
 });
+
+describe("DiaryBoardPage — contested dates, venue-wide (roadmap N3)", () => {
+  function contestedEntry(overrides: Partial<CalendarBookingEntry> & Pick<CalendarBookingEntry, "id" | "title">): CalendarBookingEntry {
+    return {
+      entryType: "booking", spaceId: SALOON, kind: "hold", status: "active", state: "hold", eventType: "wedding",
+      startsAt: "2027-03-20T15:00:00.000Z", endsAt: "2027-03-20T23:00:00.000Z", rank: 1, jointFlag: false,
+      decisionAt: "2026-10-02T12:00:00.000Z", ownerUserId: "00000000-0000-4000-8000-0000000000aa",
+      ownerName: "Fiona Coordinator", nextAction: null, nextActionDueAt: null, eventId: null, seriesId: null, ...overrides,
+    };
+  }
+  const FIRST = contestedEntry({ id: "00000000-0000-4000-8000-0000000000f1", title: "Hartley wedding" });
+  const SECOND = contestedEntry({
+    id: "00000000-0000-4000-8000-0000000000f2", title: "Guild dinner", rank: 2, startsAt: "2027-03-20T17:00:00.000Z",
+    decisionAt: "2026-09-10T12:00:00.000Z", ownerUserId: null, ownerName: null,
+  });
+  const DINNER = contestedEntry({
+    id: "00000000-0000-4000-8000-0000000000f3", title: "Law Society dinner", spaceId: GRAND_HALL, kind: "ink", state: "ink",
+    rank: null, decisionAt: null, startsAt: "2026-11-14T18:00:00.000Z", endsAt: "2026-11-14T23:00:00.000Z",
+  });
+  const BEHIND = contestedEntry({
+    id: "00000000-0000-4000-8000-0000000000f4", title: "Kerr reception", spaceId: GRAND_HALL,
+    startsAt: "2026-11-14T17:00:00.000Z", endsAt: "2026-11-14T22:00:00.000Z",
+  });
+
+  function withContested(): CalendarResponse {
+    return {
+      ...fixture(),
+      contested: {
+        dates: [
+          { spaceId: GRAND_HALL, startsAt: BEHIND.startsAt, endsAt: DINNER.endsAt, bookings: [DINNER, BEHIND] },
+          { spaceId: SALOON, startsAt: FIRST.startsAt, endsAt: FIRST.endsAt, bookings: [FIRST, SECOND] },
+        ],
+        total: 3,
+      },
+    };
+  }
+
+  /** Each card as read: its heading, then each booking's lines. */
+  function cards(): { readonly when: string; readonly ladder: string[][] }[] {
+    return Array.from(document.querySelectorAll(".diary-contested-date")).map((card) => ({
+      when: card.querySelector(".diary-contested-when")?.textContent ?? "",
+      ladder: Array.from(card.querySelectorAll(".diary-contested-booking")).map((row) =>
+        Array.from(row.children).map((line) => line.textContent ?? "")),
+    }));
+  }
+
+  it("lists each contested date with its ladder, the confirmed booking first, in Blake's words", async () => {
+    getCalendarMock.mockResolvedValue(withContested());
+    const restore = pinDate("2026-09-16T10:00:00.000Z");
+    try {
+      renderPage();
+      const panel = await screen.findByRole("region", { name: "Contested dates" });
+      expect(within(panel).getByRole("heading", { level: 2 }).textContent).toBe("Contested dates 3");
+      expect(cards()).toEqual([
+        { when: "Grand Hall · Sat 14 Nov", ladder: [
+          ["Law Society dinner", "Confirmed · Fiona Coordinator", "18:00–23:00"],
+          ["Kerr reception", "1st option · Fiona Coordinator", "17:00–22:00", "Decide by Fri 2 Oct"],
+        ] },
+        { when: "Saloon · Sat 20 Mar 2027", ladder: [
+          ["Hartley wedding", "1st option · Fiona Coordinator", "15:00–23:00", "Decide by Fri 2 Oct"],
+          ["Guild dinner", "2nd option · No owner", "17:00–23:00", "Decision was due Thu 10 Sept"],
+        ] },
+      ]);
+      expect(within(panel).getByText("Showing the 2 soonest of 3.")).toBeDefined();
+    } finally {
+      restore();
+    }
+  });
+
+  it("opens a contested booking where it stands, without moving the board, and gives focus back", async () => {
+    getCalendarMock.mockResolvedValue(withContested());
+    renderPage();
+    const panel = await screen.findByRole("region", { name: "Contested dates" });
+    const row = within(panel).getByRole("button", { name: /Guild dinner/ });
+    const title = document.querySelector(".diary-range-title")?.textContent;
+    row.focus();
+    fireEvent.click(row);
+    const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+    expect(within(drawer).getByDisplayValue("Guild dinner")).toBeTruthy();
+    expect(document.querySelector(".diary-range-title")?.textContent).toBe(title);
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close" }));
+    await waitFor(() => { expect(document.activeElement).toBe(row); });
+  });
+
+  it("says when nothing is contested, and shows no list for an older API that sends none", async () => {
+    getCalendarMock.mockResolvedValue({ ...fixture(), contested: { dates: [], total: 0 } });
+    const view = renderPage();
+    const panel = await screen.findByRole("region", { name: "Contested dates" });
+    expect(within(panel).getByText("No date in the year ahead is wanted by more than one booking.")).toBeDefined();
+    expect(within(panel).getByRole("heading", { level: 2 }).textContent).toBe("Contested dates");
+    view.unmount();
+    getCalendarMock.mockResolvedValue(fixture());
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    expect(screen.queryByRole("region", { name: "Contested dates" })).toBeNull();
+  });
+});

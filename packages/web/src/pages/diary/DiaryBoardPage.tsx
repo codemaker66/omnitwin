@@ -52,7 +52,7 @@ import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
 import { ViewMenu } from "./components/ViewMenu.js";
 import {
-  type TrayEnquiry, ConflictRail, DecisionsDuePanel, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
+  type TrayEnquiry, ConflictRail, ContestedDatesPanel, DecisionsDuePanel, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
 import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
 import { EnquiryDragGhost } from "./components/EnquiryDragGhost.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
@@ -1212,6 +1212,14 @@ export function DiaryBoardPage(): ReactElement {
               onEnquiryPressEnd={writable && !showingOverview ? endSlipPress : undefined}
               liftedEnquiryId={enquiryDrag?.enquiryId ?? null}
             />
+            {shown.contested === undefined ? null : (
+              <ContestedDatesPanel
+                contested={shown.contested}
+                rooms={rooms}
+                nowMs={nowMs}
+                onOpen={openBookingFromOverview}
+              />
+            )}
             {/* This range's own: shown once it is read, never as "none". */}
             {data === null ? null : <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />}
             {data !== null && entries.length === 0 ? (

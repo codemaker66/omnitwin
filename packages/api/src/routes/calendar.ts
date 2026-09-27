@@ -3,6 +3,8 @@ import { and, asc, eq, gt, inArray, isNotNull, isNull, lt, sql } from "drizzle-o
 import {
   CalendarQuerySchema,
   CalendarResponseSchema,
+  CONTESTED_HORIZON_DAYS,
+  CONTESTED_LIMIT,
   DECISIONS_DUE_HORIZON_DAYS,
   DECISIONS_DUE_LIMIT,
   NEXT_ACTIONS_DUE_HORIZON_DAYS,
@@ -23,6 +25,7 @@ import {
   type ConflictBookingInput,
   type ConflictPhaseInput,
 } from "../services/calendar-conflicts.js";
+import { contestedDates } from "../services/contested-dates.js";
 
 // ---------------------------------------------------------------------------
 // GET /calendar — the Diary's shared read model (T-489; Canon §12 P0).
@@ -40,6 +43,11 @@ import {
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
+
+/** A bound on the live bookings the contested read scans: far above a
+ *  venue's year. They come soonest first, so the dates listed stay whole;
+ *  only the total could fall short past it. */
+const CONTESTED_SCAN_LIMIT = 5000;
 
 // Explicit column map, NOT db.select().from(...): adding a join to a bare
 // select() silently changes Drizzle's row shape to nested
@@ -220,10 +228,26 @@ export async function calendarRoutes(
     // action is overdue or due within the horizon. Served by
     // bookings_venue_next_action_idx.
     const nextActionHorizon = new Date(Date.now() + NEXT_ACTIONS_DUE_HORIZON_DAYS * DAY_MS);
+    // Contested dates, venue-wide (roadmap N3): the live holds and confirmed
+    // bookings from now to the horizon, read lean in one scan and grouped by
+    // contestedDates(); full entries are read after for the dates shown. A
+    // correlated lookup for crossing bookings would have scanned each room's
+    // whole history once per booking, on the endpoint every view polls.
+    const contestedFrom = new Date();
+    const contestedHorizon = new Date(contestedFrom.getTime() + CONTESTED_HORIZON_DAYS * DAY_MS);
+    const liveContestConditions = and(
+      eq(bookings.venueId, query.venueId),
+      isNull(bookings.deletedAt),
+      inArray(bookings.spaceId, [...knownSpaceIds]),
+      eq(bookings.status, "active"),
+      inArray(bookings.kind, ["hold", "ink"]),
+      gt(bookings.endsAt, contestedFrom),
+      lt(bookings.startsAt, contestedHorizon),
+    );
 
-    // The five reads are independent — one round-trip of latency, not five
+    // The six reads are independent — one round-trip of latency, not six
     // (review finding: this is the endpoint every calendar view polls).
-    const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows] = await Promise.all([
+    const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows, liveRows] = await Promise.all([
       db
         .select(BOOKING_ENTRY_COLUMNS)
         .from(bookings)
@@ -325,7 +349,35 @@ export async function calendarRoutes(
         )
         .orderBy(asc(bookings.nextActionDueAt), asc(bookings.id))
         .limit(NEXT_ACTIONS_DUE_LIMIT),
+      db
+        .select({
+          id: bookings.id,
+          spaceId: bookings.spaceId,
+          kind: bookings.kind,
+          status: bookings.status,
+          startsAt: bookings.startsAt,
+          endsAt: bookings.endsAt,
+          rank: bookings.rank,
+        })
+        .from(bookings)
+        .where(liveContestConditions)
+        .orderBy(asc(bookings.startsAt), asc(bookings.id))
+        .limit(CONTESTED_SCAN_LIMIT),
     ]);
+
+    // The dates found among the lean rows; full entries only for those shown.
+    const contestedFound = contestedDates(liveRows.map((row) => ({
+      ...row,
+      startsAt: row.startsAt.toISOString(),
+      endsAt: row.endsAt.toISOString(),
+    })));
+    const shownIds = contestedFound.slice(0, CONTESTED_LIMIT).flatMap((date) => date.bookings.map((booking) => booking.id));
+    const contestedRows = shownIds.length === 0 ? [] : await db
+      .select(BOOKING_ENTRY_COLUMNS)
+      .from(bookings)
+      .leftJoin(events, and(eq(bookings.eventId, events.id), isNull(events.deletedAt)))
+      .leftJoin(users, eq(bookings.ownerUserId, users.id))
+      .where(and(liveContestConditions, inArray(bookings.id, shownIds)));
 
     const conflictBookings: ConflictBookingInput[] = bookingRows.map((row) => ({
       id: row.id,
@@ -371,6 +423,9 @@ export async function calendarRoutes(
     }
 
     const bookingEntries: CalendarEntry[] = bookingRows.map(toBookingEntry);
+    // Grouped again from the full entries: a booking released in between
+    // simply leaves its date, as the next read would show.
+    const contested = contestedDates(contestedRows.map(toBookingEntry));
 
     const entries = [...bookingEntries, ...phaseEntries].sort((a, b) => {
       if (a.startsAt !== b.startsAt) return a.startsAt < b.startsAt ? -1 : 1;
@@ -401,6 +456,10 @@ export async function calendarRoutes(
       nextActionsDue: {
         holds: nextActionRows.map(toBookingEntry),
         total: nextActionRows[0]?.total ?? 0,
+      },
+      contested: {
+        dates: contested.slice(0, CONTESTED_LIMIT),
+        total: Math.max(contestedFound.length, contested.length),
       },
     });
     return { data: response };

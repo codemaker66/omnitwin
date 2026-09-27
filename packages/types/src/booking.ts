@@ -582,6 +582,43 @@ export const CalendarNextActionsDueSchema = z.object({
 });
 export type CalendarNextActionsDue = z.infer<typeof CalendarNextActionsDueSchema>;
 
+/** How far ahead the Diary's venue-wide Contested dates list looks (roadmap
+ *  N3): a year of the ladder. */
+export const CONTESTED_HORIZON_DAYS = 365;
+
+/** The most contested dates one calendar read carries, soonest first. */
+export const CONTESTED_LIMIT = 20;
+
+/** One room and time that more than one live booking wants (roadmap N3):
+ *  provisional holds crossing each other, or a hold crossing a confirmed
+ *  booking, as the conflict engine's hold overlap counts them. Bookings that
+ *  cross in a chain (A with B, B with C) are one contested time. */
+export const CalendarContestedDateSchema = z.object({
+  spaceId: z.string().uuid(),
+  /** The earliest start and latest end of the bookings in contest. */
+  startsAt: IsoInstantSchema,
+  endsAt: IsoInstantSchema,
+  /** Confirmed bookings first, then the holds in ladder order (unranked
+   *  last); full calendar entries, so each opens where it stands. */
+  bookings: z.array(CalendarBookingEntrySchema).min(2),
+}).refine((date) => date.bookings.some((entry) => entry.kind === "hold"), {
+  message: "A contested date has at least one provisional hold.",
+  path: ["bookings"],
+});
+export type CalendarContestedDate = z.infer<typeof CalendarContestedDateSchema>;
+
+/** The venue's contested dates from now to CONTESTED_HORIZON_DAYS ahead. */
+export const CalendarContestedSchema = z.object({
+  dates: z.array(CalendarContestedDateSchema).max(CONTESTED_LIMIT),
+  /** Every contested date in the horizon; larger than `dates.length` when
+   *  capped. */
+  total: z.number().int().nonnegative(),
+}).refine((list) => list.total >= list.dates.length, {
+  message: "total cannot be smaller than the dates listed.",
+  path: ["total"],
+});
+export type CalendarContested = z.infer<typeof CalendarContestedSchema>;
+
 export const CalendarResponseSchema = z.object({
   venueId: z.string().uuid(),
   range: z.object({ from: IsoInstantSchema, to: IsoInstantSchema }),
@@ -597,5 +634,8 @@ export const CalendarResponseSchema = z.object({
   /** Optional so older servers stay valid; a client treats absence as "the
    *  venue-wide list is unavailable", never as "nothing needs attention". */
   nextActionsDue: CalendarNextActionsDueSchema.optional(),
+  /** Optional so older servers stay valid; a client treats absence as "the
+   *  venue-wide list is unavailable", never as "nothing is contested". */
+  contested: CalendarContestedSchema.optional(),
 });
 export type CalendarResponse = z.infer<typeof CalendarResponseSchema>;

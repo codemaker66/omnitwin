@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import type {
   CalendarBookingEntry,
   CalendarConflict,
+  CalendarContested,
   CalendarDecisionsDue,
   CalendarNextActionsDue,
   CalendarRoom,
@@ -13,6 +14,7 @@ import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
 import { eventDateLong, eventDateParts, eventLead, venueYear } from "../../../components/dashboard/enquiries/enquiry-desk-format.js";
 import type { NeedsActionItem } from "../lib/board-layout.js";
+import { bookingTimeLabel } from "../lib/board-overview.js";
 import { formatInlineDay } from "../lib/board-time.js";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +91,75 @@ export function DecisionsDuePanel({ decisions, rooms, nowMs, onOpen }: Decisions
       )}
       {decisions.total > decisions.holds.length ? (
         <p className="diary-tray-more">{copy.more(decisions.holds.length, decisions.total)}</p>
+      ) : null}
+    </section>
+  );
+}
+
+export interface ContestedDatesPanelProps {
+  readonly contested: CalendarContested;
+  readonly rooms: readonly CalendarRoom[];
+  readonly nowMs: number;
+  readonly onOpen: (entry: CalendarBookingEntry) => void;
+}
+
+/** Every room and time more than one booking wants in the year ahead
+ *  (roadmap N3), soonest first: the ladder the Conflicts list used to fold
+ *  away, in order. Confirmed bookings lead; each booking opens where it
+ *  stands, without moving the board. */
+export function ContestedDatesPanel({ contested, rooms, nowMs, onOpen }: ContestedDatesPanelProps): ReactElement {
+  const roomNames = new Map(rooms.map((room) => [room.id, room.name]));
+  const copy = BOARD_COPY.contested;
+  const decisions = BOARD_COPY.decisions;
+  return (
+    <section className="diary-panel diary-contested" aria-label={copy.title}>
+      <h2 className="diary-panel-title">
+        {copy.title}
+        {contested.total > 0 ? <>{" "}<span className="diary-tray-count">{contested.total}</span></> : null}
+      </h2>
+      {contested.dates.length === 0 ? (
+        <p className="diary-panel-empty">{copy.empty}</p>
+      ) : (
+        <ol className="diary-contested-list">
+          {contested.dates.map((date) => (
+            <li key={`${date.spaceId}:${date.startsAt}`} className="diary-contested-date">
+              <p className="diary-contested-when">
+                {copy.when(roomNames.get(date.spaceId) ?? decisions.roomUnknown, formatInlineDay(Date.parse(date.startsAt), nowMs))}
+              </p>
+              <ol className="diary-contested-ladder">
+                {date.bookings.map((entry) => {
+                  const confirmed = entry.kind === "ink";
+                  const decisionMs = entry.decisionAt === null ? null : Date.parse(entry.decisionAt);
+                  const decisionDay = decisionMs === null ? null : formatInlineDay(decisionMs, nowMs);
+                  const overdue = decisionMs !== null && decisionMs < nowMs;
+                  return (
+                    <li key={entry.id}>
+                      <button
+                        type="button"
+                        className={`diary-contested-booking${confirmed ? " is-confirmed" : ""}`}
+                        onClick={() => { onOpen(entry); }}
+                      >
+                        <span className="diary-decision-title">{entry.title}</span>
+                        <span className="diary-decision-meta">
+                          {`${confirmed ? copy.confirmed : decisions.option(entry.rank, entry.jointFlag)} · ${entry.ownerName ?? decisions.noOwner}`}
+                        </span>
+                        <span className="diary-decision-meta">{bookingTimeLabel(entry)}</span>
+                        {confirmed || decisionDay === null ? null : (
+                          <span className={`diary-decision-when${overdue ? " is-overdue" : ""}`}>
+                            {overdue ? decisions.wasDue(decisionDay) : decisions.decideBy(decisionDay)}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </li>
+          ))}
+        </ol>
+      )}
+      {contested.total > contested.dates.length ? (
+        <p className="diary-tray-more">{copy.more(contested.dates.length, contested.total)}</p>
       ) : null}
     </section>
   );

@@ -157,6 +157,14 @@ test.describe("Diary timetable", () => {
     await expect(kerr).toContainText("Send the revised menu.");
     await expect(kerr).toContainText(/Was due Mon,? 14 Sept? · Fiona Coordinator/u);
 
+    // Contested dates cover the year ahead: each room and time more than one
+    // booking wants, with its ladder in order (roadmap N3).
+    const contested = page.getByRole("region", { name: "Contested dates" });
+    await expect(contested.locator(".diary-contested-when")).toHaveText(["Grand Hall · Sat 14 Nov", "Saloon · Sat 20 Mar 2027"]);
+    await expect(contested.locator(".diary-contested-date").first().locator(".diary-decision-title"))
+      .toHaveText(["Law Society dinner", "Guild dinner"]);
+    await expect(contested.getByRole("button", { name: /Hartley wedding/u })).toContainText("2nd option · Fiona Coordinator");
+
     // The tray: the open enquiries, newest first, read once.
     await expect(page.locator(".diary-tray-enquiry .diary-tray-item-title")).toHaveText(["Aisha and Tom Baird", "Glasgow Law Society"]);
     expect(emulated.enquiryRequests).toEqual([`?states=submitted%2Cunder_review&order=created_desc&venueId=${VENUE_ID}&limit=51`]);

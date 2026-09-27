@@ -164,6 +164,18 @@ export const BOARD_COPY = {
     more: (shown: number, total: number): string =>
       `Showing the ${String(shown)} most urgent of ${String(total)}.`,
   },
+
+  /** The venue's contested dates for the year ahead (roadmap N3): each room
+   *  and time more than one booking wants, with its ladder. The place words
+   *  and decision dates are the decisions list's own. */
+  contested: {
+    title: "Contested dates",
+    empty: "No date in the year ahead is wanted by more than one booking.",
+    confirmed: "Confirmed",
+    when: (room: string, day: string): string => `${room} · ${day}`,
+    more: (shown: number, total: number): string =>
+      `Showing the ${String(shown)} soonest of ${String(total)}.`,
+  },
   today: "Today",
   previous: "Earlier",
   next: "Later",

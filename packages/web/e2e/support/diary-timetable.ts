@@ -109,6 +109,28 @@ const NEXT_ACTIONS: readonly CalendarBookingEntry[] = [
   }),
 ];
 
+/** Contested dates across the venue (roadmap N3): the Guild dinner shares
+ *  its joint 1st in November, and the Hartley wedding stands 2nd next March. */
+const CONTESTED_LAW = entry("00000000-0000-4000-8000-000000009304", {
+  title: "Law Society dinner", jointFlag: true,
+  startsAt: "2026-11-14T17:30:00.000Z", endsAt: "2026-11-14T23:00:00.000Z",
+  decisionAt: "2026-09-25T11:00:00.000Z",
+});
+const CONTESTED_ROSS = entry("00000000-0000-4000-8000-000000009305", {
+  spaceId: SALOON, title: "Ross engagement",
+  startsAt: "2027-03-20T14:00:00.000Z", endsAt: "2027-03-20T22:00:00.000Z",
+  decisionAt: "2026-10-09T11:00:00.000Z",
+});
+const CONTESTED = {
+  dates: [
+    { spaceId: GRAND_HALL, startsAt: CONTESTED_LAW.startsAt, endsAt: "2026-11-14T23:00:00.000Z",
+      bookings: [CONTESTED_LAW, ...DECISIONS.filter((row) => row.title === "Guild dinner")] },
+    { spaceId: SALOON, startsAt: CONTESTED_ROSS.startsAt, endsAt: "2027-03-20T23:00:00.000Z",
+      bookings: [CONTESTED_ROSS, ...DECISIONS.filter((row) => row.title === "Hartley wedding")] },
+  ],
+  total: 2,
+};
+
 function enquiry(n: number, name: string, state: string): Enquiry {
   const created = new Date(Date.parse("2026-09-15T09:00:00.000Z") - n * 3_600_000).toISOString();
   return {
@@ -154,6 +176,7 @@ function calendar(): CalendarResponse {
     turnaroundRules: [{ spaceId: null, eventType: null, name: CHANGEOVER.name, minutes: CHANGEOVER.minutes, isActive: true }],
     decisionsDue: { holds: [...DECISIONS, ...WEEK.filter((row) => row.id === MACLEOD)], total: 3 },
     nextActionsDue: { holds: [...NEXT_ACTIONS], total: 1 },
+    contested: CONTESTED,
   };
 }
 

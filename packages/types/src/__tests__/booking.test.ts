@@ -10,6 +10,8 @@ import {
   CalendarQuerySchema,
   CalendarBookingEntrySchema,
   CalendarResponseSchema,
+  CONTESTED_HORIZON_DAYS,
+  CONTESTED_LIMIT,
   ConflictReportSchema,
   CreateBookingSchema,
   DECISIONS_DUE_HORIZON_DAYS,
@@ -760,6 +762,63 @@ describe("Calendar entries and conflicts", () => {
     expect(CalendarResponseSchema.safeParse({
       ...base,
       nextActionsDue: { holds: Array.from({ length: NEXT_ACTIONS_DUE_LIMIT + 1 }, () => hold), total: 60 },
+    }).success).toBe(false);
+  });
+
+  it("contested is optional (older servers), and each date carries two or more bookings, one a hold (roadmap N3)", () => {
+    const hold = {
+      entryType: "booking" as const,
+      id: "00000000-0000-4000-8000-0000000000c1",
+      spaceId: VENUE_ID,
+      kind: "hold" as const,
+      status: "active" as const,
+      state: "hold" as const,
+      title: "MacLeod wedding",
+      eventType: "wedding",
+      startsAt: "2026-10-03T12:00:00.000Z",
+      endsAt: "2026-10-03T22:00:00.000Z",
+      rank: 1,
+      jointFlag: false,
+      decisionAt: null,
+      ownerUserId: null,
+      nextAction: null,
+      nextActionDueAt: null,
+      eventId: null,
+      seriesId: null,
+    };
+    const second = { ...hold, id: "00000000-0000-4000-8000-0000000000c2", title: "Guild dinner", rank: 2 };
+    const confirmed = { ...hold, id: "00000000-0000-4000-8000-0000000000c3", title: "Chamber dinner", kind: "ink" as const, state: "ink" as const, rank: null };
+    const date = (bookings: readonly unknown[]) => ({ spaceId: VENUE_ID, startsAt: hold.startsAt, endsAt: hold.endsAt, bookings });
+    const base = {
+      venueId: VENUE_ID,
+      range: { from: "2026-09-28T00:00:00.000Z", to: "2026-10-05T00:00:00.000Z" },
+      rooms: [],
+      entries: [],
+      conflicts: {
+        conflicts: [],
+        checks: {
+          inkDoubleBook: { status: "checked" },
+          holdOverlap: { status: "checked" },
+          turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
+        },
+      },
+    };
+    // Absent: an older server, which says nothing about contested dates.
+    expect(CalendarResponseSchema.safeParse(base).success).toBe(true);
+    const parsed = CalendarResponseSchema.parse({ ...base, contested: { dates: [date([hold, second]), date([confirmed, hold])], total: 5 } });
+    expect(parsed.contested?.dates.map((entry) => entry.bookings.map((booking) => booking.title))).toEqual([
+      ["MacLeod wedding", "Guild dinner"],
+      ["Chamber dinner", "MacLeod wedding"],
+    ]);
+    // A lone booking, or confirmed bookings with no hold, contest nothing.
+    for (const wrong of [[hold], [confirmed, { ...confirmed, id: "00000000-0000-4000-8000-0000000000c4" }]]) {
+      expect(CalendarResponseSchema.safeParse({ ...base, contested: { dates: [date(wrong)], total: 1 } }).success).toBe(false);
+    }
+    expect(CalendarResponseSchema.safeParse({ ...base, contested: { dates: [date([hold, second])], total: 0 } }).success).toBe(false);
+    expect(CONTESTED_HORIZON_DAYS).toBe(365);
+    expect(CalendarResponseSchema.safeParse({
+      ...base,
+      contested: { dates: Array.from({ length: CONTESTED_LIMIT + 1 }, () => date([hold, second])), total: 30 },
     }).success).toBe(false);
   });
 

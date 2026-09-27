@@ -195,6 +195,18 @@ button.diary-slip-date:active { transform: scale(0.97); }
 .diary-decision-meta { font-size: 12px; color: var(--house-ink-2); }
 .diary-decision-when { font-size: 12px; font-weight: 600; color: var(--house-ink-2); }
 .diary-decisions-group.is-overdue .diary-decision-when { color: var(--house-copper-text); }
+/* Contested dates (roadmap N3): one card per room and time, its ladder as
+   rows. Each row's edge is the legend's own: amber for a provisional hold,
+   sage for a confirmed booking, which always leads. */
+.diary-contested-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.diary-contested-date { border: 1px solid #d8dfcf; background: #fffdf7; border-radius: 7px; overflow: hidden; }
+.diary-contested-when { margin: 0; padding: 10px 12px 7px; color: var(--house-ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.diary-contested-ladder { list-style: none; padding: 0; margin: 0; }
+.diary-contested-ladder li + li .diary-contested-booking { border-top: 1px solid #e7e9df; }
+.diary-contested-booking { width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 9px 12px 10px 11px; border: 0; border-left: 3px solid #dca475; background: transparent; color: var(--house-ink-1); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease; }
+.diary-contested-booking.is-confirmed { border-left-color: #6f917a; }
+.diary-contested-booking:hover { background: #e9efdf; }
+.diary-contested-booking .diary-decision-when.is-overdue { color: var(--house-copper-text); }
 .diary-conflicts { background: #f6e8de; border-color: #e6d2c2; }
 .diary-conflict-heading { display: flex; align-items: center; gap: 8px; color: var(--house-copper-text); text-transform: uppercase; font-size: 12px; letter-spacing: .05em; cursor: pointer; padding: 10px 0; }
 .diary-conflict-heading > span:last-child { margin-left: auto; font-size: 12px; text-transform: none; letter-spacing: 0; }

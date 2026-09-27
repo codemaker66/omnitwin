@@ -612,6 +612,61 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       expect(lanes.json<AttentionPayload>().data.nextActionsDue.total).toBe(2);
     });
 
+    it("lists the venue's contested dates for the year ahead, each with its ladder (roadmap N3)", async () => {
+      const a = await venue("contest A");
+      const b = await venue("contest B");
+      const staff = await a.actor("staff");
+      const now = Date.now();
+      const [room0, room1] = [a.rooms[0] ?? "", a.rooms[1] ?? ""];
+      const at = (days: number, hours: number): Date => new Date(now + days * DAY + hours * HOUR);
+      const booking = (venueId: string, spaceId: string, title: string, days: number, from: number, to: number,
+        extra: Partial<typeof schema.bookings.$inferInsert> = {}): typeof schema.bookings.$inferInsert => ({
+        venueId, spaceId, kind: "hold", title, rank: 1, startsAt: at(days, from), endsAt: at(days, to), ...extra,
+      });
+      await db.insert(schema.bookings).values([
+        // Six months out, two holds cross: the 1st option first.
+        booking(a.venueId, room0, "Six months, 2nd option", 180, 13, 20, { rank: 2 }),
+        booking(a.venueId, room0, "Six months, 1st option", 180, 12, 18),
+        // A hold behind a confirmed dinner next week: the dinner first.
+        booking(a.venueId, room1, "Behind the dinner", 7, 16, 21),
+        booking(a.venueId, room1, "Confirmed dinner", 7, 18, 23, { kind: "ink", rank: null }),
+        // None of these is contested: times that only touch, and bookings
+        // that are interest only, released or deleted.
+        booking(a.venueId, room0, "Morning", 30, 8, 12),
+        booking(a.venueId, room0, "Afternoon", 30, 12, 17),
+        booking(a.venueId, room0, "Interest only", 30, 9, 11, { kind: "prospect", rank: null }),
+        booking(a.venueId, room0, "Released", 30, 9, 11, { status: "released" }),
+        booking(a.venueId, room0, "Deleted", 30, 9, 11, { deletedAt: new Date(now) }),
+        // Contested, but past, beyond the year, or another venue's.
+        booking(a.venueId, room0, "Past 1st", -10, 12, 18),
+        booking(a.venueId, room0, "Past 2nd", -10, 13, 19, { rank: 2 }),
+        booking(a.venueId, room0, "Next year 1st", 400, 12, 18),
+        booking(a.venueId, room0, "Next year 2nd", 400, 13, 19, { rank: 2 }),
+        booking(b.venueId, b.rooms[0] ?? "", "Other venue 1st", 20, 12, 18),
+        booking(b.venueId, b.rooms[0] ?? "", "Other venue 2nd", 20, 13, 19, { rank: 2 }),
+      ]);
+      type ContestedPayload = { data: { contested: {
+        dates: { spaceId: string; startsAt: string; endsAt: string; bookings: { title: string }[] }[];
+        total: number;
+      } } };
+      const url = `/calendar?venueId=${a.venueId}&from=${new Date(now - DAY).toISOString()}&to=${new Date(now + 7 * DAY).toISOString()}`;
+      const response = await server.inject({ method: "GET", url, headers: bearer(staff) });
+      expect(response.statusCode, response.body).toBe(200);
+      const { contested } = response.json<ContestedPayload>().data;
+      // Soonest first, whatever the range asked for; each date whole, from
+      // its first start to its last end.
+      expect(contested.dates.map((date) => [date.spaceId, date.bookings.map((row) => row.title)])).toEqual([
+        [room1, ["Confirmed dinner", "Behind the dinner"]],
+        [room0, ["Six months, 1st option", "Six months, 2nd option"]],
+      ]);
+      expect(contested.dates[1]?.startsAt).toBe(at(180, 12).toISOString());
+      expect(contested.dates[1]?.endsAt).toBe(at(180, 20).toISOString());
+      expect(contested.total).toBe(2);
+      // The list is the venue's, not the lanes asked for.
+      const lanes = await server.inject({ method: "GET", url: `${url}&spaceIds=${room0}`, headers: bearer(staff) });
+      expect(lanes.json<ContestedPayload>().data.contested.total).toBe(2);
+    });
+
     it("keeps a hold's owner inside its venue: create, edit and conversion refuse another venue's user or a hallkeeper", async () => {
       const a = await venue("owners A");
       const b = await venue("owners B");
