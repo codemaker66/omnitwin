@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 380 cases. Four hosted CPU shards execute
-375 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 382 cases. Four hosted CPU shards execute
+377 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -54,7 +54,13 @@ pipeline, however often it is pressed (`enquiries-hand-offs.spec.ts`). A
 seventeenth adds one beside it: Hold a date in the Diary opening the Diary on
 the date asked for with the hold ready, and the hold on the board once made. An
 eighteenth adds one: the staff header staying the same element from the
-Enquiries desk to the Diary and the Day Board (`staff-shell.spec.ts`).
+Enquiries desk to the Diary and the Day Board (`staff-shell.spec.ts`). A
+nineteenth adds two: the Layout reviews desk, a keyboard-only triage of three
+layouts with no new tab opened, and the open review surviving a reload through
+its address with a colleague's presence at 4.5:1 or better
+(`reviews-desk.spec.ts`). Two more restate a case each one for one, as the
+desk asks for a change request inline rather than in a dialog: the keyboard
+audit's focus-trap case and the button audit's change-request case.
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and

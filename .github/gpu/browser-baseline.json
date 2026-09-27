@@ -369,6 +369,49 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Layout reviews desk (T-635 X2): the queue grouped by stage beside a forest decision panel, over a review API emulated on the real state machine (VALID_CONFIGURATION_REVIEW_TRANSITIONS). One case triages three layouts with the keyboard alone (start and approve one, send one back with a note, approve the third), with focus on each next step, and asserts that no tab or window opened. The other reloads a review opened by its ?review= address and finds it still open, and measures a colleague's presence text at 4.5:1 or better in the browser.",
+      "sourceCommit": "c18dc10b35fc2652658967e98e608ccb50ea51c8",
+      "sourceFile": "packages/web/e2e/reviews-desk.spec.ts",
+      "sourceFileGitBlobSha256": "3cb24ec92e90a819791e62d9186783dbbc00bfd7bf99ea9df65877bed5406b4a",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "b871264458f5fb1f5036042b827872418e0259d72545daefaf80ce561750016f",
+      "caseIds": [
+        "9e9155fe8db93c902ffe-1330379a89a6caa01005",
+        "9e9155fe8db93c902ffe-74252d0053cd3be8de8a"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The reviews desk asks for a change request inline, in the panel beside the review, not in a modal dialog (T-635 X2), so the keyboard audit's case 203e5a905de9618d8ebf-53d6b74a46fa0a60a244 ('review request-changes dialog traps keyboard focus and closes cleanly') has no dialog to trap focus in. It is restated for the inline confirmation: focus lands on the note, Tab stays within the confirmation, no dialog opens, and Escape returns focus to the step that asked, within the same frame budget and accessibility audit.",
+      "sourceCommit": "c18dc10b35fc2652658967e98e608ccb50ea51c8",
+      "sourceFile": "packages/web/e2e/keyboard-focus-performance.spec.ts",
+      "sourceFileGitBlobSha256": "ff02e313dbaa4b9c19e10107a3cf2e8e5c2fb161d55150f92a57e99d6ce0148a",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "b871264458f5fb1f5036042b827872418e0259d72545daefaf80ce561750016f",
+      "caseIds": [
+        "203e5a905de9618d8ebf-709cc8aeff438810fed0"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 203e5a905de9618d8ebf-53d6b74a46fa0a60a244 one for one, so the totals are unchanged by it; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The reviews desk asks for a change request inline (T-635 X2), so the button audit's case 2a7be7d54f62686846cb-0e87fb2d72252c5333b7 ('review change-request modal requires a note and posts the review action') has no modal. It is restated for the inline confirmation: the request cannot be sent without a note, is posted with it, and leaves the layout with its planner, over a mock whose gates follow the state machine.",
+      "sourceCommit": "c18dc10b35fc2652658967e98e608ccb50ea51c8",
+      "sourceFile": "packages/web/e2e/button-action-audit.spec.ts",
+      "sourceFileGitBlobSha256": "02d21892209ffccfdb470f46a2bdf77a98a16c7c954b9a64856fe7d326f35fa5",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "b871264458f5fb1f5036042b827872418e0259d72545daefaf80ce561750016f",
+      "caseIds": [
+        "2a7be7d54f62686846cb-2984429f06c00d2a846c"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 2a7be7d54f62686846cb-0e87fb2d72252c5333b7 one for one, so the totals are unchanged by it; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -542,6 +585,28 @@
       "suitePath": [
         "public-config-flow.spec.ts",
         "Editor with placed objects"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9e9155fe8db93c902ffe-1330379a89a6caa01005",
+      "file": "reviews-desk.spec.ts",
+      "title": "a reviewer triages three layouts with the keyboard alone, deciding each without opening a tab",
+      "suitePath": [
+        "reviews-desk.spec.ts",
+        "Layout reviews desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "9e9155fe8db93c902ffe-74252d0053cd3be8de8a",
+      "file": "reviews-desk.spec.ts",
+      "title": "the open review survives a reload through its address, and a colleague looking at it reads at 4.5:1 or better",
+      "suitePath": [
+        "reviews-desk.spec.ts",
+        "Layout reviews desk"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -897,6 +962,16 @@
       "expectedStatus": "passed"
     },
     {
+      "id": "203e5a905de9618d8ebf-709cc8aeff438810fed0",
+      "file": "keyboard-focus-performance.spec.ts",
+      "title": "review change request asks inline, keeps Tab within it, and Escape returns to the step that asked",
+      "suitePath": [
+        "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
       "id": "203e5a905de9618d8ebf-48ec67e17f38f009b793",
       "file": "keyboard-focus-performance.spec.ts",
       "title": "loadout create and delete dialogs trap focus without keyboard leaks",
@@ -910,16 +985,6 @@
       "id": "203e5a905de9618d8ebf-493dc21ed172bd678c8c",
       "file": "keyboard-focus-performance.spec.ts",
       "title": "onboarding admin action forms keep focus visible across seeded operator controls",
-      "suitePath": [
-        "keyboard-focus-performance.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "203e5a905de9618d8ebf-53d6b74a46fa0a60a244",
-      "file": "keyboard-focus-performance.spec.ts",
-      "title": "review request-changes dialog traps keyboard focus and closes cleanly",
       "suitePath": [
         "keyboard-focus-performance.spec.ts"
       ],
@@ -1072,17 +1137,6 @@
       "id": "2a7be7d54f62686846cb-09dcbf08e055f0c3371d",
       "file": "button-action-audit.spec.ts",
       "title": "proposal conversation and client-link controls call the staff proposal APIs",
-      "suitePath": [
-        "button-action-audit.spec.ts",
-        "SS++ deep modal, drawer, role, disabled, and error states"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "2a7be7d54f62686846cb-0e87fb2d72252c5333b7",
-      "file": "button-action-audit.spec.ts",
-      "title": "review change-request modal requires a note and posts the review action",
       "suitePath": [
         "button-action-audit.spec.ts",
         "SS++ deep modal, drawer, role, disabled, and error states"
@@ -1479,6 +1533,17 @@
       "id": "2a7be7d54f62686846cb-d1931178cd6e2aabbfc7",
       "file": "button-action-audit.spec.ts",
       "title": "hallkeeper mobile denied sheet path stays readable and recovers on retry",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-2984429f06c00d2a846c",
+      "file": "button-action-audit.spec.ts",
+      "title": "review change request asks inline, requires a note and posts the review action",
       "suitePath": [
         "button-action-audit.spec.ts",
         "SS++ deep modal, drawer, role, disabled, and error states"
