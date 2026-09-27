@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { occasionLabel, type HallkeeperSheetSummary } from "@omnitwin/types";
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { boardRange, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../diary/lib/board-time.js";
+import { boardRange, formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs } from "../diary/lib/board-time.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
@@ -326,7 +326,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // midnight, so an always-on wall tablet rolls to the new day by itself.
   const selectedMs = selectedDate === null ? nowMs : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
   const range = useMemo(() => boardRange(selectedMs, "day", timeZone), [selectedMs, timeZone]);
-  const { data, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range);
+  // The days either side are read once this one is on screen, so ← and →
+  // show them at once. A day shown from that read is read again on arrival
+  // and replaced by what the new read says, as the Diary's ranges are.
+  const neighbours = useMemo(() => [shiftRange(range, 1, timeZone), shiftRange(range, -1, timeZone)], [range, timeZone]);
+  const { data, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range, neighbours);
   const live = useDiaryLive(venueId !== null, refetch);
   const shownDate = msToWallInput(selectedMs, timeZone).slice(0, 10);
   const today = msToWallInput(nowMs, timeZone).slice(0, 10);
@@ -360,15 +364,19 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   }, [moveDay]);
 
   // A slot whose room moved on since the last drawing plays one stamp; the
-  // first drawing of a day is still.
+  // first drawing of a day is still. Worked out once per board, so a render
+  // for anything else (a neighbouring day's read landing) cannot cut it short.
   const drawn = useRef(new Map<string, DayBoardState>());
-  const moved = new Set<string>();
-  for (const lane of board?.lanes ?? []) {
-    for (const slot of lane.slots) {
-      const before = drawn.current.get(slot.bookingId);
-      if (before !== undefined && before !== slot.state) moved.add(slot.bookingId);
+  const moved = useMemo(() => {
+    const changed = new Set<string>();
+    for (const lane of board?.lanes ?? []) {
+      for (const slot of lane.slots) {
+        const before = drawn.current.get(slot.bookingId);
+        if (before !== undefined && before !== slot.state) changed.add(slot.bookingId);
+      }
     }
-  }
+    return changed;
+  }, [board]);
   useEffect(() => {
     for (const lane of board?.lanes ?? []) {
       for (const slot of lane.slots) drawn.current.set(slot.bookingId, slot.state);

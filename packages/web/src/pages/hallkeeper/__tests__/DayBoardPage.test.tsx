@@ -5,6 +5,7 @@ import type { CalendarResponse } from "@omnitwin/types";
 import type { ReactElement } from "react";
 import { DayBoardPage, DayBoardSlotRequestsContext } from "../DayBoardPage.js";
 import { DAY_BOARD_LEGEND } from "../lib/day-board-state.js";
+import { boardRange, msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
@@ -14,8 +15,9 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 // the error/retry path — against a mocked calendar API.
 // ---------------------------------------------------------------------------
 
-const { getCalendarMock, liveUpdate, liveConnected, resolveLayoutsMock, getSummaryMock } = vi.hoisted(() => ({
-  getCalendarMock: vi.fn(), liveUpdate: { current: null as (() => void) | null },
+const { getCalendarMock, getVenueMock, liveUpdate, liveConnected, resolveLayoutsMock, getSummaryMock } = vi.hoisted(() => ({
+  getCalendarMock: vi.fn<(venueId: string, from: string, to: string, signal?: AbortSignal) => Promise<CalendarResponse>>(),
+  getVenueMock: vi.fn(), liveUpdate: { current: null as (() => void) | null },
   liveConnected: { current: true }, resolveLayoutsMock: vi.fn(), getSummaryMock: vi.fn(),
 }));
 
@@ -46,7 +48,7 @@ vi.mock("@clerk/react", () => ({
   useClerk: () => ({ signOut: vi.fn() }),
 }));
 vi.mock("../../../api/spaces.js", () => ({
-  getVenue: vi.fn().mockResolvedValue({ id: "venue-1", name: "Trades Hall" }),
+  getVenue: getVenueMock,
 }));
 vi.mock("../../../components/dashboard/NotificationCenter.js", () => ({
   NotificationCenter: () => null,
@@ -122,7 +124,44 @@ function renderBoard(): void {
   );
 }
 
+interface DayRead { readonly from: string; readonly to: string }
+
+/** The day `offset` days from today as the board asks for it: from the
+ *  venue's midnight to the next, the day holding noon of that date. Worked
+ *  out here from the date, not by stepping a range, so a read ahead that
+ *  lands on another day's midnights would not match it. */
+function dayRange(offset: number, timeZone = "Europe/London"): DayRead {
+  const today = msToWallInput(Date.now(), timeZone).slice(0, 10);
+  const date = new Date(Date.parse(`${today}T12:00:00.000Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+  const noon = wallInputToMs(`${date}T12:00`, timeZone);
+  if (noon === null) throw new Error(`No noon on ${date}`);
+  const range = boardRange(noon, "day", timeZone);
+  return { from: new Date(range.fromMs).toISOString(), to: new Date(range.toMs).toISOString() };
+}
+
+/** How many times the board has asked for `day`. */
+function readsOf(day: DayRead): number {
+  return getCalendarMock.mock.calls.filter(([, from, to]) => from === day.from && to === day.to).length;
+}
+
+/** Today's reads answer from `queue` in turn, then with `fallback`; the days
+ *  either side, read ahead, answer with a quiet day. */
+function serveToday(fallback: CalendarResponse, queue: Promise<CalendarResponse>[] = []): void {
+  const today = dayRange(0);
+  getCalendarMock.mockImplementation((_venueId, from) =>
+    from === today.from ? queue.shift() ?? Promise.resolve(fallback) : Promise.resolve(calendarFixture([])));
+}
+
+function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void; readonly reject: (reason: Error) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (reason: Error) => void = () => undefined;
+  const promise = new Promise<T>((settle, fail) => { resolve = settle; reject = fail; });
+  return { promise, resolve, reject };
+}
+
 beforeEach(() => {
+  getVenueMock.mockReset();
+  getVenueMock.mockResolvedValue({ id: "venue-1", name: "Trades Hall" });
   getCalendarMock.mockReset();
   resolveLayoutsMock.mockReset();
   // A summary that never arrives shows no line, which other cases expect.
@@ -187,20 +226,21 @@ describe("DayBoardPage", () => {
   });
 
   it("shows one shared status while retrying a failed background refresh and keeps the board visible", async () => {
-    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const queue: Promise<CalendarResponse>[] = [];
+    serveToday(calendarFixture([liveBooking()]), queue);
     renderBoard();
     await screen.findByText("Chamber dinner");
     let rejectRefresh: ((reason: Error) => void) | undefined;
     let resolveRetry: ((value: CalendarResponse) => void) | undefined;
     const refresh = new Promise<CalendarResponse>((_resolve, reject) => { rejectRefresh = reject; });
     const retry = new Promise<CalendarResponse>((resolve) => { resolveRetry = resolve; });
-    getCalendarMock.mockReturnValueOnce(refresh).mockReturnValueOnce(retry);
+    queue.push(refresh, retry);
 
     act(() => { liveUpdate.current?.(); });
     await screen.findByText("Refreshing the day’s bookings…");
     await act(async () => { rejectRefresh?.(new Error("Offline")); await refresh.catch(() => undefined); });
     fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
-    await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(3); });
+    await waitFor(() => { expect(readsOf(dayRange(0))).toBe(3); });
 
     const sharedStatuses = screen.getAllByRole("status").filter((status) => status.querySelector("[data-activity-indicator]") !== null);
     expect(sharedStatuses).toHaveLength(1);
@@ -215,18 +255,19 @@ describe("DayBoardPage", () => {
   });
 
   it("does not let a superseded refresh retire the current request's activity", async () => {
-    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const queue: Promise<CalendarResponse>[] = [];
+    serveToday(calendarFixture([liveBooking()]), queue);
     renderBoard();
     await screen.findByText("Chamber dinner");
     let resolveFirst: ((value: CalendarResponse) => void) | undefined;
     let resolveSecond: ((value: CalendarResponse) => void) | undefined;
     const first = new Promise<CalendarResponse>((resolve) => { resolveFirst = resolve; });
     const second = new Promise<CalendarResponse>((resolve) => { resolveSecond = resolve; });
-    getCalendarMock.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    queue.push(first, second);
     act(() => { liveUpdate.current?.(); });
-    await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(2); });
+    await waitFor(() => { expect(readsOf(dayRange(0))).toBe(2); });
     act(() => { liveUpdate.current?.(); });
-    await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(3); });
+    await waitFor(() => { expect(readsOf(dayRange(0))).toBe(3); });
     await act(async () => { resolveFirst?.(calendarFixture([])); await first; });
     expect(screen.getByText("Refreshing the day’s bookings…")).toBeTruthy();
     expect(screen.getByText("Chamber dinner")).toBeTruthy();
@@ -300,15 +341,147 @@ describe("DayBoardPage", () => {
     await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(1); });
   });
 
+  // --- The days either side, read ahead -------------------------------------
+
+  function tomorrowsLunch(title = "Awards lunch"): CalendarResponse["entries"][number] {
+    const noon = Date.parse(dayRange(1).from) + 12 * 3_600_000;
+    return {
+      ...liveBooking(), id: "00000000-0000-4000-8000-0000000000b3", spaceId: SALOON, title,
+      startsAt: new Date(noon).toISOString(), endsAt: new Date(noon + 3 * 3_600_000).toISOString(),
+    } as CalendarResponse["entries"][number];
+  }
+
+  it("reads the days either side once the day is on screen, on the venue's own midnights", async () => {
+    // New York's midnights: a step worked out on London's would read days
+    // that ← and → never show.
+    const zone = "America/New_York";
+    getVenueMock.mockResolvedValue({ id: VENUE, name: "Harbour Hall", timezone: zone });
+    const today = deferred<CalendarResponse>();
+    getCalendarMock.mockImplementation((_venueId, from) =>
+      from === dayRange(0, zone).from ? today.promise : Promise.resolve(calendarFixture([])));
+    renderBoard();
+    await waitFor(() => { expect(readsOf(dayRange(0, zone))).toBe(1); });
+    // Nothing is read ahead while the day itself is still being read.
+    expect(readsOf(dayRange(1, zone)) + readsOf(dayRange(-1, zone))).toBe(0);
+
+    await act(async () => { today.resolve(calendarFixture([liveBooking()])); await today.promise; });
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+    await waitFor(() => {
+      expect(readsOf(dayRange(1, zone))).toBe(1);
+      expect(readsOf(dayRange(-1, zone))).toBe(1);
+    });
+    expect(getCalendarMock).toHaveBeenCalledWith(VENUE, dayRange(1, zone).from, dayRange(1, zone).to, expect.any(AbortSignal));
+  });
+
+  it("steps onto a day read ahead at once, reads it again, and shows what the new read says", async () => {
+    const tomorrow = dayRange(1);
+    const again = deferred<CalendarResponse>();
+    getCalendarMock.mockImplementation((_venueId, from) => {
+      if (from !== tomorrow.from) return Promise.resolve(calendarFixture([liveBooking()]));
+      return readsOf(tomorrow) === 1 ? Promise.resolve(calendarFixture([tomorrowsLunch()])) : again.promise;
+    });
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
+    await act(async () => { await Promise.resolve(); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    // Tomorrow as it was read a moment ago, said to be refreshing.
+    expect(screen.getByText("Awards lunch")).toBeTruthy();
+    expect(screen.queryByText("Chamber dinner")).toBeNull();
+    expect(screen.queryByText("Loading the day’s bookings…")).toBeNull();
+    expect(screen.getByText("Refreshing the day’s bookings…")).toBeTruthy();
+    expect(screen.getByText(/^Live · updated \d\d:\d\d$/u)).toBeTruthy();
+    expect(readsOf(tomorrow)).toBe(2);
+
+    // The lunch became a dinner since: the board says what the new read says.
+    await act(async () => { again.resolve(calendarFixture([tomorrowsLunch("Awards dinner")])); await again.promise; });
+    expect(screen.getByText("Awards dinner")).toBeTruthy();
+    expect(screen.queryByText("Awards lunch")).toBeNull();
+    expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+  });
+
+  it("keeps a day read ahead on screen when its read on arrival fails, and says from when", async () => {
+    const tomorrow = dayRange(1);
+    const again = deferred<CalendarResponse>();
+    getCalendarMock.mockImplementation((_venueId, from) => {
+      if (from !== tomorrow.from) return Promise.resolve(calendarFixture([liveBooking()]));
+      return readsOf(tomorrow) === 1 ? Promise.resolve(calendarFixture([tomorrowsLunch()])) : again.promise;
+    });
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
+    await act(async () => { await Promise.resolve(); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    await act(async () => { again.reject(new Error("Offline")); await again.promise.catch(() => undefined); });
+    expect(screen.getByText("Awards lunch")).toBeTruthy();
+    expect(screen.getByText(/^Couldn't refresh at \d\d:\d\d\./u)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+  });
+
+  it("reads a day whose read ahead failed on arrival, saying it is loading rather than showing another day", async () => {
+    const tomorrow = dayRange(1);
+    const arrival = deferred<CalendarResponse>();
+    getCalendarMock.mockImplementation((_venueId, from) => {
+      if (from !== tomorrow.from) return Promise.resolve(calendarFixture([liveBooking()]));
+      return readsOf(tomorrow) === 1 ? Promise.reject(new Error("Offline")) : arrival.promise;
+    });
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
+    await act(async () => { await Promise.resolve(); });
+    // A read ahead that fails says nothing.
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(screen.getByText("Loading the day’s bookings…")).toBeTruthy();
+    expect(screen.queryByText("Chamber dinner")).toBeNull();
+    expect(screen.queryByText(/Nothing scheduled/u)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    await act(async () => { arrival.resolve(calendarFixture([tomorrowsLunch()])); await arrival.promise; });
+    expect(screen.getByText("Awards lunch")).toBeTruthy();
+    expect(screen.queryByText("Loading the day’s bookings…")).toBeNull();
+  });
+
+  it("forgets the days read ahead when the Diary changes, so a step reads the day rather than show it from before", async () => {
+    const today = dayRange(0);
+    const tomorrow = dayRange(1);
+    const todayAgain = deferred<CalendarResponse>();
+    const arrival = deferred<CalendarResponse>();
+    getCalendarMock.mockImplementation((_venueId, from) => {
+      if (from === today.from) return readsOf(today) === 1 ? Promise.resolve(calendarFixture([liveBooking()])) : todayAgain.promise;
+      if (from === tomorrow.from) return readsOf(tomorrow) === 1 ? Promise.resolve(calendarFixture([tomorrowsLunch()])) : arrival.promise;
+      return Promise.resolve(calendarFixture([]));
+    });
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
+    await act(async () => { await Promise.resolve(); });
+
+    // A committed Diary change can touch any day: the board reads today again,
+    // and tomorrow's earlier read is no longer one to show.
+    act(() => { liveUpdate.current?.(); });
+    await waitFor(() => { expect(readsOf(today)).toBe(2); });
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(screen.getByText("Loading the day’s bookings…")).toBeTruthy();
+    expect(screen.queryByText("Awards lunch")).toBeNull();
+
+    await act(async () => { arrival.resolve(calendarFixture([tomorrowsLunch("Awards dinner")])); await arrival.promise; });
+    expect(screen.getByText("Awards dinner")).toBeTruthy();
+  });
+
   it("says how fresh the day is while live updates reconnect, with a Refresh that reads it now", async () => {
     liveConnected.current = false;
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();
     await screen.findByText("Chamber dinner");
     expect(screen.getByText(/^Updated \d\d:\d\d · reconnecting…$/u)).toBeTruthy();
-    const calls = getCalendarMock.mock.calls.length;
+    const calls = readsOf(dayRange(0));
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBe(calls + 1); });
+    await waitFor(() => { expect(readsOf(dayRange(0))).toBe(calls + 1); });
   });
 
   it("says when it last read the day while connected, with no Refresh to press", async () => {
@@ -330,6 +503,11 @@ describe("DayBoardPage", () => {
     } as CalendarResponse["entries"][number]]));
     act(() => { liveUpdate.current?.(); });
     await screen.findByText(/^Booked until/u);
+    expect(container.querySelector(".dayboard-slot .dayboard-chip.is-stamped")?.textContent).toMatch(/^Booked until/u);
+    // The change forgot the days either side; their reads landing redraw the
+    // page, and must not cut the stamp short.
+    await waitFor(() => { expect(readsOf(dayRange(1))).toBe(2); });
+    await act(async () => { await Promise.resolve(); });
     expect(container.querySelector(".dayboard-slot .dayboard-chip.is-stamped")?.textContent).toMatch(/^Booked until/u);
   });
 

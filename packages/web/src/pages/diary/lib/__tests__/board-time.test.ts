@@ -11,6 +11,7 @@ import {
   rangeTitle,
   shiftRange,
   snapMs,
+  wallInputToMs,
   widthPx,
 } from "../board-time.js";
 
@@ -125,6 +126,37 @@ describe("shiftRange", () => {
         expect(shiftRange(back, 1)).toEqual(range);
       }
     }
+  });
+
+  // The Day Board shows the day holding noon of the date chosen, in the
+  // venue's zone, and reads the days either side ahead with shiftRange: a
+  // read ahead is only worth anything if it is that very day's range.
+  const dayOf = (date: string, zone: string): ReturnType<typeof boardRange> => {
+    const noon = wallInputToMs(`${date}T12:00`, zone);
+    if (noon === null) throw new Error(`No noon on ${date} in ${zone}`);
+    return boardRange(noon, "day", zone);
+  };
+
+  it("reads ahead the very day a Day Board steps to, in the venue's zone, across daylight-saving changes", () => {
+    // London's, New York's and Sydney's changes in 2026, and a half-hour zone
+    // with none.
+    const days = [
+      ["2026-03-07", "2026-03-08", "2026-03-09"], ["2026-03-28", "2026-03-29", "2026-03-30"],
+      ["2026-04-04", "2026-04-05", "2026-04-06"], ["2026-10-03", "2026-10-04", "2026-10-05"],
+      ["2026-10-24", "2026-10-25", "2026-10-26"], ["2026-10-31", "2026-11-01", "2026-11-02"],
+    ] as const;
+    for (const zone of ["Europe/London", "America/New_York", "Australia/Sydney", "Asia/Kolkata"]) {
+      for (const [before, date, after] of days) {
+        const day = dayOf(date, zone);
+        expect(shiftRange(day, 1, zone), `${zone} after ${date}`).toEqual(dayOf(after, zone));
+        expect(shiftRange(day, -1, zone), `${zone} before ${date}`).toEqual(dayOf(before, zone));
+      }
+    }
+  });
+
+  it("needs the venue's zone to read ahead the right day: London's next day is not New York's", () => {
+    const day = dayOf("2026-09-16", "America/New_York");
+    expect(shiftRange(day, 1)).not.toEqual(dayOf("2026-09-17", "America/New_York"));
   });
 
   it("pages a fortnight across the year boundary", () => {
