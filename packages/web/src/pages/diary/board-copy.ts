@@ -165,6 +165,16 @@ export const BOARD_COPY = {
       `Showing the ${String(shown)} most urgent of ${String(total)}.`,
   },
 
+  /** The week on a phone (roadmap N3): day by day, in time order. */
+  agenda: {
+    label: "Bookings by day",
+    free: "Nothing booked.",
+    openDay: (day: string): string => `Open ${day} in Day view`,
+    add: "Add",
+    addLabel: (day: string): string => `Add a booking on ${day}`,
+    continues: "continues from the day before",
+  },
+
   /** The venue's contested dates for the year ahead (roadmap N3): each room
    *  and time more than one booking wants, with its ladder. The place words
    *  and decision dates are the decisions list's own. */

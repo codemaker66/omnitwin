@@ -47,6 +47,8 @@ import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
 import { BoardGrid, type BoardCreate, type OpenGap } from "./components/BoardGrid.js";
 import { GapSheet } from "./components/GapSheet.js";
 import { BoardOverview } from "./components/BoardOverview.js";
+import { BoardAgenda } from "./components/BoardAgenda.js";
+import { useNarrowViewport } from "./hooks/useNarrowViewport.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
@@ -158,6 +160,8 @@ export function DiaryBoardPage(): ReactElement {
   const rangeFailed = data === null && frame !== null && status === "error";
   const [timeline, setTimeline] = useState(false);
   const showingOverview = view !== "day" && !timeline;
+  // On a phone the overview reads as an agenda, day by day (roadmap N3).
+  const narrow = useNarrowViewport();
 
   const [showExited, setShowExited] = useState(false);
   const [overrides, setOverrides] = useState<ReadonlyMap<string, MoveSnapshot>>(new Map());
@@ -1158,10 +1162,13 @@ export function DiaryBoardPage(): ReactElement {
                 {BOARD_COPY.retry}
               </button>
             </div>
-          ) : showingOverview ? <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
+          ) : showingOverview ? (narrow ? <BoardAgenda rooms={rooms} entries={entries} range={range} nowMs={nowMs}
             conflictSeverity={conflictSeverity} onOpenBooking={openBookingFromOverview} pending={rangePending}
             soughtDayMs={soughtDay?.fromMs ?? null}
-            onOpenDay={openDayFromOverview} onCreateOnDay={writable && !rangePending ? openCreateOnDay : undefined} /> : <BoardGrid
+            onOpenDay={openDayFromOverview} onCreateOnDay={writable && !rangePending ? openCreateOnDay : undefined} /> : <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
+            conflictSeverity={conflictSeverity} onOpenBooking={openBookingFromOverview} pending={rangePending}
+            soughtDayMs={soughtDay?.fromMs ?? null}
+            onOpenDay={openDayFromOverview} onCreateOnDay={writable && !rangePending ? openCreateOnDay : undefined} />) : <BoardGrid
             rooms={rooms}
             entries={entries}
             range={range}

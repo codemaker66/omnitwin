@@ -1561,3 +1561,43 @@ describe("DiaryBoardPage — contested dates, venue-wide (roadmap N3)", () => {
     expect(screen.queryByRole("region", { name: "Contested dates" })).toBeNull();
   });
 });
+
+describe("DiaryBoardPage — the week on a phone (roadmap N3)", () => {
+  /** A screen as wide as a phone, or not, as the Diary's media query sees it. */
+  function screenWidth(narrow: boolean): { mockRestore: () => void } {
+    return vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+      matches: narrow && query === "(max-width: 760px)",
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }));
+  }
+
+  it("reads the week as an agenda, day by day, instead of a grid wider than the screen", async () => {
+    const spy = screenWidth(true);
+    try {
+      renderPage();
+      const agenda = await screen.findByRole("region", { name: "Bookings by day" });
+      expect(await within(agenda).findByRole("button", { name: /^Chamber dinner — / })).toBeDefined();
+      expect(document.querySelector(".diary-overview-grid")).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps the overview grid on a wider screen", async () => {
+    const spy = screenWidth(false);
+    try {
+      renderPage();
+      await screen.findByRole("button", { name: /^Chamber dinner — / });
+      expect(document.querySelector(".diary-overview-grid")).not.toBeNull();
+      expect(screen.queryByRole("region", { name: "Bookings by day" })).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

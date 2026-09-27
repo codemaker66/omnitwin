@@ -158,6 +158,30 @@
 .diary-overview-phase { background: #f2f5ee; border: 1px dashed #bdcbb4; border-radius: 5px; padding: 8px; display: flex; flex-direction: column; gap: 5px; color: var(--house-ink-3); font-size: 12px; overflow-wrap: anywhere; }
 .diary-overview-phase > span { text-transform: uppercase; letter-spacing: .035em; font-size: 12px; }
 .diary-overview-phase strong, .diary-overview-phase small, .diary-overview-phase time { font-size: 12px; }
+/* The week on a phone (roadmap N3): day by day, each day a card and its
+   bookings in time order, edged in the legend's own colours. */
+.diary-agenda-days { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.diary-agenda-day { border: 1px solid #dfe4d5; border-radius: 9px; background: #fffdf7; overflow: hidden; }
+.diary-agenda-day.is-today { border-color: #93ad98; }
+.diary-agenda-day.is-sought { border-color: var(--house-copper-text); }
+.diary-agenda-heading { margin: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 0 8px; background: #f1f3e9; border-bottom: 1px solid #e3e8da; }
+.diary-agenda-dayname { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 6px; border: 0; background: transparent; color: var(--house-ink-1); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.diary-agenda-dayname small { font-size: 12px; font-weight: 600; color: #fff; background: #335b45; border-radius: 10px; padding: 2px 8px; }
+.diary-agenda-add { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; padding: 0 10px; border: 0; background: transparent; color: var(--house-ink-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.diary-agenda-list { list-style: none; margin: 0; padding: 0; }
+.diary-agenda-list li + li { border-top: 1px solid #edf0e6; }
+.diary-agenda-booking, .diary-agenda-phase { width: 100%; display: grid; grid-template-columns: 88px minmax(0,1fr); column-gap: 10px; row-gap: 2px; align-items: baseline; padding: 11px 12px 11px 9px; border-left: 3px solid #aabda5; text-align: left; color: var(--house-ink-1); }
+.diary-agenda-booking { min-height: 44px; border-top: 0; border-right: 0; border-bottom: 0; background: transparent; font: inherit; cursor: pointer; transition: background-color 140ms ease; }
+.diary-agenda-booking:hover { background: #f1f4ea; }
+.diary-agenda-booking.is-hold { border-left-color: #dca475; }
+.diary-agenda-booking.is-prospect { border-left-style: dashed; border-left-color: #9aa89c; }
+.diary-agenda-booking.is-internal_block { border-left-color: #9fb5ad; }
+.diary-agenda-booking.is-exited { border-left-color: #c9ccc2; color: var(--house-ink-3); }
+.diary-agenda-phase { border-left-style: dotted; border-left-color: #bdcbb4; background: #f7f8f2; }
+.diary-agenda-time { grid-row: 1 / span 2; font-size: 13px; font-weight: 600; color: var(--house-ink-2); font-variant-numeric: tabular-nums; }
+.diary-agenda-title { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.diary-agenda-meta { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--house-ink-3); }
+.diary-agenda-free { margin: 0; padding: 12px 14px; font-size: 13px; color: var(--house-ink-3); }
 .diary-panel { border: 1px solid #dfe4d5; background: #f1f3e9; border-radius: 9px; padding: 15px; overflow: hidden; }
 .diary-panel-title { font: 500 23px/1.2 var(--diary-hand); color: #284936; margin: 0 0 14px; display: flex; justify-content: space-between; align-items: center; }
 .diary-tray > .diary-panel-title { margin: -15px -15px 15px; padding: 15px; background: #2f5845; color: #fffef3; }
