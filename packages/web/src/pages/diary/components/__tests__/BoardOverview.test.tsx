@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarEntry, ConflictSeverity } from "@omnitwin/types";
 import { BoardOverview } from "../BoardOverview.js";
 import { boardRange, dayColumns } from "../../lib/board-time.js";
@@ -68,6 +68,55 @@ describe("BoardOverview", () => {
       expect(card(id)?.querySelector(".diary-option, .diary-overview-age")).toBeNull();
     }
     expect(card("released")?.querySelector(".diary-overview-status")?.textContent).toBe("Released");
+  });
+
+  it("is one Tab stop, today's heading until a place is landed on, and the place after", () => {
+    // Wednesday 9 September 2026, 11:00 BST.
+    const nowMs = Date.parse("2026-09-09T10:00:00Z");
+    const view = render(<BoardOverview rooms={rooms} entries={[entry]} range={range} nowMs={nowMs}
+      conflictSeverity={new Map()} onOpenBooking={vi.fn()} onOpenDay={vi.fn()} onCreateOnDay={vi.fn()} />);
+    const stops = (): Element[] => Array.from(document.querySelectorAll("[tabindex='0']"));
+    expect(stops().map((stop) => stop.getAttribute("aria-label"))).toEqual([expect.stringMatching(/^Open Wed,? 9 Sept? in Day view$/u)]);
+    // The summaries region is no second stop: its places are reachable.
+    expect(screen.getByRole("region", { name: "Room and day booking summaries" }).hasAttribute("tabindex")).toBe(false);
+    const card = screen.getByRole("button", { name: /^Arrival and audiovisual accessibility briefing — /u });
+    act(() => { card.focus(); });
+    expect(stops()).toEqual([card]);
+    // A booking the board no longer shows gives the stop back to today's heading.
+    view.rerender(<BoardOverview rooms={rooms} entries={[]} range={range} nowMs={nowMs}
+      conflictSeverity={new Map()} onOpenBooking={vi.fn()} onOpenDay={vi.fn()} onCreateOnDay={vi.fn()} />);
+    expect(stops().map((stop) => stop.getAttribute("aria-label"))).toEqual([expect.stringMatching(/^Open Wed,? 9 Sept? in Day view$/u)]);
+  });
+
+  it("moves across the days, down a square's stack and across rooms, and to a row's ends", () => {
+    const other = { id: "other-room", name: "Second room", slug: "second-room", sortOrder: 1 };
+    const booked = (id: string, spaceId: string, startsAt: string, endsAt: string): CalendarBookingEntry =>
+      ({ ...entry, id, title: id, spaceId, startsAt, endsAt });
+    render(<BoardOverview rooms={[...rooms, other]} range={range} nowMs={range.fromMs} conflictSeverity={new Map()}
+      onOpenBooking={vi.fn()} onOpenDay={vi.fn()} onCreateOnDay={vi.fn()} entries={[
+        booked("breakfast", "room", "2026-09-07T07:00:00Z", "2026-09-07T09:00:00Z"),
+        booked("lunch", "room", "2026-09-07T11:00:00Z", "2026-09-07T13:00:00Z"),
+        booked("ceilidh", other.id, "2026-09-08T18:00:00Z", "2026-09-08T22:00:00Z"),
+      ]} />);
+    const press = (key: string, ctrlKey = false): string | null => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key, ctrlKey });
+      return document.activeElement?.getAttribute("aria-label") ?? null;
+    };
+    act(() => { screen.getByRole("button", { name: /^Open Mon/u }).focus(); });
+    expect(press("ArrowDown")).toMatch(/^breakfast — /u);
+    expect(press("ArrowDown")).toMatch(/^lunch — /u);
+    expect(press("ArrowDown")).toMatch(/^New booking — Unmapped room, Mon/u);
+    expect(press("ArrowDown")).toMatch(/^New booking — Second room, Mon/u);
+    expect(press("ArrowRight")).toMatch(/^ceilidh — /u);
+    expect(press("ArrowUp")).toMatch(/^New booking — Unmapped room, Tue/u);
+    expect(press("End")).toMatch(/^New booking — Unmapped room, Sun/u);
+    expect(press("Home")).toMatch(/^breakfast — /u);
+    expect(press("End", true)).toMatch(/^New booking — Second room, Sun/u);
+    expect(press("Home", true)).toMatch(/^Open Mon/u);
+    // At an edge a key goes nowhere, and the arrows are the grid's own.
+    expect(press("ArrowLeft")).toMatch(/^Open Mon/u);
+    expect(fireEvent.keyDown(document.activeElement ?? document.body, { key: "ArrowUp" })).toBe(false);
+    expect(Array.from(document.querySelectorAll("[tabindex='0']"))).toEqual([document.activeElement]);
   });
 
   it("opens a venue-local day using the actual day boundary", () => {

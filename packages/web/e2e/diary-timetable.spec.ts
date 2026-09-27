@@ -195,6 +195,23 @@ test.describe("Diary timetable", () => {
     expect(await create.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
     await create.getByRole("button", { name: "Close" }).click();
 
+    // The overview is one Tab stop, and the arrows move round it (roadmap
+    // N3): up from the Saloon's Wednesday to the Grand Hall's, across to
+    // Thursday's dinner, and Enter opens it.
+    await expect(page.locator(".diary-overview-grid [tabindex='0']")).toHaveCount(1);
+    await page.getByRole("button", { name: /^New booking — Saloon, Wed,? 16 Sept?$/u }).focus();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByRole("button", { name: /^New booking — Grand Hall, Wed,? 16 Sept?$/u })).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    const dinner = page.getByRole("button", { name: /^Hammermen annual dinner — /u });
+    await expect(dinner).toBeFocused();
+    await page.keyboard.press("Enter");
+    const opened = page.getByRole("dialog", { name: "Booking details" });
+    await expect(opened).toBeVisible();
+    await opened.getByRole("button", { name: "Close" }).click();
+    await expect(dinner).toBeFocused();
+    await expect(dinner).toHaveAttribute("tabindex", "0");
+
     // On the timeline, a click on empty lane space books at that time:
     // Tuesday 10:00 is 34 hours in, at 18 px an hour (+1 px stays inside
     // the quarter hour the click snaps to).

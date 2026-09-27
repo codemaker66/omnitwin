@@ -113,8 +113,10 @@
 .diary-overview-intro { padding: 15px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 7px 20px; border-bottom: 1px solid #e5e8de; }
 .diary-overview-intro > span { display: flex; align-items: center; gap: 9px; font-weight: 600; }
 .diary-overview-intro p { margin: 0; color: var(--house-ink-3); font-size: 12px; }
-.diary-overview-scroll { overflow: auto; max-height: calc(100dvh - 265px); scrollbar-width: thin; scrollbar-color: #b4c4af #f3f4ec; }
-.diary-overview-grid { --diary-overview-rail: 172px; min-width: 100%; }
+/* A place reached from the keyboard scrolls clear of the sticky days (66 px)
+   and rooms, with room for its focus ring. */
+.diary-overview-scroll { --diary-overview-rail: 172px; overflow: auto; max-height: calc(100dvh - 265px); scroll-padding: 76px 0 0 calc(var(--diary-overview-rail) + 4px); scrollbar-width: thin; scrollbar-color: #b4c4af #f3f4ec; }
+.diary-overview-grid { min-width: 100%; }
 .diary-overview-grid.is-long-range { width: calc(var(--diary-overview-rail) + var(--diary-days) * 145px); }
 .diary-overview-row { display: grid; grid-template-columns: var(--diary-overview-rail) repeat(var(--diary-days),minmax(0,1fr)); border-bottom: 1px solid #e7e9df; }
 .diary-overview-row:last-child { border-bottom: 0; }
@@ -462,7 +464,7 @@ button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(-
 .diary-palette-label { font-weight: 600; font-size: 13px; }
 .diary-palette-detail { margin-left: auto; font-size: 12px; color: var(--house-ink-3); }
 @media (min-width: 1500px) {
-  .diary-overview-grid { --diary-overview-rail: 188px; }
+  .diary-overview-scroll { --diary-overview-rail: 188px; }
   .diary-overview-booking strong { font-size: 13px; }
   .diary-overview-room img { width: 72px; height: 84px; }
 }
@@ -481,7 +483,8 @@ button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(-
   .diary-range-title { order: -1; flex-basis: 100%; padding: 0 0 5px; }
   .diary-legend { gap: 8px 12px; font-size: 12px; }
   .diary-overview-intro { padding: 13px; }
-  .diary-overview-grid { --diary-overview-rail: 142px; width: calc(142px + var(--diary-days) * 145px); }
+  .diary-overview-scroll { --diary-overview-rail: 142px; }
+  .diary-overview-grid { width: calc(142px + var(--diary-days) * 145px); }
   .diary-overview-room { padding: 12px 10px; gap: 8px; }
   .diary-overview-room img { width: 47px; height: 64px; }
   .diary-overview-room h2 { font-size: 15px; }

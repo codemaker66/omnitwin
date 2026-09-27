@@ -490,6 +490,7 @@ export const BOARD_COPY = {
       { keys: ["G"], does: "Go to a date" },
       { keys: ["D", "W", "F"], does: "Day, week and fortnight" },
       { keys: ["O"], does: "Overview or timeline" },
+      { keys: ["↑", "↓", "←", "→"], does: "Move round the overview" },
       { keys: ["N"], does: "New booking" },
       { keys: ["Ctrl", "K"], does: "Find on the board" },
       { keys: ["Ctrl", "Z"], does: "Undo" },
