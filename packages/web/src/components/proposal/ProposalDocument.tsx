@@ -155,7 +155,7 @@ export function ProposalDocument({ proposal, band, conversation, decision, showS
 
         {conversation}
         {decision}
-        <p className="pd-printed-decision">{printedDecision(proposal)}</p>
+        {showStanding && <p className="pd-printed-decision">{printedDecision(proposal)}</p>}
 
         <footer className="pd-foot">
           <p>Capacity and layout are the venue team's planning estimates. Nothing here is a safety, occupancy or compliance determination.</p>

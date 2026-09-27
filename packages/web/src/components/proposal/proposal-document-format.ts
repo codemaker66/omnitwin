@@ -103,8 +103,10 @@ export function roomPhotograph(venueSlug: string | null, roomSlug: string | null
 export function commentAuthor(comment: { readonly authorName: string | null; readonly from?: "venue" | "client" | undefined }): string {
   const from = comment.from ?? (comment.authorName === "Venue team" ? "venue" : "client");
   if (from === "venue") return "The venue team";
+  // Said as the client's, whatever name was typed: a link reaches more than
+  // one person, and a name alone could pass for the venue's.
   const name = comment.authorName?.trim() ?? "";
-  return name === "" ? "You" : name;
+  return name === "" ? "The client" : `${name} (client)`;
 }
 
 /** The conversation, without the note written automatically with an

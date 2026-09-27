@@ -18,12 +18,14 @@ export interface ShareState {
   readonly clientMessage: string;
   /** Absolute URL of the most recently created client share link, or null. */
   readonly lastShareUrl: string | null;
+  /** The proposal that link is for, to preview it as the client sees it. */
+  readonly lastShareProposalId: string | null;
 }
 
 interface ShareActions {
   readonly setEventTitle: (title: string) => void;
   readonly setClientMessage: (message: string) => void;
-  readonly setLastShareUrl: (url: string | null) => void;
+  readonly setLastShareUrl: (url: string | null, proposalId?: string | null) => void;
   readonly reset: () => void;
 }
 
@@ -33,12 +35,13 @@ const INITIAL_STATE: ShareState = {
   eventTitle: "",
   clientMessage: "",
   lastShareUrl: null,
+  lastShareProposalId: null,
 };
 
 export const useShareStore = create<ShareStore>((set) => ({
   ...INITIAL_STATE,
   setEventTitle: (eventTitle) => { set({ eventTitle }); },
   setClientMessage: (clientMessage) => { set({ clientMessage }); },
-  setLastShareUrl: (lastShareUrl) => { set({ lastShareUrl }); },
+  setLastShareUrl: (lastShareUrl, proposalId = null) => { set({ lastShareUrl, lastShareProposalId: proposalId }); },
   reset: () => { set({ ...INITIAL_STATE }); },
 }));

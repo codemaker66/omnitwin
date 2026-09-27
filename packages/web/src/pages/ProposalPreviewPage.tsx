@@ -29,11 +29,24 @@ function refusal(error: unknown): string {
   return "The preview could not be read. Please try again.";
 }
 
-/** Which version the client's link shows, beside this one. */
-export function previewStanding(version: number, sentVersion: number | null): string {
+/** Which version the client's link shows, beside this one, and whether the
+ *  link still opens. */
+export function previewStanding(version: number, sentVersion: number | null, linkOpen = true): string {
   if (sentVersion === null) return "It has not been sent yet.";
+  if (!linkOpen) {
+    return sentVersion === version
+      ? "It was sent, but the client's link no longer opens."
+      : `It has not been sent; the client's link, which showed version ${String(sentVersion)}, no longer opens.`;
+  }
   if (sentVersion === version) return "This is the version the client's link shows.";
   return `It has not been sent yet; the client's link shows version ${String(sentVersion)}.`;
+}
+
+/** Where the client would answer, as their page offers it: on a proposal out
+ *  with them, or on a version still to be sent. */
+function answerable(proposal: PublicProposal): boolean {
+  return proposal.status === "draft" || proposal.status === "sent"
+    || (proposal.status === "changes_requested" && proposal.sentVersion !== proposal.version);
 }
 
 function PreviewDecision({ proposal }: { readonly proposal: PublicProposal }): ReactElement {
@@ -91,16 +104,15 @@ export function ProposalPreviewPage(): ReactElement {
     <main aria-label="Proposal preview">
       <ProposalDocument
         proposal={proposal}
-        showStanding={proposal.sentVersion === proposal.version}
+        showStanding={proposal.sentVersion === proposal.version && proposal.linkOpen}
         band={(
-          <p className="pd-band" data-register="forest" data-testid="preview-band">
+          <p className="pd-band pd-band--prints" data-register="forest" data-testid="preview-band">
             <strong>Preview of version {String(proposal.version)}, as the client sees it.</strong>{" "}
-            {previewStanding(proposal.version, proposal.sentVersion)}{" "}
+            {previewStanding(proposal.version, proposal.sentVersion, proposal.linkOpen)}{" "}
             Opening it here is not counted as the link being opened.
           </p>
         )}
-        decision={proposal.status === "sent" || proposal.status === "draft" || proposal.status === "changes_requested"
-          ? <PreviewDecision proposal={proposal} /> : null}
+        decision={answerable(proposal) ? <PreviewDecision proposal={proposal} /> : null}
       />
     </main>
   );

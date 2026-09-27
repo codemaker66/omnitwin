@@ -36,6 +36,7 @@ function preview(overrides: Partial<PublicProposal> = {}): PublicProposal {
     venueAddress: null,
     preparedAt: "2026-10-05T15:00:00.000Z",
     sentVersion: 2,
+    linkOpen: true,
     facts: { eventDate: "2027-06-05", guestCount: 160, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" },
     accepted: null,
     clientMessage: "Planning-grade proposal for your wedding on 5 June.",
@@ -90,10 +91,40 @@ describe("Preview as the client", () => {
     expect(document.title).toBe("Preview — Crawford wedding proposal — Trades Hall Glasgow — version 3");
   });
 
-  it("says which version the client's link shows", () => {
+  it("says which version the client's link shows, and when that link no longer opens", () => {
     expect(previewStanding(1, null)).toBe("It has not been sent yet.");
     expect(previewStanding(2, 2)).toBe("This is the version the client's link shows.");
     expect(previewStanding(3, 2)).toBe("It has not been sent yet; the client's link shows version 2.");
+    expect(previewStanding(2, 2, false)).toBe("It was sent, but the client's link no longer opens.");
+    expect(previewStanding(3, 2, false)).toBe("It has not been sent; the client's link, which showed version 2, no longer opens.");
+  });
+
+  it("previews an accepted proposal the team archived as the client still sees it, and prints what it is", async () => {
+    mocks.getProposalPreview.mockResolvedValue(preview({
+      status: "accepted", version: 2, sentVersion: 2, accepted: { by: "Elaine Crawford", at: "2026-10-06T10:00:00.000Z" },
+    }));
+    renderPreview();
+    expect((await screen.findByTestId("preview-band")).textContent).toContain("This is the version the client's link shows.");
+    expect(screen.getByTestId("proposal-standing").textContent).toContain("Accepted by Elaine Crawford");
+    // Nothing to answer, as on the client's page.
+    expect(screen.queryByTestId("preview-decision")).toBeNull();
+    // The band goes to paper, so a printed preview says it is one.
+    expect(screen.getByTestId("preview-band").classList.contains("pd-band--prints")).toBe(true);
+  });
+
+  it("prints no standing on a version not yet sent, and says a closed link is closed", async () => {
+    mocks.getProposalPreview.mockResolvedValue(preview());
+    renderPreview();
+    await screen.findByTestId("preview-band");
+    // Version 3 is unsent: the sent version's standing is not printed on it.
+    expect(document.querySelector(".pd-printed-decision")).toBeNull();
+    cleanup();
+
+    mocks.getProposalPreview.mockResolvedValue(preview({ status: "withdrawn", version: 2, sentVersion: 2, linkOpen: false }));
+    renderPreview();
+    expect((await screen.findByTestId("preview-band")).textContent).toContain("It was sent, but the client's link no longer opens.");
+    expect(screen.queryByTestId("proposal-standing")).toBeNull();
+    expect(screen.queryByTestId("preview-decision")).toBeNull();
   });
 
   it("says why there is no preview, in words", async () => {

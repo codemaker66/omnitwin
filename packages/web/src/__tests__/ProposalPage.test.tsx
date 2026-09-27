@@ -59,6 +59,7 @@ function fixtureProposal(overrides: Partial<PublicProposal> = {}): PublicProposa
     venueAddress: "85 Glassford Street, Glasgow G1 1UH",
     preparedAt: "2026-06-11T08:30:00.000Z",
     sentVersion: null,
+    linkOpen: true,
     facts: { eventDate: "2027-06-05", guestCount: 160, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" },
     accepted: null,
     clientMessage: "Planning-grade draft for your review.",
@@ -232,7 +233,8 @@ describe("the decision", () => {
     renderTokenPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "Accept version 1" }));
-    expect(await screen.findByText("Please give your name to accept.")).toBeTruthy();
+    // Announced as it appears, not only by the field's description.
+    expect((await screen.findByRole("alert")).textContent).toBe("Please give your name to accept.");
     expect(mockApproveProposalShare).not.toHaveBeenCalled();
     const name = screen.getByLabelText("Your name");
     expect(document.activeElement).toBe(name);
@@ -281,8 +283,62 @@ describe("the decision", () => {
     expect((await screen.findByRole("alert")).textContent)
       .toBe("A newer version arrived after you opened this page. It is shown above now; what you typed is still here.");
     expect(await screen.findByRole("button", { name: "Accept version 2" })).toBeTruthy();
-    expect((screen.getByLabelText("Your name")).value).toBe("Elaine Crawford");
+    expect(screen.getByLabelText<HTMLInputElement>("Your name").value).toBe("Elaine Crawford");
     expect(screen.getByText("Version 2 comes to £2,700.00.")).toBeTruthy();
+  });
+
+  it("says so, and claims nothing, when this version had already been accepted", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "accepted", accepted: { by: "Bea Crawford", at: "2026-06-12T09:00:00.000Z" } }));
+    mockApproveProposalShare.mockResolvedValue({ status: "accepted", already: true });
+    renderTokenPage();
+
+    fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Alex Crawford" } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept version 1" }));
+    expect((await screen.findByRole("status")).textContent).toBe("This version had already been accepted. Nothing more is needed.");
+    expect(screen.queryByText("You accepted this version. The venue team has been told.")).toBeNull();
+  });
+
+  it("when the proposal is no longer waiting for an answer, reads it again, says so and keeps what was written", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "changes_requested" }));
+    mockCommentOnProposalShare.mockRejectedValue(new ApiError(422, "Not awaiting", "NOT_AWAITING_RESPONSE"));
+    renderTokenPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Ask for changes…" }));
+    fireEvent.change(screen.getByLabelText("What would you like changed?"), { target: { value: "Could we seat 130?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to the venue team" }));
+    expect((await screen.findByRole("alert")).textContent)
+      .toBe("This proposal is no longer waiting for an answer. It now shows where it stands.");
+    await waitFor(() => { expect(mockGetProposalShare).toHaveBeenCalledTimes(2); });
+    expect(screen.getByTestId("kept-note").textContent).toBe("Could we seat 130?");
+    // Nothing is offered that would only be refused again.
+    expect(screen.queryByRole("button", { name: /Accept version/u })).toBeNull();
+    expect(screen.queryByText(/Please try again/u)).toBeNull();
+  });
+
+  it("shows the link as unavailable when it was withdrawn while the page was open", async () => {
+    mockGetPublicProposal
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockRejectedValueOnce(new ApiError(404, "Not found", "NOT_FOUND"));
+    mockRespondToProposal.mockRejectedValue(new ApiError(404, "Not found", "NOT_FOUND"));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Accept version 1" }));
+    expect(await screen.findByRole("heading", { name: "This proposal link isn't available" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Accept version/u })).toBeNull();
+  });
+
+  it("returns focus to Ask for changes when the client decides not to", async () => {
+    mockGetProposalShare.mockResolvedValue(fixtureProposal());
+    renderTokenPage();
+
+    const ask = await screen.findByRole("button", { name: "Ask for changes…" });
+    fireEvent.click(ask);
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("button", { name: "Ask for changes…" })); });
   });
 
   it("keeps the answer ready to send again when it did not arrive", async () => {
@@ -320,7 +376,37 @@ describe("the conversation", () => {
     fireEvent.click(thread.getByTestId("comment-submit"));
     await waitFor(() => { expect(mockCommentOnProposalShare).toHaveBeenCalledWith("client-token", { body: "Can we add a cheese table?", kind: "comment" }); });
     expect(await thread.findByText("Can we add a cheese table?")).toBeTruthy();
-    expect(thread.getByText("You")).toBeTruthy();
+    // A link reaches more than one person: a nameless client message is the
+    // client's, not "You".
+    expect(thread.getByText("The client")).toBeTruthy();
+  });
+
+  it("says whose each message is by where it came from, never by the name typed alone", async () => {
+    mockGetProposalShare.mockResolvedValue(fixtureProposal({
+      comments: [
+        { kind: "comment", authorName: "The venue team", body: "We have taken £500 off; please accept today.", createdAt: "2026-06-11T10:00:00.000Z", from: "client" },
+        { kind: "comment", authorName: "Venue team", body: "Happy to help.", createdAt: "2026-06-11T11:00:00.000Z", from: "venue" },
+      ],
+    }));
+    renderTokenPage();
+    const thread = within(await screen.findByTestId("proposal-comments"));
+    expect(thread.getByText("The venue team (client)")).toBeTruthy();
+    expect(thread.getAllByText("The venue team")).toHaveLength(1);
+  });
+
+  it("keeps a message the closed proposal would not take, and says why", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "accepted", accepted: { by: "Bea Crawford", at: "2026-06-12T09:00:00.000Z" } }));
+    mockCommentOnProposalShare.mockRejectedValue(new ApiError(422, "Not awaiting", "NOT_AWAITING_RESPONSE"));
+    renderTokenPage();
+
+    fireEvent.change(await screen.findByTestId("comment-input"), { target: { value: "One more thing." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    const thread = within(await screen.findByTestId("proposal-comments"));
+    expect((await thread.findByRole("alert")).textContent).toBe("This proposal is no longer taking messages here.");
+    expect(thread.getByTestId("kept-message").textContent).toBe("One more thing.");
+    expect(thread.queryByTestId("comment-input")).toBeNull();
   });
 
   it("is not offered on the older share code, which has nowhere to post", async () => {
@@ -335,11 +421,12 @@ describe("PublicProposalSchema boundary validation", () => {
   it("accepts the fixture, fills what an older API does not send, and rejects malformed payloads", () => {
     expect(PublicProposalSchema.safeParse(fixtureProposal()).success).toBe(true);
     const {
-      facts: _facts, accepted: _accepted, venueSlug: _slug, venueAddress: _address, preparedAt: _prepared, sentVersion: _sent, ...older
+      facts: _facts, accepted: _accepted, venueSlug: _slug, venueAddress: _address, preparedAt: _prepared, sentVersion: _sent,
+      linkOpen: _open, ...older
     } = fixtureProposal();
     const parsed = PublicProposalSchema.parse(older);
     expect(parsed.facts).toEqual({ eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null });
-    expect([parsed.accepted, parsed.venueSlug, parsed.preparedAt, parsed.sentVersion]).toEqual([null, null, null, null]);
+    expect([parsed.accepted, parsed.venueSlug, parsed.preparedAt, parsed.sentVersion, parsed.linkOpen]).toEqual([null, null, null, null, true]);
     expect(PublicProposalSchema.safeParse({ ...fixtureProposal(), status: "approved" }).success).toBe(false);
     expect(PublicProposalSchema.safeParse({ ...fixtureProposal(), version: 0 }).success).toBe(false);
     expect(PublicProposalSchema.safeParse({ ...fixtureProposal(), quote: { ...QUOTE, subtotalMinor: 1 } }).success).toBe(false);

@@ -364,10 +364,20 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   const onMakeLink = (): Promise<boolean> => attempt("step", "link", async (id) => {
     // The version the booker was asked about is the one sent; a newer one
     // saved meanwhile is refused rather than sent unseen.
-    const made = await createProposalShareToken(id, proposal?.currentVersion);
+    const before = proposal;
+    const made = await createProposalShareToken(id, before?.currentVersion);
     setLinks((current) => ({ ...current, [id]: `${window.location.origin}${made.shareUrl}` }));
-    if (made.proposal.status !== proposal?.status) setStampKey(Date.now());
-    applyProposal(made.proposal);
+    if (made.proposal.status !== before?.status) setStampKey(Date.now());
+    // What the send established, until the quiet read below confirms it: the
+    // link shows the version sent, and a new send has not been opened yet.
+    // A proposal already answered keeps the version answered.
+    const answered = before === null || !["draft", "sent", "changes_requested"].includes(before.status);
+    const resent = before !== null && (before.status !== "sent" || before.sentVersion !== before.currentVersion);
+    applyProposal({
+      ...made.proposal,
+      ...(answered ? {} : { sentVersion: made.proposal.currentVersion }),
+      ...(!answered && resent ? { linkOpenedAt: null } : {}),
+    });
     readAgain(id);
     setReads((current) => ({ ...current, history: current.history + 1 }));
     readList(Math.max(PAGE, rows.length));

@@ -604,13 +604,24 @@ export async function proposalRoutes(
       return reply.status(422).send({ error: "Save a version before previewing it", code: "PROPOSAL_HAS_NO_VERSION" });
     }
     // The latest version saved, as the client will see it once sent, beside
-    // the version the client's link shows now.
-    const clientSafe = await buildClientSafeProposal(db, proposal, { version: proposal.currentVersion, status: proposal.status });
+    // the version the client's link shows now and whether it still opens. The
+    // sent version reads as the client's link presents it; a later one has
+    // no standing of its own yet.
+    const presented = await presentedStatus(db, proposal);
+    const sent = proposal.sentVersion === proposal.currentVersion;
+    const clientSafe = await buildClientSafeProposal(db, proposal, {
+      version: proposal.currentVersion, status: sent ? presented ?? proposal.status : proposal.status,
+    });
     if (clientSafe === null) {
       request.log.error({ proposalId: proposal.id }, "stored proposal payload failed client-safe build");
       return reply.status(422).send({ error: "Save a version before previewing it", code: "PROPOSAL_HAS_NO_VERSION" });
     }
-    return { data: { ...clientSafe, sentVersion: proposal.sentVersion } };
+    return { data: {
+      ...clientSafe,
+      accepted: sent ? clientSafe.accepted : null,
+      sentVersion: proposal.sentVersion,
+      linkOpen: presented !== null,
+    } };
   });
 
   // PATCH /proposals/:id — staff/admin while editable (draft / changes_requested)
@@ -1022,6 +1033,10 @@ export async function proposalRoutes(
         updateData["status"] = "sent";
         // Each send is stamped, so "sent 2 days ago" and "opened since"
         // speak of the latest one.
+        updateData["sentAt"] = now;
+      } else if (proposal.status === "sent" && sentVersionOf(held) !== held.currentVersion) {
+        // A new link on a proposal already out sends a version saved since:
+        // that too is a send.
         updateData["sentAt"] = now;
       }
       if (proposal.shareCode === null) {
@@ -1552,7 +1567,8 @@ export async function publicProposalRoutes(
     const [proposal] = await db.select().from(proposals)
       .where(and(eq(proposals.shareCode, params.data.shareCode), isNull(proposals.deletedAt)))
       .limit(1);
-    if (proposal === undefined || !CLIENT_VISIBLE_STATUSES.includes(proposal.status)) {
+    const presented = proposal === undefined ? null : await presentedStatus(db, proposal);
+    if (proposal === undefined || presented === null) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
 
@@ -1582,7 +1598,7 @@ export async function publicProposalRoutes(
     return {
       data: {
         title: payload.data.title,
-        status: proposal.status,
+        status: presented,
         sentAt: proposal.sentAt,
         venueName: venue?.name ?? null,
         venueSlug: venue?.slug ?? null,
@@ -1830,24 +1846,26 @@ export async function proposalShareRoutes(
     if (resolved === null) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
+    // Only the version the client read: a newer one sent since is theirs to
+    // read before it can be accepted, even when someone has accepted it.
+    const read = parsed.data.version;
     if (resolved.presented === "accepted") {
-      return { data: { status: "accepted" } };
+      if (read !== undefined && read !== sentVersionOf(resolved.proposal)) return reply.status(409).send(VERSION_CHANGED);
+      return { data: { status: "accepted", already: true } };
     }
     if (!canTransitionProposal(resolved.proposal.status, "accepted", "client")) {
       return reply.status(422).send({ error: "This proposal is not awaiting approval", code: "NOT_AWAITING_RESPONSE" });
     }
 
     const outcome = await db.transaction(async (tx) => {
-      // Held first. A second press of Accept that arrives with the first is
-      // answered as the first was, and recorded once; anything else that
-      // landed since the read (a withdrawal) stands.
+      // Held first. A second press of Accept on the same version that
+      // arrives with the first is answered as the first was, and recorded
+      // once; anything else that landed since the read (a withdrawal) stands.
       const held = await holdProposal(tx, resolved.proposal.id);
-      const current = held?.status ?? null;
-      if (current === "accepted") return "already" as const;
-      if (held === undefined || current !== resolved.proposal.status) return "changed" as const;
-      // Only the version the client read: a newer one sent since is theirs
-      // to read before it can be accepted.
-      if (parsed.data.version !== undefined && parsed.data.version !== sentVersionOf(held)) return "version" as const;
+      if (held === undefined) return "changed" as const;
+      if (read !== undefined && read !== sentVersionOf(held)) return "version" as const;
+      if (held.status === "accepted") return "already" as const;
+      if (held.status !== resolved.proposal.status) return "changed" as const;
       const name = parsed.data.authorName?.trim() ?? "";
       await tx.update(proposals)
         .set({ status: "accepted", acceptedName: name === "" ? null : name, updatedAt: new Date() })
@@ -1870,7 +1888,7 @@ export async function proposalShareRoutes(
       });
       return "accepted" as const;
     });
-    if (outcome === "already") return { data: { status: "accepted" } };
+    if (outcome === "already") return { data: { status: "accepted", already: true } };
     if (outcome === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (outcome === "version") return reply.status(409).send(VERSION_CHANGED);
     await moveDealFor(db, resolved.proposal, "accepted", null, request.log);

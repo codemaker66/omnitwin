@@ -198,6 +198,16 @@
 .pd-decision .pd-field input, .pd-decision .pd-field textarea { border-color: var(--reg-edge); background: var(--reg-raised); color: var(--reg-text-1); }
 .pd-decision__error { margin: 0; color: var(--reg-alert); font-size: 14px; }
 .pd-decision__hint { margin: 0; color: var(--reg-text-2); font-size: 14px; line-height: 1.5; }
+.pd-decision__kept {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 2px solid var(--reg-rule);
+  color: var(--reg-text-1);
+  font-size: 15px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 /* -- The venue team's preview band ---------------------------------------------- */
 .pd-band {
@@ -255,4 +265,6 @@
   .pd-section h2 { break-after: avoid; }
   .pd-section svg { max-height: 95mm; }
   .pd-printed-decision { display: block; margin: 0 0 24px; font: 400 17px / 1.4 var(--house-serif); }
+  /* A printed preview says what it is. */
+  .pd-band.pd-band--prints { display: block !important; margin: 0 0 16px; padding: 0 0 10px; border-bottom: 1px solid #111111; border-radius: 0; background: none; }
 }

@@ -50,6 +50,7 @@ export function ShareLensPanel(): ReactElement {
   const eventTitle = useShareStore((state) => state.eventTitle);
   const clientMessage = useShareStore((state) => state.clientMessage);
   const lastShareUrl = useShareStore((state) => state.lastShareUrl);
+  const lastShareProposalId = useShareStore((state) => state.lastShareProposalId);
   const setEventTitle = useShareStore((state) => state.setEventTitle);
   const setClientMessage = useShareStore((state) => state.setClientMessage);
   const setLastShareUrl = useShareStore((state) => state.setLastShareUrl);
@@ -97,7 +98,7 @@ export function ShareLensPanel(): ReactElement {
       const url = token.shareUrl.startsWith("http")
         ? token.shareUrl
         : `${window.location.origin}${token.shareUrl}`;
-      setLastShareUrl(url);
+      setLastShareUrl(url, proposal.id);
       setPhase("idle");
     };
 
@@ -219,9 +220,14 @@ export function ShareLensPanel(): ReactElement {
               <button type="button" className="lens-panel__chip-link" onClick={handleCopy} data-testid="share-copy">
                 {copied ? "Copied" : "Copy link"}
               </button>
-              <a className="lens-panel__chip-link" href={lastShareUrl} target="_blank" rel="noreferrer" data-testid="share-open">
-                Open
-              </a>
+              {/* Opening the client's own link would count as the client
+                  opening it; the preview shows the same page and stamps nothing. */}
+              {lastShareProposalId !== null && (
+                <a className="lens-panel__chip-link" href={`/proposal-preview/${encodeURIComponent(lastShareProposalId)}`}
+                  target="_blank" rel="noopener noreferrer" data-testid="share-preview">
+                  Preview as the client
+                </a>
+              )}
             </div>
           </div>
         )}

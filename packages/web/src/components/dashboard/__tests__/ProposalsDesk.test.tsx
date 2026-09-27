@@ -430,7 +430,7 @@ describe("the next step", () => {
   });
 
   it("gives a sent proposal a new link, saying the one the client has keeps working", async () => {
-    existing = [proposal({ status: "sent", currentVersion: 2, sentAt: NOW })];
+    existing = [proposal({ status: "sent", currentVersion: 2, sentVersion: 2, sentAt: NOW })];
     mocks.createProposalShareToken.mockResolvedValue({
       token: "fresh-token", shareUrl: "/proposal-share/fresh-token", tokenPrefix: "fresh-to", proposal: existing[0],
     });
@@ -443,6 +443,29 @@ describe("the next step", () => {
     fireEvent.click(panel.getByRole("button", { name: "Issue the link" }));
     expect((await panel.findByTestId("share-link")).textContent).toContain("/proposal-share/fresh-token");
     expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1", 2);
+  });
+
+  it("says a new link sends a version saved since, and shows it as sent and unopened until the desk reads it again", async () => {
+    // A platform administrator saved version 3 while version 2 was out.
+    existing = [proposal({ status: "sent", currentVersion: 3, sentVersion: 2, sentAt: NOW, linkOpenedAt: "2026-10-05T13:10:00.000Z" })];
+    mocks.createProposalShareToken.mockResolvedValue({
+      token: "fresh-token", shareUrl: "/proposal-share/fresh-token", tokenPrefix: "fresh-to", proposal: existing[0],
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect(panel.getByTestId("link-opened").textContent).toBe("The link was last opened Mon 5 Oct, 14:10.");
+    fireEvent.click(panel.getByRole("button", { name: "Issue a new link…" }));
+    expect(panel.getByText("Send version 3 in a new link?")).toBeDefined();
+    expect(panel.getByTestId("send-consequence").textContent)
+      .toBe("Links the client already has will show version 3 too. Nothing is emailed; you send the link.");
+    // The quiet read after the send never arrives: the panel still says what
+    // the send established.
+    mocks.getDeskProposal.mockImplementation(() => new Promise(() => undefined));
+    fireEvent.click(panel.getByRole("button", { name: "Issue the link" }));
+    expect((await panel.findByTestId("share-link")).textContent).toContain("/proposal-share/fresh-token");
+    expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1", 3);
+    expect(panel.getByTestId("link-opened").textContent).not.toContain("last opened");
+    expect(panel.queryByText(/the client's link shows version 2/u)).toBeNull();
   });
 
   it("says whether the link has been opened since it was sent, and offers the client's view in a tab of its own", async () => {

@@ -61,8 +61,10 @@ export const PublicProposalSchema = z.object({
   venueAddress: z.string().nullable().default(null),
   /** When the version shown was saved. */
   preparedAt: z.string().nullable().default(null),
-  /** The venue team's preview only: the version the client's link shows. */
+  /** The venue team's preview only: the version the client's link shows,
+   *  and whether that link still opens. */
   sentVersion: z.number().int().positive().nullable().default(null),
+  linkOpen: z.boolean().default(true),
 });
 
 export type PublicProposal = z.infer<typeof PublicProposalSchema>;
@@ -71,7 +73,8 @@ export type PublicProposalPayload = z.input<typeof PublicProposalSchema>;
 
 export type ProposalResponseAction = "accept" | "request_changes";
 
-const RespondResultSchema = z.object({ status: ProposalStatusSchema });
+/** `already`: someone had accepted this very version before this answer. */
+const RespondResultSchema = z.object({ status: ProposalStatusSchema, already: z.boolean().optional() });
 export type ProposalRespondResult = z.infer<typeof RespondResultSchema>;
 
 export async function getPublicProposal(shareCode: string): Promise<PublicProposal> {

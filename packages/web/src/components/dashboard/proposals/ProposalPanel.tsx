@@ -204,6 +204,8 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
   const [asking, setAsking] = useState<"link" | "withdraw" | null>(null);
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
   const sent = proposal.status === "sent";
+  // A version saved since the one the client's link shows goes with the link.
+  const sendsNewer = sent && proposal.sentVersion !== null && proposal.sentVersion !== proposal.currentVersion;
   const canLink = LINKABLE.includes(proposal.status) && proposal.currentVersion >= 1;
   const busy = working !== null;
 
@@ -284,10 +286,13 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
       {asking === "link" && canLink && (
         <div className="enq-confirm" data-tone="review" role="group" aria-labelledby={questionId}>
           <p id={questionId} className="enq-confirm__question">
-            {sent ? "Issue a new link?" : `Send version ${String(proposal.currentVersion)} to ${proposal.clientName ?? "the client"}?`}
+            {sendsNewer ? `Send version ${String(proposal.currentVersion)} in a new link?`
+              : sent ? "Issue a new link?" : `Send version ${String(proposal.currentVersion)} to ${proposal.clientName ?? "the client"}?`}
           </p>
           <p className="enq-next__hint" data-testid="send-consequence">
-            {sent
+            {sendsNewer
+              ? `Links the client already has will show version ${String(proposal.currentVersion)} too. Nothing is emailed; you send the link.`
+              : sent
               ? "Links the client already has keep working. Nothing is emailed; you send the link."
               : "Making the link marks the proposal Sent. Nothing is emailed; you send the link."}
           </p>

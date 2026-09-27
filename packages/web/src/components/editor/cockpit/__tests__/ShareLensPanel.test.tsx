@@ -88,6 +88,14 @@ describe("ShareLensPanel", () => {
     expect(mocks.transitionProposal).toHaveBeenCalledWith("p1", "sent");
     expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1");
     expect(useShareStore.getState().lastShareUrl).toContain("/proposal-share/tok");
+    // Opening the client's own link would count as the client opening it;
+    // the panel offers the preview instead, which stamps nothing.
+    expect(screen.queryByTestId("share-open")).toBeNull();
+    const preview = screen.getByTestId("share-preview");
+    expect(preview.getAttribute("href")).toBe("/proposal-preview/p1");
+    expect(preview.getAttribute("target")).toBe("_blank");
+    expect(preview.getAttribute("rel")).toContain("noopener");
+    expect(preview.getAttribute("href")).not.toContain("/proposal-share/");
     // Nothing was emailed, so nothing says "sent"; and another link is
     // another proposal, which the panel says before it is pressed.
     expect(screen.getByTestId("share-result").textContent).toContain("Link ready. Not emailed; copy it into your message.");
