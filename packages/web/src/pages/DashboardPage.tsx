@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
@@ -98,6 +98,11 @@ export function configIdFromSearchValue(value: string | null): string | null {
   return UUID_PATTERN.test(trimmed) ? trimmed : null;
 }
 
+/** The deal the pipeline opens from the address (?opportunity=): a uuid, or none. */
+export function opportunityIdFromSearchValue(value: string | null): string | null {
+  return configIdFromSearchValue(value);
+}
+
 export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
   if (role === null) return false;
   // Caterers are event-scoped: they reach an event through a share, never the
@@ -172,6 +177,13 @@ export function DashboardPage(): React.ReactElement {
     () => configIdFromSearchValue(searchParams.get("config")),
     [searchParams],
   );
+  // Create opportunity on the Enquiries desk lands on its deal as
+  // /dashboard?view=pipeline&opportunity=:id, and the address then follows
+  // the deal that is open.
+  const requestedOpportunityId = useMemo(
+    () => opportunityIdFromSearchValue(searchParams.get("opportunity")),
+    [searchParams],
+  );
   const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole, userPlatformRole));
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileLeadId, setProfileLeadId] = useState<string | null>(null);
@@ -211,8 +223,30 @@ export function DashboardPage(): React.ReactElement {
     }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("view", newView);
+    if (newView !== "pipeline") nextParams.delete("opportunity");
     setSearchParams(nextParams);
   };
+
+  const handleOpenOpportunity = (opportunityId: string): void => {
+    setView("pipeline");
+    setProfileUserId(null);
+    setProfileLeadId(null);
+    setEnquiryReturnContext(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("view", "pipeline");
+    nextParams.set("opportunity", opportunityId);
+    setSearchParams(nextParams);
+  };
+
+  const handleOpportunityShown = useCallback((opportunityId: string | null): void => {
+    setSearchParams((previous) => {
+      if ((previous.get("opportunity") ?? null) === opportunityId) return previous;
+      const nextParams = new URLSearchParams(previous);
+      if (opportunityId === null) nextParams.delete("opportunity");
+      else nextParams.set("opportunity", opportunityId);
+      return nextParams;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const handleOpenDefaultView = (): void => {
     handleViewChange(defaultDashboardViewForRole(userRole));
@@ -273,10 +307,11 @@ export function DashboardPage(): React.ReactElement {
             // team, and "pipeline" is the view that capability already gates,
             // so the button and the tab agree by construction.
             canCreateOpportunity={canOpenDashboardView("pipeline", userRole, userPlatformRole)}
+            onOpenOpportunity={handleOpenOpportunity}
           />
         );
       case "pipeline":
-        return <CommercialPipelineView />;
+        return <CommercialPipelineView opportunityId={requestedOpportunityId} onOpportunityShown={handleOpportunityShown} />;
       case "reviews":
         return <ReviewsView initialSelectedId={requestedConfigId} />;
       case "analytics":

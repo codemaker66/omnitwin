@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import { occasionLabel } from "@omnitwin/types";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
 import type { Enquiry, StatusHistoryEntry } from "../../../api/enquiries.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
@@ -62,6 +63,8 @@ interface EnquiryPanelProps {
    *  control is not offered at all, rather than offered and refused. */
   readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
+  /** Why Create opportunity failed, said beside it; null when it has not. */
+  readonly opportunityFailure: string | null;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
@@ -80,8 +83,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
   const headingId = useId();
   const received = relativeAge(enquiry.createdAt, nowMs);
   const request = requestKind(enquiry.eventType);
-  const eventType = enquiry.eventType?.trim() ?? "";
-  const kindLabel = request !== null ? requestWords(request).label : eventType === "" ? "Enquiry" : eventType;
+  const kindLabel = request !== null ? requestWords(request).label : occasionLabel(enquiry.eventType) ?? "Enquiry";
   const eyebrow = `${kindLabel}${received === null ? "" : ` · received ${received}`}`;
   const source = sourceWords(enquiry.source);
 
@@ -142,7 +144,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
               failure={transition.failure} onConfirm={props.onConfirm} onCancel={props.onCancel} />
           ) : request === null ? (
             <NextStep enquiry={enquiry} transition={transition} canCreateOpportunity={props.canCreateOpportunity}
-              creatingOpportunity={props.creatingOpportunity}
+              creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
               onRequest={props.onRequest} onCreateOpportunity={props.onCreateOpportunity} />
           ) : (
             <RequestNextStep enquiry={enquiry} kind={request} transition={transition} onRequest={props.onRequest} />
@@ -174,7 +176,8 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
         {request === null && (
           <>
             <EnquiryTools enquiry={enquiry} canCreateOpportunity={props.canCreateOpportunity}
-              creatingOpportunity={props.creatingOpportunity} onCreateOpportunity={props.onCreateOpportunity} />
+              creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
+              onCreateOpportunity={props.onCreateOpportunity} />
             <EnquiryDrafts enquiry={enquiry} />
           </>
         )}
@@ -280,11 +283,12 @@ function StagePath({ state, request }: { readonly state: string; readonly reques
   );
 }
 
-function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportunity, onRequest, onCreateOpportunity }: {
+function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportunity, opportunityFailure, onRequest, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
   readonly transition: PanelTransition;
   readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
+  readonly opportunityFailure: string | null;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
   readonly onCreateOpportunity: () => void;
 }): ReactElement {
@@ -340,6 +344,7 @@ function NextStep({ enquiry, transition, canCreateOpportunity, creatingOpportuni
               </button>
             </div>
           )}
+          {opportunityFailure !== null && <p className="enq-confirm__error" role="alert">{opportunityFailure}</p>}
           <p className="enq-next__hint">Approved. An opportunity carries it on to a proposal.</p>
           {failure}
         </>
@@ -496,10 +501,11 @@ function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
 // Tools, drafts, timeline
 // ---------------------------------------------------------------------------
 
-function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, onCreateOpportunity }: {
+function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, opportunityFailure, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
   readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
+  readonly opportunityFailure: string | null;
   readonly onCreateOpportunity: () => void;
 }): ReactElement | null {
   // An approved enquiry offers the opportunity as its next step instead, and
@@ -524,6 +530,7 @@ function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, onCr
           </button>
         )}
       </div>
+      {offersOpportunity && opportunityFailure !== null && <p className="enq-confirm__error" role="alert">{opportunityFailure}</p>}
     </section>
   );
 }

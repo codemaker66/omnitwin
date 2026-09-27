@@ -10,6 +10,8 @@ import {
   GuestEnquirySchema,
   GUEST_ENQUIRY_SOURCES,
   ENQUIRY_SOURCES,
+  occasionLabel,
+  occasionPhrase,
 } from "../enquiry.js";
 import {
   isBookingEnquiry,
@@ -616,5 +618,30 @@ describe("isBookingEnquiry", () => {
     expect(isBookingEnquiry("")).toBe(true);
     expect(isBookingEnquiry(null)).toBe(true);
     expect(isBookingEnquiry(undefined)).toBe(true);
+  });
+});
+
+describe("occasions in words", () => {
+  it("reads every slug the venue's forms send as words, on its own and in a sentence", () => {
+    const slugs = ["wedding", "dinner", "conference", "reception", "corporate", "ceremony", "concert", "private", "other"];
+    expect(slugs.map((slug) => occasionLabel(slug))).toEqual([
+      "Wedding", "Dinner", "Conference", "Drinks reception", "Corporate event", "Ceremony",
+      "Concert or performance", "Private celebration", "Other occasion",
+    ]);
+    expect(slugs.map((slug) => occasionPhrase(slug))).toEqual([
+      "a wedding", "a dinner", "a conference", "a drinks reception", "a corporate event", "a ceremony",
+      "a concert or performance", "a private celebration", "another occasion",
+    ]);
+  });
+
+  it("reads a slug in any case, keeps a free-typed occasion as typed, and says nothing for none", () => {
+    expect(occasionLabel(" Wedding ")).toBe("Wedding");
+    expect(occasionLabel("Wedding Reception")).toBe("Wedding Reception");
+    expect(occasionPhrase("Wedding Reception")).toBe("Wedding Reception");
+    expect(occasionLabel("constructor")).toBe("constructor");
+    for (const none of [null, undefined, "", "   "]) {
+      expect(occasionLabel(none)).toBeNull();
+      expect(occasionPhrase(none)).toBeNull();
+    }
   });
 });

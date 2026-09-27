@@ -823,6 +823,16 @@ describe("EnquiriesView decisions", () => {
     expect(within(screen.getByRole("region", { name: /Client 3/u })).queryByText("Grand Hall")).toBeNull();
   });
 
+  it("reads the occasion a form sent as words, in the list and the panel", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(3), eventType: "corporate", estimatedGuests: 80 }], {}));
+    render(<EnquiriesView />);
+    const listed = await screen.findByRole("button", { name: /^Client 3,/u });
+    expect(listed.textContent).toContain("Corporate event · 80 guests");
+    expect(listed.textContent).not.toContain("corporate ·");
+    fireEvent.click(listed);
+    expect(await screen.findByText(/^Corporate event · received /u)).toBeDefined();
+  });
+
   it("shows no source where it is not known", async () => {
     mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(3), source: null, roomChosen: true }], {}));
     render(<EnquiriesView />);

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AIAssistantStatus } from "@omnitwin/types";
 import type { Enquiry, EnquiryPage, EnquiryStageCounts } from "../../../api/enquiries.js";
@@ -99,7 +99,10 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); });
 
-async function openAlice(state: string, props: { readonly canCreateOpportunity?: boolean }): Promise<void> {
+async function openAlice(
+  state: string,
+  props: { readonly canCreateOpportunity?: boolean; readonly onOpenOpportunity?: (opportunityId: string) => void },
+): Promise<void> {
   mocks.listEnquiryPage.mockResolvedValue(page([enquiry(state)]));
   render(<EnquiriesView {...props} />);
   fireEvent.click(await screen.findByRole("button", { name: /^Alice,/u }));
@@ -158,5 +161,34 @@ describe("the capability the dashboard passes down", () => {
 
   it("admits a Venviewer platform admin whatever its venue role", () => {
     expect(canOpenDashboardView("pipeline", "planner", "admin")).toBe(true);
+  });
+});
+
+// Roadmap N6: pressing Create opportunity lands on the deal, selected in the
+// pipeline, whether the press made it or found the one an earlier press made.
+describe("Create opportunity lands on the deal", () => {
+  it("opens the pipeline on the deal it made, and on the same deal when pressed again", async () => {
+    const onOpenOpportunity = vi.fn<(opportunityId: string) => void>();
+    mocks.createOpportunityFromEnquiry
+      .mockResolvedValueOnce({ created: true, opportunity: { id: "opp-1" } })
+      .mockResolvedValueOnce({ created: false, opportunity: { id: "opp-1" } });
+    await openAlice("approved", { canCreateOpportunity: true, onOpenOpportunity });
+    fireEvent.click(screen.getByTestId("create-opportunity-from-enquiry"));
+    await waitFor(() => { expect(onOpenOpportunity).toHaveBeenCalledWith("opp-1"); });
+    fireEvent.click(screen.getByTestId("create-opportunity-from-enquiry"));
+    await waitFor(() => { expect(onOpenOpportunity).toHaveBeenCalledTimes(2); });
+    expect(onOpenOpportunity.mock.calls).toEqual([["opp-1"], ["opp-1"]]);
+    // The deal is the confirmation; no notice claims it was opened elsewhere.
+    expect(mocks.addToast).not.toHaveBeenCalled();
+  });
+
+  it("says beside the button when the deal could not be made, and goes nowhere", async () => {
+    const onOpenOpportunity = vi.fn<(opportunityId: string) => void>();
+    mocks.createOpportunityFromEnquiry.mockRejectedValueOnce(new Error("Unavailable"));
+    await openAlice("under_review", { canCreateOpportunity: true, onOpenOpportunity });
+    fireEvent.click(screen.getByTestId("create-opportunity-from-enquiry"));
+    expect((await screen.findByRole("alert")).textContent).toBe("The opportunity could not be created. Nothing was changed; try again.");
+    expect(onOpenOpportunity).not.toHaveBeenCalled();
+    expect(mocks.addToast).not.toHaveBeenCalled();
   });
 });

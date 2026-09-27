@@ -141,6 +141,33 @@ afterEach(() => {
 });
 
 describe("CommercialPipelineView", () => {
+  // Roadmap N6: Create opportunity on the Enquiries desk links its deal as
+  // ?opportunity=, and the address then follows whichever deal is open.
+  it("opens a deal linked from the address beside the board, and says which deal is open", async () => {
+    const shown = vi.fn<(opportunityId: string | null) => void>();
+    mocks.getPipeline.mockResolvedValue({ opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner" })], todayTasks: [], stageCounts: { new: 2 }, pipelineValueMinor: 4_000_000, currency: "GBP" });
+    mocks.getOpportunity.mockImplementation((id: string) => Promise.resolve({
+      opportunity: id === "opp2" ? opportunity({ id: "opp2", title: "Winter dinner" }) : opportunity(), activities: [], tasks: [], proposals: [],
+    }));
+    const view = render(<CommercialPipelineView opportunityId="opp1" onOpportunityShown={shown} />);
+    expect(await screen.findByLabelText("Opportunity detail")).toBeTruthy();
+    expect(mocks.getOpportunity).toHaveBeenCalledWith("opp1");
+    expect(shown).toHaveBeenLastCalledWith("opp1");
+
+    // Opening another deal on the board moves the address with it, and the
+    // address's answer does not read the deal again.
+    fireEvent.click(await screen.findByTestId("opportunity-opp2"));
+    await screen.findByRole("heading", { name: "Winter dinner" });
+    expect(shown).toHaveBeenLastCalledWith("opp2");
+    view.rerender(<CommercialPipelineView opportunityId="opp2" onOpportunityShown={shown} />);
+    expect(mocks.getOpportunity).toHaveBeenCalledTimes(2);
+
+    // Going back to the first address opens that deal again.
+    view.rerender(<CommercialPipelineView opportunityId="opp1" onOpportunityShown={shown} />);
+    await waitFor(() => { expect(mocks.getOpportunity).toHaveBeenCalledTimes(3); });
+    expect(mocks.getOpportunity).toHaveBeenLastCalledWith("opp1");
+  });
+
   it("keeps the newest repeated selection loading when an earlier request for that same record settles", async () => {
     let resolveOld: ((value: unknown) => void) | undefined;
     let resolveNew: ((value: unknown) => void) | undefined;

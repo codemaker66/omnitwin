@@ -4,6 +4,8 @@ import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
   VENVIEWER_PRICING_ENQUIRY_TYPE,
+  occasionLabel,
+  occasionPhrase,
   type EnquirySource,
 } from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
@@ -237,6 +239,9 @@ export async function publicEnquiryRoutes(
 
     // Notify hallkeeper(s) of the venue
     const roomName = anchor.roomName;
+    // The occasion as a person reads it: "a corporate event", never "a corporate".
+    const occasion = occasionPhrase(parsed.data.eventType);
+    const eventTypeWords = accessRequest ? "Access request" : pricingEnquiry ? "Venviewer enquiry" : occasionLabel(parsed.data.eventType);
     const [venueRow] = await db.select({ name: venues.name })
       .from(venues)
       .where(eq(venues.id, anchor.venueId))
@@ -262,7 +267,7 @@ export async function publicEnquiryRoutes(
         } : {
           title: roomName === null ? "New enquiry" : `New enquiry — ${roomName}`,
           body: `${displayName} ${roomName === null ? `enquired ${SOURCE_PHRASE[source]}` : `enquired about ${roomName}`}${
-            parsed.data.eventType === undefined ? "" : ` for a ${parsed.data.eventType}`
+            occasion === null ? "" : ` for ${occasion}`
           }${
             parsed.data.eventDate === undefined ? "" : ` on ${parsed.data.eventDate}`
           }${roomName === null ? ", without choosing a room" : ""}. Open Enquiries to respond.`,
@@ -294,7 +299,7 @@ export async function publicEnquiryRoutes(
         venueName,
         roomName,
         organiserName: parsed.data.name ?? parsed.data.email,
-        eventType: parsed.data.eventType ?? null,
+        eventType: occasionLabel(parsed.data.eventType),
         eventDate: parsed.data.eventDate ?? null,
         guestCount: parsed.data.guestCount ?? null,
         replyToEmail: resolveEmailReplyTo(),
@@ -334,7 +339,7 @@ export async function publicEnquiryRoutes(
       const emailData = await newEnquiryNotification({
         roomName,
         source,
-        eventType: parsed.data.eventType ?? null,
+        eventType: eventTypeWords,
         contactName: displayName,
         contactEmail: parsed.data.email,
         contactPhone: parsed.data.phone ?? null,

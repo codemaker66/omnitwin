@@ -318,7 +318,7 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
     const notices = await pool.query<{ title: string; body: string }>("SELECT DISTINCT title, body FROM event_plan_notifications");
     expect(notices.rows).toEqual([{
       title: "New enquiry",
-      body: "Elaine Fraser enquired from the walkthrough for a Wedding on 2026-10-02, without choosing a room. Open Enquiries to respond.",
+      body: "Elaine Fraser enquired from the walkthrough for a wedding on 2026-10-02, without choosing a room. Open Enquiries to respond.",
     }]);
   });
 

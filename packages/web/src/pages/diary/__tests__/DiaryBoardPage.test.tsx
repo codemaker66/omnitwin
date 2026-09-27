@@ -480,13 +480,13 @@ describe("DiaryBoardPage", () => {
   });
 
   it("converts an open enquiry through the drawer (T-496)", async () => {
-    convertEnquiryMock.mockResolvedValue({ title: "Fiona MacLeod — wedding" });
+    convertEnquiryMock.mockResolvedValue({ title: "Fiona MacLeod — Wedding" });
     renderPage();
     const convert = await screen.findByRole("button", { name: "Hold a date…" });
     convert.click();
     const drawer = await screen.findByRole("dialog", { name: "Hold a date for this enquiry" });
     expect(drawer).toBeDefined();
-    expect(screen.getByDisplayValue("Fiona MacLeod — wedding")).toBeDefined();
+    expect(screen.getByDisplayValue("Fiona MacLeod — Wedding")).toBeDefined();
     expect(screen.getByText(/enquiry stays in review/)).toBeDefined();
   });
 

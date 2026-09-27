@@ -139,12 +139,16 @@ interface EnquiriesViewProps {
    *  bug. The cost of the unsafe one is a role seeing a control it must not,
    *  which is invisible until someone presses it. */
   readonly canCreateOpportunity?: boolean;
+  /** Opens the pipeline on the deal Create opportunity made or found, so the
+   *  press lands on it rather than on a notice that it exists. */
+  readonly onOpenOpportunity?: (opportunityId: string) => void;
 }
 
 export function EnquiriesView({
   initialSelectedId = null,
   onDetailClose,
   canCreateOpportunity = false,
+  onOpenOpportunity,
 }: EnquiriesViewProps = {}): ReactElement {
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
@@ -170,6 +174,8 @@ export function EnquiriesView({
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [moved, setMoved] = useState(0);
   const [creatingOpportunity, setCreatingOpportunity] = useState(false);
+  // Said beside the button that failed, for the enquiry it failed on.
+  const [opportunityFailure, setOpportunityFailure] = useState<{ readonly enquiryId: string; readonly message: string } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const deskRef = useRef<HTMLDivElement>(null);
   const sheetHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -481,11 +487,15 @@ export function EnquiriesView({
   const handleCreateOpportunity = async (enquiry: Enquiry): Promise<void> => {
     if (creatingOpportunity) return;
     setCreatingOpportunity(true);
+    setOpportunityFailure(null);
     try {
       const result = await createOpportunityFromEnquiry(enquiry.id);
-      addToast(result.created ? "Opportunity created from enquiry" : "Existing opportunity opened", "success");
+      // A second press finds the deal the first made; either way the press
+      // lands on it, selected in the pipeline.
+      if (onOpenOpportunity !== undefined) onOpenOpportunity(result.opportunity.id);
+      else addToast(result.created ? "Opportunity created. It is in the pipeline." : "This enquiry's opportunity is already in the pipeline.", "success");
     } catch {
-      addToast("Failed to create opportunity from enquiry", "error");
+      setOpportunityFailure({ enquiryId: enquiry.id, message: "The opportunity could not be created. Nothing was changed; try again." });
     } finally {
       setCreatingOpportunity(false);
     }
@@ -623,6 +633,7 @@ export function EnquiriesView({
           announcement={announcement}
           canCreateOpportunity={canCreateOpportunity}
           creatingOpportunity={creatingOpportunity}
+          opportunityFailure={opportunityFailure !== null && opportunityFailure.enquiryId === selected.id ? opportunityFailure.message : null}
           navigation={{
             layout: wide ? "wide" : "single",
             backLabel,

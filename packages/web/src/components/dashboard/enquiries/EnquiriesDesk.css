@@ -694,6 +694,8 @@
   .enq-row__side { grid-column: 2; display: flex; align-items: center; gap: 10px; }
   .enq-date__month { letter-spacing: 0.04em; }
   .enq-row__title { font-size: 17.5px; }
+  /* A phone shows the whole facts line, wrapped, rather than an ellipsis. */
+  .enq-row__meta { overflow: visible; white-space: normal; }
   .enq-date__day { font-size: 22px; }
   .enq-desk--single .enq-panel { min-height: calc(100dvh - 80px); }
   .enq-panel__body { --enq-panel-pad: 16px; --enq-panel-pad-top: 24px; padding: 24px 16px 32px; }

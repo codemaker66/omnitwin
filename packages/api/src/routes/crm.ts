@@ -3,6 +3,7 @@ import { z } from "zod";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   OPPORTUNITY_STAGES,
+  occasionLabel,
   type OpportunityStage,
 } from "@omnitwin/types";
 import {
@@ -89,29 +90,22 @@ export async function crmRoutes(
       return reply.status(403).send({ error: "Only the venue commercial team can create opportunities from enquiries", code: "FORBIDDEN" });
     }
 
-    const [existing] = await db.select()
-      .from(opportunities)
-      .where(and(eq(opportunities.sourceEnquiryId, enquiry.id), isNull(opportunities.deletedAt)))
-      .limit(1);
-
-    if (existing !== undefined) {
-      return {
-        data: {
-          created: false,
-          opportunity: existing,
-          clientAccount: null,
-          contact: null,
-          followUpTask: null,
-        },
-      };
-    }
-
     const clientName = enquiry.guestName ?? enquiry.name;
     const clientEmail = enquiry.guestEmail ?? enquiry.email;
     const clientPhone = enquiry.guestPhone;
-    const eventLabel = enquiry.eventType ?? "Event";
+    const eventLabel = occasionLabel(enquiry.eventType) ?? "Event";
 
     const created = await db.transaction(async (tx) => {
+      // One deal per enquiry. A second press, another tab or a colleague
+      // pressing at the same moment waits here, then finds the deal the
+      // first made and lands on it.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`crm-from-enquiry:${enquiry.id}`}, 0))`);
+      const [existing] = await tx.select()
+        .from(opportunities)
+        .where(and(eq(opportunities.sourceEnquiryId, enquiry.id), isNull(opportunities.deletedAt)))
+        .limit(1);
+      if (existing !== undefined) return { existing };
+
       const [account] = await tx.insert(clientAccounts).values({
         venueId: enquiry.venueId,
         name: clientName,
@@ -180,6 +174,18 @@ export async function crmRoutes(
 
       return { account, contact, opportunity, followUpTask };
     });
+
+    if ("existing" in created) {
+      return {
+        data: {
+          created: false,
+          opportunity: created.existing,
+          clientAccount: null,
+          contact: null,
+          followUpTask: null,
+        },
+      };
+    }
 
     return reply.status(201).send({
       data: {

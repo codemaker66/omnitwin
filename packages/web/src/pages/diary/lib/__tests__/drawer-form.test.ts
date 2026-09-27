@@ -189,7 +189,8 @@ describe("initialDrawerForm", () => {
     });
     expect(form.kind).toBe("hold");
     expect(form.spaceId).toBe(SPACE);
-    expect(form.title).toBe("Fiona MacLeod — wedding");
+    // The occasion reads as words, not as the form's slug.
+    expect(form.title).toBe("Fiona MacLeod — Wedding");
     expect(form.startsAt).toBe("2026-09-19T17:00");
     expect(form.ownerUserId).toBe(OWNER);
   });

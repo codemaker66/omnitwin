@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import {
   OPPORTUNITY_STAGE_TRANSITIONS,
   OpportunityStageSchema,
@@ -165,7 +165,15 @@ function toDetailState(detail: OpportunityDetail): DetailState {
   };
 }
 
-export function CommercialPipelineView(): ReactElement {
+export interface CommercialPipelineViewProps {
+  /** A deal to open beside the board from the address (?opportunity=), as
+   *  Create opportunity on the Enquiries desk links it. */
+  readonly opportunityId?: string | null;
+  /** Told which deal is open, or null when none, so the address follows it. */
+  readonly onOpportunityShown?: (opportunityId: string | null) => void;
+}
+
+export function CommercialPipelineView({ opportunityId = null, onOpportunityShown }: CommercialPipelineViewProps = {}): ReactElement {
   const user = useAuthStore((state) => state.user);
   const addToast = useToastStore((state) => state.addToast);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
@@ -195,6 +203,10 @@ export function CommercialPipelineView(): ReactElement {
   const [busy, setBusy] = useState(false);
   const detailRequest = useLatestRequest();
   const pipelineRequest = useLatestRequest();
+  // The deal last opened, whichever way it was, and the latest listener for it.
+  const shownRef = useRef<string | null>(null);
+  const onShownRef = useRef(onOpportunityShown);
+  useEffect(() => { onShownRef.current = onOpportunityShown; });
 
   const refresh = useCallback(() => {
     const ownsRequest = pipelineRequest.begin();
@@ -217,6 +229,8 @@ export function CommercialPipelineView(): ReactElement {
   useEffect(() => { refresh(); }, [refresh]);
 
   const reloadSelected = useCallback((id: string) => {
+    shownRef.current = id;
+    onShownRef.current?.(id);
     const ownsRequest = detailRequest.begin();
     setSelected(null);
     setActivityText("");
@@ -237,6 +251,12 @@ export function CommercialPipelineView(): ReactElement {
       })
       .finally(() => { if (ownsRequest()) setDetailRequests(0); });
   }, [addToast, detailRequest]);
+
+  // A deal linked from the address opens beside the board, whatever page of
+  // the board it is on; one already open is not read again.
+  useEffect(() => {
+    if (opportunityId !== null && opportunityId !== shownRef.current) reloadSelected(opportunityId);
+  }, [opportunityId, reloadSelected]);
 
   // `pipelineValue` is SERVED, not summed here. `opportunities` is one page of
   // the board, so adding it up produced a "pipeline value" that shrank as you
@@ -423,6 +443,8 @@ export function CommercialPipelineView(): ReactElement {
   const canPageForward = page !== null && lastShown < page.total;
   const goToPage = (nextOffset: number): void => {
     setSelected(null);
+    shownRef.current = null;
+    onShownRef.current?.(null);
     setPageOffset(Math.max(0, nextOffset));
   };
 

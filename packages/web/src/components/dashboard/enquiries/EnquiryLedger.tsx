@@ -1,4 +1,5 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { occasionLabel } from "@omnitwin/types";
 import { Building2, KeyRound } from "lucide-react";
 import type { Enquiry } from "../../../api/enquiries.js";
 import { StageChip } from "./EnquiryStages.js";
@@ -60,7 +61,8 @@ export function enquiryDetails(enquiry: Enquiry, roomName: string | null | undef
   const request = requestKind(enquiry.eventType);
   if (request !== null) return [requestWords(request).label];
   const details: string[] = [];
-  if (enquiry.eventType !== null && enquiry.eventType.trim() !== "") details.push(enquiry.eventType.trim());
+  const occasion = occasionLabel(enquiry.eventType);
+  if (occasion !== null) details.push(occasion);
   if (enquiry.estimatedGuests !== null) details.push(guestsPhrase(enquiry.estimatedGuests));
   if (roomName !== null && roomName !== undefined) details.push(roomName);
   if (enquiry.configurationId !== null) details.push("layout attached");

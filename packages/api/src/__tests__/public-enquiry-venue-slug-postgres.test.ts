@@ -247,7 +247,7 @@ describe.skipIf(databaseUrl === undefined)("POST /public/enquiries on isolated P
     // flagship the enquiry is filed under.
     expect(sends.map(([message]) => message.subject)).toEqual([
       "We have your enquiry — Trades Hall fixture",
-      "New enquiry — wedding",
+      "New enquiry — Wedding",
     ]);
     for (const [message] of sends) expect(message.html).not.toContain("The Grand Hall");
     expect(notifyCommercialTeamSpy).toHaveBeenCalledTimes(1);

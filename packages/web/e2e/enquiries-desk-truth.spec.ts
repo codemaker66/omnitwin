@@ -50,6 +50,8 @@ const PLANNED = enquiry(5, {
   configurationId: "00000000-0000-4000-8000-000000008009",
   source: "planner",
   roomChosen: true,
+  eventType: "concert",
+  estimatedGuests: 1200,
   message: "Our layout is attached.",
 });
 
@@ -134,5 +136,18 @@ test.describe("Enquiries desk, the truth about a lead", () => {
     if (box !== null) expect(box.x + box.width).toBeLessThanOrEqual(390);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     expect(await unreadableLead(page, "a roomless enquiry on a phone")).toEqual([]);
+
+    // A long facts line wraps on a phone rather than ending in an ellipsis,
+    // and the occasion reads as words.
+    await page.goto("/dashboard?view=enquiries");
+    const facts = page.getByRole("button", { name: /^Ross MacLeod,/u }).locator(".enq-row__meta");
+    await expect(facts).toHaveText("Concert or performance · 1,200 guests · Grand Hall · layout attached");
+    const shape = await facts.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return { lines: new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size, hidden: element.scrollWidth - element.clientWidth };
+    });
+    expect(shape.hidden).toBeLessThanOrEqual(0);
+    expect(shape.lines).toBeGreaterThan(1);
   });
 });

@@ -4,6 +4,7 @@ import {
   TransitionHoldSchema,
   UpdateBookingSchema,
   VALID_BOOKING_TRANSITIONS,
+  occasionLabel,
   type BookingKind,
   type BookingState,
   type CalendarBookingEntry,
@@ -119,6 +120,7 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
 
   if (mode.kind === "convert") {
     const { enquiry } = mode;
+    const occasion = occasionLabel(enquiry.eventType);
     const dayStart =
       enquiry.preferredDate === null
         ? null
@@ -132,7 +134,7 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
     return {
       kind: "hold",
       spaceId: mode.drop?.spaceId ?? (enquiry.roomChosen === false ? "" : enquiry.spaceId),
-      title: `${enquiry.name}${enquiry.eventType === null ? "" : ` — ${enquiry.eventType}`}`.slice(0, 200),
+      title: `${enquiry.name}${occasion === null ? "" : ` — ${occasion}`}`.slice(0, 200),
       eventType: enquiry.eventType ?? "",
       startsAt: msToWallInput(startMs),
       endsAt: msToWallInput(endMs),

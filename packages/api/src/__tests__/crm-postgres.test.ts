@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -76,11 +76,12 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
   let pool: Pool;
   let server: FastifyInstance;
   const fixtureSchema = `crm_pipeline_${randomUUID().replaceAll("-", "")}`;
-  // Only the tables the routes under test read. `POST /crm/from-enquiry`
-  // keeps its existing auth coverage in commercial-spine-routes.test.ts.
+  // Only the tables the routes under test read and write. `POST
+  // /crm/from-enquiry` keeps its auth coverage in commercial-spine-routes.test.ts;
+  // here it meets real concurrency.
   const tables: PgTable[] = [
     schema.opportunities, schema.followUpTasks, schema.activities,
-    schema.opportunityStatusHistory,
+    schema.opportunityStatusHistory, schema.enquiries, schema.clientAccounts, schema.contacts,
   ];
 
   beforeAll(async () => {
@@ -110,7 +111,7 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history");
+    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, enquiries, client_accounts, contacts");
     // Five opportunities created on five consecutive days, inserted
     // oldest-first so a route that forgets to sort returns them in exactly
     // the wrong order and the assertions below fail loudly.
@@ -148,6 +149,29 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     expect(res.statusCode).toBe(200);
     return JSON.parse(res.body) as PipelineBody;
   }
+
+  it("makes one deal of an enquiry, however many presses reach it at once", async () => {
+    const enquiryId = randomUUID();
+    await pool.query(
+      `INSERT INTO enquiries (id, venue_id, space_id, name, email, state, event_type, room_chosen)
+       VALUES ($1, $2, $3, 'Elaine Fraser', 'elaine@example.test', 'approved', 'wedding', false)`,
+      [enquiryId, VENUE, randomUUID()],
+    );
+    const press = (): Promise<LightMyRequestResponse> =>
+      server.inject({ method: "POST", url: `/crm/from-enquiry/${enquiryId}`, headers: headers("staff") });
+    const responses = await Promise.all([press(), press(), press()]);
+    expect(responses.map((res) => res.statusCode).sort()).toEqual([200, 200, 201]);
+    const ids = responses.map((res) => (JSON.parse(res.body) as { data: { opportunity: { id: string } } }).data.opportunity.id);
+    expect(new Set(ids).size).toBe(1);
+    for (const table of ["opportunities", "client_accounts", "contacts"]) {
+      const { rows } = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM ${table} WHERE source_enquiry_id = $1`, [enquiryId]);
+      expect(rows[0]?.count, table).toBe(1);
+    }
+    // A later press lands on the same deal.
+    const again = await press();
+    expect(again.statusCode).toBe(200);
+    expect((JSON.parse(again.body) as { data: { created: boolean; opportunity: { id: string } } }).data).toMatchObject({ created: false, opportunity: { id: ids[0] } });
+  });
 
   it("returns the pipeline newest first", async () => {
     const body = await pipeline();
