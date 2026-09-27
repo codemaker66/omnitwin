@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import type { BookingKind, BookingState, CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
@@ -14,6 +14,7 @@ import { ActivityStatus } from "../../../components/shared/Activity.js";
 import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 import { formatInlineDay, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../lib/board-time.js";
 import { bookingStateLabel, bookingTimeLabel } from "../lib/board-overview.js";
+import { extendedDecisionMs } from "../lib/extend-decision.js";
 import { isEndingTransition, ladderAfterExit, type EndingTransition } from "../lib/lifecycle-ending.js";
 import type { LadderPlace } from "../lib/ladder-place.js";
 
@@ -168,6 +169,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const ladderNoteId = useId();
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -227,6 +229,10 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   // hallkeeper reads the diary but never edits it, so a read-only role is
   // never offered a control whose every path ends in a 403.
   const canWriteDiary = hasRole(DIARY_WRITE_ROLES, role);
+  // Where a live hold's decision can move to (roadmap N3's Extend): a week
+  // on, never past the day before its event; null when there is no later day.
+  const extendTo = canWriteDiary && mode.kind === "edit" && decisionMs !== null && mode.booking.decisionAt !== null
+    ? extendedDecisionMs(mode.booking.decisionAt, mode.booking.startsAt, nowMs) : null;
 
   useEffect(() => {
     if (canWriteDiary) titleRef.current?.focus();
@@ -259,12 +265,19 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     };
   }
 
+  function failureMessage(caught: unknown): string {
+    if (caught instanceof ApiError && caught.code === "INK_SLOT_TAKEN") return BOARD_COPY.undo.slotTaken;
+    return caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.saveFailed;
+  }
+
   function failure(caught: unknown): void {
-    if (caught instanceof ApiError && caught.code === "INK_SLOT_TAKEN") {
-      setSubmitError(BOARD_COPY.undo.slotTaken);
-      return;
-    }
-    setSubmitError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.saveFailed);
+    setSubmitError(failureMessage(caught));
+  }
+
+  /** A next step that failed says so under its own buttons, not below the
+   *  form it now sits above (roadmap N3). */
+  function stepFailure(caught: unknown): void {
+    setStepError(failureMessage(caught));
   }
 
   function rejectWithVisibleErrors(errors: FieldErrors): void {
@@ -339,23 +352,40 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     if (toState === "hold" && mode.booking.kind === "prospect") {
       const place = ladderPlace?.(mode.booking.spaceId, Date.parse(mode.booking.startsAt), Date.parse(mode.booking.endsAt));
       setSubmitError(null);
+      setStepError(null);
       setPromotionErrors({});
       setPromotion(initialPromotionForm(mode.booking, place?.kind === "read" ? place.rank : null));
       return;
     }
     if (isEndingTransition(toState)) {
       setSubmitError(null);
+      setStepError(null);
       setEndingError(null);
       setEnding(toState);
       return;
     }
-    setSubmitError(null);
+    setStepError(null);
     setBusy(true);
     transitionBooking(mode.booking.id, toState)
       .then(({ booking }) => {
         onSaved(BOARD_COPY.drawer.transitioned(booking.title, BOARD_COPY.transitions[toState]));
       })
-      .catch(failure)
+      .catch(stepFailure)
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  function extendDecision(): void {
+    if (mode.kind !== "edit" || extendTo === null) return;
+    const day = formatInlineDay(extendTo, nowMs);
+    setStepError(null);
+    setBusy(true);
+    updateBooking(mode.booking.id, { decisionAt: new Date(extendTo).toISOString() })
+      .then((saved) => {
+        onSaved(BOARD_COPY.drawer.extended(saved.title, day));
+      })
+      .catch(stepFailure)
       .finally(() => {
         setBusy(false);
       });
@@ -680,22 +710,31 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         <div className="diary-drawer-transitions" ref={transitionsRef}>
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
           <div className="diary-drawer-actions">
-            {transitions.map((target) => (
-              <button
-                key={target}
-                type="button"
-                data-transition={target}
-                className={`diary-button${target === "ink" ? " is-primary" : ""}`}
-                onClick={() => {
-                  runTransition(target);
-                }}
-                disabled={busy}
-              >
-                {/* "…": this one asks first. */}
-                {BOARD_COPY.transitions[target]}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
-              </button>
+            {transitions.map((target, index) => (
+              <Fragment key={target}>
+                <button
+                  type="button"
+                  data-transition={target}
+                  className={`diary-button${target === "ink" ? " is-primary" : ""}`}
+                  onClick={() => {
+                    runTransition(target);
+                  }}
+                  disabled={busy}
+                >
+                  {/* "…": this one asks first. */}
+                  {BOARD_COPY.transitions[target]}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
+                </button>
+                {/* Confirm, Extend, Release: the day it moves to is on the
+                    button, so it needs no question of its own. */}
+                {extendTo !== null && (target === "ink" || (index === 0 && !transitions.includes("ink"))) ? (
+                  <button type="button" className="diary-button" onClick={extendDecision} disabled={busy}>
+                    {BOARD_COPY.drawer.extendTo(formatInlineDay(extendTo, nowMs))}
+                  </button>
+                ) : null}
+              </Fragment>
             ))}
           </div>
+          {stepError !== null ? <p className="diary-drawer-error" role="alert">{stepError}</p> : null}
         </div>
       ) : null}
 

@@ -274,6 +274,9 @@ export const BOARD_COPY = {
     transitioned: (title: string, action: string): string => `${action}: ${title}.`,
     /** The booking's next step, under its facts (roadmap N3). */
     transitionsTitle: "Next step",
+    /** A live hold's decision moved on (roadmap N3's Extend). */
+    extendTo: (day: string): string => `Extend to ${day}`,
+    extended: (title: string, day: string): string => `${title} now decides by ${day}.`,
     planTitle: "Floor plan",
     planNone: "No floor plan. Start one with this booking's name and times.",
     planAttached: "Floor plan attached.",

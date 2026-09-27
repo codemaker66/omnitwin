@@ -701,3 +701,62 @@ describe("BookingDrawer — the facts first, the next step in one place (roadmap
     expect(facts().find(([label]) => label === "Decide by")?.[1]).toBe("Fri 2 Oct");
   });
 });
+
+describe("BookingDrawer — extending a hold's decision (roadmap N3)", () => {
+  // Wednesday 16 September 2026, 09:00 BST.
+  const NOW = Date.parse("2026-09-16T08:00:00.000Z");
+  const GUILD = booking({
+    kind: "hold", state: "hold", rank: 1, title: "Guild dinner", decisionAt: "2026-09-21T11:00:00.000Z",
+    startsAt: "2026-11-14T18:00:00.000Z", endsAt: "2026-11-14T23:00:00.000Z",
+  });
+
+  function renderHold(entry: CalendarBookingEntry, onSaved: SavedSpy = vi.fn<(message: string) => void>(), role = "staff"): void {
+    render(
+      <BookingDrawer
+        mode={{ kind: "edit", booking: entry }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role={role}
+        nowMs={NOW}
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+      />,
+    );
+  }
+
+  it("offers a week more beside Confirm it, and saves the decision date alone", async () => {
+    updateBookingMock.mockResolvedValue({ ...GUILD, title: "Guild dinner" });
+    const onSaved = vi.fn<(message: string) => void>();
+    renderHold(GUILD, onSaved);
+    const actions = screen.getByRole("heading", { name: "Next step" }).parentElement?.querySelectorAll("button") ?? [];
+    expect(Array.from(actions).map((button) => button.textContent).slice(0, 2)).toEqual(["Confirm it", "Extend to Mon 28 Sept"]);
+    fireEvent.click(screen.getByRole("button", { name: "Extend to Mon 28 Sept" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Guild dinner now decides by Mon 28 Sept."); });
+    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { decisionAt: "2026-09-28T11:00:00.000Z" });
+  });
+
+  it("says why under the next step when the extension cannot be saved, and keeps the drawer open", async () => {
+    updateBookingMock.mockRejectedValue(new ApiError(409, "This booking changed while you were editing it.", "BOOKING_STALE"));
+    const onSaved = vi.fn<(message: string) => void>();
+    renderHold(GUILD, onSaved);
+    fireEvent.click(screen.getByRole("button", { name: "Extend to Mon 28 Sept" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("This booking changed while you were editing it.");
+    // Under the next step it came from, not below the form it sits above.
+    expect(alert.closest(".diary-drawer-transitions")).not.toBeNull();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Extend to Mon 28 Sept" })).toBeTruthy();
+  });
+
+  it("offers no extension when the event leaves no later day, for a confirmed booking, or to a read-only role", () => {
+    renderHold({ ...GUILD, decisionAt: "2026-09-24T11:00:00.000Z", startsAt: "2026-09-25T17:00:00.000Z", endsAt: "2026-09-25T22:00:00.000Z" });
+    expect(screen.getByRole("button", { name: "Confirm it" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Extend to/u })).toBeNull();
+    cleanup();
+    renderHold(booking());
+    expect(screen.queryByRole("button", { name: /^Extend to/u })).toBeNull();
+    cleanup();
+    renderHold(GUILD, vi.fn<(message: string) => void>(), "hallkeeper");
+    expect(screen.queryByRole("button", { name: /^Extend to/u })).toBeNull();
+  });
+});
