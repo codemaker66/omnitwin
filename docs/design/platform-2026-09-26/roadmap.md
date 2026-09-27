@@ -488,6 +488,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Done on 27 September, as two figures on the venue's clock, "Not set" with its reason, and on the printed
   sheet too ([session log](../../sessions/2026-09-27.md)).
 - Approval state: a full-width band (brick for rejected, amber for awaiting) and an approval stamp, instead of three separate version mentions.
+  Done on 27 September, with slate for draft, withdrawn and archived; the rows are unchanged until Blake
+  answers Q-E3 ([session log](../../sessions/2026-09-27.md)).
 - A copper plane of category counts replaces the five-row pages and the `<select>`. Finished zones fold away. When everything is checked, the sheet shows "Setup checked · 43 of 43".
 - A "Keep in view" band: access needs, allergies, the day-of contact as a `tel:` link, and the next deadline.
   Done on 27 September, above the stages so it stays on every stage, with the event's open issues. Revised:
