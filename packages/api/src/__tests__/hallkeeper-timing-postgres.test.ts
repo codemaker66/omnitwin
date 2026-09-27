@@ -57,10 +57,14 @@ describe.skipIf(explicitUrl === undefined)("resolveTiming reads the right bookin
     if (explicitUrl === undefined) throw new Error("Explicit test URL required");
     assertTestTarget(explicitUrl);
     migrationPool = new PgPool({ connectionString: explicitUrl });
-    const target = await migrationPool.query<{ database: string; host: string }>(
+    const target = await migrationPool.query<{ database: string; host: string | null }>(
       "SELECT current_database() AS database, host(inet_server_addr()) AS host",
     );
-    expect(target.rows).toEqual([{ database: "venviewer_timing_test", host: "127.0.0.1" }]);
+    expect(target.rows[0]?.database).toBe("venviewer_timing_test");
+    // The guard above admitted only the loopback URL. A Docker port forward
+    // (CI's service container) keeps that endpoint, but PostgreSQL reports its
+    // container address rather than 127.0.0.1, as db-client-local.test.ts notes.
+    expect(target.rows[0]?.host).toBeTypeOf("string");
     await migrate(nodeDrizzle(migrationPool), { migrationsFolder: resolve(import.meta.dirname, "../../drizzle") });
     // The production client, on its loopback branch: the same drizzle
     // queries the API sends, over the local port the guard has admitted.
