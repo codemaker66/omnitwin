@@ -10,6 +10,7 @@ import {
   realDiaryCommandDeps,
 } from "../services/diary-commands.js";
 import type { MutationActor } from "../services/booking-mutations.js";
+import { runRequestEscalationPass } from "../services/requests.js";
 import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +28,10 @@ import { AuthMessage, resolveWsUser } from "./auto-save.js";
 // one consistent stream.
 //
 // Protocol:
-//   client → { type: "auth", token }          first message, auto-save style
+//   client → { type: "auth", token, presence? }   first message, auto-save
+//            style; presence: false marks a connection that only listens
+//            (the requests and notifications channel), which hears what its
+//            role may hear but is nobody "here" on the Diary
 //   client → { type: "ping" }                 keepalive (any message touches)
 //   client → { type: "diary.command", command }   T-537 mutation envelope
 //   server → { type: "hello", venueId, presence }
@@ -43,6 +47,10 @@ import { AuthMessage, resolveWsUser } from "./auto-save.js";
 
 const HEARTBEAT_INTERVAL_MS = 20_000; // Canon §15: app-level keepalive ~20s
 const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
+/** How often the request escalation sweep looks for an unanswered "now".
+ *  Short against the shortest sensible venue window, cheap because the query
+ *  is a partial index on exactly those rows. */
+const ESCALATION_SWEEP_INTERVAL_MS = 15_000;
 
 /** Read roles: who may watch the live diary. Everyone who works the venue's
  *  day or its pipeline; caterers are event-scoped and never see the
@@ -64,7 +72,16 @@ export interface DiaryLiveUser {
 export interface DiaryLiveConnection {
   readonly socket: DiaryLiveSocket;
   readonly user: DiaryLiveUser;
+  /** False for a connection that only listens: every floor page keeps one
+   *  open for requests and the unread count. It hears the frames its role
+   *  may hear, but its person is not on the Diary, so it is not presence. */
+  readonly present: boolean;
   lastSeenMs: number;
+}
+
+export interface DiaryLiveJoinOptions {
+  /** Defaults to true: the Diary and the Day Board are where people are. */
+  readonly present?: boolean;
 }
 
 /**
@@ -79,12 +96,21 @@ export class DiaryLiveHub {
     socket: DiaryLiveSocket,
     user: DiaryLiveUser,
     nowMs: number,
+    options: DiaryLiveJoinOptions = {},
   ): DiaryLiveConnection {
-    const connection: DiaryLiveConnection = { socket, user, lastSeenMs: nowMs };
+    const connection: DiaryLiveConnection = {
+      socket,
+      user,
+      present: options.present ?? true,
+      lastSeenMs: nowMs,
+    };
     const set = this.#byVenue.get(venueId) ?? new Set<DiaryLiveConnection>();
     set.add(connection);
     this.#byVenue.set(venueId, set);
-    this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    // A listener changes nobody's presence, so the room is not told.
+    if (connection.present) {
+      this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    }
     return connection;
   }
 
@@ -93,7 +119,9 @@ export class DiaryLiveHub {
     if (set === undefined) return;
     if (!set.delete(connection)) return;
     if (set.size === 0) this.#byVenue.delete(venueId);
-    this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    if (connection.present) {
+      this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    }
   }
 
   touch(connection: DiaryLiveConnection, nowMs: number): void {
@@ -104,10 +132,14 @@ export class DiaryLiveHub {
     return this.#byVenue.get(venueId)?.size ?? 0;
   }
 
-  /** Presence deduped by user — two tabs are still one person. */
+  /** Presence deduped by user — two tabs are still one person — and only
+   *  from connections that are somewhere people are: a page that merely
+   *  listens for requests does not put its person "here" (T-619's rule that
+   *  the count names only colleagues who are there). */
   presenceFor(venueId: string): readonly DiaryLiveUser[] {
     const byUser = new Map<string, DiaryLiveUser>();
     for (const connection of this.#byVenue.get(venueId) ?? []) {
+      if (!connection.present) continue;
       byUser.set(connection.user.userId, connection.user);
     }
     return [...byUser.values()];
@@ -116,8 +148,43 @@ export class DiaryLiveHub {
   /** Send to every connection of the venue; a broken socket never breaks
    *  the loop (it will be reaped by the stale sweep). */
   broadcast(venueId: string, payload: Record<string, unknown>): void {
+    this.#send(this.#byVenue.get(venueId) ?? [], payload);
+  }
+
+  /** Send to the venue's connections whose ROLE is in `roles` — a request's
+   *  own audience, fixed when it was made. A colleague whose role is not in
+   *  that list never receives the frame, so the live channel cannot widen an
+   *  audience the database deliberately narrowed. */
+  broadcastToRoles(
+    venueId: string,
+    roles: readonly string[],
+    payload: Record<string, unknown>,
+  ): void {
+    const allowed = new Set(roles);
+    const targets = [...this.#byVenue.get(venueId) ?? []].filter(
+      (connection) => allowed.has(connection.user.role),
+    );
+    this.#send(targets, payload);
+  }
+
+  /** Send to named people in the venue (an escalation reaches the venue's
+   *  administrators by name, not by role list). */
+  broadcastToUsers(
+    venueId: string,
+    userIds: readonly string[],
+    payload: Record<string, unknown>,
+  ): void {
+    if (userIds.length === 0) return;
+    const allowed = new Set(userIds);
+    const targets = [...this.#byVenue.get(venueId) ?? []].filter(
+      (connection) => allowed.has(connection.user.userId),
+    );
+    this.#send(targets, payload);
+  }
+
+  #send(connections: Iterable<DiaryLiveConnection>, payload: Record<string, unknown>): void {
     const text = JSON.stringify(payload);
-    for (const connection of this.#byVenue.get(venueId) ?? []) {
+    for (const connection of connections) {
       try {
         connection.socket.send(text);
       } catch {
@@ -152,10 +219,68 @@ export class DiaryLiveHub {
   }
 }
 
+/** The house auth frame, plus whether the connection is presence. Absent
+ *  means present, which is what the Diary and the Day Board send; the
+ *  requests channel sends false. */
+export const DiaryAuthMessage = AuthMessage.extend({
+  presence: z.boolean().optional(),
+});
+
 const IncomingLiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ping") }),
   z.object({ type: z.literal("diary.command"), command: DiaryCommandSchema }),
 ]);
+
+/**
+ * Ship Friday slice 10. Requests ride the same venue channel the Diary uses —
+ * the same door and the same authentication — on a connection of their own
+ * that says presence: false, so a person listening for requests on any floor
+ * page is not counted as being on the Diary. A request frame goes
+ * only to the venue's connections whose role is in the request's OWN stored
+ * audience, and an inbox frame to that audience or to the people it names;
+ * the live channel can never widen what the database narrowed. A frame says
+ * something changed, never what: the client refetches, and the server's
+ * answer is the truth. Older clients ignore an unknown frame type by design.
+ * Returns the unsubscribe for the server's close hook.
+ */
+export function subscribeRequestFrames(hub: DiaryLiveHub): () => void {
+  const unsubscribeRequests = subscribe("request.changed", {
+    name: "diary-live-requests",
+    handle: (payload) => {
+      hub.broadcastToRoles(payload.venueId, payload.audienceRoles, {
+        type: "request.event",
+        venueId: payload.venueId,
+        kind: payload.kind,
+        requestId: payload.requestId,
+        bookingId: payload.bookingId,
+        roomId: payload.roomId,
+        state: payload.state,
+        at: payload.at,
+      });
+    },
+  });
+
+  const unsubscribeNotifications = subscribe("notification.created", {
+    name: "diary-live-notifications",
+    handle: (payload) => {
+      const frame = {
+        type: "notification.event",
+        venueId: payload.venueId,
+        notificationIds: payload.notificationIds,
+        title: payload.title,
+        severity: payload.severity,
+        at: payload.at,
+      };
+      hub.broadcastToRoles(payload.venueId, payload.audienceRoles, frame);
+      hub.broadcastToUsers(payload.venueId, payload.recipientUserIds, frame);
+    },
+  });
+
+  return () => {
+    unsubscribeRequests();
+    unsubscribeNotifications();
+  };
+}
 
 export async function registerDiaryLive(server: FastifyInstance, db: Database): Promise<void> {
   const hub = new DiaryLiveHub();
@@ -167,6 +292,8 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
     },
   });
 
+  const unsubscribeRequestFrames = subscribeRequestFrames(hub);
+
   const heartbeat = setInterval(() => {
     hub.pingAll();
     hub.sweepStale(Date.now(), STALE_AFTER_MS);
@@ -175,9 +302,63 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
   // shutdown grace timer in index.ts).
   heartbeat.unref();
 
+  // The escalation sweep. A short timer rather than a cron because the claim
+  // is a conditional UPDATE (escalated_at IS NULL) and the email carries its
+  // own idempotency key: two replicas sweeping together escalate once between
+  // them. An external cron can still call the endpoint; it is the same pass.
+  let sweeping = false;
+  const escalationSweep = setInterval(() => {
+    if (sweeping) return;
+    sweeping = true;
+    void runRequestEscalationPass(db, { logger: server.log })
+      .then((escalated) => {
+        for (const item of escalated) {
+          const at = new Date().toISOString();
+          emit(server.log, "request.changed", {
+            venueId: item.request.venueId,
+            kind: "request.escalated",
+            requestId: item.request.id,
+            bookingId: item.request.bookingId,
+            roomId: item.request.roomId,
+            state: item.request.state,
+            audienceRoles: item.request.audienceRoles,
+            actorUserId: null,
+            at,
+          });
+          // The inbox copy too, addressed to the administrators BY NAME — the
+          // same announcement the escalation endpoint makes. Without it this
+          // path writes the notification row but the number on their nav sits
+          // still until they navigate, and the two paths disagree about what
+          // "escalated" feels like.
+          if (item.notificationIds.length > 0) {
+            emit(server.log, "notification.created", {
+              venueId: item.request.venueId,
+              audienceRoles: [],
+              recipientUserIds: item.recipientUserIds,
+              notificationIds: item.notificationIds,
+              title: item.request.roomName === null
+                ? "A request is still waiting"
+                : `A request in ${item.request.roomName} is still waiting`,
+              severity: "urgent",
+              at,
+            });
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        server.log.error({ err: error }, "request escalation sweep failed");
+      })
+      .finally(() => {
+        sweeping = false;
+      });
+  }, ESCALATION_SWEEP_INTERVAL_MS);
+  escalationSweep.unref();
+
   server.addHook("onClose", () => {
     clearInterval(heartbeat);
+    clearInterval(escalationSweep);
     unsubscribe();
+    unsubscribeRequestFrames();
   });
 
   server.get("/ws/diary", { websocket: true }, (socket, _request) => {
@@ -204,7 +385,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
         // A frame while authentication is already in flight must not abort
         // the valid attempt (review P2) — drop it quietly.
         if (authenticating) return;
-        const auth = AuthMessage.safeParse(data);
+        const auth = DiaryAuthMessage.safeParse(data);
         if (!auth.success) {
           send({ type: "error", code: "UNAUTHORIZED", message: "Authenticate first" });
           socket.close();
@@ -245,6 +426,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               socket,
               { userId: user.userId, name: profile?.name ?? "Colleague", role: user.userRole },
               Date.now(),
+              { present: auth.data.presence !== false },
             );
             send({ type: "hello", venueId, presence: hub.presenceFor(venueId) });
           } catch {

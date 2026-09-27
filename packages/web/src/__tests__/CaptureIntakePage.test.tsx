@@ -21,7 +21,10 @@ vi.mock("../components/dashboard/NotificationCenter.js", () => ({
 }));
 // The shell reads the unread count for the nav chip; this suite does not
 // exercise notifications, so the edge is stubbed like the rest of them.
-vi.mock("../api/notifications.js", () => ({ listNotifications: () => Promise.resolve([]) }));
+vi.mock("../api/notifications.js", () => ({
+  listNotifications: () => Promise.resolve([]),
+  getUnreadNotificationCount: () => Promise.resolve(0),
+}));
 
 
 const mocks = vi.hoisted(() => ({ getStatus: vi.fn() }));

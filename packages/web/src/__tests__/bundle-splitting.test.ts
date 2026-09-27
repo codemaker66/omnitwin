@@ -228,3 +228,37 @@ describe("planner — on-demand GDTF/MVR archive reader", () => {
     expect(mvr).toMatch(/import\(\s*["']\.\/gdtf-archive\.js["']\s*\)/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The request slab travels with the Day Board (T-623)
+//
+// Lane 9 first mounted its requests provider in main.tsx and imported the
+// Day Board's context from the page itself. Measured with `vite build`, that
+// took the entry script every visitor loads from 59.4 kB to 278.5 kB: the Day
+// Board page, the dashboard shell, zod, the request schemas and the API
+// client, on the public front door. The provider now wraps the Day Board's
+// route, and the slot contract is a leaf the provider can import without the
+// page. These pin both halves.
+// ---------------------------------------------------------------------------
+
+describe("the request slab travels with the Day Board (T-623)", () => {
+  it("keeps request machinery and page modules out of the app root", async () => {
+    const { codeOnly } = await readSource("src/main.tsx");
+    expect(codeOnly).not.toMatch(/from\s+["']\.\/components\/requests\//);
+    expect(codeOnly).not.toMatch(/from\s+["']\.\/pages\//);
+  });
+
+  it("brings the requests provider with the Day Board's own lazy route", async () => {
+    const { codeOnly: router } = await readSource("src/router.tsx");
+    expect(router).toMatch(/lazyWithPreload\(\(\)\s*=>\s*import\(["']\.\/pages\/hallkeeper\/DayBoardRoute\.js["']/);
+    expect(router).not.toMatch(/from\s+["']\.\/components\/requests\//);
+    const { codeOnly: route } = await readSource("src/pages/hallkeeper/DayBoardRoute.tsx");
+    expect(route).toContain("<RequestsProvider>");
+  });
+
+  it("gives the provider the slot contract without the page", async () => {
+    const { codeOnly } = await readSource("src/components/requests/RequestsProvider.tsx");
+    expect(codeOnly).toMatch(/from\s+["']\.\.\/\.\.\/pages\/hallkeeper\/lib\/slot-requests-contract\.js["']/);
+    expect(codeOnly).not.toMatch(/import\s+\{[^}]*\}\s+from\s+["'][^"']*\/DayBoardPage\.js["']/);
+  });
+});

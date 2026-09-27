@@ -381,6 +381,11 @@ async function mockDashboardRoutes(page: Page): Promise<void> {
   await page.route(`${API}/notifications*`, (route) => {
     void route.fulfill({ json: { data: [] } });
   });
+  // The shell's nav chip reads the count at its own path, which the
+  // single-segment glob above does not reach.
+  await page.route(`${API}/notifications/unread-count`, (route) => {
+    void route.fulfill({ json: { data: { unread: 0 } } });
+  });
   await page.route(`${API}/analytics/venue-dashboard*`, (route) => {
     void route.fulfill({ json: { data: revenueAnalyticsFixture() } });
   });

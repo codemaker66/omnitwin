@@ -244,6 +244,11 @@ async function mockDashboardRoutes(page: Page): Promise<void> {
       void route.fulfill({ json: { data: notificationFixture(NOW) } });
       return;
     }
+    // The shell's nav chip reads /notifications/unread-count, as the API serves it.
+    if (new URL(route.request().url()).pathname === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: 1 } } });
+      return;
+    }
     void route.fulfill({ json: { data: [notificationFixture()] } });
   });
   await page.route(`${API}/analytics/venue-dashboard**`, (route) => {
@@ -268,6 +273,11 @@ async function mockDashboardErrorRoutes(page: Page): Promise<void> {
     });
   });
   await page.route(`${API}/notifications**`, (route) => {
+    // The shell's nav chip reads /notifications/unread-count, as the API serves it.
+    if (new URL(route.request().url()).pathname === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: 0 } } });
+      return;
+    }
     void route.fulfill({ json: { data: [] } });
   });
   await page.route(`${API}/analytics/venue-dashboard**`, (route) => {

@@ -991,7 +991,13 @@ async function mockEventDayRoutes(page: Page): Promise<void> {
   await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
     void route.fulfill({ json: { data: [changeFeedFixture()] } });
   });
-  await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements`, (route) => {
+  // The board reads the room's acknowledgements (none yet, as the API would
+  // answer); only the acknowledgement it tries to save fails.
+  await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
+    if (route.request().method() === "GET") {
+      void route.fulfill({ json: { data: [] } });
+      return;
+    }
     void route.fulfill({ status: 500, json: { error: "t469 change acknowledgement failure" } });
   });
   await page.route(`${API}/ops-tasks/${TASK_ID}/status`, (route) => {
@@ -1004,6 +1010,11 @@ async function mockEventDayRoutes(page: Page): Promise<void> {
 
 async function mockOnboardingRoutes(page: Page): Promise<void> {
   await page.route(`${API}/notifications**`, (route) => {
+    // The shell's nav chip reads /notifications/unread-count, as the API serves it.
+    if (new URL(route.request().url()).pathname === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: 0 } } });
+      return;
+    }
     void route.fulfill({ json: { data: [] } });
   });
   await page.route(`${API}/enquiries**`, (route) => {
@@ -1025,6 +1036,11 @@ async function mockOnboardingRoutes(page: Page): Promise<void> {
 
 async function mockAdminRegistryRoutes(page: Page): Promise<void> {
   await page.route(`${API}/notifications**`, (route) => {
+    // The shell's nav chip reads /notifications/unread-count, as the API serves it.
+    if (new URL(route.request().url()).pathname === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: 0 } } });
+      return;
+    }
     void route.fulfill({ json: { data: [] } });
   });
   await page.route(`${API}/enquiries**`, (route) => {

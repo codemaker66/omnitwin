@@ -100,8 +100,9 @@ const HallkeeperPage = lazyWithPreload(() =>
 const HallkeeperRoomPlansPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/hallkeeper/HallkeeperRoomPlansPage.js").then((m) => ({ default: m.HallkeeperRoomPlansPage }))),
 );
-const DayBoardPage = lazyWithPreload(() =>
-  import("./pages/hallkeeper/DayBoardPage.js").then((m) => ({ default: m.DayBoardPage })),
+// The board with the requests provider around it (DayBoardRoute.tsx).
+const DayBoardRoute = lazyWithPreload(() =>
+  import("./pages/hallkeeper/DayBoardRoute.js").then((m) => ({ default: m.DayBoardRoute })),
 );
 const HallkeeperWalkthroughPage = lazyWithPreload(() =>
   cockpitImport(() => import("./pages/hallkeeper/HallkeeperWalkthroughPage.js").then((m) => ({ default: m.HallkeeperWalkthroughPage }))),
@@ -425,9 +426,9 @@ export const router = createBrowserRouter([
     path: "/hallkeeper/today",
     element: withClerk(
       <ProtectedRoute allowedRoles={VENUE_DAY_ROLES}>
-        <DayBoardPage />
+        <DayBoardRoute />
       </ProtectedRoute>,
-      DayBoardPage,
+      DayBoardRoute,
     ),
   },
   {

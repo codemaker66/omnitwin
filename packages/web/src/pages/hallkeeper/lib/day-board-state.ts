@@ -3,8 +3,12 @@ import type {
   CalendarPhaseEntry,
   CalendarResponse,
   CalendarRoom,
+  RequestKind,
+  RequestState,
+  RequestUrgency,
 } from "@omnitwin/types";
-import { formatWallTime } from "../../diary/lib/board-time.js";
+import { VENUE_TIME_ZONE, formatWallTime } from "../../diary/lib/board-time.js";
+import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board state machine (Day Board S1; plan:
@@ -31,6 +35,9 @@ const MIN_MS = 60_000;
 const ORGANISERS_WINDOW_MIN = 60;
 const GUESTS_WINDOW_MIN = 30;
 const IMMINENT_WINDOW_MIN = 10;
+/** How long after a request arrives the slot pulses. ONE pulse, then a steady
+ *  dot for as long as the request is open: a room in use is never strobed. */
+const REQUEST_PULSE_WINDOW_MS = 20_000;
 
 export type DayBoardState =
   | "scheduled"
@@ -72,6 +79,10 @@ export interface DayBoardSlot {
   readonly title: string;
   readonly eventType: string | null;
   readonly kind: CalendarBookingEntry["kind"];
+  /** What kind of booking this is, in the house's words. A hold reads as the
+   *  Diary reads it ("Provisional · 1st option"), through the Diary's own
+   *  bookingStateLabel, so the two boards cannot word one hold two ways. */
+  readonly bookingLabel: string;
   readonly startsAtMs: number;
   readonly endsAtMs: number;
   /** Earliest scheduled phase in this room, falling back to booking start.
@@ -89,6 +100,111 @@ export interface DayBoardSlot {
   readonly exceptionDetail: string | null;
   /** A warning-grade turnaround note that does not escalate the state. */
   readonly turnaroundWarning: string | null;
+  /** Open requests made against THIS booking (Ship Friday slice 10). Empty
+   *  when the board was derived without a requests input. */
+  readonly requests: readonly DayBoardSlotRequest[];
+  /** What the slot shows about those requests, or null when there are none —
+   *  an empty slot carries no chrome at all. */
+  readonly requestSignal: DayBoardRequestSignal | null;
+}
+
+// ---------------------------------------------------------------------------
+// Requests on the slot (Ship Friday slice 10, gate line 22).
+//
+// The board already owns the arithmetic of the day; a request is one more
+// thing that is true about a slot, so it is derived here rather than decided
+// inside a component. The rule the plan fixes: ONE pulse when something
+// arrives, then a steady coloured dot while it is open. Never a strobe, never
+// a sound. A slot with nothing open gets no signal at all — null, not an
+// empty badge — so the region on the card collapses to nothing.
+// ---------------------------------------------------------------------------
+
+export interface DayBoardSlotRequest {
+  readonly id: string;
+  readonly bookingId: string | null;
+  readonly kind: RequestKind;
+  readonly quantity: number | null;
+  readonly urgency: RequestUrgency;
+  readonly state: RequestState;
+  /** ISO-8601 instant, as the API serialises it. */
+  readonly createdAt: string;
+}
+
+export interface DayBoardRequestSignal {
+  /** Everything not yet finished. */
+  readonly openCount: number;
+  /** Of those, the ones nobody has even said they have seen. */
+  readonly waitingCount: number;
+  /** At least one urgent request is still waiting. */
+  readonly urgent: boolean;
+  /** One pulse while the newest arrival is fresh, then nothing. */
+  readonly motion: "pulse-once" | "none";
+  /** The steady dot the slot holds while anything is open. */
+  readonly dot: "copper" | "none";
+  /** The reduced-motion experience: the words carry the whole meaning. */
+  readonly label: string;
+  readonly newestId: string | null;
+  readonly newestAtMs: number | null;
+}
+
+function isOpenRequest(request: DayBoardSlotRequest): boolean {
+  return request.state !== "resolved";
+}
+
+/**
+ * What a slot says about its open requests at a given instant. Pure, so the
+ * slab, the board and the tests all agree — and so "one pulse, then steady"
+ * is a fact about time rather than a hope about a CSS class.
+ */
+export function deriveSlotRequestSignal(
+  requests: readonly DayBoardSlotRequest[],
+  nowMs: number,
+): DayBoardRequestSignal | null {
+  const open = requests.filter(isOpenRequest);
+  if (open.length === 0) return null;
+
+  const waiting = open.filter((request) => request.state === "sent");
+  const newest = open.reduce<DayBoardSlotRequest | null>((latest, request) => {
+    if (latest === null) return request;
+    return Date.parse(request.createdAt) > Date.parse(latest.createdAt) ? request : latest;
+  }, null);
+  const newestAtMs = newest === null ? null : Date.parse(newest.createdAt);
+  const fresh = newestAtMs !== null
+    && nowMs - newestAtMs >= 0
+    && nowMs - newestAtMs < REQUEST_PULSE_WINDOW_MS;
+
+  const head = open.length === 1 ? "One request" : `${String(open.length)} requests`;
+  const label = waiting.length === open.length
+    ? `${head} waiting`
+    : waiting.length === 0
+      ? `${head} in hand`
+      : `${head} · ${String(waiting.length)} waiting`;
+
+  return {
+    openCount: open.length,
+    waitingCount: waiting.length,
+    urgent: waiting.some((request) => request.urgency === "now"),
+    motion: fresh ? "pulse-once" : "none",
+    dot: "copper",
+    label,
+    newestId: newest?.id ?? null,
+    newestAtMs,
+  };
+}
+
+/** Group requests by the booking they were made against. A request with no
+ *  booking belongs to no slot and is simply not on the board. */
+export function groupRequestsByBooking(
+  requests: readonly DayBoardSlotRequest[],
+): ReadonlyMap<string, readonly DayBoardSlotRequest[]> {
+  const byBooking = new Map<string, DayBoardSlotRequest[]>();
+  for (const request of requests) {
+    if (request.bookingId === null) continue;
+    const list = byBooking.get(request.bookingId) ?? [];
+    list.push(request);
+    byBooking.set(request.bookingId, list);
+  }
+  return byBooking;
 }
 
 export interface DayBoardLane {
@@ -125,6 +241,7 @@ function deriveTimedState(
   booking: CalendarBookingEntry,
   setupStartsAtMs: number,
   nowMs: number,
+  timeZone: string,
 ): TimedState {
   const startsAtMs = Date.parse(booking.startsAt);
   const endsAtMs = Date.parse(booking.endsAt);
@@ -135,7 +252,7 @@ function deriveTimedState(
       stateLabel: "Scheduled end passed",
       tone: "faded",
       motion: "none",
-      countdown: `Booked until ${formatWallTime(endsAtMs)}`,
+      countdown: `Booked until ${formatWallTime(endsAtMs, timeZone)}`,
     };
   }
   if (nowMs >= startsAtMs) {
@@ -175,7 +292,7 @@ function deriveTimedState(
       tone: "green",
       motion: "pulse-4s",
       countdown: setupInMin <= 0
-        ? `First phase from ${formatWallTime(setupStartsAtMs)}`
+        ? `First phase from ${formatWallTime(setupStartsAtMs, timeZone)}`
         : `${setupStartsAtMs < startsAtMs ? "First phase" : "Starts"} in ${String(setupInMin)}m`,
     };
   }
@@ -184,18 +301,32 @@ function deriveTimedState(
     stateLabel: "Scheduled",
     tone: "quiet",
     motion: "none",
-    countdown: `Starts ${formatWallTime(startsAtMs)}`,
+    countdown: `Starts ${formatWallTime(startsAtMs, timeZone)}`,
   };
 }
 
 /** A hallkeeper preps rooms for things that are happening: ink, live holds,
  *  house blocks. The sales pipeline (prospects) and departed bookings
- *  (released/expired/cancelled/lost) never reach the board. */
-function isBoardWorthy(entry: CalendarBookingEntry): boolean {
+ *  (released/expired/cancelled/lost) never reach the board.
+ *
+ *  Exported because the event-day board asks the same question of the same
+ *  calendar and must get the same answer. It used to filter on `status` alone,
+ *  so a PROSPECT carrying the event's id could set that board's hero hour
+ *  while the sheet, the PDF and this board all ignored it — three surfaces,
+ *  three different evenings. */
+export function isBoardWorthy(entry: CalendarBookingEntry): boolean {
   return entry.status === "active" && entry.kind !== "prospect";
 }
 
-export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBoard {
+export function deriveDayBoard(
+  response: CalendarResponse,
+  nowMs: number,
+  timeZone: string = VENUE_TIME_ZONE,
+  /** Requests made against this venue's bookings. Optional: a board derived
+   *  without them is exactly the board that existed before requests did. */
+  requests: readonly DayBoardSlotRequest[] = [],
+): DayBoard {
+  const requestsByBooking = groupRequestsByBooking(requests);
   const bookings: CalendarBookingEntry[] = [];
   const phases: CalendarPhaseEntry[] = [];
   for (const entry of response.entries) {
@@ -238,9 +369,14 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
               startsAtMs,
             );
 
-          const timed = deriveTimedState(entry, setupStartsAtMs, nowMs);
+          const timed = deriveTimedState(entry, setupStartsAtMs, nowMs, timeZone);
+          const slotRequests = (requestsByBooking.get(entry.id) ?? []).filter(isOpenRequest);
+          const requestSignal = deriveSlotRequestSignal(slotRequests, nowMs);
           const blocking = blockingByBooking.get(entry.id);
-          const timeRange = `${formatWallTime(startsAtMs)} – ${formatWallTime(endsAtMs)}`;
+          const timeRange = `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
+          const bookingLabel = entry.kind === "hold"
+            ? bookingStateLabel(entry)
+            : entry.kind === "internal_block" ? "House block" : "Confirmed booking";
 
           const slot: DayBoardSlot =
             blocking !== undefined
@@ -254,6 +390,7 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
                   title: entry.title,
                   eventType: entry.eventType,
                   kind: entry.kind,
+                  bookingLabel,
                   startsAtMs,
                   endsAtMs,
                   setupStartsAtMs,
@@ -266,6 +403,8 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
                   exception: "turnaround-at-risk",
                   exceptionDetail: blocking,
                   turnaroundWarning: null,
+                  requests: slotRequests,
+                  requestSignal,
                 }
               : {
                   bookingId: entry.id,
@@ -277,6 +416,7 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
                   title: entry.title,
                   eventType: entry.eventType,
                   kind: entry.kind,
+                  bookingLabel,
                   startsAtMs,
                   endsAtMs,
                   setupStartsAtMs,
@@ -289,6 +429,8 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
                   exception: null,
                   exceptionDetail: null,
                   turnaroundWarning: warningByBooking.get(entry.id) ?? null,
+                  requests: slotRequests,
+                  requestSignal,
                 };
           return slot;
         });

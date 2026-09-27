@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
-import { USER_ROLES } from "@omnitwin/types";
-import { DIARY_READ_ROLES, DiaryLiveHub, type DiaryLiveSocket } from "../../ws/diary-live.js";
+import Fastify from "fastify";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { STAFF_AUDIENCE_ROLES, USER_ROLES } from "@omnitwin/types";
+import { __resetRegistryForTests, emit } from "../../observability/event-bus.js";
+import {
+  DIARY_READ_ROLES, DiaryAuthMessage, DiaryLiveHub, subscribeRequestFrames, type DiaryLiveSocket,
+} from "../../ws/diary-live.js";
 import { DIARY_WRITE_ROLES } from "../../services/booking-mutations.js";
 
 // ---------------------------------------------------------------------------
@@ -96,6 +100,45 @@ describe("DiaryLiveHub", () => {
     expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "A", role: "staff" }]);
   });
 
+  // The requests channel rides this door from every floor page. T-619 made
+  // the Diary's count name only colleagues who are there; a page that only
+  // listens must not put its person "here".
+  it("hears a listening connection's frames but never counts it as presence", () => {
+    const hub = new DiaryLiveHub();
+    const onDiary = fakeSocket();
+    const listening = fakeSocket();
+    hub.join(VENUE_A, onDiary, { userId: "u1", name: "Elaine", role: "hallkeeper" }, 0);
+    const presenceFrames = (): number => messagesOf(onDiary).filter((message) => message.type === "presence").length;
+    const before = presenceFrames();
+
+    const listener = hub.join(VENUE_A, listening, { userId: "u2", name: "Fiona", role: "staff" }, 0, { present: false });
+
+    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "Elaine", role: "hallkeeper" }]);
+    expect(presenceFrames()).toBe(before);
+    hub.broadcastToRoles(VENUE_A, ["staff"], { type: "request.event" });
+    expect(messagesOf(listening).some((message) => message.type === "request.event")).toBe(true);
+
+    hub.leave(VENUE_A, listener);
+    expect(presenceFrames()).toBe(before);
+    expect(hub.connectionCount(VENUE_A)).toBe(1);
+  });
+
+  it("takes a person's presence only from where they are, not from their listening page", () => {
+    const hub = new DiaryLiveHub();
+    const watcher = fakeSocket();
+    hub.join(VENUE_A, watcher, { userId: "u9", name: "Watcher", role: "admin" }, 0);
+    const diaryTab = hub.join(VENUE_A, fakeSocket(), { userId: "u1", name: "Elaine", role: "hallkeeper" }, 0);
+    hub.join(VENUE_A, fakeSocket(), { userId: "u1", name: "Elaine", role: "hallkeeper" }, 0, { present: false });
+    expect(hub.presenceFor(VENUE_A).map((person) => person.userId).sort()).toEqual(["u1", "u9"]);
+
+    // Elaine closes the Diary; her other page still listens, but she has gone.
+    hub.leave(VENUE_A, diaryTab);
+    expect(hub.presenceFor(VENUE_A).map((person) => person.userId)).toEqual(["u9"]);
+    const last = messagesOf(watcher).filter((message) => message.type === "presence").at(-1) as
+      { type: string; users: readonly { userId: string }[] } | undefined;
+    expect(last?.users.map((person) => person.userId)).toEqual(["u9"]);
+  });
+
   it("send failures never break the fanout loop", () => {
     const hub = new DiaryLiveHub();
     const broken = fakeSocket();
@@ -110,6 +153,106 @@ describe("DiaryLiveHub", () => {
       hub.broadcast(VENUE_A, { type: "diary.event" });
     }).not.toThrow();
     expect(messagesOf(healthy).some((message) => message.type === "diary.event")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Requests on the diary channel (Ship Friday slice 10). The guarantee: a frame
+// reaches only the connections whose role is in the request's OWN stored
+// audience, or the people an inbox copy names, in that venue and no other.
+// Driven through the real event bus and a real hub, so the wiring is proved,
+// not only the targeting.
+// ---------------------------------------------------------------------------
+
+describe("request frames reach only the request's own audience", () => {
+  afterEach(() => { __resetRegistryForTests(); });
+
+  const log = Fastify({ logger: false }).log;
+
+  function floorAndBeyond(hub: DiaryLiveHub): Record<string, FakeSocket> {
+    const people: Record<string, FakeSocket> = {};
+    for (const role of ["hallkeeper", "staff", "manager", "admin", "sales"] as const) {
+      people[role] = fakeSocket();
+      hub.join(VENUE_A, people[role], { userId: `${role}-a`, name: role, role }, 0);
+    }
+    people["elsewhere"] = fakeSocket();
+    hub.join(VENUE_B, people["elsewhere"], { userId: "hallkeeper-b", name: "B", role: "hallkeeper" }, 0);
+    return people;
+  }
+
+  function framesOf(socket: FakeSocket, type: string): Record<string, unknown>[] {
+    return socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+      .filter((message) => message["type"] === type);
+  }
+
+  it("targets roles within the venue, and nobody beyond them", () => {
+    const hub = new DiaryLiveHub();
+    const people = floorAndBeyond(hub);
+    hub.broadcastToRoles(VENUE_A, ["hallkeeper", "staff"], { type: "probe" });
+    expect(framesOf(people["hallkeeper"] as FakeSocket, "probe")).toHaveLength(1);
+    expect(framesOf(people["staff"] as FakeSocket, "probe")).toHaveLength(1);
+    for (const outside of ["manager", "admin", "sales", "elsewhere"]) {
+      expect(framesOf(people[outside] as FakeSocket, "probe"), outside).toHaveLength(0);
+    }
+  });
+
+  it("targets named people within the venue, and nobody when nobody is named", () => {
+    const hub = new DiaryLiveHub();
+    const people = floorAndBeyond(hub);
+    hub.broadcastToUsers(VENUE_A, ["admin-a"], { type: "probe" });
+    hub.broadcastToUsers(VENUE_A, [], { type: "nobody" });
+    expect(framesOf(people["admin"] as FakeSocket, "probe")).toHaveLength(1);
+    for (const other of ["hallkeeper", "staff", "manager", "sales", "elsewhere"]) {
+      expect(framesOf(people[other] as FakeSocket, "probe"), other).toHaveLength(0);
+    }
+    for (const socket of Object.values(people)) expect(framesOf(socket, "nobody")).toHaveLength(0);
+  });
+
+  it("routes a request change to its stored audience, and says only that something changed", () => {
+    const hub = new DiaryLiveHub();
+    const people = floorAndBeyond(hub);
+    subscribeRequestFrames(hub);
+    emit(log, "request.changed", {
+      venueId: VENUE_A, kind: "request.created", requestId: "r-1", bookingId: "b-1", roomId: "room-1",
+      state: "sent", audienceRoles: [...STAFF_AUDIENCE_ROLES], actorUserId: "hallkeeper-a",
+      at: "2026-09-26T10:00:00.000Z",
+    });
+    for (const role of ["hallkeeper", "staff", "manager", "admin"]) {
+      const frames = framesOf(people[role] as FakeSocket, "request.event");
+      expect(frames, role).toHaveLength(1);
+      expect(Object.keys(frames[0] ?? {}).sort()).toEqual(
+        ["at", "bookingId", "kind", "requestId", "roomId", "state", "type", "venueId"],
+      );
+    }
+    expect(framesOf(people["sales"] as FakeSocket, "request.event")).toHaveLength(0);
+    expect(framesOf(people["elsewhere"] as FakeSocket, "request.event")).toHaveLength(0);
+  });
+
+  it("delivers an escalation's inbox frame to the administrators it names, and no one else", () => {
+    const hub = new DiaryLiveHub();
+    const people = floorAndBeyond(hub);
+    subscribeRequestFrames(hub);
+    emit(log, "notification.created", {
+      venueId: VENUE_A, audienceRoles: [], recipientUserIds: ["admin-a"], notificationIds: ["n-1"],
+      title: "A request in Grand Hall is still waiting", severity: "urgent", at: "2026-09-26T10:03:00.000Z",
+    });
+    expect(framesOf(people["admin"] as FakeSocket, "notification.event")).toHaveLength(1);
+    for (const other of ["hallkeeper", "staff", "manager", "sales", "elsewhere"]) {
+      expect(framesOf(people[other] as FakeSocket, "notification.event"), other).toHaveLength(0);
+    }
+  });
+
+  it("stops routing once the server has closed", () => {
+    const hub = new DiaryLiveHub();
+    const people = floorAndBeyond(hub);
+    const unsubscribe = subscribeRequestFrames(hub);
+    unsubscribe();
+    emit(log, "request.changed", {
+      venueId: VENUE_A, kind: "request.updated", requestId: "r-1", bookingId: null, roomId: "room-1",
+      state: "accepted", audienceRoles: ["hallkeeper"], actorUserId: null, at: "2026-09-26T10:05:00.000Z",
+    });
+    expect(framesOf(people["hallkeeper"] as FakeSocket, "request.event")).toHaveLength(0);
   });
 });
 
@@ -162,6 +305,15 @@ describe("registerDiaryLive — source contract", () => {
     const parse = source.indexOf("AuthMessage.safeParse");
     expect(inFlightGuard).toBeGreaterThan(-1);
     expect(parse).toBeGreaterThan(inFlightGuard);
+  });
+
+  it("reads presence from the auth frame: absent is present, false only listens", async () => {
+    expect(DiaryAuthMessage.parse({ type: "auth", token: "t" }).presence).toBeUndefined();
+    expect(DiaryAuthMessage.parse({ type: "auth", token: "t", presence: false }).presence).toBe(false);
+    expect(DiaryAuthMessage.safeParse({ type: "auth", token: "t", presence: "no" }).success).toBe(false);
+    const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
+    expect(source).toContain("DiaryAuthMessage.safeParse(data)");
+    expect(source).toContain("{ present: auth.data.presence !== false }");
   });
 
   it("never joins a socket that closed while authentication was in flight", async () => {

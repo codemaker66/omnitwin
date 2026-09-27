@@ -63,7 +63,8 @@ vi.mock("@clerk/react", async (importOriginal) => ({
 }));
 vi.mock("../../../lib/clerk-session-hint.js", () => ({ hasLikelyClerkSession: () => probe.sessionHint }));
 vi.mock("../../../pages/LoginPage.js", () => ({ LoginPage: () => <div>Sign in page</div> }));
-vi.mock("../../../pages/hallkeeper/DayBoardPage.js", () => pageModule("DayBoardPage"));
+// The Day Board's route module wraps the board in the requests provider.
+vi.mock("../../../pages/hallkeeper/DayBoardRoute.js", () => pageModule("DayBoardRoute"));
 vi.mock("../../../pages/hallkeeper/HallkeeperRoomPlansPage.js", () => pageModule("HallkeeperRoomPlansPage"));
 vi.mock("../../../pages/hallkeeper/HallkeeperWalkthroughPage.js", () => pageModule("HallkeeperWalkthroughPage"));
 vi.mock("../../../pages/HallkeeperPage.js", () => pageModule("HallkeeperPage"));
@@ -98,7 +99,7 @@ const planner: Access = { role: "planner", platformRole: "none" };
 const venueAdmin: Access = { role: "admin", platformRole: "none" };
 const staff: Access = { role: "staff", platformRole: "none" };
 const DENIED: readonly DeniedRoute[] = [
-  { path: "/hallkeeper/today", page: "DayBoardPage", allowed: { role: "hallkeeper", platformRole: "none" }, denied: client, heading: "Access needed" },
+  { path: "/hallkeeper/today", page: "DayBoardRoute", allowed: { role: "hallkeeper", platformRole: "none" }, denied: client, heading: "Access needed" },
   { path: "/hallkeeper/rooms", page: "HallkeeperRoomPlansPage", allowed: planner, denied: client, heading: "Access needed" },
   // T-616: the fictional workflow walkthrough is admin-only under /dev.
   { path: "/dev/hallkeeper-walkthrough", page: "HallkeeperWalkthroughPage", allowed: venueAdmin, denied: staff, heading: "Access needed" },

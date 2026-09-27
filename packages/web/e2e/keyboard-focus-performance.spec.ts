@@ -851,6 +851,10 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
       void route.fulfill({ json: { data: [notificationFixture()] } });
       return;
     }
+    if (path === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: 1 } } });
+      return;
+    }
 
     if (path === "/configurations/reviews/pending") {
       void route.fulfill({ json: { data: { entries: [pendingReviewFixture()] } } });
@@ -1025,6 +1029,23 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
     }
     if (path === `/events/${EVENT_ID}/change-feed`) {
       void route.fulfill({ json: { data: [changeFeedFixture()] } });
+      return;
+    }
+    if (path === `/events/${EVENT_ID}/change-acknowledgements` && method === "GET") {
+      // What the room has already acknowledged, as the API would list it.
+      void route.fulfill({
+        json: {
+          data: state.acknowledgements.map((changeId) => ({
+            id: "00000000-0000-4000-8000-000000004017",
+            changeId,
+            eventId: EVENT_ID,
+            acknowledgedBy: "00000000-0000-4000-8000-000000004093",
+            acknowledgedByRole: "hallkeeper",
+            note: null,
+            createdAt: NOW,
+          })),
+        },
+      });
       return;
     }
     if (path === `/events/${EVENT_ID}/change-acknowledgements`) {

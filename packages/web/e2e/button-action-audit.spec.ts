@@ -1268,9 +1268,16 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   await page.route(`${API}/enquiries**`, (route) => {
     void route.fulfill({ json: { data: [], meta: { total: 0, limit: 20, offset: 0 } } });
   });
+  let unreadNotifications = 1;
   await page.route(`${API}/notifications**`, (route) => {
     if (route.request().method() === "PATCH") {
+      unreadNotifications = 0;
       void route.fulfill({ json: { data: notificationFixture(NOW) } });
+      return;
+    }
+    // The shell's nav chip reads /notifications/unread-count, as the API serves it.
+    if (new URL(route.request().url()).pathname === "/notifications/unread-count") {
+      void route.fulfill({ json: { data: { unread: unreadNotifications } } });
       return;
     }
     void route.fulfill({ json: { data: [notificationFixture()] } });
@@ -1641,7 +1648,25 @@ async function mockEventDayRoutes(page: Page): Promise<{
   await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
     void route.fulfill({ json: { data: [changeFeedFixture()] } });
   });
-  await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements`, (route) => {
+  await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
+    // The board reads what the room has already acknowledged: the ones this
+    // spec has saved, as the API would list them.
+    if (route.request().method() === "GET") {
+      void route.fulfill({
+        json: {
+          data: acknowledgements.map((changeId) => ({
+            id: "00000000-0000-4000-8000-000000004017",
+            changeId,
+            eventId: EVENT_ID,
+            acknowledgedBy: "00000000-0000-4000-8000-000000004093",
+            acknowledgedByRole: "hallkeeper",
+            note: null,
+            createdAt: NOW,
+          })),
+        },
+      });
+      return;
+    }
     const body = route.request().postDataJSON() as { readonly changeId?: string };
     if (body.changeId !== undefined) acknowledgements.push(body.changeId);
     void route.fulfill({
@@ -2453,6 +2478,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
       void route.fulfill({ json: { data: missingHandoffEventDayBoardFixture() } });
     });
     await page.route(`${API}/events/${EVENT_ID}/change-feed**`, (route) => {
+      void route.fulfill({ json: { data: [] } });
+    });
+    await page.route(`${API}/events/${EVENT_ID}/change-acknowledgements**`, (route) => {
       void route.fulfill({ json: { data: [] } });
     });
 
