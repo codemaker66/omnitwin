@@ -29,6 +29,7 @@ import {
   handoffPacks,
   opportunities,
   contacts,
+  spaces,
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -110,6 +111,11 @@ function selectDeskProposals(db: Database) {
     eventType: sql<string | null>`COALESCE(${opportunities.eventType}, ${enquiries.eventType})`,
     latestTotalMinor: sql<number | null>`(${latestQuote("totalMinor")})::int`,
     latestCurrency: sql<string | null>`${latestQuote("currency")}`,
+    // When a link of its was last opened. Staff read it through the preview,
+    // which never stamps, so this is the client's.
+    clientOpenedAt: sql<string | null>`(
+      SELECT to_char(max(${proposalShareTokens.lastViewedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+      FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${proposals.id})`,
   })
     .from(proposals)
     .leftJoin(opportunities, and(
@@ -570,6 +576,30 @@ export async function proposalRoutes(
     // the desk says, for a proposal opened from its address.
     const [withFacts] = await selectDeskProposals(db).where(eq(proposals.id, proposal.id)).limit(1);
     return { data: withFacts ?? proposal };
+  });
+
+  // GET /proposals/:id/preview — the proposal exactly as its client would
+  // read it, for the venue team (roadmap X1). Never counted as the client
+  // opening it: no link is used and nothing is stamped.
+  server.get("/:id/preview", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const [proposal] = await db.select().from(proposals)
+      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
+      .limit(1);
+    if (proposal === undefined) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const clientSafe = await buildClientSafeProposal(db, proposal);
+    if (clientSafe === null) {
+      return reply.status(422).send({ error: "Save a version before previewing it", code: "PROPOSAL_HAS_NO_VERSION" });
+    }
+    return { data: clientSafe };
   });
 
   // PATCH /proposals/:id — staff/admin while editable (draft / changes_requested)
@@ -1233,11 +1263,23 @@ const ShareTokenParam = z.object({
 type ShareTokenRecord = typeof proposalShareTokens.$inferSelect;
 type ProposalRecord = typeof proposals.$inferSelect;
 
+/** The event a proposal is for, as its client reads it. */
+interface ClientFacts {
+  readonly eventDate: string | null;
+  readonly guestCount: number | null;
+  readonly occasion: string | null;
+  readonly roomName: string | null;
+  readonly roomSlug: string | null;
+}
+
 interface ClientSafeProposalPayload {
   readonly title: string;
   readonly status: string;
   readonly sentAt: Date | null;
   readonly venueName: string | null;
+  readonly facts: ClientFacts;
+  /** Who accepted it and when, once it is accepted. */
+  readonly accepted: { readonly by: string | null; readonly at: Date } | null;
   readonly clientMessage: string | null;
   readonly capacityNote: string | null;
   readonly roomSummary: string | null;
@@ -1279,6 +1321,51 @@ async function resolveProposalShareToken(
   return { shareToken, proposal };
 }
 
+/**
+ * The event the proposal is for, told to its client: the date, how many are
+ * coming, the occasion and the room. The room is the layout's, else the one
+ * the guest chose on their enquiry; the rest is the deal's, else the
+ * enquiry's. Everything is read at the proposal's own venue only.
+ */
+async function clientFacts(db: Database, proposal: ProposalRecord): Promise<ClientFacts> {
+  const [deal] = proposal.opportunityId === null ? [] : await db.select({
+    preferredDate: opportunities.preferredDate,
+    guestCount: opportunities.guestCount,
+    eventType: opportunities.eventType,
+    sourceEnquiryId: opportunities.sourceEnquiryId,
+  }).from(opportunities)
+    .where(and(eq(opportunities.id, proposal.opportunityId), eq(opportunities.venueId, proposal.venueId), isNull(opportunities.deletedAt)))
+    .limit(1);
+  const enquiryId = proposal.enquiryId ?? deal?.sourceEnquiryId ?? null;
+  const [enquiry] = enquiryId === null ? [] : await db.select({
+    preferredDate: enquiries.preferredDate,
+    estimatedGuests: enquiries.estimatedGuests,
+    eventType: enquiries.eventType,
+    spaceId: enquiries.spaceId,
+    roomChosen: enquiries.roomChosen,
+  }).from(enquiries)
+    .where(and(eq(enquiries.id, enquiryId), eq(enquiries.venueId, proposal.venueId)))
+    .limit(1);
+  const [layoutRoom] = proposal.configurationId === null ? [] : await db.select({ name: spaces.name, slug: spaces.slug })
+    .from(configurations)
+    .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
+    .where(and(eq(configurations.id, proposal.configurationId), eq(spaces.venueId, proposal.venueId), isNull(spaces.deletedAt)))
+    .limit(1);
+  // An enquiry filed under a room the guest never chose names no room.
+  const [enquiryRoom] = layoutRoom !== undefined || enquiry === undefined || !enquiry.roomChosen ? [] : await db.select({ name: spaces.name, slug: spaces.slug })
+    .from(spaces)
+    .where(and(eq(spaces.id, enquiry.spaceId), eq(spaces.venueId, proposal.venueId), isNull(spaces.deletedAt)))
+    .limit(1);
+  const room = layoutRoom ?? enquiryRoom ?? null;
+  return {
+    eventDate: deal?.preferredDate ?? enquiry?.preferredDate ?? null,
+    guestCount: deal?.guestCount ?? enquiry?.estimatedGuests ?? null,
+    occasion: deal?.eventType ?? enquiry?.eventType ?? null,
+    roomName: room?.name ?? null,
+    roomSlug: room?.slug ?? null,
+  };
+}
+
 async function buildClientSafeProposal(db: Database, proposal: ProposalRecord): Promise<ClientSafeProposalPayload | null> {
   const [version] = await db.select().from(proposalVersions)
     .where(and(
@@ -1315,11 +1402,21 @@ async function buildClientSafeProposal(db: Database, proposal: ProposalRecord): 
     .orderBy(packageSelections.createdAt)
     .limit(50);
 
+  // Accepted: when, and the name the client gave as they accepted.
+  const [acceptance] = proposal.status !== "accepted" ? [] : await db.select({ at: proposalStatusHistory.createdAt })
+    .from(proposalStatusHistory)
+    .where(and(eq(proposalStatusHistory.proposalId, proposal.id), eq(proposalStatusHistory.toStatus, "accepted")))
+    .orderBy(desc(proposalStatusHistory.createdAt))
+    .limit(1);
+  const approver = [...comments].reverse().find((comment) => comment.kind === "approval_note")?.authorName ?? null;
+
   return {
     title: payload.data.title,
     status: proposal.status,
     sentAt: proposal.sentAt,
     venueName: venue?.name ?? null,
+    facts: await clientFacts(db, proposal),
+    accepted: acceptance === undefined ? null : { by: approver, at: acceptance.at },
     clientMessage: payload.data.clientMessage,
     capacityNote: payload.data.capacityNote,
     roomSummary: payload.data.roomSummary ?? null,
@@ -1385,6 +1482,8 @@ export async function publicProposalRoutes(
         status: proposal.status,
         sentAt: proposal.sentAt,
         venueName: venue?.name ?? null,
+        facts: await clientFacts(db, proposal),
+        accepted: null,
         clientMessage: payload.data.clientMessage,
         capacityNote: payload.data.capacityNote,
         roomSummary: payload.data.roomSummary ?? null,

@@ -48,6 +48,7 @@ interface DeskRow {
   readonly eventType: string | null;
   readonly latestTotalMinor: number | null;
   readonly latestCurrency: string | null;
+  readonly clientOpenedAt: string | null;
 }
 
 interface DeskBody {
@@ -60,7 +61,7 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
   let pool: Pool;
   let server: FastifyInstance;
   const fixtureSchema = `proposals_desk_${randomUUID().replaceAll("-", "")}`;
-  const tables: PgTable[] = [schema.proposals, schema.proposalVersions, schema.opportunities, schema.contacts, schema.enquiries];
+  const tables: PgTable[] = [schema.proposals, schema.proposalVersions, schema.opportunities, schema.contacts, schema.enquiries, schema.proposalShareTokens];
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: testUrl, application_name: fixtureSchema, max: 4, options: `-c search_path=${fixtureSchema}` });
@@ -83,7 +84,7 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE proposals, proposal_versions, opportunities, contacts, enquiries");
+    await pool.query("TRUNCATE proposals, proposal_versions, opportunities, contacts, enquiries, proposal_share_tokens");
   });
 
   afterAll(async () => {
@@ -221,6 +222,19 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
     expect(byId.get(quoted)).toMatchObject({ latestTotalMinor: 1_840_000, latestCurrency: "GBP" });
     expect(byId.get(unquoted)).toMatchObject({ latestTotalMinor: null, latestCurrency: null });
     expect(byId.get(unsaved)).toMatchObject({ latestTotalMinor: null, latestCurrency: null });
+  });
+
+  it("says when the client last opened any of its links, and nothing before they have", async () => {
+    const opened = await proposal("Opened", "sent", "2026-09-05T10:00:00Z", { version: 1 });
+    const unopened = await proposal("Unopened", "sent", "2026-09-05T10:00:00Z", { version: 1 });
+    await pool.query(
+      `INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix, last_viewed_at) VALUES
+       ($1, 'a', 'a', '2026-09-06T09:30:00.123Z'), ($1, 'b', 'b', '2026-09-07T14:05:00Z'), ($1, 'c', 'c', NULL), ($2, 'd', 'd', NULL)`,
+      [opened, unopened],
+    );
+    const byId = new Map((await desk()).data.map((row) => [row.id, row]));
+    expect(byId.get(opened)?.clientOpenedAt).toBe("2026-09-07T14:05:00.000Z");
+    expect(byId.get(unopened)?.clientOpenedAt).toBeNull();
   });
 
   it("keeps each venue's proposals to itself, and a role without the commercial desk to its own", async () => {
