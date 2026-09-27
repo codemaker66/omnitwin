@@ -242,6 +242,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Day Board keeps still and says what is true (T-635 N4, the hallkeeper's board watched all day): with the clock fixed at 13:00 and motion allowed, no element on the board runs an infinite animation; the legend's words are those the slots use; a finished booking keeps opacity 1; the free room is named on one line rather than given a lane; every label reads at 12 px and 4.5:1 or better; and the right arrow reads tomorrow while t returns to today.",
+      "sourceCommit": "00df5a523d842506b7804aa54049803a84821650",
+      "sourceFile": "packages/web/e2e/day-board.spec.ts",
+      "sourceFileGitBlobSha256": "d3ec1e92cfe9d9654b8c1cc87b3dd6a3c6a93bdaea0570a40f31fa6c20f9e33f",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "10f0fca6c0a47620fdd435b329cd0a27fb9581e182ff70f6151cae723eaabf36",
+      "caseIds": [
+        "1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3453,6 +3467,17 @@
       "suitePath": [
         "dashboard-state-visual-performance.spec.ts",
         "T-469 dashboard drawer visual and frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f",
+      "file": "day-board.spec.ts",
+      "title": "stays still and readable all day, speaks its legend in the slots' words, and steps the day from the keyboard",
+      "suitePath": [
+        "day-board.spec.ts",
+        "Day Board"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
