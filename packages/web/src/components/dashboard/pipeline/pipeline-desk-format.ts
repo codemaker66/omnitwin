@@ -175,7 +175,8 @@ export function pipelineSummary(input: {
         ? ["Nothing is due today; ", { strong: `${deals(due.overdue)} ${due.overdue === 1 ? "is" : "are"} overdue`, tone: "new" }, "."]
         : ["Nothing is due today or overdue."];
   const open: SummaryPart[] = openCount === 0 ? [" No deals are open."]
-    : openValueMinor === null ? [" ", { strong: deals(openCount) }, openCount === 1 ? " is open." : " are open."]
+    // No price yet reads as the count alone, as the stage counts and rows show it.
+    : openValueMinor === null || openValueMinor === 0 ? [" ", { strong: deals(openCount) }, openCount === 1 ? " is open." : " are open."]
       : [" ", { strong: formatMinorAsCurrency(openValueMinor, currency).replace(/\.00$/u, "") }, " is open across ", { strong: deals(openCount) }, "."];
   return [...owed, ...open];
 }
