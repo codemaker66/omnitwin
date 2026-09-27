@@ -71,6 +71,11 @@ export const BOARD_COPY = {
    *  the countdown is minute-granular on the shared board clock. */
   card: {
     doorsIn: (label: string): string => `Doors in ${label}`,
+    /** A hold's decision age, in copper once a week or less remains (roadmap N3). */
+    decidesToday: "Decides today",
+    decidesTomorrow: "Decides tomorrow",
+    decidesIn: (days: number): string => `Decides in ${String(days)} days`,
+    decisionOverdue: "Decision overdue",
     guests: (count: number): string => `${String(count)} guests`,
     segments: { setup: "Setup", live: "Live", teardown: "Teardown" } as const,
     /** Beside a gap shorter than its room's changeover time (T-637). */
@@ -205,6 +210,8 @@ export const BOARD_COPY = {
 
   block: {
     jointFirst: "Joint 1st",
+    /** Joint 1st on a block too narrow for the words: the British "equal first". */
+    jointFirstShort: "=1st",
     rank: (ordinal: string): string => `${ordinal} option`,
     unranked: "Provisional, no option yet",
   },

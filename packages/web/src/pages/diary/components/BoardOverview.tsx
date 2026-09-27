@@ -5,6 +5,8 @@ import { diaryRoomPhoto, DIARY_ROOM_PHOTO_SIZES } from "../../../lib/diary-room-
 import { TRADES_HALL_ROOM_CAPACITIES, type PublishedRoomSlug } from "../../../lib/trades-hall-venue-truth.js";
 import { dayColumns, msToWallInput, type BoardRange } from "../lib/board-time.js";
 import { buildOverviewIndex, type OverviewItem } from "../lib/board-overview.js";
+import { decisionAge } from "../lib/decision-age.js";
+import { BookingState } from "./BookingState.js";
 import { BOARD_COPY } from "../board-copy.js";
 
 export interface BoardOverviewProps {
@@ -68,6 +70,9 @@ export const BoardOverview = memo(function BoardOverview({ rooms, entries, range
                 const { entry, timeLabel, stateLabel } = item;
                 const severity = conflictSeverity.get(entry.id);
                 const continuation = item.startMs < day.startMs;
+                // A live hold's decision age, once a week or less remains
+                // (roadmap N3's encoding by luminance).
+                const age = entry.status === "active" && entry.kind === "hold" ? decisionAge(entry.decisionAt, nowMs) : null;
                 const client = entry.clientName ?? "";
                 const guests = entry.guestCount === null || entry.guestCount === undefined ? "" : `${String(entry.guestCount)} guests`;
                 const detail = [entry.title, timeLabel, stateLabel, client, guests].filter(Boolean).join(" · ");
@@ -78,10 +83,11 @@ export const BoardOverview = memo(function BoardOverview({ rooms, entries, range
                   onClick={() => { onOpenBooking(entry); }}
                   onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenBooking(entry); } }}
                   title={detail}
-                  aria-label={`${entry.title} — ${stateLabel}, ${timeLabel}, ${room.name}, ${day.label}${client.length > 0 ? `, ${client}` : ""}${guests.length > 0 ? `, ${guests}` : ""}${continuation ? ", continues from an earlier day" : ""}${severity === undefined ? "" : `, ${severity} conflict`}`}>
+                  aria-label={`${entry.title} — ${stateLabel}, ${timeLabel}, ${room.name}, ${day.label}${client.length > 0 ? `, ${client}` : ""}${guests.length > 0 ? `, ${guests}` : ""}${age === null ? "" : `, ${age}`}${continuation ? ", continues from an earlier day" : ""}${severity === undefined ? "" : `, ${severity} conflict`}`}>
                   {continuation ? <small className="diary-overview-continuation">Continues</small> : null}
                   <strong>{entry.title}</strong><time>{timeLabel}</time>
-                  <span className="diary-overview-meta"><span className="diary-overview-status">{stateLabel}</span>
+                  <span className="diary-overview-meta"><span className="diary-overview-status"><BookingState entry={entry} /></span>
+                    {age === null ? null : <span className="diary-overview-age">{age}</span>}
                     {severity !== undefined ? <span className={`diary-overview-warning is-${severity}`}><AlertTriangle size={12} />{severity === "blocking" ? "Conflict" : "Review"}</span> : null}</span>
                 </button>;
               })}

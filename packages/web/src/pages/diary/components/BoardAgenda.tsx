@@ -3,6 +3,8 @@ import { AlertTriangle, ArrowRight, Plus } from "lucide-react";
 import type { CalendarBookingEntry, CalendarEntry, CalendarRoom, ConflictSeverity } from "@omnitwin/types";
 import { dayColumns, type BoardRange } from "../lib/board-time.js";
 import { buildOverviewIndex, type OverviewItem } from "../lib/board-overview.js";
+import { decisionAge } from "../lib/decision-age.js";
+import { BookingState } from "./BookingState.js";
 import { BOARD_COPY } from "../board-copy.js";
 
 export interface BoardAgendaProps {
@@ -72,17 +74,19 @@ export const BoardAgenda = memo(function BoardAgenda({ rooms, entries, range, no
                 const { entry, timeLabel, stateLabel } = item;
                 const severity = conflictSeverity.get(entry.id);
                 const continuation = item.startMs < day.startMs;
+                const age = entry.status === "active" && entry.kind === "hold" ? decisionAge(entry.decisionAt, nowMs) : null;
                 return <li key={entry.id}>
                   <button type="button"
                     id={item.anchorDayMs === day.startMs ? `diary-block-${entry.id}` : `diary-block-${entry.id}-${String(day.startMs)}`}
                     data-booking-id={entry.id}
                     className={`diary-agenda-booking is-${entry.status === "active" ? entry.kind : "exited"}`}
                     onClick={() => { onOpenBooking(entry); }}
-                    aria-label={`${entry.title} — ${stateLabel}, ${timeLabel}, ${room.name}, ${day.label}${continuation ? ", continues from an earlier day" : ""}${severity === undefined ? "" : `, ${severity} conflict`}`}>
+                    aria-label={`${entry.title} — ${stateLabel}, ${timeLabel}, ${room.name}, ${day.label}${age === null ? "" : `, ${age}`}${continuation ? ", continues from an earlier day" : ""}${severity === undefined ? "" : `, ${severity} conflict`}`}>
                     <time className="diary-agenda-time">{timeLabel}</time>
                     <span className="diary-agenda-title">{entry.title}</span>
                     <span className="diary-agenda-meta">
-                      {`${room.name} · ${stateLabel}${continuation ? ` · ${copy.continues}` : ""}`}
+                      <span>{`${room.name} · `}<BookingState entry={entry} />{continuation ? ` · ${copy.continues}` : ""}</span>
+                      {age === null ? null : <span className="diary-agenda-age">{age}</span>}
                       {severity === undefined ? null : <span className={`diary-overview-warning is-${severity}`}>
                         <AlertTriangle size={12} aria-hidden="true" />{severity === "blocking" ? "Conflict" : "Review"}</span>}
                     </span>

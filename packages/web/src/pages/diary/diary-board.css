@@ -39,7 +39,8 @@
 /* What the booking is, first (roadmap N3), with the legend's own swatch. */
 .diary-booking-detail .diary-booking-standing { display: flex; align-items: center; gap: 7px; margin: 0 0 11px; color: var(--house-ink-2); font-size: 13px; font-weight: 600; }
 .diary-booking-standing::before { content: ''; flex: none; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #aabda5; background: #cbd9c3; }
-.diary-booking-standing[data-kind="hold"]::before { background: #f3e7bb; border-color: #dca475; }
+.diary-booking-standing[data-kind="ink"]::before { background: var(--house-forest); border-color: var(--house-forest-deep); }
+.diary-booking-standing[data-kind="hold"]::before { background: var(--house-sheet); border-color: #dca475; }
 .diary-booking-standing[data-kind="prospect"]::before { background: #fbfcf8; border-style: dashed; }
 .diary-booking-standing[data-kind="internal_block"]::before { background: #d7e2de; }
 .diary-booking-standing[data-kind="exited"]::before { background: transparent; border-color: #c9ccc2; }
@@ -101,7 +102,8 @@
 .diary-status-retry { min-height: 28px; padding: 2px 6px; border: 0; background: transparent; color: #294f40; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
 .diary-legend-item { display: flex; gap: 6px; align-items: center; }
 .diary-legend-item::before { content: ''; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #aabda5; background: #cbd9c3; }
-.diary-legend-item.is-hold::before { background: #f3e7bb; border-color: #dca475; }
+.diary-legend-item.is-ink::before { background: var(--house-forest); border-color: var(--house-forest-deep); }
+.diary-legend-item.is-hold::before { background: var(--house-sheet); border-color: #dca475; }
 .diary-legend-item.is-prospect::before { background: #fbfcf8; border-style: dashed; }
 .diary-legend-item.is-internal_block::before { background: #d7e2de; }
 .diary-legend-item.is-phase::before { background: #f6f6ef; border-style: dotted; }
@@ -140,21 +142,39 @@
 .diary-overview-row:hover .diary-overview-new, .diary-overview-new:focus-visible { opacity: 1; }
 .diary-overview-new:hover { border-color: var(--house-edge); background: var(--house-sheet-hover); }
 @media (hover: none) { .diary-overview-new { opacity: 1; } }
-.diary-overview-booking { width: 100%; min-height: 88px; border: 1px solid #bacbb0; border-radius: 7px; background: #d9e4cf; color: #294431; padding: 9px; text-align: left; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; transition: border-color 160ms ease,box-shadow 160ms ease; }
-.diary-overview-booking:hover { border-color: #6c8d65; box-shadow: 0 3px 8px #24452a18; }
+.diary-overview-booking { --diary-conflict-edge: 0 0 #0000; width: 100%; min-height: 88px; border: 1px solid #bacbb0; border-radius: 7px; background: #d9e4cf; color: #294431; padding: 9px; text-align: left; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; box-shadow: var(--diary-conflict-edge); transition: border-color 160ms ease,box-shadow 160ms ease; }
+.diary-overview-booking:hover { border-color: #6c8d65; box-shadow: var(--diary-conflict-edge), 0 3px 8px #24452a18; }
 .diary-overview-booking strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13px; line-height: 1.35; font-weight: 650; }
 .diary-overview-booking time { display: block; font-size: 12px; line-height: 1.35; font-variant-numeric: tabular-nums; }
-.diary-overview-booking.is-hold { background: #f5e9bf; border-color: #dca475; color: #7e4620; }
+/* Commitment by luminance (roadmap N3): a confirmed booking is forest with
+   cream words; a provisional hold is ivory, its option and a near decision in
+   copper; interest only is dashed. Confirmed against a 1st option measures
+   about 9:1, where the old sage and yellow measured 1.08:1. */
+.diary-overview-booking.is-ink { background: var(--house-forest); border-color: var(--house-forest-deep); color: var(--house-forest-ink-1); }
+.diary-overview-booking.is-ink time, .diary-overview-booking.is-ink .diary-overview-meta { color: var(--house-forest-ink-2); }
+.diary-overview-booking.is-ink:hover { border-color: var(--house-forest-edge); }
+.diary-overview-booking.is-hold { background: var(--house-sheet); border-color: #dca475; color: var(--house-ink-1); }
+.diary-overview-booking.is-hold:hover { border-color: var(--house-copper-dot); }
 .diary-overview-booking.is-prospect { background: #f6f8f0; border-color: #b7c7ac; border-style: dashed; }
 .diary-overview-booking.is-internal_block { background: #e0e9e4; border-color: #b9cdc1; }
 .diary-overview-booking.is-exited { background: #f3f2ec; border-color: #e0dfd5; color: var(--house-ink-3); }
-.diary-overview-booking.has-blocking { background: #f9e1d8; border-color: #d79888; }
+/* A conflict is a brick edge and its word over the booking's own fill, so its
+   commitment still shows; a review is the same in copper. */
+.diary-overview-booking.has-blocking { --diary-conflict-edge: inset 4px 0 0 var(--house-brick-dot); }
+.diary-overview-booking.has-warning { --diary-conflict-edge: inset 4px 0 0 var(--house-copper-dot); }
+.diary-overview-booking.is-ink.has-blocking { --diary-conflict-edge: inset 4px 0 0 var(--house-brick-lit); }
+.diary-overview-booking.is-ink.has-warning { --diary-conflict-edge: inset 4px 0 0 var(--house-copper-lit); }
 .diary-overview-meta { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; }
 .diary-overview-status { font-size: 12px; line-height: 1.3; }
 .diary-overview-warning { display: flex; align-items: center; gap: 4px; }
 .diary-overview-continuation { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
 .diary-overview-warning { color: var(--house-copper-text); font-size: 12px; font-weight: 600; }
 .diary-overview-warning.is-blocking { color: #a33b30; }
+.diary-overview-booking.is-ink .diary-overview-warning { color: var(--house-copper-lit); }
+.diary-overview-booking.is-ink .diary-overview-warning.is-blocking { color: var(--house-brick-lit); }
+.diary-option, .diary-overview-age, .diary-agenda-age { color: var(--house-copper-text); font-weight: 600; }
+/* Under the hold's option, on a line of its own, before any warning. */
+.diary-overview-age { flex-basis: 100%; font-size: 12px; line-height: 1.3; }
 .diary-overview-phase { background: #f2f5ee; border: 1px dashed #bdcbb4; border-radius: 5px; padding: 8px; display: flex; flex-direction: column; gap: 5px; color: var(--house-ink-3); font-size: 12px; overflow-wrap: anywhere; }
 .diary-overview-phase > span { text-transform: uppercase; letter-spacing: .035em; font-size: 12px; }
 .diary-overview-phase strong, .diary-overview-phase small, .diary-overview-phase time { font-size: 12px; }
@@ -173,6 +193,7 @@
 .diary-agenda-booking, .diary-agenda-phase { width: 100%; display: grid; grid-template-columns: 88px minmax(0,1fr); column-gap: 10px; row-gap: 2px; align-items: baseline; padding: 11px 12px 11px 9px; border-left: 3px solid #aabda5; text-align: left; color: var(--house-ink-1); }
 .diary-agenda-booking { min-height: 44px; border-top: 0; border-right: 0; border-bottom: 0; background: transparent; font: inherit; cursor: pointer; transition: background-color 140ms ease; }
 .diary-agenda-booking:hover { background: #f1f4ea; }
+.diary-agenda-booking.is-ink { border-left-color: var(--house-forest); }
 .diary-agenda-booking.is-hold { border-left-color: #dca475; }
 .diary-agenda-booking.is-prospect { border-left-style: dashed; border-left-color: #9aa89c; }
 .diary-agenda-booking.is-internal_block { border-left-color: #9fb5ad; }
@@ -228,15 +249,15 @@ button.diary-slip-date:active { transform: scale(0.97); }
 .diary-decision-when { font-size: 12px; font-weight: 600; color: var(--house-ink-2); }
 .diary-decisions-group.is-overdue .diary-decision-when { color: var(--house-copper-text); }
 /* Contested dates (roadmap N3): one card per room and time, its ladder as
-   rows. Each row's edge is the legend's own: amber for a provisional hold,
-   sage for a confirmed booking, which always leads. */
+   rows. Each row's edge is the legend's own: copper for a provisional hold,
+   forest for a confirmed booking, which always leads. */
 .diary-contested-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .diary-contested-date { border: 1px solid #d8dfcf; background: #fffdf7; border-radius: 7px; overflow: hidden; }
 .diary-contested-when { margin: 0; padding: 10px 12px 7px; color: var(--house-ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .diary-contested-ladder { list-style: none; padding: 0; margin: 0; }
 .diary-contested-ladder li + li .diary-contested-booking { border-top: 1px solid #e7e9df; }
 .diary-contested-booking { width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 9px 12px 10px 11px; border: 0; border-left: 3px solid #dca475; background: transparent; color: var(--house-ink-1); font: inherit; text-align: left; cursor: pointer; transition: background-color 140ms ease; }
-.diary-contested-booking.is-confirmed { border-left-color: #6f917a; }
+.diary-contested-booking.is-confirmed { border-left-color: var(--house-forest); }
 .diary-contested-booking:hover { background: #e9efdf; }
 .diary-contested-booking .diary-decision-when.is-overdue { color: var(--house-copper-text); }
 .diary-conflicts { background: #f6e8de; border-color: #e6d2c2; }
@@ -289,24 +310,46 @@ button.diary-slip-date:active { transform: scale(0.97); }
 .diary-block.is-lifted { touch-action: none; }
 /* What the finger picked up casts a shadow. No transform: a block's position
    on the timeline is data. */
-.diary-block.is-lifted .diary-block-card { box-shadow: 0 6px 16px rgb(20 48 42 / 28%); }
-.diary-block-card { display: flex; flex-direction: column; gap: 5px; height: 100%; overflow: hidden; padding: 9px; background: #d8e4cc; border: 1px solid #b5caa5; border-radius: 7px; }
-.diary-block.is-hold .diary-block-card { background: #f5e8b9; border-color: #dca475; color: #6a542e; }
+.diary-block.is-lifted .diary-block-card { box-shadow: var(--diary-conflict-edge), 0 6px 16px rgb(20 48 42 / 28%); }
+.diary-block-card { --diary-conflict-edge: 0 0 #0000; display: flex; flex-direction: column; gap: 5px; height: 100%; overflow: hidden; padding: 9px; background: #d8e4cc; border: 1px solid #b5caa5; border-radius: 7px; box-shadow: var(--diary-conflict-edge); }
+/* The overview's encoding by luminance, on the timeline: forest confirmed,
+   ivory holds with their option and a near decision in copper. */
+.diary-block.is-ink .diary-block-card { background: var(--house-forest); border-color: var(--house-forest-deep); color: var(--house-forest-ink-1); }
+.diary-block.is-ink .diary-block-time, .diary-block.is-ink .diary-block-client { color: var(--house-forest-ink-2); }
+.diary-block.is-hold .diary-block-card { background: var(--house-sheet); border-color: #dca475; color: var(--house-ink-1); }
+.diary-block.is-hold .diary-block-chip, .diary-block.is-hold .diary-block-decision { color: var(--house-copper-text); font-weight: 600; }
 .diary-block.is-prospect .diary-block-card { background: #f6f8ef; border-style: dashed; }
 .diary-block.is-internal_block .diary-block-card { background: #dce7e0; border-color: #b6cabe; }
 .diary-block.is-exited .diary-block-card { background: #f0f0e8; color: var(--house-ink-3); border-color: #dce0d3; }
-.diary-block.has-conflict-blocking .diary-block-card { background: #f8dfd4; border-color: #d78e79; }
-.diary-block.has-conflict-warning .diary-block-card { border-color: #c98a5b; }
+.diary-block.has-conflict-blocking .diary-block-card { --diary-conflict-edge: inset 4px 0 0 var(--house-brick-dot); }
+.diary-block.has-conflict-warning .diary-block-card { --diary-conflict-edge: inset 4px 0 0 var(--house-copper-dot); }
+.diary-block.is-ink.has-conflict-blocking .diary-block-card { --diary-conflict-edge: inset 4px 0 0 var(--house-brick-lit); }
+.diary-block.is-ink.has-conflict-warning .diary-block-card { --diary-conflict-edge: inset 4px 0 0 var(--house-copper-lit); }
 .diary-block:hover .diary-block-card { border-color: #628454; }
+.diary-block.is-ink:hover .diary-block-card { border-color: var(--house-forest-edge); }
+.diary-block.is-hold:hover .diary-block-card { border-color: var(--house-copper-dot); }
 .diary-block-main { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
 .diary-block-title { font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .diary-block-time { font-size: 12px; font-variant-numeric: tabular-nums; }
 .diary-block-face { display: flex; flex-direction: column; gap: 3px; }
-.diary-block-chip, .diary-block-countdown, .diary-block-client { font-size: 12px; }
+.diary-block-chip, .diary-block-countdown, .diary-block-client, .diary-block-decision { font-size: 12px; }
+/* The option never wraps: a narrow block shows its numeral alone. The time
+   keeps to one line, into the card's padding if it must. */
+.diary-block-chip, .diary-block-time { flex: none; white-space: nowrap; }
+/* The face's second line: the client, or a near decision, and the conflict's
+   word at its end. */
+.diary-block-note { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.diary-block-client, .diary-block-decision { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diary-block-segments { position: relative; display: block; height: 8px; margin-top: auto; background: #aabf9a; }
 .diary-block-segment { position: absolute; height: 8px; overflow: hidden; font-size: 0; background: #c5d4b8; }
 .diary-block-segment.is-live { background: #6f8d5d; }
-.diary-block-stamp { position: absolute; right: 5px; bottom: 5px; font-size: 12px; color: #a53f30; }
+.diary-block.is-ink .diary-block-segments { background: var(--house-forest-rule); }
+.diary-block.is-ink .diary-block-segment { background: var(--house-forest-edge); }
+.diary-block.is-ink .diary-block-segment.is-live { background: var(--house-forest-ink-2); }
+.diary-block-stamp { flex: none; margin-left: auto; font-size: 12px; font-weight: 600; color: #a53f30; }
+.diary-block-stamp.is-warning { color: var(--house-copper-text); }
+.diary-block.is-ink .diary-block-stamp { color: var(--house-brick-lit); }
+.diary-block.is-ink .diary-block-stamp.is-warning { color: var(--house-copper-lit); }
 .diary-block.is-dragging { opacity: .35; }
 .diary-phase-strip { position: absolute; border: 1px dashed #96b697; border-radius: 3px; height: 16px; overflow: hidden; padding: 1px 4px; background: #e4ede0; color: var(--house-ink-3); font-size: 12px; }
 .diary-gap { position: absolute; bottom: 4px; height: 17px; display: flex; justify-content: center; align-items: center; color: var(--house-ink-3); pointer-events: none; font-size: 12px; }

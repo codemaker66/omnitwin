@@ -6,6 +6,7 @@ import {
   VENUE_ID,
   cancels,
   emulate,
+  fillContrast,
   openDiary,
   touch,
   unreadableText,
@@ -84,9 +85,19 @@ test.describe("Diary timetable", () => {
     const found = await unreadableText(page, ".diary-view-menu", "view menu");
     await page.keyboard.press("Escape");
     found.push(...await unreadableText(page, ".diary-page", "overview"));
+    // Commitment by luminance (roadmap N3): the confirmed dinner's fill is the
+    // darker, 3:1 or more against the 1st-option wedding's, on both boards.
+    const confirmed = page.getByRole("button", { name: /^Hammermen annual dinner — /u });
+    const firstOption = page.getByRole("button", { name: /^MacLeod wedding — /u });
+    const overviewFills = await fillContrast(confirmed, firstOption);
+    expect(overviewFills.ordered).toBe(true);
+    expect(overviewFills.ratio).toBeGreaterThanOrEqual(3);
     await page.getByRole("button", { name: "Timeline" }).click();
     await expect(page.locator(".diary-lane").first()).toBeVisible();
     found.push(...await unreadableText(page, ".diary-page", "timeline"));
+    const timelineFills = await fillContrast(confirmed, firstOption);
+    expect(timelineFills.ordered).toBe(true);
+    expect(timelineFills.ratio).toBeGreaterThanOrEqual(3);
     await page.getByRole("button", { name: "Day", exact: true }).click();
     await expect(page.locator(".diary-lane").first()).toBeVisible();
     found.push(...await unreadableText(page, ".diary-page", "day"));

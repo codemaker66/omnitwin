@@ -23,6 +23,7 @@ import {
   type BoardRange,
   type DayColumn,
 } from "../lib/board-time.js";
+import { decisionAge } from "../lib/decision-age.js";
 import { laneGaps, laneUtilisation, layoutLane, type LaneGap, type LaneLayout, type PositionedBlock } from "../lib/board-layout.js";
 import { changeoverDuration, changeoverDurationWords } from "../../../components/dashboard/changeovers/changeover-format.js";
 import type { Ghost } from "../lib/board-drag.js";
@@ -45,6 +46,8 @@ const TIME_MIN_WIDTH = 88;
 const FACE_MIN_WIDTH = 150;
 const COUNTDOWN_WINDOW_MS = 4 * 3_600_000;
 const SEGMENT_LABEL_MIN_PX = 46;
+/** "Provisional, no option yet" crowds out the title below this. */
+const UNRANKED_CHIP_MIN_WIDTH = 300;
 const GAP_LABEL_MIN_PX = 56;
 const GAP_NOTE_MIN_PX = 120;
 const CREATE_SNAP_MINUTES = 15;
@@ -85,12 +88,16 @@ export interface BoardGridProps {
 export type OpenGap = (room: { readonly id: string; readonly name: string }, gap: LaneGap, opener: HTMLElement) => void;
 
 
-function rankChip(block: PositionedBlock): string | null {
+/** A hold's option as its block shows it: in full where the block is wide
+ *  enough to keep its title, as the copper numeral alone where it is narrow
+ *  (roadmap N3). The block's label always says it in full. */
+function rankChip(block: PositionedBlock, width: number): string | null {
   const { entry } = block;
   if (entry.kind !== "hold") return null;
-  if (entry.rank === null) return BOARD_COPY.block.unranked;
-  if (entry.rank === 1 && entry.jointFlag) return BOARD_COPY.block.jointFirst;
-  return BOARD_COPY.block.rank(ordinal(entry.rank));
+  const roomy = width >= FACE_MIN_WIDTH;
+  if (entry.rank === null) return width >= UNRANKED_CHIP_MIN_WIDTH ? BOARD_COPY.block.unranked : null;
+  if (entry.rank === 1 && entry.jointFlag) return roomy ? BOARD_COPY.block.jointFirst : BOARD_COPY.block.jointFirstShort;
+  return roomy ? BOARD_COPY.block.rank(ordinal(entry.rank)) : ordinal(entry.rank);
 }
 
 
@@ -138,6 +145,9 @@ interface BoardBlockProps {
   /** The doors countdown, worked out by the lane: the block re-renders only
    *  when its text changes, not on every minute tick. */
   readonly countdown: string | null;
+  /** A live hold's decision age once a week or less remains (roadmap N3),
+   *  worked out by the lane in the same way. */
+  readonly decision: string | null;
   readonly beingDragged: boolean;
   /** A finger or pen is carrying this block: only it stops the page scrolling. */
   readonly lifted: boolean;
@@ -155,6 +165,7 @@ const BoardBlock = memo(function BoardBlock({
   severity,
   writable,
   countdown,
+  decision,
   beingDragged,
   lifted,
   handlersFor,
@@ -167,7 +178,8 @@ const BoardBlock = memo(function BoardBlock({
     msToX(clampedEnd, range, pxPerHour) - left,
     MIN_BLOCK_WIDTH,
   );
-  const chip = rankChip(block);
+  const chip = rankChip(block, width);
+  const option = rankChip(block, Number.POSITIVE_INFINITY);
   const isActive = block.entry.status === "active";
   const descriptor: DragBlockDescriptor = {
     id: block.entry.id,
@@ -186,7 +198,7 @@ const BoardBlock = memo(function BoardBlock({
     guestCount === null || guestCount === 0 ? null : BOARD_COPY.card.guests(guestCount),
   ].filter((part): part is string => part !== null);
   const stateClass = `is-${block.entry.status === "active" ? block.entry.kind : "exited"}`;
-  const ariaLabel = `${block.entry.title} — ${BOARD_COPY.legend[block.entry.kind]}, ${timeLabel}, ${roomName}${faceParts.length === 0 ? "" : `, ${faceParts.join(", ")}`}${countdown === null ? "" : `, ${countdown}`}${chip === null ? "" : `, ${chip}`}${severity === undefined ? "" : ", has a conflict"}${writable && isActive ? `. ${BOARD_COPY.drag.grabHint}` : ""}`;
+  const ariaLabel = `${block.entry.title} — ${BOARD_COPY.legend[block.entry.kind]}, ${timeLabel}, ${roomName}${faceParts.length === 0 ? "" : `, ${faceParts.join(", ")}`}${countdown === null ? "" : `, ${countdown}`}${option === null ? "" : `, ${option}`}${decision === null ? "" : `, ${decision}`}${severity === undefined ? "" : ", has a conflict"}${writable && isActive ? `. ${BOARD_COPY.drag.grabHint}` : ""}`;
 
   return (
     <button
@@ -229,8 +241,22 @@ const BoardBlock = memo(function BoardBlock({
       {width >= TIME_MIN_WIDTH ? (
         <span className="diary-block-face">
           <span className="diary-block-time">{timeLabel}</span>
-          {faceParts.length > 0 && width >= FACE_MIN_WIDTH ? (
-            <span className="diary-block-client">{faceParts.join(" · ")}</span>
+          {/* The face's second line: a near decision before the client, and
+              the conflict's word beside it, in the flow so it covers nothing. */}
+          {((decision !== null || faceParts.length > 0) && width >= FACE_MIN_WIDTH) || severity !== undefined ? (
+            <span className="diary-block-note">
+              {width < FACE_MIN_WIDTH ? null : decision !== null ? (
+                <span className="diary-block-decision">{decision}</span>
+              ) : faceParts.length > 0 ? (
+                <span className="diary-block-client">{faceParts.join(" · ")}</span>
+              ) : null}
+              {severity === undefined ? null : (
+                // Every conflict edge comes with its word (roadmap N3).
+                <span className={`diary-block-stamp is-${severity}`} aria-hidden="true">
+                  {severity === "blocking" ? "Conflict" : "Review"}
+                </span>
+              )}
+            </span>
           ) : null}
         </span>
       ) : null}
@@ -286,11 +312,6 @@ const BoardBlock = memo(function BoardBlock({
               );
             });
           })()}
-        </span>
-      ) : null}
-      {severity === "blocking" ? (
-        <span className="diary-block-stamp" aria-hidden="true">
-          Conflict
         </span>
       ) : null}
       </span>
@@ -522,6 +543,7 @@ const BoardLane = memo(function BoardLane({
             block.entry.status === "active" && block.entry.kind === "ink" && startsInMs > 0 && startsInMs <= COUNTDOWN_WINDOW_MS
               ? BOARD_COPY.card.doorsIn(countdownLabel(startsInMs))
               : null;
+          const decision = block.entry.status === "active" && block.entry.kind === "hold" ? decisionAge(block.entry.decisionAt, nowMs) : null;
           return (
             <BoardBlock
               key={block.entry.id}
@@ -532,6 +554,7 @@ const BoardLane = memo(function BoardLane({
               severity={conflictSeverity.get(block.entry.id)}
               writable={writable}
               countdown={countdown}
+              decision={decision}
               beingDragged={activeBlockId === block.entry.id}
               lifted={liftedBlockId === block.entry.id}
               handlersFor={handlersFor}

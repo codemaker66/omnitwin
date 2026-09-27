@@ -42,6 +42,34 @@ describe("BoardOverview", () => {
     expect(screen.getAllByText("Continues")).toHaveLength(2);
     expect(screen.getAllByText("Review")).toHaveLength(3);
   });
+  it("names a live hold's option in copper, and its decision once a week or less remains", () => {
+    // Monday 7 September 2026, 09:00 BST.
+    const nowMs = Date.parse("2026-09-07T08:00:00Z");
+    const hold = { ...entry, kind: "hold" as const, state: "hold" as const, eventType: "wedding" };
+    const entries: readonly CalendarEntry[] = [
+      entry,
+      { ...hold, id: "wedding", title: "MacLeod wedding", rank: 1, decisionAt: "2026-09-09T11:00:00Z", startsAt: "2026-09-12T12:00:00Z", endsAt: "2026-09-12T21:30:00Z" },
+      { ...hold, id: "ceilidh", title: "Robertson ceilidh", rank: 2, decisionAt: "2026-10-01T11:00:00Z", startsAt: "2026-09-11T16:00:00Z", endsAt: "2026-09-11T21:00:00Z" },
+      { ...hold, id: "released", title: "Released lunch", status: "released", state: "released", rank: 1, decisionAt: "2026-09-09T11:00:00Z",
+        startsAt: "2026-09-10T11:00:00Z", endsAt: "2026-09-10T13:00:00Z" },
+    ];
+    render(<BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
+      conflictSeverity={new Map()} onOpenBooking={vi.fn()} onOpenDay={vi.fn()} />);
+    const card = (id: string): Element | null => document.querySelector(`[data-booking-id='${id}']`);
+    expect(card("wedding")?.querySelector(".diary-overview-status")?.textContent).toBe("Provisional · 1st option");
+    expect(card("wedding")?.querySelector(".diary-option")?.textContent).toBe("1st option");
+    expect(card("wedding")?.querySelector(".diary-overview-age")?.textContent).toBe("Decides in 2 days");
+    expect(card("wedding")?.getAttribute("aria-label")).toContain(", Decides in 2 days");
+    // Further off than a week, the option alone.
+    expect(card("ceilidh")?.querySelector(".diary-option")?.textContent).toBe("2nd option");
+    expect(card("ceilidh")?.querySelector(".diary-overview-age")).toBeNull();
+    // A confirmed booking and a released hold carry neither.
+    for (const id of ["short-booking", "released"]) {
+      expect(card(id)?.querySelector(".diary-option, .diary-overview-age")).toBeNull();
+    }
+    expect(card("released")?.querySelector(".diary-overview-status")?.textContent).toBe("Released");
+  });
+
   it("opens a venue-local day using the actual day boundary", () => {
     const onOpenDay = vi.fn();
     render(<BoardOverview rooms={rooms} entries={[entry]} range={range} nowMs={range.fromMs}

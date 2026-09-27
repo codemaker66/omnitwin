@@ -219,3 +219,67 @@ describe("BoardGrid — the day view opens where the day is (roadmap N3)", () =>
     expect(scroller().scrollLeft).toBe(15.5 * DAY_PX);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Commitment by luminance (roadmap N3), on the timeline: a live hold names its
+// option and, a week or less out, its decision in the countdown's place; every
+// conflict edge comes with its word.
+// ---------------------------------------------------------------------------
+
+describe("BoardGrid holds and conflicts", () => {
+  const DAY = boardRange(Date.parse("2026-09-10T12:00:00Z"), "day");
+  // Tuesday 8 September 2026, 09:00 BST.
+  const props = {
+    rooms: ROOMS, range: DAY, pxPerHour: 96, writable: true, nowMs: Date.parse("2026-09-08T08:00:00Z"),
+    drag: dragOf(() => HANDLERS, null, null),
+  };
+  const at = (id: string, spaceId: string, overrides: Partial<CalendarBookingEntry> = {}): CalendarBookingEntry =>
+    booking(id, spaceId, "2026-09-10T09:00:00Z", "2026-09-10T12:00:00Z", overrides);
+
+  it("shows a live hold's decision a week or less out, in the client's place, and nothing further off", () => {
+    const client = { clientName: "Fiona and Ross MacLeod" };
+    render(<BoardGrid {...props} conflictSeverity={new Map()} entries={[
+      at("near", ROOM_A, { kind: "hold", state: "hold", rank: 1, decisionAt: "2026-09-09T11:00:00Z", ...client }),
+      at("far", ROOM_B, { kind: "hold", state: "hold", rank: 2, decisionAt: "2026-09-20T11:00:00Z", ...client }),
+      at("gone", ROOM_C, { kind: "hold", status: "released", state: "released", rank: 1, decisionAt: "2026-09-09T11:00:00Z" }),
+    ]} />);
+    const near = document.getElementById("diary-block-near");
+    expect(near?.querySelector(".diary-block-decision")?.textContent).toBe("Decides tomorrow");
+    expect(near?.querySelector(".diary-block-chip")?.textContent).toBe("1st option");
+    expect(near?.querySelector(".diary-block-client")).toBeNull();
+    expect(near?.getAttribute("aria-label")).toContain("Fiona and Ross MacLeod");
+    expect(near?.getAttribute("aria-label")).toContain(", Decides tomorrow");
+    expect(document.querySelector("#diary-block-far .diary-block-chip")?.textContent).toBe("2nd option");
+    expect(document.querySelector("#diary-block-far .diary-block-decision")).toBeNull();
+    expect(document.querySelector("#diary-block-far .diary-block-client")?.textContent).toBe("Fiona and Ross MacLeod");
+    expect(document.querySelector("#diary-block-gone .diary-block-decision")).toBeNull();
+  });
+
+  it("names the option by its numeral on a block too narrow for the words, and in full to a screen reader", () => {
+    const holds = [
+      at("second", ROOM_A, { kind: "hold", state: "hold", rank: 2 }),
+      at("joint", ROOM_B, { kind: "hold", state: "hold", rank: 1, jointFlag: true }),
+      at("open", ROOM_C, { kind: "hold", state: "hold", rank: null }),
+    ];
+    const chip = (id: string): string | null | undefined => document.querySelector(`#diary-block-${id} .diary-block-chip`)?.textContent;
+    const label = (id: string): string | null | undefined => document.getElementById(`diary-block-${id}`)?.getAttribute("aria-label");
+    // Three hours at 30 px an hour: 90 px, room for the time but not the words.
+    const view = render(<BoardGrid {...props} pxPerHour={30} conflictSeverity={new Map()} entries={holds} />);
+    // A joint 1st says so even here: "=1st", not a sole "1st".
+    expect([chip("second"), chip("joint"), chip("open")]).toEqual(["2nd", "=1st", undefined]);
+    expect(label("second")).toContain(", 2nd option");
+    expect(label("joint")).toContain(", Joint 1st");
+    expect(label("open")).toContain(", Provisional, no option yet");
+    // Three hours at 110 px an hour: the words in full.
+    view.rerender(<BoardGrid {...props} pxPerHour={110} conflictSeverity={new Map()} entries={holds} />);
+    expect([chip("second"), chip("joint"), chip("open")]).toEqual(["2nd option", "Joint 1st", "Provisional, no option yet"]);
+  });
+
+  it("gives every conflict edge its word", () => {
+    render(<BoardGrid {...props} entries={[at("clash", ROOM_A), at("review", ROOM_B), at("clear", ROOM_C)]}
+      conflictSeverity={new Map<string, ConflictSeverity>([["clash", "blocking"], ["review", "warning"]])} />);
+    expect(document.querySelector("#diary-block-clash.has-conflict-blocking .diary-block-stamp")?.textContent).toBe("Conflict");
+    expect(document.querySelector("#diary-block-review.has-conflict-warning .diary-block-stamp.is-warning")?.textContent).toBe("Review");
+    expect(document.querySelector("#diary-block-clear .diary-block-stamp")).toBeNull();
+  });
+});

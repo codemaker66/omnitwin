@@ -1,4 +1,4 @@
-import { expect, type CDPSession, type Page } from "@playwright/test";
+import { expect, type CDPSession, type Locator, type Page } from "@playwright/test";
 import type {
   Booking,
   BookingKind,
@@ -286,6 +286,25 @@ export async function cancels(page: Page): Promise<number> {
 
 export async function touch(cdp: CDPSession, type: "touchStart" | "touchMove" | "touchEnd", point: { x: number; y: number } | null): Promise<void> {
   await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: point === null ? [] : [{ x: point.x, y: point.y }] });
+}
+
+/**
+ * The luminance contrast between two bookings' fills (roadmap N3: commitment
+ * encoded by luminance), and which is the darker. A timeline block's button is
+ * transparent and its face carries the fill; an overview card is its own.
+ */
+export async function fillContrast(darker: Locator, lighter: Locator): Promise<{ readonly ratio: number; readonly ordered: boolean }> {
+  const luminance = (card: Locator): Promise<number> => card.evaluate((element) => {
+    const face = element.querySelector(".diary-block-card") ?? element;
+    const parts = (/rgba?\(([^)]+)\)/u.exec(getComputedStyle(face).backgroundColor)?.[1] ?? "0 0 0").split(/[ ,/]+/u).filter(Boolean).map(Number);
+    const linear = (channel: number): number => {
+      const value = channel / 255;
+      return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * linear(parts[0] ?? 0) + 0.7152 * linear(parts[1] ?? 0) + 0.0722 * linear(parts[2] ?? 0);
+  });
+  const [dark, light] = [await luminance(darker), await luminance(lighter)];
+  return { ratio: (Math.max(dark, light) + 0.05) / (Math.min(dark, light) + 0.05), ordered: dark < light };
 }
 
 /**

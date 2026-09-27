@@ -99,6 +99,15 @@ describe("BoardAgenda", () => {
     expect(onCreateOnDay).toHaveBeenCalledWith(HALL, thursday?.startMs);
   });
 
+  it("names a live hold's option in copper, and its decision once a week or less remains", () => {
+    renderAgenda([DINNER, { ...CEILIDH, decisionAt: "2026-09-17T11:00:00.000Z" }]);
+    const ceilidh = screen.getByRole("button", { name: /^Robertson ceilidh — Provisional · 2nd option, 17:00–22:00, Saloon, .*, Decides tomorrow$/u });
+    expect(ceilidh.querySelector(".diary-option")?.textContent).toBe("2nd option");
+    expect(ceilidh.querySelector(".diary-agenda-age")?.textContent).toBe("Decides tomorrow");
+    const dinner = screen.getByRole("button", { name: /^Hammermen dinner — Confirmed/u });
+    expect(dinner.querySelector(".diary-option, .diary-agenda-age")).toBeNull();
+  });
+
   it("offers no Add to a role that cannot write", () => {
     renderAgenda([DINNER]);
     expect(screen.queryByRole("button", { name: /^Add a booking on/u })).toBeNull();
