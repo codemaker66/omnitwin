@@ -495,6 +495,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   what nobody recorded reads "None recorded". Allergies and the contact follow E5's default until Blake
   answers ([session log](../../sessions/2026-09-27.md)).
 - On phones, a Checklist | Plan switch, no scroll box inside the page, and the room switcher in the header.
+  Done on 27 September. The switch's first turn is named after the stage's work, and the rooms reach the
+  header wherever the rail hides, at 860 px and below ([session log](../../sessions/2026-09-27.md)).
 - Venue-time formatting in `HallkeeperStatusBanner.tsx:51` and `InstructionsBanner.tsx:199-202`.
   Done on 27 September in N4's first slice; its third names the sheet's zone in words, and only for a device
   on another clock ([session log](../../sessions/2026-09-27.md)).
