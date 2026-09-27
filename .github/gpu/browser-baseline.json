@@ -412,6 +412,22 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case replaces the retired identity 2a7be7d54f62686846cb-0e87fb2d72252c5333b7 one for one, so the totals are unchanged by it; it was absent from sourceRunId, sourceReports and the earlier admissions, and every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Clients desk (T-635 X1): one search over people, organisations, deals, proposals and layouts, beside a forest panel holding the client, with the search and the open client in the address (?q=, ?client=). The /clients routes answer with the rows the API returns on real PostgreSQL in client-search-postgres.test.ts, where the typo tolerance itself is proven. One case finds the Hendersons from the keyboard alone (/ to the search, the arrow keys into the results, Enter to open), reloads onto the open client, and closes it with the browser's Back onto the same results with focus on its row. One sends \"Mcdonald\" to the search exactly as typed and runs the accessibility audit with a client open. One, at 390 by 844, has the client replace the list with no sideways scroll and Back to clients return focus to the row.",
+      "sourceCommit": "9ce247d2448d7a9e0c48a0966111b7e84f359035",
+      "sourceFile": "packages/web/e2e/clients-desk.spec.ts",
+      "sourceFileGitBlobSha256": "29764790342281b1a7b57183671a1178d0ece6dc377c8d6ed29568c828eb4fee",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "d12e6926f016060d86f20a70e6581c3c2de5251e86c485e6e273ce224edca992",
+      "caseIds": [
+        "3e3b1414eeabcd03b8d4-72b37e7c867bb61f775e",
+        "3e3b1414eeabcd03b8d4-a70e2bf62e1742711c92",
+        "3e3b1414eeabcd03b8d4-f5c507da60e26d87789d"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -1415,6 +1431,39 @@
       "suitePath": [
         "button-action-audit.spec.ts",
         "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3e3b1414eeabcd03b8d4-72b37e7c867bb61f775e",
+      "file": "clients-desk.spec.ts",
+      "title": "a booker finds the Hendersons from the keyboard, opens Ailsa, reloads, and Back returns to the results",
+      "suitePath": [
+        "clients-desk.spec.ts",
+        "Clients desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3e3b1414eeabcd03b8d4-a70e2bf62e1742711c92",
+      "file": "clients-desk.spec.ts",
+      "title": "a name spelt as it was heard reaches the search as typed, and the desk reads cleanly",
+      "suitePath": [
+        "clients-desk.spec.ts",
+        "Clients desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3e3b1414eeabcd03b8d4-f5c507da60e26d87789d",
+      "file": "clients-desk.spec.ts",
+      "title": "on a phone the client replaces the list, Back to clients returns to it, and nothing scrolls sideways",
+      "suitePath": [
+        "clients-desk.spec.ts",
+        "Clients desk"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 382 cases. Four hosted CPU shards execute
-377 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 385 cases. Four hosted CPU shards execute
+380 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -60,7 +60,12 @@ layouts with no new tab opened, and the open review surviving a reload through
 its address with a colleague's presence at 4.5:1 or better
 (`reviews-desk.spec.ts`). Two more restate a case each one for one, as the
 desk asks for a change request inline rather than in a dialog: the keyboard
-audit's focus-trap case and the button audit's change-request case.
+audit's focus-trap case and the button audit's change-request case. A twentieth
+adds three: the Clients desk, finding the Hendersons from the keyboard, opening
+one onto a reload and closing it with the browser's Back onto the same results;
+a name spelt as it was heard reaching the search as typed, under the
+accessibility audit; and a phone, where the client replaces the list with no
+sideways scroll (`clients-desk.spec.ts`).
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and
