@@ -115,6 +115,14 @@ const ENQUIRIES: readonly Enquiry[] = [
   enquiry(2, "Glasgow Law Society", "under_review"),
 ];
 
+/** One demo changeover time for every room, as a seeded venue has it:
+ *  nobody has confirmed it (T-637). */
+const CHANGEOVER = {
+  id: "00000000-0000-4000-8000-000000009501", venueId: VENUE_ID, spaceId: null, eventType: null, name: "All rooms",
+  minutes: 120, isActive: true, confirmedAt: null, updatedByName: null,
+  createdAt: "2026-09-01T09:00:00.000Z", updatedAt: "2026-09-01T09:00:00.000Z",
+} as const;
+
 function calendar(): CalendarResponse {
   return {
     venueId: VENUE_ID,
@@ -133,7 +141,7 @@ function calendar(): CalendarResponse {
         turnaround: { status: "checked", uncoveredPairCount: 0, detail: "Every gap is covered by a turnaround rule." },
       },
     },
-    turnaroundRules: [],
+    turnaroundRules: [{ spaceId: null, eventType: null, name: CHANGEOVER.name, minutes: CHANGEOVER.minutes, isActive: true }],
     decisionsDue: { holds: [...DECISIONS, ...WEEK.filter((row) => row.id === MACLEOD)], total: 3 },
   };
 }
@@ -185,6 +193,12 @@ export async function emulate(page: Page): Promise<Emulated> {
     } else if (url.pathname === `/venues/${VENUE_ID}`) {
       void route.fulfill({ json: { data: { id: VENUE_ID, name: "Trades Hall Glasgow", slug: "trades-hall",
         address: "85 Glassford Street", logoUrl: null, brandColour: null, spaces: [] } } });
+    } else if (url.pathname === `/venues/${VENUE_ID}/turnaround-rules` && route.request().method() === "GET") {
+      void route.fulfill({ json: { data: {
+        rules: [CHANGEOVER],
+        rooms: [{ id: GRAND_HALL, name: "Grand Hall" }, { id: SALOON, name: "Saloon" }, { id: ROBERT_ADAM, name: "Robert Adam Room" }],
+        eventTypes: ["wedding", "dinner"],
+      } } });
     } else if (url.pathname.startsWith("/notifications")) {
       void route.fulfill({ json: { data: [] } });
     } else {

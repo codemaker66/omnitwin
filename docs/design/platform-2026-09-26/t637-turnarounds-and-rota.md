@@ -47,10 +47,16 @@ The estimate is a pure function: fixed allowances, plus the work in crew-minutes
 | Later | Shift offers to casual staff through a signed link; timesheets with a payroll CSV (holiday pay on its own line); swaps; SMS. | B |
 
 **Status, 26 September:**
-- Slice A's migration (0076) and API are built.
-- So is the Changeovers section in Venue settings.
-- Still to come in slice A: opening a rule from a Diary gap (after Lane 5), and the sheet's set-up time
-  from the rule (after Lane 6).
+- Slice A's migration (0076) and API are live, and so is the Changeovers section in Venue settings.
+- A gap on the Diary's timeline opens its changeover sheet beside the lanes. The sheet shows:
+  - how long the room has, between which functions;
+  - the time that applies and who set it;
+  - whether the gap is enough.
+
+  The venue's administrators keep, change or give the room its own time there. Sales and the
+  hallkeeper read it. The lane's chip and copper note now use Venue settings' words ("1 h 30",
+  "needs 2 h").
+- Still to come in slice A: the sheet's set-up time from the rule (with Lanes 6 and 9).
 
 Every slice follows the shipping contract. A migration ships **before** the code that reads it: Railway and Vercel deploy on push, and the Deploy workflow migrates only after CI. The migration takes the next free number; Lane 9's request model was earmarked 0076. Its journal `when` must be later than the last applied one, because drizzle silently skips an older timestamp.
 

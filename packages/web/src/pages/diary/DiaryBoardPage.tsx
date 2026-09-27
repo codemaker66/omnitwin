@@ -8,7 +8,7 @@ import type {
   ConflictSeverity,
 } from "@omnitwin/types";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { DIARY_WRITE_ROLES, hasRole } from "../../lib/role-capabilities.js";
+import { DIARY_WRITE_ROLES, VENUE_ADMIN_ROLES, hasRole } from "../../lib/role-capabilities.js";
 import { ApiError } from "../../api/client.js";
 import { moveBooking } from "../../api/diary.js";
 import { BOARD_COPY } from "./board-copy.js";
@@ -21,7 +21,7 @@ import {
   msToWallInput,
   type BoardView,
 } from "./lib/board-time.js";
-import { filterBoardEntries, needsAction } from "./lib/board-layout.js";
+import { filterBoardEntries, needsAction, type LaneGap } from "./lib/board-layout.js";
 import type { CommitPayload, InkSpan } from "./lib/board-drag.js";
 import {
   popMove,
@@ -37,7 +37,8 @@ import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
 import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
-import { BoardGrid, type BoardCreate } from "./components/BoardGrid.js";
+import { BoardGrid, type BoardCreate, type OpenGap } from "./components/BoardGrid.js";
+import { GapSheet } from "./components/GapSheet.js";
 import { BoardOverview } from "./components/BoardOverview.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
@@ -108,6 +109,9 @@ export function DiaryBoardPage(): ReactElement {
   const user = useAuthStore((state) => state.user);
   const venueId = user?.venueId ?? null;
   const writable = hasRole(DIARY_WRITE_ROLES, user?.role);
+  // Changeover times are the venue's administration (T-637): sales and the
+  // hallkeeper read them from a gap, and these roles change them.
+  const canEditChangeovers = hasRole(VENUE_ADMIN_ROLES, user?.role);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get("view");
@@ -140,10 +144,27 @@ export function DiaryBoardPage(): ReactElement {
    *  take it — a booking opened from the decisions list may sit in a week the
    *  board is not showing. */
   const drawerReturnFocusRef = useRef<HTMLElement | null>(null);
+  // The changeover sheet for one gap (T-637). It and the booking drawer
+  // share the right-hand edge, so opening either closes the other.
+  const [gapSheet, setGapSheet] = useState<{ readonly room: { readonly id: string; readonly name: string }; readonly gap: LaneGap } | null>(null);
+  const gapReturnFocusRef = useRef<HTMLElement | null>(null);
   const openDrawer = useCallback((mode: DrawerMode) => {
     drawerNonceRef.current += 1;
     if (document.activeElement instanceof HTMLElement) drawerReturnFocusRef.current = document.activeElement;
+    setGapSheet(null);
     setDrawer({ mode, nonce: drawerNonceRef.current });
+  }, []);
+  const openGap = useCallback<OpenGap>((room, gap, opener) => {
+    gapReturnFocusRef.current = opener;
+    setDrawer(null);
+    setGapSheet({ room, gap });
+  }, []);
+  const closeGap = useCallback(() => {
+    const opener = gapReturnFocusRef.current;
+    setGapSheet(null);
+    requestAnimationFrame(() => {
+      if (opener !== null && opener.isConnected) opener.focus({ preventScroll: true });
+    });
   }, []);
   const [enquiryState, setEnquiryState] = useState<{
     readonly venueId: string | null;
@@ -917,6 +938,7 @@ export function DiaryBoardPage(): ReactElement {
             onOpenBlock={openBlock}
             create={boardCreate}
             turnaroundRules={data.turnaroundRules}
+            onOpenGap={venueId === null ? undefined : openGap}
           />}
           <aside className="diary-side">
             {data.decisionsDue === undefined ? null : (
@@ -976,6 +998,18 @@ export function DiaryBoardPage(): ReactElement {
             });
           }}
           onSaved={onDrawerSaved}
+        />
+      ) : null}
+
+      {gapSheet !== null && venueId !== null ? (
+        <GapSheet
+          key={gapSheet.gap.id}
+          venueId={venueId}
+          room={gapSheet.room}
+          gap={gapSheet.gap}
+          canEdit={canEditChangeovers}
+          onClose={closeGap}
+          onChanged={refetch}
         />
       ) : null}
 

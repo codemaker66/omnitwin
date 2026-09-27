@@ -1,0 +1,1309 @@
+/* ---------------------------------------------------------------------------
+   The Rota (T-637, slice B): the ivory register. An ivory sheet with a tilted
+   edge on the sage ground, the copper plane for the week's numbers, copper
+   for what needs someone, sage for what is settled, forest for the one next
+   step. Colours come from the register's --reg-* names only.
+   --------------------------------------------------------------------------- */
+
+.rota {
+  --rota-pad: clamp(24px, 3vw, 44px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+  box-sizing: border-box;
+  min-height: calc(100dvh - 80px);
+  padding: 24px;
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.rota--with-panel {
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 26vw, 400px);
+}
+
+.rota :is(button, input, select, a):focus-visible,
+.rota [tabindex="-1"]:focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.rota [tabindex="-1"]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   The sheet
+   --------------------------------------------------------------------------- */
+
+.rota__sheet {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  padding: 34px var(--rota-pad) 44px;
+}
+
+.rota__sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--reg-surface);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+
+.rota__sheet[hidden] {
+  display: none;
+}
+
+.rota__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px 32px;
+}
+
+.rota__eyebrow {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.rota__title {
+  margin: 8px 0 0;
+  font: 400 clamp(38px, 3.6vw, 54px)/1.04 var(--house-serif);
+  letter-spacing: -0.022em;
+}
+
+.rota__lede {
+  max-width: 60ch;
+  margin: 12px 0 0;
+  color: var(--reg-text-2);
+  font: 400 19px/1.5 var(--house-serif);
+  text-wrap: pretty;
+}
+
+.rota__lede strong {
+  color: var(--reg-text-1);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.rota__lede [data-tone="attention"] {
+  color: var(--reg-attention);
+}
+
+.rota__lede [data-tone="settled"] {
+  color: var(--reg-settled);
+}
+
+.rota__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 22px;
+}
+
+.rota__weeks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rota__heading {
+  min-width: 0;
+}
+
+.rota__staff {
+  margin-left: 8px;
+}
+
+.rota__refreshing {
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+/* The week in numbers, on the copper plane, breaking past the sheet's edge. */
+.rota__plane {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  margin: 22px 0 6px calc(-1 * var(--rota-pad) - 12px);
+  padding: 12px 14px 12px calc(var(--rota-pad) + 12px);
+}
+
+.rota__plane::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--reg-surface);
+  clip-path: polygon(0 7%, 100% 0, calc(100% - 10px) 100%, 6px 100%);
+}
+
+.rota__plane > div {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 14px;
+  border-left: 1px solid color-mix(in srgb, var(--reg-text-2) 28%, transparent);
+}
+
+.rota__plane > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.rota__plane dt {
+  color: var(--reg-text-2);
+  font-size: 14px;
+}
+
+.rota__plane dd {
+  margin: 0;
+  color: var(--reg-text-1);
+  font-size: clamp(28px, 2.4vw, 38px);
+  font-weight: 300;
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rota__plane [data-tone="attention"] dd {
+  color: var(--reg-attention);
+  font-weight: 400;
+}
+
+.rota-quiet-note {
+  margin: 14px 0 0;
+  color: var(--reg-text-3);
+  font-size: 14px;
+}
+
+.rota-state {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  margin-top: 24px;
+  color: var(--reg-text-2);
+}
+
+.rota-state p {
+  margin: 0;
+  max-width: 56ch;
+  font: 400 19px/1.5 var(--house-serif);
+}
+
+/* ---------------------------------------------------------------------------
+   The week: people down the side, days across
+   --------------------------------------------------------------------------- */
+
+.rota-table-wrap {
+  margin-top: 20px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.rota-table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.rota-table__people {
+  width: 204px;
+}
+
+.rota--with-panel .rota-table__people {
+  width: 150px;
+}
+
+.rota--with-panel .rota-table {
+  min-width: 840px;
+}
+
+.rota--with-panel .rota-table thead th {
+  padding: 0 4px 10px;
+}
+
+.rota--with-panel .rota-table tbody td {
+  padding: 5px 4px;
+}
+
+.rota--with-panel .rota-tile {
+  column-gap: 6px;
+  padding: 5px 7px;
+}
+
+.rota--with-panel .rota-tile[data-today="true"] {
+  padding: 4px 6px;
+}
+
+.rota--with-panel .rota-shift {
+  padding: 5px 6px 6px;
+}
+
+.rota--with-panel .rota-shift__time {
+  font-size: 13px;
+}
+
+.rota-table th,
+.rota-table td {
+  padding: 6px 5px;
+  vertical-align: top;
+  text-align: left;
+}
+
+.rota-table thead th {
+  padding: 0 5px 10px;
+  vertical-align: bottom;
+}
+
+.rota-table tbody th,
+.rota-table tbody td {
+  border-top: 1px solid var(--reg-rule);
+}
+
+.rota-table tbody td {
+  border-left: 1px solid var(--reg-rule);
+}
+
+.rota-table tbody th {
+  padding: 10px 12px 10px 0;
+  font-weight: 400;
+}
+
+.rota-tile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "day weekday" "day month";
+  align-items: center;
+  column-gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 3px;
+  background: var(--reg-raised);
+}
+
+.rota-tile[data-today="true"] {
+  border: 2px solid var(--reg-text-1);
+  padding: 5px 9px;
+}
+
+.rota-tile__day {
+  grid-area: day;
+  font: 400 26px/1 var(--house-serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.rota-tile__weekday,
+.rota-tile__month {
+  color: var(--reg-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.rota-tile__weekday {
+  grid-area: weekday;
+  align-self: end;
+}
+
+.rota-tile__month {
+  grid-area: month;
+  align-self: start;
+}
+
+.rota-row-label {
+  display: block;
+  margin: 0;
+  padding-top: 4px;
+  color: var(--reg-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.rota-row-label[data-tone="attention"] {
+  color: var(--reg-attention);
+}
+
+/* Functions along the top: Confirmed with a forest edge; the rest quietly. */
+.rota-table__functions td,
+.rota-table__functions th {
+  padding-bottom: 10px;
+}
+
+.rota-fn {
+  display: grid;
+  gap: 1px;
+  margin-bottom: 5px;
+  padding: 5px 7px 6px;
+  border-left: 3px solid var(--reg-primary);
+  background: var(--reg-raised);
+}
+
+.rota-fn__title {
+  display: -webkit-box;
+  overflow: hidden;
+  font: 400 15px/1.25 var(--house-serif);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.rota-fn__meta {
+  color: var(--reg-text-2);
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.rota-fn-likely-group {
+  display: grid;
+  gap: 3px;
+}
+
+.rota-fn-likely {
+  margin: 0;
+  padding-left: 7px;
+  border-left: 1px dashed var(--reg-edge);
+  color: var(--reg-text-3);
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.rota-fn-likely__hold {
+  font-weight: 600;
+}
+
+/* A person, down the side. */
+.rota-person {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rota-person__name {
+  font: 400 17px/1.25 var(--house-serif);
+  overflow-wrap: break-word;
+}
+
+.rota-person__open {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--reg-text-1) 25%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: text-decoration-color 120ms ease;
+}
+
+.rota-person__open:hover {
+  text-decoration-color: var(--reg-text-1);
+}
+
+.rota-person__meta,
+.rota-person__hours {
+  color: var(--reg-text-2);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.rota-person__hours {
+  color: var(--reg-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.rota-person__fact {
+  color: var(--reg-attention);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* A day's cell. */
+.rota-cell {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-height: 60px;
+}
+
+.rota-cell[data-away="true"] {
+  margin: -6px -5px;
+  padding: 6px 5px;
+  background: repeating-linear-gradient(135deg, transparent 0 7px, color-mix(in srgb, var(--reg-rule) 70%, transparent) 7px 8px);
+}
+
+.rota-away {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+/* A shift. */
+.rota-shift {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px 7px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+div.rota-shift {
+  cursor: default;
+}
+
+.rota-shift[data-status="draft"] {
+  border-style: dashed;
+}
+
+.rota-shift[data-status="published"] {
+  border-left: 3px solid var(--reg-primary);
+}
+
+.rota-shift[data-status="cancelled"] {
+  border-style: dotted;
+  background: transparent;
+}
+
+.rota-shift[data-status="cancelled"] .rota-shift__time {
+  text-decoration: line-through;
+}
+
+/* An unfilled need, on the copper plane. */
+.rota-shift.ws-plane {
+  border-color: var(--reg-attention);
+  background: var(--reg-surface);
+}
+
+.rota-shift.ws-plane[data-status="published"] {
+  border-left-color: var(--reg-attention);
+}
+
+.rota-shift__time {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.rota-shift__role {
+  color: var(--reg-text-2);
+  overflow-wrap: break-word;
+}
+
+.rota-shift__state {
+  color: var(--reg-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rota-shift__issue {
+  margin-top: 2px;
+  color: var(--reg-attention);
+  font-weight: 500;
+  overflow-wrap: break-word;
+}
+
+.rota-shift__issue[data-tone="alert"] {
+  color: var(--reg-alert);
+  font-weight: 600;
+}
+
+.rota-shift__issue[data-tone="kept"] {
+  color: var(--reg-text-3);
+  font-weight: 400;
+}
+
+.rota-shift[aria-current="true"] {
+  background: var(--reg-surface-selected);
+  box-shadow: inset 0 0 0 1px var(--reg-text-1);
+}
+
+/* Adding: the whole empty cell is the way in. With a mouse the + appears
+   along the row the pointer is on, so a week of empty days stays quiet; on a
+   touch screen it is always there, faintly. Focus always shows it. */
+.rota-add {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 52px;
+  border: 1px dashed transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--reg-edge);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.rota-add[data-compact="true"] {
+  min-height: 28px;
+}
+
+.rota-add:focus-visible {
+  color: var(--reg-text-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rota-add {
+    color: transparent;
+  }
+
+  .rota-table tbody tr:hover .rota-add,
+  .rota-days__person:hover .rota-add {
+    color: var(--reg-edge);
+  }
+
+  .rota-shift:hover {
+    background: var(--reg-surface-hover);
+  }
+
+  .rota-add:hover {
+    border-color: var(--reg-edge);
+    background: var(--reg-surface-hover);
+    color: var(--reg-text-1);
+  }
+
+  .rota-add:focus-visible {
+    color: var(--reg-text-1);
+  }
+}
+
+@media (hover: none) {
+  .rota-add {
+    border-color: var(--reg-rule);
+  }
+}
+
+.rota-shift:active,
+.rota-add:active {
+  transform: scale(0.98);
+}
+
+/* ---------------------------------------------------------------------------
+   Controls
+   --------------------------------------------------------------------------- */
+
+.rota-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--reg-text-1);
+  font: 600 14px/1 var(--house-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.rota-button--primary {
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.rota-button[data-tone="alert"] {
+  color: var(--reg-alert);
+}
+
+.rota-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rota-button:hover:not(:disabled) {
+    background: var(--reg-surface-hover);
+  }
+
+  .rota-button--primary:hover:not(:disabled) {
+    border-color: var(--reg-primary-hover);
+    background: var(--reg-primary-hover);
+  }
+}
+
+.rota-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.rota-icon-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--reg-text-1);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rota-icon-button:hover {
+    background: var(--reg-surface-hover);
+  }
+}
+
+.rota-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--reg-text-1);
+  font: 500 14px/1.3 var(--house-sans);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--reg-text-1) 35%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.rota-link:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.rota-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.rota-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--reg-edge);
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.rota-notice[data-tone="alert"] {
+  border-left-color: var(--reg-alert);
+}
+
+.rota-notice[data-tone="settled"] {
+  border-left-color: var(--reg-settled);
+}
+
+.rota-panel .rota-notice {
+  margin: 0;
+  background: var(--reg-surface);
+}
+
+/* Publishing: the one next step, with its consequence under it. */
+.rota-publish {
+  display: grid;
+  justify-self: end;
+  gap: 8px;
+  width: 340px;
+  max-width: 100%;
+}
+
+.rota-publish__button {
+  min-height: 48px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+
+.rota-publish__consequence,
+.rota-publish__held {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.rota-publish__held {
+  color: var(--reg-attention);
+}
+
+.rota-publish .rota-confirm {
+  margin-top: 4px;
+}
+
+.rota-legend {
+  margin: 12px 0 0;
+  color: var(--reg-text-3);
+  font-size: 13px;
+}
+
+.rota-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--reg-edge);
+  border-left: 3px solid var(--reg-primary);
+  border-radius: 3px;
+  background: var(--reg-raised);
+}
+
+.rota-panel .rota-confirm {
+  background: var(--reg-surface);
+}
+
+.rota-confirm__question {
+  margin: 0;
+  font: 400 21px/1.3 var(--house-serif);
+}
+
+.rota-confirm__consequence {
+  margin: 0 0 4px;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* ---------------------------------------------------------------------------
+   Beside the week: a shift, or staff
+   --------------------------------------------------------------------------- */
+
+.rota__side {
+  position: sticky;
+  top: 104px;
+  min-width: 0;
+}
+
+.rota-panel {
+  display: grid;
+  gap: 16px;
+  max-height: calc(100dvh - 128px);
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 22px 22px 26px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: var(--reg-raised);
+}
+
+.rota-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rota-panel__head h2 {
+  margin: 0;
+  font: 400 30px/1.1 var(--house-serif);
+  letter-spacing: -0.015em;
+}
+
+.rota-panel__sub,
+.rota-panel__fact,
+.rota-panel__consequence {
+  margin: 4px 0 0;
+  color: var(--reg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.rota-panel__consequence {
+  margin: 0;
+}
+
+.rota-facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.rota-facts div {
+  display: grid;
+  gap: 2px;
+}
+
+.rota-facts dt {
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rota-facts dd {
+  margin: 0;
+  font-size: 15px;
+}
+
+.rota-form {
+  display: grid;
+  gap: 16px;
+}
+
+.rota-form__title {
+  margin: 0;
+  font: 400 24px/1.2 var(--house-serif);
+}
+
+.rota-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.rota-field--wide {
+  grid-column: 1 / -1;
+}
+
+.rota-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rota-field > span,
+.rota-choice legend {
+  color: var(--reg-text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* A date or time box would otherwise hold its column open to its own width. */
+.rota-field input,
+.rota-field select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font: 400 15px/1.2 var(--house-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.rota-field__hint {
+  margin: 0;
+  color: var(--reg-text-3);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.rota-field__hint:empty {
+  display: none;
+}
+
+/* A hint that sits beside its field, level with the box rather than the label. */
+.rota-field__hint--beside {
+  align-self: end;
+  padding-bottom: 4px;
+}
+
+.rota-choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.rota-choice legend {
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.rota-choice__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rota-choice__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 999px;
+  background: var(--reg-surface);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.rota-choice__option:has(input:checked) {
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.rota-choice__option input,
+.rota-check input {
+  margin: 0;
+  accent-color: var(--reg-primary);
+}
+
+.rota-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.rota-keep {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.rota-back {
+  justify-self: start;
+}
+
+/* Warnings, in the words the checks give them. */
+.rota-issues {
+  display: grid;
+  gap: 10px;
+}
+
+.rota-issues h3,
+.rota-leave h3,
+.rota-staff__group {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.rota-issues ul,
+.rota-staff,
+.rota-leave__list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rota-issue {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--reg-attention);
+  background: var(--reg-surface);
+}
+
+.rota-issue[data-tone="alert"] {
+  border-left-color: var(--reg-alert);
+}
+
+.rota-issue[data-tone="kept"] {
+  border-left-color: var(--reg-rule);
+}
+
+.rota-issue__message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.rota-issue[data-tone="alert"] .rota-issue__message {
+  color: var(--reg-alert);
+  font-weight: 500;
+}
+
+.rota-issue__kept {
+  margin: 0;
+  color: var(--reg-text-3);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Staff. */
+.rota-staff__item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--reg-rule);
+  border-radius: 3px;
+  background: var(--reg-surface);
+  color: var(--reg-text-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rota-staff__item:hover {
+    border-color: var(--reg-edge);
+    background: var(--reg-surface-hover);
+  }
+}
+
+.rota-staff__name {
+  font: 400 18px/1.25 var(--house-serif);
+}
+
+.rota-staff__meta,
+.rota-staff__fact {
+  color: var(--reg-text-2);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.rota-staff__fact[data-tone="attention"] {
+  color: var(--reg-attention);
+  font-weight: 500;
+}
+
+.rota-leave {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--reg-rule);
+}
+
+.rota-leave__list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------------------
+   One day at a time, on a phone
+   --------------------------------------------------------------------------- */
+
+.rota-days {
+  margin-top: 18px;
+}
+
+.rota-days__tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.rota-days__tab {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  min-height: 54px;
+  padding: 6px 0;
+  border: 1px solid var(--reg-rule);
+  border-radius: 3px;
+  background: var(--reg-raised);
+  color: var(--reg-text-1);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.rota-days__tab[data-today="true"] {
+  border: 2px solid var(--reg-text-1);
+}
+
+.rota-days__tab[aria-selected="true"] {
+  border-color: var(--reg-primary);
+  background: var(--reg-primary);
+  color: var(--reg-primary-ink);
+}
+
+.rota-days__weekday {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rota-days__date {
+  font: 400 19px/1 var(--house-serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.rota-days__title {
+  margin: 20px 0 10px;
+  font: 400 24px/1.2 var(--house-serif);
+}
+
+.rota-days__functions {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.rota-days__people {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rota-days__person {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 8px 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--reg-rule);
+}
+
+.rota-days__person[data-unfilled="true"] .rota-row-label {
+  align-self: start;
+}
+
+/* ---------------------------------------------------------------------------
+   Narrower screens: the week and a panel take turns; a phone is flush.
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 1179px) {
+  .rota__side {
+    position: static;
+  }
+
+  .rota-panel {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 760px) {
+  .rota {
+    gap: 0;
+    padding: 0;
+  }
+
+  .rota__sheet {
+    --rota-pad: 16px;
+    padding: 22px 16px 32px;
+  }
+
+  .rota__sheet::before {
+    clip-path: none;
+  }
+
+  .rota__head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rota-publish {
+    justify-self: stretch;
+    width: auto;
+  }
+
+  .rota__plane {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 6px;
+  }
+
+  .rota__plane::before {
+    clip-path: none;
+  }
+
+  .rota__plane > div {
+    padding: 4px 10px;
+  }
+
+  .rota__plane > div:nth-child(3n + 1) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .rota__plane dd {
+    font-size: 26px;
+  }
+
+  .rota__weeks .rota-button {
+    min-width: 44px;
+    padding: 0 12px;
+  }
+
+  .rota__weeks-word {
+    display: none;
+  }
+
+  .rota-panel {
+    padding: 20px 16px 28px;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .rota-form__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rota-field input,
+  .rota-field select {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rota-shift,
+  .rota-add,
+  .rota-button,
+  .rota-icon-button,
+  .rota-choice__option,
+  .rota-staff__item,
+  .rota-days__tab,
+  .rota-person__open {
+    transition: none;
+  }
+
+  .rota-shift:active,
+  .rota-add:active,
+  .rota-button:active:not(:disabled) {
+    transform: none;
+  }
+}

@@ -34,6 +34,14 @@ const NOT_FOUND_META_TITLE = "Page not found — Trades Hall of Glasgow";
 export function NotFoundPage(): ReactElement {
   useEffect(() => {
     document.title = NOT_FOUND_META_TITLE;
+    // Every address is served the app with a 200 (vercel.json rewrites them
+    // all to index.html), so this page tells search engines itself that
+    // there is nothing here to index. It leaves with the page.
+    const robots = document.createElement("meta");
+    robots.name = "robots";
+    robots.content = "noindex";
+    document.head.appendChild(robots);
+    return () => { robots.remove(); };
   }, []);
 
   return (

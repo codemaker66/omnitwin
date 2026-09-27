@@ -9,7 +9,8 @@
 #   - the API's readiness;
 #   - optional route checks without sign-in: a new route answering 401
 #     rather than 404 shows the deployed API has it;
-#   - the front door's status.
+#   - the front door's status, and optional web route checks that do not
+#     follow redirects, so an edge redirect shows as its own 307 or 308.
 # It fails when the API does not contain the commit, is not ready, or a route
 # check differs. With browser "true" a second job opens the public pages in
 # Chromium: the production route pass (e2e/production-live-route-pass.spec.ts,
@@ -27,6 +28,10 @@ on:
         default: ""
       routes:
         description: "Space-separated STATUS:PATH checks on the API, e.g. 401:/venues/00000000-0000-0000-0000-000000000000/turnaround-rules"
+        required: false
+        default: ""
+      web-routes:
+        description: "Space-separated STATUS:PATH checks on the web, redirects not followed, e.g. 307:/landing"
         required: false
         default: ""
       wait-minutes:
@@ -59,6 +64,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           EXPECTED_SHA: ${{ inputs.sha || github.sha }}
           ROUTE_CHECKS: ${{ inputs.routes }}
+          WEB_ROUTE_CHECKS: ${{ inputs.web-routes }}
           WAIT_MINUTES: ${{ inputs.wait-minutes }}
           API: https://api.venviewer.com
           WEB: https://venviewer.com
@@ -153,6 +159,25 @@ jobs:
           note ""
           note "### Web"
           note "- $WEB/: $(status_of "$WEB/")"
+          for check in $WEB_ROUTE_CHECKS; do
+            if [[ ! "$check" =~ ^([0-9]{3}):(/[A-Za-z0-9/_.-]*)$ ]]; then
+              note "- \`$check\` is not STATUS:PATH"
+              failed=1
+              continue
+            fi
+            want=${BASH_REMATCH[1]}
+            path=${BASH_REMATCH[2]}
+            answer=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 "$WEB$path" || true)
+            got=${answer%% *}
+            target=${answer#* }
+            [[ "$got" == 3* && -n "$target" ]] && got_words="$got to $target" || got_words="$got"
+            if [[ "$got" == "$want" ]]; then
+              note "- $path: $got_words, as expected"
+            else
+              note "- $path: $got_words, expected $want"
+              failed=1
+            fi
+          done
 
           exit "$failed"
 

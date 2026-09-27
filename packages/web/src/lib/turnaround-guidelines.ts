@@ -17,14 +17,15 @@ export interface TurnaroundGuideline {
 
 /** Most specific active rule for (spaceId, incoming eventType); a typed rule
  *  needs a matching non-null incoming type; ties resolve toward the LARGEST
- *  minutes — the fail-safe direction. */
-export function resolveTurnaroundGuideline(
-  rules: readonly CalendarTurnaroundRule[] | undefined,
+ *  minutes — the fail-safe direction. Generic, so a surface that shows or
+ *  edits the rule (the Diary's changeover sheet) gets the rule itself. */
+export function resolveTurnaroundRule<Rule extends CalendarTurnaroundRule>(
+  rules: readonly Rule[] | undefined,
   spaceId: string,
   incomingEventType: string | null,
-): TurnaroundGuideline | null {
+): Rule | null {
   if (rules === undefined) return null;
-  let best: CalendarTurnaroundRule | null = null;
+  let best: Rule | null = null;
   let bestScore = -1;
   for (const candidate of rules) {
     if (!candidate.isActive) continue;
@@ -45,5 +46,14 @@ export function resolveTurnaroundGuideline(
       bestScore = score;
     }
   }
+  return best;
+}
+
+export function resolveTurnaroundGuideline(
+  rules: readonly CalendarTurnaroundRule[] | undefined,
+  spaceId: string,
+  incomingEventType: string | null,
+): TurnaroundGuideline | null {
+  const best = resolveTurnaroundRule(rules, spaceId, incomingEventType);
   return best === null ? null : { minutes: best.minutes, name: best.name };
 }

@@ -64,6 +64,18 @@ test.describe("Diary timetable", () => {
     await expect(create.getByLabel("Starts", { exact: true })).toHaveValue("2026-09-15T10:00");
     await create.getByRole("button", { name: "Close" }).click();
 
+    // A gap's time opens its changeover sheet (T-637): between Thursday's
+    // Hammermen dinner and Saturday's MacLeod wedding, which is provisional,
+    // so the gap waits to be checked against the room's time.
+    await page.getByRole("button", { name: "Changeover in Grand Hall: 39 hours between Hammermen annual dinner and MacLeod wedding" }).click();
+    const changeover = page.getByRole("dialog", { name: "Changeover" });
+    const needs = changeover.getByRole("region", { name: "The time this room needs" });
+    await expect(needs.getByText("2 h", { exact: true })).toBeVisible();
+    await expect(needs.getByText("Not confirmed")).toBeVisible();
+    await expect(needs.getByText("Checked once both functions are confirmed")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(changeover).toBeHidden();
+
     // The drawer states owner and client, keeps the note, and saves an edit
     // of it; the board move that follows does not re-read the tray.
     await page.getByRole("button", { name: /^MacLeod wedding — /u }).click();

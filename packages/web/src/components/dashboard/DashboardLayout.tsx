@@ -14,7 +14,7 @@ import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import {
   ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
-  REVIEW_QUEUE_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
+  REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
 import "./DashboardLayout.css";
 
@@ -22,7 +22,7 @@ import "./DashboardLayout.css";
 // DashboardLayout — shared venue navigation and a single workspace landmark
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "inventory" | "onboarding" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "inventory" | "rota" | "onboarding" | "admin";
 
 interface DashboardLayoutProps {
   /** Present only on /dashboard, which owns the view switch itself. Every
@@ -36,9 +36,10 @@ interface DashboardLayoutProps {
    *  only <main> on the page, so a wrapped surface hands its name up rather
    *  than keeping a second landmark of its own. */
   readonly mainLabel?: string;
-  /** A view that paints its own full-bleed workspace (the Enquiries desk)
-   *  asks for it here; everything else keeps the padded forest ground. */
-  readonly surface?: "enquiries";
+  /** A view that paints its own full-bleed workspace (the Enquiries desk,
+   *  the Rota) asks for it here; everything else keeps the padded forest
+   *  ground. */
+  readonly surface?: "enquiries" | "rota";
   readonly children: ReactNode;
 }
 
@@ -48,7 +49,7 @@ interface DashboardLayoutProps {
 // that answers 403.
 type NavCapability =
   | "workspace" | "commercial" | "crmPipeline" | "analytics" | "clientSearch"
-  | "reviewQueue" | "venueAdmin" | "platformAdmin";
+  | "reviewQueue" | "venueAdmin" | "rota" | "platformAdmin";
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavCapability }[] = [
   { view: "enquiries", label: "Enquiries", capability: "workspace" },
@@ -67,6 +68,9 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   { view: "loadouts", label: "Reference Loadouts", capability: "workspace" },
   { view: "settings", label: "Venue Settings", capability: "workspace" },
   { view: "inventory", label: "Inventory", capability: "venueAdmin" },
+  // The Rota is RotaView, reading api/rota.js — routes/rota.ts answers the
+  // venue's whole team: the week for the floor, their own shifts for sales.
+  { view: "rota", label: "Rota", capability: "rota" },
   { view: "onboarding", label: "Clients & access", capability: "platformAdmin" },
   { view: "admin", label: "Admin", capability: "platformAdmin" },
 ];
@@ -106,6 +110,7 @@ export function canShowNavItem(
   if (item.capability === "analytics") return hasRole(ANALYTICS_ROLES, role);
   if (item.capability === "clientSearch") return hasRole(CLIENT_SEARCH_ROLES, role);
   if (item.capability === "reviewQueue") return hasRole(REVIEW_QUEUE_ROLES, role);
+  if (item.capability === "rota") return hasRole(ROTA_TAB_ROLES, role);
   return hasRole(WORKSPACE_ROLES, role);
 }
 
@@ -275,7 +280,10 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   // Venue stock is written by venue administration only, and the platform
   // admin's own tools never grant it (pinned by DashboardLayout.test.tsx).
   const canManageStock = hasRole(INVENTORY_WRITE_ROLES, user?.role);
-  const moreItems = NAV_ITEMS.filter((item) => item.view !== "inventory" && canShowNavItem(item, user?.role, platformRole));
+  const rotaItem = NAV_ITEMS.find((item) => item.view === "rota");
+  const canOpenRota = rotaItem !== undefined && canShowNavItem(rotaItem, user?.role, platformRole);
+  // Inventory and the Rota sit on the visible row; the rest wait behind More.
+  const moreItems = NAV_ITEMS.filter((item) => item.view !== "inventory" && item.view !== "rota" && canShowNavItem(item, user?.role, platformRole));
   // /event-architect still marks the menu active for anyone who reaches it by
   // URL, even though R1 offers no link to it.
   const moreActive = moreItems.some((item) => item.view === activeView) ||
@@ -302,6 +310,10 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
             aria-current={isRouteActive("/diary") ? "page" : undefined}>Diary</Link>}
           {canOpenHallkeeperDay && <Link className={routeLinkClass("/hallkeeper")} to="/hallkeeper"
             aria-current={isRouteActive("/hallkeeper") ? "page" : undefined}>Hallkeeper</Link>}
+          {canOpenRota && <button type="button"
+            className={`dashboard-layout-nav-item${activeView === "rota" ? " dashboard-layout-nav-item--active" : ""}`}
+            aria-current={activeView === "rota" ? "page" : undefined}
+            onClick={() => { selectView("rota"); }}>Rota</button>}
           {canManageStock && <button type="button"
             className={`dashboard-layout-nav-item${activeView === "inventory" ? " dashboard-layout-nav-item--active" : ""}`}
             aria-current={activeView === "inventory" ? "page" : undefined}
@@ -354,7 +366,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
           </div>
         </div>
       </header>
-      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "enquiries" ? " dashboard-layout-main--enquiries" : ""}`}>
+      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "enquiries" ? " dashboard-layout-main--enquiries" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
         <main className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={mainLabel ?? "Dashboard workspace"}>
           {children}
         </main>
