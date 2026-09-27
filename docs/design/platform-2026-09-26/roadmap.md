@@ -720,11 +720,20 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   - ledger grouped by when the next action is due;
   - copper plane of live stages showing counts and values;
   - forest panel with date, guests, room, value, the stage path, one primary action, contact, a proposal chip and the timeline.
+  Done on 27 September (`PipelineDesk.tsx`). The ledger reads `GET /crm/pipeline?order=due`: Overdue, Due
+  today, This week, Later, No date set, then Won and lost. Each live stage's count is its filter (`&stage=`).
+  The opening sentence counts what is due today or overdue on the venue's calendar (`due`).
 - Offer only the valid moves (`commercial-spine.ts:43-52`); Won and Lost require a reason.
+  Done: each stage offers one next step and a quieter alternative, only where the rules allow. The API now
+  refuses a close without a reason (`REASON_REQUIRED`), and the panel asks for it in place, offering the
+  common ones. The reason is kept in the deal's history.
 - An editable value, filled from the latest quote.
+  Editable on 27 September, in exact pence; filled from the latest quote is not yet done.
 - Follow-ups with due dates.
-- Proposal events move the deal's stage.
+  Done: added with a day, and listed across the pipeline beside the ledger when no deal is open.
+- Proposal events move the deal's stage. Not yet done.
 - Layouts that respond to width.
+  Done: on a phone the deal takes the page, with Back to the pipeline.
 
 *Proposals*
 - A ledger by status (Drafts / Waiting on you / With client / Accepted), paged.
