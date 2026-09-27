@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
 import { isBookingEnquiry } from "@omnitwin/types";
@@ -16,6 +16,7 @@ import {
   dayColumns,
   snapMs,
   boardRange,
+  formatInlineDay,
   formatWallTime,
   rangeTitle,
   shiftRange,
@@ -23,7 +24,9 @@ import {
   type BoardView,
 } from "./lib/board-time.js";
 import { filterBoardEntries, needsAction, type LaneGap } from "./lib/board-layout.js";
+import { bookingTimeLabel } from "./lib/board-overview.js";
 import { contestedHolds } from "./lib/lifecycle-ending.js";
+import { parseGoToDate, roomsOnDay, saidWeekday } from "./lib/go-to-date.js";
 import type { CommitPayload, InkSpan } from "./lib/board-drag.js";
 import {
   popMove,
@@ -106,6 +109,18 @@ interface ToastState {
   readonly message: string;
   readonly showUndo: boolean;
 }
+
+interface GoToState {
+  readonly open: boolean;
+  readonly text: string;
+  /** The venue-local date the words named, "YYYY-MM-DD". */
+  readonly sought: string | null;
+  readonly unread: boolean;
+  /** Weekdays as getUTCDay numbers: the one said, and the date's own. */
+  readonly otherWeekday: { readonly said: number; readonly actual: number } | null;
+}
+
+const GO_TO_CLOSED: GoToState = { open: false, text: "", sought: null, unread: false, otherWeekday: null };
 
 export function DiaryBoardPage(): ReactElement {
   const user = useAuthStore((state) => state.user);
@@ -367,6 +382,49 @@ export function DiaryBoardPage(): ReactElement {
   );
   const drawerLadderRead = drawerBooking !== null && data !== null
     && Date.parse(drawerBooking.startsAt) >= range.fromMs && Date.parse(drawerBooking.endsAt) <= range.toMs;
+
+  // Go to date (roadmap N3): the words typed, the day they named, whether
+  // they could be read, and a weekday said with them that the date does not
+  // fall on. The answer comes from the range's own read.
+  const [goTo, setGoTo] = useState<GoToState>(GO_TO_CLOSED);
+  const goToInputRef = useRef<HTMLInputElement | null>(null);
+  const goToButtonRef = useRef<HTMLButtonElement | null>(null);
+  const goToHintId = useId();
+  const openGoTo = useCallback(() => {
+    setGoTo((previous) => ({ ...previous, open: true }));
+    requestAnimationFrame(() => { goToInputRef.current?.focus(); goToInputRef.current?.select(); });
+  }, []);
+  const closeGoTo = useCallback(() => {
+    setGoTo(GO_TO_CLOSED);
+    requestAnimationFrame(() => { goToButtonRef.current?.focus(); });
+  }, []);
+  const soughtDay = useMemo(
+    () => (goTo.sought === null ? null : boardRange(Date.parse(`${goTo.sought}T12:00:00.000Z`), "day")),
+    [goTo.sought],
+  );
+  const soughtAnswer = useMemo(() => {
+    if (soughtDay === null || data === null || soughtDay.fromMs < range.fromMs || soughtDay.toMs > range.toMs) return null;
+    const line = (entry: CalendarBookingEntry): string => {
+      const time = bookingTimeLabel(entry);
+      if (entry.kind === "ink") return BOARD_COPY.goTo.confirmed(entry.title, time);
+      if (entry.kind === "internal_block") return BOARD_COPY.goTo.block(entry.title, time);
+      const decides = entry.decisionAt === null ? null : formatInlineDay(Date.parse(entry.decisionAt), nowMs);
+      return BOARD_COPY.goTo.hold(entry.rank, entry.jointFlag, entry.title, time, decides);
+    };
+    return {
+      day: rangeTitle(soughtDay),
+      rooms: roomsOnDay(data.entries, data.rooms, { startMs: soughtDay.fromMs, endMs: soughtDay.toMs }).map((answer) => ({
+        id: answer.roomId,
+        name: answer.room,
+        lines: answer.bookings.length > 0
+          ? answer.bookings.map((entry) => ({ key: entry.id, text: line(entry) }))
+          : [{ key: "free", text: BOARD_COPY.goTo.free(answer.interest, answer.freeFromMs === null ? null : formatWallTime(answer.freeFromMs)) }],
+      })),
+    };
+  }, [data, nowMs, range.fromMs, range.toMs, soughtDay]);
+  const goToNote = goTo.unread
+    ? BOARD_COPY.goTo.notADate
+    : goTo.otherWeekday === null ? null : BOARD_COPY.goTo.otherWeekday(goTo.otherWeekday.actual, goTo.otherWeekday.said);
 
   const applyMove = useCallback(
     (bookingId: string, patch: MoveSnapshot, undoEntry: UndoEntry | null) => {
@@ -746,12 +804,19 @@ export function DiaryBoardPage(): ReactElement {
       else if (event.key === "d") setRange("day", anchorMs);
       else if (event.key === "w") setRange("week", anchorMs);
       else if (event.key === "f") setRange("2w", anchorMs);
+      else if (event.key === "[") setRange(view, shiftRange(range, -1).fromMs + 12 * 3_600_000);
+      else if (event.key === "]") setRange(view, shiftRange(range, 1).fromMs + 12 * 3_600_000);
+      else if (event.key === "g") {
+        // Held back, or the letter would land in the field it opens.
+        event.preventDefault();
+        openGoTo();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [anchorMs, drag.state.phase, drawerOpen, setRange, undo, view]);
+  }, [anchorMs, drag.state.phase, drawerOpen, openGoTo, range, setRange, undo, view]);
 
   /** Scrolls a booking's block into view and focuses it; false when the
    *  board is not showing it. */
@@ -866,6 +931,16 @@ export function DiaryBoardPage(): ReactElement {
             >
               {BOARD_COPY.next}
             </button>
+            <button
+              ref={goToButtonRef}
+              type="button"
+              className="diary-button"
+              aria-expanded={goTo.open}
+              aria-keyshortcuts="G"
+              onClick={() => { if (goTo.open) closeGoTo(); else openGoTo(); }}
+            >
+              {BOARD_COPY.goTo.open}
+            </button>
           </div>
           <span className="diary-range-title">{rangeTitle(range)}</span>
           {view !== "day" ? <div className="diary-view-switch" role="group" aria-label="Board presentation">
@@ -922,6 +997,70 @@ export function DiaryBoardPage(): ReactElement {
             {othersPresent.length > 0 ? ` · ${String(othersPresent.length)}` : ""}
           </span>
         </div>
+        {goTo.open ? (
+          <form
+            className="diary-goto"
+            role="search"
+            aria-label={BOARD_COPY.goTo.label}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const today = msToWallInput(Date.now()).slice(0, 10);
+              const sought = parseGoToDate(goTo.text, today);
+              if (sought === null) {
+                setGoTo((previous) => ({ ...previous, sought: null, unread: true, otherWeekday: null }));
+                return;
+              }
+              const said = saidWeekday(goTo.text);
+              const actual = new Date(`${sought}T12:00:00.000Z`).getUTCDay();
+              const otherWeekday = said === null || said === actual ? null : { said, actual };
+              setGoTo((previous) => ({ ...previous, sought, unread: false, otherWeekday }));
+              setRange(view, Date.parse(`${sought}T12:00:00.000Z`));
+            }}
+          >
+            <label className="diary-goto-field">
+              <span>{BOARD_COPY.goTo.label}</span>
+              <input
+                ref={goToInputRef}
+                type="text"
+                value={goTo.text}
+                placeholder="5 Jun 27"
+                autoComplete="off"
+                aria-invalid={goTo.unread}
+                aria-describedby={goToHintId}
+                onChange={(event) => { const text = event.target.value; setGoTo((previous) => ({ ...previous, text, unread: false, otherWeekday: null })); }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeGoTo();
+                  }
+                }}
+              />
+            </label>
+            <button type="submit" className="diary-button is-primary">{BOARD_COPY.goTo.go}</button>
+            <button type="button" className="diary-button" onClick={closeGoTo}>{BOARD_COPY.goTo.close}</button>
+            {/* A note replaces the hint as a new element, so it is announced. */}
+            {goToNote === null
+              ? <p key="hint" id={goToHintId} className="diary-goto-hint">{BOARD_COPY.goTo.hint}</p>
+              : <p key={goToNote} id={goToHintId} className="diary-goto-error" role="alert">{goToNote}</p>}
+            {/* Announced once the range's own read can answer it. */}
+            <div className="diary-goto-answer" role="status">
+              {soughtAnswer === null ? null : (
+                <>
+                  <p className="diary-goto-day">{soughtAnswer.day}</p>
+                  <dl className="diary-goto-rooms">
+                    {soughtAnswer.rooms.map((room) => (
+                      <div key={room.id} className="diary-goto-room">
+                        <dt>{room.name}</dt>
+                        {room.lines.map((roomLine) => <dd key={roomLine.key}>{roomLine.text}</dd>)}
+                      </div>
+                    ))}
+                  </dl>
+                </>
+              )}
+            </div>
+          </form>
+        ) : null}
         <div className="diary-header-foot">
           <ul className="diary-legend" aria-label="Legend">
             <li className="diary-legend-item is-ink">{BOARD_COPY.legend.ink}</li>
@@ -970,6 +1109,7 @@ export function DiaryBoardPage(): ReactElement {
             </div>
           ) : showingOverview ? <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
             conflictSeverity={conflictSeverity} onOpenBooking={openBookingFromOverview} pending={rangePending}
+            soughtDayMs={soughtDay?.fromMs ?? null}
             onOpenDay={openDayFromOverview} onCreateOnDay={writable && !rangePending ? openCreateOnDay : undefined} /> : <BoardGrid
             rooms={rooms}
             entries={entries}

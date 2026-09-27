@@ -22,6 +22,9 @@ function listNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
 }
 
+/** Indexed as Date's getUTCDay: 0 is Sunday. */
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
 /** 1 → "1st", 2 → "2nd", 11 → "11th": the option numbers in Blake's words. */
 export function ordinal(rank: number): string {
   const mod100 = rank % 100;
@@ -242,6 +245,32 @@ export const BOARD_COPY = {
       nextActionDueAt: "Next action due",
       notes: "Notes",
     } as const,
+  },
+
+  /** Go to date (roadmap N3): a date as it was said, and what each room
+   *  holds that day. */
+  goTo: {
+    open: "Go to date",
+    label: "Go to date",
+    go: "Go",
+    close: "Close",
+    hint: "As you would say it: 5 Jun 27, 05/06/2027 or 5th June.",
+    notADate: "The Diary cannot read that as a date. Try 5 Jun 27 or 05/06/2027.",
+    /** Each booking in a room that day, as the board labels it. */
+    confirmed: (title: string, time: string): string => `Confirmed, ${title}, ${time}`,
+    hold: (rank: number | null, jointFlag: boolean, title: string, time: string, decides: string | null): string => {
+      const place = rank === null ? "Provisional," : rank === 1 && jointFlag ? "Joint 1st" : `${ordinal(rank)} option`;
+      return `${place} ${title}, ${time}${decides === null ? "" : `, decides ${decides}`}`;
+    },
+    block: (title: string, time: string): string => `House block, ${title}, ${time}`,
+    /** `from`: the night before's event ends in the small hours ("01:00"). */
+    free: (interest: readonly string[], from: string | null): string => {
+      const free = from === null ? "Free" : `Free from ${from}`;
+      return interest.length === 0 ? free : `${free}, interest only from ${listNames(interest)}`;
+    },
+    /** A weekday said with the date that is not the date's own (0 is Sunday). */
+    otherWeekday: (actual: number, said: number): string =>
+      `That date is a ${WEEKDAY_NAMES[actual] ?? ""}, not a ${WEEKDAY_NAMES[said] ?? ""}.`,
   },
 
   /** The lifecycle's confirmation (roadmap N3). A change that ends a

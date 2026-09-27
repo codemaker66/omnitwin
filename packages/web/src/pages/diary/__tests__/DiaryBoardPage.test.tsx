@@ -1119,3 +1119,123 @@ describe("DiaryBoardPage — ending a booking asks first (roadmap N3)", () => {
     expect(transitionBookingMock).toHaveBeenCalledWith(INK_ID, "cancelled", undefined);
   });
 });
+
+describe("DiaryBoardPage — Go to date (roadmap N3)", () => {
+  /** The answer as shown: its day, then each room with its lines. */
+  function goToAnswer(): { readonly day: string; readonly rooms: readonly (readonly [string, readonly string[]])[] } | null {
+    const answer = document.querySelector(".diary-goto-answer");
+    const day = answer?.querySelector(".diary-goto-day")?.textContent ?? null;
+    if (answer === null || day === null) return null;
+    return {
+      day,
+      rooms: Array.from(answer.querySelectorAll(".diary-goto-room")).map((room) => [
+        room.querySelector("dt")?.textContent ?? "",
+        Array.from(room.querySelectorAll("dd")).map((line) => line.textContent ?? ""),
+      ] as const),
+    };
+  }
+
+  it("goes to the week of a date as it was said, and answers per room", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.keyDown(window, { key: "g" });
+    const field = await screen.findByRole("textbox", { name: "Go to date" });
+    await waitFor(() => { expect(document.activeElement).toBe(field); });
+    fireEvent.change(field, { target: { value: "5 Jun 27" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+
+    // The board reads the week of Saturday 5 June 2027, Monday 31 May onwards.
+    await waitFor(() => {
+      expect(getCalendarMock.mock.calls.some((call) => call[1] === "2027-05-30T23:00:00.000Z")).toBe(true);
+    });
+    expect(await screen.findByText("Week of Mon, 31 May 2027")).toBeDefined();
+    await waitFor(() => {
+      expect(goToAnswer()).toEqual({ day: "Sat, 5 Jun 2027", rooms: [["Grand Hall", ["Free"]], ["Saloon", ["Free"]]] });
+    });
+  });
+
+  it("names what each room holds on a day the board has read", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.click(screen.getByRole("button", { name: "Go to date" }));
+    const field = await screen.findByRole("textbox", { name: "Go to date" });
+    fireEvent.change(field, { target: { value: "18/09/2026" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    // The confirmed dinner has the evening, so the 1st option it overlaps is left out.
+    await waitFor(() => {
+      expect(goToAnswer()).toEqual({
+        day: "Fri, 18 Sept 2026",
+        rooms: [["Grand Hall", ["Confirmed, Chamber dinner, 18:00–23:00"]], ["Saloon", ["Free"]]],
+      });
+    });
+  });
+
+  it("names a hold by its own place on the ladder, with its time and decision date", async () => {
+    const withoutTheDinner = fixture();
+    getCalendarMock.mockResolvedValue({
+      ...withoutTheDinner,
+      entries: withoutTheDinner.entries.filter((entry) => entry.id !== INK_ID),
+      conflicts: { ...withoutTheDinner.conflicts, conflicts: [] },
+    });
+    renderPage();
+    await screen.findByRole("button", { name: /^MacLeod wedding — / });
+    fireEvent.keyDown(window, { key: "g" });
+    const field = await screen.findByRole("textbox", { name: "Go to date" });
+    fireEvent.change(field, { target: { value: "Fri 18 Sept 2026" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    await waitFor(() => { expect(goToAnswer()?.rooms[0]?.[0]).toBe("Grand Hall"); });
+    // It ends at midnight, so the board's own label names both days.
+    expect(goToAnswer()?.rooms[0]?.[1]).toEqual([
+      expect.stringMatching(/^1st option MacLeod wedding, 18 Sept? 19:00 – 19 Sept? 00:00, decides Tue 1 Dec( 2026)?$/u),
+    ]);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says when the words are not a date, and leaves the board where it is", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.keyDown(window, { key: "g" });
+    const field = await screen.findByRole("textbox", { name: "Go to date" });
+    fireEvent.change(field, { target: { value: "next Thursday-ish" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    expect((await screen.findByRole("alert")).textContent).toBe("The Diary cannot read that as a date. Try 5 Jun 27 or 05/06/2027.");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText("Week of Mon, 14 Sept 2026")).toBeDefined();
+  });
+
+  it("goes to the date, and says so when the weekday said with it is another", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.keyDown(window, { key: "g" });
+    const field = await screen.findByRole("textbox", { name: "Go to date" });
+    fireEvent.change(field, { target: { value: "Fri 5 Jun 27" } });
+    fireEvent.submit(field.closest("form") as HTMLFormElement);
+    expect((await screen.findByRole("alert")).textContent).toBe("That date is a Saturday, not a Friday.");
+    expect(field.getAttribute("aria-invalid")).toBe("false");
+    await waitFor(() => { expect(goToAnswer()?.day).toBe("Sat, 5 Jun 2027"); });
+    // New words put the hint back.
+    fireEvent.change(field, { target: { value: "Sat 5 Jun 27" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("As you would say it: 5 Jun 27, 05/06/2027 or 5th June.")).toBeDefined();
+  });
+
+  it("closes with Escape and gives focus back to its button", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.click(screen.getByRole("button", { name: "Go to date" }));
+    const field = await screen.findByRole("textbox", { name: "Go to date" });
+    fireEvent.keyDown(field, { key: "Escape" });
+    await waitFor(() => { expect(screen.queryByRole("textbox", { name: "Go to date" })).toBeNull(); });
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("button", { name: "Go to date" })); });
+  });
+
+  it("moves the range with [ and ]", async () => {
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.keyDown(window, { key: "]" });
+    expect(await screen.findByText("Week of Mon, 21 Sept 2026")).toBeDefined();
+    fireEvent.keyDown(window, { key: "[" });
+    fireEvent.keyDown(window, { key: "[" });
+    expect(await screen.findByText("Week of Mon, 7 Sept 2026")).toBeDefined();
+  });
+});

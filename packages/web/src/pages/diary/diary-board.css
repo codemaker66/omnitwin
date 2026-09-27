@@ -59,6 +59,21 @@
    slot keeps a line's height when empty, which on a phone, where it wraps
    under the legend, holds that line open. Only a failed refresh's notice
    can need a second line there. */
+/* Go to date (roadmap N3): a date as it was said, and the rooms that day.
+   It opens under the toolbar and pushes nothing else aside. */
+.diary-goto { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; max-width: 760px; margin-top: 14px; padding: 14px 16px; border: 1px solid #d7dcce; border-left: 3px solid #c98a5b; border-radius: 3px; background: #fffef8; }
+.diary-goto-field { display: flex; flex-direction: column; gap: 6px; color: var(--house-ink-2); font-size: 12px; font-weight: 600; }
+.diary-goto-field input { min-width: 220px; min-height: 40px; padding: 8px 11px; border: 1px solid #ced8c4; border-radius: 6px; background: #fffef9; color: #284431; font-size: 15px; font-weight: 400; }
+.diary-goto-hint, .diary-goto-error { flex: 1 1 100%; margin: 0; font-size: 12px; color: var(--house-ink-3); }
+.diary-goto-error { color: var(--house-brick-text); }
+.diary-goto-answer { flex: 1 1 100%; margin: 0; color: var(--house-ink-1); font-size: 14px; line-height: 1.5; }
+.diary-goto-answer:empty { display: none; }
+.diary-goto-day { margin: 2px 0 8px; font-family: var(--diary-hand); font-size: 19px; font-weight: 500; }
+.diary-goto-rooms { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 20px; margin: 0; }
+.diary-goto-room { display: contents; }
+.diary-goto-room dt { grid-column: 1; font-weight: 650; }
+.diary-goto-room dd { grid-column: 2; margin: 0; }
+.diary-overview-day.is-sought { box-shadow: inset 0 -3px 0 #c98a5b; font-weight: 650; }
 .diary-header-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 24px; margin-top: 17px; }
 .diary-header-foot .diary-legend { margin: 0; }
 .diary-status-slot { min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 18px; color: #536359; font-size: 12px; }
@@ -360,6 +375,10 @@ button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(-
   .diary-welcome { padding: 22px; }
   .diary-welcome-entries { grid-template-columns: 1fr; gap: 5px; }
   .diary-welcome-entry { display: block; margin-bottom: 12px; }
+  .diary-goto-field input { min-width: 0; width: 100%; }
+  .diary-goto-field { flex: 1 1 100%; }
+  .diary-goto-rooms { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .diary-goto-room dd { grid-column: 1; margin-bottom: 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .diary-page *, .diary-page *::before, .diary-page *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

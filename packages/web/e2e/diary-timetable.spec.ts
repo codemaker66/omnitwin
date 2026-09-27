@@ -96,6 +96,37 @@ test.describe("Diary timetable", () => {
     expect(found).toEqual([]);
   });
 
+  test("goes to a date as it was said, and answers what each room holds", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await emulate(page);
+    await openDiary(page);
+    await page.keyboard.press("g");
+    const field = page.getByRole("textbox", { name: "Go to date" });
+    await expect(field).toBeFocused();
+    await field.fill("5 Jun 27");
+    await field.press("Enter");
+    // The week of Saturday 5 June 2027, with the day marked and each room answered.
+    // Browsers' ICU data differs on the comma after the weekday.
+    await expect(page.getByText(/^Week of Mon,? 31 May 2027$/u)).toBeVisible();
+    await expect(page.locator(".diary-overview-day.is-sought")).toContainText(/Sat,? 5 Jun/u);
+    const answer = page.locator(".diary-goto-answer");
+    await expect(answer.locator(".diary-goto-day")).toHaveText(/^Sat,? 5 Jun 2027$/u);
+    await expect(answer.locator("dt")).toHaveText(["Grand Hall", "Saloon", "Robert Adam Room"]);
+    await expect(answer.locator("dd")).toHaveText(["Free", "Free", "Free"]);
+
+    // A day the board holds bookings on names them in Blake's words, and a
+    // weekday said with the date that is not its own is pointed out.
+    await field.fill("Fri 19/09/2026");
+    await field.press("Enter");
+    await expect(page.getByRole("alert")).toHaveText("That date is a Saturday, not a Friday.");
+    await expect(answer.locator(".diary-goto-day")).toHaveText(/^Sat,? 19 Sept? 2026$/u);
+    await expect(answer.locator("dd")).toHaveText([/^1st option MacLeod wedding, 14:00–23:30, decides Mon,? 21 Sept?$/u, "Free", "Free"]);
+    expect(await unreadableText(page, ".diary-goto", "go to date")).toEqual([]);
+
+    await field.press("Escape");
+    await expect(page.getByRole("button", { name: "Go to date" })).toBeFocused();
+  });
+
   test("opens on this week with the decisions due and the tray, and books where it is clicked", async ({ page }) => {
     const emulated = await emulate(page);
     await openDiary(page);

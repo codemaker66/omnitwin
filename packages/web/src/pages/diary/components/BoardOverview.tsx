@@ -22,6 +22,8 @@ export interface BoardOverviewProps {
   /** The range is on its way: rooms and days stand, and no room claims a
    *  number of bookings the board has not read. */
   readonly pending?: boolean;
+  /** The day Go to date named, marked in the axis. */
+  readonly soughtDayMs?: number | null;
 }
 
 const NO_ITEMS: readonly OverviewItem[] = [];
@@ -30,7 +32,7 @@ const NO_ITEMS: readonly OverviewItem[] = [];
  *  enquiry loads, none of which change what the overview shows. The index
  *  is rebuilt only when the entries (or the visible days) change, so a render
  *  costs one pass over the visible cards — no per-cell filtering or Intl. */
-export const BoardOverview = memo(function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay, onCreateOnDay, pending = false }: BoardOverviewProps): ReactElement {
+export const BoardOverview = memo(function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay, onCreateOnDay, pending = false, soughtDayMs = null }: BoardOverviewProps): ReactElement {
   const days = useMemo(() => dayColumns(range), [range]);
   const columns = useMemo(() => days.map((day) => ({ day, date: msToWallInput(day.startMs).slice(0, 10) })), [days]);
   const index = useMemo(() => buildOverviewIndex(entries, days), [entries, days]);
@@ -41,7 +43,7 @@ export const BoardOverview = memo(function BoardOverview({ rooms, entries, range
       <div className={`diary-overview-grid${days.length > 7 ? " is-long-range" : ""}`} style={{ "--diary-days": days.length } as CSSProperties}>
         <div className="diary-overview-row diary-overview-axis">
           <div className="diary-overview-room-heading">Rooms <span>{rooms.length}</span></div>
-          {days.map((day) => <button type="button" key={day.startMs} className={`diary-overview-day${nowMs >= day.startMs && nowMs < day.endMs ? " is-today" : ""}`}
+          {days.map((day) => <button type="button" key={day.startMs} className={`diary-overview-day${nowMs >= day.startMs && nowMs < day.endMs ? " is-today" : ""}${day.startMs === soughtDayMs ? " is-sought" : ""}`}
             onClick={() => { onOpenDay(day.startMs); }} aria-label={`Open ${day.label} in Day view`}>
             <span>{day.label}</span>{nowMs >= day.startMs && nowMs < day.endMs ? <small>Today</small> : <ArrowRight size={13} />}</button>)}
         </div>
