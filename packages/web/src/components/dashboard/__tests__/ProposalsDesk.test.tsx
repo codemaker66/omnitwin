@@ -479,6 +479,24 @@ describe("the next step", () => {
     expect((await panel.findByRole("alert")).textContent).toBe("That did not go through. The proposal is as it was.");
     expect(panel.getByTestId("withdraw-confirm")).toBeDefined();
   });
+
+  it("says the proposal moved first, and shows where it now stands, when the client answered before a withdrawal arrived", async () => {
+    existing = [proposal({ status: "sent", currentVersion: 1 })];
+    mocks.transitionProposal.mockImplementation(() => {
+      // The client accepted a moment before the booker's withdrawal reached the API.
+      existing = [proposal({ status: "accepted", currentVersion: 1 })];
+      return Promise.reject(new ApiError(409, "The proposal changed", "PROPOSAL_STATUS_CHANGED"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(panel.getByTestId("withdraw-button"));
+    fireEvent.click(panel.getByTestId("withdraw-confirm-button"));
+    expect((await panel.findByRole("alert")).textContent)
+      .toBe("It changed before that arrived, so nothing was done. It now shows where it stands.");
+    expect(await panel.findByText("Accepted", { selector: ".enq-chip" })).toBeDefined();
+    // The ledger is read again too, so the row moves to Accepted.
+    await waitFor(() => { expect(screen.getByTestId("proposals-summary").textContent).toBe("Nothing is waiting on you."); });
+  });
 });
 
 describe("the next version", () => {

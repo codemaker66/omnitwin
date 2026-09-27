@@ -79,6 +79,15 @@ const FAILURE_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   reply: "The reply was not posted. Your words are still here.",
 };
 
+/** The proposal moved before the request arrived (a client's answer, or a
+ *  colleague), so nothing was done; the panel is read again to show it. */
+const MOVED_CODES: readonly string[] = ["PROPOSAL_STATUS_CHANGED", "INVALID_TRANSITION", "NOT_EDITABLE"];
+const MOVED_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
+  step: "It changed before that arrived, so nothing was done. It now shows where it stands.",
+  version: "It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.",
+  reply: "It changed before the reply arrived, so it was not posted. Your words are still here.",
+};
+
 function isEditable(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
     || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
@@ -338,7 +347,13 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
       return true;
     } catch (error: unknown) {
       if (openIdRef.current === id) {
-        setFailure({ where, message: error instanceof RefusedHere ? error.message : FAILURE_WORDS[where] });
+        const moved = error instanceof ApiError && MOVED_CODES.includes(error.code);
+        setFailure({ where, message: error instanceof RefusedHere ? error.message : moved ? MOVED_WORDS[where] : FAILURE_WORDS[where] });
+        if (moved) {
+          readAgain(id);
+          setReads((current) => ({ ...current, history: current.history + 1 }));
+          readList(Math.max(PAGE, rows.length));
+        }
       }
       return false;
     } finally {

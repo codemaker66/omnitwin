@@ -6,7 +6,7 @@ import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
-import { proposalRoutes, proposalShareRoutes } from "../routes/proposals.js";
+import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "../routes/proposals.js";
 
 // ---------------------------------------------------------------------------
 // The client's proposal page (roadmap X1) on isolated PostgreSQL.
@@ -37,6 +37,8 @@ const STAFF = "33333333-3333-4333-8333-333333333333";
 const PROPOSAL = "66666666-6666-4666-8666-666666666666";
 // The shape the API issues: 32 random bytes, base64url.
 const TOKEN = "clientPageToken_0123456789abcdefghijklmnopqrstuv";
+// The older six-letter share code.
+const SHARE_CODE = "abcdef";
 
 const VERSION_PAYLOAD = {
   schemaVersion: PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION,
@@ -89,6 +91,7 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     server = Fastify();
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
     await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+    await server.register(publicProposalRoutes, { db, prefix: "/public" });
     await server.ready();
   }, 120_000);
 
@@ -96,9 +99,9 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     await pool.query(`TRUNCATE ${tables.map((table) => `"${getTableConfig(table).name}"`).join(", ")}`);
     await pool.query("INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', 'trades-hall-glasgow', '85 Glassford Street')", [VENUE]);
     await pool.query(
-      `INSERT INTO proposals (id, venue_id, title, status, current_version, sent_at, created_by)
-       VALUES ($1, $2, 'Crawford wedding proposal', 'sent', 1, now(), $3)`,
-      [PROPOSAL, VENUE, STAFF],
+      `INSERT INTO proposals (id, venue_id, title, status, current_version, sent_at, created_by, share_code)
+       VALUES ($1, $2, 'Crawford wedding proposal', 'sent', 1, now(), $3, $4)`,
+      [PROPOSAL, VENUE, STAFF, SHARE_CODE],
     );
     await pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, coordinate_space) VALUES ($1, 1, $2, 'real_metre')",
       [PROPOSAL, JSON.stringify(VERSION_PAYLOAD)]);
@@ -202,5 +205,95 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     const unsaved = await server.inject({ method: "GET", url: `/proposals/${PROPOSAL}/preview`, headers: headers() });
     expect(unsaved.statusCode).toBe(422);
     expect((JSON.parse(unsaved.body) as { code: string }).code).toBe("PROPOSAL_HAS_NO_VERSION");
+  });
+
+  // -------------------------------------------------------------------------
+  // Two answers at once. Each action reads where the proposal stands and then
+  // writes; a change that commits in between must not be written over. The
+  // other side holds the row, as a transaction mid-way through its own change
+  // does, while the request is made, then commits.
+  // -------------------------------------------------------------------------
+
+  async function waitingOnTheRow(): Promise<void> {
+    await expect.poll(async () => Number((await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+      [fixtureSchema],
+    )).rows[0]?.count), { timeout: 5000 }).toBe(1);
+  }
+
+  async function whileChanging<T>(to: string, request: () => Promise<T>): Promise<T> {
+    const other = await pool.connect();
+    try {
+      await other.query("BEGIN");
+      await other.query("UPDATE proposals SET status = $2, updated_at = now() WHERE id = $1", [PROPOSAL, to]);
+      const pending = request();
+      await waitingOnTheRow();
+      await other.query("COMMIT");
+      return await pending;
+    } catch (error) {
+      await other.query("ROLLBACK");
+      throw error;
+    } finally {
+      other.release();
+    }
+  }
+
+  async function stored(): Promise<{ status: string; moves: string[]; notes: string[] }> {
+    const status = (await pool.query<{ status: string }>("SELECT status FROM proposals WHERE id = $1", [PROPOSAL])).rows[0]?.status ?? "";
+    const moves = (await pool.query<{ to_status: string }>("SELECT to_status FROM proposal_status_history ORDER BY created_at")).rows.map((row) => row.to_status);
+    const notes = (await pool.query<{ kind: string }>("SELECT kind FROM proposal_comments ORDER BY created_at")).rows.map((row) => row.kind);
+    return { status, moves, notes };
+  }
+
+  const CLIENT_ANSWERS = [
+    ["accepts through their link", { method: "POST" as const, url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford" } }],
+    ["asks for changes through their link", { method: "POST" as const, url: `/proposal-share/${TOKEN}/comment`, payload: { body: "A later finish?", kind: "request_changes" } }],
+    ["accepts through the older share code", { method: "POST" as const, url: `/public/proposals/${SHARE_CODE}/respond`, payload: { action: "accept" } }],
+    ["asks for changes through the older share code", { method: "POST" as const, url: `/public/proposals/${SHARE_CODE}/respond`, payload: { action: "request_changes", note: "A later finish?" } }],
+  ] as const;
+
+  it.each(CLIENT_ANSWERS)("keeps a withdrawal that lands while the client %s", async (_, request) => {
+    const res = await whileChanging("withdrawn", () => server.inject(request));
+    expect(res.statusCode, res.body).toBe(409);
+    expect((JSON.parse(res.body) as { code: string }).code).toBe("PROPOSAL_STATUS_CHANGED");
+    // Nothing of the client's answer is kept against a proposal it no longer
+    // answers: no move, and no note that reads as if it were taken.
+    expect(await stored()).toEqual({ status: "withdrawn", moves: [], notes: [] });
+  });
+
+  it("keeps the client's acceptance that lands while the team withdraws", async () => {
+    const res = await whileChanging("accepted", () => server.inject({
+      method: "POST", url: `/proposals/${PROPOSAL}/transition`, headers: headers(), payload: { status: "withdrawn" },
+    }));
+    expect(res.statusCode, res.body).toBe(409);
+    expect((JSON.parse(res.body) as { code: string }).code).toBe("PROPOSAL_STATUS_CHANGED");
+    expect(await stored()).toEqual({ status: "accepted", moves: [], notes: [] });
+  });
+
+  it("keeps a withdrawal that lands while the team sends the proposal, and issues no link", async () => {
+    await pool.query("UPDATE proposals SET status = 'changes_requested' WHERE id = $1", [PROPOSAL]);
+    await pool.query("DELETE FROM proposal_share_tokens");
+    const res = await whileChanging("withdrawn", () => server.inject({
+      method: "POST", url: `/proposals/${PROPOSAL}/share-token`, headers: headers(),
+    }));
+    expect(res.statusCode, res.body).toBe(409);
+    expect(await stored()).toEqual({ status: "withdrawn", moves: [], notes: [] });
+    expect((await pool.query("SELECT id FROM proposal_share_tokens")).rowCount).toBe(0);
+  });
+
+  it("keeps both of two requests for changes at once, and moves the proposal once", async () => {
+    const ask = (body: string) => server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/comment`, payload: { body, kind: "request_changes" } });
+    const [first, second] = await Promise.all([ask("A later finish?"), ask("And a piper?")]);
+    expect([first?.statusCode, second?.statusCode], `${first?.body ?? ""} ${second?.body ?? ""}`).toEqual([201, 201]);
+    expect(await stored()).toEqual({ status: "changes_requested", moves: ["changes_requested"], notes: ["request_changes", "request_changes"] });
+  });
+
+  it("answers a second acceptance as the first, and records it once", async () => {
+    const [first, second] = await Promise.all([
+      server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford" } }),
+      server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford" } }),
+    ]);
+    expect([first?.statusCode, second?.statusCode], `${first?.body ?? ""} ${second?.body ?? ""}`).toEqual([200, 200]);
+    expect(await stored()).toEqual({ status: "accepted", moves: ["accepted"], notes: ["approval_note"] });
   });
 });

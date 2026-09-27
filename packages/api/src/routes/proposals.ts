@@ -111,8 +111,9 @@ function selectDeskProposals(db: Database) {
     eventType: sql<string | null>`COALESCE(${opportunities.eventType}, ${enquiries.eventType})`,
     latestTotalMinor: sql<number | null>`(${latestQuote("totalMinor")})::int`,
     latestCurrency: sql<string | null>`${latestQuote("currency")}`,
-    // When a link of its was last opened. Staff read it through the preview,
-    // which never stamps, so this is the client's.
+    // When any of its links was last opened. The team reads it through the
+    // preview, which never stamps; a link itself can be opened by anyone it
+    // reaches, so this says when the link was opened, not by whom.
     clientOpenedAt: sql<string | null>`(
       SELECT to_char(max(${proposalShareTokens.lastViewedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${proposals.id})`,
@@ -778,33 +779,39 @@ export async function proposalRoutes(
     }
 
     const fromStatus = proposal.status;
-    const [updated] = await db.update(proposals)
-      .set(updateData)
-      .where(eq(proposals.id, params.data.id))
-      .returning();
-
-    await db.insert(proposalStatusHistory).values({
-      proposalId: params.data.id,
-      fromStatus,
-      toStatus: parsed.data.status,
-      changedBy: request.user.id,
-      note: parsed.data.note ?? null,
-    });
-    if (updated !== undefined) {
-      await moveDealFor(db, updated, parsed.data.status, request.user.id, request.log);
-      await recordProposalLifecycleChange(db, updated, {
-        actorUserId: request.user.id,
-        actorRole: toEventPlanAudienceRole(request.user.role),
-        actorLabel: request.user.email,
-        sourceKind: "proposal",
-        sourceId: updated.id,
-        title: "Proposal status changed",
-        summary: `${updated.title} moved from ${fromStatus} to ${parsed.data.status}.`,
-        affectedSurfaces: ["proposal"],
-        includeHallkeeperWhenHandoffExists: parsed.data.status === "changes_requested",
-        logger: request.log,
+    // The move and its history commit together, and only from the status read
+    // above: a client's answer that landed since then stands.
+    const updated = await db.transaction(async (tx) => {
+      if ((await holdProposal(tx, params.data.id))?.status !== fromStatus) return null;
+      const [row] = await tx.update(proposals)
+        .set(updateData)
+        .where(eq(proposals.id, params.data.id))
+        .returning();
+      if (row === undefined) throw new Error("proposal update returned no row");
+      await tx.insert(proposalStatusHistory).values({
+        proposalId: params.data.id,
+        fromStatus,
+        toStatus: parsed.data.status,
+        changedBy: request.user.id,
+        note: parsed.data.note ?? null,
       });
-    }
+      return row;
+    });
+    if (updated === null) return reply.status(409).send(STATUS_CHANGED);
+
+    await moveDealFor(db, updated, parsed.data.status, request.user.id, request.log);
+    await recordProposalLifecycleChange(db, updated, {
+      actorUserId: request.user.id,
+      actorRole: toEventPlanAudienceRole(request.user.role),
+      actorLabel: request.user.email,
+      sourceKind: "proposal",
+      sourceId: updated.id,
+      title: "Proposal status changed",
+      summary: `${updated.title} moved from ${fromStatus} to ${parsed.data.status}.`,
+      affectedSurfaces: ["proposal"],
+      includeHallkeeperWhenHandoffExists: parsed.data.status === "changes_requested",
+      logger: request.log,
+    });
 
     return { data: updated };
   });
@@ -970,6 +977,8 @@ export async function proposalRoutes(
 
     const now = new Date();
     const result = await db.transaction(async (tx) => {
+      // Sending moves the status; it moves only from the one read above.
+      if ((await holdProposal(tx, proposal.id))?.status !== proposal.status) return null;
       const [shareToken] = await tx.insert(proposalShareTokens).values({
         proposalId: proposal.id,
         tokenHash,
@@ -1013,6 +1022,7 @@ export async function proposalRoutes(
 
       return { shareToken, proposal: updated };
     });
+    if (result === null) return reply.status(409).send(STATUS_CHANGED);
     if (result.proposal.status !== proposal.status) {
       await moveDealFor(db, result.proposal, result.proposal.status, request.user.id, request.log);
     }
@@ -1262,6 +1272,26 @@ const ShareTokenParam = z.object({
 
 type ShareTokenRecord = typeof proposalShareTokens.$inferSelect;
 type ProposalRecord = typeof proposals.$inferSelect;
+type ProposalTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+/**
+ * The proposal's row, held until the transaction ends. Every move of a
+ * proposal's status takes it first and compares it with the status the
+ * request read, so an answer or a move that committed in between is never
+ * written over: a client accepting while the team withdraws, or two presses
+ * of Accept at once.
+ */
+async function holdProposal(tx: ProposalTransaction, id: string): Promise<ProposalRecord | undefined> {
+  const [row] = await tx.select().from(proposals)
+    .where(and(eq(proposals.id, id), isNull(proposals.deletedAt)))
+    .for("update");
+  return row;
+}
+
+const STATUS_CHANGED = {
+  error: "The proposal changed while this was on its way. Reload it to see where it stands.",
+  code: "PROPOSAL_STATUS_CHANGED",
+} as const;
 
 /** The event a proposal is for, as its client reads it. */
 interface ClientFacts {
@@ -1532,18 +1562,24 @@ export async function publicProposalRoutes(
     }
 
     const fromStatus = proposal.status;
-    const [updated] = await db.update(proposals)
-      .set({ status: toStatus, updatedAt: new Date() })
-      .where(eq(proposals.id, proposal.id))
-      .returning({ status: proposals.status });
-
-    await db.insert(proposalStatusHistory).values({
-      proposalId: proposal.id,
-      fromStatus,
-      toStatus,
-      changedBy: null,
-      note: parsed.data.note ?? null,
+    // The answer and its history commit together, and only while the
+    // proposal still stands as it was read.
+    const updated = await db.transaction(async (tx) => {
+      if ((await holdProposal(tx, proposal.id))?.status !== fromStatus) return null;
+      const [row] = await tx.update(proposals)
+        .set({ status: toStatus, updatedAt: new Date() })
+        .where(eq(proposals.id, proposal.id))
+        .returning({ status: proposals.status });
+      await tx.insert(proposalStatusHistory).values({
+        proposalId: proposal.id,
+        fromStatus,
+        toStatus,
+        changedBy: null,
+        note: parsed.data.note ?? null,
+      });
+      return row ?? null;
     });
+    if (updated === null) return reply.status(409).send(STATUS_CHANGED);
     await moveDealFor(db, proposal, toStatus, null, request.log);
 
     await recordProposalLifecycleChange(db, proposal, {
@@ -1563,7 +1599,7 @@ export async function publicProposalRoutes(
       logger: request.log,
     });
 
-    return { data: { status: updated?.status ?? toStatus } };
+    return { data: { status: updated.status } };
   });
 }
 
@@ -1616,7 +1652,15 @@ export async function proposalShareRoutes(
     }
 
     const kind = parsed.data.kind;
+    const read = resolved.proposal.status;
     const result = await db.transaction(async (tx) => {
+      // Held first: nothing is kept against a proposal withdrawn since the
+      // read. A second request for changes at once is kept as it would have
+      // been a moment later, without moving the proposal again.
+      const current = (await holdProposal(tx, resolved.proposal.id))?.status ?? null;
+      if (current !== read && !(kind === "request_changes" && read === "sent" && current === "changes_requested")) {
+        return null;
+      }
       const [comment] = await tx.insert(proposalComments).values({
         proposalId: resolved.proposal.id,
         shareTokenId: resolved.shareToken.id,
@@ -1628,7 +1672,8 @@ export async function proposalShareRoutes(
       }).returning();
       if (comment === undefined) throw new Error("proposal comment insert returned no row");
 
-      if (kind === "request_changes" && resolved.proposal.status === "sent") {
+      const moves = kind === "request_changes" && current === "sent";
+      if (moves) {
         await tx.update(proposals)
           .set({ status: "changes_requested", updatedAt: new Date() })
           .where(eq(proposals.id, resolved.proposal.id));
@@ -1641,20 +1686,22 @@ export async function proposalShareRoutes(
         });
       }
 
-      return comment;
+      return { comment, moved: moves };
     });
-    if (kind === "request_changes" && resolved.proposal.status === "sent") {
+    if (result === null) return reply.status(409).send(STATUS_CHANGED);
+    const { comment } = result;
+    if (result.moved) {
       await moveDealFor(db, resolved.proposal, "changes_requested", null, request.log);
     }
 
     await recordProposalLifecycleChange(db, resolved.proposal, {
       actorUserId: null,
       actorRole: "client",
-      actorLabel: result.authorName ?? "Client",
+      actorLabel: comment.authorName ?? "Client",
       sourceKind: "proposal_comment",
-      sourceId: result.id,
+      sourceId: comment.id,
       title: kind === "request_changes" ? "Client requested proposal changes" : "Client commented on proposal",
-      summary: boundedLifecycleSummary(result.body),
+      summary: boundedLifecycleSummary(comment.body),
       affectedSurfaces: kind === "request_changes" ? ["proposal", "comments"] : ["comments"],
       includeHallkeeperWhenHandoffExists: kind === "request_changes",
       logger: request.log,
@@ -1662,10 +1709,10 @@ export async function proposalShareRoutes(
 
     return reply.status(201).send({
       data: {
-        kind: result.kind,
-        authorName: result.authorName,
-        body: result.body,
-        createdAt: result.createdAt,
+        kind: comment.kind,
+        authorName: comment.authorName,
+        body: comment.body,
+        createdAt: comment.createdAt,
       },
     });
   });
@@ -1691,7 +1738,13 @@ export async function proposalShareRoutes(
       return reply.status(422).send({ error: "This proposal is not awaiting approval", code: "NOT_AWAITING_RESPONSE" });
     }
 
-    await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
+      // Held first. A second press of Accept that arrives with the first is
+      // answered as the first was, and recorded once; anything else that
+      // landed since the read (a withdrawal) stands.
+      const current = (await holdProposal(tx, resolved.proposal.id))?.status ?? null;
+      if (current === "accepted") return "already" as const;
+      if (current !== resolved.proposal.status) return "changed" as const;
       await tx.update(proposals)
         .set({ status: "accepted", updatedAt: new Date() })
         .where(eq(proposals.id, resolved.proposal.id));
@@ -1711,7 +1764,10 @@ export async function proposalShareRoutes(
         body: parsed.data.body ?? "Client approved the proposal.",
         isClientVisible: true,
       });
+      return "accepted" as const;
     });
+    if (outcome === "already") return { data: { status: "accepted" } };
+    if (outcome === "changed") return reply.status(409).send(STATUS_CHANGED);
     await moveDealFor(db, resolved.proposal, "accepted", null, request.log);
 
     await recordProposalLifecycleChange(db, resolved.proposal, {
