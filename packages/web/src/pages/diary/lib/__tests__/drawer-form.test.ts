@@ -276,3 +276,53 @@ describe("create at a clicked instant (T-619)", () => {
     expect(form.endsAt).toBe("2026-09-19T16:15");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plain words (roadmap N3): the booker reads what a field needs, never the
+// schema's own wording ("endsAt must be after startsAt", "Invalid uuid",
+// "String must contain at least 1 character(s)").
+// ---------------------------------------------------------------------------
+
+describe("drawer form — what a field needs, in plain words", () => {
+  function createErrors(overrides: Partial<DrawerForm>): Readonly<Record<string, string>> {
+    const result = formToCreatePayload(holdForm(overrides), VENUE);
+    if (result.ok) throw new Error("expected the form to be refused");
+    return result.fieldErrors;
+  }
+
+  it.each<[string, Partial<DrawerForm>, string, string]>([
+    ["no room", { spaceId: "" }, "spaceId", "Choose a room."],
+    ["no title", { title: "   " }, "title", "Give the booking a title."],
+    ["a long title", { title: "x".repeat(201) }, "title", "Keep the title to 200 characters."],
+    ["a long event type", { eventType: "x".repeat(81) }, "eventType", "Keep the event type to 80 characters."],
+    ["no start", { startsAt: "" }, "startsAt", "Choose when it starts."],
+    ["no end", { endsAt: "" }, "endsAt", "Choose when it ends."],
+    ["an end before the start", { endsAt: "2026-09-19T17:00" }, "endsAt", "It must end after it starts."],
+    ["option 0", { rank: "0" }, "rank", "The option is a whole number, 1 or more."],
+    ["option 1.5", { rank: "1.5" }, "rank", "The option is a whole number, 1 or more."],
+    ["a long next action", { nextAction: "x".repeat(501) }, "nextAction", "Keep the next action to 500 characters."],
+    ["long notes", { notes: "x".repeat(2001) }, "notes", "Keep the notes to 2,000 characters."],
+    ["no owner", { ownerUserId: "not-a-person" }, "ownerUserId", "Choose who owns the hold."],
+    ["an unreadable time", { decisionAt: "someday" }, "decisionAt", "Enter a valid date and time."],
+  ])("says what %s needs", (_case, overrides, field, words) => {
+    expect(createErrors(overrides)[field]).toBe(words);
+  });
+
+  it("keeps the schema's own plain words for a hold's requirements", () => {
+    expect(createErrors({ decisionAt: "" })["decisionAt"]).toBe("A provisional hold needs a decision date.");
+    expect(createErrors({ nextAction: "" })["nextAction"]).toBe("A provisional hold needs a next action.");
+    expect(createErrors({ nextActionDueAt: "" })["nextActionDueAt"]).toBe("A provisional hold needs a date for its next action.");
+  });
+
+  it("never shows the schema's wording, whatever is wrong", () => {
+    const broken: readonly Partial<DrawerForm>[] = [
+      { spaceId: "" }, { title: "" }, { endsAt: "2026-09-19T09:00" }, { rank: "-3" }, { ownerUserId: "x" },
+      { title: "x".repeat(500), notes: "x".repeat(3000), nextAction: "x".repeat(900) },
+    ];
+    for (const overrides of broken) {
+      for (const words of Object.values(createErrors(overrides))) {
+        expect(words).not.toMatch(/must contain|Invalid|Expected|Required|endsAt|startsAt|uuid|greater than|characters?\(s\)/u);
+      }
+    }
+  });
+});

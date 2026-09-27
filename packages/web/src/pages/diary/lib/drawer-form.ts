@@ -11,6 +11,7 @@ import {
   type UpdateBookingInput,
 } from "@omnitwin/types";
 import { msToWallInput, wallInputToMs } from "./board-time.js";
+import { BOARD_COPY } from "../board-copy.js";
 import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
 
 // ---------------------------------------------------------------------------
@@ -180,7 +181,7 @@ function mapTimes(form: DrawerForm, fields: readonly (keyof DrawerForm)[]): Time
     }
     const ms = wallInputToMs(raw);
     if (ms === null) {
-      errors[field] = "Enter a valid date and time.";
+      errors[field] = BOARD_COPY.drawer.problems.date;
       continue;
     }
     values[field] = new Date(ms).toISOString();
@@ -188,13 +189,43 @@ function mapTimes(form: DrawerForm, fields: readonly (keyof DrawerForm)[]): Time
   return { values, errors };
 }
 
-function issuesToFieldErrors(
-  issues: readonly { path: readonly (string | number)[]; message: string }[],
-): FieldErrors {
+interface SchemaIssue {
+  readonly code: string;
+  readonly path: readonly (string | number)[];
+  readonly message: string;
+}
+
+/** A schema issue as the booker reads it (roadmap N3): plain words about
+ *  the field in front of them. The schema's own custom messages for a hold's
+ *  requirements already read that way and pass as they are; nothing else of
+ *  the schema's wording does. */
+function plainMessage(field: string, issue: SchemaIssue): string {
+  const words = BOARD_COPY.drawer.problems;
+  const custom = issue.code === "custom";
+  switch (field) {
+    case "spaceId": return words.room;
+    case "title": return issue.code === "too_big" ? words.titleLong : words.titleMissing;
+    case "eventType": return words.eventTypeLong;
+    case "startsAt": return words.startsMissing;
+    case "endsAt": return custom ? words.endsBeforeStart : words.endsMissing;
+    // "Only a provisional hold has an option number."
+    case "rank": return custom ? issue.message : words.option;
+    // "A provisional hold needs a next action." and its like.
+    case "nextAction": return custom ? issue.message : issue.code === "too_big" ? words.nextActionLong : words.nextActionMissing;
+    case "ownerUserId": return custom ? issue.message : words.owner;
+    case "decisionAt":
+    case "nextActionDueAt": return custom ? issue.message : words.date;
+    case "notes": return words.notesLong;
+    case "kind": return words.commitment;
+    default: return words.unreadable;
+  }
+}
+
+function issuesToFieldErrors(issues: readonly SchemaIssue[]): FieldErrors {
   const errors: Record<string, string> = {};
   for (const issue of issues) {
     const key = String(issue.path[0] ?? "form");
-    errors[key] ??= issue.message;
+    errors[key] ??= plainMessage(key, issue);
   }
   return errors;
 }

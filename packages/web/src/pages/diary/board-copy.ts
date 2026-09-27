@@ -207,6 +207,27 @@ export const BOARD_COPY = {
       `A provisional date for ${name}. The enquiry stays in review.`,
     hygieneLegend: "Keeping the hold current",
     ownerNote: "You will own this hold.",
+    /** What a field needs, in plain words (roadmap N3). The schema's own
+     *  words ("endsAt must be after startsAt", "Invalid uuid") never reach
+     *  the booker; its hold requirements already read plainly and pass as
+     *  they are. */
+    problems: {
+      room: "Choose a room.",
+      titleMissing: "Give the booking a title.",
+      titleLong: "Keep the title to 200 characters.",
+      eventTypeLong: "Keep the event type to 80 characters.",
+      startsMissing: "Choose when it starts.",
+      endsMissing: "Choose when it ends.",
+      endsBeforeStart: "It must end after it starts.",
+      option: "The option is a whole number, 1 or more.",
+      nextActionMissing: "Write the next action.",
+      nextActionLong: "Keep the next action to 500 characters.",
+      notesLong: "Keep the notes to 2,000 characters.",
+      owner: "Choose who owns the hold.",
+      date: "Enter a valid date and time.",
+      commitment: "Choose a commitment.",
+      unreadable: "This booking cannot be saved as it stands. Close it and open it again.",
+    },
     /** What already holds the room and time a new hold is placed in (roadmap
      *  N3); its option follows this ladder until the booker sets one. */
     ladder: {
