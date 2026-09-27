@@ -161,12 +161,16 @@ function asBooking(row: CalendarBookingEntry, patch: Record<string, unknown>): B
 export interface Emulated {
   /** Query strings of every GET /enquiries. */
   readonly enquiryRequests: string[];
+  /** A GET /calendar for the range starting at this instant (ISO) waits for
+   *  the promise, or answers 500 while it holds "fail". Unplanned ranges
+   *  answer at once. */
+  readonly calendarPlan: Map<string, "fail" | Promise<void>>;
   /** booking.update payloads, as the hub received them. */
   readonly updates: { readonly bookingId: string; readonly payload: Record<string, unknown> }[];
 }
 
 export async function emulate(page: Page): Promise<Emulated> {
-  const emulated: Emulated = { enquiryRequests: [], updates: [] };
+  const emulated: Emulated = { enquiryRequests: [], calendarPlan: new Map(), updates: [] };
   await page.clock.setFixedTime(new Date(NOW));
   await page.addInitScript((user) => {
     Object.defineProperty(window, "__OMNITWIN_E2E__", { value: true, writable: false });
@@ -181,12 +185,22 @@ export async function emulate(page: Page): Promise<Emulated> {
       // the venue-wide decisions list whatever the range.
       const from = Date.parse(url.searchParams.get("from") ?? "");
       const to = Date.parse(url.searchParams.get("to") ?? "");
-      const data = calendar();
-      void route.fulfill({ json: { data: {
-        ...data,
-        range: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-        entries: data.entries.filter((row) => Date.parse(row.startsAt) < to && Date.parse(row.endsAt) > from),
-      } } });
+      const plan = emulated.calendarPlan.get(new Date(from).toISOString());
+      if (plan === "fail") {
+        void route.fulfill({ status: 500, json: { error: "Internal error", code: "INTERNAL_ERROR" } });
+        return;
+      }
+      const answer = (): void => {
+        const data = calendar();
+        // The board may have let a read ahead go by then; nothing waits for it.
+        void route.fulfill({ json: { data: {
+          ...data,
+          range: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
+          entries: data.entries.filter((row) => Date.parse(row.startsAt) < to && Date.parse(row.endsAt) > from),
+        } } }).catch(() => undefined);
+      };
+      if (plan === undefined) answer();
+      else void plan.then(answer);
     } else if (url.pathname === "/enquiries") {
       emulated.enquiryRequests.push(url.search);
       void route.fulfill({ json: { data: ENQUIRIES } });

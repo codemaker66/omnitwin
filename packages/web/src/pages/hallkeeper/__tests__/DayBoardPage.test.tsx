@@ -170,7 +170,11 @@ describe("DayBoardPage", () => {
     });
     expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
     expect(screen.getByText("Chamber dinner")).toBeTruthy();
-    if (settlement === "reject") expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    if (settlement === "reject") {
+      expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+      // The day stays, and the notice says the refresh did not land.
+      expect(screen.getByText(/^Couldn't refresh at \d\d:\d\d\./u)).toBeTruthy();
+    }
   });
 
   it("shows one shared status while retrying a failed background refresh and keeps the board visible", async () => {

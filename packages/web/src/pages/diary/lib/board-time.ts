@@ -196,7 +196,13 @@ export function shiftRange(
   direction: 1 | -1,
   timeZone: string = VENUE_TIME_ZONE,
 ): BoardRange {
-  const anchor = direction === 1 ? range.toMs + MINUTE_MS : range.fromMs - MINUTE_MS;
+  // Forward: the first minute after the range. Back: midday a whole range
+  // earlier. A minute before the range landed in its previous WEEK, so a
+  // fortnight went back seven days while it went forward fourteen. Midday
+  // keeps a daylight-saving hour from tipping it into another day.
+  const anchor = direction === 1
+    ? range.toMs + MINUTE_MS
+    : range.fromMs - (range.toMs - range.fromMs) + 12 * HOUR_MS;
   return boardRange(anchor, range.view, timeZone);
 }
 

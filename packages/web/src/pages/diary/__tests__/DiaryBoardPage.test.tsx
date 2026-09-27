@@ -240,6 +240,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
   window.localStorage.clear();
   useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false, error: null });
 });
@@ -424,7 +425,10 @@ describe("DiaryBoardPage", () => {
     expect(await screen.findByText("The diary could not load.")).toBeDefined();
     screen.getByRole("button", { name: "Try again" }).click();
     expect(await screen.findByText("Grand Hall")).toBeDefined();
-    expect(getCalendarMock).toHaveBeenCalledTimes(2);
+    // The failed read and its retry are both this week; any later reads are
+    // its neighbours, read ahead.
+    const weeks = getCalendarMock.mock.calls.map((call) => String(call[1]));
+    expect(weeks.slice(0, 2)).toEqual(["2026-09-13T23:00:00.000Z", "2026-09-13T23:00:00.000Z"]);
   });
 
   it("keyboard-moves a pencil with Space and PATCHes the snapped window (review P2 coverage)", async () => {
@@ -617,11 +621,13 @@ describe("DiaryBoardPage — the tray reads once (T-619)", () => {
     getCalendarMock.mockImplementation(() => Promise.resolve(fixture()));
     renderPage();
     await screen.findByText("Fiona MacLeod");
-    const calendarCalls = getCalendarMock.mock.calls.length;
+    // The board's own week; its neighbours are read ahead as well.
+    const readsOfThisWeek = (): number => getCalendarMock.mock.calls.filter((call) => call[1] === "2026-09-13T23:00:00.000Z").length;
+    const before = readsOfThisWeek();
     expect(listEnquiriesMock).toHaveBeenCalledTimes(1);
     act(() => { liveState.onChange?.(); });
     await waitFor(() => { expect(listEnquiriesMock).toHaveBeenCalledTimes(2); });
-    expect(getCalendarMock.mock.calls.length).toBe(calendarCalls + 1);
+    await waitFor(() => { expect(readsOfThisWeek()).toBe(before + 1); });
   });
 
   it("reloads the tray after a drawer save", async () => {
@@ -780,7 +786,8 @@ describe("DiaryBoardPage — shortcuts, presence and retired views (T-619)", () 
     await screen.findByText("Grand Hall");
     expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("button", { name: "Month" })).toBeNull();
-    const requested = getCalendarMock.mock.calls.at(-1) as [string, string, string] | undefined;
+    // The board's own read comes first; its neighbours are read ahead after.
+    const requested = getCalendarMock.mock.calls[0] as [string, string, string] | undefined;
     expect(requested?.[1]).toBe("2026-09-13T23:00:00.000Z");
     expect(requested?.[2]).toBe("2026-09-20T23:00:00.000Z");
     fireEvent.keyDown(window, { key: "m" });
@@ -975,5 +982,113 @@ describe("DiaryBoardPage — a finger scrolls the tray, a long press lifts a sli
     fireEvent.pointerUp(slip, { pointerType: "touch", pointerId: 7, clientX: 300, clientY: 200 });
     act(() => { vi.advanceTimersByTime(1_000); });
     expect(document.querySelector(".diary-enquiry-ghost")).toBeNull();
+  });
+});
+
+describe("DiaryBoardPage — the board stays steady (roadmap N3)", () => {
+  const NEXT_WEEK = "2026-09-20T23:00:00.000Z";
+
+  function later<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
+    let resolve: (value: T) => void = () => { throw new Error("Promise not initialised"); };
+    const promise = new Promise<T>((settle) => { resolve = settle; });
+    return { promise, resolve };
+  }
+
+  /** The fixture's bookings a week on, as the next week's read returns them. */
+  function nextWeekFixture(): CalendarResponse {
+    const base = fixture();
+    const weekOn = (iso: string): string => new Date(Date.parse(iso) + 7 * 86_400_000).toISOString();
+    return {
+      ...base,
+      range: { from: NEXT_WEEK, to: "2026-09-27T23:00:00.000Z" },
+      entries: base.entries.map((entry) => ({ ...entry, startsAt: weekOn(entry.startsAt), endsAt: weekOn(entry.endsAt) })),
+      conflicts: { ...base.conflicts, conflicts: [] },
+    };
+  }
+
+  function readsOf(from: string): number {
+    return getCalendarMock.mock.calls.filter((call) => call[1] === from).length;
+  }
+
+  it("keeps the rooms while a later week is on its way, and claims nothing about its bookings", async () => {
+    const next = later<CalendarResponse>();
+    getCalendarMock.mockImplementation((_venue: string, from: string) => (from === NEXT_WEEK ? next.promise : Promise.resolve(fixture())));
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+
+    // The rooms and the new week's days stand, and the board says what it is doing.
+    expect(screen.getByText("Grand Hall")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Open Fri 25 Sept in Day view" })).toBeDefined();
+    expect(screen.getByText("Opening the week of Mon, 21 Sept 2026…")).toBeDefined();
+    expect(screen.queryByText("Opening the diary…")).toBeNull();
+    expect(screen.getByRole("region", { name: "Booking overview" }).getAttribute("aria-busy")).toBe("true");
+    // Nothing is said about bookings not yet read: no counts, no "none", no
+    // conflicts, and nowhere offered to put a new one.
+    expect(screen.queryByRole("button", { name: /^Chamber dinner — / })).toBeNull();
+    for (const count of document.querySelectorAll(".diary-overview-room small")) {
+      expect(count.getAttribute("aria-hidden")).toBe("true");
+    }
+    expect(screen.queryByText("No bookings in this range.")).toBeNull();
+    expect(screen.queryByText("No overdue next actions.")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Conflicts" })).toBeNull();
+    expect(document.querySelector(".diary-overview-new")).toBeNull();
+
+    await act(async () => { next.resolve(nextWeekFixture()); await next.promise; });
+    expect(await screen.findByRole("button", { name: /^Chamber dinner — .*Fri 25 Sept/ })).toBeDefined();
+    expect(screen.queryByText(/^Opening the week of/)).toBeNull();
+    expect(screen.getByRole("region", { name: "Booking overview" }).getAttribute("aria-busy")).toBe("false");
+    expect(screen.getByRole("region", { name: "Conflicts" })).toBeDefined();
+  });
+
+  it("keeps the bookings when a refresh fails, and says when it last read them", async () => {
+    let now = Date.parse("2026-09-16T08:00:00.000Z");
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    // This week's neighbours are read ahead first, so the failure below is the refresh's own.
+    await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(3); });
+    now += 3 * 60_000;
+    getCalendarMock.mockRejectedValueOnce(new Error("offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    // Venue time: 08:00 UTC is 09:00 in Glasgow in September.
+    const notice = await screen.findByText("Couldn't refresh at 09:03. Showing the Diary as it was at 09:00.");
+    expect(screen.getByRole("button", { name: /^Chamber dinner — / })).toBeDefined();
+    expect(screen.queryByText("The diary could not load.")).toBeNull();
+
+    fireEvent.click(within(notice).getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(screen.queryByText(/^Couldn't refresh/u)).toBeNull(); });
+    expect(screen.getByRole("button", { name: /^Chamber dinner — / })).toBeDefined();
+  });
+
+  it("opens a week already read ahead at once, and reads it again", async () => {
+    getCalendarMock.mockImplementation((_venue: string, from: string) => Promise.resolve(from === NEXT_WEEK ? nextWeekFixture() : fixture()));
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    await waitFor(() => { expect(readsOf(NEXT_WEEK)).toBe(1); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+
+    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+    expect(screen.getByRole("button", { name: /^Chamber dinner — .*Fri 25 Sept/ })).toBeDefined();
+    expect(screen.queryByText(/^Opening the week of/u)).toBeNull();
+    await waitFor(() => { expect(readsOf(NEXT_WEEK)).toBe(2); });
+  });
+
+  it("says a week could not be read where its bookings would be, and keeps the rooms' side", async () => {
+    getCalendarMock.mockImplementation((_venue: string, from: string) => (
+      from === NEXT_WEEK ? Promise.reject(new Error("offline")) : Promise.resolve(fixture())));
+    renderPage();
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("The week of Mon, 21 Sept 2026 could not be read.");
+    expect(screen.queryByText("The diary could not load.")).toBeNull();
+    expect(screen.getByRole("region", { name: "Needs attention" })).toBeDefined();
+
+    getCalendarMock.mockImplementation(() => Promise.resolve(nextWeekFixture()));
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: /^Chamber dinner — .*Fri 25 Sept/ })).toBeDefined();
   });
 });

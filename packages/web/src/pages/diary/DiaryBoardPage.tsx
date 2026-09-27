@@ -16,6 +16,7 @@ import {
   dayColumns,
   snapMs,
   boardRange,
+  formatWallTime,
   rangeTitle,
   shiftRange,
   msToWallInput,
@@ -125,7 +126,15 @@ export function DiaryBoardPage(): ReactElement {
   const anchorDate = msToWallInput(anchorMs).slice(0, 10);
   const range = useMemo(() => boardRange(anchorMs, view), [anchorDate, view]);
 
-  const { data, status, error, refetch, isRefreshing } = useCalendar(venueId, range);
+  // Later first: the way a booker usually steps.
+  const neighbours = useMemo(() => [shiftRange(range, 1), shiftRange(range, -1)], [range]);
+  const { data, frame, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range, neighbours);
+  // What the board stands on: this range's read, or while it is on its way,
+  // the venue's rooms, rules and decisions from the last range read. Only
+  // `data` speaks for this range's bookings and conflicts.
+  const shown = data ?? frame;
+  const rangePending = data === null && frame !== null && status === "loading";
+  const rangeFailed = data === null && frame !== null && status === "error";
   const [timeline, setTimeline] = useState(false);
   const showingOverview = view !== "day" && !timeline;
 
@@ -305,7 +314,7 @@ export function DiaryBoardPage(): ReactElement {
     return map;
   }, [entries]);
 
-  const rooms = data?.rooms ?? [];
+  const rooms = shown?.rooms ?? [];
   const laneOrder = useMemo(() => rooms.map((room) => room.id), [rooms]);
 
   const inksByLane = useMemo(() => {
@@ -340,7 +349,7 @@ export function DiaryBoardPage(): ReactElement {
 
   // With the venue-wide decisions list on the board, a passed decision date
   // is its to show; an older API that sends no list keeps it here.
-  const decisionsListed = data?.decisionsDue !== undefined;
+  const decisionsListed = shown?.decisionsDue !== undefined;
   const trayItems = useMemo(
     () => needsAction(entries, nowMs, { decisions: !decisionsListed }),
     [decisionsListed, entries, nowMs],
@@ -900,19 +909,31 @@ export function DiaryBoardPage(): ReactElement {
             {othersPresent.length > 0 ? ` · ${String(othersPresent.length)}` : ""}
           </span>
         </div>
-        <ul className="diary-legend" aria-label="Legend">
-          <li className="diary-legend-item is-ink">{BOARD_COPY.legend.ink}</li>
-          <li className="diary-legend-item is-hold">{BOARD_COPY.legend.hold}</li>
-          <li className="diary-legend-item is-prospect">{BOARD_COPY.legend.prospect}</li>
-          <li className="diary-legend-item is-internal_block">{BOARD_COPY.legend.internal_block}</li>
-          <li className="diary-legend-item is-phase">{BOARD_COPY.legend.phase}</li>
-        </ul>
+        <div className="diary-header-foot">
+          <ul className="diary-legend" aria-label="Legend">
+            <li className="diary-legend-item is-ink">{BOARD_COPY.legend.ink}</li>
+            <li className="diary-legend-item is-hold">{BOARD_COPY.legend.hold}</li>
+            <li className="diary-legend-item is-prospect">{BOARD_COPY.legend.prospect}</li>
+            <li className="diary-legend-item is-internal_block">{BOARD_COPY.legend.internal_block}</li>
+            <li className="diary-legend-item is-phase">{BOARD_COPY.legend.phase}</li>
+          </ul>
+          {/* One fixed place for what the board is doing, so a refresh or a
+              save never pushes the board down (roadmap N3). */}
+          <div className="diary-status-slot">
+            {rangePending ? <ActivityStatus>{BOARD_COPY.opening(rangeTitle(range))}</ActivityStatus> : null}
+            {isRefreshing ? <ActivityStatus>{BOARD_COPY.refreshing}</ActivityStatus> : null}
+            {pendingMoves > 0 ? <ActivityStatus>Saving booking moves…</ActivityStatus> : null}
+            {refreshFailedAtMs !== null ? (
+              <p className="diary-status-notice" role="status">
+                {BOARD_COPY.refreshFailed(formatWallTime(refreshFailedAtMs), readAtMs === null ? null : formatWallTime(readAtMs))}
+                <button type="button" className="diary-status-retry" onClick={refetch}>{BOARD_COPY.retry}</button>
+              </p>
+            ) : null}
+          </div>
+        </div>
       </header>
 
-      {isRefreshing ? <ActivityStatus>Refreshing the Diary…</ActivityStatus> : null}
-      {pendingMoves > 0 ? <ActivityStatus>Saving booking moves…</ActivityStatus> : null}
-
-      {status === "error" ? (
+      {shown === null && status === "error" ? (
         <div className="diary-notice is-error" role="alert">
           <p>{BOARD_COPY.errorTitle}</p>
           {error !== null ? <p className="diary-notice-detail">{error}</p> : null}
@@ -920,13 +941,23 @@ export function DiaryBoardPage(): ReactElement {
             {BOARD_COPY.retry}
           </button>
         </div>
-      ) : data === null ? (
+      ) : shown === null ? (
         <div className="diary-notice"><ActivityStatus variant="panel">{BOARD_COPY.loading}</ActivityStatus></div>
       ) : (
         <div className="diary-layout">
-          {showingOverview ? <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
-            conflictSeverity={conflictSeverity} onOpenBooking={openBookingFromOverview}
-            onOpenDay={openDayFromOverview} onCreateOnDay={writable ? openCreateOnDay : undefined} /> : <BoardGrid
+          {/* A range that could not be read says so where its bookings would
+              be; the rooms' side of the page stays. */}
+          {rangeFailed ? (
+            <div className="diary-notice is-error diary-range-error" role="alert">
+              <p>{BOARD_COPY.rangeError(rangeTitle(range))}</p>
+              {error !== null ? <p className="diary-notice-detail">{error}</p> : null}
+              <button type="button" className="diary-button" onClick={refetch}>
+                {BOARD_COPY.retry}
+              </button>
+            </div>
+          ) : showingOverview ? <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
+            conflictSeverity={conflictSeverity} onOpenBooking={openBookingFromOverview} pending={rangePending}
+            onOpenDay={openDayFromOverview} onCreateOnDay={writable && !rangePending ? openCreateOnDay : undefined} /> : <BoardGrid
             rooms={rooms}
             entries={entries}
             range={range}
@@ -936,14 +967,15 @@ export function DiaryBoardPage(): ReactElement {
             writable={writable}
             nowMs={nowMs}
             onOpenBlock={openBlock}
-            create={boardCreate}
-            turnaroundRules={data.turnaroundRules}
+            create={rangePending ? undefined : boardCreate}
+            pending={rangePending}
+            turnaroundRules={shown.turnaroundRules}
             onOpenGap={venueId === null ? undefined : openGap}
           />}
           <aside className="diary-side">
-            {data.decisionsDue === undefined ? null : (
+            {shown.decisionsDue === undefined ? null : (
               <DecisionsDuePanel
-                decisions={data.decisionsDue}
+                decisions={shown.decisionsDue}
                 rooms={rooms}
                 nowMs={nowMs}
                 onOpen={openBookingFromOverview}
@@ -951,6 +983,7 @@ export function DiaryBoardPage(): ReactElement {
             )}
             <HoldingTray
               items={trayItems}
+              itemsPending={data === null}
               onFocusEntry={focusEntry}
               enquiries={openEnquiries.map((enquiry) => ({
                 id: enquiry.id,
@@ -969,8 +1002,9 @@ export function DiaryBoardPage(): ReactElement {
               onEnquiryPressEnd={writable && !showingOverview ? endSlipPress : undefined}
               liftedEnquiryId={enquiryDrag?.enquiryId ?? null}
             />
-            <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />
-            {entries.length === 0 ? (
+            {/* This range's own: shown once it is read, never as "none". */}
+            {data === null ? null : <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />}
+            {data !== null && entries.length === 0 ? (
               <p className="diary-panel-empty">{BOARD_COPY.emptyRange}</p>
             ) : null}
           </aside>

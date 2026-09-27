@@ -102,3 +102,19 @@ describe("T-619 copy uses Blake's hold words", () => {
     expect(Object.keys(BOARD_COPY.views)).toEqual(["day", "week", "2w"]);
   });
 });
+
+describe("the board's loading and refresh words (roadmap N3)", () => {
+  it("puts a week or a fortnight inside the sentence, and a day as it is", () => {
+    expect(BOARD_COPY.opening("Week of Mon, 21 Sept 2026")).toBe("Opening the week of Mon, 21 Sept 2026…");
+    expect(BOARD_COPY.opening("Fortnight of Mon, 21 Sept 2026")).toBe("Opening the fortnight of Mon, 21 Sept 2026…");
+    expect(BOARD_COPY.opening("Mon, 21 Sept 2026")).toBe("Opening Mon, 21 Sept 2026…");
+    expect(BOARD_COPY.rangeError("Week of Mon, 21 Sept 2026")).toBe("The week of Mon, 21 Sept 2026 could not be read.");
+    expect(BOARD_COPY.rangeError("Mon, 21 Sept 2026")).toBe("Mon, 21 Sept 2026 could not be read.");
+  });
+
+  it("says from when the board is shown only once that is a different minute", () => {
+    expect(BOARD_COPY.refreshFailed("09:03", "09:00")).toBe("Couldn't refresh at 09:03. Showing the Diary as it was at 09:00.");
+    expect(BOARD_COPY.refreshFailed("09:03", "09:03")).toBe("Couldn't refresh at 09:03.");
+    expect(BOARD_COPY.refreshFailed("09:03", null)).toBe("Couldn't refresh at 09:03.");
+  });
+});

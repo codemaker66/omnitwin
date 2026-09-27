@@ -10,6 +10,12 @@
 // provisional, an ink is confirmed, and a prospect is "Interest only".
 // ---------------------------------------------------------------------------
 
+/** "Week of Mon, 21 Sept 2026" → "the week of Mon, 21 Sept 2026", so a
+ *  range title reads inside a sentence; a day's title stands as it is. */
+function rangePhrase(title: string): string {
+  return /^(Week|Fortnight) of /u.test(title) ? `the ${title.charAt(0).toLowerCase()}${title.slice(1)}` : title;
+}
+
 /** 1 → "1st", 2 → "2nd", 11 → "11th": the option numbers in Blake's words. */
 export function ordinal(rank: number): string {
   const mod100 = rank % 100;
@@ -25,6 +31,17 @@ export const BOARD_COPY = {
 
   loading: "Opening the diary…",
   errorTitle: "The diary could not load.",
+  /** A range on its way while the rooms stay on screen (roadmap N3). */
+  opening: (rangeTitle: string): string => `Opening ${rangePhrase(rangeTitle)}…`,
+  refreshing: "Refreshing the Diary…",
+  /** A refresh that did not land: the board keeps what it last read, and
+   *  says from when once that is a different minute. */
+  refreshFailed: (at: string, readAt: string | null): string =>
+    readAt === null || readAt === at ? `Couldn't refresh at ${at}.` : `Couldn't refresh at ${at}. Showing the Diary as it was at ${readAt}.`,
+  rangeError: (rangeTitle: string): string => {
+    const phrase = rangePhrase(rangeTitle);
+    return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)} could not be read.`;
+  },
   retry: "Try again",
   refresh: "Refresh",
   noVenue: "Your account has no venue assigned — ask an administrator to link one.",

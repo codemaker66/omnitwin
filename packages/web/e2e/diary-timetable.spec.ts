@@ -25,6 +25,53 @@ test.describe("Diary timetable", () => {
   test.describe.configure({ timeout: 60_000 });
   test.use({ viewport: { width: 1440, height: 900 } });
 
+  test("keeps its rooms while a week is on its way, and its bookings when a refresh fails", async ({ page }) => {
+    const emulated = await emulate(page);
+    // Monday 21 September, 00:00 BST: next week's read waits until released.
+    const nextWeek = "2026-09-20T23:00:00.000Z";
+    let releaseNextWeek: () => void = () => undefined;
+    emulated.calendarPlan.set(nextWeek, new Promise<void>((resolve) => { releaseNextWeek = resolve; }));
+    await openDiary(page);
+    const hammermen = page.getByRole("button", { name: /^Hammermen annual dinner — /u });
+    await expect(hammermen).toBeVisible();
+    const boardTop = async (): Promise<number> => (await page.locator(".diary-layout").boundingBox())?.y ?? Number.NaN;
+    const settledTop = await boardTop();
+
+    // A week on its way keeps the rooms, its own days and the decisions due,
+    // and claims nothing about bookings it has not read.
+    await page.getByRole("button", { name: "Later" }).click();
+    await expect(page.getByText(/^Opening the week of Mon,? 21 Sept? 2026…$/u)).toBeVisible();
+    await expect(page.locator(".diary-overview-room h2")).toHaveText(["Grand Hall", "Saloon", "Robert Adam Room"]);
+    await expect(page.getByRole("region", { name: "Booking overview" })).toHaveAttribute("aria-busy", "true");
+    await expect(page.getByRole("region", { name: /Decisions due/u })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^New booking — /u })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Conflicts" })).toHaveCount(0);
+    await expect(page.getByText("Opening the diary…")).toHaveCount(0);
+    expect(await boardTop()).toBe(settledTop);
+
+    releaseNextWeek();
+    await expect(page.getByText("No bookings in this range.")).toBeVisible();
+    await expect(page.getByText(/^Opening the week of/u)).toHaveCount(0);
+
+    // This week was read a moment ago, so it opens at once.
+    await page.getByRole("button", { name: "Earlier" }).click();
+    await expect(hammermen).toBeVisible();
+    await expect(page.getByText(/^Opening the week of/u)).toHaveCount(0);
+
+    // A refresh that fails keeps the bookings and says so beside the legend.
+    emulated.calendarPlan.set("2026-09-13T23:00:00.000Z", "fail");
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(page.getByText("Couldn't refresh at 09:00.")).toBeVisible();
+    await expect(hammermen).toBeVisible();
+    await expect(page.getByText("The diary could not load.")).toHaveCount(0);
+    expect(await boardTop()).toBe(settledTop);
+
+    emulated.calendarPlan.clear();
+    await page.locator(".diary-status-notice").getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByText(/^Couldn't refresh/u)).toHaveCount(0);
+    await expect(hammermen).toBeVisible();
+  });
+
   test("opens on this week with the decisions due and the tray, and books where it is clicked", async ({ page }) => {
     const emulated = await emulate(page);
     await openDiary(page);

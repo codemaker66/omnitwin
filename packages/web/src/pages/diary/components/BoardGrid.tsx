@@ -76,6 +76,9 @@ export interface BoardGridProps {
   /** Opens the changeover sheet for a gap (T-637); undefined leaves a gap's
    *  time as a plain label. `opener` takes focus back when the sheet closes. */
   readonly onOpenGap?: OpenGap;
+  /** The range is on its way: rooms and days stand, and nothing is claimed
+   *  about bookings the board has not read (no counts, no "0%"). */
+  readonly pending?: boolean;
 }
 
 export type OpenGap = (room: { readonly id: string; readonly name: string }, gap: LaneGap, opener: HTMLElement) => void;
@@ -316,6 +319,7 @@ interface BoardLaneProps {
    *  the lanes it leaves and enters and no others. */
   readonly ghost: Ghost | null;
   readonly onOpenGap: OpenGap | undefined;
+  readonly pending: boolean;
 }
 
 /** One room: its rail and its lane of columns, gaps, phases, blocks, ghost. */
@@ -337,6 +341,7 @@ const BoardLane = memo(function BoardLane({
   create,
   ghost,
   onOpenGap,
+  pending,
 }: BoardLaneProps): ReactElement {
   const photo = diaryRoomPhoto(room.slug);
   const laneHeight = Math.max(118, lane.subRowCount * SUB_ROW_HEIGHT + LANE_PADDING * 2);
@@ -372,7 +377,7 @@ const BoardLane = memo(function BoardLane({
               {railCapacity(room.slug)} reception
             </span>
           ) : null}
-          <span className="diary-rail-counts">
+          <span className={`diary-rail-counts${pending ? " is-pending" : ""}`} aria-hidden={pending || undefined}>
             <span className="diary-rail-count is-ink">
               {BOARD_COPY.lane.inkCount(inkCount)}
             </span>
@@ -384,7 +389,8 @@ const BoardLane = memo(function BoardLane({
             const pct = Math.round(laneUtilisation(lane.blocks, range) * 100);
             return (
               <span
-                className="diary-rail-utilisation"
+                className={`diary-rail-utilisation${pending ? " is-pending" : ""}`}
+                aria-hidden={pending || undefined}
                 title={BOARD_COPY.rail.utilisationNote}
               >
                 {pct}%
@@ -562,7 +568,7 @@ const BoardLane = memo(function BoardLane({
 /** Memoised: the page re-renders for toasts, presence and enquiry loads that
  *  leave the board untouched; `drag` keeps one identity per drag state. */
 export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactElement {
-  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock, create, onOpenGap } = props;
+  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock, create, onOpenGap, pending = false } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
   const columns = useMemo(() => dayColumns(range), [range]);
   const ticks = useMemo(() => (range.view === "day" ? hourTicks(range) : []), [range]);
@@ -576,7 +582,7 @@ export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactEl
   );
 
   return (
-    <div className="diary-scroll" role="region" aria-label={BOARD_COPY.title} tabIndex={0}>
+    <div className={`diary-scroll${pending ? " is-pending" : ""}`} role="region" aria-label={BOARD_COPY.title} aria-busy={pending} tabIndex={0}>
       <div
         className="diary-canvas"
         style={{ width: `calc(var(--diary-rail-width) + ${String(canvasWidth)}px)` }}
@@ -629,6 +635,7 @@ export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactEl
               create={create}
               ghost={ghost !== null && ghost.spaceId === room.id ? ghost : null}
               onOpenGap={onOpenGap}
+              pending={pending}
             />
           ))}
 

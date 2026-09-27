@@ -164,6 +164,9 @@ export interface TrayEnquiry {
 
 export interface HoldingTrayProps {
   readonly items: readonly NeedsActionItem[];
+  /** The range's bookings are on their way, so its items are not known:
+   *  the tray neither counts them nor says there are none. */
+  readonly itemsPending?: boolean;
   readonly onFocusEntry: (entryId: string) => void;
   readonly enquiries: readonly TrayEnquiry[];
   readonly enquiriesLoading?: boolean;
@@ -191,6 +194,7 @@ export interface HoldingTrayProps {
 
 export function HoldingTray({
   items,
+  itemsPending = false,
   onFocusEntry,
   enquiries,
   enquiriesLoading = false,
@@ -208,9 +212,9 @@ export function HoldingTray({
     <section className="diary-panel diary-tray" aria-label={BOARD_COPY.tray.title}>
       <h2 className="diary-panel-title">
         {BOARD_COPY.tray.title}
-        {items.length > 0 ? <span className="diary-tray-count">{items.length}</span> : null}
+        {!itemsPending && items.length > 0 ? <span className="diary-tray-count">{items.length}</span> : null}
       </h2>
-      {items.length === 0 ? (
+      {itemsPending ? null : items.length === 0 ? (
         <p className="diary-panel-empty">{BOARD_COPY.tray.empty}</p>
       ) : (
         <ul className="diary-tray-list">

@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { CalendarResponse } from "@omnitwin/types";
-import { useCalendar } from "../useCalendar.js";
+import { CALENDAR_REUSE_MS, useCalendar } from "../useCalendar.js";
 import { boardRange } from "../../lib/board-time.js";
 
 const { getCalendar } = vi.hoisted(() => ({ getCalendar: vi.fn() }));
 vi.mock("../../../../api/diary.js", () => ({ getCalendar }));
-afterEach(() => { cleanup(); vi.resetAllMocks(); });
+afterEach(() => { cleanup(); vi.resetAllMocks(); vi.restoreAllMocks(); });
 const first = boardRange(Date.parse("2026-09-07T12:00Z"), "week");
 const second = boardRange(Date.parse("2026-09-14T12:00Z"), "week");
 const response = (venueId: string): CalendarResponse => ({ venueId,
@@ -93,5 +93,137 @@ describe("useCalendar request identity", () => {
     expect(result.current.data).toBeNull();expect(result.current.status).toBe("loading");
     rerender({ venueId: "venue-b", range: second });
     expect(result.current.data).toBeNull();expect(result.current.status).toBe("loading");
+  });
+});
+
+describe("useCalendar keeps the board steady (roadmap N3)", () => {
+  const flush = async (): Promise<void> => { await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); }); };
+
+  it("keeps the venue's frame while another range loads, never its bookings", async () => {
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockImplementation(() => new Promise(() => undefined));
+    const { result, rerender } = renderHook(({ range }) => useCalendar("venue-a", range), { initialProps: { range: first } });
+    await waitFor(() => { expect(result.current.data?.venueId).toBe("venue-a"); });
+    rerender({ range: second });
+    expect(result.current.data).toBeNull();
+    expect(result.current.status).toBe("loading");
+    expect(result.current.frame?.venueId).toBe("venue-a");
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  it("reads the next range ahead, shows it at once on arrival, and reads it again", async () => {
+    const reread = deferred<CalendarResponse>();
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockResolvedValueOnce(response("venue-a")).mockReturnValueOnce(reread.promise);
+    const { result, rerender } = renderHook(({ range, next }) => useCalendar("venue-a", range, next),
+      { initialProps: { range: first, next: [second] } });
+    await waitFor(() => { expect(getCalendar).toHaveBeenCalledTimes(2); });
+    expect(getCalendar.mock.calls[1]?.[1]).toBe(new Date(second.fromMs).toISOString());
+    await flush();
+
+    rerender({ range: second, next: [] });
+    expect(result.current.status).toBe("ready");
+    expect(result.current.data).not.toBeNull();
+    expect(result.current.isRefreshing).toBe(true);
+    expect(getCalendar).toHaveBeenCalledTimes(3);
+    await act(async () => { reread.resolve(response("venue-a")); await reread.promise; });
+    expect(result.current.isRefreshing).toBe(false);
+  });
+
+  it("keeps the range on screen when a refresh fails, and says when", async () => {
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockRejectedValueOnce(new Error("Offline"));
+    const { result } = renderHook(() => useCalendar("venue-a", first));
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    const readAtMs = result.current.readAtMs;
+    expect(readAtMs).not.toBeNull();
+
+    act(() => { result.current.refetch(); });
+    expect(result.current.isRefreshing).toBe(true);
+    await waitFor(() => { expect(result.current.refreshFailedAtMs).not.toBeNull(); });
+    expect(result.current.status).toBe("ready");
+    expect(result.current.data?.venueId).toBe("venue-a");
+    expect(result.current.error).toBeNull();
+    expect(result.current.isRefreshing).toBe(false);
+    expect(result.current.readAtMs).toBe(readAtMs);
+  });
+
+  it("forgets the other ranges on a refetch, because a change can touch any week", async () => {
+    getCalendar.mockResolvedValue(response("venue-a"));
+    const { result, rerender } = renderHook(({ range, next }) => useCalendar("venue-a", range, next),
+      { initialProps: { range: first, next: [second] } });
+    await waitFor(() => { expect(getCalendar).toHaveBeenCalledTimes(2); });
+    await flush();
+
+    rerender({ range: first, next: [] });
+    act(() => { result.current.refetch(); });
+    await waitFor(() => { expect(result.current.isRefreshing).toBe(false); });
+    getCalendar.mockImplementation(() => new Promise(() => undefined));
+    rerender({ range: second, next: [] });
+    expect(result.current.data).toBeNull();
+    expect(result.current.status).toBe("loading");
+    expect(result.current.frame?.venueId).toBe("venue-a");
+  });
+
+  it("waits for a fresh read of a range read ahead too long ago", async () => {
+    let now = Date.parse("2026-09-27T09:00:00.000Z");
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockResolvedValueOnce(response("venue-a"))
+      .mockImplementation(() => new Promise(() => undefined));
+    const { result, rerender } = renderHook(({ range, next }) => useCalendar("venue-a", range, next),
+      { initialProps: { range: first, next: [second] } });
+    await waitFor(() => { expect(getCalendar).toHaveBeenCalledTimes(2); });
+    await flush();
+
+    now += CALENDAR_REUSE_MS + 60_000;
+    rerender({ range: second, next: [] });
+    expect(result.current.data).toBeNull();
+    expect(result.current.status).toBe("loading");
+  });
+
+  it("keeps the range it is on however long the board stays open", async () => {
+    let now = Date.parse("2026-09-27T09:00:00.000Z");
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    getCalendar.mockResolvedValue(response("venue-a"));
+    const { result, rerender } = renderHook(({ range }) => useCalendar("venue-a", range), { initialProps: { range: first } });
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
+    now += 3 * CALENDAR_REUSE_MS;
+    rerender({ range: first });
+    expect(result.current.data?.venueId).toBe("venue-a");
+  });
+
+  it("does not keep a read ahead that set out before a refetch", async () => {
+    const ahead = deferred<CalendarResponse>();
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockReturnValueOnce(ahead.promise)
+      .mockResolvedValueOnce(response("venue-a")).mockImplementation(() => new Promise(() => undefined));
+    const { result, rerender } = renderHook(({ range, next }) => useCalendar("venue-a", range, next),
+      { initialProps: { range: first, next: [second] } });
+    await waitFor(() => { expect(getCalendar).toHaveBeenCalledTimes(2); });
+
+    // A colleague's change arrives while the read ahead is out, and the read
+    // ahead lands in the same moment, before the board has redrawn.
+    await act(async () => {
+      result.current.refetch();
+      ahead.resolve(response("venue-a"));
+      await ahead.promise;
+      await Promise.resolve();
+    });
+    await waitFor(() => { expect(result.current.isRefreshing).toBe(false); });
+    rerender({ range: second, next: [] });
+    expect(result.current.data).toBeNull();
+    expect(result.current.status).toBe("loading");
+  });
+
+  it("says nothing when a read ahead fails; the visit reads the range itself", async () => {
+    getCalendar.mockResolvedValueOnce(response("venue-a")).mockRejectedValueOnce(new Error("Offline"))
+      .mockResolvedValueOnce(response("venue-a"));
+    const { result, rerender } = renderHook(({ range, next }) => useCalendar("venue-a", range, next),
+      { initialProps: { range: first, next: [second] } });
+    await waitFor(() => { expect(getCalendar).toHaveBeenCalledTimes(2); });
+    await flush();
+    expect(result.current.status).toBe("ready");
+    expect(result.current.error).toBeNull();
+    expect(result.current.refreshFailedAtMs).toBeNull();
+
+    rerender({ range: second, next: [] });
+    expect(result.current.status).toBe("loading");
+    await waitFor(() => { expect(result.current.status).toBe("ready"); });
   });
 });

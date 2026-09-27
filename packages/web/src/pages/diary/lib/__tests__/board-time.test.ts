@@ -108,6 +108,25 @@ describe("shiftRange", () => {
     expect(rangeTitle(range)).toMatch(/^Fortnight of /u);
   });
 
+  it("pages a fortnight back by fourteen days, so Later then Earlier comes home", () => {
+    const range = boardRange(Date.parse("2026-09-16T09:00:00.000Z"), "2w");
+    const back = shiftRange(range, -1);
+    expect(back.toMs).toBe(range.fromMs);
+    expect(back.toMs - back.fromMs).toBe(336 * HOUR);
+    expect(shiftRange(shiftRange(range, 1), -1)).toEqual(range);
+  });
+
+  it("pages back across both daylight-saving changes without skipping a range", () => {
+    for (const view of ["day", "week", "2w"] as const) {
+      for (const anchorIso of ["2026-03-30T12:00:00.000Z", "2026-04-07T12:00:00.000Z", "2026-10-26T12:00:00.000Z", "2026-11-03T12:00:00.000Z"]) {
+        const range = boardRange(Date.parse(anchorIso), view);
+        const back = shiftRange(range, -1);
+        expect(back.toMs).toBe(range.fromMs);
+        expect(shiftRange(back, 1)).toEqual(range);
+      }
+    }
+  });
+
   it("pages a fortnight across the year boundary", () => {
     const december = boardRange(Date.parse("2026-12-24T12:00:00.000Z"), "2w");
     const january = shiftRange(december, 1);

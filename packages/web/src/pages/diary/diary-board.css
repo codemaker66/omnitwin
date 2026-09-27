@@ -54,6 +54,16 @@
 .diary-live { border: 1px solid #d4dfcf; background: #f1f4eb; color: #627363; border-radius: 20px; padding: 6px 11px; font-size: 12px; white-space: nowrap; }
 .diary-live.is-connected { color: #31553e; }
 .diary-legend { display: flex; flex-wrap: wrap; gap: 9px 18px; list-style: none; padding: 0; margin: 17px 0 0; color: #647267; font-size: 11px; }
+/* The legend and the board's one status line share a row (roadmap N3), so a
+   refresh, a save or a range on its way does not push the board down. The
+   slot keeps a line's height when empty, which on a phone, where it wraps
+   under the legend, holds that line open. Only a failed refresh's notice
+   can need a second line there. */
+.diary-header-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 24px; margin-top: 17px; }
+.diary-header-foot .diary-legend { margin: 0; }
+.diary-status-slot { min-height: 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 18px; color: #536359; font-size: 12px; }
+.diary-status-notice { margin: 0; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; color: #7a4a1f; }
+.diary-status-retry { min-height: 28px; padding: 2px 6px; border: 0; background: transparent; color: #294f40; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
 .diary-legend-item { display: flex; gap: 6px; align-items: center; }
 .diary-legend-item::before { content: ''; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #aabda5; background: #cbd9c3; }
 .diary-legend-item.is-hold::before { background: #f3e7bb; border-color: #dca475; }
@@ -183,6 +193,11 @@
 .diary-lane-new:hover { background: var(--house-sheet-hover); }
 .diary-page .diary-lane-new:focus-visible { outline-offset: -3px; background: var(--house-sheet-hover); }
 .diary-lane-col.is-weekend, .diary-axis-day.is-weekend { background: #f6f8f0; }
+/* A range on its way: rooms and days stand on a quieter ground, and nothing
+   counts bookings the board has not read. Static; the status line carries
+   the only motion. */
+.diary-scroll.is-pending .diary-lane, .diary-overview.is-pending .diary-overview-cell { background: #f1f2e9; }
+.diary-rail-counts.is-pending, .diary-rail-utilisation.is-pending, .diary-overview-room small.is-pending { visibility: hidden; }
 /* The lane pans under a finger until a long press lifts a block, and only the
    lifted block claims the gesture (T-619). */
 .diary-block { position: absolute; border: 0; background: transparent; padding: 0; text-align: left; color: #2e4c37; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; border-radius: 7px; z-index: 2; }

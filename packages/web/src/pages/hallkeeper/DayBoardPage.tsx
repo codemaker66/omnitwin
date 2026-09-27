@@ -223,6 +223,14 @@ export interface DayBoardPageProps {
   readonly slotRequests?: SlotRequestsComponent;
 }
 
+/** The day stays on screen when a refresh does not land; it says from when
+ *  once that is a different minute (the Diary's words, for the day). */
+function dayRefreshFailed(at: string, readAt: string | null): string {
+  return readAt === null || readAt === at
+    ? `Couldn't refresh at ${at}.`
+    : `Couldn't refresh at ${at}. Showing the day as it was at ${readAt}.`;
+}
+
 export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactElement {
   const user = useAuthStore((state) => state.user);
   const venueId = user?.venueId ?? null;
@@ -246,7 +254,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // midnight, so an always-on wall tablet rolls to the new day by itself.
   const selectedMs = selectedDate === null ? nowMs : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
   const range = useMemo(() => boardRange(selectedMs, "day", timeZone), [selectedMs, timeZone]);
-  const { data, status, error, refetch, isRefreshing } = useCalendar(venueId, range);
+  const { data, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range);
   const live = useDiaryLive(venueId !== null, refetch);
 
   const board = useMemo(
@@ -291,6 +299,15 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         {status === "error" ? (
           <div className="dayboard-notice" role="alert">
             <p>{error ?? "The board could not load."}</p>
+            <button type="button" className="diary-button" onClick={refetch}>
+              Try again
+            </button>
+          </div>
+        ) : null}
+        {/* A refresh that did not land keeps the day on screen and says from when. */}
+        {refreshFailedAtMs !== null ? (
+          <div className="dayboard-notice" role="status">
+            <p>{dayRefreshFailed(formatWallTime(refreshFailedAtMs, timeZone), readAtMs === null ? null : formatWallTime(readAtMs, timeZone))}</p>
             <button type="button" className="diary-button" onClick={refetch}>
               Try again
             </button>

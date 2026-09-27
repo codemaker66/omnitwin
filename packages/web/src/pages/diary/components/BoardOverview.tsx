@@ -19,6 +19,9 @@ export interface BoardOverviewProps {
    *  a square of the overview is a day, not an instant, so the drawer gives
    *  it the house's default hours. Undefined for a read-only role. */
   readonly onCreateOnDay?: (spaceId: string, dayStartMs: number) => void;
+  /** The range is on its way: rooms and days stand, and no room claims a
+   *  number of bookings the board has not read. */
+  readonly pending?: boolean;
 }
 
 const NO_ITEMS: readonly OverviewItem[] = [];
@@ -27,11 +30,11 @@ const NO_ITEMS: readonly OverviewItem[] = [];
  *  enquiry loads, none of which change what the overview shows. The index
  *  is rebuilt only when the entries (or the visible days) change, so a render
  *  costs one pass over the visible cards — no per-cell filtering or Intl. */
-export const BoardOverview = memo(function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay, onCreateOnDay }: BoardOverviewProps): ReactElement {
+export const BoardOverview = memo(function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay, onCreateOnDay, pending = false }: BoardOverviewProps): ReactElement {
   const days = useMemo(() => dayColumns(range), [range]);
   const columns = useMemo(() => days.map((day) => ({ day, date: msToWallInput(day.startMs).slice(0, 10) })), [days]);
   const index = useMemo(() => buildOverviewIndex(entries, days), [entries, days]);
-  return <section className="diary-overview" aria-label="Booking overview">
+  return <section className={`diary-overview${pending ? " is-pending" : ""}`} aria-label="Booking overview" aria-busy={pending}>
     <div className="diary-overview-intro"><span><CalendarDays size={16} />{days.length === 7 ? "Week overview" : "Booking overview"}</span>
       <p>Open a day for the timeline.</p></div>
     <div className="diary-overview-scroll" role="region" aria-label="Room and day booking summaries" tabIndex={0}>
@@ -53,7 +56,7 @@ export const BoardOverview = memo(function BoardOverview({ rooms, entries, range
                 width={photo.width} height={photo.height} style={{ objectPosition: photo.objectPosition }} loading="lazy" decoding="async"
                 onError={(event) => { event.currentTarget.hidden = true; }} />}
               <div><h2>{room.name}</h2>{capacity !== null ? <span>{capacity} reception</span> : null}
-                <small>{activeCount} {activeCount === 1 ? "booking" : "bookings"}</small></div>
+                <small className={pending ? "is-pending" : undefined} aria-hidden={pending || undefined}>{activeCount} {activeCount === 1 ? "booking" : "bookings"}</small></div>
             </div>
             {columns.map(({ day, date }) => <div key={day.startMs} className={`diary-overview-cell${day.isWeekend ? " is-weekend" : ""}`}
               data-diary-day={date} aria-label={`${room.name}, ${day.label}`}>
