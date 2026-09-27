@@ -33,6 +33,7 @@ import { InstructionsBanner } from "../components/hallkeeper/InstructionsBanner.
 import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
 import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspace.js";
+import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
 import { ActivityStatus } from "../components/shared/Activity.js";
 import "../styles/hallkeeper-register.css";
 import "./hallkeeper-sheet.css";
@@ -500,7 +501,6 @@ export function HallkeeperPage(): React.ReactElement {
       highlightedRowKey={highlightedRowKey} onHighlight={setHighlightedRowKey} disabled={progressUnavailable}
       downloadBusy={downloadBusy} onDownload={handleDownload} onPrint={handlePrint}
       notices={<>
-        {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility).filter((callout) => callout.severity === "critical")} />}
         {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
         {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
         {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
@@ -516,6 +516,7 @@ export function HallkeeperPage(): React.ReactElement {
       </>} />
     <div className="hk-print-only" aria-hidden="true">
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
+      {data.timing !== null && <p>{formatSheetTimes(data.timing, data.venue.timezone)}</p>}
       <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
       <p>{progressUnavailable ? "Shared checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} setup rows checked`}</p>

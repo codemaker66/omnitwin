@@ -279,8 +279,32 @@
   font: 27px/1.5 var(--house-serif);
 }
 .hkf-time-card small {
+  display: block;
   font-size: 12px;
   color: var(--muted);
+}
+.hkf-times {
+  display: flex;
+  gap: 26px;
+  margin: 0;
+}
+.hkf-times dt {
+  font-size: 12px;
+  color: #476349;
+}
+.hkf-times dd {
+  margin: 0;
+  font: 27px/1.5 var(--house-serif);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+/* Sits on the figure's line, so the card keeps its height either way. */
+.hkf-time-unset {
+  font: 500 16px/1.5 Inter, system-ui, sans-serif;
+  color: var(--muted);
+}
+.hkf-time-note {
+  max-width: 28ch;
+  margin-top: 4px;
 }
 .hkf-provenance {
   display: flex;
@@ -735,42 +759,106 @@
 .hkf-reference-preview small {
   font-size: 12px;
 }
-.hkf-attention-strip {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  margin-top: 18px;
-  padding: 14px 18px;
+/* Keep in view (roadmap N4): the facts that must not be missed, under the
+   heading and above the work on every stage. A copper rule marks a guest's
+   need; every fact keeps its place. */
+.hkf-keep {
+  margin-bottom: 18px;
+  padding: 14px 18px 16px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: #f8f8f0;
-  min-height: 63px;
 }
-.hkf-attention-strip > div:first-child {
-  min-width: 155px;
+/* An overline, not a heading's serif: the band names itself quietly. */
+.hkf-app .hkf-keep > h2 {
+  font: 600 12px/1.45 Inter, system-ui, sans-serif;
+  letter-spacing: 0.13em;
 }
-.hkf-attention-strip strong {
+.hkf-keep-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px 24px;
+  margin: 10px 0 0;
+}
+.hkf-keep-fact {
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 2px solid #d9dccf;
+}
+.hkf-keep-fact.is-need {
+  border-left-color: var(--hk-copper);
+}
+.hkf-keep-fact dt {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--muted);
 }
-.hkf-attention-copy {
-  font-size: 12px;
+.hkf-keep-fact dd {
   display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 3px 0 0;
+  font-size: 15px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
-.hkf-attention-copy a,
-.hkf-attention-copy button {
-  color: #6a7757;
+.hkf-keep-fact ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hkf-keep-fact li {
+  font-weight: 600;
+}
+.hkf-keep-note,
+.hkf-keep-name small {
+  color: var(--muted);
+}
+.hkf-keep-fact strong {
+  font-weight: 600;
+}
+.hkf-keep-name small {
+  font-size: 14px;
+}
+.hkf-keep-quiet {
+  color: var(--muted);
+}
+/* "gluten-free" breaks at its hyphen otherwise. */
+.hkf-keep-unbroken {
   white-space: nowrap;
 }
-.hkf-attention-copy button {
-  border: 1px solid #dce2d2;
+.hkf-keep-call a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #2f5a3f;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.hkf-keep-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  color: #3f5f46;
+  font-size: 14px;
+  font-weight: 500;
+}
+button.hkf-keep-action {
+  margin-top: 4px;
+  padding: 0 12px;
+  border: 1px solid #c9d2bf;
+  border-radius: 6px;
   background: #fffdf6;
-  padding: 6px 9px;
-  border-radius: 5px;
+}
+a.hkf-keep-action {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 .hkf-footer {
   display: flex;
@@ -944,11 +1032,8 @@
   .hkf-plan-footer > span {
     width: 100%;
   }
-  .hkf-attention-strip {
-    gap: 12px;
-  }
-  .hkf-attention-strip > div:first-child {
-    min-width: 125px;
+  .hkf-times dd {
+    font-size: 23px;
   }
 }
 @media (max-width: 640px) {
@@ -976,9 +1061,11 @@
   .hkf-main {
     padding: 18px 13px;
   }
+  /* Two figures need the width: the card moves under the heading. */
   .hkf-heading {
-    align-items: start;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
   }
   .hkf-heading h1 {
     font-size: 32px;
@@ -988,12 +1075,12 @@
     -webkit-line-clamp: 3;
   }
   .hkf-time-card {
-    min-width: 95px;
-    padding: 10px 8px;
-    max-width: 110px;
+    min-width: 0;
+    padding: 12px 14px;
   }
-  .hkf-time-card strong {
-    font-size: 19px;
+  .hkf-time-card strong,
+  .hkf-times dd {
+    font-size: 26px;
   }
   .hkf-time-card > span {
     font-size: 12px;
@@ -1058,15 +1145,22 @@
   .hkf-stage-content {
     height: 340px;
   }
-  .hkf-attention-strip {
-    align-items: start;
-    flex-direction: column;
-    padding: 13px;
-    gap: 7px;
+  .hkf-keep {
+    padding: 13px 13px 14px;
+    margin-bottom: 15px;
   }
-  .hkf-attention-copy {
-    flex-wrap: wrap;
-    gap: 7px;
+  .hkf-keep-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .hkf-keep-fact {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 10px;
+    padding-left: 10px;
+  }
+  .hkf-keep-fact dd {
+    margin: 0;
   }
   .hkf-footer {
     flex-wrap: wrap;

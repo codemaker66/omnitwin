@@ -306,6 +306,55 @@ test.describe("Hallkeeper Page — on a phone", () => {
   });
 });
 
+// A dinner on Saturday 3 October 2026 whose planner recorded the facts a
+// hallkeeper must keep in view (roadmap N4): the room ready by 16:00 for an
+// 18:30 start, a hearing loop and wheelchair spaces, allergen meals, a contact
+// and a florist's deadline.
+const FACTS_SHEET = HallkeeperSheetV2Schema.parse({
+  ...MOCK_SHEET,
+  timing: { eventStart: "2026-10-03T17:30:00.000Z", setupBy: "2026-10-03T15:00:00.000Z", bufferMinutes: 150 },
+  instructions: {
+    dayOfContact: { name: "Elaine Gray", role: "Events manager", phone: "0141 552 2418" },
+    phaseDeadlines: [{ phase: "furniture", deadline: "2026-10-03T13:30:00.000Z", reason: "Florist arrives" }],
+    accessibility: { hearingLoopRequired: true, hearingLoopZone: "Centre", wheelchairSpaces: 4 },
+    dietary: { nutFree: 3, glutenFree: 2, otherAllergies: "Table 4: sesame." },
+  },
+});
+
+test.describe("Hallkeeper Page — the facts in view", () => {
+  test("a phone shows ready by, access needs, allergies and a tap to call above the stages", async ({ page }) => {
+    // 09:00 on the day in Glasgow, so the florist's deadline is still ahead.
+    await page.clock.setFixedTime(new Date("2026-10-03T08:00:00.000Z"));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await seedAuthenticatedPlanner(page);
+    await mockSheetData(page, FACTS_SHEET);
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+
+    await expect(page.locator(".hkf-times")).toHaveText(/^Ready by\s*16:00\s*Starts\s*18:30$/u);
+    const band = page.getByRole("region", { name: "Keep in view" });
+    await expect(band.getByText("Hearing loop in Centre")).toBeVisible();
+    await expect(band.getByText("4 wheelchair spaces")).toBeVisible();
+    await expect(band.getByText("3 nut-free and 2 gluten-free meals")).toBeVisible();
+    await expect(band.getByText("Furniture by 14:30")).toBeVisible();
+    const call = band.getByRole("link", { name: "Call Elaine Gray on 0141 552 2418" });
+    await expect(call).toHaveAttribute("href", "tel:01415522418");
+
+    // Where the eye lands before any work: begun within the first screen,
+    // whole above the stages, and the call a thumb's height.
+    const bandBox = await band.boundingBox();
+    const stagesBox = await page.getByRole("navigation", { name: "Event workflow views" }).boundingBox();
+    const callBox = await call.boundingBox();
+    expect(bandBox).not.toBeNull();
+    expect(stagesBox).not.toBeNull();
+    expect(bandBox?.y ?? Infinity).toBeLessThan(844);
+    expect((bandBox?.y ?? 0) + (bandBox?.height ?? 0)).toBeLessThanOrEqual(stagesBox?.y ?? 0);
+    expect(callBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    expect(await unreadableText(page, ".hkf-app", "facts in view on a phone")).toEqual([]);
+  });
+});
+
 test.describe("Hallkeeper Page — route protection", () => {
   test("unauthenticated navigation redirects to /login", async ({ page }) => {
     // Explicitly seed the dev-only E2E auth bridge with no user so remote CI
@@ -448,7 +497,7 @@ test.describe("Hallkeeper Page — approval stamp banner", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
 
     await expect(page.getByText("Sheet v3 · approved by Catherine Tait", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Brief & contacts ↗" }).click();
+    await page.getByRole("button", { name: "Brief & contacts" }).click();
     const brief = page.getByRole("dialog", { name: "Brief & contacts" });
     await expect(brief).toContainText("Sheet v3 approved by Catherine Tait on 17/04/2026, 15:30:00.");
     await brief.getByRole("button", { name: "Close brief" }).click();
@@ -471,7 +520,7 @@ test.describe("Hallkeeper Page — approval stamp banner", () => {
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
     await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
     await expect(page.getByText(/Sheet v\d+ · approved by/)).toHaveCount(0);
-    await page.getByRole("button", { name: "Brief & contacts ↗" }).click();
+    await page.getByRole("button", { name: "Brief & contacts" }).click();
     await expect(page.getByRole("dialog", { name: "Brief & contacts" })).not.toContainText("approved by");
     await expect(page.getByRole("status", { name: /Approved version/, includeHidden: true })).toHaveCount(0);
   });

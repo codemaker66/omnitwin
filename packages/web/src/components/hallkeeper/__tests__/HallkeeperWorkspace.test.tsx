@@ -136,6 +136,25 @@ describe("HallkeeperWorkspace compact working views", () => {
     expect(props.onHighlight).not.toHaveBeenCalled();
   });
 
+  it("keeps the facts in view above the stages, whichever stage is open (roadmap N4)", () => {
+    mount({ data: { ...sheet, instructions: { specialInstructions: "", dayOfContact: { name: "Elaine Gray", role: "", phone: "0141 552 2418", email: "" },
+      phaseDeadlines: [], accessNotes: "", accessibility: null, dietary: null, doorSchedule: null } } });
+    const band = screen.getByRole("region", { name: "Keep in view" });
+    const stageNav = screen.getByRole("navigation", { name: "Event workflow views" });
+    const order = Array.from(document.querySelectorAll("section, nav"));
+    expect(order.indexOf(band)).toBeLessThan(order.indexOf(stageNav));
+    for (const name of ["Prepare", "Hosting", "Handback"]) {
+      fireEvent.click(within(stageNav).getByRole("button", { name: new RegExp(name, "u") }));
+      expect(within(screen.getByRole("region", { name: "Keep in view" })).getByRole("link", { name: "Call Elaine Gray on 0141 552 2418" })).toBeTruthy();
+    }
+  });
+
+  it("opens the brief in place, with no arrow promising another page", () => {
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Brief & contacts" }));
+    expect(screen.getByRole("dialog", { name: "Brief & contacts" })).toBeTruthy();
+  });
+
   it("keeps real setup checks usable when the optional event context fails", () => {
     const retry = vi.fn();
     vi.mocked(useHallkeeperContext).mockReturnValue({ status: "error", context: null, error: "Event context could not be verified", retry });
@@ -204,16 +223,18 @@ describe("HallkeeperWorkspace event time", () => {
   it("shows the Diary's hour even when the event row disagrees", () => {
     withGraphStart("2026-09-19T12:00:00.000Z"); // 13:00 London — the drifted row
     mount({ data: { ...sheet, timing: diaryTiming } });
-    expect(screen.getByText("Event starts")).toBeTruthy();
+    expect(screen.getByText("Starts")).toBeTruthy();
     expect(screen.getByText("09:00")).toBeTruthy();
     expect(screen.queryByText("13:00")).toBeNull();
   });
 
-  it("carries the setup deadline and the venue's zone on the same card", () => {
+  it("sets the hour the room must be ready beside the hour the event starts (roadmap N4)", () => {
     withGraphStart("2026-09-19T12:00:00.000Z");
     mount({ data: { ...sheet, timing: diaryTiming } });
-    expect(screen.getByText(/Set up by 07:30/u)).toBeTruthy();
-    expect(screen.getByText(/Europe\/London/u)).toBeTruthy();
+    const times = screen.getByText("Ready by").closest("dl");
+    expect(times?.textContent).toBe("Ready by07:30Starts09:00");
+    // The zone is named in words, and only for a device on another clock.
+    expect(screen.queryByText(/Europe\/London/u)).toBeNull();
   });
 
   it("says the event is not in the Diary rather than inventing an hour", () => {
@@ -228,9 +249,9 @@ describe("HallkeeperWorkspace event time", () => {
     // silent and not invent a constant.
     withGraphStart("2026-09-19T12:00:00.000Z");
     mount({ data: { ...sheet, timing: { ...diaryTiming, setupBy: null, bufferMinutes: null } } });
-    expect(screen.getByText("Event starts")).toBeTruthy();
+    expect(screen.getByText("Starts")).toBeTruthy();
     expect(screen.getByText("09:00")).toBeTruthy();
-    expect(screen.getByText(/no changeover time is recorded for this room/u)).toBeTruthy();
-    expect(screen.queryByText(/Set up by/u)).toBeNull();
+    expect(screen.getByText("Ready by").closest("dl")?.textContent).toBe("Ready byNot setStarts09:00");
+    expect(screen.getByText("No changeover time is recorded for this room.")).toBeTruthy();
   });
 });
