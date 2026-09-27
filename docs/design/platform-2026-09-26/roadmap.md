@@ -739,8 +739,21 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *Clients*
 - Extend the search API to accounts, contacts, deals and proposals, tolerant of typos (`api/routes/clients.ts:30-130,68-70`).
+  Done on 27 September (`services/client-search.ts`). A row matches when one of its names contains the
+  words typed or, from four letters, when pg_trgm's word similarity reaches 0.6 (migration 0081, applied
+  first). Closest first; the query's own `%` and `_` are taken literally. A deal is found by its client's
+  name too. Only the commercial roles find contacts, organisations, deals and proposals.
 - A Clients desk: `/` focuses search; recent and upcoming clients show before anything is typed.
+  Done on 27 September. "Coming up" lists live enquiries whose date is within the year ahead (`GET
+  /clients/upcoming`), then "Recently in touch", each guest opening on their own profile. The arrow keys,
+  j and k move through what is found, which is grouped People, Organisations, Deals, Proposals, Layouts.
+  The navigation now says "Clients".
 - The profile opens as a forest panel with its state in the URL (`?view=search&client=`), with `mailto:` and `tel:` links, a timeline and lifetime facts.
+  Done on 27 September, as `?client=<kind>:<id>` beside `?q=`. A contact
+  (`GET /clients/contacts/:id/profile`) shows their organisation, deals, proposals, deals won in each
+  currency and a timeline; a deal opens in the pipeline and a proposal in Proposals (`?proposal=`). A
+  signed-in client or a guest shows their enquiries (and layouts). The old search view and profile are
+  deleted. Pending reviews and Clients now sit full-bleed on the desk's sage ground, as Enquiries does.
 
 *Client proposal page*
 - An ivory document:
@@ -756,7 +769,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - **List order:** 25 fixtures appear newest-first and every one is reachable.
 - **Notifications:** approving a proposal made in the dashboard (no event link) creates an in-app notification for its owner.
 - **Search:** "Mcdonald" finds "MacDonald"; "henderson" returns the contact, the deal and the proposal.
+  Held on 27 September against real PostgreSQL (`client-search-postgres.test.ts`), with "Hendersen" too.
 - **Client profile:** survives reload, and Back returns to the results.
+  Held on 27 September by `e2e/clients-desk.spec.ts`, which also returns focus to the client's row.
 - **Client page:** at 390 px, the facts, total and decision are visible without horizontal scroll; print emulation is readable.
 - **Baselines:** the first ones for pipeline, proposals, search, profile, and the client page (ready and accepted).
 
