@@ -740,8 +740,15 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *Proposals*
 - A ledger by status (Drafts / Waiting on you / With client / Accepted), paged.
+  Done on 27 September (`ProposalsDesk.tsx`, `GET /proposals/desk`): Waiting on you, Drafts, With the client,
+  Accepted and Closed, each row with who it is for, the event's date and guests, and what it comes to; the
+  counts cover the whole list.
 - The composer is pre-filled from the latest version ("Editing version 3"), with a diff.
+  Done: the next version starts from the latest one's message, capacity note and quote lines, and says what it
+  changes ("Changed: the quote, £18,400 to £17,600.").
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
+  The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
+  made, as links are kept hashed; Preview as the client is not yet done.
 - "Add from price list" (`api/pricing.ts:66-78`).
 - Link the deal, enquiry and configuration; derive `configurationId` on the server.
 - Notify the owner of every client decision.
