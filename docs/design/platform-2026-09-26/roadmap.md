@@ -509,15 +509,26 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *Day Board*
 - Remove the endless pulses (`day-board.css:244-267`); a single stamp plays when a room's state changes.
+  Done on 27 September ([session log](../../sessions/2026-09-27.md)).
 - A legend built from the real states.
+  Done on 27 September, with a unit test that every entry is a state the board emits.
 - Amber warning `#6f500f` on `#efe0b8`.
+  Done on 27 September.
 - Finished slots keep full-strength text.
+  Done on 27 September, behind a slate edge.
 - ← Today → with arrow and `t` keys.
+  Done on 27 September.
 - Empty rooms collapse into one line.
+  Done on 27 September; a room chosen from the filter keeps its lane.
 - "Updated 14:02 · reconnecting…" with a Refresh action.
+  Done on 27 September.
 - "Open setup sheet" becomes the primary action.
+  Partly done by Lane 6: each slot's first action opens its sheet, resolved from the booking's event. Its
+  ready-by hour and checked count wait for the calendar projection named under *API* above.
 - The venue time zone comes from data (`DayBoardPage.tsx:117`).
+  Already done by Lane 6; since 27 September it is named in words, and only for a device on another clock.
 - Delete the dead dark block.
+  Done on 27 September, with byte-identical renders.
 
 *Event-day ops and Mission Control (functional fixes only)*
 - A relative kicker instead of the hard-coded one (`EventDayOpsPage.tsx:345`), and venue-zone times (`:37-64`).
