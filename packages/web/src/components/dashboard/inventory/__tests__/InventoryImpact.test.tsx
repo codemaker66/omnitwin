@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import type { ReactElement } from "react";
 import type { InventoryAssessment } from "@omnitwin/types";
 import { InventoryImpact, InventoryRemedyShortcut } from "../InventoryImpact.js";
 import type { InventoryDemandContext } from "../InventoryDemand.js";
@@ -11,27 +13,52 @@ function context(assessment: InventoryAssessment = demandAssessment): InventoryD
   return { assessment, assessmentCurrent: true, loading: false, canAct: true, windowForm: null, onRemedy: vi.fn() };
 }
 
+/** A reservation in the lowest interval, so the impact names its event. */
+function shortageAssessment(): InventoryAssessment {
+  const assessment = structuredClone(demandAssessment);
+  const item = assessment.items[0];
+  if (item?.availability === null || item?.availability === undefined) throw new Error("Missing test availability");
+  const initial = item.availability.segments[0];
+  if (initial === undefined) throw new Error("Missing test interval");
+  item.availability.segments = [
+    { ...initial, endsAt: "2026-09-06T12:00:00.000Z", ownedQuantity: 300, totalQuantity: 300,
+      usableQuantity: 300, reservedQuantity: 280, remainingQuantity: 20 },
+    { ...initial, startsAt: "2026-09-06T12:00:00.000Z", ownedQuantity: 80, totalQuantity: 80,
+      usableQuantity: 80, reservedQuantity: 90, remainingQuantity: -10, shortageQuantity: 10,
+      eventIds: [demandIds.event] },
+  ];
+  item.availability.minimumRemainingQuantity = -10;
+  item.availability.maximumShortageQuantity = 10;
+  return assessment;
+}
+
+function EventDayStub(): ReactElement {
+  const { eventId } = useParams<{ eventId: string }>();
+  return <h1>Event day {eventId}</h1>;
+}
+
 describe("InventoryImpact", () => {
   it("keeps usable, reserved and remaining quantities in the same interval", () => {
-    const assessment = structuredClone(demandAssessment);
-    const item = assessment.items[0];
-    if (item?.availability === null || item?.availability === undefined) throw new Error("Missing test availability");
-    const initial = item.availability.segments[0];
-    if (initial === undefined) throw new Error("Missing test interval");
-    item.availability.segments = [
-      { ...initial, endsAt: "2026-09-06T12:00:00.000Z", ownedQuantity: 300, totalQuantity: 300,
-        usableQuantity: 300, reservedQuantity: 280, remainingQuantity: 20 },
-      { ...initial, startsAt: "2026-09-06T12:00:00.000Z", ownedQuantity: 80, totalQuantity: 80,
-        usableQuantity: 80, reservedQuantity: 90, remainingQuantity: -10, shortageQuantity: 10,
-        eventIds: [demandIds.event] },
-    ];
-    item.availability.minimumRemainingQuantity = -10;
-    item.availability.maximumShortageQuantity = 10;
-    const { container } = render(<InventoryImpact demand={context(assessment)} assetId={demandIds.asset} />);
+    const { container } = render(<MemoryRouter><InventoryImpact demand={context(shortageAssessment())} assetId={demandIds.asset} /></MemoryRouter>);
     expect(Array.from(container.querySelectorAll("dd"), (node) => node.textContent)).toEqual(["80", "90", "-10"]);
     expect(screen.getByRole("link", { name: "McLaren wedding" }).getAttribute("href")).toBe(`/ops/events/${demandIds.event}`);
     expect(screen.getByText(/Coverage gaps remain/u)).toBeTruthy();
     expect(screen.getByText(/Selected period/u)).toBeTruthy();
+  });
+
+  it("opens an overlapping reservation's event inside the app, without reloading it", () => {
+    render(
+      <MemoryRouter initialEntries={["/dashboard?view=inventory"]}>
+        <Routes>
+          <Route path="/dashboard" element={<InventoryImpact demand={context(shortageAssessment())} assetId={demandIds.asset} />} />
+          <Route path="/ops/events/:eventId" element={<EventDayStub />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    // A router link: the click is the router's, not a document load.
+    const link = screen.getByRole("link", { name: "McLaren wedding" });
+    expect(fireEvent.click(link)).toBe(false);
+    expect(screen.getByRole("heading", { level: 1, name: `Event day ${demandIds.event}` })).toBeTruthy();
   });
 
   it("identifies retained figures as stale and never calls them a current shortfall", () => {

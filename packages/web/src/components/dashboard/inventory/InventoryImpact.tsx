@@ -1,5 +1,6 @@
 import { ArrowUpRight, TriangleAlert } from "lucide-react";
 import type { ReactElement } from "react";
+import { Link } from "react-router-dom";
 import type { InventoryAssessmentItem } from "@omnitwin/types";
 import { ActivityStatus } from "../../shared/Activity.js";
 import type { InventoryDemandContext } from "./InventoryDemand.js";
@@ -30,8 +31,8 @@ export function InventoryImpact({ demand, assetId }: { readonly demand: Inventor
       <div className="inventory-impact-events"><p className={interval.remainingQuantity < 0 ? "inventory-impact-shortage" : "inventory-impact-available"}>
         {interval.remainingQuantity < 0 ? <><TriangleAlert size={24} />{Math.abs(interval.remainingQuantity).toLocaleString("en-GB")} needed</> : "Approved demand covered"}</p>
         <div><h3>Overlapping reservations</h3>{interval.eventIds.length === 0 ? <p>No approved reservations in this interval.</p> :
-          interval.eventIds.map((eventId) => <a key={eventId} href={`/ops/events/${encodeURIComponent(eventId)}`}>
-            {assessment.sources.find((source) => source.eventId === eventId)?.eventName ?? "Open event"}<ArrowUpRight size={14} /></a>)}</div></div>
+          interval.eventIds.map((eventId) => <Link key={eventId} to={`/ops/events/${encodeURIComponent(eventId)}`}>
+            {assessment.sources.find((source) => source.eventId === eventId)?.eventName ?? "Open event"}<ArrowUpRight size={14} /></Link>)}</div></div>
       {assessment.coverage !== "complete" ? <p className="inventory-impact-caveat">Coverage gaps remain. Event demand may be missing.</p> : null}
     </>}
   </section>;
