@@ -536,10 +536,17 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Revised on 27 September: issues do notify staff and hallkeepers (truth sweep), and the page says so. The
   list counts only open and in-progress issues; a resolved one waits apart until closed ([session log](../../sessions/2026-09-27.md)).
 - A "Waiting for your acknowledgement" block with no 10-event cap. Each Acknowledge action gets busy, error and 409 handling.
+  Done on 27 September as "Waiting for acknowledgement": the list is team-wide, as the record's replay is, so
+  "your" would be untrue once a teammate's acknowledgement clears an event. A conflict counts as acknowledged.
 - Incidents get a Resolve action.
+  Done on 27 September, with Reopen for a slip and "No open incidents." once none is open.
 - "Start" appears only on the next phase, with an honest message on conflict.
+  Done on 27 September: Go live only on the first phase still to come and only once nothing is live, with
+  Skip after one question so an evening that drops a phase need not invent it.
 - Mission Control writes join the offline queue (`lib/event-day-offline-queue.ts`).
 - Remove success notices, and put errors beside their card.
+  Done on 27 September; a pressed button also keeps focus while it works, and hands it to its section's
+  heading when a write removes it ([session log](../../sessions/2026-09-27.md)).
 
 *Ops handoff*
 - Fix the print styles (`OpsHandoffPage.css:414-440`).
