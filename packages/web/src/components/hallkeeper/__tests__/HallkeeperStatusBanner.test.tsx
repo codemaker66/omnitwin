@@ -25,7 +25,7 @@ afterEach(cleanup);
 
 describe("HallkeeperStatusBanner", () => {
   it("gives the approval time on the venue's clock, in British 24-hour time", async () => {
-    vi.mocked(getAvailableTransitions).mockResolvedValue({ currentStatus: "approved", availableTransitions: [] });
+    vi.mocked(getAvailableTransitions).mockResolvedValue({ currentStatus: "approved", availableTransitions: [], internalDemoReviewEligible: false });
     vi.mocked(getLatestSnapshot).mockResolvedValue(SNAPSHOT);
     render(<HallkeeperStatusBanner configId={CONFIG} timeZone="Europe/London" />);
     expect((await screen.findByRole("status")).textContent).toMatch(/Sheet · v3 · approved Sat 19 Sept?, 12:00$/u);
