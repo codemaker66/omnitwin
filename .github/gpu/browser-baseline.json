@@ -186,6 +186,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The setup sheet on a phone (T-635 N4, the hallkeeper's sheet read at arm's length): at 390 x 844 its item names, search field and category menu are 16 px or more, a checkbox's edge is 3:1 or better against its row, and every visible label on the sheet reads at 12 px and 4.5:1 or better.",
+      "sourceCommit": "b851f67a2ec42a59f39a3992f0b090f705366c5d",
+      "sourceFile": "packages/web/e2e/hallkeeper.spec.ts",
+      "sourceFileGitBlobSha256": "dbb2ec19f88411e3903cdc127e8ab8a80ae8e8a83e36bd96dcd71aed795f1b35",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "733f87cfc15f072d569fea8cca1af81923854cf594c73a0078d9f2871553da43",
+      "caseIds": [
+        "d04ac5b0eb52f15c1dda-3671875dd8bd93721565"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -2924,6 +2938,17 @@
       "suitePath": [
         "operational-state-visual-performance.spec.ts",
         "T-469 operational route visual and CDP frame-budget pass"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-3671875dd8bd93721565",
+      "file": "hallkeeper.spec.ts",
+      "title": "reads at arm's length: 16 px rows and fields, 3:1 checkboxes, nothing under 12 px",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 on a phone"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
