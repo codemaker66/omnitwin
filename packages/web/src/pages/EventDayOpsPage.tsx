@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { AlertCircle, Bell, Check, CircleDashed, Clock, NotebookPen, RefreshCw, Send, ShieldAlert, Truck } from "lucide-react";
 import type {
@@ -101,6 +101,11 @@ function formatChangeTime(iso: string, timeZone: string): string {
   });
 }
 
+function openIssueCount(count: number): string {
+  if (count === 0) return "No open issues.";
+  return `${String(count)} open issue${count === 1 ? "" : "s"}.`;
+}
+
 function issueStatusLabel(status: EventDayIssueStatus): string {
   switch (status) {
     case "open": return "Open";
@@ -186,7 +191,7 @@ function Section(props: {
   readonly title: string;
   readonly subtitle?: string;
   readonly icon: ReactElement;
-  readonly children: ReactElement | readonly ReactElement[];
+  readonly children: ReactNode;
 }): ReactElement {
   return (
     <section className="event-day-section">
@@ -402,7 +407,11 @@ export function EventDayOpsPage(): ReactElement {
   const setupTasks = useMemo(() => tasks.filter((task) => task.kind === "setup"), [tasks]);
   const roomFlipTasks = useMemo(() => tasks.filter((task) => task.kind === "room_flip"), [tasks]);
   const taskList = useMemo(() => [...setupTasks, ...roomFlipTasks], [setupTasks, roomFlipTasks]);
-  const openIssues = useMemo(() => board?.issues.filter((issue) => issue.status !== "closed") ?? [], [board]);
+  // Open means someone still has to act: open or being handled, as the
+  // hallkeeper's sheet and Mission Control count it. A resolved issue waits
+  // apart, quietly, until someone closes it.
+  const openIssues = useMemo(() => board?.issues.filter((issue) => issue.status === "open" || issue.status === "in_progress") ?? [], [board]);
+  const resolvedIssues = useMemo(() => board?.issues.filter((issue) => issue.status === "resolved") ?? [], [board]);
   const handoffNotes = useMemo(
     () => board?.handoffPack?.supplierInstructions.filter(isHandoffNote) ?? [],
     [board],
@@ -552,6 +561,52 @@ export function EventDayOpsPage(): ReactElement {
 
   const readyBoard = state.board;
 
+  const issueItem = (issue: EventDayIssue): ReactElement => (
+    <li key={issue.id} data-severity={issue.severity}>
+      <div>
+        <span>{issue.severity} · {issueStatusLabel(issue.status)}</span>
+        <h3>{issue.title}</h3>
+        <p>{issue.detail}</p>
+        <small>
+          {formatChangeTime(issue.createdAt, timeZone)}
+          {issue.assignedTo === null
+            ? " · unassigned"
+            : issue.assignedTo === currentUserId ? " · with you" : " · assigned"}
+        </small>
+      </div>
+      <div className="event-day-issue-actions" aria-label={`${issue.title} actions`}>
+        {issue.status !== "resolved" && currentUserId !== null && issue.assignedTo !== currentUserId && (
+          <button
+            type="button"
+            disabled={issueBusyId !== null}
+            aria-busy={issueBusyId === issue.id}
+            onClick={() => { changeIssue(issue, { assignedTo: currentUserId, status: "in_progress" }, "Issue assigned to you."); }}
+          >
+            Take it
+          </button>
+        )}
+        {issue.status !== "resolved" && (
+          <button
+            type="button"
+            disabled={issueBusyId !== null}
+            aria-busy={issueBusyId === issue.id}
+            onClick={() => { changeIssue(issue, { status: "resolved" }, "Issue resolved."); }}
+          >
+            Resolve
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={issueBusyId !== null}
+          aria-busy={issueBusyId === issue.id}
+          onClick={() => { changeIssue(issue, { status: "closed" }, "Issue closed."); }}
+        >
+          Close
+        </button>
+      </div>
+    </li>
+  );
+
   return (
     <DashboardLayout>
 
@@ -695,7 +750,7 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Issue report"
-        subtitle={`${String(openIssues.length)} open issue(s).`}
+        subtitle={openIssueCount(openIssues.length)}
         icon={<ShieldAlert aria-hidden="true" />}
       >
         <form className="event-day-issue-form" onSubmit={submitIssue}>
@@ -736,53 +791,13 @@ export function EventDayOpsPage(): ReactElement {
         {openIssues.length === 0 ? (
           <p className="event-day-muted">No open issues on this event.</p>
         ) : (
-          <ul className="event-day-issue-list">
-            {openIssues.map((issue) => (
-              <li key={issue.id} data-severity={issue.severity}>
-                <div>
-                  <span>{issue.severity} · {issueStatusLabel(issue.status)}</span>
-                  <h3>{issue.title}</h3>
-                  <p>{issue.detail}</p>
-                  <small>
-                    {formatChangeTime(issue.createdAt, timeZone)}
-                    {issue.assignedTo === null
-                      ? " · unassigned"
-                      : issue.assignedTo === currentUserId ? " · with you" : " · assigned"}
-                  </small>
-                </div>
-                <div className="event-day-issue-actions" aria-label={`${issue.title} actions`}>
-                  {currentUserId !== null && issue.assignedTo !== currentUserId && (
-                    <button
-                      type="button"
-                      disabled={issueBusyId !== null}
-                      aria-busy={issueBusyId === issue.id}
-                      onClick={() => { changeIssue(issue, { assignedTo: currentUserId, status: "in_progress" }, "Issue assigned to you."); }}
-                    >
-                      Take it
-                    </button>
-                  )}
-                  {issue.status !== "resolved" && (
-                    <button
-                      type="button"
-                      disabled={issueBusyId !== null}
-                      aria-busy={issueBusyId === issue.id}
-                      onClick={() => { changeIssue(issue, { status: "resolved" }, "Issue resolved."); }}
-                    >
-                      Resolve
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    disabled={issueBusyId !== null}
-                    aria-busy={issueBusyId === issue.id}
-                    onClick={() => { changeIssue(issue, { status: "closed" }, "Issue closed."); }}
-                  >
-                    Close
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <ul className="event-day-issue-list">{openIssues.map(issueItem)}</ul>
+        )}
+        {resolvedIssues.length === 0 ? null : (
+          <>
+            <h3 className="event-day-issue-group">Resolved</h3>
+            <ul className="event-day-issue-list is-resolved">{resolvedIssues.map(issueItem)}</ul>
+          </>
         )}
       </Section>
 

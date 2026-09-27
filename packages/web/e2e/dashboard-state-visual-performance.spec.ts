@@ -809,7 +809,7 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
     } finally {
       releaseResponse();
     }
-    await expect(page.getByText("You don't have permission to view this events sheet.")).toBeVisible();
+    await expect(page.getByText("You don't have permission to view this event's sheet.")).toBeVisible();
     await assertHeaderTargets("denied");
     await test.info().attach("hallkeeper-loading-and-denied-targets", {
       body: JSON.stringify(targetBounds, null, 2), contentType: "application/json",

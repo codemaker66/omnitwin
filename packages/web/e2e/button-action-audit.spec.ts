@@ -2682,11 +2682,14 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     });
 
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
-    await expect(page.getByRole("alert")).toContainText("You don't have permission to view this events sheet.");
-    await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("You don't have permission to view this event's sheet.");
+    // Trying again cannot grant access (roadmap N4), so none is offered; the
+    // sheet's navigation is the way out, and a reload once access is given.
+    await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Today's rooms" })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     allowSheetSuccess = true;
-    await page.getByRole("button", { name: "Try again" }).click();
+    await page.reload();
     await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
     await expect(page.getByText("Button audit gala", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Download PDF" })).toBeVisible();

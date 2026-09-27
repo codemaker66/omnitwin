@@ -645,6 +645,36 @@ describe("EventDayOpsPage", () => {
     await waitFor(() => { expect(mockGetEventDayOpsBoard).toHaveBeenCalledTimes(2); });
   });
 
+  it("counts only issues someone still has to act on, and keeps resolved ones apart until closed", async () => {
+    const open = openIssueFixture();
+    const handled = { ...open, id: "00000000-0000-4000-8000-000000003051", title: "Stage lights flicker", status: "in_progress" as const };
+    const resolved = { ...open, id: "00000000-0000-4000-8000-000000003052", title: "Cloakroom rail missing", status: "resolved" as const, resolvedAt: NOW };
+    const closed = { ...open, id: "00000000-0000-4000-8000-000000003053", title: "Door wedge lost", status: "closed" as const, resolvedAt: NOW };
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), issues: [open, handled, resolved, closed] });
+    renderPage();
+
+    await screen.findByText("Chair delivery short");
+    expect(screen.getByText("2 open issues.")).toBeTruthy();
+    const lists = document.querySelectorAll(".event-day-issue-list");
+    expect(Array.from(lists[0]?.querySelectorAll("h3") ?? [], (title) => title.textContent)).toEqual(["Chair delivery short", "Stage lights flicker"]);
+    // Resolved waits apart with only Close; a closed issue is gone.
+    expect(screen.getByRole("heading", { name: "Resolved" })).toBeTruthy();
+    const waiting = document.querySelector(".event-day-issue-list.is-resolved");
+    expect(Array.from(waiting?.querySelectorAll("h3") ?? [], (title) => title.textContent)).toEqual(["Cloakroom rail missing"]);
+    expect(Array.from(waiting?.querySelectorAll("button") ?? [], (button) => button.textContent)).toEqual(["Close"]);
+    expect(screen.queryByText("Door wedge lost")).toBeNull();
+  });
+
+  it("says no issue is open once every one is resolved", async () => {
+    const resolved = { ...openIssueFixture(), status: "resolved" as const, resolvedAt: NOW };
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), issues: [resolved] });
+    renderPage();
+
+    await screen.findByText("Chair delivery short");
+    expect(screen.getByText("No open issues.")).toBeTruthy();
+    expect(screen.getByText("No open issues on this event.")).toBeTruthy();
+  });
+
   it("closes an open issue", async () => {
     const issue = openIssueFixture();
     mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), issues: [issue] });

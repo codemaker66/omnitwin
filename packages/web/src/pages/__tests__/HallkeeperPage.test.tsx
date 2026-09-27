@@ -90,6 +90,15 @@ function unavailableSnapshot(): Response {
 }
 
 describe("HallkeeperPage approved snapshot failures", () => {
+  it("offers no Try Again on a sheet the reader may not see, only the way out", async () => {
+    vi.stubGlobal("fetch", vi.fn((): Promise<Response> => Promise.resolve(new Response(null, { status: 403 }))));
+    mount();
+    expect((await screen.findByRole("alert")).textContent).toBe("You don't have permission to view this event's sheet.");
+    expect(screen.getByText("Ask the event manager to share this sheet or open it with a hallkeeper-approved account.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try Again" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Today's rooms" })).toBeTruthy();
+  });
+
   it("explains an unavailable approved sheet and retries with activity before showing recovered contents", async () => {
     const retry = deferred<Response>();
     let loads = 0;

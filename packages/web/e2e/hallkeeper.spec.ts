@@ -385,8 +385,12 @@ test.describe("Hallkeeper Page — authorized error states", () => {
     });
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
     await expect(
-      page.getByText("You don't have permission to view this events sheet."),
+      page.getByText("You don't have permission to view this event's sheet."),
     ).toBeVisible({ timeout: 8_000 });
+    // Trying again cannot grant access (roadmap N4): the way out is the
+    // sheet's navigation.
+    await expect(page.getByRole("button", { name: "Try Again" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Today's rooms" })).toBeVisible();
   });
 });
 

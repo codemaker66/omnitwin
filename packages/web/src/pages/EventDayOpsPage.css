@@ -47,6 +47,18 @@
 .event-day-issue-list h3 { font-size: 0.95rem; margin: 6px 0 4px; }
 .event-day-issue-list p { color: var(--hk-ink-dim); font-size: 0.82rem; margin: 0; }
 .event-day-issue-list small { color: var(--hk-ink-faint); display: block; font-size: 0.7rem; margin-top: 6px; }
+/* A resolved issue waits apart until someone closes it: a quiet heading and a
+   neutral edge, its words at full strength. */
+.event-day-issue-group {
+  color: var(--hk-ink-dim);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin: 22px 0 0;
+  text-transform: uppercase;
+}
+.event-day-issue-list.is-resolved { margin-top: 10px; }
+.event-day-issue-list.is-resolved li { background: transparent; border-left-color: var(--hk-line); }
 
 .event-day-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .event-day-issue-actions button {

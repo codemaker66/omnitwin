@@ -199,5 +199,6 @@ function summariseInstructions(ins: EventInstructions): string {
 function formatDeadlineTime(iso: string, timezone?: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", ...(timezone === undefined ? {} : { timeZone: timezone }) });
+  // A British 24-hour time: a phone set to US English still reads 18:30.
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", ...(timezone === undefined ? {} : { timeZone: timezone }) });
 }

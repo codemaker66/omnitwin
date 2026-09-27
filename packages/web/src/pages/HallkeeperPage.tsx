@@ -66,6 +66,7 @@ interface DownloadNotice {
 }
 
 const APPROVED_SNAPSHOT_UNAVAILABLE = "The approved setup sheet is unavailable.";
+const NO_PERMISSION = "You don't have permission to view this event's sheet.";
 const ApprovedSnapshotErrorSchema = z.object({ code: z.literal("APPROVED_SNAPSHOT_UNAVAILABLE") });
 
 async function isApprovedSnapshotUnavailable(response: Response): Promise<boolean> {
@@ -179,7 +180,7 @@ export function HallkeeperPage(): React.ReactElement {
         // Stale-request guard
         if (!isCurrent()) return;
 
-        if (sheetRes.status === 403) { setError("You don't have permission to view this events sheet."); return; }
+        if (sheetRes.status === 403) { setError(NO_PERMISSION); return; }
         if (sheetRes.status === 404) { setError("Configuration not found."); return; }
         if (!sheetRes.ok) {
           const snapshotUnavailable = await isApprovedSnapshotUnavailable(sheetRes);
@@ -469,7 +470,7 @@ export function HallkeeperPage(): React.ReactElement {
   }
 
   if (error !== null || data === null) {
-    const isPermissionError = error !== null && error.includes("permission");
+    const isPermissionError = error === NO_PERMISSION;
     return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet unavailable">
       <SheetNavigation />
       <section className="hk-state-card" aria-labelledby="hallkeeper-error-title">
@@ -479,7 +480,8 @@ export function HallkeeperPage(): React.ReactElement {
           : error === APPROVED_SNAPSHOT_UNAVAILABLE
             ? "Contact venue staff before using a replacement. You can try again once the approved sheet is available."
           : "Check that the handoff link is current, then try again."}</p>
-        <button type="button" className="hk-button hk-button-primary hk-retry-btn" onClick={loadData}>Try Again</button>
+        {/* Trying again cannot grant access: the way out is the navigation above. */}
+        {isPermissionError ? null : <button type="button" className="hk-button hk-button-primary hk-retry-btn" onClick={loadData}>Try Again</button>}
       </section>
     </main>;
   }
@@ -514,7 +516,7 @@ export function HallkeeperPage(): React.ReactElement {
       </>} />
     <div className="hk-print-only" aria-hidden="true">
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
-      <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} />
+      <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} />
       {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
       <p>{progressUnavailable ? "Shared checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} setup rows checked`}</p>
       <InteractiveFloorPlan floorPlan={data.floorPlan} room={data.space} phases={data.phases} highlightedRowKey={null} onMarkerClick={() => undefined} />

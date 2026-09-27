@@ -40,6 +40,7 @@ interface StatusMeta {
 function describeStatus(
   status: ConfigurationReviewStatus,
   snapshot: SnapshotEnvelope | null,
+  timeZone: string,
 ): StatusMeta {
   const version = snapshot !== null ? ` · v${String(snapshot.version)}` : "";
   const approvedAt = snapshot?.approvedAt ?? null;
@@ -48,9 +49,11 @@ function describeStatus(
     case "approved": {
       const approvedStamp = approvedAt === null
         ? ""
-        : ` · approved ${new Date(approvedAt).toLocaleString(undefined, {
+        // The venue's own clock and a British 24-hour time, whatever the
+        // reader's device is set to.
+        : ` · approved ${new Date(approvedAt).toLocaleString("en-GB", {
             weekday: "short", day: "numeric", month: "short",
-            hour: "2-digit", minute: "2-digit",
+            hour: "2-digit", minute: "2-digit", timeZone,
           })}`;
       return {
         label: "Approved — source of truth",
@@ -133,11 +136,13 @@ function describeStatus(
 
 interface HallkeeperStatusBannerProps {
   readonly configId: string;
+  /** The venue's IANA zone, for the approval time. */
+  readonly timeZone: string;
   readonly compact?: boolean;
 }
 
 export function HallkeeperStatusBanner(
-  { configId, compact = false }: HallkeeperStatusBannerProps,
+  { configId, timeZone, compact = false }: HallkeeperStatusBannerProps,
 ): React.ReactElement | null {
   const [status, setStatus] = useState<ConfigurationReviewStatus | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotEnvelope | null>(null);
@@ -171,7 +176,7 @@ export function HallkeeperStatusBanner(
 
   if (!loaded || status === null) return null;
 
-  const meta = describeStatus(status, snapshot);
+  const meta = describeStatus(status, snapshot, timeZone);
 
   return (
     <div
