@@ -651,19 +651,25 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *API*
 - `GuestEnquirySchema` gains an optional room slug, validated against the venue.
+  Done on 27 September: `roomSlug` names one of the venue's live rooms on the venue path. A room the venue
+  does not have is filed as no room chosen rather than refused, so no lead is lost ([session log](../../sessions/2026-09-27.md)).
 - Because `spaceId` is NOT NULL (`schema.ts:671`), store an explicit "room not chosen" marker.
-  Begun on 27 September: migration 0079 adds `enquiries.room_chosen`, false for every enquiry from the
-  venue's own pages. The desk reads it in N6's next slice ([session log](../../sessions/2026-09-27.md)).
+  Done on 27 September: migration 0079 adds `enquiries.room_chosen`, false for every enquiry from the
+  venue's own pages. The public route writes it, and the desk, the emails, the Diary's hold drawer and the
+  client profile read it ([session log](../../sessions/2026-09-27.md)).
 - A `source` field (tour, website, planner, phone) replaces setting `fromTwin` on every venue-slug enquiry (`public-enquiries.ts:136`) and prepending the twin note (`:17,143-148`).
   Revised on 27 September: the values are website, walkthrough, planner, phone and email, and NULL where
   the source is not known. Walkthrough is the code's word for the tour, and email sits beside phone.
   Migration 0079 fills the column only where a row proves the source. An enquiry from before 26 September
   22:23 UTC keeps none, because the website's form then wrote the walkthrough's note too. The note is
-  taken out of every stored message ([session log](../../sessions/2026-09-27.md)).
+  taken out of every stored message ([session log](../../sessions/2026-09-27.md)). The route has written
+  the source since N6's second slice, and 0080 settles the rows written between the two releases ([session log](../../sessions/2026-09-27.md)).
 - A shared, human-labelled occasion list, used by the twin, `/fresh`, the planner and the desk. Today the desk prints raw slugs (`EnquiryLedger.tsx:50`).
 
 *Desk*
 - Show "Room not chosen" instead of the flagship room's name and photo, plus a quiet source chip.
+  Done on 27 September: the room reads "Not chosen", with no photograph in the list, the panel or the
+  overview, and a quiet outlined chip says where the enquiry came from, wherever that is known ([session log](../../sessions/2026-09-27.md)).
 - "Create opportunity" opens `?view=pipeline&opportunity=<id>` with the list beside it; remove the misleading toast (`EnquiriesView.tsx:461-472`).
 - A secondary "Pencil in the Diary" action, using the existing conversion (`bookings.ts:250`).
 - On phones, the facts line wraps rather than truncating.
@@ -673,7 +679,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 **Acceptance**
 - An API test sends a venue-slug enquiry with no room. The desk shows "Room not chosen", no Grand Hall photo, and a quote made of the client's own first words.
+  Held since 27 September by the public enquiry PostgreSQL tests and `enquiries-desk-truth.spec.ts`.
 - An enquiry from the `/fresh` composer is stored with `source = website`.
+  Held since 27 September by `public-enquiry-venue-slug-postgres.test.ts`.
 - Pressing Create opportunity twice lands on the same deal, selected in the pipeline, both times.
 - Pencilling from the desk creates a hold with the enquiry's date and room, visible in the Diary.
 
