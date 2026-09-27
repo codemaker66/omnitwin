@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { DAY_BOARD_LEGEND } from "../pages/hallkeeper/lib/day-board-state.js";
 
 // CARD A3 (G2a): the House token layer. This suite is the card's DoD gate:
 //   1. House token names carry 02-DESIGN-LANGUAGE's exact BOH values.
@@ -739,14 +740,13 @@ describe("one accent, but never one colour for two states", () => {
     const page = await readFile(resolve("src/pages/hallkeeper/DayBoardPage.tsx"), "utf-8");
     const css = stripCssComments(await readFile(resolve("src/pages/hallkeeper/day-board.css"), "utf-8"));
 
-    // The legend is the footer that explains the colours; read the chip
-    // classes out of it rather than hard-coding them, so a Lane 6 edit that
-    // adds a fifth entry is audited too.
+    // The legend is the footer that explains the colours, built from the
+    // states the board draws (roadmap N4): audit every entry it carries, so a
+    // state added later is audited too.
     const legend = /<footer className="dayboard-legend"[\s\S]*?<\/footer>/.exec(page);
     expect(legend, "DayBoardPage must still render the colour legend").not.toBeNull();
-    const chipClasses = [...(legend?.[0] ?? "").matchAll(/dayboard-chip-([a-z-]+)/g)]
-      .map((match) => match[1] ?? "")
-      .filter((name) => name !== "dot");
+    expect(legend?.[0], "the legend must be built from DAY_BOARD_LEGEND").toContain("DAY_BOARD_LEGEND.map");
+    const chipClasses = DAY_BOARD_LEGEND.map((entry) => entry.tone);
     expect(chipClasses.length, "the legend should carry several entries").toBeGreaterThan(2);
 
     // .dayboard-chip-live points at --db-gilt, not at --db-live: follow the

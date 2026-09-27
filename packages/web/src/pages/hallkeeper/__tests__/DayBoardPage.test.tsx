@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import type { ReactElement } from "react";
 import { DayBoardPage, DayBoardSlotRequestsContext } from "../DayBoardPage.js";
+import { DAY_BOARD_LEGEND } from "../lib/day-board-state.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
@@ -13,9 +14,9 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 // the error/retry path — against a mocked calendar API.
 // ---------------------------------------------------------------------------
 
-const { getCalendarMock, liveUpdate, resolveLayoutsMock } = vi.hoisted(() => ({
+const { getCalendarMock, liveUpdate, liveConnected, resolveLayoutsMock } = vi.hoisted(() => ({
   getCalendarMock: vi.fn(), liveUpdate: { current: null as (() => void) | null },
-  resolveLayoutsMock: vi.fn(),
+  liveConnected: { current: true }, resolveLayoutsMock: vi.fn(),
 }));
 
 vi.mock("../../../api/diary.js", () => ({
@@ -31,7 +32,7 @@ vi.mock("../../../lib/event-linked-layouts.js", () => ({
 vi.mock("../../diary/hooks/useDiaryLive.js", () => ({
   useDiaryLive: (_enabled: boolean, onUpdate: () => void) => {
     liveUpdate.current = onUpdate;
-    return { connected: true, presence: [] };
+    return { connected: liveConnected.current, presence: [] };
   },
 }));
 
@@ -122,6 +123,7 @@ beforeEach(() => {
   resolveLayoutsMock.mockReset();
   resolveLayoutsMock.mockResolvedValue({ eventName: "Chamber dinner", roomName: "Grand Hall", layouts: [], unavailableCount: 0 });
   liveUpdate.current = null;
+  liveConnected.current = true;
   useAuthStore.getState().setUser({
     id: "00000000-0000-4000-8000-0000000000ff",
     email: "keeper@tradeshall.co.uk",
@@ -224,18 +226,91 @@ describe("DayBoardPage", () => {
     await act(async () => { resolveSecond?.(calendarFixture([liveBooking()])); await second; });
     expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
   });
-  it("renders a lane per room with live state chips whose text carries the meaning", async () => {
+  it("draws a lane for each room in use, with chips whose text carries the meaning, and names the free rooms on one line", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
-    renderBoard();
+    const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
 
     await waitFor(() => {
       expect(screen.getByRole("region", { name: "Grand Hall" })).toBeTruthy();
     });
-    expect(screen.getByRole("region", { name: "Saloon" })).toBeTruthy();
     expect(screen.getByText("Chamber dinner")).toBeTruthy();
-    // The chip text is the reduced-motion / colour-blind contract.
+    // The chip text is the colour-blind contract.
     expect(screen.getByText(/until booked end$/u)).toBeTruthy();
-    expect(screen.getByText("Nothing scheduled.")).toBeTruthy();
+    // A room with nothing on is a name in a line, not a lane to scroll past.
+    expect(screen.queryByRole("region", { name: "Saloon" })).toBeNull();
+    expect(container.querySelector(".dayboard-free")?.textContent).toBe("Also free today: Saloon.");
+  });
+
+  it("keeps a free room's lane when the room is chosen", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
+    await screen.findByText("Chamber dinner");
+    fireEvent.change(screen.getByRole("combobox", { name: "Room" }), { target: { value: SALOON } });
+    expect(within(screen.getByRole("region", { name: "Saloon" })).getByText("Nothing scheduled.")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Grand Hall" })).toBeNull();
+    expect(container.querySelector(".dayboard-free")).toBeNull();
+  });
+
+  it("moves a day at a time with the arrows and their keys, and back with Today or t (roadmap N4)", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    const day = screen.getByLabelText<HTMLInputElement>("Day");
+    const today = day.value;
+    const plus = (days: number): string => new Date(Date.parse(`${today}T12:00:00.000Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    expect(screen.getByRole("button", { name: "Today", pressed: true })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(day.value).toBe(plus(1));
+    expect(screen.getByRole("button", { name: "Today", pressed: false })).toBeTruthy();
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(day.value).toBe(plus(2));
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(day.value).toBe(plus(-1));
+    fireEvent.keyDown(document.body, { key: "t" });
+    expect(day.value).toBe(today);
+    expect(screen.getByRole("button", { name: "Today", pressed: true })).toBeTruthy();
+
+    // A field keeps its own keys, and so does anything outside the board.
+    fireEvent.keyDown(day, { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Room" }), { key: "t" });
+    expect(day.value).toBe(today);
+    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(1); });
+  });
+
+  it("says how fresh the day is while live updates reconnect, with a Refresh that reads it now", async () => {
+    liveConnected.current = false;
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    expect(screen.getByText(/^Updated \d\d:\d\d · reconnecting…$/u)).toBeTruthy();
+    const calls = getCalendarMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBe(calls + 1); });
+  });
+
+  it("says when it last read the day while connected, with no Refresh to press", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    expect(screen.getByText(/^Live · updated \d\d:\d\d$/u)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+  });
+
+  it("stamps a chip once when its room's state moves on, and never on first drawing", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
+    await screen.findByText("Chamber dinner");
+    expect(container.querySelector(".dayboard-chip.is-stamped")).toBeNull();
+    // The dinner ends early: the same booking, now finished.
+    getCalendarMock.mockResolvedValue(calendarFixture([{
+      ...liveBooking(), endsAt: new Date(Date.now() - 60_000).toISOString(),
+    } as CalendarResponse["entries"][number]]));
+    act(() => { liveUpdate.current?.(); });
+    await screen.findByText(/^Booked until/u);
+    expect(container.querySelector(".dayboard-slot .dayboard-chip.is-stamped")?.textContent).toMatch(/^Booked until/u);
   });
 
   it("names each kind of booking in the house's own words", async () => {
@@ -253,15 +328,12 @@ describe("DayBoardPage", () => {
     expect(screen.queryByText(/pencil|prospect|\bink\b/iu)).toBeNull();
   });
 
-  it("teaches the colour system: the legend names every meaning in words", async () => {
+  it("teaches the colour system in the words the slots use (roadmap N4)", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();
-    await waitFor(() => {
-      expect(screen.getByLabelText("What the colours mean")).toBeTruthy();
-    });
-    for (const label of ["First phase due", "Booking starts soon", "Needs attention"]) {
-      expect(screen.getByText(label)).toBeTruthy();
-    }
+    const legend = within(await screen.findByLabelText("What the colours mean"));
+    for (const entry of DAY_BOARD_LEGEND) expect(legend.getByText(entry.label)).toBeTruthy();
+    expect(legend.getAllByText(/./u)).toHaveLength(DAY_BOARD_LEGEND.length);
   });
 
   it("a day with nothing in the diary says so plainly", async () => {
@@ -335,11 +407,13 @@ describe("DayBoardPage", () => {
     expect(seen[0]).toBe("Grand Hall:00000000-0000-4000-8000-0000000000b1");
   });
 
-  it("names the venue's own timezone rather than a hard-coded one", async () => {
+  it("names the venue's clock in words for a device on another, never by its IANA name", async () => {
+    // The suite runs on UTC; the venue keeps UK time.
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();
     await screen.findByText("Chamber dinner");
-    expect(screen.getByText(/Europe\/London/u)).toBeTruthy();
+    expect(screen.getByText(/ · UK time$/u)).toBeTruthy();
+    expect(screen.queryByText(/Europe\/London/u)).toBeNull();
   });
 
   it("a failed load shows the error and a retry that refetches", async () => {

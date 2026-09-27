@@ -15,9 +15,9 @@ import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 // docs/plan/hallkeeper-day-board-plan.md).
 //
 // One pure derivation: GET /calendar + a clock instant → per-slot state,
-// tone, cadence and label copy. The page renders what this returns and CSS
-// animates it; nothing visual is decided anywhere else, which is what makes
-// the 60/30/10-minute boundaries and the exception priority unit-testable.
+// tone and label copy. The page renders what this returns; nothing visual is
+// decided anywhere else, which is what makes the 60/30/10-minute boundaries
+// and the exception priority unit-testable.
 //
 // Colour discipline (the design decision the plan flags): the countdown ramp
 // runs green → amber → deep amber as arrival approaches, an event IN
@@ -26,9 +26,10 @@ import { bookingStateLabel } from "../../diary/lib/board-overview.js";
 // later slices add their signals. A four-hour red pulse would numb the one
 // colour that must always mean "look now".
 //
-// Labels are load-bearing: under prefers-reduced-motion the pulses stop and
-// the text carries the whole meaning, and every state stays legible without
-// colour (state word + countdown + wall-clock range on every slot).
+// Labels are load-bearing: nothing on the board moves but a single stamp
+// when a room's state changes (roadmap N4), so the words carry the whole
+// meaning, and every state stays legible without colour (state word +
+// countdown + wall-clock range on every slot).
 // ---------------------------------------------------------------------------
 
 const MIN_MS = 60_000;
@@ -57,16 +58,6 @@ export type DayBoardTone =
   | "faded"
   | "red";
 
-/** Cadence names only — CSS owns the keyframes, and all pulses of the same
- *  cadence are phase-locked by a shared epoch on the board root. */
-export type DayBoardMotion =
-  | "none"
-  | "pulse-4s"
-  | "pulse-3s"
-  | "pulse-2s"
-  | "breathe-4s"
-  | "pulse-fast";
-
 export type DayBoardException = "turnaround-at-risk" | "overrun" | "urgent-message";
 
 export interface DayBoardSlot {
@@ -91,8 +82,7 @@ export interface DayBoardSlot {
   readonly state: DayBoardState;
   readonly stateLabel: string;
   readonly tone: DayBoardTone;
-  readonly motion: DayBoardMotion;
-  /** The chip's countdown/status text — the reduced-motion experience. */
+  /** The chip's countdown/status text. */
   readonly countdown: string;
   /** Wall-clock range, venue-local: "13:00 – 17:00". */
   readonly timeRange: string;
@@ -207,6 +197,19 @@ export function groupRequestsByBooking(
   return byBooking;
 }
 
+/** The board's legend: one entry per colour, each worded exactly as a slot in
+ *  that state reads (roadmap N4), in the order a day runs. A slot whose first
+ *  phase comes before its booking reads "Phase scheduled" in the same green. */
+export const DAY_BOARD_LEGEND: readonly { readonly tone: DayBoardTone; readonly label: string }[] = [
+  { tone: "quiet", label: "Scheduled" },
+  { tone: "green", label: "Upcoming" },
+  { tone: "amber", label: "Starting shortly" },
+  { tone: "amber-deep", label: "Starting soon" },
+  { tone: "live", label: "In booked window" },
+  { tone: "faded", label: "Scheduled end passed" },
+  { tone: "red", label: "Changeover at risk" },
+];
+
 export interface DayBoardLane {
   readonly room: CalendarRoom;
   readonly slots: readonly DayBoardSlot[];
@@ -233,7 +236,6 @@ interface TimedState {
   readonly state: DayBoardState;
   readonly stateLabel: string;
   readonly tone: DayBoardTone;
-  readonly motion: DayBoardMotion;
   readonly countdown: string;
 }
 
@@ -251,7 +253,6 @@ function deriveTimedState(
       state: "done",
       stateLabel: "Scheduled end passed",
       tone: "faded",
-      motion: "none",
       countdown: `Booked until ${formatWallTime(endsAtMs, timeZone)}`,
     };
   }
@@ -261,7 +262,6 @@ function deriveTimedState(
       state: "in-progress",
       stateLabel: "In booked window",
       tone: "live",
-      motion: "breathe-4s",
       countdown: `${formatDuration(remaining)} until booked end`,
     };
   }
@@ -271,7 +271,6 @@ function deriveTimedState(
       state: "imminent",
       stateLabel: "Starting soon",
       tone: "amber-deep",
-      motion: "pulse-2s",
       countdown: `Starts in ${String(doorsInMin)}m`,
     };
   }
@@ -280,7 +279,6 @@ function deriveTimedState(
       state: "guests-due",
       stateLabel: "Starting shortly",
       tone: "amber",
-      motion: "pulse-3s",
       countdown: `Starts in ${String(doorsInMin)}m`,
     };
   }
@@ -290,7 +288,6 @@ function deriveTimedState(
       state: "organisers-due",
       stateLabel: setupStartsAtMs < startsAtMs ? "Phase scheduled" : "Upcoming",
       tone: "green",
-      motion: "pulse-4s",
       countdown: setupInMin <= 0
         ? `First phase from ${formatWallTime(setupStartsAtMs, timeZone)}`
         : `${setupStartsAtMs < startsAtMs ? "First phase" : "Starts"} in ${String(setupInMin)}m`,
@@ -300,7 +297,6 @@ function deriveTimedState(
     state: "scheduled",
     stateLabel: "Scheduled",
     tone: "quiet",
-    motion: "none",
     countdown: `Starts ${formatWallTime(startsAtMs, timeZone)}`,
   };
 }
@@ -397,7 +393,6 @@ export function deriveDayBoard(
                   state: "exception",
                   stateLabel: "Changeover at risk",
                   tone: "red",
-                  motion: "pulse-fast",
                   countdown: timed.countdown,
                   timeRange,
                   exception: "turnaround-at-risk",
@@ -423,7 +418,6 @@ export function deriveDayBoard(
                   state: timed.state,
                   stateLabel: timed.stateLabel,
                   tone: timed.tone,
-                  motion: timed.motion,
                   countdown: timed.countdown,
                   timeRange,
                   exception: null,

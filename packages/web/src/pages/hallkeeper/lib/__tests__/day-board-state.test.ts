@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarResponse } from "@omnitwin/types";
 import {
+  DAY_BOARD_LEGEND,
   deriveDayBoard,
   deriveSlotRequestSignal,
   type DayBoardSlot,
@@ -11,15 +12,13 @@ import {
 // The Day Board state machine (Day Board S1) — tests written FIRST.
 //
 // One pure function turns GET /calendar + a clock instant into per-slot
-// states, tones, cadences and countdown labels. Everything the board
-// animates is decided here, deterministically, so every boundary is
-// unit-testable without a DOM: the 60/30/10-minute thresholds, the LIVE
-// window, the priority of exception over everything else, and the exact
-// label copy the chips display.
+// states, tones and countdown labels. Everything the board shows is decided
+// here, deterministically, so every boundary is unit-testable without a DOM:
+// the 60/30/10-minute thresholds, the LIVE window, the priority of exception
+// over everything else, and the exact label copy the chips display.
 //
-// Motion is CSS's job; this module only names the cadence. Reduced motion
-// swaps CSS behaviour, never these derivations — the label text IS the
-// reduced-motion experience, so labels are load-bearing, not decoration.
+// Nothing on the board moves but one stamp when a state changes (roadmap
+// N4), so the label text carries the state: load-bearing, not decoration.
 // ---------------------------------------------------------------------------
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
@@ -110,24 +109,22 @@ function soleSlot(response: CalendarResponse): DayBoardSlot {
 }
 
 describe("deriveDayBoard — the countdown ramp", () => {
-  it("far out is quiet: no motion, a scheduled state, a wall-clock label", () => {
+  it("far out is quiet: a scheduled state and a wall-clock label", () => {
     const response = baseResponse();
     response.entries = [booking(200, 400)];
     const slot = soleSlot(response);
     expect(slot.state).toBe("scheduled");
-    expect(slot.motion).toBe("none");
     // The label speaks venue wall time, not offsets.
     expect(slot.countdown).toMatch(/\d{1,2}:\d{2}/u);
   });
 
-  it("organisers due: inside 60m of the SETUP opening, green, 4s pulse", () => {
+  it("organisers due: inside 60m of the SETUP opening, green", () => {
     const response = baseResponse();
     // Doors at +120m, but setup opens at +45m — the state keys off setup.
     response.entries = [booking(120, 300), phase(45, 120)];
     const slot = soleSlot(response);
     expect(slot.state).toBe("organisers-due");
     expect(slot.tone).toBe("green");
-    expect(slot.motion).toBe("pulse-4s");
     expect(slot.countdown).toBe("First phase in 45m");
   });
 
@@ -141,43 +138,61 @@ describe("deriveDayBoard — the countdown ramp", () => {
     expect(soleSlot(far).state).toBe("scheduled");
   });
 
-  it("guests due: inside 30m of doors, amber, 3s pulse, guest-facing label", () => {
+  it("guests due: inside 30m of doors, amber, guest-facing label", () => {
     const response = baseResponse();
     response.entries = [booking(28, 200)];
     const slot = soleSlot(response);
     expect(slot.state).toBe("guests-due");
     expect(slot.tone).toBe("amber");
-    expect(slot.motion).toBe("pulse-3s");
     expect(slot.countdown).toBe("Starts in 28m");
   });
 
-  it("imminent: inside 10m of doors the amber deepens and quickens", () => {
+  it("imminent: inside 10m of doors the amber deepens", () => {
     const response = baseResponse();
     response.entries = [booking(9, 200)];
     const slot = soleSlot(response);
     expect(slot.state).toBe("imminent");
     expect(slot.tone).toBe("amber-deep");
-    expect(slot.motion).toBe("pulse-2s");
     expect(slot.countdown).toBe("Starts in 9m");
   });
 
-  it("in progress: a calm LIVE breathe — never a red pulse — with time remaining", () => {
+  it("in progress: a calm LIVE state, never red, with time remaining", () => {
     const response = baseResponse();
     response.entries = [booking(-30, 90)];
     const slot = soleSlot(response);
     expect(slot.state).toBe("in-progress");
     expect(slot.tone).toBe("live");
-    expect(slot.motion).toBe("breathe-4s");
     expect(slot.countdown).toBe("1h 30m until booked end");
   });
 
-  it("ended: faded, still, and labelled done", () => {
+  it("ended: faded and labelled done", () => {
     const response = baseResponse();
     response.entries = [booking(-300, -60)];
     const slot = soleSlot(response);
     expect(slot.state).toBe("done");
     expect(slot.tone).toBe("faded");
-    expect(slot.motion).toBe("none");
+    expect(slot.stateLabel).toBe("Scheduled end passed");
+  });
+});
+
+describe("the legend (roadmap N4)", () => {
+  it("names each colour exactly as a slot in that state reads, one entry a colour", () => {
+    // One room per state, read at the same instant.
+    const response = baseResponse();
+    const rooms = ["scheduled", "upcoming", "shortly", "soon", "live", "done", "risk-a", "risk-b"]
+      .map((name, index) => ({ id: `00000000-0000-4000-8000-00000000010${String(index)}`, name, slug: name, sortOrder: index }));
+    response.rooms = rooms;
+    const at = (room: number, start: number, end: number): CalendarResponse["entries"][number] =>
+      booking(start, end, { id: `00000000-0000-4000-8000-00000000020${String(room)}`, spaceId: rooms[room]?.id });
+    response.entries = [at(0, 200, 300), at(1, 59, 200), at(2, 28, 200), at(3, 9, 200), at(4, -30, 90), at(5, -300, -60), at(6, 100, 150), at(7, 150, 200)];
+    response.conflicts.conflicts = [{
+      id: "risk", type: "insufficient_turnaround", severity: "blocking", spaceId: rooms[6]?.id ?? "",
+      entryIds: ["00000000-0000-4000-8000-000000000206", "00000000-0000-4000-8000-000000000207"], explanation: "No time between them.",
+    }];
+    const emitted = new Map(deriveDayBoard(response, NOW).lanes.flatMap((lane) => lane.slots).map((slot) => [slot.stateLabel, slot.tone]));
+    for (const entry of DAY_BOARD_LEGEND) expect(emitted.get(entry.label), entry.label).toBe(entry.tone);
+    expect(new Set(DAY_BOARD_LEGEND.map((entry) => entry.tone)).size).toBe(DAY_BOARD_LEGEND.length);
+    expect(new Set(emitted.values()).size).toBe(DAY_BOARD_LEGEND.length);
   });
 });
 
@@ -203,7 +218,7 @@ describe("deriveDayBoard — the house's words for each booking", () => {
 });
 
 describe("deriveDayBoard — exceptions own red", () => {
-  it("a turnaround-at-risk pair pulses red at 1.5s and says why", () => {
+  it("a turnaround-at-risk pair turns red and says why", () => {
     const response = baseResponse();
     response.entries = [booking(-30, 90), booking(100, 200, { id: BOOKING_2 })];
     response.conflicts.conflicts = [
@@ -222,7 +237,6 @@ describe("deriveDayBoard — exceptions own red", () => {
     expect(flagged).toHaveLength(2);
     for (const slot of flagged) {
       expect(slot.tone).toBe("red");
-      expect(slot.motion).toBe("pulse-fast");
       expect(slot.exception).toBe("turnaround-at-risk");
       expect(slot.exceptionDetail).toContain("changeover");
     }

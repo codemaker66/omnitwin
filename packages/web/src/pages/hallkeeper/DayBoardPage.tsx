@@ -1,6 +1,7 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { boardRange, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../diary/lib/board-time.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
@@ -8,9 +9,10 @@ import { useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
-import { deriveDayBoard, type DayBoardSlot } from "./lib/day-board-state.js";
+import { DAY_BOARD_LEGEND, deriveDayBoard, type DayBoardSlot, type DayBoardState } from "./lib/day-board-state.js";
 import { describeSlotSheet, type SlotSheetState } from "./lib/day-board-sheet.js";
 import { useVenueTimezone } from "./lib/use-venue-timezone.js";
+import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
 import {
   DayBoardSlotRequestsContext,
   type SlotRequestsComponent,
@@ -26,12 +28,11 @@ import "./day-board.css";
 // existing /ws/diary channel (any committed diary change refetches — the
 // snapshot doctrine, never trusted deltas).
 //
-// Motion contract: every pulse is CSS keyframes on transform/opacity only,
-// phase-locked via a single epoch custom property set ONCE per mount — all
-// slots of a cadence breathe together, which reads calm where free-running
-// pulses read as noise. The clock ticks state at 30s granularity and never
-// re-renders per animation frame. prefers-reduced-motion stops the pulses;
-// the countdown text already carries the full meaning.
+// Motion contract (roadmap N4): nothing on the board moves but one 320 ms
+// stamp on a slot's chip when that room's state moves on, never on first
+// drawing and never under reduced motion. A board watched all day must not
+// keep something moving in the corner of the eye; the words carry the state.
+// The clock ticks state at 30s granularity.
 //
 // Two things a slot carries beyond its own state (Ship Friday, lines 20-21):
 //   - the door to the room's setup sheet, resolved from the booking's event
@@ -42,12 +43,16 @@ import "./day-board.css";
 // ---------------------------------------------------------------------------
 
 const CLOCK_TICK_MS = 30_000;
+const DAY_MS = 86_400_000;
 
-/** All cadences (4s, 3s, 2s, 1.5s) divide 60s, so anchoring every animation
- *  to a shared origin phase-locks each cadence family. Computed once per
- *  mount — changing it would restart every animation. */
-function epochDelaySeconds(): number {
-  return -(Date.now() / 1000) % 60;
+/** A calendar day on either side of `date` (YYYY-MM-DD), as the same form. */
+function stepDay(date: string, days: number): string {
+  return new Date(Date.parse(`${date}T12:00:00.000Z`) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** Keys that move the day are the board's own only when no field holds focus. */
+function typingInto(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
 }
 
 // The <SlotRequests> mount point: its contract lives in
@@ -160,21 +165,23 @@ function SlotSheetLink({ eventId, roomSlug, roomName }: {
   );
 }
 
-function SlotCard({ slot, room, timeZone, slotRequests: SlotRequests }: {
+function SlotCard({ slot, room, timeZone, slotRequests: SlotRequests, stamped }: {
   readonly slot: DayBoardSlot;
   readonly room: { readonly id: string; readonly name: string; readonly slug: string };
   readonly timeZone: string;
   readonly slotRequests: SlotRequestsComponent | null;
+  /** The room's state moved on since the board last drew it. */
+  readonly stamped: boolean;
 }): ReactElement {
   return (
     <article
       className={`dayboard-slot dayboard-tone-${slot.tone}`}
-      data-motion={slot.motion}
       data-state={slot.state}
     >
       <div className="dayboard-slot-head">
         <span className="dayboard-slot-time">{slot.timeRange}</span>
-        <span className={`dayboard-chip dayboard-chip-${slot.tone}`} data-motion={slot.motion}>
+        {/* A new key plays the stamp once, as the Enquiries desk's chips do. */}
+        <span key={stamped ? slot.state : "still"} className={`dayboard-chip dayboard-chip-${slot.tone}${stamped ? " is-stamped" : ""}`}>
           <span className="dayboard-chip-dot" aria-hidden="true" />
           {slot.countdown}
         </span>
@@ -256,39 +263,91 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const range = useMemo(() => boardRange(selectedMs, "day", timeZone), [selectedMs, timeZone]);
   const { data, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range);
   const live = useDiaryLive(venueId !== null, refetch);
+  const shownDate = msToWallInput(selectedMs, timeZone).slice(0, 10);
+  const today = msToWallInput(nowMs, timeZone).slice(0, 10);
 
   const board = useMemo(
     () => (data === null ? null : deriveDayBoard(data, nowMs, timeZone)),
     [data, nowMs, timeZone],
   );
 
-  // Set once per mount: re-writing this would restart every CSS animation.
-  const epochRef = useRef<number>(epochDelaySeconds());
+  // ← Today → (roadmap N4): tomorrow's rooms are a key away, not a picker.
+  // The keys are the board's while focus rests on it or on nothing: a menu
+  // in the header keeps its own arrows.
+  const boardRef = useRef<HTMLDivElement>(null);
+  const moveDay = useCallback((days: number): void => {
+    const next = stepDay(shownDate, days);
+    setSelectedDate(next === today ? null : next);
+  }, [shownDate, today]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.altKey || event.ctrlKey || event.metaKey || typingInto(event.target)) return;
+      const onBoard = event.target === document.body || (event.target instanceof Node && boardRef.current?.contains(event.target) === true);
+      if (!onBoard) return;
+      if (event.key === "ArrowLeft") moveDay(-1);
+      else if (event.key === "ArrowRight") moveDay(1);
+      else if (event.key === "t") setSelectedDate(null);
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); };
+  }, [moveDay]);
 
+  // A slot whose room moved on since the last drawing plays one stamp; the
+  // first drawing of a day is still.
+  const drawn = useRef(new Map<string, DayBoardState>());
+  const moved = new Set<string>();
+  for (const lane of board?.lanes ?? []) {
+    for (const slot of lane.slots) {
+      const before = drawn.current.get(slot.bookingId);
+      if (before !== undefined && before !== slot.state) moved.add(slot.bookingId);
+    }
+  }
+  useEffect(() => {
+    for (const lane of board?.lanes ?? []) {
+      for (const slot of lane.slots) drawn.current.set(slot.bookingId, slot.state);
+    }
+  }, [board]);
+
+  const zone = useMemo(() => zoneNote(timeZone, deviceZone()), [timeZone]);
   const busyLanes = board?.lanes.filter((lane) => lane.slots.length > 0).length ?? 0;
+  // A room with nothing on is one name in a line, not a lane to scroll past;
+  // a room chosen from the filter keeps its lane either way.
+  const shownLanes = (board?.lanes ?? []).filter((lane) => (roomId === "" ? lane.slots.length > 0 : lane.room.id === roomId));
+  const freeRooms = roomId === "" && busyLanes > 0 ? (board?.lanes ?? []).filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
+  const readAt = readAtMs === null ? null : formatWallTime(readAtMs, timeZone);
 
   return (
     <DashboardLayout mainLabel="The Day Board">
-      <div
-        className="dayboard"
-        style={{ "--dayboard-epoch": `${String(epochRef.current)}s` } as React.CSSProperties}
-      >
+      <div className="dayboard" ref={boardRef}>
         <header className="dayboard-header">
           <div>
             <h1 className="dayboard-title">The Day Board</h1>
-            <p className="dayboard-subtitle">{formatWallDay(selectedMs, timeZone)} · {timeZone}</p>
+            <p className="dayboard-subtitle">{formatWallDay(selectedMs, timeZone)}{zone === null ? "" : ` · ${zone}`}</p>
           </div>
-          <div className="dayboard-status">
+          {/* Honest about how fresh the day is: the socket reconnects by
+              itself, and Refresh reads the day now. */}
+          <div className="dayboard-status" role="status">
             <span
               className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`}
               aria-hidden="true"
             />
-            <span>{live.connected ? "Live updates" : "Live updates disconnected"}</span>
+            {live.connected
+              ? <span>{readAt === null ? "Live" : `Live · updated ${readAt}`}</span>
+              : <>
+                <span>{readAt === null ? "Reconnecting…" : `Updated ${readAt} · reconnecting…`}</span>
+                {venueId !== null && <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>}
+              </>}
           </div>
         </header>
         <div className="dayboard-controls">
-          <label>Day<input type="date" value={msToWallInput(selectedMs, timeZone).slice(0, 10)} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value); }} /></label>
-          <button type="button" onClick={() => { setSelectedDate(null); }}>Today</button>
+          <div className="dayboard-days">
+            <button type="button" aria-label="Previous day" onClick={() => { moveDay(-1); }}><ArrowLeft size={18} aria-hidden="true" /></button>
+            <label className="dayboard-day-field">Day<input type="date" value={shownDate} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value === today ? null : event.target.value); }} /></label>
+            <button type="button" aria-pressed={selectedDate === null} onClick={() => { setSelectedDate(null); }}>Today</button>
+            <button type="button" aria-label="Next day" onClick={() => { moveDay(1); }}><ArrowRight size={18} aria-hidden="true" /></button>
+          </div>
           <label>Room<select value={roomId} onChange={(event) => { setRoomId(event.target.value); }}><option value="">All rooms</option>{(board?.lanes ?? []).map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
           <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/rooms">Room plans</Link>
         </div>
@@ -307,19 +366,19 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
         {/* A refresh that did not land keeps the day on screen and says from when. */}
         {refreshFailedAtMs !== null ? (
           <div className="dayboard-notice" role="status">
-            <p>{dayRefreshFailed(formatWallTime(refreshFailedAtMs, timeZone), readAtMs === null ? null : formatWallTime(readAtMs, timeZone))}</p>
+            <p>{dayRefreshFailed(formatWallTime(refreshFailedAtMs, timeZone), readAt)}</p>
             <button type="button" className="diary-button" onClick={refetch}>
               Try again
             </button>
           </div>
         ) : null}
 
-        {status !== "error" && board !== null && busyLanes === 0 ? (
+        {status !== "error" && board !== null && busyLanes === 0 && roomId === "" ? (
           <p className="dayboard-notice">{selectedDate === null ? "Nothing scheduled today." : "Nothing scheduled on this day."}</p>
         ) : null}
 
         <div className="dayboard-lanes">
-          {(board?.lanes ?? []).filter((lane) => roomId === "" || roomId === lane.room.id).map((lane) => (
+          {shownLanes.map((lane) => (
             <section key={lane.room.id} className="dayboard-lane" aria-label={lane.room.name}>
               <h2 className="dayboard-lane-title">{lane.room.name}</h2>
               {lane.slots.length === 0 ? (
@@ -332,30 +391,25 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
                     room={lane.room}
                     timeZone={timeZone}
                     slotRequests={slotRequestsComponent}
+                    stamped={moved.has(slot.bookingId)}
                   />
                 ))
               )}
             </section>
           ))}
         </div>
+        {freeRooms.length > 0 && <p className="dayboard-free">
+          <span>{selectedDate === null ? "Also free today:" : "Also free this day:"}</span> {freeRooms.join(", ")}.
+        </p>}
 
+        {/* Built from the states the board draws, in the words a slot uses. */}
         <footer className="dayboard-legend" aria-label="What the colours mean">
-          <span className="dayboard-chip dayboard-chip-green">
-            <span className="dayboard-chip-dot" aria-hidden="true" />
-            First phase due
-          </span>
-          <span className="dayboard-chip dayboard-chip-amber">
-            <span className="dayboard-chip-dot" aria-hidden="true" />
-            Booking starts soon
-          </span>
-          <span className="dayboard-chip dayboard-chip-live">
-            <span className="dayboard-chip-dot" aria-hidden="true" />
-            Scheduled event
-          </span>
-          <span className="dayboard-chip dayboard-chip-red">
-            <span className="dayboard-chip-dot" aria-hidden="true" />
-            Needs attention
-          </span>
+          {DAY_BOARD_LEGEND.map((entry) => (
+            <span key={entry.tone} className={`dayboard-chip dayboard-chip-${entry.tone}`}>
+              <span className="dayboard-chip-dot" aria-hidden="true" />
+              {entry.label}
+            </span>
+          ))}
         </footer>
       </div>
     </DashboardLayout>
