@@ -667,8 +667,10 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - A shared, human-labelled occasion list, used by the twin, `/fresh`, the planner and the desk. Today the desk prints raw slugs (`EnquiryLedger.tsx:50`).
   Partly done on 27 September: `occasionLabel` and `occasionPhrase` in `@omnitwin/types` give each occasion
   the forms offer its words ("Corporate event", "for a corporate event"), and keep an occasion a guest typed
-  as typed. The desk, the team's notice and email, a deal's title and the Diary's hold title read them. The
-  planner's and `/fresh`'s own lists are still to take them, and the twin's waits for the 3D batch ([session log](../../sessions/2026-09-27.md)).
+  as typed. The desk, the team's notice and email, a deal's title and the Diary's hold title read them, and
+  since the fourth slice the client profile, the Day Board and the Diary tray's slips. `/fresh` already used
+  the same words, and the planner's form now lists its occasions in sentence case; the twin's form waits for
+  the 3D batch ([session log](../../sessions/2026-09-27.md)).
 
 *Desk*
 - Show "Room not chosen" instead of the flagship room's name and photo, plus a quiet source chip.
@@ -679,6 +681,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   is said beside the button. The route makes one deal per enquiry under an advisory lock, so presses that
   arrive together land on the same deal ([session log](../../sessions/2026-09-27.md)).
 - A secondary "Pencil in the Diary" action, using the existing conversion (`bookings.ts:250`).
+  Done on 27 September as "Hold a date in the Diary" (Blake's words: nothing on screen says pencil). The
+  Diary opens on the date asked for with the hold's drawer open, and the conversion no longer takes the
+  room a roomless enquiry is only filed under ([session log](../../sessions/2026-09-27.md)).
 - On phones, the facts line wraps rather than truncating.
   Done on 27 September ([session log](../../sessions/2026-09-27.md)).
 
@@ -693,6 +698,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - Pressing Create opportunity twice lands on the same deal, selected in the pipeline, both times.
   Held since 27 September by `enquiries-hand-offs.spec.ts` and the concurrent case in `crm-postgres.test.ts`.
 - Pencilling from the desk creates a hold with the enquiry's date and room, visible in the Diary.
+  Held since 27 September by `enquiries-hand-offs.spec.ts`, the Diary's link tests and the conversion's
+  PostgreSQL case. A guest who chose no room is asked for one rather than given the room the enquiry is filed under.
 
 ### 2.4 Next
 
