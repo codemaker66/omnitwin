@@ -228,6 +228,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "A rejected setup sheet says so across its work (T-635 N4, the sheet's approval state): with the review API reporting the layout rejected, a band reading \"Do not prepare the room from this sheet\" sits wholly above the stages, as wide as they are, at 15 px or more, announced as an alert; the rows stay as they were until Blake decides Q-E3, and every label on the sheet reads at 12 px and 4.5:1 or better.",
+      "sourceCommit": "e323d7c2f289890e05ccba87d2273120fee6cb46",
+      "sourceFile": "packages/web/e2e/hallkeeper.spec.ts",
+      "sourceFileGitBlobSha256": "f24e68d9869e244878a61e7b857f9227091bf24613d4e15ef58ab92bc0c34a39",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "49f6cbbccd67ea713856c4fa6ce721462ef352ec3bc3e2543e76488c60dad4e8",
+      "caseIds": [
+        "d04ac5b0eb52f15c1dda-2223fe6b81fd757ce5e7"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3150,6 +3164,17 @@
       "id": "d04ac5b0eb52f15c1dda-880f90733950ff789f9d",
       "file": "hallkeeper.spec.ts",
       "title": "renders the approval banner when approval is populated",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 approval stamp banner"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-2223fe6b81fd757ce5e7",
+      "file": "hallkeeper.spec.ts",
+      "title": "a rejected sheet says so in a band above its work",
       "suitePath": [
         "hallkeeper.spec.ts",
         "Hallkeeper Page \u2014 approval stamp banner"

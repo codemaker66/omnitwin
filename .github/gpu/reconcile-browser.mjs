@@ -9,7 +9,7 @@ import { GPU_SCOPE_POLICY } from './gpu-scope.mjs';
 // A reviewed inventory is deliberately explicit. Changes to the suite or its
 // skip/expected-failure policy require an equally reviewable baseline update.
 export const BROWSER_POLICY = Object.freeze({ version: 'venviewer-browser-partition-v1',
-  playwright: '1.59.1', project: 'chromium', total: 369, cpu: 364, gpu: 5,
+  playwright: '1.59.1', project: 'chromium', total: 370, cpu: 365, gpu: 5,
   skipped: 42, expectedFailures: 4, gpuFile: 'twin-performance.spec.ts' });
 const HERE = dirname(fileURLToPath(import.meta.url));
 const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
