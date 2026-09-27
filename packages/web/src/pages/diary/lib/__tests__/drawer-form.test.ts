@@ -7,6 +7,8 @@ import {
   formToUpdatePayload,
   hiddenFieldError,
   initialDrawerForm,
+  initialPromotionForm,
+  promotionPayload,
   type DrawerForm,
 } from "../drawer-form.js";
 
@@ -324,5 +326,35 @@ describe("drawer form — what a field needs, in plain words", () => {
         expect(words).not.toMatch(/must contain|Invalid|Expected|Required|endsAt|startsAt|uuid|greater than|characters?\(s\)/u);
       }
     }
+  });
+});
+
+describe("drawer form — making interest only provisional (roadmap N3)", () => {
+  const prospect = { ...bookingEntry(), kind: "prospect" as const, state: "prospect" as const, rank: null, decisionAt: null, nextAction: null, nextActionDueAt: null };
+
+  it("seeds the place from the ladder and keeps what the booking already has", () => {
+    expect(initialPromotionForm(prospect, 2)).toEqual({ rank: "2", decisionAt: "", nextAction: "", nextActionDueAt: "" });
+    expect(initialPromotionForm(prospect, null).rank).toBe("");
+    const withDetails = { ...prospect, nextAction: "Send the menus.", decisionAt: "2026-10-12T11:00:00.000Z" };
+    expect(initialPromotionForm(withDetails, 3)).toMatchObject({ rank: "3", nextAction: "Send the menus.", decisionAt: "2026-10-12T12:00" });
+  });
+
+  it("says in plain words what the hold still needs", () => {
+    const empty = promotionPayload({ rank: "0", decisionAt: "", nextAction: " ", nextActionDueAt: "soon" });
+    expect(empty.ok ? null : empty.fieldErrors).toEqual({
+      rank: "The option is a whole number, 1 or more.",
+      decisionAt: "A provisional hold needs a decision date.",
+      nextAction: "A provisional hold needs a next action.",
+      nextActionDueAt: "Enter a valid date and time.",
+    });
+  });
+
+  it("sends the hold's details as instants, the option as a number, and no option when none is set", () => {
+    const full = promotionPayload({ rank: "2", decisionAt: "2026-10-12T12:00", nextAction: "Send the menus.", nextActionDueAt: "2026-10-01T10:00" });
+    expect(full.ok ? full.hold : null).toEqual({
+      rank: 2, decisionAt: "2026-10-12T11:00:00.000Z", nextAction: "Send the menus.", nextActionDueAt: "2026-10-01T09:00:00.000Z",
+    });
+    const unranked = promotionPayload({ rank: "", decisionAt: "2026-10-12T12:00", nextAction: "Send the menus.", nextActionDueAt: "2026-10-01T10:00" });
+    expect(unranked.ok ? unranked.hold.rank : "refused").toBeUndefined();
   });
 });

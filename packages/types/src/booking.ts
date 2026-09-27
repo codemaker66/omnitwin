@@ -242,9 +242,28 @@ export const UpdateBookingSchema = z
   });
 export type UpdateBookingInput = z.infer<typeof UpdateBookingSchema>;
 
+/** What a booking needs to become a live provisional hold (roadmap N3): a
+ *  live hold carries a decision date, an owner and a dated next action, and
+ *  a place on its ladder. Each is optional here because the booking may
+ *  already have it; the API refuses the transition when the hold would still
+ *  lack any, and the owner defaults to whoever makes it provisional. */
+export const TransitionHoldSchema = z.object({
+  decisionAt: IsoInstantSchema.optional(),
+  ownerUserId: z.string().uuid().optional(),
+  nextAction: z.string().trim().min(1).max(500).optional(),
+  nextActionDueAt: IsoInstantSchema.optional(),
+  rank: z.number().int().min(1).optional(),
+  jointFlag: z.boolean().optional(),
+});
+export type TransitionHoldInput = z.infer<typeof TransitionHoldSchema>;
+
 export const TransitionBookingSchema = z.object({
   toState: BookingStateSchema,
   note: z.string().max(2000).optional(),
+  hold: TransitionHoldSchema.optional(),
+}).refine((input) => input.hold === undefined || input.toState === "hold", {
+  message: "Only a booking made provisional takes a hold's details.",
+  path: ["hold"],
 });
 export type TransitionBookingInput = z.infer<typeof TransitionBookingSchema>;
 

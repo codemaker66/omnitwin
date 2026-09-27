@@ -367,7 +367,9 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
 
   it("clears the ladder rank on promotion to ink", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    expect(source).toContain('rank: toState === "ink" ? null : current.rank');
+    // Ink clears the rank; a hold keeps its place, or takes the one given
+    // when interest only is made provisional (roadmap N3).
+    expect(source).toContain('rank: toState === "ink" ? null : hygiene?.rank ?? current.rank');
   });
 
   it("carries no unsupported claim language", async () => {

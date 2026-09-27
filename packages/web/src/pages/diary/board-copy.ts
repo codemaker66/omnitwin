@@ -226,6 +226,9 @@ export const BOARD_COPY = {
       owner: "Choose who owns the hold.",
       date: "Enter a valid date and time.",
       commitment: "Choose a commitment.",
+      needsDecision: "A provisional hold needs a decision date.",
+      needsNextAction: "A provisional hold needs a next action.",
+      needsNextActionDate: "A provisional hold needs a date for its next action.",
       unreadable: "This booking cannot be saved as it stands. Close it and open it again.",
     },
     /** What already holds the room and time a new hold is placed in (roadmap
@@ -307,6 +310,18 @@ export const BOARD_COPY = {
     /** A weekday said with the date that is not the date's own (0 is Sunday). */
     otherWeekday: (actual: number, said: number): string =>
       `That date is a ${WEEKDAY_NAMES[actual] ?? ""}, not a ${WEEKDAY_NAMES[said] ?? ""}.`,
+  },
+
+  /** Making an interest-only booking provisional (roadmap N3): a live hold
+   *  carries its place, a decision date and a dated next action, so the
+   *  drawer asks for them before it acts. */
+  promotion: {
+    question: (title: string): string => `Make ${title} provisional?`,
+    needs: "A provisional hold has an option, a decision date and a dated next action.",
+    confirm: "Make it provisional",
+    saving: "Making it provisional…",
+    keep: "Keep it as interest only",
+    done: (title: string, place: string): string => `${title} is provisional, ${place.toLowerCase()}.`,
   },
 
   /** The lifecycle's confirmation (roadmap N3). A change that ends a

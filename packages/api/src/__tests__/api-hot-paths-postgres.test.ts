@@ -655,6 +655,52 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       expect(written?.count).toBe(1);
     });
 
+    it("makes interest only provisional only with a hold's details, the owner defaulting to whoever does it (roadmap N3)", async () => {
+      const a = await venue("promotion A");
+      const b = await venue("promotion B");
+      const staff = await a.actor("staff");
+      const elsewhere = await b.actor("staff");
+      const now = Date.now();
+      const [prospect] = await db.insert(schema.bookings).values({
+        venueId: a.venueId, spaceId: a.rooms[0] ?? "", kind: "prospect", title: "Law Society dinner",
+        startsAt: new Date(now + 40 * DAY), endsAt: new Date(now + 40 * DAY + 4 * HOUR),
+      }).returning({ id: schema.bookings.id });
+      const url = `/bookings/${prospect?.id ?? ""}/transition`;
+
+      // Nothing given: the hold would lack its decision date and dated next
+      // action (the owner is whoever makes it provisional).
+      const bare = await server.inject({ method: "POST", url, headers: bearer(staff), payload: { toState: "hold" } });
+      expect(bare.statusCode, bare.body).toBe(400);
+      expect(bare.json<{ code: string; details: string[] }>()).toMatchObject({
+        code: "HOLD_HYGIENE_REQUIRED", details: ["decisionAt", "nextAction", "nextActionDueAt"],
+      });
+
+      const details = {
+        decisionAt: new Date(now + 5 * DAY).toISOString(), nextAction: "Send the dinner menus.",
+        nextActionDueAt: new Date(now + DAY).toISOString(), rank: 2,
+      };
+      const foreign = await server.inject({ method: "POST", url, headers: bearer(staff), payload: { toState: "hold", hold: { ...details, ownerUserId: elsewhere.id } } });
+      expect(foreign.statusCode, foreign.body).toBe(400);
+      expect(foreign.json<{ code: string }>().code).toBe("OWNER_VENUE_MISMATCH");
+      const wrongTarget = await server.inject({ method: "POST", url, headers: bearer(staff), payload: { toState: "ink", hold: details } });
+      expect(wrongTarget.statusCode, wrongTarget.body).toBe(400);
+
+      const promoted = await server.inject({ method: "POST", url, headers: bearer(staff), payload: { toState: "hold", hold: details } });
+      expect(promoted.statusCode, promoted.body).toBe(200);
+      expect(promoted.json<{ data: Record<string, unknown> }>().data).toMatchObject({
+        state: "hold", rank: 2, ownerUserId: staff.id, nextAction: "Send the dinner menus.",
+        decisionAt: details.decisionAt, nextActionDueAt: details.nextActionDueAt,
+      });
+      // So the venue-wide lists find it.
+      const calendar = await server.inject({
+        method: "GET", headers: bearer(staff),
+        url: `/calendar?venueId=${a.venueId}&from=${new Date(now - DAY).toISOString()}&to=${new Date(now + 7 * DAY).toISOString()}`,
+      });
+      const lists = calendar.json<{ data: { decisionsDue: { holds: { title: string }[] }; nextActionsDue: { holds: { title: string }[] } } }>().data;
+      expect(lists.decisionsDue.holds.map((hold) => hold.title)).toContain("Law Society dinner");
+      expect(lists.nextActionsDue.holds.map((hold) => hold.title)).toContain("Law Society dinner");
+    });
+
     it("dry-runs the reminder pass from the database: who is told, about what, and never an address", async () => {
       const f = await diaryFixture();
       // One minute after the T-3 instant of the 3-day decision (and the T-1

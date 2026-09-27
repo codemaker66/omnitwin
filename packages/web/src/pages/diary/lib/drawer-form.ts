@@ -1,6 +1,7 @@
 import {
   ConvertEnquirySchema,
   CreateBookingSchema,
+  TransitionHoldSchema,
   UpdateBookingSchema,
   VALID_BOOKING_TRANSITIONS,
   type BookingKind,
@@ -8,6 +9,7 @@ import {
   type CalendarBookingEntry,
   type ConvertEnquiryInput,
   type CreateBookingInput,
+  type TransitionHoldInput,
   type UpdateBookingInput,
 } from "@omnitwin/types";
 import { msToWallInput, wallInputToMs } from "./board-time.js";
@@ -373,6 +375,60 @@ export function formToConvertPayload(
   const parsed = ConvertEnquirySchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };
   return { ok: true, payload: parsed.data, changed: true };
+}
+
+/** What making an interest-only booking provisional asks for (roadmap N3):
+ *  a live hold carries its place, a decision date and a dated next action.
+ *  Datetime fields hold venue wall time, as the drawer's do. */
+export interface PromotionForm {
+  readonly rank: string;
+  readonly decisionAt: string;
+  readonly nextAction: string;
+  readonly nextActionDueAt: string;
+}
+
+/** Seeded from what the booking already has; the option from its ladder's
+ *  next place when the board has read it. */
+export function initialPromotionForm(booking: CalendarBookingEntry, nextPlace: number | null): PromotionForm {
+  const wall = (iso: string | null): string => (iso === null ? "" : msToWallInput(Date.parse(iso)));
+  return {
+    rank: booking.rank !== null ? String(booking.rank) : nextPlace === null ? "" : String(nextPlace),
+    decisionAt: wall(booking.decisionAt),
+    nextAction: booking.nextAction ?? "",
+    nextActionDueAt: wall(booking.nextActionDueAt),
+  };
+}
+
+export function promotionPayload(
+  form: PromotionForm,
+): { readonly ok: true; readonly hold: TransitionHoldInput } | { readonly ok: false; readonly fieldErrors: FieldErrors } {
+  const words = BOARD_COPY.drawer.problems;
+  const errors: Record<string, string> = {};
+  const instant = (field: "decisionAt" | "nextActionDueAt", missing: string): string | undefined => {
+    const raw = form[field].trim();
+    if (raw.length === 0) {
+      errors[field] = missing;
+      return undefined;
+    }
+    const ms = wallInputToMs(raw);
+    if (ms === null) {
+      errors[field] = words.date;
+      return undefined;
+    }
+    return new Date(ms).toISOString();
+  };
+  const decisionAt = instant("decisionAt", words.needsDecision);
+  const nextActionDueAt = instant("nextActionDueAt", words.needsNextActionDate);
+  const nextAction = form.nextAction.trim();
+  if (nextAction.length === 0) errors["nextAction"] = words.needsNextAction;
+  else if (nextAction.length > 500) errors["nextAction"] = words.nextActionLong;
+  const rankText = form.rank.trim();
+  const rank = rankText.length === 0 ? undefined : Number(rankText);
+  if (rank !== undefined && (!Number.isInteger(rank) || rank < 1)) errors["rank"] = words.option;
+  if (Object.keys(errors).length > 0) return { ok: false, fieldErrors: errors };
+  const parsed = TransitionHoldSchema.safeParse({ decisionAt, nextAction, nextActionDueAt, rank });
+  if (!parsed.success) return { ok: false, fieldErrors: issuesToFieldErrors(parsed.error.issues) };
+  return { ok: true, hold: parsed.data };
 }
 
 /** Lifecycle moves the drawer may offer: the structural matrix gated by the

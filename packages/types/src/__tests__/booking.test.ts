@@ -292,6 +292,24 @@ describe("TransitionBookingSchema", () => {
   it("rejects vocabulary outside the state list", () => {
     expect(TransitionBookingSchema.safeParse({ toState: "confirmed" }).success).toBe(false);
   });
+
+  it("carries a hold's details only when a booking is made provisional (roadmap N3)", () => {
+    const hold = {
+      decisionAt: "2026-10-12T11:00:00.000Z",
+      ownerUserId: "00000000-0000-4000-8000-0000000000aa",
+      nextAction: "Send the menu.",
+      nextActionDueAt: "2026-10-01T09:00:00.000Z",
+      rank: 2,
+      jointFlag: false,
+    };
+    expect(TransitionBookingSchema.safeParse({ toState: "hold", hold }).success).toBe(true);
+    // Each detail may be left to what the booking already has.
+    expect(TransitionBookingSchema.safeParse({ toState: "hold", hold: {} }).success).toBe(true);
+    expect(TransitionBookingSchema.safeParse({ toState: "ink", hold }).success).toBe(false);
+    for (const wrong of [{ nextAction: "  " }, { rank: 0 }, { ownerUserId: "Fiona" }, { decisionAt: "next Friday" }]) {
+      expect(TransitionBookingSchema.safeParse({ toState: "hold", hold: { ...hold, ...wrong } }).success).toBe(false);
+    }
+  });
 });
 
 describe("BookingSchema serialization contract", () => {

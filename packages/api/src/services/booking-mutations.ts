@@ -507,6 +507,41 @@ export async function transitionBookingCore(
   }
 
   const columns = bookingStateToColumns(toState, row.kind);
+
+  // A booking made provisional becomes a live hold, which carries its
+  // hygiene like any other (roadmap N3): what the request gives over what
+  // the booking has, the owner defaulting to whoever makes it provisional.
+  // Without this a promoted hold had no decision date, owner or dated next
+  // action, and no list or reminder would ever find it.
+  const becomesLiveHold = columns.kind === "hold" && columns.status === "active";
+  const given = body.hold ?? {};
+  if (becomesLiveHold && given.ownerUserId !== undefined && given.ownerUserId !== row.ownerUserId
+    && !(await ownerWorksAtVenue(conn, given.ownerUserId, row.venueId))) {
+    return OWNER_VENUE_MISMATCH;
+  }
+  const actorMayOwn = becomesLiveHold && given.ownerUserId === undefined && row.ownerUserId === null
+    && await ownerWorksAtVenue(conn, actor.id, row.venueId);
+  const mergedHygiene = (base: BookingRow) => ({
+    decisionAt: given.decisionAt === undefined ? base.decisionAt : new Date(given.decisionAt),
+    ownerUserId: given.ownerUserId ?? base.ownerUserId ?? (actorMayOwn ? actor.id : null),
+    nextAction: given.nextAction ?? base.nextAction,
+    nextActionDueAt: given.nextActionDueAt === undefined ? base.nextActionDueAt : new Date(given.nextActionDueAt),
+    rank: given.rank ?? base.rank,
+    jointFlag: given.jointFlag ?? base.jointFlag,
+  });
+  if (becomesLiveHold) {
+    const missing = holdHygieneIssues({ kind: "hold", status: "active", ...mergedHygiene(row) });
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        status: 400,
+        code: "HOLD_HYGIENE_REQUIRED",
+        error: "A provisional hold needs a decision date, an owner and a dated next action.",
+        details: missing,
+      };
+    }
+  }
+
   const holdExited =
     row.kind === "hold" &&
     row.status === "active" &&
@@ -551,6 +586,14 @@ export async function transitionBookingCore(
         return "stale" as const;
       }
 
+      // Merged again from the row as it stands now: an edit that landed
+      // meanwhile is kept, and a hold it would leave without its hygiene
+      // is reported as a change rather than written.
+      const hygiene = becomesLiveHold ? mergedHygiene(current) : null;
+      if (hygiene !== null && holdHygieneIssues({ kind: "hold", status: "active", ...hygiene }).length > 0) {
+        return "stale" as const;
+      }
+
       // Compare-and-set on the columns the transition was derived from:
       // if another transaction moved this booking between our read and
       // this write, zero rows match and the conflict is reported honestly
@@ -562,7 +605,14 @@ export async function transitionBookingCore(
           status: columns.status,
           // Promotion to ink resolves the ladder; the rank is cleared
           // (bookings_rank_hold_only backs this at the DB).
-          rank: toState === "ink" ? null : current.rank,
+          rank: toState === "ink" ? null : hygiene?.rank ?? current.rank,
+          ...(hygiene === null ? {} : {
+            decisionAt: hygiene.decisionAt,
+            ownerUserId: hygiene.ownerUserId,
+            nextAction: hygiene.nextAction,
+            nextActionDueAt: hygiene.nextActionDueAt,
+            jointFlag: hygiene.jointFlag,
+          }),
           updatedAt: new Date(),
         })
         .where(

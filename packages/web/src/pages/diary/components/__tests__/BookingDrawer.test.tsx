@@ -566,3 +566,75 @@ describe("BookingDrawer — a new hold's option follows the ladder (roadmap N3)"
     expect(ladder).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Making interest only provisional asks for the hold's details (roadmap N3).
+// A live hold carries its place, a decision date and a dated next action,
+// and the API now refuses one without; the drawer asks before it acts.
+// ---------------------------------------------------------------------------
+
+describe("BookingDrawer — making interest only provisional asks for the hold (roadmap N3)", () => {
+  const prospect = booking({ id: "00000000-0000-4000-8000-0000000000f7", spaceId: SALOON, kind: "prospect", state: "prospect", title: "Law Society dinner" });
+  type Ladder = NonNullable<Parameters<typeof BookingDrawer>[0]["ladderPlace"]>;
+  const fraser = booking({ spaceId: SALOON, kind: "hold", state: "hold", title: "Fraser wedding", rank: 1 });
+
+  function renderProspect(onSaved: SavedSpy = vi.fn<(message: string) => void>()): SavedSpy {
+    const ladder: Ladder = () => ({ kind: "read", rank: 2, holds: [fraser], confirmed: [] });
+    render(
+      <BookingDrawer
+        mode={{ kind: "edit", booking: prospect }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        onClose={vi.fn<() => void>()}
+        onSaved={onSaved}
+        ladderPlace={ladder}
+      />,
+    );
+    return onSaved;
+  }
+
+  it("asks for the place, the decision date and the dated next action, and refuses without them", async () => {
+    renderProspect();
+    fireEvent.click(screen.getByRole("button", { name: "Make it provisional…" }));
+    const panel = screen.getByRole("group", { name: "Make Law Society dinner provisional?" });
+    expect(within(panel).getByText(/A provisional hold has an option, a decision date and a dated next action\. You will own this hold\./u)).toBeDefined();
+    expect(within(panel).getByText("Held then: Fraser wedding (1st option).")).toBeDefined();
+    const option = within(panel).getByRole<HTMLInputElement>("spinbutton", { name: "Option" });
+    expect(option.value).toBe("2");
+    await waitFor(() => { expect(document.activeElement).toBe(option); });
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Make it provisional" }));
+    expect(within(panel).getByText("A provisional hold needs a decision date.")).toBeDefined();
+    expect(within(panel).getByText("A provisional hold needs a next action.")).toBeDefined();
+    expect(within(panel).getByText("A provisional hold needs a date for its next action.")).toBeDefined();
+    expect(transitionBookingMock).not.toHaveBeenCalled();
+  });
+
+  it("makes it provisional with what was given, and says where it stands", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { ...prospect, kind: "hold", state: "hold", rank: 2 }, promotedToFirst: [] });
+    const onSaved = renderProspect();
+    fireEvent.click(screen.getByRole("button", { name: "Make it provisional…" }));
+    const panel = screen.getByRole("group", { name: "Make Law Society dinner provisional?" });
+    fireEvent.change(within(panel).getByLabelText("Decision date"), { target: { value: "2026-10-12T12:00" } });
+    fireEvent.change(within(panel).getByLabelText("Next action"), { target: { value: "Send the dinner menus." } });
+    fireEvent.change(within(panel).getByLabelText("Next action due"), { target: { value: "2026-10-01T10:00" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Make it provisional" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalledWith("Law Society dinner is provisional, 2nd option."); });
+    // Venue wall time (BST) to instants.
+    expect(transitionBookingMock).toHaveBeenCalledWith(prospect.id, "hold", undefined, {
+      decisionAt: "2026-10-12T11:00:00.000Z", nextAction: "Send the dinner menus.", nextActionDueAt: "2026-10-01T09:00:00.000Z", rank: 2,
+    });
+  });
+
+  it("steps back with Escape, focus on its button, and the booking stays interest only", async () => {
+    renderProspect();
+    const button = screen.getByRole("button", { name: "Make it provisional…" });
+    fireEvent.click(button);
+    const panel = screen.getByRole("group", { name: "Make Law Society dinner provisional?" });
+    fireEvent.keyDown(within(panel).getByLabelText("Next action"), { key: "Escape" });
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("button", { name: "Make it provisional…" })); });
+    expect(screen.queryByRole("group", { name: "Make Law Society dinner provisional?" })).toBeNull();
+    expect(transitionBookingMock).not.toHaveBeenCalled();
+  });
+});

@@ -9,6 +9,7 @@ import {
   type ConvertEnquiryInput,
   type CreateBookingInput,
   type DiaryCommandAck,
+  type TransitionHoldInput,
 } from "@omnitwin/types";
 import { api } from "./client.js";
 import { sendCommandViaChannelOrRest, sendViaChannelOrRest } from "../pages/diary/lib/diary-command-channel.js";
@@ -109,11 +110,13 @@ export async function transitionBooking(
   bookingId: string,
   toState: BookingState,
   note?: string,
+  /** A booking made provisional carries the hold's details (roadmap N3). */
+  hold?: TransitionHoldInput,
 ): Promise<TransitionOutcome> {
   return sendCommandViaChannelOrRest(
-    (commandId) => ({ kind: "booking.transition", commandId, bookingId, payload: { toState, note } }),
+    (commandId) => ({ kind: "booking.transition", commandId, bookingId, payload: { toState, note, hold } }),
     (commandId) =>
-      api.post(`/bookings/${bookingId}/transition`, { toState, note }, undefined, TransitionReplySchema, {
+      api.post(`/bookings/${bookingId}/transition`, { toState, note, hold }, undefined, TransitionReplySchema, {
         idempotencyKey: commandId,
         keepEnvelope: true,
       }).then((reply) => ({ booking: reply.data, promotedToFirst: promotions(reply.resequence) })),

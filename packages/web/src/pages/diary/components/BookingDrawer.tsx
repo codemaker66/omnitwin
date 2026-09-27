@@ -34,9 +34,12 @@ import {
   formToUpdatePayload,
   hiddenFieldError,
   initialDrawerForm,
+  initialPromotionForm,
+  promotionPayload,
   type DrawerForm,
   type DrawerMode,
   type FieldErrors,
+  type PromotionForm,
 } from "../lib/drawer-form.js";
 
 // ---------------------------------------------------------------------------
@@ -167,6 +170,25 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const transitionsRef = useRef<HTMLDivElement | null>(null);
   /** The change whose button opened the confirmation "Keep it" closed. */
   const endingReturnRef = useRef<EndingTransition | null>(null);
+  // Making an interest-only booking provisional asks for the hold's details
+  // first (roadmap N3); a live hold carries them, and the API now refuses one
+  // without.
+  const [promotion, setPromotion] = useState<PromotionForm | null>(null);
+  const [promotionErrors, setPromotionErrors] = useState<FieldErrors>({});
+  const promotionQuestionId = useId();
+  const promotionFirstRef = useRef<HTMLInputElement | null>(null);
+  const promotionReturnRef = useRef(false);
+  useEffect(() => {
+    if (promotion !== null) return;
+    if (promotionReturnRef.current) {
+      promotionReturnRef.current = false;
+      transitionsRef.current?.querySelector<HTMLButtonElement>('[data-transition="hold"]')?.focus();
+    }
+  }, [promotion]);
+  const promotionOpen = promotion !== null;
+  useEffect(() => {
+    if (promotionOpen) promotionFirstRef.current?.focus();
+  }, [promotionOpen]);
   function keepBooking(): void {
     endingReturnRef.current = ending;
     setEnding(null);
@@ -299,6 +321,13 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
 
   function runTransition(toState: BookingState): void {
     if (mode.kind !== "edit") return;
+    if (toState === "hold" && mode.booking.kind === "prospect") {
+      const place = ladderPlace?.(mode.booking.spaceId, Date.parse(mode.booking.startsAt), Date.parse(mode.booking.endsAt));
+      setSubmitError(null);
+      setPromotionErrors({});
+      setPromotion(initialPromotionForm(mode.booking, place?.kind === "read" ? place.rank : null));
+      return;
+    }
     if (isEndingTransition(toState)) {
       setSubmitError(null);
       setEndingError(null);
@@ -312,6 +341,34 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         onSaved(BOARD_COPY.drawer.transitioned(booking.title, BOARD_COPY.transitions[toState]));
       })
       .catch(failure)
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  function keepAsInterest(): void {
+    promotionReturnRef.current = true;
+    setPromotion(null);
+    setPromotionErrors({});
+  }
+
+  function confirmPromotion(): void {
+    if (mode.kind !== "edit" || promotion === null) return;
+    const result = promotionPayload(promotion);
+    if (!result.ok) {
+      setPromotionErrors(result.fieldErrors);
+      return;
+    }
+    setPromotionErrors({});
+    setBusy(true);
+    transitionBooking(mode.booking.id, "hold", undefined, result.hold)
+      .then(({ booking }) => {
+        onSaved(BOARD_COPY.promotion.done(booking.title, BOARD_COPY.decisions.option(booking.rank, booking.jointFlag)));
+      })
+      .catch((caught: unknown) => {
+        // What was typed stays; the failure is said beside it.
+        setPromotionErrors({ form: caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.saveFailed });
+      })
       .finally(() => {
         setBusy(false);
       });
@@ -420,6 +477,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       if (busy) return;
       // A confirmation open inside the drawer steps back first.
       if (ending !== null) keepBooking();
+      else if (promotion !== null) keepAsInterest();
       else onClose();
     }
   }
@@ -706,7 +764,84 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         </div>
       ) : null}
 
-      {transitions.length > 0 && ending !== null && mode.kind === "edit" ? (
+      {transitions.length > 0 && promotion !== null && mode.kind === "edit" ? (
+        <div className="diary-drawer-transitions">
+          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
+          <div className="diary-consequence" role="group" aria-labelledby={promotionQuestionId} data-tone="sage">
+            <p className="diary-consequence-question" id={promotionQuestionId}>
+              {BOARD_COPY.promotion.question(mode.booking.title)}
+            </p>
+            <p className="diary-consequence-line">
+              {BOARD_COPY.promotion.needs}{mode.booking.ownerUserId === null ? ` ${BOARD_COPY.drawer.ownerNote}` : ""}
+            </p>
+            {ladderPlace === undefined ? null : (
+              <p className="diary-drawer-note">
+                {ladderNote(
+                  ladderPlace(mode.booking.spaceId, Date.parse(mode.booking.startsAt), Date.parse(mode.booking.endsAt)),
+                  rooms.find((room) => room.id === mode.booking.spaceId)?.name ?? BOARD_COPY.drawer.fields.room,
+                )}
+              </p>
+            )}
+            <div className="diary-field-row">
+              <label className="diary-field">
+                {BOARD_COPY.drawer.fields.rank}
+                <input
+                  ref={promotionFirstRef}
+                  type="number"
+                  min={1}
+                  value={promotion.rank}
+                  disabled={busy}
+                  aria-invalid={promotionErrors["rank"] !== undefined}
+                  onChange={(event) => { const rank = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, rank })); }}
+                />
+                {promotionErrors["rank"] !== undefined ? <span className="diary-field-error">{promotionErrors["rank"]}</span> : null}
+              </label>
+              <label className="diary-field">
+                {BOARD_COPY.drawer.fields.decisionAt}
+                <input
+                  type="datetime-local"
+                  value={promotion.decisionAt}
+                  disabled={busy}
+                  aria-invalid={promotionErrors["decisionAt"] !== undefined}
+                  onChange={(event) => { const decisionAt = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, decisionAt })); }}
+                />
+                {promotionErrors["decisionAt"] !== undefined ? <span className="diary-field-error">{promotionErrors["decisionAt"]}</span> : null}
+              </label>
+            </div>
+            <label className="diary-field">
+              {BOARD_COPY.drawer.fields.nextAction}
+              <input
+                type="text"
+                value={promotion.nextAction}
+                disabled={busy}
+                aria-invalid={promotionErrors["nextAction"] !== undefined}
+                onChange={(event) => { const nextAction = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, nextAction })); }}
+              />
+              {promotionErrors["nextAction"] !== undefined ? <span className="diary-field-error">{promotionErrors["nextAction"]}</span> : null}
+            </label>
+            <label className="diary-field">
+              {BOARD_COPY.drawer.fields.nextActionDueAt}
+              <input
+                type="datetime-local"
+                value={promotion.nextActionDueAt}
+                disabled={busy}
+                aria-invalid={promotionErrors["nextActionDueAt"] !== undefined}
+                onChange={(event) => { const nextActionDueAt = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, nextActionDueAt })); }}
+              />
+              {promotionErrors["nextActionDueAt"] !== undefined ? <span className="diary-field-error">{promotionErrors["nextActionDueAt"]}</span> : null}
+            </label>
+            <div className="diary-drawer-actions">
+              <button type="button" className="diary-button is-primary" onClick={confirmPromotion} disabled={busy} aria-busy={busy}>
+                {busy ? BOARD_COPY.promotion.saving : BOARD_COPY.promotion.confirm}
+              </button>
+              <button type="button" className="diary-button" onClick={keepAsInterest} disabled={busy}>
+                {BOARD_COPY.promotion.keep}
+              </button>
+            </div>
+            {promotionErrors["form"] !== undefined ? <p className="diary-drawer-error" role="alert">{promotionErrors["form"]}</p> : null}
+          </div>
+        </div>
+      ) : transitions.length > 0 && ending !== null && mode.kind === "edit" ? (
         <div className="diary-drawer-transitions">
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
           <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId} data-tone={ending === "cancelled" ? "brick" : "amber"}>
@@ -752,7 +887,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
                 disabled={busy}
               >
                 {/* "…": this one asks first. */}
-                {BOARD_COPY.transitions[target]}{isEndingTransition(target) ? "…" : ""}
+                {BOARD_COPY.transitions[target]}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
               </button>
             ))}
           </div>
