@@ -285,6 +285,10 @@ test.describe("Proposals desk", () => {
   test("on a phone the proposal replaces the ledger, Back to proposals returns to it, and nothing scrolls sideways", async ({ page }) => {
     await openDesk(page, 390, 844);
     await page.goto("/dashboard?view=proposals");
+    // The ledger fits too: "Version 1, changed yesterday" wraps beneath its
+    // status rather than running past the edge.
+    await expect(proposalRow(page, "Crawford wedding proposal")).toContainText("Version 1, changed yesterday");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await proposalRow(page, "Spring gala proposal").click();
     await expect(page.getByRole("heading", { level: 2, name: "Spring gala proposal" })).toBeFocused();
     await expect(page.getByRole("heading", { level: 1, name: "Proposals" })).toHaveCount(0);
