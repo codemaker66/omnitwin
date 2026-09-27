@@ -188,3 +188,34 @@ describe("BoardGrid gaps", () => {
     expect(chip?.textContent).toBe("1 h 30needs 2 h");
   });
 });
+
+describe("BoardGrid — the day view opens where the day is (roadmap N3)", () => {
+  // Thursday 10 September; the Grand Hall's first hold starts at 09:00 UTC (10:00 BST).
+  const THURSDAY = boardRange(Date.parse("2026-09-10T12:00:00Z"), "day");
+  const DAY_PX = 96;
+  const scroller = (): HTMLElement => document.querySelector(".diary-scroll") as HTMLElement;
+  const props = {
+    rooms: ROOMS, entries: ENTRIES, range: THURSDAY, pxPerHour: DAY_PX, conflictSeverity: new Map<string, ConflictSeverity>(),
+    writable: true, nowMs: Date.parse("2026-09-07T08:00:00Z"),
+  };
+
+  it("opens another day an hour before its first booking, once, leaving the booker's scrolling alone", () => {
+    const handlersFor = vi.fn((_block: DragBlockDescriptor): BlockDragHandlers => HANDLERS);
+    const view = render(<BoardGrid {...props} drag={dragOf(handlersFor, null, null)} />);
+    // 08:00 UTC is 9 hours after the venue's midnight (23:00 UTC).
+    expect(scroller().scrollLeft).toBe(9 * DAY_PX);
+    scroller().scrollLeft = 40;
+    view.rerender(<BoardGrid {...props} entries={ENTRIES.slice(0, 4)} drag={dragOf(handlersFor, null, null)} />);
+    expect(scroller().scrollLeft).toBe(40);
+  });
+
+  it("waits for the day's bookings, and opens today at the current time", () => {
+    const handlersFor = vi.fn((_block: DragBlockDescriptor): BlockDragHandlers => HANDLERS);
+    const now = Date.parse("2026-09-10T15:30:00Z");
+    const view = render(<BoardGrid {...props} nowMs={now} pending drag={dragOf(handlersFor, null, null)} />);
+    expect(scroller().scrollLeft).toBe(0);
+    view.rerender(<BoardGrid {...props} nowMs={now} drag={dragOf(handlersFor, null, null)} />);
+    // 14:30 UTC, an hour before now, is 15.5 hours after the venue's midnight.
+    expect(scroller().scrollLeft).toBe(15.5 * DAY_PX);
+  });
+});

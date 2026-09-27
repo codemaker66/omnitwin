@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import type { ReactElement } from "react";
 import type {
   CalendarTurnaroundRule,
@@ -26,6 +26,7 @@ import {
 import { laneGaps, laneUtilisation, layoutLane, type LaneGap, type LaneLayout, type PositionedBlock } from "../lib/board-layout.js";
 import { changeoverDuration, changeoverDurationWords } from "../../../components/dashboard/changeovers/changeover-format.js";
 import type { Ghost } from "../lib/board-drag.js";
+import { dayOpeningMs } from "../lib/day-opening.js";
 import type { BoardDrag, DragBlockDescriptor } from "../hooks/useBoardDrag.js";
 
 // ---------------------------------------------------------------------------
@@ -581,8 +582,20 @@ export const BoardGrid = memo(function BoardGrid(props: BoardGridProps): ReactEl
     [rooms, entries],
   );
 
+  // A day opens where the day is (roadmap N3): at the current time today,
+  // else at its first booking. Once per day, and only when that day's
+  // bookings have been read, so it never fights the booker's own scrolling.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const openedDayRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (range.view !== "day" || pending || openedDayRef.current === range.fromMs) return;
+    openedDayRef.current = range.fromMs;
+    const scroller = scrollRef.current;
+    if (scroller !== null) scroller.scrollLeft = msToX(dayOpeningMs(range, entries, nowMs), range, pxPerHour);
+  }, [entries, nowMs, pending, pxPerHour, range]);
+
   return (
-    <div className={`diary-scroll${pending ? " is-pending" : ""}`} role="region" aria-label={BOARD_COPY.title} aria-busy={pending} tabIndex={0}>
+    <div ref={scrollRef} className={`diary-scroll${pending ? " is-pending" : ""}`} role="region" aria-label={BOARD_COPY.title} aria-busy={pending} tabIndex={0}>
       <div
         className="diary-canvas"
         style={{ width: `calc(var(--diary-rail-width) + ${String(canvasWidth)}px)` }}
