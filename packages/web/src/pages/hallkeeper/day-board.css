@@ -1,11 +1,10 @@
 /* ---------------------------------------------------------------------------
-   The Day Board (Day Board S1) — Ink & Gilt, tuned for a wall tablet.
+   The Day Board — the hallkeeper's day on the register's ivory ground
+   (styles/hallkeeper-register.css), read on a phone, a tablet or a wall.
 
-   Colour discipline: text is ALWAYS paper-on-ink (AA everywhere; the board
-   deliberately commits to its own dark look and paints its background
-   explicitly). Tone lives in the dot, the border and the ring, never under
-   the text — which is also what keeps every state legible for colour-blind
-   hallkeepers: the words carry the meaning, the colour only underlines it.
+   Colour discipline: text is never tinted by state. Tone lives in the chip's
+   dot and a slot's edge, and the words carry the meaning on their own, which
+   is also what keeps every state legible for a colour-blind hallkeeper.
 
    Motion discipline: transform/opacity keyframes only. Every animated
    element takes `animation-delay: var(--dayboard-epoch)` — one shared
@@ -16,28 +15,26 @@
 --------------------------------------------------------------------------- */
 
 .dayboard {
-  --db-ink: #221c14;
-  --db-ink-raised: #2b241b;
-  --db-paper: #efe7d6;
-  --db-paper-dim: rgba(239, 231, 214, 0.66);
-  --db-line: rgba(246, 241, 232, 0.12);
-  /* Four legend entries, four values. Fix round 1 put --db-gilt and --db-amber
-     on the same copper, so "Booking starts soon" and "Scheduled event" drew
-     identical dots inside the footer whose whole job is to explain the
-     colours. --db-gilt stays the accent (a scheduled event is the ordinary
-     case); --db-amber takes the register's signal hue, sage, because the
-     board may not carry gold. Pairwise distinctness is asserted in
-     src/__tests__/house-tokens.test.ts. */
-  --db-gilt: #c98a5b;
+  /* The board's own names for the register's values. */
+  --db-ink: var(--hk-ivory);
+  --db-ink-raised: var(--hk-ivory-raised);
+  --db-paper: var(--hk-ink);
+  --db-paper-dim: var(--hk-ink-faint);
+  --db-line: var(--hk-line);
+  /* One legend entry, one value: pairwise distinctness is asserted in
+     src/__tests__/house-tokens.test.ts. --db-amber takes the register's sage
+     ink: sage at its display value measures about 2:1 on this ivory, under
+     the 3:1 a legend dot needs. */
+  --db-gilt: var(--hk-copper);
   --db-green: #4f9d69;
-  --db-amber: #8fae8b;
+  --db-amber: var(--vv-sage-ink);
   --db-amber-deep: #c9761d;
-  --db-live: #8f2f2a;
-  --db-red: #c23b2e;
+  --db-live: var(--hk-forest);
+  --db-red: var(--hk-alert);
   --db-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   min-height: 100%;
-  padding: 20px 24px 28px;
+  padding: 30px;
   background: var(--db-ink);
   color: var(--db-paper);
 }
@@ -51,13 +48,13 @@
 }
 
 .dayboard-title {
-  font-size: 1.4rem;
+  font: 400 36px/1.15 var(--hk-serif);
   letter-spacing: 0.01em;
   margin: 0;
 }
 
 .dayboard-subtitle {
-  margin: 2px 0 0;
+  margin: 8px 0 0;
   color: var(--db-paper-dim);
   font-size: 0.9rem;
 }
@@ -92,12 +89,49 @@
   gap: 14px;
 }
 
+/* --- controls -------------------------------------------------------------- */
+
+.dayboard-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.dayboard-controls label {
+  display: grid;
+  gap: 5px;
+  color: #666452;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dayboard-controls input,
+.dayboard-controls select,
+.dayboard-controls button,
+.dayboard-controls a {
+  min-height: 44px;
+  border: 1px solid #dcd5c6;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #3d523b;
+  background: #fffefa;
+  font: 14px/1.4 Inter, sans-serif;
+  text-decoration: none;
+}
+
+.dayboard-controls button {
+  cursor: pointer;
+}
+
 /* --- lanes ---------------------------------------------------------------- */
 
 .dayboard-lanes {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 20px;
   align-items: start;
 }
 
@@ -105,15 +139,16 @@
   background: var(--db-ink-raised);
   border: 1px solid var(--db-line);
   border-radius: 12px;
-  padding: 14px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-shadow: 0 5px 22px #50422906;
 }
 
 .dayboard-lane-title {
-  margin: 0 0 2px;
-  font-size: 0.82rem;
+  margin: 0 0 18px;
+  font: 400 25px/1.2 var(--hk-serif);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--db-gilt);
@@ -128,19 +163,22 @@
 /* --- slot cards ----------------------------------------------------------- */
 
 .dayboard-slot {
-  --db-tone: var(--db-paper-dim);
-  border: 1px solid var(--db-line);
-  border-left: 3px solid var(--db-tone);
+  border: 1px solid #e2ddcf;
+  border-left: 4px solid #becaad;
   border-radius: 10px;
-  padding: 10px 12px 12px;
-  background: var(--db-ink);
+  padding: 17px;
+  background: #fffdf7;
 }
 
-.dayboard-tone-green { --db-tone: var(--db-green); }
-.dayboard-tone-amber { --db-tone: var(--db-amber); }
-.dayboard-tone-amber-deep { --db-tone: var(--db-amber-deep); }
-.dayboard-tone-live { --db-tone: var(--db-live); }
-.dayboard-tone-red { --db-tone: var(--db-red); }
+.dayboard-tone-live {
+  border-left-color: #7f9978;
+  background: #f1f5eb;
+}
+
+.dayboard-tone-red {
+  border-left-color: #b83f33;
+  background: #fff4ee;
+}
 
 .dayboard-tone-faded {
   opacity: 0.55;
@@ -161,8 +199,9 @@
 
 .dayboard-slot-title {
   margin: 6px 0 2px;
-  font-size: 1rem;
-  line-height: 1.25;
+  font-size: 17px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .dayboard-slot-meta {
@@ -190,6 +229,48 @@
   margin: 8px 0 0;
   color: var(--db-amber);
   font-size: 0.8rem;
+}
+
+.dayboard-phases {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+  margin: 16px 0;
+  gap: 7px;
+  list-style: none;
+}
+
+.dayboard-phases li {
+  padding: 12px;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  color: #504e40;
+  background: #eee5d5;
+}
+
+.dayboard-phases li[data-colour="1"] { background: #f5dccb; }
+.dayboard-phases li[data-colour="2"] { background: #f8e8bd; }
+.dayboard-phases li[data-colour="3"] { background: #dfe8d8; }
+.dayboard-phases li[data-colour="4"] { background: #dfe9ec; }
+.dayboard-phases li[data-colour="5"] { background: #e9e2ee; }
+
+.dayboard-phases strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dayboard-phases span {
+  font-size: 12px;
+}
+
+.dayboard-open-event {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: #3d5c3c;
+  font-size: 13px;
+  text-underline-offset: 4px;
 }
 
 /* --- chips: the pulse lives HERE, on the dot, never under text ------------ */
@@ -287,43 +368,41 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 20px;
+  margin-top: 25px;
   padding-top: 14px;
   border-top: 1px solid var(--db-line);
 }
 
-/* Selected Hallkeeper workspace: ivory, forest, pastel event phases. This
-   block is unconditional and comes last, so THIS is the ground the board
-   actually renders on. --db-amber is overridden here too: sage at its display
-   value (#8fae8b) measures ~2:1 on this ivory, below the 3:1 a legend dot
-   needs, so the light ground takes the register's sage INK. */
-/* The Day Board's own names, register values (src/styles/hallkeeper-register.css). */
-.dayboard { --db-ink:var(--hk-ivory); --db-ink-raised:var(--hk-ivory-raised); --db-paper:var(--hk-ink); --db-paper-dim:var(--hk-ink-faint); --db-line:var(--hk-line); --db-gilt:var(--hk-copper); --db-amber:var(--vv-sage-ink); --db-live:var(--hk-forest); --db-red:var(--hk-alert); padding:30px; }
-.dayboard-title { font:400 36px/1.15 var(--hk-serif); }
-.dayboard-subtitle { margin-top:8px; }
-.dayboard-controls { display:flex; align-items:end; flex-wrap:wrap; gap:12px; margin:24px 0; }
-.dayboard-controls label { display:grid; gap:5px; color:#666452; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
-.dayboard-controls input,.dayboard-controls select,.dayboard-controls button,.dayboard-controls a { min-height:44px; border:1px solid #dcd5c6; border-radius:8px; padding:10px 14px; color:#3d523b; background:#fffefa; font:14px/1.4 Inter,sans-serif; text-decoration:none; }
-.dayboard-controls button { cursor:pointer; }
-.dayboard-lanes { grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:20px; }
-.dayboard-lane { padding:20px; box-shadow:0 5px 22px #50422906; }
-.dayboard-lane-title { font:400 25px/1.2 var(--hk-serif); margin-bottom:18px; }
-.dayboard-slot { background:#fffdf7; border:1px solid #e2ddcf; border-left:4px solid #becaad; padding:17px; }
-.dayboard-slot-title { font-size:17px; line-height:1.5; overflow-wrap:anywhere; }
-.dayboard-tone-red { border-left-color:#b83f33; background:#fff4ee; }
-.dayboard-tone-live { border-left-color:#7f9978; background:#f1f5eb; }
-.dayboard-phases { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:0; margin:16px 0; gap:7px; list-style:none; }
-.dayboard-phases li { padding:12px; border-radius:8px; display:grid; gap:5px; color:#504e40; background:#eee5d5; }
-.dayboard-phases li[data-colour="1"] { background:#f5dccb; }
-.dayboard-phases li[data-colour="2"] { background:#f8e8bd; }
-.dayboard-phases li[data-colour="3"] { background:#dfe8d8; }
-.dayboard-phases li[data-colour="4"] { background:#dfe9ec; }
-.dayboard-phases li[data-colour="5"] { background:#e9e2ee; }
-.dayboard-phases strong { font-size:13px; font-weight:500; }
-.dayboard-phases span { font-size:12px; }
-.dayboard-open-event { display:inline-flex; min-height:44px; align-items:center; color:#3d5c3c; font-size:13px; text-underline-offset:4px; }
-.dayboard-legend { margin-top:25px; }
-@media(max-width:600px) { .dayboard { padding:22px 14px; }.dayboard-header{align-items:flex-start;flex-wrap:wrap}.dayboard-title{font-size:30px}.dayboard-controls{gap:8px}.dayboard-controls label{max-width:100%}.dayboard-controls select{max-width:100%}.dayboard-lane{padding:16px}.dayboard-slot{padding:13px}.dayboard-slot-head{flex-wrap:wrap} }
+@media (max-width: 600px) {
+  .dayboard {
+    padding: 22px 14px;
+  }
+  .dayboard-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .dayboard-title {
+    font-size: 30px;
+  }
+  .dayboard-controls {
+    gap: 8px;
+  }
+  .dayboard-controls label {
+    max-width: 100%;
+  }
+  .dayboard-controls select {
+    max-width: 100%;
+  }
+  .dayboard-lane {
+    padding: 16px;
+  }
+  .dayboard-slot {
+    padding: 13px;
+  }
+  .dayboard-slot-head {
+    flex-wrap: wrap;
+  }
+}
 
 /* --- The setup-sheet corridor and Lane 9's request region (Ship Friday) ---
    The door out of a slot. Its honest states are as prominent as its link:
