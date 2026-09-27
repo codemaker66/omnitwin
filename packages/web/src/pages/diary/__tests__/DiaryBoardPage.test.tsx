@@ -874,13 +874,19 @@ describe("DiaryBoardPage — decisions due, venue-wide (T-619)", () => {
     getCalendarMock.mockResolvedValue(withDecisions());
     renderPage();
     const row = await screen.findByRole("button", { name: /Hartley wedding/ });
-    const calendarCalls = getCalendarMock.mock.calls.length;
+    const title = document.querySelector(".diary-range-title")?.textContent;
+    // The board reads its own week and its neighbours ahead, whenever those
+    // land; no read reaches next March, where the hold is.
+    const holdMs = Date.parse("2027-03-20T15:00:00.000Z");
+    const readsOfTheHoldsDate = (): number => getCalendarMock.mock.calls.filter((call) =>
+      Date.parse(String(call[1])) <= holdMs && Date.parse(String(call[2])) > holdMs).length;
     row.focus();
     fireEvent.click(row);
     const drawer = await screen.findByRole("dialog", { name: "Booking details" });
     expect(within(drawer).getByDisplayValue("Hartley wedding")).toBeTruthy();
     expect(within(drawer).getByText("Fiona Coordinator")).toBeTruthy();
-    expect(getCalendarMock.mock.calls.length).toBe(calendarCalls);
+    expect(document.querySelector(".diary-range-title")?.textContent).toBe(title);
+    expect(readsOfTheHoldsDate()).toBe(0);
     fireEvent.click(within(drawer).getByRole("button", { name: "Close" }));
     await waitFor(() => { expect(document.activeElement).toBe(row); });
   });
