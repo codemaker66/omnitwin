@@ -200,6 +200,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The setup sheet keeps its facts in view (T-635 N4, the hallkeeper's ready-by hour and the needs that must not be missed): at 390 x 844, with the clock fixed on the event's morning, the time card reads Ready by 16:00 beside Starts 18:30, and a Keep in view band, begun within the first screen and wholly above the stages, holds the access needs, the allergen meals, the planner's next deadline and a 44 px tap to call the day-of contact, with every label at 12 px and 4.5:1 or better.",
+      "sourceCommit": "87687fc944aa9d3541b156a228526317f80e57d9",
+      "sourceFile": "packages/web/e2e/hallkeeper.spec.ts",
+      "sourceFileGitBlobSha256": "71c8d7a1b4c20e2bf904ff22c5a1872590fcd478327f88eacda5e2a172eb8913",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "90ad5c69c65889c5dea7d3ca5f92c143f707173a4f441947da9ac7379635be98",
+      "caseIds": [
+        "d04ac5b0eb52f15c1dda-0f82e100d17e356ec5b9"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -2949,6 +2963,17 @@
       "suitePath": [
         "hallkeeper.spec.ts",
         "Hallkeeper Page \u2014 on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "d04ac5b0eb52f15c1dda-0f82e100d17e356ec5b9",
+      "file": "hallkeeper.spec.ts",
+      "title": "a phone shows ready by, access needs, allergies and a tap to call above the stages",
+      "suitePath": [
+        "hallkeeper.spec.ts",
+        "Hallkeeper Page \u2014 the facts in view"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
