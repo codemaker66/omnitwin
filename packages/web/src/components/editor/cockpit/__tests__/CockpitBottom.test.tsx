@@ -401,28 +401,43 @@ describe("CockpitBottom room layout timeline", () => {
     expect(screen.queryByText("Loading room timeline")).toBeNull();
   });
 
-  it("keeps an ordinary room planner editable when frozen history loads", async () => {
-    useCockpitStore.getState().selectPhase("saved-plan-phase");
-    const savedObjects = useEditorStore.getState().objects;
-    const savedConfigId = useEditorStore.getState().configId;
-    timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
-      Promise.resolve(responseForQuery(query, [arrival, roomFlip, dinner])),
-    );
-    renderBottom("/plan/cfg-1?space=grand-hall");
+  // With no date in the URL the dock opens on the venue's operational day,
+  // which starts at 04:00 in the venue's zone. A browser in UTC first anchors
+  // in its own zone, so from 03:00 to 04:00 UTC in British summer time it
+  // opens on the day before and then moves to the venue's day: the phases
+  // arrive one fetch later. The clock is pinned on both sides of that hour.
+  it.each([
+    "2026-09-27T02:30:00.000Z",
+    "2026-09-27T03:30:00.000Z",
+  ])("keeps an ordinary room planner editable when frozen history loads (at %s)", async (now) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(now));
+    try {
+      useCockpitStore.getState().selectPhase("saved-plan-phase");
+      const savedObjects = useEditorStore.getState().objects;
+      const savedConfigId = useEditorStore.getState().configId;
+      timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
+        Promise.resolve(responseForQuery(query, [arrival, roomFlip, dinner])),
+      );
+      renderBottom("/plan/cfg-1?space=grand-hall");
 
-    await screen.findByRole("slider", { name: /scrub room layout/i });
-    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
-    expect(isLayoutTimelineMutationLocked()).toBe(false);
-    expect(useEditorStore.getState().objects).toBe(savedObjects);
-    expect(useEditorStore.getState().configId).toBe(savedConfigId);
-    expect(useCockpitStore.getState().selectedPhaseId).toBe("saved-plan-phase");
-    expect(screen.queryByRole("button", { name: "Exit preview" })).toBeNull();
+      await screen.findByRole("slider", { name: /scrub room layout/i });
+      const arrivalCards = await screen.findAllByRole("button", { name: /Guest arrival.*Frozen layout/i });
+      expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
+      expect(isLayoutTimelineMutationLocked()).toBe(false);
+      expect(useEditorStore.getState().objects).toBe(savedObjects);
+      expect(useEditorStore.getState().configId).toBe(savedConfigId);
+      expect(useCockpitStore.getState().selectedPhaseId).toBe("saved-plan-phase");
+      expect(screen.queryByRole("button", { name: "Exit preview" })).toBeNull();
 
-    // The timeline remains usable: a deliberate historical selection locks
-    // editing before displaying any frozen furniture.
-    fireEvent.click(screen.getAllByRole("button", { name: /Guest arrival.*Frozen layout/i })[0] ?? document.body);
-    expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
-    expect(isLayoutTimelineMutationLocked()).toBe(true);
+      // The timeline remains usable: a deliberate historical selection locks
+      // editing before displaying any frozen furniture.
+      fireEvent.click(arrivalCards[0] ?? document.body);
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
+      expect(isLayoutTimelineMutationLocked()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps an explicitly requested historical phase locked", async () => {
