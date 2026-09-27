@@ -2143,6 +2143,11 @@ export const proposals = pgTable("proposals", {
   currentVersion: integer("current_version").notNull().default(0),
   shareCode: varchar("share_code", { length: 12 }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  // Migration 0082: the version the client's link shows, set by every send,
+  // so a version saved since is never shown before it is sent.
+  sentVersion: integer("sent_version"),
+  // Migration 0082: the name the client gave as they accepted, if any.
+  acceptedName: varchar("accepted_name", { length: 200 }),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

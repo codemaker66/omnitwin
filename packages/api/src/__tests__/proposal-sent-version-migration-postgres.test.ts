@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
-// Migration 0082 on isolated PostgreSQL (T-635, roadmap X1).
+// Migrations 0082 and 0083 on isolated PostgreSQL (T-635, roadmap X1).
 //
 // The client's link served the latest version saved, so a version saved
 // after the client asked for changes was live before anyone sent it; and the
@@ -16,8 +16,8 @@ import * as schema from "../db/schema.js";
 // name given with its acceptance, filled from what the rows prove. Every
 // kind of proposal the routes have written meets it here, on tables built as
 // the release before it defined them; then the previous API keeps writing
-// until the next release runs the same fill again, which must settle those
-// rows and change nothing else.
+// until the next release's 0083 runs the fill again, which must settle those
+// rows, keep the version a link was sent, and change nothing else.
 //
 // Opt-in, isolated PostgreSQL only. Never consults DATABASE_URL or .env.
 // ---------------------------------------------------------------------------
@@ -36,8 +36,8 @@ if (testUrl !== undefined) {
 /** The two columns 0082 adds, which the release before it did not have. */
 const ADDED = ["sent_version", "accepted_name"];
 
-async function applyMigration(pool: Pool): Promise<void> {
-  const migration = await readFile(resolve("drizzle", "0082_proposal_sent_version.sql"), "utf8");
+async function applyMigration(pool: Pool, file = "0082_proposal_sent_version.sql"): Promise<void> {
+  const migration = await readFile(resolve("drizzle", file), "utf8");
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -58,7 +58,7 @@ interface Stored {
   readonly accepted_name: string | null;
 }
 
-describe.skipIf(testUrl === undefined)("migration 0082 on isolated PostgreSQL", () => {
+describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated PostgreSQL", () => {
   const fixtureSchema = `proposal_sent_${randomUUID().replaceAll("-", "")}`;
   const venue = randomUUID();
   const token = randomUUID();
@@ -75,6 +75,10 @@ describe.skipIf(testUrl === undefined)("migration 0082 on isolated PostgreSQL", 
     adminSavedWhileSent: randomUUID(),
     reopenedThenMarked: randomUUID(),
     reopenedStillSent: randomUUID(),
+    acceptedAgainByAnother: randomUUID(),
+    acceptedAgainByTeam: randomUUID(),
+    linkMadeWhileSent: randomUUID(),
+    draftAtFillThenAccepted: randomUUID(),
   };
 
   async function proposal(id: string, status: string, currentVersion: number): Promise<void> {
@@ -114,7 +118,7 @@ describe.skipIf(testUrl === undefined)("migration 0082 on isolated PostgreSQL", 
     pool = new Pool({ connectionString: testUrl, application_name: fixtureSchema, max: 2, options: `-c search_path=${fixtureSchema}` });
     await pool.query(`CREATE SCHEMA "${fixtureSchema}"`);
     // The tables as the release before 0082 defined them.
-    const tables: PgTable[] = [schema.proposals, schema.proposalVersions, schema.proposalStatusHistory, schema.proposalComments];
+    const tables: PgTable[] = [schema.proposals, schema.proposalVersions, schema.proposalStatusHistory, schema.proposalComments, schema.proposalShareTokens];
     for (const table of tables) {
       const config = getTableConfig(table);
       const columns = config.columns.filter((column) => !ADDED.includes(column.name)).map((column) => {
@@ -197,6 +201,22 @@ describe.skipIf(testUrl === undefined)("migration 0082 on isolated PostgreSQL", 
     await note(ids.reopenedStillSent, "Bruce Kerr", "2026-09-01T11:00:00Z");
     await moved(ids.reopenedStillSent, "accepted", "sent", "2026-09-02T09:00:00Z");
 
+    // Accepted as Alice Grant, twice over: once reopened and accepted again
+    // through a link by someone else, and once by the team, both after 0082.
+    for (const id of [ids.acceptedAgainByAnother, ids.acceptedAgainByTeam]) {
+      await proposal(id, "accepted", 1);
+      await version(id, 1, "2026-09-01T10:00:00Z");
+      await moved(id, "draft", "sent", "2026-09-01T10:05:00Z");
+      await moved(id, "sent", "accepted", "2026-09-01T11:00:00Z");
+      await note(id, "Alice Grant", "2026-09-01T11:00:00Z");
+    }
+    // Sent once; after 0082 a version is saved and a new link made on it.
+    await proposal(ids.linkMadeWhileSent, "sent", 1);
+    await version(ids.linkMadeWhileSent, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.linkMadeWhileSent, "draft", "sent", "2026-09-01T10:05:00Z");
+    // A draft when 0082 ran; afterwards sent, accepted, and saved again.
+    await proposal(ids.draftAtFillThenAccepted, "draft", 0);
+
     // Exactly as it ships, in one transaction as the migrator runs it.
     await applyMigration(pool);
   }, 120_000);
@@ -239,22 +259,67 @@ describe.skipIf(testUrl === undefined)("migration 0082 on isolated PostgreSQL", 
       .rejects.toThrow(/proposals_sent_version_positive/u);
   });
 
-  it("settles what the previous API wrote meanwhile when run again, and changes nothing else", async () => {
+  it("0083 settles what the previous API wrote meanwhile, keeps what was sent, and changes nothing else", async () => {
     const before = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
     // The previous API, still running once 0082 applied, sends version 2 and
-    // a first version without touching the new columns.
+    // a first version, and sees a client accept by name, without touching
+    // the new columns.
     await pool.query("UPDATE proposals SET status = 'sent' WHERE id = $1", [ids.changesAskedThenSaved]);
     await moved(ids.changesAskedThenSaved, "changes_requested", "sent", "2026-09-28T09:00:00Z");
     await pool.query("UPDATE proposals SET status = 'sent', current_version = 1 WHERE id = $1", [ids.draft]);
     await version(ids.draft, 1, "2026-09-28T09:00:00Z");
     await moved(ids.draft, "draft", "sent", "2026-09-28T09:05:00Z");
+    await pool.query("UPDATE proposals SET status = 'accepted' WHERE id = $1", [ids.sentOnce]);
+    await moved(ids.sentOnce, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await note(ids.sentOnce, "Moira Kerr", "2026-09-28T10:00:00Z");
+    // The new release, once it runs: a platform administrator saves version
+    // 3 while version 2 is with the client. It is a draft; the link keeps 2.
+    await pool.query("UPDATE proposals SET current_version = 3 WHERE id = $1", [ids.adminSavedWhileSent]);
+    await version(ids.adminSavedWhileSent, 3, "2026-09-28T11:00:00Z");
 
-    await applyMigration(pool);
+    // Reopened by an administrator and accepted again, through another link
+    // as Bob Kerr, and by the team with no name.
+    await pool.query("UPDATE proposals SET status = 'accepted' WHERE id = ANY($1)", [[ids.acceptedAgainByAnother, ids.acceptedAgainByTeam]]);
+    for (const id of [ids.acceptedAgainByAnother, ids.acceptedAgainByTeam]) {
+      await moved(id, "accepted", "sent", "2026-09-28T09:00:00Z");
+      await moved(id, "sent", "accepted", "2026-09-28T10:00:00Z");
+    }
+    await note(ids.acceptedAgainByAnother, "Bob Kerr", "2026-09-28T10:00:00Z");
+    // A platform administrator saves version 2 while version 1 is with the
+    // client, then a new link is made: the previous API showed version 2.
+    await pool.query("UPDATE proposals SET current_version = 2 WHERE id = $1", [ids.linkMadeWhileSent]);
+    await version(ids.linkMadeWhileSent, 2, "2026-09-28T09:00:00Z");
+    await pool.query(
+      "INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix, created_at) VALUES ($1, 'minted', 'minted', '2026-09-28T09:30:00Z')",
+      [ids.linkMadeWhileSent],
+    );
+    // Sent and accepted on version 1; version 2 saved after the acceptance.
+    await pool.query("UPDATE proposals SET status = 'accepted', current_version = 2 WHERE id = $1", [ids.draftAtFillThenAccepted]);
+    await version(ids.draftAtFillThenAccepted, 1, "2026-09-28T09:00:00Z");
+    await moved(ids.draftAtFillThenAccepted, "draft", "sent", "2026-09-28T09:05:00Z");
+    await moved(ids.draftAtFillThenAccepted, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await version(ids.draftAtFillThenAccepted, 2, "2026-09-28T11:00:00Z");
 
+    await applyMigration(pool, "0083_proposal_sent_version_refill.sql");
+
+    expect(await stored(ids.acceptedAgainByAnother)).toEqual({ sent_version: 1, accepted_name: "Bob Kerr" });
+    expect(await stored(ids.acceptedAgainByTeam)).toEqual({ sent_version: 1, accepted_name: null });
+    expect((await stored(ids.linkMadeWhileSent)).sent_version).toBe(2);
+    expect((await stored(ids.draftAtFillThenAccepted)).sent_version).toBe(1);
     expect((await stored(ids.changesAskedThenSaved)).sent_version).toBe(2);
     expect((await stored(ids.draft)).sent_version).toBe(1);
+    expect(await stored(ids.sentOnce)).toEqual({ sent_version: 1, accepted_name: "Moira Kerr" });
+    expect((await stored(ids.adminSavedWhileSent)).sent_version).toBe(2);
+    const settled: readonly string[] = [
+      ids.changesAskedThenSaved, ids.draft, ids.sentOnce,
+      ids.acceptedAgainByAnother, ids.acceptedAgainByTeam, ids.linkMadeWhileSent, ids.draftAtFillThenAccepted,
+    ];
     const after = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
-    const unchanged = (rows: readonly (Stored & { id: string })[]) => rows.filter((row) => row.id !== ids.changesAskedThenSaved && row.id !== ids.draft);
+    const unchanged = (rows: readonly (Stored & { id: string })[]) => rows.filter((row) => !settled.includes(row.id));
     expect(unchanged(after)).toEqual(unchanged(before));
+
+    // Run again, it changes nothing.
+    await applyMigration(pool, "0083_proposal_sent_version_refill.sql");
+    expect((await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows).toEqual(after);
   });
 });

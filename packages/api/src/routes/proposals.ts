@@ -747,6 +747,12 @@ export async function proposalRoutes(
       });
     }
 
+    // A send records the version the client is sent, from the row as it is
+    // written. The team marking it accepted gives no name, so no earlier
+    // acceptance's name stands.
+    if (parsed.data.status === "sent") updateData["sentVersion"] = sql`${proposals.currentVersion}`;
+    if (parsed.data.status === "accepted") updateData["acceptedName"] = null;
+
     const fromStatus = proposal.status;
     const [updated] = await db.update(proposals)
       .set(updateData)
@@ -948,7 +954,11 @@ export async function proposalRoutes(
       }).returning();
       if (shareToken === undefined) throw new Error("proposal share token insert returned no row");
 
-      const updateData: Record<string, unknown> = { updatedAt: now };
+      // A link made on a proposal still with the client sends its current
+      // version; one already answered keeps the version that was answered.
+      const updateData: Record<string, unknown> = ["draft", "sent", "changes_requested"].includes(proposal.status)
+        ? { updatedAt: now, sentVersion: sql`${proposals.currentVersion}` }
+        : { updatedAt: now };
       let toStatus = proposal.status;
       if (proposal.status === "draft" || proposal.status === "changes_requested") {
         toStatus = "sent";
@@ -1434,7 +1444,10 @@ export async function publicProposalRoutes(
 
     const fromStatus = proposal.status;
     const [updated] = await db.update(proposals)
-      .set({ status: toStatus, updatedAt: new Date() })
+      // This path takes no name, so no earlier acceptance's name stands.
+      .set(toStatus === "accepted"
+        ? { status: toStatus, acceptedName: null, updatedAt: new Date() }
+        : { status: toStatus, updatedAt: new Date() })
       .where(eq(proposals.id, proposal.id))
       .returning({ status: proposals.status });
 
@@ -1592,9 +1605,11 @@ export async function proposalShareRoutes(
       return reply.status(422).send({ error: "This proposal is not awaiting approval", code: "NOT_AWAITING_RESPONSE" });
     }
 
+    // The name given with the acceptance itself, kept on the proposal.
+    const acceptedName = parsed.data.authorName?.trim() ?? "";
     await db.transaction(async (tx) => {
       await tx.update(proposals)
-        .set({ status: "accepted", updatedAt: new Date() })
+        .set({ status: "accepted", acceptedName: acceptedName === "" ? null : acceptedName, updatedAt: new Date() })
         .where(eq(proposals.id, resolved.proposal.id));
       await tx.insert(proposalStatusHistory).values({
         proposalId: resolved.proposal.id,
