@@ -463,6 +463,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *API*
 - `resolveTiming` defaults to 18:00 venue-local (`hallkeeper-sheet-v2-data.ts:36,429`).
+  Revised on 27 September: Lane 6 removed the default instead. The sheet reads the live booking's own
+  start and the room's set-up time, so the acceptance's June and December pair tests those
+  ([session log](../../sessions/2026-09-27.md)).
 - The calendar and ops projection returns the approved configuration id and the checked count, for Day Board links.
 
 *Hallkeeper sheet*
@@ -483,6 +486,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - On phones, a Checklist | Plan switch, no scroll box inside the page, and the room switcher in the header.
 - Venue-time formatting in `HallkeeperStatusBanner.tsx:51` and `InstructionsBanner.tsx:199-202`.
 - 403 copy without "Try Again".
+  Done on 27 September: a denied sheet offers its own navigation instead ([session log](../../sessions/2026-09-27.md)).
 - Delete the dead `.hk-*` rules.
 
 *Day Board*
@@ -500,6 +504,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 *Event-day ops and Mission Control (functional fixes only)*
 - A relative kicker instead of the hard-coded one (`EventDayOpsPage.tsx:345`), and venue-zone times (`:37-64`).
 - An issue list with a Resolve action (`updateEventDayIssue`), plus the honest line "Nobody is notified" until notification exists.
+  Revised on 27 September: issues do notify staff and hallkeepers (truth sweep), and the page says so. The
+  list counts only open and in-progress issues; a resolved one waits apart until closed ([session log](../../sessions/2026-09-27.md)).
 - A "Waiting for your acknowledgement" block with no 10-event cap. Each Acknowledge action gets busy, error and 409 handling.
 - Incidents get a Resolve action.
 - "Start" appears only on the next phase, with an honest message on conflict.
