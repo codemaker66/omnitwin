@@ -8,6 +8,7 @@ import {
   emulate,
   openDiary,
   touch,
+  unreadableText,
 } from "./support/diary-timetable.js";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,29 @@ test.describe("Diary timetable", () => {
     await page.locator(".diary-status-notice").getByRole("button", { name: "Try again" }).click();
     await expect(page.getByText(/^Couldn't refresh/u)).toHaveCount(0);
     await expect(hammermen).toBeVisible();
+  });
+
+  test("every label on the board reads at 12 px or more and 4.5:1 or better", async ({ page }) => {
+    // Reduced motion: no colour transition is caught half-way.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await emulate(page);
+    await openDiary(page);
+    await page.getByLabel("Show released & cancelled").check();
+    const found = await unreadableText(page, ".diary-page", "overview");
+    await page.getByRole("button", { name: "Timeline" }).click();
+    await expect(page.locator(".diary-lane").first()).toBeVisible();
+    found.push(...await unreadableText(page, ".diary-page", "timeline"));
+    await page.getByRole("button", { name: "Day", exact: true }).click();
+    await expect(page.locator(".diary-lane").first()).toBeVisible();
+    found.push(...await unreadableText(page, ".diary-page", "day"));
+    await page.getByRole("button", { name: "Week", exact: true }).click();
+    await page.getByRole("button", { name: "Overview" }).click();
+    await page.getByRole("button", { name: /^Hammermen annual dinner — /u }).click();
+    const drawer = page.getByRole("dialog", { name: "Booking details" });
+    await drawer.getByRole("button", { name: "Cancel the booking…", exact: true }).click();
+    await expect(drawer.getByRole("group", { name: /^Cancel .*\?$/u })).toBeVisible();
+    found.push(...await unreadableText(page, ".diary-drawer", "drawer"));
+    expect(found).toEqual([]);
   });
 
   test("opens on this week with the decisions due and the tray, and books where it is clicked", async ({ page }) => {
