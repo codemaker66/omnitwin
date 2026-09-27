@@ -91,10 +91,29 @@ const ContactSchema = z.object({
   deletedAt: z.string().nullable(),
 });
 
+/** A deal as the pipeline lists it: with who it is with, where the API says. */
+export const PipelineOpportunitySchema = OpportunitySchema.extend({
+  contactName: z.string().nullable().default(null),
+});
+
+export type PipelineOpportunity = z.infer<typeof PipelineOpportunitySchema>;
+
+/** An open follow-up as the pipeline lists it, with the deal it is for. */
+export const PipelineTaskSchema = FollowUpTaskSchema.extend({
+  opportunityTitle: z.string().nullable().default(null),
+});
+
+export type PipelineTask = z.infer<typeof PipelineTaskSchema>;
+
 const PipelineSchema = z.object({
-  opportunities: z.array(OpportunitySchema),
-  todayTasks: z.array(FollowUpTaskSchema),
+  opportunities: z.array(PipelineOpportunitySchema),
+  todayTasks: z.array(PipelineTaskSchema),
   stageCounts: z.record(z.number().int()),
+  // What each stage's deals are estimated at, and how many open deals have a
+  // step due today or already past it, over the whole pipeline (roadmap X1).
+  // Optional, as below, for a web build briefly ahead of the API.
+  stageValues: z.record(z.number().int()).optional(),
+  due: z.object({ overdue: z.number().int(), today: z.number().int() }).optional(),
   // Served by the API, never summed from `opportunities` here: that array is
   // one PAGE of the board, and a page total is not a pipeline total. It is
   // the same figure Executive Analytics shows, so the two agree by
@@ -141,11 +160,38 @@ const FromEnquiryResultSchema = z.object({
 
 export type FromEnquiryResult = z.infer<typeof FromEnquiryResultSchema>;
 
+export const StageMoveSchema = z.object({
+  id: z.string(),
+  fromStage: z.string(),
+  toStage: z.string(),
+  note: z.string().nullable(),
+  changedByName: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type StageMove = z.infer<typeof StageMoveSchema>;
+
+export const DealContactSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  phone: z.string().nullable(),
+  accountName: z.string().nullable(),
+});
+
+export type DealContact = z.infer<typeof DealContactSchema>;
+
 const OpportunityDetailSchema = z.object({
   opportunity: OpportunitySchema,
   activities: z.array(ActivitySchema),
   tasks: z.array(FollowUpTaskSchema),
   proposals: z.array(StaffProposalSchema),
+  // Every move between stages with who made it and why, who the deal is
+  // with, and the room the guest asked for (null where they named none).
+  // Defaulted for an API from before them.
+  history: z.array(StageMoveSchema).default([]),
+  contact: DealContactSchema.nullable().default(null),
+  room: z.string().nullable().default(null),
 });
 
 export type OpportunityDetail = z.infer<typeof OpportunityDetailSchema>;
@@ -168,6 +214,10 @@ export async function createOpportunityFromEnquiry(enquiryId: string): Promise<F
 export interface PipelineQuery {
   readonly limit?: number;
   readonly offset?: number;
+  /** "due": open deals by when their next step is due, then won and lost;
+   *  archived deals left out (the pipeline desk's order). */
+  readonly order?: "recent" | "due";
+  readonly stage?: OpportunityStage;
 }
 
 export async function getPipeline(query: PipelineQuery = {}): Promise<PipelineSummary> {
@@ -178,6 +228,8 @@ export async function getPipeline(query: PipelineQuery = {}): Promise<PipelineSu
   // this client has always made — including for the e2e route mocks that
   // stand in for the API and match an exact path.
   if (query.offset !== undefined && query.offset > 0) params.set("offset", String(query.offset));
+  if (query.order !== undefined && query.order !== "recent") params.set("order", query.order);
+  if (query.stage !== undefined) params.set("stage", query.stage);
   const search = params.toString();
   return api.get(search === "" ? "/crm/pipeline" : `/crm/pipeline?${search}`, PipelineSchema);
 }

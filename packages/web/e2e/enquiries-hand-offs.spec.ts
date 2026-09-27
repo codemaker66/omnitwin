@@ -167,8 +167,8 @@ test.describe("Enquiries desk, handing a lead on", () => {
 
     await pressCreateOpportunity(page);
     await expect(page).toHaveURL(new RegExp(`[?&]view=pipeline&opportunity=${DEAL_ID}$`, "u"));
-    const detail = page.getByLabel("Opportunity detail");
-    await expect(detail.getByRole("heading", { name: DEAL.title })).toBeVisible();
+    const detail = page.getByRole("region", { name: DEAL.title });
+    await expect(detail.getByRole("heading", { level: 2, name: DEAL.title })).toBeVisible();
     // The board is beside it, with the deal on it.
     await expect(page.getByTestId(`opportunity-${DEAL_ID}`)).toBeVisible();
     // No notice claims the deal was opened somewhere else.
@@ -179,7 +179,7 @@ test.describe("Enquiries desk, handing a lead on", () => {
     await expect(page).toHaveURL(/view=enquiries/u);
     await pressCreateOpportunity(page);
     await expect(page).toHaveURL(new RegExp(`[?&]view=pipeline&opportunity=${DEAL_ID}$`, "u"));
-    await expect(page.getByLabel("Opportunity detail").getByRole("heading", { name: DEAL.title })).toBeVisible();
+    await expect(page.getByRole("region", { name: DEAL.title }).getByRole("heading", { level: 2, name: DEAL.title })).toBeVisible();
     expect(presses.made).toBe(2);
     expect(presses.answered).toEqual([DEAL_ID, DEAL_ID]);
     await expect(page.getByText("Existing opportunity opened")).toHaveCount(0);

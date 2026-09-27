@@ -16,7 +16,7 @@ import { AdminPanel } from "../components/dashboard/AdminPanel.js";
 import { InventoryPanel } from "../components/dashboard/inventory/InventoryPanel.js";
 import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyticsView.js";
 import { ProposalsView } from "../components/dashboard/ProposalsView.js";
-import { CommercialPipelineView } from "../components/dashboard/CommercialPipelineView.js";
+import { PipelineDesk } from "../components/dashboard/PipelineDesk.js";
 import { OnboardingView } from "../components/dashboard/OnboardingView.js";
 import { RotaView } from "../components/dashboard/rota/RotaView.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -54,7 +54,7 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "admin",
 ];
 
-// Pipeline is CommercialPipelineView, which reads api/crm.js (routes/crm.ts
+// Pipeline is PipelineDesk, which reads api/crm.js (routes/crm.ts
 // and routes/opportunities.ts); Proposals reads api/proposals.js. Both routes
 // gate on canManageCommercial today, but each view keeps its own set so each
 // tab names the gate it mirrors. See lib/role-capabilities.ts
@@ -75,7 +75,7 @@ const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 /** The views set as desks, full-bleed on the sage ground. */
-const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search"]);
+const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search", "pipeline"]);
 type PlatformRole = "none" | "operator" | "admin";
 
 export function dashboardViewFromSearchValue(value: string | null): DashboardView | null {
@@ -230,7 +230,7 @@ export function DashboardPage(): React.ReactElement {
   };
 
   /** Opens another view on one record, as a step the browser's Back undoes. */
-  const openRecord = (target: DashboardView, param: "opportunity" | "proposal", id: string): void => {
+  const openRecord = (target: DashboardView, param: "opportunity" | "proposal" | "client", id: string): void => {
     setView(target);
     setEnquiryReturnContext(null);
     const nextParams = new URLSearchParams(searchParams);
@@ -242,6 +242,9 @@ export function DashboardPage(): React.ReactElement {
 
   const handleOpenOpportunity = (opportunityId: string): void => { openRecord("pipeline", "opportunity", opportunityId); };
   const handleOpenProposal = (proposalId: string): void => { openRecord("proposals", "proposal", proposalId); };
+  const handleOpenContact = (contactId: string): void => {
+    openRecord("search", "client", clientRefToSearchValue({ kind: "contact", id: contactId }));
+  };
 
   const handleProposalShown = useCallback((proposalId: string | null): void => {
     setSearchParams((previous) => {
@@ -346,7 +349,10 @@ export function DashboardPage(): React.ReactElement {
           />
         );
       case "pipeline":
-        return <CommercialPipelineView opportunityId={requestedOpportunityId} onOpportunityShown={handleOpportunityShown} />;
+        return (
+          <PipelineDesk opportunityId={requestedOpportunityId} onOpportunityShown={handleOpportunityShown}
+            onOpenProposal={handleOpenProposal} onOpenClient={handleOpenContact} />
+        );
       case "reviews":
         return <ReviewsView reviewId={requestedReviewId} onReviewShown={handleReviewShown} />;
       case "analytics":

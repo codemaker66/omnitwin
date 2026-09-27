@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -66,6 +66,7 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
   const tables: PgTable[] = [
     schema.opportunities, schema.followUpTasks, schema.activities,
     schema.opportunityStatusHistory, schema.proposals,
+    schema.users, schema.contacts, schema.clientAccounts, schema.enquiries, schema.spaces,
   ];
 
   beforeAll(async () => {
@@ -94,7 +95,7 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, proposals");
+    await pool.query("TRUNCATE opportunities, follow_up_tasks, activities, opportunity_status_history, proposals, users, contacts, client_accounts, enquiries, spaces");
     for (let index = 1; index <= 4; index += 1) {
       await pool.query(
         `INSERT INTO opportunities (id, venue_id, title, stage, estimated_value_minor, currency, next_action, created_at, updated_at)
@@ -179,6 +180,82 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     expect(body.data.proposals.map((row) => row.title)).toEqual([
       "Proposal 3", "Proposal 2", "Proposal 1",
     ]);
+  });
+
+  it("says who the deal is with, the room they asked for, and every move with who made it and why", async () => {
+    const account = randomUUID();
+    const contact = randomUUID();
+    const room = randomUUID();
+    const enquiry = randomUUID();
+    await pool.query("INSERT INTO users (id, email, name, display_name, role) VALUES ($1, 'catherine@example.test', 'C Tait', 'Catherine Tait', 'staff')", [STAFF]);
+    await pool.query("INSERT INTO client_accounts (id, venue_id, name, account_type) VALUES ($1, $2, 'Henderson Family', 'individual')", [account, VENUE]);
+    await pool.query(
+      "INSERT INTO contacts (id, venue_id, client_account_id, name, email, phone) VALUES ($1, $2, $3, 'Ailsa Henderson', 'ailsa@example.test', '0141 555 0100')",
+      [contact, VENUE, account],
+    );
+    await pool.query("INSERT INTO spaces (id, venue_id, name, slug) VALUES ($1, $2, 'Grand Hall', 'grand-hall')", [room, VENUE]);
+    await pool.query(
+      "INSERT INTO enquiries (id, venue_id, space_id, name, email, state, room_chosen) VALUES ($1, $2, $3, 'Ailsa Henderson', 'ailsa@example.test', 'approved', true)",
+      [enquiry, VENUE, room],
+    );
+    await pool.query("UPDATE opportunities SET primary_contact_id = $2, source_enquiry_id = $3 WHERE id = $1", [opportunityId(1), contact, enquiry]);
+    await pool.query(
+      `INSERT INTO opportunity_status_history (opportunity_id, from_stage, to_stage, changed_by, note, created_at)
+       VALUES ($1, 'new', 'qualified', $2, 'Date and numbers confirmed', '2026-09-03T10:00:00Z'),
+              ($1, 'qualified', 'proposal_drafting', NULL, NULL, '2026-09-04T10:00:00Z')`,
+      [opportunityId(1), STAFF],
+    );
+
+    const detail = async (): Promise<{ contact: unknown; room: string | null; history: unknown[] }> => {
+      const res = await server.inject({ method: "GET", url: `/opportunities/${opportunityId(1)}`, headers: headers() });
+      expect(res.statusCode).toBe(200);
+      return (JSON.parse(res.body) as { data: { contact: unknown; room: string | null; history: unknown[] } }).data;
+    };
+    const found = await detail();
+    expect(found.contact).toEqual({
+      id: contact, name: "Ailsa Henderson", email: "ailsa@example.test", phone: "0141 555 0100", accountName: "Henderson Family",
+    });
+    expect(found.room).toBe("Grand Hall");
+    expect(found.history).toEqual([
+      expect.objectContaining({ fromStage: "qualified", toStage: "proposal_drafting", note: null, changedByName: null }),
+      expect.objectContaining({ fromStage: "new", toStage: "qualified", note: "Date and numbers confirmed", changedByName: "Catherine Tait" }),
+    ]);
+
+    // A room the guest never chose is not presented as theirs.
+    await pool.query("UPDATE enquiries SET room_chosen = false WHERE id = $1", [enquiry]);
+    expect((await detail()).room).toBeNull();
+    // Nor is another venue's contact, whatever the deal points at.
+    await pool.query("UPDATE contacts SET venue_id = $2 WHERE id = $1", [contact, OTHER_VENUE]);
+    expect((await detail()).contact).toBeNull();
+  });
+
+  it("closes a deal as won or lost only with the reason it was", async () => {
+    await pool.query("INSERT INTO users (id, email, name, role) VALUES ($1, 'catherine@example.test', 'Catherine Tait', 'staff')", [STAFF]);
+    await pool.query("UPDATE opportunities SET stage = 'proposal_sent' WHERE id = $1", [opportunityId(1)]);
+    const move = (id: string, body: Record<string, unknown>): Promise<LightMyRequestResponse> =>
+      server.inject({ method: "PATCH", url: `/opportunities/${id}`, headers: headers(), payload: body });
+
+    for (const body of [{ stage: "won" }, { stage: "won", note: "   " }, { stage: "lost", note: "" }]) {
+      const refused = await move(body.stage === "won" ? opportunityId(1) : opportunityId(2), body);
+      expect(refused.statusCode, JSON.stringify(body)).toBe(422);
+      expect((JSON.parse(refused.body) as { code: string }).code).toBe("REASON_REQUIRED");
+    }
+    const unchanged = await pool.query<{ stage: string }>("SELECT stage FROM opportunities WHERE id = ANY($1) ORDER BY id", [[opportunityId(1), opportunityId(2)]]);
+    expect(unchanged.rows.map((row) => row.stage)).toEqual(["proposal_sent", "qualified"]);
+
+    const won = await move(opportunityId(1), { stage: "won", note: "Accepted the proposal for 5 June" });
+    expect(won.statusCode).toBe(200);
+    const lost = await move(opportunityId(2), { stage: "lost", note: "Chose another venue" });
+    expect(lost.statusCode).toBe(200);
+    const history = await pool.query<{ to_stage: string; note: string }>(
+      "SELECT to_stage, note FROM opportunity_status_history WHERE opportunity_id = ANY($1) ORDER BY to_stage", [[opportunityId(1), opportunityId(2)]],
+    );
+    expect(history.rows).toEqual([
+      { to_stage: "lost", note: "Chose another venue" },
+      { to_stage: "won", note: "Accepted the proposal for 5 June" },
+    ]);
+    // Other moves still need no reason.
+    expect((await move(opportunityId(3), { stage: "proposal_drafting" })).statusCode).toBe(200);
   });
 
   it("serves a venue's own admin, who used to be 403'd on their own opportunities", async () => {

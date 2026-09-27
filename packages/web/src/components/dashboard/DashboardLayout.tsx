@@ -55,7 +55,7 @@ type NavCapability =
 
 const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavCapability }[] = [
   { view: "enquiries", label: "Enquiries", capability: "workspace" },
-  // Pipeline is CommercialPipelineView, reading api/crm.js — mirrors
+  // Pipeline is PipelineDesk, reading api/crm.js — mirrors
   // routes/crm.ts and routes/opportunities.ts, which gate on
   // canManageCommercial: admin, manager, staff and sales.
   { view: "pipeline", label: "Pipeline", capability: "crmPipeline" },

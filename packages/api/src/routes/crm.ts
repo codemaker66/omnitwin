@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
   OPPORTUNITY_STAGES,
   occasionLabel,
@@ -18,7 +18,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { canManageCommercial } from "../utils/query.js";
-import { PIPELINE_VALUE_CURRENCY, loadPipelineValueMinor } from "../services/commercial-pipeline.js";
+import { OPEN_PIPELINE_STAGES, PIPELINE_VALUE_CURRENCY, loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 
 const IdParam = {
   schema: {
@@ -52,6 +52,13 @@ const PipelineQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   taskLimit: z.coerce.number().int().min(1).max(200).default(50),
   taskOffset: z.coerce.number().int().min(0).default(0),
+  // "recent": every deal, newest first (the board's order). "due": the
+  // pipeline desk's (roadmap X1): open deals by when their next step is due,
+  // those with no date after them, then won and lost deals, most recently
+  // closed first. Archived deals are done with and left out of "due".
+  order: z.enum(["recent", "due"]).default("recent"),
+  /** One stage only, as the desk's stage counts filter it. */
+  stage: z.enum(OPPORTUNITY_STAGES).optional(),
 });
 
 function tomorrowAtNoon(): Date {
@@ -71,6 +78,18 @@ function buildStageCounts(rows: readonly { stage: string; count: number }[]): Re
     }
   }
   return counts;
+}
+
+/** What the deals at each stage are estimated at, in minor units of the
+ *  pipeline's currency, over the whole pipeline (like the counts). */
+function buildStageValues(rows: readonly { stage: string; value: number }[]): Record<OpportunityStage, number> {
+  const values = Object.fromEntries(OPPORTUNITY_STAGES.map((stage) => [stage, 0])) as Record<OpportunityStage, number>;
+  for (const row of rows) {
+    if ((OPPORTUNITY_STAGES as readonly string[]).includes(row.stage)) {
+      values[row.stage as OpportunityStage] += row.value;
+    }
+  }
+  return values;
 }
 
 export async function crmRoutes(
@@ -211,21 +230,60 @@ export async function crmRoutes(
     const where = scope.venueId === null
       ? isNull(opportunities.deletedAt)
       : and(eq(opportunities.venueId, scope.venueId), isNull(opportunities.deletedAt));
+    const byDue = query.data.order === "due";
+    const listed = and(
+      where,
+      byDue ? ne(opportunities.stage, "archived") : undefined,
+      query.data.stage === undefined ? undefined : eq(opportunities.stage, query.data.stage),
+    );
 
     // Stage counts come from the WHOLE pipeline, not the returned page. The
     // old code counted the (silently truncated) 200-row window, so a venue
     // past 200 open opportunities was shown stage totals that were simply
     // wrong. Counting in SQL keeps the header honest under pagination.
-    const [totalRow] = await db.select({ count: sql<number>`count(*)::int` }).from(opportunities).where(where);
-    const stageRows = await db.select({ stage: opportunities.stage, count: sql<number>`count(*)::int` })
+    const [totalRow] = await db.select({ count: sql<number>`count(*)::int` }).from(opportunities).where(listed);
+    const stageRows = await db.select({
+      stage: opportunities.stage,
+      count: sql<number>`count(*)::int`,
+      value: sql<number>`coalesce(sum(${opportunities.estimatedValueMinor}), 0)`.mapWith(Number),
+    })
       .from(opportunities)
       .where(where)
       .groupBy(opportunities.stage);
 
-    const rows = await db.select()
+    // How many open deals have a next step due today, or already past it, on
+    // the venue's calendar, over the whole pipeline: the desk's first sentence.
+    const dueDay = sql`(${opportunities.nextActionDueAt} AT TIME ZONE 'Europe/London')::date`;
+    const today = sql`(now() AT TIME ZONE 'Europe/London')::date`;
+    const [dueRow] = await db.select({
+      overdue: sql<number>`count(*) FILTER (WHERE ${dueDay} < ${today})::int`,
+      today: sql<number>`count(*) FILTER (WHERE ${dueDay} = ${today})::int`,
+    })
       .from(opportunities)
-      .where(where)
-      .orderBy(desc(opportunities.createdAt), desc(opportunities.id))
+      .where(and(where, inArray(opportunities.stage, [...OPEN_PIPELINE_STAGES])));
+
+    const closed = sql`(${opportunities.stage} IN ('won', 'lost'))`;
+    const rows = await db.select({
+      ...getTableColumns(opportunities),
+      // Who the deal is with, for its row; another venue's contact never.
+      contactName: contacts.name,
+    })
+      .from(opportunities)
+      .leftJoin(contacts, and(
+        eq(contacts.id, opportunities.primaryContactId),
+        eq(contacts.venueId, opportunities.venueId),
+        isNull(contacts.deletedAt),
+      ))
+      .where(listed)
+      .orderBy(...(byDue
+        ? [
+          asc(closed),
+          sql`CASE WHEN ${closed} THEN NULL ELSE ${opportunities.nextActionDueAt} END ASC NULLS LAST`,
+          sql`${opportunities.closedAt} DESC NULLS LAST`,
+          desc(opportunities.createdAt),
+          desc(opportunities.id),
+        ]
+        : [desc(opportunities.createdAt), desc(opportunities.id)]))
       .limit(query.data.limit)
       .offset(query.data.offset);
 
@@ -242,7 +300,11 @@ export async function crmRoutes(
       eq(followUpTasks.status, "open"),
     );
     const [taskTotalRow] = await db.select({ count: sql<number>`count(*)::int` }).from(followUpTasks).where(taskWhere);
-    const tasks = await db.select()
+    const tasks = await db.select({
+      ...getTableColumns(followUpTasks),
+      // The deal each is for, so a follow-up can be read on its own.
+      opportunityTitle: sql<string | null>`(SELECT ${opportunities.title} FROM ${opportunities} WHERE ${opportunities.id} = ${followUpTasks.opportunityId})`,
+    })
       .from(followUpTasks)
       .where(taskWhere)
       .orderBy(asc(followUpTasks.dueAt), desc(followUpTasks.createdAt), desc(followUpTasks.id))
@@ -254,6 +316,8 @@ export async function crmRoutes(
         opportunities: rows,
         todayTasks: tasks,
         stageCounts: buildStageCounts(stageRows),
+        stageValues: buildStageValues(stageRows),
+        due: { overdue: dueRow?.overdue ?? 0, today: dueRow?.today ?? 0 },
         // Served, not summed client-side: a page of rows cannot be summed
         // into a pipeline total, and this is the same figure Executive
         // Analytics reports (services/commercial-pipeline.ts).

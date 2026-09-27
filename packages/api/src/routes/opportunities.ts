@@ -20,6 +20,8 @@ import {
   opportunities,
   opportunityStatusHistory,
   proposals,
+  spaces,
+  users,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
@@ -68,6 +70,10 @@ function nextActionForStage(stage: OpportunityStage): string {
       return "No next action.";
   }
 }
+
+/** A deal closes as won or lost only with the reason it did: the pipeline's
+ *  history is what a team learns from (roadmap X1). */
+const CLOSING_STAGES: ReadonlySet<OpportunityStage> = new Set<OpportunityStage>(["won", "lost"]);
 
 function isoToDate(value: string | null | undefined): Date | null {
   if (value === undefined || value === null) return null;
@@ -241,8 +247,54 @@ export async function opportunityRoutes(
       .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))
       .orderBy(desc(proposals.createdAt), desc(proposals.id))
       .limit(50);
+    // Every move between stages, newest first, with who made it and why.
+    const history = await db.select({
+      id: opportunityStatusHistory.id,
+      fromStage: opportunityStatusHistory.fromStage,
+      toStage: opportunityStatusHistory.toStage,
+      note: opportunityStatusHistory.note,
+      changedByName: sql<string | null>`COALESCE(${users.displayName}, ${users.name})`,
+      createdAt: opportunityStatusHistory.createdAt,
+    })
+      .from(opportunityStatusHistory)
+      .leftJoin(users, eq(users.id, opportunityStatusHistory.changedBy))
+      .where(eq(opportunityStatusHistory.opportunityId, opportunity.id))
+      .orderBy(desc(opportunityStatusHistory.createdAt), desc(opportunityStatusHistory.id))
+      .limit(100);
+    // Who the deal is with, at this venue.
+    const [contact] = opportunity.primaryContactId === null ? [] : await db.select({
+      id: contacts.id,
+      name: contacts.name,
+      email: contacts.email,
+      phone: contacts.phone,
+      accountName: clientAccounts.name,
+    })
+      .from(contacts)
+      .leftJoin(clientAccounts, and(eq(clientAccounts.id, contacts.clientAccountId), isNull(clientAccounts.deletedAt)))
+      .where(and(eq(contacts.id, opportunity.primaryContactId), eq(contacts.venueId, opportunity.venueId), isNull(contacts.deletedAt)))
+      .limit(1);
+    // The room the guest asked for; none where they named none (roomChosen
+    // false files an enquiry under the venue's first room).
+    const [source] = opportunity.sourceEnquiryId === null ? [] : await db.select({
+      roomName: spaces.name,
+      roomChosen: enquiries.roomChosen,
+    })
+      .from(enquiries)
+      .leftJoin(spaces, eq(spaces.id, enquiries.spaceId))
+      .where(and(eq(enquiries.id, opportunity.sourceEnquiryId), eq(enquiries.venueId, opportunity.venueId)))
+      .limit(1);
 
-    return { data: { opportunity, activities: opportunityActivities, tasks, proposals: linkedProposals } };
+    return {
+      data: {
+        opportunity,
+        activities: opportunityActivities,
+        tasks,
+        proposals: linkedProposals,
+        history,
+        contact: contact ?? null,
+        room: source === undefined || !source.roomChosen ? null : source.roomName,
+      },
+    };
   });
 
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
@@ -275,6 +327,9 @@ export async function opportunityRoutes(
     const toStage = parsed.data.stage;
     if (toStage !== undefined && toStage !== fromStage && !isPlatformAdmin(request.user) && !isValidOpportunityStageTransition(fromStage, toStage)) {
       return reply.status(422).send({ error: `Cannot transition opportunity from ${fromStage} to ${toStage}`, code: "INVALID_TRANSITION" });
+    }
+    if (toStage !== undefined && toStage !== fromStage && CLOSING_STAGES.has(toStage) && (parsed.data.note ?? "").trim() === "") {
+      return reply.status(422).send({ error: "Say why the deal was won or lost.", code: "REASON_REQUIRED" });
     }
 
     const updateData: Partial<typeof opportunities.$inferInsert> = { updatedAt: new Date() };

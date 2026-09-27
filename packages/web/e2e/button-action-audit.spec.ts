@@ -395,14 +395,17 @@ function opportunityDetailFixture(overrides: Partial<OpportunityDetail> = {}): O
     activities: [opportunityActivityFixture()],
     tasks: [pipelineTaskFixture()],
     proposals: [],
+    history: [],
+    contact: null,
+    room: null,
     ...overrides,
   };
 }
 
 function pipelineSummaryFixture(overrides: Partial<PipelineSummary> = {}): PipelineSummary {
   return {
-    opportunities: [opportunityFixture()],
-    todayTasks: [pipelineTaskFixture()],
+    opportunities: [{ ...opportunityFixture(), contactName: null }],
+    todayTasks: [{ ...pipelineTaskFixture(), opportunityTitle: opportunityFixture().title }],
     stageCounts: { new: 1 },
     ...overrides,
   };
@@ -1005,6 +1008,9 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   let remainingAnalyticsFailures = options.failAnalyticsOnce === true ? 2 : 0;
   let remainingPipelineFailures = options.failPipelineOnce === true ? 2 : 0;
   let failOpportunityDetailOnce = options.failOpportunityDetailOnce === true;
+  // The deal's stage as the API holds it: a move is kept, so a re-read after
+  // it shows the deal where it moved to.
+  let opportunityStage = "new";
   let failProposalHistoryOnce = options.failProposalHistoryOnce === true;
   let failProposalCommentsOnce = options.failProposalCommentsOnce === true;
   let remainingReviewsListFailures = options.failReviewsListOnce === true ? 2 : 0;
@@ -1306,13 +1312,16 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     }
     void route.fulfill({ json: { data: revenueAnalyticsFixture() } });
   });
-  await page.route(`${API}/crm/pipeline`, (route) => {
+  // The pipeline desk asks with a query (?order=due), so the path is matched.
+  await page.route((url) => url.origin === API && url.pathname === "/crm/pipeline", (route) => {
     if (remainingPipelineFailures > 0) {
       remainingPipelineFailures -= 1;
       void route.fulfill({ status: 500, json: { error: "button audit pipeline failure" } });
       return;
     }
-    void route.fulfill({ json: { data: pipelineSummaryFixture() } });
+    void route.fulfill({ json: { data: pipelineSummaryFixture({
+      opportunities: [{ ...opportunityFixture({ stage: opportunityStage }), contactName: null }],
+    }) } });
   });
   await page.route(`${API}/crm/from-enquiry/**`, (route) => {
     const enquiryId = decodeURIComponent(route.request().url().split("/").pop() ?? "");
@@ -1354,14 +1363,8 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     if (route.request().method() === "PATCH") {
       const body = route.request().postDataJSON() as { readonly stage?: string; readonly note?: string | null };
       pipelineStageUpdates.push(`${body.stage ?? ""}|${body.note ?? ""}`);
-      void route.fulfill({
-        json: {
-          data: opportunityFixture({
-            stage: body.stage ?? "new",
-            nextAction: body.note ?? "Confirm event basics",
-          }),
-        },
-      });
+      if (body.stage !== undefined) opportunityStage = body.stage;
+      void route.fulfill({ json: { data: opportunityFixture({ stage: opportunityStage }) } });
       return;
     }
     if (failOpportunityDetailOnce) {
@@ -1369,7 +1372,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
       void route.fulfill({ status: 500, json: { error: "button audit opportunity detail failure" } });
       return;
     }
-    void route.fulfill({ json: { data: opportunityDetailFixture() } });
+    void route.fulfill({ json: { data: opportunityDetailFixture({ opportunity: opportunityFixture({ stage: opportunityStage }) }) } });
   });
   await page.route(`${API}/opportunities/${OPPORTUNITY_ID}/activities`, (route) => {
     const body = route.request().postDataJSON() as { readonly body?: string };
@@ -2400,7 +2403,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     // What the nav offers, the route opens.
     await page.goto("/dashboard?view=pipeline");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Commercial pipeline" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Pipeline" })).toBeVisible();
 
     // What it withholds stays closed when the URL is typed in.
     await page.goto("/dashboard?view=onboarding");
@@ -2966,42 +2969,43 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard?view=pipeline");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Commercial pipeline" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Pipeline" })).toBeVisible();
 
+    // A new deal: a value it cannot read is refused, never coerced to zero.
+    await page.getByRole("button", { name: "New deal" }).click();
     await page.getByTestId("manual-opportunity-title").fill("Winter dinner");
     await page.getByTestId("manual-opportunity-value").fill("-10");
-    await page.getByRole("button", { name: "Add" }).click();
-    await expect(page.getByTestId("manual-opportunity-error")).toContainText("non-negative pounds amount");
+    await page.getByRole("button", { name: "Open the deal" }).click();
+    await expect(page.getByTestId("manual-opportunity-error")).toContainText("Enter the value in pounds");
     await expect.poll(() => mock.createdPipelineOpportunities.length).toBe(0);
-
     await page.getByTestId("manual-opportunity-value").fill("120.50");
-    await page.getByRole("button", { name: "Add" }).click();
+    await page.getByRole("button", { name: "Open the deal" }).click();
     await expect.poll(() => mock.createdPipelineOpportunities).toContain("Winter dinner|12050");
 
-    await page.getByTestId("pipeline-enquiry-id").fill("enquiry-button-audit");
-    await page.getByTestId("pipeline-enquiry-create").click();
-    await expect.poll(() => mock.enquiryOpportunityRequests).toContain("enquiry-button-audit");
+    // The deal opens beside the ledger. A New deal is offered only the moves
+    // the API accepts from New.
+    const panel = page.getByRole("region", { name: "Reception Room wedding enquiry" });
+    await expect(panel.getByRole("button", { name: "Mark qualified" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Mark won…" })).toHaveCount(0);
+    await panel.getByRole("button", { name: "Mark qualified" }).click();
+    await expect.poll(() => mock.pipelineStageUpdates).toContain("qualified|");
 
-    await page.getByTestId(`opportunity-${OPPORTUNITY_ID}`).click();
-    await expect(page.getByLabel("Opportunity detail")).toBeVisible();
-    // A New deal is offered only the moves the API accepts from New.
-    await page.getByTestId("opportunity-stage").selectOption("qualified");
-    await expect.poll(() => mock.pipelineStageUpdates).toContain("qualified|Moved to Qualified");
-
-    await page.getByRole("button", { name: "Done" }).click();
-    await expect.poll(() => mock.completedPipelineTasks).toContain("done");
-
-    await page.getByLabel("New task title").fill("Confirm AV arrival");
-    await page.getByTestId("opportunity-task-add").click();
-    await expect.poll(() => mock.addedPipelineTasks).toContain("Confirm AV arrival");
-
-    await page.getByLabel("Activity note").fill("Client prefers later speeches.");
-    await page.getByRole("button", { name: "Add note" }).click();
-    await expect.poll(() => mock.addedOpportunityNotes).toContain("Client prefers later speeches.");
-
-    await page.getByRole("button", { name: "Create proposal draft" }).click();
+    // Qualified, it drafts a proposal and moves on to Proposal drafting.
+    await panel.getByRole("button", { name: "Draft a proposal" }).click();
     await expect.poll(() => mock.createdOpportunityProposalDrafts)
       .toContain(`${OPPORTUNITY_ID}|Reception Room wedding enquiry proposal`);
+    await expect.poll(() => mock.pipelineStageUpdates).toContain("proposal_drafting|Proposal draft created");
+
+    await panel.getByRole("button", { name: "Mark “Confirm planning assumptions” done" }).click();
+    await expect.poll(() => mock.completedPipelineTasks).toContain("done");
+
+    await panel.getByLabel("A follow-up").fill("Confirm AV arrival");
+    await panel.getByRole("button", { name: "Add", exact: true }).click();
+    await expect.poll(() => mock.addedPipelineTasks).toContain("Confirm AV arrival");
+
+    await panel.getByLabel("Add a note").fill("Client prefers later speeches.");
+    await panel.getByRole("button", { name: "Add the note" }).click();
+    await expect.poll(() => mock.addedOpportunityNotes).toContain("Client prefers later speeches.");
   });
 
   test("commercial pipeline load and detail failures expose recovery paths", async ({ page }) => {
@@ -3010,14 +3014,14 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard?view=pipeline");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("alert")).toContainText("Could not load the commercial pipeline");
-    await page.getByRole("button", { name: "Retry pipeline" }).click();
+    await expect(page.getByRole("alert")).toContainText("The pipeline could not be read");
+    await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByTestId(`opportunity-${OPPORTUNITY_ID}`)).toBeVisible();
 
     await page.getByTestId(`opportunity-${OPPORTUNITY_ID}`).click();
-    await expect(page.getByTestId("opportunity-detail-error")).toContainText("Could not load that opportunity");
-    await page.getByTestId(`opportunity-${OPPORTUNITY_ID}`).click();
-    await expect(page.getByLabel("Opportunity detail")).toBeVisible();
+    await expect(page.getByTestId("opportunity-detail-error")).toContainText("The deal could not be opened");
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("region", { name: "Reception Room wedding enquiry" })).toBeVisible();
   });
 
   test("admin onboarding form enforces required fields and posts the rollout package", async ({ page }) => {

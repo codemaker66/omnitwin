@@ -53,9 +53,11 @@ function headers(
 
 interface PipelineBody {
   readonly data: {
-    readonly opportunities: readonly { readonly id: string; readonly title: string }[];
+    readonly opportunities: readonly { readonly id: string; readonly title: string; readonly contactName?: string | null }[];
     readonly todayTasks: readonly { readonly id: string; readonly title: string }[];
     readonly stageCounts: Record<string, number>;
+    readonly stageValues: Record<string, number>;
+    readonly due: { readonly overdue: number; readonly today: number };
     readonly pipelineValueMinor: number;
     readonly currency: string;
     // Inside `data`, not beside it: the shared web client unwraps `data`
@@ -201,6 +203,96 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     const page = await pipeline("?limit=2&offset=2");
     expect(page.data.page).toMatchObject({ total: 5, limit: 2, offset: 2 });
     expect(page.data.page.taskLimit).toBeGreaterThan(0);
+  });
+
+  it("orders the desk's view by when each open deal's next step is due, then the closed, and leaves the archived out", async () => {
+    const due = async (suffix: number, at: string | null): Promise<void> => {
+      await pool.query("UPDATE opportunities SET next_action_due_at = $2 WHERE id = $1", [opportunityId(suffix), at]);
+    };
+    await due(1, "2026-10-09T09:00:00.000Z");
+    await due(2, null);
+    await due(3, "2026-10-02T09:00:00.000Z");
+    await due(4, "2026-10-05T09:00:00.000Z");
+    // Won and lost come last, most recently closed first, whatever their dates.
+    await pool.query("UPDATE opportunities SET closed_at = '2026-09-20T10:00:00Z', next_action_due_at = '2026-09-01T09:00:00Z' WHERE id = $1", [opportunityId(5)]);
+    await pool.query(
+      `INSERT INTO opportunities (id, venue_id, title, stage, estimated_value_minor, currency, next_action, closed_at, created_at, updated_at)
+       VALUES ($1, $2, 'Lost later', 'lost', 50000, 'GBP', 'Record the reason', '2026-09-25T10:00:00Z', now(), now()),
+              ($3, $2, 'Put away', 'archived', 70000, 'GBP', 'No next action', NULL, now(), now())`,
+      [opportunityId(6), VENUE, opportunityId(7)],
+    );
+
+    const desk = await pipeline("?order=due");
+    expect(desk.data.opportunities.map((row) => row.title)).toEqual([
+      "Opportunity 3", "Opportunity 4", "Opportunity 1", "Opportunity 2", "Lost later", "Opportunity 5",
+    ]);
+    expect(desk.data.page.total).toBe(6);
+    // Paging the desk's order repeats and drops nothing.
+    const pages = await Promise.all([0, 2, 4].map((offset) => pipeline(`?order=due&limit=2&offset=${String(offset)}`)));
+    expect(pages.flatMap((page) => page.data.opportunities.map((row) => row.title)))
+      .toEqual(desk.data.opportunities.map((row) => row.title));
+    // The board's own order still has every deal, archived included, newest first.
+    expect((await pipeline()).data.page.total).toBe(7);
+  });
+
+  it("says what the deals at each stage are worth, over the whole pipeline", async () => {
+    const page = await pipeline("?limit=1&order=due");
+    // Opportunities 1–4 are qualified (100k–400k); 5 is won (500k).
+    expect(page.data.stageValues["qualified"]).toBe(1_000_000);
+    expect(page.data.stageValues["won"]).toBe(500_000);
+    expect(page.data.stageValues["lost"]).toBe(0);
+    // Another venue's 9,000,000 is in none of them.
+    expect(Object.values(page.data.stageValues).reduce((sum, value) => sum + value, 0)).toBe(1_500_000);
+  });
+
+  it("shows one stage when asked, and pages it honestly", async () => {
+    const won = await pipeline("?order=due&stage=won");
+    expect(won.data.opportunities.map((row) => row.title)).toEqual(["Opportunity 5"]);
+    expect(won.data.page.total).toBe(1);
+    const qualified = await pipeline("?stage=qualified&limit=3");
+    expect(qualified.data.page.total).toBe(4);
+    expect(qualified.data.opportunities).toHaveLength(3);
+    const refused = await server.inject({ method: "GET", url: "/crm/pipeline?stage=nonsense", headers: headers("staff") });
+    expect(refused.statusCode).toBe(400);
+  });
+
+  it("counts the open deals whose next step is due today or already past, on the venue's calendar", async () => {
+    // Glasgow's today at noon, yesterday, and a week on; the won deal's past
+    // date is history, not a step anyone owes.
+    await pool.query(
+      `UPDATE opportunities SET next_action_due_at = CASE id
+         WHEN $1 THEN ((now() AT TIME ZONE 'Europe/London')::date + time '12:00') AT TIME ZONE 'Europe/London'
+         WHEN $2 THEN ((now() AT TIME ZONE 'Europe/London')::date - 1 + time '12:00') AT TIME ZONE 'Europe/London'
+         WHEN $3 THEN ((now() AT TIME ZONE 'Europe/London')::date + 7 + time '12:00') AT TIME ZONE 'Europe/London'
+         WHEN $4 THEN ((now() AT TIME ZONE 'Europe/London')::date - 3 + time '12:00') AT TIME ZONE 'Europe/London'
+       END WHERE id IN ($1, $2, $3, $4)`,
+      [opportunityId(1), opportunityId(2), opportunityId(3), opportunityId(5)],
+    );
+    const body = await pipeline("?order=due&limit=1");
+    expect(body.data.due).toEqual({ overdue: 1, today: 1 });
+  });
+
+  it("names the deal each open follow-up is for", async () => {
+    await pool.query(
+      "INSERT INTO follow_up_tasks (opportunity_id, title, status, due_at) VALUES ($1, 'Send the menu', 'open', '2026-10-01T12:00:00Z')",
+      [opportunityId(3)],
+    );
+    const tasks = (await pipeline()).data.todayTasks as readonly { title: string; opportunityTitle?: string | null }[];
+    expect(tasks).toEqual([expect.objectContaining({ title: "Send the menu", opportunityTitle: "Opportunity 3" })]);
+  });
+
+  it("names who each deal is with, and never another venue's contact", async () => {
+    const ailsa = randomUUID();
+    const stranger = randomUUID();
+    await pool.query(
+      `INSERT INTO contacts (id, venue_id, name, email) VALUES ($1, $2, 'Ailsa Henderson', 'ailsa@example.test'), ($3, $4, 'Somebody Else', 'else@example.test')`,
+      [ailsa, VENUE, stranger, OTHER_VENUE],
+    );
+    await pool.query("UPDATE opportunities SET primary_contact_id = $2 WHERE id = $1", [opportunityId(1), ailsa]);
+    await pool.query("UPDATE opportunities SET primary_contact_id = $2 WHERE id = $1", [opportunityId(2), stranger]);
+    const rows = (await pipeline("?order=due")).data.opportunities;
+    expect(rows.find((row) => row.id === opportunityId(1))?.contactName).toBe("Ailsa Henderson");
+    expect(rows.find((row) => row.id === opportunityId(2))?.contactName).toBeNull();
   });
 
   it("counts stages over the whole pipeline, not over the page", async () => {

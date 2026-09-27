@@ -59,6 +59,41 @@ describe("pipeline request URL", () => {
   });
 });
 
+describe("the pipeline desk's order and stage", () => {
+  it("asks for the desk's order and one stage only when it says something", async () => {
+    fetchMock.mockResolvedValue(pipelineBody());
+    await getPipeline({ order: "due", limit: 50, stage: "qualified" });
+    expect(requestedUrl()).toContain("/crm/pipeline?limit=50&order=due&stage=qualified");
+
+    fetchMock.mockResolvedValue(pipelineBody());
+    await getPipeline({ order: "recent" });
+    expect(requestedUrl(1).endsWith("/crm/pipeline")).toBe(true);
+  });
+
+  it("reads the stage values, due counts and names, and still loads an API from before them", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: {
+      opportunities: [{
+        id: "o1", venueId: "v1", clientAccountId: null, primaryContactId: null, sourceEnquiryId: null, ownerUserId: null,
+        title: "Henderson wedding", stage: "new", eventType: null, preferredDate: null, guestCount: null, estimatedValueMinor: 0,
+        currency: "GBP", nextAction: "Confirm", nextActionDueAt: null, createdAt: "2026-10-01T09:00:00.000Z",
+        updatedAt: "2026-10-01T09:00:00.000Z", closedAt: null, deletedAt: null,
+      }],
+      todayTasks: [], stageCounts: { new: 1 },
+    } }), { status: 200 }));
+    const older = await getPipeline();
+    expect(older.opportunities[0]?.contactName).toBeNull();
+    expect(older.stageValues).toBeUndefined();
+    expect(older.due).toBeUndefined();
+
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: {
+      opportunities: [], todayTasks: [], stageCounts: { new: 0 }, stageValues: { new: 0 }, due: { overdue: 2, today: 1 },
+    } }), { status: 200 }));
+    const newer = await getPipeline({ order: "due" });
+    expect(newer.due).toEqual({ overdue: 2, today: 1 });
+    expect(newer.stageValues).toEqual({ new: 0 });
+  });
+});
+
 describe("pipeline paging block", () => {
   it("reads the page block through when the server sends one", async () => {
     fetchMock.mockResolvedValue(pipelineBody({

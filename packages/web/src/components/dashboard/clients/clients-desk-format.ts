@@ -5,6 +5,7 @@ import type {
 } from "../../../api/clients.js";
 import { formatMinorAsCurrency } from "../../../lib/money-input.js";
 import { eventDateLong, venueMoment } from "../enquiries/enquiry-desk-format.js";
+import { dealStageWords } from "../pipeline/pipeline-desk-format.js";
 
 // ---------------------------------------------------------------------------
 // Words and shapes for the Clients desk (roadmap X1).
@@ -49,20 +50,8 @@ export function initials(name: string): string {
   return letters.filter((letter): letter is string => letter !== undefined).join("").toUpperCase() || "·";
 }
 
-const DEAL_STAGE_WORDS: Readonly<Record<string, string>> = {
-  new: "New",
-  qualified: "Qualified",
-  proposal_drafting: "Proposal drafting",
-  proposal_sent: "Proposal sent",
-  negotiation: "Negotiation",
-  won: "Won",
-  lost: "Lost",
-  archived: "Archived",
-};
-
-export function dealStageWords(stage: string): string {
-  return DEAL_STAGE_WORDS[stage] ?? "In the pipeline";
-}
+// A deal's stage in the pipeline desk's words, kept in one place.
+export { dealStageWords };
 
 const PROPOSAL_STATUS_WORDS: Readonly<Record<string, string>> = {
   draft: "Draft",
