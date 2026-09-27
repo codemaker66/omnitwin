@@ -57,6 +57,7 @@
 .mission-phase-rail button,
 .mission-task-actions button,
 .mission-incidents button,
+.mission-waiting button,
 .mission-timeline button {
   /* Forest, not sage: sage carries ~3.0 against 12.5px/900 button text. */
   background: var(--hk-forest);
@@ -72,22 +73,27 @@
   transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.mission-state button:active:not(:disabled),
-.mission-launch button:active:not(:disabled),
-.mission-phase-rail button:active:not(:disabled),
-.mission-task-actions button:active:not(:disabled),
-.mission-incidents button:active:not(:disabled),
-.mission-timeline button:active:not(:disabled) {
+.mission-state button:active:not(:disabled, [aria-disabled="true"]),
+.mission-launch button:active:not(:disabled, [aria-disabled="true"]),
+.mission-phase-rail button:active:not(:disabled, [aria-disabled="true"]),
+.mission-task-actions button:active:not(:disabled, [aria-disabled="true"]),
+.mission-incidents button:active:not(:disabled, [aria-disabled="true"]),
+.mission-waiting button:active:not(:disabled, [aria-disabled="true"]),
+.mission-timeline button:active:not(:disabled, [aria-disabled="true"]) {
   transform: scale(0.97);
 }
 
-.mission-state button:disabled,
-.mission-launch button:disabled,
-.mission-phase-rail button:disabled,
-.mission-task-actions button:disabled,
-.mission-incidents button:disabled {
-  cursor: wait;
+/* While one write is out the others wait. The pressed control keeps its
+   focus (aria-disabled, not disabled) and its words at full strength. */
+.mission-shell button:disabled,
+.mission-shell button[aria-disabled="true"] {
+  cursor: not-allowed;
   opacity: 0.48;
+}
+
+.mission-shell button[aria-busy="true"] {
+  cursor: progress;
+  opacity: 1;
 }
 
 .mission-launch {
@@ -139,7 +145,7 @@
   align-items: center;
   color: var(--hk-forest);
   display: flex;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 700;
   gap: 7px;
   letter-spacing: 0.12em;
@@ -166,7 +172,7 @@
 .mission-command-header > div > p:last-child {
   color: var(--hk-ink-dim);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   margin: 7px 0 0;
 }
 
@@ -184,7 +190,7 @@
   color: var(--mission-gold);
   cursor: pointer;
   font: inherit;
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 700;
   min-height: 34px;
   padding: 0 10px;
@@ -198,7 +204,7 @@
   color: var(--mission-gold);
   display: flex;
   flex: 0 0 auto;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 700;
   gap: 7px;
   padding: 8px 11px;
@@ -218,18 +224,89 @@
 }
 
 .mission-live-state[data-live="true"] span {
-  animation: mission-pulse 1.8s ease-in-out infinite;
   box-shadow: 0 0 0 5px rgba(107, 137, 99, 0.12);
 }
 
-.mission-notice {
-  background: rgba(107, 137, 99, 0.08);
-  border-left: 3px solid var(--mission-cyan);
-  color: #39443b;
-  font-size: 0.84rem;
-  font-weight: 700;
-  margin: -4px 0 0;
-  padding: 10px 12px;
+/* A failed write, beside the card it belongs to. */
+.mission-card-error {
+  background: var(--house-brick-wash);
+  border-radius: 8px;
+  color: var(--house-brick-strong);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+}
+
+.mission-launch > .mission-card-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* What waits for someone to acknowledge it: all of it, above the record. */
+.mission-waiting {
+  background: var(--house-amber-wash);
+  border: 1px solid var(--house-amber-dot);
+  border-radius: 14px;
+  padding: 15px;
+}
+
+.mission-waiting > h3 {
+  color: var(--house-amber-text);
+  font-size: 0.96rem;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.mission-waiting > p {
+  color: var(--house-amber-text);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  margin: 3px 0 0;
+}
+
+.mission-waiting ul {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.mission-waiting li {
+  align-items: center;
+  background: var(--hk-ivory-raised);
+  border: 1px solid var(--hk-line);
+  border-radius: 11px;
+  display: grid;
+  gap: 8px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 11px 12px;
+}
+
+.mission-waiting li strong {
+  display: block;
+  font-size: 0.875rem;
+}
+
+.mission-waiting li p {
+  color: var(--hk-ink-dim);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  margin: 3px 0 0;
+}
+
+.mission-waiting li small {
+  color: var(--hk-ink-dim);
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 4px;
+}
+
+.mission-waiting li > .mission-card-error {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .mission-complete-confirm {
@@ -251,8 +328,13 @@
 
 .mission-complete-confirm p {
   color: #5e695b;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   margin-top: 3px;
+}
+
+.mission-complete-confirm > .mission-card-error {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .mission-complete-confirm button {
@@ -262,7 +344,7 @@
   color: #323b33;
   cursor: pointer;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 700;
   min-height: 38px;
   padding: 0 10px;
@@ -304,7 +386,7 @@
 
 .mission-stat-strip span {
   color: var(--hk-ink-dim);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
@@ -350,11 +432,11 @@
 
 .mission-phase-rail ol {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   list-style: none;
   margin: 0;
-  overflow-x: auto;
-  padding: 0 0 4px;
+  padding: 0;
 }
 
 .mission-phase-rail li {
@@ -376,16 +458,17 @@
   box-shadow: inset 3px 0 var(--mission-cyan);
 }
 
-.mission-phase-rail li[data-status="completed"] {
-  opacity: 0.62;
+.mission-phase-rail li[data-status="completed"],
+.mission-phase-rail li[data-status="skipped"] {
+  background: transparent;
 }
 
 .mission-phase-rail li span,
 .mission-task-card header span,
-.mission-incident-list > li > span {
+.mission-incident-list li > div > span {
   color: var(--hk-forest);
   display: block;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -403,13 +486,52 @@
 
 .mission-phase-rail li small {
   color: var(--hk-ink-dim);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   margin-top: 4px;
 }
 
 .mission-phase-rail button {
   min-height: 34px;
   padding: 0 9px;
+  white-space: nowrap;
+}
+
+.mission-phase-actions {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+}
+
+.mission-phase-rail .mission-phase-skip {
+  background: transparent;
+  color: var(--hk-forest);
+  min-height: 28px;
+  padding: 0 4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mission-phase-confirm {
+  align-items: center;
+  background: rgba(152, 98, 70, 0.08);
+  border: 1px solid rgba(152, 98, 70, 0.28);
+  border-radius: 11px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  margin-top: 10px;
+  padding: 10px 12px;
+}
+
+.mission-phase-confirm p {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.mission-phase-rail .mission-phase-confirm > button:first-of-type {
+  background: #d0cdc6;
+  color: #323b33;
 }
 
 .mission-grid {
@@ -487,13 +609,13 @@
 .mission-map-legend small,
 .mission-presence small {
   color: var(--hk-ink-dim);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   margin-top: 2px;
 }
 
 .mission-map-legend code {
   color: var(--mission-gold);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
 }
 
 .mission-presence li > span {
@@ -503,7 +625,7 @@
   border-radius: 50%;
   color: var(--hk-forest);
   display: flex;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 700;
   height: 30px;
   justify-content: center;
@@ -512,7 +634,7 @@
 
 .mission-presence time {
   color: var(--hk-ink-dim);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
 }
 
 .mission-task-grid {
@@ -532,7 +654,7 @@
 }
 
 .mission-task-card[data-status="done"] {
-  opacity: 0.6;
+  background: transparent;
 }
 
 .mission-task-card header {
@@ -543,7 +665,7 @@
 
 .mission-task-card header strong {
   color: var(--mission-gold);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
 }
 
@@ -553,8 +675,8 @@
 }
 
 .mission-task-card p {
-  color: #697465;
-  font-size: 0.73rem;
+  color: var(--hk-ink-dim);
+  font-size: 0.8125rem;
   line-height: 1.45;
   margin: 0;
 }
@@ -562,7 +684,7 @@
 .mission-task-card > small {
   color: var(--hk-ink-dim);
   display: block;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   margin-top: 8px;
 }
 
@@ -594,7 +716,7 @@
   border-radius: 8px;
   color: #e4e1d9;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 1rem;
   min-height: 40px;
   padding: 9px 10px;
 }
@@ -612,35 +734,77 @@
   align-items: flex-start;
   border-top: 1px solid rgba(46, 56, 46, 0.07);
   display: grid;
-  gap: 8px;
-  grid-template-columns: 66px minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
   padding: 10px 0;
 }
 
-.mission-incident-list li[data-severity="urgent"] > span {
-  color: var(--mission-red);
+.mission-incident-list li[data-severity="urgent"] > div > span {
+  color: var(--house-brick-text);
 }
 
 .mission-incident-list strong {
-  font-size: 0.78rem;
+  display: block;
+  font-size: 0.875rem;
+  margin-top: 2px;
 }
 
-.mission-incident-list p {
+.mission-incident-list p:not(.mission-card-error) {
   color: var(--hk-ink-dim);
-  font-size: 0.7rem;
+  font-size: 0.8125rem;
   line-height: 1.4;
   margin: 3px 0 0;
 }
 
-.mission-incident-list li > small {
+.mission-incident-side {
+  align-items: flex-end;
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.mission-incident-side small {
   color: var(--mission-gold);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.mission-incident-list.is-settled {
+  margin-top: 4px;
+}
+
+.mission-incident-list.is-settled strong {
+  color: var(--hk-ink-dim);
+}
+
+.mission-incident-list.is-settled .mission-incident-side small {
+  color: var(--hk-ink-dim);
+}
+
+/* Nothing open: said once, quietly, in the colour of a thing done. */
+.mission-sealed {
+  align-items: center;
+  background: var(--house-sage-wash);
+  border-radius: 10px;
+  color: var(--house-sage-text);
+  display: flex;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+}
+
+.mission-sealed svg {
+  flex: 0 0 auto;
+  height: 16px;
+  width: 16px;
 }
 
 .mission-timeline > label {
-  color: #626d5f;
+  color: var(--hk-ink-dim);
   display: grid;
-  font-size: 0.71rem;
+  font-size: 0.75rem;
   font-weight: 700;
   gap: 6px;
 }
@@ -660,7 +824,7 @@
   border-left: 1px solid rgba(107, 137, 99, 0.22);
   display: grid;
   gap: 8px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   margin-left: 10px;
   padding: 7px 0 7px 13px;
   position: relative;
@@ -680,7 +844,7 @@
 .mission-timeline li > span {
   color: var(--mission-gold);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
 }
 
 .mission-timeline li strong,
@@ -694,31 +858,18 @@
 
 .mission-timeline li small {
   color: var(--hk-ink-dim);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   margin-top: 2px;
-}
-
-.mission-timeline li button {
-  min-height: 32px;
-  padding: 0 8px;
-}
-
-.mission-ack-warning {
-  color: var(--mission-gold);
-  font-size: 0.72rem;
-  font-weight: 700;
-  margin: 10px 0 0;
 }
 
 .mission-shell button:focus-visible,
 .mission-shell input:focus-visible,
 .mission-shell textarea:focus-visible,
-.mission-shell select:focus-visible {
+.mission-shell select:focus-visible,
+.mission-shell [tabindex="-1"]:focus-visible {
   outline: var(--vv-focus-ring);
   outline-offset: var(--vv-focus-ring-offset);
 }
-
-@keyframes mission-pulse { 50% { opacity: 0.48; transform: scale(0.78); } }
 
 @media (max-width: 719px) {
   .mission-command-header {
@@ -735,6 +886,28 @@
   }
 
   .mission-complete-confirm > div {
+    grid-column: 1 / -1;
+  }
+
+  .mission-phase-rail ol {
+    flex-direction: column;
+  }
+
+  .mission-phase-rail li {
+    flex: none;
+    min-height: 56px;
+  }
+
+  .mission-phase-actions {
+    align-items: center;
+    grid-auto-flow: column;
+  }
+
+  .mission-phase-confirm {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mission-phase-confirm p {
     grid-column: 1 / -1;
   }
 }
@@ -765,11 +938,5 @@
 @media (min-width: 1100px) {
   .mission-task-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mission-live-state[data-live="true"] span {
-    animation: none;
   }
 }

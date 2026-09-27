@@ -24,7 +24,9 @@ import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import type {
   EventMissionBoard,
   EventMissionEvent,
+  EventMissionIncident,
   EventMissionIncidentSeverity,
+  EventMissionIncidentStatus,
   EventMissionPhase,
   EventMissionReplay,
   EventMissionTask,
@@ -43,6 +45,7 @@ import {
   transitionEventMissionPhase,
   transitionEventMissionStatus,
   transitionEventMissionTask,
+  updateEventMissionIncident,
 } from "../../api/event-mission-control.js";
 import "../../styles/hallkeeper-register.css";
 import "./EventMissionControl.css";
@@ -100,6 +103,57 @@ function eventLabel(event: EventMissionEvent): string {
     case "incident_updated": return "Incident updated";
     case "event_acknowledged": return "Event acknowledged";
   }
+}
+
+const RETRY = "Check the connection and try again.";
+
+const SEVERITY_WORD: Readonly<Record<EventMissionIncidentSeverity, string>> = {
+  info: "Information", attention: "Attention", urgent: "Urgent",
+};
+
+const INCIDENT_STATUS_WORD: Readonly<Record<EventMissionIncidentStatus, string>> = {
+  open: "Open", in_progress: "In hand", resolved: "Resolved", closed: "Closed",
+};
+
+const INCIDENT_CHANGE_WORD: Readonly<Record<EventMissionIncidentStatus, string>> = {
+  open: "reopened", in_progress: "in hand", resolved: "resolved", closed: "closed",
+};
+
+/** What an event that waits for acknowledgement says happened, in the
+ *  venue's words and from its own record rather than a generic kind. */
+export function acknowledgementSummary(event: EventMissionEvent): { readonly title: string; readonly detail: string | null } {
+  const { payload } = event;
+  switch (payload.kind) {
+    case "mission_status_changed":
+      return { title: payload.mission.status === "cancelled" ? "Mission cancelled" : "Mission closed", detail: payload.reason };
+    case "task_status_changed":
+      return { title: `${payload.task.status === "blocked" ? "Task blocked" : "Task changed"}: ${payload.task.title}`, detail: payload.note };
+    case "incident_created":
+      return { title: `${SEVERITY_WORD[payload.incident.severity]} incident: ${payload.incident.title}`, detail: payload.incident.detail };
+    case "incident_updated": {
+      const change = payload.fromStatus === payload.incident.status ? "updated" : INCIDENT_CHANGE_WORD[payload.incident.status];
+      return { title: `${SEVERITY_WORD[payload.incident.severity]} incident ${change}: ${payload.incident.title}`, detail: payload.incident.detail };
+    }
+    case "mission_started":
+    case "phase_status_changed":
+    case "event_acknowledged":
+      return { title: eventLabel(event), detail: null };
+  }
+}
+
+/** A phase's place in the evening, in words: the one now, the one next. */
+function phaseWord(phase: EventMissionPhase, nextId: string | null): string {
+  switch (phase.status) {
+    case "active": return "Now";
+    case "completed": return "Done";
+    case "skipped": return "Skipped";
+    case "pending": return phase.id === nextId ? "Next" : "Later";
+  }
+}
+
+/** The record moved on another device before this write reached it. */
+function isStale(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 409 || error.status === 422);
 }
 
 function formatMissionTime(iso: string): string {
@@ -220,43 +274,45 @@ const MissionSpatialMap = memo(function MissionSpatialMap(props: {
   );
 });
 
+const TASK_STATUS_WORD: Readonly<Record<OpsTaskStatus, string>> = {
+  todo: "To do", in_progress: "In progress", done: "Done", blocked: "Blocked", waived: "Waived",
+};
+
 const MissionTaskGrid = memo(function MissionTaskGrid(props: {
   readonly tasks: readonly EventMissionTask[];
-  readonly busyId: string | null;
+  readonly busy: string | null;
+  readonly errors: ReadonlyMap<string, string>;
   readonly onTransition: (task: EventMissionTask, status: OpsTaskStatus) => void;
 }): ReactElement {
+  const action = (task: EventMissionTask, status: OpsTaskStatus, label: string): ReactElement => {
+    const key = `task:${task.id}:${status}`;
+    return (
+      <button type="button" aria-disabled={props.busy !== null} aria-busy={props.busy === key} onClick={() => { props.onTransition(task, status); }}>
+        {props.busy === key && <ActivityIndicator size={18} />} {props.busy === key ? "Saving…" : label}
+      </button>
+    );
+  };
   return (
     <section className="mission-tasks" aria-labelledby="mission-tasks-title">
       <div className="mission-panel-heading">
         <Check aria-hidden="true" />
         <div>
-          <h3 id="mission-tasks-title">Live execution</h3>
+          <h3 id="mission-tasks-title" tabIndex={-1}>Live execution</h3>
         </div>
       </div>
       <div className="mission-task-grid">
         {props.tasks.map((task) => (
           <article key={task.id} className="mission-task-card" data-status={task.status}>
-            <header><span>{task.kind.replace(/_/gu, " ")}</span><strong>{task.status.replace(/_/gu, " ")}</strong></header>
+            <header><span>{task.kind.replace(/_/gu, " ")}</span><strong>{TASK_STATUS_WORD[task.status]}</strong></header>
             <h4>{task.title}</h4>
             <p>{task.detail}</p>
-            <small>{task.spatialAnchors.length} spatial ref(s)</small>
+            <small>{task.spatialAnchors.length === 1 ? "1 place on the plan" : `${String(task.spatialAnchors.length)} places on the plan`}</small>
             <div className="mission-task-actions">
-              {task.status !== "in_progress" && task.status !== "done" && task.status !== "waived" && (
-                <button type="button" disabled={props.busyId === task.id} onClick={() => { props.onTransition(task, "in_progress"); }}>
-                  {props.busyId === task.id && <ActivityIndicator size={18} />} Start
-                </button>
-              )}
-              {task.status !== "done" && task.status !== "waived" && (
-                <button type="button" disabled={props.busyId === task.id} onClick={() => { props.onTransition(task, "done"); }}>
-                  {props.busyId === task.id && <ActivityIndicator size={18} />} Done
-                </button>
-              )}
-              {task.status !== "blocked" && task.status !== "done" && task.status !== "waived" && (
-                <button type="button" disabled={props.busyId === task.id} onClick={() => { props.onTransition(task, "blocked"); }}>
-                  {props.busyId === task.id && <ActivityIndicator size={18} />} Block
-                </button>
-              )}
+              {task.status !== "in_progress" && task.status !== "done" && task.status !== "waived" && action(task, "in_progress", "Start")}
+              {task.status !== "done" && task.status !== "waived" && action(task, "done", "Done")}
+              {task.status !== "blocked" && task.status !== "done" && task.status !== "waived" && action(task, "blocked", "Block")}
             </div>
+            {props.errors.has(`task:${task.id}`) && <p className="mission-card-error" role="alert">{props.errors.get(`task:${task.id}`)}</p>}
           </article>
         ))}
       </div>
@@ -270,13 +326,43 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
   const [timeline, setTimeline] = useState<EventMissionTimeline | null>(null);
   const [replay, setReplay] = useState<EventMissionReplay | null>(null);
   const [viewingSequence, setViewingSequence] = useState(0);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // One write at a time, named by its exact action ("phase:<id>:active"), so
+  // only the pressed control says it is working.
+  const [busy, setBusy] = useState<string | null>(null);
+  // A failed write's words, keyed by the card they sit beside. Nothing
+  // announces success: the changed card is the confirmation.
+  const [errors, setErrors] = useState<ReadonlyMap<string, string>>(() => new Map());
+  // Acknowledgements this screen has seen land. They are never withdrawn, so
+  // a poll that left before one landed cannot bring its event back.
+  const [acknowledgedHere, setAcknowledgedHere] = useState<ReadonlySet<string>>(() => new Set());
   const [endConfirm, setEndConfirm] = useState(false);
+  const [skipConfirm, setSkipConfirm] = useState<string | null>(null);
   const [incidentDraft, setIncidentDraft] = useState<IncidentDraft>(EMPTY_INCIDENT);
+  // Where focus goes when a write removes the control that was pressed: its
+  // section's heading, never another action, so a second key press cannot
+  // act on something not yet read.
+  const [focusTarget, setFocusTarget] = useState<string | null>(null);
   const [sessionId] = useState(createUuid);
   const latestSequenceRef = useRef(0);
   const timelineRef = useRef<EventMissionTimeline | null>(null);
+
+  useEffect(() => {
+    if (focusTarget === null) return;
+    setFocusTarget(null);
+    // Only when focus has fallen to the page; never take it from elsewhere.
+    if (document.activeElement !== null && document.activeElement !== document.body) return;
+    (document.getElementById(focusTarget) ?? document.getElementById("mission-heading"))?.focus();
+  }, [focusTarget]);
+
+  const showError = useCallback((key: string, message: string | null) => {
+    setErrors((current) => {
+      if (message === null ? !current.has(key) : current.get(key) === message) return current;
+      const next = new Map(current);
+      if (message === null) next.delete(key);
+      else next.set(key, message);
+      return next;
+    });
+  }, []);
 
   const applyBoard = useCallback((next: EventMissionBoard) => {
     const previousLatestSequence = latestSequenceRef.current;
@@ -365,56 +451,75 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
   useEffect(() => {
     if (board === null || viewingSequence >= board.latestSequence) {
       setReplay(null);
+      showError("replay", null);
       return;
     }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       void getEventMissionReplay(board.mission.id, viewingSequence, controller.signal)
-        .then(setReplay)
-        .catch(() => { if (!controller.signal.aborted) setNotice("Historical replay could not be loaded."); });
+        .then((next) => {
+          setReplay(next);
+          showError("replay", null);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) showError("replay", "That point in the history did not load. Move the slider to try again.");
+        });
     }, 180);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [board, viewingSequence]);
+  }, [board, showError, viewingSequence]);
 
   const startMission = useCallback(() => {
-    if (props.handoffPackId === null || busyId !== null) return;
-    setBusyId("start");
+    if (props.handoffPackId === null || busy !== null) return;
+    setBusy("start");
+    showError("start", null);
     void startEventMission(props.eventId, {
       handoffPackId: props.handoffPackId,
       idempotencyKey: `start:${props.eventId}:${props.handoffPackId}`.slice(0, 160),
     }).then((next) => {
       applyBoard(next);
-      setNotice("Live mission started from the frozen handoff baseline.");
+      setFocusTarget("mission-heading");
     }).catch((error: unknown) => {
-      setNotice(error instanceof ApiError ? error.message : "Mission could not be started.");
-    }).finally(() => { setBusyId(null); });
-  }, [applyBoard, busyId, props.eventId, props.handoffPackId]);
+      // Another device started it first: show that mission.
+      if (error instanceof ApiError && error.status === 409) {
+        void loadMission();
+        return;
+      }
+      showError("start", error instanceof ApiError && error.status === 404
+        ? "The handoff pack for this event could not be found."
+        : `The mission did not start. ${RETRY}`);
+    }).finally(() => { setBusy(null); });
+  }, [applyBoard, busy, loadMission, props.eventId, props.handoffPackId, showError]);
 
   const transitionPhase = useCallback((phase: EventMissionPhase, status: EventMissionPhase["status"]) => {
-    if (board === null || busyId !== null) return;
-    setBusyId(phase.id);
+    if (board === null || busy !== null) return;
+    setBusy(`phase:${phase.id}:${status}`);
+    showError("phases", null);
     void transitionEventMissionPhase(board.mission.id, phase.id, {
       status,
       expectedRevision: phase.revision,
       idempotencyKey: operationKey(`phase:${phase.id}:${status}`),
     }).then((updated) => {
       setBoard((current) => current === null ? current : replacePhase(current, updated));
-      setNotice(`${updated.name} is now ${updated.status.replace(/_/gu, " ")}.`);
-      void loadMission(undefined, true);
+      setSkipConfirm(null);
+      setFocusTarget("mission-phase-title");
     }).catch((error: unknown) => {
-      setNotice(error instanceof ApiError && error.status === 409
-        ? "That phase changed on another device. The live state has been refreshed."
-        : "The phase transition was not accepted.");
+      if (isStale(error)) setSkipConfirm(null);
+      showError("phases", isStale(error)
+        ? `${phase.name} was not changed: another device changed the mission first. The phases now show the latest.`
+        : `${phase.name} was not changed. ${RETRY}`);
+    }).finally(() => {
+      setBusy(null);
       void loadMission(undefined, true);
-    }).finally(() => { setBusyId(null); });
-  }, [board, busyId, loadMission]);
+    });
+  }, [board, busy, loadMission, showError]);
 
   const completeMission = useCallback(() => {
-    if (board === null || board.mission.status !== "live" || busyId !== null) return;
-    setBusyId("mission-complete");
+    if (board === null || board.mission.status !== "live" || busy !== null) return;
+    setBusy("mission-complete");
+    showError("mission-complete", null);
     void transitionEventMissionStatus(board.mission.id, {
       status: "completed",
       idempotencyKey: operationKey(`mission:${board.mission.id}:completed`),
@@ -422,36 +527,102 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
     }).then((mission) => {
       setBoard((current) => current === null ? current : { ...current, mission });
       setEndConfirm(false);
-      setNotice("Mission completed. The timeline remains available for replay.");
+      setFocusTarget("mission-heading");
+    }).catch((error: unknown) => {
+      // Closed on another device: the refresh below shows how it ended.
+      if (isStale(error)) {
+        setEndConfirm(false);
+        setFocusTarget("mission-heading");
+        return;
+      }
+      showError("mission-complete", `The mission is still live. ${RETRY}`);
+    }).finally(() => {
+      setBusy(null);
       void loadMission(undefined, true);
-    }).catch(() => { setNotice("The mission could not be completed from the current state."); })
-      .finally(() => { setBusyId(null); });
-  }, [board, busyId, loadMission]);
+    });
+  }, [board, busy, loadMission, showError]);
 
   const transitionTask = useCallback((task: EventMissionTask, status: OpsTaskStatus) => {
-    if (board === null || busyId !== null) return;
-    setBusyId(task.id);
+    if (board === null || busy !== null) return;
+    const card = `task:${task.id}`;
+    setBusy(`${card}:${status}`);
+    showError(card, null);
     void transitionEventMissionTask(board.mission.id, task.id, {
       status,
       expectedRevision: task.revision,
       idempotencyKey: operationKey(`task:${task.id}:${status}`),
     }).then((updated) => {
       setBoard((current) => current === null ? current : replaceTask(current, updated));
-      setNotice(`${updated.title} is now ${updated.status.replace(/_/gu, " ")}.`);
-      void loadMission(undefined, true);
+      setFocusTarget("mission-tasks-title");
     }).catch((error: unknown) => {
-      setNotice(error instanceof ApiError && error.status === 409
-        ? "That task changed on another device. The live state has been refreshed."
-        : "The task transition was not accepted.");
+      showError(card, isStale(error)
+        ? "Not changed: another device changed this task first. It now shows the latest."
+        : `Not saved. ${RETRY}`);
+    }).finally(() => {
+      setBusy(null);
       void loadMission(undefined, true);
-    }).finally(() => { setBusyId(null); });
-  }, [board, busyId, loadMission]);
+    });
+  }, [board, busy, loadMission, showError]);
+
+  const moveIncident = useCallback((incident: EventMissionIncident, status: EventMissionIncidentStatus) => {
+    if (board === null || busy !== null) return;
+    const card = `incident:${incident.id}`;
+    setBusy(`${card}:${status}`);
+    showError(card, null);
+    void updateEventMissionIncident(board.mission.id, incident.id, {
+      status,
+      expectedRevision: incident.revision,
+      idempotencyKey: operationKey(`${card}:${status}`),
+    }).then((updated) => {
+      setBoard((current) => current === null ? current : {
+        ...current,
+        incidents: current.incidents.map((entry) => entry.id === updated.id ? updated : entry),
+      });
+      setFocusTarget("mission-incidents-title");
+    }).catch((error: unknown) => {
+      showError(card, error instanceof ApiError && error.code === "MISSION_CONFLICT"
+        ? "The mission has closed, so this incident can no longer change."
+        : isStale(error)
+          ? "Not changed: another device changed this incident first. It now shows the latest."
+          : `Not saved. ${RETRY}`);
+    }).finally(() => {
+      setBusy(null);
+      void loadMission(undefined, true);
+    });
+  }, [board, busy, loadMission, showError]);
+
+  const acknowledge = useCallback((event: EventMissionEvent) => {
+    if (board === null || busy !== null) return;
+    const key = `ack:${event.id}`;
+    setBusy(key);
+    showError(key, null);
+    const settle = (): void => {
+      setAcknowledgedHere((current) => new Set(current).add(event.id));
+      setFocusTarget("mission-waiting-title");
+    };
+    void acknowledgeEventMissionEvent(board.mission.id, { eventId: event.id, idempotencyKey: operationKey(key) })
+      .then(settle)
+      .catch((error: unknown) => {
+        // A conflict means this person has already acknowledged it, on
+        // another device or in another tab. It is done, so it leaves.
+        if (error instanceof ApiError && error.status === 409) {
+          settle();
+          return;
+        }
+        showError(key, `Not acknowledged. ${RETRY}`);
+      })
+      .finally(() => {
+        setBusy(null);
+        void loadMission(undefined, true);
+      });
+  }, [board, busy, loadMission, showError]);
 
   const submitIncident = useCallback((event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (board === null || busyId !== null) return;
+    if (board === null || busy !== null) return;
     const activePhaseId = board.phases.find((phase) => phase.status === "active")?.phaseId ?? null;
-    setBusyId("incident");
+    setBusy("incident-form");
+    showError("incident-form", null);
     void createEventMissionIncident(board.mission.id, {
       ...incidentDraft,
       phaseId: activePhaseId,
@@ -461,11 +632,12 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
     }).then((incident) => {
       setBoard((current) => current === null ? current : { ...current, incidents: [incident, ...current.incidents] });
       setIncidentDraft(EMPTY_INCIDENT);
-      setNotice("Incident logged.");
-      void loadMission(undefined, true);
-    }).catch(() => { setNotice("Could not log the incident."); })
-      .finally(() => { setBusyId(null); });
-  }, [board, busyId, incidentDraft, loadMission]);
+    }).catch(() => { showError("incident-form", `The incident was not logged. ${RETRY}`); })
+      .finally(() => {
+        setBusy(null);
+        void loadMission(undefined, true);
+      });
+  }, [board, busy, incidentDraft, loadMission, showError]);
 
   const activePhase = board?.phases.find((phase) => phase.status === "active") ?? null;
   const replayEvents = useMemo(() => {
@@ -473,11 +645,13 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
     return timeline.events.filter((event) => event.sequence <= viewingSequence).slice(-10).reverse();
   }, [timeline, viewingSequence]);
   const acknowledgedIds = useMemo(
-    () => new Set(board?.acknowledgements.map((ack) => ack.acknowledgedEventId) ?? []),
-    [board?.acknowledgements],
+    () => new Set([...(board?.acknowledgements.map((ack) => ack.acknowledgedEventId) ?? []), ...acknowledgedHere]),
+    [acknowledgedHere, board?.acknowledgements],
   );
+  // Everything still waiting, newest first and never capped: an event that
+  // has scrolled out of the recent history stays within reach here.
   const pendingAcknowledgements = useMemo(
-    () => (timeline?.events ?? []).filter((event) => event.requiresAcknowledgement && !acknowledgedIds.has(event.id)),
+    () => (timeline?.events ?? []).filter((event) => event.requiresAcknowledgement && !acknowledgedIds.has(event.id)).reverse(),
     [acknowledgedIds, timeline?.events],
   );
 
@@ -501,9 +675,10 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
           <h2 id="mission-launch-title">Start Mission Control</h2>
           <small>Internal execution only. This does not approve the layout or certify operational fitness.</small>
         </div>
-        <button type="button" disabled={props.handoffPackId === null || busyId !== null} onClick={startMission}>
-          {busyId === "start" ? <ActivityIndicator size={20} /> : <Play aria-hidden="true" />} {props.handoffPackId === null ? "Handoff required" : "Start live mission"}
+        <button type="button" disabled={props.handoffPackId === null} aria-disabled={busy !== null} aria-busy={busy === "start"} onClick={startMission}>
+          {busy === "start" ? <ActivityIndicator size={20} /> : <Play aria-hidden="true" />} {props.handoffPackId === null ? "Handoff required" : busy === "start" ? "Starting…" : "Start live mission"}
         </button>
+        {errors.has("start") && <p className="mission-card-error" role="alert">{errors.get("start")}</p>}
       </section>
     );
   }
@@ -519,54 +694,140 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
   // and never progressed, and nothing else in the product transitions a
   // mission phase — `transitionEventMissionPhase` has exactly one caller.
   const canAct = isLiveEdge && ownsControls;
+  // Phases run in order, one live at a time. Only the first still to come
+  // may go live, and only once nothing else is live: anywhere else the
+  // server is bound to refuse. It may also be skipped, so an evening that
+  // drops a phase need not invent one.
+  const orderedPhases = [...displayedPhases].sort((left, right) => left.sortOrder - right.sortOrder);
+  const nextPhase = orderedPhases.find((phase) => phase.status === "pending") ?? null;
+  const phaseLive = orderedPhases.some((phase) => phase.status === "active");
+  const skipping = isLiveEdge && nextPhase !== null && nextPhase.id === skipConfirm ? nextPhase : null;
+  const openIncidents = displayedIncidents.filter((incident) => incident.status === "open" || incident.status === "in_progress");
+  const settledIncidents = displayedIncidents.filter((incident) => incident.status === "resolved" || incident.status === "closed");
   const missionHeading = board.mission.status === "live"
     ? activePhase === null ? "Mission live · phase not started" : `Now · ${activePhase.name}`
     : board.mission.status === "completed" ? "Mission complete · replay retained" : "Mission cancelled · replay retained";
+
+  const phaseButton = (phase: EventMissionPhase, status: EventMissionPhase["status"], label: string, working: string): ReactElement => {
+    const key = `phase:${phase.id}:${status}`;
+    return (
+      <button type="button" aria-disabled={busy !== null} aria-busy={busy === key} onClick={() => { transitionPhase(phase, status); }}>
+        {busy === key && <ActivityIndicator size={18} />} {busy === key ? working : label}
+      </button>
+    );
+  };
+
+  const incidentRow = (incident: EventMissionIncident): ReactElement => {
+    const card = `incident:${incident.id}`;
+    const next: EventMissionIncidentStatus | null = !isLiveEdge ? null
+      : incident.status === "open" || incident.status === "in_progress" ? "resolved"
+        : incident.status === "resolved" ? "open" : null;
+    const key = `${card}:${next ?? "none"}`;
+    return (
+      <li key={incident.id} data-severity={incident.severity} data-status={incident.status}>
+        <div>
+          <span>{SEVERITY_WORD[incident.severity]}</span>
+          <strong id={`mission-incident-${incident.id}`}>{incident.title}</strong>
+          <p>{incident.detail}</p>
+          {errors.has(card) && <p className="mission-card-error" role="alert">{errors.get(card)}</p>}
+        </div>
+        <div className="mission-incident-side">
+          <small>{INCIDENT_STATUS_WORD[incident.status]}</small>
+          {next !== null && (
+            <button type="button" aria-disabled={busy !== null} aria-busy={busy === key} aria-describedby={`mission-incident-${incident.id}`} onClick={() => { moveIncident(incident, next); }}>
+              {busy === key && <ActivityIndicator size={18} />} {next === "resolved"
+                ? busy === key ? "Resolving…" : "Resolve"
+                : busy === key ? "Reopening…" : "Reopen"}
+            </button>
+          )}
+        </div>
+      </li>
+    );
+  };
 
   return (
     <section className="mission-shell" aria-label="Event mission record">
       <header className="mission-command-header">
         <div>
           <p className="mission-eyebrow"><Radio aria-hidden="true" /> Mission record</p>
-          <h2>{missionHeading}</h2>
+          <h2 id="mission-heading" tabIndex={-1}>{missionHeading}</h2>
         </div>
         <div className="mission-command-actions">
           <div className="mission-live-state" data-live={isLiveEdge}>
-            <span /> {isLiveEdge ? "Live now" : replay === null ? board.mission.status : `Replay · #${String(viewingSequence)}`}
+            <span /> {isLiveEdge ? "Live now" : replay !== null ? `Replay · #${String(viewingSequence)}` : board.mission.status === "cancelled" ? "Cancelled" : "Complete"}
           </div>
           {board.mission.status === "live" && replay === null && (
-            <button type="button" className="mission-complete-trigger" onClick={() => { setEndConfirm(true); }}>Finish mission</button>
+            <button type="button" id="mission-finish" className="mission-complete-trigger" onClick={() => { setEndConfirm(true); }}>Finish mission</button>
           )}
         </div>
       </header>
 
-      {notice !== null && <p className="mission-notice" role="status">{notice}</p>}
       {endConfirm && (
         <section className="mission-complete-confirm" role="alert">
           <div><strong>Complete this live mission?</strong><p>Phase, task, incident, and acknowledgement history will become read-only and remain replayable.</p></div>
-          <button type="button" onClick={() => { setEndConfirm(false); }}>Keep live</button>
-          <button type="button" disabled={busyId !== null} onClick={completeMission}>{busyId === "mission-complete" && <ActivityIndicator size={18} />} Complete mission</button>
+          <button type="button" onClick={() => { setEndConfirm(false); showError("mission-complete", null); setFocusTarget("mission-finish"); }}>Keep live</button>
+          <button type="button" aria-disabled={busy !== null} aria-busy={busy === "mission-complete"} onClick={completeMission}>{busy === "mission-complete" && <ActivityIndicator size={18} />} {busy === "mission-complete" ? "Completing…" : "Complete mission"}</button>
+          {errors.has("mission-complete") && <p className="mission-card-error">{errors.get("mission-complete")}</p>}
+        </section>
+      )}
+
+      {pendingAcknowledgements.length > 0 && (
+        <section className="mission-waiting" aria-labelledby="mission-waiting-title">
+          <h3 id="mission-waiting-title" tabIndex={-1}>Waiting for acknowledgement</h3>
+          <p>Each stays here until someone on the team acknowledges it.</p>
+          <ul>
+            {pendingAcknowledgements.map((event) => {
+              const summary = acknowledgementSummary(event);
+              const key = `ack:${event.id}`;
+              return (
+                <li key={event.id}>
+                  <div id={`mission-waiting-${event.id}`}>
+                    <strong>{summary.title}</strong>
+                    {summary.detail !== null && <p>{summary.detail}</p>}
+                    <small>{event.actorLabel} · {formatMissionTime(event.occurredAt)}</small>
+                  </div>
+                  <button type="button" aria-disabled={busy !== null} aria-busy={busy === key} aria-describedby={`mission-waiting-${event.id}`} onClick={() => { acknowledge(event); }}>
+                    {busy === key && <ActivityIndicator size={18} />} {busy === key ? "Acknowledging…" : "Acknowledge"}
+                  </button>
+                  {errors.has(key) && <p className="mission-card-error" role="alert">{errors.get(key)}</p>}
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
 
       <div className="mission-stat-strip">
         {ownsControls && <article><Activity aria-hidden="true" /><strong>{displayedTasks.filter((task) => task.status === "done").length}/{displayedTasks.length}</strong><span>tasks complete</span></article>}
-        <article><AlertTriangle aria-hidden="true" /><strong>{displayedIncidents.filter((incident) => incident.status !== "closed" && incident.status !== "resolved").length}</strong><span>open incidents</span></article>
+        <article><AlertTriangle aria-hidden="true" /><strong>{openIncidents.length}</strong><span>open incidents</span></article>
         <article><Users aria-hidden="true" /><strong>{board.presence.length}</strong><span>active operators</span></article>
         <article><Clock3 aria-hidden="true" /><strong>#{viewingSequence}</strong><span>timeline cursor</span></article>
       </div>
 
       <section className="mission-phase-rail" aria-labelledby="mission-phase-title">
-        <div className="mission-panel-heading"><CircleDot aria-hidden="true" /><div><h3 id="mission-phase-title">Phases</h3></div></div>
+        <div className="mission-panel-heading"><CircleDot aria-hidden="true" /><div><h3 id="mission-phase-title" tabIndex={-1}>Phases</h3></div></div>
         <ol>
-          {displayedPhases.map((phase) => (
+          {orderedPhases.map((phase) => (
             <li key={phase.id} data-status={phase.status}>
-              <div><span>{phase.status}</span><strong>{phase.name}</strong></div>
-              {isLiveEdge && phase.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "active"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Go live</button>}
-              {isLiveEdge && phase.status === "active" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "completed"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Complete</button>}
+              <div><span>{phaseWord(phase, nextPhase?.id ?? null)}</span><strong>{phase.name}</strong></div>
+              {isLiveEdge && phase.status === "active" && phaseButton(phase, "completed", "Complete", "Completing…")}
+              {isLiveEdge && phase.id === nextPhase?.id && (
+                <div className="mission-phase-actions">
+                  {!phaseLive && phaseButton(phase, "active", "Go live", "Going live…")}
+                  <button type="button" id={`mission-skip-${phase.id}`} className="mission-phase-skip" aria-disabled={busy !== null} aria-expanded={skipping?.id === phase.id} onClick={() => { if (busy === null) setSkipConfirm(phase.id); }}>Skip</button>
+                </div>
+              )}
             </li>
           ))}
         </ol>
+        {skipping !== null && (
+          <div className="mission-phase-confirm">
+            <p><strong>Skip {skipping.name}?</strong> A skipped phase cannot be started afterwards.</p>
+            <button type="button" onClick={() => { setSkipConfirm(null); setFocusTarget(`mission-skip-${skipping.id}`); }}>Keep</button>
+            {phaseButton(skipping, "skipped", `Skip ${skipping.name}`, "Skipping…")}
+          </div>
+        )}
+        {errors.has("phases") && <p className="mission-card-error" role="alert">{errors.get("phases")}</p>}
       </section>
 
       <div className="mission-grid">
@@ -579,13 +840,13 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
         </section>
       </div>
 
-      {canAct && <MissionTaskGrid tasks={board.tasks} busyId={busyId} onTransition={transitionTask} />}
+      {canAct && <MissionTaskGrid tasks={board.tasks} busy={busy} errors={errors} onTransition={transitionTask} />}
 
       <div className="mission-grid">
         <section className="mission-incidents" aria-labelledby="mission-incidents-title">
-          <div className="mission-panel-heading"><AlertTriangle aria-hidden="true" /><div><h3 id="mission-incidents-title">Incident channel</h3></div></div>
+          <div className="mission-panel-heading"><AlertTriangle aria-hidden="true" /><div><h3 id="mission-incidents-title" tabIndex={-1}>Incident channel</h3></div></div>
           {!ownsControls && (
-            <p className="mission-empty-copy">Issues are logged and resolved on the event-day board.</p>
+            <p className="mission-empty-copy">New issues are logged on the event-day board.</p>
           )}
           {canAct && (
             <form onSubmit={submitIncident}>
@@ -594,10 +855,16 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
               <select aria-label="Incident severity" value={incidentDraft.severity} onChange={(event) => { setIncidentDraft((current) => ({ ...current, severity: event.target.value as EventMissionIncidentSeverity })); }}>
                 <option value="info">Information</option><option value="attention">Attention</option><option value="urgent">Urgent</option>
               </select>
-              <button type="submit" disabled={busyId !== null}>{busyId === "incident" && <ActivityIndicator size={18} />} Log incident</button>
+              <button type="submit" aria-disabled={busy !== null} aria-busy={busy === "incident-form"}>{busy === "incident-form" && <ActivityIndicator size={18} />} {busy === "incident-form" ? "Logging…" : "Log incident"}</button>
+              {errors.has("incident-form") && <p className="mission-card-error" role="alert">{errors.get("incident-form")}</p>}
             </form>
           )}
-          <ul className="mission-incident-list">{displayedIncidents.slice(0, 6).map((incident) => <li key={incident.id} data-severity={incident.severity}><span>{incident.severity}</span><div><strong>{incident.title}</strong><p>{incident.detail}</p></div><small>{incident.status}</small></li>)}</ul>
+          {openIncidents.length === 0
+            ? <p className="mission-sealed"><Check aria-hidden="true" /> No open incidents.</p>
+            : <ul className="mission-incident-list">{openIncidents.map(incidentRow)}</ul>}
+          {settledIncidents.length > 0 && (
+            <ul className="mission-incident-list is-settled" aria-label="Resolved and closed incidents">{settledIncidents.map(incidentRow)}</ul>
+          )}
         </section>
 
         <section className="mission-timeline" aria-labelledby="mission-timeline-title">
@@ -606,8 +873,8 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
             <input type="range" min="0" max={board.latestSequence} value={viewingSequence} onChange={(event) => { setViewingSequence(Number(event.target.value)); }} />
           </label>
           {!isLiveEdge && <button type="button" className="mission-return-live" onClick={() => { setViewingSequence(board.latestSequence); }}>Return to live</button>}
-          <ol>{replayEvents.map((event) => <li key={event.id} data-kind={event.kind}><span>#{event.sequence}</span><div><strong>{eventLabel(event)}</strong><small>{event.actorLabel} · {formatMissionTime(event.occurredAt)}</small></div>{event.requiresAcknowledgement && !acknowledgedIds.has(event.id) && isLiveEdge ? <button type="button" onClick={() => { void acknowledgeEventMissionEvent(board.mission.id, { eventId: event.id, idempotencyKey: operationKey(`ack:${event.id}`) }).then(() => loadMission(undefined, true)); }}>Acknowledge</button> : null}</li>)}</ol>
-          {pendingAcknowledgements.length > 0 && <p className="mission-ack-warning">{pendingAcknowledgements.length} event(s) require acknowledgement.</p>}
+          {errors.has("replay") && <p className="mission-card-error" role="alert">{errors.get("replay")}</p>}
+          <ol>{replayEvents.map((event) => <li key={event.id} data-kind={event.kind}><span>#{event.sequence}</span><div><strong>{eventLabel(event)}</strong><small>{event.actorLabel} · {formatMissionTime(event.occurredAt)}</small></div></li>)}</ol>
         </section>
       </div>
     </section>
