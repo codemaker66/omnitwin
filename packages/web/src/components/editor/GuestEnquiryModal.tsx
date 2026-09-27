@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useEditorStore } from "../../stores/editor-store.js";
+import { usePlannerVenueIdentity } from "../../hooks/use-planner-venue-identity.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
@@ -107,6 +109,11 @@ interface GuestEnquiryModalProps {
 }
 
 export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps): React.ReactElement {
+  // The venue this layout belongs to, never a hard-coded one: another venue's
+  // guest must not be told that Trades Hall will reply (T-635 N5, item 1).
+  const venueId = useEditorStore((state) => state.venueId);
+  const venue = usePlannerVenueIdentity(venueId);
+  const venueName = venue.known ? venue.name : null;
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
@@ -251,7 +258,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.6,
             marginBottom: 8, maxWidth: 340, marginLeft: "auto", marginRight: "auto",
           }}>
-            Trades Hall will reply to
+            {venueName === null ? "The venue's events team will reply to" : `${venueName} will reply to`}
           </p>
           <p style={{
             fontSize: 15, fontWeight: 600, color: GOLD, marginBottom: 24,
@@ -593,7 +600,9 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             textAlign: "center", fontSize: 12, color: "rgba(255,255,255,0.36)",
             marginTop: 14, lineHeight: 1.4,
           }}>
-            Your details are shared only with the Trades Hall events team.
+            {venueName === null
+              ? "Your details are shared only with this venue's events team."
+              : `Your details are shared only with the ${venueName} events team.`}
           </p>
         </form>
       </div>

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { isCapturedSupplierArrival, resolveTaskStatusTransition } from "../services/event-day-ops.js";
+import { EVENT_DAY_ISSUE_AUDIENCE, isCapturedSupplierArrival, resolveTaskStatusTransition } from "../services/event-day-ops.js";
 
 process.env["DATABASE_URL"] = "postgresql://mock:mock@localhost/mock";
 process.env["JWT_SECRET"] = "test-jwt-secret-that-is-at-least-32-characters-long";
@@ -97,6 +97,14 @@ describe("event-day ops API", () => {
       fromStatus: "todo",
       toStatus: "done",
     });
+  });
+
+  it("addresses a logged issue to exactly the roles the board says are notified", async () => {
+    // EventDayOpsPage tells the person logging it "Staff and hallkeepers are
+    // notified." — true only while the plan change goes to these two roles.
+    expect(EVENT_DAY_ISSUE_AUDIENCE).toEqual(["staff", "hallkeeper"]);
+    const route = await readFile(resolve("src/routes/event-day-ops.ts"), "utf-8");
+    expect(route).toContain("audienceRoles: [...EVENT_DAY_ISSUE_AUDIENCE]");
   });
 
   it("registers the requested event-day routes with safe language", async () => {

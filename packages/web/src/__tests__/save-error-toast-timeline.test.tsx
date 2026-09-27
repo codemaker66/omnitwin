@@ -16,6 +16,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("SaveErrorToast says where unsaved changes are", () => {
+  it("promises no safety it does not have and names the two ways it saves", () => {
+    render(<SaveErrorToast message="offline" isAuthenticated conflict={null} />);
+    const text = screen.getByRole("status").textContent ?? "";
+    expect(text).toContain("Your changes are held in this tab until they save: press Retry, or your next change will try again.");
+    expect(text).not.toMatch(/safe|we'll try again/u);
+  });
+});
+
 describe("SaveErrorToast timeline isolation", () => {
   it("keeps the save warning intact and disables retry during preview", () => {
     const clearSaveError = vi.fn();

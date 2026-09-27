@@ -88,6 +88,11 @@ describe("ShareLensPanel", () => {
     expect(mocks.transitionProposal).toHaveBeenCalledWith("p1", "sent");
     expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1");
     expect(useShareStore.getState().lastShareUrl).toContain("/proposal-share/tok");
+    // Nothing was emailed, so nothing says "sent"; and another link is
+    // another proposal, which the panel says before it is pressed.
+    expect(screen.getByTestId("share-result").textContent).toContain("Link ready. Not emailed; copy it into your message.");
+    expect(screen.getByTestId("share-result").textContent).not.toMatch(/sent/iu);
+    expect(screen.getByTestId("share-another-hint").textContent).toBe("Another link starts a new proposal. This one stays in Proposals.");
   });
 
   it("shows a friendly error and does not break when the API fails", async () => {

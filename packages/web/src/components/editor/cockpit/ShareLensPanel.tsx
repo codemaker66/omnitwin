@@ -199,13 +199,21 @@ export function ShareLensPanel(): ReactElement {
           </div>
         )}
 
+        {canShare && lastShareUrl !== null && (
+          <p className="lens-panel__hint" data-testid="share-another-hint">
+            Another link starts a new proposal. This one stays in Proposals.
+          </p>
+        )}
+
         {error !== null && (
           <p className="lens-panel__error" role="alert" data-testid="share-error">{error}</p>
         )}
 
         {lastShareUrl !== null && (
           <div className="lens-panel__share-result" data-testid="share-result">
-            <span className="lens-panel__share-result-label">Client link — sent</span>
+            {/* Nothing is emailed: the link exists, and staff send it (T-635 N5,
+                item 3; it used to read "Client link — sent"). */}
+            <span className="lens-panel__share-result-label">Link ready. Not emailed; copy it into your message.</span>
             <span className="lens-panel__share-url" data-testid="share-url">{lastShareUrl}</span>
             <div className="lens-panel__share-buttons">
               <button type="button" className="lens-panel__chip-link" onClick={handleCopy} data-testid="share-copy">

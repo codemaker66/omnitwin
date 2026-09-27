@@ -25,6 +25,10 @@ export function usePlannerVenueIdentity(venueId: string | null): {
   readonly name: string;
   readonly logoUrl: string | null;
   readonly loading: boolean;
+  /** True once the venue itself was read, so `name` is its name rather than
+   *  a placeholder ("Venue planner", "Venue unavailable") that must never be
+   *  put in a sentence about who replies. */
+  readonly known: boolean;
 } {
   const [result, setResult] = useState<VenueResult | null>(null);
 
@@ -52,5 +56,6 @@ export function usePlannerVenueIdentity(venueId: string | null): {
     name: tradesHall ? "Trade's Hall of Glasgow" : venue?.name ?? (selected === null ? "Venue planner" : "Venue unavailable"),
     logoUrl: tradesHall ? "/images/venues/trades-hall-glasgow-crest-200.webp" : venue?.logoUrl ?? null,
     loading: venueId !== null && selected === null,
+    known: venue !== null,
   };
 }

@@ -605,6 +605,8 @@ describe("EventDayOpsPage", () => {
         expect.objectContaining({ title: "Supplier late" }),
       );
     });
+    // It says who hears: the API raises notifications for staff and hallkeepers.
+    expect(await screen.findByText("Issue logged. Staff and hallkeepers are notified.")).toBeTruthy();
   });
 
   // --- Ship Friday, gate line 21 and decision 7 ---------------------------

@@ -85,7 +85,9 @@ import "./BlueprintPage.css";
 //   · Live coordinate readout follows the cursor in world metres
 //   · Guest count stepper with + and −
 //   · Event-type pills toggle the scene state
-//   · Dirty / saved indicator + a working "Send for quote" path
+//   · Dirty / saved indicator, and "Ask about a date" to the front door's
+//     enquiry form (the one form that reaches the venue; this sketch stays on
+//     the device and is not sent with it)
 // ---------------------------------------------------------------------------
 
 const INK = "#1a1a1a";
@@ -293,12 +295,6 @@ function BlueprintDemo(): ReactElement {
 
   const clearGuides = useCallback(() => { setGuides([]); }, []);
 
-  const handleSendForQuote = useCallback(() => {
-    dispatch({ type: "mark-saved" });
-    setToast("Plan sent — our events team will respond within 24 hours.");
-    window.setTimeout(() => { setToast(null); }, 3200);
-  }, []);
-
   const handleApplyTemplate = useCallback((id: TemplateId) => {
     const seed = nextIdRef.current;
     nextIdRef.current += 200;
@@ -408,7 +404,7 @@ function BlueprintDemo(): ReactElement {
           onReorderLayers={(ids) => { dispatch({ type: "set-items-order", ids }); }}
         />
       </main>
-      <StatusBar metrics={metrics} onSendForQuote={handleSendForQuote} onExportPng={handleExportPng} />
+      <StatusBar metrics={metrics} enquireHref={ENQUIRE_HREF} onExportPng={handleExportPng} />
       {toast !== null ? <Toast message={toast} /> : null}
       {helpOpen ? <KeyboardHelpOverlay onClose={() => { setHelpOpen(false); }} onDuplicate={handleDuplicate} /> : null}
     </div>
@@ -753,6 +749,9 @@ function BlueprintFromStore(): ReactElement {
   const guestCount = plannedGuestCount ?? 0;
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  // The view's own zoom and pan: they change what is shown, never the layout.
+  const [zoom, setZoom] = useState<number>(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     const t = setInterval(() => { setNowMs(Date.now()); }, 60_000);
@@ -851,16 +850,18 @@ function BlueprintFromStore(): ReactElement {
           onUndo={() => { useEditorStore.getState().undo(); }}
           onRedo={() => { useEditorStore.getState().redo(); }}
           guides={EMPTY_GUIDES}
-          zoom={1}
-          setZoom={noop as Dispatch<SetStateAction<number>>}
-          pan={EMPTY_PAN}
-          setPan={noop as Dispatch<SetStateAction<{ x: number; y: number }>>}
+          zoom={zoom}
+          setZoom={setZoom}
+          pan={pan}
+          setPan={setPan}
         />
+        {/* Rotate and Remove are left to the 3D view, which moves and removes
+            a table with its chairs; offering them here did nothing. */}
         <RightInspector
           scene={scene}
           selected={selectedItem}
-          onRotate={noop}
-          onRemove={noop}
+          onRotate={null}
+          onRemove={null}
           onPatchItem={null}
           onToggleLock={null}
           onRaise={null}
@@ -873,14 +874,14 @@ function BlueprintFromStore(): ReactElement {
           onReorderLayers={null}
         />
       </main>
-      <StatusBar metrics={metrics} onSendForQuote={noop} onExportPng={null} />
+      <StatusBar metrics={metrics} enquireHref={null} onExportPng={null} />
     </div>
   );
 }
 
-const noop = (): void => { /* intentional */ };
+/** The front door's enquiry form: the one form that reaches the venue. */
+const ENQUIRE_HREF = "/#enquire";
 const EMPTY_GUIDES: readonly AlignmentGuide[] = [];
-const EMPTY_PAN = { x: 0, y: 0 };
 const EMPTY_IDS: readonly string[] = [];
 
 // ---------------------------------------------------------------------------
@@ -1936,8 +1937,8 @@ function formatM(n: number): string {
 function RightInspector(props: {
   scene: BlueprintScene;
   selected: BlueprintItem | null;
-  onRotate: () => void;
-  onRemove: () => void;
+  onRotate: (() => void) | null;
+  onRemove: (() => void) | null;
   onPatchItem: ((item: BlueprintItem) => void) | null;
   onToggleLock: (() => void) | null;
   onRaise: (() => void) | null;
@@ -2055,8 +2056,12 @@ function RightInspector(props: {
               : ` / ${String(estimateTargetForKind(scene, selected.kind))}`} placed
           </span>
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            <button type="button" className="bp-inspector-btn" onClick={onRotate} style={inspectorBtn} aria-label="Rotate 90°" disabled={isLocked}>Rotate 90°</button>
-            <button type="button" className="bp-inspector-btn" onClick={onRemove} style={{ ...inspectorBtn, background: ACCENT_RED, color: PAPER, borderColor: ACCENT_RED }} aria-label="Remove selected item" disabled={isLocked}>Remove</button>
+            {onRotate !== null ? (
+              <button type="button" className="bp-inspector-btn" onClick={onRotate} style={inspectorBtn} aria-label="Rotate 90°" disabled={isLocked}>Rotate 90°</button>
+            ) : null}
+            {onRemove !== null ? (
+              <button type="button" className="bp-inspector-btn" onClick={onRemove} style={{ ...inspectorBtn, background: ACCENT_RED, color: PAPER, borderColor: ACCENT_RED }} aria-label="Remove selected item" disabled={isLocked}>Remove</button>
+            ) : null}
             {onToggleLock !== null ? (
               <button type="button" className="bp-inspector-btn" onClick={onToggleLock} style={{ ...inspectorBtn, background: isLocked ? INK : PAPER, color: isLocked ? PAPER : INK }} aria-pressed={isLocked} aria-label={isLocked ? "Unlock item" : "Lock item"}>
                 {isLocked ? "🔒 Locked" : "Lock"}
@@ -2289,7 +2294,7 @@ function estimateTargetForKind(scene: BlueprintScene, kind: BlueprintItem["kind"
 // Status bar + toast
 // ---------------------------------------------------------------------------
 
-function StatusBar({ metrics, onSendForQuote, onExportPng }: { metrics: ReturnType<typeof computeStatusMetrics>; onSendForQuote: () => void; onExportPng: (() => void) | null }): ReactElement {
+function StatusBar({ metrics, enquireHref, onExportPng }: { metrics: ReturnType<typeof computeStatusMetrics>; enquireHref: string | null; onExportPng: (() => void) | null }): ReactElement {
   return (
     <div className="bp-status-bar" style={statusBar}>
       <StatusChip label={metrics.seatsArePlaced ? "Seats placed" : "Seats"} value={String(metrics.totalSeats)} />
@@ -2304,7 +2309,9 @@ function StatusBar({ metrics, onSendForQuote, onExportPng }: { metrics: ReturnTy
       {onExportPng !== null ? (
         <button type="button" style={ghostCtaStyle} onClick={onExportPng}>Export PNG</button>
       ) : null}
-      <button type="button" className="bp-cta" style={cta} onClick={onSendForQuote}>Send for quote →</button>
+      {enquireHref !== null ? (
+        <a className="bp-cta" style={cta} href={enquireHref}>Ask about a date →</a>
+      ) : null}
     </div>
   );
 }
@@ -2591,6 +2598,8 @@ const statusChip: CSSProperties = {
 };
 
 const cta: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
   padding: "10px 18px",
   background: ACCENT_RED,
   color: PAPER,
@@ -2601,6 +2610,7 @@ const cta: CSSProperties = {
   fontWeight: 500,
   cursor: "pointer",
   letterSpacing: 0.3,
+  textDecoration: "none",
 };
 
 const zoomBadge: CSSProperties = {

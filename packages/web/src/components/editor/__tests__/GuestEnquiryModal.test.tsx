@@ -1,7 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
-import { GuestEnquiryModal } from "../GuestEnquiryModal.js";
+import type { VenueDetail } from "../../../api/spaces.js";
+
+const mocks = vi.hoisted(() => ({ getVenue: vi.fn(), submit: vi.fn() }));
+vi.mock("../../../api/spaces.js", () => ({ getVenue: mocks.getVenue }));
+vi.mock("../../../api/configurations.js", () => ({ submitGuestEnquiry: mocks.submit }));
+
+const { GuestEnquiryModal } = await import("../GuestEnquiryModal.js");
+import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../../constants/scale.js";
@@ -59,5 +66,50 @@ describe("GuestEnquiryModal capacity guidance (T-429)", () => {
 
     fireEvent.change(input, { target: { value: "" } });
     expect(screen.queryByTestId("enquiry-capacity-guidance")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The layout's own venue, never a hard-coded one (T-635 N5, item 1). The form
+// told every venue's guests that "Trades Hall will reply" and that their
+// details went to "the Trades Hall events team".
+// ---------------------------------------------------------------------------
+describe("GuestEnquiryModal names the layout's own venue", () => {
+  const cityRooms: VenueDetail = {
+    id: "venue-city", name: "City Rooms", slug: "city-rooms", address: "1 Example Street",
+    logoUrl: null, brandColour: null, spaces: [],
+  };
+
+  beforeEach(() => {
+    resetStores();
+    mocks.getVenue.mockReset();
+    mocks.submit.mockReset();
+  });
+  afterEach(() => {
+    cleanup();
+    resetStores();
+    useEditorStore.getState().reset();
+  });
+
+  it("says whose team gets the details and who replies", async () => {
+    mocks.getVenue.mockResolvedValue(cityRooms);
+    mocks.submit.mockResolvedValue({});
+    useEditorStore.setState({ venueId: cityRooms.id });
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+
+    expect(await screen.findByText("Your details are shared only with the City Rooms events team.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/email/iu), { target: { value: "guest@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    expect(await screen.findByText("City Rooms will reply to")).toBeTruthy();
+    expect(document.body.textContent ?? "").not.toMatch(/Trades Hall/u);
+  });
+
+  it("names no venue until it knows which, and never a placeholder", async () => {
+    mocks.getVenue.mockRejectedValue(new Error("offline"));
+    useEditorStore.setState({ venueId: cityRooms.id });
+    render(<GuestEnquiryModal configId="cfg-1" onClose={() => { /* noop */ }} />);
+
+    expect(await screen.findByText("Your details are shared only with this venue's events team.")).toBeTruthy();
+    expect(document.body.textContent ?? "").not.toMatch(/Venue unavailable|Trades Hall/u);
   });
 });

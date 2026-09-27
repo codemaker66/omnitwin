@@ -16,6 +16,7 @@ import { eventPhases, events, handoffPacks, opsTasks } from "../db/schema.js";
 import { authenticate } from "../middleware/auth.js";
 import { canAccessInternalEvent } from "../utils/query.js";
 import {
+  EVENT_DAY_ISSUE_AUDIENCE,
   EventDayIssueNotFoundError,
   EventDayTaskNotFoundError,
   createEventDayIssue,
@@ -167,7 +168,7 @@ export async function eventDayEventRoutes(server: FastifyInstance, opts: { db: D
       title: "Event-day issue logged",
       summary: boundedLifecycleSummary(`${issue.title}: ${issue.detail}`),
       affectedSurfaces: ["ops_tasks", "service_notes"],
-      audienceRoles: ["staff", "hallkeeper"],
+      audienceRoles: [...EVENT_DAY_ISSUE_AUDIENCE],
       riskLevel: issue.severity === "urgent" ? "blocker" : issue.severity,
       requiresHallkeeperAcknowledgement: false,
       actionPath: `/ops/events/${eventRow.id}`,

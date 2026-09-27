@@ -31,6 +31,7 @@ import {
   type TaskCompletionEvent,
   type UpdateEventDayIssueInput,
   type UpdateOpsTaskStatusInput,
+  type EventPlanAudienceRole,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
@@ -426,6 +427,16 @@ export async function updateOpsTaskStatus(
     };
   });
 }
+
+/**
+ * Who a logged issue reaches: the route records it as a plan change addressed
+ * to these roles, which raises one notification per role. The event-day board
+ * tells the person logging it exactly this ("Staff and hallkeepers are
+ * notified."), so changing the list means changing that sentence too
+ * (web/src/pages/EventDayOpsPage.tsx). Who else should hear about an urgent
+ * problem is Blake's question C4 in the platform roadmap.
+ */
+export const EVENT_DAY_ISSUE_AUDIENCE: readonly EventPlanAudienceRole[] = ["staff", "hallkeeper"];
 
 export async function createEventDayIssue(
   db: Database,

@@ -457,7 +457,10 @@ export function EventDayOpsPage(): ReactElement {
     void createEventDayIssue(eventId, input)
       .then((issue) => {
         setIssueDraft(EMPTY_ISSUE_DRAFT);
-        setNotice("Issue logged.");
+        // The API records the issue as a plan change addressed to staff and
+        // hallkeepers (routes/event-day-ops.ts), which is what raises their
+        // notifications; say who hears, so nobody assumes more or less.
+        setNotice("Issue logged. Staff and hallkeepers are notified.");
         setState((prev) => prev.kind === "ready"
           ? { kind: "ready", board: { ...prev.board, issues: [issue, ...prev.board.issues] } }
           : prev);

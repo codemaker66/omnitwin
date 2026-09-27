@@ -586,7 +586,11 @@ export function SaveErrorToast({
   };
   const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
   const body = conflict === null
-    ? `Couldn't save — ${message}. Your layout is safe; we'll try again.`
+    // Honest about where the changes are (T-635 N5, item 9): nothing keeps
+    // them outside this tab, and the next attempt is Retry or the next change
+    // (EditorBridge's autosave), not a timer. It used to say "Your layout is
+    // safe; we'll try again."
+    ? `Couldn't save — ${message}. Your changes are held in this tab until they save: press Retry, or your next change will try again.`
     : `Couldn't save — ${message} Server revision ${String(conflict.currentRevision)} is newer than this tab's revision ${String(conflict.expectedRevision)}.`;
   return (
     <div

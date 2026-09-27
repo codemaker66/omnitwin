@@ -223,3 +223,49 @@ describe("BlueprintFromStore undo toolbar", () => {
     expect(useEditorStore.getState().objects).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Nothing offered that does nothing (T-635 N5, item 2). The planner's 2D view
+// wired Rotate 90°, Remove, zoom and "Send for quote" to no-ops; the demo at
+// /blueprint answered "Send for quote" with "Plan sent — our events team will
+// respond within 24 hours" while sending nothing at all.
+// ---------------------------------------------------------------------------
+describe("BlueprintPage offers nothing that does nothing", () => {
+  it("in the planner's 2D view, leaves out Rotate, Remove and the send, and zooms for real", () => {
+    const micStand = CANONICAL_ASSETS.find((asset) => asset.slug === "mic-stand");
+    if (micStand === undefined) throw new Error("Missing fixture asset: mic-stand");
+    useEditorStore.getState().addObject(micStand.id, 0, 0, 0);
+    const placed = useEditorStore.getState().objects[0];
+    if (placed === undefined) throw new Error("expected the placed object");
+    useEditorStore.getState().selectObject(placed.id);
+
+    render(<BlueprintPage source="editor-store" />);
+
+    // The inspector shows the selection, but not the two buttons that did nothing.
+    expect(screen.getAllByText("Mic stand").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Rotate 90°" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove selected item" })).toBeNull();
+    expect(screen.queryByText(/Send for quote/u)).toBeNull();
+    expect(screen.queryByRole("link", { name: /Ask about a date/u })).toBeNull();
+
+    // Zoom is the view's own, and it now moves.
+    const reset = screen.getByTitle("Reset zoom");
+    expect(reset.textContent).toBe("100%");
+    fireEvent.click(screen.getByTitle("Zoom in"));
+    expect(reset.textContent).toBe("125%");
+    fireEvent.click(reset);
+    expect(reset.textContent).toBe("100%");
+  });
+
+  it("in the demo, links to the venue's enquiry form and claims nothing was sent", () => {
+    render(<BlueprintPage />);
+
+    const ask = screen.getByRole("link", { name: "Ask about a date →" });
+    expect(ask.getAttribute("href")).toBe("/#enquire");
+    expect(screen.queryByText(/Send for quote/u)).toBeNull();
+    fireEvent.click(ask);
+    expect(screen.queryByText(/Plan sent/u)).toBeNull();
+    // The demo's own editing is untouched: its inspector still rotates and removes.
+    expect(screen.queryAllByRole("button", { name: "Rotate 90°" }).length).toBeGreaterThan(0);
+  });
+});
