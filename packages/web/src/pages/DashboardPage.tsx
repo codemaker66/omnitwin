@@ -170,11 +170,12 @@ export function DashboardPage(): React.ReactElement {
     () => dashboardViewFromSearchValue(searchParams.get("view")),
     [searchParams],
   );
-  // The reviewer email's "Open Review" button deep-links here as
-  // /dashboard?view=reviews&config=:id. Anything that is not a uuid is
-  // ignored rather than handed to the reviews list as a selection.
-  const requestedConfigId = useMemo(
-    () => configIdFromSearchValue(searchParams.get("config")),
+  // The review open on the reviews desk is in the address as ?review=:id, so
+  // a reload or a shared link returns to it. The reviewer email's "Open
+  // Review" button still links here as ?config=:id. Anything that is not a
+  // uuid is ignored rather than handed to the desk as a selection.
+  const requestedReviewId = useMemo(
+    () => configIdFromSearchValue(searchParams.get("review")) ?? configIdFromSearchValue(searchParams.get("config")),
     [searchParams],
   );
   // Create opportunity on the Enquiries desk lands on its deal as
@@ -224,6 +225,7 @@ export function DashboardPage(): React.ReactElement {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("view", newView);
     if (newView !== "pipeline") nextParams.delete("opportunity");
+    if (newView !== "reviews") { nextParams.delete("review"); nextParams.delete("config"); }
     setSearchParams(nextParams);
   };
 
@@ -244,6 +246,17 @@ export function DashboardPage(): React.ReactElement {
       const nextParams = new URLSearchParams(previous);
       if (opportunityId === null) nextParams.delete("opportunity");
       else nextParams.set("opportunity", opportunityId);
+      return nextParams;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const handleReviewShown = useCallback((reviewId: string | null): void => {
+    setSearchParams((previous) => {
+      if ((previous.get("review") ?? null) === reviewId && !previous.has("config")) return previous;
+      const nextParams = new URLSearchParams(previous);
+      nextParams.delete("config");
+      if (reviewId === null) nextParams.delete("review");
+      else nextParams.set("review", reviewId);
       return nextParams;
     }, { replace: true });
   }, [setSearchParams]);
@@ -315,7 +328,7 @@ export function DashboardPage(): React.ReactElement {
       case "pipeline":
         return <CommercialPipelineView opportunityId={requestedOpportunityId} onOpportunityShown={handleOpportunityShown} />;
       case "reviews":
-        return <ReviewsView initialSelectedId={requestedConfigId} />;
+        return <ReviewsView reviewId={requestedReviewId} onReviewShown={handleReviewShown} />;
       case "analytics":
         return <ExecutiveAnalyticsView />;
       case "proposals":

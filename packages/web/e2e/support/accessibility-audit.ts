@@ -607,10 +607,29 @@ async function collectContrastOffenders(page: Page): Promise<ContrastOffender[]>
       };
     }
 
+    /** A ground painted by a pseudo-element that covers its whole element
+     *  (`position: absolute; inset: 0`), as the desks paint their ivory sheet
+     *  and copper stage plane, so a shaped edge can be clipped. */
+    function coveringPseudoGround(element: Element): Rgba[] {
+      const grounds: Rgba[] = [];
+      for (const pseudo of ["::after", "::before"] as const) {
+        const style = window.getComputedStyle(element, pseudo);
+        if (style.content === "none" || style.content === "normal") continue;
+        if (style.position !== "absolute" && style.position !== "fixed") continue;
+        if ([style.top, style.right, style.bottom, style.left].some((edge) => edge !== "0px")) continue;
+        const color = parseCssColor(style.backgroundColor);
+        if (color !== null && color.a > 0) grounds.push(color);
+      }
+      return grounds;
+    }
+
     function effectiveBackground(element: Element): Rgba {
       const layers: Rgba[] = [];
       let current: Element | null = element;
       while (current !== null) {
+        // Innermost first: a covering pseudo-element paints above its own
+        // element's background, so it is pushed before it.
+        layers.push(...coveringPseudoGround(current));
         const style = window.getComputedStyle(current);
         const color = parseCssColor(style.backgroundColor);
         if (color !== null && color.a > 0) {

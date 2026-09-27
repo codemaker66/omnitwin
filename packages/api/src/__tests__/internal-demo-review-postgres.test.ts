@@ -301,6 +301,53 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(email).not.toHaveBeenCalled();
   });
 
+  it("lists each pending review with its room, planner, event date and the move that put it in its stage (roadmap X2)", async () => {
+    const f = await fixture({ name: "Real plan", eventName: "Real event" });
+    const otherRoom = randomUUID();
+    await db.insert(schema.spaces).values({ id: otherRoom, venueId: f.venueId, name: "Other room", slug: "other-room",
+      widthM: "10", lengthM: "10", heightM: "3", floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] });
+    const at = (iso: string): Date => new Date(iso);
+    const booking = (spaceId: string, kind: "prospect" | "hold" | "ink", startsAt: string,
+      extra: Partial<typeof schema.bookings.$inferInsert> = {}): typeof schema.bookings.$inferInsert => ({
+      venueId: f.venueId, spaceId, eventId: f.eventId, kind, title: `Booking ${kind}`, startsAt: at(startsAt),
+      endsAt: new Date(at(startsAt).getTime() + 4 * 3_600_000), ...(kind === "hold" ? { rank: 1 } : {}), ...extra,
+    });
+    await db.insert(schema.bookings).values([
+      // Not the event: a pipeline prospect, a released hold, a deleted row and
+      // another room, each earlier than the booking that is.
+      booking(f.roomId, "prospect", "2030-03-01T18:00:00.000Z"),
+      booking(f.roomId, "hold", "2030-03-02T18:00:00.000Z", { status: "released" }),
+      booking(f.roomId, "ink", "2030-03-03T18:00:00.000Z", { deletedAt: new Date() }),
+      booking(otherRoom, "ink", "2030-03-04T18:00:00.000Z"),
+      booking(f.roomId, "hold", "2030-03-07T18:00:00.000Z"),
+      booking(f.roomId, "ink", "2030-03-09T18:00:00.000Z"),
+    ]);
+    expect((await post(f, "submit")).statusCode).toBe(200);
+    expect((await post(f, "start-review")).statusCode).toBe(200);
+    const [started] = (await state(f)).history.filter((row) => row.toStatus === "under_review");
+
+    const response = await server.inject({ method: "GET", url: "/configurations/reviews/pending", headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    const entries = response.json<{ data: { entries: Record<string, unknown>[] } }>().data.entries;
+    expect(entries.find((entry) => entry["id"] === f.configId)).toMatchObject({
+      reviewStatus: "under_review",
+      spaceName: "Room",
+      plannerName: "Test actor",
+      eventStartsAt: "2030-03-07T18:00:00.000Z",
+      stageSince: started?.createdAt.toISOString(),
+      stageByName: "Test actor",
+    });
+
+    // A layout no event holds a room for has no date, and none is invented.
+    const unlinked = await fixture({ name: "Unlinked plan", eventName: "Unlinked event", linked: false });
+    expect((await post(unlinked, "submit")).statusCode).toBe(200);
+    const listed = (await server.inject({ method: "GET", url: "/configurations/reviews/pending", headers: unlinked.headers }))
+      .json<{ data: { entries: Record<string, unknown>[] } }>().data.entries;
+    expect(listed.find((entry) => entry["id"] === unlinked.configId)).toMatchObject({
+      reviewStatus: "submitted", spaceName: "Room", plannerName: "Test actor", eventStartsAt: null, stageByName: "Test actor",
+    });
+  });
+
   it("rejects missing auth and a string false at runtime", async () => {
     const f = await fixture();
     expect((await server.inject({ method: "POST", url: `/configurations/${f.configId}/review/submit`, payload: { notifyTeam: false } })).statusCode).toBe(401);

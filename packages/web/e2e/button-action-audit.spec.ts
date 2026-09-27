@@ -15,6 +15,7 @@ import type {
   WorkspaceEntitlement,
   WorkspaceMembership,
 } from "@omnitwin/types";
+import { VALID_CONFIGURATION_REVIEW_TRANSITIONS, type ConfigurationReviewStatus } from "@omnitwin/types";
 import type { PendingReviewEntry, ReviewHistoryEntry } from "../src/api/configuration-reviews.js";
 import type { Activity, FollowUpTask, Opportunity, OpportunityDetail, PipelineSummary } from "../src/api/crm.js";
 import type { Loadout, LoadoutDetail, LoadoutPhoto } from "../src/api/loadouts.js";
@@ -414,10 +415,15 @@ function pendingReviewFixture(overrides: Partial<PendingReviewEntry> = {}): Pend
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
     userId: null,
-    reviewStatus: "submitted",
+    reviewStatus: "under_review",
     submittedAt: NOW,
     updatedAt: NOW,
     guestCount: 120,
+    spaceName: "Reception Room",
+    plannerName: null,
+    eventStartsAt: null,
+    stageSince: NOW,
+    stageByName: null,
     ...overrides,
   };
 }
@@ -1002,7 +1008,10 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   let failProposalHistoryOnce = options.failProposalHistoryOnce === true;
   let failProposalCommentsOnce = options.failProposalCommentsOnce === true;
   let remainingReviewsListFailures = options.failReviewsListOnce === true ? 2 : 0;
-  let remainingReviewHistoryFailures = options.failReviewHistoryOnce === true ? 2 : 0;
+  // The desk reads a review's timeline once when it opens it.
+  let remainingReviewHistoryFailures = options.failReviewHistoryOnce === true ? 1 : 0;
+  // Where the review stands: each accepted move changes it, as the API does.
+  let reviewStatus: ConfigurationReviewStatus = "under_review";
   let failReviewApproveOnce = options.failReviewApproveOnce === true;
   let failLoadoutListOnce = options.failLoadoutListOnce === true;
   let failLoadoutCreateOnce = options.failLoadoutCreateOnce === true;
@@ -1391,7 +1400,8 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
       void route.fulfill({ status: 500, json: { error: "button audit reviews list failure" } });
       return;
     }
-    void route.fulfill({ json: { data: { entries: [pendingReviewFixture()] } } });
+    const pending = reviewStatus === "submitted" || reviewStatus === "under_review" || reviewStatus === "changes_requested";
+    void route.fulfill({ json: { data: { entries: pending ? [pendingReviewFixture({ reviewStatus })] : [] } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/history`, (route) => {
     if (remainingReviewHistoryFailures > 0) {
@@ -1406,13 +1416,17 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
       json: {
         data: {
           configurationId: CONFIG_ID,
-          currentStatus: "submitted",
-          availableTransitions: ["under_review", "approved", "changes_requested", "rejected"],
+          currentStatus: reviewStatus,
+          availableTransitions: VALID_CONFIGURATION_REVIEW_TRANSITIONS[reviewStatus],
         },
       },
     });
   });
+  await page.route(`${API}/configurations/${CONFIG_ID}/snapshot/latest`, (route) => {
+    void route.fulfill({ status: 404, json: { error: "button audit has no submitted plan", code: "NOT_FOUND" } });
+  });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/start-review`, (route) => {
+    reviewStatus = "under_review";
     void route.fulfill({ json: { data: { reviewStatus: "under_review" } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/approve`, (route) => {
@@ -1421,16 +1435,19 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
       void route.fulfill({ status: 500, json: { error: "Approval did not save" } });
       return;
     }
+    reviewStatus = "approved";
     void route.fulfill({ json: { data: { reviewStatus: "approved", snapshot: snapshotEnvelopeFixture() } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/request-changes`, (route) => {
     const body = route.request().postDataJSON() as { readonly note?: string };
     if (body.note !== undefined) reviewNotes.push(body.note);
+    reviewStatus = "changes_requested";
     void route.fulfill({ json: { data: { reviewStatus: "changes_requested" } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/reject`, (route) => {
     const body = route.request().postDataJSON() as { readonly note?: string };
     if (body.note !== undefined) reviewNotes.push(body.note);
+    reviewStatus = "rejected";
     void route.fulfill({ json: { data: { reviewStatus: "rejected" } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/viewers/heartbeat`, (route) => {
@@ -2695,7 +2712,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("button", { name: "Download PDF" })).toBeVisible();
   });
 
-  test("review change-request modal requires a note and posts the review action", async ({ page }) => {
+  test("review change request asks inline, requires a note and posts the review action", async ({ page }) => {
     await seedAuthenticatedUser(page, "staff");
     const mock = await mockDashboardRoutes(page);
 
@@ -2703,22 +2720,23 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Pending reviews" }).click();
-    await expect(page.getByRole("heading", { name: /Pending reviews/u })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Pending reviews" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Open review for Reception Room dinner review" }).click();
-    await expect(page.getByRole("heading", { name: "Reception Room dinner review" })).toBeVisible();
-    await page.getByRole("button", { name: "Request Changes" }).click();
+    await page.locator('button[data-review-id][aria-label^="Reception Room dinner review,"]').click();
+    await expect(page.getByRole("heading", { level: 2, name: "Reception Room dinner review" })).toBeVisible();
+    await page.getByRole("button", { name: "Ask for changes…" }).click();
 
-    const dialog = page.getByRole("dialog", { name: "Request changes on this layout?" });
-    await expect(dialog).toBeVisible();
-    const send = dialog.getByRole("button", { name: "Send change request" });
+    const confirm = page.getByRole("group", { name: "Ask for changes on Reception Room dinner review?" });
+    await expect(confirm).toBeVisible();
+    const send = confirm.getByRole("button", { name: "Record the request" });
     await expect(send).toBeDisabled();
-    await dialog.getByLabel("Review note").fill("Keep the 1.2m route clearance open beside the main doors.");
+    await confirm.getByLabel("What needs to change").fill("Keep the 1.2m route clearance open beside the main doors.");
     await expect(send).toBeEnabled();
     await send.click();
 
     await expect.poll(() => mock.reviewNotes).toContain("Keep the 1.2m route clearance open beside the main doors.");
-    await expect(dialog).toHaveCount(0);
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText("Back with the planner for changes. It returns to To start when it is submitted again.")).toBeVisible();
   });
 
   test("review list, context, and approve failures remain visible and retryable", async ({ page }) => {
@@ -2731,20 +2749,23 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard?view=reviews");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByTestId("reviews-load-error")).toContainText("Could not load pending reviews");
-    await page.getByRole("button", { name: "Retry reviews" }).click();
-    await page.getByRole("button", { name: "Open review for Reception Room dinner review" }).click();
+    await expect(page.getByTestId("reviews-load-error")).toContainText("The queue could not be read");
+    await page.getByTestId("reviews-load-error").getByRole("button", { name: "Try again" }).click();
+    await page.locator('button[data-review-id][aria-label^="Reception Room dinner review,"]').click();
 
     await expect(page.getByTestId("review-context-error")).toContainText("button audit review history failure");
-    await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
-    await page.getByRole("button", { name: "Retry review context" }).click();
-    await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve…" })).toHaveCount(0);
+    await page.getByTestId("review-context-error").getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("button", { name: "Approve…" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Approve" }).click();
+    await page.getByRole("button", { name: "Approve…" }).click();
+    const approve = page.getByRole("button", { name: "Approve and email" });
+    await approve.click();
     await expect(page.getByTestId("review-action-error")).toContainText("Approval did not save");
-    await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
-    await page.getByRole("button", { name: "Approve" }).click();
+    await expect(approve).toBeEnabled();
+    await approve.click();
     await expect(page.getByTestId("review-action-error")).toHaveCount(0);
+    await expect(page.getByTestId("review-recorded")).toHaveText("Reception Room dinner review");
   });
 
   test("reference-loadout modal is keyboard-readable and creates a real loadout", async ({ page }) => {

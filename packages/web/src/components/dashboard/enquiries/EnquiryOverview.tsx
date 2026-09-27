@@ -106,7 +106,7 @@ function NextMove({ counts, nowMs, room, onOpen, onFilter }: Omit<EnquiryOvervie
   );
 }
 
-function Seal(): ReactElement {
+export function Seal(): ReactElement {
   return (
     <svg className="enq-seal" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" strokeWidth="1.25" />

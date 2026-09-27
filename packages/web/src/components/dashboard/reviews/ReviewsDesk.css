@@ -1,0 +1,73 @@
+/* ---------------------------------------------------------------------------
+   The Layout reviews desk (roadmap X2). It is set in the Enquiries desk's
+   grammar (EnquiriesDesk.css: ivory sheet, stage counts on the copper plane,
+   ledger rows led by a date tile, forest decision panel), so a reviewer who
+   knows one desk knows the other. Only what the reviews desk adds is here.
+   Every text colour holds WCAG AA (4.5:1) on the surface it sits on.
+   --------------------------------------------------------------------------- */
+
+/* Three stages and All. */
+.rev-stages { grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 0.9fr); }
+
+/* A row waiting on the venue shows its wait in copper. */
+.enq-row .rev-row__wait { color: var(--enq-copper); font-weight: 500; }
+
+/* Who has the review, and since when: beside the stage chip, in the panel's
+   secondary ink. */
+.rev-claim { color: var(--enq-forest-ink-2); font-size: 14px; }
+
+/* Another colleague has it open: said in the panel's own ink at full
+   contrast, with a copper mark, never a tinted badge. */
+.rev-presence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  color: var(--enq-forest-ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.rev-presence[hidden] { display: none; }
+.rev-presence__dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: #f0b68f; }
+
+/* The next step keeps its height while the gates are read again, so the
+   panel below it does not jump. */
+.rev-next { min-height: 88px; }
+.rev-moved { color: var(--enq-forest-ink); }
+
+.rev-rehearsal { display: grid; gap: 6px; margin: 0 0 14px; }
+.rev-rehearsal label { display: flex; align-items: center; gap: 10px; color: var(--enq-forest-ink); font-size: 14.5px; }
+.rev-rehearsal input { width: 18px; height: 18px; margin: 0; accent-color: #f0b68f; }
+.rev-rehearsal p { margin: 0; color: var(--enq-forest-ink-2); font-size: 13.5px; }
+
+/* The plan as it was submitted: drawn on an ivory plate, with its version and
+   largest items beside it. */
+.rev-plan { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.rev-plan__thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 3px;
+  background: var(--enq-sheet);
+}
+.rev-plan__facts { display: grid; gap: 10px; min-width: 0; }
+.rev-plan__version { margin: 0; color: var(--enq-forest-ink-2); font-size: 13.5px; }
+.rev-plan__items { display: grid; gap: 6px; margin: 0; font-variant-numeric: tabular-nums; }
+.rev-plan__items > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.rev-plan__items dt { overflow: hidden; color: var(--enq-forest-ink); font-size: 14.5px; text-overflow: ellipsis; white-space: nowrap; }
+.rev-plan__items dd { margin: 0; color: var(--enq-forest-ink); font-size: 16px; font-weight: 300; }
+.rev-plan:only-child, .rev-plan:not(:has(.rev-plan__thumb)) { grid-template-columns: minmax(0, 1fr); }
+.rev-plan__retry { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.rev-plan__retry .enq-next__hint { margin: 0; }
+.rev-tools { margin-top: 16px; }
+
+/* The panel's closing words after a review leaves the queue. */
+.rev-panel .enq-overview h2:focus { outline: none; }
+
+@media (max-width: 760px) {
+  .rev-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .rev-stages .enq-stage { border-top: 0; }
+  .rev-stages .enq-stage:nth-child(4) { padding-left: 10px; border-left: 1px solid #b9906f88; }
+  .rev-stages .enq-stage:nth-child(4)[aria-pressed="true"]::after { left: 10px; }
+  .rev-plan { grid-template-columns: minmax(0, 1fr); }
+}

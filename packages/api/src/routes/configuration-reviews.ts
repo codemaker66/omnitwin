@@ -38,6 +38,7 @@ import {
   SnapshotNotFoundError,
 } from "../services/sheet-snapshot.js";
 import { schedulePrerender } from "../services/pdf-prerender.js";
+import { pendingReviewFacts } from "../services/pending-review-facts.js";
 import { internalDemoReviewScope, InternalDemoReviewForbiddenError, recordSuppressedReviewNotifications } from "../services/internal-demo-review.js";
 import { incrementCounter } from "../observability/metrics.js";
 import type { Env } from "../env.js";
@@ -1083,6 +1084,10 @@ export async function configurationReviewRoutes(
             ))
             .orderBy(asc(configurations.submittedAt));
 
+    // The desk's row facts: room, planner, event date, and who moved each
+    // review into its stage, and when.
+    const facts = await pendingReviewFacts(db, scopedRows);
+
     return {
       data: {
         entries: scopedRows.map((r) => ({
@@ -1095,6 +1100,7 @@ export async function configurationReviewRoutes(
           submittedAt: r.submittedAt === null ? null : r.submittedAt.toISOString(),
           updatedAt: r.updatedAt.toISOString(),
           guestCount: r.guestCount,
+          ...facts.get(r.id),
         })),
       },
     };

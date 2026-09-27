@@ -16,6 +16,7 @@ import type {
   WorkspaceEntitlement,
   WorkspaceMembership,
 } from "@omnitwin/types";
+import { VALID_CONFIGURATION_REVIEW_TRANSITIONS } from "@omnitwin/types";
 import type { PendingReviewEntry, ReviewHistoryEntry } from "../src/api/configuration-reviews.js";
 import type { Loadout, LoadoutDetail, LoadoutPhoto } from "../src/api/loadouts.js";
 import type { PricingRule } from "../src/api/pricing.js";
@@ -249,10 +250,15 @@ function pendingReviewFixture(): PendingReviewEntry {
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
     userId: null,
-    reviewStatus: "submitted",
+    reviewStatus: "under_review",
     submittedAt: NOW,
     updatedAt: NOW,
     guestCount: 120,
+    spaceName: "Reception Room",
+    plannerName: null,
+    eventStartsAt: null,
+    stageSince: NOW,
+    stageByName: null,
   };
 }
 
@@ -869,8 +875,8 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
         json: {
           data: {
             configurationId: CONFIG_ID,
-            currentStatus: "submitted",
-            availableTransitions: ["under_review", "approved", "changes_requested", "rejected"],
+            currentStatus: "under_review",
+            availableTransitions: VALID_CONFIGURATION_REVIEW_TRANSITIONS.under_review,
           },
         },
       });
@@ -898,6 +904,10 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
     }
     if (path === `/configurations/${CONFIG_ID}/review/viewers/self`) {
       void route.fulfill({ status: 204 });
+      return;
+    }
+    if (path === `/configurations/${CONFIG_ID}/snapshot/latest`) {
+      void route.fulfill({ status: 404, json: { error: "No snapshot for this focus fixture", code: "NOT_FOUND" } });
       return;
     }
 
@@ -1416,26 +1426,32 @@ test("admin nested space, pricing, and destructive dialogs stay accessible and k
   await expect(deleteVenueDialog).toBeHidden();
 });
 
-test("review request-changes dialog traps keyboard focus and closes cleanly", async ({ page }) => {
+test("review change request asks inline, keeps Tab within it, and Escape returns to the step that asked", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const problems = await openDashboardView(page, "staff", "reviews");
-  await page.getByRole("button", { name: "Open review for Reception Room dinner review" }).click();
-  await expect(page.getByRole("button", { name: "Request Changes" })).toBeVisible();
-  await page.getByRole("button", { name: "Request Changes" }).click();
+  await page.locator('button[data-review-id][aria-label^="Reception Room dinner review,"]').click();
+  const askForChanges = page.getByRole("button", { name: "Ask for changes…" });
+  await expect(askForChanges).toBeVisible();
+  await askForChanges.click();
 
-  const dialog = page.getByRole("dialog", { name: "Request changes on this layout?" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveAttribute("aria-modal", "true");
-  await page.waitForTimeout(50);
-  await expectFocusInside(page, dialog, "review request changes initial focus");
-  await recordAccessibilityState(page, problems, "reviews request-changes dialog", "/dashboard?view=reviews", "desktop", 10);
+  // The question is asked in the panel, beside the review, not in a dialog.
+  const confirm = page.getByRole("group", { name: "Ask for changes on Reception Room dinner review?" });
+  await expect(confirm).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const note = confirm.getByLabel("What needs to change");
+  await expect(note).toBeFocused();
+  await note.fill("Keep the 1.2m route clearance open beside the main doors.");
+  await recordAccessibilityState(page, problems, "reviews change-request confirmation", "/dashboard?view=reviews", "desktop", 10);
+  // The audit tabs through the page; the reader starts again from the note.
+  await note.focus();
 
-  await recordKeyboardBudget(page, problems, "reviews-request-changes-focus-trap", "desktop", async () => {
-    await pressTabsInside(page, dialog, "review request changes", 6);
+  await recordKeyboardBudget(page, problems, "reviews-change-request-inline", "desktop", async () => {
+    await pressTabsInside(page, confirm, "review change request", 2);
   });
 
   await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
+  await expect(confirm).toBeHidden();
+  await expect(askForChanges).toBeFocused();
 });
 
 test("loadout create and delete dialogs trap focus without keyboard leaks", async ({ page }) => {

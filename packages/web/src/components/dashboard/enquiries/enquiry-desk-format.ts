@@ -284,6 +284,24 @@ export function venueMoment(iso: string, zone: string = VENUE_TIME_ZONE): string
   return `${weekdayName(at.dayNumber)} ${String(at.day)} ${monthName(at.month)}, ${pad(at.hour)}:${pad(at.minute)}`;
 }
 
+/** The venue's calendar date of a moment, as "2027-06-05", so a booking's
+ *  start reads as the date tile an enquiry's preferred date does. */
+export function venueCalendarDate(iso: string, zone: string = VENUE_TIME_ZONE): string | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const at = calendarParts(ms, zone);
+  return `${String(at.year)}-${pad(at.month)}-${pad(at.day)}`;
+}
+
+/** "10:14" when the moment falls on the venue's today, else "Tue 22 Sep, 10:14". */
+export function venueSince(iso: string, nowMs: number, zone: string = VENUE_TIME_ZONE): string | null {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return null;
+  const at = calendarParts(ms, zone);
+  const clock = `${pad(at.hour)}:${pad(at.minute)}`;
+  return at.dayNumber === calendarParts(nowMs, zone).dayNumber ? clock : venueMoment(iso, zone);
+}
+
 /** "12 Aug 2026" in the venue's time zone. */
 export function venueDate(iso: string, zone: string = VENUE_TIME_ZONE): string | null {
   const ms = Date.parse(iso);

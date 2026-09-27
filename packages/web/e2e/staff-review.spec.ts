@@ -1,13 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
+import { VALID_CONFIGURATION_REVIEW_TRANSITIONS, type ConfigurationReviewStatus } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // E2E: Staff review flow — dashboard More → Pending reviews → approve
 //
 // Covers the staff-side happy path that complements hallkeeper.spec.ts
 // (hallkeeper view) and the planner's SubmitForReviewPanel (editor).
-// Uses route mocks so the Fastify API isn't required; the test
-// verifies the CLIENT code paths for loading pending reviews, opening
-// a detail view, and invoking the approve transition.
+// Uses route mocks so the Fastify API isn't required; the review's gates
+// are the transitions the state machine allows from where it stands, and
+// each accepted move changes it, as the API does.
 // ---------------------------------------------------------------------------
 
 const API = "http://localhost:3001";
@@ -23,12 +24,16 @@ interface MockPendingReview {
   readonly venueId: string;
   readonly spaceId: string;
   readonly userId: string | null;
-  readonly reviewStatus: string;
+  readonly reviewStatus: ConfigurationReviewStatus;
   readonly submittedAt: string;
   readonly guestCount: number;
   readonly layoutStyle: string;
   readonly updatedAt: string;
   readonly spaceName: string;
+  readonly plannerName: string | null;
+  readonly eventStartsAt: string | null;
+  readonly stageSince: string | null;
+  readonly stageByName: string | null;
 }
 
 const MOCK_PENDING: MockPendingReview = {
@@ -43,6 +48,10 @@ const MOCK_PENDING: MockPendingReview = {
   layoutStyle: "dinner-rounds",
   updatedAt: "2026-04-17T09:00:00.000Z",
   spaceName: "Grand Hall",
+  plannerName: "Morag Anderson",
+  eventStartsAt: "2026-06-13T13:00:00.000Z",
+  stageSince: "2026-04-17T09:00:00.000Z",
+  stageByName: "Morag Anderson",
 };
 
 const MOCK_APPROVED_SNAPSHOT = {
@@ -111,19 +120,19 @@ async function seedAuthenticatedStaff(page: Page): Promise<void> {
   }, { staffUserId: STAFF_USER_ID, venueId: VENUE_ID });
 }
 
-async function mockReviewsAPIs(page: Page): Promise<void> {
-  // Pending list
+async function mockReviewsAPIs(page: Page, initial: ConfigurationReviewStatus = "submitted"): Promise<void> {
+  let status = initial;
+  const pending = (): boolean => status === "submitted" || status === "under_review" || status === "changes_requested";
   await page.route(`${API}/configurations/reviews/pending*`, (route) => {
-    void route.fulfill({ json: { data: { entries: [MOCK_PENDING] } } });
+    void route.fulfill({ json: { data: { entries: pending() ? [{ ...MOCK_PENDING, reviewStatus: status }] : [] } } });
   });
-  // Available transitions
   await page.route(`${API}/configurations/${CONFIG_ID}/review/available-transitions*`, (route) => {
     void route.fulfill({
       json: {
         data: {
           configurationId: CONFIG_ID,
-          currentStatus: "submitted",
-          availableTransitions: ["under_review", "approved", "rejected", "changes_requested"],
+          currentStatus: status,
+          availableTransitions: VALID_CONFIGURATION_REVIEW_TRANSITIONS[status],
         },
       },
     });
@@ -136,8 +145,21 @@ async function mockReviewsAPIs(page: Page): Promise<void> {
       },
     });
   });
+  await page.route(`${API}/configurations/${CONFIG_ID}/snapshot/latest`, (route) => {
+    void route.fulfill({ json: { data: { ...MOCK_APPROVED_SNAPSHOT, approvedAt: null, approvedBy: null,
+      payload: { ...MOCK_APPROVED_SNAPSHOT.payload, approval: null } } } });
+  });
+  await page.route(`${API}/configurations/${CONFIG_ID}/review/viewers**`, (route) => {
+    void route.fulfill(route.request().method() === "DELETE" ? { status: 204 }
+      : { json: { data: route.request().url().endsWith("/heartbeat") ? { ok: true } : { configurationId: CONFIG_ID, viewers: [] } } });
+  });
+  await page.route(`${API}/configurations/${CONFIG_ID}/review/start-review`, (route) => {
+    status = "under_review";
+    void route.fulfill({ json: { data: { reviewStatus: status } } });
+  });
   // Approve action
   await page.route(`${API}/configurations/${CONFIG_ID}/review/approve`, (route) => {
+    status = "approved";
     void route.fulfill({ json: { data: { reviewStatus: "approved", snapshot: MOCK_APPROVED_SNAPSHOT } } });
   });
 }
@@ -151,8 +173,12 @@ async function openPendingReviews(page: Page): Promise<void> {
   await navigation.getByRole("button", { name: "Pending reviews", exact: true }).click({ timeout: 8_000 });
   await expect(page).toHaveURL(/\/dashboard\?view=reviews$/u);
   await expect(more).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByRole("heading", { name: "Pending reviews (1)", exact: true }))
+  await expect(page.getByRole("heading", { level: 1, name: "Pending reviews", exact: true }))
     .toBeVisible({ timeout: 8_000 });
+}
+
+function queueRow(page: Page) {
+  return page.locator('button[data-review-id][aria-label^="Anderson Wedding Reception,"]');
 }
 
 test.describe("Staff review — pending list", () => {
@@ -163,52 +189,55 @@ test.describe("Staff review — pending list", () => {
 
   test("dashboard Reviews tab shows the submitted config in the pending list", async ({ page }) => {
     await openPendingReviews(page);
-    const review = page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true });
+    const review = queueRow(page);
     await expect(review).toBeVisible({ timeout: 8_000 });
-    await expect(review).toContainText("Submitted");
-    await expect(review).toContainText("Guests: 120");
+    await expect(review).toContainText("To start");
+    await expect(review).toContainText("Grand Hall · 120 guests · Planned by Morag Anderson");
+    await expect(review).toHaveAttribute("aria-label", /event Sat 13 Jun 2026/u);
   });
 
   test("opening a pending review shows its detail + available actions", async ({ page }) => {
     await openPendingReviews(page);
-    await page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true }).click();
-    await expect(page.getByRole("heading", { name: MOCK_PENDING.name, exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Layout", exact: true })).toHaveAttribute("href", `/plan/${CONFIG_ID}`);
-    await expect(page.getByRole("link", { name: "Preview Sheet", exact: true })).toHaveAttribute("href", `/hallkeeper/${CONFIG_ID}`);
-    for (const action of ["Start Review", "Approve", "Request Changes", "Reject"]) {
+    await queueRow(page).click();
+    await expect(page.getByRole("heading", { level: 2, name: MOCK_PENDING.name, exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open the layout (opens in a new tab)" })).toHaveAttribute("href", `/plan/${CONFIG_ID}`);
+    await expect(page.getByRole("link", { name: "Preview the setup sheet (opens in a new tab)" })).toHaveAttribute("href", `/hallkeeper/${CONFIG_ID}`);
+    // A submitted layout is started before it is decided: the state machine
+    // offers starting the review, or withdrawing it, and nothing else.
+    for (const action of ["Start review", "Withdraw…"]) {
       const button = page.getByRole("button", { name: action, exact: true });
       await expect(button).toBeVisible({ timeout: 8_000 });
       await expect(button).toBeEnabled();
     }
-    // The fixture grants staff these transitions, but not withdrawal.
-    await expect(page.getByRole("button", { name: "Withdraw", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Approve…", exact: true })).toHaveCount(0);
   });
 });
 
 test.describe("Staff review — approve action", () => {
   test.beforeEach(async ({ page }) => {
     await seedAuthenticatedStaff(page);
-    await mockReviewsAPIs(page);
+    await mockReviewsAPIs(page, "under_review");
   });
 
   test("clicking Approve hits the approve endpoint", async ({ page }) => {
     const approveRequests: { readonly method: string; readonly body: unknown }[] = [];
-    await page.route(`${API}/configurations/${CONFIG_ID}/review/approve`, (route) => {
-      const request = route.request();
-      const body: unknown = request.postDataJSON();
-      approveRequests.push({ method: request.method(), body });
-      void route.fulfill({ json: { data: { reviewStatus: "approved", snapshot: MOCK_APPROVED_SNAPSHOT } } });
+    page.on("request", (request) => {
+      if (request.url() === `${API}/configurations/${CONFIG_ID}/review/approve`) {
+        approveRequests.push({ method: request.method(), body: request.postDataJSON() as unknown });
+      }
     });
 
     await openPendingReviews(page);
-    await page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true }).click();
-    await page.getByRole("button", { name: "Approve", exact: true }).click();
+    await queueRow(page).click();
+    await page.getByRole("button", { name: "Approve…", exact: true }).click();
+    await expect(page.getByTestId("approve-consequence")).toHaveText("Approving emails the planner and your venue's hallkeepers.");
+    await page.getByRole("button", { name: "Approve and email", exact: true }).click();
 
     // A native action sends one ordinary approval, without silently choosing
     // demo-only notification suppression or a different configuration.
     await expect.poll(() => approveRequests).toEqual([{ method: "POST", body: {} }]);
-    await expect(page.getByText("No pending reviews.", { exact: true })).toBeVisible({ timeout: 8_000 });
-    await expect(page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true }))
-      .toHaveCount(0);
+    await expect(page.getByText("Approved. The planner and your hallkeepers are being emailed.")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByRole("heading", { name: "No layouts waiting" })).toBeVisible();
+    await expect(queueRow(page)).toHaveCount(0);
   });
 });

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { VenueDashboardAnalytics } from "@omnitwin/types";
+import { VALID_CONFIGURATION_REVIEW_TRANSITIONS, type VenueDashboardAnalytics } from "@omnitwin/types";
 import type { PendingReviewEntry, ReviewHistoryEntry } from "../src/api/configuration-reviews.js";
 import type { Loadout, LoadoutDetail, LoadoutPhoto } from "../src/api/loadouts.js";
 import type { PricingRule } from "../src/api/pricing.js";
@@ -197,6 +197,9 @@ function pricingRuleFixture(): PricingRule {
   };
 }
 
+// The review is in review, so its gates are the ones the state machine
+// itself allows from there (roadmap X2 retired a fixture that offered
+// approval straight from "submitted", which the API refuses).
 function pendingReviewFixture(): PendingReviewEntry {
   return {
     id: CONFIG_ID,
@@ -204,22 +207,72 @@ function pendingReviewFixture(): PendingReviewEntry {
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
     userId: null,
-    reviewStatus: "submitted",
-    submittedAt: NOW,
+    reviewStatus: "under_review",
+    submittedAt: "2026-06-18T09:00:00.000Z",
     updatedAt: NOW,
     guestCount: 120,
+    spaceName: "Reception Room",
+    plannerName: null,
+    eventStartsAt: "2026-09-12T17:00:00.000Z",
+    stageSince: "2026-06-18T10:30:00.000Z",
+    stageByName: "Staff Frame Budget",
   };
 }
 
-function reviewHistoryFixture(): ReviewHistoryEntry {
-  return {
+function reviewHistoryFixture(): ReviewHistoryEntry[] {
+  return [{
     id: "00000000-0000-4000-8000-000000004024",
     configurationId: CONFIG_ID,
     fromStatus: "draft",
     toStatus: "submitted",
     changedByName: "Planner Frame Budget",
     note: "Submitted for venue review.",
-    createdAt: NOW,
+    createdAt: "2026-06-18T09:00:00.000Z",
+  }, {
+    id: "00000000-0000-4000-8000-000000004025",
+    configurationId: CONFIG_ID,
+    fromStatus: "submitted",
+    toStatus: "under_review",
+    changedByName: "Staff Frame Budget",
+    note: null,
+    createdAt: "2026-06-18T10:30:00.000Z",
+  }];
+}
+
+/** The plan as it was submitted: a real sheet, so the panel draws it. */
+function reviewSnapshotFixture() {
+  return {
+    ...snapshotEnvelopeFixture(),
+    version: 1,
+    createdAt: "2026-06-18T09:00:00.000Z",
+    approvedAt: null,
+    payload: {
+      config: { id: CONFIG_ID, name: "Reception Room dinner review", guestCount: 120, layoutStyle: "dinner-rounds" },
+      venue: { name: "Trades Hall Glasgow", address: "85 Glassford Street", logoUrl: null, timezone: "Europe/London" },
+      space: { name: "Reception Room", widthM: 12, lengthM: 8, heightM: 4 },
+      timing: null,
+      instructions: null,
+      phases: [],
+      totals: {
+        entries: [{ name: "Round table", category: "table", qty: 12 }, { name: "Banquet chair", category: "chair", qty: 120 }],
+        totalRows: 2,
+        totalItems: 132,
+      },
+      diagramUrl: null,
+      floorPlan: {
+        coordinateSpace: "real_m_v1",
+        outline: [{ x: 0, z: 0 }, { x: 12, z: 0 }, { x: 12, z: 8 }, { x: 0, z: 8 }],
+        objects: Array.from({ length: 6 }, (_, index) => ({
+          objectId: `00000000-0000-4000-8000-0000000041${String(10 + index)}`,
+          assetDefinitionId: "00000000-0000-4000-8000-000000004199",
+          name: "Round table", category: "table", x: 2 + (index % 3) * 4, z: 2.5 + Math.floor(index / 3) * 3.5,
+          rotationY: 0, scale: 1, widthM: 1.8, depthM: 1.8, collisionType: "cylinder",
+        })),
+      },
+      webViewUrl: `http://localhost:5173/hallkeeper/${CONFIG_ID}`,
+      generatedAt: "2026-06-18T09:00:00.000Z",
+      approval: null,
+    },
   };
 }
 
@@ -402,18 +455,21 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     void route.fulfill({ json: { data: { entries: [pendingReviewFixture()] } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/history`, (route) => {
-    void route.fulfill({ json: { data: { configurationId: CONFIG_ID, entries: [reviewHistoryFixture()] } } });
+    void route.fulfill({ json: { data: { configurationId: CONFIG_ID, entries: reviewHistoryFixture() } } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/available-transitions`, (route) => {
     void route.fulfill({
       json: {
         data: {
           configurationId: CONFIG_ID,
-          currentStatus: "submitted",
-          availableTransitions: ["under_review", "approved", "changes_requested", "rejected"],
+          currentStatus: "under_review",
+          availableTransitions: VALID_CONFIGURATION_REVIEW_TRANSITIONS.under_review,
         },
       },
     });
+  });
+  await page.route(`${API}/configurations/${CONFIG_ID}/snapshot/latest`, (route) => {
+    void route.fulfill({ json: { data: reviewSnapshotFixture() } });
   });
   await page.route(`${API}/configurations/${CONFIG_ID}/review/approve`, (route) => {
     if (failReviewApprove) {
@@ -643,12 +699,17 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "staff");
     await mockDashboardRoutes(page, { failReviewApprove: true });
+    // The desk says the date, the greeting and each wait: hold the clock so
+    // the picture is the same on every run. Timers and frames still run.
+    await page.clock.setFixedTime(new Date(NOW));
 
     await page.goto("/dashboard?view=reviews");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await page.getByRole("button", { name: "Open review for Reception Room dinner review" }).click();
-    await expect(page.getByRole("heading", { name: "Reception Room dinner review" })).toBeVisible();
-    await page.getByRole("button", { name: "Approve" }).click();
+    await page.locator('button[data-review-id][aria-label^="Reception Room dinner review,"]').click();
+    await expect(page.getByRole("heading", { level: 2, name: "Reception Room dinner review" })).toBeVisible();
+    await expect(page.getByText("Version 1, frozen Thu 18 Jun, 10:00")).toBeVisible();
+    await page.getByRole("button", { name: "Approve…" }).click();
+    await page.getByRole("button", { name: "Approve and email" }).click();
     await expect(page.getByTestId("review-action-error")).toContainText("Approval did not save");
 
     await recordFrameAndVisualState(page, problems, "reviews-action-error", "desktop", async () => {

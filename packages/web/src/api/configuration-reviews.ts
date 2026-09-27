@@ -372,6 +372,17 @@ export interface PendingReviewEntry {
   readonly submittedAt: string | null;
   readonly updatedAt: string;
   readonly guestCount: number;
+  /** The room's name, or null when it is not known. */
+  readonly spaceName: string | null;
+  /** The planner's name, or null when the layout has no planner account. */
+  readonly plannerName: string | null;
+  /** When the event starts: the earliest live booking holding the room for an
+   *  event this layout serves, or null when none does. */
+  readonly eventStartsAt: string | null;
+  /** When the review entered the stage it is in, or null when unrecorded. */
+  readonly stageSince: string | null;
+  /** Who moved it into that stage, or null for a system move. */
+  readonly stageByName: string | null;
 }
 
 const PendingReviewEntrySchema = z.object({
@@ -384,6 +395,13 @@ const PendingReviewEntrySchema = z.object({
   submittedAt: z.string().datetime().nullable(),
   updatedAt: z.string().datetime(),
   guestCount: z.number().int().nonnegative(),
+  // The desk's row facts (roadmap X2). An API from before them says nothing,
+  // and the desk then shows none rather than a guess.
+  spaceName: z.string().nullable().default(null),
+  plannerName: z.string().nullable().default(null),
+  eventStartsAt: z.string().datetime().nullable().default(null),
+  stageSince: z.string().datetime().nullable().default(null),
+  stageByName: z.string().nullable().default(null),
 });
 
 const PendingReviewsResponseSchema = z.object({
