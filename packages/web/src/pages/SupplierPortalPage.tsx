@@ -77,6 +77,8 @@ export function SupplierPortalPage(): ReactElement {
   const [ackNote, setAckNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // What was last sent, so the page can say who heard it.
+  const [sentStatus, setSentStatus] = useState<CreateSupplierAcknowledgementInput["status"] | null>(null);
 
   useEffect(() => {
     if (token === undefined || token.length === 0) {
@@ -106,6 +108,7 @@ export function SupplierPortalPage(): ReactElement {
     if (token === undefined || token.length === 0 || state.kind !== "ready" || submitDisabled) return;
     setSubmitting(true);
     setSubmitError(null);
+    setSentStatus(null);
 
     const input: CreateSupplierAcknowledgementInput = {
       status: ackStatus,
@@ -115,10 +118,15 @@ export function SupplierPortalPage(): ReactElement {
     };
 
     acknowledgeSupplierShare(token, input)
-      .then(() => getSupplierShare(token))
+      .then(() => {
+        // Sent: the venue's staff and hallkeepers are notified with these
+        // words (routes/supplier-coordination.ts), whatever the re-read does.
+        setSentStatus(input.status);
+        setAckNote("");
+        return getSupplierShare(token);
+      })
       .then((pack) => {
         setState({ kind: "ready", pack });
-        setAckNote("");
       })
       .catch(() => {
         setSubmitError("We could not send this supplier response. Please check the details and try again.");
@@ -191,14 +199,23 @@ export function SupplierPortalPage(): ReactElement {
                 <span>Supplier</span>
                 <strong>{pack.supplierName ?? "Supplier contact"}</strong>
               </div>
+              {/* The pack's contact is who it is addressed to: it defaults to
+                  the supplier's own contact, so it was wrong to call it the
+                  venue's. The venue hears through the response below. */}
               <div className="supplier-portal__contact-row">
-                <span>Venue contact</span>
-                <strong>{pack.contactName ?? "Venue team"}</strong>
+                <span>From</span>
+                <strong>{pack.venueName ?? "The venue team"}</strong>
               </div>
               <div className="supplier-portal__contact-row">
-                <span>Email</span>
-                <strong>{pack.contactEmail ?? "Use the venue contact channel"}</strong>
+                <span>Addressed to</span>
+                <strong>{pack.contactName ?? pack.supplierName ?? "Your team"}</strong>
               </div>
+              {pack.contactEmail !== null ? (
+                <div className="supplier-portal__contact-row">
+                  <span>Email</span>
+                  <strong>{pack.contactEmail}</strong>
+                </div>
+              ) : null}
               <div className="supplier-portal__contact-row">
                 <span>Issued</span>
                 <strong>{issuedAt ?? "Not recorded"}</strong>
@@ -284,6 +301,16 @@ export function SupplierPortalPage(): ReactElement {
                 </div>
               ) : null}
             </section>
+
+            {/* Outside the form: an acknowledgement closes the pack, and the
+                form with it, but the supplier still hears who was told. */}
+            {sentStatus !== null ? (
+              <p className="supplier-portal__panel supplier-portal__copy" role="status">
+                {sentStatus === "needs_clarification"
+                  ? `Sent. ${pack.venueName ?? "The venue"}'s team has been notified with your question.`
+                  : `Thank you. ${pack.venueName ?? "The venue"}'s team has been told you have the handoff.`}
+              </p>
+            ) : null}
 
             {canAcknowledge ? (
               <section className="supplier-portal__panel" aria-label="Respond to supplier handoff">

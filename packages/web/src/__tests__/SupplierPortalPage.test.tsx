@@ -112,7 +112,8 @@ describe("SupplierPortalPage", () => {
     renderSupplierPortal();
 
     expect(await screen.findByText("Technical supplier coordination pack")).toBeTruthy();
-    expect(screen.getByText("Trades Hall of Glasgow")).toBeTruthy();
+    // In the heading's label and as who the pack is from.
+    expect(screen.getAllByText("Trades Hall of Glasgow")).toHaveLength(2);
     expect(screen.getByText("Technical Partner")).toBeTruthy();
     expect(screen.getByText("08:00-10:00")).toBeTruthy();
     expect(screen.getByText(/Round tables changed/)).toBeTruthy();
@@ -152,6 +153,33 @@ describe("SupplierPortalPage", () => {
     expect(await screen.findByText("Latest response")).toBeTruthy();
     expect(screen.getByText("Received and confirmed.")).toBeTruthy();
     expect(screen.getByText("Response closed")).toBeTruthy();
+    // The form closes with the pack, but the supplier still hears who was told.
+    expect(screen.getByRole("status").textContent)
+      .toBe("Thank you. Trades Hall of Glasgow's team has been told you have the handoff.");
+  });
+
+  it("says the venue team has the question once a clarification request is sent", async () => {
+    mockGetSupplierShare.mockResolvedValue(fixturePack());
+    mockAcknowledgeSupplierShare.mockResolvedValue(fixtureAcknowledgement());
+    renderSupplierPortal();
+
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Sam Supplier" } });
+    fireEvent.click(screen.getByLabelText("Need clarification"));
+    fireEvent.change(screen.getByLabelText("Clarification needed"), { target: { value: "Please confirm lift access." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send clarification request" }));
+
+    expect((await screen.findByText(/has been notified with your question/u)).textContent)
+      .toBe("Sent. Trades Hall of Glasgow's team has been notified with your question.");
+  });
+
+  it("names who the pack is from and addressed to, not a venue contact it does not have", async () => {
+    mockGetSupplierShare.mockResolvedValue(fixturePack({ contactName: "Sam at Technical Partner", contactEmail: null }));
+    renderSupplierPortal();
+    const contact = await screen.findByRole("complementary", { name: "Supplier contact and status" });
+    expect(contact.textContent).toContain("FromTrades Hall of Glasgow");
+    expect(contact.textContent).toContain("Addressed toSam at Technical Partner");
+    expect(contact.textContent).not.toContain("Venue contact");
+    expect(contact.textContent).not.toContain("Use the venue contact channel");
   });
 
   it("requires a clarification note before sending a clarification request", async () => {

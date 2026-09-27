@@ -64,9 +64,21 @@ export async function notifyCommercialTeam(
   db: Database,
   input: CommercialNotificationInput,
 ): Promise<number> {
-  if (COMMERCIAL_AUDIENCE_ROLES.length === 0) return 0;
+  return notifyVenueRoles(db, { ...input, audienceRoles: COMMERCIAL_AUDIENCE_ROLES });
+}
 
-  const rows = COMMERCIAL_AUDIENCE_ROLES.map((audienceRole) => ({
+/**
+ * Raise one venue-scoped, event-less notification per audience role: the
+ * same shape as the commercial team's, for any venue team a change concerns
+ * (a supplier's response goes to the people running the day).
+ */
+export async function notifyVenueRoles(
+  db: Database,
+  input: CommercialNotificationInput & { readonly audienceRoles: readonly EventPlanAudienceRole[] },
+): Promise<number> {
+  if (input.audienceRoles.length === 0) return 0;
+
+  const rows = input.audienceRoles.map((audienceRole) => ({
     changeId: null,
     eventId: null,
     venueId: input.venueId,

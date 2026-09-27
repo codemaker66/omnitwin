@@ -20,6 +20,7 @@ import {
   type SupplierCoordinationPackItem,
   type SupplierCoordinationShareToken,
   type SupplierSafePackView,
+  type EventPlanAudienceRole,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
@@ -36,6 +37,15 @@ import {
 } from "../db/schema.js";
 import { authenticate } from "../middleware/auth.js";
 import { canManageVenue } from "../utils/query.js";
+import { notifyVenueRoles } from "../services/commercial-notifications.js";
+
+/**
+ * Who hears a supplier's response: the people running the day, as for an
+ * event-day issue (services/event-day-ops.ts). Before this a clarification
+ * request was stored on the pack and reached nobody, and no staff screen
+ * shows packs, so the notification carries the supplier's own words.
+ */
+export const SUPPLIER_RESPONSE_AUDIENCE: readonly EventPlanAudienceRole[] = ["staff", "hallkeeper"];
 
 const IdParam = z.object({ id: z.string().uuid() });
 const ShareTokenParam = z.object({
@@ -630,6 +640,29 @@ export async function supplierShareRoutes(
 
       return acknowledgement;
     });
+
+    // The response is saved whatever happens here: a notification that
+    // cannot be written is logged, never turned into a failed response.
+    const supplier = resolved.supplierName ?? "A supplier";
+    const who = [
+      parsed.data.acknowledgedByName ?? null,
+      parsed.data.acknowledgedByEmail ?? null,
+    ].filter((part): part is string => part !== null && part.length > 0).join(", ");
+    const note = parsed.data.note ?? null;
+    try {
+      await notifyVenueRoles(db, {
+        venueId: resolved.pack.venueId,
+        audienceRoles: SUPPLIER_RESPONSE_AUDIENCE,
+        title: parsed.data.status === "needs_clarification"
+          ? `${supplier} needs clarification`
+          : `${supplier} acknowledged the handoff`,
+        body: `${resolved.pack.title}. ${who.length > 0 ? `From ${who}. ` : ""}${note === null ? "No note." : `"${note}"`}`,
+        severity: parsed.data.status === "needs_clarification" ? "attention" : "info",
+        actionPath: null,
+      });
+    } catch (error: unknown) {
+      request.log.warn({ err: error, packId: resolved.pack.id }, "supplier response notification failed");
+    }
 
     return reply.status(201).send({ data: serializeAcknowledgement(result) });
   });
