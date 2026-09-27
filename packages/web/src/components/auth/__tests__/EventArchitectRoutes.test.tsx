@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Window as HappyWindow } from "happy-dom";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router-dom";
 import { router } from "../../../router.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { ApiError } from "../../../api/client.js";
@@ -19,10 +19,30 @@ vi.mock("../../../pages/EventArchitectPage.js", () => ({
 }));
 vi.mock("../../../api/client-event-schedule.js", () => ({ getClientEventSchedule: getProjection }));
 vi.mock("../../../pages/LoginPage.js", () => ({ LoginPage: () => <div>Sign in page</div> }));
+// Staff tools open under the persistent staff shell (roadmap N2), whose
+// header reads the venue's name and the unread notifications; neither is
+// what these admission checks cover, so both answer at once.
+vi.mock("../../../api/notifications.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/notifications.js")>(),
+  listNotifications: () => Promise.resolve([]),
+  getUnreadNotificationCount: () => Promise.resolve(0),
+}));
+vi.mock("../../../api/spaces.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/spaces.js")>(),
+  getVenue: () => Promise.resolve({ id: "venue", name: "Trades Hall" }),
+}));
 
 // Use the actual application's route elements, rather than wrapping a fixture
 // in the desired guard: an omitted alias guard must fail this regression.
-const routes = router.routes.filter(route => ["/event-architect", "/event-architect/runs/:runId", "/events/:eventId", "/login"].includes(route.path ?? ""));
+// The staff tools sit under the persistent shell's route, which is kept, so
+// the shell they really open under is part of what is checked.
+const WANTED = ["/event-architect", "/event-architect/runs/:runId", "/events/:eventId", "/login"];
+const routes = router.routes.flatMap((route): RouteObject[] => {
+  if (WANTED.includes(route.path ?? "")) return [route];
+  if (route.index === true) return [];
+  const children = route.children?.filter((child) => WANTED.includes(child.path ?? "")) ?? [];
+  return children.length === 0 ? [] : [{ ...route, children }];
+});
 const mountedRouters: ReturnType<typeof createMemoryRouter>[] = [];
 const paths = ["/event-architect", "/event-architect/runs/00000000-0000-4000-8000-000000000001"];
 const browserSettings = window.happyDOM.settings as typeof window.happyDOM.settings
@@ -35,9 +55,11 @@ const previousDisabledLoading = browserSettings.handleDisabledFileLoadingAsSucce
 beforeAll(async () => {
   browserSettings.disableCSSFileLoading = true;
   browserSettings.handleDisabledFileLoadingAsSuccess = true;
-  // Preload the real lazy page so initial module transformation does not
-  // consume the assertion window for these route-admission checks.
+  // Preload the real lazy page, and the staff shell the tools open under, so
+  // initial module transformation does not consume the assertion window for
+  // these route-admission checks.
   await import("../../../pages/ClientEventPage.js");
+  await import("../../dashboard/DashboardLayout.js");
 });
 
 function seed(role: string, platformRole: "none" | "admin" = "none") {

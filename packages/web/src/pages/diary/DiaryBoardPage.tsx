@@ -1007,7 +1007,7 @@ export function DiaryBoardPage(): ReactElement {
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout mainLabel={BOARD_COPY.title}>
       {/* The board wears the app shell now, so the nav rail, the account block
           and sign-out follow you here. This is a <div>, not a <main> — the
           shell owns the single <main> a page is allowed. */}

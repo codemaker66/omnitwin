@@ -62,6 +62,18 @@ vi.mock("@clerk/react", async (importOriginal) => ({
   useClerk: () => ({ signOut: vi.fn() }),
 }));
 vi.mock("../../../lib/clerk-session-hint.js", () => ({ hasLikelyClerkSession: () => probe.sessionHint }));
+// A workspace member's staff pages open under the persistent shell (roadmap
+// N2), whose header reads the venue's name and the unread notifications.
+// Neither is what these cases cover, so both answer at once.
+vi.mock("../../../api/notifications.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/notifications.js")>(),
+  listNotifications: () => Promise.resolve([]),
+  getUnreadNotificationCount: () => Promise.resolve(0),
+}));
+vi.mock("../../../api/spaces.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/spaces.js")>(),
+  getVenue: () => Promise.resolve({ id: "venue", name: "Trades Hall" }),
+}));
 vi.mock("../../../pages/LoginPage.js", () => ({ LoginPage: () => <div>Sign in page</div> }));
 // The Day Board's route module wraps the board in the requests provider.
 vi.mock("../../../pages/hallkeeper/DayBoardRoute.js", () => pageModule("DayBoardRoute"));
@@ -127,9 +139,14 @@ const previousDisabledLoading = browserSettings.handleDisabledFileLoadingAsSucce
 
 // The real router attaches a font stylesheet with the first cockpit chunk;
 // network fonts are unrelated to route admission and must not escape here.
-beforeAll(() => {
+beforeAll(async () => {
   browserSettings.disableCSSFileLoading = true;
   browserSettings.handleDisabledFileLoadingAsSuccess = true;
+  // The persistent staff shell's code is asked for with Clerk's and the
+  // page's while access is checked, so a browser holds it by the time an
+  // account is confirmed. Transform it once here, so the first case does not
+  // pay for the whole shell's first compile inside its wait for the page.
+  await import("../../dashboard/DashboardLayout.js");
 });
 afterAll(() => {
   browserSettings.disableCSSFileLoading = previousCssLoading;

@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import { useAuthStore } from "./stores/auth-store.js";
-import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet, useLocation, useMatches, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import {
-  DIARY_ROLES, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
+  DIARY_ROLES, hasRole, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
 } from "./lib/role-capabilities.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
@@ -172,6 +172,11 @@ const TwinPage = lazy(() =>
 const DiaryBoardPage = lazyWithPreload(() =>
   import("./pages/diary/DiaryBoardPage.js").then((m) => ({ default: m.DiaryBoardPage })),
 );
+// The staff pages' persistent shell (roadmap N2): one header under every
+// staff page, drawn once.
+const PersistentStaffShell = lazyWithPreload(() =>
+  cockpitImport(() => import("./components/dashboard/DashboardLayout.js").then((m) => ({ default: m.PersistentStaffShell }))),
+);
 
 function LoadingFallback(): ReactElement {
   return <RouteArrival />;
@@ -203,6 +208,46 @@ function withClerk(node: ReactElement, page?: Preloadable): ReactElement {
   const provided = <ClerkRouteProvider>{node}</ClerkRouteProvider>;
   if (page === undefined) return withSuspense(provided);
   return withSuspense(<PreloadRouteCode code={[ClerkRouteProvider, page]}>{provided}</PreloadRouteCode>);
+}
+
+/** What a staff page's route carries: the page's code, for the shell to ask for. */
+interface StaffPageHandle { readonly staffPage: Preloadable }
+
+function isStaffPageHandle(handle: unknown): handle is StaffPageHandle {
+  return typeof handle === "object" && handle !== null && "staffPage" in handle;
+}
+
+/** Asks for Clerk's code, the shell's and the matched staff page's at once, as
+ *  withClerk does for a page of its own, so the page's chunk never waits for
+ *  the provider's. */
+function PreloadStaffRoute({ children }: { readonly children: ReactElement }): ReactElement {
+  const matches = useMatches();
+  ClerkRouteProvider.preload();
+  PersistentStaffShell.preload();
+  for (const match of matches) {
+    if (isStaffPageHandle(match.handle)) match.handle.staffPage.preload();
+  }
+  return children;
+}
+
+/**
+ * The staff pages' parent route (roadmap N2). A workspace member or platform
+ * admin gets the persistent shell. Until someone is signed in, and for anyone
+ * else, each page's own guard shows its states or sends them to sign in, and
+ * a page it admits wears its own layout, as it always has; none of them waits
+ * for the shell's code.
+ */
+function StaffShellRoute(): ReactElement {
+  const member = useAuthStore((state) => state.user !== null
+    && (state.user.platformRole === "admin" || hasRole(WORKSPACE_ROLES, state.user.role)));
+  if (!member) return withSuspense(<Outlet />);
+  return <PersistentStaffShell />;
+}
+
+/** A staff page under the persistent shell: its guard and page open beneath
+ *  the header, which stays as the pages change. */
+function staffPage(path: string, page: Preloadable, node: ReactElement): RouteObject {
+  return { path, handle: { staffPage: page } satisfies StaffPageHandle, element: node };
 }
 
 // Planner routes stay Clerk-free for guests (no script cost) but mount the
@@ -419,48 +464,55 @@ export const router = createBrowserRouter([
     element: withPlannerAuth(<EditorPage />, EditorPage),
   },
   {
-    // The Day Board (Day Board S1): the hallkeeper's live view of today —
-    // a projection of GET /calendar with the countdown/LIVE/exception state
-    // machine. Declared before /hallkeeper/:configId for clarity, though v7
-    // route ranking would prefer the static segment regardless.
-    path: "/hallkeeper/today",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={VENUE_DAY_ROLES}>
-        <DayBoardRoute />
-      </ProtectedRoute>,
-      DayBoardRoute,
+    // The staff pages share one shell (roadmap N2): the header is drawn once
+    // and stays while the pages beneath it change. Each page keeps its own
+    // guard, which alone decides whether it renders or fetches.
+    element: withSuspense(
+      <PreloadStaffRoute>
+        <ClerkRouteProvider><StaffShellRoute /></ClerkRouteProvider>
+      </PreloadStaffRoute>,
     ),
-  },
-  {
-    path: "/hallkeeper",
-    element: <Navigate to="/hallkeeper/today" replace />,
-  },
-  {
-    path: "/hallkeeper/rooms",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
-        <HallkeeperRoomPlansPage />
-      </ProtectedRoute>,
-      HallkeeperRoomPlansPage,
-    ),
-  },
-  {
-    // The workflow walkthrough is a FICTIONAL demonstration (Hillside House),
-    // so it moved under /dev, admin-only (Lane 6's hand-off, PR #21; Blake's
-    // decision of 26 September 2026). The old address forwards there, so a
-    // link Blake presented from still opens it for an admin, and nobody lands
-    // on a hallkeeper sheet for a configuration called "walkthrough".
-    path: "/hallkeeper/walkthrough",
-    element: <Navigate to="/dev/hallkeeper-walkthrough" replace />,
-  },
-  {
-    path: "/dev/hallkeeper-walkthrough",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={["admin"]}>
-        <HallkeeperWalkthroughPage />
-      </ProtectedRoute>,
-      HallkeeperWalkthroughPage,
-    ),
+    children: [
+      // The header's Hallkeeper link: forwarded under the shell, so the
+      // header stays on the way to the Day Board.
+      { path: "/hallkeeper", element: <Navigate to="/hallkeeper/today" replace /> },
+      // The workflow walkthrough is a FICTIONAL demonstration (Hillside House),
+      // so it moved under /dev, admin-only (Lane 6's hand-off, PR #21; Blake's
+      // decision of 26 September 2026). The old address forwards there, so a
+      // link Blake presented from still opens it for an admin, and nobody lands
+      // on a hallkeeper sheet for a configuration called "walkthrough".
+      { path: "/hallkeeper/walkthrough", element: <Navigate to="/dev/hallkeeper-walkthrough" replace /> },
+      // The Day Board (Day Board S1): the hallkeeper's live view of today —
+      // a projection of GET /calendar with the countdown/LIVE/exception state
+      // machine. v7 route ranking prefers this static segment to
+      // /hallkeeper/:configId.
+      staffPage("/hallkeeper/today", DayBoardRoute,
+        <ProtectedRoute allowedRoles={VENUE_DAY_ROLES}><DayBoardRoute /></ProtectedRoute>),
+      staffPage("/hallkeeper/rooms", HallkeeperRoomPlansPage,
+        <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}><HallkeeperRoomPlansPage /></ProtectedRoute>),
+      staffPage("/dev/hallkeeper-walkthrough", HallkeeperWalkthroughPage,
+        <ProtectedRoute allowedRoles={["admin"]}><HallkeeperWalkthroughPage /></ProtectedRoute>),
+      // The Diary Board (T-493): staff/admin move bookings; hallkeeper reads.
+      // The API enforces the same write split server-side.
+      staffPage("/diary", DiaryBoardPage,
+        <ProtectedRoute allowedRoles={DIARY_ROLES}><DiaryBoardPage /></ProtectedRoute>),
+      staffPage("/dashboard", DashboardPage,
+        <ProtectedRoute allowedRoles={WORKSPACE_ROLES}><DashboardPage /></ProtectedRoute>),
+      staffPage("/ops/handoff/:handoffPackId", OpsHandoffPage,
+        <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}><OpsHandoffPage /></ProtectedRoute>),
+      staffPage("/ops/events/:eventId", EventDayOpsPage,
+        <InternalEventRoute><EventDayOpsPage /></InternalEventRoute>),
+      staffPage("/event-architect", EventArchitectPage,
+        <InternalEventRoute><EventArchitectPage /></InternalEventRoute>),
+      staffPage("/event-architect/runs/:runId", EventArchitectPage,
+        <InternalEventRoute><EventArchitectPage /></InternalEventRoute>),
+      staffPage("/dev/capture-intake", CaptureIntakePage,
+        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin"><CaptureIntakePage /></ProtectedRoute>),
+      // Legacy room-level registry remains available during Foundry migration;
+      // the Runtime Foundry dashboard links to it as a named compatibility tool.
+      staffPage("/dev/assets/rooms", TradesHallAssetStatusPage,
+        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin"><TradesHallAssetStatusPage /></ProtectedRoute>),
+    ],
   },
   {
     // Hallkeeper sheets expose PII (enquiry contact details, event info) and
@@ -476,68 +528,12 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    // The Diary Board (T-493): staff/admin move bookings; hallkeeper reads.
-    // The API enforces the same write split server-side.
-    path: "/diary",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={DIARY_ROLES}>
-        <DiaryBoardPage />
-      </ProtectedRoute>,
-      DiaryBoardPage,
-    ),
-  },
-  {
-    path: "/dashboard",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={WORKSPACE_ROLES}>
-        <DashboardPage />
-      </ProtectedRoute>,
-      DashboardPage,
-    ),
-  },
-  {
-    path: "/ops/handoff/:handoffPackId",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={VENUE_ROOM_ROLES}>
-        <OpsHandoffPage />
-      </ProtectedRoute>,
-      OpsHandoffPage,
-    ),
-  },
-  {
-    path: "/ops/events/:eventId",
-    element: withClerk(
-      <InternalEventRoute>
-        <EventDayOpsPage />
-      </InternalEventRoute>,
-      EventDayOpsPage,
-    ),
-  },
-  {
     path: "/events/:eventId",
     element: withClerk(
       <ProtectedRoute>
         <ClientEventPage />
       </ProtectedRoute>,
       ClientEventPage,
-    ),
-  },
-  {
-    path: "/event-architect",
-    element: withClerk(
-      <InternalEventRoute>
-        <EventArchitectPage />
-      </InternalEventRoute>,
-      EventArchitectPage,
-    ),
-  },
-  {
-    path: "/event-architect/runs/:runId",
-    element: withClerk(
-      <InternalEventRoute>
-        <EventArchitectPage />
-      </InternalEventRoute>,
-      EventArchitectPage,
     ),
   },
   {
@@ -573,17 +569,6 @@ export const router = createBrowserRouter([
     element: withSplatAccess(<TradesHallVisualPage />),
   },
   {
-    // Legacy room-level registry remains available during Foundry migration;
-    // the Runtime Foundry dashboard links to it as a named compatibility tool.
-    path: "/dev/assets/rooms",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
-        <TradesHallAssetStatusPage />
-      </ProtectedRoute>,
-      TradesHallAssetStatusPage,
-    ),
-  },
-  {
     path: "/trades-house/leaflet",
     element: withSuspense(<TradesHouseLeafletPage />),
   },
@@ -595,15 +580,6 @@ export const router = createBrowserRouter([
     // The short shareable door to the same room — venviewer.com/quiz.
     path: "/quiz",
     element: withSuspense(<TradesHouseCraftQuizPage />),
-  },
-  {
-    path: "/dev/capture-intake",
-    element: withClerk(
-      <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
-        <CaptureIntakePage />
-      </ProtectedRoute>,
-      CaptureIntakePage,
-    ),
   },
   {
     // Room captures — the internal review console for every staged XGRIDS

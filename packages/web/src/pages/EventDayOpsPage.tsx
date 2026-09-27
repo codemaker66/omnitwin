@@ -540,7 +540,7 @@ export function EventDayOpsPage(): ReactElement {
 
   if (state.kind === "loading") {
     return (
-      <DashboardLayout>
+      <DashboardLayout mainLabel="Event day">
 
         <div className="event-day-page event-day-centered" role="status">
         <ActivityIndicator size={64} />
@@ -553,7 +553,7 @@ export function EventDayOpsPage(): ReactElement {
 
   if (state.kind === "error") {
     return (
-      <DashboardLayout>
+      <DashboardLayout mainLabel="Event day">
 
         <div className="event-day-page event-day-centered">
         <AlertCircle aria-hidden="true" />
@@ -618,7 +618,7 @@ export function EventDayOpsPage(): ReactElement {
   );
 
   return (
-    <DashboardLayout>
+    <DashboardLayout mainLabel="Event day">
 
       <div className="event-day-page">
       <header className="event-day-hero">

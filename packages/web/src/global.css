@@ -116,6 +116,13 @@ button:disabled,
   color: var(--vv-forest);
 }
 
+/* Under the persistent staff shell a guard's state is a lit area of the
+   workspace, below the header, rather than a page of its own. */
+.vv-route-state--framed {
+  min-height: min(70dvh, 640px);
+  border-radius: 8px;
+}
+
 .vv-state-panel {
   display: grid;
   width: min(520px, 100%);

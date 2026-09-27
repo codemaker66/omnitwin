@@ -1,6 +1,6 @@
-import { type ReactNode, useCallback, useState, useEffect, useId, useLayoutEffect, useRef } from "react";
+import { type ReactNode, Suspense, useCallback, useMemo, useState, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useClerk } from "@clerk/react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Bell, ChevronDown } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
@@ -10,6 +10,7 @@ import { getUnreadNotificationCount } from "../../api/notifications.js";
 import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
+import { StaffShellContext, useInStaffShell, useShellFrame, type ShellFrame, type StaffShell } from "./staff-shell.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
@@ -273,21 +274,23 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
     return () => { document.title = previous; };
   }, [venueKnown, venueName, workspaceName]);
 
-  // Choosing another view moves focus to the workspace, which is named after
-  // the view, so a keyboard or screen-reader user starts in the new view
-  // ("Proposals, main") rather than on a menu that has closed. Not the
-  // view's first heading: several views open with a card's ("New
-  // proposal"). Not over a view that placed focus itself, and not on first
-  // arrival, which keeps the browser's own start.
+  // Choosing another view, or another page under the persistent shell, moves
+  // focus to the workspace, which is named after it, so a keyboard or
+  // screen-reader user starts in the new place ("Proposals, main") rather
+  // than on a menu that has closed or a link in the header. Not the view's
+  // first heading: several views open with a card's ("New proposal"). Not
+  // over a page that placed focus itself, and not on first arrival, which
+  // keeps the browser's own start.
   const mainRef = useRef<HTMLElement>(null);
-  const previousView = useRef(activeView);
+  const place = `${location.pathname}|${activeView ?? ""}`;
+  const previousPlace = useRef(place);
   useEffect(() => {
-    if (previousView.current === activeView) return;
-    previousView.current = activeView;
+    if (previousPlace.current === place) return;
+    previousPlace.current = place;
     const main = mainRef.current;
     if (main === null || main.contains(document.activeElement)) return;
     main.focus({ preventScroll: true });
-  }, [activeView]);
+  }, [place]);
 
   // -------------------------------------------------------------------------
   // Unread notifications on the VISIBLE nav row
@@ -474,8 +477,44 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   );
 }
 
+/** Inside the persistent shell a page hands its frame up to the header and
+ *  draws only its workspace. */
+function FramedWorkspace({ children, ...frame }: DashboardLayoutProps): React.ReactElement {
+  useShellFrame(frame);
+  return <>{children}</>;
+}
+
 export function DashboardLayout(props: DashboardLayoutProps): React.ReactElement {
+  const inShell = useInStaffShell();
+  if (inShell) return <FramedWorkspace {...props} />;
   return <InventoryExitBoundary><DashboardLayoutShell {...props} /></InventoryExitBoundary>;
 }
+
+/**
+ * The persistent staff shell (roadmap N2), the parent of every staff page for
+ * the venue's workspace members and platform admins. The header is drawn once
+ * and stays while the pages beneath it change, so its unread count, its menus
+ * and any toast survive a move from the Enquiries desk to the Diary.
+ */
+export function PersistentStaffShell(): React.ReactElement {
+  const [held, setHeld] = useState<{ readonly owner: symbol; readonly frame: ShellFrame } | null>(null);
+  const shell = useMemo<StaffShell>(() => ({
+    hold: (owner, frame) => { setHeld({ owner, frame }); },
+    release: (owner) => { setHeld((current) => (current?.owner === owner ? null : current)); },
+  }), []);
+  return (
+    <InventoryExitBoundary>
+      <StaffShellContext.Provider value={shell}>
+        <DashboardLayoutShell {...held?.frame}>
+          {/* A page whose code is still on its way opens here, under the header. */}
+          <Suspense fallback={<ActivityStatus variant="panel">Opening…</ActivityStatus>}>
+            <Outlet />
+          </Suspense>
+        </DashboardLayoutShell>
+      </StaffShellContext.Provider>
+    </InventoryExitBoundary>
+  );
+}
+
 
 export type { DashboardView };

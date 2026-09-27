@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { authRouteWithReturnTo } from "../../lib/auth-return.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
+import { useInStaffShell, useShellFrame } from "../dashboard/staff-shell.js";
 
 /**
  * A refusal is not a dead end. Whoever reads this screen is signed in as
@@ -70,6 +71,18 @@ function DenialActions(): React.ReactElement {
   );
 }
 
+/**
+ * A guard's own state. On its own it is a page; under the persistent staff
+ * shell it is a panel in the workspace, which takes its name, so the page
+ * never holds a second main landmark.
+ */
+function RouteState({ label, children }: { readonly label: string; readonly children: ReactNode }): React.ReactElement {
+  const framed = useInStaffShell();
+  useShellFrame({ mainLabel: label });
+  if (framed) return <div className="vv-route-state vv-route-state--framed">{children}</div>;
+  return <main className="vv-route-state" aria-label={label}>{children}</main>;
+}
+
 // ---------------------------------------------------------------------------
 // ProtectedRoute — guards routes by auth + role
 // ---------------------------------------------------------------------------
@@ -86,12 +99,12 @@ export function ProtectedRoute({ children, allowedRoles, requiredPlatformRole }:
 
   if (isLoading) {
     return (
-      <main className="vv-route-state" aria-label="Workspace access check">
+      <RouteState label="Workspace access check">
         <section className="vv-state-panel" role="status" aria-live="polite">
           <ActivityIndicator size={48} />
           <h1>Checking access…</h1>
         </section>
-      </main>
+      </RouteState>
     );
   }
 
@@ -101,25 +114,25 @@ export function ProtectedRoute({ children, allowedRoles, requiredPlatformRole }:
 
   if (allowedRoles !== undefined && user !== null && !allowedRoles.includes(user.role)) {
     return (
-      <main className="vv-route-state" aria-label="Workspace access denied">
+      <RouteState label="Workspace access denied">
         <section className="vv-state-panel" role="alert">
           <h1>Access needed</h1>
           <p>Ask your venue admin to grant access.</p>
           <DenialActions />
         </section>
-      </main>
+      </RouteState>
     );
   }
 
   if (requiredPlatformRole !== undefined && user !== null && user.platformRole !== requiredPlatformRole) {
     return (
-      <main className="vv-route-state" aria-label="Workspace access denied">
+      <RouteState label="Workspace access denied">
         <section className="vv-state-panel" role="alert">
           <h1>Platform access needed</h1>
           <p>Ask a Venviewer platform admin to grant access.</p>
           <DenialActions />
         </section>
-      </main>
+      </RouteState>
     );
   }
 
