@@ -310,6 +310,14 @@ function renderPage(): void {
   );
 }
 
+/** The line under the event's name: date, start hour, time zone, guests.
+ *  Hours are read here and nowhere else, because the sync label beside it
+ *  ("Updated 08:00") shows the real clock: a bare /08:00/ matched it too
+ *  when CI ran at 08:00 in London. */
+function heroLine(): string {
+  return screen.getByText(/ guests$/u).textContent ?? "";
+}
+
 beforeEach(() => {
   mockGetEventDayOpsBoard.mockReset();
   mockUpdateOpsTaskStatus.mockReset();
@@ -697,8 +705,8 @@ describe("EventDayOpsPage", () => {
     });
     renderPage();
     await screen.findByText("Blake event day");
-    await waitFor(() => { expect(screen.getByText(/08:00/u)).toBeTruthy(); });
-    expect(screen.queryByText(/10:00/u)).toBeNull();
+    await waitFor(() => { expect(heroLine()).toContain("08:00"); });
+    expect(heroLine()).not.toContain("10:00");
   });
 
   it("marks the time as planned when the Diary cannot be read", async () => {
@@ -731,8 +739,8 @@ describe("EventDayOpsPage", () => {
     renderPage();
     await screen.findByText("Blake event day");
     // 07:00Z = 08:00 Europe/London — the ink booking, not the 06:00 prospect.
-    await waitFor(() => { expect(screen.getByText(/08:00/u)).toBeTruthy(); });
-    expect(screen.queryByText(/06:00/u)).toBeNull();
+    await waitFor(() => { expect(heroLine()).toContain("08:00"); });
+    expect(heroLine()).not.toContain("06:00");
   });
 
   it("keeps UI language claim-safe", async () => {
