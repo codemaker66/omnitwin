@@ -284,6 +284,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Day Board says when each room must be ready and how far its sheet has got (T-635 N4): on a phone, a booking linked to its event opens the room's one layout from Open setup sheet, the line under the door reads \"Ready by 16:00 \u00b7 12 of 43 checked\" on the venue's clock, the progress bar fills to that share, and every label on the board reads at 12 px and 4.5:1 or better.",
+      "sourceCommit": "77b3849692bae987911d3d98b3fb1b428be8050a",
+      "sourceFile": "packages/web/e2e/day-board.spec.ts",
+      "sourceFileGitBlobSha256": "fb29a31e4caf393b23d6ce7d82bc101f612b7bda02f4098546af820be5d1ff60",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "250bb87c07f0baa4c8c91b068137017cda6476a092e2d13f61bc46ab93c10321",
+      "caseIds": [
+        "1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3525,6 +3539,17 @@
       "id": "1b07f1b6eeb3a7bdbe8c-1030efa1e1333500384f",
       "file": "day-board.spec.ts",
       "title": "stays still and readable all day, speaks its legend in the slots' words, and steps the day from the keyboard",
+      "suitePath": [
+        "day-board.spec.ts",
+        "Day Board"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "1b07f1b6eeb3a7bdbe8c-542cfb6aca0a4807d9ce",
+      "file": "day-board.spec.ts",
+      "title": "shows under each room's sheet when setup must be done and how far its checklist has got",
       "suitePath": [
         "day-board.spec.ts",
         "Day Board"
