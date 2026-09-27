@@ -200,7 +200,7 @@ test.describe("Pipeline desk", () => {
     await page.goto("/dashboard?view=pipeline");
     await expect(page.getByRole("main")).toHaveAccessibleName("Pipeline");
     await expect(page.getByTestId("pipeline-summary"))
-      .toHaveText("1 deal has a step due today, and 1 is overdue. £24,600.00 is open across 3 deals.");
+      .toHaveText("1 deal has a step due today, and 1 is overdue. £24,600 is open across 3 deals.");
     await expect.poll(() => groups(page)).toEqual(["Overdue", "Due today", "No date set"]);
     await expect(page.getByRole("button", { name: "Proposal sent, 1, £18,400" })).toBeVisible();
 
@@ -234,7 +234,7 @@ test.describe("Pipeline desk", () => {
     await expect(panel.getByText("Accepted the proposal for 5 June")).toBeVisible();
     await expect.poll(() => groups(page)).toEqual(["Due today", "No date set", "Won and lost"]);
     await expect(page.getByTestId("pipeline-summary"))
-      .toHaveText("1 deal has a step due today. £6,200.00 is open across 2 deals.");
+      .toHaveText("1 deal has a step due today. £6,200 is open across 2 deals.");
 
     // Won, it is last on the ledger; k moves to the deal before it, and the
     // address follows.

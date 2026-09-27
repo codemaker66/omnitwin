@@ -176,7 +176,7 @@ export function pipelineSummary(input: {
         : ["Nothing is due today or overdue."];
   const open: SummaryPart[] = openCount === 0 ? [" No deals are open."]
     : openValueMinor === null ? [" ", { strong: deals(openCount) }, openCount === 1 ? " is open." : " are open."]
-      : [" ", { strong: formatMinorAsCurrency(openValueMinor, currency) }, " is open across ", { strong: deals(openCount) }, "."];
+      : [" ", { strong: formatMinorAsCurrency(openValueMinor, currency).replace(/\.00$/u, "") }, " is open across ", { strong: deals(openCount) }, "."];
   return [...owed, ...open];
 }
 

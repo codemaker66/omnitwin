@@ -187,7 +187,7 @@ describe("the ledger", () => {
   it("says what is owed today and what is open, from the pipeline's own figures", async () => {
     render(<PipelineDesk />);
     expect((await screen.findByTestId("pipeline-summary")).textContent)
-      .toBe("2 deals have a step due today, and 1 is overdue. £43,400.00 is open across 8 deals.");
+      .toBe("2 deals have a step due today, and 1 is overdue. £43,400 is open across 8 deals.");
   });
 
   it("shows each live stage's count and worth, and filters the ledger by it", async () => {

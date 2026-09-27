@@ -691,7 +691,12 @@
   .enq-stage:nth-child(3n + 1)[aria-pressed="true"]::after { left: 0; }
   .enq-stage__count { font-size: 28px; }
   .enq-row { grid-template-columns: 52px minmax(0, 1fr); gap: 14px; padding-right: 4px; }
-  .enq-row__side { grid-column: 2; display: flex; align-items: center; gap: 10px; }
+  /* The status and its age share a line while they fit, and the age wraps
+     beneath rather than running past the edge ("Version 2, changed …"). */
+  .enq-row__side { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  /* At the narrowest widths a long age ("Version 12, changed on 28 Sep 2025")
+     is wider than the column even on its own line, so it breaks between words. */
+  .enq-row__age { white-space: normal; }
   .enq-date__month { letter-spacing: 0.04em; }
   .enq-row__title { font-size: 17.5px; }
   /* A phone shows the whole facts line, wrapped, rather than an ellipsis. */

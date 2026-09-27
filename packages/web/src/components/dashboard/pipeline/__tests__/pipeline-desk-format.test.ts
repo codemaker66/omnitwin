@@ -58,11 +58,13 @@ describe("the opening sentence", () => {
     return parts === null ? null : summaryText(parts);
   };
   it("says what is owed today and what is open, in whole sentences", () => {
-    expect(sentence({ overdue: 2, today: 1 })).toBe("1 deal has a step due today, and 2 are overdue. £12,345.00 is open across 3 deals.");
-    expect(sentence({ overdue: 0, today: 2 })).toBe("2 deals have a step due today. £12,345.00 is open across 3 deals.");
-    expect(sentence({ overdue: 1, today: 0 }, 1)).toBe("Nothing is due today; 1 deal is overdue. £12,345.00 is open across 1 deal.");
+    expect(sentence({ overdue: 2, today: 1 })).toBe("1 deal has a step due today, and 2 are overdue. £12,345 is open across 3 deals.");
+    expect(sentence({ overdue: 0, today: 2 })).toBe("2 deals have a step due today. £12,345 is open across 3 deals.");
+    expect(sentence({ overdue: 1, today: 0 }, 1)).toBe("Nothing is due today; 1 deal is overdue. £12,345 is open across 1 deal.");
     expect(sentence({ overdue: 0, today: 0 }, 0)).toBe("Nothing is due today or overdue. No deals are open.");
     expect(sentence({ overdue: 0, today: 0 }, 2, null)).toBe("Nothing is due today or overdue. 2 deals are open.");
+    // Whole pounds as the stage counts show them; pence only when there are some.
+    expect(sentence({ overdue: 0, today: 0 }, 2, 1_234_550)).toBe("Nothing is due today or overdue. £12,345.50 is open across 2 deals.");
   });
   it("says nothing rather than guess from an API that does not count", () => {
     expect(sentence(null)).toBeNull();
