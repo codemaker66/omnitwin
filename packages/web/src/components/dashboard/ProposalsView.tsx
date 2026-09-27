@@ -656,22 +656,6 @@ export function ProposalsView(): ReactElement {
               </p>
             )}
 
-            {confirmingWithdraw && WITHDRAWABLE_STATUSES.includes(selected.status) && (
-              <div role="group" aria-labelledby="proposal-withdraw-question" data-testid="withdraw-confirm" style={{ display: "grid", gap: 10, marginTop: 16, padding: 12, border: "1px solid rgba(255, 180, 162, 0.4)", borderRadius: 8 }}>
-                <p id="proposal-withdraw-question" style={{ margin: 0, fontSize: 13.5, color: "#fff7e8" }}>
-                  Withdraw this proposal? The client's link will stop working.
-                </p>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button type="button" data-testid="withdraw-confirm-button" style={buttonSecondary} disabled={busy} onClick={() => { handleTransition("withdrawn"); }}>
-                    Withdraw
-                  </button>
-                  <button type="button" style={buttonSecondary} disabled={busy} onClick={() => { setConfirmingWithdraw(false); }}>
-                    Keep it
-                  </button>
-                </div>
-              </div>
-            )}
-
             <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
               {LINKABLE_STATUSES.includes(selected.status) && (
                 <button
@@ -687,8 +671,12 @@ export function ProposalsView(): ReactElement {
                   {alreadySent ? "Issue a new client link" : "Generate client link"}
                 </button>
               )}
-              {WITHDRAWABLE_STATUSES.includes(selected.status) && !confirmingWithdraw && (
-                <button type="button" data-testid="withdraw-button" style={buttonSecondary} disabled={busy} onClick={() => { setConfirmingWithdraw(true); }}>
+              {WITHDRAWABLE_STATUSES.includes(selected.status) && (
+                // Stays in place while the question is open, so focus has
+                // somewhere to be and the question follows it in tab order.
+                <button type="button" data-testid="withdraw-button" style={buttonSecondary} disabled={busy}
+                  aria-expanded={confirmingWithdraw}
+                  onClick={() => { setConfirmingWithdraw((open) => !open); }}>
                   Withdraw…
                 </button>
               )}
@@ -698,6 +686,21 @@ export function ProposalsView(): ReactElement {
                 </button>
               )}
             </div>
+            {confirmingWithdraw && WITHDRAWABLE_STATUSES.includes(selected.status) && (
+              <div role="group" aria-labelledby="proposal-withdraw-question" data-testid="withdraw-confirm" style={{ display: "grid", gap: 10, marginTop: 16, padding: 12, border: "1px solid rgba(255, 180, 162, 0.4)", borderRadius: 8 }}>
+                <p id="proposal-withdraw-question" style={{ margin: 0, fontSize: 13.5, color: "#fff7e8" }}>
+                  Withdraw this proposal? The client's link will stop working.
+                </p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button type="button" data-testid="withdraw-confirm-button" style={buttonSecondary} disabled={busy} onClick={() => { handleTransition("withdrawn"); }}>
+                    Withdraw
+                  </button>
+                  <button type="button" style={buttonSecondary} disabled={busy} onClick={() => { setConfirmingWithdraw(false); }}>
+                    Keep it
+                  </button>
+                </div>
+              </div>
+            )}
             {actionError !== null && (
               <div role="alert" style={{ marginTop: 10, fontSize: 13, color: "#ffb4a2" }}>{actionError}</div>
             )}

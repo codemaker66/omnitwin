@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { ConfigurationReviewStatus } from "@omnitwin/types";
+import { ApiError } from "../../api/client.js";
 import {
   approveLayout,
   getAvailableTransitions,
@@ -11,6 +12,7 @@ import {
   withdrawReview,
   type PendingReviewEntry,
   type ReviewHistoryEntry,
+  type ReviewNotificationPolicy,
 } from "../../api/configuration-reviews.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { useReviewViewers } from "../../hooks/use-review-viewers.js";
@@ -50,6 +52,52 @@ const STATUS_VISUALS: Readonly<Record<ConfigurationReviewStatus, {
   withdrawn:         { label: "Withdrawn",          background: "rgba(246, 241, 232, 0.07)", color: "rgba(246, 241, 232, 0.58)" },
   archived:          { label: "Archived",           background: "rgba(246, 241, 232, 0.07)", color: "rgba(246, 241, 232, 0.58)" },
 };
+
+// Where a review stands, as words for a sentence.
+const STATUS_IN_WORDS: Readonly<Record<ConfigurationReviewStatus, string>> = {
+  draft: "back with the planner as a draft",
+  submitted: "waiting for a reviewer",
+  under_review: "under review",
+  approved: "approved",
+  rejected: "rejected",
+  changes_requested: "back with the planner for changes",
+  withdrawn: "withdrawn",
+  archived: "archived",
+};
+
+// The API's 409 codes for a review that moved on before a decision reached
+// it: someone else decided, or the planner withdrew it.
+const REVIEW_MOVED_CODES: ReadonlySet<string> = new Set([
+  "INVALID_TRANSITION", "SNAPSHOT_CONFLICT", "SNAPSHOT_ALREADY_APPROVED",
+]);
+
+function reviewMovedOn(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && REVIEW_MOVED_CODES.has(error.code);
+}
+
+// Who a decision emails (routes/configuration-reviews.ts): approval emails
+// the layout's planner and every hallkeeper account at the venue; a
+// rejection or change request emails the planner. A layout with no planner
+// account has nobody to email on that side.
+function approvalConsequence(hasPlanner: boolean, emails: boolean): string {
+  if (!emails) return "Approving records the decision. Nobody is emailed.";
+  return hasPlanner
+    ? "Approving emails the planner and your venue's hallkeepers."
+    : "Approving emails your venue's hallkeepers. This layout has no planner account to email.";
+}
+
+function approvalToast(policy: ReviewNotificationPolicy | undefined, hasPlanner: boolean): string {
+  if (policy === "suppressed_demo") return "Layout approved. Nobody was emailed.";
+  return hasPlanner
+    ? "Layout approved. The planner and your hallkeepers are being emailed."
+    : "Layout approved. Your hallkeepers are being emailed.";
+}
+
+function noteConsequence(hasPlanner: boolean): string {
+  return hasPlanner
+    ? "Your note is emailed to the planner and kept in this review's timeline."
+    : "This layout has no planner account, so nobody is emailed. Your note is kept in this review's timeline.";
+}
 
 const cardStyle: React.CSSProperties = {
   background: "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
@@ -206,7 +254,9 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
       aria-modal="true"
       aria-labelledby="review-note-modal-title"
       aria-describedby="review-note-modal-description"
-      onClick={() => { if (!props.inFlight) props.onCancel(); }}
+      // A stray click beside the dialog closes it only while nothing is
+      // written; Cancel and Escape still close it on purpose.
+      onClick={() => { if (!props.inFlight && trimmed.length === 0) props.onCancel(); }}
       onKeyDown={(event) => { if (event.key === "Escape" && !props.inFlight) props.onCancel(); }}
       style={{
         position: "fixed", inset: 0, zIndex: 100,
@@ -271,7 +321,8 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
 interface DetailViewProps {
   readonly entry: PendingReviewEntry;
   readonly onBack: () => void;
-  readonly onStatusChange: (id: string, next: ConfigurationReviewStatus) => void;
+  /** `notice`, when given, is said on the list if the review leaves it. */
+  readonly onStatusChange: (id: string, next: ConfigurationReviewStatus, notice?: string) => void;
 }
 
 function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.ReactElement {
@@ -286,6 +337,14 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   const [inFlight, setInFlight] = useState(false);
   const [modal, setModal] = useState<null | "reject" | "changes">(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Withdrawing ends the review for good, so it is asked, not done.
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
+  // Said when a decision met a review that had moved on. It outlives the
+  // context reload that follows, and the next decision clears it.
+  const [movedNotice, setMovedNotice] = useState<string | null>(null);
+  const withdrawQuestionId = useId();
+  const rehearsalHintId = useId();
+  const hasPlanner = entry.userId !== null;
   // Presence — who else is viewing this same review. Heartbeats + polls
   // while mounted; fires an explicit leave on unmount so other viewers
   // drop the badge within a couple of seconds.
@@ -299,6 +358,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
     setDemoEligible(false);
     setNotifyTeam(true);
     setActionError(null);
+    setConfirmingWithdraw(false);
     void (async () => {
       try {
         const [hist, trans] = await Promise.all([
@@ -329,18 +389,47 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   const can = (status: ConfigurationReviewStatus): boolean =>
     availableTransitions.includes(status);
 
-  const handleStartReview = (): void => {
+  const beginDecision = (): number => {
     const operation = ++actionOperation.current;
     setInFlight(true);
     setActionError(null);
+    setMovedNotice(null);
+    return operation;
+  };
+
+  // A decision met a review that had moved on. Read where it stands and say
+  // so: "did not save" would invite a retry that cannot work.
+  const reportMovedOn = async (operation: number): Promise<void> => {
+    setModal(null);
+    setConfirmingWithdraw(false);
+    try {
+      const now = await getAvailableTransitions(entry.id);
+      if (actionOperation.current !== operation) return;
+      if (now.currentStatus === entry.reviewStatus) {
+        setMovedNotice("This review changed while it was open here, so your decision was not recorded. It has been read again; look it over before deciding.");
+        loadContext();
+        return;
+      }
+      const notice = `${entry.name} changed while it was open here. It is now ${STATUS_IN_WORDS[now.currentStatus]}, so your decision was not recorded.`;
+      setMovedNotice(notice);
+      onStatusChange(entry.id, now.currentStatus, notice);
+    } catch {
+      if (actionOperation.current !== operation) return;
+      setActionError("This review changed while it was open here, so your decision was not recorded. Go back to the list and open it again.");
+    }
+  };
+
+  const handleStartReview = (): void => {
+    const operation = beginDecision();
     void (async () => {
       try {
         const next = await startReview(entry.id);
         if (actionOperation.current !== operation) return;
         addToast("Review started", "success");
         onStatusChange(entry.id, next);
-      } catch {
+      } catch (error: unknown) {
         if (actionOperation.current !== operation) return;
+        if (reviewMovedOn(error)) { await reportMovedOn(operation); return; }
         setActionError("Could not start this review. Check your role and retry before making a decision.");
         addToast("Failed to start review", "error");
       } finally {
@@ -350,20 +439,17 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   };
 
   const handleApprove = (): void => {
-    const operation = ++actionOperation.current;
-    setInFlight(true);
-    setActionError(null);
+    const operation = beginDecision();
     void (async () => {
       try {
         const { reviewStatus, notificationPolicy } = demoEligible
           ? await approveLayout(entry.id, undefined, notifyTeam) : await approveLayout(entry.id);
         if (actionOperation.current !== operation) return;
-        addToast(notificationPolicy === "suppressed_demo"
-          ? "Layout approved for internal demo. Team notifications were suppressed."
-          : "Layout approved — team notifications requested", "success");
+        addToast(approvalToast(notificationPolicy, hasPlanner), "success");
         onStatusChange(entry.id, reviewStatus);
-      } catch {
+      } catch (error: unknown) {
         if (actionOperation.current !== operation) return;
+        if (reviewMovedOn(error)) { await reportMovedOn(operation); return; }
         setActionError("Approval did not save. The layout has not been approved.");
         addToast("Failed to approve", "error");
       } finally {
@@ -373,18 +459,17 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   };
 
   const handleReject = (note: string): void => {
-    const operation = ++actionOperation.current;
-    setInFlight(true);
-    setActionError(null);
+    const operation = beginDecision();
     void (async () => {
       try {
         const next = await rejectLayout(entry.id, note);
         if (actionOperation.current !== operation) return;
-        addToast("Rejection sent to planner", "success");
+        addToast(hasPlanner ? "Rejection sent to the planner" : "Rejection recorded. There is no planner account to email.", "success");
         setModal(null);
         onStatusChange(entry.id, next);
-      } catch {
+      } catch (error: unknown) {
         if (actionOperation.current !== operation) return;
+        if (reviewMovedOn(error)) { await reportMovedOn(operation); return; }
         setActionError("Rejection did not save. The planner has not been notified.");
         addToast("Failed to reject", "error");
       } finally {
@@ -394,18 +479,17 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   };
 
   const handleRequestChanges = (note: string): void => {
-    const operation = ++actionOperation.current;
-    setInFlight(true);
-    setActionError(null);
+    const operation = beginDecision();
     void (async () => {
       try {
         const next = await requestChanges(entry.id, note);
         if (actionOperation.current !== operation) return;
-        addToast("Change request sent to planner", "success");
+        addToast(hasPlanner ? "Change request sent to the planner" : "Change request recorded. There is no planner account to email.", "success");
         setModal(null);
         onStatusChange(entry.id, next);
-      } catch {
+      } catch (error: unknown) {
         if (actionOperation.current !== operation) return;
+        if (reviewMovedOn(error)) { await reportMovedOn(operation); return; }
         setActionError("Change request did not save. The planner has not been notified.");
         addToast("Failed to request changes", "error");
       } finally {
@@ -415,17 +499,17 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   };
 
   const handleWithdraw = (): void => {
-    const operation = ++actionOperation.current;
-    setInFlight(true);
-    setActionError(null);
+    const operation = beginDecision();
     void (async () => {
       try {
         const next = await withdrawReview(entry.id);
         if (actionOperation.current !== operation) return;
+        setConfirmingWithdraw(false);
         addToast("Review withdrawn", "success");
         onStatusChange(entry.id, next);
-      } catch {
+      } catch (error: unknown) {
         if (actionOperation.current !== operation) return;
+        if (reviewMovedOn(error)) { await reportMovedOn(operation); return; }
         setActionError("Withdraw did not save. This review is still active.");
         addToast("Failed to withdraw", "error");
       } finally {
@@ -497,6 +581,11 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
               {actionError}
             </div>
           )}
+          {movedNotice !== null && (
+            <div role="alert" data-testid="review-moved-on" style={{ ...alertStyle, marginBottom: 10 }}>
+              {movedNotice}
+            </div>
+          )}
           {contextState.status === "ready" && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {can("under_review") && (
@@ -504,12 +593,25 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
                 Start Review
               </button>
             )}
-            {can("approved") && demoEligible && (
-              <label style={{ flexBasis: "100%", fontSize: 13 }}>
-                <input type="checkbox" checked={notifyTeam} disabled={inFlight}
-                  onChange={event => { setNotifyTeam(event.target.checked); }} /> Notify team
-                <span style={{ display: "block" }}>Uncheck to record this decision internally, without emailing the planner or the hallkeeper. Offered only on rehearsal plans.</span>
-              </label>
+            {can("approved") && (
+              <div style={{ flexBasis: "100%", display: "grid", gap: 6, fontSize: 13, lineHeight: 1.45, color: "rgba(246,241,232,0.78)" }}>
+                {demoEligible && (
+                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input type="checkbox" checked={notifyTeam} disabled={inFlight} aria-describedby={rehearsalHintId}
+                      style={{ width: 16, height: 16, margin: 0, accentColor: "#c98a5b" }}
+                      onChange={event => { setNotifyTeam(event.target.checked); }} />
+                    {hasPlanner ? "Email the planner and hallkeepers" : "Email your venue's hallkeepers"}
+                  </label>
+                )}
+                {demoEligible && (
+                  <p id={rehearsalHintId} style={{ margin: 0, color: "rgba(246,241,232,0.62)" }}>
+                    This is a rehearsal plan, so it can be approved without emailing anyone.
+                  </p>
+                )}
+                <p data-testid="approve-consequence" style={{ margin: 0 }}>
+                  {approvalConsequence(hasPlanner, !demoEligible || notifyTeam)}
+                </p>
+              </div>
             )}
             {can("approved") && (
               <button type="button" style={buttonPrimary} onClick={handleApprove} disabled={inFlight}>
@@ -527,13 +629,31 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
               </button>
             )}
             {can("withdrawn") && (
-              <button type="button" style={buttonSecondary} onClick={handleWithdraw} disabled={inFlight}>
-                Withdraw
+              <button type="button" style={buttonSecondary} disabled={inFlight}
+                aria-expanded={confirmingWithdraw}
+                onClick={() => { setConfirmingWithdraw((open) => !open); }}>
+                Withdraw…
               </button>
+            )}
+            {can("withdrawn") && confirmingWithdraw && (
+              <div role="group" aria-labelledby={withdrawQuestionId} data-testid="review-withdraw-confirm"
+                style={{ flexBasis: "100%", display: "grid", gap: 10, padding: 12, borderRadius: 8, border: "1px solid rgba(255, 125, 91, 0.36)" }}>
+                <p id={withdrawQuestionId} style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: "#fff7e8" }}>
+                  Withdraw this layout from review? The review ends here and cannot be reopened. Nobody is emailed.
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  <button type="button" style={buttonDanger} onClick={handleWithdraw} disabled={inFlight}>
+                    Withdraw
+                  </button>
+                  <button type="button" style={buttonSecondary} onClick={() => { setConfirmingWithdraw(false); }} disabled={inFlight}>
+                    Keep it in review
+                  </button>
+                </div>
+              </div>
             )}
             {availableTransitions.length === 0 && (
               <span style={{ fontSize: 12, color: "rgba(246,241,232,0.58)" }}>
-                No actions available for your role in state &lsquo;{entry.reviewStatus}&rsquo;.
+                Your role has no decision to make while this review is {STATUS_IN_WORDS[entry.reviewStatus]}.
               </span>
             )}
           </div>
@@ -575,7 +695,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
       {modal === "reject" && (
         <NoteModal
           title="Reject this layout?"
-          description="This note is emailed to the planner and saved in review history."
+          description={noteConsequence(hasPlanner)}
           confirmLabel="Send rejection"
           confirmStyle={buttonDanger}
           onConfirm={handleReject}
@@ -587,7 +707,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
       {modal === "changes" && (
         <NoteModal
           title="Request changes on this layout?"
-          description="Describe the revisions needed. Your note is saved in review history."
+          description={`Describe the revisions needed. ${noteConsequence(hasPlanner)}`}
           confirmLabel="Send change request"
           confirmStyle={buttonWarning}
           onConfirm={handleRequestChanges}
@@ -618,6 +738,9 @@ export function ReviewsView({ initialSelectedId = null }: ReviewsViewProps = {})
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Why a review left the list while it was open, when it was not this
+  // reviewer's own decision.
+  const [listNotice, setListNotice] = useState<string | null>(null);
   // Honoured once per deep link, so a reviewer who clicks Back to the list is
   // not dragged into the detail again by the next render.
   const appliedDeepLink = useRef<string | null>(null);
@@ -647,7 +770,7 @@ export function ReviewsView({ initialSelectedId = null }: ReviewsViewProps = {})
     setSelectedId(initialSelectedId);
   }, [entries, initialSelectedId]);
 
-  const handleStatusChange = (id: string, next: ConfigurationReviewStatus): void => {
+  const handleStatusChange = (id: string, next: ConfigurationReviewStatus, notice?: string): void => {
     // If the entry transitioned out of the "pending" set, drop it from
     // the list. Otherwise keep it and update the status in place.
     const stillPending: ReadonlySet<ConfigurationReviewStatus> = new Set<ConfigurationReviewStatus>([
@@ -659,6 +782,7 @@ export function ReviewsView({ initialSelectedId = null }: ReviewsViewProps = {})
     });
     if (!stillPending.has(next)) {
       setSelectedId(null);
+      setListNotice(notice ?? null);
     }
   };
 
@@ -686,6 +810,10 @@ export function ReviewsView({ initialSelectedId = null }: ReviewsViewProps = {})
           {loading && <ActivityIndicator size={16} />} {loading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
+
+      {listNotice !== null && (
+        <div role="status" data-testid="reviews-list-notice" style={alertStyle}>{listNotice}</div>
+      )}
 
       {loading && entries.length === 0 && (
         <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 40, textAlign: "center", color: "rgba(246,241,232,0.72)" }}>Loading reviews…</ActivityStatus>
@@ -715,7 +843,7 @@ export function ReviewsView({ initialSelectedId = null }: ReviewsViewProps = {})
           type="button"
           aria-label={`Open review for ${entry.name}`}
           style={cardStyle}
-          onClick={() => { setSelectedId(entry.id); }}
+          onClick={() => { setListNotice(null); setSelectedId(entry.id); }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#fff7e8" }}>{entry.name}</div>

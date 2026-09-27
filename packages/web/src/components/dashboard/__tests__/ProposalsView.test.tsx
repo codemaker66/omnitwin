@@ -685,6 +685,8 @@ describe("ProposalsView says what it holds and what an action will do", () => {
 
     fireEvent.click(screen.getByTestId("withdraw-button"));
     expect(screen.getByTestId("withdraw-confirm").textContent).toContain("Withdraw this proposal? The client's link will stop working.");
+    // The button stays where it was, so keyboard focus is not dropped.
+    expect(screen.getByTestId("withdraw-button").getAttribute("aria-expanded")).toBe("true");
     expect(mocks.transitionProposal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
     expect(screen.queryByTestId("withdraw-confirm")).toBeNull();
