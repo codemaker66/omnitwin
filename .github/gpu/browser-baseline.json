@@ -130,6 +130,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Loadout captions (T-635 N5, item 15): at the photo grid's narrowest column the caption field pushed Save past the card, which clipped it, and clicking away threw the typed caption away. The case pins a card at 200 px and requires Save inside it, then requires one save on Enter and one on leaving the field, and no second save when the field closes.",
+      "sourceCommit": "ca39fb4b79d6ce52a2c387319f144eeae33438d1",
+      "sourceFile": "packages/web/e2e/button-action-audit.spec.ts",
+      "sourceFileGitBlobSha256": "319c9e22bbaa2c37662a5a868d85b89ce86822a3543e5774c65a48b31ebd0aa5",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "5e8b08f9af839d003ba34cc964986cd604c730ffa010399d2b92f19855d31dfc",
+      "caseIds": [
+        "2a7be7d54f62686846cb-3c8558010ac96be320bd"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -1097,6 +1111,17 @@
       "id": "2a7be7d54f62686846cb-a472c88e976a7e645802",
       "file": "button-action-audit.spec.ts",
       "title": "admin deployment project-gate failures keep the save control retryable",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ deep modal, drawer, role, disabled, and error states"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-3c8558010ac96be320bd",
+      "file": "button-action-audit.spec.ts",
+      "title": "a loadout caption fits its card, and saves once on Enter or on leaving the field",
       "suitePath": [
         "button-action-audit.spec.ts",
         "SS++ deep modal, drawer, role, disabled, and error states"
