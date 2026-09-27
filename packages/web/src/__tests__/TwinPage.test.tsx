@@ -246,13 +246,17 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
     expect(screen.getByTestId("twin-quick-actions")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("radio", { name: TWIN_MODE_DOLLHOUSE_LABEL }));
+    // The switch is a navigation (?mode=dollhouse) that re-renders the whole
+    // twin page, which on a loaded runner takes more than Testing Library's
+    // one-second default: CI 36281909033 failed here, and twelve parallel
+    // runs on four cores reproduced it once, at 1132 ms.
     await waitFor(() => {
       expect(
         screen
           .getByRole("radio", { name: TWIN_MODE_DOLLHOUSE_LABEL })
           .getAttribute("aria-checked"),
       ).toBe("true");
-    });
+    }, { timeout: 5_000 });
     expect(screen.queryByTestId("twin-quick-actions")).toBeNull();
   });
 });
