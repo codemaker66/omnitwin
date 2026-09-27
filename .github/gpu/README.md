@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 374 cases. Four hosted CPU shards execute
-369 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 375 cases. Four hosted CPU shards execute
+370 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -37,15 +37,16 @@ showcase case is restated on the front door's enquiry composer. Each replaces
 its retired identities one for one, so the totals are unchanged. The fifth adds two ordinary Diary timetable regressions
 (T-619): the week opening with its decisions due and tray and booking where it
 is clicked, and on a phone a finger panning the lane while a long press lifts a
-block that follows the finger. Thirteen on 27 September each add one ordinary case: the dashboard
+block that follows the finger. Fourteen on 27 September each add one ordinary case: the dashboard
 shell's navigation on a phone, loadout captions at the photo grid's narrowest
 column, the Diary holding steady while a week loads, every Diary label readable,
 Go to date, the setup sheet read on a phone, the sheet's facts in view, the
 sheet's checklist and plan taking turns on a phone, a rejected sheet's band,
 the Day Board kept still and readable (its own spec, `day-board.spec.ts`),
 Mission Control keeping what waits within reach (`mission-control.spec.ts`),
-the handoff pack printed as a sheet (`ops-handoff-print.spec.ts`), and each
-room's ready-by time and checked rows on the Day Board.
+the handoff pack printed as a sheet (`ops-handoff-print.spec.ts`), each room's
+ready-by time and checked rows on the Day Board, and the event-day board's
+writes kept offline and sent once (`event-day-offline.spec.ts`).
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and

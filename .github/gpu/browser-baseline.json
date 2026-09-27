@@ -298,6 +298,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The event-day board keeps writes on the device offline and sends each once (T-635 N4 acceptance): with the browser context offline and every API request dropped, marking a task done and logging an issue both say they are saved on this device, the header counts 2 pending and the issue form clears; when the connection returns each write reaches the server exactly once, the header reads Synced and the issue shows.",
+      "sourceCommit": "ee4ab124f33d4694ec90956b16f4d78e70d1cf47",
+      "sourceFile": "packages/web/e2e/event-day-offline.spec.ts",
+      "sourceFileGitBlobSha256": "5f51c46a521312420b357ef01b44ae402c6ce30000a317c9bd8986c2cbf80e11",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "8722ce21a6a10393dffbd0b91e6a4949932b2d95270a608469dcd46f03e0d2a6",
+      "caseIds": [
+        "02e2c49c5135f0c0642b-6b5e71904176cd01affe"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -4210,6 +4224,17 @@
       "suitePath": [
         "enquiries-list-paging.spec.ts",
         "Staff enquiries list paging"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "02e2c49c5135f0c0642b-6b5e71904176cd01affe",
+      "file": "event-day-offline.spec.ts",
+      "title": "keeps a task marked done and an issue logged on the device while offline, then sends each once on reconnect",
+      "suitePath": [
+        "event-day-offline.spec.ts",
+        "Event-day board offline"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
