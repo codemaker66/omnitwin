@@ -116,6 +116,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the worktree's absolute paths and the listing's start time, so a re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The dashboard shell on phones (T-635): at 375 by 667 the bell and More wrap to the left edge of the navigation row, where More's menu opened 193 px off-screen. The case opens the bell and requires both header menus to sit wholly on screen, the notifications to be showing in view without a scroll, and a notification to be marked read from there.",
+      "sourceCommit": "bf6539451f33f02868c62b936cf6abc5ea3c2177",
+      "sourceFile": "packages/web/e2e/button-action-audit.spec.ts",
+      "sourceFileGitBlobSha256": "af7b7ed497bef641b27e7a361d6e83743c640076edf1c91627bfb54aef791284",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "73615e57fa4ac87d2574b18bc2677374eae48e435b900523a1dada08f71b6e74",
+      "caseIds": [
+        "2a7be7d54f62686846cb-ac2aff39c47cf155b19e"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -940,6 +954,17 @@
       "id": "2a7be7d54f62686846cb-7fe032da67234ee034f7",
       "file": "button-action-audit.spec.ts",
       "title": "dashboard navigation and notification controls are live",
+      "suitePath": [
+        "button-action-audit.spec.ts",
+        "SS++ representative button behavior"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "2a7be7d54f62686846cb-ac2aff39c47cf155b19e",
+      "file": "button-action-audit.spec.ts",
+      "title": "on a phone the header menus open on screen and the bell opens the list",
       "suitePath": [
         "button-action-audit.spec.ts",
         "SS++ representative button behavior"
