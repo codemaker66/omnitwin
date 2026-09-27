@@ -158,6 +158,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Every Diary label is readable (T-635 N3): a browser audit found 148 of 309 labels under 12 px or below 4.5:1 against the colour behind them. The case samples every visible label of the overview, timeline, day view and drawer with its composited background and ancestors' opacity, under reduced motion, and requires none under 12 px or 4.5:1 (3:1 for large text).",
+      "sourceCommit": "7e99300f0e1bc3b6906c388f5ab11a8ea74a0ea3",
+      "sourceFile": "packages/web/e2e/diary-timetable.spec.ts",
+      "sourceFileGitBlobSha256": "0a6b9e8d558ca53b14ab6292e70670ae3e7c7a5fdc5b85d4c3c2dbd16132c603",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "19ccc7b348549cf2b442a99ac4dee9fd381c4d3e51793c275255f2458334aab0",
+      "caseIds": [
+        "7bffe49ce87053aabb53-1976117654afc8f112b7"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3990,6 +4004,17 @@
       "id": "7bffe49ce87053aabb53-e85128afb7e7ef756469",
       "file": "diary-timetable.spec.ts",
       "title": "keeps its rooms while a week is on its way, and its bookings when a refresh fails",
+      "suitePath": [
+        "diary-timetable.spec.ts",
+        "Diary timetable"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7bffe49ce87053aabb53-1976117654afc8f112b7",
+      "file": "diary-timetable.spec.ts",
+      "title": "every label on the board reads at 12 px or more and 4.5:1 or better",
       "suitePath": [
         "diary-timetable.spec.ts",
         "Diary timetable"
