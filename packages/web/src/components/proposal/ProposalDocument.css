@@ -132,6 +132,8 @@
 
 /* -- The conversation --------------------------------------------------------- */
 .pd-conversation { margin: 0 0 32px; }
+.pd-conversation .pd-decision__error, .pd-conversation .pd-decision__hint { margin-top: 10px; }
+.pd-conversation .pd-decision__kept { margin-top: 8px; }
 .pd-thread { display: grid; gap: 16px; margin: 0 0 16px; padding: 0; list-style: none; }
 .pd-thread li { display: grid; gap: 4px; padding-left: 14px; border-left: 2px solid var(--reg-rule); }
 .pd-thread li[data-from="venue"] { border-left-color: var(--reg-primary); }
