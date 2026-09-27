@@ -532,6 +532,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *Event-day ops and Mission Control (functional fixes only)*
 - A relative kicker instead of the hard-coded one (`EventDayOpsPage.tsx:345`), and venue-zone times (`:37-64`).
+  Done on 27 September: the kicker counts days on the venue's calendar. The times were already on the venue's
+  clock; the zone is now named in words, and only for a device on another clock.
 - An issue list with a Resolve action (`updateEventDayIssue`), plus the honest line "Nobody is notified" until notification exists.
   Revised on 27 September: issues do notify staff and hallkeepers (truth sweep), and the page says so. The
   list counts only open and in-progress issues; a resolved one waits apart until closed ([session log](../../sessions/2026-09-27.md)).
@@ -550,6 +552,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *Ops handoff*
 - Fix the print styles (`OpsHandoffPage.css:414-440`).
+  Done on 27 September. The contrast already held on white; the fault was the phone layout, which fired on
+  paper too. A twelve-line pack now prints on two A4 sheets rather than five, without the app's navigation
+  ([session log](../../sessions/2026-09-27.md)).
 
 **Acceptance**
 - Unit test: `resolveTiming` for 2026-06-15 and 2026-12-15 in Europe/London both render 18:00, and "Ready by" appears.
