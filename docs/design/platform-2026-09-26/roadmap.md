@@ -407,6 +407,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 *Needs attention and the ladder*
 - "Needs attention" covers the whole venue, via a new API query, grouped into Overdue and Due this week.
 - Enquiry slips carry a date tile.
+    Revised on 27 September: pressing a slip's tile opens Go to date on its date, which shows the board there and what each room holds that day ([session log](../../sessions/2026-09-27.md)).
 - A "Contested dates" list offers inline Confirm, Extend and Release.
 
 *The booking drawer*
