@@ -32,6 +32,7 @@
   color: #f7e9c9;
   font-family: var(--house-serif);
   letter-spacing: 0;
+  line-height: 1.2;
 }
 
 .admin-panel-header h2 {
@@ -334,6 +335,7 @@
   color: #f7e9c9;
   font-family: var(--house-serif);
   font-size: 1.22rem;
+  line-height: 1.2;
 }
 
 .admin-panel-venue-meta,

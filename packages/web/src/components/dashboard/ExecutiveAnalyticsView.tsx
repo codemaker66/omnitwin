@@ -160,7 +160,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
       <div style={{ display: "grid", gap: 18 }}>
         <section style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
           <div>
-            <h2 style={{ margin: "6px 0", color: "#fff7e8", fontSize: 28, fontFamily: "var(--house-serif)", letterSpacing: 0 }}>Executive analytics</h2>
+            <h2 style={{ margin: "6px 0", color: "#fff7e8", fontSize: 28, fontFamily: "var(--house-serif)", lineHeight: 1.15, letterSpacing: 0 }}>Executive analytics</h2>
             <p style={{ margin: 0, maxWidth: 760, color: "rgba(246,241,232,0.88)", lineHeight: 1.5 }}>
               {data.disclosure}.
             </p>

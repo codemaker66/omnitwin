@@ -7,7 +7,7 @@
 }
 
 .event-day-page h1,
-.event-day-page h2 { font-family: var(--hk-serif); font-weight: 500; }
+.event-day-page h2 { font-family: var(--hk-serif); font-weight: 500; line-height: 1.2; }
 
 /* Live poll stamp and issue lifecycle (Ship Friday line 21). */
 .event-day-live { color: var(--hk-ink-faint); font-size: 0.72rem; }

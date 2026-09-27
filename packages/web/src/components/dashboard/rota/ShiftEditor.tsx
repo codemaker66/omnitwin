@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
 import { X } from "lucide-react";
 import {
   ROTA_SKILLS,
@@ -106,7 +106,8 @@ export function ShiftEditor({
   const lastKeeping = useRef<RotaWarningCode | null>(null);
   const keepingCode = keeping?.code ?? null;
 
-  useEffect(() => { (noticeRef.current ?? headingRef.current)?.focus(); }, []);
+  // In the commit, before paint, as in StaffDrawer: never a frame unfocused.
+  useLayoutEffect(() => { (noticeRef.current ?? headingRef.current)?.focus(); }, []);
   useEffect(() => {
     if (confirming !== null) questionRef.current?.focus();
     else if (lastConfirming.current === "remove") removeRef.current?.focus();

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { ChevronLeft, X } from "lucide-react";
 import {
   ROTA_SKILLS,
@@ -114,7 +114,9 @@ function PersonForm({ venueId, week, record, message, onSaved, onBack }: {
   const questionRef = useRef<HTMLParagraphElement>(null);
   const takeOffRef = useRef<HTMLButtonElement>(null);
   const wasConfirming = useRef(false);
-  useEffect(() => { (noticeRef.current ?? titleRef.current)?.focus(); }, []);
+  // In the commit, before paint: a passive effect let the new form paint, and
+  // be read, with focus still on the page behind it (CI caught the gap).
+  useLayoutEffect(() => { (noticeRef.current ?? titleRef.current)?.focus(); }, []);
   useEffect(() => {
     if (confirmingRemoval) questionRef.current?.focus();
     else if (wasConfirming.current) takeOffRef.current?.focus();
@@ -446,7 +448,7 @@ export function StaffDrawer({ venueId, week, today, openPersonId, onChanged, onC
 
   // Opened at the list, focus starts at the drawer's heading; opened at a
   // record, the record's form takes it.
-  useEffect(() => { if (openPersonId === null) headingRef.current?.focus(); }, []);
+  useLayoutEffect(() => { if (openPersonId === null) headingRef.current?.focus(); }, []);
 
   const show = (next: DrawerView): void => {
     setSaid(null);

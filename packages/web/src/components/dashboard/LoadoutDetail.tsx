@@ -241,7 +241,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
           &larr; Back to loadouts
         </button>
         <section style={{ ...panelStyle, padding: 24 }} role="alert" data-testid="loadout-detail-error">
-          <h2 style={{ margin: "8px 0", fontSize: 24, fontFamily: "var(--house-serif)", letterSpacing: 0 }}>Loadout unavailable</h2>
+          <h2 style={{ margin: "8px 0", fontSize: 24, fontFamily: "var(--house-serif)", lineHeight: 1.2, letterSpacing: 0 }}>Loadout unavailable</h2>
           <p style={{ color: "rgba(246,241,232,0.72)", lineHeight: 1.55 }}>
             {loadErrorMessage ?? "Failed to load this reference setup pack."}
           </p>

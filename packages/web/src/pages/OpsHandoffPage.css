@@ -27,7 +27,7 @@
 }
 
 .ops-handoff-page h1,
-.ops-handoff-page h2 { font-family: var(--hk-serif); font-weight: 500; }
+.ops-handoff-page h2 { font-family: var(--hk-serif); font-weight: 500; line-height: 1.2; }
 
 .ops-handoff-page::before {
   background:

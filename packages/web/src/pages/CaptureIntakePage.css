@@ -30,7 +30,7 @@
 .capture-intake-command-head p,
 .capture-intake-section-head p { color: #48736f; font-size: 0.6875rem; font-weight: 700; letter-spacing: .12em; margin: 0 0 5px; text-transform: uppercase; }
 .capture-intake-command h2,
-.capture-intake-section-head h2 { font-family: var(--house-serif); font-size: clamp(1.45rem, 3vw, 2.35rem); font-weight: 500; letter-spacing: -.03em; margin: 0; }
+.capture-intake-section-head h2 { font-family: var(--house-serif); font-size: clamp(1.45rem, 3vw, 2.35rem); font-weight: 500; letter-spacing: -.03em; margin: 0; line-height: 1.15; }
 .capture-intake-command-head > span { background: #d4eee8; border: 1px solid #9dd4ca; border-radius: 999px; color: #174e48; font-size: 0.6875rem; font-weight: 700; padding: 8px 10px; text-transform: uppercase; }
 .capture-intake-command-head > span[data-status="blocked"] { background: #f4d9d0; border-color: #e8a895; color: #702d20; }
 .capture-intake-command-head > span[data-status="requires_review"] { background: #f2e4bf; border-color: #dca475; color: #654c0e; }

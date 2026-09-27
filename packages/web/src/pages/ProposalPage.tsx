@@ -27,6 +27,8 @@ import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity
 // Newsreader, the house serif, which every route loads (Cormorant loaded only
 // with the quiz, so this page fell back to Georgia).
 const SERIF = "var(--house-serif)";
+// Newsreader's own line height is 1.0; a wrapped title needs room to breathe.
+const SERIF_TYPE = { fontFamily: SERIF, lineHeight: 1.2 } as const;
 const SANS = "'Inter', -apple-system, sans-serif";
 const GRAPHITE = "#16181d";
 const PANEL = "#1e2128";
@@ -164,7 +166,7 @@ export function ProposalPage(): ReactElement {
         style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, fontFamily: SANS, padding: 24 }}
       >
         <div style={{ maxWidth: 460, textAlign: "center" }}>
-          <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 32, color: CREAM, marginBottom: 12 }}>
+          <h1 style={{ ...SERIF_TYPE, fontWeight: 400, fontSize: 32, color: CREAM, marginBottom: 12 }}>
             This proposal link isn't available
           </h1>
           <p style={{ color: CREAM_MUT, fontSize: 15, lineHeight: 1.6 }}>
@@ -194,7 +196,7 @@ export function ProposalPage(): ReactElement {
               {proposal.venueName}
             </div>
           )}
-          <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 42, lineHeight: 1.15, margin: 0 }}>
+          <h1 style={{ ...SERIF_TYPE, fontWeight: 400, fontSize: 42, lineHeight: 1.15, margin: 0 }}>
             {proposal.title}
           </h1>
           {sentDate !== null && (
@@ -231,7 +233,7 @@ export function ProposalPage(): ReactElement {
 
         {proposal.quote !== null && (
           <section aria-label="Quote" style={{ background: PANEL, border: `1px solid ${HAIRLINE}`, borderRadius: 12, padding: "26px 28px", marginBottom: 28 }}>
-            <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: 24, margin: "0 0 18px" }}>Your quote</h2>
+            <h2 style={{ ...SERIF_TYPE, fontWeight: 400, fontSize: 24, margin: "0 0 18px" }}>Your quote</h2>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ color: CREAM_MUT, textAlign: "left" }}>

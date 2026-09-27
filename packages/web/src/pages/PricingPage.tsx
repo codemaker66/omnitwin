@@ -29,6 +29,9 @@ const CREAM = "#f5ede0";
 const CREAM_MUT = "rgba(245,237,224,0.7)";
 const CREAM_FAINT = "rgba(245,237,224,0.62)";
 const SERIF = "var(--house-serif)";
+// Newsreader's own line height is 1.0 (Playfair's was about 1.18), so a serif
+// element here states its leading; an explicit lineHeight after the spread wins.
+const SERIF_TYPE = { fontFamily: SERIF, lineHeight: 1.15 } as const;
 const BODY = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
 
 const KEYFRAMES_ID = "pricing-page-animations";
@@ -357,7 +360,7 @@ export function PricingPage(): React.ReactElement {
           margin: "0 auto",
         }}
       >
-        <Link to="/" style={{ textDecoration: "none", color: CREAM, fontFamily: SERIF, fontSize: 22, fontWeight: 500, letterSpacing: 2 }}>
+        <Link to="/" style={{ textDecoration: "none", color: CREAM, ...SERIF_TYPE, fontSize: 22, fontWeight: 500, letterSpacing: 2 }}>
           VENVIEWER
         </Link>
         <div className="pricing-nav-links" style={{ display: "flex", gap: 28, alignItems: "center", fontSize: 14 }}>
@@ -418,7 +421,7 @@ export function PricingPage(): React.ReactElement {
           <h1
             aria-label="Pricing"
             style={{
-              fontFamily: SERIF,
+              ...SERIF_TYPE,
               fontSize: "clamp(48px, 7vw, 96px)",
               lineHeight: 1.02,
               margin: 0,
@@ -480,10 +483,10 @@ export function PricingPage(): React.ReactElement {
 
           <div style={{ textAlign: "center", margin: "24px 0 8px" }}>
             <span style={{ fontSize: 28, color: CREAM_MUT, verticalAlign: "top", marginRight: 4 }}>£</span>
-            <span style={{ fontSize: 84, fontFamily: SERIF, fontWeight: 400, color: CREAM, lineHeight: 1 }}>
+            <span style={{ fontSize: 84, ...SERIF_TYPE, fontWeight: 400, color: CREAM, lineHeight: 1 }}>
               {Math.floor(price)}
             </span>
-            <span style={{ fontSize: 36, fontFamily: SERIF, fontWeight: 400, color: CREAM }}>
+            <span style={{ fontSize: 36, ...SERIF_TYPE, fontWeight: 400, color: CREAM }}>
               .{(price % 1).toFixed(2).slice(2)}
             </span>
             <span style={{ fontSize: 16, color: CREAM_MUT, marginLeft: 8 }}>/ month</span>
@@ -552,7 +555,7 @@ export function PricingPage(): React.ReactElement {
           <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 12, fontWeight: 600 }}>
             Scale with your venue
           </div>
-          <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
+          <h2 style={{ ...SERIF_TYPE, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
             Add-ons
           </h2>
 
@@ -579,7 +582,7 @@ export function PricingPage(): React.ReactElement {
                 {addon.name}
               </div>
               <div style={{ marginBottom: 14 }}>
-                <span style={{ fontSize: 36, fontFamily: SERIF, fontWeight: 400 }}>{addon.price}</span>
+                <span style={{ fontSize: 36, ...SERIF_TYPE, fontWeight: 400 }}>{addon.price}</span>
                 <span style={{ fontSize: 13, color: CREAM_MUT, marginLeft: 6 }}>{addon.sub}</span>
               </div>
               <p style={{ fontSize: 14, color: CREAM_MUT, lineHeight: 1.6, margin: 0 }}>
@@ -596,7 +599,7 @@ export function PricingPage(): React.ReactElement {
           <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 12, fontWeight: 600 }}>
             One-off · Professional services
           </div>
-          <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
+          <h2 style={{ ...SERIF_TYPE, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
             Venue scanning
           </h2>
           <p style={{ fontSize: 17, color: CREAM_MUT, marginTop: 16, maxWidth: 580, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
@@ -647,7 +650,7 @@ export function PricingPage(): React.ReactElement {
               <div style={{ fontSize: 13, color: GOLD_DIM, letterSpacing: 3, textTransform: "uppercase", fontWeight: 600, marginBottom: 16 }}>
                 {scan.name}
               </div>
-              <div style={{ fontSize: 48, fontFamily: SERIF, fontWeight: 400, marginBottom: 14, letterSpacing: 0 }}>
+              <div style={{ fontSize: 48, ...SERIF_TYPE, fontWeight: 400, marginBottom: 14, letterSpacing: 0 }}>
                 {scan.price}
               </div>
               <p style={{ fontSize: 14, color: CREAM_MUT, lineHeight: 1.7, margin: 0 }}>
@@ -685,7 +688,7 @@ export function PricingPage(): React.ReactElement {
               <div style={{ fontSize: 11, letterSpacing: 4, color: GOLD, textTransform: "uppercase", fontWeight: 600, marginBottom: 14 }}>
                 Founder bundle · Limited
               </div>
-              <h3 style={{ fontFamily: SERIF, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: 0, color: CREAM, lineHeight: 1.1 }}>
+              <h3 style={{ ...SERIF_TYPE, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: 0, color: CREAM, lineHeight: 1.1 }}>
                 Scan + 12 months Pro.<br />
                 <em style={{ color: GOLD, fontStyle: "italic" }}>Save £575.</em>
               </h3>
@@ -726,7 +729,7 @@ export function PricingPage(): React.ReactElement {
           <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 12, fontWeight: 600 }}>
             What you pay elsewhere
           </div>
-          <h2 style={{ fontFamily: SERIF, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
+          <h2 style={{ ...SERIF_TYPE, fontSize: 40, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
             The same job, <em style={{ color: GOLD, fontStyle: "italic" }}>one-tenth the cost.</em>
           </h2>
         </div>
@@ -760,7 +763,7 @@ export function PricingPage(): React.ReactElement {
                 <div style={{ fontSize: 15, fontWeight: 600, color: CREAM }}>{row.name}</div>
                 <div style={{ fontSize: 12, color: CREAM_FAINT, marginTop: 4 }}>{row.context}</div>
               </div>
-              <div style={{ fontSize: 17, fontFamily: SERIF, color: CREAM_MUT }}>{row.price}</div>
+              <div style={{ fontSize: 17, ...SERIF_TYPE, color: CREAM_MUT }}>{row.price}</div>
             </div>
           ))}
 
@@ -779,7 +782,7 @@ export function PricingPage(): React.ReactElement {
               <div style={{ fontSize: 15, fontWeight: 700, color: GOLD, letterSpacing: 0.5 }}>Venviewer · all-in-one</div>
               <div style={{ fontSize: 12, color: CREAM_MUT, marginTop: 4 }}>Planner + 3D walkthrough + enquiry pipeline</div>
             </div>
-            <div style={{ fontSize: 22, fontFamily: SERIF, color: GOLD, fontWeight: 500 }}>£47.99/mo</div>
+            <div style={{ fontSize: 22, ...SERIF_TYPE, color: GOLD, fontWeight: 500 }}>£47.99/mo</div>
           </div>
         </div>
 
@@ -790,7 +793,7 @@ export function PricingPage(): React.ReactElement {
 
       {/* === FAQ === */}
       <section style={{ position: "relative", zIndex: 2, padding: "80px 48px", maxWidth: 760, margin: "0 auto" }}>
-        <h2 style={{ fontFamily: SERIF, fontSize: 40, margin: "0 0 40px", fontWeight: 400, textAlign: "center", letterSpacing: 0 }}>
+        <h2 style={{ ...SERIF_TYPE, fontSize: 40, margin: "0 0 40px", fontWeight: 400, textAlign: "center", letterSpacing: 0 }}>
           Questions, answered.
         </h2>
 
@@ -825,7 +828,7 @@ export function PricingPage(): React.ReactElement {
             className="pricing-faq-item"
             style={{
               borderBottom: "1px solid rgba(255,255,255,0.06)",
-              padding: "24px 0",
+              padding: "20px 0",
             }}
           >
             <summary
@@ -836,7 +839,11 @@ export function PricingPage(): React.ReactElement {
                 color: CREAM,
                 listStyle: "none",
                 transition: "color 0.2s",
-                fontFamily: SERIF,
+                ...SERIF_TYPE,
+                // A question is the control that opens its answer: a target
+                // taller than one tight line of text.
+                lineHeight: 1.4,
+                padding: "4px 0",
               }}
             >
               {item.q}
@@ -850,7 +857,7 @@ export function PricingPage(): React.ReactElement {
 
       {/* === Enquiry === */}
       <section id="enquiry" style={{ position: "relative", zIndex: 2, padding: "100px 48px 120px", textAlign: "center", maxWidth: 800, margin: "0 auto" }}>
-        <h2 style={{ fontFamily: SERIF, fontSize: 56, margin: 0, fontWeight: 400, letterSpacing: 0, lineHeight: 1.05 }}>
+        <h2 style={{ ...SERIF_TYPE, fontSize: 56, margin: 0, fontWeight: 400, letterSpacing: 0, lineHeight: 1.05 }}>
           Talk to us about your venue
         </h2>
         <p style={{ fontSize: 18, color: CREAM_MUT, marginTop: 24, lineHeight: 1.6 }}>

@@ -144,6 +144,7 @@
   font-weight: 400;
   letter-spacing: -0.025em;
   margin: 0;
+  line-height: 1.15;
 }
 
 .event-architect-section-head > span,
@@ -361,6 +362,7 @@
   font-size: 2rem;
   font-weight: 400;
   margin: 18px 0 7px;
+  line-height: 1.15;
 }
 
 .event-architect-results-state p {
@@ -424,6 +426,7 @@
   font-size: 1.7rem;
   font-weight: 400;
   margin: 0;
+  line-height: 1.15;
 }
 
 .event-architect-selected-chip {
@@ -846,6 +849,7 @@
   font-size: clamp(1.8rem, 4vw, 3rem);
   font-weight: 400;
   margin: 0;
+  line-height: 1.15;
 }
 
 .event-architect-ops-status {
