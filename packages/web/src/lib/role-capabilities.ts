@@ -24,7 +24,7 @@ export const VENUE_ADMIN_ROLES = ["admin", "manager", "staff"] as const;
 /**
  * Mirrors `canManageCommercial` — proposals, quotes, enquiries, revenue.
  *
- * Proposals is `ProposalsView` → `api/proposals.js`, and after #19 every
+ * Proposals is `ProposalsDesk` → `api/proposals.js`, and after #19 every
  * proposals route gates on `canManageCommercial` (`routes/proposals.ts`), so
  * the whole set may open the tab. #24 does not narrow it.
  */

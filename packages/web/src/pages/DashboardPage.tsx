@@ -15,7 +15,7 @@ import { VenueSettings } from "../components/dashboard/VenueSettings.js";
 import { AdminPanel } from "../components/dashboard/AdminPanel.js";
 import { InventoryPanel } from "../components/dashboard/inventory/InventoryPanel.js";
 import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyticsView.js";
-import { ProposalsView } from "../components/dashboard/ProposalsView.js";
+import { ProposalsDesk } from "../components/dashboard/ProposalsDesk.js";
 import { PipelineDesk } from "../components/dashboard/PipelineDesk.js";
 import { OnboardingView } from "../components/dashboard/OnboardingView.js";
 import { RotaView } from "../components/dashboard/rota/RotaView.js";
@@ -75,7 +75,7 @@ const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
 /** The views set as desks, full-bleed on the sage ground. */
-const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search", "pipeline"]);
+const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search", "pipeline", "proposals"]);
 type PlatformRole = "none" | "operator" | "admin";
 
 export function dashboardViewFromSearchValue(value: string | null): DashboardView | null {
@@ -358,7 +358,7 @@ export function DashboardPage(): React.ReactElement {
       case "analytics":
         return <ExecutiveAnalyticsView />;
       case "proposals":
-        return <ProposalsView proposalId={requestedProposalId} onProposalShown={handleProposalShown} />;
+        return <ProposalsDesk proposalId={requestedProposalId} onProposalShown={handleProposalShown} onOpenDeal={handleOpenOpportunity} />;
       case "search":
         return (
           <ClientsDesk

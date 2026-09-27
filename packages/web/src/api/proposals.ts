@@ -234,6 +234,50 @@ const ProposalPageSchema = z.object({
   meta: z.object({ total: z.number().int().nonnegative() }).optional(),
 }).transform(({ data, meta }): ProposalPage => ({ rows: data, total: meta?.total ?? data.length }));
 
+/** A proposal as the Proposals desk shows it (roadmap X1): who it is for,
+ *  their event's date, guests and occasion from its deal or enquiry, and what
+ *  its latest version comes to. Defaulted for an API from before them. */
+export const DeskProposalSchema = StaffProposalSchema.extend({
+  dealTitle: z.string().nullable().default(null),
+  clientName: z.string().nullable().default(null),
+  eventDate: z.string().nullable().default(null),
+  guestCount: z.number().int().nullable().default(null),
+  eventType: z.string().nullable().default(null),
+  latestTotalMinor: z.number().int().nullable().default(null),
+  latestCurrency: z.string().nullable().default(null),
+});
+
+export type DeskProposal = z.infer<typeof DeskProposalSchema>;
+
+/** The desk's groups, in the order a booker works them. */
+export const PROPOSAL_DESK_GROUPS = ["waiting", "drafts", "with_client", "accepted", "closed"] as const;
+export type ProposalDeskGroup = (typeof PROPOSAL_DESK_GROUPS)[number];
+
+export interface ProposalDeskPage {
+  readonly rows: readonly DeskProposal[];
+  /** How many there are in the group asked for (or in all). */
+  readonly total: number;
+  /** Every status's count over the whole list, never the page. */
+  readonly statusCounts: Readonly<Record<string, number>>;
+}
+
+const ProposalDeskPageSchema = z.object({
+  data: z.array(DeskProposalSchema),
+  meta: z.object({ total: z.number().int().nonnegative() }),
+  statusCounts: z.record(z.string(), z.number().int().nonnegative()),
+}).transform(({ data, meta, statusCounts }): ProposalDeskPage => ({ rows: data, total: meta.total, statusCounts }));
+
+export async function listProposalDesk(query: { readonly limit: number; readonly offset: number; readonly group?: ProposalDeskGroup }): Promise<ProposalDeskPage> {
+  const params = new URLSearchParams({ limit: String(query.limit), offset: String(query.offset) });
+  if (query.group !== undefined) params.set("group", query.group);
+  return api.getEnvelope(`/proposals/desk?${params.toString()}`, ProposalDeskPageSchema);
+}
+
+/** One proposal with the same facts as its row on the desk. */
+export async function getDeskProposal(id: string): Promise<DeskProposal> {
+  return api.get(`/proposals/${id}`, DeskProposalSchema);
+}
+
 export async function listProposalPage(
   query: { readonly limit: number; readonly offset: number; readonly status?: string },
   signal?: AbortSignal,

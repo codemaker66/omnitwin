@@ -61,7 +61,7 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   { view: "pipeline", label: "Pipeline", capability: "crmPipeline" },
   { view: "reviews", label: "Pending reviews", capability: "reviewQueue" },
   { view: "analytics", label: "Executive analytics", capability: "analytics" },
-  // Proposals is ProposalsView, which reads api/proposals.js — already on
+  // Proposals is ProposalsDesk, which reads api/proposals.js — already on
   // canManageCommercial, so the whole commercial set can open it.
   { view: "proposals", label: "Proposals", capability: "commercial" },
   // Clients is the Clients desk, reading api/clients.js — its search and

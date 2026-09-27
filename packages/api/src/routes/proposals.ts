@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { eq, and, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import {
   CreateProposalCommentSchema,
   toEventPlanAudienceRole,
@@ -28,6 +28,7 @@ import {
   events,
   handoffPacks,
   opportunities,
+  contacts,
   venues,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -85,6 +86,63 @@ const TransitionBody = z.object({
 const ListQuery = z.object({
   status: z.enum(PROPOSAL_STATES).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+/**
+ * A proposal with who it is for, their event's date, guests and occasion, and
+ * what its latest version comes to. The deal, its contact and the enquiry
+ * (the proposal's own, or its deal's) are read only at the proposal's own
+ * venue, so another venue's names never reach a row.
+ */
+function selectDeskProposals(db: Database) {
+  const enquiryId = sql`COALESCE(${proposals.enquiryId}, ${opportunities.sourceEnquiryId})`;
+  const latestQuote = (field: "totalMinor" | "currency") => sql`(
+    SELECT ${proposalVersions.payload} -> 'quote' ->> ${field}
+    FROM ${proposalVersions}
+    WHERE ${proposalVersions.proposalId} = ${proposals.id} AND ${proposalVersions.version} = ${proposals.currentVersion})`;
+  return db.select({
+    ...getTableColumns(proposals),
+    dealTitle: opportunities.title,
+    clientName: sql<string | null>`COALESCE(${contacts.name}, ${enquiries.name})`,
+    eventDate: sql<string | null>`COALESCE(${opportunities.preferredDate}, ${enquiries.preferredDate})::text`,
+    guestCount: sql<number | null>`COALESCE(${opportunities.guestCount}, ${enquiries.estimatedGuests})`,
+    eventType: sql<string | null>`COALESCE(${opportunities.eventType}, ${enquiries.eventType})`,
+    latestTotalMinor: sql<number | null>`(${latestQuote("totalMinor")})::int`,
+    latestCurrency: sql<string | null>`${latestQuote("currency")}`,
+  })
+    .from(proposals)
+    .leftJoin(opportunities, and(
+      eq(opportunities.id, proposals.opportunityId),
+      eq(opportunities.venueId, proposals.venueId),
+      isNull(opportunities.deletedAt),
+    ))
+    .leftJoin(contacts, and(
+      eq(contacts.id, opportunities.primaryContactId),
+      eq(contacts.venueId, proposals.venueId),
+      isNull(contacts.deletedAt),
+    ))
+    .leftJoin(enquiries, and(eq(enquiries.id, enquiryId), eq(enquiries.venueId, proposals.venueId)));
+}
+
+/**
+ * The Proposals desk's groups (roadmap X1), in the order a booker works them:
+ * what the client sent back first, then their own drafts, then what is with
+ * the client, then what was accepted, then what is closed.
+ */
+const DESK_GROUPS = {
+  waiting: ["changes_requested"],
+  drafts: ["draft"],
+  with_client: ["sent"],
+  accepted: ["accepted"],
+  closed: ["declined", "withdrawn", "expired", "archived"],
+} as const satisfies Record<string, readonly string[]>;
+type DeskGroup = keyof typeof DESK_GROUPS;
+const DESK_GROUP_NAMES = Object.keys(DESK_GROUPS) as [DeskGroup, ...DeskGroup[]];
+
+const DeskQuery = z.object({
+  group: z.enum(DESK_GROUP_NAMES).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
 
@@ -388,6 +446,54 @@ export async function proposalRoutes(
     return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
   });
 
+  // GET /proposals/desk — the Proposals desk's ledger (roadmap X1): grouped
+  // as a booker works them, each row with who it is for, their event's date
+  // and guests, and what its latest version comes to, and a count of every
+  // status over the whole list, not the page. The same people see the same
+  // proposals as GET /proposals.
+  server.get("/desk", { preHandler: [authenticate] }, async (request, reply) => {
+    const query = DeskQuery.safeParse(request.query);
+    if (!query.success) {
+      return reply.status(400).send({ error: "Invalid query", code: "VALIDATION_ERROR", details: query.error.issues });
+    }
+
+    const user = request.user;
+    const scope = [isNull(proposals.deletedAt)];
+    if (isPlatformAdmin(user)) {
+      // Every venue.
+    } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
+      scope.push(eq(proposals.venueId, user.venueId));
+    } else {
+      scope.push(eq(proposals.createdBy, user.id));
+    }
+    const where = and(...scope);
+    const listed = query.data.group === undefined ? where : and(where, inArray(proposals.status, [...DESK_GROUPS[query.data.group]]));
+
+    const statusRows = await db.select({ status: proposals.status, count: sql<number>`count(*)::int` })
+      .from(proposals).where(where).groupBy(proposals.status);
+    const [countRow] = await db.select({ count: sql<number>`count(*)::int` }).from(proposals).where(listed);
+
+    const rank = sql`CASE
+      WHEN ${proposals.status} = 'changes_requested' THEN 0
+      WHEN ${proposals.status} = 'draft' THEN 1
+      WHEN ${proposals.status} = 'sent' THEN 2
+      WHEN ${proposals.status} = 'accepted' THEN 3
+      ELSE 4 END`;
+    const rows = await selectDeskProposals(db)
+      .where(listed)
+      .orderBy(sql`${rank}`, desc(proposals.updatedAt), desc(proposals.id))
+      .limit(query.data.limit)
+      .offset(query.data.offset);
+
+    const statusCounts: Record<string, number> = {};
+    for (const row of statusRows) statusCounts[row.status] = row.count;
+    return {
+      data: rows,
+      meta: { total: countRow?.count ?? 0, limit: query.data.limit, offset: query.data.offset },
+      statusCounts,
+    };
+  });
+
   // POST /proposals — venue staff/admin or platform admin creates a draft
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateProposalBody.safeParse(request.body);
@@ -460,7 +566,10 @@ export async function proposalRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    return { data: proposal };
+    // With who it is for and what its latest version comes to, as its row on
+    // the desk says, for a proposal opened from its address.
+    const [withFacts] = await selectDeskProposals(db).where(eq(proposals.id, proposal.id)).limit(1);
+    return { data: withFacts ?? proposal };
   });
 
   // PATCH /proposals/:id — staff/admin while editable (draft / changes_requested)

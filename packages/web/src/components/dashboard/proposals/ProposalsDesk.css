@@ -1,0 +1,113 @@
+/* ---------------------------------------------------------------------------
+   The Proposals desk (roadmap X1), in the Enquiries desk's grammar
+   (EnquiriesDesk.css) and the pipeline's (PipelineDesk.css: the title with its
+   New button, the new form in the sheet, the quoted note). Only what
+   proposals add is here. Every text colour holds WCAG AA (4.5:1) on the
+   surface it sits on.
+   --------------------------------------------------------------------------- */
+
+/* A new proposal is one field, so its form is one column. */
+.pr-desk .pl-new-deal { grid-template-columns: minmax(0, 1fr); }
+.pr-desk .pl-new-deal .enq-next__hint { margin: 0; color: var(--enq-ink-2); }
+.pr-desk .pl-new-deal .pr-field { color: var(--enq-ink-2); }
+
+/* The version beside the status. */
+.pr-version { color: var(--enq-forest-ink-2); font-size: 14px; }
+
+/* Four facts, two by two, so a long name is never squeezed. */
+.pr-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 20px; }
+.pr-facts > div:nth-child(odd) { padding-left: 0; border-left: 0; }
+.pr-facts dd { font-size: clamp(21px, 1.7vw, 27px); }
+
+.pr-deal { margin-top: 14px; }
+.pr-deal .enq-quiet { gap: 6px; }
+
+/* The client's link, once made. */
+.pr-link {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+  background: #ffffff0a;
+}
+.pr-link__label { margin: 0; color: var(--enq-forest-ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
+.pr-link a { color: var(--enq-forest-ink); font-size: 14.5px; overflow-wrap: anywhere; }
+.pr-link .enq-next__hint { margin: 0; }
+
+/* Fields inside the forest panel read as the pipeline's do. */
+.pr-field { display: grid; gap: 6px; margin-top: 14px; color: var(--enq-forest-ink-2); font-size: 13px; }
+.pr-panel input, .pr-panel textarea, .pr-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+  background: #18301f33;
+  color: var(--enq-forest-ink);
+  font: inherit;
+  font-size: 14.5px;
+}
+.pr-panel select { color-scheme: dark; }
+.pr-panel textarea { min-height: 88px; resize: vertical; }
+.pr-desk .pl-new-deal input { background: #ffffff; color: var(--enq-ink); border-color: var(--enq-rule-strong); }
+
+.pr-compose .enq-actions { margin-top: 16px; }
+
+/* Capacity guidance, a help beside the note. */
+.pr-guidance {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+}
+.pr-guidance__title { margin: 0; color: var(--enq-forest-ink-2); font-size: 13px; }
+.pr-guidance__fields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.7fr) minmax(0, 1.2fr); gap: 10px; }
+.pr-guidance .enq-next__hint { margin: 0; }
+
+/* The quote's lines. */
+.pr-quote { display: grid; gap: 10px; margin-top: 20px; }
+.pr-quote__title { margin: 0; color: var(--enq-forest-ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
+.pr-quote .enq-next__hint { margin: 0; }
+/* A line: what it is across the top, then how many at what each. */
+.pr-line {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 150px) auto;
+  align-items: end;
+  gap: 8px 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--enq-forest-rule);
+}
+.pr-line > input:first-child { grid-column: 1 / -1; }
+.pr-line__part { display: grid; gap: 4px; color: var(--enq-forest-ink-2); font-size: 12.5px; }
+.pr-line .enq-quiet { justify-self: start; }
+
+.pr-quote-table { width: 100%; border-collapse: collapse; color: var(--enq-forest-ink); font-size: 14.5px; font-variant-numeric: tabular-nums; }
+.pr-quote-table td { padding: 8px 0; border-bottom: 1px solid var(--enq-forest-rule); }
+.pr-quote-table .pr-num { padding-left: 12px; text-align: right; white-space: nowrap; }
+.pr-quote-table__total td { border-bottom: 0; font-weight: 600; }
+
+/* The conversation, the client's words first in weight. */
+.pr-thread { display: grid; gap: 14px; margin: 0 0 6px; padding: 0; list-style: none; }
+.pr-thread li { display: grid; gap: 4px; padding-left: 14px; border-left: 2px solid var(--enq-forest-rule); }
+.pr-thread li[data-author="client"] { border-left-color: #f0b68f; }
+.pr-thread__who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; color: var(--enq-forest-ink-2); font-size: 13px; }
+.pr-thread__who strong { color: var(--enq-forest-ink); font-size: 14.5px; font-weight: 600; }
+.pr-thread__asked { color: #f5c3a0; font-weight: 500; }
+.pr-thread__body { margin: 0; color: var(--enq-forest-ink); font: 400 16px/1.5 var(--enq-serif); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* With nothing open, the panel rests. */
+.pr-rest { margin: 12px 0 0; color: var(--enq-forest-ink-2); font: 400 21px/1.4 var(--enq-serif); text-wrap: pretty; }
+
+@media (max-width: 760px) {
+  .pr-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pr-facts > div:nth-child(3) { grid-column: auto; padding-left: 0; border-left: 0; }
+  .pr-facts > div:nth-child(4) { padding-left: 16px; border-left: 1px solid var(--enq-forest-rule); }
+  .pr-guidance__fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .pr-guidance__fields select:first-child { grid-column: 1 / -1; }
+  .pr-line { grid-template-columns: 88px minmax(0, 1fr) auto; }
+}

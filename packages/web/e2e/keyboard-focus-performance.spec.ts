@@ -942,6 +942,11 @@ async function mockApiRoutes(page: Page): Promise<MockState> {
       void route.fulfill({ json: { data: [staffProposalFixture()] } });
       return;
     }
+    // The Proposals desk's ledger (GET /proposals/desk).
+    if (path === "/proposals/desk" && method === "GET") {
+      void route.fulfill({ json: { data: [staffProposalFixture()], meta: { total: 1, limit: 50, offset: 0 }, statusCounts: { draft: 1 } } });
+      return;
+    }
     if (path === `/proposals/${PROPOSAL_ID}`) {
       void route.fulfill({ json: { data: staffProposalFixture({ currentVersion: 1 }) } });
       return;
@@ -1490,9 +1495,9 @@ test("proposal drawer and composer controls remain keyboard reachable within fra
   const problems = await openDashboardView(page, "staff", "proposals");
   await page.getByTestId(`proposal-row-${PROPOSAL_ID}`).click();
 
-  const detail = page.getByLabel("Proposal detail");
+  const detail = page.getByRole("region", { name: "Reception Room wedding proposal" });
   await expect(detail).toBeVisible();
-  await expect(page.getByLabel("Compose version")).toBeVisible();
+  await expect(detail.getByTestId("composer")).toBeVisible();
   await recordAccessibilityState(page, problems, "proposal detail drawer", "/dashboard?view=proposals", "desktop", 16);
   await page.locator("main").click({ position: { x: 24, y: 24 } });
 

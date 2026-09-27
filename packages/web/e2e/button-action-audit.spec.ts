@@ -1486,6 +1486,10 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     }
     void route.fulfill({ json: { data: [staffProposalFixture()], meta: { total: 1, limit: 50, offset: 0 } } });
   });
+  // The Proposals desk's ledger, with every status's count over the list.
+  await page.route(new RegExp(`^${API}/proposals/desk(?:\\?.*)?$`, "u"), (route) => {
+    void route.fulfill({ json: { data: [staffProposalFixture()], meta: { total: 1, limit: 50, offset: 0 }, statusCounts: { draft: 1 } } });
+  });
   await page.route(`${API}/proposals/${PROPOSAL_ID}`, (route) => {
     void route.fulfill({ json: { data: staffProposalFixture({ currentVersion: 1 }) } });
   });
@@ -2941,6 +2945,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await reply.click();
     await expect.poll(() => mock.proposalReplies).toContain("We will re-check the main-door route with operations before sending the next version.");
 
+    // Sending asks first, in place, and says it marks the proposal sent.
+    await page.getByRole("button", { name: "Send to the client…" }).click();
+    await expect(page.getByTestId("send-consequence")).toContainText("marks the proposal Sent");
     await page.getByTestId("send-button").click();
     await expect.poll(() => mock.proposalShareRequests).toContain(PROPOSAL_ID);
     await expect(page.getByTestId("share-link")).toHaveText(new RegExp(`/proposal-share/${SHARE_TOKEN}$`, "u"));
