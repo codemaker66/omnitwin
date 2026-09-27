@@ -256,6 +256,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Mission Control says what waits and what failed where it happened (T-635 N4, the live record on the event-day board): on a phone with a task blocked twelve events back, the blocked task still waits for acknowledgement above the record; no phase offers Go live while another is live, and the next offers Skip; nothing runs an infinite animation and every label reads at 12 px and 4.5:1 or better; from the keyboard a failed acknowledgement says so beside its event and keeps focus, the retry lands and focus goes to a heading; and resolving both incidents leaves the sealed line \"No open incidents.\" with each offering Reopen.",
+      "sourceCommit": "b1859a37ee4762b48e460f6ca99c373e1d05ea6b",
+      "sourceFile": "packages/web/e2e/mission-control.spec.ts",
+      "sourceFileGitBlobSha256": "cc04d25f007bfb20b2653db899008cdef59df18c792e1dab7c85a1f8233ab473",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "5f65aff1c9d3216a977cfd821170c65d11de31dea25ef2f83de19545688096b5",
+      "caseIds": [
+        "02d795642a60b2700198-a0dbff5f707516a8cab6"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -818,6 +832,17 @@
       "title": "event-day mobile ops controls are keyboard reachable without horizontal overflow",
       "suitePath": [
         "keyboard-focus-performance.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "02d795642a60b2700198-a0dbff5f707516a8cab6",
+      "file": "mission-control.spec.ts",
+      "title": "keeps what waits within reach, says a failure beside its event, offers only the next phase and seals a resolved list",
+      "suitePath": [
+        "mission-control.spec.ts",
+        "Mission Control"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
