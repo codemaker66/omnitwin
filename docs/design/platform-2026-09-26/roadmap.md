@@ -728,10 +728,13 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   refuses a close without a reason (`REASON_REQUIRED`), and the panel asks for it in place, offering the
   common ones. The reason is kept in the deal's history.
 - An editable value, filled from the latest quote.
-  Editable on 27 September, in exact pence; filled from the latest quote is not yet done.
+  Done on 27 September: editable in exact pence. A deal with no value takes its first quote's total, and the
+  panel offers the latest quote's total beside a value that differs (`latestQuote`).
 - Follow-ups with due dates.
   Done: added with a day, and listed across the pipeline beside the ledger when no deal is open.
-- Proposal events move the deal's stage. Not yet done.
+- Proposal events move the deal's stage.
+  Done on 27 September (`services/deal-stage-from-proposal.ts`): sent, changes asked for, accepted and declined
+  move the deal, never a closed one and never backwards, with the act kept as the move's reason.
 - Layouts that respond to width.
   Done: on a phone the deal takes the page, with Back to the pipeline.
 
