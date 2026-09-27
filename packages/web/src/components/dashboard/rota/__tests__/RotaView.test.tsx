@@ -209,7 +209,9 @@ describe("RotaView", () => {
     expect(await within(drawer).findByText("Saved.")).toBeDefined();
     expect(within(drawer).getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
     expect(within(drawer).getByLabelText<HTMLInputElement>("Right to work checked on").value).toBe("2026-09-24");
-    expect(mocks.week).toHaveBeenCalledTimes(2);
+    // The save asks for the week again; that read starts in an effect after
+    // the render that says "Saved.", so it is waited for, not assumed.
+    await vi.waitFor(() => { expect(mocks.week).toHaveBeenCalledTimes(2); });
   });
 
   it("gives the venue floor the published week to read, with nothing to change", async () => {
