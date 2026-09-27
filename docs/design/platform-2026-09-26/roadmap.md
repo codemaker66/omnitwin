@@ -576,6 +576,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - Mission Control, with 12 newer events: an unacknowledged blocked task still offers Acknowledge; a failed POST shows an inline error; resolving every incident shows a sealed "No open issues".
 - Print emulation of `/ops/handoff/:id`: sampled h1, h2 and table text is at least 4.5:1 on white.
 - `context.setOffline(true)`: marking a task done and logging an incident both queue and show "Saved on this phone", then replay on reconnect.
+  Held since 27 September by `event-day-offline.spec.ts`, for the event-day board's task and issue: the board
+  says "saved on this device", which is true of a tablet too.
 
 #### N5. Truth and safety sweep (M in total; each item S; runs in parallel from day one)
 
@@ -650,7 +652,14 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 *API*
 - `GuestEnquirySchema` gains an optional room slug, validated against the venue.
 - Because `spaceId` is NOT NULL (`schema.ts:671`), store an explicit "room not chosen" marker.
+  Begun on 27 September: migration 0079 adds `enquiries.room_chosen`, false for every enquiry from the
+  venue's own pages. The desk reads it in N6's next slice ([session log](../../sessions/2026-09-27.md)).
 - A `source` field (tour, website, planner, phone) replaces setting `fromTwin` on every venue-slug enquiry (`public-enquiries.ts:136`) and prepending the twin note (`:17,143-148`).
+  Revised on 27 September: the values are website, walkthrough, planner, phone and email, and NULL where
+  the source is not known. Walkthrough is the code's word for the tour, and email sits beside phone.
+  Migration 0079 fills the column only where a row proves the source. An enquiry from before 26 September
+  22:23 UTC keeps none, because the website's form then wrote the walkthrough's note too. The note is
+  taken out of every stored message ([session log](../../sessions/2026-09-27.md)).
 - A shared, human-labelled occasion list, used by the twin, `/fresh`, the planner and the desk. Today the desk prints raw slugs (`EnquiryLedger.tsx:50`).
 
 *Desk*
