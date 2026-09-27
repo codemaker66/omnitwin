@@ -485,11 +485,19 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Done on 27 September; the checkbox edge is `#7d8573` (3.8:1).
 
 - "Ready by" appears next to the start time.
+  Done on 27 September, as two figures on the venue's clock, "Not set" with its reason, and on the printed
+  sheet too ([session log](../../sessions/2026-09-27.md)).
 - Approval state: a full-width band (brick for rejected, amber for awaiting) and an approval stamp, instead of three separate version mentions.
 - A copper plane of category counts replaces the five-row pages and the `<select>`. Finished zones fold away. When everything is checked, the sheet shows "Setup checked · 43 of 43".
 - A "Keep in view" band: access needs, allergies, the day-of contact as a `tel:` link, and the next deadline.
+  Done on 27 September, above the stages so it stays on every stage, with the event's open issues. Revised:
+  the next deadline is the planner's next phase deadline, since "Ready by" already sits in the time card, and
+  what nobody recorded reads "None recorded". Allergies and the contact follow E5's default until Blake
+  answers ([session log](../../sessions/2026-09-27.md)).
 - On phones, a Checklist | Plan switch, no scroll box inside the page, and the room switcher in the header.
 - Venue-time formatting in `HallkeeperStatusBanner.tsx:51` and `InstructionsBanner.tsx:199-202`.
+  Done on 27 September in N4's first slice; its third names the sheet's zone in words, and only for a device
+  on another clock ([session log](../../sessions/2026-09-27.md)).
 - 403 copy without "Try Again".
   Done on 27 September: a denied sheet offers its own navigation instead ([session log](../../sessions/2026-09-27.md)).
 - Delete the dead `.hk-*` rules.
