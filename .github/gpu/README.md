@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 378 cases. Four hosted CPU shards execute
-373 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 379 cases. Four hosted CPU shards execute
+374 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -50,7 +50,9 @@ writes kept offline and sent once (`event-day-offline.spec.ts`). A fifteenth
 adds two: the Enquiries desk naming and picturing no room a guest did not
 choose, on a desktop and on a phone (`enquiries-desk-truth.spec.ts`). A
 sixteenth adds one: Create opportunity landing on its one deal, selected in the
-pipeline, however often it is pressed (`enquiries-hand-offs.spec.ts`).
+pipeline, however often it is pressed (`enquiries-hand-offs.spec.ts`). A
+seventeenth adds one beside it: Hold a date in the Diary opening the Diary on
+the date asked for with the hold ready, and the hold on the board once made.
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and

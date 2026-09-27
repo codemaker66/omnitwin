@@ -341,6 +341,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Enquiries desk hands a lead on to the Diary (T-635 N6): Hold a date in the Diary opens the Diary on the week of the date asked for with the hold's drawer open, titled with the occasion in words, and takes no room a guest did not choose. At 1440 by 900 a room is chosen, the hold is made and is on the board, and the address forgets the enquiry, so after Back and forward nothing is held twice.",
+      "sourceCommit": "876fd275758eb307b908d9da925261aa9c18afa9",
+      "sourceFile": "packages/web/e2e/enquiries-hand-offs.spec.ts",
+      "sourceFileGitBlobSha256": "a398ae56364d4fdad35630427aec6ca5103b9bf2562d30f354c0b8ca49ad8eae",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "5761da3dfe9223534a11c5af9ba536e62e29c0f28d1ba952b5bae415df9d0881",
+      "caseIds": [
+        "7b9624289ed6d12b445b-b6702d3165727e31079f"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3505,6 +3519,17 @@
       "id": "7b9624289ed6d12b445b-6fa162adff4dadf1f357",
       "file": "enquiries-hand-offs.spec.ts",
       "title": "Create opportunity lands on the deal, selected in the pipeline, and a second press lands on the same deal",
+      "suitePath": [
+        "enquiries-hand-offs.spec.ts",
+        "Enquiries desk, handing a lead on"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7b9624289ed6d12b445b-b6702d3165727e31079f",
+      "file": "enquiries-hand-offs.spec.ts",
+      "title": "Hold a date in the Diary opens the Diary on the date asked for, and the hold is on the board once made",
       "suitePath": [
         "enquiries-hand-offs.spec.ts",
         "Enquiries desk, handing a lead on"
