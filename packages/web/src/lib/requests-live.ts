@@ -12,7 +12,9 @@ import { nextBackoffMs } from "../pages/diary/lib/live-protocol.js";
 // it opens when the first surface that cares about requests mounts and closes
 // when the last one leaves. It speaks the same /ws/diary protocol the Diary
 // board already uses — same door, same authentication — but it deliberately
-// does NOT register the T-537 command channel: this connection only listens.
+// does NOT register the T-537 command channel: this connection only listens,
+// and it says so (presence: false), so its person is not counted as being on
+// the Diary while they are on some other page.
 //
 // Reconnect replays rather than trusting deltas: after a drop, the listener
 // is told "reconnected" and refetches the snapshot, exactly as the Diary does.
@@ -156,7 +158,9 @@ function connect(): void {
         ws.close();
         return;
       }
-      ws.send(JSON.stringify({ type: "auth", token }));
+      // presence: false — this connection only listens. Its person may be
+      // on any page, so the Diary must not count them as "here".
+      ws.send(JSON.stringify({ type: "auth", token, presence: false }));
       stopPing();
       pingTimer = window.setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));

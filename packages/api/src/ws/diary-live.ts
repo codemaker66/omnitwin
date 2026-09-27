@@ -28,7 +28,10 @@ import { AuthMessage, resolveWsUser } from "./auto-save.js";
 // one consistent stream.
 //
 // Protocol:
-//   client → { type: "auth", token }          first message, auto-save style
+//   client → { type: "auth", token, presence? }   first message, auto-save
+//            style; presence: false marks a connection that only listens
+//            (the requests and notifications channel), which hears what its
+//            role may hear but is nobody "here" on the Diary
 //   client → { type: "ping" }                 keepalive (any message touches)
 //   client → { type: "diary.command", command }   T-537 mutation envelope
 //   server → { type: "hello", venueId, presence }
@@ -69,7 +72,16 @@ export interface DiaryLiveUser {
 export interface DiaryLiveConnection {
   readonly socket: DiaryLiveSocket;
   readonly user: DiaryLiveUser;
+  /** False for a connection that only listens: every floor page keeps one
+   *  open for requests and the unread count. It hears the frames its role
+   *  may hear, but its person is not on the Diary, so it is not presence. */
+  readonly present: boolean;
   lastSeenMs: number;
+}
+
+export interface DiaryLiveJoinOptions {
+  /** Defaults to true: the Diary and the Day Board are where people are. */
+  readonly present?: boolean;
 }
 
 /**
@@ -84,12 +96,21 @@ export class DiaryLiveHub {
     socket: DiaryLiveSocket,
     user: DiaryLiveUser,
     nowMs: number,
+    options: DiaryLiveJoinOptions = {},
   ): DiaryLiveConnection {
-    const connection: DiaryLiveConnection = { socket, user, lastSeenMs: nowMs };
+    const connection: DiaryLiveConnection = {
+      socket,
+      user,
+      present: options.present ?? true,
+      lastSeenMs: nowMs,
+    };
     const set = this.#byVenue.get(venueId) ?? new Set<DiaryLiveConnection>();
     set.add(connection);
     this.#byVenue.set(venueId, set);
-    this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    // A listener changes nobody's presence, so the room is not told.
+    if (connection.present) {
+      this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    }
     return connection;
   }
 
@@ -98,7 +119,9 @@ export class DiaryLiveHub {
     if (set === undefined) return;
     if (!set.delete(connection)) return;
     if (set.size === 0) this.#byVenue.delete(venueId);
-    this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    if (connection.present) {
+      this.broadcast(venueId, { type: "presence", users: this.presenceFor(venueId) });
+    }
   }
 
   touch(connection: DiaryLiveConnection, nowMs: number): void {
@@ -109,10 +132,14 @@ export class DiaryLiveHub {
     return this.#byVenue.get(venueId)?.size ?? 0;
   }
 
-  /** Presence deduped by user — two tabs are still one person. */
+  /** Presence deduped by user — two tabs are still one person — and only
+   *  from connections that are somewhere people are: a page that merely
+   *  listens for requests does not put its person "here" (T-619's rule that
+   *  the count names only colleagues who are there). */
   presenceFor(venueId: string): readonly DiaryLiveUser[] {
     const byUser = new Map<string, DiaryLiveUser>();
     for (const connection of this.#byVenue.get(venueId) ?? []) {
+      if (!connection.present) continue;
       byUser.set(connection.user.userId, connection.user);
     }
     return [...byUser.values()];
@@ -192,15 +219,23 @@ export class DiaryLiveHub {
   }
 }
 
+/** The house auth frame, plus whether the connection is presence. Absent
+ *  means present, which is what the Diary and the Day Board send; the
+ *  requests channel sends false. */
+export const DiaryAuthMessage = AuthMessage.extend({
+  presence: z.boolean().optional(),
+});
+
 const IncomingLiveMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ping") }),
   z.object({ type: z.literal("diary.command"), command: DiaryCommandSchema }),
 ]);
 
 /**
- * Ship Friday slice 10. Requests ride the SAME venue channel the Diary already
- * holds open, so a phone that is watching the day is watching the floor as
- * well — no second connection, no second authentication. A request frame goes
+ * Ship Friday slice 10. Requests ride the same venue channel the Diary uses —
+ * the same door and the same authentication — on a connection of their own
+ * that says presence: false, so a person listening for requests on any floor
+ * page is not counted as being on the Diary. A request frame goes
  * only to the venue's connections whose role is in the request's OWN stored
  * audience, and an inbox frame to that audience or to the people it names;
  * the live channel can never widen what the database narrowed. A frame says
@@ -350,7 +385,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
         // A frame while authentication is already in flight must not abort
         // the valid attempt (review P2) — drop it quietly.
         if (authenticating) return;
-        const auth = AuthMessage.safeParse(data);
+        const auth = DiaryAuthMessage.safeParse(data);
         if (!auth.success) {
           send({ type: "error", code: "UNAUTHORIZED", message: "Authenticate first" });
           socket.close();
@@ -391,6 +426,7 @@ export async function registerDiaryLive(server: FastifyInstance, db: Database): 
               socket,
               { userId: user.userId, name: profile?.name ?? "Colleague", role: user.userRole },
               Date.now(),
+              { present: auth.data.presence !== false },
             );
             send({ type: "hello", venueId, presence: hub.presenceFor(venueId) });
           } catch {

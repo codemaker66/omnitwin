@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestsLiveListenerCount, subscribeRequestsLive } from "../requests-live.js";
 
+vi.mock("../../api/client.js", () => ({ getAuthToken: () => Promise.resolve("token-1") }));
+
 // ---------------------------------------------------------------------------
 // The requests live channel — when it may open a socket at all.
 //
@@ -50,7 +52,44 @@ afterEach(() => {
   delete (window as E2EWindow).__OMNITWIN_E2E__;
 });
 
+/** A socket that opens when told to and records what it was sent. */
+class RecordingSocket {
+  static latest: RecordingSocket | null = null;
+  static readonly OPEN = 1;
+  readyState = 0;
+  readonly sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(readonly url: string) {
+    RecordingSocket.latest = this;
+  }
+  open(): void {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+  send(text: string): void { this.sent.push(text); }
+  close(): void { this.readyState = 3; }
+}
+
 describe("the requests live channel", () => {
+  it("authenticates as a listener, so its person is not counted on the Diary", async () => {
+    vi.stubGlobal("WebSocket", RecordingSocket);
+    const unsubscribe = subscribeRequestsLive(vi.fn());
+    try {
+      const socket = RecordingSocket.latest;
+      if (socket === null) throw new Error("The channel should have opened a socket");
+      socket.open();
+      await vi.waitFor(() => { expect(socket.sent.length).toBeGreaterThan(0); });
+      expect(JSON.parse(socket.sent[0] ?? "{}")).toEqual({ type: "auth", token: "token-1", presence: false });
+    } finally {
+      // The channel is module state: close it even when the case fails, so
+      // the next case starts with no listener and no socket.
+      unsubscribe();
+    }
+  });
+
   it("opens no socket under the E2E harness, and still accepts listeners", () => {
     (window as E2EWindow).__OMNITWIN_E2E__ = true;
     const unsubscribe = subscribeRequestsLive(vi.fn());

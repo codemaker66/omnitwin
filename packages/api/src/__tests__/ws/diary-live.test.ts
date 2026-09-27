@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { STAFF_AUDIENCE_ROLES, USER_ROLES } from "@omnitwin/types";
 import { __resetRegistryForTests, emit } from "../../observability/event-bus.js";
 import {
-  DIARY_READ_ROLES, DiaryLiveHub, subscribeRequestFrames, type DiaryLiveSocket,
+  DIARY_READ_ROLES, DiaryAuthMessage, DiaryLiveHub, subscribeRequestFrames, type DiaryLiveSocket,
 } from "../../ws/diary-live.js";
 import { DIARY_WRITE_ROLES } from "../../services/booking-mutations.js";
 
@@ -98,6 +98,45 @@ describe("DiaryLiveHub", () => {
     expect(stale.closed).toBe(true);
     expect(fresh.closed).toBe(false);
     expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "A", role: "staff" }]);
+  });
+
+  // The requests channel rides this door from every floor page. T-619 made
+  // the Diary's count name only colleagues who are there; a page that only
+  // listens must not put its person "here".
+  it("hears a listening connection's frames but never counts it as presence", () => {
+    const hub = new DiaryLiveHub();
+    const onDiary = fakeSocket();
+    const listening = fakeSocket();
+    hub.join(VENUE_A, onDiary, { userId: "u1", name: "Elaine", role: "hallkeeper" }, 0);
+    const presenceFrames = (): number => messagesOf(onDiary).filter((message) => message.type === "presence").length;
+    const before = presenceFrames();
+
+    const listener = hub.join(VENUE_A, listening, { userId: "u2", name: "Fiona", role: "staff" }, 0, { present: false });
+
+    expect(hub.presenceFor(VENUE_A)).toEqual([{ userId: "u1", name: "Elaine", role: "hallkeeper" }]);
+    expect(presenceFrames()).toBe(before);
+    hub.broadcastToRoles(VENUE_A, ["staff"], { type: "request.event" });
+    expect(messagesOf(listening).some((message) => message.type === "request.event")).toBe(true);
+
+    hub.leave(VENUE_A, listener);
+    expect(presenceFrames()).toBe(before);
+    expect(hub.connectionCount(VENUE_A)).toBe(1);
+  });
+
+  it("takes a person's presence only from where they are, not from their listening page", () => {
+    const hub = new DiaryLiveHub();
+    const watcher = fakeSocket();
+    hub.join(VENUE_A, watcher, { userId: "u9", name: "Watcher", role: "admin" }, 0);
+    const diaryTab = hub.join(VENUE_A, fakeSocket(), { userId: "u1", name: "Elaine", role: "hallkeeper" }, 0);
+    hub.join(VENUE_A, fakeSocket(), { userId: "u1", name: "Elaine", role: "hallkeeper" }, 0, { present: false });
+    expect(hub.presenceFor(VENUE_A).map((person) => person.userId).sort()).toEqual(["u1", "u9"]);
+
+    // Elaine closes the Diary; her other page still listens, but she has gone.
+    hub.leave(VENUE_A, diaryTab);
+    expect(hub.presenceFor(VENUE_A).map((person) => person.userId)).toEqual(["u9"]);
+    const last = messagesOf(watcher).filter((message) => message.type === "presence").at(-1) as
+      { type: string; users: readonly { userId: string }[] } | undefined;
+    expect(last?.users.map((person) => person.userId)).toEqual(["u9"]);
   });
 
   it("send failures never break the fanout loop", () => {
@@ -266,6 +305,15 @@ describe("registerDiaryLive — source contract", () => {
     const parse = source.indexOf("AuthMessage.safeParse");
     expect(inFlightGuard).toBeGreaterThan(-1);
     expect(parse).toBeGreaterThan(inFlightGuard);
+  });
+
+  it("reads presence from the auth frame: absent is present, false only listens", async () => {
+    expect(DiaryAuthMessage.parse({ type: "auth", token: "t" }).presence).toBeUndefined();
+    expect(DiaryAuthMessage.parse({ type: "auth", token: "t", presence: false }).presence).toBe(false);
+    expect(DiaryAuthMessage.safeParse({ type: "auth", token: "t", presence: "no" }).success).toBe(false);
+    const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
+    expect(source).toContain("DiaryAuthMessage.safeParse(data)");
+    expect(source).toContain("{ present: auth.data.presence !== false }");
   });
 
   it("never joins a socket that closed while authentication was in flight", async () => {
