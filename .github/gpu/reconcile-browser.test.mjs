@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full377 union requires372 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
+test('full378 union requires373 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 377, cpu: 372, gpu: 5, ordinaryPasses: 331,
+  assert.deepEqual(result.totals, { inventory: 378, cpu: 373, gpu: 5, ordinaryPasses: 332,
     expectedFailures: 4, originalSkips: 42, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 372);
+  assert.equal(result.totals.cpu, 373);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 326);
+  assert.equal(result.totals.ordinaryPasses, 327);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 21);
+  assert.equal(baseline.inventoryAdmissions.length, 22);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -525,6 +525,24 @@ test('the Enquiries desk truth admission adds exactly two ordinary cases in thei
 });
 rejected('an Enquiries desk truth case cannot become a skip', (input) => {
   const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === deskTruthAdditions[1]);
+  spec.tests[0].expectedStatus = 'skipped';
+  spec.tests[0].results[0].status = 'skipped';
+  spec.tests[0].status = 'skipped';
+}, /policy changed/);
+const handOffAddition = '7b9624289ed6d12b445b-6fa162adff4dadf1f357';
+test('the Enquiries hand-off admission adds exactly one ordinary case in its own spec', () => {
+  const admission = baseline.inventoryAdmissions[21];
+  assert.equal(admission.date, '2026-09-27');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/enquiries-hand-offs.spec.ts');
+  assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+  assert.deepEqual(admission.caseIds, [handOffAddition]);
+  const row = baseline.cases.find((entry) => entry.id === handOffAddition);
+  assert.equal(row?.file, 'enquiries-hand-offs.spec.ts');
+  assert.equal(row?.expectedStatus, 'passed');
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+rejected('the Enquiries hand-off case cannot become a skip', (input) => {
+  const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === handOffAddition);
   spec.tests[0].expectedStatus = 'skipped';
   spec.tests[0].results[0].status = 'skipped';
   spec.tests[0].status = 'skipped';

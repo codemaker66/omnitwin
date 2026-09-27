@@ -327,6 +327,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces these identities, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Enquiries desk hands a lead on (T-635 N6): Create opportunity lands on the deal it made, selected in the pipeline beside the board, with no notice that a deal was opened somewhere else. At 1440 by 900 the first press makes the deal and the address names the pipeline and that deal; back on the desk, a second press lands on the same deal, which the real route now guarantees by making one deal per enquiry however many presses reach it.",
+      "sourceCommit": "c11281966ad45866655eb8cea86617bc2435904d",
+      "sourceFile": "packages/web/e2e/enquiries-hand-offs.spec.ts",
+      "sourceFileGitBlobSha256": "3167d753d08b9f59ed931512708a48992e7d56396fff16833bfc0d6af9a2880e",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "7919de1d5a9bfdb87dd2615a392e5de990f4a490c6b639f8e70c16ccfcf68038",
+      "caseIds": [
+        "7b9624289ed6d12b445b-6fa162adff4dadf1f357"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -3483,6 +3497,17 @@
       "suitePath": [
         "enquiries-desk-truth.spec.ts",
         "Enquiries desk, the truth about a lead"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7b9624289ed6d12b445b-6fa162adff4dadf1f357",
+      "file": "enquiries-hand-offs.spec.ts",
+      "title": "Create opportunity lands on the deal, selected in the pipeline, and a second press lands on the same deal",
+      "suitePath": [
+        "enquiries-hand-offs.spec.ts",
+        "Enquiries desk, handing a lead on"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
