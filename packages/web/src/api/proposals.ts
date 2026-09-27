@@ -35,6 +35,8 @@ export const PublicProposalSchema = z.object({
     authorName: z.string().nullable(),
     body: z.string(),
     createdAt: z.string(),
+    /** Who wrote it; from an API before it, a "Venue team" author is the venue's. */
+    from: z.enum(["venue", "client"]).optional(),
   })).optional(),
   packages: z.array(z.object({
     label: z.string(),
@@ -54,6 +56,13 @@ export const PublicProposalSchema = z.object({
   }).default({ eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null }),
   /** Who accepted it (the name they gave, if any) and when. */
   accepted: z.object({ by: z.string().nullable(), at: z.string() }).nullable().default(null),
+  /** The venue, for its own room photographs and the printed address. */
+  venueSlug: z.string().nullable().default(null),
+  venueAddress: z.string().nullable().default(null),
+  /** When the version shown was saved. */
+  preparedAt: z.string().nullable().default(null),
+  /** The venue team's preview only: the version the client's link shows. */
+  sentVersion: z.number().int().positive().nullable().default(null),
 });
 
 export type PublicProposal = z.infer<typeof PublicProposalSchema>;
@@ -73,14 +82,17 @@ export async function getProposalShare(token: string): Promise<PublicProposal> {
   return api.get(`/proposal-share/${encodeURIComponent(token)}`, PublicProposalSchema);
 }
 
+/** An answer names the version the client read, so one made on a page older
+ *  than the version now sent is refused (409 PROPOSAL_VERSION_CHANGED). */
 export async function respondToProposal(
   shareCode: string,
   action: ProposalResponseAction,
   note?: string,
+  version?: number,
 ): Promise<ProposalRespondResult> {
   return api.post(
     `/public/proposals/${encodeURIComponent(shareCode)}/respond`,
-    { action, note: note ?? null },
+    { action, note: note ?? null, ...(version === undefined ? {} : { version }) },
     true,
     RespondResultSchema,
   );
@@ -88,7 +100,13 @@ export async function respondToProposal(
 
 export async function commentOnProposalShare(
   token: string,
-  input: { readonly body: string; readonly kind?: "comment" | "request_changes"; readonly authorName?: string | null; readonly authorEmail?: string | null },
+  input: {
+    readonly body: string;
+    readonly kind?: "comment" | "request_changes";
+    readonly authorName?: string | null;
+    readonly authorEmail?: string | null;
+    readonly version?: number;
+  },
 ): Promise<{ kind: string; authorName: string | null; body: string; createdAt: string }> {
   const CommentSchema = z.object({
     kind: z.string(),
@@ -101,7 +119,7 @@ export async function commentOnProposalShare(
 
 export async function approveProposalShare(
   token: string,
-  input: { readonly body?: string; readonly authorName?: string | null; readonly authorEmail?: string | null } = {},
+  input: { readonly body?: string; readonly authorName?: string | null; readonly authorEmail?: string | null; readonly version?: number } = {},
 ): Promise<ProposalRespondResult> {
   return api.post(`/proposal-share/${encodeURIComponent(token)}/approve`, input, true, RespondResultSchema);
 }
@@ -258,8 +276,11 @@ export const DeskProposalSchema = StaffProposalSchema.extend({
   eventType: z.string().nullable().default(null),
   latestTotalMinor: z.number().int().nullable().default(null),
   latestCurrency: z.string().nullable().default(null),
-  /** When any of its links was last opened; the team's previews never count. */
-  clientOpenedAt: z.string().nullable().default(null),
+  /** When a link to it was last opened since it was last sent; the team's
+   *  previews never count, and anyone the link reaches does. */
+  linkOpenedAt: z.string().nullable().default(null),
+  /** The version the client's link shows, once sent. */
+  sentVersion: z.number().int().positive().nullable().default(null),
 });
 
 export type DeskProposal = z.infer<typeof DeskProposalSchema>;
@@ -324,8 +345,10 @@ export async function transitionProposal(id: string, status: string, note?: stri
   return api.post(`/proposals/${id}/transition`, { status, note: note ?? null }, undefined, StaffProposalSchema);
 }
 
-export async function createProposalShareToken(id: string): Promise<ShareTokenResult> {
-  return api.post(`/proposals/${id}/share-token`, {}, undefined, ShareTokenResultSchema);
+/** Sends the version the booker confirmed; a newer one saved meanwhile is
+ *  refused (409 PROPOSAL_VERSION_CHANGED) rather than sent unseen. */
+export async function createProposalShareToken(id: string, version?: number): Promise<ShareTokenResult> {
+  return api.post(`/proposals/${id}/share-token`, version === undefined ? {} : { version }, undefined, ShareTokenResultSchema);
 }
 
 export async function getProposalHistory(id: string): Promise<ProposalHistoryEntry[]> {

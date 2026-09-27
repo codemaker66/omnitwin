@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
-// Migration 0082 on isolated PostgreSQL (T-635, roadmap X1).
+// Migrations 0082 and 0083 on isolated PostgreSQL (T-635, roadmap X1).
 //
 // The client's link served the latest version saved, so a version saved
 // after the client asked for changes was live before anyone sent it; and the
@@ -16,8 +16,8 @@ import * as schema from "../db/schema.js";
 // name given with its acceptance, filled from what the rows prove. Every
 // kind of proposal the routes have written meets it here, on tables built as
 // the release before it defined them; then the previous API keeps writing
-// until the next release runs the same fill again, which must settle those
-// rows and change nothing else.
+// until the next release's 0083 runs the fill again, which must settle those
+// rows, keep the version a link was sent, and change nothing else.
 //
 // Opt-in, isolated PostgreSQL only. Never consults DATABASE_URL or .env.
 // ---------------------------------------------------------------------------
@@ -36,8 +36,8 @@ if (testUrl !== undefined) {
 /** The two columns 0082 adds, which the release before it did not have. */
 const ADDED = ["sent_version", "accepted_name"];
 
-async function applyMigration(pool: Pool): Promise<void> {
-  const migration = await readFile(resolve("drizzle", "0082_proposal_sent_version.sql"), "utf8");
+async function applyMigration(pool: Pool, file = "0082_proposal_sent_version.sql"): Promise<void> {
+  const migration = await readFile(resolve("drizzle", file), "utf8");
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -58,7 +58,7 @@ interface Stored {
   readonly accepted_name: string | null;
 }
 
-describe.skipIf(testUrl === undefined)("migration 0082 on isolated PostgreSQL", () => {
+describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated PostgreSQL", () => {
   const fixtureSchema = `proposal_sent_${randomUUID().replaceAll("-", "")}`;
   const venue = randomUUID();
   const token = randomUUID();
@@ -239,22 +239,37 @@ describe.skipIf(testUrl === undefined)("migration 0082 on isolated PostgreSQL", 
       .rejects.toThrow(/proposals_sent_version_positive/u);
   });
 
-  it("settles what the previous API wrote meanwhile when run again, and changes nothing else", async () => {
+  it("0083 settles what the previous API wrote meanwhile, keeps what was sent, and changes nothing else", async () => {
     const before = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
     // The previous API, still running once 0082 applied, sends version 2 and
-    // a first version without touching the new columns.
+    // a first version, and sees a client accept by name, without touching
+    // the new columns.
     await pool.query("UPDATE proposals SET status = 'sent' WHERE id = $1", [ids.changesAskedThenSaved]);
     await moved(ids.changesAskedThenSaved, "changes_requested", "sent", "2026-09-28T09:00:00Z");
     await pool.query("UPDATE proposals SET status = 'sent', current_version = 1 WHERE id = $1", [ids.draft]);
     await version(ids.draft, 1, "2026-09-28T09:00:00Z");
     await moved(ids.draft, "draft", "sent", "2026-09-28T09:05:00Z");
+    await pool.query("UPDATE proposals SET status = 'accepted' WHERE id = $1", [ids.sentOnce]);
+    await moved(ids.sentOnce, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await note(ids.sentOnce, "Moira Kerr", "2026-09-28T10:00:00Z");
+    // The new release, once it runs: a platform administrator saves version
+    // 3 while version 2 is with the client. It is a draft; the link keeps 2.
+    await pool.query("UPDATE proposals SET current_version = 3 WHERE id = $1", [ids.adminSavedWhileSent]);
+    await version(ids.adminSavedWhileSent, 3, "2026-09-28T11:00:00Z");
 
-    await applyMigration(pool);
+    await applyMigration(pool, "0083_proposal_sent_version_refill.sql");
 
     expect((await stored(ids.changesAskedThenSaved)).sent_version).toBe(2);
     expect((await stored(ids.draft)).sent_version).toBe(1);
+    expect(await stored(ids.sentOnce)).toEqual({ sent_version: 1, accepted_name: "Moira Kerr" });
+    expect((await stored(ids.adminSavedWhileSent)).sent_version).toBe(2);
+    const settled: readonly string[] = [ids.changesAskedThenSaved, ids.draft, ids.sentOnce];
     const after = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
-    const unchanged = (rows: readonly (Stored & { id: string })[]) => rows.filter((row) => row.id !== ids.changesAskedThenSaved && row.id !== ids.draft);
+    const unchanged = (rows: readonly (Stored & { id: string })[]) => rows.filter((row) => !settled.includes(row.id));
     expect(unchanged(after)).toEqual(unchanged(before));
+
+    // Run again, it changes nothing.
+    await applyMigration(pool, "0083_proposal_sent_version_refill.sql");
+    expect((await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows).toEqual(after);
   });
 });

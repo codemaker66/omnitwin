@@ -2185,14 +2185,14 @@ test.describe("SS++ representative button behavior", () => {
   test("proposal controls approve, reveal change request, and post token comments", async ({ page }) => {
     await mockProposalRoutes(page);
     await page.goto(`/proposal/${SHARE_CODE}`);
-    await page.getByRole("button", { name: "Request changes" }).click();
-    const sendRequest = page.getByRole("button", { name: "Send request" });
+    await page.getByRole("button", { name: "Ask for changes…" }).click();
+    const sendRequest = page.getByRole("button", { name: "Send to the venue team" });
     await expect(sendRequest).toBeDisabled();
-    await page.getByLabel(/what you'd like changed/i).fill("Can we move speeches earlier?");
+    await page.getByLabel("What would you like changed?").fill("Can we move speeches earlier?");
     await expect(sendRequest).toBeEnabled();
 
-    await page.getByRole("button", { name: "Approve proposal" }).click();
-    await expect(page.getByText("Proposal accepted")).toBeVisible();
+    await page.getByRole("button", { name: "Accept version 1" }).click();
+    await expect(page.getByText("You accepted this version. The venue team has been told.")).toBeVisible();
 
     await page.goto(`/proposal-share/${SHARE_TOKEN}`);
     await page.getByTestId("comment-input").fill("Could we move the arrival time thirty minutes later?");
@@ -2323,9 +2323,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto(`/proposal/${SHARE_CODE}`);
     await expect(page.getByRole("heading", { level: 1, name: "Reception Room wedding proposal" })).toBeVisible();
-    await expect(page.getByText("Proposal expired")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Approve proposal" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Request changes" })).toHaveCount(0);
+    await expect(page.getByTestId("proposal-standing")).toHaveText("This proposal has expired. Ask the venue team for a current one.");
+    await expect(page.getByRole("button", { name: /^Accept/u })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Ask for changes…" })).toHaveCount(0);
   });
 
   test("proposal response and comment failures keep clients informed", async ({ page }) => {
@@ -2337,13 +2337,15 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     });
 
     await page.goto(`/proposal/${SHARE_CODE}`);
-    await page.getByRole("button", { name: "Request changes" }).click();
-    const sendRequest = page.getByRole("button", { name: "Send request" });
+    await page.getByRole("button", { name: "Ask for changes…" }).click();
+    const sendRequest = page.getByRole("button", { name: "Send to the venue team" });
     await expect(sendRequest).toBeDisabled();
-    await page.getByLabel(/what you'd like changed/i).fill("Please move speeches before dinner.");
+    await page.getByLabel("What would you like changed?").fill("Please move speeches before dinner.");
     await expect(sendRequest).toBeEnabled();
     await sendRequest.click();
-    await expect(page.getByRole("alert")).toContainText("Something went wrong sending your response");
+    await expect(page.getByRole("alert")).toContainText("Your answer did not reach the venue team.");
+    // What was typed is still there to send again.
+    await expect(page.getByLabel("What would you like changed?")).toHaveValue("Please move speeches before dinner.");
 
     await page.route(`${API}/proposal-share/${SHARE_TOKEN}`, (route) => {
       void route.fulfill({ json: { data: publicProposalFixture() } });
@@ -2358,7 +2360,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByTestId("comment-input").fill("Please keep a clear route for a wheelchair user.");
     await expect(sendComment).toBeEnabled();
     await sendComment.click();
-    await expect(page.getByRole("alert")).toContainText("We couldn't post your comment");
+    await expect(page.getByRole("alert")).toContainText("Your message was not posted.");
   });
 
   test("dashboard role restrictions hide staff/admin-only surfaces from hallkeepers", async ({ page }) => {

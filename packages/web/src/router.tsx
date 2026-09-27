@@ -3,7 +3,7 @@ import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, Outlet, useLocation, useMatches, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import {
-  DIARY_ROLES, hasRole, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
+  COMMERCIAL_ROLES, DIARY_ROLES, hasRole, VENUE_DAY_ROLES, VENUE_ROOM_ROLES, WORKSPACE_ROLES,
 } from "./lib/role-capabilities.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
@@ -147,6 +147,9 @@ const CaptureIntakePage = lazyWithPreload(() =>
 );
 const ProposalPage = lazy(() =>
   cockpitImport(() => import("./pages/ProposalPage.js").then((m) => ({ default: m.ProposalPage }))),
+);
+const ProposalPreviewPage = lazyWithPreload(() =>
+  cockpitImport(() => import("./pages/ProposalPreviewPage.js").then((m) => ({ default: m.ProposalPreviewPage }))),
 );
 const SupplierPortalPage = lazy(() =>
   cockpitImport(() => import("./pages/SupplierPortalPage.js").then((m) => ({ default: m.SupplierPortalPage }))),
@@ -639,6 +642,18 @@ export const router = createBrowserRouter([
     // the API through a stored hash and returns only client-safe proposal data.
     path: "/proposal-share/:token",
     element: withSuspense(<ProposalPage />),
+  },
+  {
+    // Preview as the client (roadmap X1): the venue's commercial team reads a
+    // proposal's latest version as its client would, without the staff
+    // header, and the API never counts it as the link being opened.
+    path: "/proposal-preview/:proposalId",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={COMMERCIAL_ROLES}>
+        <ProposalPreviewPage />
+      </ProtectedRoute>,
+      ProposalPreviewPage,
+    ),
   },
   {
     // Supplier coordination share token route. Public — the token is resolved

@@ -18,7 +18,7 @@ function row(overrides: Partial<DeskProposal> = {}): DeskProposal {
     id: "p1", venueId: "v1", opportunityId: null, enquiryId: null, configurationId: null, title: "Autumn gala", status: "draft",
     currentVersion: 0, shareCode: null, sentAt: null, createdBy: "u1", createdAt: "2026-09-20T09:00:00.000Z",
     updatedAt: "2026-10-01T09:00:00.000Z", deletedAt: null, dealTitle: null, clientName: null, eventDate: null, guestCount: null,
-    eventType: null, latestTotalMinor: null, latestCurrency: null, clientOpenedAt: null, ...overrides,
+    eventType: null, latestTotalMinor: null, latestCurrency: null, linkOpenedAt: null, sentVersion: null, ...overrides,
   };
 }
 
@@ -61,7 +61,9 @@ describe("a row", () => {
   it("says when it last moved, in the words of where it stands", () => {
     expect(rowWhen(row(), NOW)).toBe("Nothing written yet");
     expect(rowWhen(row({ currentVersion: 2 }), NOW)).toBe("Version 2, changed yesterday");
-    expect(rowWhen(row({ status: "sent", currentVersion: 1, sentAt: "2026-09-29T10:00:00.000Z" }), NOW)).toBe("Sent 3 days ago");
+    expect(rowWhen(row({ status: "sent", currentVersion: 1, sentAt: "2026-09-29T10:00:00.000Z" }), NOW)).toBe("Sent 3 days ago, not opened yet");
+    expect(rowWhen(row({ status: "sent", currentVersion: 1, sentAt: "2026-09-29T10:00:00.000Z", linkOpenedAt: "2026-10-01T18:00:00.000Z" }), NOW))
+      .toBe("Sent 3 days ago, opened yesterday");
     expect(rowWhen(row({ status: "changes_requested", currentVersion: 1, updatedAt: "2026-10-02T08:00:00.000Z" }), NOW)).toBe("Version 1, changed 2 hours ago");
     expect(rowWhen(row({ status: "accepted", updatedAt: "2026-09-25T10:00:00.000Z" }), NOW)).toBe("Accepted 7 days ago");
   });

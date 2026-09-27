@@ -206,7 +206,7 @@ describe("the ledger", () => {
     expect([...document.querySelectorAll(".enq-group")].map((heading) => heading.firstChild?.textContent))
       .toEqual(["Waiting on you", "Drafts", "With the client", "Accepted", "Closed"]);
     expect(row("p1").getAttribute("aria-label"))
-      .toBe("Sent ball, With the client, event Friday 20 November 2026, Elaine Crawford, Wedding, 120 guests, £18,400, sent 3 days ago");
+      .toBe("Sent ball, With the client, event Friday 20 November 2026, Elaine Crawford, Wedding, 120 guests, £18,400, sent 3 days ago, not opened yet");
     expect(row("p3").getAttribute("aria-label")).toContain("Changes asked for, event Friday 20 November 2026");
     expect(row("p3").getAttribute("aria-label")).toContain("version 1, changed yesterday");
     expect(row("p2").getAttribute("aria-label")).toBe("Draft lunch, Draft, no event date, Wedding, 120 guests, version 1, changed 2 days ago");
@@ -419,8 +419,12 @@ describe("the next step", () => {
     expect(panel.getByTestId("send-consequence").textContent).toBe("Making the link marks the proposal Sent. Nothing is emailed; you send the link.");
     expect(mocks.createProposalShareToken).not.toHaveBeenCalled();
     fireEvent.click(panel.getByRole("button", { name: "Make the link" }));
-    await waitFor(() => { expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1"); });
-    expect((await panel.findByTestId("share-link")).getAttribute("href")).toBe(`${window.location.origin}/proposal-share/client-token`);
+    // The version the booker was asked about is the one sent.
+    await waitFor(() => { expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1", 1); });
+    // Shown to copy, never as a link a booker might follow and so seem to open.
+    const link = await panel.findByTestId("share-link");
+    expect(link.textContent).toBe(`${window.location.origin}/proposal-share/client-token`);
+    expect(link.closest("a")).toBeNull();
     expect(panel.getByTestId("share-link-note").textContent).toBe("Not emailed. Copy it into your message to the client.");
     await waitFor(() => { expect(panel.getByText("With the client", { selector: ".enq-chip" })).toBeDefined(); });
   });
@@ -437,7 +441,33 @@ describe("the next step", () => {
     fireEvent.click(panel.getByRole("button", { name: "Issue a new link…" }));
     expect(panel.getByTestId("send-consequence").textContent).toContain("Links the client already has keep working.");
     fireEvent.click(panel.getByRole("button", { name: "Issue the link" }));
-    expect((await panel.findByTestId("share-link")).getAttribute("href")).toContain("/proposal-share/fresh-token");
+    expect((await panel.findByTestId("share-link")).textContent).toContain("/proposal-share/fresh-token");
+    expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1", 2);
+  });
+
+  it("says whether the link has been opened since it was sent, and offers the client's view in a tab of its own", async () => {
+    existing = [proposal({ status: "sent", currentVersion: 2, sentVersion: 2, sentAt: NOW, linkOpenedAt: "2026-10-05T13:10:00.000Z" })];
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect(panel.getByTestId("link-opened").textContent).toBe("The link was last opened Mon 5 Oct, 14:10.");
+    const preview = panel.getByTestId("preview-link");
+    expect(preview.getAttribute("href")).toBe("/proposal-preview/p1");
+    expect(preview.getAttribute("target")).toBe("_blank");
+    expect(preview.getAttribute("rel")).toContain("noopener");
+    expect(preview.textContent).toContain("Preview as the client");
+    cleanup();
+
+    existing = [proposal({ status: "sent", currentVersion: 2, sentVersion: 2, sentAt: NOW })];
+    render(<ProposalsDesk />);
+    const unopened = within(await openProposal());
+    expect(unopened.getByTestId("link-opened").textContent).toBe("The link has not been opened since it was sent.");
+  });
+
+  it("says when the client's link shows an older version than the one saved", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 3, sentVersion: 2, sentAt: NOW })];
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect(await panel.findByText(/the client's link shows version 2/u)).toBeDefined();
   });
 
   it("offers archive, and no link, composer or withdrawal, once a proposal is settled", async () => {

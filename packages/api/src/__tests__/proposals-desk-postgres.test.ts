@@ -48,7 +48,7 @@ interface DeskRow {
   readonly eventType: string | null;
   readonly latestTotalMinor: number | null;
   readonly latestCurrency: string | null;
-  readonly clientOpenedAt: string | null;
+  readonly linkOpenedAt: string | null;
 }
 
 interface DeskBody {
@@ -224,17 +224,23 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
     expect(byId.get(unsaved)).toMatchObject({ latestTotalMinor: null, latestCurrency: null });
   });
 
-  it("says when the client last opened any of its links, and nothing before they have", async () => {
+  it("says when a link was last opened since the latest send, and nothing before it has been", async () => {
     const opened = await proposal("Opened", "sent", "2026-09-05T10:00:00Z", { version: 1 });
     const unopened = await proposal("Unopened", "sent", "2026-09-05T10:00:00Z", { version: 1 });
+    const resent = await proposal("Sent again since", "sent", "2026-09-08T10:00:00Z", { version: 2 });
+    await pool.query("UPDATE proposals SET sent_at = '2026-09-06T09:00:00Z' WHERE id = ANY($1)", [[opened, unopened]]);
+    await pool.query("UPDATE proposals SET sent_at = '2026-09-08T10:00:00Z' WHERE id = $1", [resent]);
     await pool.query(
       `INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix, last_viewed_at) VALUES
-       ($1, 'a', 'a', '2026-09-06T09:30:00.123Z'), ($1, 'b', 'b', '2026-09-07T14:05:00Z'), ($1, 'c', 'c', NULL), ($2, 'd', 'd', NULL)`,
-      [opened, unopened],
+       ($1, 'a', 'a', '2026-09-06T09:30:00.123Z'), ($1, 'b', 'b', '2026-09-07T14:05:00Z'), ($1, 'c', 'c', NULL), ($2, 'd', 'd', NULL),
+       ($3, 'e', 'e', '2026-09-07T12:00:00Z')`,
+      [opened, unopened, resent],
     );
     const byId = new Map((await desk()).data.map((row) => [row.id, row]));
-    expect(byId.get(opened)?.clientOpenedAt).toBe("2026-09-07T14:05:00.000Z");
-    expect(byId.get(unopened)?.clientOpenedAt).toBeNull();
+    expect(byId.get(opened)?.linkOpenedAt).toBe("2026-09-07T14:05:00.000Z");
+    expect(byId.get(unopened)?.linkOpenedAt).toBeNull();
+    // Opened before it was sent again: the version sent since is unread.
+    expect(byId.get(resent)?.linkOpenedAt).toBeNull();
   });
 
   it("keeps each venue's proposals to itself, and a role without the commercial desk to its own", async () => {

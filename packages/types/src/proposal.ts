@@ -394,6 +394,21 @@ export const ProposalLayoutSnapshotSchema = z.object({
 });
 export type ProposalLayoutSnapshot = z.infer<typeof ProposalLayoutSnapshotSchema>;
 
+/**
+ * The event a proposal is for (roadmap X1): its date, how many are coming,
+ * the occasion and the room, as the venue held them when the version was
+ * saved. Frozen with each version, so a later change to the deal never
+ * rewrites what a client was sent or accepted.
+ */
+export const ProposalFactsSchema = z.object({
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u).nullable(),
+  guestCount: z.number().int().nonnegative().nullable(),
+  occasion: z.string().max(200).nullable(),
+  roomName: z.string().max(200).nullable(),
+  roomSlug: z.string().max(200).nullable(),
+});
+export type ProposalFacts = z.infer<typeof ProposalFactsSchema>;
+
 export const ProposalVersionPayloadSchema = z
   .object({
     schemaVersion: z.literal(PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION),
@@ -407,6 +422,8 @@ export const ProposalVersionPayloadSchema = z
     layoutSummary: z.string().max(1000).nullable().optional(),
     packageSummary: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
     layoutSnapshot: ProposalLayoutSnapshotSchema.nullable().optional(),
+    /** Filled by the server when the version is saved; never by a client. */
+    facts: ProposalFactsSchema.nullable().optional(),
   })
   .superRefine((payload, ctx) => {
     const guarded: ReadonlyArray<readonly [string, string | null]> = [

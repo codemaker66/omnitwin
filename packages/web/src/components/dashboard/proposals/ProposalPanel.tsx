@@ -8,7 +8,7 @@ import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYL
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, draftChanges, draftFromVersion, historyMoments, listWords, type ComposerDraft, type QuoteLineDraft,
+  EMPTY_LINE, draftChanges, draftFromVersion, historyMoments, linkOpenedSentence, listWords, type ComposerDraft, type QuoteLineDraft,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -134,6 +134,8 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
             {proposal.currentVersion === 0 ? "Nothing written yet" : `Version ${String(proposal.currentVersion)}`}
             {props.latest.value !== null && proposal.currentVersion > 0
               ? `, saved ${venueMoment(props.latest.value.createdAt) ?? ""}` : ""}
+            {proposal.sentVersion !== null && proposal.sentVersion !== proposal.currentVersion
+              ? `; the client's link shows version ${String(proposal.sentVersion)}` : ""}
           </span>
         </div>
         <p className="vv-sr-only" role="status">{props.announcement}</p>
@@ -200,7 +202,7 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
   const headingId = useId();
   const questionId = useId();
   const [asking, setAsking] = useState<"link" | "withdraw" | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
   const sent = proposal.status === "sent";
   const canLink = LINKABLE.includes(proposal.status) && proposal.currentVersion >= 1;
   const busy = working !== null;
@@ -213,7 +215,10 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
   };
   const copy = (): void => {
     if (shareUrl === null) return;
-    void navigator.clipboard.writeText(shareUrl).then(() => { setCopied(true); }, () => { setCopied(false); });
+    // A browser that refuses the clipboard says so, rather than nothing.
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard as Clipboard | undefined;
+    if (clipboard === undefined) { setCopied("failed"); return; }
+    void clipboard.writeText(shareUrl).then(() => { setCopied("copied"); }, () => { setCopied("failed"); });
   };
 
   return (
@@ -223,13 +228,19 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
       {shareUrl !== null && (
         <div className="pr-link">
           <p className="pr-link__label">The client's link</p>
-          <a data-testid="share-link" href={shareUrl}>{shareUrl}</a>
+          {/* Shown to copy, not to follow: opening it here would read as the
+              client opening it. Preview as the client below reads it safely. */}
+          <p className="pr-link__url" data-testid="share-link">{shareUrl}</p>
           <div className="enq-actions">
-            <button type="button" className="enq-quiet" onClick={copy}>{copied ? "Copied" : "Copy the link"}</button>
+            <button type="button" className="enq-quiet" onClick={copy}>{copied === "copied" ? "Copied" : "Copy the link"}</button>
           </div>
+          {copied === "failed" && (
+            <p className="enq-confirm__error" role="alert">This browser would not copy it. Select the link above and copy it by hand.</p>
+          )}
           <p className="enq-next__hint" data-testid="share-link-note">Not emailed. Copy it into your message to the client.</p>
         </div>
       )}
+      {sent && <p className="enq-next__hint" data-testid="link-opened">{linkOpenedSentence(proposal.linkOpenedAt)}</p>}
       {shareUrl === null && sent && (
         <p className="enq-next__hint" data-testid="share-link-unavailable">
           It is with the client. Links are kept hashed, so theirs cannot be shown again; issue a new one if they need it.
@@ -246,6 +257,14 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
             onClick={() => { setAsking((open) => open === "link" ? null : "link"); }}>
             {sent ? "Issue a new link…" : "Send to the client…"}
           </button>
+        )}
+        {proposal.currentVersion >= 1 && (
+          // A tab of its own, so a version being written here is never lost.
+          <a className="enq-quiet pr-preview" href={`/proposal-preview/${encodeURIComponent(proposal.id)}`} target="_blank" rel="noopener noreferrer"
+            data-testid="preview-link">
+            Preview as the client <ArrowUpRight size={14} aria-hidden="true" />
+            <span className="vv-sr-only"> (opens in a new tab)</span>
+          </a>
         )}
         {WITHDRAWABLE.includes(proposal.status) && (
           <button type="button" className="enq-quiet" data-testid="withdraw-button" aria-expanded={asking === "withdraw"} disabled={busy}

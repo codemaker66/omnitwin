@@ -586,14 +586,15 @@ test.describe("T-469 production-live route pass", () => {
 
     await page.goto(path);
     await expect(page.getByRole("heading", { name: "Reception Room wedding proposal" })).toBeVisible();
-    await page.getByRole("button", { name: "Request changes" }).click();
-    await expect(page.getByLabel("Tell the venue team what you'd like changed")).toBeVisible();
+    await page.getByRole("button", { name: "Ask for changes…" }).click();
+    await expect(page.getByLabel("What would you like changed?")).toBeVisible();
     await page.getByTestId("comment-input").fill("Please keep the main-door route wider for older guests.");
     await page.getByTestId("comment-submit").click();
     await expect(page.getByText("Please keep the main-door route wider for older guests.")).toBeVisible();
-    await page.getByRole("button", { name: "Approve proposal" }).click();
-    await expect(page.getByText("Proposal accepted")).toBeVisible();
-    actionProofs.push("Proposal share: request-changes form opens, standalone comment posts/reloads, and approve updates the visible terminal banner.");
+    await page.getByLabel("Your name").fill("Elaine Crawford");
+    await page.getByRole("button", { name: /^Accept version/u }).click();
+    await expect(page.getByText("You accepted this version. The venue team has been told.")).toBeVisible();
+    actionProofs.push("Proposal share: the change-request form opens, a message posts and reloads, and accepting with a name says so where the buttons were.");
 
     await recordControlAudit(page, "proposal share functional fixture", path);
     await recordAccessibilityState(page, problems, "proposal share functional fixture", path, "desktop", 16);

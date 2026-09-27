@@ -2,7 +2,7 @@ import { occasionLabel, type ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalDeskGroup, ProposalHistoryEntry } from "../../../api/proposals.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
 import { proposalStatusWords } from "../clients/clients-desk-format.js";
-import { relativeAge, type SummaryPart } from "../enquiries/enquiry-desk-format.js";
+import { relativeAge, venueMoment, type SummaryPart } from "../enquiries/enquiry-desk-format.js";
 
 // ---------------------------------------------------------------------------
 // The Proposals desk's words (roadmap X1): the groups a booker works in, what
@@ -92,17 +92,35 @@ export function rowDetails(row: DeskProposal): string[] {
   ].filter((part): part is string => part !== null);
 }
 
-/** When the proposal last moved, beside its status: "Sent 3 days ago",
- *  "Version 2, changed today". A proposal in hand says its version, since a
- *  new one saved since the client asked is the booker's own change. */
-export function rowWhen(row: Pick<DeskProposal, "status" | "sentAt" | "updatedAt" | "currentVersion">, nowMs: number): string {
+/** Whether the client's link has been opened since the proposal was last
+ *  sent: "opened yesterday", "not opened yet". A link can be opened by anyone
+ *  it reaches, so this says the link was opened, never who opened it. */
+export function linkOpenedWords(linkOpenedAt: string | null, nowMs: number): string {
+  const at = linkOpenedAt ?? null;
+  if (at === null) return "not opened yet";
+  const age = relativeAge(at, nowMs);
+  return age === null ? "opened" : `opened ${age}`;
+}
+
+/** The panel's sentence for the same: "The link was last opened Tue 29 Sep,
+ *  14:10." */
+export function linkOpenedSentence(linkOpenedAt: string | null): string {
+  const at = (linkOpenedAt ?? null) === null ? null : venueMoment(linkOpenedAt ?? "");
+  return at === null ? "The link has not been opened since it was sent." : `The link was last opened ${at}.`;
+}
+
+/** When the proposal last moved, beside its status: "Sent 3 days ago,
+ *  opened yesterday", "Version 2, changed today". A proposal in hand says its
+ *  version, since a new one saved since the client asked is the booker's own
+ *  change. */
+export function rowWhen(row: Pick<DeskProposal, "status" | "sentAt" | "updatedAt" | "currentVersion" | "linkOpenedAt">, nowMs: number): string {
   const age = (iso: string): string => relativeAge(iso, nowMs) ?? "";
   switch (row.status) {
     case "draft":
     case "changes_requested":
       return row.currentVersion === 0 ? "Nothing written yet" : `Version ${String(row.currentVersion)}, changed ${age(row.updatedAt)}`;
     case "sent":
-      return `Sent ${age(row.sentAt ?? row.updatedAt)}`;
+      return `Sent ${age(row.sentAt ?? row.updatedAt)}, ${linkOpenedWords(row.linkOpenedAt, nowMs)}`;
     default:
       return `${proposalStatusWords(row.status)} ${age(row.updatedAt)}`;
   }

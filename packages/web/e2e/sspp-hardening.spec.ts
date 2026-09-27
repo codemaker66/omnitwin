@@ -571,7 +571,7 @@ test.describe("SS++ hardening visual regression", () => {
 
     await page.goto("/proposal/hardening-share");
     await expect(page.getByRole("heading", { level: 1, name: "North Gallery reception proposal" })).toBeVisible();
-    await expect(page.getByText(/planning estimates for discussion/i)).toBeVisible();
+    await expect(page.getByText(/planning estimates/iu)).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-client-proposal.png");
     expect(pageErrors).toEqual([]);
   });

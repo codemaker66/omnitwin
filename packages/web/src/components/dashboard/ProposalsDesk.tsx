@@ -81,7 +81,7 @@ const FAILURE_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
 
 /** The proposal moved before the request arrived (a client's answer, or a
  *  colleague), so nothing was done; the panel is read again to show it. */
-const MOVED_CODES: readonly string[] = ["PROPOSAL_STATUS_CHANGED", "INVALID_TRANSITION", "NOT_EDITABLE"];
+const MOVED_CODES: readonly string[] = ["PROPOSAL_STATUS_CHANGED", "PROPOSAL_VERSION_CHANGED", "INVALID_TRANSITION", "NOT_EDITABLE"];
 const MOVED_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   step: "It changed before that arrived, so nothing was done. It now shows where it stands.",
   version: "It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.",
@@ -362,7 +362,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   };
 
   const onMakeLink = (): Promise<boolean> => attempt("step", "link", async (id) => {
-    const made = await createProposalShareToken(id);
+    // The version the booker was asked about is the one sent; a newer one
+    // saved meanwhile is refused rather than sent unseen.
+    const made = await createProposalShareToken(id, proposal?.currentVersion);
     setLinks((current) => ({ ...current, [id]: `${window.location.origin}${made.shareUrl}` }));
     if (made.proposal.status !== proposal?.status) setStampKey(Date.now());
     applyProposal(made.proposal);

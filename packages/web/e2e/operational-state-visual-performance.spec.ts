@@ -1330,7 +1330,7 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await expect(page.getByRole("heading", { name: "Reception Room wedding proposal" })).toBeVisible();
     await page.getByTestId("comment-input").fill("Could we keep the main-door route wider for older guests?");
     await page.getByTestId("comment-submit").click();
-    await expect(page.getByRole("alert")).toContainText("We couldn't post your comment");
+    await expect(page.getByRole("alert")).toContainText("Your message was not posted.");
     await page.evaluate(async () => {
       await document.fonts.ready;
       window.scrollTo(0, document.documentElement.scrollHeight);

@@ -27,10 +27,30 @@ const KIND_STROKE: Record<ProposalLayoutItemKind, string> = {
   other: FALLBACK_STROKE,
 };
 
+// On the client's ivory document (house tokens: copper, sheet, slate, ink).
+// Every outline holds at least 3:1 against the paper, so each piece reads,
+// printed or on screen.
+const IVORY_FILL: Record<ProposalLayoutItemKind, string> = {
+  table: "#f3dcc9",
+  chair: "#e5dec9",
+  stage: "#e3e3db",
+  other: "#e3e3db",
+};
+
+const IVORY_STROKE: Record<ProposalLayoutItemKind, string> = {
+  table: "#94491f",
+  chair: "#55655c",
+  stage: "#545e59",
+  other: "#747f6f",
+};
+
 export function ProposalLayoutVisual({
   snapshot,
+  tone = "graphite",
 }: {
   readonly snapshot: ProposalLayoutSnapshot;
+  /** "ivory" on the client's document; "graphite" on the dark surfaces. */
+  readonly tone?: "graphite" | "ivory";
 }): ReactElement | null {
   if (snapshot.items.length === 0 || snapshot.roomWidthM <= 0 || snapshot.roomLengthM <= 0) {
     return null;
@@ -61,8 +81,8 @@ export function ProposalLayoutVisual({
         width={roomW}
         height={roomH}
         rx={8}
-        fill="rgba(255, 255, 255, 0.02)"
-        stroke="rgba(201, 138, 91, 0.45)"
+        fill={tone === "ivory" ? "#ffffff" : "rgba(255, 255, 255, 0.02)"}
+        stroke={tone === "ivory" ? "#55655c" : "rgba(201, 138, 91, 0.45)"}
         strokeWidth={1.5}
       />
       {snapshot.items.map((item, index) => {
@@ -70,8 +90,8 @@ export function ProposalLayoutVisual({
         const cy = PAD_PX + item.zM * scale;
         const iw = Math.max(2, item.widthM * scale);
         const ih = Math.max(2, item.depthM * scale);
-        const fill = KIND_FILL[item.kind];
-        const stroke = KIND_STROKE[item.kind];
+        const fill = (tone === "ivory" ? IVORY_FILL : KIND_FILL)[item.kind];
+        const stroke = (tone === "ivory" ? IVORY_STROKE : KIND_STROKE)[item.kind];
 
         if (item.shape === "round") {
           return (

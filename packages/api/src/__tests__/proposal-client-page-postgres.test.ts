@@ -51,15 +51,21 @@ const VERSION_PAYLOAD = {
   quote: null,
 };
 
-function headers(venueId = VENUE, id = STAFF): { authorization: string } {
-  return { authorization: `Bearer ${JSON.stringify({ id, email: "fixture@example.test", role: "staff", platformRole: "none", venueId })}` };
+function headers(venueId = VENUE, id = STAFF, role = "staff"): { authorization: string } {
+  return { authorization: `Bearer ${JSON.stringify({ id, email: "fixture@example.test", role, platformRole: "none", venueId })}` };
 }
 
 interface ClientPage {
+  readonly title: string;
+  readonly version: number;
+  readonly venueSlug: string | null;
+  readonly venueAddress: string | null;
   readonly facts: { eventDate: string | null; guestCount: number | null; occasion: string | null; roomName: string | null; roomSlug: string | null };
   readonly accepted: { by: string | null; at: string } | null;
   readonly status: string;
 }
+
+const NO_FACTS = { eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null };
 
 describe.skipIf(testUrl === undefined)("the client's proposal page on isolated PostgreSQL", () => {
   let pool: Pool;
@@ -72,7 +78,12 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications,
   ];
 
+  // The older share-code path retires on a date; these tests read it as it
+  // stands until then.
+  const sunset = process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+
   beforeAll(async () => {
+    process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = "2099-01-01T00:00:00.000Z";
     pool = new Pool({ connectionString: testUrl, application_name: fixtureSchema, max: 4, options: `-c search_path=${fixtureSchema}` });
     await pool.query(`CREATE SCHEMA "${fixtureSchema}"`);
     // Columns derive from the real Drizzle schema; no production migration or
@@ -110,6 +121,8 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
   }, 60_000);
 
   afterAll(async () => {
+    if (sunset === undefined) delete process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+    else process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = sunset;
     if (server !== undefined) await server.close();
     if (pool !== undefined) {
       // Only the random schema created by this invocation is removed.
@@ -295,5 +308,183 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     ]);
     expect([first?.statusCode, second?.statusCode], `${first?.body ?? ""} ${second?.body ?? ""}`).toEqual([200, 200]);
     expect(await stored()).toEqual({ status: "accepted", moves: ["accepted"], notes: ["approval_note"] });
+  });
+
+  // -------------------------------------------------------------------------
+  // The version the client was sent (X1). Versions saved since are the
+  // team's drafts: the client's link keeps showing, and answers only, the one
+  // sent, and the team can read the draft as the client will.
+  // -------------------------------------------------------------------------
+
+  async function saveVersion(version: number, title: string): Promise<void> {
+    await pool.query("INSERT INTO proposal_versions (proposal_id, version, payload, coordinate_space) VALUES ($1, $2, $3, 'real_metre')",
+      [PROPOSAL, version, JSON.stringify({ ...VERSION_PAYLOAD, title })]);
+    await pool.query("UPDATE proposals SET current_version = $2 WHERE id = $1", [PROPOSAL, version]);
+  }
+
+  async function row(): Promise<{ status: string; sent_version: number | null; accepted_name: string | null; sent_at: Date | null }> {
+    const found = (await pool.query<{ status: string; sent_version: number | null; accepted_name: string | null; sent_at: Date | null }>(
+      "SELECT status, sent_version, accepted_name, sent_at FROM proposals WHERE id = $1", [PROPOSAL],
+    )).rows[0];
+    if (found === undefined) throw new Error("no proposal");
+    return found;
+  }
+
+  it("shows the client the version they were sent, never one saved since, and the team the one saved", async () => {
+    await pool.query("UPDATE proposals SET status = 'changes_requested', sent_version = 1 WHERE id = $1", [PROPOSAL]);
+    await saveVersion(2, "Crawford wedding proposal, revised");
+
+    const page = await clientPage();
+    expect(page).toMatchObject({ version: 1, title: "Crawford wedding proposal", venueSlug: "trades-hall-glasgow", venueAddress: "85 Glassford Street" });
+
+    // The older six-letter code shows the same version, and none of the
+    // event's particulars.
+    const legacy = await server.inject({ method: "GET", url: `/public/proposals/${SHARE_CODE}` });
+    expect(legacy.statusCode, legacy.body).toBe(200);
+    expect((JSON.parse(legacy.body) as { data: ClientPage }).data).toMatchObject({
+      version: 1, title: "Crawford wedding proposal", facts: NO_FACTS, accepted: null, venueSlug: "trades-hall-glasgow",
+    });
+
+    const preview = await server.inject({ method: "GET", url: `/proposals/${PROPOSAL}/preview`, headers: headers() });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect((JSON.parse(preview.body) as { data: ClientPage & { sentVersion: number | null } }).data).toMatchObject({
+      version: 2, title: "Crawford wedding proposal, revised", sentVersion: 1,
+    });
+  });
+
+  it("lets the venue's commercial team preview it, and nobody else", async () => {
+    const preview = (who: { authorization: string }) => server.inject({ method: "GET", url: `/proposals/${PROPOSAL}/preview`, headers: who });
+    expect((await preview(headers(VENUE, randomUUID(), "sales"))).statusCode).toBe(200);
+    // Prices are the commercial team's, not the hallkeeper's.
+    expect((await preview(headers(VENUE, randomUUID(), "hallkeeper"))).statusCode).toBe(403);
+    expect((await preview(headers(OTHER_VENUE, randomUUID(), "manager"))).statusCode).toBe(403);
+    // Whoever made it, once they work at another venue, reads it no longer.
+    expect((await preview(headers(OTHER_VENUE, STAFF))).statusCode).toBe(403);
+  });
+
+  const STALE_ANSWERS = [
+    ["accepts through their link", { method: "POST" as const, url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford", version: 1 } }],
+    ["asks for changes through their link", { method: "POST" as const, url: `/proposal-share/${TOKEN}/comment`, payload: { body: "A later finish?", kind: "request_changes", version: 1 } }],
+    ["accepts through the older share code", { method: "POST" as const, url: `/public/proposals/${SHARE_CODE}/respond`, payload: { action: "accept", version: 1 } }],
+    ["asks for changes through the older share code", { method: "POST" as const, url: `/public/proposals/${SHARE_CODE}/respond`, payload: { action: "request_changes", version: 1 } }],
+  ] as const;
+
+  it.each(STALE_ANSWERS)("refuses, and writes nothing, when the client %s on a version since replaced", async (_, request) => {
+    await saveVersion(2, "Crawford wedding proposal, revised");
+    await pool.query("UPDATE proposals SET sent_version = 2 WHERE id = $1", [PROPOSAL]);
+    const res = await server.inject(request);
+    expect(res.statusCode, res.body).toBe(409);
+    expect((JSON.parse(res.body) as { code: string }).code).toBe("PROPOSAL_VERSION_CHANGED");
+    expect(await stored()).toEqual({ status: "sent", moves: [], notes: [] });
+
+    // On the version sent, it is taken.
+    const fresh = await server.inject({ ...request, payload: { ...request.payload, version: 2 } });
+    expect(fresh.statusCode, fresh.body).toBeLessThan(300);
+  });
+
+  it("keeps an acceptance's name to the acceptance itself", async () => {
+    // Nobody with the link can write an approval of their own.
+    const planted = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`, payload: { body: "Approved.", kind: "approval_note", authorName: "Mallory" },
+    });
+    expect(planted.statusCode, planted.body).toBe(400);
+    expect(await stored()).toEqual({ status: "sent", moves: [], notes: [] });
+
+    // One written before this release is never taken for the acceptance's.
+    const token = (await pool.query<{ id: string }>("SELECT id FROM proposal_share_tokens")).rows[0]?.id;
+    await pool.query(
+      `INSERT INTO proposal_comments (proposal_id, share_token_id, kind, author_name, body, is_client_visible)
+       VALUES ($1, $2, 'approval_note', 'Mallory', 'Approved.', true)`,
+      [PROPOSAL, token],
+    );
+    const accepted = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { version: 1 } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect((await clientPage()).accepted?.by).toBeNull();
+  });
+
+  it("gives the name as it was given, and drops it when the acceptance is not the client's by name", async () => {
+    const accepted = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "  Elaine Crawford ", version: 1 } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect((await row()).accepted_name).toBe("Elaine Crawford");
+
+    // Reopened, then marked accepted by the team: no name stands.
+    await pool.query("UPDATE proposals SET status = 'sent' WHERE id = $1", [PROPOSAL]);
+    const marked = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/transition`, headers: headers(), payload: { status: "accepted" } });
+    expect(marked.statusCode, marked.body).toBe(200);
+    expect((await row()).accepted_name).toBeNull();
+
+    // Reopened, then accepted through the older code, which takes no name.
+    await pool.query("UPDATE proposals SET status = 'sent', accepted_name = 'Elaine Crawford' WHERE id = $1", [PROPOSAL]);
+    const legacy = await server.inject({ method: "POST", url: `/public/proposals/${SHARE_CODE}/respond`, payload: { action: "accept" } });
+    expect(legacy.statusCode, legacy.body).toBe(200);
+    expect((await row()).accepted_name).toBeNull();
+  });
+
+  it("still reads as accepted once the team archives it, and closes a link archived before acceptance", async () => {
+    const accepted = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford", version: 1 } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    await pool.query("UPDATE proposals SET status = 'archived' WHERE id = $1", [PROPOSAL]);
+    await pool.query("INSERT INTO proposal_status_history (proposal_id, from_status, to_status) VALUES ($1, 'accepted', 'archived')", [PROPOSAL]);
+    const page = await clientPage();
+    expect(page.status).toBe("accepted");
+    expect(page.accepted?.by).toBe("Elaine Crawford");
+    // Pressed again, it is answered as accepted and nothing more is written.
+    const again = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford", version: 1 } });
+    expect(again.statusCode, again.body).toBe(200);
+    expect(await stored()).toEqual({ status: "archived", moves: ["accepted", "archived"], notes: ["approval_note"] });
+
+    // Archived while it was still with the client: the link is closed.
+    await pool.query("DELETE FROM proposal_status_history");
+    await pool.query("INSERT INTO proposal_status_history (proposal_id, from_status, to_status) VALUES ($1, 'sent', 'archived')", [PROPOSAL]);
+    expect((await server.inject({ method: "GET", url: `/proposal-share/${TOKEN}` })).statusCode).toBe(404);
+  });
+
+  it("sends only the version the team was shown, freezes its facts, and stamps each send", async () => {
+    const deal = randomUUID();
+    await pool.query(
+      `INSERT INTO opportunities (id, venue_id, title, stage, preferred_date, guest_count, event_type, estimated_value_minor, currency, next_action)
+       VALUES ($1, $2, 'Crawford wedding', 'proposal_sent', '2027-06-05', 160, 'wedding', 0, 'GBP', 'Wait')`,
+      [deal, VENUE],
+    );
+    await pool.query(
+      "UPDATE proposals SET status = 'changes_requested', sent_version = 1, sent_at = '2026-09-01T10:00:00Z', opportunity_id = $2 WHERE id = $1",
+      [PROPOSAL, deal],
+    );
+    const saved = await server.inject({
+      method: "POST", url: `/proposals/${PROPOSAL}/versions`, headers: headers(),
+      payload: { ...VERSION_PAYLOAD, title: "Crawford wedding proposal, revised", facts: { ...NO_FACTS, guestCount: 9999 } },
+    });
+    expect(saved.statusCode, saved.body).toBe(201);
+
+    // Sending what the team read as version 1 is refused: version 2 is the
+    // one that would go.
+    const stale = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/share-token`, headers: headers(), payload: { version: 1 } });
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect((JSON.parse(stale.body) as { code: string }).code).toBe("PROPOSAL_VERSION_CHANGED");
+    expect((await pool.query("SELECT id FROM proposal_share_tokens")).rowCount).toBe(1);
+    expect(await row()).toMatchObject({ status: "changes_requested", sent_version: 1 });
+
+    const sent = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/share-token`, headers: headers(), payload: { version: 2 } });
+    expect(sent.statusCode, sent.body).toBe(201);
+    const after = await row();
+    expect(after).toMatchObject({ status: "sent", sent_version: 2 });
+    expect(after.sent_at?.getTime()).toBeGreaterThan(Date.parse("2026-09-02T00:00:00Z"));
+
+    // The deal changes after the send; what was sent does not. Facts sent in
+    // the request were never taken.
+    await pool.query("UPDATE opportunities SET guest_count = 200 WHERE id = $1", [deal]);
+    const page = await clientPage();
+    expect(page).toMatchObject({ version: 2, title: "Crawford wedding proposal, revised" });
+    expect(page.facts).toEqual({ eventDate: "2027-06-05", guestCount: 160, occasion: "wedding", roomName: null, roomSlug: null });
+  });
+
+  it("keeps an answered proposal on the version that was answered when another link is made", async () => {
+    await pool.query("UPDATE proposals SET status = 'accepted', sent_version = 1 WHERE id = $1", [PROPOSAL]);
+    // A platform administrator saved version 2 after the acceptance.
+    await saveVersion(2, "Crawford wedding proposal, amended");
+    const link = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/share-token`, headers: headers(), payload: { version: 2 } });
+    expect(link.statusCode, link.body).toBe(201);
+    expect(await row()).toMatchObject({ status: "accepted", sent_version: 1 });
+    expect((await clientPage()).version).toBe(1);
   });
 });

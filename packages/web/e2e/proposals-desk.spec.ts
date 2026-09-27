@@ -52,7 +52,7 @@ function proposal(id: string, title: string, status: string, extra: Partial<Desk
     id, venueId: VENUE_ID, opportunityId: null, enquiryId: null, configurationId: null, title, status, currentVersion: 1,
     shareCode: null, sentAt: null, createdBy: STAFF_ID, createdAt: "2026-09-20T09:00:00.000Z", updatedAt: "2026-10-01T09:00:00.000Z",
     deletedAt: null, dealTitle: null, clientName: null, eventDate: null, guestCount: null, eventType: null,
-    latestTotalMinor: null, latestCurrency: null, clientOpenedAt: null, ...extra,
+    latestTotalMinor: null, latestCurrency: null, linkOpenedAt: null, sentVersion: null, ...extra,
   };
 }
 
@@ -82,7 +82,7 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
     proposals: new Map([
       [CRAWFORD, proposal(CRAWFORD, "Crawford wedding proposal", "changes_requested", {
         clientName: "Elaine Crawford", eventDate: "2027-06-05", guestCount: 160, eventType: "wedding", updatedAt: "2026-10-05T15:00:00.000Z",
-        latestTotalMinor: 1_840_000, latestCurrency: "GBP", sentAt: "2026-09-29T10:00:00.000Z",
+        latestTotalMinor: 1_840_000, latestCurrency: "GBP", sentAt: "2026-09-29T10:00:00.000Z", sentVersion: 1,
       })],
       [MERCHANTS, proposal(MERCHANTS, "Merchants' dinner proposal", "sent", {
         clientName: "Iain Robertson", eventDate: "2026-11-20", guestCount: 90, eventType: "dinner", sentAt: "2026-10-02T11:00:00.000Z",
@@ -157,6 +157,22 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
       const rest = match[2] ?? "";
       if (rest === "" && method === "GET") {
         void route.fulfill({ json: { data: current } });
+        return;
+      }
+      if (rest === "/preview" && method === "GET") {
+        // The latest saved version, as the client's page would draw it.
+        const latest = (emulator.versions.get(id) ?? []).at(-1);
+        if (latest === undefined) {
+          void route.fulfill({ status: 422, json: { error: "No version", code: "PROPOSAL_HAS_NO_VERSION" } });
+          return;
+        }
+        void route.fulfill({ json: { data: {
+          title: latest.payload.title, status: current.status, sentAt: current.sentAt, venueName: "Trades Hall Glasgow",
+          venueSlug: "trades-hall-glasgow", venueAddress: "85 Glassford Street, Glasgow G1 1UH", preparedAt: latest.createdAt,
+          sentVersion: current.sentVersion, accepted: null,
+          facts: { eventDate: current.eventDate, guestCount: current.guestCount, occasion: current.eventType, roomName: "Grand Hall", roomSlug: "grand-hall" },
+          clientMessage: latest.payload.clientMessage, capacityNote: latest.payload.capacityNote, quote: latest.payload.quote, version: latest.version,
+        } } });
         return;
       }
       if (rest === "/versions/latest") {
@@ -280,6 +296,31 @@ test.describe("Proposals desk", () => {
       name: "proposals desk with a proposal open", path: "/dashboard?view=proposals", problems, maxFocusSteps: 16,
     });
     expectAccessibilityAuditClean(result);
+  });
+
+  test("Preview as the client shows the latest version as the client's page draws it, and no client route is called", async ({ page }) => {
+    await openDesk(page);
+    const clientCalls: string[] = [];
+    page.on("request", (request) => {
+      if (/\/proposal-share\/|\/public\/proposals\//u.test(request.url())) clientCalls.push(request.url());
+    });
+    await page.goto("/dashboard?view=proposals");
+    await proposalRow(page, "Crawford wedding proposal").click();
+    const link = page.getByTestId("preview-link");
+    // A tab of its own, so a version being written in the desk is never lost.
+    await expect(link).toHaveAttribute("target", "_blank");
+    const href = await link.getAttribute("href");
+    expect(href).toBe(`/proposal-preview/${CRAWFORD}`);
+
+    await page.goto(href ?? "");
+    await expect(page.getByRole("heading", { level: 1, name: "Crawford wedding proposal" })).toBeVisible();
+    await expect(page.getByTestId("preview-band")).toContainText("Preview of version 1, as the client sees it.");
+    await expect(page.getByTestId("preview-band")).toContainText("This is the version the client's link shows.");
+    await expect(page.getByTestId("proposal-facts")).toContainText("Saturday 5 June 2027");
+    await expect(page.getByTestId("proposal-total")).toContainText("£18,400.00");
+    await expect(page.getByTestId("preview-decision").getByRole("button")).toHaveCount(0);
+    await expect(page).toHaveTitle("Preview — Crawford wedding proposal — Trades Hall Glasgow — version 1");
+    expect(clientCalls).toEqual([]);
   });
 
   test("on a phone the proposal replaces the ledger, Back to proposals returns to it, and nothing scrolls sideways", async ({ page }) => {
