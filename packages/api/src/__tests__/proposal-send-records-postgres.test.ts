@@ -151,6 +151,20 @@ describe.skipIf(testUrl === undefined)("what a send and an acceptance record, on
     expect((await row()).sent_version).toBe(4);
   });
 
+  it("keeps the version a link shows while links show the current one: a version saved while out, and the team's answer", async () => {
+    expect(await makeLink()).toBe(201);
+    // A platform administrator saves version 2 while version 1 is out.
+    const admin = { authorization: `Bearer ${JSON.stringify({ id: STAFF, email: "fixture@example.test", role: "admin", platformRole: "admin", venueId: VENUE })}` };
+    const saved = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/versions`, headers: admin, payload: VERSION_PAYLOAD });
+    expect(saved.statusCode, saved.body).toBe(201);
+    expect(await row()).toMatchObject({ status: "sent", sent_version: 2 });
+
+    // The team records the client's decline on what the link showed.
+    await saveVersion(3);
+    expect(await move("declined")).toBe(200);
+    expect(await row()).toMatchObject({ status: "declined", sent_version: 3 });
+  });
+
   it("keeps an answered proposal on the version that was answered when a new link is made", async () => {
     expect(await makeLink()).toBe(201);
     await pool.query("UPDATE proposals SET status = 'accepted' WHERE id = $1", [PROPOSAL]);

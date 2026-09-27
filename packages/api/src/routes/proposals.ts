@@ -752,6 +752,9 @@ export async function proposalRoutes(
     // acceptance's name stands.
     if (parsed.data.status === "sent") updateData["sentVersion"] = sql`${proposals.currentVersion}`;
     if (parsed.data.status === "accepted") updateData["acceptedName"] = null;
+    // (until links show the sent version): an answer, the client's or the team's, is on the version
+    // the link shows, its current one.
+    if (ANSWERED_STATUSES.includes(parsed.data.status)) updateData["sentVersion"] = sql`${proposals.currentVersion}`;
 
     const fromStatus = proposal.status;
     const [updated] = await db.update(proposals)
@@ -1057,8 +1060,12 @@ export async function proposalRoutes(
       // The prepared snapshot must still belong to the linked configuration.
       if (current.configurationId !== proposal.configurationId) return "PROPOSAL_CHANGED" as const;
 
+      // (until links show the sent version): a version saved on a proposal with the client is on its
+      // link at once, so it is what the client is sent.
       const [claimed] = await tx.update(proposals)
-        .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
+        .set(current.status === "sent"
+          ? { currentVersion: sql`${proposals.currentVersion} + 1`, sentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() }
+          : { currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
         .where(eq(proposals.id, current.id))
         .returning({ version: proposals.currentVersion });
       if (claimed === undefined) throw new Error("Proposal version allocation returned no row");
@@ -1188,6 +1195,9 @@ const CLIENT_VISIBLE_STATUSES: readonly string[] = [
 ];
 
 const ShareCodeParam = z.object({ shareCode: ShortCodeSchema });
+
+/** The statuses a proposal takes when it is answered, by the client or for them. */
+const ANSWERED_STATUSES: readonly string[] = ["accepted", "declined", "expired", "changes_requested"];
 
 // ---------------------------------------------------------------------------
 // Legacy share-code retirement
@@ -1444,8 +1454,9 @@ export async function publicProposalRoutes(
 
     const fromStatus = proposal.status;
     const [updated] = await db.update(proposals)
-      // This path takes no name, so no earlier acceptance's name stands. The
-      // answer is on the version the link showed: its current one.
+      // This path takes no name, so no earlier acceptance's name stands.
+      // (until links show the sent version): the answer is on the version the link showed, its
+      // current one.
       .set(toStatus === "accepted"
         ? { status: toStatus, acceptedName: null, sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() }
         : { status: toStatus, sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() })
@@ -1544,7 +1555,8 @@ export async function proposalShareRoutes(
       if (comment === undefined) throw new Error("proposal comment insert returned no row");
 
       if (kind === "request_changes" && resolved.proposal.status === "sent") {
-        // The answer is on the version the link showed: its current one.
+        // (until links show the sent version): the answer is on the version the link showed, its
+        // current one.
         await tx.update(proposals)
           .set({ status: "changes_requested", sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() })
           .where(eq(proposals.id, resolved.proposal.id));
@@ -1614,7 +1626,8 @@ export async function proposalShareRoutes(
         .set({
           status: "accepted",
           acceptedName: acceptedName === "" ? null : acceptedName,
-          // The answer is on the version the link showed: its current one.
+          // (until links show the sent version): the answer is on the version the link showed, its
+          // current one.
           sentVersion: sql`${proposals.currentVersion}`,
           updatedAt: new Date(),
         })
