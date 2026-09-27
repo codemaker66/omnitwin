@@ -14,6 +14,8 @@ import {
   CreateBookingSchema,
   DECISIONS_DUE_HORIZON_DAYS,
   DECISIONS_DUE_LIMIT,
+  NEXT_ACTIONS_DUE_HORIZON_DAYS,
+  NEXT_ACTIONS_DUE_LIMIT,
   MAX_CALENDAR_RANGE_DAYS,
   TransitionBookingSchema,
   TurnaroundRuleSchema,
@@ -682,6 +684,64 @@ describe("Calendar entries and conflicts", () => {
     expect(CalendarResponseSchema.safeParse({
       ...base,
       decisionsDue: { holds: Array.from({ length: DECISIONS_DUE_LIMIT + 1 }, () => hold), total: 60 },
+    }).success).toBe(false);
+  });
+
+  it("carries the venue-wide Needs attention list only as active holds with a next action date (roadmap N3)", () => {
+    const hold = {
+      entryType: "booking",
+      id: BOOKING_ID,
+      spaceId: SPACE_ID,
+      kind: "hold",
+      status: "active",
+      state: "hold",
+      title: "Hartley wedding",
+      eventType: "wedding",
+      startsAt: "2027-03-20T15:00:00.000Z",
+      endsAt: "2027-03-20T23:00:00.000Z",
+      rank: 1,
+      jointFlag: false,
+      decisionAt: null,
+      ownerUserId: null,
+      nextAction: "Call the Hartleys about the menu.",
+      nextActionDueAt: "2026-09-25T09:00:00.000Z",
+      eventId: null,
+      seriesId: null,
+      ownerName: null,
+    };
+    const base = {
+      venueId: VENUE_ID,
+      range: { from: "2026-09-21T00:00:00.000Z", to: "2026-09-28T00:00:00.000Z" },
+      rooms: [],
+      entries: [],
+      conflicts: {
+        conflicts: [],
+        checks: {
+          inkDoubleBook: { status: "checked" },
+          holdOverlap: { status: "checked" },
+          turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
+        },
+      },
+    };
+    // Absent: an older server, which says nothing about next actions.
+    expect(CalendarResponseSchema.safeParse(base).success).toBe(true);
+    const parsed = CalendarResponseSchema.parse({ ...base, nextActionsDue: { holds: [hold], total: 2 } });
+    expect(parsed.nextActionsDue?.holds[0]?.nextAction).toBe("Call the Hartleys about the menu.");
+    expect(parsed.nextActionsDue?.total).toBe(2);
+    // A confirmed booking, a released hold or a hold with no next action date
+    // needs no attention here, and the contract refuses to carry one.
+    for (const wrong of [
+      { ...hold, kind: "ink", state: "ink", rank: null },
+      { ...hold, status: "released", state: "released" },
+      { ...hold, nextActionDueAt: null },
+    ]) {
+      expect(CalendarResponseSchema.safeParse({ ...base, nextActionsDue: { holds: [wrong], total: 1 } }).success).toBe(false);
+    }
+    expect(CalendarResponseSchema.safeParse({ ...base, nextActionsDue: { holds: [hold], total: 0 } }).success).toBe(false);
+    expect(NEXT_ACTIONS_DUE_HORIZON_DAYS).toBe(7);
+    expect(CalendarResponseSchema.safeParse({
+      ...base,
+      nextActionsDue: { holds: Array.from({ length: NEXT_ACTIONS_DUE_LIMIT + 1 }, () => hold), total: 60 },
     }).success).toBe(false);
   });
 

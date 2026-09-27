@@ -370,9 +370,11 @@ export function DiaryBoardPage(): ReactElement {
   // With the venue-wide decisions list on the board, a passed decision date
   // is its to show; an older API that sends no list keeps it here.
   const decisionsListed = shown?.decisionsDue !== undefined;
+  // The same for next actions (roadmap N3): the venue-wide list carries them.
+  const nextActionsListed = shown?.nextActionsDue !== undefined;
   const trayItems = useMemo(
-    () => needsAction(entries, nowMs, { decisions: !decisionsListed }),
-    [decisionsListed, entries, nowMs],
+    () => needsAction(entries, nowMs, { decisions: !decisionsListed, nextActions: !nextActionsListed }),
+    [decisionsListed, entries, nextActionsListed, nowMs],
   );
 
   // The holds crossing the booking open in the drawer, so ending it can say
@@ -1159,6 +1161,10 @@ export function DiaryBoardPage(): ReactElement {
               items={trayItems}
               itemsPending={data === null}
               onFocusEntry={focusEntry}
+              nextActions={shown.nextActionsDue}
+              rooms={rooms}
+              nowMs={nowMs}
+              onOpenBooking={openBookingFromOverview}
               enquiries={openEnquiries.map((enquiry) => ({
                 id: enquiry.id,
                 name: enquiry.name,

@@ -4,6 +4,7 @@ import type {
   CalendarBookingEntry,
   CalendarConflict,
   CalendarDecisionsDue,
+  CalendarNextActionsDue,
   CalendarRoom,
   ConflictReport,
   ConflictSeverity,
@@ -168,6 +169,14 @@ export interface HoldingTrayProps {
    *  the tray neither counts them nor says there are none. */
   readonly itemsPending?: boolean;
   readonly onFocusEntry: (entryId: string) => void;
+  /** Needs attention across the venue (roadmap N3): holds whose next action
+   *  is overdue or due within seven days, whatever the booking's date. An
+   *  older server sends none, and the tray then shows the range's own. */
+  readonly nextActions?: CalendarNextActionsDue;
+  readonly rooms?: readonly CalendarRoom[];
+  readonly nowMs?: number;
+  /** Opens a listed hold where it stands, without moving the board. */
+  readonly onOpenBooking?: (entry: CalendarBookingEntry) => void;
   readonly enquiries: readonly TrayEnquiry[];
   readonly enquiriesLoading?: boolean;
   /** More open enquiries exist than the tray lists (it shows the newest). */
@@ -196,6 +205,10 @@ export function HoldingTray({
   items,
   itemsPending = false,
   onFocusEntry,
+  nextActions,
+  rooms = [],
+  nowMs = Date.now(),
+  onOpenBooking,
   enquiries,
   enquiriesLoading = false,
   enquiriesMore = false,
@@ -210,34 +223,10 @@ export function HoldingTray({
 }: HoldingTrayProps): ReactElement {
   return (
     <section className="diary-panel diary-tray" aria-label={BOARD_COPY.tray.title}>
-      <h2 className="diary-panel-title">
-        {BOARD_COPY.tray.title}
-        {!itemsPending && items.length > 0 ? <span className="diary-tray-count">{items.length}</span> : null}
-      </h2>
-      {itemsPending ? null : items.length === 0 ? (
-        <p className="diary-panel-empty">{BOARD_COPY.tray.empty}</p>
-      ) : (
-        <ul className="diary-tray-list">
-          {items.map((item) => (
-            <li key={item.entry.id}>
-              <button
-                type="button"
-                className="diary-tray-item"
-                onClick={() => {
-                  onFocusEntry(item.entry.id);
-                }}
-              >
-                <span className="diary-tray-item-title">{item.entry.title}</span>
-                {item.reasons.map((reason) => (
-                  <span key={reason} className="diary-tray-item-reason">
-                    {reason}
-                  </span>
-                ))}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {nextActions === undefined
+        ? <RangeAttention items={items} itemsPending={itemsPending} onFocusEntry={onFocusEntry} />
+        : <VenueAttention nextActions={nextActions} items={items} itemsPending={itemsPending} rooms={rooms} nowMs={nowMs}
+          onFocusEntry={onFocusEntry} onOpenBooking={onOpenBooking} />}
 
       <h3 className="diary-checks-title">{BOARD_COPY.trayEnquiries.title}</h3>
       {enquiriesLoading ? <ActivityStatus>Loading open enquiries…</ActivityStatus> : null}
@@ -291,6 +280,128 @@ export function HoldingTray({
         <p className="diary-tray-more">{BOARD_COPY.trayEnquiries.more(enquiries.length)}</p>
       ) : null}
     </section>
+  );
+}
+
+/** The range's own holds that need attention, one button each; pressing one
+ *  brings its block into view. */
+function AttentionItems({ items, onFocusEntry }: { readonly items: readonly NeedsActionItem[]; readonly onFocusEntry: (entryId: string) => void }): ReactElement {
+  return (
+    <ul className="diary-tray-list">
+      {items.map((item) => (
+        <li key={item.entry.id}>
+          <button
+            type="button"
+            className="diary-tray-item"
+            onClick={() => {
+              onFocusEntry(item.entry.id);
+            }}
+          >
+            <span className="diary-tray-item-title">{item.entry.title}</span>
+            {item.reasons.map((reason) => (
+              <span key={reason} className="diary-tray-item-reason">
+                {reason}
+              </span>
+            ))}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** An older server's Needs attention: what the board's range holds, and no
+ *  claim about the rest of the venue. */
+function RangeAttention({ items, itemsPending, onFocusEntry }: {
+  readonly items: readonly NeedsActionItem[];
+  readonly itemsPending: boolean;
+  readonly onFocusEntry: (entryId: string) => void;
+}): ReactElement {
+  return (
+    <>
+      <h2 className="diary-panel-title">
+        {BOARD_COPY.tray.title}
+        {!itemsPending && items.length > 0 ? <span className="diary-tray-count">{items.length}</span> : null}
+      </h2>
+      {itemsPending ? null : items.length === 0 ? (
+        <p className="diary-panel-empty">{BOARD_COPY.tray.empty}</p>
+      ) : <AttentionItems items={items} onFocusEntry={onFocusEntry} />}
+    </>
+  );
+}
+
+/** Needs attention across the venue (roadmap N3): next actions overdue, then
+ *  due within seven days, each opening its booking where it stands; then the
+ *  range's holds with no option yet. The venue's list does not wait on the
+ *  range: a week on its way still shows it. */
+function VenueAttention({ nextActions, items, itemsPending, rooms, nowMs, onFocusEntry, onOpenBooking }: {
+  readonly nextActions: CalendarNextActionsDue;
+  readonly items: readonly NeedsActionItem[];
+  readonly itemsPending: boolean;
+  readonly rooms: readonly CalendarRoom[];
+  readonly nowMs: number;
+  readonly onFocusEntry: (entryId: string) => void;
+  readonly onOpenBooking: ((entry: CalendarBookingEntry) => void) | undefined;
+}): ReactElement {
+  const copy = BOARD_COPY.tray;
+  const roomNames = new Map(rooms.map((room) => [room.id, room.name]));
+  const dueMs = (hold: CalendarBookingEntry): number => (hold.nextActionDueAt === null ? Number.POSITIVE_INFINITY : Date.parse(hold.nextActionDueAt));
+  const overdue = nextActions.holds.filter((hold) => dueMs(hold) < nowMs);
+  const soon = nextActions.holds.filter((hold) => dueMs(hold) >= nowMs);
+  const unplaced = itemsPending ? [] : items;
+  const count = nextActions.total + unplaced.length;
+
+  const group = (label: string, holds: readonly CalendarBookingEntry[], isOverdue: boolean): ReactElement | null => {
+    if (holds.length === 0) return null;
+    return (
+      <div className={`diary-decisions-group${isOverdue ? " is-overdue" : ""}`}>
+        <h3 className="diary-decisions-heading">{label}{" "}<span className="diary-decisions-count">{holds.length}</span></h3>
+        <ul className="diary-decisions-list">
+          {holds.map((hold) => {
+            const day = formatInlineDay(dueMs(hold), nowMs);
+            return (
+              <li key={hold.id}>
+                <button
+                  type="button"
+                  className="diary-tray-item diary-decision"
+                  onClick={() => { onOpenBooking?.(hold); }}
+                >
+                  <span className="diary-decision-title">{hold.title}</span>
+                  <span className="diary-decision-meta">
+                    {`${roomNames.get(hold.spaceId) ?? BOARD_COPY.decisions.roomUnknown} · ${formatInlineDay(Date.parse(hold.startsAt), nowMs)}`}
+                  </span>
+                  <span className="diary-decision-meta">{hold.nextAction ?? copy.noActionWritten}</span>
+                  <span className="diary-decision-when">
+                    {isOverdue ? copy.wasDue(day, hold.ownerName ?? null) : copy.due(day, hold.ownerName ?? null)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <h2 className="diary-panel-title">
+        {copy.title}
+        {count > 0 ? <span className="diary-tray-count">{count}</span> : null}
+      </h2>
+      {group(copy.overdue, overdue, true)}
+      {group(copy.soon, soon, false)}
+      {unplaced.length > 0 ? (
+        <div className="diary-decisions-group">
+          <h3 className="diary-decisions-heading">{copy.noOption}{" "}<span className="diary-decisions-count">{unplaced.length}</span></h3>
+          <AttentionItems items={unplaced} onFocusEntry={onFocusEntry} />
+        </div>
+      ) : null}
+      {nextActions.holds.length === 0 && unplaced.length === 0 ? <p className="diary-panel-empty">{copy.emptyVenue}</p> : null}
+      {nextActions.total > nextActions.holds.length ? (
+        <p className="diary-tray-more">{copy.more(nextActions.holds.length, nextActions.total)}</p>
+      ) : null}
+    </>
   );
 }
 

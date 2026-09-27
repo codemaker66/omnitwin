@@ -99,6 +99,16 @@ const DECISIONS: readonly CalendarBookingEntry[] = [
   }),
 ];
 
+/** Needs attention across the venue (roadmap N3): a hold next April whose
+ *  next action was due on Monday, on no board this week. */
+const NEXT_ACTIONS: readonly CalendarBookingEntry[] = [
+  entry("00000000-0000-4000-8000-000000009303", {
+    spaceId: SALOON, title: "Kerr anniversary",
+    startsAt: "2027-04-10T17:00:00.000Z", endsAt: "2027-04-10T22:00:00.000Z",
+    decisionAt: "2026-10-30T11:00:00.000Z", nextAction: "Send the revised menu.", nextActionDueAt: "2026-09-14T09:00:00.000Z",
+  }),
+];
+
 function enquiry(n: number, name: string, state: string): Enquiry {
   const created = new Date(Date.parse("2026-09-15T09:00:00.000Z") - n * 3_600_000).toISOString();
   return {
@@ -143,6 +153,7 @@ function calendar(): CalendarResponse {
     },
     turnaroundRules: [{ spaceId: null, eventType: null, name: CHANGEOVER.name, minutes: CHANGEOVER.minutes, isActive: true }],
     decisionsDue: { holds: [...DECISIONS, ...WEEK.filter((row) => row.id === MACLEOD)], total: 3 },
+    nextActionsDue: { holds: [...NEXT_ACTIONS], total: 1 },
   };
 }
 

@@ -383,9 +383,11 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - Header: a date line, the range as large serif numerals, and one sentence built from real counts.
 - A copper count plane whose counts act as filters: Confirmed · 1st option · 2nd+ option · Prospects · Decisions due · Conflicts.
 - Toolbar reduced to: ‹ Today ›, Go to date (`g`), Day/Week/Fortnight/Month, and Overview/Timeline. Secondary actions move into a View menu, and "New booking" gets a fixed place.
+    Revised on 27 September: Day, Week and 2W only, since T-619 retired the month board. New booking sits beside the title ([session log](../../sessions/2026-09-27.md)).
 
 *Finding dates*
 - Go to date accepts "5 Jun 27" and answers per room ("Grand Hall: free · Saloon: 1st option Fraser, decides 12 Oct").
+    Revised on 27 September: the answer is one line per room, not a sentence, so it reads at a glance. Each booking carries its own place on its ladder and its times, and a weekday that contradicts the date is pointed out ([session log](../../sessions/2026-09-27.md)).
 
 *Stability while loading*
 - Keep the room rail and photos visible while a range loads, and prefetch the neighbouring ranges.

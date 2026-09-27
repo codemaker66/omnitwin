@@ -418,7 +418,20 @@ export const BOARD_COPY = {
 
   tray: {
     title: "Needs attention",
-    empty: "No overdue next actions.",
+    /** An older server sends no venue-wide list: the board's range is all
+     *  this panel has read, and it says so. */
+    empty: "No overdue next actions in this range.",
+    /** Needs attention across the venue (roadmap N3): next actions overdue or
+     *  due within seven days, whatever the booking's date. */
+    emptyVenue: "No next actions due in the next 7 days.",
+    overdue: "Overdue",
+    soon: "Next 7 days",
+    /** Holds on the board with no place on their ladder yet. */
+    noOption: "No option yet",
+    noActionWritten: "No next action written.",
+    wasDue: (day: string, owner: string | null): string => `Was due ${day} · ${owner ?? "No owner"}`,
+    due: (day: string, owner: string | null): string => `Due ${day} · ${owner ?? "No owner"}`,
+    more: (shown: number, total: number): string => `Showing the ${String(shown)} most urgent of ${String(total)}.`,
     open: (count: number): string =>
       `${String(count)} provisional ${count === 1 ? "hold needs" : "holds need"} attention`,
   },

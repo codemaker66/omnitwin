@@ -568,6 +568,47 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       expect(other.json<CalendarPayload>().data.decisionsDue.holds.map((row) => row.title)).toEqual(["Other venue, decision overdue"]);
     });
 
+    it("lists the venue's holds whose next action is overdue or due this week, whatever the booking's date (roadmap N3)", async () => {
+      const a = await venue("attention A");
+      const b = await venue("attention B");
+      const staff = await a.actor("staff");
+      const now = Date.now();
+      const [room0, room1] = [a.rooms[0] ?? "", a.rooms[1] ?? ""];
+      const hold = (venueId: string, spaceId: string, title: string, startsInDays: number, nextActionInDays: number | null,
+        extra: Partial<typeof schema.bookings.$inferInsert> = {}): typeof schema.bookings.$inferInsert => ({
+        venueId, spaceId, kind: "hold", title, rank: 1, nextAction: `Next step for ${title}.`,
+        nextActionDueAt: nextActionInDays === null ? null : new Date(now + nextActionInDays * DAY),
+        startsAt: new Date(now + startsInDays * DAY), endsAt: new Date(now + startsInDays * DAY + 4 * HOUR), ...extra,
+      });
+      await db.insert(schema.bookings).values([
+        hold(a.venueId, room0, "In range, next action in 3 days", 2, 3),
+        hold(a.venueId, room1, "Six months out, next action overdue", 180, -2),
+        hold(a.venueId, room0, "Next action in 10 days", 60, 10),
+        hold(a.venueId, room1, "No next action date", 30, null),
+        hold(a.venueId, room0, "Released, next action overdue", 190, -3, { status: "released" }),
+        hold(a.venueId, room0, "Deleted, next action overdue", 191, -4, { deletedAt: new Date(now) }),
+        { venueId: a.venueId, spaceId: room1, kind: "ink", title: "Confirmed, next action overdue", nextAction: "Send the contract.",
+          nextActionDueAt: new Date(now - DAY), startsAt: new Date(now + 3 * DAY), endsAt: new Date(now + 3 * DAY + 4 * HOUR) },
+        hold(b.venueId, b.rooms[0] ?? "", "Other venue, next action overdue", 30, -1),
+      ]);
+      type AttentionPayload = { data: { nextActionsDue: { holds: { title: string; nextAction: string | null }[]; total: number } } };
+      const url = `/calendar?venueId=${a.venueId}&from=${new Date(now - DAY).toISOString()}&to=${new Date(now + 7 * DAY).toISOString()}`;
+      const response = await server.inject({ method: "GET", url, headers: bearer(staff) });
+      expect(response.statusCode, response.body).toBe(200);
+      const { nextActionsDue } = response.json<AttentionPayload>().data;
+      // Most overdue first; out-of-range holds included; released, deleted,
+      // confirmed, undated, far-off and other venues' left out.
+      expect(nextActionsDue.holds.map((row) => row.title)).toEqual([
+        "Six months out, next action overdue",
+        "In range, next action in 3 days",
+      ]);
+      expect(nextActionsDue.holds[0]?.nextAction).toBe("Next step for Six months out, next action overdue.");
+      expect(nextActionsDue.total).toBe(2);
+      // The list is the venue's, not the lanes asked for.
+      const lanes = await server.inject({ method: "GET", url: `${url}&spaceIds=${room0}`, headers: bearer(staff) });
+      expect(lanes.json<AttentionPayload>().data.nextActionsDue.total).toBe(2);
+    });
+
     it("dry-runs the reminder pass from the database: who is told, about what, and never an address", async () => {
       const f = await diaryFixture();
       // One minute after the T-3 instant of the 3-day decision (and the T-1

@@ -534,6 +534,35 @@ export const CalendarDecisionsDueSchema = z.object({
 });
 export type CalendarDecisionsDue = z.infer<typeof CalendarDecisionsDueSchema>;
 
+/** How far ahead the Diary's venue-wide Needs attention list looks for next
+ *  actions: the same week as the decisions list (roadmap N3). */
+export const NEXT_ACTIONS_DUE_HORIZON_DAYS = 7;
+
+/** The most provisional holds one calendar read carries on that list. */
+export const NEXT_ACTIONS_DUE_LIMIT = 50;
+
+/** A hold that belongs on Needs attention: provisional, still active, and
+ *  carrying the next action date the list is ordered by. */
+const NextActionDueHoldSchema = CalendarBookingEntrySchema.refine(
+  (entry) => entry.kind === "hold" && entry.status === "active" && entry.nextActionDueAt !== null,
+  { message: "Only an active hold with a next action date needs attention." },
+);
+
+/** The venue-wide list of provisional holds whose next action is overdue or
+ *  due within NEXT_ACTIONS_DUE_HORIZON_DAYS, whatever the booking's own date,
+ *  so a hold six months out still appears on this week's board. */
+export const CalendarNextActionsDueSchema = z.object({
+  /** Most overdue first. Full calendar entries, so the Diary can open one
+   *  without first moving the board to its week. */
+  holds: z.array(NextActionDueHoldSchema).max(NEXT_ACTIONS_DUE_LIMIT),
+  /** Every such hold in the venue; larger than `holds.length` when capped. */
+  total: z.number().int().nonnegative(),
+}).refine((list) => list.total >= list.holds.length, {
+  message: "total cannot be smaller than the holds listed.",
+  path: ["total"],
+});
+export type CalendarNextActionsDue = z.infer<typeof CalendarNextActionsDueSchema>;
+
 export const CalendarResponseSchema = z.object({
   venueId: z.string().uuid(),
   range: z.object({ from: IsoInstantSchema, to: IsoInstantSchema }),
@@ -546,5 +575,8 @@ export const CalendarResponseSchema = z.object({
   /** Optional so older servers stay valid; a client treats absence as "the
    *  venue-wide list is unavailable", never as "nothing is due". */
   decisionsDue: CalendarDecisionsDueSchema.optional(),
+  /** Optional so older servers stay valid; a client treats absence as "the
+   *  venue-wide list is unavailable", never as "nothing needs attention". */
+  nextActionsDue: CalendarNextActionsDueSchema.optional(),
 });
 export type CalendarResponse = z.infer<typeof CalendarResponseSchema>;

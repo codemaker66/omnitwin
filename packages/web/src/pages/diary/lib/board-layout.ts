@@ -317,6 +317,10 @@ export interface NeedsActionOptions {
    *  every overdue decision, whatever the booking's date, and saying it twice
    *  is noise. True for an older server that sends no such list. */
   readonly decisions: boolean;
+  /** Whether an overdue next action is a reason here. False when the
+   *  venue-wide next actions list is on the board (roadmap N3), which carries
+   *  them whatever the booking's date. Absent means true. */
+  readonly nextActions?: boolean;
 }
 
 /** The holding tray (Canon §3 "Open Tentatives" aging): live pencils whose
@@ -335,7 +339,7 @@ export function needsAction(
     const reasons: string[] = [];
     let earliestOverdue = Number.POSITIVE_INFINITY;
 
-    if (entry.nextActionDueAt !== null) {
+    if (options.nextActions !== false && entry.nextActionDueAt !== null) {
       const dueMs = Date.parse(entry.nextActionDueAt);
       if (dueMs < nowMs) {
         reasons.push(

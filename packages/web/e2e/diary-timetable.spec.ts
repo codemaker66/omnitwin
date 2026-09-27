@@ -150,6 +150,13 @@ test.describe("Diary timetable", () => {
     await expect(decisions.getByRole("button", { name: /Hartley wedding/u })).toContainText("2nd option · Fiona Coordinator");
     await expect(decisions.getByRole("button", { name: /Guild dinner/u })).toContainText("Joint 1st · No owner");
 
+    // Needs attention covers the venue: a hold next April whose next action
+    // was due on Monday is on this week's board, with what is to be done.
+    const attention = page.getByRole("region", { name: "Needs attention" });
+    const kerr = attention.getByRole("button", { name: /Kerr anniversary/u });
+    await expect(kerr).toContainText("Send the revised menu.");
+    await expect(kerr).toContainText(/Was due Mon,? 14 Sept? · Fiona Coordinator/u);
+
     // The tray: the open enquiries, newest first, read once.
     await expect(page.locator(".diary-tray-enquiry .diary-tray-item-title")).toHaveText(["Aisha and Tom Baird", "Glasgow Law Society"]);
     expect(emulated.enquiryRequests).toEqual([`?states=submitted%2Cunder_review&order=created_desc&venueId=${VENUE_ID}&limit=51`]);

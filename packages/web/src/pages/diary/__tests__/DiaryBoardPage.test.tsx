@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import type { CalendarBookingEntry, CalendarResponse } from "@omnitwin/types";
+import type { CalendarBookingEntry, CalendarEntry, CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { welcomeStorageKey } from "../lib/welcome.js";
@@ -1043,7 +1043,7 @@ describe("DiaryBoardPage — the board stays steady (roadmap N3)", () => {
       expect(count.getAttribute("aria-hidden")).toBe("true");
     }
     expect(screen.queryByText("No bookings in this range.")).toBeNull();
-    expect(screen.queryByText("No overdue next actions.")).toBeNull();
+    expect(screen.queryByText("No overdue next actions in this range.")).toBeNull();
     expect(screen.queryByRole("region", { name: "Conflicts" })).toBeNull();
     expect(document.querySelector(".diary-overview-new")).toBeNull();
 
@@ -1124,6 +1124,96 @@ describe("DiaryBoardPage — ending a booking asks first (roadmap N3)", () => {
 
     expect(await screen.findByText("Cancelled Chamber dinner. MacLeod wedding, 1st option, can now be confirmed.")).toBeDefined();
     expect(transitionBookingMock).toHaveBeenCalledWith(INK_ID, "cancelled", undefined);
+  });
+});
+
+describe("DiaryBoardPage — Needs attention, venue-wide (roadmap N3)", () => {
+  const HARTLEY_ID = "00000000-0000-4000-8000-0000000000e1";
+  const GUILD_ID = "00000000-0000-4000-8000-0000000000e2";
+
+  function attentionHold(overrides: Partial<CalendarBookingEntry> & Pick<CalendarBookingEntry, "id" | "title">): CalendarBookingEntry {
+    return {
+      entryType: "booking",
+      spaceId: SALOON,
+      kind: "hold",
+      status: "active",
+      state: "hold",
+      eventType: "wedding",
+      startsAt: "2027-03-20T15:00:00.000Z",
+      endsAt: "2027-03-20T23:00:00.000Z",
+      rank: 1,
+      jointFlag: false,
+      decisionAt: null,
+      ownerUserId: "00000000-0000-4000-8000-0000000000aa",
+      ownerName: "Fiona Coordinator",
+      nextAction: "Call the Hartleys about the menu.",
+      nextActionDueAt: "2026-09-15T09:00:00.000Z",
+      eventId: null,
+      seriesId: null,
+      ...overrides,
+    };
+  }
+
+  function withAttention(holds: readonly CalendarBookingEntry[], total = holds.length): CalendarResponse {
+    return { ...fixture(), decisionsDue: { holds: [], total: 0 }, nextActionsDue: { holds: [...holds], total } };
+  }
+
+  it("lists next actions overdue and due this week across the venue, and opens one where it stands", async () => {
+    getCalendarMock.mockResolvedValue(withAttention([
+      attentionHold({ id: HARTLEY_ID, title: "Hartley wedding" }),
+      attentionHold({
+        id: GUILD_ID, title: "Guild dinner", spaceId: GRAND_HALL, startsAt: "2026-11-14T18:00:00.000Z", endsAt: "2026-11-14T23:00:00.000Z",
+        nextAction: null, nextActionDueAt: "2026-09-18T09:00:00.000Z", ownerUserId: null, ownerName: null,
+      }),
+    ]));
+    const restore = pinDate("2026-09-16T10:00:00.000Z");
+    try {
+      renderPage();
+      const panel = await screen.findByRole("region", { name: "Needs attention" });
+      const overdue = within(panel).getByRole("heading", { name: /^Overdue/u }).closest("div") as HTMLElement;
+      const soon = within(panel).getByRole("heading", { name: /^Next 7 days/u }).closest("div") as HTMLElement;
+      // A hold next March, whose next action was due yesterday, is on this week's board.
+      expect(within(overdue).getByText("Saloon · Sat 20 Mar 2027")).toBeDefined();
+      expect(within(overdue).getByText("Call the Hartleys about the menu.")).toBeDefined();
+      expect(within(overdue).getByText(/^Was due Tue 15 Sept? · Fiona Coordinator$/u)).toBeDefined();
+      expect(within(soon).getByText("No next action written.")).toBeDefined();
+      expect(within(soon).getByText(/^Due Fri 18 Sept? · No owner$/u)).toBeDefined();
+      expect(within(panel).queryByText("No overdue next actions in this range.")).toBeNull();
+
+      const title = document.querySelector(".diary-range-title")?.textContent;
+      fireEvent.click(within(overdue).getByRole("button", { name: /Hartley wedding/u }));
+      const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+      expect(within(drawer).getByDisplayValue("Hartley wedding")).toBeTruthy();
+      expect(document.querySelector(".diary-range-title")?.textContent).toBe(title);
+    } finally {
+      restore();
+    }
+  });
+
+  it("says nothing is due only when the venue's list says so, keeps the range's holds with no option, and says when it is capped", async () => {
+    const unranked = { ...fixture().entries[1], rank: null } as CalendarBookingEntry;
+    getCalendarMock.mockResolvedValue({ ...withAttention([]), entries: [fixture().entries[0], unranked] as CalendarEntry[] });
+    renderPage();
+    const panel = await screen.findByRole("region", { name: "Needs attention" });
+    await waitFor(() => { expect(within(panel).getByRole("heading", { name: /^No option yet/u })).toBeDefined(); });
+    expect(within(panel).getByText("This provisional hold has no option yet — give it one.")).toBeDefined();
+    expect(within(panel).queryByText("No next actions due in the next 7 days.")).toBeNull();
+    cleanup();
+
+    getCalendarMock.mockResolvedValue(withAttention([]));
+    renderPage();
+    expect(await screen.findByText("No next actions due in the next 7 days.")).toBeDefined();
+    cleanup();
+
+    getCalendarMock.mockResolvedValue(withAttention([attentionHold({ id: HARTLEY_ID, title: "Hartley wedding" })], 60));
+    renderPage();
+    expect(await screen.findByText("Showing the 1 most urgent of 60.")).toBeDefined();
+  });
+
+  it("keeps an older server's range list, and says it covers only the range", async () => {
+    getCalendarMock.mockResolvedValue({ ...fixture(), entries: [fixture().entries[0]] as CalendarEntry[] });
+    renderPage();
+    expect(await screen.findByText("No overdue next actions in this range.")).toBeDefined();
   });
 });
 

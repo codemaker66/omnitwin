@@ -5,6 +5,8 @@ import {
   CalendarResponseSchema,
   DECISIONS_DUE_HORIZON_DAYS,
   DECISIONS_DUE_LIMIT,
+  NEXT_ACTIONS_DUE_HORIZON_DAYS,
+  NEXT_ACTIONS_DUE_LIMIT,
   deriveBookingState,
   type CalendarBookingEntry,
   type CalendarEntry,
@@ -214,10 +216,14 @@ export async function calendarRoutes(
     // `spaceIds`: the list is the venue's, not the lanes'. Served by
     // bookings_venue_decision_idx.
     const decisionHorizon = new Date(Date.now() + DECISIONS_DUE_HORIZON_DAYS * DAY_MS);
+    // Needs attention, venue-wide (roadmap N3): the same, for holds whose next
+    // action is overdue or due within the horizon. Served by
+    // bookings_venue_next_action_idx.
+    const nextActionHorizon = new Date(Date.now() + NEXT_ACTIONS_DUE_HORIZON_DAYS * DAY_MS);
 
-    // The four reads are independent — one round-trip of latency, not four
+    // The five reads are independent — one round-trip of latency, not five
     // (review finding: this is the endpoint every calendar view polls).
-    const [bookingRows, phaseRows, ruleRows, decisionRows] = await Promise.all([
+    const [bookingRows, phaseRows, ruleRows, decisionRows, nextActionRows] = await Promise.all([
       db
         .select(BOOKING_ENTRY_COLUMNS)
         .from(bookings)
@@ -298,6 +304,27 @@ export async function calendarRoutes(
         )
         .orderBy(asc(bookings.decisionAt), asc(bookings.id))
         .limit(DECISIONS_DUE_LIMIT),
+      db
+        .select({
+          ...BOOKING_ENTRY_COLUMNS,
+          total: sql<number>`count(*) over ()`.mapWith(Number),
+        })
+        .from(bookings)
+        .leftJoin(events, and(eq(bookings.eventId, events.id), isNull(events.deletedAt)))
+        .leftJoin(users, eq(bookings.ownerUserId, users.id))
+        .where(
+          and(
+            eq(bookings.venueId, query.venueId),
+            isNull(bookings.deletedAt),
+            inArray(bookings.spaceId, [...knownSpaceIds]),
+            eq(bookings.kind, "hold"),
+            eq(bookings.status, "active"),
+            isNotNull(bookings.nextActionDueAt),
+            lt(bookings.nextActionDueAt, nextActionHorizon),
+          ),
+        )
+        .orderBy(asc(bookings.nextActionDueAt), asc(bookings.id))
+        .limit(NEXT_ACTIONS_DUE_LIMIT),
     ]);
 
     const conflictBookings: ConflictBookingInput[] = bookingRows.map((row) => ({
@@ -370,6 +397,10 @@ export async function calendarRoutes(
       decisionsDue: {
         holds: decisionRows.map(toBookingEntry),
         total: decisionRows[0]?.total ?? 0,
+      },
+      nextActionsDue: {
+        holds: nextActionRows.map(toBookingEntry),
+        total: nextActionRows[0]?.total ?? 0,
       },
     });
     return { data: response };
