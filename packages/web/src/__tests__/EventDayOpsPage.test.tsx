@@ -425,6 +425,54 @@ describe("EventDayOpsPage", () => {
       .toBe(`/ops/handoff/${PACK_ID}`);
   });
 
+  it("reads the board and its change feed together, and draws the board once both have answered", async () => {
+    let resolveBoard: (board: EventDayOpsBoard) => void = () => undefined;
+    let resolveFeed: (items: ChangeFeedItem[]) => void = () => undefined;
+    const boardRead = new Promise<EventDayOpsBoard>((resolve) => { resolveBoard = resolve; });
+    const feedRead = new Promise<ChangeFeedItem[]>((resolve) => { resolveFeed = resolve; });
+    mockGetEventDayOpsBoard.mockReturnValue(boardRead);
+    mockGetEventChangeFeed.mockReturnValue(feedRead);
+    renderPage();
+
+    // Both reads are out before either answers.
+    await waitFor(() => { expect(mockGetEventChangeFeed).toHaveBeenCalledWith(EVENT_ID, 25); });
+    expect(mockGetEventDayOpsBoard).toHaveBeenCalledWith(EVENT_ID);
+    expect(screen.getByRole("heading", { level: 1, name: "Loading event-day board" })).toBeTruthy();
+
+    // The board alone does not draw the page: its changes are not known yet,
+    // and "No changes awaiting acknowledgement" would be a guess.
+    await act(async () => { resolveBoard(boardFixture()); await boardRead; });
+    expect(screen.getByRole("heading", { level: 1, name: "Loading event-day board" })).toBeTruthy();
+    expect(screen.queryByText("No changes awaiting acknowledgement.")).toBeNull();
+
+    await act(async () => { resolveFeed([requiredChangeFixture()]); await feedRead; });
+    expect(screen.getByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+    expect(screen.queryByText("Loading event-day board")).toBeNull();
+  });
+
+  it("says the board is unavailable when the board cannot be read, without waiting for the feed, and Retry reads both again", async () => {
+    mockGetEventDayOpsBoard.mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockReturnValueOnce(new Promise<ChangeFeedItem[]>(() => undefined));
+    renderPage();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Event-day board unavailable" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
+    expect(mockGetEventDayOpsBoard).toHaveBeenCalledTimes(2);
+    expect(mockGetEventChangeFeed).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the board when only its change feed cannot be read", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    renderPage();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
+    expect(screen.queryByText("Event-day board unavailable")).toBeNull();
+  });
+
   it("does not invent a setup-sheet link when the event has no linked handoff", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), handoffPack: null, sourceStatus: "missing_handoff" });
     renderPage();

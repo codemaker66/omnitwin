@@ -272,13 +272,19 @@ export function EventDayOpsPage(): ReactElement {
     }
     setState({ kind: "loading" });
     readAcknowledgements();
-    void (async () => {
-      const board = await getEventDayOpsBoard(eventId);
-      const changes = await getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []);
-      setState({ kind: "ready", board });
-      setChangeFeed(changes);
-      setLastSyncedAt(new Date().toISOString());
-    })()
+    // The board and its change feed are read together, not one after the
+    // other. The page still waits for both, as it did, so the changes it
+    // lists for acknowledgement never appear after the board has drawn
+    // without them; only the board's own read can fail the page.
+    void Promise.all([
+      getEventDayOpsBoard(eventId),
+      getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
+    ])
+      .then(([board, changes]) => {
+        setState({ kind: "ready", board });
+        setChangeFeed(changes);
+        setLastSyncedAt(new Date().toISOString());
+      })
       .catch(() => {
         setState({
           kind: "error",
