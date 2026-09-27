@@ -17,7 +17,7 @@ import {
   type DayBoardSlotRequest,
 } from "../../pages/hallkeeper/lib/day-board-state.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
-import { useSlotRequests } from "./requests-context.js";
+import { mintRequestKey, useSlotRequests } from "./requests-context.js";
 import "./slot-requests.css";
 
 // ---------------------------------------------------------------------------
@@ -81,8 +81,10 @@ function RequestCard({ request, nowMs }: {
   readonly request: VenueRequest;
   readonly nowMs: number;
 }): ReactElement {
-  const { move, busyId, error } = useSlotRequests();
+  const { move, busyId, failure } = useSlotRequests();
   const busy = busyId === request.id;
+  // Only this request's own failure is said on its card.
+  const failed = failure?.on === "request" && failure.requestId === request.id ? failure.message : null;
   const canAcknowledge = nextRequestState(request.state, "acknowledged").ok;
   const canAccept = nextRequestState(request.state, "accepted").ok;
   const [finishing, setFinishing] = useState(false);
@@ -151,7 +153,7 @@ function RequestCard({ request, nowMs }: {
           </>
         )}
       </div>
-      {error !== null && busyId === null ? <p className="vv-request-error" role="alert">{error}</p> : null}
+      {failed !== null && busyId === null ? <p className="vv-request-error" role="alert">{failed}</p> : null}
     </li>
   );
 }
@@ -160,7 +162,13 @@ function Composer({ slot, onClose }: {
   readonly slot: SlotRequestsProps;
   readonly onClose: () => void;
 }): ReactElement {
-  const { ask, asking } = useSlotRequests();
+  const { ask, askingKeys, failure } = useSlotRequests();
+  // One key per composer: pressing "Send it" again after a failure replays
+  // the same request rather than making a second.
+  const [idempotencyKey] = useState(mintRequestKey);
+  const asking = askingKeys.has(idempotencyKey);
+  // Only this composer's own failure is said here, beside its "Send it".
+  const failed = failure?.on === "ask" && failure.idempotencyKey === idempotencyKey ? failure.message : null;
   const [kind, setKind] = useState<RequestKind>("refreshments");
   const [urgency, setUrgency] = useState<RequestUrgency>("soon");
   const [quantity, setQuantity] = useState("");
@@ -174,15 +182,19 @@ function Composer({ slot, onClose }: {
       className="vv-request-composer"
       onSubmit={(event) => {
         event.preventDefault();
-        ask(slot, {
+        if (asking) return;
+        // The composer stays open while the request travels, so "Sending…"
+        // is seen, and closes only once it is made. A failure leaves it open,
+        // with what was chosen and typed, saying why and ready to send again.
+        void ask(slot, {
           kind,
           urgency,
           quantity: countable && Number.isFinite(parsedQuantity) && parsedQuantity > 0
             ? parsedQuantity
             : null,
           detail: detail.trim() === "" ? null : detail.trim(),
-        });
-        onClose();
+          idempotencyKey,
+        }).then((made) => { if (made) onClose(); });
       }}
     >
       <fieldset className="vv-request-choices">
@@ -247,6 +259,7 @@ function Composer({ slot, onClose }: {
         </button>
         <button type="button" className="vv-request-action" onClick={onClose}>Not now</button>
       </div>
+      {failed === null || asking ? null : <p className="vv-request-error" role="alert">{failed}</p>}
     </form>
   );
 }

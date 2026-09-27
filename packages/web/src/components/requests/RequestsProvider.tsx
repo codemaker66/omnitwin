@@ -17,6 +17,7 @@ import {
   SLOT_REQUESTS_UNAVAILABLE,
   SlotRequestsContext,
   type AskForSomething,
+  type SlotRequestFailure,
   type SlotRequestsApi,
 } from "./requests-context.js";
 
@@ -45,19 +46,6 @@ import {
 const CLOCK_TICK_MS = 30_000;
 const REFETCH_DEBOUNCE_MS = 120;
 
-/** The same guard the mission record uses: a phone on a page served without
- *  a secure context has no randomUUID, and a request pressed there still
- *  needs a key the server can dedupe on. */
-function mintKey(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  const tail = `${Date.now().toString(16)}${Math.floor(Math.random() * 0xffff_ffff).toString(16)}`
-    .padEnd(12, "0")
-    .slice(0, 12);
-  return `00000000-0000-4000-8000-${tail}`;
-}
-
 function messageFor(cause: unknown): string {
   return cause instanceof Error && cause.message !== ""
     ? cause.message
@@ -74,8 +62,8 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
   const [status, setStatus] = useState<SlotRequestsApi["status"]>("loading");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [askingKeys, setAskingKeys] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const [failure, setFailure] = useState<SlotRequestFailure | null>(null);
 
   // Monotonic: a slow answer to an old question never lands on a newer one.
   const sequenceRef = useRef(0);
@@ -172,11 +160,12 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
   const ask = useCallback((
     slot: { readonly bookingId: string; readonly eventId: string | null; readonly roomId: string },
     input: AskForSomething,
-  ): void => {
-    if (venueId === null) return;
-    setAsking(true);
-    setError(null);
-    void makeVenueRequest(venueId, {
+  ): Promise<boolean> => {
+    if (venueId === null) return Promise.resolve(false);
+    const key = input.idempotencyKey;
+    setAskingKeys((current) => new Set(current).add(key));
+    setFailure(null);
+    return makeVenueRequest(venueId, {
       roomId: slot.roomId,
       bookingId: slot.bookingId,
       eventId: slot.eventId,
@@ -184,20 +173,32 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
       urgency: input.urgency,
       quantity: input.quantity,
       detail: input.detail,
-      idempotencyKey: mintKey(),
+      idempotencyKey: key,
     })
-      .then(merge)
-      .catch((cause: unknown) => { setError(messageFor(cause)); })
-      .finally(() => { setAsking(false); });
+      .then((made) => {
+        merge(made);
+        return true;
+      })
+      .catch((cause: unknown) => {
+        setFailure({ on: "ask", idempotencyKey: key, message: messageFor(cause) });
+        return false;
+      })
+      .finally(() => {
+        setAskingKeys((current) => {
+          const next = new Set(current);
+          next.delete(key);
+          return next;
+        });
+      });
   }, [venueId, merge]);
 
   const move = useCallback((request: VenueRequest, transition: RequestTransition): void => {
     setBusyId(request.id);
-    setError(null);
+    setFailure(null);
     void moveVenueRequest(request.id, transition)
       .then(merge)
       .catch((cause: unknown) => {
-        setError(messageFor(cause));
+        setFailure({ on: "request", requestId: request.id, message: messageFor(cause) });
         // Somebody else may have moved it — take the server's word for it.
         refresh();
       })
@@ -206,9 +207,9 @@ export function RequestsProvider({ children }: { readonly children: ReactNode })
 
   const value = useMemo<SlotRequestsApi>(
     () => enabled
-      ? { status, nowMs, requestsFor, ask, move, busyId, asking, error }
+      ? { status, nowMs, requestsFor, ask, move, busyId, askingKeys, failure }
       : SLOT_REQUESTS_UNAVAILABLE,
-    [enabled, status, nowMs, requestsFor, ask, move, busyId, asking, error],
+    [enabled, status, nowMs, requestsFor, ask, move, busyId, askingKeys, failure],
   );
 
   return (

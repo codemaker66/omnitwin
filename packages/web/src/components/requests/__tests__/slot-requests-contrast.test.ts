@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 // 1.1:1) and bright copper on ivory (about 2.2:1), which a rendered-board check
 // found and no unit test could. This reads the three stylesheets that decide
 // it and holds both summary colours to AA on every ground a slot can take.
+// A failure is said on the dark grounds, on a request card or in the composer
+// beside "Send it", so its words are held to AA there too.
 // ---------------------------------------------------------------------------
 
 function css(path: string): string {
@@ -68,6 +70,14 @@ function colourRule(source: string, selector: string): string {
   return colour.trim();
 }
 
+function backgroundRule(source: string, selector: string): string {
+  const escaped = selector.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const body = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, "u").exec(source)?.[1] ?? "";
+  const background = /(?:^|[;\s])background\s*:\s*([^;]+);/u.exec(body)?.[1];
+  if (background === undefined) throw new Error(`${selector} declares no background`);
+  return background.trim();
+}
+
 /** The last background each slot selector declares: the ivory block is
  *  unconditional and comes last, so that is what renders. */
 function slotGrounds(): readonly (readonly [string, Rgb])[] {
@@ -94,5 +104,17 @@ describe("the request slab's summary line on the Day Board", () => {
       // 13px at weight 600 is normal-size text: the 4.5:1 bar.
       expect(contrast(ink, colour), `${selector} on ${ground}`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+});
+
+describe("the words that say something could not be sent", () => {
+  const tokens = registerTokens();
+  const slab = css("src/components/requests/slot-requests.css");
+
+  it.each([".vv-request", ".vv-request-composer"])("stay at AA on the %s ground", (ground) => {
+    const ink = colourOf(colourRule(slab, ".vv-request-error"), tokens);
+    const background = colourOf(backgroundRule(slab, ground), tokens);
+    // 12px is normal-size text: the 4.5:1 bar.
+    expect(contrast(ink, background), `.vv-request-error on ${ground}`).toBeGreaterThanOrEqual(4.5);
   });
 });
