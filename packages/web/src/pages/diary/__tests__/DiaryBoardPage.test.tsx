@@ -898,6 +898,37 @@ describe("DiaryBoardPage — decisions due, venue-wide (T-619)", () => {
     await waitFor(() => { expect(document.activeElement).toBe(row); });
   });
 
+  it("gives focus back after closing only if it has not moved on", async () => {
+    getCalendarMock.mockResolvedValue(withDecisions());
+    renderPage();
+    const row = await screen.findByRole("button", { name: /Hartley wedding/ });
+    row.focus();
+    fireEvent.click(row);
+    const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close" }));
+    // Someone moves on before the hand-back's frame: it leaves them there.
+    const elsewhere = screen.getByRole("button", { name: /Guild dinner/ });
+    elsewhere.focus();
+    await new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(resolve); }); });
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it("gives focus back to the latest opener, not to one an earlier close was waiting on", async () => {
+    getCalendarMock.mockResolvedValue(withDecisions());
+    renderPage();
+    const first = await screen.findByRole("button", { name: /Hartley wedding/ });
+    const second = screen.getByRole("button", { name: /Guild dinner/ });
+    first.focus();
+    fireEvent.click(first);
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Booking details" })).getByRole("button", { name: "Close" }));
+    // A second booking opens and closes before the first close's frame.
+    second.focus();
+    fireEvent.click(second);
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Booking details" })).getByRole("button", { name: "Close" }));
+    await new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(resolve); }); });
+    expect(document.activeElement).toBe(second);
+  });
+
   it("leaves overdue decisions to the list rather than repeating them in Needs attention", async () => {
     const response = withDecisions();
     getCalendarMock.mockResolvedValue({

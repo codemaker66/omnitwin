@@ -194,12 +194,14 @@ test.describe("Diary timetable", () => {
     // scroll sideways.
     expect(await create.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0);
     await create.getByRole("button", { name: "Close" }).click();
+    // Closing hands focus back to the square that opened it, a frame later.
+    const saloonWednesday = page.getByRole("button", { name: /^New booking — Saloon, Wed,? 16 Sept?$/u });
+    await expect(saloonWednesday).toBeFocused();
 
     // The overview is one Tab stop, and the arrows move round it (roadmap
     // N3): up from the Saloon's Wednesday to the Grand Hall's, across to
     // Thursday's dinner, and Enter opens it.
     await expect(page.locator(".diary-overview-grid [tabindex='0']")).toHaveCount(1);
-    await page.getByRole("button", { name: /^New booking — Saloon, Wed,? 16 Sept?$/u }).focus();
     await page.keyboard.press("ArrowUp");
     await expect(page.getByRole("button", { name: /^New booking — Grand Hall, Wed,? 16 Sept?$/u })).toBeFocused();
     await page.keyboard.press("ArrowRight");

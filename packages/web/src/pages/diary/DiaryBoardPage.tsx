@@ -95,6 +95,13 @@ function isBoardView(value: string | null): value is BoardView {
   return value === "day" || value === "week" || value === "2w";
 }
 
+/** True when nothing holds focus, because the element that had it left the
+ *  page with a closed drawer or sheet. */
+function focusIsLost(): boolean {
+  const active = document.activeElement;
+  return active === null || active === document.body;
+}
+
 /** The retired month board's deep links (`?view=month`) still sit in
  *  bookmarks and older emails. They land on the week their date falls in —
  *  a real range, not an error and not a URL that disagrees with the board. */
@@ -182,13 +189,27 @@ export function DiaryBoardPage(): ReactElement {
   // share the right-hand edge, so opening either closes the other.
   const [gapSheet, setGapSheet] = useState<{ readonly room: { readonly id: string; readonly name: string }; readonly gap: LaneGap } | null>(null);
   const gapReturnFocusRef = useRef<HTMLElement | null>(null);
+  // Focus goes back a frame after the drawer or sheet closes, once it has
+  // left the page. By then a newer open or close may have come, or someone may
+  // have moved on: a hand-back acts only while it is the latest and focus is
+  // still lost, so it never takes focus from where it has gone since.
+  const handBackRef = useRef(0);
+  const handBack = useCallback((give: () => void) => {
+    handBackRef.current += 1;
+    const ticket = handBackRef.current;
+    requestAnimationFrame(() => {
+      if (ticket === handBackRef.current && focusIsLost()) give();
+    });
+  }, []);
   const openDrawer = useCallback((mode: DrawerMode) => {
+    handBackRef.current += 1;
     drawerNonceRef.current += 1;
     if (document.activeElement instanceof HTMLElement) drawerReturnFocusRef.current = document.activeElement;
     setGapSheet(null);
     setDrawer({ mode, nonce: drawerNonceRef.current });
   }, []);
   const openGap = useCallback<OpenGap>((room, gap, opener) => {
+    handBackRef.current += 1;
     gapReturnFocusRef.current = opener;
     setDrawer(null);
     setGapSheet({ room, gap });
@@ -196,10 +217,10 @@ export function DiaryBoardPage(): ReactElement {
   const closeGap = useCallback(() => {
     const opener = gapReturnFocusRef.current;
     setGapSheet(null);
-    requestAnimationFrame(() => {
+    handBack(() => {
       if (opener !== null && opener.isConnected) opener.focus({ preventScroll: true });
     });
-  }, []);
+  }, [handBack]);
   const [enquiryState, setEnquiryState] = useState<{
     readonly venueId: string | null;
     readonly rows: readonly Enquiry[];
@@ -1250,7 +1271,7 @@ export function DiaryBoardPage(): ReactElement {
             const bookingId = drawer.mode.kind === "edit" ? drawer.mode.booking.id : null;
             const opener = drawerReturnFocusRef.current;
             setDrawer(null);
-            requestAnimationFrame(() => {
+            handBack(() => {
               if (bookingId !== null && focusEntry(bookingId)) return;
               // Not on the board (a booking opened from the decisions list in
               // another week): back to whatever opened the drawer.
