@@ -297,6 +297,13 @@ button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(-
 .diary-changeover-failed { display: grid; gap: 10px; justify-items: start; }
 .diary-changeover-link { align-self: flex-start; color: var(--diary-brass-bright); font-size: 13.5px; font-weight: 600; text-underline-offset: 3px; }
 .diary-drawer-transitions { border-top: 1px solid #dde4d2; padding-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+/* The lifecycle's confirmation (roadmap N3; design system 3.11 on the ivory
+   register): paper with an edge and a 3 px rule in its tone, copper for a
+   hold's end and brick for cancelling a confirmed booking. */
+.diary-consequence { flex: 1 1 100%; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid #d7dcce; border-left: 3px solid #c98a5b; border-radius: 3px; background: #fffef8; }
+.diary-consequence[data-tone="brick"] { border-left-color: #a24933; }
+.diary-consequence-question { margin: 0; color: #183c30; font: 500 21px/1.3 var(--diary-hand); }
+.diary-consequence-line { margin: 0; color: #3f5a47; font-size: 14px; line-height: 1.5; }
 .diary-welcome-overlay, .diary-palette-backdrop { position: fixed; inset: 0; z-index: 115; display: grid; place-items: center; background: #1b342b55; padding: 20px; }
 .diary-welcome, .diary-palette { width: min(660px,100%); max-height: calc(100dvh - 40px); overflow: auto; background: #fffdf4; color: #284431; border: 1px solid #d9dfca; border-radius: 15px; box-shadow: 0 20px 60px #152d3330; padding: 30px; }
 .diary-welcome-body { font-size: 14px; line-height: 1.65; }

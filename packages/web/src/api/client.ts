@@ -200,7 +200,7 @@ export const api = {
     body?: unknown,
     skipAuth?: boolean,
     schema?: ResponseSchema<T>,
-    options?: { idempotencyKey?: string; signal?: AbortSignal },
+    options?: { idempotencyKey?: string; signal?: AbortSignal; keepEnvelope?: boolean },
   ): Promise<T> =>
     request<T>({ method: "POST", path, body, skipAuth, ...options }, schema),
 

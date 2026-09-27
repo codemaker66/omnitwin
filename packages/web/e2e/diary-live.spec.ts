@@ -216,8 +216,10 @@ test("the exclusion constraint arbitrates a live two-coordinator ink race (T-487
     await leftover.focus();
     await pageA.keyboard.press("Enter");
     await expect(pageA.getByRole("dialog", { name: "Booking details" })).toBeVisible();
-    await pageA.getByRole("button", { name: "Cancel the booking" }).click();
-    await expect(pageA.getByText(/^Cancel the booking: /)).toBeVisible({ timeout: 15_000 });
+    // Cancelling asks first (roadmap N3), then closes by naming the booking.
+    await pageA.getByRole("button", { name: "Cancel the booking…", exact: true }).click();
+    await pageA.getByRole("group", { name: /^Cancel .*\?$/u }).getByRole("button", { name: "Cancel the booking", exact: true }).click();
+    await expect(pageA.getByText(/^Cancelled /u)).toBeVisible({ timeout: 15_000 });
     await pageA.waitForTimeout(500); // let the refetch settle before re-checking
   }
 
@@ -254,8 +256,9 @@ test("the exclusion constraint arbitrates a live two-coordinator ink race (T-487
   await winner.focus();
   await pageA.keyboard.press("Enter");
   await expect(pageA.getByRole("dialog", { name: "Booking details" })).toBeVisible();
-  await pageA.getByRole("button", { name: "Cancel the booking" }).click();
-  await expect(pageA.getByText(/^Cancel the booking: /)).toBeVisible({ timeout: 15_000 });
+  await pageA.getByRole("button", { name: "Cancel the booking…", exact: true }).click();
+  await pageA.getByRole("group", { name: /^Cancel .*\?$/u }).getByRole("button", { name: "Cancel the booking", exact: true }).click();
+  await expect(pageA.getByText(/^Cancelled /u)).toBeVisible({ timeout: 15_000 });
 });
 
 test("the live channel carries a colleague's booking without a reload (T-497)", async () => {

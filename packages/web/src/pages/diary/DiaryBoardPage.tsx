@@ -23,6 +23,7 @@ import {
   type BoardView,
 } from "./lib/board-time.js";
 import { filterBoardEntries, needsAction, type LaneGap } from "./lib/board-layout.js";
+import { contestedHolds } from "./lib/lifecycle-ending.js";
 import type { CommitPayload, InkSpan } from "./lib/board-drag.js";
 import {
   popMove,
@@ -354,6 +355,18 @@ export function DiaryBoardPage(): ReactElement {
     () => needsAction(entries, nowMs, { decisions: !decisionsListed }),
     [decisionsListed, entries, nowMs],
   );
+
+  // The holds crossing the booking open in the drawer, so ending it can say
+  // who stands first after. The board has read them when the booking lies
+  // inside the range on screen; one opened from the decisions list in
+  // another week may have holds the board has not read.
+  const drawerBooking = drawer !== null && drawer.mode.kind === "edit" ? drawer.mode.booking : null;
+  const drawerContested = useMemo(
+    () => (drawerBooking === null ? [] : contestedHolds(entries, drawerBooking)),
+    [drawerBooking, entries],
+  );
+  const drawerLadderRead = drawerBooking !== null && data !== null
+    && Date.parse(drawerBooking.startsAt) >= range.fromMs && Date.parse(drawerBooking.endsAt) <= range.toMs;
 
   const applyMove = useCallback(
     (bookingId: string, patch: MoveSnapshot, undoEntry: UndoEntry | null) => {
@@ -1032,6 +1045,8 @@ export function DiaryBoardPage(): ReactElement {
             });
           }}
           onSaved={onDrawerSaved}
+          contested={drawerContested}
+          ladderRead={drawerLadderRead}
         />
       ) : null}
 

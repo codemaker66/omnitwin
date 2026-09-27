@@ -1092,3 +1092,24 @@ describe("DiaryBoardPage — the board stays steady (roadmap N3)", () => {
     expect(await screen.findByRole("button", { name: /^Chamber dinner — .*Fri 25 Sept/ })).toBeDefined();
   });
 });
+
+describe("DiaryBoardPage — ending a booking asks first (roadmap N3)", () => {
+  it("cannot cancel a confirmed booking without saying first who can then be confirmed", async () => {
+    transitionBookingMock.mockResolvedValue({ booking: { title: "Chamber dinner" }, promotedToFirst: [] });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /^Chamber dinner — / }));
+    const drawer = await screen.findByRole("dialog", { name: "Booking details" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Cancel the booking…" }));
+    expect(transitionBookingMock).not.toHaveBeenCalled();
+
+    // The 1st option is the fixture's own: MacLeod wedding, on the same room and evening.
+    const question = within(drawer).getByRole("group", { name: "Cancel Chamber dinner?" });
+    expect(within(question).getByText(
+      "Grand Hall, Fri 18 Sept 18:00–23:00: the confirmed booking ends. MacLeod wedding, 1st option, can then be confirmed. Nothing is sent to the client.",
+    )).toBeDefined();
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel the booking" }));
+
+    expect(await screen.findByText("Cancelled Chamber dinner. MacLeod wedding, 1st option, can now be confirmed.")).toBeDefined();
+    expect(transitionBookingMock).toHaveBeenCalledWith(INK_ID, "cancelled", undefined);
+  });
+});

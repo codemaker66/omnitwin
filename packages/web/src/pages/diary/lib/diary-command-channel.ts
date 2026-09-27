@@ -74,6 +74,18 @@ export async function sendViaChannelOrRest(
   buildCommand: (commandId: string) => DiaryCommand,
   restFallback: (commandId: string) => Promise<Booking>,
 ): Promise<Booking> {
+  return sendCommandViaChannelOrRest(buildCommand, restFallback, (ack) => ack.booking);
+}
+
+/** The same routing, for a result that carries more than the booking: a
+ *  transition's resequence rides both its ack and its REST reply. `fromAck`
+ *  reads an applied ack; undefined means the ack lacked the result, and the
+ *  SAME-id REST call replays the recorded outcome instead. */
+export async function sendCommandViaChannelOrRest<T>(
+  buildCommand: (commandId: string) => DiaryCommand,
+  restFallback: (commandId: string) => Promise<T>,
+  fromAck: (ack: DiaryCommandAck) => T | undefined,
+): Promise<T> {
   const commandId = crypto.randomUUID();
   const channel = currentChannel;
   if (channel === null) return restFallback(commandId);
@@ -97,11 +109,12 @@ export async function sendViaChannelOrRest(
       ack.details,
     );
   }
-  if (ack.booking === undefined) {
+  const result = fromAck(ack);
+  if (result === undefined) {
     // Defensive: an applied ack should always carry the booking; if a
     // server variant ever omits it, the SAME-id REST call replays the
     // recorded outcome with a fresh row read — authoritative state.
     return restFallback(command.commandId);
   }
-  return ack.booking;
+  return result;
 }

@@ -167,8 +167,10 @@ test("write probe: a labelled house block lands and is released (opt-in)", async
     await block.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog", { name: "Booking details" })).toBeVisible();
-    await page.getByRole("button", { name: "Release" }).click();
-    await expect(page.getByText(/^Release: /)).toBeVisible({ timeout: 15_000 });
+    // Releasing asks first (roadmap N3), then closes by naming the booking.
+    await page.getByRole("button", { name: "Release…", exact: true }).click();
+    await page.getByRole("group", { name: /^Release .*\?$/u }).getByRole("button", { name: "Release it" }).click();
+    await expect(page.getByText(/^Released /u)).toBeVisible({ timeout: 15_000 });
   };
   let released = false;
   try {

@@ -1,14 +1,17 @@
+import { z } from "zod";
 import {
   BookingSchema,
   CalendarResponseSchema,
+  DiaryAckResequenceSchema,
   type Booking,
   type BookingState,
   type CalendarResponse,
   type ConvertEnquiryInput,
   type CreateBookingInput,
+  type DiaryCommandAck,
 } from "@omnitwin/types";
 import { api } from "./client.js";
-import { sendViaChannelOrRest } from "../pages/diary/lib/diary-command-channel.js";
+import { sendCommandViaChannelOrRest, sendViaChannelOrRest } from "../pages/diary/lib/diary-command-channel.js";
 
 // ---------------------------------------------------------------------------
 // Diary API client (T-493). One read model for every calendar view, plus the
@@ -76,17 +79,45 @@ export async function updateBooking(bookingId: string, patch: EditBookingPatch):
   );
 }
 
+/** A hold that became 1st option because another left its date. */
+export interface PromotedHold {
+  readonly id: string;
+  readonly title: string;
+}
+
+export interface TransitionOutcome {
+  readonly booking: Booking;
+  /** Every hold now 1st option on a date this booking left: the API
+   *  resequences the ladder when a hold goes (`resequence.promotedToFirst`). */
+  readonly promotedToFirst: readonly PromotedHold[];
+}
+
+const TransitionReplySchema = z.object({
+  data: BookingSchema,
+  resequence: DiaryAckResequenceSchema.optional(),
+});
+
+function promotions(resequence: z.infer<typeof DiaryAckResequenceSchema> | undefined): readonly PromotedHold[] {
+  return (resequence?.promotedToFirst ?? []).map((hold) => ({ id: hold.id, title: hold.title }));
+}
+
+function outcomeFromAck(ack: DiaryCommandAck): TransitionOutcome | undefined {
+  return ack.booking === undefined ? undefined : { booking: ack.booking, promotedToFirst: promotions(ack.resequence) };
+}
+
 export async function transitionBooking(
   bookingId: string,
   toState: BookingState,
   note?: string,
-): Promise<Booking> {
-  return sendViaChannelOrRest(
+): Promise<TransitionOutcome> {
+  return sendCommandViaChannelOrRest(
     (commandId) => ({ kind: "booking.transition", commandId, bookingId, payload: { toState, note } }),
     (commandId) =>
-      api.post(`/bookings/${bookingId}/transition`, { toState, note }, undefined, BookingSchema, {
+      api.post(`/bookings/${bookingId}/transition`, { toState, note }, undefined, TransitionReplySchema, {
         idempotencyKey: commandId,
-      }),
+        keepEnvelope: true,
+      }).then((reply) => ({ booking: reply.data, promotedToFirst: promotions(reply.resequence) })),
+    outcomeFromAck,
   );
 }
 

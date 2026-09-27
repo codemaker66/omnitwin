@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
-import type { BookingKind, BookingState, CalendarRoom } from "@omnitwin/types";
+import type { BookingKind, BookingState, CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import {
   convertEnquiry,
@@ -12,6 +12,8 @@ import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
 import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
+import { formatWallDay, formatWallTime } from "../lib/board-time.js";
+import { isEndingTransition, ladderAfterExit, type EndingTransition } from "../lib/lifecycle-ending.js";
 
 /**
  * The planner link for an attached plan: the event the planner binds from,
@@ -51,6 +53,36 @@ export interface BookingDrawerProps {
   readonly role: string;
   readonly onClose: () => void;
   readonly onSaved: (message: string) => void;
+  /** The other active holds crossing an edited booking's room and time, as
+   *  the board has them, so ending it can say who stands first after. */
+  readonly contested?: readonly CalendarBookingEntry[];
+  /** False when the board has not read the booking's dates (a booking
+   *  opened from the decisions list in another week). */
+  readonly ladderRead?: boolean;
+}
+
+const NO_CONTESTED: readonly CalendarBookingEntry[] = [];
+
+/** What ending this booking does, in one plain paragraph: where and when,
+ *  what ends, who stands first after, and that the client hears nothing. */
+function endingConsequence(
+  booking: CalendarBookingEntry,
+  rooms: readonly CalendarRoom[],
+  contested: readonly CalendarBookingEntry[],
+  ladderRead: boolean,
+): string {
+  const room = rooms.find((candidate) => candidate.id === booking.spaceId)?.name ?? BOARD_COPY.drawer.fields.room;
+  const startMs = Date.parse(booking.startsAt);
+  const when = `${formatWallDay(startMs)} ${formatWallTime(startMs)}–${formatWallTime(Date.parse(booking.endsAt))}`;
+  const sentences = [BOARD_COPY.ending.ends(room, when, BOARD_COPY.ending.what[booking.kind])];
+  // Holds are named only from a date the board has read whole: a partial
+  // read could miss the 1st option and call the 2nd "1st".
+  const ladder = ladderRead ? ladderAfterExit(booking, contested) : null;
+  if (ladder?.kind === "promoted") sentences.push(BOARD_COPY.ending.promoted(ladder.titles));
+  else if (ladder?.kind === "free") sentences.push(BOARD_COPY.ending.free(ladder.titles));
+  else if (ladder === null && booking.kind === "hold" && booking.rank === 1) sentences.push(BOARD_COPY.ending.ladderUnread);
+  if (booking.kind !== "internal_block") sentences.push(BOARD_COPY.ending.nothingSent);
+  return sentences.join(" ");
 }
 
 const KIND_OPTIONS: readonly BookingKind[] = ["hold", "ink", "internal_block", "prospect"];
@@ -70,7 +102,7 @@ function drawerTitle(mode: DrawerMode): string {
 }
 
 export function BookingDrawer(props: BookingDrawerProps): ReactElement {
-  const { mode, rooms, venueId, role, onClose, onSaved } = props;
+  const { mode, rooms, venueId, role, onClose, onSaved, contested = NO_CONTESTED, ladderRead = true } = props;
   const [form, setForm] = useState<DrawerForm>(() => initialDrawerForm(mode));
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -80,6 +112,35 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   /** An event created by startPlan whose link has not landed yet — so a
    *  retry finishes the job instead of orphaning another plan. */
   const startedEventRef = useRef<string | null>(null);
+  // Ending a booking's claim on its date is confirmed first (roadmap N3);
+  // its failure is said beside it, not above the form's Save.
+  const [ending, setEnding] = useState<EndingTransition | null>(null);
+  const [endingNote, setEndingNote] = useState("");
+  const [endingError, setEndingError] = useState<string | null>(null);
+  const endingQuestionId = useId();
+  const endingQuestionRef = useRef<HTMLParagraphElement | null>(null);
+  const endingNoteRef = useRef<HTMLTextAreaElement | null>(null);
+  const transitionsRef = useRef<HTMLDivElement | null>(null);
+  /** The change whose button opened the confirmation "Keep it" closed. */
+  const endingReturnRef = useRef<EndingTransition | null>(null);
+  function keepBooking(): void {
+    endingReturnRef.current = ending;
+    setEnding(null);
+    setEndingError(null);
+  }
+  useEffect(() => {
+    if (ending === null) {
+      // Back on the button that asked, which the confirmation had replaced.
+      const target = endingReturnRef.current;
+      endingReturnRef.current = null;
+      if (target !== null) transitionsRef.current?.querySelector<HTMLButtonElement>(`[data-transition="${target}"]`)?.focus();
+      return;
+    }
+    // A precise pointer goes straight to the reason; on touch the keyboard
+    // would cover the question, so focus lands on the question instead.
+    const finePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: fine)").matches;
+    (finePointer ? endingNoteRef.current : endingQuestionRef.current)?.focus();
+  }, [ending]);
 
   // The same gate the API applies to diary writes (DIARY_WRITE_ROLES): the
   // hallkeeper reads the diary but never edits it, so a read-only role is
@@ -188,13 +249,45 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
 
   function runTransition(toState: BookingState): void {
     if (mode.kind !== "edit") return;
+    if (isEndingTransition(toState)) {
+      setSubmitError(null);
+      setEndingError(null);
+      setEnding(toState);
+      return;
+    }
     setSubmitError(null);
     setBusy(true);
     transitionBooking(mode.booking.id, toState)
-      .then((booking) => {
+      .then(({ booking }) => {
         onSaved(BOARD_COPY.drawer.transitioned(booking.title, BOARD_COPY.transitions[toState]));
       })
       .catch(failure)
+      .finally(() => {
+        setBusy(false);
+      });
+  }
+
+  function confirmEnding(): void {
+    if (mode.kind !== "edit" || ending === null) return;
+    const toState = ending;
+    const note = endingNote.trim();
+    setEndingError(null);
+    setBusy(true);
+    transitionBooking(mode.booking.id, toState, note.length === 0 ? undefined : note)
+      .then(({ booking, promotedToFirst }) => {
+        // The closing line says who now stands first: from the API's own
+        // resequence when a hold left. A confirmed booking leaving moves no
+        // hold's rank, so its 1st option is the one the board already had.
+        const done = BOARD_COPY.ending.done[toState](booking.title);
+        const ladder = ladderRead ? ladderAfterExit(mode.booking, contested) : null;
+        if (promotedToFirst.length > 0) onSaved(`${done} ${BOARD_COPY.ending.nowFirst(promotedToFirst.map((hold) => hold.title))}`);
+        else if (ladder?.kind === "free") onSaved(`${done} ${BOARD_COPY.ending.nowFree(ladder.titles)}`);
+        else onSaved(done);
+      })
+      .catch((caught: unknown) => {
+        // The reason typed so far stays; the failure is said beside it.
+        setEndingError(caught instanceof ApiError ? caught.message : BOARD_COPY.drawer.saveFailed);
+      })
       .finally(() => {
         setBusy(false);
       });
@@ -274,7 +367,10 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       event.preventDefault();
       // Same rule as the Cancel button: while a save is in flight the drawer
       // stays put, so its outcome always lands somewhere visible (review P2).
-      if (!busy) onClose();
+      if (busy) return;
+      // A confirmation open inside the drawer steps back first.
+      if (ending !== null) keepBooking();
+      else onClose();
     }
   }
 
@@ -554,21 +650,53 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         </div>
       ) : null}
 
-      {transitions.length > 0 ? (
+      {transitions.length > 0 && ending !== null && mode.kind === "edit" ? (
         <div className="diary-drawer-transitions">
+          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
+          <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId} data-tone={ending === "cancelled" ? "brick" : "amber"}>
+            <p className="diary-consequence-question" id={endingQuestionId} ref={endingQuestionRef} tabIndex={-1}>
+              {BOARD_COPY.ending.question[ending](mode.booking.title)}
+            </p>
+            <p className="diary-consequence-line">{endingConsequence(mode.booking, rooms, contested, ladderRead)}</p>
+            <label className="diary-field">
+              {BOARD_COPY.ending.noteLabel}
+              <textarea
+                ref={endingNoteRef}
+                value={endingNote}
+                maxLength={500}
+                rows={2}
+                disabled={busy}
+                onChange={(event) => { setEndingNote(event.target.value); }}
+              />
+            </label>
+            <div className="diary-drawer-actions">
+              <button type="button" className="diary-button is-primary" onClick={confirmEnding} disabled={busy} aria-busy={busy}>
+                {busy ? BOARD_COPY.ending.saving[ending] : BOARD_COPY.ending.confirm[ending]}
+              </button>
+              <button type="button" className="diary-button" onClick={keepBooking} disabled={busy}>
+                {BOARD_COPY.ending.keep}
+              </button>
+            </div>
+            {endingError !== null ? <p className="diary-drawer-error" role="alert">{endingError}</p> : null}
+          </div>
+        </div>
+      ) : transitions.length > 0 ? (
+        <div className="diary-drawer-transitions" ref={transitionsRef}>
           <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
           <div className="diary-drawer-actions">
             {transitions.map((target) => (
               <button
                 key={target}
                 type="button"
+                data-transition={target}
                 className={`diary-button${target === "ink" ? " is-primary" : ""}`}
                 onClick={() => {
                   runTransition(target);
                 }}
                 disabled={busy}
               >
-                {BOARD_COPY.transitions[target]}
+                {/* "…": this one asks first. */}
+                {BOARD_COPY.transitions[target]}{isEndingTransition(target) ? "…" : ""}
               </button>
             ))}
           </div>

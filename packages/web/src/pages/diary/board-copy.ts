@@ -16,6 +16,12 @@ function rangePhrase(title: string): string {
   return /^(Week|Fortnight) of /u.test(title) ? `the ${title.charAt(0).toLowerCase()}${title.slice(1)}` : title;
 }
 
+/** "A", "A and B", "A, B and C". */
+function listNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1] ?? ""}`;
+}
+
 /** 1 → "1st", 2 → "2nd", 11 → "11th": the option numbers in Blake's words. */
 export function ordinal(rank: number): string {
   const mod100 = rank % 100;
@@ -236,6 +242,44 @@ export const BOARD_COPY = {
       nextActionDueAt: "Next action due",
       notes: "Notes",
     } as const,
+  },
+
+  /** The lifecycle's confirmation (roadmap N3). A change that ends a
+   *  booking's claim on its date says, before it runs, what ends, who stands
+   *  first on the date afterwards and that nothing reaches the client. A
+   *  booking's history keeps the reason; hold reminders go only to staff. */
+  ending: {
+    question: {
+      released: (title: string): string => `Release ${title}?`,
+      expired: (title: string): string => `Mark ${title} expired?`,
+      lost: (title: string): string => `Mark ${title} lost?`,
+      cancelled: (title: string): string => `Cancel ${title}?`,
+    },
+    confirm: { released: "Release it", expired: "Mark expired", lost: "Mark lost", cancelled: "Cancel the booking" },
+    saving: { released: "Releasing…", expired: "Marking expired…", lost: "Marking lost…", cancelled: "Cancelling…" },
+    done: {
+      released: (title: string): string => `Released ${title}.`,
+      expired: (title: string): string => `Marked ${title} expired.`,
+      lost: (title: string): string => `Marked ${title} lost.`,
+      cancelled: (title: string): string => `Cancelled ${title}.`,
+    },
+    /** "Grand Hall, Thu 17 Sept 18:00–23:00: the confirmed booking ends." */
+    ends: (room: string, when: string, what: string): string => `${room}, ${when}: ${what} ends.`,
+    what: {
+      ink: "the confirmed booking",
+      hold: "the provisional hold",
+      prospect: "the interest",
+      internal_block: "the house block",
+    },
+    promoted: (titles: readonly string[]): string => `${listNames(titles)} ${titles.length === 1 ? "becomes" : "become"} 1st option.`,
+    free: (titles: readonly string[]): string => `${listNames(titles)}, 1st option, can then be confirmed.`,
+    /** A hold opened from another week: the board has not read its date. */
+    ladderUnread: "Any hold behind it on that date moves up.",
+    nothingSent: "Nothing is sent to the client.",
+    noteLabel: "Reason (optional, kept with this change)",
+    keep: "Keep it",
+    nowFirst: (titles: readonly string[]): string => `${listNames(titles)} ${titles.length === 1 ? "is" : "are"} now 1st option.`,
+    nowFree: (titles: readonly string[]): string => `${listNames(titles)}, 1st option, can now be confirmed.`,
   },
 
   transitions: {
