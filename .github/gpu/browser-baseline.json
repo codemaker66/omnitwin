@@ -312,6 +312,21 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The Enquiries desk tells the truth about a lead (T-635 N6): an enquiry from the venue's own pages that names no room is filed under the venue's first room, and the desk never names or pictures that room as the guest's choice. At 1440 by 900 a roomless walkthrough enquiry's row names no room and quotes the guest's words, and its panel reads Not chosen, with no photograph and a quiet From the walkthrough chip, while a planner enquiry beside it keeps its room and photograph; on a phone the chip stays beside the stage, inside the screen. The stage, source, facts and quote read at 12 px and 4.5:1.",
+      "sourceCommit": "fa7ed0e205b050b537c037c53e1ea2cdd8d8b682",
+      "sourceFile": "packages/web/e2e/enquiries-desk-truth.spec.ts",
+      "sourceFileGitBlobSha256": "6b8cc65e7bcd2faf6de1456f7ae4b6cbfdd54b9bbaf3cc984e66428d5c76f3b0",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "c108996eb526ad8627dd18cafe1181f8352c48e3752a8768dcee570b024acbcf",
+      "caseIds": [
+        "b67e2c2a64ecdcab9584-2cea25214bef25cb31ce",
+        "b67e2c2a64ecdcab9584-9267af156c6688670414"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These two cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces these identities, not this hash."
     }
   ],
   "cases": [
@@ -3446,6 +3461,28 @@
       "suitePath": [
         "editor.spec.ts",
         "Public Editor"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "b67e2c2a64ecdcab9584-9267af156c6688670414",
+      "file": "enquiries-desk-truth.spec.ts",
+      "title": "names and pictures no room a guest did not choose, quotes their words and says where they came from",
+      "suitePath": [
+        "enquiries-desk-truth.spec.ts",
+        "Enquiries desk, the truth about a lead"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "b67e2c2a64ecdcab9584-2cea25214bef25cb31ce",
+      "file": "enquiries-desk-truth.spec.ts",
+      "title": "keeps the source chip beside the stage on a phone, inside the screen",
+      "suitePath": [
+        "enquiries-desk-truth.spec.ts",
+        "Enquiries desk, the truth about a lead"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

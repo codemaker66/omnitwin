@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 375 cases. Four hosted CPU shards execute
-370 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 377 cases. Four hosted CPU shards execute
+372 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -46,7 +46,9 @@ the Day Board kept still and readable (its own spec, `day-board.spec.ts`),
 Mission Control keeping what waits within reach (`mission-control.spec.ts`),
 the handoff pack printed as a sheet (`ops-handoff-print.spec.ts`), each room's
 ready-by time and checked rows on the Day Board, and the event-day board's
-writes kept offline and sent once (`event-day-offline.spec.ts`).
+writes kept offline and sent once (`event-day-offline.spec.ts`). A fifteenth
+adds two: the Enquiries desk naming and picturing no room a guest did not
+choose, on a desktop and on a phone (`enquiries-desk-truth.spec.ts`).
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and
