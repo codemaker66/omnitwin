@@ -401,6 +401,11 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   - holds: ivory with a copper option numeral, and a copper decision age when 7 days or fewer remain;
   - prospects: dashed;
   - conflicts: a brick edge plus a word.
+
+  Revised on 27 September: done as written, and measured at 9.24:1 against 3:1. On the timeline a near
+  decision takes the client's line, a block too narrow for "1st option" shows its copper numeral ("=1st"
+  for a joint 1st) with the option in full in its label, and a review has its word ("Review") as a
+  conflict has "Conflict" ([session log](../../sessions/2026-09-27.md)).
 - Every label at least 12 px and 4.5:1 (`diary-board.css:136,144,169-178`).
 - Phase labels become visible (remove `font-size:0` at `:165`) and get a pattern as well as colour.
 
