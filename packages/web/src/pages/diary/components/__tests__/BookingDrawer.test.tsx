@@ -638,3 +638,66 @@ describe("BookingDrawer — making interest only provisional asks for the hold (
     expect(transitionBookingMock).not.toHaveBeenCalled();
   });
 });
+
+describe("BookingDrawer — the facts first, the next step in one place (roadmap N3)", () => {
+  const NOW = Date.parse("2026-09-16T09:00:00.000Z");
+
+  function renderAt(entry: CalendarBookingEntry): void {
+    render(
+      <BookingDrawer
+        mode={{ kind: "edit", booking: entry }}
+        rooms={ROOMS}
+        venueId={VENUE}
+        role="staff"
+        nowMs={NOW}
+        onClose={vi.fn<() => void>()}
+        onSaved={vi.fn<(message: string) => void>()}
+      />,
+    );
+  }
+
+  /** The summary's facts as read: each label with its value. */
+  function facts(): string[][] {
+    return Array.from(document.querySelectorAll(".diary-booking-facts dt")).map((term) =>
+      [term.textContent ?? "", term.nextElementSibling?.textContent ?? ""]);
+  }
+
+  it("says what a hold is, when and where it stands and when it was to be decided, before who owns it", () => {
+    renderAt(booking({
+      kind: "hold", state: "hold", rank: 2, title: "Guild dinner", startsAt: "2026-09-19T13:00:00.000Z",
+      endsAt: "2026-09-19T22:30:00.000Z", decisionAt: "2026-09-14T11:00:00.000Z", ownerName: "Elaine Gray",
+    }));
+    const summary = screen.getByLabelText("Booking summary");
+    expect(within(summary).getByText("Provisional · 2nd option")).toBeTruthy();
+    expect(facts()).toEqual([
+      ["When", "Sat 19 Sept · 14:00–23:30"],
+      ["Room", "Grand Hall"],
+      ["Decision was due", "Mon 14 Sept"],
+      ["Owner", "Elaine Gray"],
+      ["Client", "No client linked"],
+    ]);
+    expect(document.querySelector(".diary-booking-facts dd.is-overdue")?.textContent).toBe("Mon 14 Sept");
+  });
+
+  it("says a confirmed booking is confirmed, with no decision date, and names both days of one past midnight", () => {
+    renderAt(booking({ startsAt: "2026-09-18T21:00:00.000Z", endsAt: "2026-09-19T01:30:00.000Z" }));
+    expect(within(screen.getByLabelText("Booking summary")).getByText("Confirmed")).toBeTruthy();
+    const when = facts().find(([label]) => label === "When")?.[1] ?? "";
+    expect(when).toMatch(/18 Sept?.*22:00.*19 Sept?.*02:30/u);
+    expect(facts().map(([label]) => label)).toEqual(["When", "Room", "Owner", "Client"]);
+  });
+
+  it("puts the next step under the facts, before the form's first field", () => {
+    renderAt(booking({ kind: "hold", state: "hold", rank: 1, decisionAt: "2026-10-02T11:00:00.000Z" }));
+    // Document order, read from the drawer's own elements.
+    const order = Array.from(screen.getByRole("dialog").querySelectorAll("*"));
+    const at = (element: Element): number => order.indexOf(element);
+    const summary = at(screen.getByLabelText("Booking summary"));
+    const nextStep = at(screen.getByRole("heading", { name: "Next step" }));
+    const confirm = at(screen.getByRole("button", { name: "Confirm it" }));
+    const title = at(screen.getByLabelText("Title"));
+    expect(summary).toBeGreaterThanOrEqual(0);
+    expect([summary < nextStep, nextStep < confirm, confirm < title]).toEqual([true, true, true]);
+    expect(facts().find(([label]) => label === "Decide by")?.[1]).toBe("Fri 2 Oct");
+  });
+});

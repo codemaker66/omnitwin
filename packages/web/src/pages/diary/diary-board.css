@@ -36,6 +36,14 @@
    the reader guess which fact it was. */
 .diary-booking-facts { margin: 0; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 5px 14px; font-size: 13px; }
 .diary-booking-facts dt { color: var(--house-ink-3); font-size: 12px; align-self: baseline; }
+/* What the booking is, first (roadmap N3), with the legend's own swatch. */
+.diary-booking-detail .diary-booking-standing { display: flex; align-items: center; gap: 7px; margin: 0 0 11px; color: var(--house-ink-2); font-size: 13px; font-weight: 600; }
+.diary-booking-standing::before { content: ''; flex: none; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #aabda5; background: #cbd9c3; }
+.diary-booking-standing[data-kind="hold"]::before { background: #f3e7bb; border-color: #dca475; }
+.diary-booking-standing[data-kind="prospect"]::before { background: #fbfcf8; border-style: dashed; }
+.diary-booking-standing[data-kind="internal_block"]::before { background: #d7e2de; }
+.diary-booking-standing[data-kind="exited"]::before { background: transparent; border-color: #c9ccc2; }
+.diary-booking-facts dd.is-overdue { color: var(--house-copper-text); font-weight: 600; }
 .diary-booking-facts dd { margin: 0; color: var(--house-ink-1); overflow-wrap: anywhere; }
 .diary-page button:focus-visible, .diary-page a:focus-visible, .diary-page input:focus-visible, .diary-page select:focus-visible, .diary-page textarea:focus-visible, .diary-page [tabindex]:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .diary-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 22px; }
@@ -350,6 +358,8 @@ button.diary-gap-chip:hover .diary-gap-label { background: #edf2e6; color: var(-
 .diary-changeover-failed { display: grid; gap: 10px; justify-items: start; }
 .diary-changeover-link { align-self: flex-start; color: var(--diary-brass-bright); font-size: 13.5px; font-weight: 600; text-underline-offset: 3px; }
 .diary-drawer-transitions { border-top: 1px solid #dde4d2; padding-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; }
+/* Under the facts (roadmap N3), a rule below parts the next step from the form. */
+.diary-drawer-transitions { border-bottom: 1px solid #dde4d2; padding-bottom: 18px; }
 /* The lifecycle's confirmation (roadmap N3; design system 3.11 on the ivory
    register): paper with an edge and a 3 px rule in its tone, copper for a
    hold's end and brick for cancelling a confirmed booking. */

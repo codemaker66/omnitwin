@@ -12,7 +12,8 @@ import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
 import { ActivityStatus } from "../../../components/shared/Activity.js";
 import { DIARY_WRITE_ROLES, hasRole } from "../../../lib/role-capabilities.js";
-import { formatWallDay, formatWallTime, wallInputToMs } from "../lib/board-time.js";
+import { formatInlineDay, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../lib/board-time.js";
+import { bookingStateLabel, bookingTimeLabel } from "../lib/board-overview.js";
 import { isEndingTransition, ladderAfterExit, type EndingTransition } from "../lib/lifecycle-ending.js";
 import type { LadderPlace } from "../lib/ladder-place.js";
 
@@ -67,6 +68,16 @@ export interface BookingDrawerProps {
    *  the board has read it (roadmap N3). A new hold's option follows it
    *  until the booker sets one. */
   readonly ladderPlace?: (spaceId: string, startMs: number, endMs: number) => LadderPlace;
+  /** The page's clock, for the facts' days and a decision date's standing. */
+  readonly nowMs?: number;
+}
+
+/** When a booking stands, for its facts: "Sat 19 Sept · 14:00–23:30", or
+ *  both ends' days when it runs past midnight. */
+function bookingWhen(booking: CalendarBookingEntry, nowMs: number): string {
+  const startMs = Date.parse(booking.startsAt);
+  const sameDay = msToWallInput(startMs).slice(0, 10) === msToWallInput(Date.parse(booking.endsAt)).slice(0, 10);
+  return sameDay ? `${formatInlineDay(startMs, nowMs)} · ${bookingTimeLabel(booking)}` : bookingTimeLabel(booking);
 }
 
 /** The ladder where the form places a new hold; null while its times do
@@ -144,6 +155,10 @@ function drawerTitle(mode: DrawerMode): string {
 
 export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const { mode, rooms, venueId, role, onClose, onSaved, contested = NO_CONTESTED, ladderRead = true, ladderPlace } = props;
+  const nowMs = props.nowMs ?? Date.now();
+  // A live hold's decision date, when it has one: a fact of the summary.
+  const decisionMs = mode.kind === "edit" && mode.booking.kind === "hold" && mode.booking.status === "active"
+    && mode.booking.decisionAt !== null ? Date.parse(mode.booking.decisionAt) : null;
   // A new hold takes the next place on its ladder, and keeps following the
   // room and time it is placed in until the booker sets an option.
   const followsLadder = mode.kind !== "edit" ? ladderPlace : undefined;
@@ -518,9 +533,23 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           anyone navigating by label (T-619). */}
       {mode.kind === "edit" ? <section className="diary-booking-detail" aria-label={BOARD_COPY.drawer.summaryLabel}>
         <h3>{mode.booking.title}</h3>
+        {/* Facts first (roadmap N3): what the booking is, in the board's own
+            words, then when and where it stands and when it must be
+            decided, before who owns it. */}
+        <p className="diary-booking-standing" data-kind={mode.booking.status === "active" ? mode.booking.kind : "exited"}>
+          {bookingStateLabel(mode.booking)}
+        </p>
         {/* Who owns it and whose event it is, by name, with each absence
             said out loud rather than left as a gap (T-619). */}
         <dl className="diary-booking-facts">
+          <dt>{BOARD_COPY.drawer.whenLabel}</dt>
+          <dd>{bookingWhen(mode.booking, nowMs)}</dd>
+          <dt>{BOARD_COPY.drawer.roomLabel}</dt>
+          <dd>{rooms.find((room) => room.id === mode.booking.spaceId)?.name ?? BOARD_COPY.drawer.roomUnknown}</dd>
+          {decisionMs === null ? null : <>
+            <dt>{decisionMs < nowMs ? BOARD_COPY.drawer.decisionWasDueLabel : BOARD_COPY.drawer.decideByLabel}</dt>
+            <dd className={decisionMs < nowMs ? "is-overdue" : undefined}>{formatInlineDay(decisionMs, nowMs)}</dd>
+          </>}
           <dt>{BOARD_COPY.drawer.ownerLabel}</dt>
           <dd>{detailOrNull(mode.booking.ownerName) ?? BOARD_COPY.drawer.ownerUnassigned}</dd>
           <dt>{BOARD_COPY.drawer.clientLabel}</dt>
@@ -536,6 +565,139 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         </dl>
       </section> : null}
       {!canWriteDiary ? <p className="diary-drawer-note">Read-only booking details. A venue coordinator can make changes.</p> : null}
+
+      {/* The next step sits in one place, under the facts and above the
+          form (roadmap N3), so confirming or releasing never means
+          scrolling past every field first. */}
+      {transitions.length > 0 && promotion !== null && mode.kind === "edit" ? (
+        <div className="diary-drawer-transitions">
+          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
+          <div className="diary-consequence" role="group" aria-labelledby={promotionQuestionId} data-tone="sage">
+            <p className="diary-consequence-question" id={promotionQuestionId}>
+              {BOARD_COPY.promotion.question(mode.booking.title)}
+            </p>
+            <p className="diary-consequence-line">
+              {BOARD_COPY.promotion.needs}{mode.booking.ownerUserId === null ? ` ${BOARD_COPY.drawer.ownerNote}` : ""}
+            </p>
+            {ladderPlace === undefined ? null : (
+              <p className="diary-drawer-note">
+                {ladderNote(
+                  ladderPlace(mode.booking.spaceId, Date.parse(mode.booking.startsAt), Date.parse(mode.booking.endsAt)),
+                  rooms.find((room) => room.id === mode.booking.spaceId)?.name ?? BOARD_COPY.drawer.fields.room,
+                )}
+              </p>
+            )}
+            <div className="diary-field-row">
+              <label className="diary-field">
+                {BOARD_COPY.drawer.fields.rank}
+                <input
+                  ref={promotionFirstRef}
+                  type="number"
+                  min={1}
+                  value={promotion.rank}
+                  disabled={busy}
+                  aria-invalid={promotionErrors["rank"] !== undefined}
+                  onChange={(event) => { const rank = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, rank })); }}
+                />
+                {promotionErrors["rank"] !== undefined ? <span className="diary-field-error">{promotionErrors["rank"]}</span> : null}
+              </label>
+              <label className="diary-field">
+                {BOARD_COPY.drawer.fields.decisionAt}
+                <input
+                  type="datetime-local"
+                  value={promotion.decisionAt}
+                  disabled={busy}
+                  aria-invalid={promotionErrors["decisionAt"] !== undefined}
+                  onChange={(event) => { const decisionAt = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, decisionAt })); }}
+                />
+                {promotionErrors["decisionAt"] !== undefined ? <span className="diary-field-error">{promotionErrors["decisionAt"]}</span> : null}
+              </label>
+            </div>
+            <label className="diary-field">
+              {BOARD_COPY.drawer.fields.nextAction}
+              <input
+                type="text"
+                value={promotion.nextAction}
+                disabled={busy}
+                aria-invalid={promotionErrors["nextAction"] !== undefined}
+                onChange={(event) => { const nextAction = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, nextAction })); }}
+              />
+              {promotionErrors["nextAction"] !== undefined ? <span className="diary-field-error">{promotionErrors["nextAction"]}</span> : null}
+            </label>
+            <label className="diary-field">
+              {BOARD_COPY.drawer.fields.nextActionDueAt}
+              <input
+                type="datetime-local"
+                value={promotion.nextActionDueAt}
+                disabled={busy}
+                aria-invalid={promotionErrors["nextActionDueAt"] !== undefined}
+                onChange={(event) => { const nextActionDueAt = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, nextActionDueAt })); }}
+              />
+              {promotionErrors["nextActionDueAt"] !== undefined ? <span className="diary-field-error">{promotionErrors["nextActionDueAt"]}</span> : null}
+            </label>
+            <div className="diary-drawer-actions">
+              <button type="button" className="diary-button is-primary" onClick={confirmPromotion} disabled={busy} aria-busy={busy}>
+                {busy ? BOARD_COPY.promotion.saving : BOARD_COPY.promotion.confirm}
+              </button>
+              <button type="button" className="diary-button" onClick={keepAsInterest} disabled={busy}>
+                {BOARD_COPY.promotion.keep}
+              </button>
+            </div>
+            {promotionErrors["form"] !== undefined ? <p className="diary-drawer-error" role="alert">{promotionErrors["form"]}</p> : null}
+          </div>
+        </div>
+      ) : transitions.length > 0 && ending !== null && mode.kind === "edit" ? (
+        <div className="diary-drawer-transitions">
+          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
+          <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId} data-tone={ending === "cancelled" ? "brick" : "amber"}>
+            <p className="diary-consequence-question" id={endingQuestionId} ref={endingQuestionRef} tabIndex={-1}>
+              {BOARD_COPY.ending.question[ending](mode.booking.title)}
+            </p>
+            <p className="diary-consequence-line">{endingConsequence(mode.booking, rooms, contested, ladderRead)}</p>
+            <label className="diary-field">
+              {BOARD_COPY.ending.noteLabel}
+              <textarea
+                ref={endingNoteRef}
+                value={endingNote}
+                maxLength={500}
+                rows={2}
+                disabled={busy}
+                onChange={(event) => { setEndingNote(event.target.value); }}
+              />
+            </label>
+            <div className="diary-drawer-actions">
+              <button type="button" className="diary-button is-primary" onClick={confirmEnding} disabled={busy} aria-busy={busy}>
+                {busy ? BOARD_COPY.ending.saving[ending] : BOARD_COPY.ending.confirm[ending]}
+              </button>
+              <button type="button" className="diary-button" onClick={keepBooking} disabled={busy}>
+                {BOARD_COPY.ending.keep}
+              </button>
+            </div>
+            {endingError !== null ? <p className="diary-drawer-error" role="alert">{endingError}</p> : null}
+          </div>
+        </div>
+      ) : transitions.length > 0 ? (
+        <div className="diary-drawer-transitions" ref={transitionsRef}>
+          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
+          <div className="diary-drawer-actions">
+            {transitions.map((target) => (
+              <button
+                key={target}
+                type="button"
+                data-transition={target}
+                className={`diary-button${target === "ink" ? " is-primary" : ""}`}
+                onClick={() => {
+                  runTransition(target);
+                }}
+                disabled={busy}
+              >
+                {/* "…": this one asks first. */}
+                {BOARD_COPY.transitions[target]}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <form
         className="diary-drawer-form"
@@ -764,135 +926,6 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         </div>
       ) : null}
 
-      {transitions.length > 0 && promotion !== null && mode.kind === "edit" ? (
-        <div className="diary-drawer-transitions">
-          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
-          <div className="diary-consequence" role="group" aria-labelledby={promotionQuestionId} data-tone="sage">
-            <p className="diary-consequence-question" id={promotionQuestionId}>
-              {BOARD_COPY.promotion.question(mode.booking.title)}
-            </p>
-            <p className="diary-consequence-line">
-              {BOARD_COPY.promotion.needs}{mode.booking.ownerUserId === null ? ` ${BOARD_COPY.drawer.ownerNote}` : ""}
-            </p>
-            {ladderPlace === undefined ? null : (
-              <p className="diary-drawer-note">
-                {ladderNote(
-                  ladderPlace(mode.booking.spaceId, Date.parse(mode.booking.startsAt), Date.parse(mode.booking.endsAt)),
-                  rooms.find((room) => room.id === mode.booking.spaceId)?.name ?? BOARD_COPY.drawer.fields.room,
-                )}
-              </p>
-            )}
-            <div className="diary-field-row">
-              <label className="diary-field">
-                {BOARD_COPY.drawer.fields.rank}
-                <input
-                  ref={promotionFirstRef}
-                  type="number"
-                  min={1}
-                  value={promotion.rank}
-                  disabled={busy}
-                  aria-invalid={promotionErrors["rank"] !== undefined}
-                  onChange={(event) => { const rank = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, rank })); }}
-                />
-                {promotionErrors["rank"] !== undefined ? <span className="diary-field-error">{promotionErrors["rank"]}</span> : null}
-              </label>
-              <label className="diary-field">
-                {BOARD_COPY.drawer.fields.decisionAt}
-                <input
-                  type="datetime-local"
-                  value={promotion.decisionAt}
-                  disabled={busy}
-                  aria-invalid={promotionErrors["decisionAt"] !== undefined}
-                  onChange={(event) => { const decisionAt = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, decisionAt })); }}
-                />
-                {promotionErrors["decisionAt"] !== undefined ? <span className="diary-field-error">{promotionErrors["decisionAt"]}</span> : null}
-              </label>
-            </div>
-            <label className="diary-field">
-              {BOARD_COPY.drawer.fields.nextAction}
-              <input
-                type="text"
-                value={promotion.nextAction}
-                disabled={busy}
-                aria-invalid={promotionErrors["nextAction"] !== undefined}
-                onChange={(event) => { const nextAction = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, nextAction })); }}
-              />
-              {promotionErrors["nextAction"] !== undefined ? <span className="diary-field-error">{promotionErrors["nextAction"]}</span> : null}
-            </label>
-            <label className="diary-field">
-              {BOARD_COPY.drawer.fields.nextActionDueAt}
-              <input
-                type="datetime-local"
-                value={promotion.nextActionDueAt}
-                disabled={busy}
-                aria-invalid={promotionErrors["nextActionDueAt"] !== undefined}
-                onChange={(event) => { const nextActionDueAt = event.target.value; setPromotion((previous) => (previous === null ? previous : { ...previous, nextActionDueAt })); }}
-              />
-              {promotionErrors["nextActionDueAt"] !== undefined ? <span className="diary-field-error">{promotionErrors["nextActionDueAt"]}</span> : null}
-            </label>
-            <div className="diary-drawer-actions">
-              <button type="button" className="diary-button is-primary" onClick={confirmPromotion} disabled={busy} aria-busy={busy}>
-                {busy ? BOARD_COPY.promotion.saving : BOARD_COPY.promotion.confirm}
-              </button>
-              <button type="button" className="diary-button" onClick={keepAsInterest} disabled={busy}>
-                {BOARD_COPY.promotion.keep}
-              </button>
-            </div>
-            {promotionErrors["form"] !== undefined ? <p className="diary-drawer-error" role="alert">{promotionErrors["form"]}</p> : null}
-          </div>
-        </div>
-      ) : transitions.length > 0 && ending !== null && mode.kind === "edit" ? (
-        <div className="diary-drawer-transitions">
-          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
-          <div className="diary-consequence" role="group" aria-labelledby={endingQuestionId} data-tone={ending === "cancelled" ? "brick" : "amber"}>
-            <p className="diary-consequence-question" id={endingQuestionId} ref={endingQuestionRef} tabIndex={-1}>
-              {BOARD_COPY.ending.question[ending](mode.booking.title)}
-            </p>
-            <p className="diary-consequence-line">{endingConsequence(mode.booking, rooms, contested, ladderRead)}</p>
-            <label className="diary-field">
-              {BOARD_COPY.ending.noteLabel}
-              <textarea
-                ref={endingNoteRef}
-                value={endingNote}
-                maxLength={500}
-                rows={2}
-                disabled={busy}
-                onChange={(event) => { setEndingNote(event.target.value); }}
-              />
-            </label>
-            <div className="diary-drawer-actions">
-              <button type="button" className="diary-button is-primary" onClick={confirmEnding} disabled={busy} aria-busy={busy}>
-                {busy ? BOARD_COPY.ending.saving[ending] : BOARD_COPY.ending.confirm[ending]}
-              </button>
-              <button type="button" className="diary-button" onClick={keepBooking} disabled={busy}>
-                {BOARD_COPY.ending.keep}
-              </button>
-            </div>
-            {endingError !== null ? <p className="diary-drawer-error" role="alert">{endingError}</p> : null}
-          </div>
-        </div>
-      ) : transitions.length > 0 ? (
-        <div className="diary-drawer-transitions" ref={transitionsRef}>
-          <h3 className="diary-checks-title">{BOARD_COPY.drawer.transitionsTitle}</h3>
-          <div className="diary-drawer-actions">
-            {transitions.map((target) => (
-              <button
-                key={target}
-                type="button"
-                data-transition={target}
-                className={`diary-button${target === "ink" ? " is-primary" : ""}`}
-                onClick={() => {
-                  runTransition(target);
-                }}
-                disabled={busy}
-              >
-                {/* "…": this one asks first. */}
-                {BOARD_COPY.transitions[target]}{isEndingTransition(target) || (target === "hold" && mode.kind === "edit" && mode.booking.kind === "prospect") ? "…" : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
     </aside>
   );
 }

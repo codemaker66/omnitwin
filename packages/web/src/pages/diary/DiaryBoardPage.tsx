@@ -1236,6 +1236,7 @@ export function DiaryBoardPage(): ReactElement {
           key={drawer.nonce}
           mode={drawer.mode}
           rooms={rooms}
+          nowMs={nowMs}
           venueId={venueId}
           role={user?.role ?? ""}
           onClose={() => {

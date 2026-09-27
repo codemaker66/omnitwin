@@ -256,6 +256,11 @@ export const BOARD_COPY = {
     // The edit drawer's facts (T-619). Each absence is stated as an answer
     // rather than left as a blank line to interpret.
     summaryLabel: "Booking summary",
+    whenLabel: "When",
+    roomLabel: "Room",
+    roomUnknown: "Room not listed",
+    decideByLabel: "Decide by",
+    decisionWasDueLabel: "Decision was due",
     ownerLabel: "Owner",
     ownerUnassigned: "Nobody yet",
     clientLabel: "Client",
@@ -267,7 +272,8 @@ export const BOARD_COPY = {
     saved: (title: string): string => `Saved ${title}.`,
     converted: (title: string): string => `Held a provisional date for ${title}.`,
     transitioned: (title: string, action: string): string => `${action}: ${title}.`,
-    transitionsTitle: "Lifecycle",
+    /** The booking's next step, under its facts (roadmap N3). */
+    transitionsTitle: "Next step",
     planTitle: "Floor plan",
     planNone: "No floor plan. Start one with this booking's name and times.",
     planAttached: "Floor plan attached.",
