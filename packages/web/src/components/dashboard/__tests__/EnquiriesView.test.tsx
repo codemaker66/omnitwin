@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import type { Enquiry, EnquiryListQuery, EnquiryPage, EnquiryStageCounts } from "../../../api/enquiries.js";
 import type { Space, VenueDetail } from "../../../api/spaces.js";
 import { ApiError } from "../../../api/client.js";
@@ -852,6 +853,35 @@ describe("EnquiriesView decisions", () => {
     await waitFor(() => { expect(mocks.getVenue).toHaveBeenCalledWith("venue-1"); });
     expect(within(overview).queryByText(/Grand Hall/u)).toBeNull();
     expect(overview.querySelector(".enq-room-photo")).toBeNull();
+  });
+
+  // Roadmap N6: a date is held in the Diary itself, which opens on the week
+  // asked for with the hold's drawer open.
+  it("offers a hold in the Diary on the date asked for while the enquiry is still going", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(3, "approved"), preferredDate: "2027-05-14", eventType: "wedding" }], {}));
+    const first = render(<MemoryRouter><EnquiriesView canHoldDate /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+    const hold = await screen.findByRole("link", { name: "Hold a date in the Diary" });
+    expect(hold.getAttribute("href")).toBe("/diary?date=2027-05-14&enquiry=enquiry-3");
+    first.unmount();
+
+    for (const state of ["rejected", "withdrawn"]) {
+      mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(4, state), preferredDate: "2027-05-14" }], {}));
+      const closed = render(<MemoryRouter><EnquiriesView canHoldDate /></MemoryRouter>);
+      fireEvent.click(await screen.findByRole("button", { name: /^Client 4,/u }));
+      await screen.findByRole("region", { name: /Client 4/u });
+      expect(screen.queryByRole("link", { name: "Hold a date in the Diary" }), state).toBeNull();
+      closed.unmount();
+    }
+  });
+
+  it("offers no hold to someone who does not write the Diary", async () => {
+    mocks.listEnquiryPage.mockResolvedValue(page([{ ...enquiry(3), preferredDate: "2027-05-14" }], {}));
+    render(<MemoryRouter><EnquiriesView canCreateOpportunity /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: /^Client 3,/u }));
+    await screen.findByRole("region", { name: /Client 3/u });
+    expect(screen.getByTestId("create-opportunity-from-enquiry")).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Hold a date in the Diary" })).toBeNull();
   });
 });
 

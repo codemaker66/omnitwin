@@ -546,11 +546,11 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             >
               <option value="">What are you planning?</option>
               <option value="wedding">Wedding</option>
-              <option value="corporate">Corporate Event</option>
+              <option value="corporate">Corporate event</option>
               <option value="ceremony">Ceremony</option>
-              <option value="concert">Concert or Performance</option>
-              <option value="private">Private Celebration</option>
-              <option value="other">Something Else</option>
+              <option value="concert">Concert or performance</option>
+              <option value="private">Private celebration</option>
+              <option value="other">Something else</option>
             </select>
           </div>
 

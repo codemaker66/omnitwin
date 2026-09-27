@@ -248,6 +248,19 @@ describe("DayBoardPage", () => {
     expect(container.querySelector(".dayboard-free")?.textContent).toBe("Also free today: Saloon.");
   });
 
+  it("names a booking's occasion in words, and keeps one typed as it was typed (roadmap N6)", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([{ ...liveBooking(), eventType: "corporate" } as CalendarResponse["entries"][number]]));
+    const first = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
+    await screen.findByText("Chamber dinner");
+    expect(first.container.querySelector(".dayboard-slot-meta")?.textContent).toContain(" · Corporate event");
+    first.unmount();
+
+    getCalendarMock.mockResolvedValue(calendarFixture([{ ...liveBooking(), eventType: "Burns supper" } as CalendarResponse["entries"][number]]));
+    const typed = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
+    await screen.findByText("Chamber dinner");
+    expect(typed.container.querySelector(".dayboard-slot-meta")?.textContent).toContain(" · Burns supper");
+  });
+
   it("keeps a free room's lane when the room is chosen", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);

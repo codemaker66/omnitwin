@@ -10,6 +10,8 @@
 // provisional, an ink is confirmed, and a prospect is "Interest only".
 // ---------------------------------------------------------------------------
 
+import { occasionLabel } from "@omnitwin/types";
+
 /** "Week of Mon, 21 Sept 2026" → "the week of Mon, 21 Sept 2026", so a
  *  range title reads inside a sentence; a day's title stands as it is. */
 function rangePhrase(title: string): string {
@@ -430,10 +432,10 @@ export const BOARD_COPY = {
     more: (shown: number): string =>
       `Showing the ${String(shown)} newest open enquiries. Older ones are not listed here.`,
     convert: "Hold a date…",
-    /** "wedding · 120 guests · in 8 months": the lead is the enquiries
+    /** "Wedding · 120 guests · in 8 months": the lead is the enquiries
      *  desk's own ("today", "date has passed"), or `noDate`. */
     detail: (eventType: string | null, guests: number | null, when: string): string => {
-      const parts = [eventType ?? "event", guests === null ? null : `${String(guests)} guests`, when];
+      const parts = [occasionLabel(eventType), guests === null ? null : `${String(guests)} guests`, when];
       return parts.filter((part): part is string => part !== null).join(" · ");
     },
     noDate: "date to be confirmed",
@@ -441,6 +443,19 @@ export const BOARD_COPY = {
     openDate: { word: "Date", tbc: "TBC" },
     /** The date tile's name: pressing it shows that date on the board. */
     showDate: (spoken: string): string => `Show ${spoken} on the board`,
+  },
+
+  /** An enquiry the Enquiries desk sent here to hold a date for (roadmap N6).
+   *  Each refusal says that no date was held, and why. */
+  enquiryLink: {
+    opening: "Opening the enquiry…",
+    unread: "The enquiry could not be read, so no date was held.",
+    notFound: "That enquiry could not be found, so no date was held.",
+    otherVenue: (name: string): string => `${name}'s enquiry is for another venue, so no date was held here.`,
+    noDateAsked: (name: string): string => `${name} did not ask for a date, so there is nothing to hold.`,
+    closed: (name: string, state: string): string =>
+      `${name}'s enquiry was ${state === "rejected" ? "declined" : state === "withdrawn" ? "withdrawn" : "closed"}, so no date was held.`,
+    dismiss: "Dismiss",
   },
 
   confirmInk: {

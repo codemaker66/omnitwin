@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
+import type { ReactElement } from "react";
+import { ApiError } from "../../../api/client.js";
 import type { CalendarBookingEntry, CalendarEntry, CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -20,6 +22,7 @@ const {
   transitionBookingMock,
   convertEnquiryMock,
   listEnquiriesMock,
+  getEnquiryMock,
 } = vi.hoisted(() => ({
   getCalendarMock: vi.fn(),
   moveBookingMock: vi.fn(),
@@ -28,6 +31,7 @@ const {
   transitionBookingMock: vi.fn(),
   convertEnquiryMock: vi.fn(),
   listEnquiriesMock: vi.fn(),
+  getEnquiryMock: vi.fn(),
 }));
 
 vi.mock("../../../api/diary.js", () => ({
@@ -41,6 +45,7 @@ vi.mock("../../../api/diary.js", () => ({
 
 vi.mock("../../../api/enquiries.js", () => ({
   listEnquiries: listEnquiriesMock,
+  getEnquiry: getEnquiryMock,
 }));
 
 // The board now wears the app shell (DashboardLayout), which renders a Clerk
@@ -1482,10 +1487,10 @@ describe("DiaryBoardPage — enquiry slips carry their date (roadmap N3)", () =>
       renderPage();
       await screen.findByText("Law Society");
       expect(slips()).toEqual([
-        { name: "Fiona MacLeod", tile: "Sat 19 Sep", pressable: true, past: false, line: "wedding · 120 guests · in 3 days" },
-        { name: "Law Society", tile: "Sat 5 Jun \u201927", pressable: true, past: false, line: "dinner · 40 guests · in 8 months" },
-        { name: "Kerr anniversary", tile: "Date TBC", pressable: false, past: false, line: "dinner · date to be confirmed" },
-        { name: "Spring ceilidh", tile: "Sat 11 Apr", pressable: true, past: true, line: "dinner · 40 guests · date has passed" },
+        { name: "Fiona MacLeod", tile: "Sat 19 Sep", pressable: true, past: false, line: "Wedding · 120 guests · in 3 days" },
+        { name: "Law Society", tile: "Sat 5 Jun \u201927", pressable: true, past: false, line: "Dinner · 40 guests · in 8 months" },
+        { name: "Kerr anniversary", tile: "Date TBC", pressable: false, past: false, line: "Dinner · date to be confirmed" },
+        { name: "Spring ceilidh", tile: "Sat 11 Apr", pressable: true, past: true, line: "Dinner · 40 guests · date has passed" },
       ]);
       // The tile's words are read as one date, not as "Sat", "19", "Sep".
       expect(screen.getByRole("button", { name: "Show Saturday 19 September 2026 on the board" })).toBeDefined();
@@ -1630,5 +1635,95 @@ describe("DiaryBoardPage — the week on a phone (roadmap N3)", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("DiaryBoardPage — a date held from the Enquiries desk (roadmap N6)", () => {
+  const LINKED = "00000000-0000-4000-8000-0000000000f6";
+
+  function linkedEnquiry(fields: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      id: LINKED, venueId: VENUE, spaceId: GRAND_HALL, configurationId: null, userId: null,
+      guestEmail: "elaine@example.com", guestPhone: null, guestName: null, state: "approved",
+      name: "Elaine Fraser", email: "elaine@example.com", preferredDate: "2026-09-19", eventType: "corporate",
+      estimatedGuests: 80, message: null, source: "walkthrough", roomChosen: false,
+      createdAt: "2026-09-01T09:00:00.000Z", updatedAt: "2026-09-01T09:00:00.000Z",
+      ...fields,
+    };
+  }
+
+  function LocationProbe(): ReactElement {
+    return <output data-testid="diary-location">{useLocation().search}</output>;
+  }
+
+  function renderLinked(): ReturnType<typeof render> {
+    return render(
+      <MemoryRouter initialEntries={[`/diary?view=week&date=2026-09-19&enquiry=${LINKED}`]}>
+        <DiaryBoardPage />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+  }
+
+  function field(drawer: HTMLElement, label: string): HTMLInputElement | HTMLSelectElement {
+    const element = within(drawer).getByLabelText(label);
+    if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLSelectElement)) throw new Error(`${label} is not a field`);
+    return element;
+  }
+
+  it("opens the hold on the date asked for, asks for a room the guest did not choose, and forgets the link", async () => {
+    getEnquiryMock.mockResolvedValue(linkedEnquiry());
+    renderLinked();
+    const drawer = await screen.findByRole("dialog", { name: "Hold a date for this enquiry" });
+    expect(field(drawer, "Title").value).toBe("Elaine Fraser — Corporate event");
+    expect(field(drawer, "Room").value).toBe("");
+    expect(within(drawer).getByRole("option", { name: "Choose a room" })).toBeDefined();
+    expect(field(drawer, "Starts").value.startsWith("2026-09-19T")).toBe(true);
+    expect(getEnquiryMock).toHaveBeenCalledTimes(1);
+    expect(getEnquiryMock.mock.calls[0]?.[0]).toBe(LINKED);
+    // A reload or Back never opens a second hold.
+    expect(screen.getByTestId("diary-location").textContent).toBe("?view=week&date=2026-09-19");
+  });
+
+  it("keeps the room a guest chose, and meets a first visit with the hold rather than the welcome", async () => {
+    window.localStorage.removeItem(welcomeStorageKey(STAFF_USER_ID));
+    getEnquiryMock.mockResolvedValue(linkedEnquiry({ spaceId: SALOON, roomChosen: true, state: "submitted" }));
+    renderLinked();
+    const drawer = await screen.findByRole("dialog", { name: "Hold a date for this enquiry" });
+    expect(field(drawer, "Room").value).toBe(SALOON);
+    expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
+  });
+
+  it("says why it holds no date for a declined enquiry, and lets that be dismissed", async () => {
+    getEnquiryMock.mockResolvedValue(linkedEnquiry({ state: "rejected" }));
+    renderLinked();
+    const notice = await screen.findByText("Elaine Fraser's enquiry was declined, so no date was held.");
+    expect(screen.queryByRole("dialog", { name: "Hold a date for this enquiry" })).toBeNull();
+    expect(within(notice).queryByRole("button", { name: "Try again" })).toBeNull();
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText("Elaine Fraser's enquiry was declined, so no date was held.")).toBeNull();
+  });
+
+  it("says so when the enquiry cannot be found, or read, and reads it again on Try again", async () => {
+    getEnquiryMock.mockRejectedValueOnce(new ApiError(404, "Enquiry not found", "NOT_FOUND"));
+    const first = renderLinked();
+    const missing = await screen.findByText("That enquiry could not be found, so no date was held.");
+    expect(within(missing).queryByRole("button", { name: "Try again" })).toBeNull();
+    first.unmount();
+
+    getEnquiryMock.mockRejectedValueOnce(new TypeError("Failed to fetch")).mockResolvedValueOnce(linkedEnquiry());
+    renderLinked();
+    const unread = await screen.findByText("The enquiry could not be read, so no date was held.");
+    fireEvent.click(within(unread).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("dialog", { name: "Hold a date for this enquiry" })).toBeDefined();
+  });
+
+  it("holds nothing for someone who only reads the Diary", async () => {
+    setUser("hallkeeper");
+    renderLinked();
+    await screen.findByText("Grand Hall");
+    expect(getEnquiryMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Hold a date for this enquiry" })).toBeNull();
+    expect(screen.getByTestId("diary-location").textContent).toBe("?view=week&date=2026-09-19");
   });
 });

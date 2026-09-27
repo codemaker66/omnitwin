@@ -39,6 +39,17 @@ describe("ClientProfile enquiries", () => {
     expect(screen.queryByText("Grand Hall")).toBeNull();
   });
 
+  it("reads each enquiry's occasion as words, and one typed as it was typed", async () => {
+    mocks.getLeadProfile.mockResolvedValue(lead([
+      { id: "enquiry-1", state: "submitted", eventType: "corporate", preferredDate: null, spaceName: "Saloon", roomChosen: true, createdAt: "2026-09-26T09:00:00.000Z" },
+      { id: "enquiry-2", state: "approved", eventType: "Burns supper", preferredDate: null, spaceName: "Saloon", roomChosen: true, createdAt: "2026-09-20T09:00:00.000Z" },
+    ]));
+    render(<ClientProfile leadId="lead-1" onBack={vi.fn()} onViewEnquiry={vi.fn()} />);
+    expect(await screen.findByText("Corporate event")).toBeDefined();
+    expect(screen.getByText("Burns supper")).toBeDefined();
+    expect(screen.queryByText("corporate")).toBeNull();
+  });
+
   it("keeps the room an older API names, which says nothing of the choice", async () => {
     mocks.getLeadProfile.mockResolvedValue(lead([
       { id: "enquiry-3", state: "submitted", eventType: null, preferredDate: null, spaceName: "Grand Hall", createdAt: "2026-09-26T09:00:00.000Z" },

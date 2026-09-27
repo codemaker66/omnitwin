@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
-  EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
+  DIARY_WRITE_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
   ROTA_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
@@ -308,6 +308,8 @@ export function DashboardPage(): React.ReactElement {
             // so the button and the tab agree by construction.
             canCreateOpportunity={canOpenDashboardView("pipeline", userRole, userPlatformRole)}
             onOpenOpportunity={handleOpenOpportunity}
+            // The Diary's own write rule, so the link and the drawer agree.
+            canHoldDate={hasRole(DIARY_WRITE_ROLES, userRole)}
           />
         );
       case "pipeline":

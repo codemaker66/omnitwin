@@ -43,7 +43,8 @@ import { holdScrollWhileLifted, keepTouchesHoldable, type ScrollHold } from "./l
 import { useCalendar } from "./hooks/useCalendar.js";
 import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
-import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
+import { getEnquiry, listEnquiries, type Enquiry } from "../../api/enquiries.js";
+import { convertSourceOf, holdRefusal } from "./lib/enquiry-link.js";
 import { BoardGrid, type BoardCreate, type OpenGap } from "./components/BoardGrid.js";
 import { GapSheet } from "./components/GapSheet.js";
 import { BoardOverview } from "./components/BoardOverview.js";
@@ -117,6 +118,13 @@ function anchorFromParam(dateParam: string | null): number {
   }
   return Date.now();
 }
+
+/** An enquiry the desk linked here: being read, read and waiting for the
+ *  board's rooms, or refused with the reason said in the header. */
+type EnquiryLink =
+  | { readonly id: string; readonly status: "reading" }
+  | { readonly id: string; readonly status: "ready"; readonly enquiry: Enquiry }
+  | { readonly id: string; readonly status: "refused"; readonly message: string; readonly retry: boolean };
 
 interface ToastState {
   readonly key: number;
@@ -245,10 +253,14 @@ export function DiaryBoardPage(): ReactElement {
   // "greets again next visit", exactly as documented in lib/welcome.ts.
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const welcomeDismissedForRef = useRef<string | null>(null);
+  // Someone the Enquiries desk sent to hold a date is met by the hold's
+  // drawer, not the welcome, which waits for their next visit.
+  const arrivedForEnquiryRef = useRef(searchParams.get("enquiry") !== null);
   const userId = user?.id ?? null;
   useEffect(() => {
     if (userId === null || venueId === null) return;
     if (welcomeDismissedForRef.current === userId) return;
+    if (arrivedForEnquiryRef.current) return;
     if (shouldShowWelcome(userId)) setWelcomeOpen(true);
   }, [userId, venueId]);
   const dismissWelcome = useCallback(() => {
@@ -614,26 +626,69 @@ export function DiaryBoardPage(): ReactElement {
     openCreateOnDay(firstRoom.id, seededDayStartMs);
   }, [openCreateOnDay, rooms, seededDayStartMs]);
 
-  const openConvertDrawer = useCallback(
-    (enquiryId: string, drop?: { readonly spaceId: string; readonly startMs: number }) => {
-      const enquiry = openEnquiries.find((candidate) => candidate.id === enquiryId);
-      if (enquiry === undefined || user === null) return;
+  const openConvertFor = useCallback(
+    (enquiry: Enquiry, drop?: { readonly spaceId: string; readonly startMs: number }) => {
+      if (userId === null) return;
       openDrawer({
         kind: "convert",
-        enquiry: {
-          id: enquiry.id,
-          spaceId: enquiry.spaceId,
-          roomChosen: enquiry.roomChosen,
-          name: enquiry.name,
-          eventType: enquiry.eventType,
-          preferredDate: enquiry.preferredDate,
-        },
-        ownerUserId: user.id,
+        enquiry: convertSourceOf(enquiry),
+        ownerUserId: userId,
         ...(drop === undefined ? {} : { drop }),
       });
     },
-    [openDrawer, openEnquiries, user],
+    [openDrawer, userId],
   );
+  const openConvertDrawer = useCallback(
+    (enquiryId: string, drop?: { readonly spaceId: string; readonly startMs: number }) => {
+      const enquiry = openEnquiries.find((candidate) => candidate.id === enquiryId);
+      if (enquiry !== undefined) openConvertFor(enquiry, drop);
+    },
+    [openConvertFor, openEnquiries],
+  );
+
+  // An enquiry the Enquiries desk sent here to hold a date for (roadmap N6).
+  // The address forgets it at once, so a reload or Back never opens a second
+  // hold. The enquiry is read afresh, since the tray lists only the newest
+  // open ones, and its drawer opens once the board has its rooms.
+  const linkedEnquiryId = searchParams.get("enquiry");
+  const [enquiryLink, setEnquiryLink] = useState<EnquiryLink | null>(null);
+  useEffect(() => {
+    if (linkedEnquiryId === null || userId === null) return;
+    setEnquiryLink(writable ? { id: linkedEnquiryId, status: "reading" } : null);
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.delete("enquiry");
+      return next;
+    }, { replace: true });
+  }, [linkedEnquiryId, setSearchParams, userId, writable]);
+  const readingEnquiryId = enquiryLink?.status === "reading" ? enquiryLink.id : null;
+  useEffect(() => {
+    if (readingEnquiryId === null || venueId === null) return;
+    const controller = new AbortController();
+    getEnquiry(readingEnquiryId, controller.signal)
+      .then((enquiry) => {
+        if (controller.signal.aborted) return;
+        const refusal = holdRefusal(enquiry, venueId);
+        setEnquiryLink(refusal === null
+          ? { id: readingEnquiryId, status: "ready", enquiry }
+          : { id: readingEnquiryId, status: "refused", message: refusal, retry: false });
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+        const missing = caught instanceof ApiError && (caught.status === 404 || caught.status === 403);
+        setEnquiryLink({ id: readingEnquiryId, status: "refused", retry: !missing,
+          message: missing ? BOARD_COPY.enquiryLink.notFound : BOARD_COPY.enquiryLink.unread });
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [readingEnquiryId, venueId]);
+  const roomsKnown = shown !== null;
+  useEffect(() => {
+    if (enquiryLink?.status !== "ready" || !roomsKnown) return;
+    setEnquiryLink(null);
+    openConvertFor(enquiryLink.enquiry);
+  }, [enquiryLink, openConvertFor, roomsKnown]);
 
   // --- the finding palette (C1, Ctrl/Cmd-K) -------------------------------
   // The palette owns its query and matching: typing never re-renders the page.
@@ -1152,6 +1207,22 @@ export function DiaryBoardPage(): ReactElement {
             {rangePending ? <ActivityStatus>{BOARD_COPY.opening(rangeTitle(range))}</ActivityStatus> : null}
             {isRefreshing ? <ActivityStatus>{BOARD_COPY.refreshing}</ActivityStatus> : null}
             {pendingMoves > 0 ? <ActivityStatus>Saving booking moves…</ActivityStatus> : null}
+            {enquiryLink !== null && enquiryLink.status !== "refused"
+              ? <ActivityStatus>{BOARD_COPY.enquiryLink.opening}</ActivityStatus> : null}
+            {enquiryLink?.status === "refused" ? (
+              <p className="diary-status-notice" role="status">
+                {enquiryLink.message}
+                {enquiryLink.retry ? (
+                  <button type="button" className="diary-status-retry"
+                    onClick={() => { setEnquiryLink({ id: enquiryLink.id, status: "reading" }); }}>
+                    {BOARD_COPY.retry}
+                  </button>
+                ) : null}
+                <button type="button" className="diary-status-retry" onClick={() => { setEnquiryLink(null); }}>
+                  {BOARD_COPY.enquiryLink.dismiss}
+                </button>
+              </p>
+            ) : null}
             {refreshFailedAtMs !== null ? (
               <p className="diary-status-notice" role="status">
                 {BOARD_COPY.refreshFailed(formatWallTime(refreshFailedAtMs), readAtMs === null ? null : formatWallTime(readAtMs))}

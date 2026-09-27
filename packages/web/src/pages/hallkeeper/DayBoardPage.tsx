@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
-import type { HallkeeperSheetSummary } from "@omnitwin/types";
+import { occasionLabel, type HallkeeperSheetSummary } from "@omnitwin/types";
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { boardRange, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../diary/lib/board-time.js";
@@ -254,7 +254,7 @@ function SlotCard({ slot, room, timeZone, slotRequests: SlotRequests, stamped }:
       <h3 className="dayboard-slot-title">{slot.title}</h3>
       <p className="dayboard-slot-meta">
         <span className="dayboard-slot-state">{slot.stateLabel}</span>
-        {slot.eventType !== null ? <span> · {slot.eventType}</span> : null}
+        {occasionLabel(slot.eventType) !== null ? <span> · {occasionLabel(slot.eventType)}</span> : null}
       </p>
       <p className="dayboard-slot-meta">{slot.bookingLabel}{slot.guestCount !== null ? ` · ${String(slot.guestCount)} guests` : ""}</p>
       {slot.phases.length > 0 && <ol className="dayboard-phases" aria-label="Planned event phases">

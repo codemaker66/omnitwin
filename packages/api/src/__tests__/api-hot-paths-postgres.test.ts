@@ -710,6 +710,49 @@ describe.skipIf(target === undefined)("API hot paths through real routes and Pos
       expect(written?.count).toBe(1);
     });
 
+    it("holds an enquiry whose guest named no room only in a room someone chose, titled in words (roadmap N6)", async () => {
+      const a = await venue("roomless A");
+      const staff = await a.actor("staff");
+      const now = Date.now();
+      const [filedRoom, chosenRoom] = [a.rooms[0] ?? "", a.rooms[1] ?? ""];
+      const [roomless] = await db.insert(schema.enquiries).values({
+        venueId: a.venueId, spaceId: filedRoom, roomChosen: false, state: "approved", name: "Elaine Fraser",
+        email: "e@hot-paths.invalid", eventType: "corporate",
+      }).returning({ id: schema.enquiries.id });
+      const hold = (extra: Record<string, unknown>) => ({
+        enquiryId: roomless?.id, rank: 1,
+        startsAt: new Date(now + 30 * DAY).toISOString(), endsAt: new Date(now + 30 * DAY + 4 * HOUR).toISOString(),
+        decisionAt: new Date(now + 10 * DAY).toISOString(), ownerUserId: staff.id, nextAction: "Call the client.",
+        nextActionDueAt: new Date(now + 2 * DAY).toISOString(), ...extra,
+      });
+      const held = () => db.select({ spaceId: schema.bookings.spaceId, title: schema.bookings.title })
+        .from(schema.bookings).where(eq(schema.bookings.venueId, a.venueId));
+
+      // The room it is filed under is not the guest's choice, so a hold asks for one.
+      const refused = await server.inject({ method: "POST", url: "/bookings/from-enquiry", headers: bearer(staff), payload: hold({}) });
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(refused.json<{ code: string; error: string }>()).toMatchObject({
+        code: "ROOM_NOT_CHOSEN", error: "Choose a room for this hold. The guest did not choose one.",
+      });
+      expect(await held()).toEqual([]);
+
+      const converted = await server.inject({
+        method: "POST", url: "/bookings/from-enquiry", headers: bearer(staff), payload: hold({ spaceId: chosenRoom }),
+      });
+      expect(converted.statusCode, converted.body).toBe(201);
+      expect(await held()).toEqual([{ spaceId: chosenRoom, title: "Elaine Fraser — Corporate event" }]);
+
+      // A guest who chose a room keeps it when none is sent.
+      const [chosen] = await db.insert(schema.enquiries).values({
+        venueId: a.venueId, spaceId: chosenRoom, state: "submitted", name: "Ross MacLeod", email: "r@hot-paths.invalid",
+      }).returning({ id: schema.enquiries.id });
+      const kept = await server.inject({
+        method: "POST", url: "/bookings/from-enquiry", headers: bearer(staff), payload: hold({ enquiryId: chosen?.id }),
+      });
+      expect(kept.statusCode, kept.body).toBe(201);
+      expect(kept.json<{ data: { spaceId: string; title: string } }>().data).toMatchObject({ spaceId: chosenRoom, title: "Ross MacLeod" });
+    });
+
     it("makes interest only provisional only with a hold's details, the owner defaulting to whoever does it (roadmap N3)", async () => {
       const a = await venue("promotion A");
       const b = await venue("promotion B");

@@ -142,6 +142,10 @@ interface EnquiriesViewProps {
   /** Opens the pipeline on the deal Create opportunity made or found, so the
    *  press lands on it rather than on a notice that it exists. */
   readonly onOpenOpportunity?: (opportunityId: string) => void;
+  /** Whether this actor writes the Diary, and so may hold a date there for
+   *  an enquiry. A permission flag, so it defaults to false for the reason
+   *  canCreateOpportunity does. */
+  readonly canHoldDate?: boolean;
 }
 
 export function EnquiriesView({
@@ -149,6 +153,7 @@ export function EnquiriesView({
   onDetailClose,
   canCreateOpportunity = false,
   onOpenOpportunity,
+  canHoldDate = false,
 }: EnquiriesViewProps = {}): ReactElement {
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
@@ -634,6 +639,7 @@ export function EnquiriesView({
           canCreateOpportunity={canCreateOpportunity}
           creatingOpportunity={creatingOpportunity}
           opportunityFailure={opportunityFailure !== null && opportunityFailure.enquiryId === selected.id ? opportunityFailure.message : null}
+          canHoldDate={canHoldDate}
           navigation={{
             layout: wide ? "wide" : "single",
             backLabel,

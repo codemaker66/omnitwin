@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { occasionLabel } from "@omnitwin/types";
+import { Link } from "react-router-dom";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
 import type { Enquiry, StatusHistoryEntry } from "../../../api/enquiries.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
@@ -9,6 +10,7 @@ import { StageChip } from "./EnquiryStages.js";
 import { EnquiryNameText, enquiryName } from "./EnquiryLedger.js";
 import type { RoomPhoto } from "./enquiry-room-photo.js";
 import type { VenueRoom } from "./use-venue-rooms.js";
+import { canHoldDateFor, diaryHoldHref } from "../../../pages/diary/lib/enquiry-link.js";
 import {
   eventDateParts, eventLead, eventWeekday, relativeAge, requestKind, requestWords, sourceWords, stageLabel, stageTone, venueMoment,
   type RequestKind,
@@ -65,6 +67,8 @@ interface EnquiryPanelProps {
   readonly creatingOpportunity: boolean;
   /** Why Create opportunity failed, said beside it; null when it has not. */
   readonly opportunityFailure: string | null;
+  /** Only those who write the Diary are offered a hold there. */
+  readonly canHoldDate: boolean;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
   readonly onRequest: (to: TransitionTarget, withNote: boolean) => void;
@@ -177,7 +181,7 @@ export function EnquiryPanel(props: EnquiryPanelProps): ReactElement {
           <>
             <EnquiryTools enquiry={enquiry} canCreateOpportunity={props.canCreateOpportunity}
               creatingOpportunity={props.creatingOpportunity} opportunityFailure={props.opportunityFailure}
-              onCreateOpportunity={props.onCreateOpportunity} />
+              canHoldDate={props.canHoldDate} onCreateOpportunity={props.onCreateOpportunity} />
             <EnquiryDrafts enquiry={enquiry} />
           </>
         )}
@@ -501,17 +505,20 @@ function ConfirmStep({ enquiry, to, saving, failure, onConfirm, onCancel }: {
 // Tools, drafts, timeline
 // ---------------------------------------------------------------------------
 
-function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, opportunityFailure, onCreateOpportunity }: {
+function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, opportunityFailure, canHoldDate, onCreateOpportunity }: {
   readonly enquiry: Enquiry;
   readonly canCreateOpportunity: boolean;
   readonly creatingOpportunity: boolean;
   readonly opportunityFailure: string | null;
+  readonly canHoldDate: boolean;
   readonly onCreateOpportunity: () => void;
 }): ReactElement | null {
   // An approved enquiry offers the opportunity as its next step instead, and
   // only the commercial team is offered it at all.
   const offersOpportunity = canCreateOpportunity && enquiry.state !== "approved";
-  if (!offersOpportunity && enquiry.configurationId === null) return null;
+  // The Diary opens on the date asked for, with the hold's drawer open.
+  const offersHold = canHoldDate && canHoldDateFor(enquiry);
+  if (!offersOpportunity && !offersHold && enquiry.configurationId === null) return null;
   return (
     <section className="enq-section">
       <h3>Tools</h3>
@@ -529,6 +536,7 @@ function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, oppo
             Create opportunity
           </button>
         )}
+        {offersHold && <Link className="enq-quiet" to={diaryHoldHref(enquiry)}>Hold a date in the Diary</Link>}
       </div>
       {offersOpportunity && opportunityFailure !== null && <p className="enq-confirm__error" role="alert">{opportunityFailure}</p>}
     </section>

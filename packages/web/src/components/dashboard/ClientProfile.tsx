@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { occasionLabel } from "@omnitwin/types";
 import * as clientsApi from "../../api/clients.js";
 import type { ClientProfile as ClientProfileData, LeadProfile as LeadProfileData } from "../../api/clients.js";
 import { StatusBadge } from "../shared/StatusBadge.js";
@@ -129,7 +130,7 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
               <button key={e.id} type="button" style={{ ...cardStyle, cursor: "pointer" }} onClick={() => { onViewEnquiry(e.id); }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <StatusBadge status={e.state} />
-                  {e.eventType !== null && <span>{e.eventType}</span>}
+                  {occasionLabel(e.eventType) !== null && <span>{occasionLabel(e.eventType)}</span>}
                   {e.preferredDate !== null && <span style={{ color: "#999" }}>{e.preferredDate}</span>}
                 </div>
                 {/* The room a roomless enquiry is filed under is not the guest's choice. */}

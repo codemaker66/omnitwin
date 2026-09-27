@@ -5,6 +5,7 @@ import {
   CreateBookingSchema,
   TransitionBookingSchema,
   UpdateBookingSchema,
+  occasionLabel,
   type DiaryCommand,
 } from "@omnitwin/types";
 import { z } from "zod";
@@ -266,6 +267,14 @@ export async function bookingRoutes(
       return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
     }
 
+    // An enquiry whose guest named no room is only filed under one (roadmap
+    // N6), so its hold takes the room someone chose, never the filing room.
+    if (input.spaceId === undefined && !enquiry.roomChosen) {
+      return reply.status(400).send({
+        error: "Choose a room for this hold. The guest did not choose one.",
+        code: "ROOM_NOT_CHOSEN",
+      });
+    }
     const spaceId = input.spaceId ?? enquiry.spaceId;
     const [space] = await db
       .select({ id: spaces.id, venueId: spaces.venueId })
@@ -282,7 +291,8 @@ export async function bookingRoutes(
       return reply.status(OWNER_VENUE_MISMATCH.status).send({ error: OWNER_VENUE_MISMATCH.error, code: OWNER_VENUE_MISMATCH.code });
     }
 
-    const fallbackTitle = `${enquiry.name}${enquiry.eventType === null ? "" : ` — ${enquiry.eventType}`}`;
+    const occasion = occasionLabel(enquiry.eventType);
+    const fallbackTitle = `${enquiry.name}${occasion === null ? "" : ` — ${occasion}`}`;
     const title = input.title ?? fallbackTitle.slice(0, 200);
 
     try {
