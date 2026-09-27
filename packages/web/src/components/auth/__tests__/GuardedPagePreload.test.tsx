@@ -202,7 +202,10 @@ describe.each(GUARDED)("guarded route $path", (route) => {
 
     act(() => { authStore.getState().setUser(account(route.allowed)); });
     expect(await screen.findByRole("heading", { name: `${route.page} ready` })).toBeTruthy();
-    expect(probe.fetched).toEqual([route.page]);
+    // The page fetches once it is committed. Under the persistent staff shell
+    // that commit can come when the shell's code resolves, after this act, so
+    // the one fetch is waited for rather than assumed to have run already.
+    await vi.waitFor(() => { expect(probe.fetched).toEqual([route.page]); });
     // Preload and render shared one import.
     expect(probe.loaded).toEqual(["ClerkRouteProvider", route.page]);
   });
