@@ -323,6 +323,8 @@ Every item below must also meet this checklist. The acceptance criteria in 2.3�
 *Component kit v1* (detail in §4.1): StatusChip with the vocabulary map, ConsequenceConfirm, Notice and UndoToast (replacing `ToastContainer`), EmptyState, DateTile, the button family, Field, `lib/venue-time.ts` and `describeFailure`.
 
 *Cleanup:* delete `.vv-status-chip` (`global.css:145-169`).
+Done on 27 September, with the Activity capsule in Inter and the pricing page's cyan ring replaced; the grep
+gates below are held by `n1-grep-gates.test.ts` ([session log](../../sessions/2026-09-27.md)).
 
 **Acceptance**
 - A hover probe runs on 12 staff routes (`/dashboard?view=*`, `/diary`, `/hallkeeper/today`, `/ops/events/:id`, `/plan`). For every enabled `button` and `[role=button]`, computed `transform` and `filter` must be `none`. Today the probe finds `matrix(1.06…)` and `brightness(1.15)` (sweep `pipeline-card-hover-pop.png`).

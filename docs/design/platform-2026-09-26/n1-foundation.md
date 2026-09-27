@@ -78,10 +78,10 @@ Lane 1 moved the root colour scheme to `light`, so the Twin must declare its own
 | Radii, the two shadows, scrim, motion tokens | Done |
 | 4px spacing scale | Not yet |
 | `color-scheme` per register; ivory ground | Done |
-| Activity capsule in Inter | Not yet |
+| Activity capsule in Inter | Done on 27 September: the panel capsule is set in the house sans. |
 | Newsreader and Inter; literal Georgia replaced in the shell and shared states | Done for the shell and shared states: the wordmark, the shared state panel, the route arrival and notifications. The dashboard's views, inventory, onboarding and admin followed on 27 September. So did every other staff and client surface outside the planner: the hallkeeper pages, the client schedule, proposals, the supplier portal, sign-in and consent, the access gate and the internal tools. Playfair and Cormorant went with Georgia there; Cormorant had loaded only with the quiz, so proposals were really set in Georgia. Still to replace: the planner's chrome, with its redesign (question 4). Public marketing pages and the Trades House campaign keep their own voice (questions 11 and 15). |
 | Component kit v1 (StatusChip, ConsequenceConfirm, Notice, UndoToast, EmptyState, DateTile, buttons, Field, `venue-time`, `describeFailure`) | Not yet |
-| Delete `.vv-status-chip` | Not yet |
+| Delete `.vv-status-chip` | Done on 27 September. `n1-grep-gates.test.ts` keeps it, the cyan ring and a first-named Georgia outside the redesign voices from coming back. |
 | Acceptance: the hover probe on 12 staff routes, and sampled ring contrast | Not yet. The token pairings are asserted. |
 
 The dashboard header takes the ivory register (27 September). NotificationCenter moved onto `--reg-*` first, so nothing in it turns dark-on-dark: it is ink on the ivory menu, with the tone named beside each dot. See the [27 September log](../../sessions/2026-09-27.md).
