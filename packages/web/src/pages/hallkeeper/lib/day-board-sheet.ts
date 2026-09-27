@@ -1,4 +1,6 @@
+import type { HallkeeperSheetSummary } from "@omnitwin/types";
 import type { LinkedLayoutChoice } from "../../../lib/event-linked-layouts.js";
+import { formatWallTime } from "../../diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board → setup sheet corridor (Ship Friday gate line 20).
@@ -33,7 +35,14 @@ export type SlotSheetState =
   /** Attached to an event, but no layout for this room is linked. */
   | { readonly kind: "no-layout"; readonly message: string; readonly nextAction: string; readonly eventId: string }
   /** Exactly one layout — the common case; one tap reaches the sheet. */
-  | { readonly kind: "one"; readonly href: string; readonly label: string; readonly layoutName: string }
+  | {
+    readonly kind: "one";
+    readonly href: string;
+    readonly label: string;
+    readonly layoutName: string;
+    readonly configurationId: string;
+    readonly eventId: string;
+  }
   /** More than one layout for this room; the hallkeeper chooses. */
   | { readonly kind: "many"; readonly eventId: string; readonly choices: readonly SlotSheetChoice[] };
 
@@ -82,6 +91,8 @@ export function describeSlotSheet(input: SlotSheetInput): SlotSheetState {
       href: sheetHref(only.configurationId, eventId),
       label: "Open setup sheet",
       layoutName: only.name,
+      configurationId: only.configurationId,
+      eventId,
     };
   }
 
@@ -94,4 +105,21 @@ export function describeSlotSheet(input: SlotSheetInput): SlotSheetState {
       href: sheetHref(layout.configurationId, eventId),
     })),
   };
+}
+
+/**
+ * The line under a sheet's door: when setup must be done, on the venue's
+ * clock, and how far the checklist has got. "Ready by 16:00 · 12 of 43
+ * checked", "Ready by not set · All 43 checked", "… · Nothing placed yet".
+ */
+export function sheetProgressLine(summary: HallkeeperSheetSummary, timeZone: string): string {
+  const ready = summary.readyBy === null
+    ? "Ready by not set"
+    : `Ready by ${formatWallTime(Date.parse(summary.readyBy), timeZone)}`;
+  const checks = summary.total === 0
+    ? "Nothing placed yet"
+    : summary.checked === summary.total
+      ? `All ${String(summary.total)} checked`
+      : `${String(summary.checked)} of ${String(summary.total)} checked`;
+  return `${ready} · ${checks}`;
 }

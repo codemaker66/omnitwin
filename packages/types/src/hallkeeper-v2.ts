@@ -248,3 +248,29 @@ export const HallkeeperSheetV2Schema = z.object({
 });
 
 export type HallkeeperSheetV2 = z.infer<typeof HallkeeperSheetV2Schema>;
+
+// ---------------------------------------------------------------------------
+// HallkeeperSheetSummary — the Day Board's one line about a sheet
+//
+// "Ready by 16:00 · 12 of 43 checked" on each room's slot, counted by the
+// server from the sheet's own rows and the shared check marks, so the board
+// and the sheet can never disagree. Checks left from rows a re-save removed
+// are not counted, as the sheet does not count them.
+// ---------------------------------------------------------------------------
+
+export const HallkeeperSheetSummarySchema = z.object({
+  configId: z.string().uuid(),
+  /** When setup must be complete, or null when no changeover rule sets it. */
+  readyBy: z.string().datetime().nullable(),
+  /** When the event begins, or null when the sheet has no timing. */
+  eventStart: z.string().datetime().nullable(),
+  /** The sheet's rows. */
+  total: z.number().int().nonnegative(),
+  /** Of those rows, how many are checked. */
+  checked: z.number().int().nonnegative(),
+}).strict().refine((summary) => summary.checked <= summary.total, {
+  message: "A sheet cannot have more rows checked than it has.",
+  path: ["checked"],
+});
+
+export type HallkeeperSheetSummary = z.infer<typeof HallkeeperSheetSummarySchema>;

@@ -256,12 +256,33 @@ describe.skipIf(target === undefined)("supported internal review routes on dispo
     expect(pdf.rawPayload.subarray(0, 5).toString()).toBe("%PDF-");
   });
 
+  it("counts the approved sheet's rows and marks for the Day Board, whatever the live layout now holds", async () => {
+    const f = await approvedFixture();
+    const rows = f.frozen.phases.flatMap((phase) => phase.zones.flatMap((zone) => zone.rows));
+    const [first] = rows;
+    if (first === undefined) throw new Error("The approved fixture must have a row");
+    // One mark on the approved sheet's row, one left on a row it does not have.
+    await db.insert(schema.hallkeeperProgress).values([
+      { configId: f.configId, rowKey: first.key, checkedBy: f.userId },
+      { configId: f.configId, rowKey: "furniture|Centre|Removed trestle|0", checkedBy: f.userId },
+    ]);
+    const response = await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/summary?eventId=${f.eventId}`, headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ data: unknown }>().data).toEqual({
+      configId: f.configId,
+      readyBy: f.frozen.timing?.setupBy ?? null,
+      eventStart: f.frozen.timing?.eventStart ?? null,
+      total: rows.length,
+      checked: 1,
+    });
+  });
+
   it("preserves authentication and tenant denial ahead of unavailable approved evidence", async () => {
     const f = await approvedFixture();
     const other = await fixture();
     await db.update(schema.configurationSheetSnapshots).set({ payload: {} })
       .where(eq(schema.configurationSheetSnapshots.id, f.snapshot.id));
-    for (const suffix of ["v2", "sheet?download=true"]) {
+    for (const suffix of ["v2", "sheet?download=true", "summary"]) {
       expect((await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/${suffix}` })).statusCode).toBe(401);
       expect((await server.inject({ method: "GET", url: `/hallkeeper/${f.configId}/${suffix}`, headers: other.headers })).statusCode).toBe(403);
     }

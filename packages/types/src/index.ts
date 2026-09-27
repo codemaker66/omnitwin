@@ -1388,6 +1388,7 @@ export {
   SheetApprovalSchema,
   HallkeeperFloorPlanSchema,
   HallkeeperSheetV2Schema,
+  HallkeeperSheetSummarySchema,
   type Zone,
   type ManifestRowV2,
   type RowPosition,
@@ -1397,6 +1398,7 @@ export {
   type SheetApproval,
   type HallkeeperFloorPlan,
   type HallkeeperSheetV2,
+  type HallkeeperSheetSummary,
 } from "./hallkeeper-v2.js";
 
 export {

@@ -428,7 +428,17 @@
 /* The layout's name sits under the action, not beside it: at lane width the
    inline form broke "Open setup sheet" across two lines mid-phrase. */
 .dayboard-open-sheet { flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.35; }
-.dayboard-slot-sheet-layout { font-weight: 400; opacity: .75; font-size: 12px; }
+/* The layout's name in the dim ink rather than faded forest: 75% opacity
+   put it under 4.5:1 on the door's sunk ivory. */
+.dayboard-slot-sheet-layout { font-weight: 400; color: var(--hk-ink-dim, #575a4e); font-size: 12px; }
+/* How far the room's sheet has got: words first, then a thin bar that turns
+   sage when every row is checked. */
+.dayboard-slot-progress { display: grid; gap: 5px; margin: 0; color: var(--hk-ink-dim, #575a4e); font-size: 12.5px; line-height: 1.4; }
+.dayboard-slot-progress-words { align-items: center; display: inline-flex; gap: 5px; }
+.dayboard-slot-progress-bar { background: var(--hk-line, #e4dcd0); border-radius: 999px; display: block; height: 4px; max-width: 220px; overflow: hidden; }
+.dayboard-slot-progress-bar > span { background: var(--hk-forest, #385542); border-radius: inherit; display: block; height: 100%; }
+.dayboard-slot-progress.is-complete { color: var(--house-sage-text); font-weight: 600; }
+.dayboard-slot-progress.is-complete .dayboard-slot-progress-bar > span { background: var(--house-sage-dot); }
 .dayboard-slot-sheet-note { color: var(--hk-ink-faint, #726c61); font-size: 12.5px; line-height: 1.5; }
 .dayboard-sheet-choices { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
 /* Lane 9 owns what goes in here; the board only reserves the place. An

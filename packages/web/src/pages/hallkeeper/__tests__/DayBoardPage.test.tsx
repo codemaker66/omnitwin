@@ -14,9 +14,13 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 // the error/retry path — against a mocked calendar API.
 // ---------------------------------------------------------------------------
 
-const { getCalendarMock, liveUpdate, liveConnected, resolveLayoutsMock } = vi.hoisted(() => ({
+const { getCalendarMock, liveUpdate, liveConnected, resolveLayoutsMock, getSummaryMock } = vi.hoisted(() => ({
   getCalendarMock: vi.fn(), liveUpdate: { current: null as (() => void) | null },
-  liveConnected: { current: true }, resolveLayoutsMock: vi.fn(),
+  liveConnected: { current: true }, resolveLayoutsMock: vi.fn(), getSummaryMock: vi.fn(),
+}));
+
+vi.mock("../../../api/hallkeeper-summary.js", () => ({
+  getSheetSummary: getSummaryMock,
 }));
 
 vi.mock("../../../api/diary.js", () => ({
@@ -121,6 +125,9 @@ function renderBoard(): void {
 beforeEach(() => {
   getCalendarMock.mockReset();
   resolveLayoutsMock.mockReset();
+  // A summary that never arrives shows no line, which other cases expect.
+  getSummaryMock.mockReset();
+  getSummaryMock.mockReturnValue(new Promise(() => undefined));
   resolveLayoutsMock.mockResolvedValue({ eventName: "Chamber dinner", roomName: "Grand Hall", layouts: [], unavailableCount: 0 });
   liveUpdate.current = null;
   liveConnected.current = true;
@@ -359,6 +366,43 @@ describe("DayBoardPage", () => {
     const link = await screen.findByRole("link", { name: /Open setup sheet/u });
     expect(link.getAttribute("href")).toBe(`/hallkeeper/${CONFIG_ID}?eventId=${EVENT_ID}`);
     expect(resolveLayoutsMock).toHaveBeenCalledWith(expect.objectContaining({ eventId: EVENT_ID, spaceSlug: "grand-hall" }));
+  });
+
+  it("says under the sheet's door when setup must be done and how far it has got", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    resolveLayoutsMock.mockResolvedValue({
+      eventName: "Chamber dinner", roomName: "Grand Hall", unavailableCount: 0,
+      layouts: [{ configurationId: CONFIG_ID, name: "Banquet 120", spaceName: "Grand Hall" }],
+    });
+    // 15:00 UTC is 16:00 in Glasgow in June.
+    getSummaryMock.mockResolvedValue({
+      configId: CONFIG_ID, readyBy: "2026-06-12T15:00:00.000Z", eventStart: "2026-06-12T17:30:00.000Z", total: 43, checked: 12,
+    });
+    renderBoard();
+
+    expect(await screen.findByText("Ready by 16:00 · 12 of 43 checked")).toBeTruthy();
+    expect(getSummaryMock).toHaveBeenCalledWith(CONFIG_ID, EVENT_ID, expect.any(AbortSignal));
+  });
+
+  it("marks a finished sheet as all checked, and shows no line it could not read", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    resolveLayoutsMock.mockResolvedValue({
+      eventName: "Chamber dinner", roomName: "Grand Hall", unavailableCount: 0,
+      layouts: [{ configurationId: CONFIG_ID, name: "Banquet 120", spaceName: "Grand Hall" }],
+    });
+    getSummaryMock.mockResolvedValue({
+      configId: CONFIG_ID, readyBy: null, eventStart: "2026-06-12T17:30:00.000Z", total: 43, checked: 43,
+    });
+    renderBoard();
+    const line = await screen.findByText("Ready by not set · All 43 checked");
+    expect(line.closest(".dayboard-slot-progress")?.classList.contains("is-complete")).toBe(true);
+    cleanup();
+
+    getSummaryMock.mockRejectedValue(new Error("offline"));
+    renderBoard();
+    await screen.findByRole("link", { name: /Open setup sheet/u });
+    await waitFor(() => { expect(getSummaryMock).toHaveBeenCalledTimes(2); });
+    expect(screen.queryByText(/checked$/u)).toBeNull();
   });
 
   it("says why there is no sheet yet and what to do instead of rendering nothing", async () => {

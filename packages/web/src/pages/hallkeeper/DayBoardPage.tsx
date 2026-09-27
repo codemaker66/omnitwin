@@ -1,7 +1,9 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import type { HallkeeperSheetSummary } from "@omnitwin/types";
+import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { boardRange, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../diary/lib/board-time.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
@@ -10,7 +12,7 @@ import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
 import { DAY_BOARD_LEGEND, deriveDayBoard, type DayBoardSlot, type DayBoardState } from "./lib/day-board-state.js";
-import { describeSlotSheet, type SlotSheetState } from "./lib/day-board-sheet.js";
+import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
 import { useVenueTimezone } from "./lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../../components/hallkeeper/sheet-facts.js";
 import {
@@ -110,10 +112,69 @@ function useSlotSheet(eventId: string | null, roomSlug: string, roomName: string
   };
 }
 
-function SlotSheetLink({ eventId, roomSlug, roomName }: {
+const SUMMARY_REFRESH_MS = 60_000;
+
+/**
+ * A sheet's ready-by time and rows checked, read now and each minute while
+ * the board is in view. A failed read keeps the last line it had; before any
+ * read lands there is no line at all, rather than a guess.
+ */
+function useSheetSummary(configId: string, eventId: string | null): HallkeeperSheetSummary | null {
+  const key = `${configId}:${eventId ?? ""}`;
+  const [summary, setSummary] = useState<{ readonly key: string; readonly value: HallkeeperSheetSummary } | null>(null);
+  useEffect(() => {
+    let reading: AbortController | null = null;
+    const read = (): void => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      reading?.abort();
+      const current = new AbortController();
+      reading = current;
+      void getSheetSummary(configId, eventId, current.signal)
+        .then((value) => { if (!current.signal.aborted) setSummary({ key, value }); })
+        .catch(() => {
+          // Keep the last line; the next minute reads again.
+        });
+    };
+    read();
+    const timer = window.setInterval(read, SUMMARY_REFRESH_MS);
+    return () => {
+      window.clearInterval(timer);
+      reading?.abort();
+    };
+  }, [configId, eventId, key]);
+  return summary?.key === key ? summary.value : null;
+}
+
+/** Under the sheet's door: "Ready by 16:00 · 12 of 43 checked", with a thin
+ *  bar that turns sage when every row is checked. */
+function SheetProgress({ configId, eventId, timeZone }: {
+  readonly configId: string;
+  readonly eventId: string | null;
+  readonly timeZone: string;
+}): ReactElement | null {
+  const summary = useSheetSummary(configId, eventId);
+  if (summary === null) return null;
+  const complete = summary.total > 0 && summary.checked === summary.total;
+  return (
+    <p className={`dayboard-slot-progress${complete ? " is-complete" : ""}`}>
+      <span className="dayboard-slot-progress-words">
+        {complete && <Check size={14} aria-hidden="true" />}
+        {sheetProgressLine(summary, timeZone)}
+      </span>
+      {summary.total > 0 && (
+        <span className="dayboard-slot-progress-bar" aria-hidden="true">
+          <span style={{ width: `${String(Math.round(summary.checked / summary.total * 100))}%` }} />
+        </span>
+      )}
+    </p>
+  );
+}
+
+function SlotSheetLink({ eventId, roomSlug, roomName, timeZone }: {
   readonly eventId: string | null;
   readonly roomSlug: string;
   readonly roomName: string;
+  readonly timeZone: string;
 }): ReactElement {
   const result = useSlotSheet(eventId, roomSlug, roomName);
 
@@ -137,9 +198,12 @@ function SlotSheetLink({ eventId, roomSlug, roomName }: {
   return (
     <div className="dayboard-slot-sheet">
       {state.kind === "one" && (
-        <Link className="dayboard-open-sheet" to={state.href}>
-          {state.label}<span className="dayboard-slot-sheet-layout">{state.layoutName}</span>
-        </Link>
+        <>
+          <Link className="dayboard-open-sheet" to={state.href}>
+            {state.label}<span className="dayboard-slot-sheet-layout">{state.layoutName}</span>
+          </Link>
+          <SheetProgress configId={state.configurationId} eventId={state.eventId} timeZone={timeZone} />
+        </>
       )}
       {state.kind === "many" && (
         <>
@@ -148,6 +212,7 @@ function SlotSheetLink({ eventId, roomSlug, roomName }: {
             {state.choices.map((choice) => (
               <li key={choice.configurationId}>
                 <Link className="dayboard-open-sheet" to={choice.href}>{choice.name}</Link>
+                <SheetProgress configId={choice.configurationId} eventId={state.eventId} timeZone={timeZone} />
               </li>
             ))}
           </ul>
@@ -197,7 +262,7 @@ function SlotCard({ slot, room, timeZone, slotRequests: SlotRequests, stamped }:
           <strong>{phase.name}</strong><span>{formatWallTime(Date.parse(phase.startsAt), timeZone)} – {formatWallTime(Date.parse(phase.endsAt), timeZone)}</span>
         </li>)}
       </ol>}
-      <SlotSheetLink eventId={slot.eventId} roomSlug={room.slug} roomName={room.name} />
+      <SlotSheetLink eventId={slot.eventId} roomSlug={room.slug} roomName={room.name} timeZone={timeZone} />
       {slot.eventId !== null && <Link className="dayboard-open-event" to={`/ops/events/${slot.eventId}`}>Open event &amp; working documents →</Link>}
       {/* Lane 9's mount point. Reserved region, props only; the board never
           reads or writes request state. */}

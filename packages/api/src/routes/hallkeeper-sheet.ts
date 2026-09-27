@@ -12,6 +12,7 @@ import { authenticate } from "../middleware/auth.js";
 import type { JwtUser } from "../middleware/auth.js";
 import { canAccessResource } from "../utils/query.js";
 import { resolveProgressMutation, checkedStateAfter } from "../lib/hallkeeper-progress.js";
+import { summarizeSheet } from "../lib/hallkeeper-summary.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper sheet routes — v2 end-to-end
@@ -19,6 +20,7 @@ import { resolveProgressMutation, checkedStateAfter } from "../lib/hallkeeper-pr
 // Endpoints (all authenticated):
 //   GET   /hallkeeper/:configId/sheet     → portrait A4 PDF
 //   GET   /hallkeeper/:configId/v2        → JSON HallkeeperSheetV2
+//   GET   /hallkeeper/:configId/summary   → ready-by time and rows checked
 //   GET   /hallkeeper/:configId/progress  → checked row keys
 //   PATCH /hallkeeper/:configId/progress  → set or toggle a row's check state
 //
@@ -208,6 +210,44 @@ export async function hallkeeperSheetRoutes(
     }
 
     return { data: result.payload };
+  });
+
+  // GET /hallkeeper/:configId/summary — the Day Board's line about a sheet:
+  // when setup must be done and how many rows are checked, counted from the
+  // same sheet the v2 route serves and behind the same gates.
+  server.get("/:configId/summary", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = ConfigIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
+    }
+
+    const gate = await requireConfigAccess(db, params.data.configId, request.user);
+    if (!gate.ok) {
+      return reply.status(gate.status).send({ error: gate.error, code: gate.code });
+    }
+
+    const baseUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
+    let result;
+    try {
+      result = await assembleSheetDataV2(db, params.data.configId, baseUrl, requestedEventId(request.query));
+    } catch (error) {
+      if (!(error instanceof ApprovedSnapshotUnavailableError)) throw error;
+      return reply.status(503).header("Cache-Control", "private, no-store")
+        .send({ error: error.message, code: error.code });
+    }
+    if (result === null) {
+      return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
+    }
+
+    if (!canAccessResource(request.user, result.authPivot.configUserId, result.authPivot.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    const marks = await db.select({ rowKey: hallkeeperProgress.rowKey })
+      .from(hallkeeperProgress)
+      .where(eq(hallkeeperProgress.configId, params.data.configId));
+
+    return { data: summarizeSheet(params.data.configId, result.payload, marks.map((mark) => mark.rowKey)) };
   });
 
   // -------------------------------------------------------------------------

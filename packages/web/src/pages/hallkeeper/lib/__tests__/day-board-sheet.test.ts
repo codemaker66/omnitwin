@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeSlotSheet, sheetHref } from "../day-board-sheet.js";
+import { describeSlotSheet, sheetHref, sheetProgressLine } from "../day-board-sheet.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board → setup sheet corridor (Ship Friday gate line 20).
@@ -61,6 +61,8 @@ describe("describeSlotSheet", () => {
     expect(state.href).toBe(`/hallkeeper/${CONFIG_A}?eventId=${EVENT}`);
     expect(state.layoutName).toBe("Banquet 120");
     expect(state.label).toBe("Open setup sheet");
+    expect(state.configurationId).toBe(CONFIG_A);
+    expect(state.eventId).toBe(EVENT);
   });
 
   it("offers the choice rather than guessing when a room has several layouts", () => {
@@ -75,5 +77,20 @@ describe("describeSlotSheet", () => {
 
   it("carries the event on the sheet link so the sheet shows the right running order", () => {
     expect(sheetHref(CONFIG_A, EVENT)).toBe(`/hallkeeper/${CONFIG_A}?eventId=${EVENT}`);
+  });
+});
+
+describe("sheetProgressLine", () => {
+  const summary = { configId: CONFIG_A, readyBy: "2026-12-12T15:00:00.000Z", eventStart: "2026-12-12T18:00:00.000Z", total: 43, checked: 12 };
+
+  it("gives the ready-by time on the venue's clock and the rows checked", () => {
+    expect(sheetProgressLine(summary, "Europe/London")).toBe("Ready by 15:00 · 12 of 43 checked");
+    expect(sheetProgressLine({ ...summary, readyBy: "2026-06-12T15:00:00.000Z" }, "Europe/London")).toBe("Ready by 16:00 · 12 of 43 checked");
+  });
+
+  it("says when no rule sets the time, when every row is checked, and when nothing is placed", () => {
+    expect(sheetProgressLine({ ...summary, readyBy: null }, "Europe/London")).toBe("Ready by not set · 12 of 43 checked");
+    expect(sheetProgressLine({ ...summary, checked: 43 }, "Europe/London")).toBe("Ready by 15:00 · All 43 checked");
+    expect(sheetProgressLine({ ...summary, total: 0, checked: 0 }, "Europe/London")).toBe("Ready by 15:00 · Nothing placed yet");
   });
 });
