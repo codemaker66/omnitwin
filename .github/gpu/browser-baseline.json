@@ -172,6 +172,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Go to date (T-635 N3, finding dates): pressing g, typing a date as it was said and pressing Enter moves the board to the range holding it, marks the day, and answers for each room with each booking's own place on its ladder, its times and decision date, or Free; a weekday said with the date that is not its own is pointed out. The case also samples every label in the panel for 12 px and 4.5:1.",
+      "sourceCommit": "b847356d391966797d963336958a8874f6d89404",
+      "sourceFile": "packages/web/e2e/diary-timetable.spec.ts",
+      "sourceFileGitBlobSha256": "34236ea63ca79d9a8fb271480eeba1c9a6956b16ec465aeb12cdf46e23b8d912",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "75cd65c2d79b643a915f5d65c4ff1be4aa43529d9ceb55408e6fac3058bacdc7",
+      "caseIds": [
+        "7bffe49ce87053aabb53-6009b1633e255c3a44d8"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. This case was absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -4015,6 +4029,17 @@
       "id": "7bffe49ce87053aabb53-1976117654afc8f112b7",
       "file": "diary-timetable.spec.ts",
       "title": "every label on the board reads at 12 px or more and 4.5:1 or better",
+      "suitePath": [
+        "diary-timetable.spec.ts",
+        "Diary timetable"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "7bffe49ce87053aabb53-6009b1633e255c3a44d8",
+      "file": "diary-timetable.spec.ts",
+      "title": "goes to a date as it was said, and answers what each room holds",
       "suitePath": [
         "diary-timetable.spec.ts",
         "Diary timetable"
