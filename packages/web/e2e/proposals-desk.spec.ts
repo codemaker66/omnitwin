@@ -289,6 +289,17 @@ test.describe("Proposals desk", () => {
     // status rather than running past the edge.
     await expect(proposalRow(page, "Crawford wedding proposal")).toContainText("Version 1, changed yesterday");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    // And no row's status line passes its own row, here or at 320 px, where
+    // the page's gutter would hide a smaller overrun from the scroll check.
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      const past = await page.$$eval(".enq-row", (rows) => Math.max(0, ...rows.map((row) => {
+        const bound = row.getBoundingClientRect().right;
+        return Math.max(0, ...[...row.querySelectorAll(".enq-row__side, .enq-row__side *")].map((part) => part.getBoundingClientRect().right - bound));
+      })));
+      expect(past, `at ${String(width)} px`).toBeLessThanOrEqual(0.5);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
     await proposalRow(page, "Spring gala proposal").click();
     await expect(page.getByRole("heading", { level: 2, name: "Spring gala proposal" })).toBeFocused();
     await expect(page.getByRole("heading", { level: 1, name: "Proposals" })).toHaveCount(0);

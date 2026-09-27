@@ -65,6 +65,8 @@ describe("the opening sentence", () => {
     expect(sentence({ overdue: 0, today: 0 }, 2, null)).toBe("Nothing is due today or overdue. 2 deals are open.");
     // Whole pounds as the stage counts show them; pence only when there are some.
     expect(sentence({ overdue: 0, today: 0 }, 2, 1_234_550)).toBe("Nothing is due today or overdue. £12,345.50 is open across 2 deals.");
+    // Deals nobody has priced yet are counted, never summed as £0.
+    expect(sentence({ overdue: 0, today: 0 }, 3, 0)).toBe("Nothing is due today or overdue. 3 deals are open.");
   });
   it("says nothing rather than guess from an API that does not count", () => {
     expect(sentence(null)).toBeNull();
