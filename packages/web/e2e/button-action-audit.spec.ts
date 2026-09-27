@@ -94,6 +94,7 @@ interface DashboardMockState {
   readonly createdAdminSpaces: string[];
   readonly createdPricingRules: string[];
   readonly deletedPricingRules: string[];
+  readonly restoredPricingRules: string[];
   readonly createdPipelineOpportunities: string[];
   readonly enquiryOpportunityRequests: string[];
   readonly pipelineStageUpdates: string[];
@@ -971,6 +972,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   const createdAdminSpaces: string[] = [];
   const createdPricingRules: string[] = [];
   const deletedPricingRules: string[] = [];
+  const restoredPricingRules: string[] = [];
   const createdPipelineOpportunities: string[] = [];
   const enquiryOpportunityRequests: string[] = [];
   const pipelineStageUpdates: string[] = [];
@@ -1142,6 +1144,11 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   await page.route(`${API}/venues/${VENUE_ID}/pricing/${pricingRuleFixture().id}`, (route) => {
     deletedPricingRules.push(pricingRuleFixture().id);
     void route.fulfill({ status: 204 });
+  });
+  await page.route(`${API}/venues/${VENUE_ID}/pricing/${pricingRuleFixture().id}/restore`, (route) => {
+    const body = route.request().postDataJSON() as { readonly isActive?: boolean };
+    restoredPricingRules.push(`${pricingRuleFixture().id}|${String(body.isActive)}`);
+    void route.fulfill({ json: { data: pricingRuleFixture() } });
   });
   await page.route(`${API}/venues/${VENUE_ID}/spaces/${SPACE_ID}/loadouts`, (route) => {
     if (route.request().method() === "POST") {
@@ -1625,6 +1632,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
     createdAdminSpaces,
     createdPricingRules,
     deletedPricingRules,
+    restoredPricingRules,
     createdPipelineOpportunities,
     enquiryOpportunityRequests,
     pipelineStageUpdates,
@@ -2448,6 +2456,10 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByRole("button", { name: "Delete pricing rule Grand Hall Half Day" }).click();
     await expect.poll(() => mock.deletedPricingRules)
       .toContain("00000000-0000-4000-8000-000000004038");
+    // A delete only marks the rule, so it can be brought back.
+    await page.getByRole("button", { name: "Undo: bring back Grand Hall Half Day" }).click();
+    await expect.poll(() => mock.restoredPricingRules)
+      .toContain("00000000-0000-4000-8000-000000004038|true");
 
     await page.getByRole("button", { name: "Back to venues" }).click();
     await page.getByRole("button", { name: "New Venue" }).click();
@@ -2796,6 +2808,43 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByTestId("loadout-action-error")).toContainText("button audit caption failure");
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  test("a loadout caption fits its card, and saves once on Enter or on leaving the field", async ({ page }) => {
+    await seedAuthenticatedUser(page, "staff");
+    const mock = await mockDashboardRoutes(page);
+
+    await page.goto("/dashboard");
+    await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("button", { name: "Reference loadouts" }).click();
+    await page.getByRole("button", { name: "Open reference loadout Ceremony reference setup" }).click();
+    await expect(page.getByRole("heading", { name: "Ceremony reference setup" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Room entrance" }).click();
+    const field = page.getByLabel("Caption for setup-entrance.jpg");
+    // At the grid's narrowest column the field gives way, so Save stays
+    // inside the card rather than clipped by it.
+    const card = page.locator("[draggable='true']").filter({ has: field });
+    await card.evaluate((element) => { element.style.width = "200px"; });
+    const cardBox = await card.boundingBox();
+    const saveBox = await card.getByRole("button", { name: "Save" }).boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(saveBox).not.toBeNull();
+    if (cardBox !== null && saveBox !== null) {
+      expect(saveBox.x + saveBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+    }
+
+    await field.fill("Main doors remain clear");
+    await field.press("Enter");
+    await expect(page.getByRole("button", { name: "Main doors remain clear" })).toBeVisible();
+    // Leaving the field saves what was typed, as Enter does.
+    await page.getByRole("button", { name: "Main doors remain clear" }).click();
+    await page.getByLabel("Caption for setup-entrance.jpg").fill("Side doors clear");
+    await page.getByRole("heading", { name: "Ceremony reference setup" }).click();
+    await expect(page.getByRole("button", { name: "Side doors clear" })).toBeVisible();
+    // One save each: closing the field after Enter does not save again.
+    expect(mock.photoCaptions).toEqual(["Main doors remain clear", "Side doors clear"]);
   });
 
   test("reference-loadout detail edits, uploads, captions, reorders, and deletes through real controls", async ({ page }) => {

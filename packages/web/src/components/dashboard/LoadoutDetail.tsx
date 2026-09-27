@@ -390,10 +390,20 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                       aria-label={`Caption for ${p.filename}`}
                       value={captionValue}
                       onChange={(e) => { setCaptionValue(e.target.value); }}
-                      style={{ flex: 1, fontSize: 12, padding: 6, border: "1px solid rgba(201, 138, 91,0.28)", borderRadius: 6, color: "#fff7e8", background: "rgba(255,247,232,0.08)" }}
+                      // minWidth 0 lets the field shrink inside the card
+                      // instead of pushing Save out of it.
+                      style={{ flex: 1, minWidth: 0, fontSize: 12, padding: 6, border: "1px solid rgba(201, 138, 91,0.28)", borderRadius: 6, color: "#fff7e8", background: "rgba(255,247,232,0.08)" }}
                       onKeyDown={(e) => { if (e.key === "Enter") void saveCaption(p.id); if (e.key === "Escape") setEditingCaption(null); }}
+                      // Clicking away keeps what was typed: it saves, as
+                      // Enter does. Moving to this caption's Save button
+                      // leaves the save to that press.
+                      onBlur={(e) => {
+                        if (e.relatedTarget instanceof HTMLElement && e.relatedTarget.dataset["captionSave"] === p.id) return;
+                        if (captionValue === (p.caption ?? "")) { setEditingCaption(null); return; }
+                        void saveCaption(p.id);
+                      }}
                     />
-                    <button type="button" onClick={() => { void saveCaption(p.id); }}
+                    <button type="button" data-caption-save={p.id} onClick={() => { void saveCaption(p.id); }}
                       disabled={busyAction !== null}
                       style={{ ...linkButtonStyle, fontSize: 11 }}>{busyAction === `caption:${p.id}` && <ActivityIndicator size={16} />} {busyAction === `caption:${p.id}` ? "Saving…" : "Save"}</button>
                   </div>
@@ -452,7 +462,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       {showDelete && (
         <ConfirmModal
           title="Delete Loadout"
-          message={`Delete "${loadout.name}"? This cannot be undone.`}
+          message={`Delete "${loadout.name}"? It stops showing among this room's loadouts. Its photos are kept, not erased.`}
           confirmLabel="Delete"
           inFlight={busyAction === "delete-loadout"}
           errorMessage={actionError}

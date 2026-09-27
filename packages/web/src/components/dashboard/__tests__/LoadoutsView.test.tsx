@@ -280,3 +280,61 @@ describe("LoadoutDetail", () => {
     expect(error.textContent).toContain("caption write rejected");
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-635 N5, item 15: leaving a caption field keeps what was typed, and the
+// delete says what it does (the loadout is only marked deleted).
+// ---------------------------------------------------------------------------
+describe("LoadoutDetail keeps what is typed and says what a delete does", () => {
+  function renderDetail(): void {
+    render(
+      <LoadoutDetail
+        venueId={VENUE_ID}
+        spaceId={SPACE_ID}
+        loadoutId={LOADOUT_ID}
+        onBack={() => undefined}
+        onDeleted={() => undefined}
+      />,
+    );
+  }
+
+  it("saves a caption when the field loses focus", async () => {
+    renderDetail();
+    fireEvent.click(await screen.findByRole("button", { name: "Main entrance" }));
+    const field = screen.getByLabelText("Caption for main.jpg");
+    fireEvent.change(field, { target: { value: "Keep main route clear" } });
+    fireEvent.blur(field);
+    await waitFor(() => {
+      expect(mocks.updatePhoto).toHaveBeenCalledWith(LOADOUT_ID, PHOTO_ID, { caption: "Keep main route clear" });
+    });
+    expect(mocks.updatePhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes an unchanged caption without saving it", async () => {
+    renderDetail();
+    fireEvent.click(await screen.findByRole("button", { name: "Main entrance" }));
+    fireEvent.blur(screen.getByLabelText("Caption for main.jpg"));
+    expect(screen.queryByLabelText("Caption for main.jpg")).toBeNull();
+    expect(mocks.updatePhoto).not.toHaveBeenCalled();
+  });
+
+  it("leaves the save to the Save button when focus moves to it", async () => {
+    renderDetail();
+    fireEvent.click(await screen.findByRole("button", { name: "Main entrance" }));
+    const field = screen.getByLabelText("Caption for main.jpg");
+    fireEvent.change(field, { target: { value: "Keep main route clear" } });
+    const save = screen.getByRole("button", { name: "Save" });
+    fireEvent.blur(field, { relatedTarget: save });
+    expect(mocks.updatePhoto).not.toHaveBeenCalled();
+    fireEvent.click(save);
+    await waitFor(() => { expect(mocks.updatePhoto).toHaveBeenCalledTimes(1); });
+  });
+
+  it("says a deleted loadout's photos are kept, not that it cannot be undone", async () => {
+    renderDetail();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete Loadout" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete Loadout" });
+    expect(dialog.textContent).toContain("It stops showing among this room's loadouts. Its photos are kept, not erased.");
+    expect(dialog.textContent).not.toContain("cannot be undone");
+  });
+});
