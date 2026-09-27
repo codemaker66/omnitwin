@@ -766,26 +766,45 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 *The queue*
 - A ledger in the desk style: date tile, layout name, room · guests · planner, and a copper wait time.
+  Done on 27 September. The date tile shows the event's date by the setup sheet's own rule: the earliest
+  live booking holding the layout's room, for an event it serves. It says "Date TBC" where none does.
+  The pending list now carries each review's room, planner and event date, and the move that put it in
+  its stage.
 - Stage counts: To start / In review / With planner.
+  Done on 27 September. Each count is also its filter; the queue groups by stage, longest-waiting first.
 
 *The detail panel*
 - A forest panel beside the list, holding:
   - snapshot facts and a thumbnail (`getLatestSnapshot` and `safeParseSnapshot`, already exported);
+    Done: the version and when it was frozen, its largest items, and the frozen floor plan drawn small.
   - a claim line ("In review with Catherine since 10:14");
+    Done, in the venue's time, and "with you" for the reader's own.
   - presence text at 4.5:1 or better;
+    Done: in the panel's own ink, 9.32:1.
   - one primary action for each state, using the inline confirmations from N5.
+    Done: Start review, then Approve… (with Ask for changes… and Reject… beside it), and none while the
+    layout is with its planner. The note dialog is gone.
 - Keep the actions mounted while context re-reads.
+  Done: they stay in place and wait. The queue is also re-read quietly each minute and when the tab is
+  looked at, and an open review that has gone says where it went.
 
 *Everything else*
 - The timeline as sentences, in venue time.
+  Done on 27 September.
 - A `?review=` URL and j/k triage.
+  Done: the reviewer email's `?config=` still opens it. After a review changes stage or leaves the queue,
+  j carries on from its place.
 - Replace the baseline that relies on mocked transitions (`e2e/dashboard-state-visual-performance.spec.ts:408`) with real state-machine transitions.
+  Done: it and the other review specs take their gates from `VALID_CONFIGURATION_REVIEW_TRANSITIONS`, and
+  its baseline is re-recorded.
 
 **Acceptance**
 - A reviewer can approve without opening a new tab; the end-to-end test asserts no new page opens.
 - Presence text measures at least 4.5:1.
 - `?review=` restores the selection after a reload.
 - A full triage of three reviews runs with the keyboard only.
+
+All four are held by `e2e/reviews-desk.spec.ts` (27 September).
 
 #### X3. Planner chrome and placement flow (L)
 
