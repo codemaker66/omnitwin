@@ -220,6 +220,29 @@ export async function listProposals(status?: string): Promise<StaffProposal[]> {
   return api.get(`/proposals${params}`, z.array(StaffProposalSchema));
 }
 
+/** One page of GET /proposals, newest first, with how many there are in all.
+ *  `listProposals` keeps only the first page (the API's default 20), which
+ *  is how the staff list silently stopped at twenty. */
+export interface ProposalPage {
+  readonly rows: readonly StaffProposal[];
+  readonly total: number;
+}
+
+const ProposalPageSchema = z.object({
+  data: z.array(StaffProposalSchema),
+  // An API without paging metadata sent everything it had in one answer.
+  meta: z.object({ total: z.number().int().nonnegative() }).optional(),
+}).transform(({ data, meta }): ProposalPage => ({ rows: data, total: meta?.total ?? data.length }));
+
+export async function listProposalPage(
+  query: { readonly limit: number; readonly offset: number; readonly status?: string },
+  signal?: AbortSignal,
+): Promise<ProposalPage> {
+  const params = new URLSearchParams({ limit: String(query.limit), offset: String(query.offset) });
+  if (query.status !== undefined) params.set("status", query.status);
+  return api.getEnvelope(`/proposals?${params.toString()}`, ProposalPageSchema, signal);
+}
+
 export async function getProposal(id: string): Promise<StaffProposal> {
   return api.get(`/proposals/${id}`, StaffProposalSchema);
 }

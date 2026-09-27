@@ -4,6 +4,7 @@ import { ProposalsView } from "../ProposalsView.js";
 
 const mocks = vi.hoisted(() => ({
   listProposals: vi.fn(),
+  listProposalPage: vi.fn(),
   getProposal: vi.fn(),
   createProposal: vi.fn(),
   updateProposalTitle: vi.fn(),
@@ -85,6 +86,12 @@ function historyEntry(overrides: Record<string, unknown> = {}): Record<string, u
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.listProposals.mockResolvedValue([]);
+  // The view reads pages; each case says which proposals exist through
+  // listProposals, and this pages over them as the API does.
+  mocks.listProposalPage.mockImplementation(async (query: { readonly limit: number; readonly offset: number }) => {
+    const rows = (await mocks.listProposals()) as unknown[];
+    return { rows: rows.slice(query.offset, query.offset + query.limit), total: rows.length };
+  });
   mocks.listSpaces.mockResolvedValue([]);
   mocks.getProposalHistory.mockResolvedValue([]);
   mocks.getProposalComments.mockResolvedValue([]);
@@ -180,6 +187,7 @@ describe("ProposalsView", () => {
     render(<ProposalsView />);
     fireEvent.click(await screen.findByTestId("proposal-row-p1"));
     fireEvent.click(screen.getByTestId("withdraw-button"));
+    fireEvent.click(screen.getByTestId("withdraw-confirm-button"));
     await waitFor(() => { expect(mocks.getProposal).toHaveBeenCalledWith("p1"); });
     await waitFor(() => { expect(screen.getByTestId<HTMLButtonElement>("proposal-row-p2").disabled).toBe(false); });
     fireEvent.click(screen.getByTestId("proposal-row-p2"));
@@ -286,6 +294,16 @@ describe("ProposalsView", () => {
       expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1");
     });
     expect(await screen.findByTestId("share-link")).toBeTruthy();
+    // Nothing is emailed; the page says so where the link appears.
+    expect(screen.getByTestId("share-link-note").textContent).toBe("Not emailed. Copy it into your message to the client.");
+  });
+
+  it("says before a draft's first link that making it marks the proposal Sent", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal({ currentVersion: 1 })]);
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+    expect((await screen.findByTestId("send-consequence")).textContent)
+      .toBe("Making a link marks this proposal Sent. Nothing is emailed; you send the link.");
   });
 
   it("loads client comments and posts a claim-guarded venue-team reply", async () => {
@@ -562,5 +580,133 @@ describe("ProposalsView", () => {
     await screen.findByTestId("composer-save");
     expect(screen.queryByTestId("capacity-space")).toBeNull();
     expect(screen.queryByTestId("capacity-result")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-635 N5, item 10: the list silently stopped at the API's first page of
+// twenty; Withdraw ended the client's link in one click; the pills put white
+// text on light fills.
+// ---------------------------------------------------------------------------
+describe("ProposalsView says what it holds and what an action will do", () => {
+  function many(count: number): Record<string, unknown>[] {
+    return Array.from({ length: count }, (_unused, index) => draftProposal({
+      id: `p${String(index + 1)}`, title: `Proposal ${String(index + 1)}`,
+    }));
+  }
+
+  it("shows how many of the proposals it holds, and fetches the rest", async () => {
+    mocks.listProposals.mockResolvedValue(many(60));
+    render(<ProposalsView />);
+    await screen.findByTestId("proposal-row-p50");
+    expect(screen.queryByTestId("proposal-row-p51")).toBeNull();
+    expect(screen.getByTestId("proposals-more").textContent).toContain("The newest 50 of 60.");
+    expect(mocks.listProposalPage).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show 10 more" }));
+    expect(await screen.findByTestId("proposal-row-p60")).toBeTruthy();
+    expect(mocks.listProposalPage).toHaveBeenLastCalledWith({ limit: 50, offset: 50 });
+    expect(screen.queryByTestId("proposals-more")).toBeNull();
+  });
+
+  it("keeps what it shows when the next page fails, and says so", async () => {
+    mocks.listProposals.mockResolvedValue(many(55));
+    render(<ProposalsView />);
+    await screen.findByTestId("proposal-row-p50");
+    mocks.listProposalPage.mockRejectedValueOnce(new Error("offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Show 5 more" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't load more proposals. Check the connection and try again.");
+    expect(screen.getByTestId("proposal-row-p50")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show 5 more" })).toBeTruthy();
+  });
+
+  // The first proposal is sent, so withdrawing it refreshes the list while
+  // a page may still be on its way.
+  function manyWithSentFirst(count: number): Record<string, unknown>[] {
+    return many(count).map((row, index) => index === 0 ? { ...row, status: "sent", currentVersion: 1 } : row);
+  }
+
+  async function withdrawFirst(): Promise<void> {
+    fireEvent.click(screen.getByTestId("withdraw-button"));
+    fireEvent.click(screen.getByTestId("withdraw-confirm-button"));
+    await waitFor(() => { expect(mocks.transitionProposal).toHaveBeenCalledWith("p1", "withdrawn"); });
+  }
+
+  it("does not offer the next page while the list is refreshing", async () => {
+    const rows = manyWithSentFirst(55);
+    mocks.listProposals.mockResolvedValue(rows);
+    mocks.transitionProposal.mockResolvedValue({ ...rows[0], status: "withdrawn" });
+    mocks.getProposal.mockResolvedValue({ ...rows[0], status: "withdrawn" });
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+    let releaseRefresh: (page: unknown) => void = () => undefined;
+    const refresh = new Promise((resolve) => { releaseRefresh = resolve; });
+    mocks.listProposalPage.mockImplementationOnce(() => refresh);
+
+    await withdrawFirst();
+    await screen.findByText("Refreshing proposals…");
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Show 5 more" }).disabled).toBe(true);
+
+    await act(async () => { releaseRefresh({ rows: rows.slice(0, 50), total: 55 }); await refresh; });
+    expect(screen.queryByText("Refreshing proposals…")).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Show 5 more" }).disabled).toBe(false);
+  });
+
+  it("lets a refresh replace a next page still on its way, leaving no working state behind", async () => {
+    const rows = manyWithSentFirst(55);
+    mocks.listProposals.mockResolvedValue(rows);
+    mocks.transitionProposal.mockResolvedValue({ ...rows[0], status: "withdrawn" });
+    mocks.getProposal.mockResolvedValue({ ...rows[0], status: "withdrawn" });
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+    let releasePage: (page: unknown) => void = () => undefined;
+    const nextPage = new Promise((resolve) => { releasePage = resolve; });
+    mocks.listProposalPage.mockImplementationOnce(() => nextPage);
+    fireEvent.click(screen.getByRole("button", { name: "Show 5 more" }));
+    expect(screen.getByText("Loading more proposals…")).toBeTruthy();
+
+    await withdrawFirst();
+    await waitFor(() => { expect(screen.queryByText("Refreshing proposals…")).toBeNull(); });
+    expect(screen.queryByText("Loading more proposals…")).toBeNull();
+    expect(screen.getByRole("button", { name: "Show 5 more" })).toBeTruthy();
+
+    // The dropped page landing late changes nothing.
+    await act(async () => { releasePage({ rows: rows.slice(50), total: 55 }); await nextPage; });
+    expect(screen.queryByTestId("proposal-row-p51")).toBeNull();
+    expect(screen.getByTestId("proposals-more").textContent).toContain("The newest 50 of 55.");
+  });
+
+  it("asks before withdrawing, naming what it ends", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal({ status: "sent", currentVersion: 1 })]);
+    mocks.transitionProposal.mockResolvedValue(draftProposal({ status: "withdrawn" }));
+    mocks.getProposal.mockResolvedValue(draftProposal({ status: "withdrawn" }));
+    render(<ProposalsView />);
+    await selectFirstProposal("p1");
+
+    fireEvent.click(screen.getByTestId("withdraw-button"));
+    expect(screen.getByTestId("withdraw-confirm").textContent).toContain("Withdraw this proposal? The client's link will stop working.");
+    expect(mocks.transitionProposal).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(screen.queryByTestId("withdraw-confirm")).toBeNull();
+    expect(mocks.transitionProposal).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("withdraw-button"));
+    fireEvent.click(screen.getByTestId("withdraw-confirm-button"));
+    await waitFor(() => { expect(mocks.transitionProposal).toHaveBeenCalledWith("p1", "withdrawn"); });
+  });
+
+  it("gives each status pill a text colour its fill can carry", async () => {
+    mocks.listProposals.mockResolvedValue([
+      draftProposal({ id: "p1", status: "sent" }),
+      draftProposal({ id: "p2", status: "changes_requested" }),
+      draftProposal({ id: "p3", status: "withdrawn" }),
+    ]);
+    render(<ProposalsView />);
+    await screen.findByTestId("proposal-row-p3");
+    for (const status of ["sent", "changes_requested", "withdrawn"]) {
+      const pill = document.querySelector<HTMLElement>(`[data-status="${status}"]`);
+      // Ink, #14302a (the DOM may keep the hex or give its rgb form).
+      expect(["#14302a", "rgb(20, 48, 42)"]).toContain(pill?.style.color);
+    }
   });
 });

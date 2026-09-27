@@ -16,7 +16,7 @@ import {
   getProposal,
   getProposalComments,
   getProposalHistory,
-  listProposals,
+  listProposalPage,
   postProposalComment,
   transitionProposal,
   type ProposalCommentRow,
@@ -97,22 +97,27 @@ const buttonSecondary: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: "#6b7280",
-  sent: "#68d8d2",
-  changes_requested: "#f2b35e",
-  accepted: "#059669",
-  declined: "#dc2626",
-  expired: "#9ca3af",
-  withdrawn: "#9ca3af",
-  archived: "#9ca3af",
+// Each pill's text colour is chosen for its fill, at least 4.5:1: white read
+// 1.7:1 on the teal, 1.8:1 on the amber and 2.5:1 on the grey.
+const INK = "#14302a";
+const STATUS_STYLES: Record<string, { readonly background: string; readonly color: string }> = {
+  draft: { background: "#6b7280", color: "#fff" },            // 4.83:1
+  sent: { background: "#68d8d2", color: INK },                // 8.31:1
+  changes_requested: { background: "#f2b35e", color: INK },   // 7.66:1
+  accepted: { background: "#047857", color: "#fff" },         // 5.48:1
+  declined: { background: "#dc2626", color: "#fff" },         // 4.83:1
+  expired: { background: "#9ca3af", color: INK },             // 5.57:1
+  withdrawn: { background: "#9ca3af", color: INK },
+  archived: { background: "#9ca3af", color: INK },
 };
+const DEFAULT_STATUS_STYLE = { background: "#6b7280", color: "#fff" } as const;
 
 function StatusPill({ status }: { readonly status: string }): ReactElement {
+  const tone = STATUS_STYLES[status] ?? DEFAULT_STATUS_STYLE;
   return (
-    <span style={{
+    <span data-status={status} style={{
       display: "inline-block", padding: "2px 10px", borderRadius: 999, fontSize: 12,
-      fontWeight: 600, color: "#fff", background: STATUS_COLORS[status] ?? "#6b7280",
+      fontWeight: 600, color: tone.color, background: tone.background,
     }}>
       {status.replace(/_/g, " ")}
     </span>
@@ -137,6 +142,9 @@ const LINKABLE_STATUSES = [...SENDABLE_STATUSES, "sent"];
 const WITHDRAWABLE_STATUSES = ["draft", "sent", "changes_requested"];
 const ARCHIVABLE_STATUSES = ["accepted", "declined", "expired", "withdrawn"];
 
+/** Proposals fetched at a time; the API allows up to 100. */
+const PROPOSAL_PAGE_SIZE = 50;
+
 interface QuoteLineDraft {
   description: string;
   quantity: string;
@@ -151,6 +159,11 @@ export function ProposalsView(): ReactElement {
   const [proposals, setProposals] = useState<StaffProposal[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  // How many proposals there are in all, so the list says when it holds
+  // only the newest of them and can fetch the rest.
+  const [proposalTotal, setProposalTotal] = useState<number | null>(null);
+  const [moreLoading, setMoreLoading] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
   const [selected, setSelected] = useState<StaffProposal | null>(null);
   const [history, setHistory] = useState<ProposalHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -173,6 +186,8 @@ export function ProposalsView(): ReactElement {
   const [actionError, setActionError] = useState<string | null>(null);
   const [latestShareUrl, setLatestShareUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Withdrawing stops the client's link working, so it is asked, not done.
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
   const listRequest = useLatestRequest();
   const historyRequest = useLatestRequest();
   const versionRequest = useLatestRequest();
@@ -183,10 +198,15 @@ export function ProposalsView(): ReactElement {
     const ownsRequest = listRequest.begin();
     setListLoading(true);
     setListError(null);
-    listProposals()
-      .then((rows) => {
+    // A refresh replaces the list, so a next page still on its way is dropped
+    // and its working state goes with it.
+    setMoreLoading(false);
+    setMoreError(null);
+    listProposalPage({ limit: PROPOSAL_PAGE_SIZE, offset: 0 })
+      .then((page) => {
         if (!ownsRequest()) return;
-        setProposals(rows);
+        setProposals([...page.rows]);
+        setProposalTotal(page.total);
         setListError(null);
       })
       .catch(() => {
@@ -197,6 +217,28 @@ export function ProposalsView(): ReactElement {
   }, [listRequest]);
 
   useEffect(() => { refreshList(); }, [refreshList]);
+
+  // The next page after what is shown. A refresh started meanwhile wins:
+  // it owns the list request, so this answer is dropped.
+  const loadMore = useCallback(() => {
+    const ownsRequest = listRequest.begin();
+    setMoreLoading(true);
+    setMoreError(null);
+    listProposalPage({ limit: PROPOSAL_PAGE_SIZE, offset: proposals.length })
+      .then((page) => {
+        if (!ownsRequest()) return;
+        setProposals((current) => {
+          const known = new Set(current.map((row) => row.id));
+          return [...current, ...page.rows.filter((row) => !known.has(row.id))];
+        });
+        setProposalTotal(page.total);
+      })
+      .catch(() => {
+        if (!ownsRequest()) return;
+        setMoreError("Couldn't load more proposals. Check the connection and try again.");
+      })
+      .finally(() => { if (ownsRequest()) setMoreLoading(false); });
+  }, [listRequest, proposals.length]);
 
   // Rooms power the capacity guidance block (T-429). Failure is non-fatal —
   // the guidance simply stays unavailable and the note stays hand-written.
@@ -258,6 +300,7 @@ export function ProposalsView(): ReactElement {
 
   const selectProposal = useCallback((proposal: StaffProposal) => {
     detailRequest.invalidate();
+    setConfirmingWithdraw(false);
     setDetailRequests(0);
     setSelected(proposal);
     setHistory([]);
@@ -419,6 +462,7 @@ export function ProposalsView(): ReactElement {
 
   const handleTransition = (status: string): void => {
     if (selected === null || busy) return;
+    setConfirmingWithdraw(false);
     setBusy(true);
     setActionError(null);
     transitionProposal(selected.id, status)
@@ -550,6 +594,23 @@ export function ProposalsView(): ReactElement {
               </li>
             ))}
           </ul>
+          {proposalTotal !== null && proposals.length > 0 && proposals.length < proposalTotal && (
+            <div data-testid="proposals-more" style={{ display: "grid", gap: 8, marginTop: 12 }}>
+              <p style={{ margin: 0, fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
+                The newest {proposals.length} of {proposalTotal}.
+              </p>
+              {moreLoading ? (
+                <ActivityStatus>Loading more proposals…</ActivityStatus>
+              ) : (
+                <button type="button" style={{ ...buttonSecondary, justifySelf: "start" }} disabled={busy || listLoading} onClick={loadMore}>
+                  Show {Math.min(PROPOSAL_PAGE_SIZE, proposalTotal - proposals.length)} more
+                </button>
+              )}
+              {moreError !== null && (
+                <p role="alert" style={{ margin: 0, fontSize: 13, color: "#ffb4a2" }}>{moreError}</p>
+              )}
+            </div>
+          )}
         </section>
       </div>
 
@@ -574,7 +635,15 @@ export function ProposalsView(): ReactElement {
               <div style={{ marginTop: 12, fontSize: 13 }}>
                 <span style={{ fontWeight: 600, marginRight: 8 }}>Client link:</span>
                 <a data-testid="share-link" href={shareUrl}>{shareUrl}</a>
+                <p data-testid="share-link-note" style={{ margin: "6px 0 0", fontSize: 12.5, color: "rgba(246, 241, 232, 0.68)" }}>
+                  Not emailed. Copy it into your message to the client.
+                </p>
               </div>
+            )}
+            {canSend && !alreadySent && (
+              <p data-testid="send-consequence" style={{ marginTop: 12, marginBottom: 0, fontSize: 12.5, color: "rgba(246, 241, 232, 0.68)", maxWidth: 560 }}>
+                Making a link marks this proposal Sent. Nothing is emailed; you send the link.
+              </p>
             )}
             {shareUrl === null && alreadySent && (
               <p
@@ -585,6 +654,22 @@ export function ProposalsView(): ReactElement {
                 cannot be shown again — issue a new one to send the client a
                 fresh link. Any link already with them keeps working.
               </p>
+            )}
+
+            {confirmingWithdraw && WITHDRAWABLE_STATUSES.includes(selected.status) && (
+              <div role="group" aria-labelledby="proposal-withdraw-question" data-testid="withdraw-confirm" style={{ display: "grid", gap: 10, marginTop: 16, padding: 12, border: "1px solid rgba(255, 180, 162, 0.4)", borderRadius: 8 }}>
+                <p id="proposal-withdraw-question" style={{ margin: 0, fontSize: 13.5, color: "#fff7e8" }}>
+                  Withdraw this proposal? The client's link will stop working.
+                </p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button type="button" data-testid="withdraw-confirm-button" style={buttonSecondary} disabled={busy} onClick={() => { handleTransition("withdrawn"); }}>
+                    Withdraw
+                  </button>
+                  <button type="button" style={buttonSecondary} disabled={busy} onClick={() => { setConfirmingWithdraw(false); }}>
+                    Keep it
+                  </button>
+                </div>
+              </div>
             )}
 
             <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
@@ -602,9 +687,9 @@ export function ProposalsView(): ReactElement {
                   {alreadySent ? "Issue a new client link" : "Generate client link"}
                 </button>
               )}
-              {WITHDRAWABLE_STATUSES.includes(selected.status) && (
-                <button type="button" data-testid="withdraw-button" style={buttonSecondary} disabled={busy} onClick={() => { handleTransition("withdrawn"); }}>
-                  Withdraw
+              {WITHDRAWABLE_STATUSES.includes(selected.status) && !confirmingWithdraw && (
+                <button type="button" data-testid="withdraw-button" style={buttonSecondary} disabled={busy} onClick={() => { setConfirmingWithdraw(true); }}>
+                  Withdraw…
                 </button>
               )}
               {ARCHIVABLE_STATUSES.includes(selected.status) && (

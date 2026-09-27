@@ -261,6 +261,24 @@ describe("CommercialPipelineView", () => {
     expect(bodyText).not.toMatch(/certified safe|legally compliant|fire approved|approved for occupancy/iu);
   });
 
+  it("says a guest count is still to come rather than printing \"pending guests\"", async () => {
+    mocks.getPipeline.mockResolvedValue({
+      opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner", guestCount: null }), opportunity({ id: "opp3", title: "Board lunch", guestCount: 1 })],
+      todayTasks: [],
+      stageCounts: { new: 3 },
+      pipelineValueMinor: 4_000_000,
+      currency: "GBP",
+      page: { total: 3, limit: 50, offset: 0, taskTotal: 0, taskLimit: 50, taskOffset: 0 },
+    });
+    render(<CommercialPipelineView />);
+
+    expect((await screen.findByTestId("opportunity-opp2")).textContent).toContain("Guest count to come");
+    expect(screen.getByTestId("opportunity-opp1").textContent).toContain("120 guests");
+    expect(screen.getByTestId("opportunity-opp3").textContent).toContain("1 guest");
+    expect(screen.getByTestId("opportunity-opp3").textContent).not.toContain("1 guests");
+    expect(document.body.textContent ?? "").not.toContain("pending guests");
+  });
+
   it("creates a manual opportunity with exact minor-unit input", async () => {
     mocks.createOpportunity.mockResolvedValue({ opportunity: opportunity({ id: "opp2", title: "Winter dinner" }), task: null });
     render(<CommercialPipelineView />);
@@ -340,7 +358,11 @@ describe("CommercialPipelineView", () => {
   });
 
   it("opens opportunity detail, updates stage, completes tasks, and creates a proposal draft", async () => {
-    mocks.updateOpportunity.mockResolvedValue(opportunity({ stage: "proposal_drafting" }));
+    // A New deal can only be qualified; it used to "move" straight to
+    // Proposal drafting against a mock that accepted what the API refuses.
+    mocks.updateOpportunity
+      .mockResolvedValueOnce(opportunity({ stage: "qualified" }))
+      .mockResolvedValueOnce(opportunity({ stage: "proposal_drafting" }));
     mocks.updateFollowUpTaskStatus.mockResolvedValue(task({ status: "done", completedAt: NOW }));
     mocks.createProposal.mockResolvedValue(proposal());
 
@@ -348,11 +370,11 @@ describe("CommercialPipelineView", () => {
     fireEvent.click(await screen.findByTestId("opportunity-opp1"));
 
     expect(await screen.findByLabelText("Opportunity detail")).toBeTruthy();
-    fireEvent.change(screen.getByTestId("opportunity-stage"), { target: { value: "proposal_drafting" } });
+    fireEvent.change(screen.getByTestId("opportunity-stage"), { target: { value: "qualified" } });
     await waitFor(() => {
       expect(mocks.updateOpportunity).toHaveBeenCalledWith("opp1", {
-        stage: "proposal_drafting",
-        note: "Moved to Proposal drafting",
+        stage: "qualified",
+        note: "Moved to Qualified",
       });
     });
 
@@ -370,6 +392,47 @@ describe("CommercialPipelineView", () => {
         title: "Grand Hall gala proposal",
       });
     });
+    // Qualified by then, the deal moves on with its first proposal, and says so.
+    await waitFor(() => {
+      expect(mocks.updateOpportunity).toHaveBeenLastCalledWith("opp1", { stage: "proposal_drafting", note: "Proposal draft created" });
+    });
+    await waitFor(() => {
+      expect(mocks.addToast).toHaveBeenCalledWith("Proposal draft created. The deal is at Proposal drafting.", "success");
+    });
+  });
+
+  it("offers only the moves the deal can make from where it is", async () => {
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+    const select = await screen.findByTestId<HTMLSelectElement>("opportunity-stage");
+    expect(Array.from(select.options).map((option) => option.textContent)).toEqual(["New", "Qualified", "Lost"]);
+  });
+
+  it("leaves a New deal where it is when a proposal is drafted, and says so", async () => {
+    mocks.createProposal.mockResolvedValue(proposal());
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+    expect(await screen.findByLabelText("Opportunity detail")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create proposal draft" }));
+    await waitFor(() => {
+      expect(mocks.addToast).toHaveBeenCalledWith("Proposal draft created. The deal stays at New.", "success");
+    });
+    // No move the API would refuse, and so no silent failure.
+    expect(mocks.updateOpportunity).not.toHaveBeenCalled();
+  });
+
+  it("says when the proposal exists but the deal could not move", async () => {
+    mocks.getOpportunity.mockResolvedValue({ opportunity: opportunity({ stage: "qualified" }), activities: [], tasks: [], proposals: [] });
+    mocks.createProposal.mockResolvedValue(proposal());
+    mocks.updateOpportunity.mockRejectedValue(new Error("offline"));
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+    expect(await screen.findByLabelText("Opportunity detail")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create proposal draft" }));
+    expect((await screen.findByTestId("opportunity-stage-error")).textContent)
+      .toBe("The proposal draft was created, but the deal could not move to Proposal drafting. Choose the stage again.");
   });
 
   it("keeps detail mutation failures inline until the user retries", async () => {

@@ -1435,7 +1435,8 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   await page.route(`${API}/configurations/${CONFIG_ID}/review/viewers/self`, (route) => {
     void route.fulfill({ status: 204 });
   });
-  await page.route(`${API}/proposals`, (route) => {
+  // The list asks for a page (?limit=&offset=); a create posts to the bare path.
+  await page.route(new RegExp(`^${API}/proposals(?:\\?.*)?$`, "u"), (route) => {
     if (route.request().method() === "POST") {
       const body = route.request().postDataJSON() as {
         readonly title?: string;
@@ -1455,7 +1456,7 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
       });
       return;
     }
-    void route.fulfill({ json: { data: [staffProposalFixture()] } });
+    void route.fulfill({ json: { data: [staffProposalFixture()], meta: { total: 1, limit: 50, offset: 0 } } });
   });
   await page.route(`${API}/proposals/${PROPOSAL_ID}`, (route) => {
     void route.fulfill({ json: { data: staffProposalFixture({ currentVersion: 1 }) } });
@@ -2910,8 +2911,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.getByTestId(`opportunity-${OPPORTUNITY_ID}`).click();
     await expect(page.getByLabel("Opportunity detail")).toBeVisible();
-    await page.getByTestId("opportunity-stage").selectOption("proposal_drafting");
-    await expect.poll(() => mock.pipelineStageUpdates).toContain("proposal_drafting|Moved to Proposal drafting");
+    // A New deal is offered only the moves the API accepts from New.
+    await page.getByTestId("opportunity-stage").selectOption("qualified");
+    await expect.poll(() => mock.pipelineStageUpdates).toContain("qualified|Moved to Qualified");
 
     await page.getByRole("button", { name: "Done" }).click();
     await expect.poll(() => mock.completedPipelineTasks).toContain("done");

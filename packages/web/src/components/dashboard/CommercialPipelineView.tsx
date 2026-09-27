@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import {
+  OPPORTUNITY_STAGE_TRANSITIONS,
+  OpportunityStageSchema,
+  isValidOpportunityStageTransition,
+  type OpportunityStage,
+} from "@omnitwin/types";
+import {
   addFollowUpTask,
   addOpportunityActivity,
   createOpportunity,
@@ -120,6 +126,27 @@ function formatDateTime(iso: string | null): string {
 
 function stageLabel(stage: string): string {
   return STAGE_LABELS[stage] ?? stage.replace(/_/g, " ");
+}
+
+/** "120 guests", or that the number is still to come. It used to read
+ *  "Guest count pending guests". */
+function guestLine(count: number | null): string {
+  if (count === null) return "Guest count to come";
+  return `${String(count)} guest${count === 1 ? "" : "s"}`;
+}
+
+function asStage(stage: string): OpportunityStage | null {
+  const parsed = OpportunityStageSchema.safeParse(stage);
+  return parsed.success ? parsed.data : null;
+}
+
+/** The stage a deal is at, then only the moves the API will accept from it
+ *  (types/commercial-spine.ts); offering every stage sent people into refusals. */
+function stageChoices(stage: string): readonly string[] {
+  const current = asStage(stage);
+  if (current === null) return [stage];
+  const moves = OPPORTUNITY_STAGE_TRANSITIONS[current].filter((next) => (STAGES as readonly string[]).includes(next));
+  return [current, ...moves];
 }
 
 interface DetailState {
@@ -347,9 +374,16 @@ export function CommercialPipelineView(): ReactElement {
       title: `${selected.opportunity.title} proposal`,
     })
       .then(async (proposal) => {
-        addToast("Proposal draft created", "success");
         setSelected((current) => current === null ? null : { ...current, proposals: [...current.proposals, proposal] });
-        // Await the stage auto-advance before releasing `busy`. Returning this
+        // The deal moves to Proposal drafting only where the stage rules allow
+        // it (from Qualified). It used to try from any stage and swallow the
+        // refusal, so a New deal stayed New while nothing said so.
+        const from = asStage(selected.opportunity.stage);
+        if (from === null || !isValidOpportunityStageTransition(from, "proposal_drafting")) {
+          addToast(`Proposal draft created. The deal stays at ${stageLabel(selected.opportunity.stage)}.`, "success");
+          return;
+        }
+        // Await the stage advance before releasing `busy`. Returning this
         // promise keeps the outer .finally() (and the busy lock that disables
         // the stage <select>) held until the advance settles, so a manual
         // stage change can't interleave and get clobbered by a late resolve.
@@ -359,8 +393,13 @@ export function CommercialPipelineView(): ReactElement {
             note: "Proposal draft created",
           });
           setSelected((current) => current === null ? null : { ...current, opportunity: updated });
+          addToast("Proposal draft created. The deal is at Proposal drafting.", "success");
           refresh();
-        } catch { /* non-critical; proposal still exists */ }
+        } catch {
+          // The proposal exists; only the move did not happen, and that is said.
+          setStageError("The proposal draft was created, but the deal could not move to Proposal drafting. Choose the stage again.");
+          addToast("Proposal draft created; the stage did not move", "error");
+        }
       })
       .catch(() => {
         setProposalError("Could not create the proposal draft. No proposal was added to this opportunity.");
@@ -531,7 +570,7 @@ export function CommercialPipelineView(): ReactElement {
                 >
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#fff7e8" }}>{opportunity.title}</div>
                   <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)", marginTop: 4 }}>
-                    {formatMoney(opportunity.estimatedValueMinor, opportunity.currency)} · {opportunity.guestCount ?? "Guest count pending"} guests
+                    {formatMoney(opportunity.estimatedValueMinor, opportunity.currency)} · {guestLine(opportunity.guestCount)}
                   </div>
                   <div style={{ fontSize: 12, color: "rgba(246, 241, 232, 0.68)", marginTop: 6 }}>{opportunity.nextAction}</div>
                 </button>
@@ -581,7 +620,7 @@ export function CommercialPipelineView(): ReactElement {
                 disabled={busy}
                 onChange={(event) => { handleStageChange(event.target.value); }}
               >
-                {STAGES.map((stage) => <option key={stage} value={stage}>{stageLabel(stage)}</option>)}
+                {stageChoices(selected.opportunity.stage).map((stage) => <option key={stage} value={stage}>{stageLabel(stage)}</option>)}
               </select>
             </div>
             {stageError !== null && (
