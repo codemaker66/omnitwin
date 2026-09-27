@@ -9,7 +9,7 @@
 .auth-page::after { content: ""; position: absolute; inset: 24px; border: 1px solid #c4a98466; border-radius: 16px; pointer-events: none; }
 .auth-page__context, .auth-page__form-shell { position: relative; z-index: 1; }
 .auth-page__brand { display: inline-flex; padding-bottom: 12px; border-bottom: 1px solid #caa98b; color: #ead3b8; font-size: 18px; font-weight: 600; }
-.auth-page__title { max-width: 600px; margin: 32px 0 22px; color: #fff9ee; font: 400 clamp(42px, 4.5vw, 66px)/1.05 Georgia, serif; }
+.auth-page__title { max-width: 600px; margin: 32px 0 22px; color: #fff9ee; font: 400 clamp(42px, 4.5vw, 66px)/1.05 var(--house-serif); }
 .auth-page__copy { max-width: 460px; color: #e3e9dd; font-size: 17px; line-height: 1.7; }
 .auth-page__proof-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px; }
 .auth-page__proof-grid span { padding: 12px 14px; border: 1px solid #c8d1bd55; border-radius: 8px; color: #ecebdd; background: #244738aa; font-size: 13px; }

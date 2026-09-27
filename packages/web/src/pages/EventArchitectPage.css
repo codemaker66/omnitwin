@@ -72,7 +72,7 @@
 }
 
 .event-architect-hero h1 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--house-serif);
   font-size: clamp(3rem, 6vw, 6.2rem);
   font-weight: 400;
   letter-spacing: -0.055em;
@@ -139,7 +139,7 @@
 
 .event-architect-section-head h2,
 .event-architect-results-head h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--house-serif);
   font-size: clamp(1.7rem, 3vw, 2.6rem);
   font-weight: 400;
   letter-spacing: -0.025em;
@@ -357,7 +357,7 @@
 }
 
 .event-architect-results-state h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--house-serif);
   font-size: 2rem;
   font-weight: 400;
   margin: 18px 0 7px;
@@ -420,7 +420,7 @@
 }
 
 .event-architect-candidate-head h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--house-serif);
   font-size: 1.7rem;
   font-weight: 400;
   margin: 0;
@@ -842,7 +842,7 @@
 }
 
 .event-architect-ops-review h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--house-serif);
   font-size: clamp(1.8rem, 4vw, 3rem);
   font-weight: 400;
   margin: 0;

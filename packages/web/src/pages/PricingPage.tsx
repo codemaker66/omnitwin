@@ -10,8 +10,8 @@ import { ActivityIndicator } from "../components/shared/Activity.js";
 // Design intent: dark, premium, expressive — a single dominant Pro tier
 // card centred as the hero, followed by scalable add-ons, professional
 // scanning services, a founder bundle, competitor comparison, and FAQ.
-// Visual language matches the LandingPage (Playfair/Newsreader serif
-// display, oxblood accent, cream on near-black).
+// Visual language: the house serif (Newsreader) for display, oxblood accent,
+// cream on near-black.
 //
 // There is no trial. Billing, /api/billing/checkout and the self-serve
 // onboarding that a trial implies are not built, so the page asks for the
@@ -28,7 +28,7 @@ const OXBLOOD = "#7a1f2a";
 const CREAM = "#f5ede0";
 const CREAM_MUT = "rgba(245,237,224,0.7)";
 const CREAM_FAINT = "rgba(245,237,224,0.62)";
-const SERIF = "'Playfair Display', 'Newsreader', Georgia, serif";
+const SERIF = "var(--house-serif)";
 const BODY = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
 
 const KEYFRAMES_ID = "pricing-page-animations";

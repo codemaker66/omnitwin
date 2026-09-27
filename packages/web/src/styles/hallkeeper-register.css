@@ -76,6 +76,6 @@
 
   /* Type. The sheet's serif for headings, the app's sans for everything
      else — the same pairing on all six surfaces. */
-  --hk-serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  --hk-serif: var(--house-serif);
   --hk-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }

@@ -16,7 +16,7 @@
 .hk-page a { color: var(--hk-forest); }
 .hk-page :focus-visible { outline: 3px solid var(--hk-copper); outline-offset: 4px; }
 .hk-page h1, .hk-page h2, .hk-page h3, .hk-page p { margin: 0; }
-.hk-page h1, .hk-page h2 { font-family: "Playfair Display", Georgia, serif; font-weight: 500; }
+.hk-page h1, .hk-page h2 { font-family: var(--house-serif); font-weight: 500; }
 .hk-page h1 { font-size: clamp(30px, 3vw, 44px); line-height: 1.14; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .hk-page h2 { font-size: 26px; line-height: 1.25; }
 .hk-top-nav { max-width: 1420px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 6px; }
@@ -34,12 +34,12 @@
 .hk-room-name span { color: var(--hk-muted); font-size: 13px; }
 .hk-room-dimensions { color: var(--hk-muted); font-size: 11px; margin-top: 5px !important; }
 .hk-guest-count { padding: 0 22px; text-align: center; border-left: 1px solid var(--hk-line); }
-.hk-guest-count strong { display: block; font: 500 39px/1.15 Georgia, serif; }
+.hk-guest-count strong { display: block; font: 500 39px/1.15 var(--house-serif); }
 .hk-guest-count span { color: var(--hk-muted); font-size: 12px; }
 .hk-time-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0; align-self: stretch; padding: 18px 20px 12px; border-radius: 14px; background: #eeeee2; border: 1px solid #dedfcf; }
 .hk-time-pair > div + div { padding-left: 20px; border-left: 1px solid #d7daca; }
 .hk-time-pair span { display: block; font-size: 11px; color: #5d6756; }
-.hk-time-pair strong { display: block; color: #3c553d; font: 500 30px/1.25 Georgia, serif; margin-top: 4px; }
+.hk-time-pair strong { display: block; color: #3c553d; font: 500 30px/1.25 var(--house-serif); margin-top: 4px; }
 .hk-time-pair p { grid-column: 1 / -1; font-size: 10px; color: #6b715f; line-height: 1.4; margin-top: 10px; }
 .hk-provenance { padding: 16px 32px 0; }
 .hk-provenance:empty { display: none; }
@@ -97,7 +97,7 @@
 .hk-empty, .hk-checklist-complete { padding: 22px; background: #f0f2e8; border: 1px solid #dce2d0; border-radius: 12px; }
 .hk-empty p, .hk-checklist-complete p { color: var(--hk-muted); font-size: 12px; margin-top: 7px; }
 .hk-sheet-bottom { border-top: 1px solid var(--hk-line); padding: 23px 32px; display: flex; align-items: center; justify-content: space-between; gap: 25px; }
-.hk-sheet-bottom strong { font: 500 20px Georgia, serif; }
+.hk-sheet-bottom strong { font: 500 20px var(--house-serif); }
 .hk-sheet-bottom p { font-size: 11px; color: var(--hk-muted); margin-top: 5px; }
 .hk-actions { display: flex; gap: 10px; }
 .hk-button { min-height: 46px; padding: 11px 23px; border: 1px solid #cfd3c4; border-radius: 8px; color: var(--hk-forest); background: #fffdf8; font-size: 12px; font-weight: 600; cursor: pointer; }

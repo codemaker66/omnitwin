@@ -15,7 +15,7 @@
 .capture-intake-hero { align-items: flex-end; display: flex; gap: 24px; justify-content: space-between; margin: 0 auto 34px; max-width: 1380px; }
 .capture-intake-kicker { align-items: center; color: var(--capture-mint); display: flex; font-size: .72rem; font-weight: 700; gap: 8px; letter-spacing: .12em; margin: 0 0 12px; text-transform: uppercase; }
 .capture-intake-kicker svg { height: 18px; width: 18px; }
-.capture-intake-hero h1 { font-family: Georgia, serif; font-size: clamp(2.3rem, 6vw, 5.7rem); font-weight: 500; letter-spacing: -.05em; line-height: .93; margin: 0; max-width: 980px; }
+.capture-intake-hero h1 { font-family: var(--house-serif); font-size: clamp(2.3rem, 6vw, 5.7rem); font-weight: 500; letter-spacing: -.05em; line-height: .93; margin: 0; max-width: 980px; }
 .capture-intake-hero > div > p:last-child { color: #b4c6c2; font-size: clamp(.95rem, 1.5vw, 1.15rem); line-height: 1.55; margin: 18px 0 0; max-width: 760px; }
 .capture-intake-trust { align-items: center; border: 1px solid rgba(126, 224, 209, .28); border-radius: 999px; color: var(--capture-mint); display: flex; flex: 0 0 auto; font-size: .73rem; font-weight: 700; gap: 8px; padding: 10px 13px; }
 .capture-intake-trust svg { height: 17px; width: 17px; }
@@ -30,7 +30,7 @@
 .capture-intake-command-head p,
 .capture-intake-section-head p { color: #48736f; font-size: 0.6875rem; font-weight: 700; letter-spacing: .12em; margin: 0 0 5px; text-transform: uppercase; }
 .capture-intake-command h2,
-.capture-intake-section-head h2 { font-family: Georgia, serif; font-size: clamp(1.45rem, 3vw, 2.35rem); font-weight: 500; letter-spacing: -.03em; margin: 0; }
+.capture-intake-section-head h2 { font-family: var(--house-serif); font-size: clamp(1.45rem, 3vw, 2.35rem); font-weight: 500; letter-spacing: -.03em; margin: 0; }
 .capture-intake-command-head > span { background: #d4eee8; border: 1px solid #9dd4ca; border-radius: 999px; color: #174e48; font-size: 0.6875rem; font-weight: 700; padding: 8px 10px; text-transform: uppercase; }
 .capture-intake-command-head > span[data-status="blocked"] { background: #f4d9d0; border-color: #e8a895; color: #702d20; }
 .capture-intake-command-head > span[data-status="requires_review"] { background: #f2e4bf; border-color: #dca475; color: #654c0e; }

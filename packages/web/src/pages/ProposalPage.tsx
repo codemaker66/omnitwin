@@ -24,7 +24,9 @@ import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity
 // changes with a note.
 // ---------------------------------------------------------------------------
 
-const SERIF = "'Cormorant Garamond', 'Playfair Display', Georgia, serif";
+// Newsreader, the house serif, which every route loads (Cormorant loaded only
+// with the quiz, so this page fell back to Georgia).
+const SERIF = "var(--house-serif)";
 const SANS = "'Inter', -apple-system, sans-serif";
 const GRAPHITE = "#16181d";
 const PANEL = "#1e2128";

@@ -59,7 +59,7 @@
   max-width: 540px;
   margin: 18px 0;
   color: #fff7e8;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--house-serif);
   font-size: 46px;
   font-weight: 500;
   line-height: 1.06;

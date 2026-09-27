@@ -13,14 +13,14 @@
 .client-event-back { color: var(--event-muted); font-size: 13px; display: inline-flex; min-height: 44px; align-items: center; margin-bottom: 16px; text-underline-offset: 4px; }
 .client-event-heading { padding-bottom: 24px; border-bottom: 1px solid var(--event-line); }
 .client-event-kicker { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #647b65; }
-.client-event-heading h1 { font: 400 clamp(30px, 5vw, 48px)/1.15 Georgia, serif; letter-spacing: -.035em; margin: 12px 0; overflow-wrap: anywhere; }
+.client-event-heading h1 { font: 400 clamp(30px, 5vw, 48px)/1.15 var(--house-serif); letter-spacing: -.035em; margin: 12px 0; overflow-wrap: anywhere; }
 .client-event-heading > p:last-child { color: var(--event-muted); font-size: 14px; margin-bottom: 0; }
 .client-event-disclosure { font-size: 12px; line-height: 1.6; color: var(--event-muted); margin: 20px 0 14px; }
 .client-event-phases { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
 .client-event-phases > li { display: flex; align-items: flex-start; gap: 17px; padding: 20px 0; border-bottom: 1px solid var(--event-line); }
 .client-event-phase-number { flex: none; display: grid; place-items: center; width: 34px; height: 34px; background: #e5ece1; border-radius: 50%; color: #5b745f; font-size: 11px; font-weight: 600; }
 .client-event-phase-copy { min-width: 0; }
-.client-event-phase-copy h3 { font: 400 21px/1.25 Georgia, serif; margin: 3px 0 9px; overflow-wrap: anywhere; }
+.client-event-phase-copy h3 { font: 400 21px/1.25 var(--house-serif); margin: 3px 0 9px; overflow-wrap: anywhere; }
 .client-event-phase-copy p { display: flex; align-items: flex-start; gap: 7px; margin: 5px 0; color: var(--event-muted); font-size: 12px; line-height: 1.5; }
 .client-event-phase-copy p svg { flex: none; margin-top: 2px; }
 .client-event-empty,
@@ -31,7 +31,7 @@
 .client-event-button:focus-visible,
 .client-event-back:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .client-event-layouts { margin-top: 30px; }
-.client-event-layouts h2 { font: 400 26px/1.3 Georgia, serif; margin: 0 0 15px; }
+.client-event-layouts h2 { font: 400 26px/1.3 var(--house-serif); margin: 0 0 15px; }
 .client-event-layouts ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); list-style: none; padding: 0; gap: 12px; }
 .client-event-layouts a { display: grid; justify-content: start; gap: 6px; min-height: 68px; }
 .client-event-layouts small { color: var(--event-muted); font-weight: 400; }
@@ -42,7 +42,7 @@
 .client-event-dock__identity { min-width: 0; display: flex; align-items: center; gap: 12px; }
 .client-event-dock__identity > svg { color: #927058; flex: none; }
 .client-event-dock__identity div { min-width: 0; }
-.client-event-dock__identity strong { display: block; font: 400 19px/1.2 Georgia, serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.client-event-dock__identity strong { display: block; font: 400 19px/1.2 var(--house-serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .client-event-dock__identity small { display: block; color: var(--event-muted); font-size: 11px; line-height: 1.5; }
 .client-event-dock__actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .client-event-dock__actions a { color: var(--event-ink); font-size: 12px; padding: 12px; text-underline-offset: 3px; }

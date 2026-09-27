@@ -57,7 +57,7 @@
 .supplier-portal__title {
   margin: 0;
   max-width: 760px;
-  font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+  font-family: var(--house-serif);
   font-size: 42px;
   line-height: 1.08;
   font-weight: 400;
@@ -169,7 +169,7 @@
 
 .supplier-portal__section-title {
   margin: 0 0 16px;
-  font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+  font-family: var(--house-serif);
   font-size: 26px;
   line-height: 1.2;
   font-weight: 400;
@@ -394,7 +394,7 @@
 
 .supplier-portal__state h1 {
   margin: 0 0 12px;
-  font-family: "Cormorant Garamond", "Playfair Display", Georgia, serif;
+  font-family: var(--house-serif);
   font-size: 34px;
   line-height: 1.15;
   font-weight: 400;

@@ -29,7 +29,7 @@
 .asset-status-hero h1 {
   margin: 0;
   color: #ffe8b0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--house-serif);
   font-size: clamp(34px, 5vw, 58px);
   line-height: 0.98;
   letter-spacing: 0;
