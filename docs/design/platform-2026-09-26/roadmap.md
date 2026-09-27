@@ -347,6 +347,9 @@ Every item below must also meet this checklist. The acceptance criteria in 2.3�
   - Refreshes on window focus and every 2 minutes, paused while the tab is hidden.
 - **Persistent shell.**
   - A parent layout route with `<Outlet/>` in `router.tsx`.
+    Done on 27 September: the staff pages sit under one parent route that draws the header once for the
+    venue's workspace members and platform admins; each page hands its frame up to it. A refusal is a panel
+    in the workspace under the header ([session log](../../sessions/2026-09-27.md)).
   - Cache the venue name; if it fails, show "Venue name unavailable".
 - **Orientation.**
   - Set `document.title` for each view.
@@ -363,6 +366,7 @@ Every item below must also meet this checklist. The acceptance criteria in 2.3�
 **Acceptance**
 - An end-to-end test runs for each role: staff, venue admin, hallkeeper, planner, executive, platform admin and supplier. Every visible nav item opens a view whose API calls return 2xx, and "Insufficient permissions" never renders.
 - The `<header>` element handle stays attached across Enquiries → Diary → Hallkeeper, and neither "Your venue" nor "Opening venue…" appears after the first load.
+  Held since 27 September by `staff-shell.spec.ts`.
 - Each staff view's tab title follows the pattern "Enquiries · Trades Hall — Venviewer".
 - Choosing a More item with the keyboard puts `document.activeElement` on the view's h1.
 - The unread count is visible without opening any menu, and has an accessible name.
