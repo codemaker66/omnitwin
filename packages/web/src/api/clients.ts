@@ -43,18 +43,94 @@ export type GuestLead = z.infer<typeof GuestLeadSchema>;
 const ConfigSearchResultSchema = z.object({
   id: z.string(),
   name: z.string(),
-  spaceName: z.string(),
+  spaceName: z.string().nullable(),
   userName: z.string().nullable(),
   createdAt: z.string(),
 });
 export type ConfigSearchResult = z.infer<typeof ConfigSearchResultSchema>;
 
+// The commercial record the search also finds (roadmap X1): only the roles
+// that work it receive any, and an API from before them sends none.
+const ContactSearchResultSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  phone: z.string().nullable(),
+  accountName: z.string().nullable(),
+});
+export type ContactSearchResult = z.infer<typeof ContactSearchResultSchema>;
+
+const AccountSearchResultSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  accountType: z.string(),
+  primaryContactId: z.string().nullable(),
+});
+export type AccountSearchResult = z.infer<typeof AccountSearchResultSchema>;
+
+const DealSearchResultSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  stage: z.string(),
+  preferredDate: z.string().nullable(),
+  guestCount: z.number().nullable(),
+  contactName: z.string().nullable(),
+});
+export type DealSearchResult = z.infer<typeof DealSearchResultSchema>;
+
+const ProposalSearchResultSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.string(),
+  currentVersion: z.number(),
+  opportunityId: z.string().nullable(),
+  sentAt: z.string().nullable(),
+});
+export type ProposalSearchResult = z.infer<typeof ProposalSearchResultSchema>;
+
 const SearchResultsSchema = z.object({
   users: z.array(ClientUserSchema),
   guestLeads: z.array(GuestLeadSchema),
   configurations: z.array(ConfigSearchResultSchema),
+  contacts: z.array(ContactSearchResultSchema).default([]),
+  accounts: z.array(AccountSearchResultSchema).default([]),
+  deals: z.array(DealSearchResultSchema).default([]),
+  proposals: z.array(ProposalSearchResultSchema).default([]),
 });
 export type SearchResults = z.infer<typeof SearchResultsSchema>;
+
+const ContactProfileSchema = z.object({
+  contact: z.object({
+    id: z.string(),
+    venueId: z.string(),
+    name: z.string(),
+    email: z.string(),
+    phone: z.string().nullable(),
+    roleLabel: z.string().nullable(),
+    sourceEnquiryId: z.string().nullable(),
+    createdAt: z.string(),
+    account: z.object({ id: z.string(), name: z.string() }).nullable(),
+  }),
+  deals: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    stage: z.string(),
+    preferredDate: z.string().nullable(),
+    guestCount: z.number().nullable(),
+    estimatedValueMinor: z.number(),
+    currency: z.string(),
+    updatedAt: z.string(),
+  })),
+  proposals: z.array(z.object({
+    id: z.string(),
+    opportunityId: z.string().nullable(),
+    title: z.string(),
+    status: z.string(),
+    currentVersion: z.number(),
+    sentAt: z.string().nullable(),
+  })),
+});
+export type ContactProfile = z.infer<typeof ContactProfileSchema>;
 
 const ClientProfileSchema = z.object({
   user: z.object({
@@ -120,6 +196,9 @@ const RecentEnquirySchema = z.object({
   eventType: z.string().nullable(),
   preferredDate: z.string().nullable(),
   createdAt: z.string(),
+  /** The guest's lead, so a guest opens on their own profile; null for a
+   *  signed-in client, or from an API before it said. */
+  leadId: z.string().nullable().default(null),
 });
 export type RecentEnquiry = z.infer<typeof RecentEnquirySchema>;
 
@@ -143,4 +222,13 @@ export async function getLeadProfile(leadId: string): Promise<LeadProfile> {
 
 export async function getRecentEnquiries(): Promise<RecentEnquiry[]> {
   return api.get("/clients/recent", RecentEnquiryListSchema);
+}
+
+/** Live enquiries whose date is today or within the year ahead, soonest first. */
+export async function getUpcomingClients(): Promise<RecentEnquiry[]> {
+  return api.get("/clients/upcoming", RecentEnquiryListSchema);
+}
+
+export async function getContactProfile(contactId: string): Promise<ContactProfile> {
+  return api.get(`/clients/contacts/${contactId}/profile`, ContactProfileSchema);
 }

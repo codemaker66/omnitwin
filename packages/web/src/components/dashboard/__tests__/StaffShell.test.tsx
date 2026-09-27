@@ -27,7 +27,7 @@ const staff: AuthUser = {
 const routers: ReturnType<typeof createMemoryRouter>[] = [];
 
 function Desk(): React.ReactElement {
-  return <DashboardLayout activeView="enquiries" onViewChange={vi.fn()} surface="enquiries">
+  return <DashboardLayout activeView="enquiries" onViewChange={vi.fn()} surface="desk">
     <h1>The desk</h1>
     <Link to="/diary">Open the Diary here</Link>
   </DashboardLayout>;
@@ -81,7 +81,7 @@ describe("the persistent staff shell", () => {
     expect(header).not.toBeNull();
     expect(await screen.findByLabelText("Notifications: 3 unread")).toBeDefined();
     expect(screen.getByRole("main").getAttribute("aria-label")).toBe("Enquiries");
-    expect(document.querySelector(".dashboard-layout-main--enquiries")).not.toBeNull();
+    expect(document.querySelector(".dashboard-layout-main--desk")).not.toBeNull();
 
     await act(async () => { await router.navigate("/diary"); });
     expect(await screen.findByRole("heading", { name: "The board" })).toBeDefined();
@@ -90,7 +90,7 @@ describe("the persistent staff shell", () => {
     expect(document.querySelectorAll("header.dashboard-layout-header")).toHaveLength(1);
     expect(screen.getAllByRole("main")).toHaveLength(1);
     expect(screen.getByRole("main").getAttribute("aria-label")).toBe("The Diary");
-    expect(document.querySelector(".dashboard-layout-main--enquiries")).toBeNull();
+    expect(document.querySelector(".dashboard-layout-main--desk")).toBeNull();
     expect(document.querySelector(".dashboard-layout-main--diary")).not.toBeNull();
     await waitFor(() => { expect(document.title).toBe("The Diary · Trade's Hall of Glasgow — Venviewer"); });
     // The unread count stays on the row, read once rather than again per page.

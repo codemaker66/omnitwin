@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import {
   findUnsupportedProposalClaim,
   LAYOUT_STYLES,
@@ -153,7 +153,15 @@ interface QuoteLineDraft {
 
 const EMPTY_LINE: QuoteLineDraft = { description: "", quantity: "1", pounds: "" };
 
-export function ProposalsView(): ReactElement {
+export interface ProposalsViewProps {
+  /** The proposal the address names (?proposal=), opened once it is read:
+   *  the Clients desk opens a proposal here. */
+  readonly proposalId?: string | null;
+  /** Told which proposal is open, so the address can follow it. */
+  readonly onProposalShown?: (proposalId: string | null) => void;
+}
+
+export function ProposalsView({ proposalId = null, onProposalShown }: ProposalsViewProps = {}): ReactElement {
   const user = useAuthStore((s) => s.user);
 
   const [proposals, setProposals] = useState<StaffProposal[]>([]);
@@ -320,6 +328,39 @@ export function ProposalsView(): ReactElement {
     loadLatestVersion(proposal.id);
     loadComments(proposal.id);
   }, [detailRequest, loadComments, loadHistory, loadLatestVersion]);
+
+  // The address names a proposal: open it once, as though it were chosen. It
+  // counts as opened only when an answer is used, so a read cancelled on the
+  // way (React's development double run, a new address) is simply asked again.
+  const appliedProposalRef = useRef<string | null>(null);
+  const [linkFailure, setLinkFailure] = useState<string | null>(null);
+  useEffect(() => {
+    if (proposalId === null || appliedProposalRef.current === proposalId) return;
+    let current = true;
+    getProposal(proposalId)
+      .then((proposal) => {
+        if (!current) return;
+        appliedProposalRef.current = proposalId;
+        setLinkFailure(null);
+        selectProposal(proposal);
+      })
+      .catch(() => {
+        if (!current) return;
+        appliedProposalRef.current = proposalId;
+        setLinkFailure("That proposal could not be opened. It may have been removed.");
+      });
+    return () => { current = false; };
+  }, [proposalId, selectProposal]);
+
+  // The address follows the proposal that is open.
+  const shownProposalId = selected?.id ?? null;
+  const reportedProposalRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (shownProposalId === reportedProposalRef.current) return;
+    reportedProposalRef.current = shownProposalId;
+    if (shownProposalId !== null) appliedProposalRef.current = shownProposalId;
+    onProposalShown?.(shownProposalId);
+  }, [onProposalShown, shownProposalId]);
 
   const refreshSelected = useCallback((id: string) => {
     const ownsRequest = detailRequest.begin();
@@ -550,6 +591,9 @@ export function ProposalsView(): ReactElement {
 
         <section style={card} aria-label="Proposals">
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>Proposals</h2>
+          {linkFailure !== null && (
+            <p role="alert" data-testid="proposal-link-failure" style={{ margin: "0 0 10px", fontSize: 13, color: "#ffb4a2" }}>{linkFailure}</p>
+          )}
           {listLoading && proposals.length > 0 && <ActivityStatus>Refreshing proposals…</ActivityStatus>}
           {listLoading && proposals.length === 0 && (
             <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals…</ActivityStatus>

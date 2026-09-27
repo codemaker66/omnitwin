@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { ProposalsView } from "../ProposalsView.js";
 
 const mocks = vi.hoisted(() => ({
@@ -117,6 +118,30 @@ async function selectFirstProposal(id: string): Promise<void> {
   const row = await screen.findByTestId(`proposal-row-${id}`);
   fireEvent.click(row);
 }
+
+describe("a proposal named by the address (the Clients desk opens one here)", () => {
+  it("opens it once it is read, even under React's development double run, and says which is open", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal(), draftProposal({ id: "p2", title: "Winter dinner" })]);
+    mocks.getProposal.mockResolvedValue(draftProposal({ id: "p2", title: "Winter dinner" }));
+    const shown = vi.fn();
+    render(<StrictMode><ProposalsView proposalId="p2" onProposalShown={shown} /></StrictMode>);
+
+    expect(await screen.findByRole("heading", { name: "Winter dinner" })).toBeTruthy();
+    expect(mocks.getProposal).toHaveBeenCalledWith("p2");
+    await waitFor(() => { expect(shown).toHaveBeenLastCalledWith("p2"); });
+    // Choosing another proposal is told too, so the address follows it.
+    fireEvent.click(await screen.findByTestId("proposal-row-p1"));
+    await waitFor(() => { expect(shown).toHaveBeenLastCalledWith("p1"); });
+  });
+
+  it("says plainly when the proposal cannot be opened", async () => {
+    mocks.getProposal.mockRejectedValue(new Error("404"));
+    render(<ProposalsView proposalId="p9" onProposalShown={vi.fn()} />);
+    const alert = await screen.findByTestId("proposal-link-failure");
+    expect(alert.textContent).toBe("That proposal could not be opened. It may have been removed.");
+    expect(alert.getAttribute("role")).toBe("alert");
+  });
+});
 
 describe("ProposalsView", () => {
   it("keeps a reply and its destination together until the server confirms the mutation", async () => {

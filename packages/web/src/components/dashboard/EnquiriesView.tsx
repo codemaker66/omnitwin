@@ -113,14 +113,14 @@ const EMPTY_WORDS: Readonly<Record<DeskFilter, readonly [heading: string, detail
 // Props — punch list #34
 //
 // `initialSelectedId` is set when the user navigates here from a different
-// view (e.g. clicking an enquiry in ClientProfile). The component pre-selects
+// view (e.g. opening an enquiry from a client on the Clients desk). The component pre-selects
 // that enquiry on mount AND fetches it independently via `getEnquiry`, so
 // the decision panel renders even when the loaded pages of the current stage
 // filter don't include it.
 //
 // `onDetailClose` is called when the user closes the open enquiry. When
 // provided, the parent decides where that goes (e.g. restoring the
-// ClientProfile they came from). When omitted, closing returns to the desk.
+// client they came from). When omitted, closing returns to the desk.
 // ---------------------------------------------------------------------------
 
 interface EnquiriesViewProps {

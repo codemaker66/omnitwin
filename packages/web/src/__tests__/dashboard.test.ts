@@ -142,17 +142,10 @@ describe("EnquiriesView", () => {
   });
 });
 
-describe("ClientSearchView", () => {
+describe("ClientsDesk", () => {
   it("exports", async () => {
-    const { ClientSearchView } = await import("../components/dashboard/ClientSearchView.js");
-    expect(typeof ClientSearchView).toBe("function");
-  });
-});
-
-describe("ClientProfile", () => {
-  it("exports", async () => {
-    const { ClientProfile } = await import("../components/dashboard/ClientProfile.js");
-    expect(typeof ClientProfile).toBe("function");
+    const { ClientsDesk } = await import("../components/dashboard/ClientsDesk.js");
+    expect(typeof ClientsDesk).toBe("function");
   });
 });
 
@@ -169,8 +162,8 @@ describe("Dashboard layout links — source-grep", () => {
 
   it("opens saved layouts through planner routes, not the legacy editor shell", async () => {
     const files = [
-      "src/components/dashboard/ClientProfile.tsx",
-      "src/components/dashboard/ClientSearchView.tsx",
+      "src/components/dashboard/ClientsDesk.tsx",
+      "src/components/dashboard/clients/ClientPanel.tsx",
       "src/components/dashboard/EnquiriesView.tsx",
       "src/components/dashboard/enquiries/EnquiryPanel.tsx",
       "src/components/dashboard/ReviewsView.tsx",
@@ -605,7 +598,7 @@ describe("VerticalToolbox save", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ClientProfile → enquiry navigation — punch list #34
+// Client → enquiry navigation — punch list #34
 //
 // Previously the DashboardPage `onViewEnquiry` callback discarded the
 // enquiry id and just dumped the user at the unfiltered list:
@@ -614,8 +607,8 @@ describe("VerticalToolbox save", () => {
 //
 // The user clicked "Wedding for Alice" in the profile and was taken to
 // the top of the enquiry list with no idea where to scroll. The fix:
-//   1. DashboardPage captures the id and stores a return context
-//      (which profile we came from)
+//   1. DashboardPage captures the id and stores a return context; the
+//      address (?client=) still names the client it came from
 //   2. EnquiriesView accepts `initialSelectedId` and fetches the enquiry
 //      independently via `getEnquiry()` so the status filter doesn't
 //      matter for the cross-view case
@@ -628,7 +621,7 @@ describe("VerticalToolbox save", () => {
 // limitation.
 // ---------------------------------------------------------------------------
 
-describe("ClientProfile enquiry navigation (#34)", () => {
+describe("Client enquiry navigation (#34)", () => {
   async function readSource(relPath: string): Promise<{ raw: string; codeOnly: string }> {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
@@ -642,23 +635,22 @@ describe("ClientProfile enquiry navigation (#34)", () => {
   it("DashboardPage captures the enquiry id (no longer discards it)", async () => {
     const { codeOnly } = await readSource("src/pages/DashboardPage.tsx");
     // Positive: the new handler is wired in by name
-    expect(codeOnly).toContain("handleViewEnquiryFromProfile");
+    expect(codeOnly).toContain("handleViewEnquiryFromClient");
     // Positive: the handler captures an `enquiryId` parameter
-    expect(codeOnly).toMatch(/handleViewEnquiryFromProfile\s*=\s*\(\s*enquiryId/);
+    expect(codeOnly).toMatch(/handleViewEnquiryFromClient\s*=\s*\(\s*enquiryId/);
     // Negative: the bug pattern is gone — `onViewEnquiry={() => {` with
     // no parameter is the discarding form. Comments stripped first.
     expect(codeOnly).not.toMatch(/onViewEnquiry=\{\s*\(\s*\)\s*=>/);
   });
 
-  it("DashboardPage stores return context for restoring the profile", async () => {
+  it("DashboardPage returns to the client the enquiry was opened from", async () => {
     const { codeOnly } = await readSource("src/pages/DashboardPage.tsx");
     // The return context type and state are wired up
     expect(codeOnly).toContain("EnquiryReturnContext");
     expect(codeOnly).toContain("enquiryReturnContext");
-    // The "back from enquiry" handler restores both possible profile types
-    expect(codeOnly).toContain("handleEnquiryDetailClose");
-    expect(codeOnly).toContain("setProfileUserId(enquiryReturnContext.returnUserId)");
-    expect(codeOnly).toContain("setProfileLeadId(enquiryReturnContext.returnLeadId)");
+    // The "back from enquiry" handler goes back to the Clients desk, whose
+    // open client the address (?client=) still names.
+    expect(codeOnly).toMatch(/handleEnquiryDetailClose[\s\S]*?setView\("search"\)/);
   });
 
   it("DashboardPage drops return context on sidebar view change", async () => {
@@ -775,20 +767,5 @@ describe("LoadoutDetail photo improvements (#37, #38) — source-grep", () => {
     const { codeOnly } = await readSource("src/components/dashboard/LoadoutDetail.tsx");
     expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*0\s*\|\|\s*busyAction\s*!==\s*null\}/);
     expect(codeOnly).toMatch(/disabled=\{idx\s*===\s*loadout\.photos\.length\s*-\s*1\s*\|\|\s*busyAction\s*!==\s*null\}/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Search debounce logic
-// ---------------------------------------------------------------------------
-
-describe("search debounce", () => {
-  it("minimum 2 character enforcement", () => {
-    // The ClientSearchView enforces q.length >= 2 before calling API
-    // This is a logic test, not a render test
-    const query = "a";
-    expect(query.length).toBeLessThan(2);
-    const query2 = "ab";
-    expect(query2.length).toBeGreaterThanOrEqual(2);
   });
 });

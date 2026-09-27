@@ -38,10 +38,10 @@ interface DashboardLayoutProps {
    *  only <main> on the page, so a wrapped surface hands its name up rather
    *  than keeping a second landmark of its own. */
   readonly mainLabel?: string;
-  /** A view that paints its own full-bleed workspace (the Enquiries desk,
-   *  the Rota) asks for it here; everything else keeps the padded forest
-   *  ground. */
-  readonly surface?: "enquiries" | "rota";
+  /** A view that paints its own full-bleed workspace asks for it here: a
+   *  desk (Enquiries, Pending reviews, Clients) on the sage ground, or the
+   *  Rota; everything else keeps the padded forest ground. */
+  readonly surface?: "desk" | "rota";
   readonly children: ReactNode;
 }
 
@@ -64,9 +64,9 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; capability: NavC
   // Proposals is ProposalsView, which reads api/proposals.js — already on
   // canManageCommercial, so the whole commercial set can open it.
   { view: "proposals", label: "Proposals", capability: "commercial" },
-  // Client search is ClientSearchView, reading api/clients.js — every
-  // /clients route gates on canManageVenue, so sales and planner are refused.
-  { view: "search", label: "Client search", capability: "clientSearch" },
+  // Clients is the Clients desk, reading api/clients.js — its search and
+  // lists gate on canManageVenue, so sales and planner are refused.
+  { view: "search", label: "Clients", capability: "clientSearch" },
   { view: "loadouts", label: "Reference loadouts", capability: "workspace" },
   { view: "settings", label: "Venue settings", capability: "workspace" },
   { view: "inventory", label: "Inventory", capability: "venueAdmin" },
@@ -466,7 +466,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
           </div>
         </div>
       </header>
-      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "enquiries" ? " dashboard-layout-main--enquiries" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
+      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "desk" ? " dashboard-layout-main--desk" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
         <main ref={mainRef} className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
           {children}
         </main>

@@ -42,9 +42,11 @@ export const COMMERCIAL_ROLES = ["admin", "manager", "staff", "sales"] as const;
 export const ANALYTICS_ROLES = COMMERCIAL_ROLES;
 
 /**
- * Client search and the client profile behind it. All four `/clients` routes
- * gate on `canManageVenue` (`routes/clients.ts:36,145,231,293`), so sales and
- * planner are refused — both were being offered the tab.
+ * The Clients desk: its search, recent and upcoming lists and the client and
+ * guest profiles gate on `canManageVenue` (`routes/clients.ts`), so sales and
+ * planner are refused — both were being offered the tab. The commercial
+ * record inside it (contacts, organisations, deals, proposals) is further
+ * limited to the roles `canManageCommercial` admits.
  */
 export const CLIENT_SEARCH_ROLES = VENUE_FLOOR_ROLES;
 

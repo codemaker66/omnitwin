@@ -8,8 +8,8 @@ import {
 import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
 import { ReviewsView } from "../components/dashboard/ReviewsView.js";
-import { ClientSearchView } from "../components/dashboard/ClientSearchView.js";
-import { ClientProfile } from "../components/dashboard/ClientProfile.js";
+import { ClientsDesk } from "../components/dashboard/ClientsDesk.js";
+import { clientRefFromSearchValue, clientRefToSearchValue, type ClientRef } from "../components/dashboard/clients/clients-desk-format.js";
 import { LoadoutsView } from "../components/dashboard/LoadoutsView.js";
 import { VenueSettings } from "../components/dashboard/VenueSettings.js";
 import { AdminPanel } from "../components/dashboard/AdminPanel.js";
@@ -28,21 +28,15 @@ import { useAuthStore } from "../stores/auth-store.js";
 // ---------------------------------------------------------------------------
 // Punch list #34 — cross-view enquiry navigation with return context
 //
-// When the user clicks an enquiry inside ClientProfile, three things happen:
-//   1. The enquiry id is captured (was previously discarded — the bug)
-//   2. The current profile state is snapshotted into `enquiryReturnContext`
-//      so "Back" can restore it
-//   3. The view switches to "enquiries" with the captured id pre-selected
-//
-// The detail-view "Back" button reads the return context and restores the
-// profile, so the user lands back exactly where they came from instead of
-// being dumped at the top of the unfiltered enquiry list.
+// When the user opens an enquiry from a client on the Clients desk, the
+// enquiry id is kept and the view switches to "enquiries" with it selected.
+// The address keeps the Clients desk's own state (?q= and ?client=), so the
+// detail's "Back to profile" returns to the client exactly as it was left,
+// rather than to the top of the unfiltered enquiry list.
 // ---------------------------------------------------------------------------
 
 interface EnquiryReturnContext {
   readonly enquiryId: string;
-  readonly returnUserId: string | null;
-  readonly returnLeadId: string | null;
 }
 
 const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
@@ -80,6 +74,8 @@ const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 // lib/role-capabilities.ts ROTA_TAB_ROLES.
 const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
+/** The views set as desks, full-bleed on the sage ground. */
+const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search"]);
 type PlatformRole = "none" | "operator" | "admin";
 
 export function dashboardViewFromSearchValue(value: string | null): DashboardView | null {
@@ -185,17 +181,23 @@ export function DashboardPage(): React.ReactElement {
     () => opportunityIdFromSearchValue(searchParams.get("opportunity")),
     [searchParams],
   );
+  // A proposal opened from the Clients desk: /dashboard?view=proposals&proposal=:id.
+  const requestedProposalId = useMemo(
+    () => opportunityIdFromSearchValue(searchParams.get("proposal")),
+    [searchParams],
+  );
+  const requestedClientQuery = (searchParams.get("q") ?? "").trim();
+  const requestedClient = useMemo(
+    () => clientRefFromSearchValue(searchParams.get("client")),
+    [searchParams],
+  );
   const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole, userPlatformRole));
-  const [profileUserId, setProfileUserId] = useState<string | null>(null);
-  const [profileLeadId, setProfileLeadId] = useState<string | null>(null);
   const [enquiryReturnContext, setEnquiryReturnContext] = useState<EnquiryReturnContext | null>(null);
 
   useEffect(() => {
     if (requestedView !== null) {
       if (!canOpenDashboardView(requestedView, userRole, userPlatformRole)) return;
       setView(requestedView);
-      setProfileUserId(null);
-      setProfileLeadId(null);
       setEnquiryReturnContext(null);
       return;
     }
@@ -203,8 +205,6 @@ export function DashboardPage(): React.ReactElement {
     const defaultView = defaultDashboardViewForRole(userRole);
     if (!canOpenDashboardView(defaultView, userRole, userPlatformRole)) return;
     setView(defaultView);
-    setProfileUserId(null);
-    setProfileLeadId(null);
     setEnquiryReturnContext(null);
   }, [requestedView, userPlatformRole, userRole]);
 
@@ -218,27 +218,65 @@ export function DashboardPage(): React.ReactElement {
     // retain their existing local profile/return-context navigation behaviour.
     if (view !== "inventory" || newView === "inventory") {
       setView(newView);
-      setProfileUserId(null);
-      setProfileLeadId(null);
       setEnquiryReturnContext(null);
     }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("view", newView);
     if (newView !== "pipeline") nextParams.delete("opportunity");
     if (newView !== "reviews") { nextParams.delete("review"); nextParams.delete("config"); }
+    if (newView !== "proposals") nextParams.delete("proposal");
+    if (newView !== "search") { nextParams.delete("q"); nextParams.delete("client"); }
     setSearchParams(nextParams);
   };
 
-  const handleOpenOpportunity = (opportunityId: string): void => {
-    setView("pipeline");
-    setProfileUserId(null);
-    setProfileLeadId(null);
+  /** Opens another view on one record, as a step the browser's Back undoes. */
+  const openRecord = (target: DashboardView, param: "opportunity" | "proposal", id: string): void => {
+    setView(target);
     setEnquiryReturnContext(null);
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("view", "pipeline");
-    nextParams.set("opportunity", opportunityId);
+    for (const stale of ["opportunity", "proposal", "q", "client"]) nextParams.delete(stale);
+    nextParams.set("view", target);
+    nextParams.set(param, id);
     setSearchParams(nextParams);
   };
+
+  const handleOpenOpportunity = (opportunityId: string): void => { openRecord("pipeline", "opportunity", opportunityId); };
+  const handleOpenProposal = (proposalId: string): void => { openRecord("proposals", "proposal", proposalId); };
+
+  const handleProposalShown = useCallback((proposalId: string | null): void => {
+    setSearchParams((previous) => {
+      if ((previous.get("proposal") ?? null) === proposalId) return previous;
+      const nextParams = new URLSearchParams(previous);
+      if (proposalId === null) nextParams.delete("proposal");
+      else nextParams.set("proposal", proposalId);
+      return nextParams;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  // The Clients desk keeps what was typed (?q=, replaced as it is typed) and
+  // the client open (?client=, a step of its own), so a reload returns to
+  // both and the browser's Back closes the client onto the results.
+  const handleClientQueryChange = useCallback((query: string): void => {
+    setSearchParams((previous) => {
+      const trimmed = query.trim();
+      if ((previous.get("q") ?? "") === trimmed) return previous;
+      const nextParams = new URLSearchParams(previous);
+      if (trimmed === "") nextParams.delete("q");
+      else nextParams.set("q", trimmed);
+      return nextParams;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const handleClientChange = useCallback((client: ClientRef | null): void => {
+    setSearchParams((previous) => {
+      const value = client === null ? null : clientRefToSearchValue(client);
+      if ((previous.get("client") ?? null) === value) return previous;
+      const nextParams = new URLSearchParams(previous);
+      if (value === null) nextParams.delete("client");
+      else nextParams.set("client", value);
+      return nextParams;
+    });
+  }, [setSearchParams]);
 
   const handleOpportunityShown = useCallback((opportunityId: string | null): void => {
     setSearchParams((previous) => {
@@ -265,26 +303,20 @@ export function DashboardPage(): React.ReactElement {
     handleViewChange(defaultDashboardViewForRole(userRole));
   };
 
-  // Triggered from ClientProfile. Snapshots the current profile so "Back"
-  // from the enquiry detail can restore it, then jumps to the enquiries view.
-  const handleViewEnquiryFromProfile = (enquiryId: string): void => {
-    setEnquiryReturnContext({
-      enquiryId,
-      returnUserId: profileUserId,
-      returnLeadId: profileLeadId,
-    });
+  // From a client on the Clients desk: the enquiry opens on the Enquiries
+  // desk. The address still names the client, so closing the enquiry (or a
+  // reload) returns to it.
+  const handleViewEnquiryFromClient = (enquiryId: string): void => {
+    setEnquiryReturnContext({ enquiryId });
     setView("enquiries");
-    setProfileUserId(null);
-    setProfileLeadId(null);
   };
 
   // Called by EnquiriesView when its detail "Back" is clicked AND a return
-  // context is in scope. Restores the profile the user came from.
+  // context is in scope: back to the client it was opened from.
   const handleEnquiryDetailClose = (): void => {
     if (enquiryReturnContext === null) return;
-    setProfileUserId(enquiryReturnContext.returnUserId);
-    setProfileLeadId(enquiryReturnContext.returnLeadId);
     setEnquiryReturnContext(null);
+    setView("search");
   };
 
   const renderContent = (): React.ReactElement => {
@@ -294,18 +326,6 @@ export function DashboardPage(): React.ReactElement {
           requestedView={deniedRequestedView}
           defaultView={defaultDashboardViewForRole(userRole)}
           onOpenDefault={handleOpenDefaultView}
-        />
-      );
-    }
-
-    // Client profile sub-view (shown from search)
-    if (profileUserId !== null || profileLeadId !== null) {
-      return (
-        <ClientProfile
-          userId={profileUserId ?? undefined}
-          leadId={profileLeadId ?? undefined}
-          onBack={() => { setProfileUserId(null); setProfileLeadId(null); }}
-          onViewEnquiry={handleViewEnquiryFromProfile}
         />
       );
     }
@@ -332,12 +352,20 @@ export function DashboardPage(): React.ReactElement {
       case "analytics":
         return <ExecutiveAnalyticsView />;
       case "proposals":
-        return <ProposalsView />;
+        return <ProposalsView proposalId={requestedProposalId} onProposalShown={handleProposalShown} />;
       case "search":
         return (
-          <ClientSearchView
-            onViewProfile={(id) => { setProfileUserId(id); }}
-            onViewLeadProfile={(id) => { setProfileLeadId(id); }}
+          <ClientsDesk
+            query={requestedClientQuery}
+            client={requestedClient}
+            onQueryChange={handleClientQueryChange}
+            onClientChange={handleClientChange}
+            // The contact, organisation, deal and proposal results are the
+            // commercial record; the pipeline is the view that gates it.
+            canSeeCommercial={canOpenDashboardView("pipeline", userRole, userPlatformRole)}
+            onOpenDeal={handleOpenOpportunity}
+            onOpenProposal={handleOpenProposal}
+            onViewEnquiry={handleViewEnquiryFromClient}
           />
         );
       case "loadouts":
@@ -355,8 +383,8 @@ export function DashboardPage(): React.ReactElement {
     }
   };
 
-  const showsOwnSurface = deniedRequestedView === null && profileUserId === null && profileLeadId === null;
-  const surface = !showsOwnSurface ? undefined : view === "enquiries" ? "enquiries" as const : view === "rota" ? "rota" as const : undefined;
+  const surface = deniedRequestedView !== null ? undefined
+    : DESK_VIEWS.has(view) ? "desk" as const : view === "rota" ? "rota" as const : undefined;
 
   return (
     <DashboardLayout activeView={view} onViewChange={handleViewChange} surface={surface}>

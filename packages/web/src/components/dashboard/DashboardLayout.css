@@ -98,8 +98,9 @@
 .dashboard-layout-main--inventory .dashboard-layout-content { padding: 0; }
 .dashboard-layout-main--diary { background: #f6f4eb; color: #183d32; }
 .dashboard-layout-main--diary .dashboard-layout-content { padding: 0; }
-.dashboard-layout-main--enquiries { background: #819087; }
-.dashboard-layout-main--enquiries .dashboard-layout-content { padding: 0; }
+/* The desks (Enquiries, Pending reviews, Clients) sit full-bleed on sage. */
+.dashboard-layout-main--desk { background: #819087; }
+.dashboard-layout-main--desk .dashboard-layout-content { padding: 0; }
 /* The Rota paints its own ivory sheet on the same sage ground (T-637). */
 .dashboard-layout-main--rota { background: var(--house-ground); }
 .dashboard-layout-main--rota .dashboard-layout-content { padding: 0; }

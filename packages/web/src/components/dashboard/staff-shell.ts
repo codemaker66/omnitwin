@@ -15,7 +15,7 @@ export interface ShellFrame {
   readonly activeView?: DashboardView;
   readonly onViewChange?: (view: DashboardView) => void;
   readonly mainLabel?: string;
-  readonly surface?: "enquiries" | "rota";
+  readonly surface?: "desk" | "rota";
 }
 
 export interface StaffShell {

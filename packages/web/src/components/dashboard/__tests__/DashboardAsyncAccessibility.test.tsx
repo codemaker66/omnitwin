@@ -1,8 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Enquiry, EnquiryListQuery, EnquiryPage, StatusHistoryEntry } from "../../../api/enquiries.js";
-import { ClientProfile } from "../ClientProfile.js";
-import { ClientSearchView } from "../ClientSearchView.js";
 import { EnquiriesView } from "../EnquiriesView.js";
 
 const { mocks } = vi.hoisted(() => ({
@@ -10,13 +8,10 @@ const { mocks } = vi.hoisted(() => ({
     addToast: vi.fn(),
     countEnquiryStages: vi.fn(),
     createOpportunityFromEnquiry: vi.fn(),
-    getClientProfile: vi.fn(),
     getEnquiry: vi.fn(),
     getEnquiryHistory: vi.fn(),
-    getLeadProfile: vi.fn(),
     getVenue: vi.fn(),
     listEnquiryPage: vi.fn(),
-    searchClients: vi.fn(),
     transitionEnquiry: vi.fn(),
   },
 }));
@@ -28,12 +23,6 @@ vi.mock("../../../api/enquiries.js", () => ({
   getEnquiryHistory: mocks.getEnquiryHistory,
   listEnquiryPage: mocks.listEnquiryPage,
   transitionEnquiry: mocks.transitionEnquiry,
-}));
-
-vi.mock("../../../api/clients.js", () => ({
-  getClientProfile: mocks.getClientProfile,
-  getLeadProfile: mocks.getLeadProfile,
-  searchClients: mocks.searchClients,
 }));
 
 vi.mock("../../../api/spaces.js", () => ({
@@ -231,78 +220,5 @@ describe("EnquiriesView async ownership", () => {
 
     expect(screen.queryByText("Stale Alice timeline")).toBeNull();
     expect(screen.getByText("Bob timeline")).toBeDefined();
-  });
-});
-
-describe("dashboard result controls", () => {
-  it("stops announcing profile activity when the request fails", async () => {
-    mocks.getClientProfile.mockRejectedValue(new Error("Unavailable"));
-    render(<ClientProfile userId="user-1" onBack={vi.fn()} onViewEnquiry={vi.fn()} />);
-
-    expect(screen.getByRole("status").textContent).toContain("Loading profile…");
-    expect(await screen.findByText("Failed to load profile")).toBeDefined();
-    expect(screen.queryByRole("status")).toBeNull();
-  });
-
-  it("renders client search results as native buttons", async () => {
-    vi.useFakeTimers();
-    mocks.searchClients.mockResolvedValue({
-      users: [{
-        id: "user-1",
-        displayName: "Ada Lovelace",
-        organizationName: "Analytical Engines",
-        email: "ada@example.com",
-        phone: null,
-        configurationCount: 2,
-        enquiryCount: 1,
-      }],
-      guestLeads: [],
-      configurations: [],
-    });
-    const onViewProfile = vi.fn();
-    render(<ClientSearchView onViewProfile={onViewProfile} onViewLeadProfile={vi.fn()} />);
-
-    fireEvent.change(screen.getByTestId("search-input"), { target: { value: "Ada" } });
-    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
-    vi.useRealTimers();
-    const result = await screen.findByRole("button", { name: /Ada Lovelace/u });
-    fireEvent.click(result);
-
-    expect(onViewProfile).toHaveBeenCalledWith("user-1");
-  });
-
-  it("renders profile enquiries as native buttons", async () => {
-    mocks.getClientProfile.mockResolvedValue({
-      user: {
-        id: "user-1",
-        displayName: "Ada Lovelace",
-        organizationName: null,
-        email: "ada@example.com",
-        phone: null,
-        name: "Ada",
-        role: "client",
-        createdAt: "2026-07-10T10:00:00.000Z",
-      },
-      configurations: [],
-      enquiries: [{
-        id: "enquiry-1",
-        state: "submitted",
-        eventType: "Conference",
-        preferredDate: null,
-        spaceName: "Trades Hall",
-      }],
-    });
-    const onViewEnquiry = vi.fn();
-    render(
-      <ClientProfile
-        userId="user-1"
-        onBack={vi.fn()}
-        onViewEnquiry={onViewEnquiry}
-      />,
-    );
-
-    const enquiry = await screen.findByRole("button", { name: /Conference/u });
-    fireEvent.click(enquiry);
-    expect(onViewEnquiry).toHaveBeenCalledWith("enquiry-1");
   });
 });

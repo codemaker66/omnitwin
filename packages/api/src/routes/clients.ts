@@ -1,12 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql, ilike, or } from "drizzle-orm";
+import { eq, and, asc, inArray, isNull, sql } from "drizzle-orm";
 import {
   users, configurations, enquiries, guestLeads,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canManageVenue } from "../utils/query.js";
+import { canManageCommercial, canManageVenue } from "../utils/query.js";
+import { contactProfile, searchClients } from "../services/client-search.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -15,6 +16,27 @@ import { canManageVenue } from "../utils/query.js";
 const SearchQuery = z.object({ q: z.string().trim().min(2).max(200) });
 const UserIdParam = z.object({ userId: z.string().uuid() });
 const LeadIdParam = z.object({ leadId: z.string().uuid() });
+const ContactIdParam = z.object({ contactId: z.string().uuid() });
+
+/** The enquiries that are still live: new, in review, or approved. */
+const LIVE_ENQUIRY_STATES = ["submitted", "under_review", "approved"] as const;
+
+/** An enquiry as the Clients desk lists it: who, what, when, and the guest's
+ *  lead, so a guest opens on their own profile. */
+const enquiryClientColumns = {
+  id: enquiries.id,
+  state: enquiries.state,
+  name: enquiries.name,
+  email: enquiries.email,
+  guestEmail: enquiries.guestEmail,
+  guestPhone: enquiries.guestPhone,
+  guestName: enquiries.guestName,
+  userId: enquiries.userId,
+  leadId: sql<string | null>`(SELECT id FROM guest_leads WHERE email = ${enquiries.guestEmail} LIMIT 1)`,
+  eventType: enquiries.eventType,
+  preferredDate: enquiries.preferredDate,
+  createdAt: enquiries.createdAt,
+};
 
 // ---------------------------------------------------------------------------
 // Plugin — client search and profiles for hallkeepers
@@ -26,7 +48,8 @@ export async function clientRoutes(
 ): Promise<void> {
   const { db } = opts;
 
-  // GET /clients/search?q=... — hallkeeper of venue or admin
+  // GET /clients/search?q=... — the venue floor, or a platform admin. Typo
+  // tolerant; see services/client-search.ts.
   server.get("/search", { preHandler: [authenticate] }, async (request, reply) => {
     const query = SearchQuery.safeParse(request.query);
     if (!query.success) {
@@ -37,102 +60,32 @@ export async function clientRoutes(
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
-    const pattern = `%${query.data.q}%`;
-    const venueId = request.user.venueId;
-    const isAdmin = isPlatformAdmin(request.user);
+    // A platform admin searches every venue; anyone else, their own. The
+    // commercial record (contacts, accounts, deals, proposals) is found only
+    // by the roles that work it (services/client-search.ts).
+    const venueId = isPlatformAdmin(request.user) ? null : request.user.venueId;
+    const results = await searchClients(db, query.data.q, {
+      venueId,
+      commercial: canManageCommercial(request.user, request.user.venueId ?? ""),
+    });
+    return { data: results };
+  });
 
-    // Search users — only those who have configurations or enquiries at this venue
-    const venueUserFilter = isAdmin
-      ? undefined
-      : sql`(
-          EXISTS (SELECT 1 FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)
-          OR EXISTS (SELECT 1 FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})
-        )`;
-
-    const matchedUsers = await db.select({
-      id: users.id,
-      displayName: users.displayName,
-      organizationName: users.organizationName,
-      email: users.email,
-      phone: users.phone,
-      configurationCount: isAdmin
-        ? sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND deleted_at IS NULL)`
-        : sql<number>`(SELECT count(*)::int FROM configurations WHERE user_id = ${users.id} AND venue_id = ${venueId} AND deleted_at IS NULL)`,
-      enquiryCount: isAdmin
-        ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id})`
-        : sql<number>`(SELECT count(*)::int FROM enquiries WHERE user_id = ${users.id} AND venue_id = ${venueId})`,
-    })
-      .from(users)
-      .where(and(
-        or(
-          ilike(users.displayName, pattern),
-          ilike(users.organizationName, pattern),
-          ilike(users.email, pattern),
-        ),
-        venueUserFilter,
-      ))
-      .limit(20);
-
-    // Search guest leads — only those with enquiries at this venue.
-    //
-    // A row in `enquiries` is "guest-originated" iff `guest_email` is set;
-    // that bit is historical and permanent. When a user later claims the
-    // public config the guest submitted against, the enquiry gets a
-    // `user_id` but keeps its `guest_email` — the lead shouldn't vanish
-    // from hallkeeper search just because the config changed hands. The
-    // venue scope is enforced by joining on `guest_email` + `venue_id`
-    // alone; claim state is irrelevant.
-    const venueLeadFilter = isAdmin
-      ? undefined
-      : sql`EXISTS (SELECT 1 FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`;
-
-    const matchedLeads = await db.select({
-      id: guestLeads.id,
-      email: guestLeads.email,
-      phone: guestLeads.phone,
-      name: guestLeads.name,
-      enquiryCount: isAdmin
-        ? sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email})`
-        : sql<number>`(SELECT count(*)::int FROM enquiries WHERE guest_email = ${guestLeads.email} AND venue_id = ${venueId})`,
-      convertedToUserId: guestLeads.convertedToUserId,
-    })
-      .from(guestLeads)
-      .where(and(
-        or(
-          ilike(guestLeads.name, pattern),
-          ilike(guestLeads.email, pattern),
-        ),
-        venueLeadFilter,
-      ))
-      .limit(20);
-
-    // Search configurations — scoped to venue
-    const venueConfigFilter = isAdmin
-      ? undefined
-      : eq(configurations.venueId, venueId ?? "");
-
-    const matchedConfigs = await db.select({
-      id: configurations.id,
-      name: configurations.name,
-      spaceName: sql<string>`(SELECT name FROM spaces WHERE id = ${configurations.spaceId})`,
-      userName: sql<string | null>`(SELECT name FROM users WHERE id = ${configurations.userId})`,
-      createdAt: configurations.createdAt,
-    })
-      .from(configurations)
-      .where(and(
-        ilike(configurations.name, pattern),
-        isNull(configurations.deletedAt),
-        venueConfigFilter,
-      ))
-      .limit(20);
-
-    return {
-      data: {
-        users: matchedUsers,
-        guestLeads: matchedLeads,
-        configurations: matchedConfigs,
-      },
-    };
+  // GET /clients/contacts/:contactId/profile — a contact, their organisation,
+  // deals and proposals. The commercial record: the commercial roles only.
+  server.get("/contacts/:contactId/profile", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = ContactIdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid contact ID", code: "VALIDATION_ERROR" });
+    }
+    if (!canManageCommercial(request.user, request.user.venueId ?? "")) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const profile = await contactProfile(db, params.data.contactId, isPlatformAdmin(request.user) ? null : request.user.venueId);
+    if (profile === null) {
+      return reply.status(404).send({ error: "Contact not found", code: "NOT_FOUND" });
+    }
+    return { data: profile };
   });
 
   // GET /clients/:userId/profile — full client profile
@@ -302,24 +255,31 @@ export async function clientRoutes(
       ? undefined
       : eq(enquiries.venueId, request.user.venueId ?? "");
 
-    const recentEnquiries = await db.select({
-      id: enquiries.id,
-      state: enquiries.state,
-      name: enquiries.name,
-      email: enquiries.email,
-      guestEmail: enquiries.guestEmail,
-      guestPhone: enquiries.guestPhone,
-      guestName: enquiries.guestName,
-      userId: enquiries.userId,
-      eventType: enquiries.eventType,
-      preferredDate: enquiries.preferredDate,
-      createdAt: enquiries.createdAt,
-    })
+    const recentEnquiries = await db.select(enquiryClientColumns)
       .from(enquiries)
       .where(venueFilter)
       .orderBy(sql`${enquiries.createdAt} DESC`)
       .limit(20);
 
     return { data: recentEnquiries };
+  });
+
+  // GET /clients/upcoming — the clients whose events come next: live
+  // enquiries whose date is today or within the year ahead, soonest first.
+  server.get("/upcoming", { preHandler: [authenticate] }, async (request, reply) => {
+    if (!canManageVenue(request.user, request.user.venueId ?? "")) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const upcoming = await db.select(enquiryClientColumns)
+      .from(enquiries)
+      .where(and(
+        isPlatformAdmin(request.user) ? undefined : eq(enquiries.venueId, request.user.venueId ?? ""),
+        inArray(enquiries.state, [...LIVE_ENQUIRY_STATES]),
+        sql`${enquiries.preferredDate} >= (now() AT TIME ZONE 'Europe/London')::date`,
+        sql`${enquiries.preferredDate} < (now() AT TIME ZONE 'Europe/London')::date + 366`,
+      ))
+      .orderBy(asc(enquiries.preferredDate), asc(enquiries.createdAt))
+      .limit(10);
+    return { data: upcoming };
   });
 }

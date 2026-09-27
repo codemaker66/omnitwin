@@ -85,9 +85,9 @@ describe("nav offers are reachable", () => {
     expect(canOpenDashboardView("analytics", "sales", "none")).toBe(true);
   });
 
-  it("offers Client search only to the roles /clients admits", () => {
-    // routes/clients.ts:36,145,231,293 all gate on canManageVenue, so sales
-    // and planner were being offered a tab that answers 403.
+  it("offers the Clients desk only to the roles /clients admits", () => {
+    // routes/clients.ts gates its search and lists on canManageVenue, so
+    // sales and planner were being offered a tab that answers 403.
     expect([...CLIENT_SEARCH_ROLES]).toEqual(["admin", "manager", "staff", "hallkeeper"]);
     for (const role of USER_ROLES) {
       expect(canOpenDashboardView("search", role, "none"), `search for ${role}`)
