@@ -442,7 +442,7 @@ test.describe("Hallkeeper Page — authorized error states", () => {
       await route.fulfill({ status: 503, json: { code: "APPROVED_SNAPSHOT_UNAVAILABLE" } });
     });
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
-    await expect(page.getByText("Sheet v3 · approved by Catherine Tait", { exact: true })).toBeVisible();
+    await expect(page.getByText("Approved v3 · Fri 17 Apr, 15:30 · Catherine Tait", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Download PDF" }).click();
     await expect(page.getByRole("button", { name: "Preparing PDF…" })).toBeDisabled();
     await expect(page.locator("[data-activity-indicator]")).toBeVisible();
@@ -450,7 +450,7 @@ test.describe("Hallkeeper Page — authorized error states", () => {
     await expect(page.getByRole("alert")).toHaveText("The approved setup sheet is unavailable.");
     await expect(page.getByRole("button", { name: "Try Again" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Print" })).toHaveCount(0);
-    await expect(page.getByText(/Sheet v3 · approved by/)).toHaveCount(0);
+    await expect(page.getByText(/Approved v3/)).toHaveCount(0);
     await expect(page.getByRole("status", { name: /Approved version/, includeHidden: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1, name: "Grand Hall", includeHidden: true })).toHaveCount(0);
     await expect(page.locator("[data-activity-indicator]")).toHaveCount(0);
@@ -497,9 +497,11 @@ test.describe("Hallkeeper Page — authorized error states", () => {
 // Approval stamp banner — Phase 4c audit trail
 //
 // When the config is in the `approved` review state, the API returns a
-// populated `approval` block on the /v2 payload. The workspace summary and
-// brief preserve version, approver and venue-local time; the complete stamp
-// remains in the printable handoff. Unapproved sheets must carry neither.
+// populated `approval` block on the /v2 payload. The workspace names it once,
+// as a stamp with version, venue-local time and approver (roadmap N4), the
+// brief keeps its line, and the complete stamp remains in the printable
+// handoff. Unapproved sheets carry none of these; a rejected one says so in a
+// band above its work.
 // ---------------------------------------------------------------------------
 
 interface ApprovalFixture {
@@ -520,7 +522,7 @@ test.describe("Hallkeeper Page — approval stamp banner", () => {
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
     await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
 
-    await expect(page.getByText("Sheet v3 · approved by Catherine Tait", { exact: true })).toBeVisible();
+    await expect(page.getByText("Approved v3 · Fri 17 Apr, 15:30 · Catherine Tait", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Brief & contacts" }).click();
     const brief = page.getByRole("dialog", { name: "Brief & contacts" });
     await expect(brief).toContainText("Sheet v3 approved by Catherine Tait on 17/04/2026, 15:30:00.");
@@ -538,12 +540,38 @@ test.describe("Hallkeeper Page — approval stamp banner", () => {
     await expect(banner).toContainText("17 Apr 2026");
   });
 
+  test("a rejected sheet says so in a band above its work", async ({ page }) => {
+    await seedAuthenticatedPlanner(page);
+    await mockSheetData(page);
+    // Registered after the fixture's own review route, so it answers first.
+    await page.route(`${API}/configurations/${CONFIG_ID}/review/available-transitions`, (route) => {
+      void route.fulfill({ json: { data: {
+        configurationId: CONFIG_ID, currentStatus: "rejected", availableTransitions: [], internalDemoReviewEligible: false,
+      } } });
+    });
+    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    const band = page.getByRole("alert").filter({ hasText: "Rejected" });
+    await expect(band).toContainText("Do not prepare the room from this sheet.");
+    const bandBox = await band.boundingBox();
+    const stagesBox = await page.getByRole("navigation", { name: "Event workflow views" }).boundingBox();
+    expect(bandBox).not.toBeNull();
+    expect((bandBox?.y ?? 0) + (bandBox?.height ?? 0)).toBeLessThanOrEqual(stagesBox?.y ?? 0);
+    // A band across the work, read at a glance: as wide as the stages, and
+    // its words larger than the sheet's small print.
+    expect(bandBox?.width ?? 0).toBeGreaterThanOrEqual((stagesBox?.width ?? Infinity) - 1);
+    expect(await band.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(15);
+    // Whether a rejected sheet's rows may be ticked is Blake's call (Q-E3):
+    // until then they stay as they were.
+    await expect(page.getByRole("checkbox", { name: /Stage Platform/u })).toBeEnabled();
+    expect(await unreadableText(page, ".hkf-app", "rejected sheet")).toEqual([]);
+  });
+
   test("does NOT render the approval banner when approval is null", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
     await mockSheetData(page); // MOCK_SHEET has no approval → null
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
     await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
-    await expect(page.getByText(/Sheet v\d+ · approved by/)).toHaveCount(0);
+    await expect(page.getByText(/Approved v\d+/)).toHaveCount(0);
     await page.getByRole("button", { name: "Brief & contacts" }).click();
     await expect(page.getByRole("dialog", { name: "Brief & contacts" })).not.toContainText("approved by");
     await expect(page.getByRole("status", { name: /Approved version/, includeHidden: true })).toHaveCount(0);

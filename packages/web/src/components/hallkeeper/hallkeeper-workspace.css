@@ -314,13 +314,53 @@
   margin-bottom: 17px;
   font-size: 12px;
 }
+.hkf-provenance:empty {
+  display: none;
+}
+/* The sheet's review state (roadmap N4): anything but approved is a band
+   under the heading, in words; approved is one quiet stamp. */
+.hkf-approval-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border: 1px solid;
+  border-left-width: 5px;
+  border-radius: 9px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.hkf-approval-band strong {
+  font-weight: 700;
+}
+.hkf-approval-band.is-brick {
+  background: var(--house-brick-wash);
+  border-color: var(--house-brick-dot);
+  color: var(--house-brick-strong);
+}
+.hkf-approval-band.is-amber {
+  background: var(--house-amber-wash);
+  border-color: var(--house-amber-dot);
+  color: var(--house-amber-text);
+}
+.hkf-approval-band.is-slate {
+  background: var(--house-slate-wash);
+  border-color: var(--house-slate-dot);
+  color: var(--house-slate-text);
+}
+.hkf-app .hkf-facts .hkf-approval-stamp {
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--house-sage-wash);
+  color: var(--house-sage-text);
+  font-weight: 600;
+}
 .hkf-provenance .hk-notice {
   width: 100%;
   margin: 0;
-}
-.hkf-approved-by {
-  font-size: 12px;
-  color: var(--muted);
 }
 .hkf-stages {
   display: grid;

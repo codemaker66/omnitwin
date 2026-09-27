@@ -4,9 +4,10 @@ import { MemoryRouter } from "react-router-dom";
 import { EventPhaseGraphSchema, HallkeeperSheetV2Schema, type EventPhaseGraph } from "@omnitwin/types";
 import { HallkeeperWorkspace, type HallkeeperWorkspaceProps } from "../HallkeeperWorkspace.js";
 import { useHallkeeperContext, type HallkeeperVerifiedContext } from "../useHallkeeperContext.js";
+import { useSheetReviewStatus } from "../useSheetReviewStatus.js";
 
 vi.mock("../useHallkeeperContext.js", () => ({ useHallkeeperContext: vi.fn() }));
-vi.mock("../HallkeeperStatusBanner.js", () => ({ HallkeeperStatusBanner: () => null }));
+vi.mock("../useSheetReviewStatus.js", () => ({ useSheetReviewStatus: vi.fn() }));
 // Geometry and object linkage retain their own real-render tests. Here the
 // marker callback exercises the workspace's category/filter/page navigation.
 vi.mock("../InteractiveFloorPlan.js", () => ({
@@ -47,6 +48,7 @@ const sheet = HallkeeperSheetV2Schema.parse({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useHallkeeperContext).mockReturnValue({ status: "idle", context: null, error: null, retry: vi.fn() });
+  vi.mocked(useSheetReviewStatus).mockReturnValue(null);
 });
 afterEach(cleanup);
 
@@ -147,6 +149,25 @@ describe("HallkeeperWorkspace compact working views", () => {
       fireEvent.click(within(stageNav).getByRole("button", { name: new RegExp(name, "u") }));
       expect(within(screen.getByRole("region", { name: "Keep in view" })).getByRole("link", { name: "Call Elaine Gray on 0141 552 2418" })).toBeTruthy();
     }
+  });
+
+  it("says a sheet is rejected in a band under the heading, before its facts and its work (roadmap N4)", () => {
+    vi.mocked(useSheetReviewStatus).mockReturnValue("rejected");
+    mount();
+    const band = screen.getByRole("alert");
+    expect(band.textContent).toContain("Do not prepare the room from this sheet.");
+    const order = Array.from(document.querySelectorAll("[role='alert'], section, nav"));
+    expect(order.indexOf(band)).toBeLessThan(order.indexOf(screen.getByRole("region", { name: "Keep in view" })));
+    expect(order.indexOf(band)).toBeLessThan(order.indexOf(screen.getByRole("navigation", { name: "Event workflow views" })));
+  });
+
+  it("gives an approved sheet one stamp and no band, where it used to name its version three times", () => {
+    vi.mocked(useSheetReviewStatus).mockReturnValue("approved");
+    const { container } = mount({ data: { ...sheet, approval: { version: 3, approvedAt: "2026-04-17T14:30:00.000Z", approverName: "Catherine Tait" } } });
+    expect(screen.getByText("Approved v3 · Fri 17 Apr, 15:30 · Catherine Tait")).toBeTruthy();
+    expect(container.querySelector(".hkf-approval-band")).toBeNull();
+    const main = container.querySelector(".hkf-main")?.textContent ?? "";
+    expect(main.match(/v3/gu)).toHaveLength(1);
   });
 
   it("opens the brief in place, with no arrow promising another page", () => {

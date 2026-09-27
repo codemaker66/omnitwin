@@ -8,10 +8,11 @@ import { RoomPlanReference } from "./RoomPlanReference.js";
 import { roomPosterSources } from "../../lib/room-posters.js";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { InteractiveFloorPlan } from "./InteractiveFloorPlan.js";
-import { HallkeeperStatusBanner } from "./HallkeeperStatusBanner.js";
+import { ApprovalBand, ApprovalStamp } from "./ApprovalBand.js";
 import { KeepInView } from "./KeepInView.js";
 import { deviceZone, venueDay, zoneNote } from "./sheet-facts.js";
 import { useHallkeeperContext, type HallkeeperVerifiedContext, type HallkeeperContextResult } from "./useHallkeeperContext.js";
+import { useSheetReviewStatus } from "./useSheetReviewStatus.js";
 import "../../styles/hallkeeper-register.css";
 import "./hallkeeper-workspace.css";
 
@@ -44,6 +45,7 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
   const [params] = useSearchParams();
   const result = useHallkeeperContext(data.config.id, params.get("eventId"));
   const context = result.context;
+  const reviewStatus = useSheetReviewStatus(data.config.id);
   const [stage, setStage] = useState<Stage>("setup");
   const [category, setCategory] = useState(data.phases[0]?.phase ?? "furniture");
   const [showDetails, setShowDetails] = useState(false);
@@ -112,7 +114,7 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
         <div className="hkf-rail-bottom"><span className="hkf-overline">Layout record</span><p>{data.space.widthM} × {data.space.lengthM} m</p><p>{data.totals.totalItems} manifest items</p><span className="hkf-muted">{data.config.layoutStyle.replace(/[-_]/g, " ")}</span></div>
       </aside>
       <div className="hkf-main">
-        <header className="hkf-heading"><div><span className="hkf-overline">Hallkeeper sheet</span><h1>{data.space.name}</h1><p className="hkf-event-name" title={data.config.name}>{data.config.name}</p>{otherRooms.length > 0 && <details className="hkf-room-switch"><summary>{otherRooms.length === 1 ? "1 other room" : `${String(otherRooms.length)} other rooms`} in this event</summary><ul>{otherRooms.map((layout) => <li key={layout.configurationId}><Link to={roomLink(layout.configurationId)}>{layout.spaceName}<small>{layout.name}</small></Link></li>)}</ul></details>}<div className="hkf-facts"><span><Users size={15} /> {data.config.guestCount} guests</span><span>{data.totals.totalItems} manifest items</span>{data.approval !== null && <span>Sheet v{data.approval.version}</span>}<button type="button" onClick={() => { setShowDetails(true); }}>Brief & contacts</button></div></div>
+        <header className="hkf-heading"><div><span className="hkf-overline">Hallkeeper sheet</span><h1>{data.space.name}</h1><p className="hkf-event-name" title={data.config.name}>{data.config.name}</p>{otherRooms.length > 0 && <details className="hkf-room-switch"><summary>{otherRooms.length === 1 ? "1 other room" : `${String(otherRooms.length)} other rooms`} in this event</summary><ul>{otherRooms.map((layout) => <li key={layout.configurationId}><Link to={roomLink(layout.configurationId)}>{layout.spaceName}<small>{layout.name}</small></Link></li>)}</ul></details>}<div className="hkf-facts">{data.approval !== null && <ApprovalStamp approval={data.approval} timeZone={data.venue.timezone} />}<span><Users size={15} /> {data.config.guestCount} guests</span><span>{data.totals.totalItems} manifest items</span><button type="button" onClick={() => { setShowDetails(true); }}>Brief & contacts</button></div></div>
           {/* The hour the room must be ready beside the hour the event starts
               (roadmap N4): the deadline the whole setup works to. */}
           <div className="hkf-time-card">
@@ -126,7 +128,8 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
             {data.timing !== null && setupByAt === null && <small className="hkf-time-note">No changeover time is recorded for this room.</small>}
           </div>
         </header>
-        <div className="hkf-provenance"><HallkeeperStatusBanner key={data.config.id} configId={data.config.id} timeZone={data.venue.timezone} compact />{data.approval !== null && <span className="hkf-approved-by">Sheet v{data.approval.version} · approved by {data.approval.approverName}</span>}{notices}</div>
+        {data.approval === null && <ApprovalBand status={reviewStatus} />}
+        <div className="hkf-provenance">{notices}</div>
         <KeepInView instructions={data.instructions} timeZone={data.venue.timezone} eventDay={eventDay} nowMs={nowMs} context={result} />
         <nav className="hkf-stages" aria-label="Event workflow views">{STAGES.map((item, index) => <button key={item.id} type="button" className={`hkf-stage hkf-${item.id}`} aria-pressed={stage === item.id} onClick={() => { setStage(item.id); setPhoneView("work"); if (item.id === "checks" && data.phases.some((entry) => entry.phase === "final")) { setCategory("final"); setPage(0); setSearch(""); } }}><span className="hkf-stage-index">{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><small>{item.caption}</small></button>)}</nav>
         <div className="hkf-phone-switch" role="group" aria-label="Show on this phone">
