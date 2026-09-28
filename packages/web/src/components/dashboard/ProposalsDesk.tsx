@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactElement } from "react";
 import {
   findUnsupportedProposalClaim, PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION, ProposalVersionPayloadSchema, type ProposalNextVersion,
   type ProposalVersionPayload,
@@ -18,9 +18,9 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { deskGreeting, venueYear, type SummaryPart } from "./enquiries/enquiry-desk-format.js";
 import {
-  COMPOSABLE, ProposalPanel, type DraftMemory, type PartRead, type ProposalFailure, type ProposalPanelProps, type ProposalWork,
+  COMPOSABLE, ProposalPanel, type DraftMemory, type PartRead, type ProposalFailure, type ProposalPanelProps, type ProposalWork, type Said,
 } from "./proposals/ProposalPanel.js";
-import { recallDraft, recallKept, rememberDraft, rememberKept, type KeptCopies } from "./proposals/proposal-memory.js";
+import { recallDraft, recallKept, rememberDraft, subscribeKept, updateKept, type KeptCopies } from "./proposals/proposal-memory.js";
 import { ProposalsLedger } from "./proposals/ProposalsLedger.js";
 import { ProposalsStages } from "./proposals/ProposalsStages.js";
 import {
@@ -187,17 +187,22 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
   const [detail, setDetail] = useState<DetailState>({ status: "idle" });
   const [working, setWorking] = useState<ProposalWork>(null);
   const [failure, setFailure] = useState<ProposalFailure | null>(null);
-  const [announcement, setAnnouncement] = useState<string | null>(null);
-  // Said apart from what a step says, so neither is lost: words kept to copy.
-  const [keptNote, setKeptNote] = useState<string | null>(null);
+  // What a step says, and apart from it, so neither is lost, that words were
+  // kept to copy. Each saying is counted, so the same words said again are
+  // heard again.
+  const saidRef = useRef(0);
+  const [announcement, setAnnouncement] = useState<Said | null>(null);
+  const [keptNote, setKeptNote] = useState<Said | null>(null);
+  const say = (text: string): Said => { saidRef.current += 1; return { text, n: saidRef.current }; };
   const [stampKey, setStampKey] = useState<number | null>(null);
   const [links, setLinks] = useState<Readonly<Record<string, string>>>({});
   // Versions that did not save, and words put aside, kept per proposal and
   // per composer so each can be copied once the composer that wrote it is
   // gone. They live for the page (proposal-memory.ts), so moving to another
-  // part of the dashboard and back loses none of them.
-  const [keptDrafts, setKeptDrafts] = useState<KeptCopies>(() => recallKept(person));
-  useEffect(() => { rememberKept(person, keptDrafts); }, [person, keptDrafts]);
+  // part of the dashboard and back loses none of them, and a save that
+  // answers after the desk was left still keeps or puts away its copy.
+  const keptDrafts = useSyncExternalStore(subscribeKept, () => recallKept(person));
+  const setKeptDrafts = useCallback((update: (current: KeptCopies) => KeptCopies): void => { updateKept(person, update); }, [person]);
   const [creating, setCreating] = useState(false);
   const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0, next: 0 });
   const listRequest = useLatestRequest();
@@ -485,7 +490,7 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     stepClosedRef.current = null;
     try {
       const said = await action(id);
-      if (openIdRef.current === id && said !== null) setAnnouncement(said);
+      if (openIdRef.current === id && said !== null) setAnnouncement(say(said));
       return true;
     } catch (error: unknown) {
       if (openIdRef.current === id) {
@@ -616,15 +621,25 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
   // moved on without them.
   const savingRef = useRef<number | null>(null);
 
-  // A version that did not save stays in its composer, which remembers it
-  // (proposal-memory.ts); once that composer is gone, its words are kept to
-  // copy (onComposerGone). A version that saves puts every copy away.
+  // A version that did not save is kept, so it can still be copied once the
+  // composer that wrote it is gone: that composer may already have been
+  // replaced while the save was on its way, taking the words with it. Hidden
+  // while its composer is on screen; a later reason for the same composer
+  // replaces it. A version that saves puts every copy away.
   const onSaveVersion = async (draft: ComposerDraft, composer: number, basedOn: number, basis?: string): Promise<boolean> => {
     const id = proposal?.id ?? null;
     savingRef.current = composer;
     const saved = await saveVersion(draft, composer, basedOn, basis);
     if (!saved && savingRef.current === composer) savingRef.current = null;
-    if (saved && id !== null) forgetKept(id, null);
+    if (id !== null) {
+      if (saved) forgetKept(id, null);
+      else {
+        setKeptDrafts((current) => ({
+          ...current,
+          [id]: [...(current[id] ?? []).filter((entry) => entry.composer !== composer), { draft, composer, why: null }],
+        }));
+      }
+    }
     return saved;
   };
 
@@ -647,7 +662,7 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     // Its own refusal explains itself, so the words it kept need no reason.
     const entry = { draft, composer, why: ownRefusal ? null : why };
     setKeptDrafts((current) => ({ ...current, [id]: [...(current[id] ?? []).filter((other) => other.composer !== composer), entry] }));
-    if (!ownRefusal) setKeptNote(byStep ? "What you wrote is kept here to copy." : `${why} What you wrote is kept here to copy.`);
+    if (!ownRefusal) setKeptNote(say(byStep ? "What you wrote is kept here to copy." : `${why} What you wrote is kept here to copy.`));
     return true;
   };
 
@@ -663,7 +678,7 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     }));
     if (failure?.where === "version") setFailure(null);
     rememberDraft(person, id, null);
-    setKeptNote(`${why} What you wrote is kept here to copy.`);
+    setKeptNote(say(`${why} What you wrote is kept here to copy.`));
   };
 
   const onDiscardKept = (composer: number): void => {

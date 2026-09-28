@@ -569,7 +569,7 @@
   transition: background-color 120ms ease, border-color 120ms ease, transform 120ms var(--enq-ease-out);
 }
 .enq-quiet:active { transform: scale(0.97); }
-.enq-quiet:disabled { cursor: default; opacity: 0.7; }
+.enq-quiet:disabled, .enq-quiet[aria-disabled="true"] { cursor: default; opacity: 0.7; }
 .enq-next__hint { margin: 10px 0 0; color: var(--enq-forest-ink-2); font-size: 13.5px; text-wrap: pretty; }
 
 .enq-confirm {

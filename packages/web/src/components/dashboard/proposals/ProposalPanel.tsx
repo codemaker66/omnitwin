@@ -50,6 +50,13 @@ export interface ProposalFailure {
   readonly moved?: boolean;
 }
 
+/** Something said aloud, counted: the same words said again are a new
+ *  saying, and are heard again. */
+export interface Said {
+  readonly text: string;
+  readonly n: number;
+}
+
 /** The words in this proposal's composer, remembered for the visit
  *  (proposal-memory.ts), so leaving the proposal loses nothing. */
 export interface DraftMemory {
@@ -64,7 +71,7 @@ export interface ProposalPanelProps {
   readonly nowMs: number;
   readonly navigation: PanelNavigation;
   readonly headingRef: RefObject<HTMLHeadingElement>;
-  readonly announcement: string | null;
+  readonly announcement: Said | null;
   readonly stampKey: number | null;
   readonly latest: PartRead<StaffProposalVersion>;
   /** What a version saved now would take that the latest does not show its
@@ -78,7 +85,7 @@ export interface ProposalPanelProps {
   readonly onRetryCheck: () => void;
   readonly memory: DraftMemory | null;
   /** Said when words are kept to copy, apart from what a step says. */
-  readonly keptNote: string | null;
+  readonly keptNote: Said | null;
   readonly history: PartRead<readonly ProposalHistoryEntry[]>;
   readonly comments: PartRead<readonly ProposalCommentRow[]>;
   readonly spaces: PartRead<readonly Space[]>;
@@ -167,6 +174,9 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
   const start = composerStart(proposal, props.latest);
   const formRef = useRef<FormOnScreen | null>(null);
   const focusKeptRef = useRef(false);
+  // A composer form that goes while focus is in it says so, as it goes.
+  const focusLostRef = useRef(false);
+  const onFocusLost = useCallback((): void => { focusLostRef.current = true; }, []);
   const report = useCallback<ReportForm>((form, written) => {
     formRef.current = form;
     memory?.remember(written);
@@ -191,14 +201,23 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
     }
     if (kept) focusKeptRef.current = true;
   }, [start, composable, proposal.status, proposal.currentVersion, memory, onComposerGone]);
-  // Focus that was in the composer is lost with it: it goes to the words kept.
+  // Focus that was in the composer is lost with it: it goes to the words
+  // kept, or else to what the next composer starts from, or, with no
+  // composer, to the proposal's name. Never from wherever it has gone since.
   useEffect(() => {
-    if (!focusKeptRef.current) return;
-    const kept = sectionRef.current?.querySelector<HTMLElement>("[data-kept-heading]") ?? null;
-    if (kept === null) return;
-    focusKeptRef.current = false;
-    const active = document.activeElement;
-    if (active === null || active === document.body) kept.focus();
+    const lost = (): boolean => document.activeElement === null || document.activeElement === document.body;
+    if (focusKeptRef.current) {
+      const kept = sectionRef.current?.querySelector<HTMLElement>("[data-kept-heading]") ?? null;
+      if (kept === null) return;
+      focusKeptRef.current = false;
+      focusLostRef.current = false;
+      if (lost()) kept.focus();
+      return;
+    }
+    if (!focusLostRef.current || start === "reading") return;
+    focusLostRef.current = false;
+    if (!lost()) return;
+    (sectionRef.current?.querySelector<HTMLElement>("[data-testid='composer-start']") ?? headingRef.current)?.focus();
   });
 
   const step = (event: KeyboardEvent<HTMLElement>): void => {
@@ -246,8 +265,11 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
             {linkVersionWords(proposal)}
           </span>
         </div>
-        <p className="vv-sr-only" role="status">{props.announcement}</p>
-        <p className="vv-sr-only" role="status" data-testid="kept-note">{props.keptNote}</p>
+        {/* Each saying is a fresh node, so the same words said again are heard. */}
+        <p className="vv-sr-only" role="status">{props.announcement !== null && <span key={props.announcement.n}>{props.announcement.text}</span>}</p>
+        <p className="vv-sr-only" role="status" data-testid="kept-note">
+          {props.keptNote !== null && <span key={props.keptNote.n}>{props.keptNote.text}</span>}
+        </p>
         {props.refreshing && <ActivityStatus className="enq-panel__activity">Refreshing the proposal…</ActivityStatus>}
 
         <Facts proposal={proposal} nowMs={props.nowMs} />
@@ -260,7 +282,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} />
-        {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} />}
+        {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onFocusLost={onFocusLost} />}
         <LatestQuote {...props} />
         <Conversation {...props} />
         <History {...props} />
@@ -464,6 +486,8 @@ interface ComposerProps extends ProposalPanelProps {
   /** The version the form starts from (composerStart). */
   readonly start: Exclude<ComposerStart, "closed">;
   readonly report: ReportForm;
+  /** The form is going while focus is in it. */
+  readonly onFocusLost: () => void;
 }
 
 interface ComposerFormProps extends ComposerProps {
@@ -529,7 +553,7 @@ function KeptDraft({ proposal, keptDrafts, failure, onDiscardKept, holder }: Pro
   const refused = shown.every((kept) => kept.why === null);
   const title = !refused ? "What you were writing" : shown.length === 1 ? "The version that did not save" : "The versions that did not save";
   return (
-    <section className="enq-section" aria-labelledby={headingId} data-testid="kept-version">
+    <section className="enq-section" aria-labelledby={headingId} data-testid="kept-version" data-composer-form={holder ?? undefined}>
       <h3 id={headingId} tabIndex={-1} data-kept-heading="">{title}</h3>
       {!composing && failure?.where === "version" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
       <p className="enq-next__hint">What you wrote is kept here to copy.</p>
@@ -566,7 +590,7 @@ let composers = 0;
 function ComposerForm(props: ComposerFormProps): ReactElement {
   const {
     proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain,
-    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, report,
+    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onFocusLost, report,
   } = props;
   const layoutLine = composerLayoutLine(proposal);
   const headingId = useId();
@@ -595,13 +619,13 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   useEffect(() => {
     report({ composer, start: basedOn }, differs ? { composer, start: basedOn, draft } : null);
   }, [report, differs, composer, basedOn, draft]);
-  // A reload or a closed tab would take them: the browser asks first.
-  useEffect(() => {
-    if (!differs) return;
-    const protect = (event: BeforeUnloadEvent): void => { event.preventDefault(); };
-    window.addEventListener("beforeunload", protect);
-    return () => { window.removeEventListener("beforeunload", protect); };
-  }, [differs]);
+  // Going while focus is in it (replaced by a version saved elsewhere, a send,
+  // or anything else), the form says so before its fields leave the page, so
+  // the panel can give focus somewhere to go.
+  useLayoutEffect(() => () => {
+    const within = document.activeElement?.closest(`[data-composer-form="${String(composer)}"]`) ?? null;
+    if (within !== null) onFocusLost();
+  }, [composer, onFocusLost]);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (!startedAgain) return;
@@ -633,18 +657,20 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const [focusLine, setFocusLine] = useState<number | null>(null);
   // Check again stays where it was pressed while it checks, so focus stays
   // with it. Answered, focus goes to what the start line now says; not
-  // answered, it is said, and Check again is there to press again.
+  // answered, it is said, and Check again is there to press again. Only a
+  // check the booker asked for is answered like that: one made again on
+  // coming back to the page says nothing and moves nothing.
   const startRef = useRef<HTMLParagraphElement>(null);
-  const retriedRef = useRef(false);
+  const askedRef = useRef<"asked" | "checking" | null>(null);
   const [checkSaid, setCheckSaid] = useState("");
   useEffect(() => {
     if (checkRetrying) {
-      retriedRef.current = true;
+      if (askedRef.current === "asked") askedRef.current = "checking";
       setCheckSaid("");
       return;
     }
-    if (!retriedRef.current) return;
-    retriedRef.current = false;
+    if (askedRef.current !== "checking") return;
+    askedRef.current = null;
     if (check.status === "failed") {
       setCheckSaid("It still could not be checked.");
       return;
@@ -652,6 +678,11 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     const active = document.activeElement;
     if (active === null || active === document.body) startRef.current?.focus();
   }, [checkRetrying, check.status]);
+  const checkAgain = (): void => {
+    if (checkRetrying) return;
+    askedRef.current = "asked";
+    onRetryCheck();
+  };
 
   useEffect(() => {
     if (focusLine === null) return;
@@ -666,15 +697,15 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   return (
     <>
       <KeptDraft {...props} holder={composer} />
-      <section className="enq-section pr-compose" aria-labelledby={headingId} data-testid="composer">
+      <section className="enq-section pr-compose" aria-labelledby={headingId} data-testid="composer" data-composer-form={composer}>
         <h3 id={headingId}>Version {String(next)}</h3>
         <p className="enq-next__hint" id={startId} ref={startRef} tabIndex={-1} data-testid="composer-start">
           {composerStartWords(from === null ? null : basedOn, changes, check, droppedChanges(from))}
         </p>
         {from !== null && (check.status === "failed" || checkRetrying) && (
           <div className="enq-actions">
-            <button type="button" className="enq-quiet" data-testid="composer-check-again" aria-disabled={checkRetrying}
-              onClick={() => { if (!checkRetrying) onRetryCheck(); }}>
+            <button type="button" className="enq-quiet" data-testid="composer-check-again" aria-disabled={checkRetrying} aria-busy={checkRetrying}
+              onClick={checkAgain}>
               {checkRetrying && <ActivityIndicator size={18} />}
               {checkRetrying ? "Checking…" : "Check again"}
             </button>
