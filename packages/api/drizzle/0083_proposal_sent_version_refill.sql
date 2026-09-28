@@ -18,8 +18,10 @@
 --   latest move into that status (into accepted, for an archived one), the
 --   version its link showed as it was answered. This can lower 0082's fill,
 --   which took the current version even when a version was saved after the
---   answer. An answered proposal with no recorded answer keeps what it has,
---   or its current version if it has none, as 0082 took.
+--   answer. An answered proposal with no recorded move into its status (from
+--   before history was kept) keeps what it has, or its current version if it
+--   has none, as 0082 took; one answered before any version was saved keeps
+--   none.
 -- - anything else (a draft, withdrawn, archived otherwise) is left as it is;
 --   its link does not open.
 --
@@ -30,9 +32,10 @@
 -- ones on those notes, so both statements leave them as they are.
 --
 -- Versions and moves are stamped with their transaction's start, not its
--- commit, so a version save that began before an answer and committed after it
--- is taken as saved before it; the window is the moment between a save's start
--- and its hold on the row, and only a save racing an answer falls in it.
+-- commit. A version save that began before an answer and committed after it
+-- is taken as saved before it; so is one that fell between the team's or the
+-- older share code's answer and its history row, which those routes write as
+-- two statements. Only a save racing an answer falls in either window.
 --
 -- Every statement gives the same answer when run again. The whole file runs
 -- in one transaction; a lock that cannot be had within ten seconds fails it,
@@ -75,11 +78,14 @@ WHERE p.id = shown.id
   AND shown.version IS NOT NULL
   AND p.sent_version IS DISTINCT FROM shown.version;
 --> statement-breakpoint
-UPDATE proposals
-SET sent_version = current_version
-WHERE sent_version IS NULL
-  AND current_version >= 1
-  AND status IN ('accepted', 'declined', 'expired', 'changes_requested');
+UPDATE proposals p
+SET sent_version = p.current_version
+WHERE p.sent_version IS NULL
+  AND p.current_version >= 1
+  AND p.status IN ('accepted', 'declined', 'expired', 'changes_requested')
+  AND NOT EXISTS (
+    SELECT 1 FROM proposal_status_history h
+    WHERE h.proposal_id = p.id AND h.to_status = p.status);
 --> statement-breakpoint
 UPDATE proposals p
 SET accepted_name = NULL
