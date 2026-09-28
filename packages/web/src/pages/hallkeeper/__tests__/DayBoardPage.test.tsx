@@ -351,6 +351,29 @@ describe("DayBoardPage", () => {
     } as CalendarResponse["entries"][number];
   }
 
+  /** A pointer comes over the day controls: someone may step. */
+  function wishToStep(): void {
+    fireEvent.pointerEnter(screen.getByRole("button", { name: "Next day" }));
+  }
+
+  it("reads nothing ahead on a board nobody steps, so a Diary change costs one read", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    for (let change = 0; change < 3; change += 1) {
+      act(() => { liveUpdate.current?.(); });
+      await waitFor(() => { expect(readsOf(dayRange(0))).toBe(change + 2); });
+      await act(async () => { await Promise.resolve(); });
+    }
+    expect(readsOf(dayRange(1)) + readsOf(dayRange(-1))).toBe(0);
+    expect(getCalendarMock).toHaveBeenCalledTimes(4);
+
+    // Focus on the day controls is intent enough.
+    act(() => { screen.getByRole("button", { name: "Previous day" }).focus(); });
+    await waitFor(() => { expect(readsOf(dayRange(-1))).toBe(1); });
+    expect(readsOf(dayRange(1))).toBe(1);
+  });
+
   it("reads the days either side once the day is on screen, on the venue's own midnights", async () => {
     // New York's midnights: a step worked out on London's would read days
     // that ← and → never show.
@@ -361,6 +384,7 @@ describe("DayBoardPage", () => {
       from === dayRange(0, zone).from ? today.promise : Promise.resolve(calendarFixture([])));
     renderBoard();
     await waitFor(() => { expect(readsOf(dayRange(0, zone))).toBe(1); });
+    wishToStep();
     // Nothing is read ahead while the day itself is still being read.
     expect(readsOf(dayRange(1, zone)) + readsOf(dayRange(-1, zone))).toBe(0);
 
@@ -382,6 +406,7 @@ describe("DayBoardPage", () => {
     });
     renderBoard();
     await screen.findByText("Chamber dinner");
+    wishToStep();
     await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
     await act(async () => { await Promise.resolve(); });
 
@@ -393,12 +418,17 @@ describe("DayBoardPage", () => {
     expect(screen.getByText("Refreshing the day’s bookings…")).toBeTruthy();
     expect(screen.getByText(/^Live · updated \d\d:\d\d$/u)).toBeTruthy();
     expect(readsOf(tomorrow)).toBe(2);
+    // The day beyond waits for tomorrow's own read: nothing is started to
+    // be cut short.
+    await act(async () => { await Promise.resolve(); });
+    expect(readsOf(dayRange(2))).toBe(0);
 
     // The lunch became a dinner since: the board says what the new read says.
     await act(async () => { again.resolve(calendarFixture([tomorrowsLunch("Awards dinner")])); await again.promise; });
     expect(screen.getByText("Awards dinner")).toBeTruthy();
     expect(screen.queryByText("Awards lunch")).toBeNull();
     expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+    await waitFor(() => { expect(readsOf(dayRange(2))).toBe(1); });
   });
 
   it("keeps a day read ahead on screen when its read on arrival fails, and says from when", async () => {
@@ -410,6 +440,7 @@ describe("DayBoardPage", () => {
     });
     renderBoard();
     await screen.findByText("Chamber dinner");
+    wishToStep();
     await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
     await act(async () => { await Promise.resolve(); });
 
@@ -430,6 +461,7 @@ describe("DayBoardPage", () => {
     });
     renderBoard();
     await screen.findByText("Chamber dinner");
+    wishToStep();
     await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
     await act(async () => { await Promise.resolve(); });
     // A read ahead that fails says nothing.
@@ -458,6 +490,7 @@ describe("DayBoardPage", () => {
     });
     renderBoard();
     await screen.findByText("Chamber dinner");
+    wishToStep();
     await waitFor(() => { expect(readsOf(tomorrow)).toBe(1); });
     await act(async () => { await Promise.resolve(); });
 
@@ -496,6 +529,7 @@ describe("DayBoardPage", () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     const { container } = render(<MemoryRouter initialEntries={["/hallkeeper/today"]}><DayBoardPage /></MemoryRouter>);
     await screen.findByText("Chamber dinner");
+    wishToStep();
     expect(container.querySelector(".dayboard-chip.is-stamped")).toBeNull();
     // The dinner ends early: the same booking, now finished.
     getCalendarMock.mockResolvedValue(calendarFixture([{

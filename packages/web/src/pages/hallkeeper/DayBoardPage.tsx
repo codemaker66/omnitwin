@@ -5,9 +5,9 @@ import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { occasionLabel, type HallkeeperSheetSummary } from "@omnitwin/types";
 import { getSheetSummary } from "../../api/hallkeeper-summary.js";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { boardRange, formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs } from "../diary/lib/board-time.js";
+import { boardRange, formatWallDay, formatWallTime, msToWallInput, shiftRange, wallInputToMs, type BoardRange } from "../diary/lib/board-time.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
-import { useCalendar } from "../diary/hooks/useCalendar.js";
+import { CALENDAR_REUSE_MS, useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
@@ -45,6 +45,8 @@ import "./day-board.css";
 // ---------------------------------------------------------------------------
 
 const CLOCK_TICK_MS = 30_000;
+/** No days read ahead: nobody has shown they may step. */
+const NO_DAYS: readonly BoardRange[] = [];
 const DAY_MS = 86_400_000;
 
 /** A calendar day on either side of `date` (YYYY-MM-DD), as the same form. */
@@ -327,9 +329,19 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const selectedMs = selectedDate === null ? nowMs : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
   const range = useMemo(() => boardRange(selectedMs, "day", timeZone), [selectedMs, timeZone]);
   // The days either side are read once this one is on screen, so ← and →
-  // show them at once. A day shown from that read is read again on arrival
-  // and replaced by what the new read says, as the Diary's ranges are.
-  const neighbours = useMemo(() => [shiftRange(range, 1, timeZone), shiftRange(range, -1, timeZone)], [range, timeZone]);
+  // show them at once, but only once someone shows they may step: a pointer
+  // over or focus on the day controls, or a step itself. A board nobody steps
+  // (a wall tablet left on today) reads only its day, so a Diary change costs
+  // it one read rather than three; the wish lapses after the reuse window. A
+  // day shown from a read ahead is read again on arrival and replaced by what
+  // the new read says, as the Diary's ranges are.
+  const [stepWishedAtMs, setStepWishedAtMs] = useState<number | null>(null);
+  const wishToStep = useCallback((): void => { setStepWishedAtMs(Date.now()); }, []);
+  const readingAhead = stepWishedAtMs !== null && nowMs - stepWishedAtMs < CALENDAR_REUSE_MS;
+  const neighbours = useMemo(
+    () => (readingAhead ? [shiftRange(range, 1, timeZone), shiftRange(range, -1, timeZone)] : NO_DAYS),
+    [readingAhead, range, timeZone],
+  );
   const { data, status, error, refetch, isRefreshing, refreshFailedAtMs, readAtMs } = useCalendar(venueId, range, neighbours);
   const live = useDiaryLive(venueId !== null, refetch);
   const shownDate = msToWallInput(selectedMs, timeZone).slice(0, 10);
@@ -345,9 +357,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   // in the header keeps its own arrows.
   const boardRef = useRef<HTMLDivElement>(null);
   const moveDay = useCallback((days: number): void => {
+    wishToStep();
     const next = stepDay(shownDate, days);
     setSelectedDate(next === today ? null : next);
-  }, [shownDate, today]);
+  }, [shownDate, today, wishToStep]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.altKey || event.ctrlKey || event.metaKey || typingInto(event.target)) return;
@@ -415,7 +428,7 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           </div>
         </header>
         <div className="dayboard-controls">
-          <div className="dayboard-days">
+          <div className="dayboard-days" onPointerEnter={wishToStep} onFocus={wishToStep}>
             <button type="button" aria-label="Previous day" onClick={() => { moveDay(-1); }}><ArrowLeft size={18} aria-hidden="true" /></button>
             <label className="dayboard-day-field">Day<input type="date" value={shownDate} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value === today ? null : event.target.value); }} /></label>
             <button type="button" aria-pressed={selectedDate === null} onClick={() => { setSelectedDate(null); }}>Today</button>

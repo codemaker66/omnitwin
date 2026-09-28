@@ -151,10 +151,12 @@ export function useCalendar(
   const fetching = fetchingKey === requestKey;
 
   // Read the neighbours ahead once this range is on screen and settled, so
-  // Earlier and Later open at once. A read ahead that fails says nothing:
-  // the visit reads the range itself.
+  // Earlier and Later open at once. Settled means read during this visit: a
+  // range shown from a read ahead is still being read again, and reading on
+  // from it would start a read the next render aborts. A read ahead that
+  // fails says nothing: the visit reads the range itself.
   const neighbourKey = neighbours.map((neighbour) => calendarKey(venueId, neighbour)).join("|");
-  const settledAtMs = data !== null && !fetching ? stored?.readAtMs ?? null : null;
+  const settledAtMs = data !== null && !fetching && stored !== undefined && stored.readAtMs >= arrivedAtMs ? stored.readAtMs : null;
   const neighboursRef = useRef(neighbours);
   neighboursRef.current = neighbours;
   useEffect(() => {
