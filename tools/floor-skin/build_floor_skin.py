@@ -71,8 +71,8 @@ def main():
     ap.add_argument("--matched-source", default=None,
                     help=f"where the --matched ratio was measured, recorded as provenance.matched (default: {MATCHED_SOURCE!r})")
     a = ap.parse_args()
-    if a.matched is not None and a.matched_source is None:
-        ap.error("--matched needs --matched-source naming where that ratio was measured")
+    if (a.matched is None) != (a.matched_source is None):
+        ap.error("--matched and --matched-source go together: a measured ratio and where it was measured")
     matched = MATCHED if a.matched is None else a.matched
     matched_source = MATCHED_SOURCE if a.matched_source is None else a.matched_source
 

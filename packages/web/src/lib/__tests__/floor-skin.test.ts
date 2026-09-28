@@ -139,6 +139,9 @@ describe("floor-skin manifest limits (T-639: the manifest is untrusted input)", 
     ["a slab mask over 4,096 wide", { slab: { ...manifest.slab, width: 4_097 } }],
     ["a slab mask over 4,096 high", { slab: { ...manifest.slab, height: 4_097 } }],
     ["a texture tier over 8,192 texels", { tiers: { ...manifest.tiers, medium: { ...manifest.tiers.medium, size: 8_193 } } }],
+    ["a tile that runs past the grid's width", { tiles: [{ col0: 300, row0: 0, cols: 200, rows: 200 }] }],
+    ["a tile that runs past the grid's height", { tiles: [{ col0: 0, row0: 100, cols: 200, rows: 200 }] }],
+    ["a tile of 200,000 × 200,000 texels", { grid: { ...manifest.grid, widthPx: 65_536, heightPx: 65_536 }, tiles: [{ col0: 0, row0: 0, cols: 200_000, rows: 200_000 }] }],
   ])("refuses %s", (_label, override) => {
     expect(parses({ ...manifest, ...override })).toBe(false);
   });

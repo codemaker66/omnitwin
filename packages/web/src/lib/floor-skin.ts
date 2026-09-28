@@ -13,6 +13,8 @@ const vec3 = z.tuple([z.number(), z.number(), z.number()]);
  * is bounded before anything is allocated from it. */
 const fileName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "A floor-skin file is named without a path.");
 const tier = z.object({ size: z.number().int().positive().max(8_192), files: z.array(fileName).min(1) });
+const tileSpan = z.number().int().positive().max(65_536);
+const tileOrigin = z.number().int().nonnegative().max(65_535);
 
 export const FloorSkinManifestSchema = z.object({
   schema: z.literal("venviewer.floor-skin.v1"),
@@ -33,10 +35,7 @@ export const FloorSkinManifestSchema = z.object({
     origin: vec3, uAxis: vec3, vAxis: vec3,
   }),
   plane: z.object({ normal: vec3, d: z.number() }),
-  tiles: z.array(z.object({
-    col0: z.number().int().nonnegative(), row0: z.number().int().nonnegative(),
-    cols: z.number().int().positive(), rows: z.number().int().positive(),
-  })).min(1).max(16),
+  tiles: z.array(z.object({ col0: tileOrigin, row0: tileOrigin, cols: tileSpan, rows: tileSpan })).min(1).max(16),
   tiers: z.object({ high: tier, medium: tier, low: tier }),
   height: z.object({
     file: fileName, cols: z.number().int().positive().max(4_096), rows: z.number().int().positive().max(4_096),
@@ -48,6 +47,13 @@ export const FloorSkinManifestSchema = z.object({
   }),
   colour: z.object({ matched: vec3 }),
   files: z.record(fileName, z.string()),
+}).superRefine((manifest, context) => {
+  // Tiles size the floor geometry, so each must lie inside the grid it cuts.
+  manifest.tiles.forEach((tile, index) => {
+    if (tile.col0 + tile.cols > manifest.grid.widthPx || tile.row0 + tile.rows > manifest.grid.heightPx) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["tiles", index], message: "A floor-skin tile lies outside its grid." });
+    }
+  });
 });
 export type FloorSkinManifest = z.infer<typeof FloorSkinManifestSchema>;
 export type FloorSkinTier = keyof FloorSkinManifest["tiers"];
