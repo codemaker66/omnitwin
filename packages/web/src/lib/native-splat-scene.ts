@@ -124,6 +124,9 @@ export class NativeSplatScene {
 
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
     if (this.renderer !== null && this.renderer !== renderer) throw new Error("A native splat scene must have one active renderer");
+    // The first host after a full teardown finds exclusionTexture disposed (see below); its
+    // mask data survives on the JS side, but the GPU-side storage must be re-created.
+    if (this.hosts === 0 && this.renderer === null) this.exclusionTexture.needsUpdate = true;
     this.renderer = renderer;
     this.camera = camera;
     this.invalidate = invalidate;
@@ -140,6 +143,8 @@ export class NativeSplatScene {
         this.clearSnapshots();
         this.cpuSortPool?.dispose();
         this.cpuSortPool = null;
+        // Safe here, not earlier: every snapshot sampling this shared mask was just cleared above, and StrictMode's immediate re-attach already had its chance to return early before this point runs.
+        this.exclusionTexture.dispose();
         this.renderer = null;
         this.camera = null;
         this.desiredKey = "";

@@ -714,4 +714,26 @@ describe("floor-slab exclusion host (T-639)", () => {
     expect((texture.image.data as Uint8Array)[0]).toBe(0);
     state.detach();
   });
+
+  it("releases the shared mask texture only on the runtime's real last detach, then re-uploads it on the next attach", async () => {
+    const state = setup();
+    const disposed = vi.fn();
+    state.runtime.exclusionMask.addEventListener("dispose", disposed);
+
+    // The runtime's real last detach (no immediate re-attach) disposes the shared mask exactly once.
+    state.detach();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(disposed).toHaveBeenCalledOnce();
+
+    // Re-attaching after that full teardown forces the (surviving) mask data to re-upload.
+    const versionAfterDispose = state.runtime.exclusionMask.version;
+    const redetach = state.runtime.attach(state.renderer, state.camera, state.invalidate);
+    expect(state.runtime.exclusionMask.version).toBeGreaterThan(versionAfterDispose);
+
+    // A detach immediately followed by a re-attach (React StrictMode) must not dispose it.
+    redetach();
+    state.runtime.attach(state.renderer, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(disposed).toHaveBeenCalledOnce();
+  });
 });
