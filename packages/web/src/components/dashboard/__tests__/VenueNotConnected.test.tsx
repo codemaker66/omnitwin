@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
@@ -54,17 +55,42 @@ describe("VenueNotConnected", () => {
     expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
   });
 
+  /** The workspace as the dashboard frames it: the notice until the account
+   *  has a venue, then the view in its place. */
+  function Workspace(): ReactElement {
+    const connected = useAuthStore((state) => state.user?.venueId !== null);
+    return (
+      <>
+        <button type="button">Notifications</button>
+        <main id="dashboard-main" tabIndex={-1} aria-label="Proposals">
+          {connected ? <p>The proposals</p> : <VenueNotConnected title="Proposals" consequence="there are no proposals to show" />}
+        </main>
+      </>
+    );
+  }
+
   it("takes a venue connected meanwhile into the account, and gives the workspace focus as the view opens", async () => {
     mocks.getCurrentAuthUser.mockResolvedValue({ ...UNPLACED, venueId: "venue-1" });
-    render(<main id="dashboard-main" tabIndex={-1} aria-label="Proposals">
-      <VenueNotConnected title="Proposals" consequence="there are no proposals to show" />
-    </main>);
+    render(<Workspace />);
     const button = screen.getByRole("button", { name: "Check again" });
     button.focus();
     fireEvent.click(button);
-    await waitFor(() => { expect(useAuthStore.getState().user?.venueId).toBe("venue-1"); });
-    expect(screen.queryByText("Not connected yet.")).toBeNull();
+    expect(await screen.findByText("The proposals")).toBeDefined();
+    expect(useAuthStore.getState().user?.venueId).toBe("venue-1");
     await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("main", { name: "Proposals" })); });
+  });
+
+  it("leaves focus where someone put it while the check was on its way", async () => {
+    let answer: (user: AuthUser) => void = () => undefined;
+    mocks.getCurrentAuthUser.mockReturnValue(new Promise<AuthUser>((resolve) => { answer = resolve; }));
+    render(<Workspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    const menu = screen.getByRole("button", { name: "Notifications" });
+    menu.focus();
+    answer({ ...UNPLACED, venueId: "venue-1" });
+    expect(await screen.findByText("The proposals")).toBeDefined();
+    await new Promise((resolve) => { requestAnimationFrame(resolve); });
+    expect(document.activeElement).toBe(menu);
   });
 
   it("says calmly that a check did not finish, and keeps the account as it was", async () => {

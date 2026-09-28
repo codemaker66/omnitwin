@@ -52,8 +52,13 @@ export function VenueNotConnected({ title, consequence }: VenueNotConnectedProps
         // Connected: the view opens in place of this notice, which leaves with
         // the button that had focus. The workspace takes it, as on any change
         // of view, so a keyboard or screen-reader user starts in the view.
+        // Focus someone has since put elsewhere (a menu opened meanwhile) stays.
         setCheck("idle");
-        requestAnimationFrame(() => { document.getElementById("dashboard-main")?.focus({ preventScroll: true }); });
+        requestAnimationFrame(() => {
+          const active = document.activeElement;
+          if (active !== null && active !== document.body) return;
+          document.getElementById("dashboard-main")?.focus({ preventScroll: true });
+        });
       })
       .catch(() => { if (mounted.current) setCheck("failed"); });
   };

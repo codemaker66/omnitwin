@@ -262,3 +262,58 @@ describe("the request slab travels with the Day Board (T-623)", () => {
     expect(codeOnly).not.toMatch(/import\s+\{[^}]*\}\s+from\s+["'][^"']*\/DayBoardPage\.js["']/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The staff shell stays out of the script every visitor loads
+//
+// The internal event pages' route guard is imported by the router directly,
+// and once rendered the dashboard shell around its venue notice. Measured with
+// `vite build`, that took the entry script from 62 kB to 252 kB (the shell,
+// its notifications, zod and the API client) on the public front door too.
+// The notice is now loaded when it is shown. Whatever the entry reaches by
+// static imports must never reach the shell or the notice.
+// ---------------------------------------------------------------------------
+
+/** Every module `entry` reaches through static imports (type-only imports
+ *  aside), as source paths. */
+async function staticImportClosure(entry: string): Promise<ReadonlySet<string>> {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const seen = new Set<string>();
+  const queue = [path.resolve(entry)];
+  const runtimeImport = /(?:^|[;\n])\s*(?:import|export)\s+(?!type\s)[^;]*?\bfrom\s+["'](\.{1,2}\/[^"']+)["']/gu;
+  const sideEffectImport = /(?:^|[;\n])\s*import\s+["'](\.{1,2}\/[^"']+)["']/gu;
+  for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const code = (await fs.readFile(file, "utf-8")).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+    const specifiers = [...code.matchAll(runtimeImport), ...code.matchAll(sideEffectImport)].map((match) => match[1] ?? "");
+    for (const specifier of specifiers) {
+      if (!specifier.endsWith(".js")) continue;
+      const base = path.resolve(path.dirname(file), specifier.slice(0, -".js".length));
+      for (const candidate of [`${base}.tsx`, `${base}.ts`]) {
+        try {
+          await fs.access(candidate);
+          queue.push(candidate);
+          break;
+        } catch {
+          // Not this extension.
+        }
+      }
+    }
+  }
+  return seen;
+}
+
+describe("the staff shell stays out of the entry script", () => {
+  it("never reaches the dashboard shell or the venue notice from the entry by static imports", async () => {
+    const path = await import("node:path");
+    const reached = await staticImportClosure("src/main.tsx");
+    expect(reached.has(path.resolve("src/router.tsx"))).toBe(true);
+    expect(reached.has(path.resolve("src/components/auth/InternalEventRoute.tsx"))).toBe(true);
+    for (const kept of ["src/components/dashboard/DashboardLayout.tsx", "src/components/dashboard/VenueNotConnected.tsx",
+      "src/components/auth/EventsNotConnected.tsx"]) {
+      expect(reached.has(path.resolve(kept)), kept).toBe(false);
+    }
+  });
+});
