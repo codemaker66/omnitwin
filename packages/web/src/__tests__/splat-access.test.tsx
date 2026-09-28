@@ -70,3 +70,17 @@ describe("production Gaussian splat hold", () => {
     expect(gaussianSplatsAvailable()).toBe(true);
   });
 });
+
+describe("where splats may run (T-639)", () => {
+  it("allows local development", () => {
+    expect(gaussianSplatsAvailable({ DEV: true, VITE_DEPLOY_ENV: "" })).toBe(true);
+  });
+
+  it("allows preview deployments so Blake can judge on his own devices", () => {
+    expect(gaussianSplatsAvailable({ DEV: false, VITE_DEPLOY_ENV: "preview" })).toBe(true);
+  });
+
+  it.each(["production", "development", "", undefined])("refuses a %s build", (deployEnv) => {
+    expect(gaussianSplatsAvailable({ DEV: false, VITE_DEPLOY_ENV: deployEnv })).toBe(false);
+  });
+});

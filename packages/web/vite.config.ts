@@ -90,6 +90,9 @@ export default defineConfig(({ mode }) => {
       // requiring a Vercel environment variable. Empty in development, where the
       // staging middleware serves them from "/splats" instead.
       "import.meta.env.VITE_SPLAT_BASE_URL": JSON.stringify(splatBaseUrl),
+      // Vercel's deployment environment, so preview links can open splats
+      // (T-639) while production keeps the founder hold. Empty outside Vercel.
+      "import.meta.env.VITE_DEPLOY_ENV": JSON.stringify(env["VERCEL_ENV"] ?? ""),
     },
     server: {
       // Transform the planner's static import graph when the dev server starts.
