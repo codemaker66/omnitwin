@@ -8,8 +8,8 @@ import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYL
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, composerLayoutLine, draftChanges, draftFromVersion, historyMoments, layoutFact, linkOpenedSentence, linkVersionWords, listWords,
-  type ComposerDraft, type KeptVersion, type QuoteLineDraft,
+  EMPTY_LINE, composerLayoutLine, composerStartWords, draftChanges, draftFromVersion, historyMoments, layoutFact, linkOpenedSentence, linkVersionWords,
+  notCarriedWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -70,7 +70,9 @@ export interface ProposalPanelProps {
   readonly onTransition: (to: "withdrawn" | "archived") => Promise<boolean>;
   /** `composer` names the composer saving, which still holds the words
    *  should the version not save. */
-  readonly onSaveVersion: (draft: ComposerDraft, composer: number) => Promise<boolean>;
+  /** `basedOn` is the version the words started from (0 for the first), so a
+   *  version saved meanwhile by someone else is never replaced unseen. */
+  readonly onSaveVersion: (draft: ComposerDraft, composer: number, basedOn: number) => Promise<boolean>;
   /** Puts one kept version away once it has been copied. */
   readonly onDiscardKept: (composer: number) => void;
   readonly onReply: (body: string) => Promise<boolean>;
@@ -425,9 +427,13 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
   const headingId = useId();
   const [composer] = useState(() => { composers += 1; return composers; });
   const from = latest.value?.payload ?? null;
+  // The version the words came from names the start and the next number: a
+  // re-read still on its way, or one that failed, keeps the words it had.
+  const basedOn = latest.value?.version ?? 0;
   const [draft, setDraft] = useState<ComposerDraft>(() => draftFromVersion(from));
-  const next = proposal.currentVersion + 1;
+  const next = basedOn + 1;
   const changes = draftChanges(from, draft);
+  const notCarried = notCarriedWords(from);
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLine, setFocusLine] = useState<number | null>(null);
@@ -448,11 +454,9 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
       <section className="enq-section pr-compose" aria-labelledby={headingId} data-testid="composer">
         <h3 id={headingId}>Version {String(next)}</h3>
         <p className="enq-next__hint" data-testid="composer-start">
-          {from === null ? "The first version." : `Starts from version ${String(proposal.currentVersion)}. `}
-          {from !== null && (changes.length === 0
-            ? `Nothing is changed from it yet.`
-            : `Changed: ${listWords(changes)}.`)}
+          {composerStartWords(from === null ? null : basedOn, changes)}
         </p>
+        {notCarried !== null && <p className="enq-next__hint" data-testid="composer-not-carried">{notCarried}</p>}
 
         <label className="pr-field">
           <span>Message to the client</span>
@@ -503,7 +507,7 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
         {failure?.where === "version" && <p className="enq-confirm__error" role="alert" data-testid="composer-error">{failure.message}</p>}
         <div className="enq-actions">
           <button type="button" className="enq-cta" data-testid="composer-save" disabled={saving || working !== null} aria-busy={saving}
-            onClick={() => { void onSaveVersion(draft, composer); }}>
+            onClick={() => { void onSaveVersion(draft, composer, basedOn); }}>
             {saving && <ActivityIndicator size={18} />}
             {saving ? "Saving…" : `Save version ${String(next)}`}
           </button>

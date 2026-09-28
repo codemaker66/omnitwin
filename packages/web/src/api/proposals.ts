@@ -381,11 +381,15 @@ export async function postProposalComment(id: string, body: string): Promise<Pro
   return api.post(`/proposals/${id}/comments`, { body }, undefined, ProposalCommentRowSchema);
 }
 
+/** `basedOn` is the version the words were written from; the API then refuses
+ *  the save (PROPOSAL_VERSION_CHANGED) if another was saved meanwhile. */
 export async function createProposalVersion(
   id: string,
   payload: ProposalVersionPayload,
+  basedOn?: number,
 ): Promise<StaffProposalVersion> {
-  return api.post(`/proposals/${id}/versions`, payload, undefined, StaffProposalVersionSchema);
+  const basis = basedOn === undefined ? "" : `?basedOn=${String(basedOn)}`;
+  return api.post(`/proposals/${id}/versions${basis}`, payload, undefined, StaffProposalVersionSchema);
 }
 
 export async function getLatestProposalVersion(id: string): Promise<StaffProposalVersion> {

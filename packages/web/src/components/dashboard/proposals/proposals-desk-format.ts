@@ -130,11 +130,12 @@ export function layoutFact(proposal: LayoutFields, inHand = true): { readonly wo
 
 /** What the composer says of the layout a version will carry, only while
  *  there is one to take. It promises no drawing: a layout with nothing
- *  placed has none. */
+ *  placed has none. Preview shows only a saved version, so it is offered for
+ *  this one once it is saved. */
 export function composerLayoutLine(proposal: LayoutFields): string | null {
   if (proposal.configurationId === null || proposal.layoutRoomName === undefined || proposal.layoutRoomName === null) return null;
   const whose = proposal.layoutFromEnquiry === true ? "Their layout" : "The layout";
-  return `${whose} is taken as it stands when you save. Preview as the client shows what they will see.`;
+  return `${whose} is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.`;
 }
 
 /** Which version the client's link shows, beside the latest saved: "; the
@@ -281,6 +282,33 @@ export function draftChanges(from: ProposalVersionPayload | null, draft: Compose
 export function listWords(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1] ?? ""}`;
+}
+
+/** Where the composer starts, and what the person has changed in it. It
+ *  speaks only of what is typed here: the layout's drawing and the event's
+ *  details are taken afresh when the version is saved. */
+export function composerStartWords(fromVersion: number | null, changes: readonly string[]): string {
+  if (fromVersion === null) return "The first version.";
+  const start = `Starts from version ${String(fromVersion)}.`;
+  return changes.length === 0
+    ? `${start} You have not changed anything here yet.`
+    : `${start} You have changed ${listWords(changes)}.`;
+}
+
+/** What the version started from shows its client that a new one does not
+ *  carry: the editor's Share lens writes descriptions of the room and layout
+ *  that the composer has no place for. Nothing when there is none. */
+export function notCarriedWords(from: ProposalVersionPayload | null): string | null {
+  if (from === null) return null;
+  const room = (from.roomSummary ?? null) !== null;
+  const layout = (from.layoutSummary ?? null) !== null;
+  const included = (from.packageSummary ?? []).length > 0;
+  const sentences: string[] = [];
+  if (room && layout) sentences.push("Its descriptions of the room and layout are not carried over.");
+  else if (room) sentences.push("Its description of the room is not carried over.");
+  else if (layout) sentences.push("Its description of the layout is not carried over.");
+  if (included) sentences.push("Its list of what is included is not carried over.");
+  return sentences.length === 0 ? null : sentences.join(" ");
 }
 
 // ---------------------------------------------------------------------------

@@ -89,6 +89,13 @@ const TransitionBody = z.object({
   note: z.string().max(1000).nullable().optional(),
 });
 
+// The version a new one was written from (the desk's composer). With it, a
+// save is refused when another was saved meanwhile, so no one's version is
+// replaced unseen; without it (the editor's Share lens), a save goes on top.
+const VersionBasisQuery = z.object({
+  basedOn: z.string().regex(/^\d{1,9}$/u).transform(Number).optional(),
+});
+
 const ListQuery = z.object({
   status: z.enum(PROPOSAL_STATES).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -1099,6 +1106,11 @@ export async function proposalRoutes(
     if (!parsed.success) {
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
+    const basis = VersionBasisQuery.safeParse(request.query);
+    if (!basis.success) {
+      return reply.status(400).send({ error: "Invalid query", code: "VALIDATION_ERROR", details: basis.error.issues });
+    }
+    const basedOn = basis.data.basedOn;
 
     const [proposal] = await db.select().from(proposals)
       .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
@@ -1145,6 +1157,9 @@ export async function proposalRoutes(
       if (current.configurationId !== proposal.configurationId
         || current.opportunityId !== proposal.opportunityId
         || current.enquiryId !== proposal.enquiryId) return "PROPOSAL_CHANGED" as const;
+      // Written from a version since followed by another: saving it on top
+      // would replace a colleague's version without either of them knowing.
+      if (basedOn !== undefined && current.currentVersion !== basedOn) return "VERSION_CHANGED" as const;
 
       const [claimed] = await tx.update(proposals)
         .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
@@ -1175,6 +1190,7 @@ export async function proposalRoutes(
     if (result === "PROPOSAL_CHANGED") {
       return reply.status(409).send({ error: "The proposal's links changed; reload before saving a version", code: "REVISION_CONFLICT" });
     }
+    if (result === "VERSION_CHANGED") return reply.status(409).send(VERSION_CHANGED);
     const { version } = result;
 
     if (version !== undefined) {

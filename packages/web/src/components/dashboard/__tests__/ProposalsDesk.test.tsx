@@ -592,7 +592,7 @@ describe("the layout it carries", () => {
     const panel = within(await openProposal());
     expect((await panel.findByTestId("proposal-layout")).textContent).toBe("Their own, Grand Hall");
     expect((await panel.findByTestId("composer-layout")).textContent)
-      .toBe("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
+      .toBe("Their layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
   });
 
   it("says a proposal carries none, and claims nothing when the API does not say", async () => {
@@ -633,13 +633,41 @@ describe("the next version", () => {
     expect(message.value).toBe("Planning-grade draft for the gala.");
     expect(panel.getByTestId<HTMLInputElement>("composer-capacity").value).toBe("Around 120 seated.");
     expect(panel.getByTestId<HTMLInputElement>("quote-price-0").value).toBe("4400");
-    expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet.");
+    expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. You have not changed anything here yet.");
     expect(panel.getByRole("button", { name: "Save version 3" })).toBeDefined();
 
     fireEvent.change(message, { target: { value: "A later finish, as asked." } });
     fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: "4600" } });
     expect(panel.getByTestId("composer-start").textContent)
-      .toBe("Starts from version 2. Changed: the message and the quote, £4,400 to £4,600.");
+      .toBe("Starts from version 2. You have changed the message and the quote, £4,400 to £4,600.");
+    expect(panel.queryByTestId("composer-not-carried")).toBeNull();
+  });
+
+  it("names the version its words came from, saves on that one, and says why a version saved meanwhile stops it", async () => {
+    // The proposal reads version 3 while its latest version still reads as 2
+    // (a re-read on its way, or one that failed): the words are version 2's.
+    existing = [proposal({ status: "changes_requested", currentVersion: 3 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(2, { clientMessage: "The words of version 2." }));
+    mocks.createProposalVersion.mockRejectedValue(
+      new ApiError(409, "A newer version was saved or sent after this was read. Reload it to see it.", "PROPOSAL_VERSION_CHANGED"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect((await panel.findByTestId("composer-start")).textContent).toBe("Starts from version 2. You have not changed anything here yet.");
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    expect(mocks.createProposalVersion.mock.calls[0]?.[2]).toBe(2);
+    expect((await panel.findByTestId("composer-error")).textContent)
+      .toBe("It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.");
+  });
+
+  it("says what a version from the editor's Share lens shows the client that the next will not carry", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1, {
+      roomSummary: "The Grand Hall is 30 m by 15 m.", layoutSummary: "Ten round tables of ten.",
+    }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect((await panel.findByTestId("composer-not-carried")).textContent).toBe("Its descriptions of the room and layout are not carried over.");
   });
 
   it("says why a version did not save when its links changed meanwhile, keeps the words, and shows the layout now linked", async () => {
@@ -774,7 +802,7 @@ describe("the next version", () => {
     // The next composer saves a version: the copy kept by the first is put away.
     fireEvent.change(again.getByTestId("composer-message"), { target: { value: "Words one, as saved." } });
     fireEvent.click(again.getByTestId("composer-save"));
-    await waitFor(() => { expect(again.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    await waitFor(() => { expect(again.getByTestId("composer-start").textContent).toBe("Starts from version 2. You have not changed anything here yet."); });
     expect(again.queryByTestId("kept-version")).toBeNull();
   });
 
@@ -792,7 +820,7 @@ describe("the next version", () => {
     expect(panel.queryByTestId("kept-version")).toBeNull();
     expect(panel.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("Planning-grade draft.");
     fireEvent.click(panel.getByTestId("composer-save"));
-    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 1. Nothing is changed from it yet."); });
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 1. You have not changed anything here yet."); });
     expect(panel.queryByTestId("kept-version")).toBeNull();
   });
 
@@ -810,8 +838,10 @@ describe("the next version", () => {
     const payload = mocks.createProposalVersion.mock.calls[0]?.[1] as { clientMessage: string; quote: null };
     expect(payload.clientMessage).toBe("Planning-grade draft.");
     expect(payload.quote).toBeNull();
+    // Written from no version, so one saved meanwhile stops it.
+    expect(mocks.createProposalVersion.mock.calls[0]?.[2]).toBe(0);
     expect(mocks.createQuote).not.toHaveBeenCalled();
-    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 1. Nothing is changed from it yet."); });
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 1. You have not changed anything here yet."); });
     expect(panel.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("Planning-grade draft.");
   });
 

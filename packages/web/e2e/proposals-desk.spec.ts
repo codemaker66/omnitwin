@@ -263,10 +263,10 @@ test.describe("Proposals desk", () => {
     await expect(composer.getByTestId("composer-message")).toHaveValue("Planning-grade proposal for your wedding on 5 June.");
     await expect(composer.getByTestId("quote-price-1")).toHaveValue("87.50");
     await composer.getByTestId("quote-price-1").fill("82.50");
-    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 1. Changed: the quote, £18,400 to £17,600.");
+    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 1. You have changed the quote, £18,400 to £17,600.");
     await composer.getByRole("button", { name: "Save version 2" }).click();
     await expect.poll(() => emulator.quotes).toEqual([{ lines: 2, totalMinor: 1_760_000 }]);
-    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 2. Nothing is changed from it yet.");
+    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 2. You have not changed anything here yet.");
     await expect(panel.getByTestId("latest-quote-total")).toHaveText("£17,600.00");
 
     // Sending asks first, in place, and names who it goes to.
@@ -336,7 +336,7 @@ test.describe("Proposals desk", () => {
     const layout = panel.getByTestId("proposal-layout");
     await expect(layout).toHaveText("Their own, Grand Hall");
     await expect(panel.getByTestId("composer-layout"))
-      .toHaveText("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
+      .toHaveText("Their layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
     // It reads across the panel, under the other facts, not squeezed into a column.
     const [fact, facts] = await layout.evaluate((dd) => [
       dd.parentElement?.getBoundingClientRect().width ?? 0, dd.closest("dl")?.getBoundingClientRect().width ?? 1,

@@ -390,7 +390,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     return `The proposal is ${proposalStatusWords(to).toLowerCase()}.`;
   });
 
-  const saveVersion = (draft: ComposerDraft): Promise<boolean> => attempt("version", "version", async (id) => {
+  const saveVersion = (draft: ComposerDraft, basedOn: number): Promise<boolean> => attempt("version", "version", async (id) => {
     if (proposal === null) return null;
     const lines = readQuoteLines(draft);
     const candidate = {
@@ -424,7 +424,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
         totalMinor: made.totalMinor,
       };
     }
-    const saved = await createProposalVersion(id, { ...checked.data, quote });
+    const saved = await createProposalVersion(id, { ...checked.data, quote }, basedOn);
     // The next version starts from this one at once; the proposal is then
     // read again for what the server made of it.
     seedLatest(id, saved);
@@ -450,9 +450,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   // composer that wrote it is gone. A composer's later failure replaces only
   // its own; one kept from an earlier composer stays until it is put away or
   // a version saves.
-  const onSaveVersion = async (draft: ComposerDraft, composer: number): Promise<boolean> => {
+  const onSaveVersion = async (draft: ComposerDraft, composer: number, basedOn: number): Promise<boolean> => {
     const id = proposal?.id ?? null;
-    const saved = await saveVersion(draft);
+    const saved = await saveVersion(draft, basedOn);
     if (id !== null) {
       if (saved) forgetKept(id, null);
       else {

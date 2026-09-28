@@ -238,8 +238,9 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     });
   });
 
-  function createVersion(): Promise<{ statusCode: number; body: string }> {
-    return server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/versions`, headers: headers(), payload: {
+  function createVersion(basedOn?: string): Promise<{ statusCode: number; body: string }> {
+    const query = basedOn === undefined ? "" : `?basedOn=${encodeURIComponent(basedOn)}`;
+    return server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/versions${query}`, headers: headers(), payload: {
       schemaVersion: "venviewer.proposal-version.v1", title: "Fixture", clientMessage: null,
       configurationId: null, layoutRevision: null, capacityNote: null, quote: null,
     } }).then((r) => r);
@@ -260,6 +261,35 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
       const latest = await server.inject({ method: "GET", url: `/proposals/${PROPOSAL}/versions/latest`, headers: headers() });
       expect(latest.statusCode).toBe(200);
     } finally { await pool.query("DROP TRIGGER reject_write ON proposal_versions"); }
+  });
+
+  it("refuses a version written from one another has since followed, keeping the colleague's", async () => {
+    expect((await createVersion("0")).statusCode).toBe(201);
+    const late = await createVersion("0");
+    expect(late.statusCode).toBe(409);
+    expect(JSON.parse(late.body)).toMatchObject({ code: "PROPOSAL_VERSION_CHANGED" });
+    const result = await pool.query<{ version: number }>("SELECT version FROM proposal_versions WHERE proposal_id = $1 ORDER BY version", [PROPOSAL]);
+    expect(result.rows.map((row) => row.version)).toEqual([1]);
+    expect((await createVersion("1")).statusCode).toBe(201);
+  });
+
+  it("saves exactly one of two versions written from the same one at once", async () => {
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [PROPOSAL]);
+      const responses = Promise.all([createVersion("0"), createVersion("0")]);
+      await waitForBlockedQueries(2);
+      await client.query("COMMIT");
+      expect((await responses).map((r) => r.statusCode).sort()).toEqual([201, 409]);
+      const result = await pool.query<{ current_version: number }>("SELECT current_version FROM proposals WHERE id = $1", [PROPOSAL]);
+      expect(result.rows[0]?.current_version).toBe(1);
+    });
+  });
+
+  it.each(["", "one", "-1", "1.5", "1e3", "9999999999"])("refuses a version basis of %j before anything is kept", async (basedOn) => {
+    const response = await createVersion(basedOn);
+    expect(response.statusCode).toBe(400);
+    const result = await pool.query<{ current_version: number }>("SELECT current_version FROM proposals WHERE id = $1", [PROPOSAL]);
+    expect(result.rows[0]?.current_version).toBe(0);
   });
 
   it("allocates distinct concurrent versions and leaves an existing snapshot at the head", async () => {

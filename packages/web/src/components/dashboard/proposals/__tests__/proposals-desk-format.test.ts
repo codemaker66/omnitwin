@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
-  composerLayoutLine, draftChanges, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords, listWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
+  composerLayoutLine, composerStartWords, draftChanges, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords, listWords,
+  notCarriedWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,28 @@ describe("the next version", () => {
     expect(listWords(["the message", "the capacity note", "the quote"])).toBe("the message, the capacity note and the quote");
     expect(listWords(["the message"])).toBe("the message");
   });
+
+  // What is typed here is all it speaks of: the drawing and the event's
+  // details are taken afresh at the save, so "nothing is changed" would not
+  // be true of the version.
+  it("says where it starts and what the person has changed, and only that", () => {
+    expect(composerStartWords(null, [])).toBe("The first version.");
+    expect(composerStartWords(2, [])).toBe("Starts from version 2. You have not changed anything here yet.");
+    expect(composerStartWords(2, ["the message", "the quote, £4,400 to £4,600"]))
+      .toBe("Starts from version 2. You have changed the message and the quote, £4,400 to £4,600.");
+  });
+
+  it("says what the version it starts from shows the client that the next one will not carry", () => {
+    expect(notCarriedWords(null)).toBeNull();
+    expect(notCarriedWords(payload())).toBeNull();
+    expect(notCarriedWords(payload({ roomSummary: "The room is 30 m by 15 m.", layoutSummary: "Ten rounds of ten." })))
+      .toBe("Its descriptions of the room and layout are not carried over.");
+    expect(notCarriedWords(payload({ roomSummary: "The room is 30 m by 15 m.", layoutSummary: null })))
+      .toBe("Its description of the room is not carried over.");
+    expect(notCarriedWords(payload({ layoutSummary: "Ten rounds of ten." }))).toBe("Its description of the layout is not carried over.");
+    expect(notCarriedWords(payload({ packageSummary: ["Piper"] }))).toBe("Its list of what is included is not carried over.");
+    expect(notCarriedWords(payload({ packageSummary: [] }))).toBeNull();
+  });
 });
 
 describe("the history", () => {
@@ -179,9 +202,11 @@ describe("the layout a proposal carries", () => {
     expect(composerLayoutLine({ configurationId: "layout-1", layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
   });
 
+  // Preview shows a saved version only, so it is offered for this one once saved.
   it("tells the composer the layout is taken as it stands, only while there is one", () => {
-    expect(composerLayoutLine(linked)).toBe("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
-    expect(composerLayoutLine({ ...linked, layoutFromEnquiry: false })).toBe("The layout is taken as it stands when you save. Preview as the client shows what they will see.");
+    expect(composerLayoutLine(linked)).toBe("Their layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
+    expect(composerLayoutLine({ ...linked, layoutFromEnquiry: false }))
+      .toBe("The layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
     expect(composerLayoutLine({ ...linked, layoutRoomName: null })).toBeNull();
     expect(composerLayoutLine({ configurationId: null, layoutRoomName: null, layoutFromEnquiry: false })).toBeNull();
   });
