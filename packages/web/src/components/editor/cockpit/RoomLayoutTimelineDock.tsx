@@ -383,12 +383,16 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   });
   const timeline = useRoomLayoutTimeline(venueId, spaceId, { scope, anchorDate });
   const timelineData = timeline.data;
-  const reconciledAutomaticAnchorRef = useRef<string | null>(null);
+  // The room, range and zone whose automatic day has been read in the venue's
+  // zone. State, not a ref: clearing it renders again, so the reconciliation
+  // below always runs after it, and the dock never waits on a day that nothing
+  // is fetching.
+  const [reconciledAutomaticAnchor, setReconciledAutomaticAnchor] = useState<string | null>(null);
   // An automatic anchor is first taken in the browser's zone, and the answer
   // names the venue's. Where the two fall on different days (a browser in UTC
   // from 03:00 to 04:00 in British summer time), that answer is the wrong
   // day's, and the reconciliation below moves to the venue's day. Until then
-  // the dock reads as loading, never as a day it is not, and nothing on it can
+  // the dock reads as loading and none of that day's phases are shown or can
   // be chosen. Once reconciled, it waits no more (a dock left open past the
   // day's change keeps its day, as before).
   const awaitingVenueDay = timeline.status === "loaded"
@@ -397,7 +401,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     && !hasLinkedEvent
     && venueId !== null
     && spaceId !== null
-    && reconciledAutomaticAnchorRef.current !== `${venueId}:${spaceId}:${scope}:${timelineData.timeZone}`
+    && reconciledAutomaticAnchor !== `${venueId}:${spaceId}:${scope}:${timelineData.timeZone}`
     && timelineScopeAnchorDateAt(Date.now(), scope, timelineData.timeZone) !== anchorDate;
   const timelineResponseMatchesSelection = timeline.status === "loaded"
     && !awaitingVenueDay
@@ -406,9 +410,23 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     && timelineData.spaceId === spaceId
     && timelineData.range.scope === scope
     && timelineData.range.anchorDate === anchorDate;
+  // The venue's zone, once any answer for this venue has named it; the
+  // browser's stands in only until then. Falling back to the browser's while
+  // each range loads moved a linked event's day between the two zones' days
+  // and asked for each in turn without end. Adjusted while rendering, so no
+  // render shows the zone it replaces.
+  const [knownVenueZone, setKnownVenueZone] = useState<{ readonly venueId: string; readonly timeZone: string } | null>(null);
+  if (
+    timelineData !== null
+    && timelineData.venueId === venueId
+    && (knownVenueZone?.venueId !== timelineData.venueId || knownVenueZone.timeZone !== timelineData.timeZone)
+  ) {
+    setKnownVenueZone({ venueId: timelineData.venueId, timeZone: timelineData.timeZone });
+  }
+  const venueZone = knownVenueZone !== null && knownVenueZone.venueId === venueId ? knownVenueZone.timeZone : null;
   const timeZone = timelineResponseMatchesSelection
     ? timelineData.timeZone
-    : initialTimeZoneRef.current;
+    : venueZone ?? initialTimeZoneRef.current;
   const range = useMemo(
     (): BoardRange => timeline.data === null || !timelineResponseMatchesSelection
       ? boardRange(Date.parse(`${anchorDate}T12:00:00.000Z`), scope, timeZone)
@@ -532,18 +550,18 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       : `${roomAnchorKey}:${scope}:${timeline.data.timeZone}`;
     if (
       reconciliationKey === null
-      || reconciledAutomaticAnchorRef.current === reconciliationKey
+      || reconciledAutomaticAnchor === reconciliationKey
       || timeline.data === null
       || explicitTimelineDate
       || hasLinkedEvent
     ) return;
-    reconciledAutomaticAnchorRef.current = reconciliationKey;
+    setReconciledAutomaticAnchor(reconciliationKey);
     const venueToday = timelineScopeAnchorDateAt(Date.now(), scope, timeline.data.timeZone);
     if (venueToday !== anchorDate) {
       anchorOriginRef.current = "automatic";
       setAnchorDate(venueToday);
     }
-  }, [anchorDate, explicitTimelineDate, hasLinkedEvent, roomAnchorKey, scope, timeline.data]);
+  }, [anchorDate, explicitTimelineDate, hasLinkedEvent, reconciledAutomaticAnchor, roomAnchorKey, scope, timeline.data]);
 
   const cancelAnimations = useCallback((): number => {
     animationGenerationRef.current += 1;
@@ -868,17 +886,21 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       let validDate = anchorDate;
       if (requestedDateIsValid) {
         anchorOriginRef.current = "explicit";
-        reconciledAutomaticAnchorRef.current = null;
+        setReconciledAutomaticAnchor(null);
         validDate = requestedDate;
+      } else if (linkedEventAnchorMs !== null) {
+        anchorOriginRef.current = "linked";
+        setReconciledAutomaticAnchor(null);
+        validDate = timelineScopeAnchorDateAt(linkedEventAnchorMs, requestedScope, timeZone);
       } else {
-        reconciledAutomaticAnchorRef.current = null;
-        if (linkedEventAnchorMs !== null) {
-          anchorOriginRef.current = "linked";
-          validDate = timelineScopeAnchorDateAt(linkedEventAnchorMs, requestedScope, timeZone);
-        } else {
-          anchorOriginRef.current = "automatic";
-          validDate = timelineScopeAnchorDateAt(Date.now(), requestedScope, timeZone);
-        }
+        anchorOriginRef.current = "automatic";
+        validDate = timelineScopeAnchorDateAt(Date.now(), requestedScope, timeZone);
+        // Read in the venue's zone, today is already the venue's day and
+        // nothing is left to reconcile. Read in the browser's, the answer
+        // reconciles it.
+        setReconciledAutomaticAnchor(timelineResponseMatchesSelection && roomAnchorKey !== null
+          ? `${roomAnchorKey}:${requestedScope}:${timeZone}`
+          : null);
       }
       const requestedPhaseId = current.get("timelinePhaseId");
       requestedInitialPhaseIdRef.current = requestedPhaseId;
@@ -955,6 +977,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     linkedEvent.status,
     linkedEventAnchorKey,
     linkedEventAnchorMs,
+    roomAnchorKey,
     scope,
     searchParamSignature,
     restorePrePreviewPhase,

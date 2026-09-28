@@ -348,6 +348,14 @@ function ClearTimelineDateButton(): ReactElement {
   );
 }
 
+// The browser's zone is the machine's unless pinned. A case about a browser in
+// a given zone pins it, so it reads the same on any machine (restored after
+// each test).
+function pinBrowserTimeZone(timeZone: string): void {
+  const browserOptions = new Intl.DateTimeFormat().resolvedOptions();
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ ...browserOptions, timeZone });
+}
+
 function LocationSearch(): ReactElement {
   return <output data-testid="location-search">{useLocation().search}</output>;
 }
@@ -410,6 +418,7 @@ describe("CockpitBottom room layout timeline", () => {
     "2026-09-27T02:30:00.000Z",
     "2026-09-27T03:30:00.000Z",
   ])("keeps an ordinary room planner editable when frozen history loads (at %s)", async (now) => {
+    pinBrowserTimeZone("UTC");
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(now));
     try {
@@ -444,6 +453,7 @@ describe("CockpitBottom room layout timeline", () => {
     // 03:30 UTC is 04:30 in Glasgow: the browser's operational day is the 26th,
     // the venue's the 27th. The browser's answers at once; the venue's never
     // does here, so anything shown is the wrong day's.
+    pinBrowserTimeZone("UTC");
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-27T03:30:00.000Z"));
     const shownPhases: string[] = [];
@@ -473,6 +483,64 @@ describe("CockpitBottom room layout timeline", () => {
       expect(shownPhases).toEqual([]);
     } finally {
       observer.disconnect();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["UTC", "America/New_York"])("settles once on a linked event's day in the venue's zone (browser in %s)", async (browserZone) => {
+    // The event's first phase is at 03:30 UTC on the 27th: 04:30 in Glasgow,
+    // the venue's 27th, and the 26th for a browser in UTC or New York. The
+    // dock reads it in the browser's zone until the venue's is known, then
+    // moves once to the venue's day. It never goes back to the browser's while
+    // that day loads, which asked again and again for the two days in turn.
+    pinBrowserTimeZone(browserZone);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-20T15:00:00.000Z"));
+    const asked = (): (string | null)[] => timelineApi.getRoomLayoutTimeline.mock.calls
+      .map(([query]) => "anchorDate" in query ? query.anchorDate : null);
+    try {
+      eventsApi.getEventPhaseGraph.mockResolvedValue(linkedEventGraph("2026-09-27T03:30:00.000Z", [ARRIVAL_ID, DINNER_ID]));
+      timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
+        Promise.resolve(responseForQuery(query, [arrival, roomFlip, dinner])),
+      );
+      renderBottom(`/plan/cfg-1?space=grand-hall&eventId=${EVENT_ID}`);
+      await waitFor(() => { expect(asked()).toContain("2026-09-27"); });
+      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      expect(asked().at(-1)).toBe("2026-09-27");
+      expect(asked().filter((day) => day === "2026-09-27")).toHaveLength(1);
+      expect(asked().length).toBeLessThanOrEqual(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps its day past the venue's 04:00 after its date is cleared, and never waits on nothing", async () => {
+    // A date cleared from the address takes the dock to today, read in the
+    // venue's zone. Left open past the venue's 04:00 it keeps that day, as any
+    // open dock does: it must not read as loading when nothing is on its way.
+    pinBrowserTimeZone("UTC");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-27T12:00:00.000Z"));
+    try {
+      timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
+        Promise.resolve(responseForQuery(query, [arrival, roomFlip, dinner])),
+      );
+      renderBottom("/plan/cfg-1?space=grand-hall", ["/plan/cfg-1?space=grand-hall"]);
+      await screen.findByRole("slider", { name: /scrub room layout/i });
+      await waitFor(() => { expect(screen.getByTestId("location-search").textContent).toContain("timelineDate=2026-09-27"); });
+      fireEvent.click(screen.getByRole("button", { name: "Clear timeline date" }));
+      await new Promise((resolve) => { setTimeout(resolve, 100); });
+      const fetched = timelineApi.getRoomLayoutTimeline.mock.calls.length;
+
+      // 03:30 UTC on the 28th is 04:30 in Glasgow: the venue's day has moved on.
+      vi.setSystemTime(new Date("2026-09-28T03:30:00.000Z"));
+      act(() => { useEditorStore.setState({ isDirty: true }); });
+      await new Promise((resolve) => { setTimeout(resolve, 100); });
+
+      expect(screen.queryByText("Loading room timeline")).toBeNull();
+      expect(screen.getByRole("slider", { name: /scrub room layout/i })).toBeDefined();
+      expect(timelineApi.getRoomLayoutTimeline.mock.calls.length).toBe(fetched);
+    } finally {
       vi.useRealTimers();
     }
   });
