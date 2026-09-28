@@ -4,6 +4,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
+  resolveBuildSplatBaseUrl,
   resolveWebClerkPublishableKey,
 } from "./src/lib/production-env";
 import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
@@ -40,23 +41,15 @@ export default defineConfig(({ mode }) => {
   const splatStaging = splatStagingPlugin(env["SPLAT_STAGING_ROOT"]);
   if (splatStaging !== null) plugins.push(splatStaging);
 
-  // Where a production build fetches captured splat tiles.
+  // Where a build fetches captured splat tiles and room packages.
   //
-  // Tiles are not in the repo, so a production bundle cannot fall back to the
-  // dev middleware's "/splats" — that path does not exist on the deployed
-  // origin. This resolves to the public R2 bucket the tiles are published to
-  // by packages/api/src/scripts/publish-splat-tiles.ts. It is a public bucket
-  // URL, not a secret, and a real VITE_SPLAT_BASE_URL always wins so the
-  // bucket can be moved without a code change.
-  // Left empty so the app requests tiles from its OWN origin, "/splats".
-  //
-  // In development that path is served from SPLAT_STAGING_ROOT by the plugin
-  // above. In production vercel.json rewrites it to the R2 bucket, which keeps
-  // the request same-origin — R2 public buckets send no CORS headers, and a
-  // splat is fetched as an ArrayBuffer, so a cross-origin fetch is refused by
-  // the browser after the bytes have already been paid for. Setting
-  // VITE_SPLAT_BASE_URL to a CORS-enabled origin bypasses the proxy.
-  const splatBaseUrl = env["VITE_SPLAT_BASE_URL"] ?? "";
+  // "" means the app's own "/splats": served from SPLAT_STAGING_ROOT by the
+  // plugin above in development. On Vercel that path redirects to the
+  // work-in-progress page while the founder hold stands (vercel.json), so a
+  // preview build reads the public R2 bucket directly instead; the bucket's
+  // CORS policy admits *.vercel.app. Production keeps "" and the hold. A real
+  // VITE_SPLAT_BASE_URL always wins, so the bucket can move without a code change.
+  const splatBaseUrl = resolveBuildSplatBaseUrl(env);
 
   if (sentrySourceMapUpload !== null) {
     plugins.push(...sentryVitePlugin({

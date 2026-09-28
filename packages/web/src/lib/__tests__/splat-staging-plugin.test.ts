@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { isRealPathContained, resolveStagedSplatPath, splatStagingPlugin } from "../splat-staging-plugin.js";
+import { isRealPathContained, resolveStagedSplatPath, splatStagingPlugin, stagedContentType } from "../splat-staging-plugin.js";
 
 const ROOT = join(sep, "staging", "splats");
 
@@ -48,6 +48,23 @@ describe("resolveStagedSplatPath", () => {
     for (const extension of [".sog", ".spz", ".ply", ".splat", ".ksplat", ".rad", ".radc"]) {
       expect(resolveStagedSplatPath(ROOT, `/splats/a/b/tile${extension}`)).not.toBeNull();
     }
+  });
+
+  it("serves a room's floor-skin package files, and only inside a floor-skin directory (T-639)", () => {
+    for (const file of ["floor-skin.json", "albedo-4096-0.webp", "height-5cm.i16", "slab-mask-1024x512.u8"]) {
+      expect(resolveStagedSplatPath(ROOT, `/splats/trades-hall/grand-hall/floor-skin/v1/${file}`))
+        .toBe(join(ROOT, "trades-hall", "grand-hall", "floor-skin", "v1", file));
+    }
+    expect(resolveStagedSplatPath(ROOT, "/splats/trades-hall/grand-hall/meta.json")).toBeNull();
+    expect(resolveStagedSplatPath(ROOT, "/splats/trades-hall/grand-hall/photo.webp")).toBeNull();
+    expect(resolveStagedSplatPath(ROOT, "/splats/trades-hall/grand-hall/floor-skin/v1/notes.txt")).toBeNull();
+    expect(resolveStagedSplatPath(ROOT, "/splats/trades-hall/grand-hall/floor-skin/v1/app.js")).toBeNull();
+    expect(resolveStagedSplatPath(ROOT, "/splats/trades-hall/grand-hall/floor-skin.json")).toBeNull();
+  });
+
+  it("judges the floor-skin directory after normalising, so dot segments cannot borrow it", () => {
+    expect(resolveStagedSplatPath(ROOT, "/splats/trades-hall/grand-hall/floor-skin/../secret.json")).toBeNull();
+    expect(resolveStagedSplatPath(ROOT, "/splats/trades-hall/grand-hall/floor-skin/%2e%2e/secret.json")).toBeNull();
   });
 });
 
@@ -103,5 +120,14 @@ describe("isRealPathContained", () => {
   it("refuses a path that does not exist rather than assuming it is safe", () => {
     const base = realpathSync(mkdtempSync(join(tmpdir(), "splat-absent-")));
     expect(isRealPathContained(base, join(base, "nope.sog"))).toBe(false);
+  });
+});
+
+describe("stagedContentType", () => {
+  it("labels package files so the browser decodes them as what they are", () => {
+    expect(stagedContentType(join(ROOT, "a", "floor-skin", "v1", "floor-skin.json"))).toBe("application/json");
+    expect(stagedContentType(join(ROOT, "a", "floor-skin", "v1", "albedo-4096-0.webp"))).toBe("image/webp");
+    expect(stagedContentType(join(ROOT, "a", "floor-skin", "v1", "height-5cm.i16"))).toBe("application/octet-stream");
+    expect(stagedContentType(join(ROOT, "a", "0_0.sog"))).toBe("application/octet-stream");
   });
 });
