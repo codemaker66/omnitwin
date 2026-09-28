@@ -49,6 +49,9 @@ interface DeskRow {
   readonly latestTotalMinor: number | null;
   readonly latestCurrency: string | null;
   readonly linkOpenedAt: string | null;
+  readonly lastSentAt: string | null;
+  readonly hasLink: boolean;
+  readonly linkOpen: boolean;
 }
 
 interface DeskBody {
@@ -61,7 +64,10 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
   let pool: Pool;
   let server: FastifyInstance;
   const fixtureSchema = `proposals_desk_${randomUUID().replaceAll("-", "")}`;
-  const tables: PgTable[] = [schema.proposals, schema.proposalVersions, schema.opportunities, schema.contacts, schema.enquiries, schema.proposalShareTokens];
+  const tables: PgTable[] = [
+    schema.proposals, schema.proposalVersions, schema.opportunities, schema.contacts, schema.enquiries, schema.proposalShareTokens,
+    schema.proposalStatusHistory,
+  ];
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: testUrl, application_name: fixtureSchema, max: 4, options: `-c search_path=${fixtureSchema}` });
@@ -84,7 +90,7 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE proposals, proposal_versions, opportunities, contacts, enquiries, proposal_share_tokens");
+    await pool.query("TRUNCATE proposals, proposal_versions, opportunities, contacts, enquiries, proposal_share_tokens, proposal_status_history");
   });
 
   afterAll(async () => {
@@ -241,6 +247,47 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
     expect(byId.get(unopened)?.linkOpenedAt).toBeNull();
     // Opened before it was sent again: the version sent since is unread.
     expect(byId.get(resent)?.linkOpenedAt).toBeNull();
+  });
+
+  it("counts opens from the latest send, even one made before each send was stamped", async () => {
+    const resent = await proposal("Sent again, first stamp kept", "sent", "2026-09-10T10:00:00Z", { version: 2 });
+    await pool.query("UPDATE proposals SET sent_at = '2026-09-01T10:00:00Z' WHERE id = $1", [resent]);
+    await pool.query(
+      `INSERT INTO proposal_status_history (proposal_id, from_status, to_status, created_at) VALUES
+       ($1, 'draft', 'sent', '2026-09-01T10:00:00Z'), ($1, 'sent', 'changes_requested', '2026-09-03T10:00:00Z'),
+       ($1, 'changes_requested', 'sent', '2026-09-10T10:00:00Z')`,
+      [resent],
+    );
+    // Opened on version 1, before version 2 was sent.
+    await pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix, last_viewed_at) VALUES ($1, 'a', 'a', '2026-09-02T09:00:00Z')", [resent]);
+    const byId = new Map((await desk()).data.map((row) => [row.id, row]));
+    expect(byId.get(resent)).toMatchObject({ linkOpenedAt: null, lastSentAt: "2026-09-10T10:00:00.000Z", hasLink: true });
+  });
+
+  it("says whether the client's link still opens, and whether it records being opened", async () => {
+    const withdrawn = await proposal("Withdrawn", "withdrawn", "2026-09-05T10:00:00Z", { version: 1 });
+    const archivedAccepted = await proposal("Accepted, archived", "archived", "2026-09-05T10:00:00Z", { version: 1 });
+    const shareCodeOnly = await proposal("Older code only", "sent", "2026-09-05T10:00:00Z", { version: 1 });
+    await pool.query("INSERT INTO proposal_status_history (proposal_id, from_status, to_status) VALUES ($1, 'accepted', 'archived')", [archivedAccepted]);
+    const byId = new Map((await desk()).data.map((row) => [row.id, row]));
+    expect(byId.get(withdrawn)?.linkOpen).toBe(false);
+    expect(byId.get(archivedAccepted)?.linkOpen).toBe(true);
+    expect(byId.get(shareCodeOnly)).toMatchObject({ linkOpen: true, hasLink: false });
+  });
+
+  it("gives the figure the client was sent once it is out, and the booker's latest while in hand", async () => {
+    const out = await proposal("Out, with a draft since", "accepted", "2026-09-05T10:00:00Z", { version: 2 });
+    const inHand = await proposal("In hand", "changes_requested", "2026-09-05T10:00:00Z", { version: 2 });
+    await pool.query("UPDATE proposals SET sent_version = 1 WHERE id = ANY($1)", [[out, inHand]]);
+    await pool.query(
+      `INSERT INTO proposal_versions (proposal_id, version, payload) VALUES
+       ($1, 1, '{"quote": {"totalMinor": 1000000, "currency": "GBP"}}'), ($1, 2, '{"quote": {"totalMinor": 1200000, "currency": "GBP"}}'),
+       ($2, 1, '{"quote": {"totalMinor": 1000000, "currency": "GBP"}}'), ($2, 2, '{"quote": {"totalMinor": 1200000, "currency": "GBP"}}')`,
+      [out, inHand],
+    );
+    const byId = new Map((await desk()).data.map((row) => [row.id, row]));
+    expect(byId.get(out)?.latestTotalMinor).toBe(1_000_000);
+    expect(byId.get(inHand)?.latestTotalMinor).toBe(1_200_000);
   });
 
   it("keeps each venue's proposals to itself, and a role without the commercial desk to its own", async () => {

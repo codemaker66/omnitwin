@@ -284,6 +284,13 @@ export const DeskProposalSchema = StaffProposalSchema.extend({
   linkOpenedAt: z.string().nullable().default(null),
   /** The version the client's link shows, once sent. */
   sentVersion: z.number().int().positive().nullable().default(null),
+  /** When it was last sent (a send before each was stamped kept the first's). */
+  lastSentAt: z.string().nullable().default(null),
+  /** Whether it has a link that records being opened; the older share code
+   *  records nothing. */
+  hasLink: z.boolean().default(true),
+  /** Whether the client's link still opens. */
+  linkOpen: z.boolean().default(true),
 });
 
 export type DeskProposal = z.infer<typeof DeskProposalSchema>;

@@ -97,10 +97,19 @@ const ListQuery = z.object({
  */
 function selectDeskProposals(db: Database) {
   const enquiryId = sql`COALESCE(${proposals.enquiryId}, ${opportunities.sourceEnquiryId})`;
+  // The figure that stands: the booker's latest while it is in hand, else the
+  // version the client was sent (a version saved since is a draft).
   const latestQuote = (field: "totalMinor" | "currency") => sql`(
     SELECT ${proposalVersions.payload} -> 'quote' ->> ${field}
     FROM ${proposalVersions}
-    WHERE ${proposalVersions.proposalId} = ${proposals.id} AND ${proposalVersions.version} = ${proposals.currentVersion})`;
+    WHERE ${proposalVersions.proposalId} = ${proposals.id}
+      AND ${proposalVersions.version} = CASE WHEN ${proposals.status} IN ('draft', 'changes_requested')
+        THEN ${proposals.currentVersion} ELSE COALESCE(${proposals.sentVersion}, ${proposals.currentVersion}) END)`;
+  // The latest send: its stamp, or a move to "sent" recorded after it (a send
+  // before sends were each stamped kept the first one's).
+  const lastSentAt = sql`GREATEST(${proposals.sentAt}, (
+    SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
+    WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
   return db.select({
     ...getTableColumns(proposals),
     dealTitle: opportunities.title,
@@ -118,7 +127,17 @@ function selectDeskProposals(db: Database) {
       SELECT to_char(max(${proposalShareTokens.lastViewedAt}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
       FROM ${proposalShareTokens}
       WHERE ${proposalShareTokens.proposalId} = ${proposals.id}
-        AND ${proposalShareTokens.lastViewedAt} >= ${proposals.sentAt})`,
+        AND ${proposalShareTokens.lastViewedAt} >= ${lastSentAt})`,
+    lastSentAt: sql<string | null>`to_char(${lastSentAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+    // Whether any of its links is the kind that records being opened; one sent
+    // only with the older share code has none.
+    hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${proposals.id})`,
+    // Whether the client's link still opens, as presentedStatus decides it.
+    linkOpen: sql<boolean>`(${proposals.status} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
+      OR (${proposals.status} = 'archived' AND (
+        SELECT ${proposalStatusHistory.fromStatus} FROM ${proposalStatusHistory}
+        WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'archived'
+        ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted'))`,
   })
     .from(proposals)
     .leftJoin(opportunities, and(
@@ -261,7 +280,9 @@ async function moveDealFor(
   logger: FastifyBaseLogger,
 ): Promise<void> {
   try {
-    await moveDealWithProposal(db, proposal, toStatus, actorUserId);
+    // A send names the version sent; an answer, the version it was given on.
+    const version = toStatus === "sent" ? proposal.currentVersion : sentVersionOf(proposal) ?? proposal.currentVersion;
+    await moveDealWithProposal(db, { ...proposal, currentVersion: version }, toStatus, actorUserId);
   } catch (error) {
     logger.warn({ err: error, proposalId: proposal.id, toStatus }, "The deal did not move with its proposal");
   }
@@ -807,9 +828,11 @@ export async function proposalRoutes(
       if (held?.status !== fromStatus) return null;
       // A send shows the client the version held here. The team marking it
       // accepted gives no name, so no earlier acceptance's name stands.
+      // An answer is on the version the link shows, recorded if it was not.
+      const answer = ANSWERED_STATUSES.includes(parsed.data.status) ? { sentVersion: sentVersionOf(held) } : {};
       const moved = parsed.data.status === "sent" ? { ...updateData, sentVersion: held.currentVersion }
-        : parsed.data.status === "accepted" ? { ...updateData, acceptedName: null }
-        : updateData;
+        : parsed.data.status === "accepted" ? { ...updateData, ...answer, acceptedName: null }
+        : { ...updateData, ...answer };
       const [row] = await tx.update(proposals)
         .set(moved)
         .where(eq(proposals.id, params.data.id))
@@ -1259,6 +1282,9 @@ export async function proposalRoutes(
 // status vocabulary beyond what the client themselves can act on.
 // ---------------------------------------------------------------------------
 
+/** The statuses a proposal takes when it is answered, by the client or for them. */
+const ANSWERED_STATUSES: readonly string[] = ["accepted", "declined", "expired", "changes_requested"];
+
 const CLIENT_VISIBLE_STATUSES: readonly string[] = [
   "sent",
   "changes_requested",
@@ -1476,9 +1502,11 @@ async function clientFacts(db: Database, proposal: ProposalRecord): Promise<Clie
 }
 
 /** The version a client's link shows: the one last sent. A version saved
- *  since is the team's draft until it is sent. */
-function sentVersionOf(proposal: ProposalRecord): number {
-  return proposal.sentVersion ?? proposal.currentVersion;
+ *  since is the team's draft until it is sent. A proposal answered before
+ *  any version was saved was shown none. */
+function sentVersionOf(proposal: Pick<ProposalRecord, "sentVersion" | "currentVersion" | "status">): number | null {
+  if (proposal.sentVersion !== null) return proposal.sentVersion;
+  return proposal.status === "sent" && proposal.currentVersion >= 1 ? proposal.currentVersion : null;
 }
 
 async function buildClientSafeProposal(
@@ -1573,10 +1601,11 @@ export async function publicProposalRoutes(
     }
 
     // The version the client was sent, never a draft saved since.
-    const [version] = await db.select().from(proposalVersions)
+    const shown = sentVersionOf(proposal);
+    const [version] = shown === null ? [] : await db.select().from(proposalVersions)
       .where(and(
         eq(proposalVersions.proposalId, proposal.id),
-        eq(proposalVersions.version, sentVersionOf(proposal)),
+        eq(proposalVersions.version, shown),
       ))
       .limit(1);
     if (version === undefined) {
@@ -1664,9 +1693,10 @@ export async function publicProposalRoutes(
       if (parsed.data.version !== undefined && parsed.data.version !== sentVersionOf(held)) return "version" as const;
       const [row] = await tx.update(proposals)
         // This path takes no name, so no earlier acceptance's name stands.
+        // The answer is on the version the link shows, recorded if it was not.
         .set(toStatus === "accepted"
-          ? { status: toStatus, acceptedName: null, updatedAt: new Date() }
-          : { status: toStatus, updatedAt: new Date() })
+          ? { status: toStatus, acceptedName: null, sentVersion: sentVersionOf(held), updatedAt: new Date() }
+          : { status: toStatus, sentVersion: sentVersionOf(held), updatedAt: new Date() })
         .where(eq(proposals.id, proposal.id))
         .returning({ status: proposals.status });
       await tx.insert(proposalStatusHistory).values({
@@ -1721,8 +1751,13 @@ export async function proposalShareRoutes(
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
 
+    // Answered before any version was saved: there is nothing it was shown.
+    const shown = sentVersionOf(resolved.proposal);
+    if (shown === null) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
     const clientSafe = await buildClientSafeProposal(db, resolved.proposal, {
-      version: sentVersionOf(resolved.proposal), status: resolved.presented,
+      version: shown, status: resolved.presented,
     });
     if (clientSafe === null) {
       request.log.error({ proposalId: resolved.proposal.id }, "stored proposal payload failed client-safe build");
@@ -1789,7 +1824,8 @@ export async function proposalShareRoutes(
       const moves = kind === "request_changes" && current === "sent";
       if (moves) {
         await tx.update(proposals)
-          .set({ status: "changes_requested", updatedAt: new Date() })
+          // On the version the link shows, recorded if it was not.
+          .set({ status: "changes_requested", sentVersion: held === undefined ? null : sentVersionOf(held), updatedAt: new Date() })
           .where(eq(proposals.id, resolved.proposal.id));
         await tx.insert(proposalStatusHistory).values({
           proposalId: resolved.proposal.id,
@@ -1868,7 +1904,7 @@ export async function proposalShareRoutes(
       if (held.status !== resolved.proposal.status) return "changed" as const;
       const name = parsed.data.authorName?.trim() ?? "";
       await tx.update(proposals)
-        .set({ status: "accepted", acceptedName: name === "" ? null : name, updatedAt: new Date() })
+        .set({ status: "accepted", acceptedName: name === "" ? null : name, sentVersion: sentVersionOf(held), updatedAt: new Date() })
         .where(eq(proposals.id, resolved.proposal.id));
       await tx.insert(proposalStatusHistory).values({
         proposalId: resolved.proposal.id,

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
-  draftChanges, draftFromVersion, groupOf, groupRows, historyMoments, listWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
+  draftChanges, draftFromVersion, groupOf, groupRows, historyMoments, linkVersionWords, listWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,8 @@ function row(overrides: Partial<DeskProposal> = {}): DeskProposal {
     id: "p1", venueId: "v1", opportunityId: null, enquiryId: null, configurationId: null, title: "Autumn gala", status: "draft",
     currentVersion: 0, shareCode: null, sentAt: null, createdBy: "u1", createdAt: "2026-09-20T09:00:00.000Z",
     updatedAt: "2026-10-01T09:00:00.000Z", deletedAt: null, dealTitle: null, clientName: null, eventDate: null, guestCount: null,
-    eventType: null, latestTotalMinor: null, latestCurrency: null, linkOpenedAt: null, sentVersion: null, ...overrides,
+    eventType: null, latestTotalMinor: null, latestCurrency: null, linkOpenedAt: null, sentVersion: null,
+    lastSentAt: null, hasLink: true, linkOpen: true, ...overrides,
   };
 }
 
@@ -140,5 +141,18 @@ describe("the history", () => {
       ["The proposal was started.", null],
     ]);
     expect(historyMoments([entry({ toStatus: "declined" })], null).map((moment) => moment.sentence)).toEqual(["Marked declined."]);
+  });
+});
+describe("the latest send and the link's version", () => {
+  it("counts a row from its latest send, and claims no opens for the older share code", () => {
+    expect(rowWhen(row({ status: "sent", sentAt: "2026-09-01T10:00:00.000Z", lastSentAt: "2026-10-01T10:00:00.000Z" }), NOW))
+      .toBe("Sent yesterday, not opened yet");
+    expect(rowWhen(row({ status: "sent", sentAt: "2026-10-01T10:00:00.000Z", hasLink: false }), NOW)).toBe("Sent yesterday");
+  });
+
+  it("says which version the client's link shows, or that a closed one showed it", () => {
+    expect(linkVersionWords(row({ currentVersion: 3, sentVersion: 2 }))).toBe("; the client's link shows version 2");
+    expect(linkVersionWords(row({ currentVersion: 3, sentVersion: 2, linkOpen: false }))).toBe("; the client's link, which showed version 2, no longer opens");
+    expect(linkVersionWords(row({ currentVersion: 2, sentVersion: 2 }))).toBe("");
   });
 });

@@ -8,7 +8,7 @@ import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYL
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, draftChanges, draftFromVersion, historyMoments, linkOpenedSentence, listWords, type ComposerDraft, type QuoteLineDraft,
+  EMPTY_LINE, draftChanges, draftFromVersion, historyMoments, linkOpenedSentence, linkVersionWords, listWords, type ComposerDraft, type QuoteLineDraft,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -59,6 +59,8 @@ export interface ProposalPanelProps {
   /** The client's link, once made in this visit; links are kept hashed, so
    *  one made earlier can never be shown again. */
   readonly shareUrl: string | null;
+  /** A version that did not save, kept to copy once the composer is gone. */
+  readonly keptDraft: ComposerDraft | null;
   readonly working: ProposalWork;
   readonly failure: ProposalFailure | null;
   /** Each resolves true once done, so the panel can put its question away. */
@@ -134,8 +136,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
             {proposal.currentVersion === 0 ? "Nothing written yet" : `Version ${String(proposal.currentVersion)}`}
             {props.latest.value !== null && proposal.currentVersion > 0
               ? `, saved ${venueMoment(props.latest.value.createdAt) ?? ""}` : ""}
-            {proposal.sentVersion !== null && proposal.sentVersion !== proposal.currentVersion
-              ? `; the client's link shows version ${String(proposal.sentVersion)}` : ""}
+            {linkVersionWords(proposal)}
           </span>
         </div>
         <p className="vv-sr-only" role="status">{props.announcement}</p>
@@ -151,7 +152,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} />
-        {COMPOSABLE.includes(proposal.status) && <Composer {...props} />}
+        {COMPOSABLE.includes(proposal.status) ? <Composer {...props} /> : <KeptDraft {...props} />}
         <LatestQuote {...props} />
         <Conversation {...props} />
         <History {...props} />
@@ -188,6 +189,10 @@ function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly 
         <dt>comes to</dt>
         <dd className={proposal.latestTotalMinor === null ? "enq-facts__muted" : undefined}>
           {proposal.latestTotalMinor === null ? "No quote yet" : money(proposal.latestTotalMinor, proposal.latestCurrency ?? "GBP")}
+          {/* Once out, the figure is the one the client was sent. */}
+          {proposal.latestTotalMinor !== null && !COMPOSABLE.includes(proposal.status)
+            && (proposal.sentVersion ?? null) !== null && proposal.sentVersion !== proposal.currentVersion
+            ? `, as sent in version ${String(proposal.sentVersion)}` : ""}
         </dd>
       </div>
     </dl>
@@ -242,7 +247,7 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
           <p className="enq-next__hint" data-testid="share-link-note">Not emailed. Copy it into your message to the client.</p>
         </div>
       )}
-      {sent && <p className="enq-next__hint" data-testid="link-opened">{linkOpenedSentence(proposal.linkOpenedAt)}</p>}
+      {sent && <p className="enq-next__hint" data-testid="link-opened">{linkOpenedSentence(proposal.linkOpenedAt, proposal.hasLink)}</p>}
       {shareUrl === null && sent && (
         <p className="enq-next__hint" data-testid="share-link-unavailable">
           It is with the client. Links are kept hashed, so theirs cannot be shown again; issue a new one if they need it.
@@ -352,6 +357,30 @@ function Composer(props: ProposalPanelProps): ReactElement {
   }
   // A new version starts from the latest one, read again whenever that changes.
   return <ComposerForm key={`${proposal.id}:${String(latest.value?.version ?? 0)}`} {...props} />;
+}
+
+/** A version that did not save because the proposal moved on: what was
+ *  written, to copy, with why it did not save. */
+function KeptDraft({ keptDraft, failure }: ProposalPanelProps): ReactElement | null {
+  const headingId = useId();
+  if (keptDraft === null) return null;
+  const lines = keptDraft.lines.filter((line) => line.description.trim() !== "");
+  return (
+    <section className="enq-section" aria-labelledby={headingId} data-testid="kept-version">
+      <h3 id={headingId}>The version that did not save</h3>
+      {failure?.where === "version" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
+      <p className="enq-next__hint">What you wrote is kept here to copy.</p>
+      {keptDraft.message.trim() !== "" && <p className="pr-kept">{keptDraft.message}</p>}
+      {keptDraft.capacityNote.trim() !== "" && <p className="pr-kept">Capacity: {keptDraft.capacityNote}</p>}
+      {lines.length > 0 && (
+        <ul className="pr-kept__lines">
+          {lines.map((line, index) => (
+            <li key={index}>{line.description} · {line.quantity} × £{line.pounds === "" ? "0" : line.pounds}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 function ComposerForm({ proposal, latest, spaces, working, failure, onSaveVersion }: ProposalPanelProps): ReactElement {

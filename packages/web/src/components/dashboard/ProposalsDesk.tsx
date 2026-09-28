@@ -139,6 +139,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [stampKey, setStampKey] = useState<number | null>(null);
   const [links, setLinks] = useState<Readonly<Record<string, string>>>({});
+  // A version that did not save, kept per proposal so it can be copied once
+  // the proposal has moved on and its composer is gone.
+  const [keptDrafts, setKeptDrafts] = useState<Readonly<Record<string, ComposerDraft>>>({});
   const [creating, setCreating] = useState(false);
   const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0 });
   const listRequest = useLatestRequest();
@@ -375,8 +378,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     const resent = before !== null && (before.status !== "sent" || before.sentVersion !== before.currentVersion);
     applyProposal({
       ...made.proposal,
+      hasLink: true,
       ...(answered ? {} : { sentVersion: made.proposal.currentVersion }),
-      ...(!answered && resent ? { linkOpenedAt: null } : {}),
+      ...(!answered && resent ? { linkOpenedAt: null, lastSentAt: new Date().toISOString() } : {}),
     });
     readAgain(id);
     setReads((current) => ({ ...current, history: current.history + 1 }));
@@ -393,7 +397,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     return `The proposal is ${proposalStatusWords(to).toLowerCase()}.`;
   });
 
-  const onSaveVersion = (draft: ComposerDraft): Promise<boolean> => attempt("version", "version", async (id) => {
+  const saveVersion = (draft: ComposerDraft): Promise<boolean> => attempt("version", "version", async (id) => {
     if (proposal === null) return null;
     const lines = readQuoteLines(draft);
     const candidate = {
@@ -436,6 +440,21 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     readList(Math.max(PAGE, rows.length));
     return `Version ${String(saved.version)} is saved.`;
   });
+
+  const onSaveVersion = async (draft: ComposerDraft): Promise<boolean> => {
+    const id = proposal?.id ?? null;
+    const saved = await saveVersion(draft);
+    if (id !== null) {
+      setKeptDrafts((current) => {
+        if (saved) {
+          const { [id]: _done, ...rest } = current;
+          return rest;
+        }
+        return { ...current, [id]: draft };
+      });
+    }
+    return saved;
+  };
 
   const onReply = (body: string): Promise<boolean> => attempt("reply", "reply", async (id) => {
     const claim = findUnsupportedProposalClaim(body);
@@ -481,6 +500,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     comments,
     spaces,
     shareUrl: openId === null ? null : links[openId] ?? null,
+    keptDraft: openId === null ? null : keptDrafts[openId] ?? null,
     working,
     failure,
     onMakeLink,

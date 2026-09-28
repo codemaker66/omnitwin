@@ -103,24 +103,40 @@ export function linkOpenedWords(linkOpenedAt: string | null, nowMs: number): str
 }
 
 /** The panel's sentence for the same: "The link was last opened Tue 29 Sep,
- *  14:10." */
-export function linkOpenedSentence(linkOpenedAt: string | null): string {
+ *  14:10." A proposal sent only with the older share code records no opens. */
+export function linkOpenedSentence(linkOpenedAt: string | null, hasLink = true): string {
+  if (!hasLink) return "It was sent with the older share code, which does not record being opened.";
   const at = (linkOpenedAt ?? null) === null ? null : venueMoment(linkOpenedAt ?? "");
   return at === null ? "The link has not been opened since it was sent." : `The link was last opened ${at}.`;
+}
+
+/** Which version the client's link shows, beside the latest saved: "; the
+ *  client's link shows version 2", or that a closed link showed it. */
+export function linkVersionWords(row: Pick<DeskProposal, "sentVersion" | "currentVersion"> & Partial<Pick<DeskProposal, "linkOpen">>): string {
+  const sent = row.sentVersion ?? null;
+  if (sent === null || sent === row.currentVersion) return "";
+  return row.linkOpen === false
+    ? `; the client's link, which showed version ${String(sent)}, no longer opens`
+    : `; the client's link shows version ${String(sent)}`;
 }
 
 /** When the proposal last moved, beside its status: "Sent 3 days ago,
  *  opened yesterday", "Version 2, changed today". A proposal in hand says its
  *  version, since a new one saved since the client asked is the booker's own
  *  change. */
-export function rowWhen(row: Pick<DeskProposal, "status" | "sentAt" | "updatedAt" | "currentVersion" | "linkOpenedAt">, nowMs: number): string {
+export function rowWhen(
+  row: Pick<DeskProposal, "status" | "sentAt" | "updatedAt" | "currentVersion" | "linkOpenedAt"> & Partial<Pick<DeskProposal, "lastSentAt" | "hasLink">>,
+  nowMs: number,
+): string {
   const age = (iso: string): string => relativeAge(iso, nowMs) ?? "";
   switch (row.status) {
     case "draft":
     case "changes_requested":
       return row.currentVersion === 0 ? "Nothing written yet" : `Version ${String(row.currentVersion)}, changed ${age(row.updatedAt)}`;
-    case "sent":
-      return `Sent ${age(row.sentAt ?? row.updatedAt)}, ${linkOpenedWords(row.linkOpenedAt, nowMs)}`;
+    case "sent": {
+      const sent = `Sent ${age(row.lastSentAt ?? row.sentAt ?? row.updatedAt)}`;
+      return row.hasLink === false ? sent : `${sent}, ${linkOpenedWords(row.linkOpenedAt, nowMs)}`;
+    }
     default:
       return `${proposalStatusWords(row.status)} ${age(row.updatedAt)}`;
   }

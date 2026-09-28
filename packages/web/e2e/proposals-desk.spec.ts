@@ -52,7 +52,8 @@ function proposal(id: string, title: string, status: string, extra: Partial<Desk
     id, venueId: VENUE_ID, opportunityId: null, enquiryId: null, configurationId: null, title, status, currentVersion: 1,
     shareCode: null, sentAt: null, createdBy: STAFF_ID, createdAt: "2026-09-20T09:00:00.000Z", updatedAt: "2026-10-01T09:00:00.000Z",
     deletedAt: null, dealTitle: null, clientName: null, eventDate: null, guestCount: null, eventType: null,
-    latestTotalMinor: null, latestCurrency: null, linkOpenedAt: null, sentVersion: null, ...extra,
+    latestTotalMinor: null, latestCurrency: null, linkOpenedAt: null, sentVersion: null, lastSentAt: null, hasLink: true, linkOpen: true,
+    ...extra,
   };
 }
 

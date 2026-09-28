@@ -23,9 +23,10 @@ import { useLatestRequest } from "../hooks/use-latest-request.js";
 // the name it is given in; asking for changes asks what. Every answer names
 // the version the client read, so a page older than the version now sent
 // cannot accept it unseen. Whenever the API refuses an answer because the
-// proposal has moved on, the page reads it again, says so, and keeps what was
-// typed. The two actions are exactly the ones the state machine grants a
-// client on a sent proposal.
+// proposal has moved on, the page reads it again and says what it now finds,
+// keeping what was typed. A newer version that arrives by any read is said
+// so before it can be answered. The two actions are exactly the ones the
+// state machine grants a client on a sent proposal.
 // ---------------------------------------------------------------------------
 
 type LoadState =
@@ -42,25 +43,36 @@ const OUTCOME_WORDS: Readonly<Record<Outcome, string>> = {
   changes_requested: "Your changes went to the venue team. This version is on hold until they send the next one.",
 };
 
-const NO_LONGER_WAITING = "This proposal is no longer waiting for an answer. It now shows where it stands.";
+/** Why an answer did not land: a newer version, a proposal that moved on,
+ *  or a failure to arrive. The words are chosen from what the page then
+ *  shows, so they are never about a form that is gone. */
+type Failure = "version" | "moved" | "failed";
 
-/** Why an answer was refused because the proposal moved on; the page then
- *  reads it again. Anything else is a failure to reach the venue team. */
-function refusalWords(error: unknown): string | null {
-  if (!(error instanceof ApiError)) return null;
-  if (error.code === "PROPOSAL_VERSION_CHANGED") return "A newer version arrived after you opened this page. It is shown above now; what you typed is still here.";
-  if (error.code === "PROPOSAL_STATUS_CHANGED") return "This proposal changed while your answer was on its way. It now shows where it stands.";
-  if (error.code === "NOT_AWAITING_RESPONSE" || error.code === "INVALID_TRANSITION") return NO_LONGER_WAITING;
-  if (error.status === 404 || error.status === 410) return NO_LONGER_WAITING;
-  return null;
+function failureOf(error: unknown): Failure {
+  if (!(error instanceof ApiError)) return "failed";
+  if (error.code === "PROPOSAL_VERSION_CHANGED") return "version";
+  if (error.code === "PROPOSAL_STATUS_CHANGED" || error.code === "NOT_AWAITING_RESPONSE" || error.code === "INVALID_TRANSITION") return "moved";
+  if (error.status === 404 || error.status === 410) return "moved";
+  return "failed";
 }
 
-const FAILED_WORDS = "Your answer did not reach the venue team. Please try again, or contact them directly.";
+const NO_LONGER_WAITING = "This proposal is no longer waiting for an answer. It now shows where it stands.";
+const NEWER_VERSION = "A newer version was sent after you opened this page. It is shown above now.";
+
+/** The words for a failed answer, beside a form that is still there. */
+const OPEN_FAILURE_WORDS: Readonly<Record<Failure, string>> = {
+  version: "A newer version arrived after you opened this page. It is shown above now; what you typed is still here.",
+  moved: "This proposal changed while your answer was on its way. It is shown above now; what you typed is still here.",
+  failed: "Your answer did not reach the venue team. Please try again, or contact them directly.",
+};
 
 export function ProposalPage(): ReactElement {
   const { shareCode, token } = useParams<{ shareCode?: string; token?: string }>();
   const hasToken = token !== undefined && token.length > 0;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // Words an answer or a message carried when it was refused, kept so a link
+  // that has since closed still gives them back.
+  const [kept, setKept] = useState<string | null>(null);
   const reads = useLatestRequest();
 
   const read = useCallback((): Promise<PublicProposal | null> => {
@@ -102,6 +114,12 @@ export function ProposalPage(): ReactElement {
         <div className="pd-sheet pd-state">
           <h1>This proposal link isn't available</h1>
           <p>The link may have expired or been withdrawn. Please ask the venue team who sent it for a current copy.</p>
+          {kept !== null && (
+            <div className="pd-state__kept">
+              <p>What you wrote, to send the venue team another way:</p>
+              <blockquote className="pd-decision__kept" data-testid="kept-words">{kept}</blockquote>
+            </div>
+          )}
         </div>
       </main>
     );
@@ -111,8 +129,8 @@ export function ProposalPage(): ReactElement {
     <main aria-label="Client proposal">
       <ProposalDocument
         proposal={state.proposal}
-        conversation={hasToken ? <Conversation proposal={state.proposal} token={token} onPosted={read} /> : null}
-        decision={<Decision proposal={state.proposal} token={hasToken ? token : null} shareCode={shareCode ?? null} onAnswered={read} />}
+        conversation={hasToken ? <Conversation proposal={state.proposal} token={token} onPosted={read} onKeep={setKept} /> : null}
+        decision={<Decision proposal={state.proposal} token={hasToken ? token : null} shareCode={shareCode ?? null} onAnswered={read} onKeep={setKept} />}
       />
     </main>
   );
@@ -128,9 +146,11 @@ interface DecisionProps {
   readonly shareCode: string | null;
   /** Reads the proposal again, as it now stands. */
   readonly onAnswered: () => Promise<PublicProposal | null>;
+  /** Keeps words a refused answer carried, for a link that has closed. */
+  readonly onKeep: (words: string) => void;
 }
 
-function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): ReactElement | null {
+function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionProps): ReactElement | null {
   const headingId = useId();
   const nameId = useId();
   const nameHelpId = useId();
@@ -141,27 +161,51 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState("");
   const [working, setWorking] = useState<ProposalResponseAction | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  // What this visit's answer did, for the version it was given on.
+  const [outcome, setOutcome] = useState<{ readonly kind: Outcome; readonly version: number } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [seenVersion, setSeenVersion] = useState(proposal.version);
+  const [returnFocus, setReturnFocus] = useState<ProposalResponseAction | null>(null);
   const outcomeRef = useRef<HTMLParagraphElement | null>(null);
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
   const askRef = useRef<HTMLButtonElement | null>(null);
+  const acceptRef = useRef<HTMLButtonElement | null>(null);
+  const sendRef = useRef<HTMLButtonElement | null>(null);
+  const refusalRef = useRef<HTMLParagraphElement | null>(null);
   const backToAsk = useRef(false);
+
+  // A newer version reached by any read (a message's, a refused answer's) is
+  // said so before it can be answered; an answer given on the old one no
+  // longer describes it.
+  if (proposal.version !== seenVersion) {
+    setSeenVersion(proposal.version);
+    if (proposal.status === "sent" && failure === null) setNotice(NEWER_VERSION);
+  }
+  const answered = outcome !== null && outcome.version === proposal.version ? outcome.kind : null;
 
   // The buttons are gone once the answer lands, so the sentence that replaces
   // them takes focus.
-  useLayoutEffect(() => { if (outcome !== null) outcomeRef.current?.focus(); }, [outcome]);
+  useLayoutEffect(() => { if (answered !== null) outcomeRef.current?.focus(); }, [answered]);
   useEffect(() => {
     if (asking) noteRef.current?.focus();
     else if (backToAsk.current) { backToAsk.current = false; askRef.current?.focus(); }
   }, [asking]);
+  // After a failed answer, focus returns to the button pressed, or to the
+  // sentence that replaced the form.
+  useEffect(() => {
+    if (returnFocus === null) return;
+    setReturnFocus(null);
+    if (proposal.status === "sent") (returnFocus === "accept" ? acceptRef : sendRef).current?.focus();
+    else refusalRef.current?.focus();
+  }, [returnFocus, proposal.status]);
 
-  if (outcome !== null) {
+  if (answered !== null) {
     return (
       <section className="pd-decision" data-register="forest" aria-labelledby={headingId}>
         <h2 id={headingId}>Your decision</h2>
-        <p ref={outcomeRef} tabIndex={-1} className="pd-decision__outcome" role="status">{OUTCOME_WORDS[outcome]}</p>
+        <p ref={outcomeRef} tabIndex={-1} className="pd-decision__outcome" role="status">{OUTCOME_WORDS[answered]}</p>
       </section>
     );
   }
@@ -172,7 +216,7 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
     return (
       <section className="pd-decision" data-register="forest" aria-labelledby={headingId}>
         <h2 id={headingId}>Your decision</h2>
-        <p role="alert" className="pd-decision__error">{failure}</p>
+        <p ref={refusalRef} tabIndex={-1} role="alert" className="pd-decision__error">{NO_LONGER_WAITING}</p>
         {note.trim() !== "" && (
           <>
             <p className="pd-decision__hint">What you wrote, to send the venue team another way:</p>
@@ -191,8 +235,9 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
     if (working !== null) return;
     setWorking(action);
     setFailure(null);
+    setNotice(null);
+    const version = proposal.version;
     try {
-      const version = proposal.version;
       let already = false;
       if (token !== null) {
         if (action === "accept") already = (await approveProposalShare(token, { authorName: name.trim(), version })).already === true;
@@ -203,11 +248,15 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
         throw new Error("Missing proposal link");
       }
       await onAnswered();
-      setOutcome(action === "accept" ? already ? "already_accepted" : "accepted" : "changes_requested");
+      setOutcome({ kind: action === "accept" ? already ? "already_accepted" : "accepted" : "changes_requested", version });
     } catch (error: unknown) {
-      const refused = refusalWords(error);
-      setFailure(refused ?? FAILED_WORDS);
-      if (refused !== null) void onAnswered();
+      const why = failureOf(error);
+      setFailure(why);
+      if (why !== "failed") {
+        if (action === "request_changes" && note.trim() !== "") onKeep(note.trim());
+        await onAnswered();
+      }
+      setReturnFocus(action);
     } finally {
       setWorking(null);
     }
@@ -233,6 +282,7 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
   return (
     <section className="pd-decision" data-register="forest" aria-labelledby={headingId} data-testid="proposal-decision">
       <h2 id={headingId}>Your decision</h2>
+      {notice !== null && <p className="pd-decision__notice" role="status">{notice}</p>}
       <p className="pd-decision__what">
         {total === null ? `Version ${String(proposal.version)}.` : `Version ${String(proposal.version)} comes to ${total}.`}
       </p>
@@ -258,7 +308,7 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
         {asksName && <p id={nameHelpId} className="pd-decision__hint">So the venue team knows who accepted it.</p>}
         {nameMissing && <p id={nameErrorId} role="alert" className="pd-decision__error">Please give your name to accept.</p>}
         <div className="pd-actions">
-          <button type="submit" className="pd-button" disabled={working !== null} aria-busy={working === "accept"} data-testid="accept-button">
+          <button ref={acceptRef} type="submit" className="pd-button" disabled={working !== null} aria-busy={working === "accept"} data-testid="accept-button">
             {working === "accept" && <ActivityIndicator size={18} />}
             {working === "accept" ? "Accepting…" : `Accept version ${String(proposal.version)}`}
           </button>
@@ -285,7 +335,7 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
             </label>
             <p className="pd-decision__hint">This version is put on hold until the venue team sends the next one.</p>
             <div className="pd-actions">
-              <button type="submit" className="pd-button" disabled={working !== null || note.trim() === ""}
+              <button ref={sendRef} type="submit" className="pd-button" disabled={working !== null || note.trim() === ""}
                 aria-busy={working === "request_changes"} data-testid="send-changes-button">
                 {working === "request_changes" && <ActivityIndicator size={18} />}
                 {working === "request_changes" ? "Sending…" : "Send to the venue team"}
@@ -299,7 +349,7 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
         )}
       </div>
 
-      {failure !== null && <p role="alert" className="pd-decision__error">{failure}</p>}
+      {failure !== null && <p role="alert" className="pd-decision__error">{OPEN_FAILURE_WORDS[failure]}</p>}
     </section>
   );
 }
@@ -308,20 +358,33 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
 // The conversation (links only; the older share code has no comment route)
 // ---------------------------------------------------------------------------
 
-function Conversation({ proposal, token, onPosted }: {
+function Conversation({ proposal, token, onPosted, onKeep }: {
   readonly proposal: PublicProposal;
   readonly token: string;
   readonly onPosted: () => Promise<PublicProposal | null>;
+  readonly onKeep: (words: string) => void;
 }): ReactElement | null {
   const headingId = useId();
   const fieldId = useId();
   const [text, setText] = useState("");
   const [posting, setPosting] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [returnFocus, setReturnFocus] = useState(false);
+  const fieldRef = useRef<HTMLTextAreaElement | null>(null);
+  const refusalRef = useRef<HTMLParagraphElement | null>(null);
   const thread = conversation(proposal.comments);
   const open = proposal.status === "sent" || proposal.status === "changes_requested";
-  // A message refused because the proposal closed stays on the page.
+  // A message that did not post stays on the page, whatever became of the
+  // proposal meanwhile.
   const kept = !open && failure !== null && text.trim() !== "";
+
+  useEffect(() => {
+    if (!returnFocus) return;
+    setReturnFocus(false);
+    if (open) fieldRef.current?.focus();
+    else refusalRef.current?.focus();
+  }, [returnFocus, open]);
+
   if (thread.length === 0 && !open && !kept) return null;
 
   const post = (event: FormEvent): void => {
@@ -332,16 +395,24 @@ function Conversation({ proposal, token, onPosted }: {
     commentOnProposalShare(token, { body: text.trim(), kind: "comment" })
       .then(() => onPosted())
       .then(() => { setText(""); })
-      .catch((error: unknown) => {
-        if (refusalWords(error) === null) {
-          setFailure("Your message was not posted. It is still here; please try again.");
-          return;
+      .catch(async (error: unknown) => {
+        const why = failureOf(error);
+        setFailure(why);
+        if (why !== "failed") {
+          onKeep(text.trim());
+          await onPosted();
         }
-        setFailure("This proposal is no longer taking messages here.");
-        void onPosted();
+        setReturnFocus(true);
       })
       .finally(() => { setPosting(false); });
   };
+
+  // Chosen from what the page now shows: open, the message can go again.
+  const words = !open
+    ? "This proposal is no longer taking messages here."
+    : failure === "failed"
+      ? "Your message was not posted. It is still here; please try again."
+      : "This proposal changed while your message was on its way. It is still here; you can send it again.";
 
   return (
     <section className="pd-conversation pd-section" aria-labelledby={headingId} data-testid="proposal-comments">
@@ -360,7 +431,7 @@ function Conversation({ proposal, token, onPosted }: {
       )}
       {kept && (
         <>
-          <p role="alert" className="pd-decision__error">{failure}</p>
+          <p ref={refusalRef} tabIndex={-1} role="alert" className="pd-decision__error">{words}</p>
           <p className="pd-decision__hint">What you wrote, to send the venue team another way:</p>
           <blockquote className="pd-decision__kept" data-testid="kept-message">{text}</blockquote>
         </>
@@ -369,7 +440,7 @@ function Conversation({ proposal, token, onPosted }: {
         <form onSubmit={post} noValidate>
           <label className="pd-field" htmlFor={fieldId}>
             A message for the venue team
-            <textarea id={fieldId} data-testid="comment-input" value={text} maxLength={4000} rows={3}
+            <textarea ref={fieldRef} id={fieldId} data-testid="comment-input" value={text} maxLength={4000} rows={3}
               onChange={(event) => { setText(event.target.value); }} />
           </label>
           <div className="pd-actions">
@@ -378,7 +449,7 @@ function Conversation({ proposal, token, onPosted }: {
               {posting ? "Sending…" : "Send the message"}
             </button>
           </div>
-          {failure !== null && <p role="alert" className="pd-decision__error">{failure}</p>}
+          {failure !== null && <p role="alert" className="pd-decision__error">{words}</p>}
         </form>
       )}
     </section>

@@ -493,6 +493,20 @@ describe("the next step", () => {
     expect(await panel.findByText(/the client's link shows version 2/u)).toBeDefined();
   });
 
+  it("says a closed link showed a version, the figure the client was sent, and that the older share code records no opens", async () => {
+    existing = [proposal({ status: "withdrawn", currentVersion: 3, sentVersion: 2, linkOpen: false, latestTotalMinor: 1_000_000, latestCurrency: "GBP" })];
+    render(<ProposalsDesk />);
+    const closed = within(await openProposal());
+    expect(await closed.findByText(/the client's link, which showed version 2, no longer opens/u)).toBeDefined();
+    expect(closed.getByText("£10,000, as sent in version 2", { selector: "dd" })).toBeDefined();
+    cleanup();
+
+    existing = [proposal({ status: "sent", currentVersion: 1, sentVersion: 1, sentAt: NOW, hasLink: false })];
+    render(<ProposalsDesk />);
+    const older = within(await openProposal());
+    expect(older.getByTestId("link-opened").textContent).toBe("It was sent with the older share code, which does not record being opened.");
+  });
+
   it("offers archive, and no link, composer or withdrawal, once a proposal is settled", async () => {
     existing = [proposal({ status: "accepted", currentVersion: 3, sentAt: NOW })];
     render(<ProposalsDesk />);
@@ -584,6 +598,25 @@ describe("the next version", () => {
     fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: "4600" } });
     expect(panel.getByTestId("composer-start").textContent)
       .toBe("Starts from version 2. Changed: the message and the quote, £4,400 to £4,600.");
+  });
+
+  it("keeps a version refused because a colleague moved the proposal, to copy, with why it did not save", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 1, sentVersion: 1 })];
+    mocks.createProposalVersion.mockImplementation(() => {
+      // A colleague sent version 1 again while this version was being written.
+      existing = [proposal({ status: "sent", currentVersion: 1, sentVersion: 1, sentAt: NOW })];
+      return Promise.reject(new ApiError(422, "Proposal content is frozen in its current status", "NOT_EDITABLE"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "Here is the later finish you asked for." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    const kept = within(await panel.findByTestId("kept-version"));
+    expect(kept.getByRole("alert").textContent)
+      .toBe("It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.");
+    expect(kept.getByText("Here is the later finish you asked for.")).toBeDefined();
+    expect(panel.queryByTestId("composer-save")).toBeNull();
+    expect(panel.getByText("With the client")).toBeDefined();
   });
 
   it("saves a first version without a quote, and the next then starts from it", async () => {

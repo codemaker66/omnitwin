@@ -545,6 +545,34 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     expect(after.sent_at?.getTime()).toBeGreaterThan(Date.parse("2026-09-21T00:00:00Z"));
   });
 
+  it("names the version answered, not a draft saved since, in the deal's history", async () => {
+    const deal = randomUUID();
+    await pool.query(
+      `INSERT INTO opportunities (id, venue_id, title, stage, estimated_value_minor, currency, next_action)
+       VALUES ($1, $2, 'Crawford wedding', 'proposal_sent', 0, 'GBP', 'Wait')`,
+      [deal, VENUE],
+    );
+    await pool.query("UPDATE proposals SET opportunity_id = $2, sent_version = 1 WHERE id = $1", [PROPOSAL, deal]);
+    // A platform administrator's draft, not on the link.
+    await saveVersion(2, "Crawford wedding proposal, draft");
+    const accepted = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { authorName: "Elaine Crawford", version: 1 } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    const notes = (await pool.query<{ note: string | null }>("SELECT note FROM opportunity_status_history WHERE opportunity_id = $1", [deal])).rows
+      .map((row) => row.note ?? "").join(" ");
+    expect(notes).toContain("(version 1)");
+    expect(notes).not.toContain("(version 2)");
+  });
+
+  it("shows no version for a proposal answered before any was saved", async () => {
+    await pool.query("DELETE FROM proposal_versions");
+    await pool.query("UPDATE proposals SET status = 'accepted', current_version = 0, sent_version = NULL WHERE id = $1", [PROPOSAL]);
+    // A platform administrator saves a first version after the answer.
+    await saveVersion(1, "Saved after the answer");
+    await pool.query("UPDATE proposals SET sent_version = NULL WHERE id = $1", [PROPOSAL]);
+    expect((await server.inject({ method: "GET", url: `/proposal-share/${TOKEN}` })).statusCode).toBe(404);
+    expect((await server.inject({ method: "GET", url: `/public/proposals/${SHARE_CODE}` })).statusCode).toBe(404);
+  });
+
   it("keeps an answered proposal on the version that was answered when another link is made", async () => {
     await pool.query("UPDATE proposals SET status = 'accepted', sent_version = 1 WHERE id = $1", [PROPOSAL]);
     // A platform administrator saved version 2 after the acceptance.

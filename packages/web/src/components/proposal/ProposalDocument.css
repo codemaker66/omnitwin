@@ -200,6 +200,9 @@
 .pd-decision .pd-field input, .pd-decision .pd-field textarea { border-color: var(--reg-edge); background: var(--reg-raised); color: var(--reg-text-1); }
 .pd-decision__error { margin: 0; color: var(--reg-alert); font-size: 14px; }
 .pd-decision__hint { margin: 0; color: var(--reg-text-2); font-size: 14px; line-height: 1.5; }
+.pd-decision__notice { margin: 0; color: var(--reg-text-1); font-size: 15px; line-height: 1.5; }
+.pd-state__kept { margin-top: 20px; text-align: left; }
+.pd-state__kept > p { font-size: 15px !important; }
 .pd-decision__kept {
   margin: 0;
   padding: 10px 14px;
