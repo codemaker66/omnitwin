@@ -1,7 +1,8 @@
-import { Matrix4, Object3D, Scene, Vector3, SRGBColorSpace, type BufferGeometry, type Camera } from "three";
+import { DataTexture, Matrix4, NearestFilter, Object3D, RedFormat, Scene, UnsignedByteType, Vector2, Vector3, SRGBColorSpace, type BufferGeometry, type Camera } from "three";
 import { StorageBufferAttribute, type UniformNode, type WebGPURenderer } from "three/webgpu";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
-import { Fn, If, float, length, max, min, storage, uniform, uniformArray, vec3 } from "three/tsl";
+import { Fn, If, float, length, max, min, storage, texture, uniform, uniformArray, vec3, vec4 } from "three/tsl";
+import { EXCLUSION_MASK_HEIGHT, EXCLUSION_MASK_WIDTH, resampleExclusionMask, type SplatExclusion } from "./splat-exclusion.js";
 import { mergeNativeSplatSources, type NativeRoomClip } from "./native-splat-merge.js";
 import { afterNativeCanvasGpuWork, isNativeCanvasRender, nativeRendererStorageLimit } from "./native-renderer.js";
 import { NativeCpuSortPool, type NativeCpuSortHandle } from "./native-cpu-sort-pool.js";
@@ -43,6 +44,9 @@ interface Snapshot {
   readonly halfExtent: UniformNode<"vec3", Vector3>;
   readonly softEdge: UniformNode<"float", number>;
   readonly clipEnabled: UniformNode<"float", number>;
+  readonly exclusionEnabled: UniformNode<"float", number>;
+  readonly exclusionMatrix: UniformNode<"mat4", Matrix4>;
+  readonly exclusionBand: UniformNode<"vec2", Vector2>;
   readonly dispose: () => void;
   readonly cpuSort: NativeCpuSortHandle | null;
   sortFailed: boolean;
@@ -92,6 +96,14 @@ export class NativeSplatScene {
   private minSortIntervalMs = 0;
   private clip: NativeRoomClip | null = null;
   private clipOwner: object | null = null;
+  private exclusion: SplatExclusion | null = null;
+  private exclusionOwner: object | null = null;
+  private readonly exclusionTexture = (() => {
+    const mask = new DataTexture(new Uint8Array(EXCLUSION_MASK_WIDTH * EXCLUSION_MASK_HEIGHT), EXCLUSION_MASK_WIDTH, EXCLUSION_MASK_HEIGHT, RedFormat, UnsignedByteType);
+    mask.magFilter = NearestFilter; mask.minFilter = NearestFilter;
+    mask.generateMipmaps = false; mask.flipY = false; mask.needsUpdate = true;
+    return mask;
+  })();
   private cpuSortPool: NativeCpuSortPool | null = null;
 
   constructor(private readonly scene: Scene, private readonly createCpuSortPool: () => NativeCpuSortPool = () => new NativeCpuSortPool()) {}
@@ -189,6 +201,26 @@ export class NativeSplatScene {
     this.clipOwner = null;
     for (const snapshot of this.snapshots.values()) this.updateSnapshot(snapshot);
     this.invalidate();
+  }
+
+  /** The shared R8 mask sampled by every draw's exclusion test. */
+  get exclusionMask(): DataTexture { return this.exclusionTexture; }
+
+  setExclusion(owner: object, exclusion: SplatExclusion | null): void {
+    this.exclusionOwner = owner;
+    this.exclusion = exclusion;
+    const data = this.exclusionTexture.image.data;
+    if (!(data instanceof Uint8Array)) throw new Error("The exclusion mask must be 8-bit.");
+    data.set(exclusion === null ? new Uint8Array(data.length) : resampleExclusionMask(exclusion.mask, EXCLUSION_MASK_WIDTH, EXCLUSION_MASK_HEIGHT));
+    this.exclusionTexture.needsUpdate = true;
+    for (const snapshot of this.snapshots.values()) this.updateSnapshot(snapshot);
+    this.invalidate();
+  }
+
+  clearExclusion(owner: object): void {
+    if (this.exclusionOwner !== owner) return;
+    this.setExclusion(owner, null);
+    this.exclusionOwner = null;
   }
 
   firstFrame(listener: FirstFrameListener): () => void {
@@ -328,6 +360,10 @@ export class NativeSplatScene {
     const halfExtent = uniform(new Vector3(1, 1, 1));
     const softEdge = uniform(0.12);
     const clipEnabled = uniform(0);
+    const exclusionEnabled = uniform(0);
+    const exclusionMatrix = uniform(new Matrix4());
+    const exclusionBand = uniform(new Vector2(-0.15, 0.12));
+    const exclusionMask = this.exclusionTexture;
     let mesh: NativeGaussianObject;
     try {
       mesh = new GaussianSplat(merged.geometry, {
@@ -347,6 +383,14 @@ export class NativeSplatScene {
             If(softEdge.greaterThan(0), () => {
               opacity.mulAssign(float(0.5).sub(distance.div(max(softEdge, 0.000001))).clamp(0, 1));
             }).Else(() => { If(distance.greaterThan(0), () => { opacity.assign(0); }); });
+          });
+          If(exclusionEnabled.greaterThan(0.5), () => {
+            const q = exclusionMatrix.mul(vec4(position, 1)).toVar();
+            const onGrid = q.x.greaterThanEqual(0).and(q.x.lessThanEqual(1)).and(q.y.greaterThanEqual(0)).and(q.y.lessThanEqual(1));
+            const inBand = q.z.greaterThanEqual(exclusionBand.x).and(q.z.lessThanEqual(exclusionBand.y));
+            If(onGrid.and(inBand), () => {
+              If(texture(exclusionMask, q.xy).level(float(0)).r.greaterThan(0.5), () => { opacity.assign(0); });
+            });
           });
           return opacity;
         })(),
@@ -399,6 +443,7 @@ export class NativeSplatScene {
     const snapshot: Snapshot = {
       key, mesh, geometry: merged.geometry, tileAttribute, sources, opacityValues,
       center, halfExtent, softEdge, clipEnabled,
+      exclusionEnabled, exclusionMatrix, exclusionBand,
       completionFailed: false, cpuSort, sortFailed: false,
       dispose: () => {
         if (this.gpuCompletion?.snapshot === snapshot) {
@@ -480,6 +525,11 @@ export class NativeSplatScene {
       snapshot.center.value.set(...this.clip.center);
       snapshot.halfExtent.value.set(...this.clip.halfExtent);
       snapshot.softEdge.value = this.clip.softEdge;
+    }
+    snapshot.exclusionEnabled.value = this.exclusion === null ? 0 : 1;
+    if (this.exclusion !== null) {
+      snapshot.exclusionMatrix.value.copy(this.exclusion.matrix);
+      snapshot.exclusionBand.value.set(-this.exclusion.below, this.exclusion.above);
     }
   }
 

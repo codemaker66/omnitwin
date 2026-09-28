@@ -699,3 +699,19 @@ describe("native presentation (T-639)", () => {
     state.detach(); await vi.advanceTimersByTimeAsync(0);
   });
 });
+
+describe("floor-slab exclusion host (T-639)", () => {
+  it("copies an owner's mask into the shared texture and clears it only for that owner", () => {
+    const state = setup();
+    const owner = {}, other = {};
+    const data = new Uint8Array(1024 * 512).fill(255);
+    state.runtime.setExclusion(owner, { matrix: new Matrix4(), below: 0.15, above: 0.12, mask: { width: 1024, height: 512, data } });
+    const texture = state.runtime.exclusionMask;
+    expect((texture.image.data as Uint8Array)[0]).toBe(255);
+    state.runtime.clearExclusion(other);
+    expect((texture.image.data as Uint8Array)[0]).toBe(255);
+    state.runtime.clearExclusion(owner);
+    expect((texture.image.data as Uint8Array)[0]).toBe(0);
+    state.detach();
+  });
+});
