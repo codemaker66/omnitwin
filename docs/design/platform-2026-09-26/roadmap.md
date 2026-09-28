@@ -762,8 +762,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   event. The notice says who answered (the name given on the page, or "The client"), what they did and to
   which proposal. Under that it gives the version they answered and their own words, and it opens that
   proposal on the Proposals desk. A change the hallkeeper must see opens its event instead, for those who
-  read events. Any of the venue's commercial roles can open it; a hallkeeper cannot, and never sees its
-  prices. A notice to the owner alone waits on the notification policy (interrupt, periphery, digest).
+  read events. Any of the venue's commercial roles can open it or find it in a list; anyone else, a
+  hallkeeper among them, can do neither, even for one they made, and never sees its prices. A notice to the
+  owner alone waits on the notification policy (interrupt, periphery, digest).
 - "Opened by the client" from `lastViewedAt`, excluding staff previews (`proposals.ts:1242`).
   Done on 28 September, as "the link was opened": a row reads "Sent 3 days ago, not opened yet", counting
   only opens since the latest send. The preview and the editor's Share panel never stamp. It cannot say
