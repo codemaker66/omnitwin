@@ -216,10 +216,38 @@ export interface ComposerDraft {
 export const EMPTY_DRAFT: ComposerDraft = { message: "", capacityNote: "", lines: [] };
 
 /** A version that did not save, and which composer wrote it: that composer
- *  still holds the words; once it is gone they are shown to copy. */
+ *  still holds the words; once it is gone they are shown to copy. `why` says
+ *  why words never sent were put aside (the proposal moved on while they were
+ *  written); a refused save is explained by its refusal instead. */
 export interface KeptVersion {
   readonly draft: ComposerDraft;
   readonly composer: number;
+  readonly why: string | null;
+}
+
+const CLOSED_WORDS: Readonly<Record<string, string>> = {
+  sent: "It is with the client now, so a new version cannot be written.",
+  accepted: "It has been accepted, so a new version cannot be written.",
+  declined: "It has been declined, so a new version cannot be written.",
+  expired: "It has expired, so a new version cannot be written.",
+  withdrawn: "It has been withdrawn, so a new version cannot be written.",
+  archived: "It has been archived, so a new version cannot be written.",
+};
+
+/** Why a composer's words were put aside unsaved: another version was saved
+ *  meanwhile, so the composer starts again from it, or the proposal left the
+ *  booker's hands, so it closes. */
+export function putAsideWords(status: string, composable: boolean, startsFrom: number): string {
+  if (!composable) return CLOSED_WORDS[status] ?? "A new version cannot be written now.";
+  return `Version ${String(startsFrom)} was saved meanwhile, so the next version starts from it.`;
+}
+
+/** Whether the words differ from those they started with, so there is
+ *  something to lose: for a first version, anything written at all. */
+export function draftDiffers(from: ProposalVersionPayload | null, draft: ComposerDraft): boolean {
+  const start = draftFromVersion(from);
+  const lines = (of: ComposerDraft): string => JSON.stringify(of.lines.map((line) => [line.description.trim(), line.quantity.trim(), line.pounds.trim()]));
+  return start.message.trim() !== draft.message.trim() || start.capacityNote.trim() !== draft.capacityNote.trim() || lines(start) !== lines(draft);
 }
 
 /** The latest version's words and quote, ready to be changed rather than
@@ -279,17 +307,26 @@ export function draftChanges(from: ProposalVersionPayload | null, draft: Compose
   return changes;
 }
 
-/** "the message, the capacity note and the quote". An item with its own
- *  comma or "and" before the last would run into the next, so the list is
- *  then set with semicolons: "the quote from £18,400 to £17,600; and the
- *  layout drawing". */
+/** Whether an item carries its own comma or "and", so it would run into the
+ *  next: a thousands separator ("£18,400") does not. */
+function runsOn(item: string): boolean {
+  // No lookbehind: older Safari cannot parse it, and would lose the module.
+  const words = item.replace(/(\d),(?=\d{3}(?!\d))/gu, "$1");
+  return words.includes(",") || words.includes(" and ");
+}
+
+/** "the message, the capacity note and the quote". A list whose items carry
+ *  their own comma or "and" is set apart more clearly: two items with a comma
+ *  ("the message, and the room and layout descriptions (now left out)"), more
+ *  with semicolons ("the date from Saturday 5 June 2027 to Saturday 12 June
+ *  2027; the occasion from Wedding to Dinner and dance; and the layout
+ *  drawing"). */
 export function listWords(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
   const last = items[items.length - 1] ?? "";
   const rest = items.slice(0, -1);
-  return rest.some((item) => item.includes(",") || item.includes(" and "))
-    ? `${rest.join("; ")}; and ${last}`
-    : `${rest.join(", ")} and ${last}`;
+  if (!items.some(runsOn)) return `${rest.join(", ")} and ${last}`;
+  return items.length === 2 ? `${rest.join("")}, and ${last}` : `${rest.join("; ")}; and ${last}`;
 }
 
 /** Where the composer's check of what a save would take stands: still on
@@ -359,7 +396,8 @@ export function checkIsFor(check: TakenCheck, fromVersion: number | null): check
  *  Until the check is back it speaks only of what is typed here, as the
  *  drawing and the event's facts are taken when the version is saved; once
  *  back, of those too, and of what the new version leaves out. A check for
- *  another version is not yet this one's. */
+ *  another version is not yet this one's; one that could not be made says
+ *  so, rather than leave the rest unknown without a word. */
 export function composerStartWords(fromVersion: number | null, typed: readonly string[], check: TakenCheck, dropped: readonly string[]): string {
   if (fromVersion === null) return "The first version.";
   const start = `Starts from version ${String(fromVersion)}.`;
@@ -367,8 +405,9 @@ export function composerStartWords(fromVersion: number | null, typed: readonly s
     const changes = [...typed, ...takenChanges(check.next), ...dropped];
     return changes.length === 0 ? `${start} Nothing is changed from it yet.` : `${start} Changed: ${listWords(changes)}.`;
   }
-  if (typed.length > 0) return `${start} You have changed ${listWords(typed)}.`;
-  return check.status === "failed" ? `${start} You have not changed anything here yet.` : start;
+  if (check.status !== "failed") return typed.length > 0 ? `${start} You have changed ${listWords(typed)}.` : start;
+  const said = typed.length > 0 ? `You have changed ${listWords(typed)}.` : "You have not changed anything here yet.";
+  return `${start} ${said} Whether the layout or the event's details have changed could not be checked.`;
 }
 
 /** What the version started from shows its client that a new one does not

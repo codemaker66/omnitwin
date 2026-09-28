@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { LAYOUT_STYLES, occasionLabel, type LayoutStyle, type ProposalNextVersion } from "@omnitwin/types";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
 import type { DeskProposal, ProposalCommentRow, ProposalHistoryEntry, StaffProposalVersion } from "../../../api/proposals.js";
@@ -8,8 +8,9 @@ import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYL
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftFromVersion, droppedChanges, historyMoments, layoutFact,
-  linkOpenedSentence, linkVersionWords, notCarriedWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft, type TakenCheck,
+  EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
+  layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft,
+  type TakenCheck,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -57,6 +58,10 @@ export interface ProposalPanelProps {
   /** What a version saved now would take that the latest does not show its
    *  client; read while the composer is open. */
   readonly next: PartRead<ProposalNextVersion>;
+  /** The last check made for the proposal as it now reads, whether or not it
+   *  is said: a save is held to it, so it takes nothing unseen. */
+  readonly lastCheck: ProposalNextVersion | null;
+  readonly onRetryCheck: () => void;
   readonly history: PartRead<readonly ProposalHistoryEntry[]>;
   readonly comments: PartRead<readonly ProposalCommentRow[]>;
   readonly spaces: PartRead<readonly Space[]>;
@@ -77,6 +82,10 @@ export interface ProposalPanelProps {
    *  never replaced unseen. `basis` is the check the composer showed, so the
    *  version takes nothing it did not say. */
   readonly onSaveVersion: (draft: ComposerDraft, composer: number, basedOn: number, basis?: string) => Promise<boolean>;
+  /** Keeps a composer's words to copy, saying why, once the proposal moved on
+   *  without them; says whether they were kept (a composer's own save keeps
+   *  or saves its words instead). */
+  readonly onKeepDraft: (composer: number, draft: ComposerDraft, why: string) => boolean;
   /** Puts one kept version away once it has been copied. */
   readonly onDiscardKept: (composer: number) => void;
   readonly onReply: (body: string) => Promise<boolean>;
@@ -101,11 +110,57 @@ function money(minor: number, currency: string): string {
   return formatMinorAsCurrency(minor, currency).replace(/\.00$/u, "");
 }
 
+/** The words in the open composer, while they differ from where it started. */
+interface LiveDraft {
+  readonly composer: number;
+  /** The version the composer starts from, which names it. */
+  readonly start: number;
+  readonly draft: ComposerDraft;
+}
+
+type ReportDraft = (live: LiveDraft | null) => void;
+
+/** The version the composer form starts from, or null while there is none to
+ *  write (the proposal is out of the booker's hands, or the version to start
+ *  from is still being read). A new form starts whenever this changes. */
+function composerStart(proposal: DeskProposal, latest: PartRead<StaffProposalVersion>): number | null {
+  if (!COMPOSABLE.includes(proposal.status)) return null;
+  if (proposal.currentVersion > 0 && latest.value === null) return null;
+  return latest.value?.version ?? 0;
+}
+
 export function ProposalPanel(props: ProposalPanelProps): ReactElement {
-  const { proposal, navigation, headingRef } = props;
+  const { proposal, navigation, headingRef, onKeepDraft } = props;
   const headingId = useId();
   const occasion = occasionLabel(proposal.eventType);
   const context = proposal.dealTitle ?? occasion;
+  const sectionRef = useRef<HTMLElement>(null);
+
+  // Words written in a composer that is then replaced (a version saved
+  // elsewhere, or the proposal sent or closed meanwhile) are kept to copy,
+  // unless its own save took them. Watched from here, where the proposal
+  // stays open while its composer changes: closing the proposal is not a
+  // replacement.
+  const composable = COMPOSABLE.includes(proposal.status);
+  const start = composerStart(proposal, props.latest);
+  const liveRef = useRef<LiveDraft | null>(null);
+  const focusKeptRef = useRef(false);
+  const report = useCallback<ReportDraft>((live) => { liveRef.current = live; }, []);
+  useLayoutEffect(() => {
+    const live = liveRef.current;
+    if (live === null || live.start === start) return;
+    liveRef.current = null;
+    if (onKeepDraft(live.composer, live.draft, putAsideWords(proposal.status, composable, start ?? proposal.currentVersion))) focusKeptRef.current = true;
+  }, [start, composable, proposal.status, proposal.currentVersion, onKeepDraft]);
+  // Focus that was in the composer is lost with it: it goes to the words kept.
+  useEffect(() => {
+    if (!focusKeptRef.current) return;
+    const kept = sectionRef.current?.querySelector<HTMLElement>("[data-kept-heading]") ?? null;
+    if (kept === null) return;
+    focusKeptRef.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) kept.focus();
+  });
 
   const step = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
@@ -115,7 +170,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
   };
 
   return (
-    <section className="enq-panel pr-panel" data-register="forest" aria-labelledby={headingId} onKeyDown={step}>
+    <section ref={sectionRef} className="enq-panel pr-panel" data-register="forest" aria-labelledby={headingId} onKeyDown={step}>
       <div className="enq-panel__body">
         <div className="enq-panel__bar">
           {navigation.layout === "single" ? (
@@ -165,7 +220,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} />
-        {COMPOSABLE.includes(proposal.status) ? <Composer {...props} /> : <KeptDraft {...props} holder={null} />}
+        {composable ? <Composer {...props} start={start} report={report} /> : <KeptDraft {...props} holder={null} />}
         <LatestQuote {...props} />
         <Conversation {...props} />
         <History {...props} />
@@ -351,11 +406,17 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
 // The next version, starting from the last one
 // ---------------------------------------------------------------------------
 
-function Composer(props: ProposalPanelProps): ReactElement {
-  const { proposal, latest } = props;
+interface ComposerProps extends ProposalPanelProps {
+  /** The version the form starts from (composerStart). */
+  readonly start: number | null;
+  readonly report: ReportDraft;
+}
+
+function Composer(props: ComposerProps): ReactElement {
+  const { proposal, latest, start } = props;
   // Until the version to start from has been read once, the form waits; read
   // again later, the form it started stays.
-  if (proposal.currentVersion > 0 && latest.value === null) {
+  if (start === null) {
     const headingId = `compose-${proposal.id}`;
     return (
       <>
@@ -379,7 +440,7 @@ function Composer(props: ProposalPanelProps): ReactElement {
     );
   }
   // A new version starts from the latest one, read again whenever that changes.
-  return <ComposerForm key={`${proposal.id}:${String(latest.value?.version ?? 0)}`} {...props} />;
+  return <ComposerForm key={`${proposal.id}:${String(start)}`} {...props} />;
 }
 
 /** Versions that did not save: what was written, to copy, with why it did
@@ -392,15 +453,20 @@ function KeptDraft({ proposal, keptDrafts, failure, onDiscardKept, holder }: Pro
   const shown = keptDrafts.filter((kept) => kept.composer !== holder);
   if (shown.length === 0) return null;
   const composing = COMPOSABLE.includes(proposal.status);
+  // Words put aside unsaved were never sent to be saved, so they are not
+  // called a version that did not save.
+  const refused = shown.every((kept) => kept.why === null);
+  const title = !refused ? "What you were writing" : shown.length === 1 ? "The version that did not save" : "The versions that did not save";
   return (
     <section className="enq-section" aria-labelledby={headingId} data-testid="kept-version">
-      <h3 id={headingId}>{shown.length === 1 ? "The version that did not save" : "The versions that did not save"}</h3>
+      <h3 id={headingId} tabIndex={-1} data-kept-heading="">{title}</h3>
       {!composing && failure?.where === "version" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
       <p className="enq-next__hint">What you wrote is kept here to copy.</p>
-      {shown.map(({ draft, composer }) => {
+      {shown.map(({ draft, composer, why }) => {
         const lines = draft.lines.filter((line) => line.description.trim() !== "");
         return (
           <div key={composer} className="pr-kept__one">
+            {why !== null && <p className="enq-next__hint" data-testid="kept-version-why">{why}</p>}
             {draft.message.trim() !== "" && <p className="pr-kept">{draft.message}</p>}
             {draft.capacityNote.trim() !== "" && <p className="pr-kept">Capacity: {draft.capacityNote}</p>}
             {lines.length > 0 && (
@@ -426,8 +492,8 @@ function KeptDraft({ proposal, keptDrafts, failure, onDiscardKept, holder }: Pro
  *  copy only once it is gone. */
 let composers = 0;
 
-function ComposerForm(props: ProposalPanelProps): ReactElement {
-  const { proposal, latest, next: checkRead, spaces, working, failure, onSaveVersion } = props;
+function ComposerForm(props: ComposerProps): ReactElement {
+  const { proposal, latest, next: checkRead, lastCheck, spaces, working, failure, onSaveVersion, onRetryCheck, report } = props;
   const layoutLine = composerLayoutLine(proposal);
   const headingId = useId();
   const [composer] = useState(() => { composers += 1; return composers; });
@@ -438,13 +504,21 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
   const [draft, setDraft] = useState<ComposerDraft>(() => draftFromVersion(from));
   const next = basedOn + 1;
   const changes = draftChanges(from, draft);
+  // The panel knows the words while there is something to lose, so they are
+  // kept should this composer be replaced.
+  const differs = draftDiffers(from, draft);
+  useEffect(() => { report(differs ? { composer, start: basedOn, draft } : null); }, [report, differs, composer, basedOn, draft]);
   // What the save would take, once checked against the version the words
   // came from: a check for another is not this one's, and one that could
-  // not be made again says nothing and holds the save to nothing.
+  // not be made again says only what is typed.
   const check: TakenCheck = checkRead.status === "error" ? { status: "failed" }
     : checkRead.value !== null && checkRead.value.basedOn === basedOn ? { status: "ready", next: checkRead.value }
       : { status: "waiting" };
   const checked = checkIsFor(check, from === null ? null : basedOn);
+  // The save is held to the last check made for these words' version, said
+  // or not: one refused, or not made again, can only be refused, so a save
+  // never takes what it was not shown.
+  const heldTo = from !== null && lastCheck !== null && lastCheck.basedOn === basedOn ? lastCheck.basis : undefined;
   // Once checked, what the new version leaves out is said with the rest of
   // what it changes; until then, on its own line.
   const notCarried = checked ? null : notCarriedWords(from);
@@ -472,6 +546,11 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
         <p className="enq-next__hint" id={startId} data-testid="composer-start">
           {composerStartWords(from === null ? null : basedOn, changes, check, droppedChanges(from))}
         </p>
+        {check.status === "failed" && from !== null && (
+          <div className="enq-actions">
+            <button type="button" className="enq-quiet" data-testid="composer-check-again" onClick={onRetryCheck}>Check again</button>
+          </div>
+        )}
         {notCarried !== null && <p className="enq-next__hint" id={notCarriedId} data-testid="composer-not-carried">{notCarried}</p>}
 
         <label className="pr-field">
@@ -526,7 +605,7 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
               it is heard at the moment of saving, however it came to change. */}
           <button type="button" className="enq-cta" data-testid="composer-save" disabled={saving || working !== null} aria-busy={saving}
             aria-describedby={notCarried === null ? startId : `${startId} ${notCarriedId}`}
-            onClick={() => { void onSaveVersion(draft, composer, basedOn, checked ? check.next.basis : undefined); }}>
+            onClick={() => { void onSaveVersion(draft, composer, basedOn, heldTo); }}>
             {saving && <ActivityIndicator size={18} />}
             {saving ? "Saving…" : `Save version ${String(next)}`}
           </button>

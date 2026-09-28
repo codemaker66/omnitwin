@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ProposalFacts, ProposalNextVersion, ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
-  composerLayoutLine, composerStartWords, draftChanges, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords, listWords,
-  droppedChanges, notCarriedWords, proposalTone, proposalsSummary, rowDetails, rowWhen, takenChanges,
+  composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords,
+  listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, takenChanges,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -119,10 +119,46 @@ describe("the next version", () => {
     expect(draftChanges(null, same)).toEqual([]);
     expect(listWords(["the message", "the capacity note", "the quote"])).toBe("the message, the capacity note and the quote");
     expect(listWords(["the message"])).toBe("the message");
-    // An item with its own comma or "and" before the last sets the list with semicolons.
-    expect(listWords(["the occasion from Wedding to Dinner and dance", "the layout drawing"]))
-      .toBe("the occasion from Wedding to Dinner and dance; and the layout drawing");
+    expect(listWords([])).toBe("");
+  });
+
+  it("sets a list apart more clearly only when its items carry their own comma or \"and\"", () => {
+    // A thousands separator is not a comma of the sentence.
     expect(listWords(["the message", "the quote from £4,400 to £4,600"])).toBe("the message and the quote from £4,400 to £4,600");
+    expect(listWords(["the quote from £18,400 to £17,600", "the guest count from 120 to 1,500", "the layout drawing"]))
+      .toBe("the quote from £18,400 to £17,600, the guest count from 120 to 1,500 and the layout drawing");
+    expect(listWords(["the quote from £1,250,000 to £1,300,000", "the layout drawing"])).toBe("the quote from £1,250,000 to £1,300,000 and the layout drawing");
+    // Two items: a comma before the last. Wherever the "and" is.
+    expect(listWords(["the occasion from Wedding to Dinner and dance", "the layout drawing"]))
+      .toBe("the occasion from Wedding to Dinner and dance, and the layout drawing");
+    expect(listWords(["the message", "the room and layout descriptions (now left out)"]))
+      .toBe("the message, and the room and layout descriptions (now left out)");
+    // More: semicolons.
+    expect(listWords(["the message", "the room (another room named Hall, East)", "the layout drawing"]))
+      .toBe("the message; the room (another room named Hall, East); and the layout drawing");
+  });
+
+  it("knows when the words differ from where they started, a first version's at all", () => {
+    const from = payload();
+    const same = draftFromVersion(from);
+    expect(draftDiffers(from, same)).toBe(false);
+    expect(draftDiffers(from, { ...same, message: "  Planning-grade draft.  " })).toBe(false);
+    expect(draftDiffers(from, { ...same, message: "A later finish." })).toBe(true);
+    expect(draftDiffers(from, { ...same, capacityNote: "Around 100." })).toBe(true);
+    expect(draftDiffers(from, { ...same, lines: [...same.lines, { description: "", quantity: "1", pounds: "" }] })).toBe(true);
+    expect(draftDiffers(from, { ...same, lines: same.lines.map((line, index) => index === 0 ? { ...line, pounds: "4500" } : line) })).toBe(true);
+    // A first version has nothing to start from: anything written is something to lose.
+    expect(draftDiffers(null, draftFromVersion(null))).toBe(false);
+    expect(draftDiffers(null, { message: "Here is the dinner you asked about.", capacityNote: "", lines: [] })).toBe(true);
+  });
+
+  it("says why words were put aside unsaved", () => {
+    expect(putAsideWords("draft", true, 3)).toBe("Version 3 was saved meanwhile, so the next version starts from it.");
+    expect(putAsideWords("changes_requested", true, 1)).toBe("Version 1 was saved meanwhile, so the next version starts from it.");
+    expect(putAsideWords("sent", false, 2)).toBe("It is with the client now, so a new version cannot be written.");
+    expect(putAsideWords("withdrawn", false, 2)).toBe("It has been withdrawn, so a new version cannot be written.");
+    expect(putAsideWords("accepted", false, 2)).toBe("It has been accepted, so a new version cannot be written.");
+    expect(putAsideWords("something new", false, 2)).toBe("A new version cannot be written now.");
   });
 
   // Until the check of what a save takes is back, what is typed here is all
@@ -133,12 +169,14 @@ describe("the next version", () => {
     const waiting = { status: "waiting" } as const;
     expect(composerStartWords(null, [], failed, [])).toBe("The first version.");
     expect(composerStartWords(null, [], waiting, [])).toBe("The first version.");
-    expect(composerStartWords(2, [], failed, [])).toBe("Starts from version 2. You have not changed anything here yet.");
     expect(composerStartWords(2, [], waiting, [])).toBe("Starts from version 2.");
-    for (const check of [failed, waiting]) {
-      expect(composerStartWords(2, ["the message", "the quote from £4,400 to £4,600"], check, []))
-        .toBe("Starts from version 2. You have changed the message and the quote from £4,400 to £4,600.");
-    }
+    expect(composerStartWords(2, ["the message", "the quote from £4,400 to £4,600"], waiting, []))
+      .toBe("Starts from version 2. You have changed the message and the quote from £4,400 to £4,600.");
+    // A check that could not be made says so, rather than leave the rest unknown without a word.
+    expect(composerStartWords(2, [], failed, []))
+      .toBe("Starts from version 2. You have not changed anything here yet. Whether the layout or the event's details have changed could not be checked.");
+    expect(composerStartWords(2, ["the message"], failed, []))
+      .toBe("Starts from version 2. You have changed the message. Whether the layout or the event's details have changed could not be checked.");
   });
 
   const FACTS: ProposalFacts = { eventDate: "2027-06-05", guestCount: 160, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
@@ -149,7 +187,7 @@ describe("the next version", () => {
   it("says, once the check is back, what the version changes: the words first, then what it takes", () => {
     expect(composerStartWords(2, [], { status: "ready", next: next() }, [])).toBe("Starts from version 2. Nothing is changed from it yet.");
     expect(composerStartWords(2, ["the quote from £18,400 to £17,600"], { status: "ready", next: next({ layout: "changed" }, { guestCount: 180 }) }, []))
-      .toBe("Starts from version 2. Changed: the quote from £18,400 to £17,600; the guest count from 160 to 180; and the layout drawing.");
+      .toBe("Starts from version 2. Changed: the quote from £18,400 to £17,600, the guest count from 160 to 180 and the layout drawing.");
     expect(composerStartWords(2, ["the message"], { status: "ready", next: next({ layout: "changed" }) }, []))
       .toBe("Starts from version 2. Changed: the message and the layout drawing.");
     // A check made for another version is not yet this one's.
@@ -166,9 +204,9 @@ describe("the next version", () => {
     expect(droppedChanges(payload())).toEqual([]);
     expect(droppedChanges(null)).toEqual([]);
     expect(composerStartWords(2, [], { status: "ready", next: next() }, droppedChanges(shared)))
-      .toBe("Starts from version 2. Changed: the room and layout descriptions (now left out); and the list of what is included (now left out).");
+      .toBe("Starts from version 2. Changed: the room and layout descriptions (now left out), and the list of what is included (now left out).");
     // Until the check is back, it speaks only of what is typed.
-    expect(composerStartWords(2, [], { status: "failed" }, droppedChanges(shared))).toBe("Starts from version 2. You have not changed anything here yet.");
+    expect(composerStartWords(2, [], { status: "waiting" }, droppedChanges(shared))).toBe("Starts from version 2.");
   });
 
   it("names what a save takes in the client's page's words and order", () => {
