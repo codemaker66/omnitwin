@@ -186,6 +186,56 @@ worker is unchanged. This bounds overlapping allocations but may lengthen comple
 loading; it changes no source points, SH, pixels, lighting or quality tier, and
 does not identify physical RAM or qualify a phone.
 
+## Presentation and the floor skin (T-639)
+
+The captured room is shown as photographed, and the Grand Hall floor is a
+measured surface rather than splats.
+
+- **No false anti-aliasing dimming.** The patched `GaussianSplat` addon takes an
+  `antialias` constructor option (default `true`, upstream behaviour). The native
+  host passes `false`: the SOG loader refuses `antialias: true` archives and the
+  SPZ loader refuses the anti-aliased flag, so the compensation could only dim
+  splats that were trained without it.
+- **No film curve on a capture.** three r186 ignores `Material.toneMapped`, so the
+  curve comes off the canvas: the walk canvas is `flat`, and the planner sets
+  `NoToneMapping` while a capture is shown (`CaptureToneMapping`, including the
+  default hybrid layer mode). Procedural content drawn in the same frame
+  (furniture, the model shell) currently shares that uncurved canvas; giving it
+  its own curve is part of the furniture increment (I3).
+- **Floor skin.** A `venviewer.floor-skin.v1` package sits beside a room's tiles
+  as `<venue>/<room>/floor-skin/v<n>/`: `floor-skin.json`, WebP albedo tiers
+  (high 4096², medium 2048², low and poster 1024² per tile, two tiles), a 5 cm
+  height grid (`.i16`) and a 1024×512 floor-slab mask (`.u8`), all in the
+  capture frame. `tools/floor-skin/build_floor_skin.py` builds it from the floor
+  study; `StageFloor` draws it under the splat transform, only for the staged
+  capture it was built for, at the tier from `useAssetDeviceTier`. `?floor=matched`
+  (development and preview builds) multiplies the photographs by the measured
+  splat/photo floor ratio for comparison.
+- **Floor-slab removal.** While the skin is shown, the host hides every splat
+  centre inside the floor outline and within 0.15 m below to 0.12 m above the
+  plane: one shared R8 mask, a band and a scene→mask matrix (`SplatExclusion`),
+  tested in the addon's vertex-stage opacity node. `excludedBySlab` is the CPU
+  reference of the shader rule; `floorExclusionMatrix` builds the matrix from
+  the scene's and the floor group's world matrices, the host's own frame.
+- **Where builds read room assets.** Development serves `/splats/*` from
+  `SPLAT_STAGING_ROOT`; the staging middleware serves floor-skin files only inside
+  a `floor-skin/` directory. Every Vercel deployment redirects `/splats/*` to
+  `/work-in-progress` under the 19 September hold, so preview builds read the
+  public R2 bucket directly (`resolveBuildSplatBaseUrl`; the bucket's CORS policy
+  admits `*.vercel.app`) and production keeps the hold. `gaussianSplatsAvailable()`
+  opens splats in development and on preview deployments only.
+- **Publishing a package.** `publish-splat-tiles.ts --package <room>/<package>/v<n>`
+  uploads one version directory: content types per file, immutable caching, the
+  SHA-256 in object metadata, the manifest last (withheld if any file failed),
+  and a refusal to overwrite a published version with different bytes. A rebuilt
+  package is published as the next version.
+- **Devices.** Phones cap at the low tier and tablets (iPad, Android) at medium
+  (`classifyDeviceInContext`); a device never rises above its GPU tier.
+
+Evidence (build PC): `D:/claude/real-hall/evidence/i1a/` holds the before and
+after walk captures from the same pose, the WebGL2 capture, the planner captures
+with the photographed and matched floors, and the floor-arm crops.
+
 ## 25 September runtime iteration evidence (T-634)
 
 Five qualified candidate comparisons each improved the declared overall time by
