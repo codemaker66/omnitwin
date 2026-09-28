@@ -426,6 +426,20 @@ describe("the decision", () => {
     expect(await screen.findByText("Your changes went to the venue team. This version is on hold until they send the next one.")).toBeTruthy();
   });
 
+  it("drops its answer at once when the answer's own read finds the version sent again", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "sent", sentAt: "2026-06-13T09:00:00.000Z" }));
+    mockCommentOnProposalShare.mockResolvedValue({ kind: "request_changes" });
+    renderTokenPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Ask for changes…" }));
+    fireEvent.change(screen.getByLabelText("What would you like changed?"), { target: { value: "Could we seat 130?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to the venue team" }));
+    expect(await screen.findByText("The venue team sent this version to you again. You can answer it below.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Accept version 1" })).toBeTruthy();
+    expect(screen.queryByText("Your changes went to the venue team. This version is on hold until they send the next one.")).toBeNull();
+  });
+
   it("gives way to a newer version brought by a message after an answer that did not arrive", async () => {
     mockGetProposalShare
       .mockResolvedValueOnce(fixtureProposal())

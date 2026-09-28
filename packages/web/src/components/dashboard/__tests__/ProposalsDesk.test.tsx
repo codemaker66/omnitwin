@@ -703,9 +703,38 @@ describe("the next version", () => {
     expect(kept.getByRole("heading", { name: "The versions that did not save" })).toBeDefined();
     expect(kept.getByText("Words one.")).toBeDefined();
     expect(kept.getByText("Words two.")).toBeDefined();
+    // One copy per composer: the second's later failure replaced its refusal.
+    expect(kept.getAllByTestId("kept-version-clear")).toHaveLength(2);
+    expect(kept.queryByText(/Late licence extension/u)).toBeNull();
     fireEvent.click(kept.getAllByTestId("kept-version-clear")[0] as HTMLElement);
     expect(within(third.getByTestId("kept-version")).queryByText("Words one.")).toBeNull();
     expect(within(third.getByTestId("kept-version")).getByText("Words two.")).toBeDefined();
+  });
+
+  it("puts away every kept copy once a version saves", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 1, sentVersion: 1, sentAt: NOW })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1));
+    mocks.createProposalVersion.mockRejectedValueOnce(new Error("offline")).mockImplementationOnce((_id: string, payload: Record<string, unknown>) => {
+      existing = [proposal({ status: "changes_requested", currentVersion: 2, sentVersion: 1, sentAt: NOW })];
+      mocks.getLatestProposalVersion.mockResolvedValue(version(2, payload));
+      return Promise.resolve(version(2, payload));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "Words one." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await panel.findByTestId("composer-error");
+    fireEvent.keyDown(panel.getByRole("heading", { level: 2, name: "Autumn gala" }), { key: "Escape" });
+    await waitFor(() => { expect(screen.queryByRole("heading", { level: 2, name: "Autumn gala" })).toBeNull(); });
+    const again = within(await openProposal());
+    await again.findByTestId("composer-message");
+    expect(again.getByTestId("kept-version")).toBeDefined();
+
+    // The next composer saves a version: the copy kept by the first is put away.
+    fireEvent.change(again.getByTestId("composer-message"), { target: { value: "Words one, as saved." } });
+    fireEvent.click(again.getByTestId("composer-save"));
+    await waitFor(() => { expect(again.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    expect(again.queryByTestId("kept-version")).toBeNull();
   });
 
   it("shows no second copy while the composer still holds a version that did not arrive, and none once it saves", async () => {
