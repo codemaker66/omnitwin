@@ -174,9 +174,11 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
   const start = composerStart(proposal, props.latest);
   const formRef = useRef<FormOnScreen | null>(null);
   const focusKeptRef = useRef(false);
-  // A composer form that goes while focus is in it says so, as it goes.
-  const focusLostRef = useRef(false);
-  const onFocusLost = useCallback((): void => { focusLostRef.current = true; }, []);
+  // A composer form says, as it goes, what had focus in it, if anything.
+  // Focus went with it only once that has left the page: React's development
+  // rehearsal of a form going leaves everything where it was.
+  const focusLostRef = useRef<Element | null>(null);
+  const onFormGoing = useCallback((focused: Element | null): void => { focusLostRef.current = focused; }, []);
   const report = useCallback<ReportForm>((form, written) => {
     formRef.current = form;
     memory?.remember(written);
@@ -210,13 +212,14 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
       const kept = sectionRef.current?.querySelector<HTMLElement>("[data-kept-heading]") ?? null;
       if (kept === null) return;
       focusKeptRef.current = false;
-      focusLostRef.current = false;
+      focusLostRef.current = null;
       if (lost()) kept.focus();
       return;
     }
-    if (!focusLostRef.current || start === "reading") return;
-    focusLostRef.current = false;
-    if (!lost()) return;
+    const focused = focusLostRef.current;
+    if (focused === null || start === "reading") return;
+    focusLostRef.current = null;
+    if (focused.isConnected || !lost()) return;
     (sectionRef.current?.querySelector<HTMLElement>("[data-testid='composer-start']") ?? headingRef.current)?.focus();
   });
 
@@ -282,7 +285,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} />
-        {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onFocusLost={onFocusLost} />}
+        {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onGoing={onFormGoing} />}
         <LatestQuote {...props} />
         <Conversation {...props} />
         <History {...props} />
@@ -486,8 +489,8 @@ interface ComposerProps extends ProposalPanelProps {
   /** The version the form starts from (composerStart). */
   readonly start: Exclude<ComposerStart, "closed">;
   readonly report: ReportForm;
-  /** The form is going while focus is in it. */
-  readonly onFocusLost: () => void;
+  /** The form is going: what had focus in it, or null. */
+  readonly onGoing: (focused: Element | null) => void;
 }
 
 interface ComposerFormProps extends ComposerProps {
@@ -590,7 +593,7 @@ let composers = 0;
 function ComposerForm(props: ComposerFormProps): ReactElement {
   const {
     proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain,
-    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onFocusLost, report,
+    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onGoing, report,
   } = props;
   const layoutLine = composerLayoutLine(proposal);
   const headingId = useId();
@@ -619,13 +622,14 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   useEffect(() => {
     report({ composer, start: basedOn }, differs ? { composer, start: basedOn, draft } : null);
   }, [report, differs, composer, basedOn, draft]);
-  // Going while focus is in it (replaced by a version saved elsewhere, a send,
-  // or anything else), the form says so before its fields leave the page, so
+  // Going (replaced by a version saved elsewhere, a send, or anything else),
+  // the form says what had focus in it before its fields leave the page, so
   // the panel can give focus somewhere to go.
   useLayoutEffect(() => () => {
-    const within = document.activeElement?.closest(`[data-composer-form="${String(composer)}"]`) ?? null;
-    if (within !== null) onFocusLost();
-  }, [composer, onFocusLost]);
+    const focused = document.activeElement;
+    const within = focused !== null && focused.closest(`[data-composer-form="${String(composer)}"]`) !== null;
+    onGoing(within ? focused : null);
+  }, [composer, onGoing]);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (!startedAgain) return;

@@ -10,6 +10,7 @@ import { getUnreadNotificationCount } from "../../api/notifications.js";
 import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
+import { useSignOutWords } from "./proposals/sign-out-words.js";
 import { StaffShellContext, useInStaffShell, useShellFrame, type ShellFrame, type StaffShell } from "./staff-shell.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
@@ -130,11 +131,17 @@ export function canShowNavItem(
 
 export { NAV_ITEMS };
 
-function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
+interface SignOutButtonProps {
+  readonly onLocalSignOut: () => void;
+  /** Signs out once any proposal words not yet saved are let go (sign-out-words.tsx). */
+  readonly askFirst: (signOut: () => void) => void;
+}
+
+function ClerkSignOutButton(props: SignOutButtonProps): React.ReactElement {
   const { signOut } = useClerk();
   const requestExit = useInventoryExit();
   const handleSignOut = (): void => {
-    requestExit(() => { props.onLocalSignOut(); void signOut(); });
+    requestExit(() => { props.askFirst(() => { props.onLocalSignOut(); void signOut(); }); });
   };
 
   return (
@@ -144,10 +151,10 @@ function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): Rea
   );
 }
 
-function LocalSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
+function LocalSignOutButton(props: SignOutButtonProps): React.ReactElement {
   const requestExit = useInventoryExit();
   return (
-    <button type="button" onClick={() => { requestExit(props.onLocalSignOut); }} className="dashboard-layout-signout">
+    <button type="button" onClick={() => { requestExit(() => { props.askFirst(props.onLocalSignOut); }); }} className="dashboard-layout-signout">
       Sign Out
     </button>
   );
@@ -258,6 +265,10 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
     return () => { request.current = false; };
   }, [noVenueTitle, user?.platformRole, user?.venueId]);
 
+  // Proposal words not yet saved are asked about before signing out (its menu
+  // closes as the question takes focus); staying, the person is back at the
+  // account button.
+  const signOutWords = useSignOutWords(user?.id ?? null, () => { accountButtonRef.current?.focus(); });
   const handleLocalSignOut = (): void => {
     setOpenMenu(null);
     // Whoever signs in next on this browser reads their own venue afresh.
@@ -464,8 +475,8 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
           <div className="dashboard-layout-popover dashboard-layout-account-panel" id={`${menuId}-account`} hidden={openMenu !== "account"}>
             <p className="dashboard-layout-account-email">{user?.email ?? ""}</p>
             {isE2EAuthBypassEnabled()
-              ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} />
-              : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} />}
+              ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={signOutWords.askFirst} />
+              : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={signOutWords.askFirst} />}
           </div>
         </div>
       </header>
@@ -476,6 +487,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
       </div>
 
       <ToastContainer />
+      {signOutWords.question}
     </>
   );
 }

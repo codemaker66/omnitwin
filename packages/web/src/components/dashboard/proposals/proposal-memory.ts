@@ -1,3 +1,4 @@
+import { useAuthStore } from "../../../stores/auth-store.js";
 import type { ComposerDraft, KeptVersion } from "./proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -6,8 +7,9 @@ import type { ComposerDraft, KeptVersion } from "./proposals-desk-format.js";
 // words that did not save. It lives as long as the page does, so moving to
 // another proposal, or to another part of the dashboard, loses nothing, and a
 // save that answers after the desk was left still finds its words. A reload
-// starts afresh, so the page asks before one while any words are here. Kept
-// per person, so an account signed in after another never reads theirs.
+// starts afresh, so the page asks before one while any words are here, until
+// the person signs out. Kept per person, so an account signed in after
+// another never reads theirs.
 // ---------------------------------------------------------------------------
 
 /** The words in one proposal's composer while they differ from where they
@@ -30,10 +32,13 @@ function key(person: string, proposalId: string): string {
 }
 
 // A reload or a closed tab would take every word here, on screen or not: the
-// browser asks first while there are any.
+// browser asks first while there are any. Not once no one is signed in:
+// every sign-out signs out on this page before it leaves it, and the words go
+// with it (the dashboard's Sign Out asks about them first), so the browser
+// never asks about them after the person has signed out.
 let guarding = false;
 function protect(event: BeforeUnloadEvent): void {
-  event.preventDefault();
+  if (useAuthStore.getState().user !== null) event.preventDefault();
 }
 function guardUnload(): void {
   const unsaved = drafts.size > 0 || kept.size > 0;
@@ -74,6 +79,24 @@ export function updateKept(person: string, update: (current: KeptCopies) => Kept
 export function subscribeKept(listener: () => void): () => void {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
+}
+
+/** How many proposals hold words of the person's not yet saved, in a
+ *  composer or kept to copy. */
+export function proposalsWithWords(person: string): number {
+  const prefix = key(person, "");
+  const ids = new Set(Object.keys(recallKept(person)));
+  for (const written of drafts.keys()) if (written.startsWith(prefix)) ids.add(written.slice(prefix.length));
+  return ids.size;
+}
+
+/** Forgets the person's words, as they sign out having chosen to leave them. */
+export function forgetWords(person: string): void {
+  const prefix = key(person, "");
+  for (const written of [...drafts.keys()]) if (written.startsWith(prefix)) drafts.delete(written);
+  kept.delete(person);
+  guardUnload();
+  for (const listener of listeners) listener();
 }
 
 /** Forgets everything; for tests, which share one page. */

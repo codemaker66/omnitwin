@@ -24,7 +24,7 @@ import { recallDraft, recallKept, rememberDraft, subscribeKept, updateKept, type
 import { ProposalsLedger } from "./proposals/ProposalsLedger.js";
 import { ProposalsStages } from "./proposals/ProposalsStages.js";
 import {
-  groupRows, groupWords, proposalStatusWords, proposalsSummary, startedAgainWords, type ComposerDraft, type ProposalFilter,
+  groupRows, groupWords, proposalStatusWords, proposalsSummary, startedAgainWords, type ComposerDraft, type KeptVersion, type ProposalFilter,
 } from "./proposals/proposals-desk-format.js";
 import "./enquiries/EnquiriesDesk.css";
 import "./pipeline/PipelineDesk.css";
@@ -593,8 +593,10 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
       }
       throw error;
     }
-    // The words are the version now: nothing of them is left to remember.
-    rememberDraft(person, id, null);
+    // The words are the version now: nothing of them is left to remember,
+    // unless words written since have taken their place (the desk was left
+    // and opened again while this save was on its way).
+    if (recallDraft(person, id)?.draft === draft) rememberDraft(person, id, null);
     // The next version starts from this one at once, if it is still open; the
     // proposal is then read again for what the server made of it.
     if (openIdRef.current === id) seedLatest(id, saved);
@@ -604,12 +606,12 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     return `Version ${String(saved.version)} is saved.`;
   }, composer);
 
-  /** Forgets the proposal's kept versions: one composer's, or all of them. */
-  const forgetKept = (id: string, composer: number | null): void => {
+  /** Forgets the proposal's kept versions: one composer's, or those given. */
+  const forgetKept = (id: string, which: number | readonly KeptVersion[]): void => {
     setKeptDrafts((current) => {
       const kept = current[id];
       if (kept === undefined) return current;
-      const left = composer === null ? [] : kept.filter((entry) => entry.composer !== composer);
+      const left = kept.filter((entry) => typeof which === "number" ? entry.composer !== which : !which.includes(entry));
       if (left.length === kept.length) return current;
       const { [id]: _done, ...rest } = current;
       return left.length === 0 ? rest : { ...rest, [id]: left };
@@ -620,20 +622,24 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
   // saves its words, so they are never put aside as though the proposal had
   // moved on without them.
   const savingRef = useRef<number | null>(null);
+  // Composers that went, words and all, while their save was on its way.
+  const goneWhileSavingRef = useRef(new Set<number>());
 
-  // A version that did not save is kept, so it can still be copied once the
-  // composer that wrote it is gone: that composer may already have been
-  // replaced while the save was on its way, taking the words with it. Hidden
-  // while its composer is on screen; a later reason for the same composer
-  // replaces it. A version that saves puts every copy away.
+  // A version that did not save is kept to copy when the composer that wrote
+  // it went while the save was on its way (a colleague's version or a send
+  // found meanwhile), taking the words with it; a composer still there holds
+  // them itself. A version that saves puts away the copies there were when
+  // it began, and none made since.
   const onSaveVersion = async (draft: ComposerDraft, composer: number, basedOn: number, basis?: string): Promise<boolean> => {
     const id = proposal?.id ?? null;
+    const before = id === null ? [] : recallKept(person)[id] ?? [];
     savingRef.current = composer;
     const saved = await saveVersion(draft, composer, basedOn, basis);
+    const gone = goneWhileSavingRef.current.delete(composer);
     if (!saved && savingRef.current === composer) savingRef.current = null;
     if (id !== null) {
-      if (saved) forgetKept(id, null);
-      else {
+      if (saved) forgetKept(id, before);
+      else if (gone) {
         setKeptDrafts((current) => ({
           ...current,
           [id]: [...(current[id] ?? []).filter((entry) => entry.composer !== composer), { draft, composer, why: null }],
@@ -655,7 +661,11 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     const step = stepClosedRef.current;
     const byStep = step !== null && step.id === id && step.status === proposal?.status;
     if (byStep) stepClosedRef.current = null;
-    if (savingRef.current === composer) return false;
+    if (savingRef.current === composer) {
+      // Should that save be refused, the words it sent are kept then.
+      if (draft !== null) goneWhileSavingRef.current.add(composer);
+      return false;
+    }
     const ownRefusal = failure?.where === "version" && failure.composer === composer && failure.moved === true;
     if (failure?.where === "version" && !ownRefusal) setFailure(null);
     if (draft === null) return false;

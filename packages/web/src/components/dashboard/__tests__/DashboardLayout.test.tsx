@@ -1,10 +1,11 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useRef, useState } from "react";
 import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
 import { DashboardLayout, forgetKnownVenueNames, type DashboardView } from "../DashboardLayout.js";
 import { InventoryNavigationGuard } from "../inventory/InventoryNavigationGuard.js";
+import { forgetProposalMemory, proposalsWithWords, recallDraft, rememberDraft, updateKept } from "../proposals/proposal-memory.js";
 
 const mocks = vi.hoisted(() => ({
   venue: vi.fn(), signOut: vi.fn(), bypass: vi.fn(), unreadCount: vi.fn(), subscribe: vi.fn(),
@@ -89,7 +90,7 @@ beforeEach(() => {
   mocks.bypass.mockReturnValue(false);
   useAuthStore.getState().setUser(admin);
 });
-afterEach(() => { cleanup(); for (const router of routers.splice(0)) router.dispose(); useAuthStore.getState().setUser(null); });
+afterEach(() => { cleanup(); for (const router of routers.splice(0)) router.dispose(); useAuthStore.getState().setUser(null); forgetProposalMemory(); });
 
 describe("DashboardLayout navigation", () => {
   it("keeps the primary destinations immediate and secondary destinations behind More", async () => {
@@ -263,6 +264,66 @@ describe("DashboardLayout navigation", () => {
     await act(async () => { confirm?.(); await saved; });
     expect(await screen.findByRole("heading", { name: "Signed out" })).toBeDefined();
     expect(mocks.signOut).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])("asks before signing out with proposal words not saved, keeping them on Cancel (local fixture: %s)", async (localFixture) => {
+    mocks.bypass.mockReturnValue(localFixture);
+    const words = { message: "Words not yet saved.", capacityNote: "", lines: [] };
+    rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: words });
+    updateKept("admin-1", () => ({ p2: [{ draft: words, composer: 2, why: null }] }));
+    renderShell();
+    await screen.findByText("Trades Hall");
+    const account = screen.getByRole("button", { name: "Account: Elaine Campbell" });
+    fireEvent.click(account);
+    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
+    expect(question.textContent).toContain("What you wrote for 2 proposals is not saved as versions yet.");
+    expect(useAuthStore.getState().user).toEqual(admin);
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => { expect(document.activeElement).toBe(account); });
+    expect(account.getAttribute("aria-expanded")).toBe("false");
+    expect(recallDraft("admin-1", "p1")?.draft).toBe(words);
+    fireEvent.click(account);
+    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard and sign out" }));
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(mocks.signOut).toHaveBeenCalledTimes(localFixture ? 0 : 1);
+    expect(proposalsWithWords("admin-1")).toBe(0);
+  });
+
+  it("signs out at once when the person has no words waiting, leaving another account's alone", async () => {
+    const words = { message: "Someone else's words.", capacityNote: "", lines: [] };
+    rememberDraft("someone-else", "p1", { composer: 1, start: 1, draft: words });
+    renderShell();
+    await screen.findByText("Trades Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Account: Elaine Campbell" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.signOut).toHaveBeenCalledOnce();
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(recallDraft("someone-else", "p1")?.draft).toBe(words);
+    // Signed out, leaving the page is not held up by the words left on it.
+    const leaving = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(false);
+  });
+
+  it("asks about proposal words once an unfinished correction has been discarded", async () => {
+    rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    renderGuardedShell();
+    await screen.findByText("Trades Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Account: Elaine Campbell" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    const correction = await screen.findByRole("dialog", { name: "Sign out with an unfinished correction?" });
+    fireEvent.click(within(correction).getByRole("button", { name: "Discard and sign out" }));
+    const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
+    expect(question.textContent).toContain("What you wrote for one proposal is not saved as a version yet.");
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    fireEvent.click(within(question).getByRole("button", { name: "Discard and sign out" }));
+    expect(await screen.findByRole("heading", { name: "Signed out" })).toBeDefined();
+    expect(mocks.signOut).toHaveBeenCalledOnce();
+    expect(recallDraft("admin-1", "p1")).toBeNull();
   });
 
   it("retains auth and the dirty correction after an unsuccessful held save", async () => {
