@@ -335,6 +335,9 @@ export class NativeSplatScene {
         kernelRadius: this.kernelRadius,
         minSortIntervalMs: this.minSortIntervalMs,
         colorSpace: SRGBColorSpace,
+        // Every native source is non-anti-aliased: the SOG and SPZ loaders refuse
+        // mip-anti-aliased assets. Upstream's always-on compensation dimmed them (T-639).
+        antialias: false,
         sphericalHarmonicsDirectionNode: (index, direction) => inverseMatrices.element(tileIds.element(index)).mul(direction),
         opacityNode: (index, position) => Fn(() => {
           const opacity = opacities.element(tileIds.element(index)).toVar();

@@ -7,7 +7,7 @@ import { GaussianSplat, type GaussianSplatCpuSortRequest } from "three/addons/ob
 import { NativeCpuSortPool, type NativeCpuSortWorker } from "../native-cpu-sort-pool.js";
 import type { NativeCpuSortCommand } from "../native-cpu-sort-protocol.js";
 
-const evidence = vi.hoisted(() => ({ created: 0, disposed: 0, applied: 0, radii: [] as number[], opacityArrays: [] as unknown[][], inputs: [] as BufferGeometry[] }));
+const evidence = vi.hoisted(() => ({ created: 0, disposed: 0, applied: 0, radii: [] as number[], antialias: [] as unknown[], opacityArrays: [] as unknown[][], inputs: [] as BufferGeometry[] }));
 vi.mock("three/tsl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three/tsl")>();
   return { ...actual, uniformArray: (values: unknown[], type: string) => {
@@ -20,12 +20,13 @@ vi.mock("three/addons/objects/GaussianSplat.js", async () => {
   return { GaussianSplat: class extends Mesh {
     minSortIntervalMs = 0;
     cpuSort: ((request: GaussianSplatCpuSortRequest) => void) | null = null;
-    constructor(source: BufferGeometry, options: { kernelRadius: number }) {
+    constructor(source: BufferGeometry, options: { kernelRadius: number; antialias?: boolean }) {
       const draw = new InstancedBufferGeometry();
       draw.instanceCount = source.getAttribute("position").count;
       super(draw, new NodeMaterial());
       evidence.created++;
       evidence.radii.push(options.kernelRadius);
+      evidence.antialias.push(options.antialias);
       evidence.inputs.push(source);
     }
     updateSort(): boolean { this.cpuSort?.({ modelViewMatrix: new Matrix4().elements, nearDepth: 0.1, farDepth: 10, binCount: 65_536 }); return true; }
@@ -99,7 +100,7 @@ function setup(automaticSort = true) {
   return { scene, camera, renderer, rendererError, runtime, compile, detach, add, draw, gpu, render, invalidate, sortWorker };
 }
 
-beforeEach(() => { vi.useFakeTimers(); evidence.created = 0; evidence.disposed = 0; evidence.applied = 0; evidence.radii.length = 0; evidence.opacityArrays.length = 0; evidence.inputs.length = 0; });
+beforeEach(() => { vi.useFakeTimers(); evidence.created = 0; evidence.disposed = 0; evidence.applied = 0; evidence.radii.length = 0; evidence.antialias.length = 0; evidence.opacityArrays.length = 0; evidence.inputs.length = 0; });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe("native complete draw lifecycle", () => {
@@ -686,5 +687,15 @@ describe("native complete draw lifecycle", () => {
     expect(callback).toHaveBeenCalledOnce();
     state.renderer.setRenderTarget(null);
     outputTarget.dispose();
+  });
+});
+
+describe("native presentation (T-639)", () => {
+  it("draws captured sources without anti-aliasing opacity compensation", async () => {
+    const state = setup();
+    state.add(3);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(evidence.antialias).toEqual([false]);
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
   });
 });

@@ -137,4 +137,13 @@ describe("bounded native SPZ decoding", () => {
     expect(parse).not.toHaveBeenCalled();
     expect(initialize).not.toHaveBeenCalled();
   });
+
+  it("rejects anti-aliased SPZ, as anti-aliased SOG is rejected, before decoding", async () => {
+    const parse = vi.spyOn(SPZLoader.prototype, "parseRawSPZ");
+    const legacy = legacySpz();
+    legacy[14] = 0x01;
+    await expect(decodeNativeSplatBuffer(new Uint8Array(gzipSync(legacy)).buffer, "/aa.spz"))
+      .rejects.toThrow("Anti-aliased SPZ");
+    expect(parse).not.toHaveBeenCalled();
+  });
 });
