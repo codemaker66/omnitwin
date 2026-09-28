@@ -1,6 +1,7 @@
-import { occasionLabel, type ProposalVersionPayload } from "@omnitwin/types";
+import { occasionLabel, type ProposalNextVersion, type ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalDeskGroup, ProposalHistoryEntry } from "../../../api/proposals.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
+import { documentFacts } from "../../proposal/proposal-document-format.js";
 import { proposalStatusWords } from "../clients/clients-desk-format.js";
 import { relativeAge, venueMoment, type SummaryPart } from "../enquiries/enquiry-desk-format.js";
 
@@ -257,7 +258,7 @@ function sameLines(a: readonly ReadLine[], b: readonly ReadLine[]): boolean {
 }
 
 /** What the new version changes from the latest one: "the message", "the
- *  quote, £18,400 to £18,900". Empty when nothing is changed yet. A quote
+ *  quote from £18,400 to £18,900". Empty when nothing is changed yet. A quote
  *  whose lines cannot all be read yet is "the quote" without a total. */
 export function draftChanges(from: ProposalVersionPayload | null, draft: ComposerDraft): readonly string[] {
   if (from === null) return [];
@@ -273,7 +274,7 @@ export function draftChanges(from: ProposalVersionPayload | null, draft: Compose
     const currency = from.quote?.currency ?? "GBP";
     const beforeTotal = from.quote?.totalMinor ?? 0;
     const afterTotal = after.reduce((sum, line) => sum + line.quantity * line.unitMinor, 0);
-    changes.push(beforeTotal === afterTotal ? "the quote" : `the quote, ${money(beforeTotal, currency)} to ${money(afterTotal, currency)}`);
+    changes.push(beforeTotal === afterTotal ? "the quote" : `the quote from ${money(beforeTotal, currency)} to ${money(afterTotal, currency)}`);
   }
   return changes;
 }
@@ -284,15 +285,62 @@ export function listWords(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1] ?? ""}`;
 }
 
-/** Where the composer starts, and what the person has changed in it. It
- *  speaks only of what is typed here: the layout's drawing and the event's
- *  details are taken afresh when the version is saved. */
-export function composerStartWords(fromVersion: number | null, changes: readonly string[]): string {
+/** Where the composer's check of what a save would take stands: still on
+ *  its way, not answered, or answered (GET /proposals/:id/versions/next). */
+export type TakenCheck =
+  | { readonly status: "waiting" }
+  | { readonly status: "failed" }
+  | { readonly status: "ready"; readonly next: ProposalNextVersion };
+
+const FACT_NOUNS: readonly (readonly [string, string])[] = [
+  ["Date", "the date"],
+  ["Guests", "the guest count"],
+  ["Occasion", "the occasion"],
+  ["Room", "the room"],
+];
+
+/** What a version saved now would take that the latest does not show its
+ *  client, in the words and the order of the client's page: the event's
+ *  facts, then the drawing. What the page does not show (no guests against
+ *  none, an occasion of "other") is not said. */
+export function takenChanges(next: ProposalNextVersion): readonly string[] {
+  const saved = next.facts.saved ?? next.facts.now;
+  const was = documentFacts(saved);
+  const now = documentFacts(next.facts.now);
+  const changes: string[] = [];
+  for (const [label, noun] of FACT_NOUNS) {
+    const before = was.find((fact) => fact.label === label)?.value ?? null;
+    const after = now.find((fact) => fact.label === label)?.value ?? null;
+    if (before === after) {
+      // Another room of the same name: its photograph may not be the same.
+      if (label === "Room" && after !== null && saved.roomSlug !== next.facts.now.roomSlug) changes.push(noun);
+    } else if (before !== null && after !== null) {
+      changes.push(`${noun} from ${before} to ${after}`);
+    } else if (after !== null) {
+      changes.push(`${noun} (now ${after})`);
+    } else {
+      changes.push(`${noun} (now left out)`);
+    }
+  }
+  if (next.layout === "changed") changes.push("the layout drawing");
+  else if (next.layout === "added") changes.push("the layout drawing (now included)");
+  else if (next.layout === "removed") changes.push("the layout drawing (now left out)");
+  return changes;
+}
+
+/** Where the composer starts, and what the version will change from it.
+ *  Until the check is back it speaks only of what is typed here, as the
+ *  drawing and the event's facts are taken when the version is saved; once
+ *  back, of those too. A check for another version is not yet this one's. */
+export function composerStartWords(fromVersion: number | null, typed: readonly string[], check: TakenCheck): string {
   if (fromVersion === null) return "The first version.";
   const start = `Starts from version ${String(fromVersion)}.`;
-  return changes.length === 0
-    ? `${start} You have not changed anything here yet.`
-    : `${start} You have changed ${listWords(changes)}.`;
+  if (check.status === "ready" && check.next.basedOn === fromVersion) {
+    const changes = [...typed, ...takenChanges(check.next)];
+    return changes.length === 0 ? `${start} Nothing is changed from it yet.` : `${start} Changed: ${listWords(changes)}.`;
+  }
+  if (typed.length > 0) return `${start} You have changed ${listWords(typed)}.`;
+  return check.status === "failed" ? `${start} You have not changed anything here yet.` : start;
 }
 
 /** What the version started from shows its client that a new one does not

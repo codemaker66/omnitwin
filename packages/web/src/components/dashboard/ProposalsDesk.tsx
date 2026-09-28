@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import {
-  findUnsupportedProposalClaim, PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION, ProposalVersionPayloadSchema, type ProposalVersionPayload,
+  findUnsupportedProposalClaim, PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION, ProposalVersionPayloadSchema, type ProposalNextVersion,
+  type ProposalVersionPayload,
 } from "@omnitwin/types";
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../../api/client.js";
 import {
   createProposal, createProposalShareToken, createProposalVersion, createQuote, deleteQuote, getDeskProposal, getLatestProposalVersion,
-  getProposalComments, getProposalHistory, listProposalDesk, postProposalComment, transitionProposal,
+  getProposalComments, getProposalHistory, getProposalNextVersion, listProposalDesk, postProposalComment, transitionProposal,
   type DeskProposal, type ProposalCommentRow, type ProposalDeskPage, type ProposalHistoryEntry, type StaffProposalVersion,
 } from "../../api/proposals.js";
 import { listSpaces, type Space } from "../../api/spaces.js";
@@ -17,7 +18,7 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { deskGreeting, venueYear, type SummaryPart } from "./enquiries/enquiry-desk-format.js";
 import {
-  ProposalPanel, type PartRead, type ProposalFailure, type ProposalPanelProps, type ProposalWork,
+  COMPOSABLE, ProposalPanel, type PartRead, type ProposalFailure, type ProposalPanelProps, type ProposalWork,
 } from "./proposals/ProposalPanel.js";
 import { ProposalsLedger } from "./proposals/ProposalsLedger.js";
 import { ProposalsStages } from "./proposals/ProposalsStages.js";
@@ -144,7 +145,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   // be copied once the composer that wrote it is gone.
   const [keptDrafts, setKeptDrafts] = useState<Readonly<Record<string, readonly KeptVersion[]>>>({});
   const [creating, setCreating] = useState(false);
-  const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0 });
+  const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0, next: 0 });
   const listRequest = useLatestRequest();
   // The proposal that should be open, and each time it should be read again.
   // The read is an effect keyed on it, so a read cut short (a newer proposal,
@@ -239,6 +240,31 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     `${String(openVersion)}:${String(reads.latest)}`, loadLatest);
   const [history] = usePart(openId, String(reads.history), loadHistory);
   const [comments] = usePart(openId, String(reads.comments), loadComments);
+  // What a version saved now would take that the latest does not show its
+  // client (the layout's drawing, the event's facts), for a proposal the
+  // composer is open on. Checked again when its version or links change, when
+  // someone comes back to the page (a layout changed in another tab, say), and
+  // after a save is refused.
+  const loadNext = useCallback((id: string): Promise<ProposalNextVersion> => getProposalNextVersion(id), []);
+  const nextFor = proposal !== null && openVersion !== null && openVersion > 0 && COMPOSABLE.includes(proposal.status) ? openId : null;
+  const [next] = usePart(nextFor,
+    [openVersion, proposal?.configurationId, proposal?.opportunityId, proposal?.enquiryId, reads.next].map(String).join(":"), loadNext);
+  useEffect(() => {
+    if (nextFor === null) return;
+    let last = 0;
+    const checkAgain = (): void => {
+      // Coming back fires both; one check answers both.
+      if (document.visibilityState !== "visible" || Date.now() - last < 1000) return;
+      last = Date.now();
+      setReads((current) => ({ ...current, next: current.next + 1 }));
+    };
+    window.addEventListener("focus", checkAgain);
+    document.addEventListener("visibilitychange", checkAgain);
+    return () => {
+      window.removeEventListener("focus", checkAgain);
+      document.removeEventListener("visibilitychange", checkAgain);
+    };
+  }, [nextFor]);
 
   // The venue's rooms power the capacity guidance; without them the note is
   // written by hand.
@@ -358,7 +384,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
           // The latest version too, even when the proposal's number has not
           // changed since it was last read: a composer left starting from an
           // older version would otherwise be refused at every save.
-          setReads((current) => ({ ...current, history: current.history + 1, latest: current.latest + 1 }));
+          setReads((current) => ({ ...current, history: current.history + 1, latest: current.latest + 1, next: current.next + 1 }));
           readList(Math.max(PAGE, rows.length));
         }
       }
@@ -393,7 +419,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     return `The proposal is ${proposalStatusWords(to).toLowerCase()}.`;
   });
 
-  const saveVersion = (draft: ComposerDraft, basedOn: number): Promise<boolean> => attempt("version", "version", async (id) => {
+  const saveVersion = (draft: ComposerDraft, basedOn: number, basis: string | undefined): Promise<boolean> => attempt("version", "version", async (id) => {
     if (proposal === null) return null;
     const lines = readQuoteLines(draft);
     const candidate = {
@@ -431,7 +457,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     }
     let saved: StaffProposalVersion;
     try {
-      saved = await createProposalVersion(id, { ...checked.data, quote }, basedOn);
+      saved = await createProposalVersion(id, { ...checked.data, quote }, basedOn, basis);
     } catch (error) {
       // A version refused outright leaves no draft quote for the deal to offer
       // as its latest figure. One that may have saved (no answer, or the
@@ -466,9 +492,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   // composer that wrote it is gone. A composer's later failure replaces only
   // its own; one kept from an earlier composer stays until it is put away or
   // a version saves.
-  const onSaveVersion = async (draft: ComposerDraft, composer: number, basedOn: number): Promise<boolean> => {
+  const onSaveVersion = async (draft: ComposerDraft, composer: number, basedOn: number, basis?: string): Promise<boolean> => {
     const id = proposal?.id ?? null;
-    const saved = await saveVersion(draft, basedOn);
+    const saved = await saveVersion(draft, basedOn, basis);
     if (id !== null) {
       if (saved) forgetKept(id, null);
       else {
@@ -527,6 +553,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     announcement,
     stampKey,
     latest,
+    next,
     history,
     comments,
     spaces,

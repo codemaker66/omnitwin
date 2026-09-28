@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   listProposalDesk: vi.fn(),
   getDeskProposal: vi.fn(),
   getLatestProposalVersion: vi.fn(),
+  getProposalNextVersion: vi.fn(),
   getProposalHistory: vi.fn(),
   getProposalComments: vi.fn(),
   postProposalComment: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   listProposalDesk: mocks.listProposalDesk,
   getDeskProposal: mocks.getDeskProposal,
   getLatestProposalVersion: mocks.getLatestProposalVersion,
+  getProposalNextVersion: mocks.getProposalNextVersion,
   getProposalHistory: mocks.getProposalHistory,
   getProposalComments: mocks.getProposalComments,
   postProposalComment: mocks.postProposalComment,
@@ -151,6 +153,8 @@ beforeEach(() => {
     const found = existing.find((row) => row["id"] === id);
     return Promise.resolve(version(Number(found?.["currentVersion"] ?? 1)));
   });
+  // As an API from before the check: the composer speaks of what is typed.
+  mocks.getProposalNextVersion.mockRejectedValue(new ApiError(404, "Not found", "NOT_FOUND"));
   mocks.getProposalHistory.mockResolvedValue([]);
   mocks.getProposalComments.mockResolvedValue([]);
   mocks.listSpaces.mockResolvedValue([]);
@@ -641,8 +645,90 @@ describe("the next version", () => {
     fireEvent.change(message, { target: { value: "A later finish, as asked." } });
     fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: "4600" } });
     expect(panel.getByTestId("composer-start").textContent)
-      .toBe("Starts from version 2. You have changed the message and the quote, £4,400 to £4,600.");
+      .toBe("Starts from version 2. You have changed the message and the quote from £4,400 to £4,600.");
     expect(panel.queryByTestId("composer-not-carried")).toBeNull();
+  });
+
+  // What a save takes besides the words (the drawing, the event's facts) is
+  // checked by the server against the version it starts from, said with the
+  // words once known, and the save is held to what was said.
+  const FACTS = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+  function checked(overrides: Record<string, unknown> = {}, now: Record<string, unknown> = {}): Record<string, unknown> {
+    return { basedOn: 2, layout: "same", facts: { saved: FACTS, now: { ...FACTS, ...now } }, basis: "b".repeat(64), ...overrides };
+  }
+
+  it("says, once checked, what the version will take besides the words", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    let answer: (next: Record<string, unknown>) => void = () => undefined;
+    mocks.getProposalNextVersion.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    // Until the check is back it says only where it starts.
+    expect((await panel.findByTestId("composer-start")).textContent).toBe("Starts from version 2.");
+    answer(checked({ layout: "changed" }, { guestCount: 180 }));
+    await waitFor(() => {
+      expect(panel.getByTestId("composer-start").textContent)
+        .toBe("Starts from version 2. Changed: the guest count from 120 to 180 and the layout drawing.");
+    });
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Room for 180 now." } });
+    expect(panel.getByTestId("composer-start").textContent)
+      .toBe("Starts from version 2. Changed: the message, the guest count from 120 to 180 and the layout drawing.");
+  });
+
+  it("says nothing is changed once checked, and holds the save to that check", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockResolvedValue(checked());
+    mocks.createProposalVersion.mockResolvedValue(version(3));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    expect(mocks.createProposalVersion.mock.calls[0]?.slice(2)).toEqual([2, "b".repeat(64)]);
+  });
+
+  it("takes a check made for another version as no check, and holds the save to nothing", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockResolvedValue(checked({ basedOn: 1, layout: "changed" }));
+    mocks.createProposalVersion.mockResolvedValue(version(3));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalled(); });
+    expect((await panel.findByTestId("composer-start")).textContent).toBe("Starts from version 2.");
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    expect(mocks.createProposalVersion.mock.calls[0]?.slice(2)).toEqual([2, undefined]);
+  });
+
+  it("checks again when someone comes back to the page, as a layout may have changed in another tab", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockResolvedValueOnce(checked()).mockResolvedValue(checked({ layout: "changed" }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => {
+      expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Changed: the layout drawing.");
+    });
+    expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks again after a save refused for taking something the check did not say, and keeps the words", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockResolvedValueOnce(checked()).mockResolvedValue(checked({ layout: "changed" }));
+    mocks.createProposalVersion.mockRejectedValue(
+      new ApiError(409, "The layout or the event changed after this was checked, so the version was not saved. Check it again.", "REVISION_CONFLICT"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "My words." } });
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    expect((await panel.findByTestId("composer-error")).textContent)
+      .toBe("It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.");
+    await waitFor(() => {
+      expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Changed: the message and the layout drawing.");
+    });
+    expect(panel.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("My words.");
   });
 
   it("names the version its words came from, saves on that one, and says why a version saved meanwhile stops it", async () => {
@@ -863,6 +949,8 @@ describe("the next version", () => {
     existing = [proposal({ status: "draft", currentVersion: 0 })];
     mocks.createProposalVersion.mockRejectedValueOnce(new Error("offline")).mockImplementationOnce((_id: string, payload: Record<string, unknown>) => {
       existing = [proposal({ currentVersion: 1 })];
+      // Read again, the latest version is the one just saved.
+      mocks.getLatestProposalVersion.mockResolvedValue(version(1, payload));
       return Promise.resolve(version(1, payload));
     });
     render(<ProposalsDesk />);
@@ -880,6 +968,8 @@ describe("the next version", () => {
   it("saves a first version without a quote, and the next then starts from it", async () => {
     mocks.createProposalVersion.mockImplementation((_id: string, payload: Record<string, unknown>) => {
       existing = [proposal({ currentVersion: 1 })];
+      // Read again, the latest version is the one just saved.
+      mocks.getLatestProposalVersion.mockResolvedValue(version(1, payload));
       return Promise.resolve(version(1, payload));
     });
     render(<ProposalsDesk />);

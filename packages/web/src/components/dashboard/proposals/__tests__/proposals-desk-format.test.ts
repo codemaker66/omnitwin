@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ProposalVersionPayload } from "@omnitwin/types";
+import type { ProposalFacts, ProposalNextVersion, ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
   composerLayoutLine, composerStartWords, draftChanges, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords, listWords,
-  notCarriedWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
+  notCarriedWords, proposalTone, proposalsSummary, rowDetails, rowWhen, takenChanges,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -111,7 +111,7 @@ describe("the next version", () => {
     expect(draftChanges(from, { ...same, message: "  Planning-grade draft.  " })).toEqual([]);
     expect(draftChanges(from, { ...same, message: "A later finish." })).toEqual(["the message"]);
     expect(draftChanges(from, { ...same, capacityNote: "Around 100." })).toEqual(["the capacity note"]);
-    expect(draftChanges(from, { ...same, lines: same.lines.slice(0, 1) })).toEqual(["the quote, £4,520.50 to £4,400"]);
+    expect(draftChanges(from, { ...same, lines: same.lines.slice(0, 1) })).toEqual(["the quote from £4,520.50 to £4,400"]);
     // The same total from different lines is still a changed quote.
     expect(draftChanges(from, { ...same, lines: [{ description: "Everything", quantity: "1", pounds: "4520.50" }] })).toEqual(["the quote"]);
     // A line not yet readable changes the quote, without a total to show.
@@ -121,14 +121,59 @@ describe("the next version", () => {
     expect(listWords(["the message"])).toBe("the message");
   });
 
-  // What is typed here is all it speaks of: the drawing and the event's
-  // details are taken afresh at the save, so "nothing is changed" would not
-  // be true of the version.
-  it("says where it starts and what the person has changed, and only that", () => {
-    expect(composerStartWords(null, [])).toBe("The first version.");
-    expect(composerStartWords(2, [])).toBe("Starts from version 2. You have not changed anything here yet.");
-    expect(composerStartWords(2, ["the message", "the quote, £4,400 to £4,600"]))
-      .toBe("Starts from version 2. You have changed the message and the quote, £4,400 to £4,600.");
+  // Until the check of what a save takes is back, what is typed here is all
+  // it speaks of: the drawing and the event's details are taken at the save,
+  // so "nothing is changed" would not yet be known to be true.
+  it("says where it starts and what the person has changed, and only that, until the check is back", () => {
+    const failed = { status: "failed" } as const;
+    const waiting = { status: "waiting" } as const;
+    expect(composerStartWords(null, [], failed)).toBe("The first version.");
+    expect(composerStartWords(null, [], waiting)).toBe("The first version.");
+    expect(composerStartWords(2, [], failed)).toBe("Starts from version 2. You have not changed anything here yet.");
+    expect(composerStartWords(2, [], waiting)).toBe("Starts from version 2.");
+    for (const check of [failed, waiting]) {
+      expect(composerStartWords(2, ["the message", "the quote from £4,400 to £4,600"], check))
+        .toBe("Starts from version 2. You have changed the message and the quote from £4,400 to £4,600.");
+    }
+  });
+
+  const FACTS: ProposalFacts = { eventDate: "2027-06-05", guestCount: 160, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+  function next(overrides: Partial<ProposalNextVersion> = {}, now: Partial<ProposalFacts> = {}): ProposalNextVersion {
+    return { basedOn: 2, layout: "same", facts: { saved: FACTS, now: { ...FACTS, ...now } }, basis: "a".repeat(64), ...overrides };
+  }
+
+  it("says, once the check is back, what the version changes: the words first, then what it takes", () => {
+    expect(composerStartWords(2, [], { status: "ready", next: next() })).toBe("Starts from version 2. Nothing is changed from it yet.");
+    expect(composerStartWords(2, ["the quote from £18,400 to £17,600"], { status: "ready", next: next({ layout: "changed" }, { guestCount: 180 }) }))
+      .toBe("Starts from version 2. Changed: the quote from £18,400 to £17,600, the guest count from 160 to 180 and the layout drawing.");
+    // A check made for another version is not yet this one's.
+    expect(composerStartWords(3, [], { status: "ready", next: next({ layout: "changed" }) })).toBe("Starts from version 3.");
+  });
+
+  it("names what a save takes in the client's page's words and order", () => {
+    expect(takenChanges(next())).toEqual([]);
+    expect(takenChanges(next({ layout: "changed" }, { eventDate: "2027-06-12", guestCount: 1200, occasion: "dinner", roomName: "Saloon", roomSlug: "saloon" })))
+      .toEqual([
+        "the date from Saturday 5 June 2027 to Saturday 12 June 2027",
+        "the guest count from 160 to 1,200",
+        "the occasion from Wedding to Dinner",
+        "the room from Grand Hall to Saloon",
+        "the layout drawing",
+      ]);
+    expect(takenChanges(next({ layout: "added" }, { eventDate: null, guestCount: null }))).toEqual([
+      "the date (now left out)", "the guest count (now left out)", "the layout drawing (now included)",
+    ]);
+    expect(takenChanges({ ...next({ layout: "removed" }), facts: { saved: { ...FACTS, guestCount: null, occasion: null }, now: FACTS } }))
+      .toEqual(["the guest count (now 160)", "the occasion (now Wedding)", "the layout drawing (now left out)"]);
+  });
+
+  it("leaves out what the client's page never shows, and names a room changed under the same name", () => {
+    // No guests and none, or "other" and no occasion, read the same on the page.
+    expect(takenChanges({ ...next(), facts: { saved: { ...FACTS, guestCount: 0, occasion: "other" }, now: { ...FACTS, guestCount: null, occasion: null } } }))
+      .toEqual([]);
+    expect(takenChanges(next({}, { roomSlug: "grand-hall-2" }))).toEqual(["the room"]);
+    // A version from before facts were kept reads them as they are now.
+    expect(takenChanges({ ...next(), facts: { saved: null, now: { ...FACTS, guestCount: 999 } } })).toEqual([]);
   });
 
   it("says what the version it starts from shows the client that the next one will not carry", () => {
