@@ -28,6 +28,7 @@ import {
   handoffPacks,
   opportunities,
   contacts,
+  quotes,
   spaces,
   venues,
 } from "../db/schema.js";
@@ -1175,6 +1176,28 @@ export async function proposalRoutes(
         createdBy: request.user.id,
       }).returning();
       if (version === undefined) throw new Error("Proposal version insert returned no row");
+
+      // A deal with no value yet takes the total of the first quote a saved
+      // version carries (roadmap X1), as the quote is stored, never the figure
+      // sent; a value already set is the booker's and stays.
+      const quoteId = payload.quote?.quoteId ?? null;
+      if (quoteId !== null && current.opportunityId !== null) {
+        const [quote] = await tx.select({ totalMinor: quotes.totalMinor, currency: quotes.currency }).from(quotes)
+          .where(and(eq(quotes.id, quoteId), eq(quotes.proposalId, current.id), eq(quotes.venueId, current.venueId),
+            isNull(quotes.deletedAt)))
+          .limit(1);
+        if (quote !== undefined) {
+          await tx.update(opportunities)
+            .set({ estimatedValueMinor: quote.totalMinor, updatedAt: new Date() })
+            .where(and(
+              eq(opportunities.id, current.opportunityId),
+              eq(opportunities.venueId, current.venueId),
+              isNull(opportunities.deletedAt),
+              eq(opportunities.estimatedValueMinor, 0),
+              eq(opportunities.currency, quote.currency),
+            ));
+        }
+      }
       return { version };
     });
 
