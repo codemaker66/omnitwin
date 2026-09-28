@@ -440,6 +440,43 @@ describe("CockpitBottom room layout timeline", () => {
     }
   });
 
+  it("never shows the browser's day while the venue's day is on its way", async () => {
+    // 03:30 UTC is 04:30 in Glasgow: the browser's operational day is the 26th,
+    // the venue's the 27th. The browser's answers at once; the venue's never
+    // does here, so anything shown is the wrong day's.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-27T03:30:00.000Z"));
+    const shownPhases: string[] = [];
+    const collect = (records: readonly MutationRecord[]): void => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          const text = node.textContent ?? "";
+          if (/Guest arrival|Dinner service/u.test(text)) shownPhases.push(text);
+        }
+      }
+    };
+    const observer = new MutationObserver(collect);
+    try {
+      timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
+        "anchorDate" in query && query.anchorDate === "2026-09-27"
+          ? new Promise<never>(() => undefined)
+          : Promise.resolve(responseForQuery(query, [arrival, roomFlip, dinner])),
+      );
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+      renderBottom("/plan/cfg-1?space=grand-hall");
+
+      await waitFor(() => { expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(2); });
+      expect(timelineApi.getRoomLayoutTimeline.mock.calls.map(([query]) => "anchorDate" in query ? query.anchorDate : null))
+        .toEqual(["2026-09-26", "2026-09-27"]);
+      expect(screen.getByText("Loading room timeline")).toBeDefined();
+      collect(observer.takeRecords());
+      expect(shownPhases).toEqual([]);
+    } finally {
+      observer.disconnect();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps an explicitly requested historical phase locked", async () => {
     timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
     renderBottom(`/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${DINNER_ID}`);

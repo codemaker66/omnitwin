@@ -383,7 +383,24 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   });
   const timeline = useRoomLayoutTimeline(venueId, spaceId, { scope, anchorDate });
   const timelineData = timeline.data;
+  const reconciledAutomaticAnchorRef = useRef<string | null>(null);
+  // An automatic anchor is first taken in the browser's zone, and the answer
+  // names the venue's. Where the two fall on different days (a browser in UTC
+  // from 03:00 to 04:00 in British summer time), that answer is the wrong
+  // day's, and the reconciliation below moves to the venue's day. Until then
+  // the dock reads as loading, never as a day it is not, and nothing on it can
+  // be chosen. Once reconciled, it waits no more (a dock left open past the
+  // day's change keeps its day, as before).
+  const awaitingVenueDay = timeline.status === "loaded"
+    && timelineData !== null
+    && anchorOriginRef.current === "automatic"
+    && !hasLinkedEvent
+    && venueId !== null
+    && spaceId !== null
+    && reconciledAutomaticAnchorRef.current !== `${venueId}:${spaceId}:${scope}:${timelineData.timeZone}`
+    && timelineScopeAnchorDateAt(Date.now(), scope, timelineData.timeZone) !== anchorDate;
   const timelineResponseMatchesSelection = timeline.status === "loaded"
+    && !awaitingVenueDay
     && timelineData !== null
     && timelineData.venueId === venueId
     && timelineData.spaceId === spaceId
@@ -460,7 +477,6 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     phaseId: null,
   });
   const autoAnchoredEventZoneRef = useRef<string | null>(null);
-  const reconciledAutomaticAnchorRef = useRef<string | null>(null);
   const externalSearchParamChange = searchParamSignature !== lastSearchParamSignatureRef.current
     && selfNavigationSignatureRef.current !== searchParamSignature;
   const externallyRequestedDate = externalSearchParamChange ? searchParams.get("timelineDate") : null;
@@ -1293,7 +1309,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     element.scrollLeft += event.deltaY;
   };
 
-  const compact = compactMessage(timeline.status, frames, hasLinkedEvent, scope);
+  const compact = compactMessage(awaitingVenueDay ? "loading" : timeline.status, frames, hasLinkedEvent, scope);
   const playDisabled = availableIndices.length < 2;
   const previousDisabled = adjacentAvailableFrameIndex(availableIndices, activeIndex, -1) === null;
   const nextDisabled = adjacentAvailableFrameIndex(availableIndices, activeIndex, 1) === null;
