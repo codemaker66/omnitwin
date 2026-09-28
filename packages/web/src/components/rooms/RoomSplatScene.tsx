@@ -351,6 +351,7 @@ export function RoomSplatScene({
   return (
     <Canvas
       frameloop="demand"
+      flat
       dpr={[1, 2]}
       gl={{
         powerPreference: "high-performance",

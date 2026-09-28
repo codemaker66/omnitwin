@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
+import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -476,6 +477,7 @@ export function PlannerScene(): ReactElement {
           <color attach="background" args={["#eee9de"]} />
           {!timelinePreviewActive && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
+          <CaptureToneMapping captureShown={splatActive} />
           {furnitureReflections && <FurnitureReflectionExperiment />}
           {!timelinePreviewActive && <SectionPlane />}
           {!timelinePreviewActive && <InvalidateOnToggle />}

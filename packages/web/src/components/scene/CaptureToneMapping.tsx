@@ -1,0 +1,16 @@
+import { useEffect } from "react";
+import { useThree } from "@react-three/fiber";
+import { captureToneMapping } from "../../lib/capture-display.js";
+
+/** Sets the canvas tone mapping for a captured room and restores it on unmount. */
+export function CaptureToneMapping({ captureShown }: { readonly captureShown: boolean }): null {
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    const previous = gl.toneMapping;
+    gl.toneMapping = captureToneMapping(captureShown);
+    invalidate();
+    return () => { gl.toneMapping = previous; invalidate(); };
+  }, [gl, invalidate, captureShown]);
+  return null;
+}
