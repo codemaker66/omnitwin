@@ -78,8 +78,12 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
     schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications,
     schema.opportunities, schema.opportunityStatusHistory,
   ];
+  // The older share-code path retires on a date; these tests use it as it
+  // stands until then, so they pin a sunset of their own.
+  const sunset = process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
 
   beforeAll(async () => {
+    process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = "2099-01-01T00:00:00.000Z";
     pool = new Pool({
       connectionString: testUrl, application_name: fixtureSchema, max: 4,
       options: `-c search_path=${fixtureSchema}`,
@@ -121,6 +125,8 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
   }, 60_000);
 
   afterAll(async () => {
+    if (sunset === undefined) delete process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"];
+    else process.env["LEGACY_PROPOSAL_SHARE_CODE_SUNSET"] = sunset;
     if (server !== undefined) await server.close();
     if (pool !== undefined) {
       // Only the random schema created by this invocation is removed.
