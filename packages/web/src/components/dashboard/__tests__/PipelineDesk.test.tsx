@@ -219,8 +219,13 @@ describe("the ledger", () => {
     render(<PipelineDesk />);
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("The pipeline could not be read.");
+    // A pipeline not read is never said to owe nothing.
+    const overview = screen.getByRole("complementary", { name: "Pipeline overview" });
+    expect(overview.textContent).toContain("What is owed shows here once the pipeline is read.");
+    expect(overview.textContent).not.toContain("Nothing is owed");
     fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
     await waitFor(() => row(/^Henderson wedding/u));
+    expect(screen.getByRole("complementary", { name: "Pipeline overview" }).textContent).not.toContain("once the pipeline is read");
   });
 });
 
