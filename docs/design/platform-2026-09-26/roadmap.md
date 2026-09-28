@@ -748,11 +748,18 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   changes ("Changed: the quote, £18,400 to £17,600.").
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
-  made, as links are kept hashed; Preview as the client is not yet done.
+  made, as links are kept hashed. Preview as the client is done (28 September):
+  - It opens `/proposal-preview/:id` (`GET /proposals/:id/preview`, commercial roles) in a tab of its own.
+  - It shows the latest version as the client's page draws it, and says which version the client's link
+    shows, or that the link no longer opens.
+  - It stamps nothing.
 - "Add from price list" (`api/pricing.ts:66-78`).
 - Link the deal, enquiry and configuration; derive `configurationId` on the server.
 - Notify the owner of every client decision.
 - "Opened by the client" from `lastViewedAt`, excluding staff previews (`proposals.ts:1242`).
+  Done on 28 September, as "the link was opened": a row reads "Sent 3 days ago, not opened yet", counting
+  only opens since the latest send. The preview and the editor's Share panel never stamp. It cannot say
+  who opened a link, which reaches whoever it is forwarded to.
 - "Use in proposal" for AI drafts.
 - Templates by room and event type.
 
@@ -781,6 +788,17 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   - a copper quote plane;
   - a forest decision panel.
 - Newsreader type, the approver's name, a print stylesheet, and one caveat line.
+  Done on 28 September (`ProposalDocument.tsx`, `ProposalPage.tsx`).
+  - Facts: the event's date, guests, occasion and room, frozen with each saved version.
+  - One standing sentence, and Trades Hall's own photograph of the room.
+  - The quote on the copper plane.
+  - A forest panel that asks the name an acceptance is given in and sends the version read.
+  - Print: ink on white, the decision as one sentence.
+
+  The link shows the version sent, never one saved since (`proposals.sent_version`, migrations 0082 and 0083,
+  shipped in two steps). An answer on a version since replaced is refused, and the page reads it again and
+  keeps what was typed. The accepting name is kept with the acceptance itself, so a comment cannot plant
+  one.
 
 **Acceptance**
 - **Task benchmark:** from an approved enquiry to a sent proposal takes 6 or fewer deliberate actions, with no retyping of date, guests or room. Measured before and after.
@@ -792,6 +810,13 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - **Client profile:** survives reload, and Back returns to the results.
   Held on 27 September by `e2e/clients-desk.spec.ts`, which also returns focus to the client's row.
 - **Client page:** at 390 px, the facts, total and decision are visible without horizontal scroll; print emulation is readable.
+  Held on 28 September:
+  - measured in Chrome 147 at 390, 360 and 320 px: the page's width equals the viewport, nothing overflows,
+    and the facts, total and decision are all drawn;
+  - print emulation is asserted by `e2e/proposal-share-link.spec.ts`.
+
+  The operational visual of the page's comment error is re-recorded; baselines for the ready and accepted
+  states remain.
 - **Baselines:** the first ones for pipeline, proposals, search, profile, and the client page (ready and accepted).
 
 #### X2. Layout reviews desk (M)
