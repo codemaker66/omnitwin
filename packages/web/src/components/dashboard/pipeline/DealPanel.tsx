@@ -264,8 +264,15 @@ function NextStep({ detail, nowMs, saving, failure, onMove, onDraftProposal, onS
   const due = dueWords(deal, nowMs);
   const pressing = dueIsPressing(deal, nowMs);
 
-  // A deal that moved on puts any half-made decision away.
-  useEffect(() => { setClosing(null); setEditing(false); }, [deal.id, deal.stage]);
+  // A deal that moved on puts any half-made decision away. Settled while
+  // rendering rather than in an effect, which would also run once the panel
+  // first appears and undo a Change pressed before then.
+  const [seen, setSeen] = useState({ id: deal.id, stage: deal.stage });
+  if (seen.id !== deal.id || seen.stage !== deal.stage) {
+    setSeen({ id: deal.id, stage: deal.stage });
+    setClosing(null);
+    setEditing(false);
+  }
   useEffect(() => { if (editing) textRef.current?.focus(); }, [editing]);
 
   const run = (stepToRun: DealStep): void => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { StrictMode } from "react";
+import { Profiler, StrictMode } from "react";
 import { ApiError } from "../../../api/client.js";
 import { PipelineDesk } from "../PipelineDesk.js";
 
@@ -402,6 +402,45 @@ describe("the open deal", () => {
     });
     expect(await screen.findByText("Send the menus")).toBeDefined();
     expect(panel.getByText("Due 9 Oct")).toBeDefined();
+  });
+
+  it("opens the next step's editor even when Change is pressed before the panel has settled", async () => {
+    // A busy device can deliver the press in the same moment the deal first
+    // appears, before React has run the panel's effects. Pressed here in the
+    // commit that shows the deal, so nothing after it may put the editor away.
+    let pressed = false;
+    const pressWhenShown = (): void => {
+      if (pressed) return;
+      const change = [...document.querySelectorAll<HTMLButtonElement>(".pl-next button")].find((button) => button.textContent === "Change");
+      if (change === undefined) return;
+      pressed = true;
+      change.click();
+    };
+    render(<Profiler id="desk" onRender={pressWhenShown}><PipelineDesk /></Profiler>);
+    const panel = within(await openDeal());
+    expect(pressed).toBe(true);
+    expect(panel.getByLabelText("What is owed next")).toBeDefined();
+  });
+
+  it("keeps the next step's editor open through a quiet re-read, and puts it away once the deal moves on", async () => {
+    mocks.updateOpportunity.mockResolvedValue(deal({ estimatedValueMinor: 1_900_000 }));
+    mocks.getOpportunity.mockResolvedValueOnce(detail())
+      .mockResolvedValueOnce(detail({}, { estimatedValueMinor: 1_900_000 }))
+      .mockResolvedValue(detail({}, { stage: "qualified" }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.click(panel.getByRole("button", { name: "Change the value" }));
+    fireEvent.change(panel.getByLabelText("Estimated value, in pounds"), { target: { value: "19000" } });
+    fireEvent.click(panel.getByRole("button", { name: "Change" }));
+    fireEvent.click(panel.getByRole("button", { name: "Save the value" }));
+    expect(await screen.findByText("£19,000")).toBeDefined();
+    await waitFor(() => { expect(mocks.getOpportunity).toHaveBeenCalledTimes(2); });
+    expect(panel.getByLabelText("What is owed next")).toBeDefined();
+
+    mocks.updateOpportunity.mockResolvedValue(deal({ stage: "qualified" }));
+    fireEvent.click(panel.getByRole("button", { name: "Mark qualified" }));
+    expect(await screen.findByText(/is now qualified/u)).toBeDefined();
+    await waitFor(() => { expect(panel.queryByLabelText("What is owed next")).toBeNull(); });
   });
 
   it("adds a follow-up with its day, marks one done, and keeps a note's words when it fails", async () => {
