@@ -456,7 +456,7 @@ describe("EnquiriesView newest-first paging", () => {
     // Starting a review sends nothing, so it needs no confirmation; the panel
     // stays on the enquiry with its new status and next step.
     expect(await screen.findByRole("button", { name: "Approve…" })).toBeDefined();
-    expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-29", "under_review", undefined);
+    expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-29", "under_review", undefined, "submitted");
     expect(screen.getByRole("heading", { name: "Client 29" })).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to enquiries" }));
@@ -638,7 +638,7 @@ describe("EnquiriesView decisions", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Approve and email" }));
 
     await waitFor(() => {
-      expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-5", "approved", "Deposit invoice sent.");
+      expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-5", "approved", "Deposit invoice sent.", "under_review");
     });
     expect(await screen.findByText("Approved.")).toBeDefined();
     expect(screen.queryByRole("group", { name: /^Approve/u })).toBeNull();
@@ -680,7 +680,7 @@ describe("EnquiriesView decisions", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: "Decline and email" }));
 
-    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-5", "rejected", undefined); });
+    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-5", "rejected", undefined, "under_review"); });
     expect(await screen.findByText("Declined. There is nothing more to do here.")).toBeDefined();
   });
 
@@ -697,7 +697,7 @@ describe("EnquiriesView decisions", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Start review" }));
 
     await waitFor(() => {
-      expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-3", "under_review", "Called; AV list to follow.");
+      expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-3", "under_review", "Called; AV list to follow.", "submitted");
     });
   });
 
@@ -939,7 +939,7 @@ describe("EnquiriesView requests", () => {
 
     mocks.getEnquiryHistory.mockResolvedValue([historyEntry("submitted", "archived", 5)]);
     fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
-    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-9", "archived", undefined); });
+    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-9", "archived", undefined, "submitted"); });
     expect(await screen.findByText("Marked done.")).toBeDefined();
     expect(document.querySelector(".enq-panel .enq-chip")?.textContent).toBe("Done");
     expect(await screen.findByText("Marked done")).toBeDefined();
@@ -947,7 +947,7 @@ describe("EnquiriesView requests", () => {
     mocks.transitionEnquiry.mockResolvedValueOnce({ ...request, state: "submitted" });
     mocks.getEnquiryHistory.mockResolvedValue([historyEntry("submitted", "archived", 5), historyEntry("archived", "submitted", 7)]);
     fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
-    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenLastCalledWith("enquiry-9", "submitted", undefined); });
+    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenLastCalledWith("enquiry-9", "submitted", undefined, "archived"); });
     expect(await screen.findByText("Reopened.")).toBeDefined();
     expect(await screen.findByText("Reopened")).toBeDefined();
     expect(screen.getByRole("button", { name: "Mark done" })).toBeDefined();
@@ -973,7 +973,7 @@ describe("EnquiriesView requests", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Note for the timeline (optional)" }),
       { target: { value: "Passed to Blake." } });
     fireEvent.click(within(screen.getByRole("group", { name: /request done\?$/u })).getByRole("button", { name: "Mark done" }));
-    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-9", "archived", "Passed to Blake."); });
+    await waitFor(() => { expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-9", "archived", "Passed to Blake.", "submitted"); });
   });
 
   it("shows a request's own steps when the API says an enquiry is not a booking", async () => {

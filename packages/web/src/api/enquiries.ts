@@ -155,8 +155,11 @@ export async function getEnquiry(id: string, signal?: AbortSignal): Promise<Enqu
   return api.get(`/enquiries/${id}`, EnquirySchema, signal);
 }
 
-export async function transitionEnquiry(id: string, status: string, note?: string): Promise<Enquiry> {
-  return api.post(`/enquiries/${id}/transition`, { status, note }, undefined, EnquirySchema);
+/** `from` is the status the screen showed when the person decided: a move
+ *  from any other is refused (ENQUIRY_STATUS_CHANGED), so a screen read
+ *  before a colleague's decision never decides the enquiry again. */
+export async function transitionEnquiry(id: string, status: string, note?: string, from?: string): Promise<Enquiry> {
+  return api.post(`/enquiries/${id}/transition`, { status, note, from }, undefined, EnquirySchema);
 }
 
 export async function getEnquiryHistory(

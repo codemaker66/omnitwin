@@ -422,7 +422,9 @@ export function EnquiriesView({
     setFailure(null);
     const stillOpen = (): boolean => selectedIdRef.current === enquiry.id;
     try {
-      const updated = await enquiriesApi.transitionEnquiry(enquiry.id, to, note);
+      // Decided from what this screen shows: if the enquiry has moved on
+      // since, nothing is done and it is read again.
+      const updated = await enquiriesApi.transitionEnquiry(enquiry.id, to, note, enquiry.state);
       applyUpdated(updated);
       setCounts((previous) => previous.value === null ? previous
         : { ...previous, value: countsAfterMove(previous.value, enquiry.id, enquiry.state, updated.state) });

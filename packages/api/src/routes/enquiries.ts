@@ -41,7 +41,17 @@ const UpdateEnquiryBody = z.object({
 const TransitionBody = z.object({
   status: z.enum(ENQUIRY_STATES),
   note: z.string().max(1000).nullable().optional(),
+  /** The status the person decided from, as their screen showed it. A move
+   *  from any other is refused: a screen read before a colleague's decision
+   *  never decides the enquiry again. */
+  from: z.enum(ENQUIRY_STATES).optional(),
 });
+
+/** Refused because the enquiry moved on after the screen deciding it read it. */
+const ENQUIRY_STATUS_CHANGED = {
+  error: "The enquiry changed after this screen read it, so nothing was done. Reload it to see where it stands.",
+  code: "ENQUIRY_STATUS_CHANGED",
+} as const;
 
 // `states` (comma-separated) and `order=created_desc` let one bounded page
 // hold exactly the states a caller shows, newest first — the Diary tray.
@@ -280,6 +290,9 @@ export async function enquiryRoutes(
     if (!canWorkEnquiry(request.user, enquiry)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
+    if (parsed.data.from !== undefined && parsed.data.from !== enquiry.state) {
+      return reply.status(409).send(ENQUIRY_STATUS_CHANGED);
+    }
 
     // An access request or an enquiry about Venviewer asked to book nothing,
     // and both decisions email the sender a booking outcome.
@@ -313,8 +326,9 @@ export async function enquiryRoutes(
     const fromStatus = enquiry.state;
 
     // The move and its history commit together, and only from the status it
-    // was judged from: a move that landed meanwhile (a colleague's decision,
-    // the client's withdrawal) stands, and a second decision is never emailed.
+    // was judged from (the person's own screen's, when it says): a move that
+    // landed first (a colleague's decision, the client's withdrawal) stands,
+    // and no second decision is made or emailed on top of it.
     const updated = await db.transaction(async (tx) => {
       const [row] = await tx.update(enquiries)
         .set({ state: parsed.data.status, updatedAt: new Date() })
@@ -330,12 +344,7 @@ export async function enquiryRoutes(
       });
       return row;
     });
-    if (updated === null) {
-      return reply.status(409).send({
-        error: "The enquiry changed while this was on its way. Reload it to see where it stands.",
-        code: "ENQUIRY_STATUS_CHANGED",
-      });
-    }
+    if (updated === null) return reply.status(409).send(ENQUIRY_STATUS_CHANGED);
 
     // Send notification emails on approval/rejection
     if (parsed.data.status === "approved" || parsed.data.status === "rejected") {
