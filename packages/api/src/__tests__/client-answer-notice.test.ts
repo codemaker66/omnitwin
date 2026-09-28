@@ -46,6 +46,15 @@ describe("clientAnswerNotice", () => {
     expect(notice.summary.startsWith("Version 12. “W")).toBe(true);
     expect(notice.summary.endsWith("…”")).toBe(true);
   });
+
+  it("never cuts through the middle of an emoji", () => {
+    // 78 letters, then an emoji across the 79th and 80th code units, then more.
+    const name = `${"E".repeat(78)}🎉 and friends`;
+    const notice = clientAnswerNotice({ act: "accepted", proposalTitle: "Autumn gala", version: 1, name, words: null });
+    expect(notice.title).toBe(`${"E".repeat(78)}… accepted Autumn gala`);
+    // No half of a pair left behind: in a /u pattern a lone half is a Cs code point.
+    expect(/\p{Cs}/u.test(notice.title)).toBe(false);
+  });
 });
 
 describe("proposalDeskPath", () => {

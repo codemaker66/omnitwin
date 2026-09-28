@@ -441,7 +441,8 @@ function Conversation({ proposal, token, onPosted }: {
     if (posting || text.trim() === "") return;
     setPosting(true);
     setFailure(null);
-    commentOnProposalShare(token, { body: text.trim(), kind: "comment" })
+    // With the version on the page, so the venue team is told which one it is about.
+    commentOnProposalShare(token, { body: text.trim(), kind: "comment", version: proposal.version })
       .then(() => onPosted())
       .then(() => { setText(""); })
       .catch(async (error: unknown) => {

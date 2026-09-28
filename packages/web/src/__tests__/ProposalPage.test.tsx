@@ -599,7 +599,8 @@ describe("the conversation", () => {
 
     fireEvent.change(thread.getByTestId("comment-input"), { target: { value: "Can we add a cheese table?" } });
     fireEvent.click(thread.getByTestId("comment-submit"));
-    await waitFor(() => { expect(mockCommentOnProposalShare).toHaveBeenCalledWith("client-token", { body: "Can we add a cheese table?", kind: "comment" }); });
+    // With the version on the page, so the venue team knows which one it is about.
+    await waitFor(() => { expect(mockCommentOnProposalShare).toHaveBeenCalledWith("client-token", { body: "Can we add a cheese table?", kind: "comment", version: 1 }); });
     expect(await thread.findByText("Can we add a cheese table?")).toBeTruthy();
     // A link reaches more than one person: a nameless client message is the
     // client's, not "You".

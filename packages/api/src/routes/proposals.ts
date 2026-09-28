@@ -34,7 +34,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource, canManageCommercial } from "../utils/query.js";
+import { canAccessResource, canManageCommercial, roleReadsInternalEvents } from "../utils/query.js";
 import {
   PROPOSAL_STATES,
   canTransitionProposal,
@@ -43,7 +43,7 @@ import {
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
-import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam } from "../services/commercial-notifications.js";
+import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } from "../services/commercial-notifications.js";
 import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
 import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
@@ -376,6 +376,21 @@ async function recordProposalLifecycleChange(
       // is taken to the proposal itself.
       actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : proposalDeskPath(proposal.id),
     });
+
+    // A role that works the pipeline but does not read internal events
+    // (sales) is never shown a notice that belongs to an event, so a client's
+    // answer reaches it as it would on a proposal with no event.
+    const outsideEvents = COMMERCIAL_AUDIENCE_ROLES.filter((role) => !roleReadsInternalEvents(role));
+    if (input.sourceKind !== "proposal" && outsideEvents.length > 0) {
+      await notifyVenueRoles(db, {
+        venueId: proposal.venueId,
+        title: input.title,
+        body: input.summary,
+        severity: input.sourceKind === "proposal_response" ? "attention" : "info",
+        actionPath: proposalDeskPath(proposal.id),
+        audienceRoles: outsideEvents,
+      });
+    }
   } catch (err) {
     // Loud, with the ids needed to find the row that went unannounced, and
     // then swallowed: the business write is already committed and is the
@@ -1817,8 +1832,10 @@ export async function proposalShareRoutes(
       if (current !== read && !(kind === "request_changes" && read === "sent" && current === "changes_requested")) {
         return "changed" as const;
       }
-      // A change request is about the version the client read.
-      if (kind === "request_changes" && current === "sent" && held !== undefined
+      // A change request is about the version the client read: one made on a
+      // version since replaced is refused, whether or not changes were
+      // already asked for on the newer one.
+      if (kind === "request_changes" && held !== undefined
         && parsed.data.version !== undefined && parsed.data.version !== sentVersionOf(held)) {
         return "version" as const;
       }
@@ -1848,7 +1865,12 @@ export async function proposalShareRoutes(
         });
       }
 
-      return { comment, moved: moves, version: held === undefined ? null : sentVersionOf(held) };
+      // A question is never refused. It names the version the client was
+      // reading when their link has shown it, else the one the link shows.
+      const shows = held === undefined ? null : sentVersionOf(held);
+      const reading = parsed.data.version;
+      const version = kind === "comment" && reading !== undefined && shows !== null && reading <= shows ? reading : shows;
+      return { comment, moved: moves, version };
     });
     if (result === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);

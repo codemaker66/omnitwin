@@ -39,10 +39,15 @@ const ACT_WORDS: Readonly<Record<ClientAnswerAct, string>> = {
   comment: "wrote about",
 };
 
-/** Trimmed to a limit, with an ellipsis where it was cut. */
+/** Trimmed to a limit, with an ellipsis where it was cut, and never through
+ *  the middle of a character written as two code units (most emoji). */
 function clipped(value: string, max: number): string {
   const trimmed = value.trim();
-  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1).trimEnd()}…`;
+  if (trimmed.length <= max) return trimmed;
+  const cut = trimmed.slice(0, max - 1);
+  const last = cut.charCodeAt(cut.length - 1);
+  const whole = last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+  return `${whole.trimEnd()}…`;
 }
 
 export function clientAnswerNotice(input: ClientAnswerNoticeInput): ClientAnswerNotice {

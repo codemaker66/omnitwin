@@ -174,6 +174,13 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
     }
   });
 
+  it("names the version the client was sent, not a draft saved since", async () => {
+    await pool.query("UPDATE proposals SET current_version = 2, sent_version = 1 WHERE id = $1", [PROPOSAL]);
+    await respond("accept");
+    const bodies = [...new Set((await notifications()).map((row) => row.body))];
+    expect(bodies).toEqual(["Version 1."]);
+  });
+
   it("notifies on request-changes and keeps the client's note", async () => {
     await respond("request_changes", "Could we move the bar to the north wall?");
     const rows = await notifications();

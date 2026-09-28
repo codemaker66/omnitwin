@@ -6,6 +6,7 @@ import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
 import { proposalRoutes, proposalShareRoutes } from "../routes/proposals.js";
+import { notificationRoutes } from "../routes/event-plan-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // An announcement must never be able to fail a save.
@@ -62,10 +63,10 @@ function audienceCheckSql(allowed: string): string {
       )`;
 }
 
-function headers(): { authorization: string } {
+function headers(id = STAFF, role = "staff"): { authorization: string } {
   return {
     authorization: `Bearer ${JSON.stringify({
-      id: STAFF, email: "fixture@example.test", role: "staff", platformRole: "none", venueId: VENUE,
+      id, email: "fixture@example.test", role, platformRole: "none", venueId: VENUE,
     })}`,
   };
 }
@@ -79,6 +80,7 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     schema.proposalComments, schema.proposalShareTokens, schema.packageSelections,
     schema.venues, schema.configurations, schema.events, schema.eventConfigurationLinks,
     schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications,
+    schema.eventPlanNotificationReads, schema.eventPlanChangeAcknowledgements,
     schema.opportunities, schema.enquiries,
     // A proposal WITH a configuration makes the versions route resolve a
     // layout snapshot, which reads these three. Without them the route 500s
@@ -116,11 +118,12 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     server = Fastify();
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
     await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
+    await server.register(notificationRoutes, { db, prefix: "/notifications" });
     await server.ready();
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE proposals, proposal_versions, proposal_status_history, event_configuration_links, events, configurations, handoff_packs, event_plan_changes, event_plan_notifications, venues, spaces, placed_objects, asset_definitions");
+    await pool.query("TRUNCATE proposals, proposal_versions, proposal_status_history, proposal_comments, proposal_share_tokens, event_configuration_links, events, configurations, handoff_packs, event_plan_changes, event_plan_notifications, event_plan_notification_reads, event_plan_change_acknowledgements, venues, spaces, placed_objects, asset_definitions");
     await pool.query(
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', 'trades-hall-glasgow', '85 Glassford Street')",
       [VENUE],
@@ -218,6 +221,51 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     expect(changes.rows).toHaveLength(1);
     expect(changes.rows[0]?.actor_label.length).toBeLessThanOrEqual(160);
     expect(changes.rows[0]?.title.endsWith("… accepted Autumn gala — Grand Hall")).toBe(true);
+  });
+
+  /** Sent, with a link the client answers through. */
+  async function sentWithLink(): Promise<string> {
+    await pool.query("UPDATE proposals SET status = 'sent', current_version = 1, sent_version = 1 WHERE id = $1", [PROPOSAL]);
+    const token = "isolationToken_0123456789abcdefghijklmnopqrstuv";
+    await pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix) VALUES ($1, $2, 'isolatio')",
+      [PROPOSAL, createHash("sha256").update(token, "utf8").digest("hex")]);
+    return token;
+  }
+
+  /** The notices a person in this role is shown, as the notification centre reads them. */
+  async function shown(role: string): Promise<readonly { title: string; actionPath: string | null }[]> {
+    const res = await server.inject({ method: "GET", url: "/notifications?status=unread", headers: headers(randomUUID(), role) });
+    expect(res.statusCode, res.body).toBe(200);
+    return (JSON.parse(res.body) as { data: { title: string; actionPath: string | null }[] }).data
+      .map(({ title, actionPath }) => ({ title, actionPath }));
+  }
+
+  it("tells sales of a client's answer on a proposal with an event, which the event's own notices never show them", async () => {
+    // The team's own changes are not repeated to sales, as on a proposal with no event.
+    expect((await createVersion()).statusCode).toBe(201);
+    expect(await shown("sales")).toEqual([]);
+
+    await pool.query("TRUNCATE event_plan_changes, event_plan_notifications");
+    const token = await sentWithLink();
+    const accepted = await server.inject({ method: "POST", url: `/proposal-share/${token}/approve`, payload: { authorName: "Elaine Crawford", version: 1 } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    const notice = { title: "Elaine Crawford accepted Autumn gala — Grand Hall", actionPath: `/dashboard?view=proposals&proposal=${PROPOSAL}` };
+    expect(await shown("sales")).toEqual([notice]);
+    // Staff read the event, and are told once.
+    expect(await shown("staff")).toEqual([notice]);
+  });
+
+  it("takes the hallkeeper to the event and sales to the proposal when changes are asked for with a handoff pack", async () => {
+    await pool.query("INSERT INTO handoff_packs (id, event_id, compiled_at) VALUES ($1, $2, now())", [randomUUID(), EVENT]);
+    const token = await sentWithLink();
+    const asked = await server.inject({
+      method: "POST", url: `/proposal-share/${token}/comment`, payload: { kind: "request_changes", body: "Could we start at seven?", version: 1 },
+    });
+    expect(asked.statusCode, asked.body).toBe(201);
+    const title = "The client asked for changes to Autumn gala — Grand Hall";
+    expect(await shown("hallkeeper")).toEqual([{ title, actionPath: `/ops/events/${EVENT}` }]);
+    expect(await shown("staff")).toEqual([{ title, actionPath: `/ops/events/${EVENT}` }]);
+    expect(await shown("sales")).toEqual([{ title, actionPath: `/dashboard?view=proposals&proposal=${PROPOSAL}` }]);
   });
 
   it("still saves the version when the announcement violates the CHECK", async () => {

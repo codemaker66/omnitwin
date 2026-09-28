@@ -21,6 +21,12 @@ import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
  */
 const VENUE_FLOOR_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "hallkeeper"]);
 
+/** Whether a venue role reads the venue's internal events, and so the notices
+ *  that belong to an event. */
+export function roleReadsInternalEvents(role: string): boolean {
+  return VENUE_FLOOR_ROLES.has(role);
+}
+
 export function canManageVenue(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,

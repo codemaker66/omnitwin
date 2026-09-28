@@ -247,6 +247,48 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     }]);
   });
 
+  it("names the version accepted, not a draft saved since", async () => {
+    await pool.query("UPDATE proposals SET current_version = 2, sent_version = 1 WHERE id = $1", [PROPOSAL]);
+    const approved = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { version: 1 } });
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect((await notices()).map((notice) => notice.body)).toEqual(["Version 1."]);
+  });
+
+  it("names the version a question was asked on when the link has shown it, and the link's own otherwise", async () => {
+    // Version 2 was sent while the client still had version 1 open.
+    await pool.query("UPDATE proposals SET current_version = 2, sent_version = 2 WHERE id = $1", [PROPOSAL]);
+    const ask = async (version: number | undefined, body: string): Promise<void> => {
+      const res = await server.inject({
+        method: "POST", url: `/proposal-share/${TOKEN}/comment`,
+        payload: version === undefined ? { kind: "comment", body } : { kind: "comment", body, version },
+      });
+      expect(res.statusCode, res.body).toBe(201);
+    };
+    await ask(1, "Is the bar in the same place?");
+    await ask(5, "Is there a cloakroom?");
+    await ask(undefined, "Can we park nearby?");
+    expect((await notices()).map((notice) => notice.body).sort()).toEqual([
+      "Version 1. “Is the bar in the same place?”",
+      "Version 2. “Can we park nearby?”",
+      "Version 2. “Is there a cloakroom?”",
+    ]);
+  });
+
+  it("refuses changes asked for on a version since replaced, even once changes were asked for on the newer one", async () => {
+    // Version 2 was sent and changes were asked for on it; a page still showing version 1 asks too.
+    await pool.query("UPDATE proposals SET status = 'changes_requested', current_version = 2, sent_version = 2 WHERE id = $1", [PROPOSAL]);
+    const stale = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`, payload: { kind: "request_changes", body: "Could the bar move?", version: 1 },
+    });
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect((JSON.parse(stale.body) as { code: string }).code).toBe("PROPOSAL_VERSION_CHANGED");
+    expect(await notices()).toEqual([]);
+    const current = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`, payload: { kind: "request_changes", body: "And the stage?", version: 2 },
+    });
+    expect(current.statusCode, current.body).toBe(201);
+  });
+
   it("lets the venue team read it as the client does, without counting as the client opening it", async () => {
     await clientPage();
     const opened = (await pool.query<{ last_viewed_at: Date | null }>("SELECT last_viewed_at FROM proposal_share_tokens")).rows[0]?.last_viewed_at ?? null;
