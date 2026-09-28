@@ -748,7 +748,10 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   (on the branch, waiting on the browser gate) it was made true of the version: it says what the person has
   changed ("You have changed the quote, £18,400 to £17,600."), since the drawing and the event are taken afresh
   at each save; it names the version its words came from; and a save written from a version since followed is
-  refused rather than replacing it. The server saying what a save itself will change is the next slice.
+  refused rather than replacing it. Then the server said what a save itself will change (`GET
+  /proposals/:id/versions/next`): the composer names the drawing and the event's facts with the words ("Changed:
+  the quote from £18,400 to £17,600, the guest count from 160 to 180 and the layout drawing."), and a save is
+  held to what it showed. That is on the branch, waiting on the browser gate.
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
   made, as links are kept hashed. Preview as the client is done (28 September):
