@@ -324,6 +324,32 @@ test.describe("Proposals desk", () => {
     expect(clientCalls).toEqual([]);
   });
 
+  test("the proposal says which layout goes out, across the panel, on a desk and on a phone", async ({ page }) => {
+    const emulator = await openDesk(page);
+    const crawford = emulator.proposals.get(CRAWFORD);
+    if (crawford === undefined) throw new Error("Missing the Crawford fixture");
+    emulator.proposals.set(CRAWFORD, {
+      ...crawford, configurationId: "00000000-0000-4000-8000-00000000c0f1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true,
+    });
+    await page.goto(`/dashboard?view=proposals&proposal=${CRAWFORD}`);
+    const panel = page.getByRole("region", { name: "Crawford wedding proposal" });
+    const layout = panel.getByTestId("proposal-layout");
+    await expect(layout).toHaveText("Their own, Grand Hall");
+    await expect(panel.getByTestId("composer-layout"))
+      .toHaveText("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
+    // It reads across the panel, under the other facts, not squeezed into a column.
+    const [fact, facts] = await layout.evaluate((dd) => [
+      dd.parentElement?.getBoundingClientRect().width ?? 0, dd.closest("dl")?.getBoundingClientRect().width ?? 1,
+    ]);
+    expect(fact / facts).toBeGreaterThan(0.9);
+    await page.screenshot({ path: test.info().outputPath("proposal-layout-desk.png") });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(layout).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    await page.screenshot({ path: test.info().outputPath("proposal-layout-phone.png"), fullPage: true });
+  });
+
   test("on a phone the proposal replaces the ledger, Back to proposals returns to it, and nothing scrolls sideways", async ({ page }) => {
     await openDesk(page, 390, 844);
     await page.goto("/dashboard?view=proposals");
