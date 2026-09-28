@@ -156,6 +156,41 @@ export function getQualitySettings(tier: DeviceTier): QualitySettings {
   return TIER_SETTINGS[tier];
 }
 
+/** What the browser reports about the device beyond its GPU string. */
+export interface DeviceContext {
+  readonly userAgent: string;
+  readonly maxTouchPoints: number;
+}
+
+const TIER_ORDER: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
+
+function capTier(tier: DeviceTier, cap: DeviceTier): DeviceTier {
+  return TIER_ORDER.indexOf(tier) <= TIER_ORDER.indexOf(cap) ? tier : cap;
+}
+
+/**
+ * Safari reports every Apple device as "Apple GPU", which `classifyDevice`
+ * reads as a desktop card, so iPhones downloaded the full 6M-splat level.
+ * Phones cap at low and tablets (iPad, Android) at medium (T-639; Blake, 24 September 2026:
+ * phones hold 60 fps at about 0.5–1M rendered splats). A device never rises
+ * above its GPU tier. iPadOS requests desktop sites with a Mac user agent, so
+ * touch support separates it from a Mac.
+ */
+export function classifyDeviceInContext(rendererString: string, context: DeviceContext): DeviceTier {
+  const tier = classifyDevice(rendererString);
+  const agent = context.userAgent;
+  const phone = /iPhone|iPod/.test(agent) || (/Android/.test(agent) && /Mobile/.test(agent));
+  const tablet = /iPad/.test(agent) || (/Macintosh/.test(agent) && context.maxTouchPoints > 1) || (/Android/.test(agent) && !/Mobile/.test(agent));
+  if (phone) return capTier(tier, "low");
+  if (tablet) return capTier(tier, "medium");
+  return tier;
+}
+
+export function currentDeviceContext(): DeviceContext {
+  if (typeof navigator === "undefined") return { userAgent: "", maxTouchPoints: 0 };
+  return { userAgent: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints };
+}
+
 export interface GpuRendererContext {
   readonly getExtension: (name: "WEBGL_debug_renderer_info") => WEBGL_debug_renderer_info | null;
   readonly getParameter: (parameter: number) => unknown;

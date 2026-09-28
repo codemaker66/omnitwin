@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDeviceStore } from "../stores/device-store.js";
-import { classifyDevice, getGpuRenderer, type DeviceTier } from "../lib/device-tier.js";
+import { classifyDeviceInContext, currentDeviceContext, getGpuRenderer, type DeviceTier } from "../lib/device-tier.js";
 import {
   resolveSplatRuntimeProfile,
   type SplatRuntimeProfile,
@@ -73,7 +73,7 @@ export function useSplatRuntimeProfile(
   // Probed exactly once, during the first render, so the first frame already
   // runs at the right tier instead of re-creating the renderer a frame later.
   const [probed] = useState<string | null>(() => (detected ? null : probe()));
-  const tier: DeviceTier = detected || probed === null ? storeTier : classifyDevice(probed);
+  const tier: DeviceTier = detected || probed === null ? storeTier : classifyDeviceInContext(probed, currentDeviceContext());
 
   useEffect(() => {
     if (!detected && probed !== null) detect(probed);
