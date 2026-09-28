@@ -14,8 +14,11 @@ Contents: `floor-skin.json` (schema `venviewer.floor-skin.v1`), texture tiers
 `height-5cm.i16` (int16, 0.1 mm relative to the fitted plane, −32768 outside) and
 `slab-mask-1024x512.u8` (255 where the splat host hides floor-slab splats).
 
-Arm A re-bakes the Matterport textured OBJ floor; Arm B is the multi-view photo
-mosaic. Use the arm that wins on the render harness (spec §4 I1).
+Arm A re-bakes the Matterport textured OBJ floor; Arm B is the multi-view photo mosaic; Arm C re-projects
+the raw 4096 px cube faces after a joint pose solve, and measured sharpest in all six comparison crops of the
+28 September study. Arms B and C carry the daylight of the capture (a sun patch and window-light pools along
+the window wall); the south third was photographed only in the evening. Use the arm that wins in the browser
+comparison (spec §4 I1).
 
 In development `SPLAT_STAGING_ROOT` serves the output. For preview and production,
 publish the folder to R2 under `splats/trades-hall/<room>/floor-skin/v1/` before

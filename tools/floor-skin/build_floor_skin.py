@@ -7,6 +7,7 @@ floor-slab mask and floor-skin.json. Inputs are read-only; outputs go to --out.
   python tools/floor-skin/build_floor_skin.py --arm A --room grand-hall \
     --floor D:/claude/visual-firstprinciples-20260928/floor \
     --out D:/claude/splats/trades-hall/grand-hall/floor-skin/v1
+Arms: A (textured OBJ), B (photo mosaic), C (raw cube faces, sharpest in the 28 September study).
 """
 import argparse, datetime, hashlib, json, os
 import numpy as np
@@ -15,7 +16,8 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 ARMS = {"A": ("floor_A_obj_2mm.png", "floor_A_obj_mask.png", "Matterport textured OBJ floor, re-baked at 2 mm"),
-        "B": ("floor_B_pano_2mm.png", "floor_B_pano_mask.png", "Matterport E57 photograph mosaic at 2 mm")}
+        "B": ("floor_B_pano_2mm.png", "floor_B_pano_mask.png", "Matterport E57 photograph mosaic at 2 mm"),
+        "C": ("floor_C_faces_2mm.png", "floor_C_faces_mask.png", "Matterport E57 raw 4096 px cube faces, jointly re-posed, at 2 mm")}
 TIERS = {"high": 4096, "medium": 2048, "low": 1024}
 MASK_W, MASK_H = 1024, 512
 MATCHED = [0.708582, 0.575199, 0.62761]  # splat/photo floor ratio, linear RGB (render-proof gain.json)
