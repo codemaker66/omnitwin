@@ -312,20 +312,30 @@ export async function enquiryRoutes(
 
     const fromStatus = enquiry.state;
 
-    // Update enquiry state
-    const [updated] = await db.update(enquiries)
-      .set({ state: parsed.data.status, updatedAt: new Date() })
-      .where(eq(enquiries.id, params.data.id))
-      .returning();
-
-    // Write history record
-    await db.insert(enquiryStatusHistory).values({
-      enquiryId: params.data.id,
-      fromStatus,
-      toStatus: parsed.data.status,
-      changedBy: request.user.id,
-      note: parsed.data.note ?? null,
+    // The move and its history commit together, and only from the status it
+    // was judged from: a move that landed meanwhile (a colleague's decision,
+    // the client's withdrawal) stands, and a second decision is never emailed.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(enquiries)
+        .set({ state: parsed.data.status, updatedAt: new Date() })
+        .where(and(eq(enquiries.id, params.data.id), eq(enquiries.state, fromStatus)))
+        .returning();
+      if (row === undefined) return null;
+      await tx.insert(enquiryStatusHistory).values({
+        enquiryId: params.data.id,
+        fromStatus,
+        toStatus: parsed.data.status,
+        changedBy: request.user.id,
+        note: parsed.data.note ?? null,
+      });
+      return row;
     });
+    if (updated === null) {
+      return reply.status(409).send({
+        error: "The enquiry changed while this was on its way. Reload it to see where it stands.",
+        code: "ENQUIRY_STATUS_CHANGED",
+      });
+    }
 
     // Send notification emails on approval/rejection
     if (parsed.data.status === "approved" || parsed.data.status === "rejected") {

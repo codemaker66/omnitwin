@@ -573,6 +573,42 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
       expect(decisions.rows[0]?.count).toBe("0");
     });
 
+    // Two decisions at once: the one that lands second must not overwrite the
+    // first, and the client must not be emailed both.
+    it("takes one decision when two arrive at once, and emails only that one", async () => {
+      const enquiryId = await submitEnquiry();
+      await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [enquiryId]);
+      const blocker = await pool.connect();
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query("SELECT id FROM enquiries WHERE id = $1 FOR UPDATE", [enquiryId]);
+        const approving = transition(enquiryId, "approved");
+        await expect.poll(async () => {
+          const waiting = await pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+            [fixtureSchema],
+          );
+          return Number(waiting.rows[0]?.count);
+        }, { timeout: 5000 }).toBe(1);
+        // A colleague declines it meanwhile.
+        await blocker.query("UPDATE enquiries SET state = 'rejected' WHERE id = $1", [enquiryId]);
+        await blocker.query("COMMIT");
+        expect(await approving).toMatchObject({ statusCode: 409, code: "ENQUIRY_STATUS_CHANGED" });
+      } finally {
+        blocker.release();
+      }
+      expect(await storedState(enquiryId)).toBe("rejected");
+      await new Promise((resolve) => { setTimeout(resolve, 600); });
+      const approvals = await pool.query<{ count: string }>(
+        "SELECT count(*) AS count FROM email_sends WHERE idempotency_key = $1", [`enquiry-approved:${enquiryId}`],
+      );
+      expect(approvals.rows[0]?.count).toBe("0");
+      const history = await pool.query<{ to_status: string }>(
+        "SELECT to_status FROM enquiry_status_history WHERE enquiry_id = $1 AND to_status = 'approved'", [enquiryId],
+      );
+      expect(history.rowCount).toBe(0);
+    });
+
     it("leaves a booking's decisions as they were: an approval still emails the client", async () => {
       const enquiryId = await submitEnquiry();
       expect((await transition(enquiryId, "archived")).code).toBe("INVALID_TRANSITION");

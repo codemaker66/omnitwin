@@ -436,9 +436,11 @@ export function EnquiriesView({
         panelHeadingRef.current?.focus();
       }
     } catch (error) {
-      if (error instanceof ApiError && (error.code === "INVALID_TRANSITION" || error.code === "NOT_A_BOOKING")) {
-        // Someone else moved it on first, or it turned out to be a request:
-        // show where it really is, and the steps it really has.
+      if (error instanceof ApiError && (error.code === "INVALID_TRANSITION" || error.code === "ENQUIRY_STATUS_CHANGED"
+        || error.code === "NOT_A_BOOKING")) {
+        // Someone else moved it on first (before this was sent, or while it
+        // was on its way), or it turned out to be a request: show where it
+        // really is, and the steps it really has.
         try {
           const current = await enquiriesApi.getEnquiry(enquiry.id);
           applyUpdated(current);

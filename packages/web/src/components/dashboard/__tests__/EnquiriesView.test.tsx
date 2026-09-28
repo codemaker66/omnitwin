@@ -701,10 +701,14 @@ describe("EnquiriesView decisions", () => {
     });
   });
 
-  it("shows where an enquiry is when someone else already moved it on", async () => {
+  // Moved on before this was sent (422), or while it was on its way (409).
+  it.each([
+    [422, "INVALID_TRANSITION"],
+    [409, "ENQUIRY_STATUS_CHANGED"],
+  ] as const)("shows where an enquiry is when someone else already moved it on (%i %s)", async (status, code) => {
     const enquiryInReview = reviewing();
     mocks.listEnquiryPage.mockResolvedValue(page([enquiryInReview], {}));
-    mocks.transitionEnquiry.mockRejectedValue(new ApiError(422, "Cannot transition", "INVALID_TRANSITION"));
+    mocks.transitionEnquiry.mockRejectedValue(new ApiError(status, "Cannot transition", code));
     mocks.getEnquiry.mockResolvedValue({ ...enquiryInReview, state: "approved" });
     render(<EnquiriesView />);
 
