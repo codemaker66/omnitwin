@@ -103,6 +103,27 @@ function changeFeedFailed(since: string, readAt: string | null, triedAt: string 
   return triedAt === null ? said : `${said} Tried again at ${triedAt}.`;
 }
 
+/** What is said aloud about the change feed: that its reads began to fail,
+ *  that one landed again, or what a pressed retry found. Kept as what
+ *  happened and when, so it is said in the venue's own clock. */
+interface FeedHeard {
+  readonly kind: "failing" | "read" | "tried";
+  readonly at: string;
+  /** Each saying is a new one, even in words said before. */
+  readonly seq: number;
+}
+
+function feedHeardWords(heard: FeedHeard, timeZone: string): string {
+  const at = formatTime(heard.at, timeZone);
+  if (heard.kind === "failing") return `Couldn't read the changes at ${at}.`;
+  if (heard.kind === "read") return `The changes were read again at ${at}.`;
+  return `Tried again at ${at}. The changes still could not be read.`;
+}
+
+/** How a read of the board and its changes landed: the changes read, the
+ *  changes not read, or overtaken by a read that set out after it. */
+type BoardRead = "read" | "failed" | "stale";
+
 function formatTime(iso: string | null, timeZone: string): string {
   if (iso === null) return "--:--";
   const date = new Date(iso);
@@ -249,9 +270,21 @@ export function EventDayOpsPage(): ReactElement {
   const [feedRetrying, setFeedRetrying] = useState(false);
   // Said aloud once for each change: when the reads begin to fail, when one
   // lands again, and what a pressed retry found. Never on every poll.
-  const [feedHeard, setFeedHeard] = useState("");
+  const [feedHeard, setFeedHeard] = useState<FeedHeard | null>(null);
+  const sayFeed = useCallback((kind: FeedHeard["kind"], at: string): void => {
+    setFeedHeard((previous) => ({ kind, at, seq: (previous?.seq ?? 0) + 1 }));
+  }, []);
   const feedOutageRef = useRef<string | null>(null);
+  // Whether the latest read to land found the changes unreadable, as soon as
+  // it lands (the notice follows a render later).
+  const feedFailingRef = useRef(false);
+  // Reads are numbered as they set out; one overtaken by a later read that has
+  // landed is dropped, so an older answer never overrides a newer one.
+  const readsIssuedRef = useRef(0);
+  const readsLandedRef = useRef(0);
   const acknowledgementsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const tryAgainRef = useRef<HTMLButtonElement>(null);
+  const [feedFocus, setFeedFocus] = useState<"heading" | "button" | null>(null);
   const [acknowledgedChanges, setAcknowledgedChanges] = useState<ReadonlySet<string>>(new Set());
   // Until the first read of the room's acknowledgements settles, the page does
   // not know which changes are still waiting, and says so rather than listing
@@ -269,7 +302,7 @@ export function EventDayOpsPage(): ReactElement {
   // One request at a time for the event on screen. Without this guard a slow
   // API turns a 10s tick into a queue of overlapping reads that each
   // overwrite the last; a Try again joins the read already out.
-  const refreshInFlight = useRef<{ readonly eventId: string; readonly read: Promise<boolean> } | null>(null);
+  const refreshInFlight = useRef<{ readonly eventId: string; readonly read: Promise<BoardRead> } | null>(null);
 
   // The room's acknowledgements are read beside the board, never in front of
   // it: a slow read must not hold the board on its loading state. They are
@@ -296,12 +329,15 @@ export function EventDayOpsPage(): ReactElement {
     setFeedFailedSince(null);
     setFeedTriedAt(null);
     setFeedRetrying(false);
-    setFeedHeard("");
+    setFeedHeard(null);
+    setFeedFocus(null);
     feedOutageRef.current = null;
+    feedFailingRef.current = false;
   }, [eventId]);
 
   const applyChangeFeed = useCallback((changes: readonly ChangeFeedItem[] | null) => {
     const at = new Date().toISOString();
+    feedFailingRef.current = changes === null;
     if (changes === null) {
       setFeedFailedSince((since) => since ?? at);
       return;
@@ -311,6 +347,16 @@ export function EventDayOpsPage(): ReactElement {
     setFeedFailedSince(null);
     setFeedTriedAt(null);
   }, []);
+
+  /** A read of the board and its changes, landing for the event it was for
+   *  and only if no read that set out after it has landed first. */
+  const landRead = useCallback((forEvent: string, seq: number, board: EventDayOpsBoard, changes: readonly ChangeFeedItem[] | null): BoardRead => {
+    if (currentEventRef.current !== forEvent || seq < readsLandedRef.current) return "stale";
+    readsLandedRef.current = seq;
+    setState({ kind: "ready", board });
+    applyChangeFeed(changes);
+    return changes === null ? "failed" : "read";
+  }, [applyChangeFeed]);
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
@@ -330,12 +376,11 @@ export function EventDayOpsPage(): ReactElement {
     // lists for acknowledgement never appear after the board has drawn
     // without them; only the board's own read can fail the page.
     // A read for an event the page has left is dropped.
+    readsIssuedRef.current += 1;
+    const seq = readsIssuedRef.current;
     void Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)])
       .then(([board, changes]) => {
-        if (currentEventRef.current !== eventId) return;
-        setState({ kind: "ready", board });
-        applyChangeFeed(changes);
-        setLastSyncedAt(new Date().toISOString());
+        if (landRead(eventId, seq, board, changes) !== "stale") setLastSyncedAt(new Date().toISOString());
       })
       .catch(() => {
         if (currentEventRef.current !== eventId) return;
@@ -344,33 +389,32 @@ export function EventDayOpsPage(): ReactElement {
           message: "This event-day board could not be loaded. Check the event link or try again.",
         });
       });
-  }, [applyChangeFeed, eventId, readAcknowledgements]);
+  }, [eventId, landRead, readAcknowledgements]);
 
   /**
    * A background refresh: it never shows the full-page loading state and
    * never clears the board on failure, so a tablet that loses the network
    * mid-event keeps showing the last good truth instead of an error screen.
    */
-  const refreshBoard = useCallback((): Promise<boolean> => {
-    if (eventId === undefined || eventId.length === 0) return Promise.resolve(false);
+  const refreshBoard = useCallback((): Promise<BoardRead> => {
+    if (eventId === undefined || eventId.length === 0) return Promise.resolve("stale");
     const running = refreshInFlight.current;
     if (running !== null && running.eventId === eventId) return running.read;
     readAcknowledgements();
-    // Resolves true once the changes are read for this event.
-    const read: Promise<boolean> = Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)])
+    readsIssuedRef.current += 1;
+    const seq = readsIssuedRef.current;
+    const read: Promise<BoardRead> = Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)])
       .then(([board, changes]) => {
-        if (currentEventRef.current !== eventId) return false;
-        setState({ kind: "ready", board });
-        applyChangeFeed(changes);
-        setLastSyncedAt(new Date().toISOString());
-        return changes !== null;
-      }, () => false) // Keep the last good board; the next tick retries.
+        const landed = landRead(eventId, seq, board, changes);
+        if (landed !== "stale") setLastSyncedAt(new Date().toISOString());
+        return landed;
+      }, (): BoardRead => "failed") // Keep the last good board; the next tick retries.
       .finally(() => {
         if (refreshInFlight.current?.read === read) refreshInFlight.current = null;
       });
     refreshInFlight.current = { eventId, read };
     return read;
-  }, [applyChangeFeed, eventId, readAcknowledgements]);
+  }, [eventId, landRead, readAcknowledgements]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -403,18 +447,17 @@ export function EventDayOpsPage(): ReactElement {
       refreshPendingCount();
       if (eventId !== undefined) {
         readAcknowledgements();
+        readsIssuedRef.current += 1;
+        const seq = readsIssuedRef.current;
         const [board, changes] = await Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)]);
-        if (currentEventRef.current === eventId) {
-          setState({ kind: "ready", board });
-          applyChangeFeed(changes);
-        }
+        landRead(eventId, seq, board, changes);
       }
       setSyncing(false);
     })().catch(() => {
       setSyncing(false);
       refreshPendingCount();
     });
-  }, [applyChangeFeed, eventId, readAcknowledgements, refreshPendingCount, syncing]);
+  }, [eventId, landRead, readAcknowledgements, refreshPendingCount, syncing]);
 
   useEffect(() => {
     loadBoard();
@@ -433,32 +476,44 @@ export function EventDayOpsPage(): ReactElement {
   useEffect(() => {
     const was = feedOutageRef.current;
     feedOutageRef.current = feedFailedSince;
-    if (feedFailedSince !== null && was === null) {
-      setFeedHeard(`Couldn't read the changes at ${formatTime(feedFailedSince, timeZone)}.`);
-    } else if (feedFailedSince === null && was !== null && feedReadAt !== null) {
-      setFeedHeard(`The changes were read again at ${formatTime(feedReadAt, timeZone)}.`);
-    }
-  }, [feedFailedSince, feedReadAt, timeZone]);
+    if (feedFailedSince !== null && was === null) sayFeed("failing", feedFailedSince);
+    else if (feedFailedSince === null && was !== null && feedReadAt !== null) sayFeed("read", feedReadAt);
+  }, [feedFailedSince, feedReadAt, sayFeed]);
+
+  // The focus moves only when it has fallen to the page or still rests on the
+  // retry control, never from wherever someone has gone since they pressed.
+  useEffect(() => {
+    if (feedFocus === null) return;
+    setFeedFocus(null);
+    const active = document.activeElement;
+    const fallen = active === null || active === document.body || !active.isConnected || active === tryAgainRef.current;
+    if (!fallen) return;
+    (feedFocus === "heading" ? acknowledgementsHeadingRef.current : tryAgainRef.current)?.focus({ preventScroll: true });
+  }, [feedFocus]);
 
   // Try again joins a read already out, says it is working until that read
   // answers, and then says what it found. Once the changes are read, the
-  // notice and its button go, so the focus moves to the section's heading.
+  // notice and its button go, so the focus goes to the section's heading; a
+  // retry that fails hands it back to the button. A failure is reported only
+  // while the reads are still failing: a read that set out later may have
+  // found the changes meanwhile.
   const tryFeedAgain = useCallback(() => {
     if (feedRetrying) return;
     const forEvent = eventId;
     setFeedRetrying(true);
-    void refreshBoard().then((read) => {
+    void refreshBoard().then(() => {
       if (currentEventRef.current !== forEvent) return;
       setFeedRetrying(false);
-      if (read) {
-        acknowledgementsHeadingRef.current?.focus({ preventScroll: true });
+      if (!feedFailingRef.current) {
+        setFeedFocus("heading");
         return;
       }
       const at = new Date().toISOString();
       setFeedTriedAt(at);
-      setFeedHeard(`Tried again at ${formatTime(at, timeZone)}. The changes still could not be read.`);
+      sayFeed("tried", at);
+      setFeedFocus("button");
     });
-  }, [eventId, feedRetrying, refreshBoard, timeZone]);
+  }, [eventId, feedRetrying, refreshBoard, sayFeed]);
   // The zone is named only for a device on another clock, and the kicker
   // follows the venue's calendar as the day turns.
   const zone = useMemo(() => zoneNote(timeZone, deviceZone()), [timeZone]);
@@ -759,7 +814,9 @@ export function EventDayOpsPage(): ReactElement {
       >
         {/* One column beside the heading: what could not be read, above what was. */}
         <div>
-          <p className="vv-sr-only" role="status" data-testid="change-feed-heard">{feedHeard}</p>
+          <p className="vv-sr-only" role="status" data-testid="change-feed-heard">
+            {feedHeard !== null && <span key={feedHeard.seq}>{feedHeardWords(feedHeard, timeZone)}</span>}
+          </p>
           {feedFailedSince !== null && (
             <div className="event-day-feed-notice" data-testid="change-feed-notice">
               <p>
@@ -769,7 +826,7 @@ export function EventDayOpsPage(): ReactElement {
                   feedTriedAt === null ? null : formatTime(feedTriedAt, timeZone),
                 )}
               </p>
-              <button type="button" className="event-day-button secondary" onClick={tryFeedAgain} disabled={feedRetrying} aria-busy={feedRetrying}>
+              <button ref={tryAgainRef} type="button" className="event-day-button secondary" onClick={tryFeedAgain} disabled={feedRetrying} aria-busy={feedRetrying}>
                 {feedRetrying && <ActivityIndicator size={20} />}
                 {feedRetrying ? "Trying again…" : "Try again"}
               </button>

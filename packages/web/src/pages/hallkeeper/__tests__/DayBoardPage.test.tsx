@@ -393,6 +393,46 @@ describe("DayBoardPage", () => {
     expect(aborted).toEqual([]);
   });
 
+  /** Chrome's answer to :focus-visible: false for the focus a tap gives, true
+   *  for keyboard focus. This test browser cannot tell the two apart. */
+  function focusVisible(visible: boolean): () => void {
+    const matches = Object.getOwnPropertyDescriptor(Element.prototype, "matches")?.value as (this: Element, selector: string) => boolean;
+    const spy = vi.spyOn(Element.prototype, "matches").mockImplementation(function (this: Element, selector: string) {
+      return selector === ":focus-visible" ? visible : matches.call(this, selector);
+    });
+    return () => { spy.mockRestore(); };
+  }
+
+  it("takes the focus a tap gives for no wish to read ahead", async () => {
+    const restore = focusVisible(false);
+    try {
+      getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+      renderBoard();
+      await screen.findByText("Chamber dinner");
+      const next = screen.getByRole("button", { name: "Next day" });
+      fireEvent.pointerEnter(next, { pointerType: "touch" });
+      act(() => { next.focus(); });
+      await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 20); }); });
+      expect(readsOf(dayRange(1)) + readsOf(dayRange(-1))).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  it("takes keyboard focus on the day controls as the wish to read ahead", async () => {
+    const restore = focusVisible(true);
+    try {
+      getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+      renderBoard();
+      await screen.findByText("Chamber dinner");
+      act(() => { screen.getByRole("button", { name: "Next day" }).focus(); });
+      await waitFor(() => { expect(readsOf(dayRange(1))).toBe(1); });
+      expect(readsOf(dayRange(-1))).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
   it("counts a key step as the sign to read ahead", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();
