@@ -744,8 +744,11 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Accepted and Closed, each row with who it is for, the event's date and guests, and what it comes to; the
   counts cover the whole list.
 - The composer is pre-filled from the latest version ("Editing version 3"), with a diff.
-  Done: the next version starts from the latest one's message, capacity note and quote lines, and says what it
-  changes ("Changed: the quote, £18,400 to £17,600.").
+  Done: the next version starts from the latest one's message, capacity note and quote lines. On 28 September
+  (on the branch, waiting on the browser gate) it was made true of the version: it says what the person has
+  changed ("You have changed the quote, £18,400 to £17,600."), since the drawing and the event are taken afresh
+  at each save; it names the version its words came from; and a save written from a version since followed is
+  refused rather than replacing it. The server saying what a save itself will change is the next slice.
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
   made, as links are kept hashed. Preview as the client is done (28 September):
@@ -759,7 +762,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   came from and that enquiry's own layout while it is live at the venue; links that contradict each other are
   refused, never mixed. A version's layout is the proposal's own, drawn by the server. The Proposals panel says
   which layout goes out ("Their own, Grand Hall", a room, "Removed" or "None"). Choosing another layout, or
-  leaving it out, waits on A10.
+  leaving it out, waits on A10. On master; it deploys once the browser gate admits its new case.
 - Notify the owner of every client decision.
   Done on 28 September (`services/client-answer-notice.ts`). Every acceptance, request for changes and
   comment tells every commercial role at the venue, the proposal's owner among them, with or without an
