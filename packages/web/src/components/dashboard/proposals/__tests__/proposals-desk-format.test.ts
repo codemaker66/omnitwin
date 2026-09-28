@@ -3,7 +3,8 @@ import type { ProposalFacts, ProposalNextVersion, ProposalVersionPayload } from 
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
   composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords,
-  listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, takenChanges,
+  listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, startedAgainWords,
+  takenChanges,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -159,6 +160,11 @@ describe("the next version", () => {
     expect(putAsideWords("withdrawn", false, 2)).toBe("It has been withdrawn, so a new version cannot be written.");
     expect(putAsideWords("accepted", false, 2)).toBe("It has been accepted, so a new version cannot be written.");
     expect(putAsideWords("something new", false, 2)).toBe("A new version cannot be written now.");
+  });
+
+  it("says what starting again put aside, from the version the words began with", () => {
+    expect(startedAgainWords(2)).toBe("You started again from version 2.");
+    expect(startedAgainWords(null)).toBe("You started the first version again.");
   });
 
   // Until the check of what a save takes is back, what is typed here is all

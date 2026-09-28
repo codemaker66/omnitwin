@@ -232,6 +232,21 @@ describe.skipIf(target === undefined)("the next version's check through real rou
     expect(await versionCount(f)).toBe(2);
   });
 
+  it("refuses a save written from an older version before drawing its layout, even one that cannot be drawn", async () => {
+    const f = await fixture();
+    await saved(f);
+    expect(await saved(f)).toBe(2);
+    // The room's outline is broken, so drawing the layout now fails: a save
+    // from the latest version shows it, and one from an older version never
+    // gets that far.
+    await db.update(schema.spaces).set({ floorPlanOutline: [null, null, null] }).where(eq(schema.spaces.id, f.hallId));
+    expect((await save(f, "?basedOn=2")).statusCode).toBe(500);
+    const refused = await save(f, "?basedOn=1");
+    expect(refused.statusCode, refused.body).toBe(409);
+    expect(refused.json<{ code: string }>().code).toBe("PROPOSAL_VERSION_CHANGED");
+    expect(await versionCount(f)).toBe(2);
+  });
+
   it("refuses a checked save when a colleague's version lands while it waits", async () => {
     const f = await fixture();
     await saved(f);

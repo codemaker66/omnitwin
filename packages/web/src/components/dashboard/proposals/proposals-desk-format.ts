@@ -242,6 +242,11 @@ export function putAsideWords(status: string, composable: boolean, startsFrom: n
   return `Version ${String(startsFrom)} was saved meanwhile, so the next version starts from it.`;
 }
 
+/** Why words were put aside when the booker started the version again. */
+export function startedAgainWords(fromVersion: number | null): string {
+  return fromVersion === null ? "You started the first version again." : `You started again from version ${String(fromVersion)}.`;
+}
+
 /** Whether the words differ from those they started with, so there is
  *  something to lose: for a first version, anything written at all. */
 export function draftDiffers(from: ProposalVersionPayload | null, draft: ComposerDraft): boolean {
