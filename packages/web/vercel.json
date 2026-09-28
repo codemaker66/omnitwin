@@ -69,6 +69,14 @@
   ],
   "rewrites": [
     {
+      "source": "/amissing-book",
+      "destination": "/amissing-book/index.html"
+    },
+    {
+      "source": "/amissing-book/",
+      "destination": "/amissing-book/index.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
@@ -185,6 +193,24 @@
         {
           "key": "Cache-Control",
           "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/amissing-book/:path*",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        }
+      ]
+    },
+    {
+      "source": "/amissing-book/:dir(art|audio|assets)/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, stale-while-revalidate=604800"
         }
       ]
     }
