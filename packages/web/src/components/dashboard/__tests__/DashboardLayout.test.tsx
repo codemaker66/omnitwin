@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
 import { DashboardLayout, forgetKnownVenueNames, type DashboardView } from "../DashboardLayout.js";
 import { InventoryNavigationGuard } from "../inventory/InventoryNavigationGuard.js";
+import { ProtectedRoute } from "../../auth/ProtectedRoute.js";
 import { forgetProposalMemory, proposalsWithWords, recallDraft, rememberDraft, updateKept } from "../proposals/proposal-memory.js";
 
 const mocks = vi.hoisted(() => ({
@@ -275,9 +276,12 @@ describe("DashboardLayout navigation", () => {
     await screen.findByText("Trades Hall");
     const account = screen.getByRole("button", { name: "Account: Elaine Campbell" });
     fireEvent.click(account);
-    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    // As a click gives a button focus, in the menu that then closes.
+    const signOutButton = screen.getByRole("button", { name: "Sign Out" });
+    signOutButton.focus();
+    fireEvent.click(signOutButton);
     const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
-    expect(question.textContent).toContain("What you wrote for 2 proposals is not saved as versions yet.");
+    expect(question.textContent).toContain("What you wrote for 2 proposals is not saved yet. It is still on the Proposals desk; signing out loses it.");
     expect(useAuthStore.getState().user).toEqual(admin);
     expect(mocks.signOut).not.toHaveBeenCalled();
     fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
@@ -290,6 +294,19 @@ describe("DashboardLayout navigation", () => {
     expect(useAuthStore.getState().user).toBeNull();
     expect(mocks.signOut).toHaveBeenCalledTimes(localFixture ? 0 : 1);
     expect(proposalsWithWords("admin-1")).toBe(0);
+  });
+
+  it("returns to the account button on Cancel when the click left focus on the page, as Safari's does", async () => {
+    rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    renderShell();
+    await screen.findByText("Trades Hall");
+    const account = screen.getByRole("button", { name: "Account: Elaine Campbell" });
+    fireEvent.click(account);
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" })).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => { expect(document.activeElement).toBe(account); });
+    expect(mocks.signOut).not.toHaveBeenCalled();
   });
 
   it("signs out at once when the person has no words waiting, leaving another account's alone", async () => {
@@ -318,11 +335,34 @@ describe("DashboardLayout navigation", () => {
     const correction = await screen.findByRole("dialog", { name: "Sign out with an unfinished correction?" });
     fireEvent.click(within(correction).getByRole("button", { name: "Discard and sign out" }));
     const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
-    expect(question.textContent).toContain("What you wrote for one proposal is not saved as a version yet.");
+    expect(question.textContent).toContain("What you wrote for one proposal is not saved yet.");
     expect(mocks.signOut).not.toHaveBeenCalled();
     fireEvent.click(within(question).getByRole("button", { name: "Discard and sign out" }));
     expect(await screen.findByRole("heading", { name: "Signed out" })).toBeDefined();
     expect(mocks.signOut).toHaveBeenCalledOnce();
+    expect(recallDraft("admin-1", "p1")).toBeNull();
+  });
+
+  it("asks the same from a refusal's Use another account inside the shell, and returns to it on Cancel", async () => {
+    rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    render(<MemoryRouter initialEntries={["/dashboard?view=inventory"]}><DashboardLayout activeView="inventory">
+      <ProtectedRoute allowedRoles={["hallkeeper"]}><h1>Hallkeeper page</h1></ProtectedRoute>
+    </DashboardLayout></MemoryRouter>);
+    await screen.findByText("Trades Hall");
+    const other = screen.getByRole("button", { name: "Use another account" });
+    other.focus();
+    fireEvent.click(other);
+    const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    fireEvent.click(within(question).getByRole("button", { name: "Cancel" }));
+    // A frame on, once the question has handed focus back, it is still there.
+    await act(async () => { await new Promise((resolve) => { requestAnimationFrame(() => { resolve(undefined); }); }); });
+    expect(document.activeElement).toBe(other);
+    expect(useAuthStore.getState().user).toEqual(admin);
+    fireEvent.click(other);
+    fireEvent.click(await screen.findByRole("button", { name: "Discard and sign out" }));
+    await waitFor(() => { expect(mocks.signOut).toHaveBeenCalledOnce(); });
+    expect(useAuthStore.getState().user).toBeNull();
     expect(recallDraft("admin-1", "p1")).toBeNull();
   });
 

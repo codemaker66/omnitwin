@@ -32,6 +32,17 @@ export function useInStaffShell(): boolean {
   return useContext(StaffShellContext) !== null;
 }
 
+/** Signs out once the person has been asked about anything the page would
+ *  lose with them (an unfinished stock correction, proposal words not yet
+ *  saved). The shell's header gives it to the workspace beneath, so a page's
+ *  own way to sign out asks the same; outside it, a sign-out goes at once. */
+export type AskBeforeSignOut = (signOut: () => void) => void;
+export const SignOutAskContext = createContext<AskBeforeSignOut | null>(null);
+function signOutAtOnce(signOut: () => void): void { signOut(); }
+export function useAskBeforeSignOut(): AskBeforeSignOut {
+  return useContext(SignOutAskContext) ?? signOutAtOnce;
+}
+
 /** Hands this page's frame to the persistent shell while it is mounted, before
  *  the browser paints; does nothing outside the shell. */
 export function useShellFrame(frame: ShellFrame): void {

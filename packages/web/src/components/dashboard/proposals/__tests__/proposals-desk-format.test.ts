@@ -3,7 +3,7 @@ import type { ProposalFacts, ProposalNextVersion, ProposalVersionPayload } from 
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
   composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords,
-  listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, startedAgainWords,
+  listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, sameWords, startedAgainWords,
   takenChanges,
 } from "../proposals-desk-format.js";
 
@@ -151,6 +151,17 @@ describe("the next version", () => {
     // A first version has nothing to start from: anything written is something to lose.
     expect(draftDiffers(null, draftFromVersion(null))).toBe(false);
     expect(draftDiffers(null, { message: "Here is the dinner you asked about.", capacityNote: "", lines: [] })).toBe(true);
+  });
+
+  it("knows two drafts say the same as a version would keep them, however they were typed", () => {
+    const words = draftFromVersion(payload());
+    expect(sameWords(words, { ...words })).toBe(true);
+    expect(sameWords(words, { ...words, message: `  ${words.message}  `, capacityNote: ` ${words.capacityNote}` })).toBe(true);
+    expect(sameWords(words, { ...words, lines: words.lines.map((line) => ({ ...line, description: ` ${line.description} ` })) })).toBe(true);
+    expect(sameWords(words, { ...words, message: "A later finish." })).toBe(false);
+    expect(sameWords(words, { ...words, capacityNote: "Around 100." })).toBe(false);
+    expect(sameWords(words, { ...words, lines: words.lines.map((line, index) => index === 0 ? { ...line, quantity: "2" } : line) })).toBe(false);
+    expect(sameWords(words, { ...words, lines: [...words.lines, { description: "", quantity: "1", pounds: "" }] })).toBe(false);
   });
 
   it("says why words were put aside unsaved", () => {

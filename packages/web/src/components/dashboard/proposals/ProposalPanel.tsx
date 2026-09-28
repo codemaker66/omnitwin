@@ -728,7 +728,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
           <input data-testid="composer-capacity" maxLength={500} value={draft.capacityNote} disabled={saving}
             onChange={(event) => { setDraft((current) => ({ ...current, capacityNote: event.target.value })); }} />
         </label>
-        <CapacityGuidance spaces={spaces} onInsert={(note) => { setDraft((current) => ({ ...current, capacityNote: note })); }} />
+        <CapacityGuidance spaces={spaces} disabled={saving} onInsert={(note) => { setDraft((current) => ({ ...current, capacityNote: note })); }} />
 
         <div className="pr-quote">
           <p className="pr-quote__title">Quote</p>
@@ -786,7 +786,13 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   );
 }
 
-function CapacityGuidance({ spaces, onInsert }: { readonly spaces: PartRead<readonly Space[]>; readonly onInsert: (note: string) => void }): ReactElement | null {
+/** `disabled` while a save is on its way: a note put in then would not be
+ *  in the version, and the composer that saves makes way for the next. */
+function CapacityGuidance({ spaces, disabled, onInsert }: {
+  readonly spaces: PartRead<readonly Space[]>;
+  readonly disabled: boolean;
+  readonly onInsert: (note: string) => void;
+}): ReactElement | null {
   const rooms = spaces.value ?? [];
   const [spaceId, setSpaceId] = useState("");
   const [guests, setGuests] = useState("");
@@ -802,12 +808,13 @@ function CapacityGuidance({ spaces, onInsert }: { readonly spaces: PartRead<read
     <div className="pr-guidance">
       <p className="pr-guidance__title">Capacity guidance, planning-grade, from the room's floor area</p>
       <div className="pr-guidance__fields">
-        <select aria-label="Guidance room" data-testid="capacity-space" value={space?.id ?? ""} onChange={(event) => { setSpaceId(event.target.value); }}>
+        <select aria-label="Guidance room" data-testid="capacity-space" value={space?.id ?? ""} disabled={disabled}
+          onChange={(event) => { setSpaceId(event.target.value); }}>
           {rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
         </select>
-        <input aria-label="Guidance guest count" data-testid="capacity-guests" inputMode="numeric" placeholder="Guests" value={guests}
+        <input aria-label="Guidance guest count" data-testid="capacity-guests" inputMode="numeric" placeholder="Guests" value={guests} disabled={disabled}
           onChange={(event) => { setGuests(event.target.value); }} />
-        <select aria-label="Guidance layout style" data-testid="capacity-style" value={style}
+        <select aria-label="Guidance layout style" data-testid="capacity-style" value={style} disabled={disabled}
           onChange={(event) => { setStyle(event.target.value as LayoutStyle); }}>
           {LAYOUT_STYLES.map((option) => <option key={option} value={option}>{CAPACITY_STYLE_LABELS[option]}</option>)}
         </select>
@@ -820,7 +827,7 @@ function CapacityGuidance({ spaces, onInsert }: { readonly spaces: PartRead<read
             . Planning estimate only; a person checks it.
           </p>
           <div className="enq-actions">
-            <button type="button" className="enq-quiet" data-testid="capacity-insert"
+            <button type="button" className="enq-quiet" data-testid="capacity-insert" disabled={disabled}
               onClick={() => { onInsert(buildProposalCapacityNote(space.name, guidance)); }}>
               Insert into the capacity note
             </button>

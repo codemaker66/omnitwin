@@ -24,7 +24,7 @@ import { recallDraft, recallKept, rememberDraft, subscribeKept, updateKept, type
 import { ProposalsLedger } from "./proposals/ProposalsLedger.js";
 import { ProposalsStages } from "./proposals/ProposalsStages.js";
 import {
-  groupRows, groupWords, proposalStatusWords, proposalsSummary, startedAgainWords, type ComposerDraft, type KeptVersion, type ProposalFilter,
+  groupRows, groupWords, proposalStatusWords, proposalsSummary, sameWords, startedAgainWords, type ComposerDraft, type KeptVersion, type ProposalFilter,
 } from "./proposals/proposals-desk-format.js";
 import "./enquiries/EnquiriesDesk.css";
 import "./pipeline/PipelineDesk.css";
@@ -594,9 +594,10 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
       throw error;
     }
     // The words are the version now: nothing of them is left to remember,
-    // unless words written since have taken their place (the desk was left
-    // and opened again while this save was on its way).
-    if (recallDraft(person, id)?.draft === draft) rememberDraft(person, id, null);
+    // unless other words have taken their place (the desk was left and
+    // opened again while this save was on its way, and more was written).
+    const written = recallDraft(person, id);
+    if (written !== null && sameWords(written.draft, draft)) rememberDraft(person, id, null);
     // The next version starts from this one at once, if it is still open; the
     // proposal is then read again for what the server made of it.
     if (openIdRef.current === id) seedLatest(id, saved);
@@ -606,12 +607,12 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     return `Version ${String(saved.version)} is saved.`;
   }, composer);
 
-  /** Forgets the proposal's kept versions: one composer's, or those given. */
-  const forgetKept = (id: string, which: number | readonly KeptVersion[]): void => {
+  /** Forgets those of the proposal's kept versions that `which` picks. */
+  const forgetKept = (id: string, which: (entry: KeptVersion) => boolean): void => {
     setKeptDrafts((current) => {
       const kept = current[id];
       if (kept === undefined) return current;
-      const left = kept.filter((entry) => typeof which === "number" ? entry.composer !== which : !which.includes(entry));
+      const left = kept.filter((entry) => !which(entry));
       if (left.length === kept.length) return current;
       const { [id]: _done, ...rest } = current;
       return left.length === 0 ? rest : { ...rest, [id]: left };
@@ -629,7 +630,8 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
   // it went while the save was on its way (a colleague's version or a send
   // found meanwhile), taking the words with it; a composer still there holds
   // them itself. A version that saves puts away the copies there were when
-  // it began, and none made since.
+  // it began, and any since of the very words it saved (a desk opened while
+  // it was on its way kept them), but no other words written since.
   const onSaveVersion = async (draft: ComposerDraft, composer: number, basedOn: number, basis?: string): Promise<boolean> => {
     const id = proposal?.id ?? null;
     const before = id === null ? [] : recallKept(person)[id] ?? [];
@@ -638,7 +640,7 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     const gone = goneWhileSavingRef.current.delete(composer);
     if (!saved && savingRef.current === composer) savingRef.current = null;
     if (id !== null) {
-      if (saved) forgetKept(id, before);
+      if (saved) forgetKept(id, (entry) => before.includes(entry) || sameWords(entry.draft, draft));
       else if (gone) {
         setKeptDrafts((current) => ({
           ...current,
@@ -693,7 +695,7 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
 
   const onDiscardKept = (composer: number): void => {
     if (openId === null) return;
-    forgetKept(openId, composer);
+    forgetKept(openId, (entry) => entry.composer === composer);
     panelHeadingRef.current?.focus({ preventScroll: true });
   };
 

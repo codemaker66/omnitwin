@@ -6,7 +6,13 @@ import type { ReactNode } from "react";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { authRouteWithReturnTo } from "../../lib/auth-return.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
-import { useInStaffShell, useShellFrame } from "../dashboard/staff-shell.js";
+import { useAskBeforeSignOut, useInStaffShell, useShellFrame, type AskBeforeSignOut } from "../dashboard/staff-shell.js";
+
+interface ExitButtonProps {
+  readonly onLocalSignOut: () => void;
+  /** Inside the staff shell, asks first about anything the page would lose. */
+  readonly askFirst: AskBeforeSignOut;
+}
 
 /**
  * A refusal is not a dead end. Whoever reads this screen is signed in as
@@ -19,7 +25,7 @@ import { useInStaffShell, useShellFrame } from "../dashboard/staff-shell.js";
  * whole refusal screen with it — a guard that renders nothing is worse than
  * the dead end it was meant to fix.
  */
-function ClerkExitButton({ onLocalSignOut }: { readonly onLocalSignOut: () => void }): React.ReactElement {
+function ClerkExitButton({ onLocalSignOut, askFirst }: ExitButtonProps): React.ReactElement {
   const { signOut } = useClerk();
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -40,7 +46,7 @@ function ClerkExitButton({ onLocalSignOut }: { readonly onLocalSignOut: () => vo
   return (
     <>
       <button type="button" className="vv-button primary" disabled={signingOut} aria-busy={signingOut}
-        onClick={() => { void handleSignOut(); }}>
+        onClick={() => { askFirst(() => { void handleSignOut(); }); }}>
         {signingOut && <ActivityIndicator size={18} />}
         {signingOut ? "Signing out…" : "Use another account"}
       </button>
@@ -49,11 +55,11 @@ function ClerkExitButton({ onLocalSignOut }: { readonly onLocalSignOut: () => vo
   );
 }
 
-function LocalExitButton({ onLocalSignOut }: { readonly onLocalSignOut: () => void }): React.ReactElement {
+function LocalExitButton({ onLocalSignOut, askFirst }: ExitButtonProps): React.ReactElement {
   const navigate = useNavigate();
   return (
     <button type="button" className="vv-button primary"
-      onClick={() => { onLocalSignOut(); void navigate("/login"); }}>
+      onClick={() => { askFirst(() => { onLocalSignOut(); void navigate("/login"); }); }}>
       Use another account
     </button>
   );
@@ -61,11 +67,12 @@ function LocalExitButton({ onLocalSignOut }: { readonly onLocalSignOut: () => vo
 
 function DenialActions(): React.ReactElement {
   const logout = useAuthStore((state) => state.logout);
+  const askFirst = useAskBeforeSignOut();
   return (
     <div className="vv-state-actions">
       {isE2EAuthBypassEnabled()
-        ? <LocalExitButton onLocalSignOut={logout} />
-        : <ClerkExitButton onLocalSignOut={logout} />}
+        ? <LocalExitButton onLocalSignOut={logout} askFirst={askFirst} />
+        : <ClerkExitButton onLocalSignOut={logout} askFirst={askFirst} />}
       <Link className="vv-button" to="/">Back to Venviewer</Link>
     </div>
   );

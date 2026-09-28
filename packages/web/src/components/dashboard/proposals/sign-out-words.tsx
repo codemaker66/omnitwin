@@ -17,13 +17,15 @@ interface Asking {
 }
 
 function unsavedWords(proposals: number): string {
-  const what = proposals === 1 ? "one proposal is not saved as a version" : `${String(proposals)} proposals is not saved as versions`;
-  return `What you wrote for ${what} yet. It is still on the Proposals desk; signing out loses it.`;
+  const what = proposals === 1 ? "one proposal" : `${String(proposals)} proposals`;
+  return `What you wrote for ${what} is not saved yet. It is still on the Proposals desk; signing out loses it.`;
 }
 
 /** `askFirst` signs out at once, or once the person chooses to leave their
- *  words; `question` is the dialog to show meanwhile. `onStay` gives focus
- *  somewhere to carry on, as the control signed out from is out of sight. */
+ *  words; `question` is the dialog to show meanwhile. Staying, focus goes back
+ *  to the control signed out from, as the dialog hands it back; `onStay` gives
+ *  it a place when that control has gone from sight (in a menu that closed as
+ *  the question took focus) or the click never gave it focus (Safari). */
 export function useSignOutWords(person: string | null, onStay: () => void): {
   readonly askFirst: (signOut: () => void) => void;
   readonly question: ReactElement | null;
@@ -34,9 +36,17 @@ export function useSignOutWords(person: string | null, onStay: () => void): {
     if (person === null || proposals === 0) signOut();
     else setAsking({ person, signOut, proposals });
   }, [person]);
+  const stay = (): void => {
+    setAsking(null);
+    // Once the dialog has gone and handed focus back.
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active === null || active === document.body || active.closest("[hidden]") !== null) onStay();
+    });
+  };
   const question = asking === null ? null : createPortal(
     <ConfirmModal title="Sign out with proposal words not saved?" message={unsavedWords(asking.proposals)} confirmLabel="Discard and sign out"
-      onCancel={() => { setAsking(null); onStay(); }}
+      onCancel={stay}
       onConfirm={() => { setAsking(null); forgetWords(asking.person); asking.signOut(); }} />,
     document.body,
   );

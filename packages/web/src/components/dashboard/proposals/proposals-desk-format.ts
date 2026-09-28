@@ -247,12 +247,16 @@ export function startedAgainWords(fromVersion: number | null): string {
   return fromVersion === null ? "You started the first version again." : `You started again from version ${String(fromVersion)}.`;
 }
 
+/** Whether two drafts say the same, as a version would keep them. */
+export function sameWords(a: ComposerDraft, b: ComposerDraft): boolean {
+  const lines = (of: ComposerDraft): string => JSON.stringify(of.lines.map((line) => [line.description.trim(), line.quantity.trim(), line.pounds.trim()]));
+  return a.message.trim() === b.message.trim() && a.capacityNote.trim() === b.capacityNote.trim() && lines(a) === lines(b);
+}
+
 /** Whether the words differ from those they started with, so there is
  *  something to lose: for a first version, anything written at all. */
 export function draftDiffers(from: ProposalVersionPayload | null, draft: ComposerDraft): boolean {
-  const start = draftFromVersion(from);
-  const lines = (of: ComposerDraft): string => JSON.stringify(of.lines.map((line) => [line.description.trim(), line.quantity.trim(), line.pounds.trim()]));
-  return start.message.trim() !== draft.message.trim() || start.capacityNote.trim() !== draft.capacityNote.trim() || lines(start) !== lines(draft);
+  return !sameWords(draftFromVersion(from), draft);
 }
 
 /** The latest version's words and quote, ready to be changed rather than
