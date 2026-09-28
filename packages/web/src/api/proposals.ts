@@ -282,6 +282,11 @@ export const DeskProposalSchema = StaffProposalSchema.extend({
   hasLink: z.boolean().default(true),
   /** Whether the client's link still opens. */
   linkOpen: z.boolean().default(true),
+  /** The room of the layout it carries, or null once that layout or room is
+   *  removed. Absent from an API from before it, so nothing is claimed. */
+  layoutRoomName: z.string().nullable().optional(),
+  /** Whether that layout is the client's own, from their enquiry. */
+  layoutFromEnquiry: z.boolean().optional(),
 });
 
 export type DeskProposal = z.infer<typeof DeskProposalSchema>;

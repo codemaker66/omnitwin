@@ -329,7 +329,8 @@ describe("the open deal", () => {
     const panel = within(await openDeal());
     fireEvent.click(panel.getByRole("button", { name: "Draft a proposal" }));
     await waitFor(() => {
-      expect(mocks.createProposal).toHaveBeenCalledWith({ venueId: "v1", opportunityId: "opp1", enquiryId: "enq1", title: "Henderson wedding proposal" });
+      // The deal alone: the server brings its enquiry and that enquiry's layout.
+      expect(mocks.createProposal).toHaveBeenCalledWith({ venueId: "v1", opportunityId: "opp1", title: "Henderson wedding proposal" });
     });
     expect(await screen.findByText("The proposal draft is made, but the deal did not move to Proposal drafting.")).toBeDefined();
 

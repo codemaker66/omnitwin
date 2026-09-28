@@ -8,7 +8,8 @@ import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYL
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, draftChanges, draftFromVersion, historyMoments, linkOpenedSentence, linkVersionWords, listWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft,
+  EMPTY_LINE, composerLayoutLine, draftChanges, draftFromVersion, historyMoments, layoutFact, linkOpenedSentence, linkVersionWords, listWords,
+  type ComposerDraft, type KeptVersion, type QuoteLineDraft,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -174,6 +175,7 @@ function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly 
   const date = eventDateParts(proposal.eventDate);
   const weekday = eventWeekday(proposal.eventDate);
   const lead = eventLead(proposal.eventDate, nowMs);
+  const layout = layoutFact(proposal);
   return (
     <dl className="enq-facts pr-facts">
       <div>
@@ -200,6 +202,12 @@ function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly 
             ? `, as sent in version ${String(proposal.sentVersion)}` : ""}
         </dd>
       </div>
+      {layout !== null && (
+        <div className="pr-facts__layout">
+          <dt>layout</dt>
+          <dd className={layout.muted ? "enq-facts__muted" : "enq-facts__room"} data-testid="proposal-layout">{layout.words}</dd>
+        </div>
+      )}
     </dl>
   );
 }
@@ -413,6 +421,7 @@ let composers = 0;
 
 function ComposerForm(props: ProposalPanelProps): ReactElement {
   const { proposal, latest, spaces, working, failure, onSaveVersion } = props;
+  const layoutLine = composerLayoutLine(proposal);
   const headingId = useId();
   const [composer] = useState(() => { composers += 1; return composers; });
   const from = latest.value?.payload ?? null;
@@ -489,6 +498,7 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
           </div>
         </div>
 
+        {layoutLine !== null && <p className="enq-next__hint" data-testid="composer-layout">{layoutLine}</p>}
         <p className="enq-next__hint">Sending shares the latest saved version. Figures are planning estimates, without safety or compliance assurance.</p>
         {failure?.where === "version" && <p className="enq-confirm__error" role="alert" data-testid="composer-error">{failure.message}</p>}
         <div className="enq-actions">

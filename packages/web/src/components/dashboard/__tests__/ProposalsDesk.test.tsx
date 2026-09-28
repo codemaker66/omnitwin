@@ -585,6 +585,29 @@ describe("the next step", () => {
   });
 });
 
+describe("the layout it carries", () => {
+  it("says the client's own layout and its room, and that the composer takes it as it stands", async () => {
+    existing = [proposal({ configurationId: "layout-1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true })];
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect((await panel.findByTestId("proposal-layout")).textContent).toBe("Their own, Grand Hall");
+    expect((await panel.findByTestId("composer-layout")).textContent)
+      .toBe("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
+  });
+
+  it("says a proposal carries none, and claims nothing when the API does not say", async () => {
+    existing = [proposal({ layoutRoomName: null, layoutFromEnquiry: false }), proposal({ id: "p2", title: "Burns supper", configurationId: "layout-1" })];
+    render(<ProposalsDesk />);
+    const none = within(await openProposal());
+    expect((await none.findByTestId("proposal-layout")).textContent).toBe("None");
+    expect(none.queryByTestId("composer-layout")).toBeNull();
+    const silent = within(await openProposal("p2", "Burns supper"));
+    await silent.findByTestId("composer-save");
+    expect(silent.queryByTestId("proposal-layout")).toBeNull();
+    expect(silent.queryByTestId("composer-layout")).toBeNull();
+  });
+});
+
 describe("the next version", () => {
   it("waits for the version to start from, says when it cannot be read, and reads it again", async () => {
     existing = [proposal({ currentVersion: 1 })];

@@ -295,7 +295,8 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
     if (current === null) return;
     const deal = current.opportunity;
     await createProposal({
-      venueId: deal.venueId, opportunityId: deal.id, enquiryId: deal.sourceEnquiryId, title: `${deal.title} proposal`,
+      // The server brings the deal's enquiry and that enquiry's layout.
+      venueId: deal.venueId, opportunityId: deal.id, title: `${deal.title} proposal`,
     });
     const from = asStage(deal.stage);
     if (from !== null && isValidOpportunityStageTransition(from, "proposal_drafting")) {

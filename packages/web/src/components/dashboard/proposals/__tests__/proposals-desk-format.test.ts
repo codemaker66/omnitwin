@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
-  draftChanges, draftFromVersion, groupOf, groupRows, historyMoments, linkVersionWords, listWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
+  composerLayoutLine, draftChanges, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords, listWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -154,5 +154,29 @@ describe("the latest send and the link's version", () => {
     expect(linkVersionWords(row({ currentVersion: 3, sentVersion: 2 }))).toBe("; the client's link shows version 2");
     expect(linkVersionWords(row({ currentVersion: 3, sentVersion: 2, linkOpen: false }))).toBe("; the client's link, which showed version 2, no longer opens");
     expect(linkVersionWords(row({ currentVersion: 2, sentVersion: 2 }))).toBe("");
+  });
+});
+
+describe("the layout a proposal carries", () => {
+  const linked = { configurationId: "layout-1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true };
+
+  it("names the client's own layout and its room, another layout's room, one removed, or none", () => {
+    expect(layoutFact(linked)).toEqual({ words: "Their own, Grand Hall", muted: false });
+    expect(layoutFact({ ...linked, layoutFromEnquiry: false })).toEqual({ words: "Grand Hall", muted: false });
+    expect(layoutFact({ ...linked, layoutRoomName: null, layoutFromEnquiry: false })).toEqual({ words: "Removed", muted: true });
+    expect(layoutFact({ configurationId: null, layoutRoomName: null, layoutFromEnquiry: false })).toEqual({ words: "None", muted: true });
+  });
+
+  it("claims nothing when the API does not say", () => {
+    expect(layoutFact({ configurationId: "layout-1", layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
+    expect(layoutFact({ configurationId: null, layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
+    expect(composerLayoutLine({ configurationId: "layout-1", layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
+  });
+
+  it("tells the composer the layout is taken as it stands, only while there is one", () => {
+    expect(composerLayoutLine(linked)).toBe("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
+    expect(composerLayoutLine({ ...linked, layoutFromEnquiry: false })).toBe("The layout is taken as it stands when you save. Preview as the client shows what they will see.");
+    expect(composerLayoutLine({ ...linked, layoutRoomName: null })).toBeNull();
+    expect(composerLayoutLine({ configurationId: null, layoutRoomName: null, layoutFromEnquiry: false })).toBeNull();
   });
 });

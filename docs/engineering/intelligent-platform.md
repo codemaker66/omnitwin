@@ -126,9 +126,12 @@ real-world predictive accuracy.
 The existing database path is event → opportunity → source enquiry →
 configuration. Selected layouts also use event-configuration links. Architect
 selection does not create that full link, and the legacy event create/update
-schemas omit opportunityId. Quotes and proposals independently validate linked
-records' venues, without proving that every link identifies the same event and
-opportunity. Explicit source binding must precede release compilation.
+schemas omit opportunityId. Proposals now bind their links when written
+(`services/proposal-links.ts`): the deal, the enquiry it came from and that
+enquiry's own live layout, refusing links that contradict one another. Quotes
+still validate each link's venue on its own, without proving that every link
+identifies the same event and opportunity. Explicit source binding must precede
+release compilation.
 
 Architect's current null pricing catalogue reflects missing asset-complete,
 versioned venue prices. Existing pricing_rules are room/venue charges without

@@ -675,7 +675,7 @@ function NewProposal({ venueId, onCancel, onCreated }: NewProposalProps): ReactE
   return (
     <form className="pl-new-deal" aria-labelledby={headingId} onSubmit={(event) => { event.preventDefault(); submit(); }}>
       <h2 id={headingId}>New proposal</h2>
-      <p className="enq-next__hint">A proposal made from a deal in the pipeline brings its client, date and guests with it.</p>
+      <p className="enq-next__hint">A proposal made from a deal in the pipeline brings its client, date and guests with it, and their layout when their enquiry has one.</p>
       <label className="pr-field">
         <span>What it is</span>
         <input data-testid="create-title" value={title} maxLength={200} placeholder="Autumn gala in the Grand Hall" disabled={saving}

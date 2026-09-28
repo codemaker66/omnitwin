@@ -111,6 +111,30 @@ export function linkOpenedSentence(linkOpenedAt: string | null, hasLink = true):
   return at === null ? "The link has not been opened since it was sent." : `The link was last opened ${at}.`;
 }
 
+type LayoutFields = Pick<DeskProposal, "configurationId" | "layoutRoomName" | "layoutFromEnquiry">;
+
+/** The layout a proposal carries, as its panel names it: the client's own
+ *  from their enquiry and its room, another layout's room, one removed, or
+ *  none. Nothing when the API does not say, so nothing untrue is shown. */
+export function layoutFact(proposal: LayoutFields): { readonly words: string; readonly muted: boolean } | null {
+  if (proposal.layoutRoomName === undefined) return null;
+  if (proposal.configurationId === null) return { words: "None", muted: true };
+  if (proposal.layoutRoomName === null) return { words: "Removed", muted: true };
+  return {
+    words: proposal.layoutFromEnquiry === true ? `Their own, ${proposal.layoutRoomName}` : proposal.layoutRoomName,
+    muted: false,
+  };
+}
+
+/** What the composer says of the layout a version will carry, only while
+ *  there is one to take. It promises no drawing: a layout with nothing
+ *  placed has none. */
+export function composerLayoutLine(proposal: LayoutFields): string | null {
+  if (proposal.configurationId === null || proposal.layoutRoomName === undefined || proposal.layoutRoomName === null) return null;
+  const whose = proposal.layoutFromEnquiry === true ? "Their layout" : "The layout";
+  return `${whose} is taken as it stands when you save. Preview as the client shows what they will see.`;
+}
+
 /** Which version the client's link shows, beside the latest saved: "; the
  *  client's link shows version 2", or that a closed link showed it. */
 export function linkVersionWords(row: Pick<DeskProposal, "sentVersion" | "currentVersion"> & Partial<Pick<DeskProposal, "linkOpen">>): string {

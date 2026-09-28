@@ -18,6 +18,8 @@
 .pr-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 20px; }
 .pr-facts > div:nth-child(odd) { padding-left: 0; border-left: 0; }
 .pr-facts dd { font-size: clamp(21px, 1.7vw, 27px); }
+/* The layout it carries reads across the panel, under the facts. */
+.pr-facts > .pr-facts__layout { grid-column: 1 / -1; padding-left: 0; border-left: 0; }
 
 .pr-deal { margin-top: 14px; }
 .pr-deal .enq-quiet { gap: 6px; }
