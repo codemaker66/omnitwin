@@ -75,6 +75,26 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     adminSavedWhileSent: randomUUID(),
     reopenedThenMarked: randomUUID(),
     reopenedStillSent: randomUUID(),
+    acceptedAgainByAnother: randomUUID(),
+    acceptedAgainByTeam: randomUUID(),
+    linkMadeWhileSent: randomUUID(),
+    draftAtFillThenAccepted: randomUUID(),
+    answeredAfterAdminSave: randomUUID(),
+    savedAfterAcceptance: randomUUID(),
+    linkAfterAcceptance: randomUUID(),
+    declinedAfterAdminSave: randomUUID(),
+    sentThenSavedAfterFill: randomUUID(),
+    writtenByRelease: randomUUID(),
+    archivedAfterAnswerOnAdminSave: randomUUID(),
+    changesAskedOnFirstSend: randomUUID(),
+    changesAskedAfterAdminSave: randomUUID(),
+    expiredAfterAdminSave: randomUUID(),
+    acceptedTwiceAcrossVersions: randomUUID(),
+    blankApprovalName: randomUUID(),
+    declinedBeforeHistory: randomUUID(),
+    answeredBeforeAnyVersion: randomUUID(),
+    venueNoteAtAcceptance: randomUUID(),
+    archivedAfterLinkAcceptance: randomUUID(),
   };
 
   async function proposal(id: string, status: string, currentVersion: number): Promise<void> {
@@ -114,7 +134,7 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     pool = new Pool({ connectionString: testUrl, application_name: fixtureSchema, max: 2, options: `-c search_path=${fixtureSchema}` });
     await pool.query(`CREATE SCHEMA "${fixtureSchema}"`);
     // The tables as the release before 0082 defined them.
-    const tables: PgTable[] = [schema.proposals, schema.proposalVersions, schema.proposalStatusHistory, schema.proposalComments];
+    const tables: PgTable[] = [schema.proposals, schema.proposalVersions, schema.proposalStatusHistory, schema.proposalComments, schema.proposalShareTokens];
     for (const table of tables) {
       const config = getTableConfig(table);
       const columns = config.columns.filter((column) => !ADDED.includes(column.name)).map((column) => {
@@ -197,6 +217,98 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     await note(ids.reopenedStillSent, "Bruce Kerr", "2026-09-01T11:00:00Z");
     await moved(ids.reopenedStillSent, "accepted", "sent", "2026-09-02T09:00:00Z");
 
+    // Accepted as Alice Grant, twice over: once reopened and accepted again
+    // through a link by someone else, and once by the team, both after 0082.
+    for (const id of [ids.acceptedAgainByAnother, ids.acceptedAgainByTeam]) {
+      await proposal(id, "accepted", 1);
+      await version(id, 1, "2026-09-01T10:00:00Z");
+      await moved(id, "draft", "sent", "2026-09-01T10:05:00Z");
+      await moved(id, "sent", "accepted", "2026-09-01T11:00:00Z");
+      await note(id, "Alice Grant", "2026-09-01T11:00:00Z");
+    }
+    // Sent once; after 0082 a version is saved and a new link made on it.
+    await proposal(ids.linkMadeWhileSent, "sent", 1);
+    await version(ids.linkMadeWhileSent, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.linkMadeWhileSent, "draft", "sent", "2026-09-01T10:05:00Z");
+    // A draft when 0082 ran; afterwards sent, accepted, and saved again.
+    await proposal(ids.draftAtFillThenAccepted, "draft", 0);
+    // Sent once; after 0082 an administrator saves version 2 while it is out,
+    // and the client accepts what the link then showed.
+    await proposal(ids.answeredAfterAdminSave, "sent", 1);
+    await version(ids.answeredAfterAdminSave, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.answeredAfterAdminSave, "draft", "sent", "2026-09-01T10:05:00Z");
+
+    // Accepted on version 1; an administrator saved version 2 afterwards, so
+    // 0082 took version 2 for it.
+    await proposal(ids.savedAfterAcceptance, "accepted", 2);
+    await version(ids.savedAfterAcceptance, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.savedAfterAcceptance, "draft", "sent", "2026-09-01T10:05:00Z");
+    await moved(ids.savedAfterAcceptance, "sent", "accepted", "2026-09-01T11:00:00Z");
+    await version(ids.savedAfterAcceptance, 2, "2026-09-02T10:00:00Z");
+    // Accepted on version 1; after 0082 a version is saved and a link made.
+    await proposal(ids.linkAfterAcceptance, "accepted", 1);
+    await version(ids.linkAfterAcceptance, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.linkAfterAcceptance, "draft", "sent", "2026-09-01T10:05:00Z");
+    await moved(ids.linkAfterAcceptance, "sent", "accepted", "2026-09-01T11:00:00Z");
+    // Drafts when 0082 ran, sent afterwards.
+    await proposal(ids.declinedAfterAdminSave, "draft", 0);
+    await proposal(ids.sentThenSavedAfterFill, "draft", 0);
+    // Sent, then accepted by name, as this release writes both.
+    await proposal(ids.writtenByRelease, "draft", 0);
+    // Sent on version 1; an administrator saved version 2 while it was out,
+    // the client accepted it, version 3 was saved after, and the team
+    // archived it.
+    await proposal(ids.archivedAfterAnswerOnAdminSave, "archived", 3);
+    await version(ids.archivedAfterAnswerOnAdminSave, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.archivedAfterAnswerOnAdminSave, "draft", "sent", "2026-09-01T10:05:00Z");
+    await version(ids.archivedAfterAnswerOnAdminSave, 2, "2026-09-01T12:00:00Z");
+    await moved(ids.archivedAfterAnswerOnAdminSave, "sent", "accepted", "2026-09-01T13:00:00Z");
+    await version(ids.archivedAfterAnswerOnAdminSave, 3, "2026-09-02T10:00:00Z");
+    await moved(ids.archivedAfterAnswerOnAdminSave, "accepted", "archived", "2026-09-03T10:00:00Z");
+
+    // A draft when 0082 ran; afterwards sent, changes asked for, saved again.
+    await proposal(ids.changesAskedOnFirstSend, "draft", 0);
+    // Sent on version 1 when 0082 ran; afterwards saved while out, then
+    // changes asked for, or marked expired and saved again.
+    for (const id of [ids.changesAskedAfterAdminSave, ids.expiredAfterAdminSave]) {
+      await proposal(id, "sent", 1);
+      await version(id, 1, "2026-09-01T10:00:00Z");
+      await moved(id, "draft", "sent", "2026-09-01T10:05:00Z");
+    }
+    // Accepted on version 1 when 0082 ran; afterwards reopened, saved and
+    // accepted again.
+    await proposal(ids.acceptedTwiceAcrossVersions, "accepted", 1);
+    await version(ids.acceptedTwiceAcrossVersions, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.acceptedTwiceAcrossVersions, "draft", "sent", "2026-09-01T10:05:00Z");
+    await moved(ids.acceptedTwiceAcrossVersions, "sent", "accepted", "2026-09-01T11:00:00Z");
+    // Accepted through a link giving a blank name.
+    await proposal(ids.blankApprovalName, "accepted", 1);
+    await version(ids.blankApprovalName, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.blankApprovalName, "draft", "sent", "2026-09-01T10:05:00Z");
+    await moved(ids.blankApprovalName, "sent", "accepted", "2026-09-01T11:00:00Z");
+    await note(ids.blankApprovalName, "", "2026-09-01T11:00:00Z");
+
+    // Declined before history was kept and before anything was saved, so
+    // 0082 took no version; versions are saved afterwards.
+    await proposal(ids.declinedBeforeHistory, "declined", 0);
+    // A venue administrator moved an empty draft to "changes asked for".
+    await proposal(ids.answeredBeforeAnyVersion, "draft", 0);
+    // Accepted by the team; a staff note (written without a link) carries the
+    // acceptance's timestamp.
+    await proposal(ids.venueNoteAtAcceptance, "accepted", 1);
+    await version(ids.venueNoteAtAcceptance, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.venueNoteAtAcceptance, "draft", "sent", "2026-09-01T10:05:00Z");
+    await moved(ids.venueNoteAtAcceptance, "sent", "accepted", "2026-09-01T11:00:00Z");
+    await pool.query(
+      `INSERT INTO proposal_comments (proposal_id, share_token_id, kind, author_name, body, is_client_visible, created_at)
+       VALUES ($1, NULL, 'approval_note', 'Venue team', 'Marked accepted.', true, '2026-09-01T11:00:00Z')`,
+      [ids.venueNoteAtAcceptance],
+    );
+    // Sent when 0082 ran; afterwards accepted through a link, then archived.
+    await proposal(ids.archivedAfterLinkAcceptance, "sent", 1);
+    await version(ids.archivedAfterLinkAcceptance, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.archivedAfterLinkAcceptance, "draft", "sent", "2026-09-01T10:05:00Z");
+
     // Exactly as it ships, in one transaction as the migrator runs it.
     await applyMigration(pool);
   }, 120_000);
@@ -220,6 +332,7 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     expect((await stored(ids.archivedAfterAcceptance)).sent_version).toBe(1);
     // A version saved while sent was on the link.
     expect((await stored(ids.adminSavedWhileSent)).sent_version).toBe(2);
+    expect((await stored(ids.savedAfterAcceptance)).sent_version).toBe(2);
   });
 
   it("takes the name given with the acceptance itself, and no other note's", async () => {
@@ -239,7 +352,7 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
       .rejects.toThrow(/proposals_sent_version_positive/u);
   });
 
-  it("0083 settles what the previous API wrote meanwhile, keeps what was sent, and changes nothing else", async () => {
+  it("0083 settles every row to what its link showed, and changes nothing else", async () => {
     const before = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
     // The previous API, still running once 0082 applied, sends version 2 and
     // a first version, and sees a client accept by name, without touching
@@ -252,18 +365,145 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     await pool.query("UPDATE proposals SET status = 'accepted' WHERE id = $1", [ids.sentOnce]);
     await moved(ids.sentOnce, "sent", "accepted", "2026-09-28T10:00:00Z");
     await note(ids.sentOnce, "Moira Kerr", "2026-09-28T10:00:00Z");
-    // The new release, once it runs: a platform administrator saves version
-    // 3 while version 2 is with the client. It is a draft; the link keeps 2.
+    // A platform administrator saves version 3 while version 2 is with the
+    // client. Until links show the sent version, it is on the link at once.
     await pool.query("UPDATE proposals SET current_version = 3 WHERE id = $1", [ids.adminSavedWhileSent]);
     await version(ids.adminSavedWhileSent, 3, "2026-09-28T11:00:00Z");
+    // Accepted on version 1: a version saved and a link made afterwards
+    // change nothing about what was accepted.
+    await pool.query("UPDATE proposals SET current_version = 2 WHERE id = $1", [ids.linkAfterAcceptance]);
+    await version(ids.linkAfterAcceptance, 2, "2026-09-28T09:00:00Z");
+    await pool.query(
+      "INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix, created_at) VALUES ($1, 'after', 'after', '2026-09-28T09:30:00Z')",
+      [ids.linkAfterAcceptance],
+    );
+    // Sent on version 1, version 2 saved while out, then declined by the team.
+    await pool.query("UPDATE proposals SET status = 'declined', current_version = 2 WHERE id = $1", [ids.declinedAfterAdminSave]);
+    await version(ids.declinedAfterAdminSave, 1, "2026-09-28T09:00:00Z");
+    await moved(ids.declinedAfterAdminSave, "draft", "sent", "2026-09-28T09:05:00Z");
+    await version(ids.declinedAfterAdminSave, 2, "2026-09-28T09:30:00Z");
+    await moved(ids.declinedAfterAdminSave, "sent", "declined", "2026-09-28T10:00:00Z");
+    await pool.query("UPDATE proposals SET current_version = 3 WHERE id = $1", [ids.declinedAfterAdminSave]);
+    await version(ids.declinedAfterAdminSave, 3, "2026-09-28T11:00:00Z");
+    // Sent on version 1, version 2 saved while still out.
+    await pool.query("UPDATE proposals SET status = 'sent', current_version = 2 WHERE id = $1", [ids.sentThenSavedAfterFill]);
+    await version(ids.sentThenSavedAfterFill, 1, "2026-09-28T09:00:00Z");
+    await moved(ids.sentThenSavedAfterFill, "draft", "sent", "2026-09-28T09:05:00Z");
+    await version(ids.sentThenSavedAfterFill, 2, "2026-09-28T09:30:00Z");
+    // As this release writes: sent on version 2, accepted as Elaine Crawford.
+    await pool.query("UPDATE proposals SET status = 'accepted', current_version = 2, sent_version = 2, accepted_name = 'Elaine Crawford' WHERE id = $1", [ids.writtenByRelease]);
+    await version(ids.writtenByRelease, 1, "2026-09-28T09:00:00Z");
+    await version(ids.writtenByRelease, 2, "2026-09-28T09:10:00Z");
+    await moved(ids.writtenByRelease, "draft", "sent", "2026-09-28T09:15:00Z");
+    await moved(ids.writtenByRelease, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await note(ids.writtenByRelease, "Elaine Crawford", "2026-09-28T10:00:00Z");
+    // Sent on version 1, changes asked for, version 2 saved and not yet sent.
+    await pool.query("UPDATE proposals SET status = 'changes_requested', current_version = 2 WHERE id = $1", [ids.changesAskedOnFirstSend]);
+    await version(ids.changesAskedOnFirstSend, 1, "2026-09-28T09:00:00Z");
+    await moved(ids.changesAskedOnFirstSend, "draft", "sent", "2026-09-28T09:05:00Z");
+    await moved(ids.changesAskedOnFirstSend, "sent", "changes_requested", "2026-09-28T10:00:00Z");
+    await version(ids.changesAskedOnFirstSend, 2, "2026-09-28T11:00:00Z");
+    // Version 2 saved while out, then changes asked for on what the link showed.
+    await pool.query("UPDATE proposals SET status = 'changes_requested', current_version = 2 WHERE id = $1", [ids.changesAskedAfterAdminSave]);
+    await version(ids.changesAskedAfterAdminSave, 2, "2026-09-28T09:00:00Z");
+    await moved(ids.changesAskedAfterAdminSave, "sent", "changes_requested", "2026-09-28T10:00:00Z");
+    // Version 2 saved while out, marked expired, version 3 saved after.
+    await pool.query("UPDATE proposals SET status = 'expired', current_version = 3 WHERE id = $1", [ids.expiredAfterAdminSave]);
+    await version(ids.expiredAfterAdminSave, 2, "2026-09-28T09:00:00Z");
+    await moved(ids.expiredAfterAdminSave, "sent", "expired", "2026-09-28T10:00:00Z");
+    await version(ids.expiredAfterAdminSave, 3, "2026-09-28T11:00:00Z");
+    // Reopened, version 2 saved while out, accepted again.
+    await pool.query("UPDATE proposals SET current_version = 2 WHERE id = $1", [ids.acceptedTwiceAcrossVersions]);
+    await moved(ids.acceptedTwiceAcrossVersions, "accepted", "sent", "2026-09-28T09:00:00Z");
+    await version(ids.acceptedTwiceAcrossVersions, 2, "2026-09-28T09:30:00Z");
+    await moved(ids.acceptedTwiceAcrossVersions, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await pool.query("UPDATE proposals SET current_version = 2 WHERE id = $1", [ids.declinedBeforeHistory]);
+    await version(ids.declinedBeforeHistory, 1, "2026-09-28T09:00:00Z");
+    await version(ids.declinedBeforeHistory, 2, "2026-09-28T09:10:00Z");
+    // Changes asked for on an empty draft, then version 1 saved.
+    await pool.query("UPDATE proposals SET status = 'changes_requested', current_version = 1 WHERE id = $1", [ids.answeredBeforeAnyVersion]);
+    await moved(ids.answeredBeforeAnyVersion, "draft", "changes_requested", "2026-09-28T09:00:00Z");
+    await version(ids.answeredBeforeAnyVersion, 1, "2026-09-28T10:00:00Z");
+    // A name that stands on a staff note alone, never given through a link.
+    await pool.query("UPDATE proposals SET accepted_name = 'Venue team' WHERE id = $1", [ids.venueNoteAtAcceptance]);
+    // Accepted through a link as Nora Bell, then archived by the team.
+    await pool.query("UPDATE proposals SET status = 'archived' WHERE id = $1", [ids.archivedAfterLinkAcceptance]);
+    await moved(ids.archivedAfterLinkAcceptance, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await note(ids.archivedAfterLinkAcceptance, "Nora Bell", "2026-09-28T10:00:00Z");
+    await moved(ids.archivedAfterLinkAcceptance, "accepted", "archived", "2026-09-28T11:00:00Z");
+
+    // Reopened by an administrator and accepted again, through another link
+    // as Bob Kerr, and by the team with no name.
+    await pool.query("UPDATE proposals SET status = 'accepted' WHERE id = ANY($1)", [[ids.acceptedAgainByAnother, ids.acceptedAgainByTeam]]);
+    for (const id of [ids.acceptedAgainByAnother, ids.acceptedAgainByTeam]) {
+      await moved(id, "accepted", "sent", "2026-09-28T09:00:00Z");
+      await moved(id, "sent", "accepted", "2026-09-28T10:00:00Z");
+    }
+    await note(ids.acceptedAgainByAnother, "Bob Kerr", "2026-09-28T10:00:00Z");
+    // A platform administrator saves version 2 while version 1 is with the
+    // client, then a new link is made: the previous API showed version 2.
+    await pool.query("UPDATE proposals SET current_version = 2 WHERE id = $1", [ids.linkMadeWhileSent]);
+    await version(ids.linkMadeWhileSent, 2, "2026-09-28T09:00:00Z");
+    await pool.query(
+      "INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix, created_at) VALUES ($1, 'minted', 'minted', '2026-09-28T09:30:00Z')",
+      [ids.linkMadeWhileSent],
+    );
+    // Sent and accepted on version 1; version 2 saved after the acceptance.
+    await pool.query("UPDATE proposals SET status = 'accepted', current_version = 2 WHERE id = $1", [ids.draftAtFillThenAccepted]);
+    await version(ids.draftAtFillThenAccepted, 1, "2026-09-28T09:00:00Z");
+    await moved(ids.draftAtFillThenAccepted, "draft", "sent", "2026-09-28T09:05:00Z");
+    await moved(ids.draftAtFillThenAccepted, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await version(ids.draftAtFillThenAccepted, 2, "2026-09-28T11:00:00Z");
+    // The link showed version 2 when the client accepted.
+    await pool.query("UPDATE proposals SET status = 'accepted', current_version = 2 WHERE id = $1", [ids.answeredAfterAdminSave]);
+    await version(ids.answeredAfterAdminSave, 2, "2026-09-28T09:00:00Z");
+    await moved(ids.answeredAfterAdminSave, "sent", "accepted", "2026-09-28T10:00:00Z");
+    await note(ids.answeredAfterAdminSave, "Carol Reid", "2026-09-28T10:00:00Z");
 
     await applyMigration(pool, "0083_proposal_sent_version_refill.sql");
 
+    expect(await stored(ids.acceptedAgainByAnother)).toEqual({ sent_version: 1, accepted_name: "Bob Kerr" });
+    expect(await stored(ids.acceptedAgainByTeam)).toEqual({ sent_version: 1, accepted_name: null });
+    expect((await stored(ids.linkMadeWhileSent)).sent_version).toBe(2);
+    expect((await stored(ids.draftAtFillThenAccepted)).sent_version).toBe(1);
+    expect(await stored(ids.answeredAfterAdminSave)).toEqual({ sent_version: 2, accepted_name: "Carol Reid" });
     expect((await stored(ids.changesAskedThenSaved)).sent_version).toBe(2);
     expect((await stored(ids.draft)).sent_version).toBe(1);
     expect(await stored(ids.sentOnce)).toEqual({ sent_version: 1, accepted_name: "Moira Kerr" });
-    expect((await stored(ids.adminSavedWhileSent)).sent_version).toBe(2);
-    const settled: readonly string[] = [ids.changesAskedThenSaved, ids.draft, ids.sentOnce];
+    // Still out: the version its link shows.
+    expect((await stored(ids.adminSavedWhileSent)).sent_version).toBe(3);
+    expect((await stored(ids.sentThenSavedAfterFill)).sent_version).toBe(2);
+    // Answered: the version answered, whatever 0082 took or was saved since.
+    expect((await stored(ids.savedAfterAcceptance)).sent_version).toBe(1);
+    expect((await stored(ids.linkAfterAcceptance)).sent_version).toBe(1);
+    expect((await stored(ids.declinedAfterAdminSave)).sent_version).toBe(2);
+    expect((await stored(ids.archivedAfterAnswerOnAdminSave)).sent_version).toBe(2);
+    // What this release writes stands.
+    expect(await stored(ids.writtenByRelease)).toEqual({ sent_version: 2, accepted_name: "Elaine Crawford" });
+    // Changes asked for, or expired: the version its link showed then.
+    expect((await stored(ids.changesAskedOnFirstSend)).sent_version).toBe(1);
+    expect((await stored(ids.changesAskedAfterAdminSave)).sent_version).toBe(2);
+    expect((await stored(ids.expiredAfterAdminSave)).sent_version).toBe(2);
+    // The latest acceptance, not the first.
+    expect((await stored(ids.acceptedTwiceAcrossVersions)).sent_version).toBe(2);
+    // A blank name is no name.
+    expect((await stored(ids.blankApprovalName)).accepted_name).toBeNull();
+    // With no recorded answer: its current version, as 0082 took.
+    expect((await stored(ids.declinedBeforeHistory)).sent_version).toBe(2);
+    // Answered before anything was saved: no version was shown.
+    expect((await stored(ids.answeredBeforeAnyVersion)).sent_version).toBeNull();
+    // Only a note written through a link names an acceptance.
+    expect((await stored(ids.venueNoteAtAcceptance)).accepted_name).toBeNull();
+    // An acceptance the team archived keeps its name.
+    expect(await stored(ids.archivedAfterLinkAcceptance)).toEqual({ sent_version: 1, accepted_name: "Nora Bell" });
+    const settled: readonly string[] = [
+      ids.changesAskedThenSaved, ids.draft, ids.sentOnce,
+      ids.acceptedAgainByAnother, ids.acceptedAgainByTeam, ids.linkMadeWhileSent, ids.draftAtFillThenAccepted,
+      ids.answeredAfterAdminSave, ids.adminSavedWhileSent, ids.savedAfterAcceptance, ids.declinedAfterAdminSave,
+      ids.sentThenSavedAfterFill, ids.writtenByRelease, ids.archivedAfterAnswerOnAdminSave,
+      ids.changesAskedOnFirstSend, ids.changesAskedAfterAdminSave, ids.expiredAfterAdminSave, ids.acceptedTwiceAcrossVersions,
+      ids.answeredBeforeAnyVersion, ids.archivedAfterLinkAcceptance, ids.declinedBeforeHistory,
+    ];
     const after = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
     const unchanged = (rows: readonly (Stored & { id: string })[]) => rows.filter((row) => !settled.includes(row.id));
     expect(unchanged(after)).toEqual(unchanged(before));

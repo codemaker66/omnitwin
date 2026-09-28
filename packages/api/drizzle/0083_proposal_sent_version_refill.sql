@@ -1,53 +1,104 @@
 -- ---------------------------------------------------------------------------
--- 0083 — 0082's fill again, for proposals sent or accepted between the two
--- releases (T-635, X1)
+-- 0083 — what each client's link showed, settled from history (T-635, X1)
 --
--- 0082 added proposals.sent_version and proposals.accepted_name and filled
--- them, but the API running then wrote neither: a proposal it sent after 0082
--- applied can hold an older sent_version, or none, and one it saw accepted
--- has no accepted_name. This release writes both, so the fill runs again.
+-- 0082 added proposals.sent_version and proposals.accepted_name, but the API
+-- running then wrote neither, and every link showed its proposal's current
+-- version. The release carrying this migration still shows every link its
+-- current version, and keeps sent_version to what the link shows: a send
+-- records the version sent, a version saved while a proposal is with the
+-- client is on its link at once, and an answer records the version it was
+-- given on. The release that makes a link show its sent_version follows only
+-- once this migration has run, so it never reads a value the old API left.
 --
--- accepted_name: 0082's statement, unchanged. It fills only an empty column,
--- and only from the approval note written with the latest acceptance, which
--- this release writes as its own acceptance does.
+-- This settles every row to that same rule, from history rather than from
+-- what 0082 happened to fill:
+-- - with the client (sent): its current version, which its link shows;
+-- - answered (accepted, declined, expired, changes asked for, or archived
+--   straight from accepted): the newest version saved no later than its
+--   latest move into that status (into accepted, for an archived one), the
+--   version its link showed as it was answered. This can lower 0082's fill,
+--   which took the current version even when a version was saved after the
+--   answer. An answered proposal with no recorded move into its status (from
+--   before history was kept) keeps what it has, or its current version if it
+--   has none, as 0082 took; one answered before any version was saved keeps
+--   none.
+-- - anything else (a draft, withdrawn, archived otherwise) is left as it is;
+--   its link does not open.
 --
--- sent_version: 0082's rules for a proposal with none. A proposal with one is
--- only ever raised, to the newest version saved no later than its latest move
--- to "sent", as the link had shown it. It is not raised to the current
--- version as 0082's rule for a sent proposal would: from this release a
--- version a platform administrator saves while a proposal is out is a draft,
--- and the link keeps the version that was sent.
+-- accepted_name: a name 0082 took is cleared when a later acceptance, which
+-- the old API recorded without it, is not the one that name was given with.
+-- Then 0082's fill runs again: the name on the approval note written with the
+-- latest acceptance, through a link. The names this release writes are the
+-- ones on those notes, so both statements leave them as they are.
 --
--- This release reaches production before its migration (Railway rebuilds the
--- API as soon as master moves; Deploy migrates after CI). For those minutes a
--- proposal with no sent_version shows its current version, as it did before.
--- The whole file runs in one transaction; a lock that cannot be had within
--- ten seconds fails it, and nothing changes.
+-- Versions and moves are stamped with their transaction's start, not its
+-- commit. A version save that began before an answer and committed after it
+-- is taken as saved before it; so is one that fell between the team's or the
+-- older share code's answer and its history row, which those routes write as
+-- two statements. Only a save racing an answer falls in either window.
+--
+-- Every statement gives the same answer when run again. The whole file runs
+-- in one transaction; a lock that cannot be had within ten seconds fails it,
+-- and nothing changes.
 -- ---------------------------------------------------------------------------
 
 SET LOCAL lock_timeout = '10s';
 --> statement-breakpoint
-WITH sent AS (
+UPDATE proposals
+SET sent_version = current_version
+WHERE status = 'sent'
+  AND current_version >= 1
+  AND sent_version IS DISTINCT FROM current_version;
+--> statement-breakpoint
+WITH answered AS (
   SELECT p.id,
-    CASE
-      WHEN p.current_version < 1 THEN NULL
-      WHEN p.sent_version IS NULL AND p.status IN ('sent', 'accepted', 'declined', 'expired') THEN p.current_version
-      ELSE COALESCE(
-        (SELECT max(v.version) FROM proposal_versions v
-          WHERE v.proposal_id = p.id
-            AND v.created_at <= (
-              SELECT max(h.created_at) FROM proposal_status_history h
-              WHERE h.proposal_id = p.id AND h.to_status = 'sent')),
-        CASE WHEN p.sent_version IS NULL AND p.status = 'changes_requested' THEN p.current_version END)
-    END AS version
+    CASE WHEN p.status = 'archived' THEN 'accepted' ELSE p.status END AS answer
   FROM proposals p
+  WHERE p.current_version >= 1
+    AND (p.status IN ('accepted', 'declined', 'expired', 'changes_requested')
+      OR (p.status = 'archived' AND (
+        SELECT h.from_status FROM proposal_status_history h
+        WHERE h.proposal_id = p.id AND h.to_status = 'archived'
+        ORDER BY h.created_at DESC
+        LIMIT 1) = 'accepted'))
+),
+shown AS (
+  SELECT a.id,
+    (SELECT max(v.version) FROM proposal_versions v
+      WHERE v.proposal_id = a.id
+        AND v.created_at <= (
+          SELECT max(h.created_at) FROM proposal_status_history h
+          WHERE h.proposal_id = a.id AND h.to_status = a.answer)) AS version
+  FROM answered a
 )
 UPDATE proposals p
-SET sent_version = sent.version
-FROM sent
-WHERE p.id = sent.id
-  AND sent.version IS NOT NULL
-  AND (p.sent_version IS NULL OR p.sent_version < sent.version);
+SET sent_version = shown.version
+FROM shown
+WHERE p.id = shown.id
+  AND shown.version IS NOT NULL
+  AND p.sent_version IS DISTINCT FROM shown.version;
+--> statement-breakpoint
+UPDATE proposals p
+SET sent_version = p.current_version
+WHERE p.sent_version IS NULL
+  AND p.current_version >= 1
+  AND p.status IN ('accepted', 'declined', 'expired', 'changes_requested')
+  AND NOT EXISTS (
+    SELECT 1 FROM proposal_status_history h
+    WHERE h.proposal_id = p.id AND h.to_status = p.status);
+--> statement-breakpoint
+UPDATE proposals p
+SET accepted_name = NULL
+WHERE p.accepted_name IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM proposal_comments c
+    WHERE c.proposal_id = p.id
+      AND c.kind = 'approval_note'
+      AND c.share_token_id IS NOT NULL
+      AND btrim(c.author_name) = p.accepted_name
+      AND c.created_at = (
+        SELECT max(h.created_at) FROM proposal_status_history h
+        WHERE h.proposal_id = p.id AND h.to_status = 'accepted'));
 --> statement-breakpoint
 WITH latest AS (
   SELECT DISTINCT ON (h.proposal_id) h.proposal_id, h.created_at
