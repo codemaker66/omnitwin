@@ -457,7 +457,8 @@ describe("the open deal", () => {
     // Saving anything reads the deal again quietly; someone has moved it on since.
     fireEvent.change(panel.getByLabelText("A follow-up"), { target: { value: "Book the piper" } });
     fireEvent.click(panel.getByRole("button", { name: "Add" }));
-    expect(await panel.findByRole("button", { name: "Mark the revised proposal sent" })).toBeDefined();
+    // The re-read has landed once the path shows the stage the deal moved to.
+    expect(await panel.findByText("Negotiation", { selector: ".pl-path li" })).toBeDefined();
     expect(screen.queryByTestId("deal-confirm-won")).toBeNull();
   });
 
