@@ -697,9 +697,12 @@ describe("the ledger and the open proposal", () => {
     const panel = within(await openProposal());
     let fail: (error: unknown) => void = () => undefined;
     mocks.getDeskProposal.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+    const reads = mocks.getDeskProposal.mock.calls.length;
     fireEvent.click(panel.getByTestId("withdraw-button"));
     fireEvent.click(panel.getByTestId("withdraw-confirm-button"));
     expect(await panel.findByText("Refreshing the proposal…")).toBeDefined();
+    // Said as soon as it is asked for; failed once it has gone out.
+    await waitFor(() => { expect(mocks.getDeskProposal.mock.calls.length).toBe(reads + 1); });
     await act(async () => { fail(new Error("offline")); await Promise.resolve(); });
     await waitFor(() => { expect(panel.queryByText("Refreshing the proposal…")).toBeNull(); });
     // The proposal stays as the step left it.
@@ -1001,10 +1004,12 @@ describe("the next version", () => {
       render(<ProposalsDesk />);
       const panel = within(await openProposal());
       (await panel.findByTestId("composer-message")).focus();
+      const latestReads = mocks.getLatestProposalVersion.mock.calls.length;
       // A colleague saves the first version, and coming back reads it.
       existing = [proposal({ status: "draft", currentVersion: 1 })];
       act(() => { document.dispatchEvent(new Event("visibilitychange")); });
       await waitFor(() => { expect(panel.getByText("Reading version 1 to start from…")).toBeDefined(); });
+      await waitFor(() => { expect(mocks.getLatestProposalVersion.mock.calls.length).toBe(latestReads + 1); });
       if (elsewhere) row("p1").focus();
       act(() => { answer(version(1)); });
       await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toMatch(/^Starts from version 1\./u); });
