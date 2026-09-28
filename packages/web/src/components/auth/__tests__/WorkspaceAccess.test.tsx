@@ -282,6 +282,23 @@ describe("authoritative account access", () => {
     expect(reloadHeld()).toBe(true);
   });
 
+  it("keeps the page let go once its own sign-out has gone through, while Clerk leaves it", async () => {
+    const reloadHeld = (): boolean => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    rememberDraft("db-user", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    mocks.getCurrentAuthUser.mockRejectedValue(new ApiError(503, "Unavailable", "SERVER_ERROR"));
+    mocks.signOut.mockResolvedValueOnce(undefined);
+    render(<Flow />);
+    await screen.findByRole("heading", { name: "Connection unavailable" });
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    await waitFor(() => { expect(mocks.signOut).toHaveBeenCalledWith({ redirectUrl: "/login" }); });
+    await act(async () => { await Promise.resolve(); });
+    expect(reloadHeld()).toBe(false);
+  });
+
   it("keeps sign-out errors actionable without leaving a working indicator", async () => {
     mocks.getCurrentAuthUser.mockRejectedValue(new ApiError(403, "Invite", "INVITATION_REQUIRED"));
     const signout = deferred<undefined>();
