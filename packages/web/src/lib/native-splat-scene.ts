@@ -72,6 +72,14 @@ function opacityOf(source: Source): number {
   const value = source.opacity();
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
+/** An exclusion mask on the host's fixed grid. One already that size (the
+ * floor skin's own mask) is used as it is; any other is resampled. Throws for
+ * a mask whose data does not match its size. */
+function exclusionMaskOnHostGrid(mask: SplatExclusion["mask"]): Uint8Array {
+  if (mask.data.length !== mask.width * mask.height) throw new Error("The exclusion mask size does not match its data.");
+  if (mask.width === EXCLUSION_MASK_WIDTH && mask.height === EXCLUSION_MASK_HEIGHT) return mask.data;
+  return resampleExclusionMask(mask, EXCLUSION_MASK_WIDTH, EXCLUSION_MASK_HEIGHT);
+}
 
 /** One instance per scene; all native sources share one global sorting domain. */
 export class NativeSplatScene {
@@ -212,11 +220,14 @@ export class NativeSplatScene {
   get exclusionMask(): DataTexture { return this.exclusionTexture; }
 
   setExclusion(owner: object, exclusion: SplatExclusion | null): void {
-    this.exclusionOwner = owner;
-    this.exclusion = exclusion;
     const data = this.exclusionTexture.image.data;
     if (!(data instanceof Uint8Array)) throw new Error("The exclusion mask must be 8-bit.");
-    data.set(exclusion === null ? new Uint8Array(data.length) : resampleExclusionMask(exclusion.mask, EXCLUSION_MASK_WIDTH, EXCLUSION_MASK_HEIGHT));
+    // The mask is prepared before the owner and matrix change: one that cannot
+    // be read throws here, leaving the current matrix paired with its own mask.
+    if (exclusion === null) data.fill(0);
+    else data.set(exclusionMaskOnHostGrid(exclusion.mask));
+    this.exclusionOwner = owner;
+    this.exclusion = exclusion;
     this.exclusionTexture.needsUpdate = true;
     for (const snapshot of this.snapshots.values()) this.updateSnapshot(snapshot);
     this.invalidate();

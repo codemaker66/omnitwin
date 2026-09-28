@@ -524,8 +524,15 @@ export function PlannerScene(): ReactElement {
                   identity (it carries its own baked alignment instead), so
                   drawing the capture-frame floor under THAT transform would
                   stand it on edge. Only the staged capture it was built for
-                  may load or draw it. */}
-              <StageFloor roomSlug={captureSource === "staged" ? roomSlug : null} transform={transform} active={splatActive} />
+                  may load or draw it. It shows in Capture mode only: Combined
+                  mode draws the model floor at y = 0, which the measured floor
+                  (−10 to +3.9 cm, tilted 0.22°) would fight, so Combined keeps
+                  the model floor over the capture's own floor. */}
+              <StageFloor
+                roomSlug={captureSource === "staged" ? roomSlug : null}
+                transform={transform}
+                active={splatActive && layerMode === "splat"}
+              />
             </group>
           )}
           {!timelinePreviewActive && <>

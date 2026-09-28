@@ -186,6 +186,18 @@ describe("RoomSplatScene runtime wiring", () => {
     expect(transform.scale).toEqual(layer["scale"]);
   });
 
+  // The walk re-renders on every progress tick. A fresh transform object each
+  // time re-ran the floor's exclusion effect, clearing and re-cutting the
+  // splat host's floor mask on every tick (T-639 final review).
+  it("hands the stage floor the same transform object when a re-render keeps the room", () => {
+    const { rerender } = render(<RoomSplatScene room={ROOM} />);
+    const first = recorded.floor?.["transform"];
+    expect(first).toBeDefined();
+
+    rerender(<RoomSplatScene room={ROOM} onProgress={() => undefined} />);
+    expect(recorded.floor?.["transform"]).toBe(first);
+  });
+
   it("drives the camera's pixel ratios from the profile", () => {
     render(<RoomSplatScene room={ROOM} />);
 

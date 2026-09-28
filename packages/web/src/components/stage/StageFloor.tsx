@@ -11,6 +11,7 @@ import {
 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { texture as textureNode, uniform, uv, vec4 } from "three/tsl";
+import { GENERATED_VENUE_SLUG } from "../../data/generated/trades-hall-splat-bundles.js";
 import type { RuntimeAssetViewTransform } from "../../lib/runtime-package-resolution.js";
 import {
   FloorSkinManifestSchema,
@@ -28,9 +29,14 @@ import { useAssetDeviceTier } from "../../hooks/use-splat-runtime-profile.js";
 import { nativeSplatScene } from "../../lib/native-splat-scene.js";
 import { gaussianSplatsAvailable } from "../../lib/splat-access.js";
 
+interface FloorTile {
+  readonly geometry: BufferGeometry;
+  readonly map: Texture;
+}
+
 interface LoadedFloor {
   readonly manifest: FloorSkinManifest;
-  readonly tiles: readonly { readonly geometry: BufferGeometry; readonly map: Texture }[];
+  readonly tiles: readonly FloorTile[];
   readonly slab: Uint8Array;
 }
 
@@ -42,17 +48,51 @@ interface KeyedFloor {
   readonly floor: LoadedFloor;
 }
 
+/** Floors whose geometries and textures have been disposed. None is ever
+ * rendered again: three would upload the disposed resources afresh, and
+ * nothing would dispose that upload. */
+const releasedFloors = new WeakSet<LoadedFloor>();
+
+function releaseTiles(tiles: readonly FloorTile[]): void {
+  for (const tile of tiles) { tile.geometry.dispose(); tile.map.dispose(); }
+}
+
+function releaseFloor(floor: LoadedFloor): void {
+  releasedFloors.add(floor);
+  releaseTiles(floor.tiles);
+}
+
 async function readBytes(url: string, signal: AbortSignal, what: string): Promise<ArrayBuffer> {
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`The ${what} could not be read (${String(response.status)}).`);
   return response.arrayBuffer();
 }
 
-async function loadFloor(url: string, tierName: FloorSkinTier, signal: AbortSignal): Promise<LoadedFloor> {
+/** One tile's texture and its displaced grid; the texture is disposed if the grid cannot be built. */
+async function loadTile(loader: TextureLoader, url: string, manifest: FloorSkinManifest, index: number, heights: Int16Array): Promise<FloorTile> {
+  const map = await loader.loadAsync(url);
+  map.colorSpace = SRGBColorSpace;
+  map.flipY = false;
+  map.anisotropy = 8;
+  map.needsUpdate = true;
+  try {
+    return { geometry: floorSkinTileGeometry(manifest, index, heights), map };
+  } catch (reason: unknown) {
+    map.dispose();
+    throw reason;
+  }
+}
+
+async function loadFloor(url: string, roomSlug: string, tierName: FloorSkinTier, signal: AbortSignal): Promise<LoadedFloor> {
   const base = url.slice(0, url.lastIndexOf("/") + 1);
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`The floor skin could not be read (${String(response.status)}).`);
   const manifest = FloorSkinManifestSchema.parse(await response.json());
+  // The package says what it was built for. One for another venue or room is
+  // measured in another capture's frame and must never stand in for this floor.
+  if (manifest.venue !== GENERATED_VENUE_SLUG || manifest.room !== roomSlug) {
+    throw new Error(`The floor skin at ${url} was built for ${manifest.venue}/${manifest.room}, not ${GENERATED_VENUE_SLUG}/${roomSlug}.`);
+  }
   const [heightBuffer, slabBuffer] = await Promise.all([
     readBytes(base + manifest.height.file, signal, "floor height grid"),
     readBytes(base + manifest.slab.file, signal, "floor slab mask"),
@@ -60,21 +100,24 @@ async function loadFloor(url: string, tierName: FloorSkinTier, signal: AbortSign
   const heights = decodeFloorHeights(heightBuffer, manifest);
   const slab = new Uint8Array(slabBuffer);
   if (slab.length !== manifest.slab.width * manifest.slab.height) throw new Error("The floor slab mask has the wrong size.");
+  const files = manifest.tiers[tierName].files.slice(0, manifest.tiles.length);
+  if (files.length !== manifest.tiles.length) {
+    throw new Error(`The floor skin's ${tierName} tier has ${String(files.length)} files for ${String(manifest.tiles.length)} tiles.`);
+  }
   const loader = new TextureLoader();
-  const files = manifest.tiers[tierName].files;
-  const tiles = await Promise.all(manifest.tiles.map(async (_, index) => {
-    const file = files[index];
-    if (file === undefined) throw new Error(`The floor skin tier lacks tile ${String(index)}.`);
-    const map = await loader.loadAsync(base + file);
-    map.colorSpace = SRGBColorSpace;
-    map.flipY = false;
-    map.anisotropy = 8;
-    map.needsUpdate = true;
-    return { geometry: floorSkinTileGeometry(manifest, index, heights), map };
-  }));
+  // Every tile settles before anything is decided, so a failed or superseded
+  // load disposes each tile that did arrive instead of leaving it resident.
+  const settled = await Promise.allSettled(files.map((file, index) => loadTile(loader, base + file, manifest, index, heights)));
+  const tiles = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
   if (signal.aborted) {
-    for (const tile of tiles) { tile.geometry.dispose(); tile.map.dispose(); }
+    releaseTiles(tiles);
     throw new DOMException("Aborted", "AbortError");
+  }
+  const failed = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failed !== undefined) {
+    releaseTiles(tiles);
+    const reason: unknown = failed.reason;
+    throw reason instanceof Error ? reason : new Error(String(reason));
   }
   return { manifest, tiles, slab };
 }
@@ -84,7 +127,8 @@ async function loadFloor(url: string, tierName: FloorSkinTier, signal: AbortSign
  * drawn under the same `transform` as its splat tiles. While shown, it hides
  * the floor-slab splats underneath via the host's exclusion test (see
  * `native-splat-scene.ts`). Renders nothing for a room without a floor-skin
- * package, while loading, or while `active` is false.
+ * package, where Gaussian splats may not run, while loading, or while
+ * `active` is false.
  */
 export function StageFloor({ roomSlug, transform, active }: {
   readonly roomSlug: string | null;
@@ -95,14 +139,18 @@ export function StageFloor({ roomSlug, transform, active }: {
   const invalidate = useThree((state) => state.invalidate);
   const deviceTier = useAssetDeviceTier();
   const tierName = floorSkinTier(deviceTier);
-  const url = roomSlug === null ? null : floorSkinManifestUrl(roomSlug, import.meta.env.VITE_SPLAT_BASE_URL);
+  // The floor replaces part of the capture, so it is held wherever the
+  // capture is: nothing is fetched where Gaussian splats may not run.
+  const splatsAvailable = gaussianSplatsAvailable();
+  const url = roomSlug === null || !splatsAvailable ? null : floorSkinManifestUrl(roomSlug, import.meta.env.VITE_SPLAT_BASE_URL);
   const key = url === null ? null : `${url}|${tierName}`;
-  const colourMode = floorColourModeFromSearch(typeof window === "undefined" ? "" : window.location.search, gaussianSplatsAvailable());
+  const colourMode = floorColourModeFromSearch(typeof window === "undefined" ? "" : window.location.search, splatsAvailable);
   const [loaded, setLoaded] = useState<KeyedFloor | null>(null);
-  // Only a load whose key matches the room/tier showing right now counts:
-  // one still in flight for a room we have already left, or one left over
-  // from before a room change, must never draw or exclude against this room.
-  const floor = loaded !== null && loaded.key === key ? loaded.floor : null;
+  // Only a load whose key matches the room/tier showing right now counts, and
+  // never one already disposed: returning to a room (another room and back,
+  // or the planner's staged → package → staged flip) reaches the same key as
+  // the floor its previous visit disposed.
+  const floor = loaded !== null && loaded.key === key && !releasedFloors.has(loaded.floor) ? loaded.floor : null;
   const groupRef = useRef<Group>(null);
 
   // Keyed by room + device tier only, not by `active`: switching layer modes
@@ -110,18 +158,18 @@ export function StageFloor({ roomSlug, transform, active }: {
   // while the layer that will show it is not active yet, so activating it is
   // instant instead of popping in a frame later. A load that is no longer
   // wanted (its key superseded, or the component unmounted) is aborted, and
-  // anything it already decoded is disposed by this same effect's cleanup —
-  // never left for a later render to pick up, and never left resident once
-  // nothing can show it.
+  // whatever it produced is disposed by this effect's cleanup and cleared from
+  // state: a later visit to the same key loads afresh.
   useEffect(() => {
-    if (url === null) return;
+    if (url === null || roomSlug === null) return;
     const loadKey = `${url}|${tierName}`;
     const controller = new AbortController();
-    let loadedResult: LoadedFloor | null = null;
-    loadFloor(url, tierName, controller.signal)
+    let delivered: LoadedFloor | null = null;
+    loadFloor(url, roomSlug, tierName, controller.signal)
       .then((result) => {
-        if (controller.signal.aborted) return;
-        loadedResult = result;
+        // Superseded after the loader's last check: nothing will ever show it.
+        if (controller.signal.aborted) { releaseFloor(result); return; }
+        delivered = result;
         setLoaded({ key: loadKey, floor: result });
         invalidate();
       })
@@ -133,9 +181,12 @@ export function StageFloor({ roomSlug, transform, active }: {
       });
     return () => {
       controller.abort();
-      if (loadedResult !== null) for (const tile of loadedResult.tiles) { tile.geometry.dispose(); tile.map.dispose(); }
+      if (delivered === null) return;
+      const released = delivered;
+      releaseFloor(released);
+      setLoaded((current) => (current?.floor === released ? null : current));
     };
-  }, [url, tierName, invalidate]);
+  }, [url, roomSlug, tierName, invalidate]);
 
   const materials = useMemo(() => {
     if (floor === null) return [];
@@ -149,6 +200,13 @@ export function StageFloor({ roomSlug, transform, active }: {
     });
   }, [floor, colourMode]);
   useEffect(() => () => { for (const material of materials) material.dispose(); }, [materials]);
+
+  // The placement's values, not the transform object: a caller may build an
+  // equal transform on every render, and each re-run of the exclusion effect
+  // below clears and re-cuts the host's shared 512 KB mask and uploads it again.
+  const [px, py, pz] = transform.position;
+  const [rx, ry, rz] = transform.rotation;
+  const { scale } = transform;
 
   // R3F applies a group's position/rotation/scale props and attaches it to
   // the scene graph while committing — before any passive effect in this
@@ -170,17 +228,11 @@ export function StageFloor({ roomSlug, transform, active }: {
     });
     invalidate();
     return () => { host.clearExclusion(owner); invalidate(); };
-  }, [floor, active, scene, invalidate, transform]);
+  }, [floor, active, scene, invalidate, px, py, pz, rx, ry, rz, scale]);
 
   if (floor === null || !active) return null;
   return (
-    <group
-      ref={groupRef}
-      position={[...transform.position] as [number, number, number]}
-      rotation={[...transform.rotation] as [number, number, number]}
-      scale={transform.scale}
-      name="stage-floor"
-    >
+    <group ref={groupRef} position={[px, py, pz]} rotation={[rx, ry, rz]} scale={scale} name="stage-floor">
       {floor.tiles.map((tile, index) => {
         const material = materials[index];
         return material === undefined ? null : (

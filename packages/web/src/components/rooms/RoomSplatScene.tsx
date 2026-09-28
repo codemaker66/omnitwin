@@ -100,7 +100,9 @@ export function RoomSplatScene({
   onProgress,
   captureReadback = false,
 }: RoomSplatSceneProps): ReactElement {
-  const transform = runtimeAssetViewTransformForRoom(room, "staged");
+  // Memoised on the room: the scene re-renders on every progress tick, and the
+  // splat layers and the stage floor must not receive a new transform each time.
+  const transform = useMemo(() => runtimeAssetViewTransformForRoom(room, "staged"), [room]);
   const camera = runtimeAssetCameraViewForRoom(room, "staged");
   // The bundle's scanner-walk extent frames the camera; it does not contain all
   // captured wall/ceiling surfaces. Preserve the full interior capture. The old
