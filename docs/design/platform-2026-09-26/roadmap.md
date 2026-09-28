@@ -761,8 +761,10 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   event. Sales cannot read internal events, so on a proposal with an event it is sent a copy without the
   event. The notice says who answered (the name given on the page, or "The client"), what they did and to
   which proposal. Under that it gives the version they answered and their own words, and it opens that
-  proposal on the Proposals desk. A change the hallkeeper must see opens its event instead. A notice to
-  the owner alone waits on the notification policy (interrupt, periphery, digest).
+  proposal on the Proposals desk. A change the hallkeeper must see opens its event instead, for those who
+  read events. A salesperson who does not own the proposal cannot yet open it (reading one proposal is
+  limited to its owner and the venue floor roles). A notice to the owner alone waits on the notification
+  policy (interrupt, periphery, digest).
 - "Opened by the client" from `lastViewedAt`, excluding staff previews (`proposals.ts:1242`).
   Done on 28 September, as "the link was opened": a row reads "Sent 3 days ago, not opened yet", counting
   only opens since the latest send. The preview and the editor's Share panel never stamp. It cannot say

@@ -39,15 +39,35 @@ const ACT_WORDS: Readonly<Record<ClientAnswerAct, string>> = {
   comment: "wrote about",
 };
 
-/** Trimmed to a limit, with an ellipsis where it was cut, and never through
- *  the middle of a character written as two code units (most emoji). */
-function clipped(value: string, max: number): string {
+/** Characters as a reader sees them: a flag, a skin tone or a family is one.
+ *  Made once; a runtime without it clips by code point instead. */
+const graphemes: Intl.Segmenter | null = ((): Intl.Segmenter | null => {
+  try {
+    return new Intl.Segmenter("en", { granularity: "grapheme" });
+  } catch {
+    return null;
+  }
+})();
+
+/** Trimmed to a limit in code units, with an ellipsis where it was cut, and
+ *  never through the middle of a character. Without a way to tell
+ *  characters (`characters` null) it keeps whole code points, so a flag may
+ *  lose its second half but nothing is left half-written. */
+export function clipped(value: string, max: number, characters: Intl.Segmenter | null = graphemes): string {
   const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
-  const cut = trimmed.slice(0, max - 1);
-  const last = cut.charCodeAt(cut.length - 1);
-  const whole = last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
-  return `${whole.trimEnd()}…`;
+  let kept = "";
+  if (characters === null) {
+    kept = trimmed.slice(0, max - 1);
+    const last = kept.charCodeAt(kept.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) kept = kept.slice(0, -1);
+  } else {
+    for (const { segment } of characters.segment(trimmed)) {
+      if (kept.length + segment.length > max - 1) break;
+      kept += segment;
+    }
+  }
+  return `${kept.trimEnd()}…`;
 }
 
 export function clientAnswerNotice(input: ClientAnswerNoticeInput): ClientAnswerNotice {

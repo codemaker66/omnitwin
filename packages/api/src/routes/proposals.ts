@@ -326,6 +326,8 @@ async function recordProposalLifecycleChange(
     readonly logger: FastifyBaseLogger;
   },
 ): Promise<void> {
+  // What was being written when it failed, so the log says what was lost.
+  let writing = "all of it: the proposal's event could not be read";
   try {
     const context = await loadProposalEventContext(db, proposal);
 
@@ -338,6 +340,7 @@ async function recordProposalLifecycleChange(
     // or moving a status does not need telling what they just did.
     if (context === null) {
       if (input.sourceKind === "proposal") return;
+      writing = "the team's notices";
       await notifyCommercialTeam(db, {
         venueId: proposal.venueId,
         title: input.title,
@@ -348,7 +351,14 @@ async function recordProposalLifecycleChange(
       return;
     }
 
+    // The event's notices are only ever shown to roles that read internal
+    // events. A role that works the pipeline but does not (sales) is told of
+    // a client's answer below without the event, as on a proposal with none;
+    // the team's own changes are not repeated to it.
+    const eventReaders = COMMERCIAL_AUDIENCE_ROLES.filter((role) => roleReadsInternalEvents(role));
+    const outsideEvents = COMMERCIAL_AUDIENCE_ROLES.filter((role) => !roleReadsInternalEvents(role));
     const notifyHallkeeper = input.includeHallkeeperWhenHandoffExists && context.handoffPackId !== null;
+    writing = "all of it: the event's change, its notices and any copy for roles that do not read events";
     await recordEventPlanChange(db, {
       eventId: context.eventId,
       venueId: context.venueId,
@@ -363,13 +373,13 @@ async function recordProposalLifecycleChange(
       title: input.title,
       summary: input.summary,
       affectedSurfaces: [...input.affectedSurfaces],
-      // The commercial audience (staff, venue admin, sales) always hears;
-      // the hallkeeper is added only when there is a handoff pack to disturb.
-      // Before this, only "staff" was notified, so a venue admin watching the
-      // same proposal saw nothing.
+      // The commercial audience that reads events (staff, venue admin,
+      // manager) always hears; the hallkeeper is added only when there is a
+      // handoff pack to disturb. Before this, only "staff" was notified, so a
+      // venue admin watching the same proposal saw nothing.
       audienceRoles: notifyHallkeeper
-        ? [...COMMERCIAL_AUDIENCE_ROLES, "hallkeeper"]
-        : [...COMMERCIAL_AUDIENCE_ROLES],
+        ? [...eventReaders, "hallkeeper"]
+        : [...eventReaders],
       riskLevel: notifyHallkeeper ? "attention" : "info",
       requiresHallkeeperAcknowledgement: notifyHallkeeper,
       // The hallkeeper is taken to the event it disturbs; otherwise everyone
@@ -377,11 +387,8 @@ async function recordProposalLifecycleChange(
       actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : proposalDeskPath(proposal.id),
     });
 
-    // A role that works the pipeline but does not read internal events
-    // (sales) is never shown a notice that belongs to an event, so a client's
-    // answer reaches it as it would on a proposal with no event.
-    const outsideEvents = COMMERCIAL_AUDIENCE_ROLES.filter((role) => !roleReadsInternalEvents(role));
     if (input.sourceKind !== "proposal" && outsideEvents.length > 0) {
+      writing = "only the copy for roles that do not read events; the event's change and notices were written";
       await notifyVenueRoles(db, {
         venueId: proposal.venueId,
         title: input.title,
@@ -403,6 +410,7 @@ async function recordProposalLifecycleChange(
       configurationId: proposal.configurationId,
       sourceKind: input.sourceKind,
       sourceId: input.sourceId,
+      lost: writing,
       error: err instanceof Error ? err.message : String(err),
     }, "proposal change committed but its announcement could not be written");
   }

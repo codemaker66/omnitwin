@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
+import { clientAnswerNotice, clipped, proposalDeskPath } from "../services/client-answer-notice.js";
 
 // ---------------------------------------------------------------------------
 // What the venue team is told when a client answers a proposal (roadmap X1):
@@ -47,13 +47,27 @@ describe("clientAnswerNotice", () => {
     expect(notice.summary.endsWith("…”")).toBe(true);
   });
 
-  it("never cuts through the middle of an emoji", () => {
-    // 78 letters, then an emoji across the 79th and 80th code units, then more.
-    const name = `${"E".repeat(78)}🎉 and friends`;
-    const notice = clientAnswerNotice({ act: "accepted", proposalTitle: "Autumn gala", version: 1, name, words: null });
-    expect(notice.title).toBe(`${"E".repeat(78)}… accepted Autumn gala`);
-    // No half of a pair left behind: in a /u pattern a lone half is a Cs code point.
-    expect(/\p{Cs}/u.test(notice.title)).toBe(false);
+  it("never cuts through the middle of a character, emoji and flags included", () => {
+    const accepted = (name: string): string =>
+      clientAnswerNotice({ act: "accepted", proposalTitle: "Autumn gala", version: 1, name, words: null }).title;
+    // A name is kept to 80 code units: 79 and the ellipsis. Each character
+    // below would run past the 79th, so it goes whole.
+    for (const [lead, character] of [[78, "🎉"], [78, "🇬🇧"], [77, "👍🏽"], [75, "👨‍👩‍👧"]] as const) {
+      const title = accepted(`${"E".repeat(lead)}${character} and friends`);
+      expect(title).toBe(`${"E".repeat(lead)}… accepted Autumn gala`);
+      // No half of a pair left behind: in a /u pattern a lone half is a Cs code point.
+      expect(/\p{Cs}/u.test(title)).toBe(false);
+    }
+    // One that fits is kept whole.
+    expect(accepted(`${"E".repeat(75)}🇬🇧 and friends`)).toBe(`${"E".repeat(75)}🇬🇧… accepted Autumn gala`);
+  });
+
+  it("keeps whole code points where the runtime cannot tell characters", () => {
+    // Without a way to tell characters, nothing is left half-written.
+    expect(clipped(`${"E".repeat(78)}🎉 and friends`, 80, null)).toBe(`${"E".repeat(78)}…`);
+    const flag = clipped(`${"E".repeat(76)}🇬🇧 and friends`, 80, null);
+    expect(/\p{Cs}/u.test(flag)).toBe(false);
+    expect(flag.length).toBeLessThanOrEqual(80);
   });
 });
 

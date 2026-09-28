@@ -74,6 +74,8 @@ function headers(id = STAFF, role = "staff"): { authorization: string } {
 describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a save", () => {
   let pool: Pool;
   let server: FastifyInstance;
+  /** What the routes log at error level, one JSON line each. */
+  const errorLog: string[] = [];
   const fixtureSchema = `announce_isolation_${randomUUID().replaceAll("-", "")}`;
   const tables: PgTable[] = [
     schema.proposals, schema.proposalVersions, schema.proposalStatusHistory,
@@ -115,7 +117,7 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
         CHECK (audience_role IN (${DEPLOYED_ROLE_VALUES}))`);
 
     const db = drizzle(pool, { schema });
-    server = Fastify();
+    server = Fastify({ logger: { level: "error", stream: { write: (line: string) => { errorLog.push(line); } } } });
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
     await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
     await server.register(notificationRoutes, { db, prefix: "/notifications" });
@@ -253,6 +255,36 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     expect(await shown("sales")).toEqual([notice]);
     // Staff read the event, and are told once.
     expect(await shown("staff")).toEqual([notice]);
+    // Nothing is addressed to sales on the event, where it could never be shown to them.
+    const onEvent = await pool.query<{ count: string }>(
+      "SELECT count(*) AS count FROM event_plan_notifications WHERE audience_role = 'sales' AND event_id IS NOT NULL",
+    );
+    expect(Number(onEvent.rows[0]?.count)).toBe(0);
+  });
+
+  it("keeps the answer and the event's notices when the copy for sales cannot be written, and says which was lost", async () => {
+    await pool.query(`CREATE OR REPLACE FUNCTION reject_sales_copy() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.audience_role = 'sales' AND NEW.event_id IS NULL THEN RAISE EXCEPTION 'injected copy failure'; END IF; RETURN NEW; END $$`);
+    await pool.query("CREATE TRIGGER reject_sales_copy BEFORE INSERT ON event_plan_notifications FOR EACH ROW EXECUTE FUNCTION reject_sales_copy()");
+    try {
+      errorLog.length = 0;
+      const token = await sentWithLink();
+      const accepted = await server.inject({ method: "POST", url: `/proposal-share/${token}/approve`, payload: { version: 1 } });
+      expect(accepted.statusCode, accepted.body).toBe(200);
+      const status = await pool.query<{ status: string }>("SELECT status FROM proposals WHERE id = $1", [PROPOSAL]);
+      expect(status.rows[0]?.status).toBe("accepted");
+      expect(await changeCount()).toBe(1);
+      expect(await shown("staff")).toHaveLength(1);
+      expect(await shown("sales")).toEqual([]);
+      const failures = errorLog.map((line) => JSON.parse(line) as { event?: string; lost?: string })
+        .filter((entry) => entry.event === "proposal.lifecycle_announcement_failed");
+      expect(failures.map((entry) => entry.lost)).toEqual([
+        "only the copy for roles that do not read events; the event's change and notices were written",
+      ]);
+    } finally {
+      await pool.query("DROP TRIGGER reject_sales_copy ON event_plan_notifications");
+      await pool.query("DROP FUNCTION reject_sales_copy()");
+    }
   });
 
   it("takes the hallkeeper to the event and sales to the proposal when changes are asked for with a handoff pack", async () => {
@@ -270,8 +302,8 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
 
   it("still saves the version when the announcement violates the CHECK", async () => {
     // Put back 0042's real seven-value constraint: the state of production
-    // between the roles lane deploying and 0073 applying. `sales` is in the
-    // commercial audience and not in those seven, so this exact insert raises
+    // between the roles lane deploying and 0073 applying. `manager` is in the
+    // event's audience and not in those seven, so this exact insert raises
     // SQLSTATE 23514.
     await pool.query("ALTER TABLE event_plan_changes DROP CONSTRAINT event_plan_changes_audience_json_check");
     await pool.query(audienceCheckSql(PRE_0073_AUDIENCE_VALUES));
