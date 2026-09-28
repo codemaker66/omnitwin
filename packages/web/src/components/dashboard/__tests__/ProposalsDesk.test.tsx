@@ -1015,6 +1015,23 @@ describe("the next version", () => {
     }
   });
 
+  it("leaves focus where the booker went while Check again was checking", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    let answer: (next: Record<string, unknown>) => void = () => undefined;
+    mocks.getProposalNextVersion.mockRejectedValueOnce(new Error("offline")).mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const button = await panel.findByTestId("composer-check-again");
+    button.focus();
+    fireEvent.click(button);
+    await waitFor(() => { expect(panel.getByTestId("composer-check-again").textContent).toBe("Checking…"); });
+    const message = panel.getByTestId("composer-message");
+    message.focus();
+    act(() => { answer(checked()); });
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    expect(document.activeElement).toBe(message);
+  });
+
   it("says nothing and moves nothing for a check made again on coming back, only for one the booker asked for", async () => {
     existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
     mocks.getProposalNextVersion.mockRejectedValueOnce(new Error("offline")).mockRejectedValueOnce(new Error("offline")).mockResolvedValue(checked());
