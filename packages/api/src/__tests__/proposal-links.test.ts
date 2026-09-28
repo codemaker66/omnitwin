@@ -85,7 +85,7 @@ describe("planProposalLinks", () => {
       .toMatchObject({ ok: false, status: 422, code: "VENUE_MISMATCH" });
     expect(planProposalLinks(VENUE, { enquiryId: ENQUIRY }, { enquiry: own.enquiry, layouts: own.layouts }))
       .toEqual({ ok: true, links: { opportunityId: null, enquiryId: ENQUIRY, configurationId: LAYOUT } });
-    // Another client's layout with this enquiry is refused, as with a deal.
+    // A layout that is not this enquiry's is refused with it, as with a deal.
     expect(planProposalLinks(VENUE, { enquiryId: ENQUIRY, configurationId: OTHER_LAYOUT }, { enquiry: own.enquiry, layouts: own.layouts }))
       .toMatchObject({ ok: false, status: 422, code: "LINK_MISMATCH", field: "configurationId" });
   });
