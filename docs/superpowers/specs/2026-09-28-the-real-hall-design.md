@@ -21,7 +21,7 @@ Measured causes on the current renderer (three 0.186 WebGPURenderer + patched `G
 4. Phones: Safari reports "Apple GPU", which `device-tier.ts` maps to the high tier, so iPhones receive all 6 million splats.
 5. Capture weak spots: fuzzy window wall, dome partly off-surface, baked capture-day sky, SOG palette dulls gilt.
 
-The 28 September proof (`render-proof/`, product renderer, identical cameras, control match 53–63 dB) shows the photographic floor registering to the splats within 1–2 mm and replacing the smear with real boards, grain and board ends. The photo-staging proof (`photo-staging/`) shows furniture composited into a Matterport photograph, lit by it, reading as real.
+The 28 September proof (`render-proof/`, product renderer, identical cameras, control match 53–63 dB) shows the photographic floor registering to the splats within 1–2 mm and replacing the smear with real boards, grain and board ends. The photo-staging proof (`photo-staging/`) composites furniture into a Matterport photograph, lit by it: scale, perspective, grounding and white balance convince, but the furnished frames do not yet pass as photographs (AI-generated chair finish, generic cloths, edges crisper than the photograph, one light probe for every table).
 
 ## 2. Principles
 
