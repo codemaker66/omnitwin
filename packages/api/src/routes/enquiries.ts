@@ -6,7 +6,7 @@ import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canAccessResource, canManageCommercial, canManageVenue } from "../utils/query.js";
-import { canTransition, enquiryKind, ENQUIRY_STATES } from "../state-machines/enquiry.js";
+import { canTransition, enquiryKind, ENQUIRY_STATES, isCustomerMove } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
@@ -297,6 +297,17 @@ export async function enquiryRoutes(
         error: `Cannot transition from '${enquiry.state}' to '${parsed.data.status}' with role '${request.user.role}'`,
         code: "INVALID_TRANSITION",
       });
+    }
+
+    // Owning an enquiry makes someone its customer, not the venue's team. The
+    // customer's own moves (submit, withdraw) are the owner's wherever the
+    // enquiry is; the venue's (review, decide, archive, reopen) are its own
+    // team's alone, whatever role the owner holds elsewhere or with no venue
+    // yet: a decision emails the venue's answer in the venue's name.
+    if (!isCustomerMove(enquiry.state, parsed.data.status, kind)
+      && !canManageVenue(request.user, enquiry.venueId)
+      && !canManageCommercial(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
     const fromStatus = enquiry.state;

@@ -3,6 +3,7 @@ import {
   canTransition,
   enquiryKind,
   getAvailableTransitions,
+  isCustomerMove,
   ENQUIRY_STATES,
 } from "../state-machines/enquiry.js";
 
@@ -181,5 +182,29 @@ describe("requests", () => {
     expect(canTransition("submitted", "archived", "staff")).toBe(false);
     expect(canTransition("archived", "submitted", "staff")).toBe(false);
     expect(canTransition("under_review", "approved", "staff", "booking")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isCustomerMove — the owner's own moves, as against the venue's
+// ---------------------------------------------------------------------------
+
+describe("isCustomerMove", () => {
+  it("is the customer's submitting and withdrawing, for a booking and for a request", () => {
+    for (const kind of ["booking", "request"] as const) {
+      expect(isCustomerMove("draft", "submitted", kind), kind).toBe(true);
+      expect(isCustomerMove("submitted", "withdrawn", kind), kind).toBe(true);
+      expect(isCustomerMove("under_review", "withdrawn", kind), kind).toBe(true);
+    }
+  });
+
+  it("is never the venue's review, decision, filing or reopening, nor a move outside the tables", () => {
+    for (const [from, to] of [["submitted", "under_review"], ["under_review", "approved"], ["under_review", "rejected"],
+      ["approved", "archived"], ["rejected", "archived"], ["approved", "draft"]] as const) {
+      expect(isCustomerMove(from, to), `${from}→${to}`).toBe(false);
+    }
+    for (const [from, to] of [["submitted", "archived"], ["under_review", "archived"], ["archived", "submitted"]] as const) {
+      expect(isCustomerMove(from, to, "request"), `${from}→${to}`).toBe(false);
+    }
   });
 });

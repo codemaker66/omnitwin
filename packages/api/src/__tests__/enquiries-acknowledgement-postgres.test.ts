@@ -548,6 +548,31 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
       }
     });
 
+    // Owning an enquiry makes someone its customer, not the venue's team: a
+    // venue role elsewhere, or with no venue yet, may withdraw their own but
+    // never review, approve or decline it, and no decision is emailed.
+    it("keeps the venue's moves to its own team, whoever owns the enquiry", async () => {
+      const elsewhere = { id: randomUUID(), email: "events@elsewhere.test", role: "staff", venueId: randomUUID() };
+      const unplaced = { id: randomUUID(), email: "new@example.test", role: "manager", venueId: null };
+      for (const owner of [elsewhere, unplaced]) {
+        const enquiryId = await submitEnquiry();
+        await pool.query("UPDATE enquiries SET user_id = $1 WHERE id = $2", [owner.id, enquiryId]);
+        expect(await transition(enquiryId, "under_review", owner), `${owner.email} review`).toMatchObject({ statusCode: 403, code: "FORBIDDEN" });
+        await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [enquiryId]);
+        for (const status of ["approved", "rejected"]) {
+          expect(await transition(enquiryId, status, owner), `${owner.email} ${status}`).toMatchObject({ statusCode: 403, code: "FORBIDDEN" });
+        }
+        expect(await storedState(enquiryId)).toBe("under_review");
+        // Their own move stands: they may withdraw what they sent.
+        expect(await transition(enquiryId, "withdrawn", owner)).toMatchObject({ statusCode: 200, state: "withdrawn" });
+      }
+      await new Promise((resolve) => { setTimeout(resolve, 600); });
+      const decisions = await pool.query<{ count: string }>(
+        "SELECT count(*) AS count FROM email_sends WHERE idempotency_key LIKE 'enquiry-approved:%' OR idempotency_key LIKE 'enquiry-rejected:%'",
+      );
+      expect(decisions.rows[0]?.count).toBe("0");
+    });
+
     it("leaves a booking's decisions as they were: an approval still emails the client", async () => {
       const enquiryId = await submitEnquiry();
       expect((await transition(enquiryId, "archived")).code).toBe("INVALID_TRANSITION");
