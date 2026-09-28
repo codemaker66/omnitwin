@@ -71,10 +71,13 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
   }
 
   // Opening one quote, and moving it where its state allows, takes the people
-  // its list and every change to it take, and whoever made it. A quote
-  // carries money, and hallkeepers never see prices (goal 18 6b).
+  // its list and every change to it take. A quote carries money, and
+  // hallkeepers never see prices (goal 18 6b).
   function open(f: Fixture) {
     return server.inject({ method: "GET", url: `/quotes/${f.quote.id}`, headers: f.headers });
+  }
+  function list(f: Fixture) {
+    return server.inject({ method: "GET", url: "/quotes", headers: f.headers });
   }
   function issue(f: Fixture) {
     return server.inject({ method: "POST", url: `/quotes/${f.quote.id}/transition`, headers: f.headers, payload: { status: "issued" } });
@@ -100,6 +103,9 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     const f = await fixture("hallkeeper");
     await db.update(schema.quotes).set({ createdBy: f.actorId }).where(eq(schema.quotes.id, f.quote.id));
     expect((await open(f)).statusCode).toBe(403);
+    const listed = await list(f);
+    expect(listed.statusCode).toBe(403);
+    expect(listed.body).not.toContain(f.quote.id);
     expect((await issue(f)).statusCode).toBe(403);
     expect((await stored(f)).quote?.status).toBe("draft");
   });
@@ -135,13 +141,12 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
   });
 
   // A quote is money on a page, and hallkeepers never see prices (goal 18 6b).
-  // The list falls back to "rows I created", which is empty for a role that
-  // cannot create one.
+  // The list refuses anyone outside the commercial roles, as the pipeline does.
   it("keeps the venue's quotes out of a hallkeeper's list", async () => {
     const f = await fixture("hallkeeper");
-    const response = await server.inject({ method: "GET", url: "/quotes", headers: f.headers });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ data: [] });
+    const response = await list(f);
+    expect(response.statusCode).toBe(403);
+    expect(response.body).not.toContain(f.quote.id);
   });
   it("lets a venue admin discover a colleague's venue quote", async () => {
     const f = await fixture("admin");

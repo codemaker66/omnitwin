@@ -294,17 +294,16 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
     expect(byId.get(inHand)?.latestTotalMinor).toBe(1_200_000);
   });
 
-  it("keeps each venue's proposals to itself, and a role without the commercial desk to its own", async () => {
+  it("keeps each venue's proposals to itself, and refuses a role without the commercial desk, even what it made", async () => {
     await proposal("Ours", "draft", "2026-09-05T10:00:00Z");
     await proposal("Theirs", "draft", "2026-09-05T10:00:00Z", { venueId: OTHER_VENUE, createdBy: randomUUID() });
     expect((await desk()).data.map((row) => row.title)).toEqual(["Ours"]);
 
+    // A proposal carries money (goal 18 6b): who made it grants nothing.
     const planner = randomUUID();
     await proposal("A planner's own", "draft", "2026-09-06T10:00:00Z", { createdBy: planner });
     const own = await server.inject({ method: "GET", url: "/proposals/desk", headers: headers("planner", null, planner) });
-    expect(own.statusCode).toBe(200);
-    const body = JSON.parse(own.body) as DeskBody;
-    expect(body.data.map((row) => row.title)).toEqual(["A planner's own"]);
-    expect(body.statusCounts).toEqual({ draft: 1 });
+    expect(own.statusCode).toBe(403);
+    expect(own.body).not.toContain("A planner's own");
   });
 });

@@ -118,17 +118,24 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
 
   // A proposal carries money, and hallkeepers never see prices (goal 18 6b) —
   // the same reading that closed the priced analytics routes to them. The list
-  // falls back to "rows I created", which is empty for a role that cannot create.
-  it("keeps the venue's proposals out of a hallkeeper's list", async () => {
+  // and the desk refuse anyone outside the commercial roles, as the pipeline does.
+  const LISTS = ["/proposals", "/proposals/desk"] as const;
+  async function listed(f: Fixture): Promise<readonly { readonly status: number; readonly shown: boolean }[]> {
+    const answers: { status: number; shown: boolean }[] = [];
+    for (const url of LISTS) {
+      const response = await server.inject({ method: "GET", url, headers: f.headers });
+      answers.push({ status: response.statusCode, shown: response.body.includes(f.proposal.id) });
+    }
+    return answers;
+  }
+  it("keeps the venue's proposals out of a hallkeeper's list and desk", async () => {
     const f = await fixture("hallkeeper");
-    const response = await server.inject({ method: "GET", url: "/proposals", headers: f.headers });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ data: [] });
+    expect(await listed(f)).toEqual(LISTS.map(() => ({ status: 403, shown: false })));
   });
   // Opening one proposal takes the people its list and every change to it
-  // take, and whoever made it. A proposal carries money, and hallkeepers never
-  // see prices (goal 18 6b); a salesperson opens a colleague's proposal when
-  // told a client has answered it.
+  // take. A proposal carries money, and hallkeepers never see prices (goal 18
+  // 6b); a salesperson opens a colleague's proposal when told a client has
+  // answered it.
   async function withVersion(f: Fixture): Promise<void> {
     await db.insert(schema.proposalVersions).values({ proposalId: f.proposal.id, version: 1,
       payload: savedPayload, sourceHash: proposalVersionPayloadDigest(savedPayload) });
@@ -165,6 +172,7 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     await withVersion(f);
     await db.update(schema.proposals).set({ createdBy: f.actorId }).where(eq(schema.proposals.id, f.proposal.id));
     expect(await opened(f)).toEqual(OPENINGS.map(() => 403));
+    expect(await listed(f)).toEqual(LISTS.map(() => ({ status: 403, shown: false })));
     const moved = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/transition`, headers: f.headers,
       payload: { status: "sent" } });
     expect(moved.statusCode).toBe(403);

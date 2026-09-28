@@ -85,11 +85,12 @@ export async function quoteRoutes(
       // Admin sees all venues
       // The venue's commercial roles see the venue's quotes. This must match
       // the create/mutate gate above, or a role could manage a quote it
-      // cannot find in its own list.
+      // cannot find in its own list. Anyone else is refused, as on opening
+      // one: a quote is money on a page, and who made it grants nothing.
     } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
       whereConditions.push(eq(quotes.venueId, user.venueId));
     } else {
-      whereConditions.push(eq(quotes.createdBy, user.id));
+      return reply.status(403).send({ error: "Only the venue commercial team can view quotes", code: "FORBIDDEN" });
     }
 
     const where = and(...whereConditions);

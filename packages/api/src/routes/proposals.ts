@@ -480,11 +480,12 @@ export async function proposalRoutes(
       // Admin sees all venues
       // The venue's commercial roles see the venue's proposals. This must
       // match the create/mutate gate above, or a role could manage a proposal
-      // it cannot find in its own list.
+      // it cannot find in its own list. Anyone else is refused, as on opening
+      // one: a proposal carries money, and who made it grants nothing.
     } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
       whereConditions.push(eq(proposals.venueId, user.venueId));
     } else {
-      whereConditions.push(eq(proposals.createdBy, user.id));
+      return reply.status(403).send({ error: "Only the venue commercial team can view proposals", code: "FORBIDDEN" });
     }
 
     const where = and(...whereConditions);
@@ -524,7 +525,7 @@ export async function proposalRoutes(
     } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
       scope.push(eq(proposals.venueId, user.venueId));
     } else {
-      scope.push(eq(proposals.createdBy, user.id));
+      return reply.status(403).send({ error: "Only the venue commercial team can view proposals", code: "FORBIDDEN" });
     }
     const where = and(...scope);
     const listed = query.data.group === undefined ? where : and(where, inArray(proposals.status, [...DESK_GROUPS[query.data.group]]));
