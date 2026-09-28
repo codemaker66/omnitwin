@@ -745,14 +745,17 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   counts cover the whole list.
 - The composer is pre-filled from the latest version ("Editing version 3"), with a diff.
   Done: the next version starts from the latest one's message, capacity note and quote lines. On 28 September
-  (on the branch, waiting on the browser gate) it was made true of the version. First it said only what the
+  (on the branch) it was made true of the version. First it said only what the
   person had changed, since the drawing and the event are taken afresh at each save; it names the version its
   words came from; and a save written from a version since followed is refused rather than replacing it. Then
   the server said what a save itself will change (`GET /proposals/:id/versions/next`). The composer now names
   the drawing, the event's facts and what the new version leaves out, with the words ("Changed: the quote from
   £18,400 to £17,600, the guest count from 160 to 180 and the layout drawing."), and a save is held to the last
-  check made for its version. Words written in a composer that a version saved elsewhere, or a send, replaces
-  are kept to copy with why. That is on the branch, waiting on the browser gate.
+  check made for its version. Words written in a composer live for the page (`proposal-memory.ts`): they carry
+  on when the proposal is opened again, even after another part of the dashboard, and are kept to copy with
+  why when a version saved elsewhere, a send or Start again replaces them. A reload asks first while any are
+  unsaved, and the desk belongs to the person signed in, so another account on the same page never sees them.
+  That is on the branch, and goes to master after its final review.
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
   made, as links are kept hashed. Preview as the client is done (28 September):
@@ -766,7 +769,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   came from and that enquiry's own layout while it is live at the venue; links that contradict each other are
   refused, never mixed. A version's layout is the proposal's own, drawn by the server. The Proposals panel says
   which layout goes out ("Their own, Grand Hall", a room, "Removed" or "None"). Choosing another layout, or
-  leaving it out, waits on A10. On master; it deploys once the browser gate admits its new case.
+  leaving it out, waits on A10. Live on 28 September (`1ebcc49c`).
 - Notify the owner of every client decision.
   Done on 28 September (`services/client-answer-notice.ts`). Every acceptance, request for changes and
   comment tells every commercial role at the venue, the proposal's owner among them, with or without an
