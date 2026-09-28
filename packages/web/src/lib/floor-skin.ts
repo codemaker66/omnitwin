@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, Matrix4, Vector3 } from "three";
 import { z } from "zod";
+import { GENERATED_VENUE_SLUG } from "../data/generated/trades-hall-splat-bundles.js";
 import { splatBaseUrl } from "../data/room-splat-bundles.js";
 import type { DeviceTier } from "./device-tier.js";
 
@@ -54,7 +55,7 @@ export const FLOOR_SKIN_ROOMS: Readonly<Record<string, string>> = { "grand-hall"
 export function floorSkinManifestUrl(roomSlug: string, configuredBaseUrl: string | undefined): string | null {
   const path = FLOOR_SKIN_ROOMS[roomSlug];
   if (path === undefined) return null;
-  return `${splatBaseUrl(configuredBaseUrl)}/trades-hall/${roomSlug}/${path}/floor-skin.json`;
+  return `${splatBaseUrl(configuredBaseUrl)}/${GENERATED_VENUE_SLUG}/${roomSlug}/${path}/floor-skin.json`;
 }
 
 export function floorSkinTier(deviceTier: DeviceTier): FloorSkinTier {
