@@ -124,6 +124,29 @@ function usePart<T>(id: string | null, read: string, load: (id: string) => Promi
   return [part.id === id ? part : { id, status: "loading", value: null }, seed];
 }
 
+/** The composer's check: read while `id` is set, and again at each `again`.
+ *  What was read stays while it is read again for the same proposal, version
+ *  and links; once any of those change, or the composer closes, it is of
+ *  something else and is dropped. */
+function useCheck(id: string | null, identity: string, again: number,
+  load: (id: string) => Promise<ProposalNextVersion>): PartRead<ProposalNextVersion> {
+  const key = id === null ? null : `${id}:${identity}`;
+  const [check, setCheck] = useState<{ readonly key: string | null } & PartRead<ProposalNextVersion>>({ key: null, status: "loading", value: null });
+  useEffect(() => {
+    if (id === null || key === null) {
+      setCheck({ key: null, status: "loading", value: null });
+      return;
+    }
+    let current = true;
+    setCheck((previous) => ({ key, status: "loading", value: previous.key === key ? previous.value : null }));
+    load(id)
+      .then((value) => { if (current) setCheck({ key, status: "ready", value }); })
+      .catch(() => { if (current) setCheck((previous) => ({ key, status: "error", value: previous.key === key ? previous.value : null })); });
+    return () => { current = false; };
+  }, [id, key, again, load]);
+  return key !== null && check.key === key ? { status: check.status, value: check.value } : { status: "loading", value: null };
+}
+
 export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }: ProposalsDeskProps = {}): ReactElement {
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
@@ -240,31 +263,6 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     `${String(openVersion)}:${String(reads.latest)}`, loadLatest);
   const [history] = usePart(openId, String(reads.history), loadHistory);
   const [comments] = usePart(openId, String(reads.comments), loadComments);
-  // What a version saved now would take that the latest does not show its
-  // client (the layout's drawing, the event's facts), for a proposal the
-  // composer is open on. Checked again when its version or links change, when
-  // someone comes back to the page (a layout changed in another tab, say), and
-  // after a save is refused.
-  const loadNext = useCallback((id: string): Promise<ProposalNextVersion> => getProposalNextVersion(id), []);
-  const nextFor = proposal !== null && openVersion !== null && openVersion > 0 && COMPOSABLE.includes(proposal.status) ? openId : null;
-  const [next] = usePart(nextFor,
-    [openVersion, proposal?.configurationId, proposal?.opportunityId, proposal?.enquiryId, reads.next].map(String).join(":"), loadNext);
-  useEffect(() => {
-    if (nextFor === null) return;
-    let last = 0;
-    const checkAgain = (): void => {
-      // Coming back fires both; one check answers both.
-      if (document.visibilityState !== "visible" || Date.now() - last < 1000) return;
-      last = Date.now();
-      setReads((current) => ({ ...current, next: current.next + 1 }));
-    };
-    window.addEventListener("focus", checkAgain);
-    document.addEventListener("visibilitychange", checkAgain);
-    return () => {
-      window.removeEventListener("focus", checkAgain);
-      document.removeEventListener("visibilitychange", checkAgain);
-    };
-  }, [nextFor]);
 
   // The venue's rooms power the capacity guidance; without them the note is
   // written by hand.
@@ -307,6 +305,43 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   const readAgain = useCallback((id: string): void => {
     setTarget((current) => current?.id === id ? { id, read: current.read + 1, quietly: true } : current);
   }, []);
+
+  // What a version saved now would take that the latest does not show its
+  // client (the layout's drawing, the event's facts), for a proposal the
+  // composer is open on. Checked again when its version or links change, when
+  // someone comes back to the page (a layout changed in another tab, say; the
+  // proposal is read again with it, so its facts agree), and after a save is
+  // refused. A proposal sent or removed meanwhile is read again, to say where
+  // it stands.
+  const nextFor = proposal !== null && openVersion !== null && openVersion > 0 && COMPOSABLE.includes(proposal.status) ? openId : null;
+  const loadNext = useCallback((id: string): Promise<ProposalNextVersion> => getProposalNextVersion(id).catch((error: unknown) => {
+    if (error instanceof ApiError && (error.code === "NOT_EDITABLE" || error.status === 404)) readAgain(id);
+    throw error;
+  }), [readAgain]);
+  const next = useCheck(nextFor, [openVersion, proposal?.configurationId, proposal?.opportunityId, proposal?.enquiryId].map(String).join(":"),
+    reads.next, loadNext);
+  // The check a save was just refused for is not said again, or sent again,
+  // while it is made again.
+  const [refusedBasis, setRefusedBasis] = useState<string | null>(null);
+  const nextShown: PartRead<ProposalNextVersion> = next.status === "loading" && next.value !== null && next.value.basis === refusedBasis
+    ? { status: "loading", value: null } : next;
+  useEffect(() => {
+    if (nextFor === null) return;
+    let last = -Infinity;
+    const checkAgain = (): void => {
+      // Coming back fires both; one check answers both.
+      if (document.visibilityState !== "visible" || performance.now() - last < 1000) return;
+      last = performance.now();
+      setReads((current) => ({ ...current, next: current.next + 1 }));
+      readAgain(nextFor);
+    };
+    window.addEventListener("focus", checkAgain);
+    document.addEventListener("visibilitychange", checkAgain);
+    return () => {
+      window.removeEventListener("focus", checkAgain);
+      document.removeEventListener("visibilitychange", checkAgain);
+    };
+  }, [nextFor, readAgain]);
 
   const closeProposal = useCallback((): void => {
     setTarget((current) => {
@@ -459,6 +494,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     try {
       saved = await createProposalVersion(id, { ...checked.data, quote }, basedOn, basis);
     } catch (error) {
+      if (basis !== undefined && error instanceof ApiError && MOVED_CODES.includes(error.code)) setRefusedBasis(basis);
       // A version refused outright leaves no draft quote for the deal to offer
       // as its latest figure. One that may have saved (no answer, or the
       // server's own failure) keeps it: the version would point at it.
@@ -553,7 +589,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     announcement,
     stampKey,
     latest,
-    next,
+    next: nextShown,
     history,
     comments,
     spaces,

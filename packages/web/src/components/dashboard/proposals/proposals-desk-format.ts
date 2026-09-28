@@ -279,10 +279,17 @@ export function draftChanges(from: ProposalVersionPayload | null, draft: Compose
   return changes;
 }
 
-/** "the message, the capacity note and the quote". */
+/** "the message, the capacity note and the quote". An item with its own
+ *  comma or "and" before the last would run into the next, so the list is
+ *  then set with semicolons: "the quote from £18,400 to £17,600; and the
+ *  layout drawing". */
 export function listWords(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1] ?? ""}`;
+  const last = items[items.length - 1] ?? "";
+  const rest = items.slice(0, -1);
+  return rest.some((item) => item.includes(",") || item.includes(" and "))
+    ? `${rest.join("; ")}; and ${last}`
+    : `${rest.join(", ")} and ${last}`;
 }
 
 /** Where the composer's check of what a save would take stands: still on
@@ -313,7 +320,7 @@ export function takenChanges(next: ProposalNextVersion): readonly string[] {
     const after = now.find((fact) => fact.label === label)?.value ?? null;
     if (before === after) {
       // Another room of the same name: its photograph may not be the same.
-      if (label === "Room" && after !== null && saved.roomSlug !== next.facts.now.roomSlug) changes.push(noun);
+      if (label === "Room" && after !== null && saved.roomSlug !== next.facts.now.roomSlug) changes.push(`${noun} (another room named ${after})`);
     } else if (before !== null && after !== null) {
       changes.push(`${noun} from ${before} to ${after}`);
     } else if (after !== null) {
@@ -328,15 +335,36 @@ export function takenChanges(next: ProposalNextVersion): readonly string[] {
   return changes;
 }
 
+/** What the version started from shows its client that a new one leaves
+ *  out, in the start line's words: the Share lens's descriptions and list,
+ *  which the composer has no place for. */
+export function droppedChanges(from: ProposalVersionPayload | null): readonly string[] {
+  if (from === null) return [];
+  const room = (from.roomSummary ?? null) !== null;
+  const layout = (from.layoutSummary ?? null) !== null;
+  const dropped: string[] = [];
+  if (room && layout) dropped.push("the room and layout descriptions (now left out)");
+  else if (room) dropped.push("the room description (now left out)");
+  else if (layout) dropped.push("the layout description (now left out)");
+  if ((from.packageSummary ?? []).length > 0) dropped.push("the list of what is included (now left out)");
+  return dropped;
+}
+
+/** Whether a check answers for the version the words came from. */
+export function checkIsFor(check: TakenCheck, fromVersion: number | null): check is { readonly status: "ready"; readonly next: ProposalNextVersion } {
+  return check.status === "ready" && fromVersion !== null && check.next.basedOn === fromVersion;
+}
+
 /** Where the composer starts, and what the version will change from it.
  *  Until the check is back it speaks only of what is typed here, as the
  *  drawing and the event's facts are taken when the version is saved; once
- *  back, of those too. A check for another version is not yet this one's. */
-export function composerStartWords(fromVersion: number | null, typed: readonly string[], check: TakenCheck): string {
+ *  back, of those too, and of what the new version leaves out. A check for
+ *  another version is not yet this one's. */
+export function composerStartWords(fromVersion: number | null, typed: readonly string[], check: TakenCheck, dropped: readonly string[]): string {
   if (fromVersion === null) return "The first version.";
   const start = `Starts from version ${String(fromVersion)}.`;
-  if (check.status === "ready" && check.next.basedOn === fromVersion) {
-    const changes = [...typed, ...takenChanges(check.next)];
+  if (checkIsFor(check, fromVersion)) {
+    const changes = [...typed, ...takenChanges(check.next), ...dropped];
     return changes.length === 0 ? `${start} Nothing is changed from it yet.` : `${start} Changed: ${listWords(changes)}.`;
   }
   if (typed.length > 0) return `${start} You have changed ${listWords(typed)}.`;

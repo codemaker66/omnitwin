@@ -8,8 +8,8 @@ import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYL
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, composerLayoutLine, composerStartWords, draftChanges, draftFromVersion, historyMoments, layoutFact, linkOpenedSentence, linkVersionWords,
-  notCarriedWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft, type TakenCheck,
+  EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftFromVersion, droppedChanges, historyMoments, layoutFact,
+  linkOpenedSentence, linkVersionWords, notCarriedWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -439,11 +439,17 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
   const next = basedOn + 1;
   const changes = draftChanges(from, draft);
   // What the save would take, once checked against the version the words
-  // came from: a check for another is not this one's.
-  const check: TakenCheck = checkRead.value !== null && checkRead.value.basedOn === basedOn
-    ? { status: "ready", next: checkRead.value }
-    : checkRead.status === "error" ? { status: "failed" } : { status: "waiting" };
-  const notCarried = notCarriedWords(from);
+  // came from: a check for another is not this one's, and one that could
+  // not be made again says nothing and holds the save to nothing.
+  const check: TakenCheck = checkRead.status === "error" ? { status: "failed" }
+    : checkRead.value !== null && checkRead.value.basedOn === basedOn ? { status: "ready", next: checkRead.value }
+      : { status: "waiting" };
+  const checked = checkIsFor(check, from === null ? null : basedOn);
+  // Once checked, what the new version leaves out is said with the rest of
+  // what it changes; until then, on its own line.
+  const notCarried = checked ? null : notCarriedWords(from);
+  const startId = useId();
+  const notCarriedId = useId();
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLine, setFocusLine] = useState<number | null>(null);
@@ -463,10 +469,10 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
       <KeptDraft {...props} holder={composer} />
       <section className="enq-section pr-compose" aria-labelledby={headingId} data-testid="composer">
         <h3 id={headingId}>Version {String(next)}</h3>
-        <p className="enq-next__hint" data-testid="composer-start">
-          {composerStartWords(from === null ? null : basedOn, changes, check)}
+        <p className="enq-next__hint" id={startId} data-testid="composer-start">
+          {composerStartWords(from === null ? null : basedOn, changes, check, droppedChanges(from))}
         </p>
-        {notCarried !== null && <p className="enq-next__hint" data-testid="composer-not-carried">{notCarried}</p>}
+        {notCarried !== null && <p className="enq-next__hint" id={notCarriedId} data-testid="composer-not-carried">{notCarried}</p>}
 
         <label className="pr-field">
           <span>Message to the client</span>
@@ -516,8 +522,11 @@ function ComposerForm(props: ProposalPanelProps): ReactElement {
         <p className="enq-next__hint">Sending shares the latest saved version. Figures are planning estimates, without safety or compliance assurance.</p>
         {failure?.where === "version" && <p className="enq-confirm__error" role="alert" data-testid="composer-error">{failure.message}</p>}
         <div className="enq-actions">
+          {/* Save is described by what the version starts from and changes, so
+              it is heard at the moment of saving, however it came to change. */}
           <button type="button" className="enq-cta" data-testid="composer-save" disabled={saving || working !== null} aria-busy={saving}
-            onClick={() => { void onSaveVersion(draft, composer, basedOn, check.status === "ready" ? check.next.basis : undefined); }}>
+            aria-describedby={notCarried === null ? startId : `${startId} ${notCarriedId}`}
+            onClick={() => { void onSaveVersion(draft, composer, basedOn, checked ? check.next.basis : undefined); }}>
             {saving && <ActivityIndicator size={18} />}
             {saving ? "Saving…" : `Save version ${String(next)}`}
           </button>

@@ -731,6 +731,130 @@ describe("the next version", () => {
     expect(panel.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("My words.");
   });
 
+  it("counts what a version from the Share lens leaves out among what changes, once checked, and describes Save by it", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(2, { roomSummary: "The room is 30 m by 15 m.", layoutSummary: "Ten rounds of ten." }));
+    let answer: (next: Record<string, unknown>) => void = () => undefined;
+    mocks.getProposalNextVersion.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    // Until checked, the words and what is not carried are said apart.
+    expect((await panel.findByTestId("composer-start")).textContent).toBe("Starts from version 2.");
+    expect(panel.getByTestId("composer-not-carried").textContent).toBe("Its descriptions of the room and layout are not carried over.");
+    answer(checked());
+    await waitFor(() => {
+      expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Changed: the room and layout descriptions (now left out).");
+    });
+    expect(panel.queryByTestId("composer-not-carried")).toBeNull();
+    const save = panel.getByRole("button", { name: "Save version 3" });
+    expect(save.getAttribute("aria-describedby")).toBe(panel.getByTestId("composer-start").id);
+  });
+
+  it("says nothing of a check that could not be made again, and holds the save to nothing", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockResolvedValueOnce(checked()).mockRejectedValue(new Error("offline"));
+    mocks.createProposalVersion.mockResolvedValue(version(3));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. You have not changed anything here yet."); });
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    expect(mocks.createProposalVersion.mock.calls[0]?.slice(2)).toEqual([2, undefined]);
+  });
+
+  it("does not say or send again the check a save was refused for while it is made again", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    let again: (next: Record<string, unknown>) => void = () => undefined;
+    mocks.getProposalNextVersion.mockResolvedValueOnce(checked())
+      .mockReturnValueOnce(new Promise((resolve) => { again = resolve; }));
+    mocks.createProposalVersion.mockRejectedValueOnce(
+      new ApiError(409, "The layout or the event changed after this was checked, so the version was not saved. Check it again.", "REVISION_CONFLICT"))
+      .mockResolvedValue(version(3));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    expect(await panel.findByTestId("composer-error")).toBeDefined();
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2."); });
+    act(() => { again(checked({ layout: "changed", basis: "c".repeat(64) })); });
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Changed: the layout drawing."); });
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(2); });
+    expect(mocks.createProposalVersion.mock.calls[1]?.slice(2)).toEqual([2, "c".repeat(64)]);
+  });
+
+  it("reads the proposal again when its check finds it can no longer take a version", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockRejectedValue(new ApiError(422, "Proposal content is frozen in its current status", "NOT_EDITABLE"));
+    render(<ProposalsDesk />);
+    await openProposal();
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(1); });
+    await waitFor(() => { expect(mocks.getDeskProposal.mock.calls.length).toBeGreaterThanOrEqual(2); });
+  });
+
+  it("reads the proposal again with the check when someone comes back, once for both events, and not while hidden", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockResolvedValue(checked());
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    const proposalReads = mocks.getDeskProposal.mock.calls.length;
+    // The guest count changed in the pipeline meanwhile.
+    existing = [proposal({ status: "changes_requested", currentVersion: 2, guestCount: 180 })];
+    // Coming back fires both, as separate events.
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await act(async () => { await Promise.resolve(); });
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(2); });
+    await waitFor(() => { expect(mocks.getDeskProposal.mock.calls.length).toBe(proposalReads + 1); });
+    // The facts row agrees with what the check now says.
+    await waitFor(() => { expect(panel.getByText("180", { selector: "dd" })).toBeDefined(); });
+    // Hidden, nothing is read.
+    const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    await new Promise((resolve) => { setTimeout(resolve, 1100); });
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    hidden.mockRestore();
+    expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks the new version once it is saved, and says nothing is changed from it", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+    mocks.getProposalNextVersion.mockImplementation(() => Promise.resolve(checked({ basedOn: Number(existing[0]?.["currentVersion"] ?? 2) })));
+    mocks.createProposalVersion.mockImplementation((_id: string, payload: Record<string, unknown>) => {
+      existing = [proposal({ status: "changes_requested", currentVersion: 3 })];
+      mocks.getLatestProposalVersion.mockResolvedValue(version(3, payload));
+      return Promise.resolve(version(3, payload));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 3. Nothing is changed from it yet."); });
+  });
+
+  it("stops listening once the desk is gone, and drops a check when the composer closes", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 2 }), proposal({ id: "p2", title: "Winter dinner", status: "sent", currentVersion: 1 })];
+    let second: (next: Record<string, unknown>) => void = () => undefined;
+    mocks.getProposalNextVersion.mockResolvedValueOnce(checked())
+      .mockReturnValueOnce(new Promise((resolve) => { second = resolve; }));
+    const { unmount } = render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 2. Nothing is changed from it yet."); });
+    // Another proposal, sent, then this one again: its old check is not said as current.
+    await openProposal("p2", "Winter dinner");
+    const again = within(await openProposal());
+    expect((await again.findByTestId("composer-start")).textContent).toBe("Starts from version 2.");
+    act(() => { second(checked({ layout: "changed" })); });
+    await waitFor(() => { expect(again.getByTestId("composer-start").textContent).toBe("Starts from version 2. Changed: the layout drawing."); });
+    const made = mocks.getProposalNextVersion.mock.calls.length;
+    unmount();
+    await new Promise((resolve) => { setTimeout(resolve, 1100); });
+    window.dispatchEvent(new Event("focus"));
+    expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(made);
+  });
+
   it("names the version its words came from, saves on that one, and says why a version saved meanwhile stops it", async () => {
     // The proposal reads version 3 while its latest version still reads as 2
     // (a re-read on its way, or one that failed): the words are version 2's.
