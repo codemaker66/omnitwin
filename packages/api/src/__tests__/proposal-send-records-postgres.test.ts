@@ -61,7 +61,7 @@ describe.skipIf(testUrl === undefined)("what a send and an acceptance record, on
     schema.proposals, schema.proposalVersions, schema.proposalStatusHistory, schema.proposalComments,
     schema.proposalShareTokens, schema.packageSelections, schema.venues, schema.configurations,
     schema.opportunities, schema.opportunityStatusHistory, schema.events, schema.eventConfigurationLinks,
-    schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications,
+    schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications, schema.contacts, schema.enquiries,
   ];
 
   beforeAll(async () => {
@@ -152,6 +152,25 @@ describe.skipIf(testUrl === undefined)("what a send and an acceptance record, on
     await saveVersion(4);
     expect(await makeLink()).toBe(201);
     expect((await row()).sent_version).toBe(4);
+  });
+
+  it("answers a new link and a move with the proposal as its row on the desk now reads", async () => {
+    const quoted = (totalMinor: number): string => JSON.stringify({ ...VERSION_PAYLOAD, quote: { totalMinor, currency: "GBP" } });
+    await pool.query("UPDATE proposal_versions SET payload = $2 WHERE proposal_id = $1 AND version = 1", [PROPOSAL, quoted(1_000_000)]);
+    const link = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/share-token`, headers });
+    expect(link.statusCode, link.body).toBe(201);
+    const sent = (JSON.parse(link.body) as { data: { proposal: Record<string, unknown> } }).data.proposal;
+    expect(sent).toMatchObject({ status: "sent", sentVersion: 1, latestTotalMinor: 1_000_000, linkOpenedAt: null, hasLink: true, linkOpen: true });
+    expect(Math.abs(Date.parse(String(sent["lastSentAt"])) - Date.parse(String(sent["sentAt"])))).toBeLessThan(60_000);
+
+    // A version saved while it is out is a draft: the figure is still the one
+    // sent, and once withdrawn the link no longer opens.
+    await pool.query("INSERT INTO proposal_versions (proposal_id, version, payload) VALUES ($1, 2, $2)", [PROPOSAL, quoted(1_200_000)]);
+    await pool.query("UPDATE proposals SET current_version = 2 WHERE id = $1", [PROPOSAL]);
+    const moved = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/transition`, headers, payload: { status: "withdrawn" } });
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect((JSON.parse(moved.body) as { data: Record<string, unknown> }).data)
+      .toMatchObject({ status: "withdrawn", currentVersion: 2, sentVersion: 1, latestTotalMinor: 1_000_000, hasLink: true, linkOpen: false });
   });
 
   it("keeps a version saved while a proposal is out as a draft, and the team's answer on the version sent", async () => {

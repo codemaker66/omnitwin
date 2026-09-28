@@ -8,7 +8,7 @@ import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYL
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, draftChanges, draftFromVersion, historyMoments, linkOpenedSentence, linkVersionWords, listWords, type ComposerDraft, type QuoteLineDraft,
+  EMPTY_LINE, draftChanges, draftFromVersion, historyMoments, linkOpenedSentence, linkVersionWords, listWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -59,14 +59,19 @@ export interface ProposalPanelProps {
   /** The client's link, once made in this visit; links are kept hashed, so
    *  one made earlier can never be shown again. */
   readonly shareUrl: string | null;
-  /** A version that did not save, kept to copy once the composer is gone. */
-  readonly keptDraft: ComposerDraft | null;
+  /** A version that did not save, kept to copy once the composer that wrote
+   *  it is gone. */
+  readonly keptDraft: KeptVersion | null;
   readonly working: ProposalWork;
   readonly failure: ProposalFailure | null;
   /** Each resolves true once done, so the panel can put its question away. */
   readonly onMakeLink: () => Promise<boolean>;
   readonly onTransition: (to: "withdrawn" | "archived") => Promise<boolean>;
-  readonly onSaveVersion: (draft: ComposerDraft) => Promise<boolean>;
+  /** `composer` names the composer saving, which still holds the words
+   *  should the version not save. */
+  readonly onSaveVersion: (draft: ComposerDraft, composer: number) => Promise<boolean>;
+  /** Puts the kept version away once it has been copied. */
+  readonly onDiscardKept: () => void;
   readonly onReply: (body: string) => Promise<boolean>;
   readonly onRetryLatest: () => void;
   readonly onRetryHistory: () => void;
@@ -152,7 +157,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         )}
 
         <NextStep {...props} />
-        {COMPOSABLE.includes(proposal.status) ? <Composer {...props} /> : <KeptDraft {...props} />}
+        {COMPOSABLE.includes(proposal.status) ? <Composer {...props} /> : <KeptDraft {...props} holder={null} />}
         <LatestQuote {...props} />
         <Conversation {...props} />
         <History {...props} />
@@ -338,40 +343,48 @@ function Composer(props: ProposalPanelProps): ReactElement {
   if (proposal.currentVersion > 0 && latest.value === null) {
     const headingId = `compose-${proposal.id}`;
     return (
-      <section className="enq-section" aria-labelledby={headingId}>
-        <h3 id={headingId}>Version {String(proposal.currentVersion + 1)}</h3>
-        {latest.status === "loading" ? (
-          <ActivityStatus>Reading version {String(proposal.currentVersion)} to start from…</ActivityStatus>
-        ) : (
-          <>
-            <p className="enq-confirm__error" role="alert" data-testid="latest-version-error">
-              Version {String(proposal.currentVersion)} could not be read, so the next one cannot start from it yet.
-            </p>
-            <div className="enq-actions">
-              <button type="button" className="enq-quiet" onClick={props.onRetryLatest}>Try again</button>
-            </div>
-          </>
-        )}
-      </section>
+      <>
+        <KeptDraft {...props} holder={null} />
+        <section className="enq-section" aria-labelledby={headingId}>
+          <h3 id={headingId}>Version {String(proposal.currentVersion + 1)}</h3>
+          {latest.status === "loading" ? (
+            <ActivityStatus>Reading version {String(proposal.currentVersion)} to start from…</ActivityStatus>
+          ) : (
+            <>
+              <p className="enq-confirm__error" role="alert" data-testid="latest-version-error">
+                Version {String(proposal.currentVersion)} could not be read, so the next one cannot start from it yet.
+              </p>
+              <div className="enq-actions">
+                <button type="button" className="enq-quiet" onClick={props.onRetryLatest}>Try again</button>
+              </div>
+            </>
+          )}
+        </section>
+      </>
     );
   }
   // A new version starts from the latest one, read again whenever that changes.
   return <ComposerForm key={`${proposal.id}:${String(latest.value?.version ?? 0)}`} {...props} />;
 }
 
-/** A version that did not save because the proposal moved on: what was
- *  written, to copy, with why it did not save. */
-function KeptDraft({ keptDraft, failure }: ProposalPanelProps): ReactElement | null {
+/** A version that did not save: what was written, to copy, with why it did
+ *  not save. While the composer that wrote it is there, that composer is the
+ *  copy; once it is gone (the proposal moved on, or the composer started again
+ *  from the proposal as it now is) the words are shown here until they are
+ *  put away or a version saves. `holder` is the composer beside it, if any. */
+function KeptDraft({ proposal, keptDraft, failure, onDiscardKept, holder }: ProposalPanelProps & { readonly holder: number | null }): ReactElement | null {
   const headingId = useId();
-  if (keptDraft === null) return null;
-  const lines = keptDraft.lines.filter((line) => line.description.trim() !== "");
+  if (keptDraft === null || keptDraft.composer === holder) return null;
+  const composing = COMPOSABLE.includes(proposal.status);
+  const { draft } = keptDraft;
+  const lines = draft.lines.filter((line) => line.description.trim() !== "");
   return (
     <section className="enq-section" aria-labelledby={headingId} data-testid="kept-version">
       <h3 id={headingId}>The version that did not save</h3>
-      {failure?.where === "version" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
+      {!composing && failure?.where === "version" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
       <p className="enq-next__hint">What you wrote is kept here to copy.</p>
-      {keptDraft.message.trim() !== "" && <p className="pr-kept">{keptDraft.message}</p>}
-      {keptDraft.capacityNote.trim() !== "" && <p className="pr-kept">Capacity: {keptDraft.capacityNote}</p>}
+      {draft.message.trim() !== "" && <p className="pr-kept">{draft.message}</p>}
+      {draft.capacityNote.trim() !== "" && <p className="pr-kept">Capacity: {draft.capacityNote}</p>}
       {lines.length > 0 && (
         <ul className="pr-kept__lines">
           {lines.map((line, index) => (
@@ -379,12 +392,21 @@ function KeptDraft({ keptDraft, failure }: ProposalPanelProps): ReactElement | n
           ))}
         </ul>
       )}
+      <div className="enq-actions">
+        <button type="button" className="enq-quiet" data-testid="kept-version-clear" onClick={onDiscardKept}>Clear this copy</button>
+      </div>
     </section>
   );
 }
 
-function ComposerForm({ proposal, latest, spaces, working, failure, onSaveVersion }: ProposalPanelProps): ReactElement {
+/** Each composer is told apart, so a version it could not save is shown to
+ *  copy only once it is gone. */
+let composers = 0;
+
+function ComposerForm(props: ProposalPanelProps): ReactElement {
+  const { proposal, latest, spaces, working, failure, onSaveVersion } = props;
   const headingId = useId();
+  const [composer] = useState(() => { composers += 1; return composers; });
   const from = latest.value?.payload ?? null;
   const [draft, setDraft] = useState<ComposerDraft>(() => draftFromVersion(from));
   const next = proposal.currentVersion + 1;
@@ -404,69 +426,72 @@ function ComposerForm({ proposal, latest, spaces, working, failure, onSaveVersio
   };
 
   return (
-    <section className="enq-section pr-compose" aria-labelledby={headingId} data-testid="composer">
-      <h3 id={headingId}>Version {String(next)}</h3>
-      <p className="enq-next__hint" data-testid="composer-start">
-        {from === null ? "The first version." : `Starts from version ${String(proposal.currentVersion)}. `}
-        {from !== null && (changes.length === 0
-          ? `Nothing is changed from it yet.`
-          : `Changed: ${listWords(changes)}.`)}
-      </p>
+    <>
+      <KeptDraft {...props} holder={composer} />
+      <section className="enq-section pr-compose" aria-labelledby={headingId} data-testid="composer">
+        <h3 id={headingId}>Version {String(next)}</h3>
+        <p className="enq-next__hint" data-testid="composer-start">
+          {from === null ? "The first version." : `Starts from version ${String(proposal.currentVersion)}. `}
+          {from !== null && (changes.length === 0
+            ? `Nothing is changed from it yet.`
+            : `Changed: ${listWords(changes)}.`)}
+        </p>
 
-      <label className="pr-field">
-        <span>Message to the client</span>
-        <textarea data-testid="composer-message" rows={4} maxLength={4000} value={draft.message} disabled={saving}
-          onChange={(event) => { setDraft((current) => ({ ...current, message: event.target.value })); }} />
-      </label>
-      <label className="pr-field">
-        <span>Capacity note</span>
-        <input data-testid="composer-capacity" maxLength={500} value={draft.capacityNote} disabled={saving}
-          onChange={(event) => { setDraft((current) => ({ ...current, capacityNote: event.target.value })); }} />
-      </label>
-      <CapacityGuidance spaces={spaces} onInsert={(note) => { setDraft((current) => ({ ...current, capacityNote: note })); }} />
+        <label className="pr-field">
+          <span>Message to the client</span>
+          <textarea data-testid="composer-message" rows={4} maxLength={4000} value={draft.message} disabled={saving}
+            onChange={(event) => { setDraft((current) => ({ ...current, message: event.target.value })); }} />
+        </label>
+        <label className="pr-field">
+          <span>Capacity note</span>
+          <input data-testid="composer-capacity" maxLength={500} value={draft.capacityNote} disabled={saving}
+            onChange={(event) => { setDraft((current) => ({ ...current, capacityNote: event.target.value })); }} />
+        </label>
+        <CapacityGuidance spaces={spaces} onInsert={(note) => { setDraft((current) => ({ ...current, capacityNote: note })); }} />
 
-      <div className="pr-quote">
-        <p className="pr-quote__title">Quote</p>
-        {draft.lines.length === 0 && <p className="enq-next__hint">No lines. A version can go without a quote.</p>}
-        {draft.lines.map((line, index) => (
-          <div className="pr-line" key={index}>
-            <input aria-label={`Line ${String(index + 1)} description`} data-testid={`quote-desc-${String(index)}`} placeholder="Grand Hall hire"
-              ref={(element) => { lineRefs.current[index] = element; }} value={line.description} disabled={saving}
-              onChange={(event) => { setLine(index, { description: event.target.value }); }} />
-            <label className="pr-line__part">
-              <span aria-hidden="true">Quantity</span>
-              <input aria-label={`Line ${String(index + 1)} quantity`} data-testid={`quote-qty-${String(index)}`} inputMode="numeric"
-                value={line.quantity} disabled={saving} onChange={(event) => { setLine(index, { quantity: event.target.value }); }} />
-            </label>
-            <label className="pr-line__part">
-              <span aria-hidden="true">Unit price, £</span>
-              <input aria-label={`Line ${String(index + 1)} unit price (£)`} data-testid={`quote-price-${String(index)}`} inputMode="decimal"
-                placeholder="0.00" value={line.pounds} disabled={saving} onChange={(event) => { setLine(index, { pounds: event.target.value }); }} />
-            </label>
-            <button type="button" className="enq-quiet" aria-label={`Remove quote line ${String(index + 1)}`} disabled={saving}
-              onClick={() => { setDraft((current) => ({ ...current, lines: current.lines.filter((_, at) => at !== index) })); }}>
-              Remove
+        <div className="pr-quote">
+          <p className="pr-quote__title">Quote</p>
+          {draft.lines.length === 0 && <p className="enq-next__hint">No lines. A version can go without a quote.</p>}
+          {draft.lines.map((line, index) => (
+            <div className="pr-line" key={index}>
+              <input aria-label={`Line ${String(index + 1)} description`} data-testid={`quote-desc-${String(index)}`} placeholder="Grand Hall hire"
+                ref={(element) => { lineRefs.current[index] = element; }} value={line.description} disabled={saving}
+                onChange={(event) => { setLine(index, { description: event.target.value }); }} />
+              <label className="pr-line__part">
+                <span aria-hidden="true">Quantity</span>
+                <input aria-label={`Line ${String(index + 1)} quantity`} data-testid={`quote-qty-${String(index)}`} inputMode="numeric"
+                  value={line.quantity} disabled={saving} onChange={(event) => { setLine(index, { quantity: event.target.value }); }} />
+              </label>
+              <label className="pr-line__part">
+                <span aria-hidden="true">Unit price, £</span>
+                <input aria-label={`Line ${String(index + 1)} unit price (£)`} data-testid={`quote-price-${String(index)}`} inputMode="decimal"
+                  placeholder="0.00" value={line.pounds} disabled={saving} onChange={(event) => { setLine(index, { pounds: event.target.value }); }} />
+              </label>
+              <button type="button" className="enq-quiet" aria-label={`Remove quote line ${String(index + 1)}`} disabled={saving}
+                onClick={() => { setDraft((current) => ({ ...current, lines: current.lines.filter((_, at) => at !== index) })); }}>
+                Remove
+              </button>
+            </div>
+          ))}
+          <div className="enq-actions">
+            <button type="button" className="enq-quiet" data-testid="add-quote-line" disabled={saving}
+              onClick={() => { setDraft((current) => ({ ...current, lines: [...current.lines, { ...EMPTY_LINE }] })); setFocusLine(draft.lines.length); }}>
+              Add a line
             </button>
           </div>
-        ))}
+        </div>
+
+        <p className="enq-next__hint">Sending shares the latest saved version. Figures are planning estimates, without safety or compliance assurance.</p>
+        {failure?.where === "version" && <p className="enq-confirm__error" role="alert" data-testid="composer-error">{failure.message}</p>}
         <div className="enq-actions">
-          <button type="button" className="enq-quiet" data-testid="add-quote-line" disabled={saving}
-            onClick={() => { setDraft((current) => ({ ...current, lines: [...current.lines, { ...EMPTY_LINE }] })); setFocusLine(draft.lines.length); }}>
-            Add a line
+          <button type="button" className="enq-cta" data-testid="composer-save" disabled={saving || working !== null} aria-busy={saving}
+            onClick={() => { void onSaveVersion(draft, composer); }}>
+            {saving && <ActivityIndicator size={18} />}
+            {saving ? "Saving…" : `Save version ${String(next)}`}
           </button>
         </div>
-      </div>
-
-      <p className="enq-next__hint">Sending shares the latest saved version. Figures are planning estimates, without safety or compliance assurance.</p>
-      {failure?.where === "version" && <p className="enq-confirm__error" role="alert" data-testid="composer-error">{failure.message}</p>}
-      <div className="enq-actions">
-        <button type="button" className="enq-cta" data-testid="composer-save" disabled={saving || working !== null} aria-busy={saving}
-          onClick={() => { void onSaveVersion(draft); }}>
-          {saving && <ActivityIndicator size={18} />}
-          {saving ? "Saving…" : `Save version ${String(next)}`}
-        </button>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
 

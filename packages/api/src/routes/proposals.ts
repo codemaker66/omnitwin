@@ -95,7 +95,7 @@ const ListQuery = z.object({
  * (the proposal's own, or its deal's) are read only at the proposal's own
  * venue, so another venue's names never reach a row.
  */
-function selectDeskProposals(db: Database) {
+function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
   const enquiryId = sql`COALESCE(${proposals.enquiryId}, ${opportunities.sourceEnquiryId})`;
   // The figure that stands: the booker's latest while it is in hand, else the
   // version the client was sent (a version saved since is a draft).
@@ -134,10 +134,10 @@ function selectDeskProposals(db: Database) {
     hasLink: sql<boolean>`EXISTS (SELECT 1 FROM ${proposalShareTokens} WHERE ${proposalShareTokens.proposalId} = ${proposals.id})`,
     // Whether the client's link still opens, as presentedStatus decides it.
     linkOpen: sql<boolean>`(${proposals.status} IN ('sent', 'changes_requested', 'accepted', 'declined', 'expired')
-      OR (${proposals.status} = 'archived' AND (
+      OR (${proposals.status} = 'archived' AND COALESCE((
         SELECT ${proposalStatusHistory.fromStatus} FROM ${proposalStatusHistory}
         WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'archived'
-        ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted'))`,
+        ORDER BY ${proposalStatusHistory.createdAt} DESC LIMIT 1) = 'accepted', false)))`,
   })
     .from(proposals)
     .leftJoin(opportunities, and(
@@ -845,7 +845,10 @@ export async function proposalRoutes(
         changedBy: request.user.id,
         note: parsed.data.note ?? null,
       });
-      return row;
+      // Answered as its row on the desk now reads, read with the move: the
+      // figure that stands and whether the client's link opens change with it.
+      const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, params.data.id)).limit(1);
+      return withFacts ?? row;
     });
     if (updated === null) return reply.status(409).send(STATUS_CHANGED);
 
@@ -1088,7 +1091,9 @@ export async function proposalRoutes(
         });
       }
 
-      return { shareToken, proposal: updated };
+      // Answered as its row on the desk now reads, the send included.
+      const [withFacts] = await selectDeskProposals(tx).where(eq(proposals.id, proposal.id)).limit(1);
+      return { shareToken, proposal: withFacts ?? updated };
     });
     if (result === "status") return reply.status(409).send(STATUS_CHANGED);
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);

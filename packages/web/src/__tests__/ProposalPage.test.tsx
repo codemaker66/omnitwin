@@ -327,8 +327,12 @@ describe("the decision", () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole("button", { name: "Accept version 1" }));
-    expect(await screen.findByRole("heading", { name: "This proposal link isn't available" })).toBeTruthy();
+    const unavailable = await screen.findByRole("heading", { name: "This proposal link isn't available" });
     expect(screen.queryByRole("button", { name: /Accept version/u })).toBeNull();
+    // The form that had the focus is gone; the sentence saying why takes it.
+    await waitFor(() => { expect(document.activeElement).toBe(unavailable); });
+    // Nothing was typed that did not reach the venue team.
+    expect(screen.queryByTestId("kept-words")).toBeNull();
   });
 
   it("returns focus to Ask for changes when the client decides not to", async () => {
@@ -370,6 +374,118 @@ describe("the decision", () => {
     expect(await screen.findByRole("button", { name: "Accept version 2" })).toBeTruthy();
     expect(screen.queryByText("Your changes went to the venue team. This version is on hold until they send the next one.")).toBeNull();
     expect(screen.getByText("A newer version was sent after you opened this page. It is shown above now.")).toBeTruthy();
+    // The request already went; it does not come back as an unsent draft.
+    expect(screen.queryByLabelText("What would you like changed?")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Ask for changes…" }));
+    expect(screen.getByLabelText<HTMLTextAreaElement>("What would you like changed?").value).toBe("");
+  });
+
+  it("offers the same version again once the venue team sends it again after changes were asked for", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "changes_requested" }))
+      .mockResolvedValueOnce(fixtureProposal({ sentAt: "2026-06-13T09:00:00.000Z" }));
+    mockCommentOnProposalShare.mockResolvedValueOnce({ kind: "request_changes" }).mockResolvedValueOnce({ kind: "comment" });
+    renderTokenPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Ask for changes…" }));
+    fireEvent.change(screen.getByLabelText("What would you like changed?"), { target: { value: "Could we seat 130?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to the venue team" }));
+    expect(await screen.findByText("Your changes went to the venue team. This version is on hold until they send the next one.")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("comment-input"), { target: { value: "Understood, thank you." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    expect(await screen.findByText("The venue team sent this version to you again. You can answer it below.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Accept version 1" })).toBeTruthy();
+    expect(screen.queryByText("Your changes went to the venue team. This version is on hold until they send the next one.")).toBeNull();
+  });
+
+  it("gives way to a newer version brought by a message after an answer that did not arrive", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ version: 2 }));
+    mockApproveProposalShare.mockRejectedValueOnce(new Error("network"));
+    mockCommentOnProposalShare.mockResolvedValue({ kind: "comment" });
+    renderTokenPage();
+    fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Elaine Crawford" } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept version 1" }));
+    await screen.findByText("Your answer did not reach the venue team. Please try again, or contact them directly.");
+    fireEvent.change(screen.getByTestId("comment-input"), { target: { value: "Hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    expect(await screen.findByText("A newer version was sent after you opened this page. It is shown above now.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Accept version 2" })).toBeTruthy();
+    expect(screen.queryByText(/did not reach the venue team/u)).toBeNull();
+  });
+
+  it("gives way to a newer version after an answer the proposal could no longer take", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "changes_requested" }))
+      .mockResolvedValueOnce(fixtureProposal({ version: 2 }));
+    // Someone else with the link asked for changes first.
+    mockApproveProposalShare.mockRejectedValueOnce(new ApiError(422, "Not awaiting", "NOT_AWAITING_RESPONSE"));
+    mockCommentOnProposalShare.mockResolvedValue({ kind: "comment" });
+    renderTokenPage();
+    fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Bea Crawford" } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept version 1" }));
+    await screen.findByText("This proposal is no longer waiting for an answer. It now shows where it stands.");
+    fireEvent.change(screen.getByTestId("comment-input"), { target: { value: "Hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    expect(await screen.findByText("A newer version was sent after you opened this page. It is shown above now.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Accept version 2" })).toBeTruthy();
+    expect(screen.queryByText(/changed while your answer was on its way/u)).toBeNull();
+    expect(within(screen.getByTestId("proposal-decision")).queryByRole("alert")).toBeNull();
+  });
+
+  it("says why an answer was refused only once the proposal has been read again, and never more than that read showed", async () => {
+    let finish: ((value: PublicProposal) => void) | undefined;
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockImplementationOnce(() => new Promise<PublicProposal>((resolve) => { finish = resolve; }));
+    mockApproveProposalShare.mockRejectedValueOnce(new ApiError(422, "Not awaiting", "NOT_AWAITING_RESPONSE"));
+    renderTokenPage();
+    fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Bea Crawford" } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept version 1" }));
+    await waitFor(() => { expect(mockGetProposalShare).toHaveBeenCalledTimes(2); });
+    // While it is read again, nothing is claimed and the button says it is working.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Accepting…" })).toBeTruthy();
+    finish?.(fixtureProposal({ status: "accepted", accepted: { by: "Alex Crawford", at: "2026-06-12T09:00:00.000Z" } }));
+    expect((await screen.findByRole("alert")).textContent).toBe("This proposal is no longer waiting for an answer. It now shows where it stands.");
+    cleanup();
+
+    // The read again fails: nothing newer is claimed to be shown.
+    mockGetProposalShare.mockReset();
+    mockGetProposalShare.mockResolvedValueOnce(fixtureProposal()).mockRejectedValueOnce(new Error("network"));
+    mockApproveProposalShare.mockRejectedValueOnce(new ApiError(409, "Changed", "PROPOSAL_VERSION_CHANGED"));
+    renderTokenPage();
+    fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Bea Crawford" } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept version 1" }));
+    expect((await screen.findByRole("alert")).textContent)
+      .toBe("Your answer was not taken, because this proposal changed while it was on its way. Please reload the page to see it as it stands; what you typed is still here.");
+    expect(screen.getByLabelText<HTMLInputElement>("Your name").value).toBe("Bea Crawford");
+  });
+
+  it("hands back only words that did not reach the venue team when the link closes", async () => {
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockRejectedValueOnce(new ApiError(404, "Not found", "NOT_FOUND"));
+    // A message refused while the proposal changed, then sent again and delivered.
+    mockCommentOnProposalShare
+      .mockRejectedValueOnce(new ApiError(409, "Changed", "PROPOSAL_STATUS_CHANGED"))
+      .mockResolvedValueOnce({ kind: "comment" });
+    mockApproveProposalShare.mockRejectedValueOnce(new ApiError(404, "Not found", "NOT_FOUND"));
+    renderTokenPage();
+    fireEvent.change(await screen.findByTestId("comment-input"), { target: { value: "One more thing." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    await screen.findByText("This proposal changed while your message was on its way. It is still here; you can send it again.");
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    await waitFor(() => { expect(screen.getByTestId<HTMLTextAreaElement>("comment-input").value).toBe(""); });
+    // The link is then withdrawn as the client accepts.
+    fireEvent.change(screen.getByLabelText("Your name"), { target: { value: "Bea Crawford" } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept version 1" }));
+    expect(await screen.findByRole("heading", { name: "This proposal link isn't available" })).toBeTruthy();
+    expect(screen.queryByTestId("kept-words")).toBeNull();
   });
 
   it("claims nothing is still here once the form is gone: a newer version accepted by someone else", async () => {
@@ -508,6 +624,29 @@ describe("the conversation", () => {
     expect((await closed.findByText("This proposal is no longer taking messages here."))).toBeTruthy();
     expect(closed.queryByText(/please try again/u)).toBeNull();
     expect(closed.getByTestId("kept-message").textContent).toBe("One more thing.");
+  });
+
+  it("says a message was not taken, and no more, when the proposal could not be read again", async () => {
+    mockGetProposalShare.mockResolvedValueOnce(fixtureProposal()).mockRejectedValueOnce(new Error("network"));
+    mockCommentOnProposalShare.mockRejectedValueOnce(new ApiError(422, "Not awaiting", "NOT_AWAITING_RESPONSE"));
+    renderTokenPage();
+    fireEvent.change(await screen.findByTestId("comment-input"), { target: { value: "One more thing." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    const thread = within(await screen.findByTestId("proposal-comments"));
+    expect((await thread.findByRole("alert")).textContent)
+      .toBe("Your message was not posted, because this proposal changed while it was on its way. Please reload the page to see it as it stands; your message is still here.");
+    expect(thread.getByTestId<HTMLTextAreaElement>("comment-input").value).toBe("One more thing.");
+  });
+
+  it("gives back a message and moves the focus to why, when the link closed while it was on its way", async () => {
+    mockGetProposalShare.mockResolvedValueOnce(fixtureProposal()).mockRejectedValueOnce(new ApiError(404, "Not found", "NOT_FOUND"));
+    mockCommentOnProposalShare.mockRejectedValueOnce(new ApiError(404, "Not found", "NOT_FOUND"));
+    renderTokenPage();
+    fireEvent.change(await screen.findByTestId("comment-input"), { target: { value: "One more thing." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send the message" }));
+    const unavailable = await screen.findByRole("heading", { name: "This proposal link isn't available" });
+    expect(screen.getByTestId("kept-words").textContent).toBe("One more thing.");
+    await waitFor(() => { expect(document.activeElement).toBe(unavailable); });
   });
 
   it("is not offered on the older share code, which has nowhere to post", async () => {

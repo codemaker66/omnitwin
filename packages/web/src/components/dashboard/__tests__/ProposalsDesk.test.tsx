@@ -445,11 +445,13 @@ describe("the next step", () => {
     expect(mocks.createProposalShareToken).toHaveBeenCalledWith("p1", 2);
   });
 
-  it("says a new link sends a version saved since, and shows it as sent and unopened until the desk reads it again", async () => {
+  it("says a new link sends a version saved since, and shows the row the send answers with before the desk reads it again", async () => {
     // A platform administrator saved version 3 while version 2 was out.
     existing = [proposal({ status: "sent", currentVersion: 3, sentVersion: 2, sentAt: NOW, linkOpenedAt: "2026-10-05T13:10:00.000Z" })];
+    // The API answers with the proposal as its desk row now reads.
     mocks.createProposalShareToken.mockResolvedValue({
-      token: "fresh-token", shareUrl: "/proposal-share/fresh-token", tokenPrefix: "fresh-to", proposal: existing[0],
+      token: "fresh-token", shareUrl: "/proposal-share/fresh-token", tokenPrefix: "fresh-to",
+      proposal: proposal({ status: "sent", currentVersion: 3, sentVersion: 3, sentAt: NOW, lastSentAt: NOW, linkOpenedAt: null }),
     });
     render(<ProposalsDesk />);
     const panel = within(await openProposal());
@@ -493,7 +495,7 @@ describe("the next step", () => {
     expect(await panel.findByText(/the client's link shows version 2/u)).toBeDefined();
   });
 
-  it("says a closed link showed a version, the figure the client was sent, and that the older share code records no opens", async () => {
+  it("says a closed link showed a version, the figure the client was sent, and that without a link nothing records opens", async () => {
     existing = [proposal({ status: "withdrawn", currentVersion: 3, sentVersion: 2, linkOpen: false, latestTotalMinor: 1_000_000, latestCurrency: "GBP" })];
     render(<ProposalsDesk />);
     const closed = within(await openProposal());
@@ -504,7 +506,24 @@ describe("the next step", () => {
     existing = [proposal({ status: "sent", currentVersion: 1, sentVersion: 1, sentAt: NOW, hasLink: false })];
     render(<ProposalsDesk />);
     const older = within(await openProposal());
-    expect(older.getByTestId("link-opened").textContent).toBe("It was sent with the older share code, which does not record being opened.");
+    expect(older.getByTestId("link-opened").textContent).toBe("It has no link that records being opened. Issue a new link if the client needs one.");
+  });
+
+  it("takes the row a withdrawal answers with, so its link and figure are true before the desk reads it again", async () => {
+    // Version 3 is the booker's, in hand; version 2 was sent, at £10,000.
+    existing = [proposal({ status: "changes_requested", currentVersion: 3, sentVersion: 2, sentAt: NOW, latestTotalMinor: 1_200_000, latestCurrency: "GBP" })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(3));
+    mocks.transitionProposal.mockResolvedValue(proposal({
+      status: "withdrawn", currentVersion: 3, sentVersion: 2, sentAt: NOW, latestTotalMinor: 1_000_000, latestCurrency: "GBP", linkOpen: false,
+    }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    // The quiet read after the move never arrives.
+    mocks.getDeskProposal.mockImplementation(() => new Promise(() => undefined));
+    fireEvent.click(panel.getByTestId("withdraw-button"));
+    fireEvent.click(panel.getByTestId("withdraw-confirm-button"));
+    expect(await panel.findByText(/the client's link, which showed version 2, no longer opens/u)).toBeDefined();
+    expect(panel.getByText("£10,000, as sent in version 2", { selector: "dd" })).toBeDefined();
   });
 
   it("offers archive, and no link, composer or withdrawal, once a proposal is settled", async () => {
@@ -617,6 +636,51 @@ describe("the next version", () => {
     expect(kept.getByText("Here is the later finish you asked for.")).toBeDefined();
     expect(panel.queryByTestId("composer-save")).toBeNull();
     expect(panel.getByText("With the client")).toBeDefined();
+  });
+
+  it("keeps a version that did not save once its composer has gone, until it is cleared or a version saves", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 1, sentVersion: 1 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1));
+    mocks.createProposalVersion.mockImplementationOnce(() => {
+      // A colleague sent version 1 again while this version was being written.
+      existing = [proposal({ status: "sent", currentVersion: 1, sentVersion: 1, sentAt: NOW })];
+      return Promise.reject(new ApiError(422, "Proposal content is frozen in its current status", "NOT_EDITABLE"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "Here is the later finish you asked for." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    expect(await panel.findByTestId("kept-version")).toBeDefined();
+
+    // The client asks again, and the proposal is opened afresh: the composer
+    // starts from version 1 again, and the words are still there to copy.
+    existing = [proposal({ status: "changes_requested", currentVersion: 1, sentVersion: 1, sentAt: NOW })];
+    fireEvent.keyDown(panel.getByRole("heading", { level: 2, name: "Autumn gala" }), { key: "Escape" });
+    await waitFor(() => { expect(screen.queryByRole("heading", { level: 2, name: "Autumn gala" })).toBeNull(); });
+    const again = within(await openProposal());
+    expect((await again.findByTestId<HTMLTextAreaElement>("composer-message")).value).toBe("");
+    expect(within(again.getByTestId("kept-version")).getByText("Here is the later finish you asked for.")).toBeDefined();
+    // Put away once copied, it stays away.
+    fireEvent.click(again.getByTestId("kept-version-clear"));
+    expect(again.queryByTestId("kept-version")).toBeNull();
+  });
+
+  it("shows no second copy while the composer still holds a version that did not arrive, and none once it saves", async () => {
+    existing = [proposal({ status: "draft", currentVersion: 0 })];
+    mocks.createProposalVersion.mockRejectedValueOnce(new Error("offline")).mockImplementationOnce((_id: string, payload: Record<string, unknown>) => {
+      existing = [proposal({ currentVersion: 1 })];
+      return Promise.resolve(version(1, payload));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Planning-grade draft." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    expect(await panel.findByTestId("composer-error")).toBeDefined();
+    expect(panel.queryByTestId("kept-version")).toBeNull();
+    expect(panel.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("Planning-grade draft.");
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 1. Nothing is changed from it yet."); });
+    expect(panel.queryByTestId("kept-version")).toBeNull();
   });
 
   it("saves a first version without a quote, and the next then starts from it", async () => {

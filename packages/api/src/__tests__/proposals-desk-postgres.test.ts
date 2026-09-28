@@ -268,10 +268,14 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
     const withdrawn = await proposal("Withdrawn", "withdrawn", "2026-09-05T10:00:00Z", { version: 1 });
     const archivedAccepted = await proposal("Accepted, archived", "archived", "2026-09-05T10:00:00Z", { version: 1 });
     const shareCodeOnly = await proposal("Older code only", "sent", "2026-09-05T10:00:00Z", { version: 1 });
+    // Archived with no record of the move: closed, and never an empty answer
+    // the desk cannot read.
+    const archivedUnrecorded = await proposal("Archived, unrecorded", "archived", "2026-09-05T10:00:00Z", { version: 1 });
     await pool.query("INSERT INTO proposal_status_history (proposal_id, from_status, to_status) VALUES ($1, 'accepted', 'archived')", [archivedAccepted]);
     const byId = new Map((await desk()).data.map((row) => [row.id, row]));
     expect(byId.get(withdrawn)?.linkOpen).toBe(false);
     expect(byId.get(archivedAccepted)?.linkOpen).toBe(true);
+    expect(byId.get(archivedUnrecorded)?.linkOpen).toBe(false);
     expect(byId.get(shareCodeOnly)).toMatchObject({ linkOpen: true, hasLink: false });
   });
 

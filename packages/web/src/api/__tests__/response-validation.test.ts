@@ -22,6 +22,7 @@ const pricing = await import("../pricing.js");
 const spaces = await import("../spaces.js");
 const uploads = await import("../uploads.js");
 const configurations = await import("../configurations.js");
+const proposals = await import("../proposals.js");
 
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -246,6 +247,30 @@ describe("configurations response validation", () => {
       expectedRevision: 1,
       currentRevision: 2,
       message: "Layout changed on the server. Reload before saving again.",
+    });
+  });
+});
+
+describe("proposals: a move and a new link answer with the desk row", () => {
+  const row = {
+    id: "p1", venueId: "v1", opportunityId: null, enquiryId: null, configurationId: null, title: "Autumn gala", status: "withdrawn",
+    currentVersion: 3, shareCode: null, sentAt: "2026-10-01T09:00:00.000Z", createdBy: "u1", createdAt: "2026-09-20T09:00:00.000Z",
+    updatedAt: "2026-10-02T09:00:00.000Z", deletedAt: null, dealTitle: null, clientName: "Elaine Crawford", eventDate: null,
+    guestCount: null, eventType: null, latestTotalMinor: 1_000_000, latestCurrency: "GBP", linkOpenedAt: null, sentVersion: 2,
+    lastSentAt: "2026-10-01T09:00:00.000Z", hasLink: true, linkOpen: false,
+  };
+
+  it("keeps what a move changes: the link closed, and the figure the client was sent", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: row }));
+    await expect(proposals.transitionProposal("p1", "withdrawn")).resolves
+      .toMatchObject({ status: "withdrawn", linkOpen: false, latestTotalMinor: 1_000_000, sentVersion: 2 });
+  });
+
+  it("keeps what a send establishes on the proposal a new link answers with", async () => {
+    const sent = { ...row, status: "sent", sentVersion: 3, linkOpen: true, lastSentAt: "2026-10-02T09:00:00.000Z" };
+    fetchMock.mockResolvedValue(jsonResponse({ data: { token: "t", shareUrl: "/proposal-share/t", tokenPrefix: "t", proposal: sent } }, 201));
+    await expect(proposals.createProposalShareToken("p1", 3)).resolves.toMatchObject({
+      proposal: { status: "sent", sentVersion: 3, linkOpen: true, hasLink: true, lastSentAt: "2026-10-02T09:00:00.000Z", linkOpenedAt: null },
     });
   });
 });

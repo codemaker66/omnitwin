@@ -103,9 +103,10 @@ export function linkOpenedWords(linkOpenedAt: string | null, nowMs: number): str
 }
 
 /** The panel's sentence for the same: "The link was last opened Tue 29 Sep,
- *  14:10." A proposal sent only with the older share code records no opens. */
+ *  14:10." With no link made nothing records opens; the older share code
+ *  records none. */
 export function linkOpenedSentence(linkOpenedAt: string | null, hasLink = true): string {
-  if (!hasLink) return "It was sent with the older share code, which does not record being opened.";
+  if (!hasLink) return "It has no link that records being opened. Issue a new link if the client needs one.";
   const at = (linkOpenedAt ?? null) === null ? null : venueMoment(linkOpenedAt ?? "");
   return at === null ? "The link has not been opened since it was sent." : `The link was last opened ${at}.`;
 }
@@ -185,6 +186,13 @@ export interface ComposerDraft {
 }
 
 export const EMPTY_DRAFT: ComposerDraft = { message: "", capacityNote: "", lines: [] };
+
+/** A version that did not save, and which composer wrote it: that composer
+ *  still holds the words; once it is gone they are shown to copy. */
+export interface KeptVersion {
+  readonly draft: ComposerDraft;
+  readonly composer: number;
+}
 
 /** The latest version's words and quote, ready to be changed rather than
  *  typed again. */

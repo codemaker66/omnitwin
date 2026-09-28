@@ -24,9 +24,9 @@ import { useLatestRequest } from "../hooks/use-latest-request.js";
 // the version the client read, so a page older than the version now sent
 // cannot accept it unseen. Whenever the API refuses an answer because the
 // proposal has moved on, the page reads it again and says what it now finds,
-// keeping what was typed. A newer version that arrives by any read is said
-// so before it can be answered. The two actions are exactly the ones the
-// state machine grants a client on a sent proposal.
+// keeping what was typed. A newer version, or the same one sent again, that
+// arrives by any read is said so before it can be answered. The two actions
+// are exactly the ones the state machine grants a client on a sent proposal.
 // ---------------------------------------------------------------------------
 
 type LoadState =
@@ -44,9 +44,19 @@ const OUTCOME_WORDS: Readonly<Record<Outcome, string>> = {
 };
 
 /** Why an answer did not land: a newer version, a proposal that moved on,
- *  or a failure to arrive. The words are chosen from what the page then
- *  shows, so they are never about a form that is gone. */
+ *  or a failure to arrive. The words are chosen once the proposal has been
+ *  read again, from what the page then shows, so they are never about a form
+ *  that is gone. */
 type Failure = "version" | "moved" | "failed";
+
+/** A refusal, whether the proposal could then be read again, and the send
+ *  (version and when it was sent) the page showed once it was. */
+interface Refusal {
+  readonly why: Failure;
+  readonly reread: boolean;
+  readonly version: number;
+  readonly sentAt: string | null;
+}
 
 function failureOf(error: unknown): Failure {
   if (!(error instanceof ApiError)) return "failed";
@@ -58,6 +68,7 @@ function failureOf(error: unknown): Failure {
 
 const NO_LONGER_WAITING = "This proposal is no longer waiting for an answer. It now shows where it stands.";
 const NEWER_VERSION = "A newer version was sent after you opened this page. It is shown above now.";
+const SENT_AGAIN = "The venue team sent this version to you again. You can answer it below.";
 
 /** The words for a failed answer, beside a form that is still there. */
 const OPEN_FAILURE_WORDS: Readonly<Record<Failure, string>> = {
@@ -66,16 +77,22 @@ const OPEN_FAILURE_WORDS: Readonly<Record<Failure, string>> = {
   failed: "Your answer did not reach the venue team. Please try again, or contact them directly.",
 };
 
+/** A refusal whose proposal could not be read again: nothing newer is shown. */
+const UNREAD_WORDS = "Your answer was not taken, because this proposal changed while it was on its way. Please reload the page to see it as it stands; what you typed is still here.";
+
 export function ProposalPage(): ReactElement {
   const { shareCode, token } = useParams<{ shareCode?: string; token?: string }>();
   const hasToken = token !== undefined && token.length > 0;
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  // Words an answer or a message carried when it was refused, kept so a link
-  // that has since closed still gives them back.
+  // Words an answer or a message carried when it was refused, kept only when
+  // the read that refusal made finds the link closed, so the closed page
+  // gives back exactly what did not reach the venue team.
   const [kept, setKept] = useState<string | null>(null);
   const reads = useLatestRequest();
+  const unavailableRef = useRef<HTMLHeadingElement | null>(null);
+  const wasReady = useRef(false);
 
-  const read = useCallback((): Promise<PublicProposal | null> => {
+  const read = useCallback((words: string | null = null): Promise<PublicProposal | null> => {
     const owns = reads.begin();
     const loader = hasToken ? getProposalShare(token) : shareCode !== undefined && shareCode.length > 0 ? getPublicProposal(shareCode) : null;
     if (loader === null) {
@@ -88,7 +105,10 @@ export function ProposalPage(): ReactElement {
         // A link withdrawn or retired is no longer the client's to read; a
         // read that only failed to arrive keeps the page as it was.
         const closed = error instanceof ApiError && (error.status === 404 || error.status === 410);
-        if (owns()) setState((current) => current.kind === "ready" && !closed ? current : { kind: "error" });
+        if (owns()) {
+          setState((current) => current.kind === "ready" && !closed ? current : { kind: "error" });
+          if (closed) setKept(words);
+        }
         return null;
       },
     );
@@ -99,6 +119,13 @@ export function ProposalPage(): ReactElement {
   useEffect(() => {
     if (state.kind === "ready") document.title = documentTitle(state.proposal);
   }, [state]);
+
+  // A link that closes while the page is open takes the focus to the sentence
+  // that says so, since the form that had it is gone.
+  useEffect(() => {
+    if (state.kind === "error" && wasReady.current) unavailableRef.current?.focus();
+    wasReady.current = state.kind === "ready";
+  }, [state.kind]);
 
   if (state.kind === "loading") {
     return (
@@ -112,7 +139,7 @@ export function ProposalPage(): ReactElement {
     return (
       <main aria-label="Client proposal" className="pd-page" data-register="ivory">
         <div className="pd-sheet pd-state">
-          <h1>This proposal link isn't available</h1>
+          <h1 ref={unavailableRef} tabIndex={-1}>This proposal link isn't available</h1>
           <p>The link may have expired or been withdrawn. Please ask the venue team who sent it for a current copy.</p>
           {kept !== null && (
             <div className="pd-state__kept">
@@ -129,8 +156,8 @@ export function ProposalPage(): ReactElement {
     <main aria-label="Client proposal">
       <ProposalDocument
         proposal={state.proposal}
-        conversation={hasToken ? <Conversation proposal={state.proposal} token={token} onPosted={read} onKeep={setKept} /> : null}
-        decision={<Decision proposal={state.proposal} token={hasToken ? token : null} shareCode={shareCode ?? null} onAnswered={read} onKeep={setKept} />}
+        conversation={hasToken ? <Conversation proposal={state.proposal} token={token} onPosted={read} /> : null}
+        decision={<Decision proposal={state.proposal} token={hasToken ? token : null} shareCode={shareCode ?? null} onAnswered={read} />}
       />
     </main>
   );
@@ -144,13 +171,12 @@ interface DecisionProps {
   readonly proposal: PublicProposal;
   readonly token: string | null;
   readonly shareCode: string | null;
-  /** Reads the proposal again, as it now stands. */
-  readonly onAnswered: () => Promise<PublicProposal | null>;
-  /** Keeps words a refused answer carried, for a link that has closed. */
-  readonly onKeep: (words: string) => void;
+  /** Reads the proposal again, as it now stands; words a refused answer
+   *  carried are kept should that read find the link closed. */
+  readonly onAnswered: (words?: string | null) => Promise<PublicProposal | null>;
 }
 
-function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionProps): ReactElement | null {
+function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): ReactElement | null {
   const headingId = useId();
   const nameId = useId();
   const nameHelpId = useId();
@@ -161,11 +187,12 @@ function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionPr
   const [asking, setAsking] = useState(false);
   const [note, setNote] = useState("");
   const [working, setWorking] = useState<ProposalResponseAction | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  // What this visit's answer did, for the version it was given on.
-  const [outcome, setOutcome] = useState<{ readonly kind: Outcome; readonly version: number } | null>(null);
+  const [failure, setFailure] = useState<Refusal | null>(null);
+  // What this visit's answer did, for the send it was given on: the version,
+  // and when it was sent, since the same version can be sent again.
+  const [outcome, setOutcome] = useState<{ readonly kind: Outcome; readonly version: number; readonly sentAt: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [seenVersion, setSeenVersion] = useState(proposal.version);
+  const [seen, setSeen] = useState<{ readonly version: number; readonly sentAt: string | null }>({ version: proposal.version, sentAt: proposal.sentAt });
   const [returnFocus, setReturnFocus] = useState<ProposalResponseAction | null>(null);
   const outcomeRef = useRef<HTMLParagraphElement | null>(null);
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
@@ -176,14 +203,19 @@ function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionPr
   const refusalRef = useRef<HTMLParagraphElement | null>(null);
   const backToAsk = useRef(false);
 
-  // A newer version reached by any read (a message's, a refused answer's) is
-  // said so before it can be answered; an answer given on the old one no
-  // longer describes it.
-  if (proposal.version !== seenVersion) {
-    setSeenVersion(proposal.version);
-    if (proposal.status === "sent" && failure === null) setNotice(NEWER_VERSION);
+  // A new send reached by any read (a message's, a refused answer's) is said
+  // so before it can be answered, and an earlier answer or refusal no longer
+  // describes it. A refusal whose own read brought the send already says so,
+  // as it will once an answer still on its way has been read again.
+  if (proposal.version !== seen.version || proposal.sentAt !== seen.sentAt) {
+    setSeen({ version: proposal.version, sentAt: proposal.sentAt });
+    const refusalSaysIt = failure !== null && failure.version === proposal.version && failure.sentAt === proposal.sentAt;
+    if (proposal.status === "sent" && working === null && !refusalSaysIt) {
+      setFailure(null);
+      setNotice(proposal.version !== seen.version ? NEWER_VERSION : SENT_AGAIN);
+    }
   }
-  const answered = outcome !== null && outcome.version === proposal.version ? outcome.kind : null;
+  const answered = outcome !== null && outcome.version === proposal.version && outcome.sentAt === proposal.sentAt ? outcome.kind : null;
 
   // The buttons are gone once the answer lands, so the sentence that replaces
   // them takes focus.
@@ -236,7 +268,7 @@ function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionPr
     setWorking(action);
     setFailure(null);
     setNotice(null);
-    const version = proposal.version;
+    const { version, sentAt } = proposal;
     try {
       let already = false;
       if (token !== null) {
@@ -248,14 +280,23 @@ function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionPr
         throw new Error("Missing proposal link");
       }
       await onAnswered();
-      setOutcome({ kind: action === "accept" ? already ? "already_accepted" : "accepted" : "changes_requested", version });
+      setOutcome({ kind: action === "accept" ? already ? "already_accepted" : "accepted" : "changes_requested", version, sentAt });
+      // The request is in the thread now; should the outcome give way to a
+      // new send, the form comes back empty rather than holding it unsent.
+      if (action === "request_changes") {
+        setNote("");
+        setAsking(false);
+      }
     } catch (error: unknown) {
       const why = failureOf(error);
-      setFailure(why);
-      if (why !== "failed") {
-        if (action === "request_changes" && note.trim() !== "") onKeep(note.trim());
-        await onAnswered();
-      }
+      // Refused, the proposal is read again first, and the words then chosen
+      // from what that read shows.
+      const words = action === "request_changes" && note.trim() !== "" ? note.trim() : null;
+      const shown = why === "failed" ? null : await onAnswered(words);
+      setFailure({
+        why, reread: why === "failed" || shown !== null,
+        version: shown?.version ?? version, sentAt: shown === null ? sentAt : shown.sentAt,
+      });
       setReturnFocus(action);
     } finally {
       setWorking(null);
@@ -349,7 +390,9 @@ function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionPr
         )}
       </div>
 
-      {failure !== null && <p role="alert" className="pd-decision__error">{OPEN_FAILURE_WORDS[failure]}</p>}
+      {failure !== null && (
+        <p role="alert" className="pd-decision__error">{failure.reread ? OPEN_FAILURE_WORDS[failure.why] : UNREAD_WORDS}</p>
+      )}
     </section>
   );
 }
@@ -358,17 +401,18 @@ function Decision({ proposal, token, shareCode, onAnswered, onKeep }: DecisionPr
 // The conversation (links only; the older share code has no comment route)
 // ---------------------------------------------------------------------------
 
-function Conversation({ proposal, token, onPosted, onKeep }: {
+function Conversation({ proposal, token, onPosted }: {
   readonly proposal: PublicProposal;
   readonly token: string;
-  readonly onPosted: () => Promise<PublicProposal | null>;
-  readonly onKeep: (words: string) => void;
+  /** Reads the proposal again; words a refused message carried are kept
+   *  should that read find the link closed. */
+  readonly onPosted: (words?: string | null) => Promise<PublicProposal | null>;
 }): ReactElement | null {
   const headingId = useId();
   const fieldId = useId();
   const [text, setText] = useState("");
   const [posting, setPosting] = useState(false);
-  const [failure, setFailure] = useState<Failure | null>(null);
+  const [failure, setFailure] = useState<Refusal | null>(null);
   const [returnFocus, setReturnFocus] = useState(false);
   const fieldRef = useRef<HTMLTextAreaElement | null>(null);
   const refusalRef = useRef<HTMLParagraphElement | null>(null);
@@ -396,12 +440,11 @@ function Conversation({ proposal, token, onPosted, onKeep }: {
       .then(() => onPosted())
       .then(() => { setText(""); })
       .catch(async (error: unknown) => {
+        // Refused, the proposal is read again first, and the words then
+        // chosen from what that read shows.
         const why = failureOf(error);
-        setFailure(why);
-        if (why !== "failed") {
-          onKeep(text.trim());
-          await onPosted();
-        }
+        const shown = why === "failed" ? null : await onPosted(text.trim());
+        setFailure({ why, reread: why === "failed" || shown !== null, version: shown?.version ?? proposal.version, sentAt: shown?.sentAt ?? proposal.sentAt });
         setReturnFocus(true);
       })
       .finally(() => { setPosting(false); });
@@ -410,9 +453,11 @@ function Conversation({ proposal, token, onPosted, onKeep }: {
   // Chosen from what the page now shows: open, the message can go again.
   const words = !open
     ? "This proposal is no longer taking messages here."
-    : failure === "failed"
+    : failure?.why === "failed"
       ? "Your message was not posted. It is still here; please try again."
-      : "This proposal changed while your message was on its way. It is still here; you can send it again.";
+      : failure?.reread === false
+        ? "Your message was not posted, because this proposal changed while it was on its way. Please reload the page to see it as it stands; your message is still here."
+        : "This proposal changed while your message was on its way. It is still here; you can send it again.";
 
   return (
     <section className="pd-conversation pd-section" aria-labelledby={headingId} data-testid="proposal-comments">

@@ -75,7 +75,7 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     schema.proposals, schema.proposalVersions, schema.proposalStatusHistory, schema.proposalComments,
     schema.proposalShareTokens, schema.packageSelections, schema.venues, schema.configurations, schema.spaces,
     schema.enquiries, schema.opportunities, schema.opportunityStatusHistory, schema.events, schema.eventConfigurationLinks,
-    schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications,
+    schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications, schema.contacts,
   ];
 
   // The older share-code path retires on a date; these tests read it as it

@@ -240,15 +240,6 @@ export interface CreateProposalInput {
   readonly configurationId?: string | null;
 }
 
-const ShareTokenResultSchema = z.object({
-  token: z.string(),
-  shareUrl: z.string(),
-  tokenPrefix: z.string(),
-  proposal: StaffProposalSchema,
-});
-
-export type ShareTokenResult = z.infer<typeof ShareTokenResultSchema>;
-
 export async function listProposals(status?: string): Promise<StaffProposal[]> {
   const params = status !== undefined ? `?status=${encodeURIComponent(status)}` : "";
   return api.get(`/proposals${params}`, z.array(StaffProposalSchema));
@@ -294,6 +285,16 @@ export const DeskProposalSchema = StaffProposalSchema.extend({
 });
 
 export type DeskProposal = z.infer<typeof DeskProposalSchema>;
+
+/** A new link, with the proposal as its row on the desk now reads. */
+const ShareTokenResultSchema = z.object({
+  token: z.string(),
+  shareUrl: z.string(),
+  tokenPrefix: z.string(),
+  proposal: DeskProposalSchema,
+});
+
+export type ShareTokenResult = z.infer<typeof ShareTokenResultSchema>;
 
 /** The desk's groups, in the order a booker works them. */
 export const PROPOSAL_DESK_GROUPS = ["waiting", "drafts", "with_client", "accepted", "closed"] as const;
@@ -351,8 +352,10 @@ export async function updateProposalTitle(id: string, title: string): Promise<St
   return api.patch(`/proposals/${id}`, { title }, StaffProposalSchema);
 }
 
-export async function transitionProposal(id: string, status: string, note?: string): Promise<StaffProposal> {
-  return api.post(`/proposals/${id}/transition`, { status, note: note ?? null }, undefined, StaffProposalSchema);
+/** Moves it, answering with its row as the desk now reads it: the figure that
+ *  stands and whether the client's link opens change with the move. */
+export async function transitionProposal(id: string, status: string, note?: string): Promise<DeskProposal> {
+  return api.post(`/proposals/${id}/transition`, { status, note: note ?? null }, undefined, DeskProposalSchema);
 }
 
 /** Sends the version the booker confirmed; a newer one saved meanwhile is

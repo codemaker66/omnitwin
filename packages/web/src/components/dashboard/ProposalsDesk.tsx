@@ -22,7 +22,7 @@ import {
 import { ProposalsLedger } from "./proposals/ProposalsLedger.js";
 import { ProposalsStages } from "./proposals/ProposalsStages.js";
 import {
-  groupRows, groupWords, proposalStatusWords, proposalsSummary, type ComposerDraft, type ProposalFilter,
+  groupRows, groupWords, proposalStatusWords, proposalsSummary, type ComposerDraft, type KeptVersion, type ProposalFilter,
 } from "./proposals/proposals-desk-format.js";
 import "./enquiries/EnquiriesDesk.css";
 import "./pipeline/PipelineDesk.css";
@@ -141,7 +141,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   const [links, setLinks] = useState<Readonly<Record<string, string>>>({});
   // A version that did not save, kept per proposal so it can be copied once
   // the proposal has moved on and its composer is gone.
-  const [keptDrafts, setKeptDrafts] = useState<Readonly<Record<string, ComposerDraft>>>({});
+  const [keptDrafts, setKeptDrafts] = useState<Readonly<Record<string, KeptVersion>>>({});
   const [creating, setCreating] = useState(false);
   const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0 });
   const listRequest = useLatestRequest();
@@ -371,17 +371,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     const made = await createProposalShareToken(id, before?.currentVersion);
     setLinks((current) => ({ ...current, [id]: `${window.location.origin}${made.shareUrl}` }));
     if (made.proposal.status !== before?.status) setStampKey(Date.now());
-    // What the send established, until the quiet read below confirms it: the
-    // link shows the version sent, and a new send has not been opened yet.
-    // A proposal already answered keeps the version answered.
-    const answered = before === null || !["draft", "sent", "changes_requested"].includes(before.status);
-    const resent = before !== null && (before.status !== "sent" || before.sentVersion !== before.currentVersion);
-    applyProposal({
-      ...made.proposal,
-      hasLink: true,
-      ...(answered ? {} : { sentVersion: made.proposal.currentVersion }),
-      ...(!answered && resent ? { linkOpenedAt: null, lastSentAt: new Date().toISOString() } : {}),
-    });
+    // The API answers with its row as the desk now reads it: the version the
+    // link shows, the send's stamp and that it has not been opened since.
+    applyProposal(made.proposal);
     readAgain(id);
     setReads((current) => ({ ...current, history: current.history + 1 }));
     readList(Math.max(PAGE, rows.length));
@@ -441,19 +433,30 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     return `Version ${String(saved.version)} is saved.`;
   });
 
-  const onSaveVersion = async (draft: ComposerDraft): Promise<boolean> => {
+  const forgetKept = (id: string): void => {
+    setKeptDrafts((current) => {
+      if (!(id in current)) return current;
+      const { [id]: _done, ...rest } = current;
+      return rest;
+    });
+  };
+
+  // A version that did not save is kept, so it can still be copied once the
+  // composer that wrote it is gone.
+  const onSaveVersion = async (draft: ComposerDraft, composer: number): Promise<boolean> => {
     const id = proposal?.id ?? null;
     const saved = await saveVersion(draft);
     if (id !== null) {
-      setKeptDrafts((current) => {
-        if (saved) {
-          const { [id]: _done, ...rest } = current;
-          return rest;
-        }
-        return { ...current, [id]: draft };
-      });
+      if (saved) forgetKept(id);
+      else setKeptDrafts((current) => ({ ...current, [id]: { draft, composer } }));
     }
     return saved;
+  };
+
+  const onDiscardKept = (): void => {
+    if (openId === null) return;
+    forgetKept(openId);
+    panelHeadingRef.current?.focus({ preventScroll: true });
   };
 
   const onReply = (body: string): Promise<boolean> => attempt("reply", "reply", async (id) => {
@@ -506,6 +509,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     onMakeLink,
     onTransition,
     onSaveVersion,
+    onDiscardKept,
     onReply,
     onRetryLatest: () => { setReads((current) => ({ ...current, latest: current.latest + 1 })); },
     onRetryHistory: () => { setReads((current) => ({ ...current, history: current.history + 1 })); },
