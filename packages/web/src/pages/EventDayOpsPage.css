@@ -225,6 +225,22 @@
   color: #454d43;
 }
 
+/* A change feed that could not be read: said in place, with a way to try
+   again, above whatever was last read. */
+.event-day-feed-notice {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.event-day-section .event-day-feed-notice p {
+  color: #3a453b;
+  font-weight: 700;
+  margin: 0;
+}
+
 .event-day-section-head {
   align-items: center;
   display: flex;

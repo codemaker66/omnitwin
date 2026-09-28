@@ -84,6 +84,19 @@ function formatEventDate(iso: string | null, timeZone: string): string {
   });
 }
 
+/** A change-feed read, or null when it could not be read: a failed read is
+ *  never taken for "no changes". */
+function readChangeFeed(eventId: string): Promise<readonly ChangeFeedItem[] | null> {
+  return getEventChangeFeed(eventId, 25).catch((): null => null);
+}
+
+/** What the page says when the change feed could not be read: that nothing is
+ *  known yet, or from when the changes shown were read. */
+function changeFeedFailed(at: string, readAt: string | null): string {
+  if (readAt === null) return `Couldn't read the changes at ${at}, so what waits for acknowledgement is not known yet. It tries again every 10 seconds.`;
+  return readAt === at ? `Couldn't refresh the changes at ${at}.` : `Couldn't refresh the changes at ${at}. Showing them as they were at ${readAt}.`;
+}
+
 function formatTime(iso: string | null, timeZone: string): string {
   if (iso === null) return "--:--";
   const date = new Date(iso);
@@ -218,7 +231,11 @@ export function EventDayOpsPage(): ReactElement {
   const [pendingIssues, setPendingIssues] = useState(0);
   const [issueDraft, setIssueDraft] = useState<IssueDraft>(EMPTY_ISSUE_DRAFT);
   const [notice, setNotice] = useState<string | null>(null);
-  const [changeFeed, setChangeFeed] = useState<readonly ChangeFeedItem[]>([]);
+  // The changes last read, or null before any read has landed; and when a
+  // read last failed, until one lands. A failed read keeps what was read.
+  const [changeFeed, setChangeFeed] = useState<readonly ChangeFeedItem[] | null>(null);
+  const [feedReadAt, setFeedReadAt] = useState<string | null>(null);
+  const [feedFailedAt, setFeedFailedAt] = useState<string | null>(null);
   const [acknowledgedChanges, setAcknowledgedChanges] = useState<ReadonlySet<string>>(new Set());
   // Until the first read of the room's acknowledgements settles, the page does
   // not know which changes are still waiting, and says so rather than listing
@@ -257,7 +274,21 @@ export function EventDayOpsPage(): ReactElement {
   useEffect(() => {
     setAcknowledgedChanges(new Set());
     setAcknowledgementsKnown(false);
+    setChangeFeed(null);
+    setFeedReadAt(null);
+    setFeedFailedAt(null);
   }, [eventId]);
+
+  const applyChangeFeed = useCallback((changes: readonly ChangeFeedItem[] | null) => {
+    const at = new Date().toISOString();
+    if (changes === null) {
+      setFeedFailedAt(at);
+      return;
+    }
+    setChangeFeed(changes);
+    setFeedReadAt(at);
+    setFeedFailedAt(null);
+  }, []);
 
   const refreshPendingCount = useCallback(() => {
     void listPendingEventDayOps()
@@ -276,13 +307,10 @@ export function EventDayOpsPage(): ReactElement {
     // other. The page still waits for both, as it did, so the changes it
     // lists for acknowledgement never appear after the board has drawn
     // without them; only the board's own read can fail the page.
-    void Promise.all([
-      getEventDayOpsBoard(eventId),
-      getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
-    ])
+    void Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)])
       .then(([board, changes]) => {
         setState({ kind: "ready", board });
-        setChangeFeed(changes);
+        applyChangeFeed(changes);
         setLastSyncedAt(new Date().toISOString());
       })
       .catch(() => {
@@ -291,7 +319,7 @@ export function EventDayOpsPage(): ReactElement {
           message: "This event-day board could not be loaded. Check the event link or try again.",
         });
       });
-  }, [eventId, readAcknowledgements]);
+  }, [applyChangeFeed, eventId, readAcknowledgements]);
 
   /**
    * A background refresh: it never shows the full-page loading state and
@@ -303,20 +331,17 @@ export function EventDayOpsPage(): ReactElement {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
     readAcknowledgements();
-    void Promise.all([
-      getEventDayOpsBoard(eventId),
-      getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
-    ])
+    void Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)])
       .then(([board, changes]) => {
         setState({ kind: "ready", board });
-        setChangeFeed(changes);
+        applyChangeFeed(changes);
         setLastSyncedAt(new Date().toISOString());
       })
       .catch(() => {
         // Keep the last good board; the next tick retries.
       })
       .finally(() => { refreshInFlight.current = false; });
-  }, [eventId, readAcknowledgements]);
+  }, [applyChangeFeed, eventId, readAcknowledgements]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -349,19 +374,16 @@ export function EventDayOpsPage(): ReactElement {
       refreshPendingCount();
       if (eventId !== undefined) {
         readAcknowledgements();
-        const [board, changes] = await Promise.all([
-          getEventDayOpsBoard(eventId),
-          getEventChangeFeed(eventId, 25).catch((): ChangeFeedItem[] => []),
-        ]);
+        const [board, changes] = await Promise.all([getEventDayOpsBoard(eventId), readChangeFeed(eventId)]);
         setState({ kind: "ready", board });
-        setChangeFeed(changes);
+        applyChangeFeed(changes);
       }
       setSyncing(false);
     })().catch(() => {
       setSyncing(false);
       refreshPendingCount();
     });
-  }, [eventId, readAcknowledgements, refreshPendingCount, syncing]);
+  }, [applyChangeFeed, eventId, readAcknowledgements, refreshPendingCount, syncing]);
 
   useEffect(() => {
     loadBoard();
@@ -434,7 +456,7 @@ export function EventDayOpsPage(): ReactElement {
   );
   const syncLabel = pendingCount === 0 ? "Synced" : `${String(pendingCount)} pending sync`;
   const requiredAcknowledgements = useMemo(
-    () => changeFeed
+    () => (changeFeed ?? [])
       .filter((change) => change.requiresHallkeeperAcknowledgement)
       .filter((change) => !acknowledgedChanges.has(change.id)),
     [acknowledgedChanges, changeFeed],
@@ -672,34 +694,43 @@ export function EventDayOpsPage(): ReactElement {
         title="Required acknowledgements"
         icon={<Bell aria-hidden="true" />}
       >
-        {!acknowledgementsKnown && changeFeed.some((change) => change.requiresHallkeeperAcknowledgement) ? (
-          <ActivityStatus>Checking what the room has acknowledged…</ActivityStatus>
-        ) : requiredAcknowledgements.length === 0 ? (
-          <p className="event-day-muted">No changes awaiting acknowledgement.</p>
-        ) : (
-          <div className="event-day-change-feed">
-            {requiredAcknowledgements.map((change) => (
-              <article key={change.id} data-risk={change.riskLevel}>
-                <div>
-                  <span>{change.riskLevel}</span>
-                  <h3>{change.title}</h3>
-                  <p>{change.summary}</p>
-                  <small>{formatChangeTime(change.createdAt, timeZone)} · {change.affectedSurfaces.join(", ")}</small>
-                </div>
-                <button
-                  type="button"
-                  className="event-day-button secondary"
-                  disabled={ackBusyId === change.id}
-                  aria-busy={ackBusyId === change.id}
-                  onClick={() => { acknowledgeChange(change); }}
-                >
-                  {ackBusyId === change.id ? <ActivityIndicator size={20} /> : <Check aria-hidden="true" />}
-                  Acknowledge change
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
+        {/* One column beside the heading: what could not be read, above what was. */}
+        <div>
+          {feedFailedAt !== null && (
+            <div className="event-day-feed-notice" role="status">
+              <p>{changeFeedFailed(formatTime(feedFailedAt, timeZone), feedReadAt === null ? null : formatTime(feedReadAt, timeZone))}</p>
+              <button type="button" className="event-day-button secondary" onClick={refreshBoard}>Try again</button>
+            </div>
+          )}
+          {changeFeed === null ? null : !acknowledgementsKnown && changeFeed.some((change) => change.requiresHallkeeperAcknowledgement) ? (
+            <ActivityStatus>Checking what the room has acknowledged…</ActivityStatus>
+          ) : requiredAcknowledgements.length === 0 ? (
+            <p className="event-day-muted">No changes awaiting acknowledgement.</p>
+          ) : (
+            <div className="event-day-change-feed">
+              {requiredAcknowledgements.map((change) => (
+                <article key={change.id} data-risk={change.riskLevel}>
+                  <div>
+                    <span>{change.riskLevel}</span>
+                    <h3>{change.title}</h3>
+                    <p>{change.summary}</p>
+                    <small>{formatChangeTime(change.createdAt, timeZone)} · {change.affectedSurfaces.join(", ")}</small>
+                  </div>
+                  <button
+                    type="button"
+                    className="event-day-button secondary"
+                    disabled={ackBusyId === change.id}
+                    aria-busy={ackBusyId === change.id}
+                    onClick={() => { acknowledgeChange(change); }}
+                  >
+                    {ackBusyId === change.id ? <ActivityIndicator size={20} /> : <Check aria-hidden="true" />}
+                    Acknowledge change
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
       </Section>
 
       <Section

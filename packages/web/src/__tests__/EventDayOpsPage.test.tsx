@@ -464,13 +464,49 @@ describe("EventDayOpsPage", () => {
     expect(mockGetEventChangeFeed).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the board when only its change feed cannot be read", async () => {
-    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
-    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
-    renderPage();
+  it("keeps the board when only its change feed cannot be read, and never takes the failure for no changes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // 14:05 in Glasgow.
+      vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      renderPage();
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
-    expect(screen.queryByText("Event-day board unavailable")).toBeNull();
+      expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
+      expect(screen.queryByText("Event-day board unavailable")).toBeNull();
+      expect(await screen.findByText("Couldn't read the changes at 14:05, so what waits for acknowledgement is not known yet. It tries again every 10 seconds.")).toBeTruthy();
+      expect(screen.queryByText("No changes awaiting acknowledgement.")).toBeNull();
+
+      // Tried again and read: the notice goes, and the changes are listed.
+      mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(await screen.findByText("Guest count changed")).toBeTruthy();
+      expect(screen.queryByText(/Couldn't read the changes/u)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the changes last read when a later read fails, and says from when", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockGetEventChangeFeed.mockResolvedValueOnce([requiredChangeFixture()]);
+      renderPage();
+      expect(await screen.findByText("Guest count changed")).toBeTruthy();
+
+      // Ten minutes on, the feed cannot be read: what was read stays.
+      vi.setSystemTime(new Date("2026-06-11T13:15:00.000Z"));
+      mockGetEventChangeFeed.mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
+      expect(await screen.findByText("Couldn't refresh the changes at 14:15. Showing them as they were at 14:05.")).toBeTruthy();
+      expect(screen.getByText("Guest count changed")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Acknowledge change" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not invent a setup-sheet link when the event has no linked handoff", async () => {
