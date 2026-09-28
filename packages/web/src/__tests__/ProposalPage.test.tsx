@@ -398,6 +398,34 @@ describe("the decision", () => {
     expect(screen.queryByText("Your changes went to the venue team. This version is on hold until they send the next one.")).toBeNull();
   });
 
+  it("confirms an answer from a page opened before the same version was sent again", async () => {
+    // Opened at the first send; meanwhile someone asked for changes and the
+    // venue sent version 1 again.
+    const resent = "2026-06-13T09:00:00.000Z";
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "accepted", sentAt: resent, accepted: { by: "Elaine Crawford", at: "2026-06-14T09:00:00.000Z" } }));
+    mockApproveProposalShare.mockResolvedValue({ status: "accepted" });
+    renderTokenPage();
+    fireEvent.change(await screen.findByLabelText("Your name"), { target: { value: "Elaine Crawford" } });
+    fireEvent.click(screen.getByRole("button", { name: "Accept version 1" }));
+    const outcome = await screen.findByText("You accepted this version. The venue team has been told.");
+    await waitFor(() => { expect(document.activeElement).toBe(outcome); });
+    cleanup();
+
+    mockGetProposalShare.mockReset();
+    mockCommentOnProposalShare.mockReset();
+    mockGetProposalShare
+      .mockResolvedValueOnce(fixtureProposal())
+      .mockResolvedValueOnce(fixtureProposal({ status: "changes_requested", sentAt: resent }));
+    mockCommentOnProposalShare.mockResolvedValue({ kind: "request_changes" });
+    renderTokenPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Ask for changes…" }));
+    fireEvent.change(screen.getByLabelText("What would you like changed?"), { target: { value: "Could we seat 130?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send to the venue team" }));
+    expect(await screen.findByText("Your changes went to the venue team. This version is on hold until they send the next one.")).toBeTruthy();
+  });
+
   it("gives way to a newer version brought by a message after an answer that did not arrive", async () => {
     mockGetProposalShare
       .mockResolvedValueOnce(fixtureProposal())

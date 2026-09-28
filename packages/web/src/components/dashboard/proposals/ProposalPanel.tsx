@@ -59,9 +59,9 @@ export interface ProposalPanelProps {
   /** The client's link, once made in this visit; links are kept hashed, so
    *  one made earlier can never be shown again. */
   readonly shareUrl: string | null;
-  /** A version that did not save, kept to copy once the composer that wrote
-   *  it is gone. */
-  readonly keptDraft: KeptVersion | null;
+  /** Versions that did not save, each kept to copy once the composer that
+   *  wrote it is gone. */
+  readonly keptDrafts: readonly KeptVersion[];
   readonly working: ProposalWork;
   readonly failure: ProposalFailure | null;
   /** Each resolves true once done, so the panel can put its question away. */
@@ -70,8 +70,8 @@ export interface ProposalPanelProps {
   /** `composer` names the composer saving, which still holds the words
    *  should the version not save. */
   readonly onSaveVersion: (draft: ComposerDraft, composer: number) => Promise<boolean>;
-  /** Puts the kept version away once it has been copied. */
-  readonly onDiscardKept: () => void;
+  /** Puts one kept version away once it has been copied. */
+  readonly onDiscardKept: (composer: number) => void;
   readonly onReply: (body: string) => Promise<boolean>;
   readonly onRetryLatest: () => void;
   readonly onRetryHistory: () => void;
@@ -367,34 +367,42 @@ function Composer(props: ProposalPanelProps): ReactElement {
   return <ComposerForm key={`${proposal.id}:${String(latest.value?.version ?? 0)}`} {...props} />;
 }
 
-/** A version that did not save: what was written, to copy, with why it did
- *  not save. While the composer that wrote it is there, that composer is the
+/** Versions that did not save: what was written, to copy, with why it did
+ *  not save. While the composer that wrote one is there, that composer is its
  *  copy; once it is gone (the proposal moved on, or the composer started again
  *  from the proposal as it now is) the words are shown here until they are
  *  put away or a version saves. `holder` is the composer beside it, if any. */
-function KeptDraft({ proposal, keptDraft, failure, onDiscardKept, holder }: ProposalPanelProps & { readonly holder: number | null }): ReactElement | null {
+function KeptDraft({ proposal, keptDrafts, failure, onDiscardKept, holder }: ProposalPanelProps & { readonly holder: number | null }): ReactElement | null {
   const headingId = useId();
-  if (keptDraft === null || keptDraft.composer === holder) return null;
+  const shown = keptDrafts.filter((kept) => kept.composer !== holder);
+  if (shown.length === 0) return null;
   const composing = COMPOSABLE.includes(proposal.status);
-  const { draft } = keptDraft;
-  const lines = draft.lines.filter((line) => line.description.trim() !== "");
   return (
     <section className="enq-section" aria-labelledby={headingId} data-testid="kept-version">
-      <h3 id={headingId}>The version that did not save</h3>
+      <h3 id={headingId}>{shown.length === 1 ? "The version that did not save" : "The versions that did not save"}</h3>
       {!composing && failure?.where === "version" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
       <p className="enq-next__hint">What you wrote is kept here to copy.</p>
-      {draft.message.trim() !== "" && <p className="pr-kept">{draft.message}</p>}
-      {draft.capacityNote.trim() !== "" && <p className="pr-kept">Capacity: {draft.capacityNote}</p>}
-      {lines.length > 0 && (
-        <ul className="pr-kept__lines">
-          {lines.map((line, index) => (
-            <li key={index}>{line.description} · {line.quantity} × £{line.pounds === "" ? "0" : line.pounds}</li>
-          ))}
-        </ul>
-      )}
-      <div className="enq-actions">
-        <button type="button" className="enq-quiet" data-testid="kept-version-clear" onClick={onDiscardKept}>Clear this copy</button>
-      </div>
+      {shown.map(({ draft, composer }) => {
+        const lines = draft.lines.filter((line) => line.description.trim() !== "");
+        return (
+          <div key={composer} className="pr-kept__one">
+            {draft.message.trim() !== "" && <p className="pr-kept">{draft.message}</p>}
+            {draft.capacityNote.trim() !== "" && <p className="pr-kept">Capacity: {draft.capacityNote}</p>}
+            {lines.length > 0 && (
+              <ul className="pr-kept__lines">
+                {lines.map((line, index) => (
+                  <li key={index}>{line.description} · {line.quantity} × £{line.pounds === "" ? "0" : line.pounds}</li>
+                ))}
+              </ul>
+            )}
+            <div className="enq-actions">
+              <button type="button" className="enq-quiet" data-testid="kept-version-clear" onClick={() => { onDiscardKept(composer); }}>
+                Clear this copy
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

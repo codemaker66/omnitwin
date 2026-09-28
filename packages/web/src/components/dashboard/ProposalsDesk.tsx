@@ -139,9 +139,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [stampKey, setStampKey] = useState<number | null>(null);
   const [links, setLinks] = useState<Readonly<Record<string, string>>>({});
-  // A version that did not save, kept per proposal so it can be copied once
-  // the proposal has moved on and its composer is gone.
-  const [keptDrafts, setKeptDrafts] = useState<Readonly<Record<string, KeptVersion>>>({});
+  // Versions that did not save, kept per proposal and per composer so each can
+  // be copied once the composer that wrote it is gone.
+  const [keptDrafts, setKeptDrafts] = useState<Readonly<Record<string, readonly KeptVersion[]>>>({});
   const [creating, setCreating] = useState(false);
   const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0 });
   const listRequest = useLatestRequest();
@@ -433,29 +433,40 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     return `Version ${String(saved.version)} is saved.`;
   });
 
-  const forgetKept = (id: string): void => {
+  /** Forgets the proposal's kept versions: one composer's, or all of them. */
+  const forgetKept = (id: string, composer: number | null): void => {
     setKeptDrafts((current) => {
-      if (!(id in current)) return current;
+      const kept = current[id];
+      if (kept === undefined) return current;
+      const left = composer === null ? [] : kept.filter((entry) => entry.composer !== composer);
+      if (left.length === kept.length) return current;
       const { [id]: _done, ...rest } = current;
-      return rest;
+      return left.length === 0 ? rest : { ...rest, [id]: left };
     });
   };
 
   // A version that did not save is kept, so it can still be copied once the
-  // composer that wrote it is gone.
+  // composer that wrote it is gone. A composer's later failure replaces only
+  // its own; one kept from an earlier composer stays until it is put away or
+  // a version saves.
   const onSaveVersion = async (draft: ComposerDraft, composer: number): Promise<boolean> => {
     const id = proposal?.id ?? null;
     const saved = await saveVersion(draft);
     if (id !== null) {
-      if (saved) forgetKept(id);
-      else setKeptDrafts((current) => ({ ...current, [id]: { draft, composer } }));
+      if (saved) forgetKept(id, null);
+      else {
+        setKeptDrafts((current) => ({
+          ...current,
+          [id]: [...(current[id] ?? []).filter((entry) => entry.composer !== composer), { draft, composer }],
+        }));
+      }
     }
     return saved;
   };
 
-  const onDiscardKept = (): void => {
+  const onDiscardKept = (composer: number): void => {
     if (openId === null) return;
-    forgetKept(openId);
+    forgetKept(openId, composer);
     panelHeadingRef.current?.focus({ preventScroll: true });
   };
 
@@ -503,7 +514,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     comments,
     spaces,
     shareUrl: openId === null ? null : links[openId] ?? null,
-    keptDraft: openId === null ? null : keptDrafts[openId] ?? null,
+    keptDrafts: openId === null ? [] : keptDrafts[openId] ?? [],
     working,
     failure,
     onMakeLink,

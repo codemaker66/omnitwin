@@ -58,6 +58,7 @@
 .pr-compose .enq-actions { margin-top: 16px; }
 .pr-kept { margin: 8px 0 0; padding: 8px 12px; border-left: 2px solid var(--reg-rule); color: var(--reg-text-1); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pr-kept__lines { margin: 8px 0 0; padding-left: 18px; color: var(--reg-text-1); }
+.pr-kept__one + .pr-kept__one { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--reg-rule); }
 
 /* Capacity guidance, a help beside the note. */
 .pr-guidance {

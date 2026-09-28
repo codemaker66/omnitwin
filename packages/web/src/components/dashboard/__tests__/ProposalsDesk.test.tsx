@@ -665,6 +665,49 @@ describe("the next version", () => {
     expect(again.queryByTestId("kept-version")).toBeNull();
   });
 
+  it("keeps each version that did not save through later failures, until each is cleared", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 1, sentVersion: 1, sentAt: NOW })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1));
+    mocks.createProposalVersion.mockRejectedValue(new Error("offline"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "Words one." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await panel.findByTestId("composer-error");
+    fireEvent.keyDown(panel.getByRole("heading", { level: 2, name: "Autumn gala" }), { key: "Escape" });
+    await waitFor(() => { expect(screen.queryByRole("heading", { level: 2, name: "Autumn gala" })).toBeNull(); });
+    const again = within(await openProposal());
+    await again.findByTestId("composer-message");
+    expect(within(again.getByTestId("kept-version")).getByText("Words one.")).toBeDefined();
+
+    // Refused here, before anything is sent: the first words stay.
+    fireEvent.click(again.getByTestId("add-quote-line"));
+    fireEvent.change(again.getByTestId("quote-desc-0"), { target: { value: "Late licence extension" } });
+    fireEvent.click(again.getByTestId("composer-save"));
+    expect((await again.findByTestId("composer-error")).textContent).toBe("Quote line 1 needs a price like 120 or 120.50.");
+    expect(within(again.getByTestId("kept-version")).getByText("Words one.")).toBeDefined();
+
+    // A second attempt that does not arrive: the first words still stay.
+    fireEvent.click(again.getByRole("button", { name: "Remove quote line 1" }));
+    fireEvent.change(again.getByTestId("composer-message"), { target: { value: "Words two." } });
+    fireEvent.click(again.getByTestId("composer-save"));
+    await waitFor(() => { expect(again.getByTestId("composer-error").textContent).toBe("The version did not save. Your changes are still here."); });
+    expect(within(again.getByTestId("kept-version")).getByText("Words one.")).toBeDefined();
+
+    // Its composer gone too, both are there to copy, and each clears alone.
+    fireEvent.keyDown(again.getByRole("heading", { level: 2, name: "Autumn gala" }), { key: "Escape" });
+    await waitFor(() => { expect(screen.queryByRole("heading", { level: 2, name: "Autumn gala" })).toBeNull(); });
+    const third = within(await openProposal());
+    await third.findByTestId("composer-message");
+    const kept = within(third.getByTestId("kept-version"));
+    expect(kept.getByRole("heading", { name: "The versions that did not save" })).toBeDefined();
+    expect(kept.getByText("Words one.")).toBeDefined();
+    expect(kept.getByText("Words two.")).toBeDefined();
+    fireEvent.click(kept.getAllByTestId("kept-version-clear")[0] as HTMLElement);
+    expect(within(third.getByTestId("kept-version")).queryByText("Words one.")).toBeNull();
+    expect(within(third.getByTestId("kept-version")).getByText("Words two.")).toBeDefined();
+  });
+
   it("shows no second copy while the composer still holds a version that did not arrive, and none once it saves", async () => {
     existing = [proposal({ status: "draft", currentVersion: 0 })];
     mocks.createProposalVersion.mockRejectedValueOnce(new Error("offline")).mockImplementationOnce((_id: string, payload: Record<string, unknown>) => {

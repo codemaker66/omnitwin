@@ -279,8 +279,13 @@ function Decision({ proposal, token, shareCode, onAnswered }: DecisionProps): Re
       } else {
         throw new Error("Missing proposal link");
       }
-      await onAnswered();
-      setOutcome({ kind: action === "accept" ? already ? "already_accepted" : "accepted" : "changes_requested", version, sentAt });
+      // The answer stands on the send it landed on: the one the page showed,
+      // or, when the proposal was sent again meanwhile with this version, the
+      // one the read shows the answer settled. A read that shows it sent is a
+      // send after the answer, which the answer no longer describes.
+      const shown = await onAnswered();
+      const landed = shown !== null && shown.status !== "sent" && shown.version === version ? shown.sentAt : sentAt;
+      setOutcome({ kind: action === "accept" ? already ? "already_accepted" : "accepted" : "changes_requested", version, sentAt: landed });
       // The request is in the thread now; should the outcome give way to a
       // new send, the form comes back empty rather than holding it unsent.
       if (action === "request_changes") {
