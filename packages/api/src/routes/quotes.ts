@@ -146,7 +146,7 @@ export async function quoteRoutes(
     }
 
     if (parsed.data.proposalId !== undefined && parsed.data.proposalId !== null) {
-      const [proposal] = await db.select({ venueId: proposals.venueId })
+      const [proposal] = await db.select({ venueId: proposals.venueId, opportunityId: proposals.opportunityId })
         .from(proposals)
         .where(and(eq(proposals.id, parsed.data.proposalId), isNull(proposals.deletedAt)))
         .limit(1);
@@ -155,6 +155,11 @@ export async function quoteRoutes(
       }
       if (proposal.venueId !== parsed.data.venueId) {
         return reply.status(422).send({ error: "Proposal belongs to a different venue", code: "VENUE_MISMATCH" });
+      }
+      // A quote for a proposal is for the proposal's deal, if it names one.
+      const namedDeal = parsed.data.opportunityId ?? null;
+      if (namedDeal !== null && namedDeal !== proposal.opportunityId) {
+        return reply.status(422).send({ error: "The quote names a deal that is not its proposal's", code: "LINK_MISMATCH" });
       }
     }
     if (parsed.data.enquiryId !== undefined && parsed.data.enquiryId !== null) {

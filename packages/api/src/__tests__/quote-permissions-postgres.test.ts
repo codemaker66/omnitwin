@@ -238,6 +238,73 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     expect(await value(fresh.id)).toBe(1_580_000);
   });
 
+  // The version's quote gives its deal a figure only when it is this
+  // proposal's own live quote and the deal has none. (A deal and a quote are
+  // both kept in pounds, so the currency guard cannot be reached here.)
+  it("fills a deal only from its own proposal's live quote, when it has no value", async () => {
+    const f = await fixture("sales");
+    const deal = async (currency: string, estimatedValueMinor = 0) => {
+      const [row] = await db.insert(schema.opportunities).values({ venueId: f.venueId, title: "Fixture deal", stage: "qualified",
+        estimatedValueMinor, currency, nextAction: "Draft" }).returning();
+      if (row === undefined) throw new Error("Missing deal fixture");
+      const [made] = await db.insert(schema.proposals).values({ venueId: f.venueId, opportunityId: row.id, title: "Fixture proposal" }).returning();
+      if (made === undefined) throw new Error("Missing proposal fixture");
+      return { dealId: row.id, proposalId: made.id };
+    };
+    const quoteFor = async (proposalId: string, currency = "GBP") => {
+      const made = await server.inject({ method: "POST", url: "/quotes", headers: f.headers,
+        payload: { venueId: f.venueId, proposalId, name: "Quote", currency, lineItems: [{ description: "Room hire", quantity: 1, unitAmountMinor: 440_000 }] } });
+      expect(made.statusCode, made.body).toBe(201);
+      return made.json<{ data: { id: string; totalMinor: number; currency: string } }>().data;
+    };
+    const saveWith = (proposalId: string, quote: { id: string; totalMinor: number; currency: string }) => server.inject({
+      method: "POST", url: `/proposals/${proposalId}/versions`, headers: f.headers,
+      payload: { schemaVersion: "venviewer.proposal-version.v1", title: "Fixture proposal", clientMessage: null, configurationId: null,
+        layoutRevision: null, capacityNote: null, quote: { quoteId: quote.id, currency: quote.currency,
+          lineItems: [{ description: "Room hire", quantity: 1, unitAmountMinor: 440_000, lineTotalMinor: 440_000 }],
+          subtotalMinor: quote.totalMinor, totalMinor: quote.totalMinor } } });
+    const value = async (id: string) => (await db.select({ minor: schema.opportunities.estimatedValueMinor })
+      .from(schema.opportunities).where(eq(schema.opportunities.id, id)))[0]?.minor;
+
+    // Another proposal's quote.
+    const own = await deal("GBP");
+    const other = await deal("GBP");
+    const othersQuote = await quoteFor(other.proposalId);
+    expect((await saveWith(own.proposalId, othersQuote)).statusCode).toBe(201);
+    expect(await value(own.dealId)).toBe(0);
+    // A quote since deleted.
+    const deleted = await quoteFor(own.proposalId);
+    expect((await server.inject({ method: "DELETE", url: `/quotes/${deleted.id}`, headers: f.headers })).statusCode).toBe(204);
+    expect((await saveWith(own.proposalId, deleted)).statusCode).toBe(201);
+    expect(await value(own.dealId)).toBe(0);
+    // A value already set is the booker's.
+    const valued = await deal("GBP", 900_000);
+    expect((await saveWith(valued.proposalId, await quoteFor(valued.proposalId))).statusCode).toBe(201);
+    expect(await value(valued.dealId)).toBe(900_000);
+    // And the proposal's own live quote fills an empty deal.
+    expect((await saveWith(own.proposalId, await quoteFor(own.proposalId))).statusCode).toBe(201);
+    expect(await value(own.dealId)).toBe(440_000);
+  });
+
+  it("refuses a quote that names a deal other than its proposal's", async () => {
+    const f = await fixture("sales");
+    const [ours, theirs] = await db.insert(schema.opportunities).values([
+      { venueId: f.venueId, title: "Ours", stage: "qualified", estimatedValueMinor: 0, currency: "GBP", nextAction: "Draft" },
+      { venueId: f.venueId, title: "Theirs", stage: "qualified", estimatedValueMinor: 0, currency: "GBP", nextAction: "Draft" },
+    ]).returning();
+    if (ours === undefined || theirs === undefined) throw new Error("Missing deal fixtures");
+    const [proposal] = await db.insert(schema.proposals).values({ venueId: f.venueId, opportunityId: ours.id, title: "Ours" }).returning();
+    if (proposal === undefined) throw new Error("Missing proposal fixture");
+    const make = (opportunityId: string) => server.inject({ method: "POST", url: "/quotes", headers: f.headers,
+      payload: { venueId: f.venueId, proposalId: proposal.id, opportunityId, name: "Quote", currency: "GBP",
+        lineItems: [{ description: "Room hire", quantity: 1, unitAmountMinor: 440_000 }] } });
+    const refused = await make(theirs.id);
+    expect(refused.statusCode, refused.body).toBe(422);
+    expect(refused.json<{ code: string }>().code).toBe("LINK_MISMATCH");
+    expect((await make(ours.id)).statusCode).toBe(201);
+    expect(await db.select().from(schema.quotes).where(eq(schema.quotes.proposalId, proposal.id))).toHaveLength(1);
+  });
+
   it("retains issued-record protection for venue admins and the existing platform override", async () => {
     for (const platformRole of ["none", "admin"] as const) {
       const f = await fixture("admin", platformRole === "admin", platformRole);
