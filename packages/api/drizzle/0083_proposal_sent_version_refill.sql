@@ -29,6 +29,11 @@
 -- latest acceptance, through a link. The names this release writes are the
 -- ones on those notes, so both statements leave them as they are.
 --
+-- Versions and moves are stamped with their transaction's start, not its
+-- commit, so a version save that began before an answer and committed after it
+-- is taken as saved before it; the window is the moment between a save's start
+-- and its hold on the row, and only a save racing an answer falls in it.
+--
 -- Every statement gives the same answer when run again. The whole file runs
 -- in one transaction; a lock that cannot be had within ten seconds fails it,
 -- and nothing changes.

@@ -81,6 +81,9 @@ describe.skipIf(testUrl === undefined)("what a send and an acceptance record, on
       });
       await pool.query(`CREATE TABLE "${config.name}" (${columns.join(", ")})`);
     }
+    // Migration 0082's own check on the version recorded.
+    await pool.query(`ALTER TABLE proposals ADD CONSTRAINT proposals_sent_version_positive
+      CHECK (sent_version IS NULL OR (sent_version >= 1 AND sent_version <= current_version))`);
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
@@ -163,6 +166,42 @@ describe.skipIf(testUrl === undefined)("what a send and an acceptance record, on
     await saveVersion(3);
     expect(await move("declined")).toBe(200);
     expect(await row()).toMatchObject({ status: "declined", sent_version: 3 });
+  });
+
+  it("records no version for an answer given on a proposal with none saved", async () => {
+    // A venue administrator may move a proposal anywhere, even one with
+    // nothing written yet.
+    await pool.query("DELETE FROM proposal_versions");
+    await pool.query("UPDATE proposals SET current_version = 0 WHERE id = $1", [PROPOSAL]);
+    const venueAdmin = { authorization: `Bearer ${JSON.stringify({ id: STAFF, email: "fixture@example.test", role: "admin", platformRole: "none", venueId: VENUE })}` };
+    const declined = await server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/transition`, headers: venueAdmin, payload: { status: "declined" } });
+    expect(declined.statusCode, declined.body).toBe(200);
+    expect(await row()).toMatchObject({ status: "declined", sent_version: null });
+  });
+
+  it("makes no link over an answer that landed after the proposal was read", async () => {
+    expect(await makeLink()).toBe(201);
+    await saveVersion(2);
+    const other = await pool.connect();
+    try {
+      // The client accepts while the link is being made.
+      await other.query("BEGIN");
+      await other.query("UPDATE proposals SET status = 'accepted' WHERE id = $1", [PROPOSAL]);
+      const pending = server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/share-token`, headers });
+      await expect.poll(async () => Number((await pool.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+        [fixtureSchema],
+      )).rows[0]?.count), { timeout: 5000 }).toBe(1);
+      await other.query("COMMIT");
+      const res = await pending;
+      expect(res.statusCode, res.body).toBe(409);
+      expect((JSON.parse(res.body) as { code: string }).code).toBe("PROPOSAL_STATUS_CHANGED");
+    } finally {
+      other.release();
+    }
+    // The acceptance stands on the version sent, and no second link exists.
+    expect(await row()).toMatchObject({ status: "accepted", sent_version: 1 });
+    expect((await pool.query("SELECT id FROM proposal_share_tokens")).rowCount).toBe(1);
   });
 
   it("keeps an answered proposal on the version that was answered when a new link is made", async () => {

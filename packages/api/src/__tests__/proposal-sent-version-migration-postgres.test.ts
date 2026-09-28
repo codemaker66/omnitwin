@@ -86,6 +86,11 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     sentThenSavedAfterFill: randomUUID(),
     writtenByRelease: randomUUID(),
     archivedAfterAnswerOnAdminSave: randomUUID(),
+    changesAskedOnFirstSend: randomUUID(),
+    changesAskedAfterAdminSave: randomUUID(),
+    expiredAfterAdminSave: randomUUID(),
+    acceptedTwiceAcrossVersions: randomUUID(),
+    blankApprovalName: randomUUID(),
   };
 
   async function proposal(id: string, status: string, currentVersion: number): Promise<void> {
@@ -257,6 +262,28 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     await version(ids.archivedAfterAnswerOnAdminSave, 3, "2026-09-02T10:00:00Z");
     await moved(ids.archivedAfterAnswerOnAdminSave, "accepted", "archived", "2026-09-03T10:00:00Z");
 
+    // A draft when 0082 ran; afterwards sent, changes asked for, saved again.
+    await proposal(ids.changesAskedOnFirstSend, "draft", 0);
+    // Sent on version 1 when 0082 ran; afterwards saved while out, then
+    // changes asked for, or marked expired and saved again.
+    for (const id of [ids.changesAskedAfterAdminSave, ids.expiredAfterAdminSave]) {
+      await proposal(id, "sent", 1);
+      await version(id, 1, "2026-09-01T10:00:00Z");
+      await moved(id, "draft", "sent", "2026-09-01T10:05:00Z");
+    }
+    // Accepted on version 1 when 0082 ran; afterwards reopened, saved and
+    // accepted again.
+    await proposal(ids.acceptedTwiceAcrossVersions, "accepted", 1);
+    await version(ids.acceptedTwiceAcrossVersions, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.acceptedTwiceAcrossVersions, "draft", "sent", "2026-09-01T10:05:00Z");
+    await moved(ids.acceptedTwiceAcrossVersions, "sent", "accepted", "2026-09-01T11:00:00Z");
+    // Accepted through a link giving a blank name.
+    await proposal(ids.blankApprovalName, "accepted", 1);
+    await version(ids.blankApprovalName, 1, "2026-09-01T10:00:00Z");
+    await moved(ids.blankApprovalName, "draft", "sent", "2026-09-01T10:05:00Z");
+    await moved(ids.blankApprovalName, "sent", "accepted", "2026-09-01T11:00:00Z");
+    await note(ids.blankApprovalName, "", "2026-09-01T11:00:00Z");
+
     // Exactly as it ships, in one transaction as the migrator runs it.
     await applyMigration(pool);
   }, 120_000);
@@ -345,6 +372,26 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     await moved(ids.writtenByRelease, "draft", "sent", "2026-09-28T09:15:00Z");
     await moved(ids.writtenByRelease, "sent", "accepted", "2026-09-28T10:00:00Z");
     await note(ids.writtenByRelease, "Elaine Crawford", "2026-09-28T10:00:00Z");
+    // Sent on version 1, changes asked for, version 2 saved and not yet sent.
+    await pool.query("UPDATE proposals SET status = 'changes_requested', current_version = 2 WHERE id = $1", [ids.changesAskedOnFirstSend]);
+    await version(ids.changesAskedOnFirstSend, 1, "2026-09-28T09:00:00Z");
+    await moved(ids.changesAskedOnFirstSend, "draft", "sent", "2026-09-28T09:05:00Z");
+    await moved(ids.changesAskedOnFirstSend, "sent", "changes_requested", "2026-09-28T10:00:00Z");
+    await version(ids.changesAskedOnFirstSend, 2, "2026-09-28T11:00:00Z");
+    // Version 2 saved while out, then changes asked for on what the link showed.
+    await pool.query("UPDATE proposals SET status = 'changes_requested', current_version = 2 WHERE id = $1", [ids.changesAskedAfterAdminSave]);
+    await version(ids.changesAskedAfterAdminSave, 2, "2026-09-28T09:00:00Z");
+    await moved(ids.changesAskedAfterAdminSave, "sent", "changes_requested", "2026-09-28T10:00:00Z");
+    // Version 2 saved while out, marked expired, version 3 saved after.
+    await pool.query("UPDATE proposals SET status = 'expired', current_version = 3 WHERE id = $1", [ids.expiredAfterAdminSave]);
+    await version(ids.expiredAfterAdminSave, 2, "2026-09-28T09:00:00Z");
+    await moved(ids.expiredAfterAdminSave, "sent", "expired", "2026-09-28T10:00:00Z");
+    await version(ids.expiredAfterAdminSave, 3, "2026-09-28T11:00:00Z");
+    // Reopened, version 2 saved while out, accepted again.
+    await pool.query("UPDATE proposals SET current_version = 2 WHERE id = $1", [ids.acceptedTwiceAcrossVersions]);
+    await moved(ids.acceptedTwiceAcrossVersions, "accepted", "sent", "2026-09-28T09:00:00Z");
+    await version(ids.acceptedTwiceAcrossVersions, 2, "2026-09-28T09:30:00Z");
+    await moved(ids.acceptedTwiceAcrossVersions, "sent", "accepted", "2026-09-28T10:00:00Z");
 
     // Reopened by an administrator and accepted again, through another link
     // as Bob Kerr, and by the team with no name.
@@ -394,11 +441,20 @@ describe.skipIf(testUrl === undefined)("migrations 0082 and 0083 on isolated Pos
     expect((await stored(ids.archivedAfterAnswerOnAdminSave)).sent_version).toBe(2);
     // What this release writes stands.
     expect(await stored(ids.writtenByRelease)).toEqual({ sent_version: 2, accepted_name: "Elaine Crawford" });
+    // Changes asked for, or expired: the version its link showed then.
+    expect((await stored(ids.changesAskedOnFirstSend)).sent_version).toBe(1);
+    expect((await stored(ids.changesAskedAfterAdminSave)).sent_version).toBe(2);
+    expect((await stored(ids.expiredAfterAdminSave)).sent_version).toBe(2);
+    // The latest acceptance, not the first.
+    expect((await stored(ids.acceptedTwiceAcrossVersions)).sent_version).toBe(2);
+    // A blank name is no name.
+    expect((await stored(ids.blankApprovalName)).accepted_name).toBeNull();
     const settled: readonly string[] = [
       ids.changesAskedThenSaved, ids.draft, ids.sentOnce,
       ids.acceptedAgainByAnother, ids.acceptedAgainByTeam, ids.linkMadeWhileSent, ids.draftAtFillThenAccepted,
       ids.answeredAfterAdminSave, ids.adminSavedWhileSent, ids.savedAfterAcceptance, ids.declinedAfterAdminSave,
       ids.sentThenSavedAfterFill, ids.writtenByRelease, ids.archivedAfterAnswerOnAdminSave,
+      ids.changesAskedOnFirstSend, ids.changesAskedAfterAdminSave, ids.expiredAfterAdminSave, ids.acceptedTwiceAcrossVersions,
     ];
     const after = (await pool.query<Stored & { id: string }>("SELECT id, sent_version, accepted_name FROM proposals ORDER BY id")).rows;
     const unchanged = (rows: readonly (Stored & { id: string })[]) => rows.filter((row) => !settled.includes(row.id));

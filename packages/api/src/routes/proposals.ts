@@ -754,7 +754,7 @@ export async function proposalRoutes(
     if (parsed.data.status === "accepted") updateData["acceptedName"] = null;
     // (until links show the sent version): an answer, the client's or the team's, is on the version
     // the link shows, its current one.
-    if (ANSWERED_STATUSES.includes(parsed.data.status)) updateData["sentVersion"] = sql`${proposals.currentVersion}`;
+    if (ANSWERED_STATUSES.includes(parsed.data.status)) updateData["sentVersion"] = LINK_VERSION;
 
     const fromStatus = proposal.status;
     const [updated] = await db.update(proposals)
@@ -949,6 +949,13 @@ export async function proposalRoutes(
 
     const now = new Date();
     const result = await db.transaction(async (tx) => {
+      // The link, its status change and the version it sends are decided on
+      // the row as it stands, held: an answer that landed since the read
+      // above stands, and nothing is sent over it.
+      const [held] = await tx.select({ status: proposals.status }).from(proposals)
+        .where(and(eq(proposals.id, proposal.id), isNull(proposals.deletedAt)))
+        .for("update");
+      if (held?.status !== proposal.status) return null;
       const [shareToken] = await tx.insert(proposalShareTokens).values({
         proposalId: proposal.id,
         tokenHash,
@@ -996,6 +1003,12 @@ export async function proposalRoutes(
 
       return { shareToken, proposal: updated };
     });
+    if (result === null) {
+      return reply.status(409).send({
+        error: "The proposal changed while this was on its way. Reload it to see where it stands.",
+        code: "PROPOSAL_STATUS_CHANGED",
+      });
+    }
     if (result.proposal.status !== proposal.status) {
       await moveDealFor(db, result.proposal, result.proposal.status, request.user.id, request.log);
     }
@@ -1198,6 +1211,10 @@ const ShareCodeParam = z.object({ shareCode: ShortCodeSchema });
 
 /** The statuses a proposal takes when it is answered, by the client or for them. */
 const ANSWERED_STATUSES: readonly string[] = ["accepted", "declined", "expired", "changes_requested"];
+
+/** (until links show the sent version) The version a link shows as the row
+ *  is written: its current one, or none before any is saved. */
+const LINK_VERSION = sql`NULLIF(${proposals.currentVersion}, 0)`;
 
 // ---------------------------------------------------------------------------
 // Legacy share-code retirement
@@ -1458,8 +1475,8 @@ export async function publicProposalRoutes(
       // (until links show the sent version): the answer is on the version the link showed, its
       // current one.
       .set(toStatus === "accepted"
-        ? { status: toStatus, acceptedName: null, sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() }
-        : { status: toStatus, sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() })
+        ? { status: toStatus, acceptedName: null, sentVersion: LINK_VERSION, updatedAt: new Date() }
+        : { status: toStatus, sentVersion: LINK_VERSION, updatedAt: new Date() })
       .where(eq(proposals.id, proposal.id))
       .returning({ status: proposals.status });
 
@@ -1558,7 +1575,7 @@ export async function proposalShareRoutes(
         // (until links show the sent version): the answer is on the version the link showed, its
         // current one.
         await tx.update(proposals)
-          .set({ status: "changes_requested", sentVersion: sql`${proposals.currentVersion}`, updatedAt: new Date() })
+          .set({ status: "changes_requested", sentVersion: LINK_VERSION, updatedAt: new Date() })
           .where(eq(proposals.id, resolved.proposal.id));
         await tx.insert(proposalStatusHistory).values({
           proposalId: resolved.proposal.id,
@@ -1628,7 +1645,7 @@ export async function proposalShareRoutes(
           acceptedName: acceptedName === "" ? null : acceptedName,
           // (until links show the sent version): the answer is on the version the link showed, its
           // current one.
-          sentVersion: sql`${proposals.currentVersion}`,
+          sentVersion: LINK_VERSION,
           updatedAt: new Date(),
         })
         .where(eq(proposals.id, resolved.proposal.id));
