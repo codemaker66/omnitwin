@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { FloorPlanPoint, ProposalLayoutItem, ProposalLayoutSnapshot } from "@omnitwin/types";
 import { MAX_PROPOSAL_LAYOUT_ITEMS } from "@omnitwin/types";
 import { assetDefinitions, configurations, placedObjects, spaces } from "../db/schema.js";
@@ -136,16 +136,21 @@ export async function resolveProposalLayoutSnapshot(
     assetDefinitionId: placedObjects.assetDefinitionId,
   }).from(placedObjects)
     .where(eq(placedObjects.configurationId, configurationId))
-    .orderBy(placedObjects.sortOrder);
+    // Pieces placed at the same step share a sort order, so the id settles
+    // theirs: the same layout always draws, and past the item cap keeps, the
+    // same pieces in the same order.
+    .orderBy(placedObjects.sortOrder, placedObjects.id);
   if (objects.length === 0) return null;
 
+  // Only the pieces placed are looked up, not the whole catalogue.
   const assetRows = await db.select({
     id: assetDefinitions.id,
     widthM: assetDefinitions.widthM,
     depthM: assetDefinitions.depthM,
     category: assetDefinitions.category,
     name: assetDefinitions.name,
-  }).from(assetDefinitions);
+  }).from(assetDefinitions)
+    .where(inArray(assetDefinitions.id, [...new Set(objects.map((object) => object.assetDefinitionId))]));
 
   const assetById = new Map<string, SnapshotAssetDims>(
     assetRows.map((row) => [row.id, {

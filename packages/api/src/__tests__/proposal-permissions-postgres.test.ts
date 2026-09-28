@@ -167,7 +167,7 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
       payload: savedPayload, sourceHash: proposalVersionPayloadDigest(savedPayload) });
     await db.update(schema.proposals).set({ currentVersion: 1 }).where(eq(schema.proposals.id, f.proposal.id));
   }
-  const OPENINGS = ["", "/history", "/comments", "/versions/latest", "/versions/1", "/available-transitions"] as const;
+  const OPENINGS = ["", "/history", "/comments", "/versions/latest", "/versions/next", "/versions/1", "/available-transitions"] as const;
   async function opened(f: Fixture): Promise<readonly number[]> {
     const codes: number[] = [];
     for (const path of OPENINGS) {

@@ -12,6 +12,8 @@ import {
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
   type EventPlanAudienceRole,
   type EventPlanChangeSurface,
+  type ProposalFacts,
+  type ProposalNextVersion,
   type ProposalVersionPayload,
   type ProposalStatus,
 } from "@omnitwin/types";
@@ -42,7 +44,7 @@ import {
   getAvailableProposalTransitions,
 } from "../state-machines/proposal.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
-import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
+import { clientFacts, layoutChange, nextVersionBasis, takenAtSave } from "../services/proposal-taken.js";
 import { patchLinkRequest, resolveProposalLinks, type ProposalLinkRefusal } from "../services/proposal-links.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } from "../services/commercial-notifications.js";
@@ -93,8 +95,12 @@ const TransitionBody = z.object({
 // The version a new one was written from (the desk's composer). With it, a
 // save is refused when another was saved meanwhile, so no one's version is
 // replaced unseen; without it (the editor's Share lens), a save goes on top.
+// `basis` is what the composer's check saw the save would take (GET
+// /:id/versions/next): with it, a save that would now take anything else is
+// refused, so the composer never said one thing while another was saved.
 const VersionBasisQuery = z.object({
   basedOn: z.string().regex(/^\d{1,9}$/u).transform(Number).optional(),
+  basis: z.string().regex(/^[0-9a-f]{64}$/u).optional(),
 });
 
 const ListQuery = z.object({
@@ -1112,6 +1118,7 @@ export async function proposalRoutes(
       return reply.status(400).send({ error: "Invalid query", code: "VALIDATION_ERROR", details: basis.error.issues });
     }
     const basedOn = basis.data.basedOn;
+    const checked = basis.data.basis;
 
     const [proposal] = await db.select().from(proposals)
       .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
@@ -1129,16 +1136,19 @@ export async function proposalRoutes(
     // The layout is the proposal's own, drawn by the server as it stands
     // (T-427 phase 7): the layout, its revision and its drawing are never the
     // browser's. With no layout linked the version has no drawing at all.
-    // Hashed with the rest of the payload, so it is part of the version.
+    // Hashed with the rest of the payload, so it is part of the version. The
+    // event it is for, as the venue holds it now, is frozen with it: a later
+    // change to the deal never rewrites what a client was sent or accepted.
+    // Server-authoritative; anything sent is ignored.
     const { layoutSnapshot: _sentSnapshot, ...content } = parsed.data;
+    const taken = await takenAtSave(db, proposal);
     let payload: ProposalVersionPayload = { ...content, configurationId: proposal.configurationId, layoutRevision: null };
-    if (proposal.configurationId !== null) {
-      payload = { ...payload, layoutSnapshot: await resolveProposalLayoutSnapshot(db, proposal.configurationId, proposal.venueId) };
+    if (taken.layoutSnapshot !== undefined) payload = { ...payload, layoutSnapshot: taken.layoutSnapshot };
+    payload = { ...payload, facts: taken.facts };
+    // Checked before it was sent, it takes only what the check saw.
+    if (checked !== undefined && checked !== nextVersionBasis(proposal.currentVersion, proposal, taken)) {
+      return reply.status(409).send(TAKEN_CHANGED);
     }
-    // The event it is for, as the venue holds it now, frozen with the
-    // version: a later change to the deal never rewrites what a client was
-    // sent or accepted. Server-authoritative; anything sent is ignored.
-    payload = { ...payload, facts: await clientFacts(db, proposal) };
 
     const sourceHash = proposalVersionPayloadDigest(payload);
 
@@ -1160,7 +1170,9 @@ export async function proposalRoutes(
         || current.enquiryId !== proposal.enquiryId) return "PROPOSAL_CHANGED" as const;
       // Written from a version since followed by another: saving it on top
       // would replace a colleague's version without either of them knowing.
+      // A checked save was checked against the version read above.
       if (basedOn !== undefined && current.currentVersion !== basedOn) return "VERSION_CHANGED" as const;
+      if (checked !== undefined && current.currentVersion !== proposal.currentVersion) return "VERSION_CHANGED" as const;
 
       const [claimed] = await tx.update(proposals)
         .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
@@ -1264,6 +1276,50 @@ export async function proposalRoutes(
     }
 
     return { data: version };
+  });
+
+  // GET /proposals/:id/versions/next — what a version saved now would take
+  // from the proposal that the latest does not show its client: the layout's
+  // drawing and the event's facts (roadmap X1, the composer's check). Its
+  // `basis` holds a save to exactly what was checked.
+  server.get("/:id/versions/next", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const [proposal] = await db.select().from(proposals)
+      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
+      .limit(1);
+    if (proposal === undefined) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (!canManageCommercial(request.user, proposal.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
+      return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
+    }
+    const [latest] = proposal.currentVersion < 1 ? [] : await db.select().from(proposalVersions)
+      .where(and(eq(proposalVersions.proposalId, proposal.id), eq(proposalVersions.version, proposal.currentVersion)))
+      .limit(1);
+    if (latest === undefined) {
+      return reply.status(404).send({ error: "Proposal has no versions yet", code: "NOT_FOUND" });
+    }
+    const saved = ProposalVersionPayloadSchema.safeParse(latest.payload);
+    if (!saved.success) {
+      return reply.status(422).send({ error: "The latest version cannot be read", code: "VERSION_UNREADABLE" });
+    }
+
+    const taken = await takenAtSave(db, proposal);
+    // Against the drawing the client's page shows for the latest version.
+    const shows = canRenderPersistedLayout(latest.coordinateSpace) ? (saved.data.layoutSnapshot ?? null) : null;
+    const next: ProposalNextVersion = {
+      basedOn: proposal.currentVersion,
+      layout: layoutChange(shows, taken.layoutSnapshot),
+      facts: { saved: saved.data.facts ?? null, now: taken.facts },
+      basis: nextVersionBasis(proposal.currentVersion, proposal, taken),
+    };
+    return { data: next };
   });
 
   // GET /proposals/:id/versions/:version — specific snapshot
@@ -1399,20 +1455,18 @@ const VERSION_CHANGED = {
   code: "PROPOSAL_VERSION_CHANGED",
 } as const;
 
+/** A checked save whose layout or event changed after the check: the version
+ *  would carry something the composer did not say. */
+const TAKEN_CHANGED = {
+  error: "The layout or the event changed after this was checked, so the version was not saved. Check it again.",
+  code: "REVISION_CONFLICT",
+} as const;
+
 /** The version a person read when they acted: the booker confirming a send,
  *  the client answering. Optional, so a page from before it still works. */
 const ReadVersion = z.object({ version: z.number().int().positive().optional() });
 
-/** The event a proposal is for, as its client reads it. */
-interface ClientFacts {
-  readonly eventDate: string | null;
-  readonly guestCount: number | null;
-  readonly occasion: string | null;
-  readonly roomName: string | null;
-  readonly roomSlug: string | null;
-}
-
-const NO_FACTS: ClientFacts = { eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null };
+const NO_FACTS: ProposalFacts = { eventDate: null, guestCount: null, occasion: null, roomName: null, roomSlug: null };
 
 interface ClientSafeProposalPayload {
   readonly title: string;
@@ -1424,7 +1478,7 @@ interface ClientSafeProposalPayload {
   readonly venueAddress: string | null;
   /** When the version shown was saved. */
   readonly preparedAt: Date;
-  readonly facts: ClientFacts;
+  readonly facts: ProposalFacts;
   /** Who accepted it (the name given with the acceptance) and when. */
   readonly accepted: { readonly by: string | null; readonly at: Date } | null;
   readonly clientMessage: string | null;
@@ -1479,57 +1533,6 @@ async function resolveProposalShareToken(
   if (proposal === undefined) return null;
   const presented = await presentedStatus(db, proposal);
   return presented === null ? null : { shareToken, proposal, presented };
-}
-
-/**
- * The event the proposal is for, told to its client: the date, how many are
- * coming, the occasion and the room. The room is the layout's, else the one
- * the guest chose on their enquiry; the rest is the deal's, else the
- * enquiry's. Everything is read at the proposal's own venue only.
- */
-async function clientFacts(db: Database, proposal: ProposalRecord): Promise<ClientFacts> {
-  const [deal] = proposal.opportunityId === null ? [] : await db.select({
-    preferredDate: opportunities.preferredDate,
-    guestCount: opportunities.guestCount,
-    eventType: opportunities.eventType,
-    sourceEnquiryId: opportunities.sourceEnquiryId,
-  }).from(opportunities)
-    .where(and(eq(opportunities.id, proposal.opportunityId), eq(opportunities.venueId, proposal.venueId), isNull(opportunities.deletedAt)))
-    .limit(1);
-  const enquiryId = proposal.enquiryId ?? deal?.sourceEnquiryId ?? null;
-  const [enquiry] = enquiryId === null ? [] : await db.select({
-    preferredDate: enquiries.preferredDate,
-    estimatedGuests: enquiries.estimatedGuests,
-    eventType: enquiries.eventType,
-    spaceId: enquiries.spaceId,
-    roomChosen: enquiries.roomChosen,
-  }).from(enquiries)
-    .where(and(eq(enquiries.id, enquiryId), eq(enquiries.venueId, proposal.venueId)))
-    .limit(1);
-  const [layoutRoom] = proposal.configurationId === null ? [] : await db.select({ name: spaces.name, slug: spaces.slug })
-    .from(configurations)
-    .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
-    .where(and(
-      eq(configurations.id, proposal.configurationId),
-      eq(configurations.venueId, proposal.venueId),
-      isNull(configurations.deletedAt),
-      eq(spaces.venueId, proposal.venueId),
-      isNull(spaces.deletedAt),
-    ))
-    .limit(1);
-  // An enquiry filed under a room the guest never chose names no room.
-  const [enquiryRoom] = layoutRoom !== undefined || enquiry === undefined || !enquiry.roomChosen ? [] : await db.select({ name: spaces.name, slug: spaces.slug })
-    .from(spaces)
-    .where(and(eq(spaces.id, enquiry.spaceId), eq(spaces.venueId, proposal.venueId), isNull(spaces.deletedAt)))
-    .limit(1);
-  const room = layoutRoom ?? enquiryRoom ?? null;
-  return {
-    eventDate: deal?.preferredDate ?? enquiry?.preferredDate ?? null,
-    guestCount: deal?.guestCount ?? enquiry?.estimatedGuests ?? null,
-    occasion: deal?.eventType ?? enquiry?.eventType ?? null,
-    roomName: room?.name ?? null,
-    roomSlug: room?.slug ?? null,
-  };
 }
 
 /** The version a client's link shows: the one last sent. A version saved

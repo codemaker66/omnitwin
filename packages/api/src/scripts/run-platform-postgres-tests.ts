@@ -22,6 +22,7 @@ export const PLATFORM_POSTGRES_TEST_FILES = [
   "src/__tests__/quote-permissions-postgres.test.ts",
   "src/__tests__/proposal-permissions-postgres.test.ts",
   "src/__tests__/proposal-links-postgres.test.ts",
+  "src/__tests__/proposal-next-version-postgres.test.ts",
   "src/__tests__/placed-object-batch-postgres.test.ts",
   "src/__tests__/role-vocabulary-postgres.test.ts",
 ] as const;
