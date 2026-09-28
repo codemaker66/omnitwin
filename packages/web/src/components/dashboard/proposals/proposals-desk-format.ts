@@ -115,11 +115,13 @@ type LayoutFields = Pick<DeskProposal, "configurationId" | "layoutRoomName" | "l
 
 /** The layout a proposal carries, as its panel names it: the client's own
  *  from their enquiry and its room, another layout's room, one removed, or
- *  none. Nothing when the API does not say, so nothing untrue is shown. */
-export function layoutFact(proposal: LayoutFields): { readonly words: string; readonly muted: boolean } | null {
+ *  none. Nothing when the API does not say, so nothing untrue is shown. Once
+ *  it is with the client, a removed layout is not said: the version they were
+ *  sent keeps its drawing. */
+export function layoutFact(proposal: LayoutFields, inHand = true): { readonly words: string; readonly muted: boolean } | null {
   if (proposal.layoutRoomName === undefined) return null;
   if (proposal.configurationId === null) return { words: "None", muted: true };
-  if (proposal.layoutRoomName === null) return { words: "Removed", muted: true };
+  if (proposal.layoutRoomName === null) return inHand ? { words: "Removed", muted: true } : null;
   return {
     words: proposal.layoutFromEnquiry === true ? `Their own, ${proposal.layoutRoomName}` : proposal.layoutRoomName,
     muted: false,

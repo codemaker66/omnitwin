@@ -81,7 +81,8 @@ const FAILURE_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
 
 /** The proposal moved before the request arrived (a client's answer, or a
  *  colleague), so nothing was done; the panel is read again to show it. */
-const MOVED_CODES: readonly string[] = ["PROPOSAL_STATUS_CHANGED", "PROPOSAL_VERSION_CHANGED", "INVALID_TRANSITION", "NOT_EDITABLE"];
+/** A version refused because its deal, enquiry or layout changed meanwhile is one of them. */
+const MOVED_CODES: readonly string[] = ["PROPOSAL_STATUS_CHANGED", "PROPOSAL_VERSION_CHANGED", "INVALID_TRANSITION", "NOT_EDITABLE", "REVISION_CONFLICT"];
 const MOVED_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   step: "It changed before that arrived, so nothing was done. It now shows where it stands.",
   version: "It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.",

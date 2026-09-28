@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ProposalVersionPayloadSchema, proposalVersionPayloadDigest, type ProposalVersionPayload } from "@omnitwin/types";
+import { ProposalVersionPayloadSchema, proposalVersionPayloadDigest } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import { proposalRoutes } from "../routes/proposals.js";
 
@@ -170,6 +170,17 @@ describe.skipIf(target === undefined)("proposal links through real routes and Po
       .toEqual({ opportunityId: oddDeal.id, enquiryId: odd.id, configurationId: null });
   });
 
+  it("refuses a removed deal, and another client's layout with an enquiry, keeping nothing", async () => {
+    const f = await fixture();
+    await db.update(schema.opportunities).set({ deletedAt: new Date() }).where(eq(schema.opportunities.id, f.deal));
+    const removed = await create(f, { opportunityId: f.deal });
+    expect(removed.statusCode, removed.body).toBe(404);
+    const mixed = await create(f, { enquiryId: f.enquiry, configurationId: f.secondLayout });
+    expect(mixed.statusCode, mixed.body).toBe(422);
+    expect(mixed.json()).toMatchObject({ code: "LINK_MISMATCH", details: { field: "configurationId" } });
+    expect(await count(f)).toBe(0);
+  });
+
   it("links an enquiry named alone with its layout, and the Share lens's layout alone", async () => {
     const f = await fixture();
     expect((await created(f, { enquiryId: f.enquiry })).stored)
@@ -215,7 +226,7 @@ describe.skipIf(target === undefined)("proposal links through real routes and Po
     const f = await fixture();
     const made = await created(f, { opportunityId: f.deal });
     const stored = await saveVersion(f, made.id, { ...baseVersion, configurationId: null, layoutRevision: 3, layoutSnapshot: forgedSnapshot });
-    const payload = stored.payload as ProposalVersionPayload;
+    const { payload } = stored;
     expect(payload.configurationId).toBe(f.layout);
     expect(payload.layoutRevision).toBeNull();
     expect(payload.layoutSnapshot?.items).toHaveLength(1);
@@ -231,7 +242,21 @@ describe.skipIf(target === undefined)("proposal links through real routes and Po
     const payload = stored.payload as Record<string, unknown>;
     expect("layoutSnapshot" in payload).toBe(false);
     expect(payload["configurationId"]).toBeNull();
-    expect(stored.sourceHash).toBe(proposalVersionPayloadDigest(stored.payload as ProposalVersionPayload));
+    expect(stored.sourceHash).toBe(proposalVersionPayloadDigest(stored.payload));
+  });
+
+  it("draws nothing from a layout whose room is removed or is another venue's", async () => {
+    const f = await fixture();
+    const made = await created(f, { opportunityId: f.deal });
+    await db.update(schema.spaces).set({ deletedAt: new Date() }).where(eq(schema.spaces.id, f.spaceId));
+    expect((await saveVersion(f, made.id, baseVersion)).payload.layoutSnapshot).toBeNull();
+
+    const other = await fixture();
+    const moved = await created(other, { opportunityId: other.deal });
+    const [elsewhere] = await db.select({ venueId: schema.configurations.venueId }).from(schema.configurations)
+      .where(eq(schema.configurations.id, other.foreignLayout));
+    await db.update(schema.spaces).set({ venueId: elsewhere?.venueId ?? "" }).where(eq(schema.spaces.id, other.spaceId));
+    expect((await saveVersion(other, moved.id, baseVersion)).payload.layoutSnapshot).toBeNull();
   });
 
   it("draws nothing, and names no room, once the linked layout is removed", async () => {
@@ -241,7 +266,7 @@ describe.skipIf(target === undefined)("proposal links through real routes and Po
     // The guest chose no room, so only the layout could name one.
     await db.update(schema.enquiries).set({ roomChosen: false }).where(eq(schema.enquiries.id, f.enquiry));
     const stored = await saveVersion(f, made.id, baseVersion);
-    const payload = stored.payload as ProposalVersionPayload;
+    const { payload } = stored;
     expect(payload.configurationId).toBe(f.layout);
     expect(payload.layoutSnapshot).toBeNull();
     expect(payload.facts?.roomName).toBeNull();

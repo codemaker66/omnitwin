@@ -642,6 +642,24 @@ describe("the next version", () => {
       .toBe("Starts from version 2. Changed: the message and the quote, £4,400 to £4,600.");
   });
 
+  it("says why a version did not save when its links changed meanwhile, keeps the words, and shows the layout now linked", async () => {
+    existing = [proposal({ status: "draft", currentVersion: 0, layoutRoomName: null, layoutFromEnquiry: false })];
+    mocks.createProposalVersion.mockImplementation(() => {
+      // A colleague linked the deal, and with it the client's layout, while this was being written.
+      existing = [proposal({ status: "draft", currentVersion: 0, configurationId: "layout-1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true })];
+      return Promise.reject(new ApiError(409, "The proposal's links changed; reload before saving a version", "REVISION_CONFLICT"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect((await panel.findByTestId("proposal-layout")).textContent).toBe("None");
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "Here is the dinner you asked about." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    expect((await panel.findByTestId("composer-error")).textContent)
+      .toBe("It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.");
+    expect(await panel.findByText("Their own, Grand Hall")).toBeDefined();
+    expect(panel.getByTestId("composer-message")).toHaveProperty("value", "Here is the dinner you asked about.");
+  });
+
   it("keeps a version refused because a colleague moved the proposal, to copy, with why it did not save", async () => {
     existing = [proposal({ status: "changes_requested", currentVersion: 1, sentVersion: 1 })];
     mocks.createProposalVersion.mockImplementation(() => {

@@ -175,7 +175,7 @@ function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly 
   const date = eventDateParts(proposal.eventDate);
   const weekday = eventWeekday(proposal.eventDate);
   const lead = eventLead(proposal.eventDate, nowMs);
-  const layout = layoutFact(proposal);
+  const layout = layoutFact(proposal, COMPOSABLE.includes(proposal.status));
   return (
     <dl className="enq-facts pr-facts">
       <div>

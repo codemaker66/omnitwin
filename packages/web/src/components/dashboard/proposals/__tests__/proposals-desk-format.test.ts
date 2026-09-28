@@ -167,6 +167,12 @@ describe("the layout a proposal carries", () => {
     expect(layoutFact({ configurationId: null, layoutRoomName: null, layoutFromEnquiry: false })).toEqual({ words: "None", muted: true });
   });
 
+  it("says nothing of a removed layout once the proposal is with the client, whose version keeps its drawing", () => {
+    expect(layoutFact({ ...linked, layoutRoomName: null }, false)).toBeNull();
+    expect(layoutFact(linked, false)).toEqual({ words: "Their own, Grand Hall", muted: false });
+    expect(layoutFact({ configurationId: null, layoutRoomName: null, layoutFromEnquiry: false }, false)).toEqual({ words: "None", muted: true });
+  });
+
   it("claims nothing when the API does not say", () => {
     expect(layoutFact({ configurationId: "layout-1", layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
     expect(layoutFact({ configurationId: null, layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
