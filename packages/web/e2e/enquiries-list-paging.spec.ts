@@ -90,7 +90,12 @@ async function mockApi(page: Page, legacy: boolean): Promise<MockedApi> {
       } else if (single[2] === "/history") {
         void route.fulfill({ json: { data: [] } });
       } else if (single[2] === "/transition" && request.method() === "POST") {
-        const body = request.postDataJSON() as { readonly status: string; readonly note?: string };
+        const body = request.postDataJSON() as { readonly status: string; readonly note?: string; readonly from?: string };
+        // As the API: a move decided from a status the enquiry has left is refused.
+        if (body.from !== undefined && body.from !== row.state) {
+          void route.fulfill({ status: 409, json: { error: "The enquiry changed after this screen read it.", code: "ENQUIRY_STATUS_CHANGED" } });
+          return;
+        }
         if (!(STAFF_TRANSITIONS[row.state] ?? []).includes(body.status)) {
           void route.fulfill({ status: 422, json: { error: "Cannot transition", code: "INVALID_TRANSITION" } });
           return;
@@ -234,7 +239,11 @@ test.describe("Staff enquiries list paging", () => {
     await confirm.getByRole("button", { name: "Approve and email" }).click();
     await expect(page.locator(".enq-panel .enq-chip")).toHaveText("Approved");
     await expect(page.getByRole("button", { name: "In review, 0" })).toBeVisible();
-    expect(transitions).toEqual([{ status: "under_review" }, { status: "approved", note: "Deposit invoice sent." }]);
+    // Each move says the status its screen showed.
+    expect(transitions).toEqual([
+      { status: "under_review", from: "submitted" },
+      { status: "approved", note: "Deposit invoice sent.", from: "under_review" },
+    ]);
 
     // j opens the enquiry that took its place in the list; Escape returns to that row.
     await page.keyboard.press("j");

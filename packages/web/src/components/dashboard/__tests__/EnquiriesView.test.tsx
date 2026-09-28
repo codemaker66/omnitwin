@@ -647,6 +647,28 @@ describe("EnquiriesView decisions", () => {
     expect(document.querySelector(".enq-panel .enq-chip--stamped")?.textContent).toBe("Approved");
   });
 
+  // A read landing while the confirmation is open (a colleague declined it)
+  // does not change what the person decided from: the move says the status
+  // they saw, so the server refuses it rather than deciding again.
+  it("sends the status the confirmation was opened from, whatever a read shows meanwhile", async () => {
+    const enquiryInReview = reviewing();
+    mocks.listEnquiryPage.mockResolvedValue(page([enquiryInReview], {}));
+    const read = deferred<Enquiry>();
+    mocks.getEnquiry.mockReturnValue(read.promise);
+    mocks.transitionEnquiry.mockRejectedValue(new ApiError(409, "The enquiry changed after this screen read it.", "ENQUIRY_STATUS_CHANGED"));
+    render(<EnquiriesView initialSelectedId={enquiryInReview.id} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Approve…" }));
+    const confirm = screen.getByRole("group", { name: "Approve Client 5’s enquiry?" });
+    await act(async () => { read.resolve({ ...enquiryInReview, state: "rejected" }); await read.promise; });
+    await waitFor(() => { expect(document.querySelector(".enq-panel .enq-chip")?.textContent).toBe("Declined"); });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Approve and email" }));
+
+    await waitFor(() => {
+      expect(mocks.transitionEnquiry).toHaveBeenCalledWith("enquiry-5", "approved", undefined, "under_review");
+    });
+  });
+
   it("says a decline note reaches the client, cancels on Escape and closes on a second", async () => {
     mocks.listEnquiryPage.mockResolvedValue(page([reviewing()], {}));
     render(<EnquiriesView />);
