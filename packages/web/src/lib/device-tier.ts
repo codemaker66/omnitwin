@@ -174,7 +174,10 @@ function capTier(tier: DeviceTier, cap: DeviceTier): DeviceTier {
  * Phones cap at low and tablets (iPad, Android) at medium (T-639; Blake, 24 September 2026:
  * phones hold 60 fps at about 0.5–1M rendered splats). A device never rises
  * above its GPU tier. iPadOS requests desktop sites with a Mac user agent, so
- * touch support separates it from a Mac.
+ * touch support separates it from a Mac. An iPhone in "Request Desktop Website"
+ * (a Mac user agent plus touch) is therefore classified as a tablet (medium),
+ * and Android's desktop mode can drop the Android token entirely (uncapped);
+ * both are limits of reading the user agent.
  */
 export function classifyDeviceInContext(rendererString: string, context: DeviceContext): DeviceTier {
   const tier = classifyDevice(rendererString);

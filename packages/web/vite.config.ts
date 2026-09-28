@@ -79,9 +79,12 @@ export default defineConfig(({ mode }) => {
     plugins,
     define: {
       __VENVIEWER_CLERK_PUBLISHABLE_KEY__: JSON.stringify(clerkPublishableKey),
-      // Baked in so a production bundle knows where published tiles live without
-      // requiring a Vercel environment variable. Empty in development, where the
-      // staging middleware serves them from "/splats" instead.
+      // Where captured room assets are fetched from (resolveBuildSplatBaseUrl):
+      // an explicit VITE_SPLAT_BASE_URL always wins; a Vercel preview build
+      // bakes the public R2 base; every other build, production included,
+      // bakes "" — the app's own "/splats", which production holds (it
+      // redirects to the work-in-progress page) and development serves from
+      // SPLAT_STAGING_ROOT.
       "import.meta.env.VITE_SPLAT_BASE_URL": JSON.stringify(splatBaseUrl),
       // Vercel's deployment environment, so preview links can open splats
       // (T-639) while production keeps the founder hold. Empty outside Vercel.
