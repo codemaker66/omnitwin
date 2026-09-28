@@ -345,6 +345,9 @@ test.describe("Proposals desk", () => {
     await page.screenshot({ path: test.info().outputPath("proposal-layout-desk.png") });
 
     await page.setViewportSize({ width: 390, height: 844 });
+    // The desk becomes one column when the page hears the new width, a moment
+    // after it is set: measure once the proposal has replaced the ledger.
+    await expect(panel.getByRole("button", { name: "Back to proposals" })).toBeVisible();
     await expect(layout).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: test.info().outputPath("proposal-layout-phone.png"), fullPage: true });
