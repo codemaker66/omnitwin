@@ -489,10 +489,11 @@ describe("CockpitBottom room layout timeline", () => {
 
   it.each(["UTC", "America/New_York"])("settles once on a linked event's day in the venue's zone (browser in %s)", async (browserZone) => {
     // The event's first phase is at 03:30 UTC on the 27th: 04:30 in Glasgow,
-    // the venue's 27th, and the 26th for a browser in UTC or New York. The
-    // dock reads it in the browser's zone until the venue's is known, then
-    // moves once to the venue's day. It never goes back to the browser's while
-    // that day loads, which asked again and again for the two days in turn.
+    // the venue's 27th, and the 26th for a browser in UTC or New York. Here
+    // today's answer names the venue's zone before the event arrives, and the
+    // dock moves once to the venue's day. It never goes back to the browser's
+    // zone while that day loads, which asked again and again for the two days
+    // in turn.
     pinBrowserTimeZone(browserZone);
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-20T15:00:00.000Z"));
@@ -1775,6 +1776,9 @@ describe("CockpitBottom room layout timeline", () => {
     expect(isValidTimelineDeepLinkDate("2028-02-29")).toBe(true);
     expect(isValidTimelineDeepLinkDate("2026-02-29")).toBe(false);
     expect(isValidTimelineDeepLinkDate("2026-04-31")).toBe(false);
+    // Noon UTC is the 18th for a browser in UTC; in Honolulu it is still the
+    // 17th, so the browser's zone is pinned.
+    pinBrowserTimeZone("UTC");
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-18T12:00:00.000Z"));
     timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
       Promise.resolve(responseForQuery(query, [])),

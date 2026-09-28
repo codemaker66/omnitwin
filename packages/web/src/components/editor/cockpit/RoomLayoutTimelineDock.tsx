@@ -895,9 +895,9 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       } else {
         anchorOriginRef.current = "automatic";
         validDate = timelineScopeAnchorDateAt(Date.now(), requestedScope, timeZone);
-        // Read in the venue's zone, today is already the venue's day and
-        // nothing is left to reconcile. Read in the browser's, the answer
-        // reconciles it.
+        // With an answer for this selection in hand, today was read in the
+        // venue's zone and nothing is left to reconcile. Without one, the next
+        // answer reconciles it.
         setReconciledAutomaticAnchor(timelineResponseMatchesSelection && roomAnchorKey !== null
           ? `${roomAnchorKey}:${requestedScope}:${timeZone}`
           : null);
