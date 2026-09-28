@@ -51,23 +51,36 @@ const graphemes: Intl.Segmenter | null = ((): Intl.Segmenter | null => {
 
 /** Trimmed to a limit in code units, with an ellipsis where it was cut, and
  *  never through the middle of a character. Without a way to tell
- *  characters (`characters` null) it keeps whole code points, so a flag may
- *  lose its second half but nothing is left half-written. */
+ *  characters (`characters` null), or when not one whole character fits, it
+ *  keeps whole code points, so nothing is left half-written. */
 export function clipped(value: string, max: number, characters: Intl.Segmenter | null = graphemes): string {
   const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
+  const byCharacter = characters === null ? "" : wholeCharacters(trimmed, max - 1, characters);
+  const kept = byCharacter === "" ? wholeCodePoints(trimmed, max - 1) : byCharacter;
+  return `${kept.trimEnd()}…`;
+}
+
+/** The longest run of whole characters from the start within `room` code
+ *  units; empty when none fits, or when they cannot be told. */
+function wholeCharacters(text: string, room: number, characters: Intl.Segmenter): string {
   let kept = "";
-  if (characters === null) {
-    kept = trimmed.slice(0, max - 1);
-    const last = kept.charCodeAt(kept.length - 1);
-    if (last >= 0xd800 && last <= 0xdbff) kept = kept.slice(0, -1);
-  } else {
-    for (const { segment } of characters.segment(trimmed)) {
-      if (kept.length + segment.length > max - 1) break;
+  try {
+    for (const { segment } of characters.segment(text)) {
+      if (kept.length + segment.length > room) break;
       kept += segment;
     }
+  } catch {
+    return "";
   }
-  return `${kept.trimEnd()}…`;
+  return kept;
+}
+
+/** The first `room` code units, less half of a pair at the end. */
+function wholeCodePoints(text: string, room: number): string {
+  const kept = text.slice(0, room);
+  const last = kept.charCodeAt(kept.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? kept.slice(0, -1) : kept;
 }
 
 export function clientAnswerNotice(input: ClientAnswerNoticeInput): ClientAnswerNotice {

@@ -69,6 +69,14 @@ describe("clientAnswerNotice", () => {
     expect(/\p{Cs}/u.test(flag)).toBe(false);
     expect(flag.length).toBeLessThanOrEqual(80);
   });
+
+  it("keeps what it can of a single character longer than the limit", () => {
+    // One letter with 199 accents is one character of 200 code units.
+    const name = `e${"\u0301".repeat(199)}`;
+    const title = clientAnswerNotice({ act: "accepted", proposalTitle: "Autumn gala", version: 1, name, words: null }).title;
+    expect(title.startsWith(`e${"\u0301".repeat(78)}…`)).toBe(true);
+    expect(title.endsWith(" accepted Autumn gala")).toBe(true);
+  });
 });
 
 describe("proposalDeskPath", () => {
