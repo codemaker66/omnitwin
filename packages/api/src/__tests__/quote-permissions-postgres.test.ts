@@ -47,7 +47,7 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     if (quote === undefined) throw new Error("Missing quote fixture");
     await db.insert(schema.quoteLineItems).values({ quoteId: quote.id, description: "Base", quantity: 1,
       unitAmountMinor: 1000, lineTotalMinor: 1000, sortOrder: 0 });
-    return { venueId, quote, headers: { authorization: `Bearer ${JSON.stringify(actor)}` } };
+    return { venueId, actorId, quote, headers: { authorization: `Bearer ${JSON.stringify(actor)}` } };
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>;
   function create(f: Fixture) {
@@ -94,6 +94,19 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     expect((await open(f)).statusCode).toBe(403);
     expect((await issue(f)).statusCode).toBe(403);
     expect((await stored(f)).quote?.status).toBe("draft");
+  });
+
+  it("gives the maker nothing once they are not one of the venue's commercial roles", async () => {
+    const f = await fixture("hallkeeper");
+    await db.update(schema.quotes).set({ createdBy: f.actorId }).where(eq(schema.quotes.id, f.quote.id));
+    expect((await open(f)).statusCode).toBe(403);
+    expect((await issue(f)).statusCode).toBe(403);
+    expect((await stored(f)).quote?.status).toBe("draft");
+  });
+
+  it("lets a platform admin open another venue's quote", async () => {
+    const f = await fixture("admin", true, "admin");
+    expect((await open(f)).statusCode).toBe(200);
   });
 
   it.each(["admin", "staff", "platform_admin"])("allows %s to create and manage the scoped draft with exact persisted totals", async role => {

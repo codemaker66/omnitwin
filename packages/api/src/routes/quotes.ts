@@ -6,7 +6,7 @@ import { quotes, quoteLineItems, proposals, opportunities, enquiries, spaces } f
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canManageCommercial, canOpenCommercialRecord } from "../utils/query.js";
+import { canManageCommercial } from "../utils/query.js";
 import { QUOTE_STATES, canTransitionQuote } from "../state-machines/proposal.js";
 import { multiplyMinor, sumMinor } from "../services/money.js";
 
@@ -247,7 +247,7 @@ export async function quoteRoutes(
     if (quote === undefined) {
       return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
     }
-    if (!canOpenCommercialRecord(request.user, quote)) {
+    if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -446,7 +446,7 @@ export async function quoteRoutes(
     if (quote === undefined) {
       return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
     }
-    if (!canOpenCommercialRecord(request.user, quote)) {
+    if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (!canTransitionQuote(quote.status, parsed.data.status, request.user.role)) {

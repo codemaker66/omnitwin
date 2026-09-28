@@ -159,6 +159,23 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     expect((await stored(f)).proposal?.status).toBe("draft");
   });
 
+  it("gives the maker nothing once they are not one of the venue's commercial roles", async () => {
+    // Made while they sold, now on the floor: who made it grants nothing.
+    const f = await fixture("hallkeeper");
+    await withVersion(f);
+    await db.update(schema.proposals).set({ createdBy: f.actorId }).where(eq(schema.proposals.id, f.proposal.id));
+    expect(await opened(f)).toEqual(OPENINGS.map(() => 403));
+    const moved = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/transition`, headers: f.headers,
+      payload: { status: "sent" } });
+    expect(moved.statusCode).toBe(403);
+  });
+
+  it("lets a platform admin open another venue's proposal", async () => {
+    const f = await fixture("admin", true, "admin");
+    await withVersion(f);
+    expect(await opened(f)).toEqual(OPENINGS.map(() => 200));
+  });
+
   it("lets sales send a colleague's proposal, and not a hallkeeper", async () => {
     const sales = await fixture("sales");
     await withVersion(sales);
