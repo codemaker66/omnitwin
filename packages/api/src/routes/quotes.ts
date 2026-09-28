@@ -18,7 +18,8 @@ import { multiplyMinor, sumMinor } from "../services/money.js";
 // rounding), and the subtotal/total are exact sums. The DB CHECK
 // quote_line_items_total_exact backstops the same invariant.
 //
-// Venue staff/admin manage their own venue; platform admins retain their override.
+// The venue's commercial roles (staff, admin, manager, sales) manage its quotes;
+// platform admins retain their override.
 // A replaced quote transitions to `superseded` and must point at its
 // successor; the DB CHECKs quotes_superseded_coherent / _not_self enforce
 // the referential shape.
@@ -81,12 +82,13 @@ export async function quoteRoutes(
       whereConditions.push(eq(quotes.proposalId, query.data.proposalId));
     }
 
+    // The venue's commercial roles see the venue's quotes, and a platform
+    // admin every venue's. This must match the create and change gates below,
+    // or a role could manage a quote it cannot find in its own list. Anyone
+    // else is refused, as on opening one: a quote is money on a page, and who
+    // made it grants nothing.
     if (isPlatformAdmin(user)) {
-      // Admin sees all venues
-      // The venue's commercial roles see the venue's quotes. This must match
-      // the create/mutate gate above, or a role could manage a quote it
-      // cannot find in its own list. Anyone else is refused, as on opening
-      // one: a quote is money on a page, and who made it grants nothing.
+      // Every venue.
     } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
       whereConditions.push(eq(quotes.venueId, user.venueId));
     } else {
@@ -110,7 +112,7 @@ export async function quoteRoutes(
     return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
   });
 
-  // POST /quotes — staff (own venue) or admin; totals computed server-side
+  // POST /quotes — the venue's commercial roles or a platform admin; totals computed server-side
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateQuoteSchema.safeParse(request.body);
     if (!parsed.success) {

@@ -1076,32 +1076,32 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     }
 
     // A hallkeeper reads the room's day, but a revenue estimate is a price:
-    // facts and photos only (decision 6b).
-    const hallkeeper = await requiredServer().inject({
-      method: "GET",
-      url: `/calendar/layout-timeline?${new URLSearchParams({
-        venueId: SNAPSHOT.venueId,
-        spaceId: SNAPSHOT.spaceId,
-        scope: "day",
-        anchorDate: "2026-06-07",
-      }).toString()}`,
-      headers: authHeaders({
-        id: "44444444-4444-4444-8444-444444444446",
-        role: "hallkeeper",
-      }),
-    });
-    expect(hallkeeper.statusCode, hallkeeper.body).toBe(200);
-    const restricted = TimelineEnvelopeSchema.parse(hallkeeper.json()).data.frames
-      .find((candidate) => candidate.phaseId === PHASE_ID)?.figures.revenue;
-    expect(restricted).toEqual({
-      state: "restricted",
-      reason: "insufficient_commercial_access",
-    });
-    expect(hallkeeper.body).not.toContain(MATCHING_REVENUE_SCENARIO_ID);
-    expect(hallkeeper.body).not.toContain("Dinner layout planning estimate");
-    expect(hallkeeper.body).not.toContain("2875000");
-    expect(hallkeeper.body).not.toContain('"estimatedRevenueMinor"');
-    expect(hallkeeper.body).not.toContain('"source":"planning_scenario"');
+    // facts and photos only (decision 6b). That holds for the one who made
+    // the event while they sold, too: who made it grants nothing.
+    for (const id of ["44444444-4444-4444-8444-444444444446", ACTOR_ID]) {
+      const hallkeeper = await requiredServer().inject({
+        method: "GET",
+        url: `/calendar/layout-timeline?${new URLSearchParams({
+          venueId: SNAPSHOT.venueId,
+          spaceId: SNAPSHOT.spaceId,
+          scope: "day",
+          anchorDate: "2026-06-07",
+        }).toString()}`,
+        headers: authHeaders({ id, role: "hallkeeper" }),
+      });
+      expect(hallkeeper.statusCode, hallkeeper.body).toBe(200);
+      const restricted = TimelineEnvelopeSchema.parse(hallkeeper.json()).data.frames
+        .find((candidate) => candidate.phaseId === PHASE_ID)?.figures.revenue;
+      expect(restricted, id).toEqual({
+        state: "restricted",
+        reason: "insufficient_commercial_access",
+      });
+      expect(hallkeeper.body).not.toContain(MATCHING_REVENUE_SCENARIO_ID);
+      expect(hallkeeper.body).not.toContain("Dinner layout planning estimate");
+      expect(hallkeeper.body).not.toContain("2875000");
+      expect(hallkeeper.body).not.toContain('"estimatedRevenueMinor"');
+      expect(hallkeeper.body).not.toContain('"source":"planning_scenario"');
+    }
   });
 
   it("marks seated capacity unavailable when frozen seat metadata is incomplete", async () => {

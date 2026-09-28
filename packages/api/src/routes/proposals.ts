@@ -51,13 +51,13 @@ import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
 //
-// Venue scoping: proposals are authored by venue staff and venue admins.
-// Creation and mutation require the actor's own venue unless they hold the
-// platform-admin role. Opening one proposal, and moving it where its state
-// allows, takes the same: its venue's commercial roles, as its list, its desk
-// and every change to it do. A proposal carries money, and hallkeepers never
-// see prices (goal 18 6b); who made it grants nothing once they are not one of
-// those roles there.
+// Venue scoping: proposals are authored by the venue's commercial roles (staff,
+// admin, manager, sales). Creation and mutation require the actor's own venue
+// unless they hold the platform-admin role. Opening one proposal, and moving it
+// where its state allows, takes the same: its venue's commercial roles, as its
+// list, its desk and every change to it do. A proposal carries money, and
+// hallkeepers never see prices (goal 18 6b); who made it grants nothing once
+// they are not one of those roles there.
 // Status changes run through the proposal state machine with role policy;
 // every transition writes a proposal_status_history row.
 //
@@ -476,12 +476,13 @@ export async function proposalRoutes(
       whereConditions.push(eq(proposals.status, query.data.status));
     }
 
+    // The venue's commercial roles see the venue's proposals, and a platform
+    // admin every venue's. This must match the create and change gates below,
+    // or a role could manage a proposal it cannot find in its own list. Anyone
+    // else is refused, as on opening one: a proposal carries money, and who
+    // made it grants nothing.
     if (isPlatformAdmin(user)) {
-      // Admin sees all venues
-      // The venue's commercial roles see the venue's proposals. This must
-      // match the create/mutate gate above, or a role could manage a proposal
-      // it cannot find in its own list. Anyone else is refused, as on opening
-      // one: a proposal carries money, and who made it grants nothing.
+      // Every venue.
     } else if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
       whereConditions.push(eq(proposals.venueId, user.venueId));
     } else {

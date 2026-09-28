@@ -152,6 +152,15 @@ describe("room layout timeline — source contract", () => {
     expect(source).not.toMatch(/for\s*\([^)]*\)\s*\{[^}]*await\s+db/su);
   });
 
+  // A revenue estimate is a price (decision 6b): the commercial roles see it,
+  // and whoever made the event gains nothing by it. The PostgreSQL rehearsal
+  // proves it against a maker since made a hallkeeper; this runs on every push.
+  it("gives the revenue estimate to the commercial roles alone, never to the event's maker", async () => {
+    const source = await readFile(resolve("src/routes/room-layout-timeline.ts"), "utf-8");
+    expect(source).toContain("commercialAccess: canManageCommercial(request.user, query.venueId),");
+    expect(source).not.toContain("eventCreatedBy");
+  });
+
   it("validates the full response and routes room flips through gap semantics", async () => {
     const source = await readFile(resolve("src/routes/room-layout-timeline.ts"), "utf-8");
     expect(source).toContain("RoomLayoutTimelineResponseSchema.parse({");

@@ -118,8 +118,10 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
 
   // A proposal carries money, and hallkeepers never see prices (goal 18 6b) —
   // the same reading that closed the priced analytics routes to them. The list
-  // and the desk refuse anyone outside the commercial roles, as the pipeline does.
-  const LISTS = ["/proposals", "/proposals/desk"] as const;
+  // and the desk take the commercial roles and refuse anyone else, as the
+  // pipeline does. Both ask for drafts, the fixture's state, so a platform
+  // admin's every-venue list finds the newest draft on its first page.
+  const LISTS = ["/proposals?status=draft&limit=100", "/proposals/desk?group=drafts&limit=100"] as const;
   async function listed(f: Fixture): Promise<readonly { readonly status: number; readonly shown: boolean }[]> {
     const answers: { status: number; shown: boolean }[] = [];
     for (const url of LISTS) {
@@ -128,10 +130,34 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     }
     return answers;
   }
-  it("keeps the venue's proposals out of a hallkeeper's list and desk", async () => {
-    const f = await fixture("hallkeeper");
+  // An invitation or an approved domain can give a commercial role no venue yet.
+  function withoutVenue(f: Fixture, role: string): Fixture {
+    const actor = { id: f.actorId, email: `${f.actorId}@proposal.invalid`, role, venueId: null, platformRole: "none" };
+    return { ...f, headers: { authorization: `Bearer ${JSON.stringify(actor)}` } };
+  }
+  it.each(["sales", "manager", "staff", "admin", "platform_admin"])("lets %s find a colleague's proposal in the list and on the desk", async role => {
+    const f = role === "platform_admin" ? await fixture("admin", true, "admin") : await fixture(role);
+    expect(await listed(f)).toEqual(LISTS.map(() => ({ status: 200, shown: true })));
+  });
+  it.each(["hallkeeper", "client", "caterer", "planner", "sales_without_venue"])("refuses %s the list and the desk", async role => {
+    const f = role === "sales_without_venue" ? withoutVenue(await fixture("sales"), "sales") : await fixture(role);
     expect(await listed(f)).toEqual(LISTS.map(() => ({ status: 403, shown: false })));
   });
+  it.each(["foreign_staff", "foreign_sales"])("keeps a colleague's proposal off %s's list and desk", async role => {
+    const f = await fixture(role.replace("foreign_", ""), true);
+    expect(await listed(f)).toEqual(LISTS.map(() => ({ status: 200, shown: false })));
+  });
+  // A share link opens the priced proposal to whoever holds it, and a comment
+  // joins its record: both take the people opening one takes.
+  async function refusedLinkAndComment(f: Fixture): Promise<void> {
+    const shared = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/share-token`, headers: f.headers });
+    expect(shared.statusCode, shared.body).toBe(403);
+    const commented = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/comments`, headers: f.headers,
+      payload: { body: "A note for the team" } });
+    expect(commented.statusCode, commented.body).toBe(403);
+    expect(await db.select().from(schema.proposalShareTokens).where(eq(schema.proposalShareTokens.proposalId, f.proposal.id))).toEqual([]);
+    expect(await db.select().from(schema.proposalComments).where(eq(schema.proposalComments.proposalId, f.proposal.id))).toEqual([]);
+  }
   // Opening one proposal takes the people its list and every change to it
   // take. A proposal carries money, and hallkeepers never see prices (goal 18
   // 6b); a salesperson opens a colleague's proposal when told a client has
@@ -163,6 +189,7 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     const moved = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/transition`, headers: f.headers,
       payload: { status: "sent" } });
     expect(moved.statusCode).toBe(403);
+    await refusedLinkAndComment(f);
     expect((await stored(f)).proposal?.status).toBe("draft");
   });
 
@@ -176,6 +203,7 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     const moved = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/transition`, headers: f.headers,
       payload: { status: "sent" } });
     expect(moved.statusCode).toBe(403);
+    await refusedLinkAndComment(f);
   });
 
   it("lets a platform admin open another venue's proposal", async () => {

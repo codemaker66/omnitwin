@@ -207,7 +207,6 @@ export async function roomLayoutTimelineRoutes(
         eventType: events.eventType,
         eventStatus: events.status,
         eventGuestCount: events.guestCount,
-        eventCreatedBy: events.createdBy,
       })
       .from(eventPhases)
       .innerJoin(events, eq(eventPhases.eventId, events.id))
@@ -359,11 +358,11 @@ export async function roomLayoutTimelineRoutes(
         densityLabel: row.densityLabel,
         staffConflictsStatus: row.staffConflictsStatus,
         staffConflictsLabel: row.staffConflictsLabel,
-        // A revenue estimate is a price: the event's creator and the roles
-        // that work the pipeline see it; a hallkeeper sees the room's facts
-        // without it (decision 6b).
-        commercialAccess: row.eventCreatedBy === request.user.id
-          || canManageCommercial(request.user, query.venueId),
+        // A revenue estimate is a price: the roles that work the pipeline see
+        // it; a hallkeeper sees the room's facts without it (decision 6b),
+        // even for an event they made while they sold. Who made it grants
+        // nothing, as for a proposal or a quote.
+        commercialAccess: canManageCommercial(request.user, query.venueId),
         keyframe: resolveRoomLayoutTimelineKeyframe({
           venueId: query.venueId,
           spaceId: query.spaceId,

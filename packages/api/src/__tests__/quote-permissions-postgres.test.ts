@@ -133,19 +133,40 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
   // The venue-scoped list must admit exactly who the create/mutate gate
   // admits (routes/quotes.ts canManageCommercial). A role that may manage a
   // quote but cannot find it in its own list has been granted nothing.
-  it.each(["manager", "sales"])("lets %s discover a colleague's venue quote", async role => {
+  it.each(["manager", "sales", "staff"])("lets %s discover a colleague's venue quote", async role => {
     const f = await fixture(role);
     const response = await server.inject({ method: "GET", url: "/quotes", headers: f.headers });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ data: [expect.objectContaining({ id: f.quote.id, venueId: f.venueId })] });
   });
 
+  // Every venue's quotes come oldest first, so the quote is found by its proposal.
+  it("lets a platform admin discover another venue's quote", async () => {
+    const f = await fixture("admin", true, "admin");
+    const [proposal] = await db.insert(schema.proposals).values({ venueId: f.venueId, title: "Linked proposal" }).returning();
+    if (proposal === undefined) throw new Error("Missing proposal fixture");
+    await db.update(schema.quotes).set({ proposalId: proposal.id }).where(eq(schema.quotes.id, f.quote.id));
+    const response = await server.inject({ method: "GET", url: `/quotes?proposalId=${proposal.id}`, headers: f.headers });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject({ data: [expect.objectContaining({ id: f.quote.id, venueId: f.venueId })] });
+  });
+
   // A quote is money on a page, and hallkeepers never see prices (goal 18 6b).
-  // The list refuses anyone outside the commercial roles, as the pipeline does.
-  it("keeps the venue's quotes out of a hallkeeper's list", async () => {
-    const f = await fixture("hallkeeper");
-    const response = await list(f);
+  // The list refuses anyone outside the commercial roles, as the pipeline does,
+  // and a commercial role with no venue yet (an invitation or approved domain).
+  it.each(["hallkeeper", "client", "caterer", "planner", "sales_without_venue"])("keeps the venue's quotes out of %s's list", async role => {
+    const f = await fixture(role === "sales_without_venue" ? "sales" : role);
+    const headers = role === "sales_without_venue"
+      ? { authorization: `Bearer ${JSON.stringify({ id: f.actorId, email: `${f.actorId}@quote.invalid`, role: "sales", venueId: null, platformRole: "none" })}` }
+      : f.headers;
+    const response = await server.inject({ method: "GET", url: "/quotes", headers });
     expect(response.statusCode).toBe(403);
+    expect(response.body).not.toContain(f.quote.id);
+  });
+  it.each(["foreign_staff", "foreign_sales"])("keeps a colleague's quote off %s's list", async role => {
+    const f = await fixture(role.replace("foreign_", ""), true);
+    const response = await list(f);
+    expect(response.statusCode).toBe(200);
     expect(response.body).not.toContain(f.quote.id);
   });
   it("lets a venue admin discover a colleague's venue quote", async () => {
