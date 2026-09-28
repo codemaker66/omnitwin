@@ -762,9 +762,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   event. The notice says who answered (the name given on the page, or "The client"), what they did and to
   which proposal. Under that it gives the version they answered and their own words, and it opens that
   proposal on the Proposals desk. A change the hallkeeper must see opens its event instead, for those who
-  read events. A salesperson who does not own the proposal cannot yet open it (reading one proposal is
-  limited to its owner and the venue floor roles). A notice to the owner alone waits on the notification
-  policy (interrupt, periphery, digest).
+  read events. Any of the venue's commercial roles can open it; a hallkeeper cannot, and never sees its
+  prices. A notice to the owner alone waits on the notification policy (interrupt, periphery, digest).
 - "Opened by the client" from `lastViewedAt`, excluding staff previews (`proposals.ts:1242`).
   Done on 28 September, as "the link was opened": a row reads "Sent 3 days ago, not opened yet", counting
   only opens since the latest send. The preview and the editor's Share panel never stamp. It cannot say
@@ -1142,7 +1141,7 @@ All four are held by `e2e/reviews-desk.spec.ts` (27 September).
 | 11 | Function sheet department views (kitchen, front of house, hallkeeper, bar, client), "changed since you last looked", acknowledgements, "Final" at T-72h | 9 | Parity + Wish | **Partial** | M | The most valuable operational artefact is nearly there |
 | 12 | Client portal: final-numbers deadline, per-guest 14-allergen list, menus, table plan, payments, documents | 8 | Parity + Wish | **Partial** | L | Ends email-thread final numbers and dietary spreadsheets |
 | 13 | Consequence-preview component plus an undo service | Cross-cutting | Wish | **Partial.** Desk confirmation (`EnquiryPanel.tsx:323-387`); Diary undo (`lib/undo-stack.ts`) | M | Removes fear and dialogs at the same time |
-| 14 | Notification policy (interrupt, periphery, digest) and owner notified of every client decision | Cross-cutting | Parity | **Partial.** `NotificationCenter`; every client answer to a proposal tells every commercial role, event or not, and opens the proposal, or for those who read events the event when the hallkeeper must see it (28 September); a salesperson who does not own the proposal cannot yet open it; no interrupt, periphery or digest policy yet | M | Deals were won with nobody told |
+| 14 | Notification policy (interrupt, periphery, digest) and owner notified of every client decision | Cross-cutting | Parity | **Partial.** `NotificationCenter`; every client answer to a proposal tells every commercial role, event or not, and opens the proposal, or for those who read events the event when the hallkeeper must see it (28 September); any commercial role can open it; no interrupt, periphery or digest policy yet | M | Deals were won with nobody told |
 | 15 | Self-serve reporting: conversion and response time by source, lost reasons, pace against last year, CSV export on every list | 13 | Parity + Wish (Momentus and Event Temple complaints) | **Partial.** Mislabelled metrics | L | No report should need a support ticket |
 | 16 | Proposal templates, price-list lines, pre-fill from the previous version, "opened by the client" | 5 | Parity + Wish | **Partial** | M | Revising a proposal is the most frequent proposal task |
 | 17 | Room capacities by layout as first-class room facts | 1, 3, 5 | Parity | **Partial.** Trades Hall truth file (`trades-hall-venue-truth.ts:31-46`), absent from the Space model (`types/src/space.ts:101-116`) | M | The first question asked about any room |

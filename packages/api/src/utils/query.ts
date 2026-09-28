@@ -150,6 +150,22 @@ export function canManageCommercial(
 }
 
 /**
+ * Opening one commercial record that carries money (a proposal, a quote), and
+ * moving it where its state allows: the venue's commercial roles, as its list
+ * and every change to it already require, and whoever made it (their own rows
+ * are in their list too). Not the venue floor as such: hallkeepers never see
+ * prices (goal 18 6b), and a salesperson opens a colleague's record when told
+ * a client has answered it.
+ */
+export function canOpenCommercialRecord(
+  user: Pick<JwtUser, "id" | "role" | "venueId" | "platformRole">,
+  record: { readonly createdBy: string | null; readonly venueId: string },
+): boolean {
+  if (record.createdBy !== null && record.createdBy === user.id) return true;
+  return canManageCommercial(user, record.venueId);
+}
+
+/**
  * Reading the Diary: the venue floor, and sales, who pencils the holds. The
  * same people as DIARY_READ_ROLES on the live channel (ws/diary-live.ts), and
  * every role booking-mutations.ts lets write; a writer who could not read the

@@ -34,7 +34,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource, canManageCommercial, roleReadsInternalEvents } from "../utils/query.js";
+import { canManageCommercial, canOpenCommercialRecord, roleReadsInternalEvents } from "../utils/query.js";
 import {
   PROPOSAL_STATES,
   canTransitionProposal,
@@ -53,7 +53,9 @@ import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
 //
 // Venue scoping: proposals are authored by venue staff and venue admins.
 // Creation and mutation require the actor's own venue unless they hold the
-// platform-admin role; reads use the house canAccessResource rule.
+// platform-admin role. Opening one proposal (and moving it, where its state
+// allows) takes its venue's commercial roles or whoever made it: see
+// canOpenCommercialRecord.
 // Status changes run through the proposal state machine with role policy;
 // every transition writes a proposal_status_history row.
 //
@@ -618,7 +620,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+    if (!canOpenCommercialRecord(request.user, proposal)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -799,7 +801,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+    if (!canOpenCommercialRecord(request.user, proposal)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     if (!canTransitionProposal(proposal.status, parsed.data.status, request.user.role)) {
@@ -908,7 +910,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+    if (!canOpenCommercialRecord(request.user, proposal)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -938,7 +940,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+    if (!canOpenCommercialRecord(request.user, proposal)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -1012,7 +1014,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+    if (!canOpenCommercialRecord(request.user, proposal)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -1255,7 +1257,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+    if (!canOpenCommercialRecord(request.user, proposal)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -1285,7 +1287,7 @@ export async function proposalRoutes(
     if (proposal === undefined) {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, proposal.createdBy, proposal.venueId)) {
+    if (!canOpenCommercialRecord(request.user, proposal)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 

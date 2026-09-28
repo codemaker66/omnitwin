@@ -125,6 +125,55 @@ describe.skipIf(target === undefined)("proposal permissions through real routes 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ data: [] });
   });
+  // Opening one proposal takes the people its list and every change to it
+  // take, and whoever made it. A proposal carries money, and hallkeepers never
+  // see prices (goal 18 6b); a salesperson opens a colleague's proposal when
+  // told a client has answered it.
+  async function withVersion(f: Fixture): Promise<void> {
+    await db.insert(schema.proposalVersions).values({ proposalId: f.proposal.id, version: 1,
+      payload: savedPayload, sourceHash: proposalVersionPayloadDigest(savedPayload) });
+    await db.update(schema.proposals).set({ currentVersion: 1 }).where(eq(schema.proposals.id, f.proposal.id));
+  }
+  const OPENINGS = ["", "/history", "/comments", "/versions/latest", "/versions/1", "/available-transitions"] as const;
+  async function opened(f: Fixture): Promise<readonly number[]> {
+    const codes: number[] = [];
+    for (const path of OPENINGS) {
+      codes.push((await server.inject({ method: "GET", url: `/proposals/${f.proposal.id}${path}`, headers: f.headers })).statusCode);
+    }
+    return codes;
+  }
+
+  it.each(["sales", "manager", "staff", "admin"])("lets %s open a colleague's proposal, its versions and its history", async role => {
+    const f = await fixture(role);
+    await withVersion(f);
+    expect(await opened(f)).toEqual(OPENINGS.map(() => 200));
+  });
+
+  it.each(["hallkeeper", "client", "foreign_staff", "foreign_sales"])("keeps a colleague's proposal and its prices from %s", async role => {
+    const f = await fixture(role.replace("foreign_", ""), role.startsWith("foreign_"));
+    await withVersion(f);
+    expect(await opened(f)).toEqual(OPENINGS.map(() => 403));
+    const moved = await server.inject({ method: "POST", url: `/proposals/${f.proposal.id}/transition`, headers: f.headers,
+      payload: { status: "sent" } });
+    expect(moved.statusCode).toBe(403);
+    expect((await stored(f)).proposal?.status).toBe("draft");
+  });
+
+  it("lets sales send a colleague's proposal, and not a hallkeeper", async () => {
+    const sales = await fixture("sales");
+    await withVersion(sales);
+    const sent = await server.inject({ method: "POST", url: `/proposals/${sales.proposal.id}/transition`, headers: sales.headers,
+      payload: { status: "sent" } });
+    expect(sent.statusCode, sent.body).toBe(200);
+
+    const hallkeeper = await fixture("hallkeeper");
+    await withVersion(hallkeeper);
+    const refused = await server.inject({ method: "POST", url: `/proposals/${hallkeeper.proposal.id}/transition`, headers: hallkeeper.headers,
+      payload: { status: "sent" } });
+    expect(refused.statusCode).toBe(403);
+    expect((await stored(hallkeeper)).proposal?.status).toBe("draft");
+  });
+
   it("lets a venue admin discover a colleague's proposal", async () => {
     const f = await fixture("admin");
     const response = await server.inject({ method: "GET", url: "/proposals", headers: f.headers });

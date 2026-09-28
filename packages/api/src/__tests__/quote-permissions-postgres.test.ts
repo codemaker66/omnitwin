@@ -70,6 +70,32 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     return { quote, lines: await db.select().from(schema.quoteLineItems).where(eq(schema.quoteLineItems.quoteId, f.quote.id)) };
   }
 
+  // Opening one quote, and moving it where its state allows, takes the people
+  // its list and every change to it take, and whoever made it. A quote
+  // carries money, and hallkeepers never see prices (goal 18 6b).
+  function open(f: Fixture) {
+    return server.inject({ method: "GET", url: `/quotes/${f.quote.id}`, headers: f.headers });
+  }
+  function issue(f: Fixture) {
+    return server.inject({ method: "POST", url: `/quotes/${f.quote.id}/transition`, headers: f.headers, payload: { status: "issued" } });
+  }
+
+  it.each(["sales", "manager", "staff", "admin"])("lets %s open and issue a colleague's quote", async role => {
+    const f = await fixture(role);
+    const opened = await open(f);
+    expect(opened.statusCode, opened.body).toBe(200);
+    expect(opened.json()).toMatchObject({ data: { id: f.quote.id, totalMinor: 1000 } });
+    const issued = await issue(f);
+    expect(issued.statusCode, issued.body).toBe(200);
+  });
+
+  it.each(["hallkeeper", "client", "foreign_staff", "foreign_sales"])("keeps a colleague's quote and its prices from %s", async role => {
+    const f = await fixture(role.replace("foreign_", ""), role.startsWith("foreign_"));
+    expect((await open(f)).statusCode).toBe(403);
+    expect((await issue(f)).statusCode).toBe(403);
+    expect((await stored(f)).quote?.status).toBe("draft");
+  });
+
   it.each(["admin", "staff", "platform_admin"])("allows %s to create and manage the scoped draft with exact persisted totals", async role => {
     const f = await fixture(role === "platform_admin" ? "admin" : role, role === "platform_admin", role === "platform_admin" ? "admin" : "none");
     const created = await create(f);
