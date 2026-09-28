@@ -2277,6 +2277,40 @@ describe("the next version", () => {
     expect(back.queryByTestId("kept-version")).toBeNull();
   });
 
+  it("keeps the same words written over a version saved since, when a late save of them answers", async () => {
+    existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
+    const current = (): number => Number(existing[0]?.["currentVersion"] ?? 1);
+    mocks.getLatestProposalVersion.mockImplementation(() => Promise.resolve(version(current(), { clientMessage: `The words of version ${String(current())}.` })));
+    let saved: (value: Record<string, unknown>) => void = () => undefined;
+    mocks.createProposalVersion.mockImplementation(() => {
+      // The version lands at once; its answer is slow to come back.
+      existing = [proposal({ status: "changes_requested", currentVersion: 2 })];
+      return new Promise((resolve) => { saved = resolve; });
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "Words for version 2." } });
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    // Away and back, a colleague has saved version 3: the booker writes the same words over it.
+    cleanup();
+    existing = [proposal({ status: "changes_requested", currentVersion: 3 })];
+    render(<ProposalsDesk />);
+    const back = within(await openProposal());
+    await waitFor(() => { expect(back.getByTestId("composer-start").textContent).toMatch(/^Starts from version 3\./u); });
+    fireEvent.change(back.getByTestId("composer-message"), { target: { value: "Words for version 2." } });
+    await act(async () => {
+      saved(version(2, { clientMessage: "Words for version 2." }));
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+    });
+    // Those words are not version 3's: they are still here, and carried on when the proposal is opened again.
+    expect(reloadHeld()).toBe(true);
+    cleanup();
+    render(<ProposalsDesk />);
+    const again = within(await openProposal());
+    await waitFor(() => { expect(again.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("Words for version 2."); });
+  });
+
   it("keeps words written since when a save arrives after the desk was left", async () => {
     existing = [proposal({ status: "changes_requested", currentVersion: 1 })];
     let saved: (value: Record<string, unknown>) => void = () => undefined;

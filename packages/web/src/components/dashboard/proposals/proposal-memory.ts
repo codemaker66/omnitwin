@@ -1,3 +1,4 @@
+import { pageLetGo } from "../../../lib/page-leave.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import type { ComposerDraft, KeptVersion } from "./proposals-desk-format.js";
 
@@ -32,13 +33,17 @@ function key(person: string, proposalId: string): string {
 }
 
 // A reload or a closed tab would take every word here, on screen or not: the
-// browser asks first while there are any. Not once no one is signed in:
-// every sign-out signs out on this page before it leaves it, and the words go
-// with it (the dashboard's Sign Out asks about them first), so the browser
-// never asks about them after the person has signed out.
+// browser asks first while there are any, and the person can still save
+// them. That is while they are signed in, or while their access is checked
+// (moving between parts of the site checks it again) or could not be, as it
+// will be again. Not once they have signed out, nor while a sign-out leaves
+// the page (page-leave.ts): the dashboard's Sign Out asks about the words
+// first, and the browser never asks after the person has signed out.
 let guarding = false;
 function protect(event: BeforeUnloadEvent): void {
-  if (useAuthStore.getState().user !== null) event.preventDefault();
+  if (pageLetGo()) return;
+  const { user, accessStatus } = useAuthStore.getState();
+  if (user !== null || accessStatus === "checking" || accessStatus === "error") event.preventDefault();
 }
 function guardUnload(): void {
   const unsaved = drafts.size > 0 || kept.size > 0;

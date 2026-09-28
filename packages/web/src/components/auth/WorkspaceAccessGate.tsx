@@ -3,6 +3,7 @@ import { useClerk, useUser } from "@clerk/react";
 import { TRADES_HALL_ENQUIRY_VENUE_SLUG, VENUE_ACCESS_ENQUIRY_TYPE } from "@omnitwin/types";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
+import { letPageGo } from "../../lib/page-leave.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import "./WorkspaceAccessGate.css";
 
@@ -102,9 +103,12 @@ export function WorkspaceAccessGate({ children }: { readonly children: ReactNode
   const handleSignOut = async (): Promise<void> => {
     setSigningOut(true);
     setSignOutError(null);
+    // Clerk signs out, then leaves the page: nothing on it should hold that.
+    letPageGo(true);
     try {
       await signOut({ redirectUrl: "/login" });
     } catch {
+      letPageGo(false);
       setSignOutError("Sign out did not finish. Please try again.");
     } finally {
       setSigningOut(false);

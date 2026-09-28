@@ -595,9 +595,10 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     }
     // The words are the version now: nothing of them is left to remember,
     // unless other words have taken their place (the desk was left and
-    // opened again while this save was on its way, and more was written).
+    // opened again while this save was on its way, and more was written, or
+    // the same written over a version saved since).
     const written = recallDraft(person, id);
-    if (written !== null && sameWords(written.draft, draft)) rememberDraft(person, id, null);
+    if (written !== null && written.start === basedOn && sameWords(written.draft, draft)) rememberDraft(person, id, null);
     // The next version starts from this one at once, if it is still open; the
     // proposal is then read again for what the server made of it.
     if (openIdRef.current === id) seedLatest(id, saved);

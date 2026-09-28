@@ -366,6 +366,31 @@ describe("DashboardLayout navigation", () => {
     expect(recallDraft("admin-1", "p1")).toBeNull();
   });
 
+  it.each([false, true])("signs out at once from a refusal outside the shell, where there is nothing to ask (local fixture: %s)", async (localFixture) => {
+    mocks.bypass.mockReturnValue(localFixture);
+    rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    render(<MemoryRouter initialEntries={["/hallkeeper/config-1"]}><ProtectedRoute allowedRoles={["hallkeeper"]}><h1>Sheet</h1></ProtectedRoute></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    await waitFor(() => { expect(useAuthStore.getState().user).toBeNull(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.signOut).toHaveBeenCalledTimes(localFixture ? 0 : 1);
+  });
+
+  it("asks from a refusal inside the shell with the local fixture too", async () => {
+    mocks.bypass.mockReturnValue(true);
+    rememberDraft("admin-1", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    render(<MemoryRouter initialEntries={["/dashboard?view=inventory"]}><DashboardLayout activeView="inventory">
+      <ProtectedRoute allowedRoles={["hallkeeper"]}><h1>Hallkeeper page</h1></ProtectedRoute>
+    </DashboardLayout></MemoryRouter>);
+    await screen.findByText("Trades Hall");
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    const question = await screen.findByRole("dialog", { name: "Sign out with proposal words not saved?" });
+    expect(useAuthStore.getState().user).toEqual(admin);
+    fireEvent.click(within(question).getByRole("button", { name: "Discard and sign out" }));
+    await waitFor(() => { expect(useAuthStore.getState().user).toBeNull(); });
+    expect(recallDraft("admin-1", "p1")).toBeNull();
+  });
+
   it("retains auth and the dirty correction after an unsuccessful held save", async () => {
     let rejectSave: ((reason: Error) => void) | undefined;
     const saved = new Promise<void>((_resolve, reject) => { rejectSave = reject; });

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { letPageGo } from "../../../../lib/page-leave.js";
 import { useAuthStore, type AuthUser } from "../../../../stores/auth-store.js";
 import { forgetProposalMemory, forgetWords, proposalsWithWords, recallDraft, recallKept, rememberDraft, subscribeKept, updateKept } from "../proposal-memory.js";
 
@@ -19,6 +20,7 @@ function reloadHeld(): boolean {
 
 afterEach(() => {
   forgetProposalMemory();
+  letPageGo(false);
   useAuthStore.getState().setUser(null);
 });
 
@@ -58,6 +60,31 @@ describe("the words a person has not yet saved", () => {
     useAuthStore.getState().setUser(null);
     expect(reloadHeld()).toBe(false);
     useAuthStore.getState().setUser(person);
+    expect(reloadHeld()).toBe(true);
+  });
+
+  it("hold a reload while access is checked again or could not be, as the person is still signed in", () => {
+    rememberDraft("u1", "p1", { composer: 1, start: 1, draft: words });
+    // Moving between parts of the site checks access again, with no one signed in meanwhile.
+    useAuthStore.getState().beginAccessCheck(person.email);
+    expect(reloadHeld()).toBe(true);
+    useAuthStore.getState().failAccessCheck("We could not confirm your venue access.", false);
+    expect(reloadHeld()).toBe(true);
+    // Waiting on an invitation, or signed out, the words cannot be saved from here.
+    useAuthStore.getState().failAccessCheck("Venue access is waiting for an invitation.", true);
+    expect(reloadHeld()).toBe(false);
+    useAuthStore.getState().beginAccessCheck(person.email);
+    useAuthStore.getState().logout();
+    expect(reloadHeld()).toBe(false);
+  });
+
+  it("stand aside while a sign-out leaves the page, and hold again if it does not", () => {
+    useAuthStore.getState().failAccessCheck("We could not confirm your venue access.", false);
+    rememberDraft("u1", "p1", { composer: 1, start: 1, draft: words });
+    expect(reloadHeld()).toBe(true);
+    letPageGo(true);
+    expect(reloadHeld()).toBe(false);
+    letPageGo(false);
     expect(reloadHeld()).toBe(true);
   });
 });
