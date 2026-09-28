@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import type { Window as HappyWindow } from "happy-dom";
 import { createMemoryRouter, RouterProvider, type RouteObject } from "react-router-dom";
 import { gaussianSplatsAvailable } from "../lib/splat-access.js";
 import { NativeSplatLayer } from "../components/scene/NativeSplatLayer.js";
@@ -82,5 +83,45 @@ describe("where splats may run (T-639)", () => {
 
   it.each(["production", "development", "", undefined])("refuses a %s build", (deployEnv) => {
     expect(gaussianSplatsAvailable({ DEV: false, VITE_DEPLOY_ENV: deployEnv })).toBe(false);
+  });
+
+  // Defence in depth: a preview build aliased to the product domain must not
+  // lift the founder hold there.
+  it.each(["venviewer.com", "www.venviewer.com", "VENVIEWER.COM", "venviewer.com."])(
+    "refuses a preview build served on %s",
+    (host) => {
+      expect(gaussianSplatsAvailable({ DEV: false, VITE_DEPLOY_ENV: "preview", HOST: host })).toBe(false);
+    },
+  );
+
+  it("refuses the product domain even to a development build", () => {
+    expect(gaussianSplatsAvailable({ DEV: true, VITE_DEPLOY_ENV: "", HOST: "venviewer.com" })).toBe(false);
+  });
+
+  it("allows a preview build on its Vercel preview host", () => {
+    expect(gaussianSplatsAvailable({ DEV: false, VITE_DEPLOY_ENV: "preview", HOST: "omnitwin-git-x-codemaker66.vercel.app" })).toBe(true);
+  });
+
+  it("allows local development on localhost", () => {
+    expect(gaussianSplatsAvailable({ DEV: true, VITE_DEPLOY_ENV: "", HOST: "localhost" })).toBe(true);
+  });
+
+  it("does not mistake a lookalike host for the product domain", () => {
+    expect(gaussianSplatsAvailable({ DEV: false, VITE_DEPLOY_ENV: "preview", HOST: "notvenviewer.com" })).toBe(true);
+  });
+
+  it("reads the page's own host when a caller gives none", () => {
+    const happyDom = window.happyDOM as typeof window.happyDOM & Pick<HappyWindow["happyDOM"], "setURL">;
+    const original = window.location.href;
+    vi.stubEnv("DEV", true);
+    try {
+      expect(gaussianSplatsAvailable()).toBe(true);
+      happyDom.setURL("https://venviewer.com/plan");
+      expect(window.location.hostname).toBe("venviewer.com");
+      expect(gaussianSplatsAvailable()).toBe(false);
+      expect(gaussianSplatsAvailable({ DEV: true })).toBe(false);
+    } finally {
+      happyDom.setURL(original);
+    }
   });
 });

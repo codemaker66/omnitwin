@@ -8,7 +8,11 @@ import type { DeviceTier } from "./device-tier.js";
  * photographs (T-639). Coordinates are in the room's capture frame, the frame
  * of its splat tiles, so the floor is drawn under the same transform. */
 const vec3 = z.tuple([z.number(), z.number(), z.number()]);
-const tier = z.object({ size: z.number().int().positive(), files: z.array(z.string().min(1)).min(1) });
+/** The manifest is fetched from a public bucket and read as untrusted input:
+ * every file it names is a bare name beside it, never a path, and every size
+ * is bounded before anything is allocated from it. */
+const fileName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "A floor-skin file is named without a path.");
+const tier = z.object({ size: z.number().int().positive().max(8_192), files: z.array(fileName).min(1) });
 
 export const FloorSkinManifestSchema = z.object({
   schema: z.literal("venviewer.floor-skin.v1"),
@@ -23,8 +27,8 @@ export const FloorSkinManifestSchema = z.object({
     inputs: z.record(z.string(), z.string()),
   }),
   grid: z.object({
-    widthPx: z.number().int().positive(),
-    heightPx: z.number().int().positive(),
+    widthPx: z.number().int().positive().max(65_536),
+    heightPx: z.number().int().positive().max(65_536),
     texelM: z.number().positive(),
     origin: vec3, uAxis: vec3, vAxis: vec3,
   }),
@@ -32,18 +36,18 @@ export const FloorSkinManifestSchema = z.object({
   tiles: z.array(z.object({
     col0: z.number().int().nonnegative(), row0: z.number().int().nonnegative(),
     cols: z.number().int().positive(), rows: z.number().int().positive(),
-  })).min(1),
+  })).min(1).max(16),
   tiers: z.object({ high: tier, medium: tier, low: tier }),
   height: z.object({
-    file: z.string().min(1), cols: z.number().int().positive(), rows: z.number().int().positive(),
+    file: fileName, cols: z.number().int().positive().max(4_096), rows: z.number().int().positive().max(4_096),
     cellPx: z.number().int().positive(), unitM: z.number().positive(), outside: z.number().int(),
   }),
   slab: z.object({
-    file: z.string().min(1), width: z.number().int().positive(), height: z.number().int().positive(),
+    file: fileName, width: z.number().int().positive().max(4_096), height: z.number().int().positive().max(4_096),
     below: z.number().nonnegative(), above: z.number().nonnegative(),
   }),
   colour: z.object({ matched: vec3 }),
-  files: z.record(z.string(), z.string()),
+  files: z.record(fileName, z.string()),
 });
 export type FloorSkinManifest = z.infer<typeof FloorSkinManifestSchema>;
 export type FloorSkinTier = keyof FloorSkinManifest["tiers"];

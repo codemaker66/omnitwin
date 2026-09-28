@@ -107,6 +107,59 @@ describe("floor-skin package (T-639)", () => {
   });
 });
 
+describe("floor-skin manifest limits (T-639: the manifest is untrusted input)", () => {
+  const parses = (value: unknown): boolean => FloorSkinManifestSchema.safeParse(value).success;
+
+  it("accepts the Grand Hall package's own file names", () => {
+    expect(parses({
+      ...manifest,
+      tiers: { ...manifest.tiers, high: { size: 4096, files: ["albedo-4096-0.webp", "albedo-4096-1.webp"] } },
+      height: { ...manifest.height, file: "height-5cm.i16" },
+      slab: { ...manifest.slab, file: "slab-mask-1024x512.u8" },
+      files: { "albedo-4096-0.webp": "0".repeat(64), "height-5cm.i16": "1".repeat(64), "slab-mask-1024x512.u8": "2".repeat(64) },
+    })).toBe(true);
+  });
+
+  it.each(["../h0.webp", "tiles/h0.webp", "tiles\\h0.webp", "/h0.webp", ".h0.webp", "-h0.webp", "h 0.webp", "%2e%2e", "https://cdn.example/h0.webp", ""])(
+    "refuses the file name %j wherever the package names a file",
+    (name) => {
+      expect(parses({ ...manifest, tiers: { ...manifest.tiers, high: { size: 200, files: [name, "h1.webp"] } } })).toBe(false);
+      expect(parses({ ...manifest, height: { ...manifest.height, file: name } })).toBe(false);
+      expect(parses({ ...manifest, slab: { ...manifest.slab, file: name } })).toBe(false);
+      expect(parses({ ...manifest, files: { [name]: "0".repeat(64) } })).toBe(false);
+    },
+  );
+
+  it.each([
+    ["17 tiles", { tiles: Array.from({ length: 17 }, () => manifest.tiles[0]) }],
+    ["a grid over 65,536 texels wide", { grid: { ...manifest.grid, widthPx: 65_537 } }],
+    ["a grid over 65,536 texels high", { grid: { ...manifest.grid, heightPx: 65_537 } }],
+    ["a height grid over 4,096 columns", { height: { ...manifest.height, cols: 4_097 } }],
+    ["a height grid over 4,096 rows", { height: { ...manifest.height, rows: 4_097 } }],
+    ["a slab mask over 4,096 wide", { slab: { ...manifest.slab, width: 4_097 } }],
+    ["a slab mask over 4,096 high", { slab: { ...manifest.slab, height: 4_097 } }],
+    ["a texture tier over 8,192 texels", { tiers: { ...manifest.tiers, medium: { ...manifest.tiers.medium, size: 8_193 } } }],
+  ])("refuses %s", (_label, override) => {
+    expect(parses({ ...manifest, ...override })).toBe(false);
+  });
+
+  it("accepts every limit exactly", () => {
+    expect(parses({
+      ...manifest,
+      tiles: Array.from({ length: 16 }, () => manifest.tiles[0]),
+      grid: { ...manifest.grid, widthPx: 65_536, heightPx: 65_536 },
+      height: { ...manifest.height, cols: 4_096, rows: 4_096 },
+      slab: { ...manifest.slab, width: 4_096, height: 4_096 },
+      tiers: { ...manifest.tiers, high: { ...manifest.tiers.high, size: 8_192 } },
+    })).toBe(true);
+  });
+
+  it("reads a package whose provenance names the source of its matched colour", () => {
+    // The builder records which measured ratio `colour.matched` carries.
+    expect(parses({ ...manifest, provenance: { ...manifest.provenance, matched: "Arm A render-proof measurement" } })).toBe(true);
+  });
+});
+
 describe("floor colour choice for Blake's review (T-639)", () => {
   it("shows the photographs as they are by default", () => {
     expect(floorColourModeFromSearch("", true)).toBe("photo");
