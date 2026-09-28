@@ -222,9 +222,12 @@ describe.skipIf(target === undefined)("the next version's check through real rou
     await saved(f);
     const checked = await check(f);
     expect(await saved(f)).toBe(2);
-    for (const query of [`?basis=${checked.basis}`, `?basedOn=1&basis=${checked.basis}`]) {
+    // With the version it was written from, it is refused as written from an
+    // older version; with only the basis, as taking something unchecked.
+    for (const [query, code] of [[`?basedOn=1&basis=${checked.basis}`, "PROPOSAL_VERSION_CHANGED"], [`?basis=${checked.basis}`, "REVISION_CONFLICT"]] as const) {
       const refused = await save(f, query);
       expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json<{ code: string }>().code).toBe(code);
     }
     expect(await versionCount(f)).toBe(2);
   });

@@ -1145,6 +1145,9 @@ export async function proposalRoutes(
     let payload: ProposalVersionPayload = { ...content, configurationId: proposal.configurationId, layoutRevision: null };
     if (taken.layoutSnapshot !== undefined) payload = { ...payload, layoutSnapshot: taken.layoutSnapshot };
     payload = { ...payload, facts: taken.facts };
+    // Written from a version already followed by another: said as that, not
+    // as a change to what it takes. (Checked again under the lock below.)
+    if (basedOn !== undefined && proposal.currentVersion !== basedOn) return reply.status(409).send(VERSION_CHANGED);
     // Checked before it was sent, it takes only what the check saw.
     if (checked !== undefined && checked !== nextVersionBasis(proposal.currentVersion, proposal, taken)) {
       return reply.status(409).send(TAKEN_CHANGED);
