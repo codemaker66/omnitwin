@@ -199,7 +199,7 @@ measured surface rather than splats.
 - **No film curve on a capture.** three r186 ignores `Material.toneMapped`, so the
   curve comes off the canvas: the walk canvas is `flat`, and the planner sets
   `NoToneMapping` while a capture is shown (`CaptureToneMapping`, including the
-  default hybrid layer mode). Procedural content drawn in the same frame
+  Combined layer mode). Procedural content drawn in the same frame
   (furniture, the model shell) currently shares that uncurved canvas; giving it
   its own curve is part of the furniture increment (I3).
 - **Floor skin.** A `venviewer.floor-skin.v1` package sits beside a room's tiles
@@ -207,10 +207,16 @@ measured surface rather than splats.
   (high 4096², medium 2048², low and poster 1024² per tile, two tiles), a 5 cm
   height grid (`.i16`) and a 1024×512 floor-slab mask (`.u8`), all in the
   capture frame. `tools/floor-skin/build_floor_skin.py` builds it from the floor
-  study; `StageFloor` draws it under the splat transform, only for the staged
-  capture it was built for, at the tier from `useAssetDeviceTier`. `?floor=matched`
-  (development and preview builds) multiplies the photographs by the measured
-  splat/photo floor ratio for comparison.
+  study (`--matched R,G,B` with `--matched-source` records each arm's measured
+  splat/photo floor ratio; the build fails if any slab-mask cell lies outside the
+  photographed floor). `StageFloor` draws it under the splat transform, only for
+  the staged capture it was built for, at the tier from `useAssetDeviceTier`, and
+  in the planner only in Capture mode: in Combined mode the model's floor at y = 0
+  and the measured floor (−10 to +3.9 cm, tilted 0.22°) would fight, so Combined
+  keeps the model floor and the capture's own floor as before. `?floor=matched`
+  (development and preview builds) multiplies the photographs by that ratio for
+  comparison. Manifests are validated as untrusted input: safe file basenames,
+  bounded sizes, and the venue and room must match the request.
 - **Floor-slab removal.** While the skin is shown, the host hides every splat
   centre inside the floor outline and within 0.15 m below to 0.12 m above the
   plane: one shared R8 mask, a band and a scene→mask matrix (`SplatExclusion`),
@@ -223,7 +229,9 @@ measured surface rather than splats.
   `/work-in-progress` under the 19 September hold, so preview builds read the
   public R2 bucket directly (`resolveBuildSplatBaseUrl`; the bucket's CORS policy
   admits `*.vercel.app`) and production keeps the hold. `gaussianSplatsAvailable()`
-  opens splats in development and on preview deployments only.
+  opens splats in development and on preview deployments only, and never on
+  `venviewer.com` or its subdomains whatever the build, so aliasing a preview
+  build to the product domain cannot lift the hold.
 - **Publishing a package.** `publish-splat-tiles.ts --package <room>/<package>/v<n>`
   uploads one version directory: content types per file, immutable caching, the
   SHA-256 in object metadata, the manifest last (withheld if any file failed),
