@@ -1,11 +1,11 @@
 import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
-import { proposalRoutes } from "../routes/proposals.js";
+import { proposalRoutes, proposalShareRoutes } from "../routes/proposals.js";
 
 // ---------------------------------------------------------------------------
 // An announcement must never be able to fail a save.
@@ -115,11 +115,12 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
+    await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
     await server.ready();
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE proposals, proposal_versions, proposal_status_history, event_configuration_links, events, configurations, event_plan_changes, event_plan_notifications, venues, spaces, placed_objects, asset_definitions");
+    await pool.query("TRUNCATE proposals, proposal_versions, proposal_status_history, event_configuration_links, events, configurations, handoff_packs, event_plan_changes, event_plan_notifications, venues, spaces, placed_objects, asset_definitions");
     await pool.query(
       "INSERT INTO venues (id, name, slug, address) VALUES ($1, 'Trades Hall Glasgow', 'trades-hall-glasgow', '85 Glassford Street')",
       [VENUE],
@@ -185,6 +186,38 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     expect(res.statusCode).toBe(201);
     // staff, admin and sales are all inside the deployed ten, so it lands.
     expect(await changeCount()).toBe(1);
+  });
+
+  it("takes the team to the proposal, and a change the hallkeeper must see to the event it disturbs", async () => {
+    const paths = async (): Promise<readonly (string | null)[]> => {
+      const rows = await pool.query<{ action_path: string | null }>("SELECT DISTINCT action_path FROM event_plan_notifications");
+      return rows.rows.map((row) => row.action_path);
+    };
+    expect((await createVersion()).statusCode).toBe(201);
+    expect(await paths()).toEqual([`/dashboard?view=proposals&proposal=${PROPOSAL}`]);
+
+    // A new layout on an event with a handoff pack reaches the hallkeeper too.
+    await pool.query("TRUNCATE event_plan_notifications");
+    await pool.query("INSERT INTO handoff_packs (id, event_id, compiled_at) VALUES ($1, $2, now())", [randomUUID(), EVENT]);
+    const relaid = await server.inject({ method: "PATCH", url: `/proposals/${PROPOSAL}`, headers: headers(), payload: { configurationId: CONFIG } });
+    expect(relaid.statusCode, relaid.body).toBe(200);
+    expect(await paths()).toEqual([`/ops/events/${EVENT}`]);
+  });
+
+  it("keeps the notice when a client accepts in a name longer than the feed keeps", async () => {
+    await pool.query("UPDATE proposals SET status = 'sent', current_version = 1 WHERE id = $1", [PROPOSAL]);
+    const token = "isolationToken_0123456789abcdefghijklmnopqrstuv";
+    await pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix) VALUES ($1, $2, 'isolatio')",
+      [PROPOSAL, createHash("sha256").update(token, "utf8").digest("hex")]);
+    // Names may run to 200 characters; the feed keeps 160 for who acted.
+    const name = `Elaine ${"Crawford ".repeat(18)}`.trim();
+    expect(name.length).toBeGreaterThan(160);
+    const accepted = await server.inject({ method: "POST", url: `/proposal-share/${token}/approve`, payload: { authorName: name } });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    const changes = await pool.query<{ actor_label: string; title: string }>("SELECT actor_label, title FROM event_plan_changes");
+    expect(changes.rows).toHaveLength(1);
+    expect(changes.rows[0]?.actor_label.length).toBeLessThanOrEqual(160);
+    expect(changes.rows[0]?.title.endsWith("… accepted Autumn gala — Grand Hall")).toBe(true);
   });
 
   it("still saves the version when the announcement violates the CHECK", async () => {

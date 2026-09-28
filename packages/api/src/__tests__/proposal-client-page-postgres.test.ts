@@ -196,6 +196,55 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     expect(page.status).toBe("accepted");
     expect(page.accepted?.by).toBe("Elaine Crawford");
     expect(Number.isNaN(Date.parse(page.accepted?.at ?? ""))).toBe(false);
+    // Accepted without a message: the note kept in its place is not put in their mouth.
+    expect(await notices()).toEqual([{
+      title: "Elaine Crawford accepted Crawford wedding proposal", body: "Version 1.", action_path: `/dashboard?view=proposals&proposal=${PROPOSAL}`,
+    }]);
+  });
+
+  async function notices(): Promise<readonly { title: string; body: string; action_path: string | null }[]> {
+    // One row per commercial role, all alike: the words and the way in are the point here.
+    const rows = await pool.query<{ title: string; body: string; action_path: string | null }>(
+      "SELECT DISTINCT title, body, action_path FROM event_plan_notifications ORDER BY title",
+    );
+    return rows.rows;
+  }
+
+  it("tells the venue team who wrote or accepted, on which version, in their words, and opens the proposal", async () => {
+    const proposalAt = `/dashboard?view=proposals&proposal=${PROPOSAL}`;
+    const asked = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`,
+      payload: { kind: "comment", authorName: "Elaine Crawford", body: "Is there parking nearby?", version: 1 },
+    });
+    expect(asked.statusCode, asked.body).toBe(201);
+    expect(await notices()).toEqual([{
+      title: "Elaine Crawford wrote about Crawford wedding proposal", body: "Version 1. “Is there parking nearby?”", action_path: proposalAt,
+    }]);
+
+    await pool.query("TRUNCATE event_plan_notifications");
+    const approved = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/approve`,
+      payload: { authorName: "Elaine Crawford", body: "See you in June.", version: 1 },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(await notices()).toEqual([{
+      title: "Elaine Crawford accepted Crawford wedding proposal", body: "Version 1. “See you in June.”", action_path: proposalAt,
+    }]);
+  });
+
+  it("tells the venue team what changes were asked for, on the version read, with no name when none was given", async () => {
+    await pool.query("UPDATE proposals SET current_version = 2, sent_version = 1 WHERE id = $1", [PROPOSAL]);
+    const changes = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`,
+      payload: { kind: "request_changes", body: "Could we start at seven?", version: 1 },
+    });
+    expect(changes.statusCode, changes.body).toBe(201);
+    // The version the client was sent, not the draft saved since.
+    expect(await notices()).toEqual([{
+      title: "The client asked for changes to Crawford wedding proposal",
+      body: "Version 1. “Could we start at seven?”",
+      action_path: `/dashboard?view=proposals&proposal=${PROPOSAL}`,
+    }]);
   });
 
   it("lets the venue team read it as the client does, without counting as the client opening it", async () => {

@@ -60,6 +60,7 @@ const VERSION_PAYLOAD = {
 interface NotificationRow {
   readonly audience_role: string;
   readonly title: string;
+  readonly body: string;
   readonly venue_id: string | null;
   readonly event_id: string | null;
   readonly change_id: string | null;
@@ -146,7 +147,7 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
 
   async function notifications(): Promise<readonly NotificationRow[]> {
     const rows = await pool.query<NotificationRow>(
-      "SELECT audience_role, title, venue_id, event_id, change_id, action_path, severity FROM event_plan_notifications ORDER BY audience_role",
+      "SELECT audience_role, title, body, venue_id, event_id, change_id, action_path, severity FROM event_plan_notifications ORDER BY audience_role",
     );
     return rows.rows;
   }
@@ -160,12 +161,15 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
     expect(roles).toContain("staff");
     expect(roles).toContain("admin");
     for (const row of rows) {
-      expect(row.title).toBe("Client approved proposal");
+      // Which proposal and version, and it opens that proposal. This older
+      // link takes no name.
+      expect(row.title).toBe("The client accepted Autumn gala — Grand Hall");
+      expect(row.body).toBe("Version 1.");
       expect(row.venue_id).toBe(VENUE);
       // No event to hang off — that is the whole point of the fix.
       expect(row.event_id).toBeNull();
       expect(row.change_id).toBeNull();
-      expect(row.action_path).toBe("/dashboard?view=proposals");
+      expect(row.action_path).toBe(`/dashboard?view=proposals&proposal=${PROPOSAL}`);
       expect(row.severity).toBe("attention");
     }
   });
@@ -175,7 +179,8 @@ describe.skipIf(testUrl === undefined)("client proposal responses on isolated Po
     const rows = await notifications();
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.title).toBe("Client requested proposal changes");
+      expect(row.title).toBe("The client asked for changes to Autumn gala — Grand Hall");
+      expect(row.body).toBe("Version 1. “Could we move the bar to the north wall?”");
     }
 
     const status = await pool.query<{ to_status: string; note: string | null }>(

@@ -44,6 +44,7 @@ import { generateUniqueShortCode } from "../services/shortcode.js";
 import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam } from "../services/commercial-notifications.js";
+import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
 import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js";
 import { moveDealWithProposal } from "../services/deal-stage-from-proposal.js";
 
@@ -342,7 +343,7 @@ async function recordProposalLifecycleChange(
         title: input.title,
         body: input.summary,
         severity: input.sourceKind === "proposal_response" ? "attention" : "info",
-        actionPath: "/dashboard?view=proposals",
+        actionPath: proposalDeskPath(proposal.id),
       });
       return;
     }
@@ -371,7 +372,9 @@ async function recordProposalLifecycleChange(
         : [...COMMERCIAL_AUDIENCE_ROLES],
       riskLevel: notifyHallkeeper ? "attention" : "info",
       requiresHallkeeperAcknowledgement: notifyHallkeeper,
-      actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : "/dashboard",
+      // The hallkeeper is taken to the event it disturbs; otherwise everyone
+      // is taken to the proposal itself.
+      actionPath: notifyHallkeeper ? `/ops/events/${context.eventId}` : proposalDeskPath(proposal.id),
     });
   } catch (err) {
     // Loud, with the ids needed to find the row that went unannounced, and
@@ -1703,7 +1706,7 @@ export async function publicProposalRoutes(
           ? { status: toStatus, acceptedName: null, sentVersion: sentVersionOf(held), updatedAt: new Date() }
           : { status: toStatus, sentVersion: sentVersionOf(held), updatedAt: new Date() })
         .where(eq(proposals.id, proposal.id))
-        .returning({ status: proposals.status });
+        .returning({ status: proposals.status, sentVersion: proposals.sentVersion });
       await tx.insert(proposalStatusHistory).values({
         proposalId: proposal.id,
         fromStatus,
@@ -1718,18 +1721,22 @@ export async function publicProposalRoutes(
     const updated = outcome;
     await moveDealFor(db, proposal, toStatus, null, request.log);
 
+    // This path takes no name.
+    const notice = clientAnswerNotice({
+      act: toStatus === "accepted" ? "accepted" : "changes",
+      proposalTitle: proposal.title,
+      version: updated.sentVersion,
+      name: null,
+      words: parsed.data.note,
+    });
     await recordProposalLifecycleChange(db, proposal, {
       actorUserId: null,
       actorRole: "client",
-      actorLabel: "Client",
+      actorLabel: notice.actorLabel,
       sourceKind: "proposal_response",
       sourceId: proposal.id,
-      title: toStatus === "accepted" ? "Client approved proposal" : "Client requested proposal changes",
-      summary: boundedLifecycleSummary(parsed.data.note ?? (
-        toStatus === "accepted"
-          ? "Client approved the proposal."
-          : "Client requested changes to the proposal."
-      )),
+      title: notice.title,
+      summary: boundedLifecycleSummary(notice.summary),
       affectedSurfaces: toStatus === "accepted" ? ["proposal"] : ["proposal", "comments"],
       includeHallkeeperWhenHandoffExists: toStatus === "changes_requested",
       logger: request.log,
@@ -1841,7 +1848,7 @@ export async function proposalShareRoutes(
         });
       }
 
-      return { comment, moved: moves };
+      return { comment, moved: moves, version: held === undefined ? null : sentVersionOf(held) };
     });
     if (result === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (result === "version") return reply.status(409).send(VERSION_CHANGED);
@@ -1850,14 +1857,21 @@ export async function proposalShareRoutes(
       await moveDealFor(db, resolved.proposal, "changes_requested", null, request.log);
     }
 
+    const notice = clientAnswerNotice({
+      act: kind === "request_changes" ? "changes" : "comment",
+      proposalTitle: resolved.proposal.title,
+      version: result.version,
+      name: comment.authorName,
+      words: comment.body,
+    });
     await recordProposalLifecycleChange(db, resolved.proposal, {
       actorUserId: null,
       actorRole: "client",
-      actorLabel: comment.authorName ?? "Client",
+      actorLabel: notice.actorLabel,
       sourceKind: "proposal_comment",
       sourceId: comment.id,
-      title: kind === "request_changes" ? "Client requested proposal changes" : "Client commented on proposal",
-      summary: boundedLifecycleSummary(comment.body),
+      title: notice.title,
+      summary: boundedLifecycleSummary(notice.summary),
       affectedSurfaces: kind === "request_changes" ? ["proposal", "comments"] : ["comments"],
       includeHallkeeperWhenHandoffExists: kind === "request_changes",
       logger: request.log,
@@ -1927,21 +1941,29 @@ export async function proposalShareRoutes(
         body: parsed.data.body ?? "Client approved the proposal.",
         isClientVisible: true,
       });
-      return "accepted" as const;
+      return { accepted: sentVersionOf(held) };
     });
     if (outcome === "already") return { data: { status: "accepted", already: true } };
     if (outcome === "changed") return reply.status(409).send(STATUS_CHANGED);
     if (outcome === "version") return reply.status(409).send(VERSION_CHANGED);
     await moveDealFor(db, resolved.proposal, "accepted", null, request.log);
 
+    // Only what the client wrote: the note kept without one is not their words.
+    const notice = clientAnswerNotice({
+      act: "accepted",
+      proposalTitle: resolved.proposal.title,
+      version: outcome.accepted,
+      name: parsed.data.authorName,
+      words: parsed.data.body,
+    });
     await recordProposalLifecycleChange(db, resolved.proposal, {
       actorUserId: null,
       actorRole: "client",
-      actorLabel: parsed.data.authorName ?? "Client",
+      actorLabel: notice.actorLabel,
       sourceKind: "proposal_response",
       sourceId: resolved.proposal.id,
-      title: "Client approved proposal",
-      summary: boundedLifecycleSummary(parsed.data.body ?? "Client approved the proposal."),
+      title: notice.title,
+      summary: boundedLifecycleSummary(notice.summary),
       affectedSurfaces: ["proposal"],
       includeHallkeeperWhenHandoffExists: false,
       logger: request.log,

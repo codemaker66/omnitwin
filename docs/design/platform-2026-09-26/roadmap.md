@@ -596,7 +596,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 
 2. `/blueprint` shows a fake "Plan sent — within 24 hours" (`BlueprintPage.tsx:294-298`). Route it to the real enquiry flow or remove it, and hide or explain the 2D view's do-nothing controls (`:836-858`).
 3. The share lens says "Client link — sent" (`ShareLensPanel.tsx:208`). Change it to "Link ready. Not emailed; copy it into your message." Say that "Create another link" creates a new proposal (`:92-96`).
-4. The client proposal page says "the venue team has been notified". Notify the owner on every proposal decision, or change the copy (`ProposalPage.tsx:55`; `proposals.ts:155-156,199-200`). Move focus to the result after the client approves.
+4. The client proposal page says "the venue team has been notified". Notify the owner on every proposal decision, or change the copy (`ProposalPage.tsx:55`; `proposals.ts:155-156,199-200`). Move focus to the result after the client approves. The notice is done: every client answer tells the commercial team, with or without an event (X1, 28 September).
 5. The supplier "clarification request" reaches nobody. Notify the pack contact, or say so; show `contactPhone` as a tap-to-call link (`supplier-coordination.ts:596-638`).
 6. "Log issue: Urgent" on the event-day board notifies nobody. Say so until notification exists (`services/event-day-ops.ts:423-435`).
 7. Venue settings: remove the brand-colour "public preview" claim (`use-planner-venue-identity.ts:50-53`).
@@ -756,6 +756,12 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - "Add from price list" (`api/pricing.ts:66-78`).
 - Link the deal, enquiry and configuration; derive `configurationId` on the server.
 - Notify the owner of every client decision.
+  Done on 28 September (`services/client-answer-notice.ts`). Every acceptance, request for changes and
+  comment tells the venue's commercial team, the proposal's owner among them, with or without an event.
+  The notice says who answered (the name given on the page, or "The client"), what they did and to which
+  proposal. Under that it gives the version they answered and their own words, and it opens that
+  proposal on the Proposals desk. A change the hallkeeper must see still opens its event. A notice to the
+  owner alone waits on the notification policy (interrupt, periphery, digest).
 - "Opened by the client" from `lastViewedAt`, excluding staff previews (`proposals.ts:1242`).
   Done on 28 September, as "the link was opened": a row reads "Sent 3 days ago, not opened yet", counting
   only opens since the latest send. The preview and the editor's Share panel never stamp. It cannot say
@@ -805,6 +811,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
 - **Revisions:** after a client requests changes, the new version starts from the previous contents and shows a diff.
 - **List order:** 25 fixtures appear newest-first and every one is reachable.
 - **Notifications:** approving a proposal made in the dashboard (no event link) creates an in-app notification for its owner.
+  Held on 28 September against real PostgreSQL (`proposals-client-response-postgres.test.ts`,
+  `proposal-client-page-postgres.test.ts`): each commercial role at the venue is told, by name and
+  version, with a link to the proposal.
 - **Search:** "Mcdonald" finds "MacDonald"; "henderson" returns the contact, the deal and the proposal.
   Held on 27 September against real PostgreSQL (`client-search-postgres.test.ts`), with "Hendersen" too.
 - **Client profile:** survives reload, and Back returns to the results.
@@ -1129,7 +1138,7 @@ All four are held by `e2e/reviews-desk.spec.ts` (27 September).
 | 11 | Function sheet department views (kitchen, front of house, hallkeeper, bar, client), "changed since you last looked", acknowledgements, "Final" at T-72h | 9 | Parity + Wish | **Partial** | M | The most valuable operational artefact is nearly there |
 | 12 | Client portal: final-numbers deadline, per-guest 14-allergen list, menus, table plan, payments, documents | 8 | Parity + Wish | **Partial** | L | Ends email-thread final numbers and dietary spreadsheets |
 | 13 | Consequence-preview component plus an undo service | Cross-cutting | Wish | **Partial.** Desk confirmation (`EnquiryPanel.tsx:323-387`); Diary undo (`lib/undo-stack.ts`) | M | Removes fear and dialogs at the same time |
-| 14 | Notification policy (interrupt, periphery, digest) and owner notified of every client decision | Cross-cutting | Parity | **Partial.** `NotificationCenter`; proposal notifications only when an event is linked (`proposals.ts:155-156`) | M | Deals are currently won with nobody told |
+| 14 | Notification policy (interrupt, periphery, digest) and owner notified of every client decision | Cross-cutting | Parity | **Partial.** `NotificationCenter`; every client answer to a proposal tells the commercial team, event or not, and opens the proposal (28 September); no interrupt, periphery or digest policy yet | M | Deals were won with nobody told |
 | 15 | Self-serve reporting: conversion and response time by source, lost reasons, pace against last year, CSV export on every list | 13 | Parity + Wish (Momentus and Event Temple complaints) | **Partial.** Mislabelled metrics | L | No report should need a support ticket |
 | 16 | Proposal templates, price-list lines, pre-fill from the previous version, "opened by the client" | 5 | Parity + Wish | **Partial** | M | Revising a proposal is the most frequent proposal task |
 | 17 | Room capacities by layout as first-class room facts | 1, 3, 5 | Parity | **Partial.** Trades Hall truth file (`trades-hall-venue-truth.ts:31-46`), absent from the Space model (`types/src/space.ts:101-116`) | M | The first question asked about any room |
@@ -1221,7 +1230,7 @@ Evidence and sources: [research/completeness.md](research/completeness.md), [res
 
 - **One capability map** for nav, views and API guards. The UI hides controls; the API still enforces access.
 - **Public enquiries:** optional room, a "room not chosen" marker, a source field, and an occasion list with human labels.
-- **Notifications:** notify the owner of every client proposal decision, not only event-linked ones.
+- **Notifications:** notify the owner of every client proposal decision, not only event-linked ones. Done (X1, 28 September).
 - **Diary:** parse `resequence.promotedToFirst` in the web client; add owner names to calendar entries; add a venue-wide decisions-due query.
 - **Calendar and ops projection:** return the approved configuration id and checked count.
 - **Timing:** `resolveTiming` uses venue-local time.
