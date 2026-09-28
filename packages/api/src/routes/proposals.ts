@@ -42,6 +42,7 @@ import {
 } from "../state-machines/proposal.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
 import { resolveProposalLayoutSnapshot } from "../services/proposal-layout-snapshot.js";
+import { patchLinkRequest, resolveProposalLinks, type ProposalLinkRefusal } from "../services/proposal-links.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } from "../services/commercial-notifications.js";
 import { clientAnswerNotice, proposalDeskPath } from "../services/client-answer-notice.js";
@@ -122,6 +123,18 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     eventDate: sql<string | null>`COALESCE(${opportunities.preferredDate}, ${enquiries.preferredDate})::text`,
     guestCount: sql<number | null>`COALESCE(${opportunities.guestCount}, ${enquiries.estimatedGuests})`,
     eventType: sql<string | null>`COALESCE(${opportunities.eventType}, ${enquiries.eventType})`,
+    // The room of the layout it carries: only a live layout in a live room at
+    // its venue, so a removed one reads as none.
+    layoutRoomName: sql<string | null>`(
+      SELECT ${spaces.name} FROM ${configurations}
+      INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
+      WHERE ${configurations.id} = ${proposals.configurationId}
+        AND ${configurations.venueId} = ${proposals.venueId}
+        AND ${configurations.deletedAt} IS NULL
+        AND ${spaces.venueId} = ${proposals.venueId}
+        AND ${spaces.deletedAt} IS NULL)`,
+    // Whether that layout is the client's own, from their enquiry.
+    layoutFromEnquiry: sql<boolean>`COALESCE(${proposals.configurationId} = ${enquiries.configurationId}, false)`,
     latestTotalMinor: sql<number | null>`(${latestQuote("totalMinor")})::int`,
     latestCurrency: sql<string | null>`${latestQuote("currency")}`,
     // When one of its links was last opened since it was last sent. The team
@@ -428,32 +441,11 @@ function generateShareToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-async function opportunityBelongsToVenue(db: Database, opportunityId: string, venueId: string): Promise<"ok" | "missing" | "mismatch"> {
-  const [opportunity] = await db.select({ venueId: opportunities.venueId })
-    .from(opportunities)
-    .where(and(eq(opportunities.id, opportunityId), isNull(opportunities.deletedAt)))
-    .limit(1);
-  if (opportunity === undefined) return "missing";
-  return opportunity.venueId === venueId ? "ok" : "mismatch";
-}
-
-async function validateOptionalOpportunity(
-  db: Database,
-  opportunityId: string | null | undefined,
-  venueId: string,
-  reply: { status: (code: number) => { send: (body: unknown) => unknown } },
-): Promise<boolean> {
-  if (opportunityId === undefined || opportunityId === null) return true;
-  const status = await opportunityBelongsToVenue(db, opportunityId, venueId);
-  if (status === "missing") {
-    reply.status(404).send({ error: "Opportunity not found", code: "NOT_FOUND" });
-    return false;
-  }
-  if (status === "mismatch") {
-    reply.status(422).send({ error: "Opportunity belongs to a different venue", code: "VENUE_MISMATCH" });
-    return false;
-  }
-  return true;
+/** A refused set of links, as the routes answer it. */
+function linkRefusalBody(refusal: ProposalLinkRefusal) {
+  return refusal.field === undefined
+    ? { error: refusal.error, code: refusal.code }
+    : { error: refusal.error, code: refusal.code, details: { field: refusal.field } };
 }
 
 export async function proposalRoutes(
@@ -567,41 +559,14 @@ export async function proposalRoutes(
       return reply.status(403).send({ error: "Only venue staff or admin can create proposals for this venue", code: "FORBIDDEN" });
     }
 
-    // Linked records must exist and belong to the same venue.
-    const opportunityOk = await validateOptionalOpportunity(db, parsed.data.opportunityId, parsed.data.venueId, reply);
-    if (!opportunityOk) return;
-
-    if (parsed.data.enquiryId !== undefined && parsed.data.enquiryId !== null) {
-      const [enquiry] = await db.select({ venueId: enquiries.venueId })
-        .from(enquiries)
-        .where(eq(enquiries.id, parsed.data.enquiryId))
-        .limit(1);
-      if (enquiry === undefined) {
-        return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
-      }
-      if (enquiry.venueId !== parsed.data.venueId) {
-        return reply.status(422).send({ error: "Enquiry belongs to a different venue", code: "VENUE_MISMATCH" });
-      }
-    }
-
-    if (parsed.data.configurationId !== undefined && parsed.data.configurationId !== null) {
-      const [config] = await db.select({ venueId: configurations.venueId })
-        .from(configurations)
-        .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
-        .limit(1);
-      if (config === undefined) {
-        return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
-      }
-      if (config.venueId !== parsed.data.venueId) {
-        return reply.status(422).send({ error: "Configuration belongs to a different venue", code: "VENUE_MISMATCH" });
-      }
-    }
+    // The deal, the enquiry it came from and that enquiry's layout, worked
+    // out here and checked against each other and the venue.
+    const linked = await resolveProposalLinks(db, parsed.data.venueId, parsed.data);
+    if (!linked.ok) return reply.status(linked.status).send(linkRefusalBody(linked));
 
     const [proposal] = await db.insert(proposals).values({
       venueId: parsed.data.venueId,
-      opportunityId: parsed.data.opportunityId ?? null,
-      enquiryId: parsed.data.enquiryId ?? null,
-      configurationId: parsed.data.configurationId ?? null,
+      ...linked.links,
       title: parsed.data.title,
       status: "draft",
       currentVersion: 0,
@@ -701,38 +666,16 @@ export async function proposalRoutes(
       return reply.status(422).send({ error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" });
     }
 
-    // Linked records must stay venue-coherent.
-    const opportunityOk = await validateOptionalOpportunity(db, parsed.data.opportunityId, proposal.venueId, reply);
-    if (!opportunityOk) return;
-
-    if (parsed.data.enquiryId !== undefined && parsed.data.enquiryId !== null) {
-      const [enquiry] = await db.select({ venueId: enquiries.venueId })
-        .from(enquiries).where(eq(enquiries.id, parsed.data.enquiryId)).limit(1);
-      if (enquiry === undefined) {
-        return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
-      }
-      if (enquiry.venueId !== proposal.venueId) {
-        return reply.status(422).send({ error: "Enquiry belongs to a different venue", code: "VENUE_MISMATCH" });
-      }
-    }
-    if (parsed.data.configurationId !== undefined && parsed.data.configurationId !== null) {
-      const [config] = await db.select({ venueId: configurations.venueId })
-        .from(configurations)
-        .where(and(eq(configurations.id, parsed.data.configurationId), isNull(configurations.deletedAt)))
-        .limit(1);
-      if (config === undefined) {
-        return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
-      }
-      if (config.venueId !== proposal.venueId) {
-        return reply.status(422).send({ error: "Configuration belongs to a different venue", code: "VENUE_MISMATCH" });
-      }
-    }
-
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.title !== undefined) updateData["title"] = parsed.data.title;
-    if (parsed.data.opportunityId !== undefined) updateData["opportunityId"] = parsed.data.opportunityId;
-    if (parsed.data.enquiryId !== undefined) updateData["enquiryId"] = parsed.data.enquiryId;
-    if (parsed.data.configurationId !== undefined) updateData["configurationId"] = parsed.data.configurationId;
+    // Links sent are laid over those stored and checked together; a title
+    // alone reads and changes none of them.
+    const linkRequest = patchLinkRequest(parsed.data, proposal);
+    if (linkRequest !== null) {
+      const linked = await resolveProposalLinks(db, proposal.venueId, linkRequest);
+      if (!linked.ok) return reply.status(linked.status).send(linkRefusalBody(linked));
+      Object.assign(updateData, linked.links);
+    }
 
     const [updated] = await db.update(proposals)
       .set(updateData)
@@ -743,8 +686,11 @@ export async function proposalRoutes(
       return reply.status(500).send({ error: "Failed to update proposal", code: "PROPOSAL_UPDATE_FAILED" });
     }
 
+    // The layout was touched when one was sent, or when the links worked out
+    // to another.
+    const layoutTouched = parsed.data.configurationId !== undefined || updated.configurationId !== proposal.configurationId;
     const affectedSurfaces = new Set<EventPlanChangeSurface>(["proposal"]);
-    if (parsed.data.configurationId !== undefined) affectedSurfaces.add("layout");
+    if (layoutTouched) affectedSurfaces.add("layout");
     await recordProposalLifecycleChange(db, updated, {
       actorUserId: request.user.id,
       actorRole: toEventPlanAudienceRole(request.user.role),
@@ -754,7 +700,7 @@ export async function proposalRoutes(
       title: "Proposal updated",
       summary: `${updated.title} was updated by the venue team.`,
       affectedSurfaces: [...affectedSurfaces],
-      includeHallkeeperWhenHandoffExists: parsed.data.configurationId !== undefined,
+      includeHallkeeperWhenHandoffExists: layoutTouched,
       logger: request.log,
     });
 
@@ -1167,14 +1113,14 @@ export async function proposalRoutes(
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
 
-    // Capture an immutable, client-safe layout snapshot from the linked
-    // configuration (T-427 phase 7). Server-authoritative geometry — any
-    // client-supplied layoutSnapshot is ignored. Hashed with the rest of the
-    // payload so the snapshot is part of the immutable version.
-    let payload = parsed.data;
+    // The layout is the proposal's own, drawn by the server as it stands
+    // (T-427 phase 7): the layout, its revision and its drawing are never the
+    // browser's. With no layout linked the version has no drawing at all.
+    // Hashed with the rest of the payload, so it is part of the version.
+    const { layoutSnapshot: _sentSnapshot, ...content } = parsed.data;
+    let payload: ProposalVersionPayload = { ...content, configurationId: proposal.configurationId, layoutRevision: null };
     if (proposal.configurationId !== null) {
-      const snapshot = await resolveProposalLayoutSnapshot(db, proposal.configurationId);
-      payload = { ...parsed.data, layoutSnapshot: snapshot };
+      payload = { ...payload, layoutSnapshot: await resolveProposalLayoutSnapshot(db, proposal.configurationId, proposal.venueId) };
     }
     // The event it is for, as the venue holds it now, frozen with the
     // version: a later change to the deal never rewrites what a client was
@@ -1194,8 +1140,11 @@ export async function proposalRoutes(
       if (!isPlatformAdmin(request.user) && !isProposalEditable(current.status as ProposalStatus)) {
         return "PROPOSAL_NOT_EDITABLE" as const;
       }
-      // The prepared snapshot must still belong to the linked configuration.
-      if (current.configurationId !== proposal.configurationId) return "PROPOSAL_CHANGED" as const;
+      // The prepared version must still be the proposal's: its layout, and the
+      // deal and enquiry its facts were read from.
+      if (current.configurationId !== proposal.configurationId
+        || current.opportunityId !== proposal.opportunityId
+        || current.enquiryId !== proposal.enquiryId) return "PROPOSAL_CHANGED" as const;
 
       const [claimed] = await tx.update(proposals)
         .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
@@ -1224,7 +1173,7 @@ export async function proposalRoutes(
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
     if (result === "PROPOSAL_CHANGED") {
-      return reply.status(409).send({ error: "Proposal configuration changed; reload before creating a version", code: "REVISION_CONFLICT" });
+      return reply.status(409).send({ error: "The proposal's links changed; reload before saving a version", code: "REVISION_CONFLICT" });
     }
     const { version } = result;
 
@@ -1521,7 +1470,13 @@ async function clientFacts(db: Database, proposal: ProposalRecord): Promise<Clie
   const [layoutRoom] = proposal.configurationId === null ? [] : await db.select({ name: spaces.name, slug: spaces.slug })
     .from(configurations)
     .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
-    .where(and(eq(configurations.id, proposal.configurationId), eq(spaces.venueId, proposal.venueId), isNull(spaces.deletedAt)))
+    .where(and(
+      eq(configurations.id, proposal.configurationId),
+      eq(configurations.venueId, proposal.venueId),
+      isNull(configurations.deletedAt),
+      eq(spaces.venueId, proposal.venueId),
+      isNull(spaces.deletedAt),
+    ))
     .limit(1);
   // An enquiry filed under a room the guest never chose names no room.
   const [enquiryRoom] = layoutRoom !== undefined || enquiry === undefined || !enquiry.roomChosen ? [] : await db.select({ name: spaces.name, slug: spaces.slug })

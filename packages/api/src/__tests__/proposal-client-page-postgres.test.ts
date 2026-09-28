@@ -186,6 +186,18 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     expect((await clientPage()).facts.roomName).toBeNull();
   });
 
+  it("names no room from a removed layout, or from another venue's", async () => {
+    const saloon = await room("Saloon", "saloon");
+    const configuration = randomUUID();
+    await pool.query("INSERT INTO configurations (id, venue_id, space_id, name) VALUES ($1, $2, $3, 'Dinner rounds')", [configuration, VENUE, saloon]);
+    await pool.query("UPDATE proposals SET configuration_id = $2 WHERE id = $1", [PROPOSAL, configuration]);
+    expect((await clientPage()).facts.roomName).toBe("Saloon");
+    await pool.query("UPDATE configurations SET deleted_at = now() WHERE id = $1", [configuration]);
+    expect((await clientPage()).facts.roomName).toBeNull();
+    await pool.query("UPDATE configurations SET deleted_at = NULL, venue_id = $2 WHERE id = $1", [configuration, OTHER_VENUE]);
+    expect((await clientPage()).facts.roomName).toBeNull();
+  });
+
   it("names who accepted it and when, as they gave their name", async () => {
     expect((await clientPage()).accepted).toBeNull();
     const approved = await server.inject({

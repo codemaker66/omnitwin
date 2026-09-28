@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { FloorPlanPoint, ProposalLayoutItem, ProposalLayoutSnapshot } from "@omnitwin/types";
 import { MAX_PROPOSAL_LAYOUT_ITEMS } from "@omnitwin/types";
 import { assetDefinitions, configurations, placedObjects, spaces } from "../db/schema.js";
@@ -112,16 +112,18 @@ export function buildProposalLayoutSnapshot(
 export async function resolveProposalLayoutSnapshot(
   db: Database,
   configurationId: string,
+  venueId: string,
 ): Promise<ProposalLayoutSnapshot | null> {
+  // Only a live layout in a live room at the proposal's venue is drawn.
   const [config] = await db.select({ spaceId: configurations.spaceId })
     .from(configurations)
-    .where(eq(configurations.id, configurationId))
+    .where(and(eq(configurations.id, configurationId), eq(configurations.venueId, venueId), isNull(configurations.deletedAt)))
     .limit(1);
   if (config === undefined) return null;
 
   const [space] = await db.select({ outline: spaces.floorPlanOutline })
     .from(spaces)
-    .where(eq(spaces.id, config.spaceId))
+    .where(and(eq(spaces.id, config.spaceId), eq(spaces.venueId, venueId), isNull(spaces.deletedAt)))
     .limit(1);
   if (space === undefined) return null;
   const outline = space.outline as readonly FloorPlanPoint[];

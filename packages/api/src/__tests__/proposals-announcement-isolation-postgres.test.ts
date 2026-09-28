@@ -209,6 +209,26 @@ describe.skipIf(testUrl === undefined)("proposal announcements cannot fail a sav
     expect(await paths()).toEqual([`/ops/events/${EVENT}`]);
   });
 
+  it("tells the hallkeeper when a deal named by PATCH brings the client's layout with it", async () => {
+    const enquiry = randomUUID(), deal = randomUUID();
+    await pool.query("UPDATE proposals SET configuration_id = NULL WHERE id = $1", [PROPOSAL]);
+    await pool.query("INSERT INTO enquiries (id, venue_id, name, email, configuration_id) VALUES ($1, $2, 'Ailsa Henderson', 'ailsa@example.test', $3)",
+      [enquiry, VENUE, CONFIG]);
+    await pool.query("INSERT INTO opportunities (id, venue_id, title, source_enquiry_id) VALUES ($1, $2, 'Autumn gala', $3)", [deal, VENUE, enquiry]);
+    await pool.query("INSERT INTO handoff_packs (id, event_id, compiled_at) VALUES ($1, $2, now())", [randomUUID(), EVENT]);
+    await pool.query("TRUNCATE event_plan_notifications");
+    try {
+      // Only the deal is sent; the layout comes with it, and is a change the floor must see.
+      const linked = await server.inject({ method: "PATCH", url: `/proposals/${PROPOSAL}`, headers: headers(), payload: { opportunityId: deal } });
+      expect(linked.statusCode, linked.body).toBe(200);
+      expect(linked.json()).toMatchObject({ data: { opportunityId: deal, enquiryId: enquiry, configurationId: CONFIG } });
+      const rows = await pool.query<{ action_path: string | null }>("SELECT DISTINCT action_path FROM event_plan_notifications");
+      expect(rows.rows.map((row) => row.action_path)).toEqual([`/ops/events/${EVENT}`]);
+    } finally {
+      await pool.query("UPDATE proposals SET opportunity_id = NULL, enquiry_id = NULL, configuration_id = $2 WHERE id = $1", [PROPOSAL, CONFIG]);
+    }
+  });
+
   it("keeps the notice when a client accepts in a name longer than the feed keeps", async () => {
     await pool.query("UPDATE proposals SET status = 'sent', current_version = 1 WHERE id = $1", [PROPOSAL]);
     const token = "isolationToken_0123456789abcdefghijklmnopqrstuv";

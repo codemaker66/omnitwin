@@ -261,4 +261,18 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
       expect(result.rows[0]?.current_version).toBe(0);
     });
   });
+
+  it("does not publish a prepared version after the proposal's deal changes", async () => {
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [PROPOSAL]);
+      const response = createVersion();
+      await waitForBlockedQueries(1);
+      // The facts were read from the deal it had; another deal's are not them.
+      await client.query("UPDATE proposals SET opportunity_id = $1 WHERE id = $2", [randomUUID(), PROPOSAL]);
+      await client.query("COMMIT");
+      expect((await response).statusCode).toBe(409);
+      const result = await pool.query<{ current_version: number }>("SELECT current_version FROM proposals WHERE id = $1", [PROPOSAL]);
+      expect(result.rows[0]?.current_version).toBe(0);
+    });
+  });
 });

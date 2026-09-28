@@ -52,6 +52,8 @@ interface DeskRow {
   readonly lastSentAt: string | null;
   readonly hasLink: boolean;
   readonly linkOpen: boolean;
+  readonly layoutRoomName: string | null;
+  readonly layoutFromEnquiry: boolean;
 }
 
 interface DeskBody {
@@ -66,7 +68,7 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
   const fixtureSchema = `proposals_desk_${randomUUID().replaceAll("-", "")}`;
   const tables: PgTable[] = [
     schema.proposals, schema.proposalVersions, schema.opportunities, schema.contacts, schema.enquiries, schema.proposalShareTokens,
-    schema.proposalStatusHistory,
+    schema.proposalStatusHistory, schema.configurations, schema.spaces,
   ];
 
   beforeAll(async () => {
@@ -90,7 +92,7 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
   }, 120_000);
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE proposals, proposal_versions, opportunities, contacts, enquiries, proposal_share_tokens, proposal_status_history");
+    await pool.query("TRUNCATE proposals, proposal_versions, opportunities, contacts, enquiries, proposal_share_tokens, proposal_status_history, configurations, spaces");
   });
 
   afterAll(async () => {
@@ -305,5 +307,46 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
     const own = await server.inject({ method: "GET", url: "/proposals/desk", headers: headers("planner", null, planner) });
     expect(own.statusCode).toBe(403);
     expect(own.body).not.toContain("A planner's own");
+  });
+  it("names the room of the layout a proposal carries, and whether it is the client's own, only while both are live here", async () => {
+    const hall = randomUUID(), foreignHall = randomUUID(), removedHall = randomUUID();
+    await pool.query(
+      `INSERT INTO spaces (id, venue_id, name, slug, deleted_at) VALUES
+       ($1, $2, 'Grand Hall', 'grand-hall', NULL), ($3, $4, 'Elsewhere', 'elsewhere', NULL), ($5, $2, 'Old Room', 'old-room', now())`,
+      [hall, VENUE, foreignHall, OTHER_VENUE, removedHall],
+    );
+    const own = randomUUID(), removed = randomUUID(), foreign = randomUUID(), inRemovedRoom = randomUUID(), roomElsewhere = randomUUID();
+    await pool.query(
+      `INSERT INTO configurations (id, venue_id, space_id, name, layout_style, deleted_at) VALUES
+       ($1, $6, $7, 'Their layout', 'dinner-rounds', NULL), ($2, $6, $7, 'Removed', 'dinner-rounds', now()),
+       ($3, $8, $9, 'Theirs', 'dinner-rounds', NULL), ($4, $6, $10, 'Old room', 'dinner-rounds', NULL),
+       ($5, $6, $9, 'Room elsewhere', 'dinner-rounds', NULL)`,
+      [own, removed, foreign, inRemovedRoom, roomElsewhere, VENUE, hall, OTHER_VENUE, foreignHall, removedHall],
+    );
+    const enquiry = randomUUID();
+    await pool.query(
+      `INSERT INTO enquiries (id, venue_id, name, email, state, configuration_id) VALUES ($1, $2, 'Ailsa Henderson', 'ailsa@example.test', 'new', $3)`,
+      [enquiry, VENUE, own],
+    );
+    const carrying = async (title: string, layout: string | null, links: { enquiry?: string } = {}): Promise<string> => {
+      const id = await proposal(title, "draft", "2026-09-10T10:00:00Z", links);
+      await pool.query("UPDATE proposals SET configuration_id = $2 WHERE id = $1", [id, layout]);
+      return id;
+    };
+    const cases: readonly (readonly [string, readonly [string | null, boolean]])[] = [
+      [await carrying("Their own", own, { enquiry }), ["Grand Hall", true]],
+      [await carrying("Same layout, no enquiry", own), ["Grand Hall", false]],
+      [await carrying("Removed layout", removed), [null, false]],
+      [await carrying("Another venue's layout", foreign), [null, false]],
+      [await carrying("Layout in a removed room", inRemovedRoom), [null, false]],
+      [await carrying("Layout in another venue's room", roomElsewhere), [null, false]],
+      [await carrying("No layout", null), [null, false]],
+    ];
+    const byId = new Map((await desk()).data.map((row) => [row.id, [row.layoutRoomName, row.layoutFromEnquiry] as const]));
+    for (const [id, expected] of cases) expect(byId.get(id)).toEqual(expected);
+
+    const opened = await server.inject({ method: "GET", url: `/proposals/${cases[0]?.[0] ?? ""}`, headers: headers() });
+    expect(opened.statusCode, opened.body).toBe(200);
+    expect(JSON.parse(opened.body)).toMatchObject({ data: { layoutRoomName: "Grand Hall", layoutFromEnquiry: true } });
   });
 });

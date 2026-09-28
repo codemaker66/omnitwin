@@ -62,6 +62,7 @@ describe.skipIf(testUrl === undefined)("what a send and an acceptance record, on
     schema.proposalShareTokens, schema.packageSelections, schema.venues, schema.configurations,
     schema.opportunities, schema.opportunityStatusHistory, schema.events, schema.eventConfigurationLinks,
     schema.handoffPacks, schema.eventPlanChanges, schema.eventPlanNotifications, schema.contacts, schema.enquiries,
+    schema.spaces,
   ];
 
   beforeAll(async () => {
