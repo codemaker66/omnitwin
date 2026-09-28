@@ -795,8 +795,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   - A forest panel that asks the name an acceptance is given in and sends the version read.
   - Print: ink on white, the decision as one sentence.
 
-  The link shows the version sent, never one saved since (`proposals.sent_version`, migrations 0082 and 0083,
-  shipped in two steps). An answer on a version since replaced is refused, and the page reads it again and
+  The link shows the version sent, never one saved since (`proposals.sent_version`, migrations 0082 and 0083).
+  It shipped in three steps: 0082, then the writers and 0083, then the reading side (`a76e2ee1`). An answer on a version since replaced is refused, and the page reads it again and
   keeps what was typed. The accepting name is kept with the acceptance itself, so a comment cannot plant
   one.
 
