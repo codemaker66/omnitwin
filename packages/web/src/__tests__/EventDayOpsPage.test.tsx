@@ -880,6 +880,35 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Blake event day, as amended");
   });
 
+  it("leaves the focus on a Try again that stays, when a read that found the changes and a newer one that did not answer together", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    renderPage();
+    await screen.findByTestId("change-feed-notice");
+    const button = screen.getByRole("button", { name: "Try again" });
+    // An older read (a task's refresh) will find the changes; a newer one (a sync) will not.
+    let landOlder: ((items: ChangeFeedItem[]) => void) | undefined;
+    let failNewer: ((reason: Error) => void) | undefined;
+    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { landOlder = resolve; }));
+    mockUpdateOpsTaskStatus.mockResolvedValue(task("done"));
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => { expect(landOlder).toBeDefined(); });
+    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { failNewer = reject; }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
+    await waitFor(() => { expect(failNewer).toBeDefined(); });
+    act(() => { button.focus(); });
+    await act(async () => {
+      landOlder?.([requiredChangeFixture()]);
+      for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+      failNewer?.(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+    });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    // The newest read failed, so the notice and its button stay, with the focus.
+    expect(screen.getByTestId("change-feed-notice")).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Try again" }));
+  });
+
   it("keeps the board a later read drew when the first load fails late", async () => {
     let failFirst: ((reason: Error) => void) | undefined;
     let boardReads = 0;

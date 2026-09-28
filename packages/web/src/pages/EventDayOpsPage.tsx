@@ -496,13 +496,15 @@ export function EventDayOpsPage(): ReactElement {
     else if (feedFailedSince === null && was !== null && feedReadAt !== null) sayFeed("read", feedReadAt);
   }, [feedFailedSince, feedReadAt, sayFeed]);
 
-  // The focus moves only when it has fallen to the page or still rests on the
-  // retry control, never from wherever someone has gone since they pressed.
+  // The focus moves only when it has fallen to the page (a pressed or removed
+  // button lets it fall), never from wherever someone has gone since.
   useEffect(() => {
     if (feedFocus === null) return;
     setFeedFocus(null);
     const active = document.activeElement;
-    const fallen = active === null || active === document.body || !active.isConnected || active === tryAgainRef.current;
+    // Only a focus that has fallen moves: a Try again still on the page keeps
+    // its focus, since answers landing together can keep the notice up.
+    const fallen = active === null || active === document.body || !active.isConnected;
     if (!fallen) return;
     (feedFocus === "heading" ? acknowledgementsHeadingRef.current : tryAgainRef.current)?.focus({ preventScroll: true });
   }, [feedFocus]);
