@@ -52,11 +52,13 @@ export function VenueNotConnected({ title, consequence }: VenueNotConnectedProps
         // Connected: the view opens in place of this notice, which leaves with
         // the button that had focus. The workspace takes it, as on any change
         // of view, so a keyboard or screen-reader user starts in the view.
-        // Focus someone has since put elsewhere (a menu opened meanwhile) stays.
+        // Focus someone has since put elsewhere stays, but not inside one of
+        // the header's menus (.dashboard-layout-popover), which close as the
+        // account changes and would drop it.
         setCheck("idle");
         requestAnimationFrame(() => {
           const active = document.activeElement;
-          if (active !== null && active !== document.body) return;
+          if (active !== null && active !== document.body && active.closest(".dashboard-layout-popover") === null) return;
           document.getElementById("dashboard-main")?.focus({ preventScroll: true });
         });
       })
@@ -73,7 +75,9 @@ export function VenueNotConnected({ title, consequence }: VenueNotConnectedProps
         <p className="vnc__lede">Your account is not connected to a venue yet, so {consequence}.</p>
         <p className="vnc__next">Your Venviewer contact can connect it.</p>
         <div className="vnc__actions">
-          <button type="button" className="vnc__button" disabled={checking} aria-busy={checking} onClick={checkAgain}>
+          {/* Not disabled while checking: that would take the keyboard's place
+              away. A press while it checks does nothing. */}
+          <button type="button" className="vnc__button" aria-disabled={checking} aria-busy={checking} onClick={checkAgain}>
             {checking && <ActivityIndicator size={18} />}
             {checking ? "Checking…" : "Check again"}
           </button>

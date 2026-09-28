@@ -311,9 +311,12 @@ describe("the staff shell stays out of the entry script", () => {
     const reached = await staticImportClosure("src/main.tsx");
     expect(reached.has(path.resolve("src/router.tsx"))).toBe(true);
     expect(reached.has(path.resolve("src/components/auth/InternalEventRoute.tsx"))).toBe(true);
-    for (const kept of ["src/components/dashboard/DashboardLayout.tsx", "src/components/dashboard/VenueNotConnected.tsx",
-      "src/components/auth/EventsNotConnected.tsx"]) {
-      expect(reached.has(path.resolve(kept)), kept).toBe(false);
-    }
+    expect(reached.has(path.resolve("src/components/auth/EventsNotConnected.tsx"))).toBe(false);
+    // Of the dashboard, only the shell's small contract; of the API layer,
+    // only the token bridge. The shell, its notifications, the API client and
+    // the schemas they bring each load with the pages that use them.
+    const relative = [...reached].map((file) => path.relative(path.resolve("."), file).split(path.sep).join("/"));
+    expect(relative.filter((file) => file.startsWith("src/components/dashboard/"))).toEqual(["src/components/dashboard/staff-shell.ts"]);
+    expect(relative.filter((file) => file.startsWith("src/api/"))).toEqual(["src/api/auth-bridge.ts"]);
   });
 });
