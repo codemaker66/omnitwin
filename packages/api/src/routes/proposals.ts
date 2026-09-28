@@ -1132,6 +1132,10 @@ export async function proposalRoutes(
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
     }
+    // Written from a version already followed by another: said as that, not
+    // as a change to what it takes, and before the layout is drawn for it.
+    // (Checked again under the lock below.)
+    if (basedOn !== undefined && proposal.currentVersion !== basedOn) return reply.status(409).send(VERSION_CHANGED);
 
     // The layout is the proposal's own, drawn by the server as it stands
     // (T-427 phase 7): the layout, its revision and its drawing are never the
@@ -1145,9 +1149,6 @@ export async function proposalRoutes(
     let payload: ProposalVersionPayload = { ...content, configurationId: proposal.configurationId, layoutRevision: null };
     if (taken.layoutSnapshot !== undefined) payload = { ...payload, layoutSnapshot: taken.layoutSnapshot };
     payload = { ...payload, facts: taken.facts };
-    // Written from a version already followed by another: said as that, not
-    // as a change to what it takes. (Checked again under the lock below.)
-    if (basedOn !== undefined && proposal.currentVersion !== basedOn) return reply.status(409).send(VERSION_CHANGED);
     // Checked before it was sent, it takes only what the check saw.
     if (checked !== undefined && checked !== nextVersionBasis(proposal.currentVersion, proposal, taken)) {
       return reply.status(409).send(TAKEN_CHANGED);
