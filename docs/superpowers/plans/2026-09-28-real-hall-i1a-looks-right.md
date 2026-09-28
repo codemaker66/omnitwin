@@ -17,7 +17,7 @@
 - Tests: `pnpm --filter @omnitwin/web exec vitest run <path relative to packages/web>`, always in the foreground.
 - All visible loading and working states use `packages/web/src/components/shared/Activity.tsx`; this plan adds none.
 - Build-PC GPU rule (two power losses on 28 September under concurrent GPU load): one GPU-heavy job at a time; browser renders hold `D:/claude/visual-firstprinciples-20260928/gpu.lock` (JSON `{"owner":"<name>","since":"<ISO>"}`, deleted afterwards); render on demand, never a spinning animation loop.
-- Bulk and generated output goes under `D:/claude/`; staged room assets live under `D:/claude/splats/trades-hall/<room>/` (served in development by `SPLAT_STAGING_ROOT`, in preview and production through the `/splats/*` rewrite to R2).
+- Bulk and generated output goes under `D:/claude/`; staged room assets live under `D:/claude/splats/trades-hall/<room>/` (served in development by `SPLAT_STAGING_ROOT`; preview builds read the public R2 bucket directly, because since the 19 September hold every deployment redirects `/splats/*` to `/work-in-progress` — see Task 1b).
 - Source captures on `F:` are read-only; research inputs under `D:/claude/visual-firstprinciples-20260928/` are read-only inputs to this plan.
 - Floor-skin tiers by device tier: high 4096², medium 2048², low and poster 1024² per tile, two tiles per room floor (2.59 / 5.18 / 10.35 mm per texel). WebP with alpha for I1a; KTX2 arrives with I2.
 - Slab removal band: splat centres from 0.15 m below to 0.12 m above the floor plane, inside the floor outline inset about 9 cm from walls and fixtures.
@@ -1485,6 +1485,8 @@ cd D:/claude/real-hall/repo && SPLAT_BUDGET_LABEL=i1a SHOT=true node packages/we
 ```
 Read the script's header first for its URL and pose options and point it at each port in turn. Expected: the new frame shows boards on the floor, no pink cast and no haze over the floor; the old frame shows the smeared floor. Save both to the evidence folder and look at them with the Read tool.
 
+- [ ] **Step 2b: Choose the floor arm** — build arms A and C with the builder into `D:/claude/real-hall/floor-arms/<arm>/v1`, copy one at a time into `D:/claude/splats/trades-hall/grand-hall/floor-skin/v1/` (the development middleware sends package files `no-cache`), and capture the same poses for each, holding the GPU lock. Judge by eye: grain and joints, colour, seams, and the daylight baked into the photographs. Leave the winner staged; it is the package Task 10 publishes.
+
 - [ ] **Step 3: Planner check** — open `/plan?space=grand-hall` in the development build (the local stack from the project's local-dev notes, or the e2e plan-bootstrap stub), confirm the floor skin appears under the captured hall, the splats show no film curve, placing a table still works and `?floor=matched` switches the floor colour. Screenshot the planner overview with and without `?floor=matched`.
 
 - [ ] **Step 4: Phone check** — in the browser pane's mobile preset (Android user agent), load the walk page and read `window.__splatRuntimeProfile.tier` with `javascript_tool`; expected `"low"`.
@@ -1498,9 +1500,9 @@ Read the script's header first for its URL and pose options and point it at each
 - [ ] **Step 1: Publish the floor-skin package to R2** (before any preview or production code reads it)
 
 ```bash
-cd D:/claude/real-hall/repo && sed -n 1,60p packages/api/src/scripts/publish-splat-tiles.ts
+cd D:/claude/real-hall/repo/packages/api && pnpm exec tsx src/scripts/publish-splat-tiles.ts --staged "D:\claude\splats" --package grand-hall/floor-skin/v1 --dry-run
 ```
-Read its options; publish only `D:/claude/splats/trades-hall/grand-hall/floor-skin/v1/` under `splats/trades-hall/grand-hall/floor-skin/v1/`. Verify with `curl -sI https://venviewer.com/splats/trades-hall/grand-hall/floor-skin/v1/floor-skin.json` → `200`. If the script cannot publish a sub-folder, stop and report rather than re-uploading every tile.
+Then the same command without `--dry-run` (the package mode from Task 10a publishes only that version directory, manifest last). Verify at the bucket, not the site, since every deployment redirects `/splats/*` under the hold: `curl -sI -H "Origin: https://example.vercel.app" https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats/trades-hall/grand-hall/floor-skin/v1/floor-skin.json` → `200`, `Content-Type: application/json`, `Access-Control-Allow-Origin` echoed.
 
 - [ ] **Step 2: Record the change** — add to `docs/engineering/native-splats.md` a section "Presentation and the floor skin (T-639)" stating: splats draw without anti-aliasing compensation (the loaders refuse anti-aliased sources); captured rooms render without tone mapping; the host hides floor-slab splats under a floor skin via a shared R8 mask, a band and a scene→mask matrix; preview deployments may open splats. Update the session log and the T-639 row with commits and evidence paths.
 
@@ -1509,11 +1511,21 @@ Read its options; publish only `D:/claude/splats/trades-hall/grand-hall/floor-sk
 ```bash
 cd D:/claude/real-hall/repo && git push && gh api repos/codemaker66/omnitwin/commits/$(git rev-parse HEAD)/status --jq '.statuses[] | [.context,.state,.target_url] | @tsv'
 ```
-Expected: a Vercel status with a preview URL. Open `<preview>/room/grand-hall` in the browser pane: the captured hall with the photographic floor (if Vercel Deployment Protection is on, the page asks for a Vercel login; report the preview as private). If the preview shows the "Work in progress" page, `VERCEL_ENV` did not reach the build: check for the literal `"preview"` in the preview's JavaScript bundle and report.
+Expected: a Vercel status with a preview URL. Open `<preview>/room/grand-hall` in the browser pane: the captured hall with the photographic floor (if Vercel Deployment Protection is on, the page asks for a Vercel login; report the preview as private). If the preview shows the "Work in progress" page, `VERCEL_ENV` did not reach the build: check for the literal `"preview"` in the preview's JavaScript bundle and report. In the network log, tiles and the floor package must come from `pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev`.
 
-- [ ] **Step 4: Merge to master and verify production still holds** — after CI passes on the branch, merge `claude/real-hall` into master (resolve documentation conflicts by keeping both sides), push, and verify production: `https://venviewer.com/room/grand-hall` still shows "Work in progress" and the planner still opens. Record the CI and deploy run IDs in the session log.
+- [ ] **Step 4: Merge to master and verify production still holds** — after CI passes on the branch, merge `claude/real-hall` into master (resolve documentation conflicts by keeping both sides), push, and verify production: `https://venviewer.com/room/grand-hall` still shows "Work in progress", `https://venviewer.com/splats/trades-hall/grand-hall/0_0.sog` still redirects to `/work-in-progress`, and the planner still opens. Record the CI and deploy run IDs in the session log.
 
 - [ ] **Step 5: Hand to Blake** — send the preview link, the before/after images and one question: the photographic floor as it is, or matched to the splat room.
+
+---
+
+## Amendments during execution (28 September)
+
+Found while executing; recorded here so the plan stays the complete record. Their briefs live in the plan's SDD workspace until the branch merges.
+
+- **Task 1b: where preview and development read room assets.** The `/splats/*` rewrite to R2 was removed by the 19 September hold (commit 7cfbcc4c): every deployment now redirects `/splats/*` to `/work-in-progress`, so Task 1 alone would have opened splats on previews with no tiles behind them. Preview builds read the public R2 bucket directly (`resolveBuildSplatBaseUrl` in `packages/web/src/lib/production-env.ts`); the bucket's CORS policy already admits `*.vercel.app` (a preflight from a preview origin returned 204 with the origin echoed). Production keeps `""` and the hold. The development staging middleware also serves a room's floor-skin package (`.json`, `.webp`, `.i16`, `.u8`, only inside a `floor-skin/` directory, sent `no-cache`).
+- **Task 5b: Arm C.** The floor study finished after Task 5 with a third arm: the raw 4096 px cube faces after a joint pose solve (sweep misalignment on the floor 7.5 mm median before, 1.1 mm after). It measured sharpest in all six comparison crops (Laplacian variance 188–654; A 34–190; B 108–444). The builder accepts `--arm C`; Task 9 Step 2b compares A and C in the browser. Known defects of B and C: daylight baked in (a sun patch and window-light pools along the window wall) and a south third photographed only in the evening.
+- **Task 10a: publishing a package.** `publish-splat-tiles.ts` gains `--package <room>/<package>/v<number>`: one version directory, each file with its content type, immutable caching and its SHA-256 in object metadata, the manifest last and withheld if any file failed, and a refusal to overwrite a published version with different bytes. A rebuilt package is published as the next version.
 
 ---
 
