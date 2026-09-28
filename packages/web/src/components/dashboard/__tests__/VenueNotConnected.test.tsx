@@ -46,24 +46,32 @@ describe("VenueNotConnected", () => {
     const checking = screen.getByRole("button", { name: "Checking…" });
     expect(checking).toHaveProperty("disabled", true);
     expect(checking.getAttribute("aria-busy")).toBe("true");
+    // Said in one live region, there from the start.
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("");
     answer(UNPLACED);
-    expect((await screen.findByRole("status")).textContent).toBe("Not connected yet.");
+    await waitFor(() => { expect(status.textContent).toBe("Not connected yet."); });
     expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
   });
 
-  it("takes a venue connected meanwhile into the account, which then opens the view", async () => {
+  it("takes a venue connected meanwhile into the account, and gives the workspace focus as the view opens", async () => {
     mocks.getCurrentAuthUser.mockResolvedValue({ ...UNPLACED, venueId: "venue-1" });
-    show();
-    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    render(<main id="dashboard-main" tabIndex={-1} aria-label="Proposals">
+      <VenueNotConnected title="Proposals" consequence="there are no proposals to show" />
+    </main>);
+    const button = screen.getByRole("button", { name: "Check again" });
+    button.focus();
+    fireEvent.click(button);
     await waitFor(() => { expect(useAuthStore.getState().user?.venueId).toBe("venue-1"); });
     expect(screen.queryByText("Not connected yet.")).toBeNull();
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("main", { name: "Proposals" })); });
   });
 
   it("says calmly that a check did not finish, and keeps the account as it was", async () => {
     mocks.getCurrentAuthUser.mockRejectedValue(new Error("offline"));
     show();
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
-    expect((await screen.findByRole("status")).textContent).toBe("That check did not finish. Try again in a moment.");
+    await waitFor(() => { expect(screen.getByRole("status").textContent).toBe("That check did not finish. Try again in a moment."); });
     expect(screen.queryByRole("alert")).toBeNull();
     expect(useAuthStore.getState().user).toEqual(UNPLACED);
     expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false);
@@ -78,8 +86,8 @@ describe("VenueNotConnected", () => {
       fireEvent.click(screen.getByRole("button", { name: "Check again" }));
       useAuthStore.getState().setUser(meanwhile);
       answer({ ...UNPLACED, venueId: "venue-1" });
-      await Promise.resolve();
-      await Promise.resolve();
+      // The button is offered again, and the session is left as it now is.
+      await waitFor(() => { expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty("disabled", false); });
       expect(useAuthStore.getState().user).toEqual(meanwhile);
       cleanup();
     }

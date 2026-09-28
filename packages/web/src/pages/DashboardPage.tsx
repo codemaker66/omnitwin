@@ -75,10 +75,16 @@ const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 // lib/role-capabilities.ts ROTA_TAB_ROLES.
 const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
+/** The views of one venue's work: all but the platform's own. */
+type VenueView = Exclude<DashboardView, "onboarding" | "admin">;
+function isVenueView(view: DashboardView): view is VenueView {
+  return !ADMIN_ONLY_VIEWS.has(view);
+}
 /** What each venue view means to an account not connected to a venue yet:
- *  it is shown this, in the view's name, and no venue read is made. */
-const NOT_CONNECTED: Readonly<Partial<Record<DashboardView, string>>> = {
-  enquiries: "there are no enquiries to show",
+ *  it is shown this, in the view's name, and no venue read is made. Every
+ *  venue view has its line, so a view added later cannot skip the notice. */
+const NOT_CONNECTED: Readonly<Record<VenueView, string>> = {
+  enquiries: "there is no enquiry inbox to show",
   pipeline: "there is no pipeline to show",
   reviews: "there are no layouts to review",
   analytics: "there are no figures to show",
@@ -341,7 +347,7 @@ export function DashboardPage(): React.ReactElement {
   // An account that works at a venue but is not connected to one yet is told
   // so in the view's own name, and the view, whose reads would each be
   // refused, is never opened.
-  const notConnectedConsequence = notConnected && deniedRequestedView === null ? NOT_CONNECTED[view] : undefined;
+  const notConnectedConsequence = notConnected && deniedRequestedView === null && isVenueView(view) ? NOT_CONNECTED[view] : undefined;
 
   const renderContent = (): React.ReactElement => {
     if (deniedRequestedView !== null) {

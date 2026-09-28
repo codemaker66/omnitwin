@@ -37,17 +37,30 @@ export function VenueNotConnected({ title, consequence }: VenueNotConnectedProps
     setCheck("checking");
     getCurrentAuthUser()
       .then((user) => {
-        // An answer that outlived this notice, or its account (signed out or
-        // replaced meanwhile), is not written back into the session.
-        if (!mounted.current || askedFor === null || useAuthStore.getState().user?.id !== askedFor || user.id !== askedFor) return;
-        // A venue in the account opens the view in place of this notice.
+        if (!mounted.current) return;
+        // An answer for an account signed out or replaced meanwhile is not
+        // written back into the session; the button is simply offered again.
+        if (askedFor === null || useAuthStore.getState().user?.id !== askedFor || user.id !== askedFor) {
+          setCheck("idle");
+          return;
+        }
         useAuthStore.getState().setUser(user);
-        setCheck(user.venueId === null ? "still" : "idle");
+        if (user.venueId === null) {
+          setCheck("still");
+          return;
+        }
+        // Connected: the view opens in place of this notice, which leaves with
+        // the button that had focus. The workspace takes it, as on any change
+        // of view, so a keyboard or screen-reader user starts in the view.
+        setCheck("idle");
+        requestAnimationFrame(() => { document.getElementById("dashboard-main")?.focus({ preventScroll: true }); });
       })
       .catch(() => { if (mounted.current) setCheck("failed"); });
   };
 
   const checking = check === "checking";
+  const said = check === "still" ? "Not connected yet."
+    : check === "failed" ? "That check did not finish. Try again in a moment." : "";
   return (
     <div className="vnc" data-register="ivory" data-testid="venue-not-connected">
       <section className="vnc__sheet" aria-labelledby={titleId}>
@@ -59,8 +72,9 @@ export function VenueNotConnected({ title, consequence }: VenueNotConnectedProps
             {checking && <ActivityIndicator size={18} />}
             {checking ? "Checking…" : "Check again"}
           </button>
-          {check === "still" && <p className="vnc__status" role="status">Not connected yet.</p>}
-          {check === "failed" && <p className="vnc__status" role="status">That check did not finish. Try again in a moment.</p>}
+          {/* One live region, present from the start, whose words change:
+              announced reliably, where one inserted with its words may not be. */}
+          <p className="vnc__status" role="status">{said}</p>
         </div>
       </section>
     </div>

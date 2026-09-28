@@ -54,7 +54,7 @@ afterEach(() => {
 
 describe("an account not connected to a venue yet", () => {
   it.each([
-    ["enquiries", "Enquiries", "there are no enquiries to show"],
+    ["enquiries", "Enquiries", "there is no enquiry inbox to show"],
     ["pipeline", "Pipeline", "there is no pipeline to show"],
     ["reviews", "Pending reviews", "there are no layouts to review"],
     ["analytics", "Executive analytics", "there are no figures to show"],
