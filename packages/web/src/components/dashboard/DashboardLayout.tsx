@@ -14,7 +14,7 @@ import { StaffShellContext, useInStaffShell, useShellFrame, type ShellFrame, typ
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
-  ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
+  ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
   REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
@@ -211,19 +211,22 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
     }`;
 
   // Fetch venue name dynamically so the header reflects the actual venue,
-  // not the hardcoded placeholder (F28). Admin users without a venueId see
-  // "Admin Dashboard" instead.
+  // not the hardcoded placeholder (F28). With no venue it says why: a
+  // platform admin's is the platform's, and a venue's own account not
+  // connected to one yet is told so on every page.
   const cachedVenueName = user?.venueId === undefined || user.venueId === null
     ? undefined
     : knownVenueNames.get(user.venueId);
-  const [venueName, setVenueName] = useState(cachedVenueName ?? "Dashboard");
+  const noVenueTitle = user?.platformRole === "admin" ? "Venviewer Platform"
+    : awaitsVenue(user ?? null) ? "No venue yet" : "Dashboard";
+  const [venueName, setVenueName] = useState(cachedVenueName ?? noVenueTitle);
   // The name is known (read by this page or an earlier one), so the header
   // can say it; until then it says what it is waiting for.
   const [venueKnown, setVenueKnown] = useState(cachedVenueName !== undefined);
   const [venueLoading, setVenueLoading] = useState(false);
   useEffect(() => {
     if (user?.venueId === undefined || user.venueId === null) {
-      setVenueName(user?.platformRole === "admin" ? "Venviewer Platform" : "Dashboard");
+      setVenueName(noVenueTitle);
       setVenueKnown(false);
       setVenueLoading(false);
       return;
@@ -253,7 +256,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
       })
       .finally(() => { if (request.current) setVenueLoading(false); });
     return () => { request.current = false; };
-  }, [user?.platformRole, user?.venueId]);
+  }, [noVenueTitle, user?.platformRole, user?.venueId]);
 
   const handleLocalSignOut = (): void => {
     setOpenMenu(null);

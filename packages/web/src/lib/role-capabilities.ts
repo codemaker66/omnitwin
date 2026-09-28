@@ -110,6 +110,21 @@ export function hasRole(roles: readonly string[], role: string | null | undefine
   return role !== null && role !== undefined && roles.includes(role);
 }
 
+/** The roles that work at a venue: its floor and its commercial team. */
+export const VENUE_MEMBER_ROLES: readonly string[] = [...new Set<string>([...VENUE_FLOOR_ROLES, ...COMMERCIAL_ROLES])];
+
+/**
+ * An account that works at a venue but is not connected to one yet (an
+ * approved domain with no venue, or an invitation that named none). Every
+ * venue gate in the API (`canManageVenue`, `canManageCommercial`) refuses it,
+ * so the dashboard says so rather than showing a refusal as a failure. A
+ * platform admin reads every venue, and customers (planner, client) have no
+ * venue by design: neither is waiting for one.
+ */
+export function awaitsVenue(user: { readonly role: string; readonly venueId: string | null; readonly platformRole: string } | null): boolean {
+  return user !== null && user.venueId === null && user.platformRole !== "admin" && hasRole(VENUE_MEMBER_ROLES, user.role);
+}
+
 // ---------------------------------------------------------------------------
 // The staff rota (T-637 slice B). A block of its own, with its own drift test
 // (__tests__/rota-capabilities.test.ts), because the rota answers three ways

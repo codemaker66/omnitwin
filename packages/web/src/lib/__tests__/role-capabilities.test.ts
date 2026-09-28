@@ -13,7 +13,9 @@ import {
   REVIEW_QUEUE_ROLES,
   VENUE_DAY_ROLES,
   VENUE_FLOOR_ROLES,
+  VENUE_MEMBER_ROLES,
   WORKSPACE_ROLES,
+  awaitsVenue,
   hasRole,
 } from "../role-capabilities.js";
 import { NAV_ITEMS, canShowNavItem } from "../../components/dashboard/DashboardLayout.js";
@@ -173,16 +175,26 @@ describe("route gates and their landing surfaces agree", () => {
       const allowed = canReadInternalEventData({
         isLoading: false,
         isAuthenticated: true,
-        user: { role, platformRole: "none" },
+        user: { role, platformRole: "none", venueId: "venue-1" },
       });
       expect(allowed, `canReadInternalEventData for ${role}`).toBe(hasRole(VENUE_FLOOR_ROLES, role));
     }
   });
 
+  it("mounts no internal reader for an account not connected to a venue, which the API refuses", () => {
+    for (const role of VENUE_FLOOR_ROLES) {
+      expect(canReadInternalEventData({ isLoading: false, isAuthenticated: true, user: { role, platformRole: "none", venueId: null } }), role)
+        .toBe(false);
+    }
+    // A platform admin reads every venue's events with no venue of its own.
+    expect(canReadInternalEventData({ isLoading: false, isAuthenticated: true, user: { role: "admin", platformRole: "admin", venueId: null } }))
+      .toBe(true);
+  });
+
   it("refuses an unresolved identity before any role check", () => {
     for (const auth of [
-      { isLoading: true, isAuthenticated: true, user: { role: "admin", platformRole: "none" as const } },
-      { isLoading: false, isAuthenticated: false, user: { role: "admin", platformRole: "none" as const } },
+      { isLoading: true, isAuthenticated: true, user: { role: "admin", platformRole: "none" as const, venueId: "venue-1" } },
+      { isLoading: false, isAuthenticated: false, user: { role: "admin", platformRole: "none" as const, venueId: "venue-1" } },
       { isLoading: false, isAuthenticated: true, user: null },
     ]) {
       expect(canReadInternalEventData(auth)).toBe(false);
@@ -238,5 +250,27 @@ describe("the capability sets themselves", () => {
       expect(hasRole(set, "executive")).toBe(false);
       expect(hasRole(set, "supplier")).toBe(false);
     }
+  });
+});
+
+// An account that works at a venue and is not connected to one yet: the API's
+// venue gates (canManageVenue, canManageCommercial) refuse every read, so the
+// dashboard tells it so. Only the venue's own roles wait for a venue.
+describe("an account waiting for its venue", () => {
+  const unplaced = { role: "staff", venueId: null, platformRole: "none" };
+
+  it("is every venue role with no venue, and only those", () => {
+    expect([...VENUE_MEMBER_ROLES].sort()).toEqual(["admin", "hallkeeper", "manager", "sales", "staff"]);
+    for (const role of USER_ROLES) {
+      expect(awaitsVenue({ ...unplaced, role }), role).toBe(hasRole(VENUE_MEMBER_ROLES, role));
+    }
+    // An operator is refused as anyone else is: the API's shortcut is the admin's alone.
+    expect(awaitsVenue({ ...unplaced, platformRole: "operator" })).toBe(true);
+  });
+
+  it("is never an account with a venue, a platform admin, or nobody", () => {
+    expect(awaitsVenue({ ...unplaced, venueId: "venue-1" })).toBe(false);
+    expect(awaitsVenue({ ...unplaced, role: "admin", platformRole: "admin" })).toBe(false);
+    expect(awaitsVenue(null)).toBe(false);
   });
 });

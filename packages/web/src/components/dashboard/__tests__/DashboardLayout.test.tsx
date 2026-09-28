@@ -450,6 +450,19 @@ describe("DashboardLayout orientation", () => {
     expect(mocks.venue).toHaveBeenCalledTimes(2);
   });
 
+  it("says in the header when an account is not connected to a venue, and reads no venue", () => {
+    useAuthStore.getState().setUser({ ...admin, venueId: null });
+    renderView("proposals");
+    expect(screen.getByText("No venue yet")).toBeDefined();
+    expect(mocks.venue).not.toHaveBeenCalled();
+    cleanup();
+    // A platform admin's own place is the platform.
+    useAuthStore.getState().setUser({ ...admin, venueId: null, platformRole: "admin" });
+    renderView("proposals");
+    expect(screen.getByText("Venviewer Platform")).toBeDefined();
+    expect(screen.queryByText("No venue yet")).toBeNull();
+  });
+
   it("says the venue name is unavailable when it cannot be read, rather than a placeholder", async () => {
     mocks.venue.mockRejectedValue(new Error("offline"));
     renderView("proposals");
