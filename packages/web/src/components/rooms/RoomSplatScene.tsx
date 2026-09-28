@@ -10,6 +10,7 @@ import {
 } from "../scene/NativeSplatLayer.js";
 import { roomSplatBundle, roomSplatLadder, walkPoseForBundle } from "../../data/room-splat-bundles.js";
 import { InteriorCamera } from "./InteriorCamera.js";
+import { StageFloor } from "../stage/StageFloor.js";
 import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
 import { settledPixelRatio } from "../../lib/splat-runtime-profile.js";
 import {
@@ -391,6 +392,7 @@ export function RoomSplatScene({
           onRendered={handleRendered}
         />
       ))}
+      <StageFloor roomSlug={room} transform={transform} active />
       {spawn !== null && walkBounds !== null && (
         <InteriorCamera
           spawn={spawn}

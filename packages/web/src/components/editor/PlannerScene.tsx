@@ -57,6 +57,7 @@ import { shouldRenderPlannerMotionOverlays } from "../../lib/planner-render-poli
 import { captureAvailability, inkTargetOpacity, roomResolvePhase } from "../../lib/room-resolve-model.js";
 import { PlannerArrival } from "./PlannerArrival.js";
 import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
+import { StageFloor } from "../stage/StageFloor.js";
 import { InkArchitectureLayer } from "./InkArchitectureLayer.js";
 import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
 import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
@@ -518,6 +519,7 @@ export function PlannerScene(): ReactElement {
                 onChunkLoaded={arrivals.markLoaded}
                 onChunkFailed={arrivals.markFailed}
               />
+              <StageFloor roomSlug={roomSlug} transform={transform} active={splatActive} />
             </group>
           )}
           {!timelinePreviewActive && <>

@@ -51,6 +51,10 @@ vi.mock("../InteriorCamera.js", () => ({
   },
 }));
 vi.mock("../RoomClipBox.js", () => ({ RoomClipBox: recorded.clip }));
+// The floor skin has its own coverage (stage-floor-mode.test.ts) and needs a
+// real useThree from @react-three/fiber, which this file's Canvas-only mock
+// does not provide; mounting it for real here would crash every test.
+vi.mock("../../stage/StageFloor.js", () => ({ StageFloor: () => null }));
 // Use the real manifest and budget selection, with an override for the
 // multi-tile coarse-level failure regression below.
 vi.mock("../../../data/room-splat-bundles.js", async (importOriginal) => {
