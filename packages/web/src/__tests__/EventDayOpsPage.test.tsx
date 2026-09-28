@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import type { ChangeFeedItem, EventDayIssue, EventDayOpsBoard, OpsTask } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { EventDayOpsPage } from "../pages/EventDayOpsPage.js";
@@ -475,17 +475,152 @@ describe("EventDayOpsPage", () => {
 
       expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
       expect(screen.queryByText("Event-day board unavailable")).toBeNull();
-      expect(await screen.findByText("Couldn't read the changes at 14:05, so what waits for acknowledgement is not known yet. It tries again every 10 seconds.")).toBeTruthy();
+      expect(await screen.findByText("Couldn't read the changes, so what waits for acknowledgement is not known yet. Trying every 10 seconds since 14:05.")).toBeTruthy();
       expect(screen.queryByText("No changes awaiting acknowledgement.")).toBeNull();
 
       // Tried again and read: the notice goes, and the changes are listed.
       mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
       fireEvent.click(screen.getByRole("button", { name: "Try again" }));
       expect(await screen.findByText("Guest count changed")).toBeTruthy();
-      expect(screen.queryByText(/Couldn't read the changes/u)).toBeNull();
+      expect(screen.queryByTestId("change-feed-notice")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("says it is trying again, joins a read already out, and says what the retry found", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      renderPage();
+      await screen.findByTestId("change-feed-notice");
+      expect(screen.getByTestId("change-feed-heard").textContent).toBe("Couldn't read the changes at 14:05.");
+
+      // Two minutes on, a retry that also fails: it works, then says so.
+      vi.setSystemTime(new Date("2026-06-11T13:07:00.000Z"));
+      let fail: ((reason: Error) => void) | undefined;
+      mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((_resolve, reject) => { fail = reject; }));
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      const trying = screen.getByRole("button", { name: "Trying again…" });
+      expect(trying.getAttribute("aria-busy")).toBe("true");
+      expect((trying as HTMLButtonElement).disabled).toBe(true);
+      expect(trying.querySelector("[data-activity-indicator]")).not.toBeNull();
+      await act(async () => { fail?.(new ApiError(0, "Network error", "NETWORK_ERROR")); await Promise.resolve(); });
+      expect(await screen.findByText("Couldn't read the changes, so what waits for acknowledgement is not known yet. Trying every 10 seconds since 14:05. Tried again at 14:07.")).toBeTruthy();
+      expect(screen.getByTestId("change-feed-heard").textContent).toBe("Tried again at 14:07. The changes still could not be read.");
+
+      // A retry that reads: the notice goes, the focus moves to the section's
+      // heading, and it is said that the changes were read.
+      vi.setSystemTime(new Date("2026-06-11T13:08:00.000Z"));
+      mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+      const again = screen.getByRole("button", { name: "Try again" });
+      again.focus();
+      fireEvent.click(again);
+      expect(await screen.findByText("Guest count changed")).toBeTruthy();
+      expect(screen.queryByTestId("change-feed-notice")).toBeNull();
+      await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Required acknowledgements" })); });
+      expect(screen.getByTestId("change-feed-heard").textContent).toBe("The changes were read again at 14:08.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps saying since when the reads have failed, rather than a new time at every poll", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      renderPage();
+      await screen.findByTestId("change-feed-notice");
+      const heard = screen.getByTestId("change-feed-heard").textContent;
+      for (const minute of ["13:06", "13:07", "13:08"]) {
+        vi.setSystemTime(new Date(`2026-06-11T${minute}:00.000Z`));
+        fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
+        await waitFor(() => { expect(screen.getByRole("button", { name: "Sync pending event-day changes" }).getAttribute("aria-busy")).toBe("false"); });
+      }
+      expect(mockGetEventChangeFeed.mock.calls.length).toBeGreaterThanOrEqual(4);
+      expect(screen.getByTestId("change-feed-notice").textContent).toContain("since 14:05.");
+      expect(screen.getByTestId("change-feed-heard").textContent).toBe(heard);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never shows one event's changes on another's board, whatever answers late", async () => {
+    const OTHER_EVENT = "00000000-0000-4000-8000-000000003099";
+    const otherBoard: EventDayOpsBoard = { ...boardFixture(), event: { ...boardFixture().event, id: OTHER_EVENT, name: "Other event day" } };
+    const navigateTo: { current: ((path: string) => void) | null } = { current: null };
+    function Navigator(): null {
+      const navigate = useNavigate();
+      navigateTo.current = (path) => { void navigate(path); };
+      return null;
+    }
+    mockGetEventDayOpsBoard.mockImplementation((id: string) => Promise.resolve(id === OTHER_EVENT ? otherBoard : boardFixture()));
+    mockGetEventChangeFeed.mockResolvedValueOnce([requiredChangeFixture()]);
+    render(
+      <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
+        <Navigator />
+        <Routes>
+          <Route path="/ops/events/:eventId" element={<EventDayOpsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+
+    // A sync for this event sets out; its read is still out when the other
+    // event is opened, whose own changes cannot be read.
+    let late: ((items: ChangeFeedItem[]) => void) | undefined;
+    mockGetEventChangeFeed.mockImplementation((id: string) => (id === EVENT_ID
+      ? new Promise<ChangeFeedItem[]>((resolve) => { late = resolve; })
+      : Promise.reject(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"))));
+    fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
+    await waitFor(() => { expect(late).toBeDefined(); });
+    act(() => { navigateTo.current?.(`/ops/events/${OTHER_EVENT}`); });
+    expect(await screen.findByRole("heading", { level: 1, name: "Other event day" })).toBeTruthy();
+    await act(async () => { late?.([requiredChangeFixture()]); await Promise.resolve(); });
+
+    expect(await screen.findByTestId("change-feed-notice")).toBeTruthy();
+    expect(screen.queryByText("Guest count changed")).toBeNull();
+    expect(screen.getByTestId("change-feed-notice").textContent).toMatch(/^Couldn't read the changes, so what waits/u);
+
+    // This event's Try again reads this event, whatever was out for the last.
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(mockGetEventChangeFeed).toHaveBeenLastCalledWith(OTHER_EVENT, 25); });
+  });
+
+  it("lets a retry on the event now open read it, even while the last event's retry is still out", async () => {
+    const OTHER_EVENT = "00000000-0000-4000-8000-000000003098";
+    const otherBoard: EventDayOpsBoard = { ...boardFixture(), event: { ...boardFixture().event, id: OTHER_EVENT, name: "Other event day" } };
+    const navigateTo: { current: ((path: string) => void) | null } = { current: null };
+    function Navigator(): null {
+      const navigate = useNavigate();
+      navigateTo.current = (path) => { void navigate(path); };
+      return null;
+    }
+    mockGetEventDayOpsBoard.mockImplementation((id: string) => Promise.resolve(id === OTHER_EVENT ? otherBoard : boardFixture()));
+    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    render(
+      <MemoryRouter initialEntries={[`/ops/events/${EVENT_ID}`]}>
+        <Navigator />
+        <Routes>
+          <Route path="/ops/events/:eventId" element={<EventDayOpsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByTestId("change-feed-notice");
+    // This event's retry is still out when the other event is opened.
+    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>(() => undefined));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    act(() => { navigateTo.current?.(`/ops/events/${OTHER_EVENT}`); });
+    expect(await screen.findByRole("heading", { level: 1, name: "Other event day" })).toBeTruthy();
+    await screen.findByTestId("change-feed-notice");
+    const calls = mockGetEventChangeFeed.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(mockGetEventChangeFeed.mock.calls.length).toBe(calls + 1); });
+    expect(mockGetEventChangeFeed).toHaveBeenLastCalledWith(OTHER_EVENT, 25);
   });
 
   it("keeps the changes last read when a later read fails, and says from when", async () => {
@@ -501,7 +636,7 @@ describe("EventDayOpsPage", () => {
       vi.setSystemTime(new Date("2026-06-11T13:15:00.000Z"));
       mockGetEventChangeFeed.mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
       fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
-      expect(await screen.findByText("Couldn't refresh the changes at 14:15. Showing them as they were at 14:05.")).toBeTruthy();
+      expect(await screen.findByText("Couldn't refresh the changes since 14:15. Showing them as they were at 14:05.")).toBeTruthy();
       expect(screen.getByText("Guest count changed")).toBeTruthy();
       expect(screen.getByRole("button", { name: "Acknowledge change" })).toBeTruthy();
     } finally {
