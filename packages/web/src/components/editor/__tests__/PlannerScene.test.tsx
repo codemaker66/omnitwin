@@ -204,6 +204,25 @@ describe("PlannerScene", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("gives the stage floor the splat layer's own transform and active state, and no room for a registered package", () => {
+    chooseGrandHall(); readyGrandHall();
+    const { rerender } = render(<PlannerScene />);
+    const splatLayer = sceneComponent("CockpitSplatLayer");
+    const stageFloor = sceneComponent("StageFloor");
+    expect(stageFloor?.props.roomSlug).toBe("grand-hall");
+    expect(stageFloor?.props.transform).toBe(splatLayer?.props.transform);
+    expect(stageFloor?.props.active).toBe(splatLayer?.props.active);
+
+    // A registered package carries its own baked alignment; the floor-skin
+    // manifest is built for the staged capture's own frame only, so a package
+    // source must never hand StageFloor a room to load or draw (T-639 fix
+    // round 1, item 1). mockSplat already supports this source value; no new
+    // fixture was needed to cover it honestly.
+    mockSplat({ roomSlug: "grand-hall", status: "loaded", hasAsset: true, source: "package", splatUrls: ["/a.sog"] });
+    rerender(<PlannerScene />);
+    expect(sceneComponent("StageFloor")?.props.roomSlug).toBeNull();
+  });
+
   it.each(["button", "escape"])("lets people enter immediately via %s while capture loading continues", (method) => {
     chooseGrandHall(); readyGrandHall();
     render(<PlannerScene />);

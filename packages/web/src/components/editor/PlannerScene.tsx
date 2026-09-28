@@ -519,7 +519,13 @@ export function PlannerScene(): ReactElement {
                 onChunkLoaded={arrivals.markLoaded}
                 onChunkFailed={arrivals.markFailed}
               />
-              <StageFloor roomSlug={roomSlug} transform={transform} active={splatActive} />
+              {/* The floor-skin manifest is built for one particular staged
+                  capture's own frame. A registered package's transform is
+                  identity (it carries its own baked alignment instead), so
+                  drawing the capture-frame floor under THAT transform would
+                  stand it on edge. Only the staged capture it was built for
+                  may load or draw it. */}
+              <StageFloor roomSlug={captureSource === "staged" ? roomSlug : null} transform={transform} active={splatActive} />
             </group>
           )}
           {!timelinePreviewActive && <>

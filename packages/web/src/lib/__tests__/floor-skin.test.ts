@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { Vector3, Vector4 } from "three";
+import { Euler, Matrix4, Quaternion, Vector3, Vector4 } from "three";
 import {
   FloorSkinManifestSchema, captureToMaskMatrix, decodeFloorHeights, floorColourGain,
-  floorSkinManifestUrl, floorSkinTier, floorSkinTileGeometry, type FloorSkinManifest,
+  floorColourModeFromSearch, floorExclusionMatrix, floorSkinManifestUrl, floorSkinTier,
+  floorSkinTileGeometry, type FloorSkinManifest,
 } from "../floor-skin.js";
 
 // A 4 m × 2 m floor on z = 1 in the capture frame, 1 cm texels, axes aligned:
@@ -76,5 +77,46 @@ describe("floor-skin package (T-639)", () => {
 
   it("refuses a package with the wrong schema", () => {
     expect(FloorSkinManifestSchema.safeParse({ ...manifest, schema: "other" }).success).toBe(false);
+  });
+
+  it("maps a scene-frame point to the mask through an arbitrary chain between the Scene and the floor's group", () => {
+    // Neither the Scene nor the floor's group is parented directly under the
+    // other with an otherwise-identity chain: the Scene itself is translated,
+    // and an intermediate parent between the Scene and the group rotates and
+    // translates too. floorExclusionMatrix must still be exact.
+    const sceneMatrixWorld = new Matrix4().makeTranslation(10, 0, 0);
+    const parentLocal = new Matrix4().compose(
+      new Vector3(0, 5, -2),
+      new Quaternion().setFromEuler(new Euler(0, Math.PI / 2, 0)),
+      new Vector3(1, 1, 1),
+    );
+    const groupLocal = new Matrix4().makeTranslation(1, 0, 0); // the group's own position/rotation/scale props
+    const groupMatrixWorld = sceneMatrixWorld.clone().multiply(parentLocal).multiply(groupLocal);
+
+    // Texel (col 100, row 50), centre, exactly on the floor plane (height 0).
+    const capturePoint = new Vector4(0.505, 1.005, 1, 1);
+    const worldPoint = capturePoint.clone().applyMatrix4(groupMatrixWorld);
+    const sceneFramePoint = worldPoint.clone().applyMatrix4(new Matrix4().copy(sceneMatrixWorld).invert());
+
+    const matrix = floorExclusionMatrix(manifest, sceneMatrixWorld, groupMatrixWorld);
+    const q = sceneFramePoint.clone().applyMatrix4(matrix);
+
+    expect(q.x).toBeCloseTo(100.5 / 400, 5);
+    expect(q.y).toBeCloseTo(50.5 / 200, 5);
+    expect(q.z).toBeCloseTo(0, 5);
+  });
+});
+
+describe("floor colour choice for Blake's review (T-639)", () => {
+  it("shows the photographs as they are by default", () => {
+    expect(floorColourModeFromSearch("", true)).toBe("photo");
+  });
+
+  it("offers the matched floor where splats may run", () => {
+    expect(floorColourModeFromSearch("?floor=matched", true)).toBe("matched");
+  });
+
+  it("ignores the query where splats may not run", () => {
+    expect(floorColourModeFromSearch("?floor=matched", false)).toBe("photo");
   });
 });

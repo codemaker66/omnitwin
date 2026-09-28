@@ -49,6 +49,17 @@ export type FloorSkinManifest = z.infer<typeof FloorSkinManifestSchema>;
 export type FloorSkinTier = keyof FloorSkinManifest["tiers"];
 export type FloorColourMode = "photo" | "matched";
 
+/**
+ * Whether Blake's review may ask for the matched (colour-graded) floor instead
+ * of the photographs as captured (T-639). The query is only honoured where
+ * Gaussian splats may run at all — that is the same review audience, and the
+ * public site must never see a query-driven variant.
+ */
+export function floorColourModeFromSearch(search: string, previewable: boolean): FloorColourMode {
+  if (!previewable) return "photo";
+  return new URLSearchParams(search).get("floor") === "matched" ? "matched" : "photo";
+}
+
 /** Rooms with a floor-skin package, by path beside their splat tiles. */
 export const FLOOR_SKIN_ROOMS: Readonly<Record<string, string>> = { "grand-hall": "floor-skin/v1" };
 
@@ -78,6 +89,20 @@ export function captureToMaskMatrix(manifest: FloorSkinManifest): Matrix4 {
     n.x, n.y, n.z, -manifest.plane.d,
     0, 0, 0, 1,
   );
+}
+
+/**
+ * Scene-frame splat centre → floor-skin mask (u, v, signed distance above the
+ * plane, 1), from the host Scene's and the floor group's own world matrices
+ * (see `SplatExclusion` in `splat-exclusion.ts`). Correct for any relationship
+ * between the two — an arbitrary chain of ancestors, not just a group parented
+ * directly under the Scene — because it is built from what each object's own
+ * `matrixWorld` already resolves to, not from any assumption about the chain
+ * in between.
+ */
+export function floorExclusionMatrix(manifest: FloorSkinManifest, sceneMatrixWorld: Matrix4, groupMatrixWorld: Matrix4): Matrix4 {
+  const captureFromScene = new Matrix4().copy(sceneMatrixWorld).invert().multiply(groupMatrixWorld).invert();
+  return captureToMaskMatrix(manifest).multiply(captureFromScene);
 }
 
 export function decodeFloorHeights(buffer: ArrayBuffer, manifest: FloorSkinManifest): Int16Array {

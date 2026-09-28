@@ -1,6 +1,6 @@
 import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSplatRuntimeProfile } from "../use-splat-runtime-profile.js";
+import { useAssetDeviceTier, useSplatRuntimeProfile } from "../use-splat-runtime-profile.js";
 import { useDeviceStore } from "../../stores/device-store.js";
 import { getQualitySettings } from "../../lib/device-tier.js";
 import { SPLAT_RUNTIME_PROFILES } from "../../lib/splat-runtime-profile.js";
@@ -88,5 +88,40 @@ describe("useSplatRuntimeProfile", () => {
   it("does not touch window when publishing is off", () => {
     renderHook(() => useSplatRuntimeProfile({ probe: () => RTX, publish: false }));
     expect(window.__splatRuntimeProfile).toBeUndefined();
+  });
+});
+
+// T-639: the planner never calls useSplatRuntimeProfile (that would also
+// change the planner's other quality settings), so the stage floor's texture
+// tier needs its own read of the device tier — one that never writes the
+// store itself, so only useSplatRuntimeProfile's mount ever records a
+// detection or publishes to window.
+describe("useAssetDeviceTier", () => {
+  beforeEach(() => {
+    resetDeviceStore();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("returns the store tier when already detected, without probing", () => {
+    useDeviceStore.getState().detect("Intel(R) Iris(R) Xe Graphics");
+    const probe = vi.fn(() => RTX);
+    const { result } = renderHook(() => useAssetDeviceTier(probe));
+
+    expect(result.current).toBe("medium");
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("classifies its own probe when not detected, without writing the store", () => {
+    const probe = vi.fn(() => RTX);
+    const { result } = renderHook(() => useAssetDeviceTier(probe));
+
+    expect(result.current).toBe("high"); // RTX 4090 under this test's desktop navigator context.
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(useDeviceStore.getState().detected).toBe(false);
+    expect(useDeviceStore.getState().gpuRenderer).toBeNull();
+    expect(useDeviceStore.getState().tier).toBe("low"); // The store itself is untouched.
   });
 });
