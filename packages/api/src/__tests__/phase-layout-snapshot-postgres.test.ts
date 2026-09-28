@@ -1077,7 +1077,8 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
 
     // A hallkeeper reads the room's day, but a revenue estimate is a price:
     // facts and photos only (decision 6b). That holds for the one who made
-    // the event while they sold, too: who made it grants nothing.
+    // the event as staff, a manager or an admin, too: who made it grants
+    // nothing.
     for (const id of ["44444444-4444-4444-8444-444444444446", ACTOR_ID]) {
       const hallkeeper = await requiredServer().inject({
         method: "GET",

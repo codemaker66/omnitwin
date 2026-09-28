@@ -360,8 +360,8 @@ export async function roomLayoutTimelineRoutes(
         staffConflictsLabel: row.staffConflictsLabel,
         // A revenue estimate is a price: the roles that work the pipeline see
         // it; a hallkeeper sees the room's facts without it (decision 6b),
-        // even for an event they made while they sold. Who made it grants
-        // nothing, as for a proposal or a quote.
+        // even for an event they made as staff, a manager or an admin. Who
+        // made it grants nothing, as for a proposal or a quote.
         commercialAccess: canManageCommercial(request.user, query.venueId),
         keyframe: resolveRoomLayoutTimelineKeyframe({
           venueId: query.venueId,
