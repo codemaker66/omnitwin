@@ -419,7 +419,10 @@ describe("the open deal", () => {
     render(<Profiler id="desk" onRender={pressWhenShown}><PipelineDesk /></Profiler>);
     const panel = within(await openDeal());
     expect(pressed).toBe(true);
-    expect(panel.getByLabelText("What is owed next")).toBeDefined();
+    // Written in straight away, it keeps what is typed, whatever React still
+    // had to run when the deal appeared.
+    fireEvent.change(panel.getByLabelText("What is owed next"), { target: { value: "Send the menus" } });
+    expect(panel.getByDisplayValue("Send the menus")).toBeDefined();
   });
 
   it("keeps the next step's editor open through a quiet re-read, and puts it away once the deal moves on", async () => {
@@ -441,6 +444,21 @@ describe("the open deal", () => {
     fireEvent.click(panel.getByRole("button", { name: "Mark qualified" }));
     expect(await screen.findByText(/is now qualified/u)).toBeDefined();
     await waitFor(() => { expect(panel.queryByLabelText("What is owed next")).toBeNull(); });
+  });
+
+  it("puts a half-made won or lost decision away when a re-read finds the deal has moved on", async () => {
+    mocks.getOpportunity.mockResolvedValueOnce(detail({}, { stage: "proposal_sent" }))
+      .mockResolvedValue(detail({}, { stage: "negotiation" }));
+    mocks.addFollowUpTask.mockResolvedValue(followUp({ id: "task2", title: "Book the piper" }));
+    render(<PipelineDesk />);
+    const panel = within(await openDeal());
+    fireEvent.click(panel.getByRole("button", { name: "Mark won…" }));
+    expect(await screen.findByTestId("deal-confirm-won")).toBeDefined();
+    // Saving anything reads the deal again quietly; someone has moved it on since.
+    fireEvent.change(panel.getByLabelText("A follow-up"), { target: { value: "Book the piper" } });
+    fireEvent.click(panel.getByRole("button", { name: "Add" }));
+    expect(await panel.findByRole("button", { name: "Mark the revised proposal sent" })).toBeDefined();
+    expect(screen.queryByTestId("deal-confirm-won")).toBeNull();
   });
 
   it("adds a follow-up with its day, marks one done, and keeps a note's words when it fails", async () => {
