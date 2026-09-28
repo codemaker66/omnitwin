@@ -19,12 +19,21 @@ import { VENUE_TIME_ZONE } from "../../diary/lib/board-time.js";
 // they are looking at.
 // ---------------------------------------------------------------------------
 
-export function useVenueTimezone(venueId: string | null): string {
-  const [timezone, setTimezone] = useState<string>(VENUE_TIME_ZONE);
+/** The venue's clock, and whether it is settled: read from the venue, or
+ *  given up on and left at the stated default. A surface that says a time
+ *  aloud waits for it to settle, so it never says one clock's time and then
+ *  another's. */
+export interface VenueClock {
+  readonly timeZone: string;
+  readonly settled: boolean;
+}
+
+export function useVenueClock(venueId: string | null): VenueClock {
+  const [clock, setClock] = useState<{ readonly timeZone: string; readonly forVenue: string | null }>({ timeZone: VENUE_TIME_ZONE, forVenue: null });
 
   useEffect(() => {
     if (venueId === null) {
-      setTimezone(VENUE_TIME_ZONE);
+      setClock({ timeZone: VENUE_TIME_ZONE, forVenue: null });
       return;
     }
     let current = true;
@@ -32,15 +41,19 @@ export function useVenueTimezone(venueId: string | null): string {
       .then((venue) => {
         if (!current) return;
         const zone = venue.timezone;
-        if (typeof zone === "string" && zone.length > 0) setTimezone(zone);
+        setClock({ timeZone: typeof zone === "string" && zone.length > 0 ? zone : VENUE_TIME_ZONE, forVenue: venueId });
       })
       .catch(() => {
         // A venue read failure is not a reason to blank the board; the
         // surface keeps the default and still labels the zone it shows.
-        if (current) setTimezone(VENUE_TIME_ZONE);
+        if (current) setClock({ timeZone: VENUE_TIME_ZONE, forVenue: venueId });
       });
     return () => { current = false; };
   }, [venueId]);
 
-  return timezone;
+  return { timeZone: clock.timeZone, settled: venueId !== null && clock.forVenue === venueId };
+}
+
+export function useVenueTimezone(venueId: string | null): string {
+  return useVenueClock(venueId).timeZone;
 }

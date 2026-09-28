@@ -23,7 +23,7 @@ import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity
 import { getCalendar } from "../api/diary.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { isBoardWorthy } from "./hallkeeper/lib/day-board-state.js";
-import { useVenueTimezone } from "./hallkeeper/lib/use-venue-timezone.js";
+import { useVenueClock } from "./hallkeeper/lib/use-venue-timezone.js";
 import { deviceZone, zoneNote } from "../components/hallkeeper/sheet-facts.js";
 import { eventDayKicker } from "../lib/event-day-words.js";
 
@@ -278,10 +278,14 @@ export function EventDayOpsPage(): ReactElement {
   // Whether the latest read to land found the changes unreadable, as soon as
   // it lands (the notice follows a render later).
   const feedFailingRef = useRef(false);
-  // Reads are numbered as they set out; one overtaken by a later read that has
-  // landed is dropped, so an older answer never overrides a newer one.
+  // Reads are numbered as they set out, so an older answer never overrides a
+  // newer one: the board shown is the latest read's, and the changes are the
+  // latest that were read. A read that could not read the changes overtakes
+  // nothing on the feed; it says they could not be read only when no read
+  // that set out after it has landed.
   const readsIssuedRef = useRef(0);
   const readsLandedRef = useRef(0);
+  const feedLandedRef = useRef(0);
   const acknowledgementsHeadingRef = useRef<HTMLHeadingElement>(null);
   const tryAgainRef = useRef<HTMLButtonElement>(null);
   const [feedFocus, setFeedFocus] = useState<"heading" | "button" | null>(null);
@@ -342,6 +346,9 @@ export function EventDayOpsPage(): ReactElement {
       setFeedFailedSince((since) => since ?? at);
       return;
     }
+    // The notice goes with its button; a focus resting on the button goes to
+    // the section's heading rather than fall to the page.
+    if (tryAgainRef.current !== null && document.activeElement === tryAgainRef.current) setFeedFocus("heading");
     setChangeFeed(changes);
     setFeedReadAt(at);
     setFeedFailedSince(null);
@@ -351,10 +358,18 @@ export function EventDayOpsPage(): ReactElement {
   /** A read of the board and its changes, landing for the event it was for
    *  and only if no read that set out after it has landed first. */
   const landRead = useCallback((forEvent: string, seq: number, board: EventDayOpsBoard, changes: readonly ChangeFeedItem[] | null): BoardRead => {
-    if (currentEventRef.current !== forEvent || seq < readsLandedRef.current) return "stale";
-    readsLandedRef.current = seq;
-    setState({ kind: "ready", board });
-    applyChangeFeed(changes);
+    if (currentEventRef.current !== forEvent) return "stale";
+    const boardFresh = seq >= readsLandedRef.current;
+    const feedFresh = seq > feedLandedRef.current && (changes !== null || boardFresh);
+    if (!boardFresh && !feedFresh) return "stale";
+    if (boardFresh) {
+      readsLandedRef.current = seq;
+      setState({ kind: "ready", board });
+    }
+    if (feedFresh) {
+      if (changes !== null) feedLandedRef.current = seq;
+      applyChangeFeed(changes);
+    }
     return changes === null ? "failed" : "read";
   }, [applyChangeFeed]);
 
@@ -383,7 +398,8 @@ export function EventDayOpsPage(): ReactElement {
         if (landRead(eventId, seq, board, changes) !== "stale") setLastSyncedAt(new Date().toISOString());
       })
       .catch(() => {
-        if (currentEventRef.current !== eventId) return;
+        // A board read since has landed: the page keeps it.
+        if (currentEventRef.current !== eventId || seq < readsLandedRef.current) return;
         setState({
           kind: "error",
           message: "This event-day board could not be loaded. Check the event link or try again.",
@@ -470,7 +486,7 @@ export function EventDayOpsPage(): ReactElement {
   }, [flushQueue]);
 
   const board = state.kind === "ready" ? state.board : null;
-  const timeZone = useVenueTimezone(board?.event.venueId ?? null);
+  const { timeZone, settled: clockSettled } = useVenueClock(board?.event.venueId ?? null);
 
   // Said aloud once as the reads begin to fail and once as one lands again.
   useEffect(() => {
@@ -815,7 +831,7 @@ export function EventDayOpsPage(): ReactElement {
         {/* One column beside the heading: what could not be read, above what was. */}
         <div>
           <p className="vv-sr-only" role="status" data-testid="change-feed-heard">
-            {feedHeard !== null && <span key={feedHeard.seq}>{feedHeardWords(feedHeard, timeZone)}</span>}
+            {feedHeard !== null && clockSettled && <span key={feedHeard.seq}>{feedHeardWords(feedHeard, timeZone)}</span>}
           </p>
           {feedFailedSince !== null && (
             <div className="event-day-feed-notice" data-testid="change-feed-notice">

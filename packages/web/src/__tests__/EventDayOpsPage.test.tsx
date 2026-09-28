@@ -809,17 +809,109 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByTestId("change-feed-heard").textContent).not.toMatch(/still could not be read/u);
   });
 
-  it("says the failure aloud on the venue's own clock, as the notice shows it", async () => {
+  it("says the failure aloud once, on the venue's own clock, waiting for the venue to be read", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      // A venue in New York: 13:05Z is 09:05 on its walls.
-      vi.mocked(getVenue).mockResolvedValueOnce({ id: "venue-1", name: "Harbour Hall", timezone: "America/New_York" } as Awaited<ReturnType<typeof getVenue>>);
+      // A venue in New York: 13:05Z is 09:05 on its walls. The venue answers late.
+      let venueLands: ((venue: Awaited<ReturnType<typeof getVenue>>) => void) | undefined;
+      vi.mocked(getVenue).mockImplementationOnce(() => new Promise((resolve) => { venueLands = resolve; }));
       vi.setSystemTime(new Date("2026-06-11T13:05:00.000Z"));
       mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
       mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      const said: string[] = [];
+      const observer = new MutationObserver(() => {
+        const text = document.querySelector("[data-testid=change-feed-heard]")?.textContent ?? "";
+        if (text !== "" && said[said.length - 1] !== text) said.push(text);
+      });
+      observer.observe(document.body, { subtree: true, childList: true, characterData: true });
       renderPage();
-      await waitFor(() => { expect(screen.getByTestId("change-feed-notice").textContent).toContain("since 09:05."); });
+      await screen.findByTestId("change-feed-notice");
+      await waitFor(() => { expect(venueLands).toBeDefined(); });
+      await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+      await act(async () => { venueLands?.({ id: "venue-1", name: "Harbour Hall", timezone: "America/New_York" } as Awaited<ReturnType<typeof getVenue>>); await Promise.resolve(); });
       await waitFor(() => { expect(screen.getByTestId("change-feed-heard").textContent).toBe("Couldn't read the changes at 09:05."); });
+      observer.disconnect();
+      expect(said).toEqual(["Couldn't read the changes at 09:05."]);
+      expect(screen.getByTestId("change-feed-notice").textContent).toContain("since 09:05.");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the changes a read found, whatever a read that set out later failed to find", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    renderPage();
+    await screen.findByTestId("change-feed-notice");
+    // The retry's read is slow, and will find the change.
+    let landRetry: ((items: ChangeFeedItem[]) => void) | undefined;
+    mockGetEventChangeFeed.mockImplementationOnce(() => new Promise<ChangeFeedItem[]>((resolve) => { landRetry = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(landRetry).toBeDefined(); });
+    // A sync sets out after it; its read cannot read the changes, and lands first.
+    const reads = mockGetEventChangeFeed.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
+    await waitFor(() => { expect(mockGetEventChangeFeed.mock.calls.length).toBe(reads + 1); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    await act(async () => { landRetry?.([requiredChangeFixture()]); await Promise.resolve(); });
+    expect(await screen.findByText("Guest count changed")).toBeTruthy();
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(screen.queryByTestId("change-feed-notice")).toBeNull();
+    expect(screen.getByTestId("change-feed-heard").textContent).not.toMatch(/still could not be read/u);
+  });
+
+  it("keeps the board a later read drew when an older read of it lands after", async () => {
+    const renamed: EventDayOpsBoard = { ...boardFixture(), event: { ...boardFixture().event, name: "Blake event day, as amended" } };
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+    renderPage();
+    await screen.findByTestId("change-feed-notice");
+    // The retry's board read is slow and will answer with the board as it was.
+    let landOld: ((board: EventDayOpsBoard) => void) | undefined;
+    mockGetEventDayOpsBoard.mockImplementationOnce(() => new Promise<EventDayOpsBoard>((resolve) => { landOld = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(landOld).toBeDefined(); });
+    // A sync sets out after it and draws the board as amended.
+    mockGetEventDayOpsBoard.mockResolvedValueOnce(renamed);
+    fireEvent.click(screen.getByRole("button", { name: "Sync pending event-day changes" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Blake event day, as amended" })).toBeTruthy();
+    await act(async () => { landOld?.(boardFixture()); await Promise.resolve(); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Blake event day, as amended");
+  });
+
+  it("keeps the board a later read drew when the first load fails late", async () => {
+    let failFirst: ((reason: Error) => void) | undefined;
+    let boardReads = 0;
+    mockGetEventDayOpsBoard.mockImplementation(() => {
+      boardReads += 1;
+      return boardReads === 1
+        ? new Promise<EventDayOpsBoard>((_resolve, reject) => { failFirst = reject; })
+        : Promise.resolve(boardFixture());
+    });
+    renderPage();
+    await waitFor(() => { expect(failFirst).toBeDefined(); });
+    // The connection returns: the queue flushes and reads the board, which lands.
+    act(() => { window.dispatchEvent(new Event("online")); });
+    expect(await screen.findByRole("heading", { level: 1, name: "Blake event day" })).toBeTruthy();
+    await act(async () => { failFirst?.(new ApiError(0, "Network error", "NETWORK_ERROR")); await Promise.resolve(); });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Blake event day");
+  });
+
+  it("hands a focus resting on Try again to the heading when a poll reads the changes", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+      mockGetEventChangeFeed.mockRejectedValue(new ApiError(503, "Unavailable", "SERVICE_UNAVAILABLE"));
+      renderPage();
+      await screen.findByTestId("change-feed-notice");
+      const button = screen.getByRole("button", { name: "Try again" });
+      act(() => { button.focus(); });
+      mockGetEventChangeFeed.mockResolvedValue([requiredChangeFixture()]);
+      await act(async () => { vi.advanceTimersByTime(10_000); await Promise.resolve(); });
+      expect(await screen.findByText("Guest count changed")).toBeTruthy();
+      await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("heading", { level: 2, name: "Required acknowledgements" })); });
     } finally {
       vi.useRealTimers();
     }
