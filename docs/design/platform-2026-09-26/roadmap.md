@@ -750,8 +750,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   words came from; and a save written from a version since followed is refused rather than replacing it. Then
   the server said what a save itself will change (`GET /proposals/:id/versions/next`). The composer now names
   the drawing, the event's facts and what the new version leaves out, with the words ("Changed: the quote from
-  £18,400 to £17,600; the guest count from 160 to 180; and the layout drawing."), and a save is held to what it
-  showed. That is on the branch, waiting on the browser gate.
+  £18,400 to £17,600, the guest count from 160 to 180 and the layout drawing."), and a save is held to the last
+  check made for its version. Words written in a composer that a version saved elsewhere, or a send, replaces
+  are kept to copy with why. That is on the branch, waiting on the browser gate.
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
   made, as links are kept hashed. Preview as the client is done (28 September):
