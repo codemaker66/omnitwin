@@ -45,6 +45,17 @@ import "./day-board.css";
 // ---------------------------------------------------------------------------
 
 const CLOCK_TICK_MS = 30_000;
+/** Focus a keyboard gave, not the focus a tap or click gives on the way to
+ *  pressing; a browser that cannot tell counts it. */
+function keyboardFocus(target: EventTarget): boolean {
+  if (!(target instanceof Element)) return false;
+  try {
+    return target.matches(":focus-visible");
+  } catch {
+    return true;
+  }
+}
+
 /** No days read ahead: nobody has shown they may step. */
 const NO_DAYS: readonly BoardRange[] = [];
 const DAY_MS = 86_400_000;
@@ -329,8 +340,10 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const selectedMs = selectedDate === null ? nowMs : wallInputToMs(`${selectedDate}T12:00`, timeZone) ?? nowMs;
   const range = useMemo(() => boardRange(selectedMs, "day", timeZone), [selectedMs, timeZone]);
   // The days either side are read once this one is on screen, so ← and →
-  // show them at once, but only once someone shows they may step: a pointer
-  // over or focus on the day controls, or a step itself. A board nobody steps
+  // show them at once, but only once someone shows they may step: a mouse
+  // over or keyboard focus on the day controls, or a step itself. A finger's
+  // touch is the step already, so it reads the day it steps to and the days
+  // beyond once that lands, rather than reads the step would cut short. A board nobody steps
   // (a wall tablet left on today) reads only its day, so a Diary change costs
   // it one read rather than three; the wish lapses after the reuse window. A
   // day shown from a read ahead is read again on arrival and replaced by what
@@ -428,7 +441,11 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
           </div>
         </header>
         <div className="dayboard-controls">
-          <div className="dayboard-days" onPointerEnter={wishToStep} onFocus={wishToStep}>
+          <div
+            className="dayboard-days"
+            onPointerEnter={(event) => { if (event.pointerType !== "touch") wishToStep(); }}
+            onFocus={(event) => { if (keyboardFocus(event.target)) wishToStep(); }}
+          >
             <button type="button" aria-label="Previous day" onClick={() => { moveDay(-1); }}><ArrowLeft size={18} aria-hidden="true" /></button>
             <label className="dayboard-day-field">Day<input type="date" value={shownDate} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value === today ? null : event.target.value); }} /></label>
             <button type="button" aria-pressed={selectedDate === null} onClick={() => { setSelectedDate(null); }}>Today</button>

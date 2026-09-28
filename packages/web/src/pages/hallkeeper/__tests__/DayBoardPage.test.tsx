@@ -7,6 +7,7 @@ import { DayBoardPage, DayBoardSlotRequestsContext } from "../DayBoardPage.js";
 import { DAY_BOARD_LEGEND } from "../lib/day-board-state.js";
 import { boardRange, msToWallInput, wallInputToMs } from "../../diary/lib/board-time.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { CALENDAR_REUSE_MS } from "../../diary/hooks/useCalendar.js";
 
 // ---------------------------------------------------------------------------
 // Render contract for the Day Board page (Day Board S1): lanes from the live
@@ -351,10 +352,91 @@ describe("DayBoardPage", () => {
     } as CalendarResponse["entries"][number];
   }
 
-  /** A pointer comes over the day controls: someone may step. */
+  /** A mouse comes over the day controls: someone may step. */
   function wishToStep(): void {
-    fireEvent.pointerEnter(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.pointerEnter(screen.getByRole("button", { name: "Next day" }), { pointerType: "mouse" });
   }
+
+  it("reads what a tap steps to, and cuts no read short", async () => {
+    const today = dayRange(0);
+    const pending = new Map<string, (value: CalendarResponse) => void>();
+    const aborted: string[] = [];
+    getCalendarMock.mockImplementation((_venueId, from, _to, signal) => {
+      if (from === today.from) return Promise.resolve(calendarFixture([liveBooking()]));
+      return new Promise<CalendarResponse>((resolve, reject) => {
+        let open = true;
+        pending.set(from, (value) => { open = false; resolve(value); });
+        signal?.addEventListener("abort", () => {
+          if (!open) return;
+          open = false;
+          aborted.push(from);
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    // A finger on Next day: contact, a moment's hold, then the press.
+    const next = screen.getByRole("button", { name: "Next day" });
+    fireEvent.pointerEnter(next, { pointerType: "touch" });
+    fireEvent.pointerDown(next, { pointerType: "touch" });
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 60); }); });
+    fireEvent.pointerUp(next, { pointerType: "touch" });
+    fireEvent.click(next);
+    await act(async () => { await Promise.resolve(); });
+    expect(aborted).toEqual([]);
+    expect(readsOf(dayRange(1))).toBe(1);
+    expect(readsOf(dayRange(-1))).toBe(0);
+    // The step was the sign: once tomorrow lands, the days beyond it are read.
+    await act(async () => { pending.get(dayRange(1).from)?.(calendarFixture([])); await Promise.resolve(); });
+    await waitFor(() => { expect(readsOf(dayRange(2))).toBe(1); });
+    expect(aborted).toEqual([]);
+  });
+
+  it("counts a key step as the sign to read ahead", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    await act(async () => { await Promise.resolve(); });
+    expect(getCalendarMock).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    await waitFor(() => { expect(readsOf(dayRange(1))).toBe(1); });
+    await waitFor(() => { expect(readsOf(dayRange(2))).toBe(1); });
+  });
+
+  it("lets the wish to step lapse, so a board left alone reads one day per Diary change again", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"], now: Date.now() });
+    const flush = async (): Promise<void> => {
+      for (let round = 0; round < 5; round += 1) {
+        await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 5); }); });
+      }
+    };
+    try {
+      getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+      renderBoard();
+      await flush();
+      expect(screen.getByText("Chamber dinner")).toBeTruthy();
+      wishToStep();
+      await flush();
+      expect(readsOf(dayRange(1))).toBe(1);
+
+      // While the wish stands, a Diary change reads today and both days ahead.
+      let before = getCalendarMock.mock.calls.length;
+      act(() => { liveUpdate.current?.(); });
+      await flush();
+      expect(getCalendarMock.mock.calls.length - before).toBe(3);
+
+      // Past the reuse window, only today.
+      act(() => { vi.advanceTimersByTime(CALENDAR_REUSE_MS + 30_000); });
+      await flush();
+      before = getCalendarMock.mock.calls.length;
+      act(() => { liveUpdate.current?.(); });
+      await flush();
+      expect(getCalendarMock.mock.calls.length - before).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("reads nothing ahead on a board nobody steps, so a Diary change costs one read", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
