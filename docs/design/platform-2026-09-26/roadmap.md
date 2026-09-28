@@ -755,7 +755,8 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   on when the proposal is opened again, even after another part of the dashboard, and are kept to copy with
   why when a version saved elsewhere, a send or Start again replaces them. A reload asks first while any are
   unsaved, and the desk belongs to the person signed in, so another account on the same page never sees them.
-  Sign Out asks first while the person has any, and the browser never asks once they have signed out.
+  Sign Out, and a refusal's Use another account, ask first while the person has any, and the browser never
+  asks once they have signed out.
   That is on the branch, and goes to master after its final review.
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
