@@ -204,6 +204,40 @@ describe.skipIf(testUrl === undefined)("route atomicity on isolated PostgreSQL",
     });
   });
 
+  it("does not move a quote from a status another move has already left", async () => {
+    await pool.query("UPDATE quotes SET status = 'issued' WHERE id = $1", [QUOTE]);
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM quotes WHERE id = $1 FOR UPDATE", [QUOTE]);
+      const response = server.inject({ method: "POST", url: `/quotes/${QUOTE}/transition`, headers: headers(),
+        payload: { status: "expired" } }).then((r) => r);
+      await waitForBlockedQueries(1);
+      // The client accepted it meanwhile; expiring it now would overwrite that.
+      await client.query("UPDATE quotes SET status = 'accepted' WHERE id = $1", [QUOTE]);
+      await client.query("COMMIT");
+      const answered = await response;
+      expect(answered.statusCode).toBe(409);
+      expect(JSON.parse(answered.body)).toMatchObject({ code: "QUOTE_STATUS_CHANGED" });
+      const result = await pool.query<{ status: string }>("SELECT status FROM quotes WHERE id = $1", [QUOTE]);
+      expect(result.rows[0]?.status).toBe("accepted");
+    });
+  });
+
+  it("does not delete a draft quote that was issued while the delete waited", async () => {
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM quotes WHERE id = $1 FOR UPDATE", [QUOTE]);
+      const response = server.inject({ method: "DELETE", url: `/quotes/${QUOTE}`, headers: headers() }).then((r) => r);
+      await waitForBlockedQueries(1);
+      await client.query("UPDATE quotes SET status = 'issued' WHERE id = $1", [QUOTE]);
+      await client.query("COMMIT");
+      const answered = await response;
+      expect(answered.statusCode).toBe(422);
+      expect(JSON.parse(answered.body)).toMatchObject({ code: "QUOTE_ISSUED_LOCKED" });
+      const result = await pool.query<{ status: string; deleted: boolean }>(
+        "SELECT status, deleted_at IS NOT NULL AS deleted FROM quotes WHERE id = $1", [QUOTE]);
+      expect(result.rows[0]).toEqual({ status: "issued", deleted: false });
+    });
+  });
+
   function createVersion(): Promise<{ statusCode: number; body: string }> {
     return server.inject({ method: "POST", url: `/proposals/${PROPOSAL}/versions`, headers: headers(), payload: {
       schemaVersion: "venviewer.proposal-version.v1", title: "Fixture", clientMessage: null,

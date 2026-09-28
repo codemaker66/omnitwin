@@ -415,13 +415,35 @@ export async function quoteRoutes(
     if (!canManageCommercial(request.user, quote.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
-    if (quote.status !== "draft" && !isPlatformAdmin(request.user)) {
+    const isAdmin = isPlatformAdmin(request.user);
+    if (quote.status !== "draft" && !isAdmin) {
       return reply.status(422).send({ error: "Issued quotes are a commercial record — supersede or expire them instead", code: "QUOTE_ISSUED_LOCKED" });
     }
 
-    await db.update(quotes)
+    const [deleted] = await db.update(quotes)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
-      .where(eq(quotes.id, params.data.id));
+      // Recheck eligibility if an issue or a delete wins the row lock first:
+      // an issued quote is a commercial record and is never deleted here.
+      .where(and(
+        eq(quotes.id, params.data.id),
+        isNull(quotes.deletedAt),
+        isAdmin ? undefined : eq(quotes.status, "draft"),
+        isAdmin ? undefined : eq(quotes.venueId, quote.venueId),
+      ))
+      .returning({ id: quotes.id });
+
+    if (deleted === undefined) {
+      const [current] = await db.select({ venueId: quotes.venueId }).from(quotes)
+        .where(and(eq(quotes.id, params.data.id), isNull(quotes.deletedAt)))
+        .limit(1);
+      if (current === undefined) {
+        return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
+      }
+      if (!canManageCommercial(request.user, current.venueId)) {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+      return reply.status(422).send({ error: "Issued quotes are a commercial record — supersede or expire them instead", code: "QUOTE_ISSUED_LOCKED" });
+    }
 
     return reply.status(204).send();
   });
@@ -488,11 +510,37 @@ export async function quoteRoutes(
       updateData["supersededByQuoteId"] = parsed.data.supersededByQuoteId;
     }
 
-    const [updated] = await db.update(quotes)
-      .set(updateData)
-      .where(eq(quotes.id, params.data.id))
-      .returning();
+    // The move commits only from the status it was judged from, as a
+    // proposal's does: a move that landed meanwhile (the client's answer, a
+    // colleague's) stands rather than being overwritten.
+    const moved = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(quotes)
+        .where(and(eq(quotes.id, params.data.id), isNull(quotes.deletedAt)))
+        .for("update");
+      if (current === undefined) return "QUOTE_NOT_FOUND" as const;
+      if (!canManageCommercial(request.user, current.venueId)) return "QUOTE_FORBIDDEN" as const;
+      if (current.status !== quote.status) return "QUOTE_STATUS_CHANGED" as const;
+      const [row] = await tx.update(quotes)
+        .set(updateData)
+        .where(eq(quotes.id, current.id))
+        .returning();
+      if (row === undefined) throw new Error("quote transition returned no row");
+      return row;
+    });
 
-    return { data: updated };
+    if (moved === "QUOTE_NOT_FOUND") {
+      return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
+    }
+    if (moved === "QUOTE_FORBIDDEN") {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (moved === "QUOTE_STATUS_CHANGED") {
+      return reply.status(409).send({
+        error: "The quote changed while this was on its way. Reload it to see where it stands.",
+        code: "QUOTE_STATUS_CHANGED",
+      });
+    }
+
+    return { data: moved };
   });
 }
