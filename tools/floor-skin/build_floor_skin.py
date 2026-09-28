@@ -1,0 +1,113 @@
+"""Build a room's floor-skin package (T-639) from the 28 September floor research.
+
+Reads the floor agent's floor.json, the 2 mm texture of one arm and its mask, and the
+5 cm LiDAR height residual map; writes WebP texture tiers, an int16 height grid, a
+floor-slab mask and floor-skin.json. Inputs are read-only; outputs go to --out.
+
+  python tools/floor-skin/build_floor_skin.py --arm A --room grand-hall \
+    --floor D:/claude/visual-firstprinciples-20260928/floor \
+    --out D:/claude/splats/trades-hall/grand-hall/floor-skin/v1
+"""
+import argparse, datetime, hashlib, json, os
+import numpy as np
+import cv2
+from PIL import Image
+
+Image.MAX_IMAGE_PIXELS = None
+ARMS = {"A": ("floor_A_obj_2mm.png", "floor_A_obj_mask.png", "Matterport textured OBJ floor, re-baked at 2 mm"),
+        "B": ("floor_B_pano_2mm.png", "floor_B_pano_mask.png", "Matterport E57 photograph mosaic at 2 mm")}
+TIERS = {"high": 4096, "medium": 2048, "low": 1024}
+MASK_W, MASK_H = 1024, 512
+MATCHED = [0.708582, 0.575199, 0.62761]  # splat/photo floor ratio, linear RGB (render-proof gain.json)
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--arm", choices=sorted(ARMS), required=True)
+    ap.add_argument("--room", required=True)
+    ap.add_argument("--floor", required=True)
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args()
+    os.makedirs(a.out, exist_ok=True)
+    fj_path = os.path.join(a.floor, "floor.json")
+    fj = json.load(open(fj_path, encoding="utf-8"))
+    tex_name, mask_name, description = ARMS[a.arm]
+    W, H = fj["texture"]["size_px"]
+    texel = fj["texture"]["texel_m"]
+    mapping = fj["texture"]["texel_to_hallframe"]
+    if (W, H) != (10600, 5300):
+        raise SystemExit(f"unexpected texture size {W}x{H}")
+    rgb = np.asarray(Image.open(os.path.join(a.floor, tex_name)).convert("RGB"))
+    valid = np.asarray(Image.open(os.path.join(a.floor, mask_name)).convert("L"))
+    if rgb.shape[:2] != (H, W) or valid.shape != (H, W):
+        raise SystemExit("texture and mask must both be 10600x5300")
+
+    files = {}
+    tiles = [{"col0": 0, "row0": 0, "cols": 5300, "rows": 5300}, {"col0": 5300, "row0": 0, "cols": 5300, "rows": 5300}]
+    tiers = {}
+    for tier, size in TIERS.items():
+        names = []
+        for t, tile in enumerate(tiles):
+            c0, r0, cw, rh = tile["col0"], tile["row0"], tile["cols"], tile["rows"]
+            crop = rgb[r0:r0 + rh, c0:c0 + cw]
+            alpha = valid[r0:r0 + rh, c0:c0 + cw]
+            colour = cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA)
+            a8 = cv2.resize(alpha, (size, size), interpolation=cv2.INTER_AREA)
+            rgba = np.dstack([colour, a8]).astype(np.uint8)
+            name = f"albedo-{size}-{t}.webp"
+            path = os.path.join(a.out, name)
+            Image.fromarray(rgba, "RGBA").save(path, "WEBP", quality=90, method=6)
+            files[name] = sha256(path)
+            names.append(name)
+        tiers[tier] = {"size": size, "files": names}
+
+    resid = np.asarray(Image.open(os.path.join(a.floor, "floor_height_resid_5cm.png")))
+    if resid.dtype != np.uint16 or resid.shape != (212, 424):
+        raise SystemExit(f"unexpected height map {resid.dtype} {resid.shape}")
+    heights = (resid.astype(np.int32) - 32768).astype("<i2")  # 0.1 mm units; -32768 = outside
+    heights.tofile(os.path.join(a.out, "height-5cm.i16"))
+    files["height-5cm.i16"] = sha256(os.path.join(a.out, "height-5cm.i16"))
+
+    poly = np.asarray(fj["floor_polygon"]["texel_col_row"], dtype=np.float64)
+    scaled = np.round(poly * [MASK_W / W, MASK_H / H] * 8).astype(np.int32)  # 3 fractional bits
+    slab = np.zeros((MASK_H, MASK_W), np.uint8)
+    cv2.fillPoly(slab, [scaled.reshape(-1, 1, 2)], 255, lineType=cv2.LINE_8, shift=3)
+    slab = cv2.erode(slab, np.ones((3, 3), np.uint8), iterations=2)  # about 4 cm more inset (about 9 cm in all)
+    slab.tofile(os.path.join(a.out, "slab-mask-1024x512.u8"))
+    files["slab-mask-1024x512.u8"] = sha256(os.path.join(a.out, "slab-mask-1024x512.u8"))
+
+    manifest = {
+        "schema": "venviewer.floor-skin.v1",
+        "venue": "trades-hall",
+        "room": a.room,
+        "frame": "capture",
+        "provenance": {
+            "kind": "measured-photographic", "arm": a.arm, "source": description,
+            "built": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "inputs": {"floor.json": sha256(fj_path), tex_name: sha256(os.path.join(a.floor, tex_name))},
+        },
+        "grid": {"widthPx": W, "heightPx": H, "texelM": texel,
+                 "origin": mapping["origin_corner"], "uAxis": mapping["u_axis_per_texel"], "vAxis": mapping["v_axis_per_texel"]},
+        "plane": {"normal": fj["floor_plane"]["hallframe_unit_normal"], "d": fj["floor_plane"]["hallframe_n_dot_x_eq_d"]},
+        "tiles": tiles,
+        "tiers": tiers,
+        "height": {"file": "height-5cm.i16", "cols": 424, "rows": 212, "cellPx": 25, "unitM": 0.0001, "outside": -32768},
+        "slab": {"file": "slab-mask-1024x512.u8", "width": MASK_W, "height": MASK_H, "below": 0.15, "above": 0.12},
+        "colour": {"matched": MATCHED},
+        "files": files,
+    }
+    with open(os.path.join(a.out, "floor-skin.json"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(manifest, f, indent=1)
+    print(json.dumps({"out": a.out, "files": len(files), "slab_pixels": int((slab > 0).sum())}))
+
+
+if __name__ == "__main__":
+    main()
