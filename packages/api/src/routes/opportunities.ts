@@ -218,10 +218,12 @@ export async function opportunityRoutes(
     // follows are its parts, none needing another, so they are read at once
     // rather than one round trip after another.
     const [opportunityActivities, tasks, linkedProposals, history, [contact], [source], [latestQuote]] = await Promise.all([
+      // The newest hundred, answered oldest first: a long-running deal's
+      // latest notes are the ones its timeline must never drop.
       db.select()
         .from(activities)
         .where(eq(activities.opportunityId, opportunity.id))
-        .orderBy(activities.createdAt)
+        .orderBy(desc(activities.createdAt), desc(activities.id))
         .limit(100),
       // Follow-ups and linked proposals are newest-first under a total order,
       // matching the list endpoints so a staff member never sees one surface
@@ -300,7 +302,7 @@ export async function opportunityRoutes(
     return {
       data: {
         opportunity,
-        activities: opportunityActivities,
+        activities: [...opportunityActivities].reverse(),
         tasks,
         proposals: linkedProposals,
         history,

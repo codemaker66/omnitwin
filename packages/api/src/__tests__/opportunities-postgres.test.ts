@@ -267,24 +267,52 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     expect(await latest()).toMatchObject({ name: "Accepted", status: "accepted" });
   });
 
-  /** Clients the pool hands out while `work` runs: how many in all, and the
-   *  most at once. Each query outside a transaction takes one. */
-  async function poolUse(work: () => Promise<void>): Promise<{ readonly acquired: number; readonly peak: number }> {
-    let active = 0;
+  /** What the route asks of the pool while `work` runs: the clients it hands
+   *  out (each query outside a transaction takes one), the queries sent, and
+   *  the most of them waiting on an answer at once. Counting queries, not
+   *  checkouts, keeps the measure off how fast the pool opens connections. */
+  async function poolUse(work: () => Promise<void>): Promise<{ readonly acquired: number; readonly sent: number; readonly peak: number }> {
     let acquired = 0;
+    let sent = 0;
+    let outstanding = 0;
     let peak = 0;
-    const acquire = (): void => { active += 1; acquired += 1; peak = Math.max(peak, active); };
-    const release = (): void => { active -= 1; };
+    const acquire = (): void => { acquired += 1; };
+    const original = pool.query.bind(pool) as (...args: unknown[]) => unknown;
+    const counting = (...args: unknown[]): unknown => {
+      sent += 1;
+      outstanding += 1;
+      peak = Math.max(peak, outstanding);
+      const answer = original(...args);
+      if (answer instanceof Promise) return answer.finally(() => { outstanding -= 1; });
+      outstanding -= 1;
+      return answer;
+    };
     pool.on("acquire", acquire);
-    pool.on("release", release);
+    pool.query = counting as typeof pool.query;
     try {
       await work();
     } finally {
+      // The pool's own query is its class's; the counting one was this
+      // pool's alone.
+      Reflect.deleteProperty(pool, "query");
       pool.off("acquire", acquire);
-      pool.off("release", release);
     }
-    return { acquired, peak };
+    return { acquired, sent, peak };
   }
+
+  it("keeps a long-running deal's newest notes, answered oldest first", async () => {
+    await pool.query(
+      `INSERT INTO activities (opportunity_id, type, body, created_at)
+       SELECT $1, 'note', 'Note ' || n, '2026-09-01T00:00:00Z'::timestamptz + n * interval '1 minute' FROM generate_series(0, 104) AS n`,
+      [opportunityId(1)],
+    );
+    const res = await server.inject({ method: "GET", url: `/opportunities/${opportunityId(1)}`, headers: headers() });
+    expect(res.statusCode, res.body).toBe(200);
+    const notes = (JSON.parse(res.body) as { data: { activities: { body: string }[] } }).data.activities.map((row) => row.body);
+    expect(notes).toHaveLength(100);
+    expect(notes[0]).toBe("Note 5");
+    expect(notes.at(-1)).toBe("Note 104");
+  });
 
   it("answers a deal's detail whole and in one shape, reading its parts at once and only after its venue is checked", async () => {
     const account = randomUUID();
@@ -353,9 +381,10 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     expect(data["latestQuote"]).toEqual({
       id: expect.any(String) as unknown, name: "Wedding quote", status: "issued", currency: "GBP", totalMinor: 1_840_000, createdAt: "2026-09-05T10:00:00.000Z",
     });
-    // The deal itself, then its seven parts, some of them at the same time.
+    // The deal itself, then its seven parts, all asked for at once.
     expect(use.acquired).toBe(8);
-    expect(use.peak).toBeGreaterThan(1);
+    expect(use.sent).toBe(8);
+    expect(use.peak).toBe(7);
 
     // Another venue's deal is refused, and nothing of it is read past the
     // deal's own row; a deleted one is not found.
@@ -366,6 +395,7 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     expect(refused?.statusCode).toBe(403);
     expect(JSON.parse(refused?.body ?? "{}")).toEqual({ error: "Insufficient permissions", code: "FORBIDDEN" });
     expect(refusal.acquired).toBe(1);
+    expect(refusal.sent).toBe(1);
     await pool.query("UPDATE opportunities SET deleted_at = now() WHERE id = $1", [opportunityId(2)]);
     const gone = await server.inject({ method: "GET", url: `/opportunities/${opportunityId(2)}`, headers: headers() });
     expect(gone.statusCode).toBe(404);
