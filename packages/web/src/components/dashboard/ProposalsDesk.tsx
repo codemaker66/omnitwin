@@ -5,7 +5,7 @@ import {
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../../api/client.js";
 import {
-  createProposal, createProposalShareToken, createProposalVersion, createQuote, getDeskProposal, getLatestProposalVersion,
+  createProposal, createProposalShareToken, createProposalVersion, createQuote, deleteQuote, getDeskProposal, getLatestProposalVersion,
   getProposalComments, getProposalHistory, listProposalDesk, postProposalComment, transitionProposal,
   type DeskProposal, type ProposalCommentRow, type ProposalDeskPage, type ProposalHistoryEntry, type StaffProposalVersion,
 } from "../../api/proposals.js";
@@ -355,7 +355,10 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
         setFailure({ where, message: error instanceof RefusedHere ? error.message : moved ? MOVED_WORDS[where] : FAILURE_WORDS[where] });
         if (moved) {
           readAgain(id);
-          setReads((current) => ({ ...current, history: current.history + 1 }));
+          // The latest version too, even when the proposal's number has not
+          // changed since it was last read: a composer left starting from an
+          // older version would otherwise be refused at every save.
+          setReads((current) => ({ ...current, history: current.history + 1, latest: current.latest + 1 }));
           readList(Math.max(PAGE, rows.length));
         }
       }
@@ -407,6 +410,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     const checked = ProposalVersionPayloadSchema.safeParse(candidate);
     if (!checked.success) throw new RefusedHere(checked.error.issues[0]?.message ?? "The proposal's words are not valid.");
     let quote: ProposalVersionPayload["quote"] = null;
+    let madeQuoteId: string | null = null;
     if (lines.length > 0) {
       // Totals come back from the server's exact money engine; the snapshot
       // uses them as they are, never adding them up here.
@@ -414,6 +418,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
         venueId: proposal.venueId, opportunityId: proposal.opportunityId, proposalId: id,
         name: `${proposal.title} quote`, currency: "GBP", lineItems: [...lines],
       });
+      madeQuoteId = made.id;
       quote = {
         quoteId: made.id,
         currency: "GBP",
@@ -424,7 +429,18 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
         totalMinor: made.totalMinor,
       };
     }
-    const saved = await createProposalVersion(id, { ...checked.data, quote }, basedOn);
+    let saved: StaffProposalVersion;
+    try {
+      saved = await createProposalVersion(id, { ...checked.data, quote }, basedOn);
+    } catch (error) {
+      // A version refused outright leaves no draft quote for the deal to offer
+      // as its latest figure. One that may have saved (no answer, or the
+      // server's own failure) keeps it: the version would point at it.
+      if (madeQuoteId !== null && error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        await deleteQuote(madeQuoteId).catch(() => undefined);
+      }
+      throw error;
+    }
     // The next version starts from this one at once; the proposal is then
     // read again for what the server made of it.
     seedLatest(id, saved);

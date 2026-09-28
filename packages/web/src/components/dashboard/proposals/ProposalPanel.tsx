@@ -69,9 +69,9 @@ export interface ProposalPanelProps {
   readonly onMakeLink: () => Promise<boolean>;
   readonly onTransition: (to: "withdrawn" | "archived") => Promise<boolean>;
   /** `composer` names the composer saving, which still holds the words
-   *  should the version not save. */
-  /** `basedOn` is the version the words started from (0 for the first), so a
-   *  version saved meanwhile by someone else is never replaced unseen. */
+   *  should the version not save. `basedOn` is the version the words started
+   *  from (0 for the first), so a version saved meanwhile by someone else is
+   *  never replaced unseen. */
   readonly onSaveVersion: (draft: ComposerDraft, composer: number, basedOn: number) => Promise<boolean>;
   /** Puts one kept version away once it has been copied. */
   readonly onDiscardKept: (composer: number) => void;

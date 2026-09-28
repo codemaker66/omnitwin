@@ -399,3 +399,8 @@ export async function getLatestProposalVersion(id: string): Promise<StaffProposa
 export async function createQuote(input: CreateQuote): Promise<StaffQuoteWithItems> {
   return api.post("/quotes", input, undefined, StaffQuoteWithItemsSchema);
 }
+
+/** Removes a draft quote (a version that did not save leaves none behind). */
+export async function deleteQuote(id: string): Promise<void> {
+  return api.delete(`/quotes/${id}`);
+}

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   createProposalShareToken: vi.fn(),
   createProposalVersion: vi.fn(),
   createQuote: vi.fn(),
+  deleteQuote: vi.fn(),
   transitionProposal: vi.fn(),
   listSpaces: vi.fn(),
 }));
@@ -40,6 +41,7 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   createProposalShareToken: mocks.createProposalShareToken,
   createProposalVersion: mocks.createProposalVersion,
   createQuote: mocks.createQuote,
+  deleteQuote: mocks.deleteQuote,
   transitionProposal: mocks.transitionProposal,
 }));
 vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
@@ -658,6 +660,57 @@ describe("the next version", () => {
     expect(mocks.createProposalVersion.mock.calls[0]?.[2]).toBe(2);
     expect((await panel.findByTestId("composer-error")).textContent)
       .toBe("It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.");
+  });
+
+  it("reads the latest version again after a save refused for one saved meanwhile, and starts from it", async () => {
+    // Read as version 2 though the proposal is at 3 (a re-read that failed);
+    // the proposal's number does not change, so only the refusal re-reads it.
+    existing = [proposal({ status: "changes_requested", currentVersion: 3 })];
+    mocks.getLatestProposalVersion.mockResolvedValueOnce(version(2, { clientMessage: "The words of version 2." }))
+      .mockResolvedValue(version(3, { clientMessage: "The words of version 3." }));
+    mocks.createProposalVersion.mockRejectedValue(
+      new ApiError(409, "A newer version was saved or sent after this was read. Reload it to see it.", "PROPOSAL_VERSION_CHANGED"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect((await panel.findByTestId("composer-start")).textContent).toBe("Starts from version 2. You have not changed anything here yet.");
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "My later words." } });
+    fireEvent.click(panel.getByRole("button", { name: "Save version 3" }));
+    await waitFor(() => {
+      expect(panel.getByTestId("composer-start").textContent).toBe("Starts from version 3. You have not changed anything here yet.");
+    });
+    expect(panel.getByTestId<HTMLTextAreaElement>("composer-message").value).toBe("The words of version 3.");
+    expect(within(panel.getByTestId("kept-version")).getByText("My later words.")).toBeDefined();
+  });
+
+  it("takes away the draft quote of a version refused outright, and keeps one that may have saved", async () => {
+    const madeQuote = {
+      id: "33333333-3333-4333-8333-333333333333", venueId: "v1", opportunityId: null, proposalId: "p1", enquiryId: null, spaceId: null,
+      name: "Autumn gala quote", status: "draft", currency: "GBP", subtotalMinor: 12_050, totalMinor: 12_050, validUntil: null,
+      supersededByQuoteId: null, notes: null, createdBy: "u1", createdAt: NOW, updatedAt: NOW, deletedAt: null,
+      lineItems: [{
+        id: "44444444-4444-4444-8444-444444444444", quoteId: "33333333-3333-4333-8333-333333333333", pricingRuleId: null,
+        description: "Grand Hall hire", quantity: 1, unitAmountMinor: 12_050, lineTotalMinor: 12_050, sortOrder: 0,
+      }],
+    };
+    mocks.createQuote.mockResolvedValue(madeQuote);
+    mocks.deleteQuote.mockResolvedValue(undefined);
+    for (const [refusal, deleted] of [
+      [new ApiError(409, "A newer version was saved or sent after this was read.", "PROPOSAL_VERSION_CHANGED"), true],
+      [new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"), false],
+    ] as const) {
+      mocks.deleteQuote.mockClear();
+      mocks.createProposalVersion.mockReset().mockRejectedValue(refusal);
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(panel.getByTestId("add-quote-line"));
+      fireEvent.change(panel.getByTestId("quote-desc-0"), { target: { value: "Grand Hall hire" } });
+      fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: "120.50" } });
+      fireEvent.click(panel.getByTestId("composer-save"));
+      await panel.findByTestId("composer-error");
+      if (deleted) expect(mocks.deleteQuote).toHaveBeenCalledWith(madeQuote.id);
+      else expect(mocks.deleteQuote).not.toHaveBeenCalled();
+      cleanup();
+    }
   });
 
   it("says what a version from the editor's Share lens shows the client that the next will not carry", async () => {
