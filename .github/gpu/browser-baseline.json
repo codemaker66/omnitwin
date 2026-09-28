@@ -460,6 +460,35 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "The client's proposal page as a document (T-635 X1). A link now asks the name an acceptance is given in and sends the version the client read; the API refuses an answer on a version since replaced (PROPOSAL_VERSION_CHANGED), and the page reads the proposal again and keeps what was typed. That is held on real PostgreSQL in proposal-client-page-postgres.test.ts. One case accepts on a link: the name is asked for before anything is sent, then sent with version 1; a second accept meets version 2 sent meanwhile, shows it with the name still typed, and accepts nothing unseen. One prints the page under print emulation: a white sheet with the total in ink, \"Not yet accepted.\" as the decision's one sentence, and neither the decision panel nor the conversation on paper.",
+      "sourceCommit": "7bb242301959503e102378074582250843321bb5",
+      "sourceFile": "packages/web/e2e/proposal-share-link.spec.ts",
+      "sourceFileGitBlobSha256": "e9dd8d36744d3d7322c26b0c661d7fb96c64fb4995e28b3da0db6de3fbc71466",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "888bd2678f6d2b9d5942fb1861d2655ebb2da2cb23681feb03ae7967aa1bee1e",
+      "caseIds": [
+        "15e01bc256dfab8f74e3-a3bc29d68edd9824f700",
+        "15e01bc256dfab8f74e3-d29553f4335cccadbfd8"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-27",
+      "reason": "Preview as the client (T-635 X1): the venue team opens the latest saved version, exactly as the client's page draws it, in a tab of its own (/proposal-preview/:id, GET /proposals/:id/preview for the venue's commercial roles). A band says which version the client's link shows. Nothing public is called, so nothing is stamped as the link being opened. The case finds the desk's Preview as the client set to open in a tab of its own, opens it, and checks the document: its heading, the band (\"This is the version the client's link shows.\"), the event's date, the total, a decision panel with nothing to press, the tab's title, and that no /proposal-share or /public route was requested.",
+      "sourceCommit": "7bb242301959503e102378074582250843321bb5",
+      "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
+      "sourceFileGitBlobSha256": "22dc52d909455f0bbb225c4767ef7abeeacbce12477e3a2f47715601bf6fa216",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "888bd2678f6d2b9d5942fb1861d2655ebb2da2cb23681feb03ae7967aa1bee1e",
+      "caseIds": [
+        "3d60696039542bd5f8df-2ea22200879023ac08bc"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -956,6 +985,28 @@
       "expectedStatus": "passed"
     },
     {
+      "id": "15e01bc256dfab8f74e3-a3bc29d68edd9824f700",
+      "file": "proposal-share-link.spec.ts",
+      "title": "on a link, accepting asks the name and sends it with the version read; a newer version is shown, not accepted unseen",
+      "suitePath": [
+        "proposal-share-link.spec.ts",
+        "proposal share link"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "15e01bc256dfab8f74e3-d29553f4335cccadbfd8",
+      "file": "proposal-share-link.spec.ts",
+      "title": "prints as a document: ink on white, the decision as one sentence, no forms",
+      "suitePath": [
+        "proposal-share-link.spec.ts",
+        "proposal share link"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
       "id": "3d60696039542bd5f8df-d8c8ae0c14d4217057eb",
       "file": "proposals-desk.spec.ts",
       "title": "a booker answers the client who asked for changes: the next version starts from the last and is sent after asking",
@@ -970,6 +1021,17 @@
       "id": "3d60696039542bd5f8df-7ee0a30779e97cef074d",
       "file": "proposals-desk.spec.ts",
       "title": "the open proposal survives a reload through its address, and the desk reads cleanly with it open",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-2ea22200879023ac08bc",
+      "file": "proposals-desk.spec.ts",
+      "title": "Preview as the client shows the latest version as the client's page draws it, and no client route is called",
       "suitePath": [
         "proposals-desk.spec.ts",
         "Proposals desk"

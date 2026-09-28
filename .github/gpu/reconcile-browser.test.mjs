@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full391 union requires386 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
+test('full394 union requires389 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 391, cpu: 386, gpu: 5, ordinaryPasses: 345,
+  assert.deepEqual(result.totals, { inventory: 394, cpu: 389, gpu: 5, ordinaryPasses: 348,
     expectedFailures: 4, originalSkips: 42, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 386);
+  assert.equal(result.totals.cpu, 389);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 340);
+  assert.equal(result.totals.ordinaryPasses, 343);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 30);
+  assert.equal(baseline.inventoryAdmissions.length, 32);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -712,6 +712,39 @@ test('the Proposals desk admission adds exactly three ordinary cases in its own 
 });
 for (const id of proposalsDeskAdditions) {
   rejected(`new Proposals desk case ${id} cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}
+const clientPageAdditions = [
+  ['packages/web/e2e/proposal-share-link.spec.ts', 'proposal-share-link.spec.ts', 30, [
+    '15e01bc256dfab8f74e3-a3bc29d68edd9824f700',
+    '15e01bc256dfab8f74e3-d29553f4335cccadbfd8',
+  ]],
+  ['packages/web/e2e/proposals-desk.spec.ts', 'proposals-desk.spec.ts', 31, [
+    '3d60696039542bd5f8df-2ea22200879023ac08bc',
+  ]],
+];
+test('the client page admissions add exactly three ordinary cases, each in its own spec', () => {
+  for (const [sourceFile, file, index, ids] of clientPageAdditions) {
+    const admission = baseline.inventoryAdmissions[index];
+    assert.equal(admission.date, '2026-09-27');
+    assert.equal(admission.sourceFile, sourceFile);
+    assert.match(admission.sourceCommit, /^[0-9a-f]{40}$/u);
+    assert.match(admission.sourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+    assert.deepEqual(admission.caseIds, [...ids].sort());
+    for (const id of ids) {
+      const row = baseline.cases.find((entry) => entry.id === id);
+      assert.equal(row?.file, file);
+      assert.equal(row?.expectedStatus, 'passed');
+    }
+  }
+  assert.equal(baseline.cases.length, BROWSER_POLICY.total);
+});
+for (const id of clientPageAdditions.flatMap(([, , , ids]) => ids)) {
+  rejected(`new client page case ${id} cannot become a skip`, (input) => {
     const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
     spec.tests[0].expectedStatus = 'skipped';
     spec.tests[0].results[0].status = 'skipped';
