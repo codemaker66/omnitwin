@@ -35,9 +35,9 @@ export default defineConfig(({ mode }) => {
 
   // Captured splat tiles are staged outside the repository (roughly a gigabyte
   // across the eight Trades Hall rooms), so `public/` cannot hold them. In
-  // development they are served from SPLAT_STAGING_ROOT; production points
-  // VITE_SPLAT_BASE_URL at R2 instead. Absent the variable, the app still runs
-  // and falls back to its procedural scene.
+  // development they are served from SPLAT_STAGING_ROOT; where deployed builds
+  // read them is described below. Absent the variable, the app still runs and
+  // falls back to its procedural scene.
   const splatStaging = splatStagingPlugin(env["SPLAT_STAGING_ROOT"]);
   if (splatStaging !== null) plugins.push(splatStaging);
 
