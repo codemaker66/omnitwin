@@ -755,6 +755,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   on when the proposal is opened again, even after another part of the dashboard, and are kept to copy with
   why when a version saved elsewhere, a send or Start again replaces them. A reload asks first while any are
   unsaved, and the desk belongs to the person signed in, so another account on the same page never sees them.
+  Sign Out asks first while the person has any, and the browser never asks once they have signed out.
   That is on the branch, and goes to master after its final review.
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
@@ -1227,7 +1228,7 @@ Evidence and sources: [research/completeness.md](research/completeness.md), [res
 | `lib/venue-time.ts` | `enquiry-desk-format.ts:187-290`, `pages/diary/lib/board-time.ts` | 14 local helpers and 9 locale-less calls | N1 onward |
 | `describeFailure(error, {action, subject})` | New, at the `api/client.ts` boundary | 39 raw `error.message` renders | N1 onward |
 | `useListTriage` hook and legend | `EnquiryLedger.tsx:35`, `EnquiryPanel.tsx:76-103` | Tab-only lists | N3, X1, X2, X6 |
-| `useUnsavedChanges` | `InventoryNavigationGuard.tsx` | Nothing (only inventory has a guard today) | Settings, proposal composer, event details |
+| `useUnsavedChanges` | `InventoryNavigationGuard.tsx` | Nothing yet; the two guards today are inventory's and the proposal composer's (`proposal-memory.ts`, `sign-out-words.tsx`) | Settings, proposal composer, event details |
 | Persistent StaffLayout route | `DashboardLayout` | Each page wrapping its own layout | N2 |
 | Chart kit | Research palette in fixed order (forest, copper, sage, heather), a headline sentence, table fallback | Cyan bars and KPI card walls | X8 |
 
