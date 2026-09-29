@@ -769,7 +769,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Done on 29 September (`PriceList.tsx`, `price-list-format.ts`): beside Add a line, the venue's prices for the
   event, its room's first, each added as a line with its name, a quantity from the event and its price; a price
   an hour asks for the hours. What cannot be offered is said. A line records no price-list entry yet (a saved
-  version's quote keeps none), and prices are copied as listed until A3 settles VAT.
+  version's quote keeps none), and prices are copied as listed until A3 settles VAT. Live on `815e12e8`.
 - Link the deal, enquiry and configuration; derive `configurationId` on the server.
   Done on 28 September (`services/proposal-links.ts`). A proposal made from a deal carries the enquiry the deal
   came from and that enquiry's own layout while it is live at the venue; links that contradict each other are
