@@ -10,6 +10,7 @@ import {
 } from "../scene/NativeSplatLayer.js";
 import { roomSplatBundle, roomSplatLadder, walkPoseForBundle } from "../../data/room-splat-bundles.js";
 import { InteriorCamera } from "./InteriorCamera.js";
+import { StageFloor } from "../stage/StageFloor.js";
 import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
 import { settledPixelRatio } from "../../lib/splat-runtime-profile.js";
 import {
@@ -99,7 +100,9 @@ export function RoomSplatScene({
   onProgress,
   captureReadback = false,
 }: RoomSplatSceneProps): ReactElement {
-  const transform = runtimeAssetViewTransformForRoom(room, "staged");
+  // Memoised on the room: the scene re-renders on every progress tick, and the
+  // splat layers and the stage floor must not receive a new transform each time.
+  const transform = useMemo(() => runtimeAssetViewTransformForRoom(room, "staged"), [room]);
   const camera = runtimeAssetCameraViewForRoom(room, "staged");
   // The bundle's scanner-walk extent frames the camera; it does not contain all
   // captured wall/ceiling surfaces. Preserve the full interior capture. The old
@@ -351,6 +354,7 @@ export function RoomSplatScene({
   return (
     <Canvas
       frameloop="demand"
+      flat
       dpr={[1, 2]}
       gl={{
         powerPreference: "high-performance",
@@ -390,6 +394,7 @@ export function RoomSplatScene({
           onRendered={handleRendered}
         />
       ))}
+      <StageFloor roomSlug={room} transform={transform} active />
       {spawn !== null && walkBounds !== null && (
         <InteriorCamera
           spawn={spawn}

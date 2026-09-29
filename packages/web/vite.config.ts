@@ -4,6 +4,7 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
+  resolveBuildSplatBaseUrl,
   resolveWebClerkPublishableKey,
 } from "./src/lib/production-env";
 import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
@@ -34,29 +35,21 @@ export default defineConfig(({ mode }) => {
 
   // Captured splat tiles are staged outside the repository (roughly a gigabyte
   // across the eight Trades Hall rooms), so `public/` cannot hold them. In
-  // development they are served from SPLAT_STAGING_ROOT; production points
-  // VITE_SPLAT_BASE_URL at R2 instead. Absent the variable, the app still runs
-  // and falls back to its procedural scene.
+  // development they are served from SPLAT_STAGING_ROOT; where deployed builds
+  // read them is described below. Absent the variable, the app still runs and
+  // falls back to its procedural scene.
   const splatStaging = splatStagingPlugin(env["SPLAT_STAGING_ROOT"]);
   if (splatStaging !== null) plugins.push(splatStaging);
 
-  // Where a production build fetches captured splat tiles.
+  // Where a build fetches captured splat tiles and room packages.
   //
-  // Tiles are not in the repo, so a production bundle cannot fall back to the
-  // dev middleware's "/splats" — that path does not exist on the deployed
-  // origin. This resolves to the public R2 bucket the tiles are published to
-  // by packages/api/src/scripts/publish-splat-tiles.ts. It is a public bucket
-  // URL, not a secret, and a real VITE_SPLAT_BASE_URL always wins so the
-  // bucket can be moved without a code change.
-  // Left empty so the app requests tiles from its OWN origin, "/splats".
-  //
-  // In development that path is served from SPLAT_STAGING_ROOT by the plugin
-  // above. In production vercel.json rewrites it to the R2 bucket, which keeps
-  // the request same-origin — R2 public buckets send no CORS headers, and a
-  // splat is fetched as an ArrayBuffer, so a cross-origin fetch is refused by
-  // the browser after the bytes have already been paid for. Setting
-  // VITE_SPLAT_BASE_URL to a CORS-enabled origin bypasses the proxy.
-  const splatBaseUrl = env["VITE_SPLAT_BASE_URL"] ?? "";
+  // "" means the app's own "/splats": served from SPLAT_STAGING_ROOT by the
+  // plugin above in development. On Vercel that path redirects to the
+  // work-in-progress page while the founder hold stands (vercel.json), so a
+  // preview build reads the public R2 bucket directly instead; the bucket's
+  // CORS policy admits *.vercel.app. Production keeps "" and the hold. A real
+  // VITE_SPLAT_BASE_URL always wins, so the bucket can move without a code change.
+  const splatBaseUrl = resolveBuildSplatBaseUrl(env);
 
   if (sentrySourceMapUpload !== null) {
     plugins.push(...sentryVitePlugin({
@@ -86,10 +79,16 @@ export default defineConfig(({ mode }) => {
     plugins,
     define: {
       __VENVIEWER_CLERK_PUBLISHABLE_KEY__: JSON.stringify(clerkPublishableKey),
-      // Baked in so a production bundle knows where published tiles live without
-      // requiring a Vercel environment variable. Empty in development, where the
-      // staging middleware serves them from "/splats" instead.
+      // Where captured room assets are fetched from (resolveBuildSplatBaseUrl):
+      // an explicit VITE_SPLAT_BASE_URL always wins; a Vercel preview build
+      // bakes the public R2 base; every other build, production included,
+      // bakes "" — the app's own "/splats", which production holds (it
+      // redirects to the work-in-progress page) and development serves from
+      // SPLAT_STAGING_ROOT.
       "import.meta.env.VITE_SPLAT_BASE_URL": JSON.stringify(splatBaseUrl),
+      // Vercel's deployment environment, so preview links can open splats
+      // (T-639) while production keeps the founder hold. Empty outside Vercel.
+      "import.meta.env.VITE_DEPLOY_ENV": JSON.stringify(env["VERCEL_ENV"] ?? ""),
     },
     server: {
       // Transform the planner's static import graph when the dev server starts.

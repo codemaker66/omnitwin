@@ -4,7 +4,13 @@ Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportion
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
-## Latest founder direction — 26 September 2026
+## Latest founder direction — 28 September 2026 (T-639)
+
+Blake asked for the visual layer to be rethought from first principles: the Grand Hall splat is "very poor quality ... especially the floor", it "loads very slowly and feels janky", and the planner must become "the most next-gen, useful, cinematic, beautiful and performant venue planning tool", photoreal "so it looks like the real hall, with the real furniture", and a joy for everyone connected to an event. He gave full permission to use or ignore any of our data and to reverse engineer XGRIDS and Matterport.
+
+The [Real Hall design](docs/superpowers/specs/2026-09-28-the-real-hall-design.md) (design page with proofs: https://claude.ai/artifact/SuxsBiZPpu2WcCBBLDGfXq) draws each surface as what it is: the floor as its own photographs on the measured plane, splats only for ornament, furniture lit by the room's daytime station photographs, a photograph-first opening and a splat pool that never freezes the page. Blake's decisions on 28 September: build it, starting with the first slice; one site day to photograph and measure the real furniture, with Claude modelling every piece; judge on private preview links while the venue-site splat hold stays. T-639 owns it; the 26 September direction (T-635) continues alongside.
+
+## Previous founder direction — 26 September 2026
 
 After judging the Enquiries desk "much cleaner … inviting", Blake asked that the design preferences from that session be reflected across every aspect of the app, and that this be hard-baked, verbatim:
 

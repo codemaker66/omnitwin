@@ -51,7 +51,7 @@ Blake's third round (same day, evening):
 - **Hold reminders.** Email the staff member who owns each provisional hold 7, 3 and 1 days before its decision date, after a dry run he can check. Clients are never emailed by it.
 - **Turnarounds, staffing and completeness**, verbatim: "Allow staff to set the time it will take but i want you to plan the best way how we can make it automatic, and it will also depend on how much staff is available so we will need staff rota also to be part of our platform which you will need to construct now too and anything else we may of missed to be the most amazing venue and events business platform ever"
 
-Not asked, because plan 16 already rules: the 3D planner keeps full sharpness while the camera moves, and phones get the full room rather than a lighter tier, until measurements on real devices justify a founder decision.
+Not asked, because plan 16 already rules: the 3D planner keeps full sharpness while the camera moves. Plan 16's other rule, that phones get the full room rather than a lighter tier, was superseded by Blake on 24 September 2026: phones hold 60 fps at about 0.5–1M rendered splats. T-639 applies it by giving phones the low splat tier; capping tablets (iPad and Android) at the medium tier is an engineering choice Blake can overrule. Measurements on real devices decide any change.
 
 ### Selected Diary direction — 7 September 2026
 

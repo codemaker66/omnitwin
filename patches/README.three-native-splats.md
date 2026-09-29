@@ -21,6 +21,10 @@ The additive constructor options are:
 - `colorSpace`: source RGB space; default `NoColorSpace` preserves upstream.
   Venviewer supplies `SRGBColorSpace` and retains normal linear working space.
 - `kernelRadius`: Gaussian cutoff in standard deviations, default upstream 2.
+- `antialias`: whether to apply upstream's opacity compensation for its 0.3 px²
+  low-pass filter; default `true` preserves upstream. Venviewer passes `false`:
+  its loaders refuse mip-anti-aliased SOG and SPZ, and compensating a source
+  trained without that filter dims it (T-639, measured 28 September 2026).
 - `minSortIntervalMs`: optional minimum gap between orientation-triggered sorts.
 
 Public `dispose()` frees generated quad, node-storage and compute resources;

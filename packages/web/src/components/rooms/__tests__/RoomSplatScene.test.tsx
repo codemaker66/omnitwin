@@ -19,6 +19,8 @@ const recorded = vi.hoisted(() => ({
   onCreated: undefined as unknown,
   capture: vi.fn(),
   clip: vi.fn(() => null),
+  /** The stage floor's latest props, or null before it has ever rendered. */
+  floor: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@react-three/fiber", () => ({
@@ -51,6 +53,16 @@ vi.mock("../InteriorCamera.js", () => ({
   },
 }));
 vi.mock("../RoomClipBox.js", () => ({ RoomClipBox: recorded.clip }));
+// The floor skin has its own coverage (floor-skin.test.ts) and needs a real
+// useThree from @react-three/fiber, which this file's Canvas-only mock does
+// not provide; mounting it for real here would crash every test. Recording
+// its props still pins that this scene hands it the right room and transform.
+vi.mock("../../stage/StageFloor.js", () => ({
+  StageFloor: (props: Record<string, unknown>) => {
+    recorded.floor = props;
+    return null;
+  },
+}));
 // Use the real manifest and budget selection, with an override for the
 // multi-tile coarse-level failure regression below.
 vi.mock("../../../data/room-splat-bundles.js", async (importOriginal) => {
@@ -137,6 +149,7 @@ describe("RoomSplatScene runtime wiring", () => {
     recorded.layers.length = 0;
     recorded.cameras.length = 0;
     recorded.hosts.length = 0;
+    recorded.floor = null;
     recorded.clip.mockClear();
     recorded.mounted.clear();
     if (typeof window.matchMedia !== "function") {
@@ -159,6 +172,30 @@ describe("RoomSplatScene runtime wiring", () => {
     for (const layer of recorded.layers) {
       expect(layer["runtime"]).toBe(PROFILE);
     }
+  });
+
+  it("hands the stage floor the room, active, and the same transform as the splat layers", () => {
+    render(<RoomSplatScene room={ROOM} />);
+
+    expect(recorded.floor).toMatchObject({ roomSlug: ROOM, active: true });
+    const layer = recorded.layers[0];
+    if (layer === undefined) throw new Error("At least one splat layer must be mounted");
+    const transform = recorded.floor?.["transform"] as { position: unknown; rotation: unknown; scale: unknown };
+    expect(transform.position).toEqual(layer["position"]);
+    expect(transform.rotation).toEqual(layer["rotation"]);
+    expect(transform.scale).toEqual(layer["scale"]);
+  });
+
+  // The walk re-renders on every progress tick. A fresh transform object each
+  // time re-ran the floor's exclusion effect, clearing and re-cutting the
+  // splat host's floor mask on every tick (T-639 final review).
+  it("hands the stage floor the same transform object when a re-render keeps the room", () => {
+    const { rerender } = render(<RoomSplatScene room={ROOM} />);
+    const first = recorded.floor?.["transform"];
+    expect(first).toBeDefined();
+
+    rerender(<RoomSplatScene room={ROOM} onProgress={() => undefined} />);
+    expect(recorded.floor?.["transform"]).toBe(first);
   });
 
   it("drives the camera's pixel ratios from the profile", () => {
@@ -284,6 +321,7 @@ describe("RoomSplatScene coarse-first ladder", () => {
     recorded.layers.length = 0;
     recorded.cameras.length = 0;
     recorded.hosts.length = 0;
+    recorded.floor = null;
     recorded.clip.mockClear();
     recorded.mounted.clear();
     if (typeof window.matchMedia !== "function") {
@@ -628,6 +666,7 @@ describe("RoomSplatScene keeps cover when the finest level fails", () => {
     recorded.layers.length = 0;
     recorded.cameras.length = 0;
     recorded.hosts.length = 0;
+    recorded.floor = null;
     recorded.mounted.clear();
     if (typeof window.matchMedia !== "function") {
       Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
@@ -742,6 +781,7 @@ describe("RoomSplatScene when a tile's fetch hangs", () => {
     recorded.layers.length = 0;
     recorded.cameras.length = 0;
     recorded.hosts.length = 0;
+    recorded.floor = null;
     recorded.mounted.clear();
     if (typeof window.matchMedia !== "function") {
       Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });

@@ -3,6 +3,8 @@ import {
   assertRequiredProductionEnv,
   getSentrySourceMapUploadConfig,
   resolveWebClerkPublishableKey,
+  PREVIEW_SPLAT_BASE_URL,
+  resolveBuildSplatBaseUrl,
 } from "../lib/production-env.js";
 
 describe("Vite production environment guard", () => {
@@ -74,5 +76,23 @@ describe("Vite production environment guard", () => {
       project: "web",
       release: "abc123",
     });
+  });
+});
+
+describe("where a build reads captured room assets (T-639)", () => {
+  it("lets an explicit VITE_SPLAT_BASE_URL win everywhere", () => {
+    expect(resolveBuildSplatBaseUrl({ VITE_SPLAT_BASE_URL: "https://cdn.example/splats", VERCEL_ENV: "preview" }))
+      .toBe("https://cdn.example/splats");
+    expect(resolveBuildSplatBaseUrl({ VITE_SPLAT_BASE_URL: "https://cdn.example/splats", VERCEL_ENV: "production" }))
+      .toBe("https://cdn.example/splats");
+  });
+
+  it("sends preview deployments to the public R2 bucket, because /splats redirects under the hold", () => {
+    expect(resolveBuildSplatBaseUrl({ VERCEL_ENV: "preview" })).toBe(PREVIEW_SPLAT_BASE_URL);
+    expect(resolveBuildSplatBaseUrl({ VITE_SPLAT_BASE_URL: "   ", VERCEL_ENV: "preview" })).toBe(PREVIEW_SPLAT_BASE_URL);
+  });
+
+  it.each(["production", "development", "", undefined])("keeps a %s build on its own origin", (vercelEnv) => {
+    expect(resolveBuildSplatBaseUrl({ VERCEL_ENV: vercelEnv })).toBe("");
   });
 });

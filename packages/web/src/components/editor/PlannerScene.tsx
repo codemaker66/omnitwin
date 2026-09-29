@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { NativeCanvas as Canvas } from "../scene/NativeCanvas.js";
+import { CaptureToneMapping } from "../scene/CaptureToneMapping.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
@@ -56,6 +57,7 @@ import { shouldRenderPlannerMotionOverlays } from "../../lib/planner-render-poli
 import { captureAvailability, inkTargetOpacity, roomResolvePhase } from "../../lib/room-resolve-model.js";
 import { PlannerArrival } from "./PlannerArrival.js";
 import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
+import { StageFloor } from "../stage/StageFloor.js";
 import { InkArchitectureLayer } from "./InkArchitectureLayer.js";
 import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
 import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
@@ -476,6 +478,7 @@ export function PlannerScene(): ReactElement {
           <color attach="background" args={["#eee9de"]} />
           {!timelinePreviewActive && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
+          <CaptureToneMapping captureShown={splatActive} />
           {furnitureReflections && <FurnitureReflectionExperiment />}
           {!timelinePreviewActive && <SectionPlane />}
           {!timelinePreviewActive && <InvalidateOnToggle />}
@@ -515,6 +518,20 @@ export function PlannerScene(): ReactElement {
                 minimumDrawnSources={loadedChunks}
                 onChunkLoaded={arrivals.markLoaded}
                 onChunkFailed={arrivals.markFailed}
+              />
+              {/* The floor-skin manifest is built for one particular staged
+                  capture's own frame. A registered package's transform is
+                  identity (it carries its own baked alignment instead), so
+                  drawing the capture-frame floor under THAT transform would
+                  stand it on edge. Only the staged capture it was built for
+                  may load or draw it. It shows in Capture mode only: Combined
+                  mode draws the model floor at y = 0, which the measured floor
+                  (−10 to +3.9 cm, tilted 0.22°) would fight, so Combined keeps
+                  the model floor over the capture's own floor. */}
+              <StageFloor
+                roomSlug={captureSource === "staged" ? roomSlug : null}
+                transform={transform}
+                active={splatActive && layerMode === "splat"}
               />
             </group>
           )}

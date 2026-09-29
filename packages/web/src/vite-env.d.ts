@@ -17,6 +17,8 @@ interface ImportMetaEnv {
    * serves from SPLAT_STAGING_ROOT.
    */
   readonly VITE_SPLAT_BASE_URL?: string;
+  /** Vercel's VERCEL_ENV at build time (vite.config.ts define); empty outside Vercel. */
+  readonly VITE_DEPLOY_ENV?: string;
   /** Base URL twin bundles are served from. Defaults to /twin (local public dir). */
   readonly VITE_TWIN_ASSET_BASE?: string;
   /** Sentry browser DSN. Optional; when omitted, browser error tracking is disabled. */

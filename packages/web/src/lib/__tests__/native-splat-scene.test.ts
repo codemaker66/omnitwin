@@ -7,7 +7,15 @@ import { GaussianSplat, type GaussianSplatCpuSortRequest } from "three/addons/ob
 import { NativeCpuSortPool, type NativeCpuSortWorker } from "../native-cpu-sort-pool.js";
 import type { NativeCpuSortCommand } from "../native-cpu-sort-protocol.js";
 
-const evidence = vi.hoisted(() => ({ created: 0, disposed: 0, applied: 0, radii: [] as number[], opacityArrays: [] as unknown[][], inputs: [] as BufferGeometry[] }));
+const evidence = vi.hoisted(() => ({ created: 0, disposed: 0, applied: 0, radii: [] as number[], antialias: [] as unknown[], opacityArrays: [] as unknown[][], inputs: [] as BufferGeometry[], maskResamples: 0 }));
+// Pass-through: the real resampler, counted, so a test can tell a copied mask from a resampled one.
+vi.mock("../splat-exclusion.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../splat-exclusion.js")>();
+  return { ...actual, resampleExclusionMask: (...args: Parameters<typeof actual.resampleExclusionMask>) => {
+    evidence.maskResamples++;
+    return actual.resampleExclusionMask(...args);
+  } };
+});
 vi.mock("three/tsl", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three/tsl")>();
   return { ...actual, uniformArray: (values: unknown[], type: string) => {
@@ -20,12 +28,13 @@ vi.mock("three/addons/objects/GaussianSplat.js", async () => {
   return { GaussianSplat: class extends Mesh {
     minSortIntervalMs = 0;
     cpuSort: ((request: GaussianSplatCpuSortRequest) => void) | null = null;
-    constructor(source: BufferGeometry, options: { kernelRadius: number }) {
+    constructor(source: BufferGeometry, options: { kernelRadius: number; antialias?: boolean }) {
       const draw = new InstancedBufferGeometry();
       draw.instanceCount = source.getAttribute("position").count;
       super(draw, new NodeMaterial());
       evidence.created++;
       evidence.radii.push(options.kernelRadius);
+      evidence.antialias.push(options.antialias);
       evidence.inputs.push(source);
     }
     updateSort(): boolean { this.cpuSort?.({ modelViewMatrix: new Matrix4().elements, nearDepth: 0.1, farDepth: 10, binCount: 65_536 }); return true; }
@@ -99,7 +108,7 @@ function setup(automaticSort = true) {
   return { scene, camera, renderer, rendererError, runtime, compile, detach, add, draw, gpu, render, invalidate, sortWorker };
 }
 
-beforeEach(() => { vi.useFakeTimers(); evidence.created = 0; evidence.disposed = 0; evidence.applied = 0; evidence.radii.length = 0; evidence.opacityArrays.length = 0; evidence.inputs.length = 0; });
+beforeEach(() => { vi.useFakeTimers(); evidence.created = 0; evidence.disposed = 0; evidence.applied = 0; evidence.radii.length = 0; evidence.antialias.length = 0; evidence.opacityArrays.length = 0; evidence.inputs.length = 0; evidence.maskResamples = 0; });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe("native complete draw lifecycle", () => {
@@ -686,5 +695,108 @@ describe("native complete draw lifecycle", () => {
     expect(callback).toHaveBeenCalledOnce();
     state.renderer.setRenderTarget(null);
     outputTarget.dispose();
+  });
+});
+
+describe("native presentation (T-639)", () => {
+  it("draws captured sources without anti-aliasing opacity compensation", async () => {
+    const state = setup();
+    state.add(3);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(evidence.antialias).toEqual([false]);
+    state.detach(); await vi.advanceTimersByTimeAsync(0);
+  });
+});
+
+describe("floor-slab exclusion host (T-639)", () => {
+  it("copies an owner's mask into the shared texture and clears it only for that owner", () => {
+    const state = setup();
+    const owner = {}, other = {};
+    const data = new Uint8Array(1024 * 512).fill(255);
+    state.runtime.setExclusion(owner, { matrix: new Matrix4(), below: 0.15, above: 0.12, mask: { width: 1024, height: 512, data } });
+    const texture = state.runtime.exclusionMask;
+    expect((texture.image.data as Uint8Array)[0]).toBe(255);
+    state.runtime.clearExclusion(other);
+    expect((texture.image.data as Uint8Array)[0]).toBe(255);
+    state.runtime.clearExclusion(owner);
+    expect((texture.image.data as Uint8Array)[0]).toBe(0);
+    state.detach();
+  });
+
+  it("copies a mask already on the host's grid exactly, without resampling it", () => {
+    const state = setup();
+    const data = new Uint8Array(1024 * 512);
+    for (let index = 0; index < data.length; index++) data[index] = (index * 7919) % 256;
+    state.runtime.setExclusion({}, { matrix: new Matrix4(), below: 0.15, above: 0.12, mask: { width: 1024, height: 512, data } });
+    const copied = state.runtime.exclusionMask.image.data as Uint8Array;
+    expect(copied === data).toBe(false);
+    let firstDifference = -1;
+    for (let index = 0; index < data.length && firstDifference < 0; index++) if (copied[index] !== data[index]) firstDifference = index;
+    expect(firstDifference).toBe(-1);
+    expect(evidence.maskResamples).toBe(0);
+    state.detach();
+  });
+
+  it("resamples a mask of any other size onto the host's grid", () => {
+    const state = setup();
+    const data = new Uint8Array([255, 0, 0, 0, 0, 0, 0, 0]);
+    state.runtime.setExclusion({}, { matrix: new Matrix4(), below: 0.15, above: 0.12, mask: { width: 4, height: 2, data } });
+    const resampled = state.runtime.exclusionMask.image.data as Uint8Array;
+    expect(evidence.maskResamples).toBe(1);
+    expect(resampled[0]).toBe(255);
+    expect(resampled[255]).toBe(255);
+    expect(resampled[256]).toBe(0);
+    state.detach();
+  });
+
+  it("clears to an all-zero mask", () => {
+    const state = setup();
+    const owner = {};
+    state.runtime.setExclusion(owner, { matrix: new Matrix4(), below: 0.15, above: 0.12, mask: { width: 1024, height: 512, data: new Uint8Array(1024 * 512).fill(255) } });
+    state.runtime.clearExclusion(owner);
+    const cleared = state.runtime.exclusionMask.image.data as Uint8Array;
+    expect(cleared.length).toBe(1024 * 512);
+    expect(cleared.every((value) => value === 0)).toBe(true);
+    state.detach();
+  });
+
+  it("keeps the current owner, matrix and mask together when a new mask cannot be read", () => {
+    const state = setup();
+    const owner = {}, intruder = {};
+    state.runtime.setExclusion(owner, { matrix: new Matrix4(), below: 0.15, above: 0.12, mask: { width: 1024, height: 512, data: new Uint8Array(1024 * 512).fill(255) } });
+    // Declared 8 × 4 but carrying 3 values: unreadable, so nothing may change.
+    expect(() => {
+      state.runtime.setExclusion(intruder, { matrix: new Matrix4().makeTranslation(5, 0, 0), below: 0.15, above: 0.12, mask: { width: 8, height: 4, data: new Uint8Array(3) } });
+    }).toThrow("does not match");
+    const texture = state.runtime.exclusionMask;
+    expect((texture.image.data as Uint8Array)[0]).toBe(255);
+    // Only the owner of the exclusion that actually applies may clear it.
+    state.runtime.clearExclusion(intruder);
+    expect((texture.image.data as Uint8Array)[0]).toBe(255);
+    state.runtime.clearExclusion(owner);
+    expect((texture.image.data as Uint8Array).every((value) => value === 0)).toBe(true);
+    state.detach();
+  });
+
+  it("releases the shared mask texture only on the runtime's real last detach, then re-uploads it on the next attach", async () => {
+    const state = setup();
+    const disposed = vi.fn();
+    state.runtime.exclusionMask.addEventListener("dispose", disposed);
+
+    // The runtime's real last detach (no immediate re-attach) disposes the shared mask exactly once.
+    state.detach();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(disposed).toHaveBeenCalledOnce();
+
+    // Re-attaching after that full teardown forces the (surviving) mask data to re-upload.
+    const versionAfterDispose = state.runtime.exclusionMask.version;
+    const redetach = state.runtime.attach(state.renderer, state.camera, state.invalidate);
+    expect(state.runtime.exclusionMask.version).toBeGreaterThan(versionAfterDispose);
+
+    // A detach immediately followed by a re-attach (React StrictMode) must not dispose it.
+    redetach();
+    state.runtime.attach(state.renderer, state.camera, state.invalidate);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(disposed).toHaveBeenCalledOnce();
   });
 });

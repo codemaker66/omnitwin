@@ -22,6 +22,9 @@ declare module "three/addons/objects/GaussianSplat.js" {
     sphericalHarmonicsDirectionNode?: (index: Node<"uint">, direction: Node<"vec3">) => Node<"vec3">;
     colorSpace?: ColorSpace;
     kernelRadius?: number;
+    /** Upstream compensates opacity for its 0.3 px² low-pass (default true). Pass
+     *  false for sources trained without mip anti-aliasing (every native source). */
+    antialias?: boolean;
     minSortIntervalMs?: number;
     cpuSort?: ((request: GaussianSplatCpuSortRequest) => void) | null;
   }

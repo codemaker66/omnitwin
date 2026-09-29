@@ -166,6 +166,19 @@ describe("useRoomRuntimeSplat", () => {
     expect(result.current.transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
   });
 
+  it("keeps the same transform object across re-renders of the same room and source", async () => {
+    // The planner re-renders on every chunk arrival; the splat layer and the
+    // stage floor both receive this transform and must not see a new one each
+    // time (T-639).
+    runtimeApi.getLatestRuntimePackage.mockResolvedValue(null);
+    useEditorStore.setState({ space: spaceWith("grand-hall") });
+    const { result, rerender } = renderHook(() => useRoomRuntimeSplat());
+    await waitFor(() => { expect(result.current.status).toBe("none"); });
+    const first = result.current.transform;
+    rerender();
+    expect(result.current.transform).toBe(first);
+  });
+
   it("still mounts the staged capture when the registry request fails", async () => {
     // A registry outage must not blank the room: the staged tiles are static
     // and keep working while the API is down.
