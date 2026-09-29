@@ -49,7 +49,7 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     if (quote === undefined) throw new Error("Missing quote fixture");
     await db.insert(schema.quoteLineItems).values({ quoteId: quote.id, description: "Base", quantity: 1,
       unitAmountMinor: 1000, lineTotalMinor: 1000, sortOrder: 0 });
-    return { venueId, actorId, quote, headers: { authorization: `Bearer ${JSON.stringify(actor)}` } };
+    return { venueId, otherVenueId, actorId, quote, headers: { authorization: `Bearer ${JSON.stringify(actor)}` } };
   }
   type Fixture = Awaited<ReturnType<typeof fixture>>;
   function create(f: Fixture) {
@@ -303,6 +303,55 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     expect(refused.json<{ code: string }>().code).toBe("LINK_MISMATCH");
     expect((await make(ours.id)).statusCode).toBe(201);
     expect(await db.select().from(schema.quotes).where(eq(schema.quotes.proposalId, proposal.id))).toHaveLength(1);
+  });
+
+  // A line priced from the price list names its entry, which must be one of
+  // the quote's own venue's: a removed entry is gone, and another venue's is
+  // refused like any other link across venues. That is the record's
+  // integrity, not who may act, so a platform admin is held to it too.
+  it.each(["sales", "platform_admin"])("keeps a quote's price-list entries at its venue for %s", async role => {
+    const platform = role === "platform_admin";
+    const f = await fixture(platform ? "admin" : role, platform, platform ? "admin" : "none");
+    const [own, foreign, removed] = await db.insert(schema.pricingRules).values([
+      { venueId: f.venueId, name: "Grand Hall hire", type: "flat_rate", amount: "2400.00" },
+      { venueId: f.otherVenueId, name: "Another venue's hire", type: "flat_rate", amount: "1800.00" },
+      { venueId: f.venueId, name: "Removed hire", type: "flat_rate", amount: "900.00", deletedAt: new Date() },
+    ]).returning();
+    if (own === undefined || foreign === undefined || removed === undefined) throw new Error("Missing price list fixtures");
+    const make = (...ruleIds: string[]) => server.inject({ method: "POST", url: "/quotes", headers: f.headers,
+      payload: { venueId: f.venueId, name: "Priced quote", currency: "GBP",
+        lineItems: ruleIds.map((pricingRuleId) => ({ description: "Room hire", quantity: 1, unitAmountMinor: 240_000, pricingRuleId })) } });
+    const add = (pricingRuleId: string) => server.inject({ method: "POST", url: `/quotes/${f.quote.id}/line-items`, headers: f.headers,
+      payload: { description: "Room hire", quantity: 1, unitAmountMinor: 240_000, pricingRuleId } });
+    const quotesAtVenue = async () => (await db.select().from(schema.quotes).where(eq(schema.quotes.venueId, f.venueId))).length;
+    const before = await quotesAtVenue();
+
+    const refusals: readonly (readonly [readonly string[], number, string])[] = [
+      [[foreign.id], 422, "VENUE_MISMATCH"],
+      [[own.id, foreign.id], 422, "VENUE_MISMATCH"],
+      [[removed.id], 404, "NOT_FOUND"],
+      [[randomUUID()], 404, "NOT_FOUND"],
+    ];
+    for (const [ruleIds, status, code] of refusals) {
+      const made = await make(...ruleIds);
+      expect(made.statusCode, made.body).toBe(status);
+      expect(made.json<{ code: string }>().code).toBe(code);
+      if (ruleIds.length !== 1 || ruleIds[0] === undefined) continue;
+      const added = await add(ruleIds[0]);
+      expect(added.statusCode, added.body).toBe(status);
+      expect(added.json<{ code: string }>().code).toBe(code);
+    }
+    // Nothing was kept: no quote was made, and the draft's lines are as they were.
+    expect(await quotesAtVenue()).toBe(before);
+    expect((await stored(f)).lines).toHaveLength(1);
+
+    // The venue's own entry is kept with each line it priced, named once or twice.
+    const made = await make(own.id, own.id);
+    expect(made.statusCode, made.body).toBe(201);
+    expect(made.json<{ data: { lineItems: { pricingRuleId: string | null }[] } }>().data.lineItems.map((line) => line.pricingRuleId))
+      .toEqual([own.id, own.id]);
+    expect((await add(own.id)).statusCode).toBe(201);
+    expect((await stored(f)).lines.map((line) => line.pricingRuleId)).toEqual(expect.arrayContaining([null, own.id]));
   });
 
   it("retains issued-record protection for venue admins and the existing platform override", async () => {
