@@ -14,7 +14,7 @@
 - Commit with explicit pathspecs only; inspect `git diff --cached --stat` before each commit; every message ends with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Inputs are read-only: the staged tiles `D:/claude/splats/trades-hall/grand-hall/*.sog`, `D:/claude/splat-quality-20260923/**`, the proof `D:/claude/real-hall/renovation/**`, and `F:/**`.
 - Outputs: work tables in `D:/claude/relight/grand-hall/work/`, the package in `D:/claude/splats/trades-hall/grand-hall/relight/v1/` (development serves this root through `SPLAT_STAGING_ROOT`), evidence in `D:/claude/relight/grand-hall/evidence/`. Nothing bulky goes on C:; C: filled up twice on 29 September.
-- GPU rule: every step that runs torch on CUDA holds `D:/claude/visual-firstprinciples-20260928/gpu.lock`, a JSON file `{"owner":"relight-bake <step>","since":"<ISO time>"}` created exclusively and deleted afterwards. If another owner holds it (the T-640 performance session uses it), wait. One GPU job at a time; the PC lost power twice under concurrent GPU load.
+- GPU rule: every step that runs torch on CUDA holds `D:/claude/visual-firstprinciples-20260928/gpu.lock`, a JSON file `{"owner":"relight-bake <step>","since":"<ISO time>"}` created exclusively and deleted afterwards. If another owner holds it (the T-640 performance session uses it), wait. One GPU job at a time; the PC lost power twice under concurrent GPU load. The proof's code (`lt.py`, `radiosity.py` and the moved scripts) runs torch on the CPU, with no CUDA anywhere, so it never takes the lock (corrected 29 September after the first run held the lock through CPU work).
 - Memory rule: per-splat work runs in chunks of at most 500,000 splats, as the proof does. The PC's 32 GB are shared with other sessions.
 - Spec numbers, verbatim: the light multiplier is clamped to between 1/16 and 8; the codec's round trip is within 1/20 of a stop; at the captured light the result is neutral; lamps default to 2,700 K. The night photo check (0.80 at station 45, 0.85 at station 43) is measured in R1b.
 - Frames: `json` is the served tiles' frame (metres, z up). `e57` is the light model's frame: +x at bearing 14.3°, window wall at y = −10.329, outward normal −y. `T_JE` (json ← e57) comes from `canonical_frame.json`. The package describes the model in the e57 frame and gives `tileToModel` = `T_EJ` = inverse of `T_JE`.
@@ -28,10 +28,10 @@ R1b's GPU kernel implements exactly this; Task 5's `relight/reference.py` is its
 - Inputs from the record: direct light `D[k]` for the nine sources k = W1..W5, cove, ch_end, ch_centre, dome; normal `n`; flags (class, isotropic, sun-reachable, chandelier group). From the splat itself: position `p` and captured linear colour `C` (the stored DC colour, sRGB-decoded); `L = C · (0.2126, 0.7152, 0.0722)`.
 - Bounce light `I[k]` (RGB) = the per-source probe volume evaluated at `p` with normal `n`: trilinear over the eight grid corners with invalid corners dropped and the weights renormalised (the proof's `03_bases.trilinear_weights`), then the ambient-cube evaluation `E(n) = Σ axis n+² cube[+axis] + n−² cube[−axis]`, or the mean of the six faces for isotropic receivers (the proof's `lt.cube_eval`).
 - Captured light: `Ecap = Σk w[k] c[k] ⊙ (D[k] + I[k])` with the fitted capture weights `w` and colours `c` from the manifest.
-- Scenario light: `E = Σk s[k] ⊙ (D[k] + I[k])`, where `s[k]` is the setting's RGB weight for source k (R1b derives it from the presets), plus, when the sun is up, `sunRGB × V(p) × cosθ + Σw b[w] × sunRGB ⊙ I[w]`. `V` is the two-plane window visibility of Task 3 (only for sun-reachable splats) times the glass transmission `fresnel(|σ · (0,−1,0)|)`, with the horizon test. `cosθ = max(0, n·σ)`, or 0.25 for isotropic receivers. `b[w]` is the sun-bounce weight of Task 4.
+- Scenario light: `E = Σk s[k] ⊙ (D[k] + I[k])`, where `s[k]` is the setting's RGB weight for source k (R1b derives it from the presets), plus, when the sun is up, `sunRGB × V(p) × cosθ + Σw b[w] × sunRGB ⊙ I[w]`. `V` is the sum over the five windows of the two-plane visibility of Task 3 (only for sun-reachable splats), each window counted only while the sun's elevation exceeds that window's horizon at the sun's azimuth (`horizon[w][round(azimuth) mod 360]`, with azimuth `atan2(σ·east, σ·north)` in degrees and elevation `asin(σ·up)` from the manifest's `site`), times the glass transmission `fresnel(|σ · (0,−1,0)|)`. The sun-bounce weights use the same horizon test. `cosθ = max(0, n·σ)`, or 0.25 for isotropic receivers. `b[w]` is the sun-bounce weight of Task 4.
 - Interior (class 0) and chandelier fixtures (class 6, lamps on): `M = clamp(E / max(Ecap, 1e-4), 1/16, 8)` per channel.
 - Embrasure (class 1: curtains, glazing bars, reveals, columns): `ρ = min(C / Ecap, 0.8)`, `excess = max(C − ρ Ecap, 0)`, `rBack = skyLevel × skyRGB / c[W1]`, `M = clamp((ρ E + excess rBack) / max(C, 1e-4), 1/16, 8)`.
-- Lamp emitters (class 3 chandelier bulbs, class 4 dome lamps, class 5 cove strip) and fixtures (class 6) at lamp level ℓ ∈ [0, 1] of their group: `Mlit = 1 + 3 × smoothstep(0.45, 0.9, L)` for classes 3 and 4, `1` for class 5, and the interior rule for class 6. `Munlit = (A E) / max(C, 1e-4)` with `A = 0.5` for class 4, `0.3` for class 5, `0.35` otherwise, times `clip(C / max(L, 1e-4), 0.5, 2)^0.4` except for class 5. `M = clamp(ℓ Mlit + (1 − ℓ) Munlit, 0, 8)`.
+- Lamp emitters (class 3 chandelier bulbs, class 4 dome lamps, class 5 cove strip) and fixtures (class 6) at lamp level ℓ ∈ [0, 1] of their group: `Mlit = 1 + (β − 1) × smoothstep(0.45, 0.9, L)` for classes 3 and 4, where β is the setting's emitter boost: 1 at the captured setting, so the captured setting stays exactly neutral, and 4 for the proof's night with the lamps lit; `1` for class 5, and the interior rule for class 6. `Munlit = (A E) / max(C, 1e-4)` with `A = 0.5` for class 4, `0.3` for class 5, `0.35` otherwise, times `clip(C / max(L, 1e-4), 0.5, 2)^0.4` except for class 5. `M = clamp(ℓ Mlit + (1 − ℓ) Munlit, 0, 8)`.
 - Hidden (class 2: outside the hall, the environment shell, pane haze): alpha 0.
 
 ## File Structure
@@ -700,6 +700,25 @@ git commit -m "feat(relight): move the proof's light model into tools/relight, p
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
+**As built (30 September).** Execution found six issues in the text above. The committed code and the task report
+(`task-2-report.md` in the SDD workspace) are the record:
+
+- Step order: `extract geometry occupancy cookie bases tables fresnel lamp-colour fit embrasure-room embrasure-back`.
+  `03c` and `03d` read `fit_state.npz`, which only `04_fit.py` writes, so the fit runs before them, as it did in the
+  proof.
+- `tables` splits every N-row array of `splats.npz`, `geom.npz` and `bases.npz` into `npy/<archive>_<key>.npy` (the
+  proof did this with inline code that was not saved). `lamp-colour` validates the proof's measured
+  `lamp_daylight_ratio.json` and copies it.
+- Every proof step is CPU-only and takes no GPU lock. `gpulock.hold` removes only its own record
+  (`tests/test_gpulock.py`).
+- `paths.panoramas` names the Matterport panorama folder, which is not under the audit folder.
+- Step 9's weight metric compares only weights at least 1e-6 in both fits. `ch_centre` sits at the solver's lower bound
+  (about 1e-11), where the original metric turns an 8.5e-8 absolute change into 0.0855.
+- This PC corrupts some computations under load. Run 1 had 21 wrong probe values out of 36 million. The data was rerun
+  step by step in separate processes and checked array by array against the proof. Any difference is settled by a
+  third run and a majority vote. Tasks 3 to 5 follow the same rule: each data-producing command runs twice, and the
+  outputs must match byte for byte.
+
 ### Task 3: Windows: stencils, horizons and sun reach
 
 **Files:**
@@ -947,7 +966,6 @@ def cmd_check_stencils(cfg, args) -> int:
     import numpy as np
     import common, lt
     from . import windows as W
-    from .gpulock import hold
     planes, wz = windows_planes(cfg)
     xs = np.arange(common.X0 + 0.05, common.X1 - 0.05, 0.05); ys = np.arange(common.Y0 + 0.05, common.Y1 - 0.05, 0.05)
     X, Y = np.meshgrid(xs, ys, indexing="ij")
@@ -958,8 +976,7 @@ def cmd_check_stencils(cfg, args) -> int:
     for (y, mo, d, hh, mi) in [(2026, 5, 31, 8, 0), (2026, 6, 21, 6, 0), (2026, 6, 21, 9, 0), (2026, 3, 20, 9, 0), (2026, 12, 21, 10, 30)]:
         az, el = common.solar_position(y, mo, d, hh, mi)
         s = common.sun_vec_e57(az, el)
-        with hold("relight-bake check-stencils"):
-            t3 = lt.sun_direct(occ, P, s).numpy()
+        t3 = lt.sun_direct(occ, P, s).numpy()          # the proof's 3D march, torch on the CPU
         t2 = sum(W.visibility(p, P, s) for p in planes.values()) * fres[int(round(min(abs(s[1]), 1.0) * 100))]
         a, b = t3 > 0.3, t2 > 0.3
         union = a | b
@@ -1107,7 +1124,7 @@ Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Bake the coarse probes and calibrate the sun bounce**
 
-Register a `probes` command. It runs under the GPU lock and does, in order:
+Register a `probes` command. It runs on the CPU (the proof's torch code has no CUDA; it takes no GPU lock) and does, in order:
 
 1. `P, shape, origin = probes.coarse_grid(cfg.room["hallE57"], cfg.room["probeSpacing"])`; `valid = probes.valid_mask(P, cfg.room["hallE57"])`.
 2. Loads `patches.npz` and the fitted patch albedo from `fit_state.npz`: print `np.load(...).files` and use the array `04_fit.py` saves as the patch albedo (the proof's `05_relight.py` reads it as `FIT["rho"]`).
@@ -1137,7 +1154,7 @@ def floor_grid(floor_manifest, texel):
     return {"w": int(round(width_m / texel)), "h": int(round(height_m / texel)), "width": width_m, "height": height_m}
 ```
 
-The `floor` command: read `<floorSkin>/manifest.json` (v1); read the grid's field names from `packages/web/src/lib/floor-skin.ts` (`FloorSkinManifestSchema.grid`) and use them in `floor_grid` if they differ from `cols`/`rows`/`texel`; build the texel centres at `cfg.room["floorTexel"]` in the capture frame from the grid's mapping (the inverse of `captureToMaskMatrix` in `lib/floor-skin.ts`); convert them to e57 with `common.json_to_e57`; set z to the fitted floor plane + 0.02 m; and compute the nine direct values exactly as `proof/03_bases.py` computes its patch direct light (the block that fills `Pw`, `Pch`, `Pdome`, `Pcove` before `np.savez(f"{WORK}/patches.npz", ...)`), with the texel centres as the points, normals +z, and the windows combined with `SKY_W`. Save `<work>/floor-light.npz` with `D` (h, w, 9) float32 and `texelToModel` (4, 4). Run it under the GPU lock.
+The `floor` command: read `<floorSkin>/floor-skin.json` (v1; the floor-skin builder names its manifest `floor-skin.json`); read the grid's field names from `packages/web/src/lib/floor-skin.ts` (`FloorSkinManifestSchema.grid`) and use them in `floor_grid` if they differ from `cols`/`rows`/`texel`; build the texel centres at `cfg.room["floorTexel"]` in the capture frame from the grid's mapping (the inverse of `captureToMaskMatrix` in `lib/floor-skin.ts`); convert them to e57 with `common.json_to_e57`; set z to the fitted floor plane + 0.02 m; and compute the nine direct values exactly as `proof/03_bases.py` computes its patch direct light (the block that fills `Pw`, `Pch`, `Pdome`, `Pcove` before `np.savez(f"{WORK}/patches.npz", ...)`), with the texel centres as the points, normals +z, and the windows combined with `SKY_W`. Save `<work>/floor-light.npz` with `D` (h, w, 9) float32 and `texelToModel` (4, 4): the matrix that maps a texel centre's `(col, row, 0, 1)` to the model frame, row 0 being the first PNG row (plan R1b relies on exactly this). It runs on the CPU and takes no GPU lock.
 
 Run: `C:/Python313/python.exe -m relight floor --config config/grand-hall.json`
 Expected: `floor-light.npz` with no NaN; print each source's maximum and the share of floor texels with non-zero window light (above 0.9 for W3).
@@ -1227,11 +1244,32 @@ class Rules(unittest.TestCase):
         m = model()
         d, n, f, p, c = splats()
         f[:] = codec.CLASS_CH_EMITTER
-        c[:] = 0.95                                        # a bright bulb: 1 + 3 x smoothstep(0.45, 0.9, L) = 4
-        on, _ = reference.multiplier(d, n, f, p, c, m, reference.Setting.captured(m).with_lamps(1.0))
+        c[:] = 0.95                                        # a bright bulb: 1 + (4 - 1) x smoothstep(0.45, 0.9, L) = 4
+        on, _ = reference.multiplier(d, n, f, p, c, m, reference.Setting.captured(m).with_lamps(1.0).with_emitter_boost(4.0))
         self.assertTrue(np.allclose(on, 4.0, atol=1e-6))
+        neutral, _ = reference.multiplier(d, n, f, p, c, m, reference.Setting.captured(m))
+        self.assertTrue(np.allclose(neutral, 1.0, atol=1e-6))      # the captured setting leaves bulbs as captured
         off, _ = reference.multiplier(d, n, f, p, c, m, reference.Setting.captured(m).with_lamps(0.0))
         self.assertTrue(np.all(off < 1.0))
+
+    def test_the_horizon_blocks_the_sun(self):
+        from dataclasses import replace
+        from relight import windows
+        def plane(y):
+            return windows.Plane(origin=np.array([0.0, y, 3.0]), u=np.array([1.0, 0, 0]), v=np.array([0, 0, -1.0]),
+                                 width=2.0, height=2.0, normal=np.array([0, -1.0, 0]), stencil=np.ones((10, 10), np.float32))
+        base = model()
+        site = (np.array([0, -1.0, 0]), np.array([1.0, 0, 0]), np.array([0, 0, 1.0]))   # north = out of the window
+        s = np.array([0.0, -0.995, 0.0995]); s /= np.linalg.norm(s)                     # azimuth 0, elevation 5.7 deg
+        d, n, f, p, c = splats(1)
+        n[:] = [0.0, -1.0, 0.0]; f[:] = codec.FLAG_SUN; p[:] = [1.0, 1.0, 2.0]
+        setting = replace(reference.Setting.captured(base), sun_dir=s, sun_rgb=np.ones(3))
+        open_m = replace(base, windows={"W1": (plane(0.0), plane(-0.5))}, horizons={"W1": np.zeros(360)}, site=site)
+        shut_m = replace(open_m, horizons={"W1": np.full(360, 90.0)})
+        lit, _ = reference.multiplier(d, n, f, p, c, open_m, setting)
+        shut, _ = reference.multiplier(d, n, f, p, c, shut_m, setting)
+        self.assertTrue(np.all(lit > 1.0 + 1e-3))
+        self.assertTrue(np.allclose(shut, 1.0, atol=1e-9))
 
 
 if __name__ == "__main__":
@@ -1254,7 +1292,7 @@ The browser's GPU kernel (plan R1b) must match this within the codec's precision
 vectors written by `python -m relight check` hold both inputs and expected outputs."""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -1281,6 +1319,8 @@ class Model:
     fresnel: np.ndarray          # (101,)
     sun_beta: float
     sky_flux: np.ndarray         # (5,)
+    horizons: dict = field(default_factory=dict)   # name -> (360,) horizon elevation in degrees by azimuth
+    site: tuple | None = None    # (north, east, up) unit vectors in the model frame
 
 
 @dataclass(frozen=True)
@@ -1291,12 +1331,13 @@ class Setting:
     lamp_levels: dict            # group -> level 0..1
     sun_dir: np.ndarray | None   # (3,) toward the sun, model frame
     sun_rgb: np.ndarray          # (3,)
+    emitter_boost: float = 1.0   # 1 at the captured setting; 4 for the proof's night with the lamps lit
 
     @staticmethod
     def captured(model: Model) -> "Setting":
         return Setting(weights=model.capture_w[:, None] * model.capture_c, sky_level=1.0,
                        sky_colour=np.asarray(model.daylight_colour, np.float64).copy(),
-                       lamp_levels={g: 1.0 for g in LAMP_GROUPS}, sun_dir=None, sun_rgb=np.zeros(3))
+                       lamp_levels={g: 1.0 for g in LAMP_GROUPS}, sun_dir=None, sun_rgb=np.zeros(3), emitter_boost=1.0)
 
     def with_sky(self, level: float) -> "Setting":
         w = self.weights.copy()
@@ -1305,6 +1346,9 @@ class Setting:
 
     def with_lamps(self, level: float) -> "Setting":
         return replace(self, lamp_levels={g: level for g in LAMP_GROUPS})
+
+    def with_emitter_boost(self, boost: float) -> "Setting":
+        return replace(self, emitter_boost=boost)
 
 
 def trilinear(model: Model, pos):
@@ -1345,12 +1389,23 @@ def fresnel_at(model: Model, s) -> float:
     return float(model.fresnel[int(round(min(abs(float(s[1])), 1.0) * 100))])
 
 
+def above_horizon(model: Model, name: str, s) -> bool:
+    """True when the sun clears window `name`'s horizon (no horizon data: always true)."""
+    if name not in model.horizons or model.site is None:
+        return True
+    north, east, up = (np.asarray(v, np.float64) for v in model.site)
+    s = np.asarray(s, np.float64)
+    el = float(np.degrees(np.arcsin(np.clip(s @ up, -1.0, 1.0))))
+    az = float(np.degrees(np.arctan2(s @ east, s @ north))) % 360.0
+    return el > float(model.horizons[name][int(round(az)) % 360])
+
+
 def sunlit_glass_area(model: Model, s) -> np.ndarray:
     """(5,): each window's glass area lit through both stencils, times the cosine to the wall normal."""
     area = np.zeros(5)
     for w, name in enumerate(WINDOWS):
         planes = model.windows.get(name)
-        if planes is None:
+        if planes is None or not above_horizon(model, name, s):
             continue
         inner, glass = planes
         h, wd = glass.stencil.shape
@@ -1381,7 +1436,8 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
         reach = (flags & codec.FLAG_SUN) > 0
         vis = np.zeros(len(n))
         if reach.any():
-            vis[reach] = sum(visibility(planes, np.asarray(pos)[reach], s) for planes in model.windows.values())
+            vis[reach] = sum(visibility(planes, np.asarray(pos)[reach], s)
+                             for name, planes in model.windows.items() if above_horizon(model, name, s))
         vis *= fresnel_at(model, s)
         cosv = np.where(iso, 0.25, np.clip(n @ s, 0, None))
         E = E + (vis * cosv)[:, None] * setting.sun_rgb[None]
@@ -1405,7 +1461,7 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
         c_fx = cls[fx]
         bulb = np.isin(c_fx, [codec.CLASS_CH_EMITTER, codec.CLASS_DOME_EMITTER])[:, None]
         cove = (c_fx == codec.CLASS_COVE)[:, None]
-        lit = np.where(bulb, (1.0 + 3.0 * smoothstep(0.45, 0.9, L[fx]))[:, None], np.where(cove, 1.0, M[fx]))
+        lit = np.where(bulb, (1.0 + (setting.emitter_boost - 1.0) * smoothstep(0.45, 0.9, L[fx]))[:, None], np.where(cove, 1.0, M[fx]))
         chroma = np.clip(C[fx] / np.maximum(L[fx], 1e-4)[:, None], 0.5, 2.0) ** 0.4
         A = np.where((c_fx == codec.CLASS_DOME_EMITTER)[:, None], 0.5, 0.35) * chroma
         A = np.where(cove, 0.3, A)
@@ -1418,7 +1474,7 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_reference -v`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Write the records and transfer, with tests**
 
@@ -1515,7 +1571,7 @@ Register a `records` command that:
 1. Loads the Task 2 tables (memory-mapped) and computes per finest-level splat, in chunks: `direct` (N, 9) from the proof's `04_fit.direct(store, idx)` (ten bases; keep the columns W1..W5, cove, ch_end, ch_centre, dome in that order and drop `sun_cap`, whose fitted weight is 0), with the embrasure room-side and back-face light that `03c`/`03d` produce folded into the window columns exactly as `04_fit.direct` already combines them for class 1; normals `bases_n` (e57 frame); `iso` from `bases_iso`; exterior and pane haze from `05_relight.exterior_masks`; the cove strip from `05_relight.cove_strip`; `fixture` = `geom_chand_id >= 0` with class 0; the centre chandelier's id as `03_bases.py` assigns it to `E_ch` column 1; and `reach` = `windows.sun_reach` over `windows.sun_directions(common.solar_position, common.sun_vec_e57)` for classes 0 and 1 only (numpy; no GPU lock needed).
 2. Splits them per finest tile with `splats_tile` (the order of `cfg.room["finestTiles"]`); `ranges = [codec.source_range(direct[:, k]) for k in range(9)]` over all finest splats.
 3. For each of the other 12 served tiles (every `*.sog` in `cfg.paths["splats"]` not in `finestTiles`): decode the centres with `decode_tile`, convert them to e57 with `common.json_to_e57`, then transfer `direct` (k = `cfg.room["transferNeighbours"]`, 8) and, with k = 1, the normals, class, iso, reach, chandelier id, cove, fixture and pane values; recompute the flags with `flags_for`.
-4. Writes the package with `package.write`; the manifest's `tiles` list holds each tile's name, the SHA-256 of the `.sog` file, its level (from the bundle file: 5 for the finest, `null` for `env.sog`), count, file, SHA-256 and size.
+4. Writes the package with `package.write`, with `site.north = common.sun_vec_e57(0, 0)`, `site.east = common.sun_vec_e57(90, 0)` and `site.up = [0, 0, 1]` (so the browser's sun matches the proof's), and each window's horizon table from `windows.npz`; the manifest's `tiles` list holds each tile's name, the SHA-256 of the `.sog` file, its level (from the bundle file: 5 for the finest, `null` for `env.sog`), count, file, SHA-256 and size.
 
 Run: `C:/Python313/python.exe -m relight records --config config/grand-hall.json`
 Expected: `D:/claude/splats/trades-hall/grand-hall/relight/v1/` holds `manifest.json`, 24 `tiles/*.relight.gz`, `probes.bin.gz`, `probe-valid.bin.gz`, 10 stencils and 3 floor maps; the tile counts sum to 11,487,038.
@@ -1529,7 +1585,7 @@ Register a `check` command that reads the package back from disk (never in-memor
 3. **Transfer:** for each coarser tile, the median |Δlog2| between a coarse splat's night multiplier and its nearest finest splat's ≤ 0.1.
 4. **Determinism:** writing the package a second time into a temporary folder on D: gives byte-identical files.
 
-Then write `packages/web/src/lib/relight/__fixtures__/relight-vectors.json`: 64 finest-level splats chosen across classes (16 interior, 16 embrasure, 8 bulbs, 8 fixtures and cove, 8 sun-reachable floor, 8 hidden), each with its 12-byte record (hex), position (e57), captured linear colour and the expected `M`, `alpha` and packed `uint32` for three settings (`captured`, `night`, `sunny_morning` with its sun direction and RGB); plus what the kernel needs from the manifest (encoding ranges, capture weights and colours, the probe block around those splats with its origin, the Fresnel table, the five windows' planes with stencils as base64 PNGs, `beta`, `skyFlux`). Keep it under 400 kB. Record `capturedIdentity`, `proofRegression`, `transfer` and `determinism` in the manifest's `evidence` too.
+Then write `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` in exactly the shape of `RelightVectorsSchema` (schema `venviewer.relight-vectors.v1`) defined in plan R1b's Task 4, `docs/superpowers/plans/2026-09-29-restored-hall-r1b-relit-browser.md`: read that block and the helper schemas above it before writing, and include each setting's `emitterBoost` (1 for `captured`, 4 for `night`) and the horizon tables. Its content: 64 finest-level splats chosen across classes (16 interior, 16 embrasure, 8 bulbs, 8 fixtures and cove, 8 sun-reachable floor, 8 hidden), each with its 12-byte record (hex), position (e57), captured linear colour and the expected `M`, `alpha` and packed `uint32` for three settings (`captured`, `night`, `sunny_morning` with its sun direction and RGB); plus what the kernel needs from the manifest (encoding ranges, capture weights and colours, the probe block around those splats with its origin, the Fresnel table, the five windows' planes with stencils as base64 PNGs, `beta`, `skyFlux`). Keep it under 400 kB. Record `capturedIdentity`, `proofRegression`, `transfer` and `determinism` in the manifest's `evidence` too.
 
 Run: `C:/Python313/python.exe -m relight check --config config/grand-hall.json`
 Expected: `checks.json` with all four `pass: true`, and the fixture written. If a check fails, stop and report the numbers.
@@ -1572,7 +1628,7 @@ Prepare the input folder that the prototype's README ("Plugging into the floor-s
 cd D:/claude/real-hall/repo && C:/Python313/python.exe tools/floor-skin/build_floor_skin.py --arm R --room grand-hall --floor D:/claude/relight/grand-hall/floor-R-inputs --out D:/claude/splats/trades-hall/grand-hall/floor-skin/v2 --albedo-luminance 0.3218
 ```
 
-Expected: v2 written; the builder's slab-mask check passes (the mask equals Arm C's); `manifest.json` shows arm R, `restored-albedo` and the scale.
+Expected: v2 written; the builder's slab-mask check passes (the mask equals Arm C's); `floor-skin.json` (the builder's manifest name) shows arm R, `restored-albedo` and the scale.
 
 - [ ] **Step 3: Document and commit**
 
@@ -1597,9 +1653,18 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 `tools/relight/README.md`: what the bake makes (link the contract), the commands in order (`proof all`, `windows`, `check-stencils`, `probes`, `floor`, `records`, `check`), the GPU-lock and D: rules, each step's time on this PC (from the logs), and how to publish.
 
-- [ ] **Step 2: Publish both packages to R2**
+- [ ] **Step 2: Teach the publisher nested package folders**
 
-The R2 credentials stay in `packages/api/.env`, so run the publisher from the shared checkout's `packages/api`, as I1a did. Use the flags `tools/floor-skin/README.md` documents for publishing a package version (`--package` with the staged folder and the R2 prefix); the publisher refuses to overwrite an existing version. Publish `D:/claude/splats/trades-hall/grand-hall/relight/v1` to `splats/trades-hall/grand-hall/relight/v1`, and `…/floor-skin/v2` to `splats/trades-hall/grand-hall/floor-skin/v2`. Then check one file of each:
+The relight package has subfolders (`tiles/`, `windows/`, `floor/`), and `packages/api/src/scripts/publish-splat-tiles.ts --package` today collects only the files directly inside the version folder. Read the script's `--package` path and its test file `packages/api/src/scripts/__tests__/publish-splat-tiles.test.ts` first, then test first:
+
+1. Add tests: a package folder with `manifest.json`, `tiles/a.relight.gz` and `windows/W1-glass.png` publishes all three under the prefix with their relative paths (`<prefix>/tiles/a.relight.gz`); `.gz` objects are uploaded with `Content-Type: application/octet-stream` and no `Content-Encoding` (the browser gunzips them itself; a `Content-Encoding: gzip` header would make the browser decompress twice); `.png` gets `image/png` and `.json` `application/json`; every object keeps the immutable cache header the script already sets.
+2. Run them and see them fail: `pnpm --filter @omnitwin/api exec vitest run src/scripts/__tests__/publish-splat-tiles.test.ts`.
+3. Make the file collection recursive (relative paths with `/` separators) and the content types as above, changing nothing else.
+4. Run the same command and see them pass; commit with explicit pathspecs.
+
+- [ ] **Step 3: Publish both packages to R2**
+
+The R2 credentials stay in `packages/api/.env`, so run this worktree's publisher script (the one Step 2 changed) with the working directory set to the shared checkout's `packages/api`, where the script reads `.env` in place, as I1a did; never copy `.env`. Use the flags `tools/floor-skin/README.md` documents for publishing a package version (`--package` with the staged folder and the R2 prefix); the publisher refuses to overwrite an existing version. Publish `D:/claude/splats/trades-hall/grand-hall/relight/v1` to `splats/trades-hall/grand-hall/relight/v1`, and `…/floor-skin/v2` to `splats/trades-hall/grand-hall/floor-skin/v2`. Then check one file of each:
 
 ```bash
 curl -sI https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats/trades-hall/grand-hall/relight/v1/manifest.json | grep -iE "^HTTP|content-type|cache-control"
@@ -1608,7 +1673,7 @@ curl -sI https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats/trades-hall/
 
 Expected: 200, a JSON content type, immutable caching.
 
-- [ ] **Step 3: Record and commit**
+- [ ] **Step 4: Record and commit**
 
 Add a section to the day's session log: what was baked, the six checks with their numbers (stencil sun, sun bounce, captured identity, proof regression, transfer, determinism), sizes and times, and the R2 paths. Update T-639's row in `docs/state/tasks.md` (R1a done; R1b next).
 
