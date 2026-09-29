@@ -1290,6 +1290,15 @@ Evidence and sources: [research/completeness.md](research/completeness.md), [res
 
 Grouped by theme, with the themes that block the most work first. Every question has a recommended default, so work can continue while it is open.
 
+**Answered on 29 September**, through the question form:
+- A10 took the default. The client's own layout goes with a proposal, staff may leave it out, venue-drawn layouts
+  come later, and the client page's closing line becomes "Numbers and layout are planning estimates; the events
+  team confirms them."
+- A client's own words on the proposal page (a question, a request for changes, a note with an acceptance) reach
+  the team as written. The claim guard stays on the venue's words.
+- Managers, as well as venue admins, change inventory stock. Each change records who made it and their role (part
+  of C2).
+
 ### A. What we build first, and how money moves (blocks Tier A and X1)
 
 | # | Question | Recommended default | Blocks |
@@ -1303,7 +1312,7 @@ Grouped by theme, with the themes that block the most work first. Every question
 | A7 | Pipeline value: raw total of open deals, or weighted by stage? Must every lost deal carry a reason? Should approving an enquiry create the deal automatically? | Raw open value plus "Won this month"; reason required from presets; keep deal creation as the one-click next step | X1; analytics |
 | A8 | Will quotes carry a service charge? (If so, the 2024 tips law applies: a written policy and records per worker.) Should Trades Hall run ticketed or shared nights (a Christmas party night sold by the table)? Should small standard bookings be bookable instantly, against the default of no public live availability? | No service charge until the policy exists; no ticketing; no instant booking until turnaround estimates can say which slots are really free | Quote engine; items 38 and 39; public pages |
 | A9 | The rota (T-637): which roles does the Hall employ itself, and which do the caterers supply? Which payroll system? How are casual staff contacted today? | The Hall's own team named; caterer staff as headcount lines; email and in-app, no SMS yet; payroll export later | Item 38 (rota), timesheets |
-| A10 | Which layout does a proposal carry? Built now: the client's own layout from their enquiry, drawn as it stands whenever a version is saved. May staff leave it out? May they send a layout the venue drew in the same room, or an event's approved layout, instead? Over a layout the client drew, should the client page still say "Capacity and layout are the venue team's planning estimates"? | Their own layout; staff may leave it out; venue-drawn layouts later; the page says "Numbers and layout are planning estimates; the events team confirms them." | X1's layout choices on a proposal; the client page's closing line |
+| A10 | **Answered 29 September: the default.** Which layout does a proposal carry? Built now: the client's own layout from their enquiry, drawn as it stands whenever a version is saved. May staff leave it out? May they send a layout the venue drew in the same room, or an event's approved layout, instead? Over a layout the client drew, should the client page still say "Capacity and layout are the venue team's planning estimates"? | Their own layout; staff may leave it out; venue-drawn layouts later; the page says "Numbers and layout are planning estimates; the events team confirms them." | X1's layout choices on a proposal; the client page's closing line |
 
 ### B. The team's own words (blocks every relabelling pass in N3–N5)
 
