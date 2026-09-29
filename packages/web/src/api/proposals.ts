@@ -365,9 +365,10 @@ export async function updateProposalTitle(id: string, title: string): Promise<St
 
 /** Leaves the layout out of the versions saved from now (A10), with null, or
  *  puts the client's own back by naming it: the server takes a layout only if
- *  it is still the one on their enquiry. */
-export async function changeProposalLayout(id: string, configurationId: string | null): Promise<StaffProposal> {
-  return api.patch(`/proposals/${id}`, { configurationId }, StaffProposalSchema);
+ *  it is still the one on their enquiry, and only while the proposal stands
+ *  where the screen showed it. */
+export async function changeProposalLayout(id: string, configurationId: string | null, expectedStatus: string): Promise<StaffProposal> {
+  return api.patch(`/proposals/${id}`, { configurationId, expectedStatus }, StaffProposalSchema);
 }
 
 /** Moves it, answering with its row as the desk now reads it: the figure that

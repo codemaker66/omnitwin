@@ -26,6 +26,10 @@
   order: -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px;
   font-size: 16px; font-weight: 400; line-height: 1.4; letter-spacing: 0;
 }
+/* Focus lands here, on what is said, only when its control has gone. */
+.pr-facts__act:focus { outline: none; }
+/* What Send still shares, on a line of its own under the control. */
+.pr-facts__saved { flex-basis: 100%; color: var(--enq-forest-ink-2); font-size: 14.5px; }
 
 .pr-deal { margin-top: 14px; }
 .pr-deal .enq-quiet { gap: 6px; }

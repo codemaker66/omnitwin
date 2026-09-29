@@ -161,10 +161,14 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         return;
       }
       if (rest === "" && method === "PATCH") {
-        // As the route: only while in hand, and a layout named only if it is
-        // their enquiry's own (A10).
-        const body = request.postDataJSON() as { configurationId?: string | null };
+        // As the route: only where the screen showed it, while in hand, and a
+        // layout named only if it is their enquiry's own (A10).
+        const body = request.postDataJSON() as { configurationId?: string | null; expectedStatus?: string };
         const theirs = current.enquiryLayoutId ?? null;
+        if (body.expectedStatus !== undefined && body.expectedStatus !== current.status) {
+          void route.fulfill({ status: 409, json: { error: "The proposal changed", code: "PROPOSAL_STATUS_CHANGED" } });
+          return;
+        }
         if (current.status !== "draft" && current.status !== "changes_requested") {
           void route.fulfill({ status: 422, json: { error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" } });
           return;
@@ -364,6 +368,10 @@ test.describe("Proposals desk", () => {
       ...crawford, configurationId: theirs, layoutRoomName: "Grand Hall", layoutFromEnquiry: true,
       enquiryLayoutId: theirs, enquiryLayoutRoomName: "Grand Hall",
     });
+    // Version 1 was saved carrying their layout.
+    const [saved] = emulator.versions.get(CRAWFORD) ?? [];
+    if (saved === undefined) throw new Error("Missing the Crawford version");
+    emulator.versions.set(CRAWFORD, [{ ...saved, payload: { ...saved.payload, configurationId: theirs } }]);
     await page.goto(`/dashboard?view=proposals&proposal=${CRAWFORD}`);
     const panel = page.getByRole("region", { name: "Crawford wedding proposal" });
     const layout = panel.getByTestId("proposal-layout");
@@ -378,20 +386,28 @@ test.describe("Proposals desk", () => {
     await page.screenshot({ path: test.info().outputPath("proposal-layout-desk.png") });
 
     // Staff may leave their layout out of the versions saved from now, and
-    // put it back (A10); the facts and the composer say which goes out.
+    // put it back (A10), from the keyboard, where focus stays; the facts, the
+    // composer and a line on the version Send shares say which goes out.
     const choice = panel.getByTestId("layout-choice");
     await expect(choice).toHaveText("Leave their layout out");
-    await choice.click();
+    await expect(panel.getByTestId("layout-saved")).toHaveCount(0);
+    await choice.focus();
+    await page.keyboard.press("Enter");
     await expect(layout).toHaveText("None");
     await expect(choice).toHaveText("Put back their Grand Hall layout");
+    await expect(choice).toBeFocused();
     await expect(panel.getByTestId("composer-layout")).toHaveCount(0);
+    await expect(panel.getByTestId("layout-saved"))
+      .toHaveText("Version 1, the one Send shares, still carries their layout. Save version 2 to send it without.");
     await expect(panel.getByRole("status").filter({ hasText: "Their Grand Hall layout is left out of the versions you save from now." }))
       .toHaveCount(1);
     expect(emulator.proposals.get(CRAWFORD)?.configurationId).toBeNull();
     await page.screenshot({ path: test.info().outputPath("proposal-layout-left-out.png") });
-    await choice.click();
+    await page.keyboard.press("Enter");
     await expect(layout).toHaveText("Their own, Grand Hall");
     await expect(choice).toHaveText("Leave their layout out");
+    await expect(choice).toBeFocused();
+    await expect(panel.getByTestId("layout-saved")).toHaveCount(0);
     expect(emulator.proposals.get(CRAWFORD)?.configurationId).toBe(theirs);
 
     await page.setViewportSize({ width: 390, height: 844 });

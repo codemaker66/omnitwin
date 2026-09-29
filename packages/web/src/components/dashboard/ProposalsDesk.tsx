@@ -93,6 +93,10 @@ const MOVED_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   reply: "It changed before the reply arrived, so it was not posted. Your words are still here.",
   layout: "It changed before that arrived, so the layout did not change. It now shows where it stands.",
 };
+/** A change to the layout whose answer never came back, or came back broken:
+ *  it may have been made, so the proposal is read again rather than said to
+ *  be as it was. */
+const LAYOUT_UNCONFIRMED_WORDS = "The change could not be confirmed. It now shows the layout as it stands.";
 /** A version refused because what it would take changed after its check, or
  *  its links changed as it arrived. The start line above says what is known
  *  of it now, checked again or not, so this claims nothing more. */
@@ -714,18 +718,25 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
   });
 
   // Leaves the client's own layout out of the versions saved from now, or puts
-  // it back (A10). The proposal is read again, and with its layout the check of
-  // what the next version takes is made again.
+  // it back (A10), only while the proposal stands where this screen shows it.
+  // Its answer is shown at once; the proposal and the ledger are read again,
+  // and with its layout the check of what the next version takes is made again.
   const onLayout = (change: LayoutChoice["change"]): Promise<boolean> => attempt("layout", "layout", async (id) => {
     const choice = proposal === null ? null : layoutChoice(proposal);
-    if (choice?.change !== change) return null;
-    await changeProposalLayout(id, choice.configurationId).catch((error: unknown) => {
-      // Their layout, enquiry or deal changed under it: nothing was done, and
-      // the panel is read again to show it as it is.
-      if (error instanceof ApiError && (error.code === "NOT_FOUND" || error.code === "LINK_MISMATCH")) readAgain(id);
-      throw error;
+    if (proposal === null || choice?.change !== change) return null;
+    const changed = await changeProposalLayout(id, choice.configurationId, proposal.status).catch((error: unknown) => {
+      // Whatever the answer, the panel is read again to show the proposal as
+      // it is. A refusal changed nothing; with no answer, or a broken one,
+      // the change may have been made, so that is not said.
+      readAgain(id);
+      if (error instanceof ApiError && error.status >= 400 && error.status < 500) throw error;
+      throw new RefusedHere(LAYOUT_UNCONFIRMED_WORDS);
     });
+    const carried = changed.configurationId !== null;
+    applyProposal({ id, configurationId: changed.configurationId, updatedAt: changed.updatedAt,
+      layoutRoomName: carried ? choice.room : null, layoutFromEnquiry: carried });
     readAgain(id);
+    readList(Math.max(PAGE, rows.length));
     return change === "leave_out"
       ? `Their ${choice.room} layout is left out of the versions you save from now.`
       : `Their ${choice.room} layout goes with the versions you save from now.`;

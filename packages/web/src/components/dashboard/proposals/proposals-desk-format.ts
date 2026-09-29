@@ -131,8 +131,9 @@ export function layoutFact(proposal: LayoutFields, inHand = true): { readonly wo
 
 /** What staff may do with a proposal's layout while it is in hand (A10): leave
  *  the client's own out of the versions saved from now, or put it back. Only
- *  ever their own, and only while it is live, so whatever is done here can be
- *  undone here. */
+ *  their enquiry's own layout, and only while the API names it (live, in a
+ *  live room, with the proposal's links agreeing), so whatever is done here
+ *  can be undone here and the server takes it. */
 export interface LayoutChoice {
   readonly change: "leave_out" | "take_back";
   readonly label: string;
@@ -142,16 +143,30 @@ export interface LayoutChoice {
   readonly configurationId: string | null;
 }
 
-export function layoutChoice(proposal: LayoutFields & Pick<DeskProposal, "enquiryLayoutId" | "enquiryLayoutRoomName">): LayoutChoice | null {
-  if (proposal.configurationId !== null) {
-    const room = proposal.layoutRoomName ?? null;
-    return proposal.layoutFromEnquiry === true && room !== null
-      ? { change: "leave_out", label: "Leave their layout out", room, configurationId: null } : null;
-  }
+export function layoutChoice(proposal: Pick<DeskProposal, "configurationId" | "enquiryLayoutId" | "enquiryLayoutRoomName">): LayoutChoice | null {
   const theirs = proposal.enquiryLayoutId ?? null;
   const room = proposal.enquiryLayoutRoomName ?? null;
-  return theirs === null || room === null ? null
-    : { change: "take_back", label: `Put back their ${room} layout`, room, configurationId: theirs };
+  if (theirs === null || room === null) return null;
+  if (proposal.configurationId === theirs) return { change: "leave_out", label: "Leave their layout out", room, configurationId: null };
+  if (proposal.configurationId === null) return { change: "take_back", label: `Put back their ${room} layout`, room, configurationId: theirs };
+  return null;
+}
+
+/** What Send would share while the saved version still says otherwise than
+ *  the choice made (A10): leaving their layout out, or putting it back, is
+ *  for versions saved from now. Nothing while the version is not read. */
+export function savedLayoutWords(choice: LayoutChoice | null, saved: {
+  readonly version: number; readonly payload: { readonly configurationId: string | null };
+} | null, currentVersion: number): string | null {
+  if (choice === null || saved === null || saved.version !== currentVersion) return null;
+  const next = String(saved.version + 1);
+  if (choice.change === "take_back" && saved.payload.configurationId === choice.configurationId) {
+    return `Version ${String(saved.version)}, the one Send shares, still carries their layout. Save version ${next} to send it without.`;
+  }
+  if (choice.change === "leave_out" && saved.payload.configurationId === null) {
+    return `Version ${String(saved.version)}, the one Send shares, carries no layout. Save version ${next} to send theirs.`;
+  }
+  return null;
 }
 
 /** What the composer says of the layout a version will carry, only while

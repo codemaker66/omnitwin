@@ -10,8 +10,8 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
   EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
-  layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, type ComposerDraft, type KeptVersion,
-  type LayoutChoice, type QuoteLineDraft, type TakenCheck,
+  layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, savedLayoutWords, type ComposerDraft,
+  type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -278,7 +278,8 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         </p>
         {props.refreshing && <ActivityStatus className="enq-panel__activity">Refreshing the proposal…</ActivityStatus>}
 
-        <Facts proposal={proposal} nowMs={props.nowMs} working={props.working} failure={props.failure} onLayout={props.onLayout} />
+        <Facts proposal={proposal} nowMs={props.nowMs} latest={props.latest} working={props.working} failure={props.failure}
+          onLayout={props.onLayout} headingRef={headingRef} />
         {proposal.opportunityId !== null && props.onOpenDeal !== null && (
           <div className="enq-actions pr-deal">
             <button type="button" className="enq-quiet" onClick={() => { if (proposal.opportunityId !== null) props.onOpenDeal?.(proposal.opportunityId); }}>
@@ -301,10 +302,10 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
 // Who it is for, when, and what it comes to
 // ---------------------------------------------------------------------------
 
-function Facts({ proposal, nowMs, working, failure, onLayout }: {
-  readonly proposal: DeskProposal; readonly nowMs: number;
+function Facts({ proposal, nowMs, latest, working, failure, onLayout, headingRef }: {
+  readonly proposal: DeskProposal; readonly nowMs: number; readonly latest: PartRead<StaffProposalVersion>;
   readonly working: ProposalWork; readonly failure: ProposalFailure | null;
-  readonly onLayout: ProposalPanelProps["onLayout"];
+  readonly onLayout: ProposalPanelProps["onLayout"]; readonly headingRef: RefObject<HTMLHeadingElement>;
 }): ReactElement {
   const date = eventDateParts(proposal.eventDate);
   const weekday = eventWeekday(proposal.eventDate);
@@ -313,7 +314,21 @@ function Facts({ proposal, nowMs, working, failure, onLayout }: {
   const layout = layoutFact(proposal, inHand);
   // Only while it is in hand: a version with the client keeps what it carried.
   const choice = inHand ? layoutChoice(proposal) : null;
+  const saved = savedLayoutWords(choice, latest.value, proposal.currentVersion);
   const layoutFailed = failure?.where === "layout" ? failure.message : null;
+  // Focus stays on the layout's control through its work and its new words:
+  // it is marked unavailable while working, never disabled. If the control
+  // goes (the proposal moved on, or their layout went), focus goes to what
+  // is said in its place, or else to the proposal's name.
+  const heldRef = useRef<HTMLButtonElement | null>(null);
+  const actRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const held = heldRef.current;
+    if (held === null || held.isConnected) return;
+    heldRef.current = null;
+    const active = document.activeElement;
+    if (active === null || active === document.body) (actRef.current ?? headingRef.current)?.focus();
+  });
   return (
     <dl className="enq-facts pr-facts">
       <div>
@@ -345,15 +360,19 @@ function Facts({ proposal, nowMs, working, failure, onLayout }: {
           <dt>layout</dt>
           <dd className={layout.muted ? "enq-facts__muted" : "enq-facts__room"} data-testid="proposal-layout">{layout.words}</dd>
           {(choice !== null || layoutFailed !== null) && (
-            <dd className="pr-facts__act">
+            <dd className="pr-facts__act" ref={actRef} tabIndex={-1}>
               {choice !== null && (
-                <button type="button" className="enq-quiet" data-testid="layout-choice" disabled={working !== null}
-                  aria-busy={working === "layout"} onClick={() => { void onLayout(choice.change); }}>
+                <button type="button" className="enq-quiet" data-testid="layout-choice" aria-disabled={working !== null}
+                  aria-busy={working === "layout"}
+                  onFocus={(event) => { heldRef.current = event.currentTarget; }}
+                  onBlur={(event) => { if (heldRef.current === event.currentTarget) heldRef.current = null; }}
+                  onClick={() => { if (working === null) void onLayout(choice.change); }}>
                   {working === "layout" && <ActivityIndicator size={18} />}
                   {working === "layout" ? (choice.change === "leave_out" ? "Leaving their layout out…" : "Putting their layout back…") : choice.label}
                 </button>
               )}
               {layoutFailed !== null && <span className="enq-confirm__error" role="alert">{layoutFailed}</span>}
+              {saved !== null && <span className="pr-facts__saved" data-testid="layout-saved">{saved}</span>}
             </dd>
           )}
         </div>

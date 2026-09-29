@@ -805,11 +805,11 @@ describe("the layout it carries", () => {
   }
   const said = (panel: { readonly getAllByRole: (role: "status") => HTMLElement[] }, words: string): HTMLElement | undefined =>
     panel.getAllByRole("status").find((region) => region.textContent === words);
+  const FACTS = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
 
   it("leaves their layout out of the versions saved from now, puts it back by naming it, and checks the next version again each time", async () => {
     existing = [carrying("layout-1")];
-    const facts = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
-    mocks.getProposalNextVersion.mockResolvedValue({ basedOn: 2, layout: "same", facts: { saved: facts, now: facts }, basis: "b".repeat(64) });
+    mocks.getProposalNextVersion.mockResolvedValue({ basedOn: 2, layout: "same", facts: { saved: FACTS, now: FACTS }, basis: "b".repeat(64) });
     mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => {
       existing = [carrying(configurationId)];
       return Promise.resolve(existing[0]);
@@ -818,45 +818,116 @@ describe("the layout it carries", () => {
     const panel = within(await openProposal());
     expect((await panel.findByTestId("proposal-layout")).textContent).toBe("Their own, Grand Hall");
     await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(1); });
+    const lists = mocks.listProposalDesk.mock.calls.length;
 
     fireEvent.click(panel.getByTestId("layout-choice"));
     await waitFor(() => { expect(said(panel, "Their Grand Hall layout is left out of the versions you save from now.")).toBeDefined(); });
-    expect(mocks.changeProposalLayout).toHaveBeenCalledWith("p1", null);
+    // Only while it stands where the screen shows it.
+    expect(mocks.changeProposalLayout).toHaveBeenCalledWith("p1", null, "changes_requested");
     await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("None"); });
     expect(panel.getByTestId("layout-choice").textContent).toBe("Put back their Grand Hall layout");
     await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(2); });
+    // The ledger is read again, so its row says when it changed.
+    await waitFor(() => { expect(mocks.listProposalDesk.mock.calls.length).toBeGreaterThan(lists); });
 
     fireEvent.click(panel.getByTestId("layout-choice"));
     await waitFor(() => { expect(said(panel, "Their Grand Hall layout goes with the versions you save from now.")).toBeDefined(); });
-    expect(mocks.changeProposalLayout).toHaveBeenLastCalledWith("p1", "layout-1");
+    expect(mocks.changeProposalLayout).toHaveBeenLastCalledWith("p1", "layout-1", "changes_requested");
     await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("Their own, Grand Hall"); });
     expect(panel.getByTestId("layout-choice").textContent).toBe("Leave their layout out");
     await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(3); });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("waits while it changes, and says the proposal is as it was when it fails", async () => {
+  it("shows the answer at once, before the proposal is read again", async () => {
     existing = [carrying("layout-1")];
-    let fail: (error: unknown) => void = () => undefined;
-    mocks.changeProposalLayout.mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
+    mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => Promise.resolve(carrying(configurationId)));
     render(<ProposalsDesk />);
     const panel = within(await openProposal());
-    fireEvent.click(await panel.findByTestId("layout-choice"));
-    const waiting = panel.getByTestId<HTMLButtonElement>("layout-choice");
-    expect(waiting.textContent).toBe("Leaving their layout out…");
-    expect(waiting.disabled).toBe(true);
-    expect(waiting.getAttribute("aria-busy")).toBe("true");
+    await panel.findByTestId("layout-choice");
+    // The read that follows never answers.
+    mocks.getDeskProposal.mockReturnValue(new Promise(() => undefined));
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("None"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Put back their Grand Hall layout");
+  });
+
+  it("keeps focus on the control while it works and as its words change", async () => {
+    existing = [carrying("layout-1")];
+    let answer: (value: unknown) => void = () => undefined;
+    mocks.changeProposalLayout.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const control = await panel.findByTestId<HTMLButtonElement>("layout-choice");
+    control.focus();
+    fireEvent.click(control);
+    // Unavailable while it works, but never disabled, so focus stays on it.
+    expect(control.textContent).toBe("Leaving their layout out…");
+    expect(control.getAttribute("aria-disabled")).toBe("true");
+    expect(control.getAttribute("aria-busy")).toBe("true");
+    expect(control.disabled).toBe(false);
+    expect(document.activeElement).toBe(control);
+    // Pressed again while it works, nothing more is sent.
+    fireEvent.click(control);
+    expect(mocks.changeProposalLayout).toHaveBeenCalledTimes(1);
+    existing = [carrying(null)];
+    await act(async () => { answer(carrying(null)); await Promise.resolve(); });
+    await waitFor(() => { expect(control.textContent).toBe("Put back their Grand Hall layout"); });
+    expect(panel.getByTestId("layout-choice")).toBe(control);
+    expect(control.getAttribute("aria-disabled")).toBe("false");
+    expect(document.activeElement).toBe(control);
+  });
+
+  it("says when the version Send shares still carries their layout once it is left out", async () => {
+    existing = [carrying("layout-1")];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(2, { configurationId: "layout-1" }));
+    mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => {
+      existing = [carrying(configurationId)];
+      return Promise.resolve(existing[0]);
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await panel.findByTestId("layout-choice");
+    expect(panel.queryByTestId("layout-saved")).toBeNull();
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    expect((await panel.findByTestId("layout-saved")).textContent)
+      .toBe("Version 2, the one Send shares, still carries their layout. Save version 3 to send it without.");
+    // Put back, the saved version and the proposal agree again.
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(panel.queryByTestId("layout-saved")).toBeNull(); });
+  });
+
+  it("says the proposal is as it was when the change is refused, and shows it as it is", async () => {
+    existing = [carrying("layout-1")];
+    mocks.changeProposalLayout.mockRejectedValue(new ApiError(422, "Validation failed", "VALIDATION_ERROR"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
     const reads = mocks.getDeskProposal.mock.calls.length;
-    await act(async () => { fail(new Error("offline")); await Promise.resolve(); });
+    fireEvent.click(await panel.findByTestId("layout-choice"));
     expect((await panel.findByRole("alert")).textContent).toBe("The layout did not change. The proposal is as it was.");
+    await waitFor(() => { expect(mocks.getDeskProposal.mock.calls.length).toBeGreaterThan(reads); });
     expect(panel.getByTestId("proposal-layout").textContent).toBe("Their own, Grand Hall");
     const again = panel.getByTestId<HTMLButtonElement>("layout-choice");
     expect(again.textContent).toBe("Leave their layout out");
-    expect(again.disabled).toBe(false);
-    expect(mocks.getDeskProposal).toHaveBeenCalledTimes(reads);
+    expect(again.getAttribute("aria-disabled")).toBe("false");
   });
 
-  it("shows the proposal as it is when their layout went before it could be put back", async () => {
+  it("does not claim nothing changed when the answer is lost, and reads the proposal again", async () => {
+    existing = [carrying("layout-1")];
+    mocks.changeProposalLayout.mockImplementation(() => {
+      // It landed, and the answer never came back.
+      existing = [carrying(null)];
+      return Promise.reject(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    expect((await panel.findByRole("alert")).textContent).toBe("The change could not be confirmed. It now shows the layout as it stands.");
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("None"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Put back their Grand Hall layout");
+  });
+
+  it("shows the proposal as it is when their layout went before it could be put back, keeping focus on what is said", async () => {
     existing = [carrying(null)];
     mocks.changeProposalLayout.mockImplementation(() => {
       // Their layout was removed a moment before the booker's press arrived.
@@ -865,11 +936,14 @@ describe("the layout it carries", () => {
     });
     render(<ProposalsDesk />);
     const panel = within(await openProposal());
-    fireEvent.click(await panel.findByTestId("layout-choice"));
+    const control = await panel.findByTestId("layout-choice");
+    control.focus();
+    fireEvent.click(control);
     expect((await panel.findByRole("alert")).textContent).toBe("The layout did not change. The proposal is as it was.");
     await waitFor(() => { expect(panel.queryByTestId("layout-choice")).toBeNull(); });
     expect(panel.getByTestId("proposal-layout").textContent).toBe("None");
-    expect(panel.getByRole("alert").textContent).toBe("The layout did not change. The proposal is as it was.");
+    // Focus goes to what is said where the control was.
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByRole("alert").closest("dd")); });
   });
 
   it("says the proposal moved first, and shows where it stands, when it was sent before the change arrived", async () => {
@@ -888,10 +962,11 @@ describe("the layout it carries", () => {
     expect(panel.queryByTestId("layout-choice")).toBeNull();
   });
 
-  it("offers nothing once it is with the client, for a layout not theirs, or for one removed", async () => {
+  it("offers nothing once it is with the client, for a layout not theirs, or for one the API does not name", async () => {
     existing = [
       carrying("layout-1", { status: "sent", sentAt: "2026-10-01T09:00:00.000Z" }),
       carrying("layout-2", { id: "p2", title: "Burns supper", layoutFromEnquiry: false }),
+      // Removed, or its links disagreeing with its deal: the API names no layout of theirs.
       carrying("layout-1", { id: "p3", title: "Hogmanay", layoutRoomName: null, enquiryLayoutId: null, enquiryLayoutRoomName: null }),
     ];
     render(<ProposalsDesk />);

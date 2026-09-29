@@ -3,7 +3,7 @@ import type { ProposalFacts, ProposalNextVersion, ProposalVersionPayload } from 
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
   composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutChoice, layoutFact, groupRows, historyMoments,
-  linkVersionWords,
+  linkVersionWords, savedLayoutWords,
   listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, sameWords, startedAgainWords,
   takenChanges,
 } from "../proposals-desk-format.js";
@@ -338,24 +338,40 @@ describe("the layout a proposal carries", () => {
 // proposal, and staff may leave it out.
 describe("leaving the client's layout out, and putting it back", () => {
   const theirs = { enquiryLayoutId: "layout-1", enquiryLayoutRoomName: "Grand Hall" };
-  const carried = { configurationId: "layout-1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true, ...theirs };
-  const leftOut = { configurationId: null, layoutRoomName: null, layoutFromEnquiry: false, ...theirs };
+  const carried = { configurationId: "layout-1", ...theirs };
+  const leftOut = { configurationId: null, ...theirs };
 
-  it("offers to leave their own live layout out, and to put it back by naming it", () => {
+  it("offers to leave their own layout out, and to put it back by naming it", () => {
     expect(layoutChoice(carried)).toEqual({ change: "leave_out", label: "Leave their layout out", room: "Grand Hall", configurationId: null });
     expect(layoutChoice(leftOut))
       .toEqual({ change: "take_back", label: "Put back their Grand Hall layout", room: "Grand Hall", configurationId: "layout-1" });
   });
 
-  it("offers nothing it could not undo: another layout, a removed one, or theirs once it is gone", () => {
-    expect(layoutChoice({ ...carried, layoutFromEnquiry: false })).toBeNull();
-    expect(layoutChoice({ ...carried, layoutRoomName: null, enquiryLayoutId: null, enquiryLayoutRoomName: null })).toBeNull();
+  it("offers nothing it could not undo, or the server would refuse", () => {
+    expect(layoutChoice({ ...carried, configurationId: "layout-2" })).toBeNull();
+    // Removed, in a removed room, or with the proposal's links disagreeing, the API names none.
+    expect(layoutChoice({ ...carried, enquiryLayoutId: null, enquiryLayoutRoomName: null })).toBeNull();
     expect(layoutChoice({ ...leftOut, enquiryLayoutId: null, enquiryLayoutRoomName: null })).toBeNull();
   });
 
   it("offers nothing when the API does not say", () => {
-    expect(layoutChoice({ ...carried, layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
-    expect(layoutChoice({ ...leftOut, enquiryLayoutId: undefined, enquiryLayoutRoomName: undefined })).toBeNull();
+    expect(layoutChoice({ ...carried, enquiryLayoutId: undefined, enquiryLayoutRoomName: undefined })).toBeNull();
     expect(layoutChoice({ ...leftOut, enquiryLayoutRoomName: undefined })).toBeNull();
+  });
+
+  it("says when the version Send shares still carries otherwise than the choice made", () => {
+    const withTheirs = { version: 2, payload: { configurationId: "layout-1" } };
+    const withNone = { version: 2, payload: { configurationId: null } };
+    expect(savedLayoutWords(layoutChoice(leftOut), withTheirs, 2))
+      .toBe("Version 2, the one Send shares, still carries their layout. Save version 3 to send it without.");
+    expect(savedLayoutWords(layoutChoice(carried), withNone, 2))
+      .toBe("Version 2, the one Send shares, carries no layout. Save version 3 to send theirs.");
+    expect(savedLayoutWords(layoutChoice(carried), withTheirs, 2)).toBeNull();
+    expect(savedLayoutWords(layoutChoice(leftOut), withNone, 2)).toBeNull();
+    // Another layout in the version, a version not read or not the latest, or no choice: nothing.
+    expect(savedLayoutWords(layoutChoice(leftOut), { version: 2, payload: { configurationId: "layout-2" } }, 2)).toBeNull();
+    expect(savedLayoutWords(layoutChoice(leftOut), null, 2)).toBeNull();
+    expect(savedLayoutWords(layoutChoice(leftOut), withTheirs, 3)).toBeNull();
+    expect(savedLayoutWords(null, withTheirs, 2)).toBeNull();
   });
 });
