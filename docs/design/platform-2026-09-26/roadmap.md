@@ -745,7 +745,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   counts cover the whole list.
 - The composer is pre-filled from the latest version ("Editing version 3"), with a diff.
   Done: the next version starts from the latest one's message, capacity note and quote lines. On 28 September
-  (on the branch) it was made true of the version. First it said only what the
+  it was made true of the version. First it said only what the
   person had changed, since the drawing and the event are taken afresh at each save; it names the version its
   words came from; and a save written from a version since followed is refused rather than replacing it. Then
   the server said what a save itself will change (`GET /proposals/:id/versions/next`). The composer now names
@@ -757,7 +757,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   unsaved, and the desk belongs to the person signed in, so another account on the same page never sees them.
   Sign Out, and a refusal's Use another account, ask first while the person has any, and the browser never
   asks once they have signed out.
-  That is on the branch, and goes to master after its final review.
+  That is live since 29 September (`ee68ec52`).
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
   made, as links are kept hashed. Preview as the client is done (28 September):
