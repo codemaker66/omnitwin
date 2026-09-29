@@ -5,7 +5,9 @@ import {
   CreateProposalCommentSchema,
   OPPORTUNITY_STAGES,
   OpportunitySchema,
+  ProposalCommentSchema,
   ProposalShareTokenSchema,
+  VenueReplyBodySchema,
   isValidOpportunityStageTransition,
 } from "../commercial-spine.js";
 
@@ -97,20 +99,42 @@ describe("commercial spine schemas", () => {
     }).success).toBe(false);
   });
 
-  it("claim-guards activity and proposal-comment text", () => {
+  it("claim-guards the venue's own words: activity notes and replies to the client", () => {
     expect(CreateActivitySchema.safeParse({
       type: "note",
       body: "Client asked for an updated planning-grade quote.",
     }).success).toBe(true);
+    expect(CreateActivitySchema.safeParse({ type: "note", body: "This says fire approved." }).success).toBe(false);
 
+    expect(VenueReplyBodySchema.safeParse("There is step-free access from Glassford Street.").success).toBe(true);
+    expect(VenueReplyBodySchema.safeParse("Yes, the Grand Hall is guaranteed accessible.").success).toBe(false);
+    expect(VenueReplyBodySchema.safeParse("   ").success).toBe(false);
+  });
+
+  it("takes a client's comment in their own words, checked for length only", () => {
     expect(CreateProposalCommentSchema.safeParse({
       authorEmail: "client@example.com",
       body: "Please update the package selection.",
       kind: "request_changes",
     }).success).toBe(true);
 
-    expect(CreateProposalCommentSchema.safeParse({
-      body: "This wording says fire approved.",
-    }).success).toBe(false);
+    const question = CreateProposalCommentSchema.safeParse({ body: "Is the Grand Hall guaranteed accessible?" });
+    expect(question.success && question.data.body).toBe("Is the Grand Hall guaranteed accessible?");
+    expect(CreateProposalCommentSchema.safeParse({ body: "  " }).success).toBe(false);
+    expect(CreateProposalCommentSchema.safeParse({ body: "x".repeat(4001) }).success).toBe(false);
+    expect(CreateProposalCommentSchema.safeParse({ body: "x".repeat(4000) }).success).toBe(true);
+
+    // A stored comment holds the client's words as written.
+    expect(ProposalCommentSchema.safeParse({
+      id: "44444444-4444-4444-8444-444444444444",
+      proposalId: "55555555-5555-4555-8555-555555555555",
+      shareTokenId: "66666666-6666-4666-8666-666666666666",
+      kind: "comment",
+      authorName: null,
+      authorEmail: null,
+      body: "Is the Grand Hall guaranteed accessible?",
+      isClientVisible: true,
+      createdAt: "2026-09-29T09:00:00.000Z",
+    }).success).toBe(true);
   });
 });

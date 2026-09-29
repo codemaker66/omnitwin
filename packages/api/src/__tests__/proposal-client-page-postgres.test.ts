@@ -259,6 +259,68 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     }]);
   });
 
+  // The claim guard keeps the venue from promising what the platform cannot
+  // back. A client asking about it promises nothing, so their words reach the
+  // team as they wrote them (Blake, 29 September 2026).
+  it("takes a client's question in their own words, even words the venue may not write", async () => {
+    const question = "Is the Grand Hall guaranteed accessible?";
+    const asked = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`,
+      payload: { kind: "comment", authorName: "Elaine Crawford", body: question, version: 1 },
+    });
+    expect(asked.statusCode, asked.body).toBe(201);
+    expect(asked.json<{ data: { body: string } }>().data.body).toBe(question);
+    expect(await notices()).toEqual([{
+      title: "Elaine Crawford wrote about Crawford wedding proposal",
+      body: `Version 1. “${question}”`,
+      action_path: `/dashboard?view=proposals&proposal=${PROPOSAL}`,
+    }]);
+    const thread = await server.inject({ method: "GET", url: `/proposals/${PROPOSAL}/comments`, headers: headers() });
+    expect(thread.statusCode, thread.body).toBe(200);
+    expect(thread.json<{ data: { body: string; authorType: string }[] }>().data)
+      .toEqual([expect.objectContaining({ body: question, authorType: "client" })]);
+    const page = await server.inject({ method: "GET", url: `/proposal-share/${TOKEN}` });
+    expect(page.json<{ data: { comments: { body: string; from: string }[] } }>().data.comments)
+      .toEqual([expect.objectContaining({ body: question, from: "client" })]);
+  });
+
+  it("takes a request for changes and a note with an acceptance in the client's own words", async () => {
+    const changes = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`,
+      payload: { kind: "request_changes", body: "We need it fire approved before we sign.", version: 1 },
+    });
+    expect(changes.statusCode, changes.body).toBe(201);
+
+    await pool.query("UPDATE proposals SET status = 'sent' WHERE id = $1", [PROPOSAL]);
+    const accepted = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/approve`,
+      payload: { authorName: "Elaine Crawford", body: "Accepted, as it is certified safe for our guests.", version: 1 },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    const kept = await pool.query<{ kind: string; body: string }>(
+      "SELECT kind, body FROM proposal_comments WHERE proposal_id = $1 ORDER BY created_at", [PROPOSAL],
+    );
+    expect(kept.rows).toEqual([
+      { kind: "request_changes", body: "We need it fire approved before we sign." },
+      { kind: "approval_note", body: "Accepted, as it is certified safe for our guests." },
+    ]);
+  });
+
+  it("still keeps the venue's own replies to what the platform can back", async () => {
+    const promise = await server.inject({
+      method: "POST", url: `/proposals/${PROPOSAL}/comments`, headers: headers(),
+      payload: { body: "Yes, the Grand Hall is guaranteed accessible." },
+    });
+    expect(promise.statusCode, promise.body).toBe(400);
+    const plain = await server.inject({
+      method: "POST", url: `/proposals/${PROPOSAL}/comments`, headers: headers(),
+      payload: { body: "There is step-free access from Glassford Street; we will send the details." },
+    });
+    expect(plain.statusCode, plain.body).toBe(201);
+    const kept = await pool.query<{ body: string }>("SELECT body FROM proposal_comments WHERE proposal_id = $1", [PROPOSAL]);
+    expect(kept.rows).toEqual([{ body: "There is step-free access from Glassford Street; we will send the details." }]);
+  });
+
   it("names the version accepted, not a draft saved since", async () => {
     await pool.query("UPDATE proposals SET current_version = 2, sent_version = 1 WHERE id = $1", [PROPOSAL]);
     const approved = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { version: 1 } });

@@ -432,9 +432,9 @@ describe("proposal/quote source guards", () => {
     expect(source).toContain("proposalStatusHistory");
   });
 
-  it("staff comment route reuses the claim-guarded comment-body schema", async () => {
+  it("staff comment route keeps the venue's reply to the claim-guarded schema", async () => {
     const source = await readFile(resolve("src/routes/proposals.ts"), "utf-8");
-    expect(source).toContain("CreateProposalCommentSchema.shape.body");
+    expect(source).toContain("const StaffCommentBody = z.object({ body: VenueReplyBodySchema });");
     expect(source).toContain("proposalComments");
   });
 });

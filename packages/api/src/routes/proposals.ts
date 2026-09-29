@@ -4,6 +4,7 @@ import { z } from "zod";
 import { eq, and, desc, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import {
   CreateProposalCommentSchema,
+  VenueReplyBodySchema,
   toEventPlanAudienceRole,
   ProposalVersionPayloadSchema,
   proposalVersionPayloadDigest,
@@ -211,9 +212,10 @@ const VersionParam = z.object({
   version: z.coerce.number().int().positive(),
 });
 
-// Staff reply body reuses the claim-guarded comment-body schema from
-// @omnitwin/types, so staff-to-client replies are SAFE by construction.
-const StaffCommentBody = z.object({ body: CreateProposalCommentSchema.shape.body });
+// Staff replies are claim-guarded (VenueReplyBodySchema), so what the venue
+// tells a client is SAFE by construction. The client's own words are not: a
+// question reaches the team as they wrote it (CreateProposalCommentSchema).
+const StaffCommentBody = z.object({ body: VenueReplyBodySchema });
 
 // Client-facing label for venue-team replies. The comment table has no
 // authorUserId; staff comments are distinguished structurally by a null
@@ -926,8 +928,8 @@ export async function proposalRoutes(
 
   // POST /proposals/:id/comments — staff reply to the client conversation.
   //
-  // Claim-guarded (CreateProposalCommentSchema.shape.body) because the reply
-  // is shown to the client. Stored with a null share_token_id (staff origin)
+  // Claim-guarded (VenueReplyBodySchema) because the reply is the venue's
+  // words, shown to the client. Stored with a null share_token_id (staff origin)
   // and client-visible so it appears on the share-link page.
   server.post("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
