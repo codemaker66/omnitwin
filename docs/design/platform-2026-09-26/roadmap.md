@@ -770,8 +770,9 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Done on 28 September (`services/proposal-links.ts`). A proposal made from a deal carries the enquiry the deal
   came from and that enquiry's own layout while it is live at the venue; links that contradict each other are
   refused, never mixed. A version's layout is the proposal's own, drawn by the server. The Proposals panel says
-  which layout goes out ("Their own, Grand Hall", a room, "Removed" or "None"). Choosing another layout, or
-  leaving it out, waits on A10. Live on 28 September (`1ebcc49c`).
+  which layout goes out ("Their own, Grand Hall", a room, "Removed" or "None"). Live on 28 September
+  (`1ebcc49c`). Since 29 September staff may leave the client's layout out and include it again (A10's
+  default, live on `db66bebe`); sending a layout the venue drew comes later.
 - Notify the owner of every client decision.
   Done on 28 September (`services/client-answer-notice.ts`). Every acceptance, request for changes and
   comment tells every commercial role at the venue, the proposal's owner among them, with or without an
@@ -1293,14 +1294,14 @@ Grouped by theme, with the themes that block the most work first. Every question
 **Answered on 29 September**, through the question form:
 - A10 took the default. The client's own layout goes with a proposal, staff may leave it out, venue-drawn layouts
   come later, and the client page's closing line becomes "Numbers and layout are planning estimates; the events
-  team confirms them." Built the same day: the desk's "Leave their layout out" and "Include their … layout", and
-  the new closing line.
+  team confirms them." Built the same day and live on `db66bebe`: the desk's "Leave their layout out" and
+  "Include their … layout", and the new closing line.
 - A client's question on the proposal page reaches the team as written. A request for changes and a note with an
   acceptance are the client's own words as well, so they are treated the same (an extension of the answer). The
   claim guard stays on the venue's words.
 - Managers, as well as venue admins, keep the inventory: they change stock, approve or revoke equipment
   reservations, and prepare and approve internal requests. Each records who made it and their role (part of C2).
-  Built the same day.
+  Built the same day, live on `db66bebe`.
 
 ### A. What we build first, and how money moves (blocks Tier A and X1)
 
