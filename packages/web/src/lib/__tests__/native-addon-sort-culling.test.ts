@@ -4,10 +4,12 @@
  * and the forced re-sort triggers with the actual addon and intercepted GPU
  * dispatch. Browser readback and matched captures establish the GPU result.
  */
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  BufferAttribute, BufferGeometry, IndirectStorageBufferAttribute, Matrix4, OrthographicCamera,
-  PerspectiveCamera, Quaternion, Vector3, Vector4, WebGPURenderer, type Camera,
+  BufferAttribute, BufferGeometry, IndirectStorageBufferAttribute, InstancedBufferGeometry, Matrix4, OrthographicCamera,
+  PerspectiveCamera, Quaternion, Scene, Sphere, Vector3, Vector4, WebGPURenderer, type Camera,
 } from "three/webgpu";
 import { GaussianSplat } from "three/addons/objects/GaussianSplat.js";
 
@@ -16,6 +18,8 @@ afterEach(() => { vi.restoreAllMocks(); });
 // Mirrors of the addon constants: the vertex stage's centre clip margin and the
 // camera travel and turn a culled order must tolerate before a forced re-sort.
 const CLIP_XY = 1.4;
+// Splat quads drawn per instance (the addon's SPLATS_PER_INSTANCE).
+const BATCH = 16;
 const TRANSLATION = 0.25;
 const ROTATION = 2.5 * Math.PI / 180;
 
@@ -172,7 +176,8 @@ describe("forced WebGPU re-sorts", () => {
       expect(f.sort()).toBe(true);
       const indirect = f.mesh.geometry.indirect;
       expect(indirect).toBeInstanceOf(IndirectStorageBufferAttribute);
-      expect(indirect === null ? [] : [...indirect.array]).toEqual([6, 64, 0, 0, 0]);
+      // drawIndexedIndirect of 16-splat batches (64 splats, 4 instances), then the kept count.
+      expect(indirect === null ? [] : [...indirect.array]).toEqual([6 * BATCH, 64 / BATCH, 0, 0, 0, 64]);
       expect(cullEnabled(f.mesh)).toBe(1);
       expect(f.compute).toHaveBeenCalledOnce();
     } finally { f.cleanup(); }
@@ -221,7 +226,8 @@ describe("forced WebGPU re-sorts", () => {
       expect(f.sort(webgl)).toBe(true);
       expect(f.mesh.geometry.indirect).toBeNull();
       expect(cullEnabled(f.mesh)).toBe(0);
-      expect(f.mesh.geometry.instanceCount).toBe(64);
+      expect(f.mesh.splatCount).toBe(64);
+      expect(f.mesh.geometry.instanceCount).toBe(64 / BATCH);
       f.camera.position.x += 3;
       expect(f.sort(webgl)).toBe(false);
       expect(webglCompute).not.toHaveBeenCalled();
@@ -237,6 +243,92 @@ describe("forced WebGPU re-sorts", () => {
     indirect.addEventListener("dispose", released);
     f.cleanup();
     expect(released).toHaveBeenCalledOnce();
+  });
+});
+
+describe("batched splat instances", () => {
+  // One instance per 4-vertex quad bounds the draw by the GPU's per-instance front end, so each
+  // instance draws BATCH indexed quads; slots past the kept splats of the last batch collapse.
+  const vertexNode = (mesh: GaussianSplat): unknown => Reflect.get(mesh.material, "vertexNode");
+  // The typed hook names WebGLRenderer; the addon's receives whichever renderer draws it.
+  const beforeRender = (mesh: GaussianSplat, renderer: WebGPURenderer, camera: Camera): void => {
+    const hook: unknown = Reflect.get(mesh, "onBeforeRender");
+    if (typeof hook !== "function") throw new Error("Missing onBeforeRender hook");
+    Reflect.apply(hook, mesh, [renderer, new Scene(), camera, mesh.geometry, mesh.material, null]);
+  };
+  // Mirror of the vertex stage: vertex v of an instance draws slot instance * BATCH + v / 4 at
+  // corner v % 4 of the quad (-r, -r), (r, -r), (r, r), (-r, r).
+  const slotOf = (instance: number, vertex: number): number => instance * BATCH + Math.floor(vertex / 4);
+  const cornerOf = (vertex: number, radius: number): [number, number] => {
+    const corner = vertex % 4;
+    return [corner === 1 || corner === 2 ? radius : -radius, corner >= 2 ? radius : -radius];
+  };
+
+  it("draw BATCH attribute-free indexed quads per instance within the splats' bounds", () => {
+    const f = fixture();
+    try {
+      expect(f.sort()).toBe(true);
+      const geometry = f.mesh.geometry;
+      expect(geometry).toBeInstanceOf(InstancedBufferGeometry);
+      expect(Object.keys(geometry.attributes)).toEqual([]);
+      expect(geometry.instanceCount).toBe(64 / BATCH);
+      expect(f.mesh.splatCount).toBe(64);
+      const index = geometry.index;
+      if (index === null) throw new Error("Batched quads are indexed");
+      expect(index.count).toBe(6 * BATCH);
+      for (let quad = 0; quad < BATCH; quad += 1) {
+        const first = 4 * quad;
+        expect(Array.from(index.array.slice(6 * quad, 6 * quad + 6))).toEqual([first, first + 1, first + 2, first, first + 2, first + 3]);
+      }
+      expect(geometry.boundingSphere?.equals(f.geometry.boundingSphere ?? new Sphere())).toBe(true);
+    } finally { f.cleanup(); }
+  });
+
+  it("keep the unbatched quad's triangles, winding and draw order", () => {
+    // The original instanced quad: vertices (-r,-r), (r,-r), (r,r), (-r,r), triangles (0,1,2), (0,2,3).
+    const radius = KERNEL;
+    const original: [number, number][] = [[-radius, -radius], [radius, -radius], [radius, radius], [-radius, radius]];
+    const triangles = [0, 1, 2, 0, 2, 3];
+    const drawn: number[] = [];
+    for (let instance = 0; instance < 3; instance += 1) {
+      for (let quad = 0; quad < BATCH; quad += 1) {
+        for (let v = 0; v < 6; v += 1) {
+          const vertex = 4 * quad + (triangles[v] ?? 0);
+          expect(cornerOf(vertex, radius)).toEqual(original[triangles[v] ?? 0]);
+          if (v === 0) drawn.push(slotOf(instance, vertex));
+        }
+      }
+    }
+    // Slots follow the sorted order: instance-major, quad-minor, with no gap or repeat.
+    expect(drawn).toEqual(Array.from({ length: 3 * BATCH }, (_, slot) => slot));
+  });
+
+  it("share one geometry across backends and swap only the vertex stage", () => {
+    const f = fixture();
+    const webgl = new WebGPURenderer({ forceWebGL: true });
+    try {
+      f.sort();
+      const geometry = f.mesh.geometry;
+      beforeRender(f.mesh, f.renderer, f.camera);
+      const webgpuStage = vertexNode(f.mesh);
+      beforeRender(f.mesh, webgl, f.camera);
+      expect(vertexNode(f.mesh)).not.toBe(webgpuStage);
+      expect(f.mesh.geometry).toBe(geometry);
+      beforeRender(f.mesh, f.renderer, f.camera);
+      expect(vertexNode(f.mesh)).toBe(webgpuStage);
+    } finally { f.cleanup(); }
+  });
+
+  it("have the sort write the batch count and the exact kept count", () => {
+    const require = createRequire(import.meta.url);
+    const sortSource = readFileSync(require.resolve("three/examples/jsm/gpgpu/CountingSort.js"), "utf8");
+    const splatSource = readFileSync(require.resolve("three/examples/jsm/objects/GaussianSplat.js"), "utf8");
+    expect(sortSource).toContain("countWrite.element( uint( this._countIndex ) ).assign( divisor === 1 ? sum : sum.add( uint( divisor - 1 ) ).div( uint( divisor ) ) );");
+    expect(sortSource).toContain("if ( this._totalIndex !== null ) countWrite.element( uint( this._totalIndex ) ).assign( sum );");
+    expect(splatSource).toContain(`const SPLATS_PER_INSTANCE = ${String(BATCH)};`);
+    expect(splatSource).toContain("countIndex: 1, countDivisor: SPLATS_PER_INSTANCE, totalIndex: 5 }");
+    expect(splatSource).toContain("const slot = instanceIndex.mul( SPLATS_PER_INSTANCE ).add( vertexIndex.div( 4 ) ).toVar( 'splatSlot' );");
+    expect(splatSource).toContain("If( inRange.not()");
   });
 });
 

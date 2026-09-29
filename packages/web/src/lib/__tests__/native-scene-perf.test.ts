@@ -39,7 +39,8 @@ describe("native scene profiler inspection", () => {
       expect(await nativeSceneDrawnSplats(scene, webgpu)).toBeNull();
       camera.updateMatrixWorld(true);
       mesh.updateSort(webgpu, camera);
-      const read = vi.spyOn(webgpu, "getArrayBufferAsync").mockResolvedValue(new Uint32Array([6, 17, 0, 0, 0]).buffer);
+      // drawIndexedIndirect arguments (batches of 16 splats per instance), then the kept count.
+      const read = vi.spyOn(webgpu, "getArrayBufferAsync").mockResolvedValue(new Uint32Array([6 * 16, 2, 0, 0, 0, 17]).buffer);
       expect(await nativeSceneDrawnSplats(scene, webgpu)).toBe(17);
       expect(read).toHaveBeenCalledWith(mesh.drawIndirect);
       expect(await nativeSceneDrawnSplats(scene, new WebGPURenderer({ forceWebGL: true }))).toBe(64);

@@ -58,7 +58,7 @@ describe("exact contiguous SH3 storage ranges", () => {
         expect(actual).toBe(source[i * 6 + word]);
       }
       expect(source).toEqual(original);
-      expect(f.mesh.geometry.instanceCount).toBe(count);
+      expect(f.mesh.splatCount).toBe(count);
     } finally { f.cleanup(); }
   });
 

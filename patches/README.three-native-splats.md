@@ -42,12 +42,22 @@ passes the 1.4× centre clip. The bound uses the kernel cutoff, the covariance t
 times the mesh's largest axis scale², and the vertex stage's 2D dilation for any
 drawing buffer at least 256 px on its short side. `CountingSort` treats any
 bin at or above `binCount` as excluded (no atomics, no order slot) and its prefix
-pass writes the kept count into `drawIndirect[1]`; the mesh then draws with
-`drawIndexedIndirect`. A re-sort is forced, whatever `minSortIntervalMs` says, once
-the camera has travelled or turned 90% of those margins or the projection or mesh
-transform changes. WebGL2 has no indirect draws: its CPU orders keep every splat
-and the geometry draws directly. The public read-only `drawIndirect` lets the
-profiler read the kept count back.
+pass writes the draw's instance count into `drawIndirect[1]` and the exact kept
+count into `drawIndirect[5]`; the mesh then draws with `drawIndexedIndirect`. A
+re-sort is forced, whatever `minSortIntervalMs` says, once the camera has travelled
+or turned 90% of those margins or the projection or mesh transform changes. WebGL2
+has no indirect draws: its CPU orders keep every splat and the geometry draws
+directly. The public read-only `drawIndirect` lets the profiler read the kept
+count back, and `splatCount` reports the loaded splats.
+
+Each draw instance holds 16 splats (T-640). One instance per four-vertex quad bounded
+the draw by the GPU's per-instance front end: on an RTX 4090, 1.75 million kept
+instances cost 1.19 ms with an empty vertex shader, the time of the full shader. The
+quad geometry is now 16 attribute-free indexed quads (triangles 0-1-2 and 0-2-3 of
+each, as before); a vertex draws slot `instance × 16 + vertex / 4` at corner
+`vertex % 4`, so every quad keeps its four-vertex reuse. The prefix pass writes
+`ceil(kept / 16)` instances, and slots past the kept count (WebGPU) or the splat
+count (WebGL's complete orders) collapse like culled splats.
 
 `native-splat-scene.ts` merges complete resident sources into one globally sorted
 draw. Affine positions/covariances are transformed into scene coordinates; inverse
