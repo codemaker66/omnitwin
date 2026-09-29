@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { InventoryActor, InventoryRemedy, InventoryReservationRelease } from "@omnitwin/types";
 import { approvedRemedy, decidedRelease, preparedRemedy } from "../services/inventory-reservations.js";
@@ -81,5 +83,20 @@ describe("an internal request", () => {
   it("refuses to record a request by a role that may not make one", () => {
     expect(() => preparedRemedy(SALES, REQUEST)).toThrow();
     expect(() => approvedRemedy(preparedRemedy(ADMIN, REQUEST), SALES, WINDOW.endsAt)).toThrow();
+  });
+});
+
+// The transactions around these build every record through them, so what is
+// tested above is what is stored: a record built beside them would record
+// whatever it was given, unseen here.
+describe("the decisions' transactions", () => {
+  it("build every reservation and request record through the functions tested here", async () => {
+    const source = await readFile(resolve("src/services/inventory-reservations.ts"), "utf-8");
+    const count = (pattern: RegExp): number => source.match(pattern)?.length ?? 0;
+    expect(count(/InventoryReservationReleaseSchema\.parse\(\{/gu), "a release built outside decidedRelease").toBe(1);
+    expect(count(/InventoryRemedySchema\.parse\(\{/gu), "a request built outside preparedRemedy or approvedRemedy").toBe(2);
+    expect(count(/decidedRelease\(actor, /gu), "approval and revocation").toBe(2);
+    expect(count(/preparedRemedy\(actor, /gu), "preparation").toBe(1);
+    expect(count(/approvedRemedy\(prepared, actor, /gu), "approval of a request").toBe(1);
   });
 });

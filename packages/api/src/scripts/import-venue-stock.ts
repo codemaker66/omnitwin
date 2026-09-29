@@ -248,21 +248,6 @@ export interface ApplyOutcome {
 }
 
 /**
- * Execute the plan through the audited adjustment service, one command at a
- * time. Each write is its own transaction and its own receipt: a failure
- * partway through leaves the earlier receipts standing, which is the honest
- * outcome for a physical count, and a re-run replays them rather than adding
- * the same stock twice.
- *
- * `onOutcome` fires as each receipt lands, not at the end. The realistic
- * failure here is an INVENTORY_REVISION_CONFLICT on an item somebody already
- * counted by hand, and it arrives partway down the list. Returning the array
- * only on success meant a throw on item n printed "Stock import failed" and
- * nothing about the n-1 receipts already written — at Friday 16:30, against
- * production, that is the worst possible moment to have to reconstruct what
- * happened from the database.
- */
-/**
  * The person the import is recorded as, read from their account: each receipt
  * records the role they hold, and only this venue's administrators and
  * managers may change its stock.
@@ -277,6 +262,21 @@ export async function stockActor(db: Parameters<typeof writeVenueInventory>[0], 
   return actor;
 }
 
+/**
+ * Execute the plan through the audited adjustment service, one command at a
+ * time. Each write is its own transaction and its own receipt: a failure
+ * partway through leaves the earlier receipts standing, which is the honest
+ * outcome for a physical count, and a re-run replays them rather than adding
+ * the same stock twice.
+ *
+ * `onOutcome` fires as each receipt lands, not at the end. The realistic
+ * failure here is an INVENTORY_REVISION_CONFLICT on an item somebody already
+ * counted by hand, and it arrives partway down the list. Returning the array
+ * only on success meant a throw on item n printed "Stock import failed" and
+ * nothing about the n-1 receipts already written — at Friday 16:30, against
+ * production, that is the worst possible moment to have to reconstruct what
+ * happened from the database.
+ */
 export async function applyStockImport(
   db: Parameters<typeof writeVenueInventory>[0],
   actor: InventoryActor,
@@ -338,6 +338,12 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
     if (value === undefined || value.trim().length === 0) throw new Error(`--${key} is required`);
     return value.trim();
   };
+  // A venue or an account is named by its id, checked before any query.
+  const id = (key: string): string => {
+    const value = required(key);
+    if (!z.string().uuid().safeParse(value).success) throw new Error(`--${key} must be an id (a UUID)`);
+    return value;
+  };
   const backupBranch = values.get("backup-branch")?.trim() ?? null;
   if (apply && (backupBranch === null || backupBranch.length === 0)) {
     // A stock import changes what the venue believes it owns. Without a
@@ -348,8 +354,8 @@ export function parseCliOptions(argv: readonly string[]): CliOptions {
   if (apply && databaseUrl === null) throw new Error("--apply requires --database-url");
   return {
     source: required("source"),
-    venueId: required("venue"),
-    actorUserId: required("actor"),
+    venueId: id("venue"),
+    actorUserId: id("actor"),
     reason: required("reason"),
     planOut: values.get("plan-out")?.trim() ?? null,
     databaseUrl,

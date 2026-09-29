@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getCanonicalAssetBySlug } from "@omnitwin/types";
 
@@ -138,6 +140,13 @@ describe("parseCliOptions", () => {
   it("requires every identifying argument", () => {
     expect(() => parseCliOptions(["--source", "intake.json"])).toThrow(/--venue is required/u);
   });
+
+  it("refuses a venue or an account that is not named by its id, before any query", () => {
+    expect(() => parseCliOptions(["--source", "intake.json", "--venue", "trades-hall", "--actor", ACTOR, "--reason", REASON]))
+      .toThrow(/--venue must be an id/u);
+    expect(() => parseCliOptions(["--source", "intake.json", "--venue", VENUE, "--actor", "not-a-uuid", "--reason", REASON]))
+      .toThrow(/--actor must be an id/u);
+  });
 });
 
 describe("deterministicUuid", () => {
@@ -159,6 +168,13 @@ describe("stockActor", () => {
       .resolves.toEqual({ userId: ACTOR, role: "manager", venueId: VENUE });
     await expect(stockActor(accounts([{ role: "admin", venueId: VENUE }]), ACTOR, VENUE))
       .resolves.toEqual({ userId: ACTOR, role: "admin", venueId: VENUE });
+  });
+
+  // The import records whoever runs it as their account says, never a fixed role.
+  it("is what the import records its receipts as", async () => {
+    const source = await readFile(resolve("src/scripts/import-venue-stock.ts"), "utf-8");
+    expect(source).toContain("actor = await stockActor(connection.db, options.actorUserId, options.venueId);");
+    expect(source).not.toMatch(/role: "admin"/u);
   });
 
   it("refuses anyone who cannot keep this venue's stock, before anything is written", async () => {
