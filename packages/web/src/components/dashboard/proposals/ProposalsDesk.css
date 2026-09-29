@@ -102,6 +102,46 @@
 .pr-line__part { display: grid; gap: 4px; color: var(--enq-forest-ink-2); font-size: 12.5px; }
 .pr-line .enq-quiet { justify-self: start; }
 
+/* The price list, beside Add a line: a row of its own under the buttons. */
+.pr-prices {
+  flex-basis: 100%;
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+}
+.pr-prices__title { margin: 0; color: var(--enq-forest-ink-2); font-size: 13px; }
+.pr-prices .enq-next__hint { margin: 0; }
+.pr-prices .enq-actions { margin-top: 0; }
+.pr-prices__rooms, .pr-prices__left { display: grid; gap: 10px; }
+.pr-prices__group { display: grid; gap: 6px; }
+.pr-prices__heading { margin: 0; color: var(--enq-forest-ink-3); font-size: 12px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
+.pr-prices__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+/* A price: what it is, and what it costs, level with it. */
+.pr-price {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 14px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--enq-forest-rule);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--enq-forest-ink);
+  font: inherit;
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.pr-price:hover:not(:disabled) { border-color: var(--enq-forest-ink-3); }
+.pr-price:disabled { cursor: default; opacity: 0.6; }
+.pr-price__name { overflow-wrap: anywhere; }
+.pr-price__figure { font-variant-numeric: tabular-nums; text-align: right; }
+.pr-price__note { grid-column: 1 / -1; color: var(--enq-forest-ink-2); font-size: 13px; }
+
 .pr-quote-table { width: 100%; border-collapse: collapse; color: var(--enq-forest-ink); font-size: 14.5px; font-variant-numeric: tabular-nums; }
 .pr-quote-table td { padding: 8px 0; border-bottom: 1px solid var(--enq-forest-rule); }
 .pr-quote-table .pr-num { padding-left: 12px; text-align: right; white-space: nowrap; }
@@ -126,4 +166,7 @@
   .pr-guidance__fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .pr-guidance__fields select:first-child { grid-column: 1 / -1; }
   .pr-line { grid-template-columns: 88px minmax(0, 1fr) auto; }
+  /* On a phone the price goes under what it is. */
+  .pr-price { grid-template-columns: minmax(0, 1fr); }
+  .pr-price__figure { text-align: left; }
 }

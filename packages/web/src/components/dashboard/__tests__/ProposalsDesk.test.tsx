@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   transitionProposal: vi.fn(),
   changeProposalLayout: vi.fn(),
   listSpaces: vi.fn(),
+  listPricingRules: vi.fn(),
 }));
 
 vi.mock("../../../api/proposals.js", async (importOriginal) => ({
@@ -50,6 +51,10 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   changeProposalLayout: mocks.changeProposalLayout,
 }));
 vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
+vi.mock("../../../api/pricing.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/pricing.js")>(),
+  listPricingRules: mocks.listPricingRules,
+}));
 
 const authState = vi.hoisted(() => ({
   user: { id: "u1", role: "staff", platformRole: "none" as const, venueId: "v1" as string | null, email: "staff@test.com", name: "Catherine Tait" },
@@ -178,6 +183,7 @@ beforeEach(() => {
   mocks.getProposalHistory.mockResolvedValue([]);
   mocks.getProposalComments.mockResolvedValue([]);
   mocks.listSpaces.mockResolvedValue([]);
+  mocks.listPricingRules.mockResolvedValue([]);
   mocks.postProposalComment.mockResolvedValue(clientComment({ id: "comment-staff", authorType: "staff", authorName: "Venue team" }));
   wideDesk();
 });
@@ -2827,5 +2833,173 @@ describe("a new proposal", () => {
     await screen.findByTestId("proposal-row-p1");
     fireEvent.click(screen.getByRole("button", { name: "New proposal" }));
     expect(screen.getByText("Your account is not linked to a venue, so a proposal cannot be started here.")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Add from price list (roadmap X1): a price picked is a line, priced for the
+// event, with nothing retyped; the booker gives only what the list cannot know.
+// ---------------------------------------------------------------------------
+
+describe("Add from price list", () => {
+  const room = (id: string, name: string, slug: string): Record<string, unknown> => ({
+    id, venueId: "v1", name, slug, widthM: "30", lengthM: "15", heightM: "10", floorPlanOutline: [],
+  });
+  const price = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id, venueId: "v1", spaceId: "room-gh", name: "Grand Hall — Evening Event (19:00–00:30)", type: "flat_rate", amount: "2400.00",
+    currency: "GBP", minHours: null, minGuests: null, tiers: null, dayOfWeekModifiers: null, seasonalModifiers: null,
+    isActive: true, validFrom: null, validTo: null, ...overrides,
+  });
+  const PRICES = [
+    price("gh-evening"),
+    price("venue", { spaceId: null, name: "Exclusive Use of Full Venue", amount: "2500" }),
+    price("saloon", { spaceId: "room-sal", name: "Saloon — Evening Event (19:00–00:30)", amount: "900" }),
+    price("bar", { spaceId: null, name: "Bar staff", type: "per_hour", amount: "18.00", minHours: 4 }),
+  ];
+  const FACTS = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+  const said = (panel: { readonly getAllByRole: (role: "status") => HTMLElement[] }, words: string): HTMLElement | undefined =>
+    panel.getAllByRole("status").find((region) => region.textContent === words);
+  const headings = (list: HTMLElement): string[] => Array.from(list.querySelectorAll(".pr-prices__heading")).map((node) => node.textContent ?? "");
+
+  beforeEach(() => {
+    existing = [proposal({ currentVersion: 1 })];
+    mocks.listSpaces.mockResolvedValue([room("room-gh", "Grand Hall", "grand-hall"), room("room-sal", "Saloon", "saloon")]);
+    mocks.listPricingRules.mockResolvedValue(PRICES);
+    mocks.getProposalNextVersion.mockResolvedValue({ basedOn: 1, layout: "none", facts: { saved: FACTS, now: FACTS }, basis: "b".repeat(64) });
+  });
+
+  it("adds the event's room's price as a line, says so, keeps the list open for another, and saves them as typed lines", async () => {
+    let saved: (value: unknown) => void = () => undefined;
+    mocks.createQuote.mockImplementation((input: { readonly lineItems: readonly { description: string; quantity: number; unitAmountMinor: number }[] }) => {
+      const lineItems = input.lineItems.map((line, index) => ({ ...line, id: `line-${String(index)}`, quoteId: "q1", pricingRuleId: null,
+        lineTotalMinor: line.quantity * line.unitAmountMinor, sortOrder: index }));
+      const total = lineItems.reduce((sum, line) => sum + line.lineTotalMinor, 0);
+      return Promise.resolve({ id: "33333333-3333-4333-8333-333333333333", venueId: "v1", opportunityId: null, proposalId: "p1", enquiryId: null,
+        spaceId: null, name: "Autumn gala quote", status: "draft", currency: "GBP", subtotalMinor: total, totalMinor: total, validUntil: null,
+        supersededByQuoteId: null, notes: null, createdBy: "u1", createdAt: NOW, updatedAt: NOW, deletedAt: null, lineItems });
+    });
+    mocks.createProposalVersion.mockReturnValue(new Promise((resolve) => { saved = resolve; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const listElement = await panel.findByTestId("price-list");
+    const list = within(listElement);
+    // The event's room first, then what any room takes; the other rooms wait.
+    await waitFor(() => { expect(headings(listElement)).toEqual(["Grand Hall", "Venue-wide"]); });
+    expect(list.queryByTestId("price-saloon")).toBeNull();
+    expect(list.getByTestId("price-gh-evening").textContent).toBe("Grand Hall — Evening Event (19:00–00:30)£2,400");
+
+    fireEvent.click(list.getByTestId("price-gh-evening"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-desc-0").value).toBe("Grand Hall — Evening Event (19:00–00:30)");
+    expect(panel.getByTestId<HTMLInputElement>("quote-qty-0").value).toBe("1");
+    expect(panel.getByTestId<HTMLInputElement>("quote-price-0").value).toBe("2400");
+    expect(said(panel, "Added Grand Hall — Evening Event (19:00–00:30) at £2,400 as line 1.")).toBeDefined();
+    fireEvent.click(list.getByTestId("price-venue"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-desc-1").value).toBe("Exclusive Use of Full Venue");
+    expect(said(panel, "Added Exclusive Use of Full Venue at £2,500 as line 2.")).toBeDefined();
+    expect(panel.getByTestId("price-list")).toBe(listElement);
+
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalled(); });
+    expect(mocks.createQuote).toHaveBeenCalledWith(expect.objectContaining({ lineItems: [
+      { description: "Grand Hall — Evening Event (19:00–00:30)", quantity: 1, unitAmountMinor: 240_000 },
+      { description: "Exclusive Use of Full Venue", quantity: 1, unitAmountMinor: 250_000 },
+    ] }));
+    // Nothing is picked while the version saves.
+    expect(list.getByTestId<HTMLButtonElement>("price-venue").disabled).toBe(true);
+    expect(panel.getByTestId<HTMLButtonElement>("price-list-toggle").disabled).toBe(true);
+    await act(async () => { saved(version(2)); await Promise.resolve(); });
+  });
+
+  it("hands focus to the hours of a price an hour, which the proposal does not hold", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("price-list-toggle"));
+    fireEvent.click(await panel.findByTestId("price-bar"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-qty-0").value).toBe("4");
+    expect(panel.getByTestId<HTMLInputElement>("quote-price-0").value).toBe("18");
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("quote-qty-0")); });
+    expect(said(panel, "Added Bar staff at £18 an hour as line 1. Enter the hours.")).toBeDefined();
+  });
+
+  it("keeps other rooms' prices behind a button, and shows every room's when the event's room is not known", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("price-list-toggle"));
+    const listElement = await panel.findByTestId("price-list");
+    await waitFor(() => { expect(headings(listElement)).toEqual(["Grand Hall", "Venue-wide"]); });
+    const others = panel.getByTestId("price-list-other-rooms");
+    expect(others.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(others);
+    expect(others.getAttribute("aria-expanded")).toBe("true");
+    expect(headings(listElement)).toEqual(["Grand Hall", "Venue-wide", "Saloon"]);
+    expect(panel.getByTestId("price-saloon").textContent).toBe("Saloon — Evening Event (19:00–00:30)£900");
+    cleanup();
+
+    // No check yet, so no room: every room's prices, and the proposal's own date and guests.
+    mocks.getProposalNextVersion.mockRejectedValue(new ApiError(404, "Not found", "NOT_FOUND"));
+    render(<ProposalsDesk />);
+    const unplaced = within(await openProposal());
+    fireEvent.click(await unplaced.findByTestId("price-list-toggle"));
+    const allRooms = await unplaced.findByTestId("price-list");
+    await waitFor(() => { expect(headings(allRooms)).toEqual(["Venue-wide", "Grand Hall", "Saloon"]); });
+    expect(unplaced.queryByTestId("price-list-other-rooms")).toBeNull();
+  });
+
+  it("reads the list once, says when it could not, and tries again", async () => {
+    mocks.listPricingRules.mockReset().mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
+      .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR")).mockResolvedValue(PRICES);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    expect((await panel.findByTestId("price-list-error")).textContent).toBe("The price list could not be read.");
+    // Closed and opened again after a failure, it reads again.
+    fireEvent.click(panel.getByTestId("price-list-done"));
+    fireEvent.click(toggle);
+    await waitFor(() => { expect(mocks.listPricingRules).toHaveBeenCalledTimes(2); });
+    await panel.findByTestId("price-list-error");
+    fireEvent.click(panel.getByTestId("price-list-retry"));
+    await panel.findByTestId("price-gh-evening");
+    expect(mocks.listPricingRules).toHaveBeenCalledTimes(3);
+    expect(mocks.listPricingRules).toHaveBeenLastCalledWith("v1");
+    fireEvent.click(panel.getByTestId("price-list-done"));
+    expect(panel.queryByTestId("price-list")).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    fireEvent.click(toggle);
+    await panel.findByTestId("price-gh-evening");
+    expect(mocks.listPricingRules).toHaveBeenCalledTimes(3);
+  });
+
+  it("says when the price list is empty, and what it leaves out and why", async () => {
+    mocks.listPricingRules.mockResolvedValue([]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("price-list-toggle"));
+    expect((await panel.findByTestId("price-list-empty")).textContent).toBe("The venue's price list is empty.");
+    cleanup();
+
+    mocks.listPricingRules.mockResolvedValue([price("euro", { name: "Euro hire", currency: "EUR" })]);
+    render(<ProposalsDesk />);
+    const other = within(await openProposal());
+    fireEvent.click(await other.findByTestId("price-list-toggle"));
+    expect((await other.findByTestId("price-list-left-out")).textContent).toBe("Priced in another currency, and the quote is in pounds: Euro hire.");
+    expect(other.queryByTestId("price-list-empty")).toBeNull();
+  });
+
+  it("closes on Escape without closing the proposal, and gives focus back to its button", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    const pick = await panel.findByTestId("price-gh-evening");
+    pick.focus();
+    fireEvent.keyDown(pick, { key: "Escape" });
+    expect(panel.queryByTestId("price-list")).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
   });
 });

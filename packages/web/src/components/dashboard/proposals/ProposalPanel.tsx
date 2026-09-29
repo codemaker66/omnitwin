@@ -14,6 +14,8 @@ import {
   type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
+import { PriceList } from "./PriceList.js";
+import type { PriceListEvent, PriceListOffer } from "./price-list-format.js";
 
 // ---------------------------------------------------------------------------
 // One proposal in the forest panel beside the ledger: who it is for and what
@@ -704,6 +706,8 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLine, setFocusLine] = useState<number | null>(null);
+  const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [focusQuantity, setFocusQuantity] = useState<number | null>(null);
   // Check again stays where it was pressed while it checks, so focus stays
   // with it. Answered, focus goes to what the start line now says; not
   // answered, it is said, and Check again is there to press again. Only a
@@ -738,6 +742,29 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     lineRefs.current[focusLine]?.focus();
     setFocusLine(null);
   }, [focusLine]);
+  useEffect(() => {
+    if (focusQuantity === null) return;
+    quantityRefs.current[focusQuantity]?.focus();
+    setFocusQuantity(null);
+  }, [focusQuantity]);
+
+  // The price list is priced for the event as the version would take it: the
+  // check's facts once answered, else the proposal's own date and guests.
+  const facts = checkRead.value?.facts.now ?? null;
+  const rooms = spaces.value ?? [];
+  const priceEvent: PriceListEvent = {
+    spaceId: facts === null || facts.roomSlug === null ? null : rooms.find((room) => room.slug === facts.roomSlug)?.id ?? null,
+    eventDate: facts?.eventDate ?? proposal.eventDate,
+    guestCount: facts?.guestCount ?? proposal.guestCount,
+  };
+  // A price picked is a line like any typed one; the booker gives the
+  // quantity it cannot know.
+  const addFromList = (offer: PriceListOffer): number => {
+    const at = draft.lines.length;
+    setDraft((current) => ({ ...current, lines: [...current.lines, { ...offer.line }] }));
+    if (offer.asks !== null) setFocusQuantity(at);
+    return at + 1;
+  };
 
   const setLine = (index: number, change: Partial<QuoteLineDraft>): void => {
     setDraft((current) => ({ ...current, lines: current.lines.map((line, at) => at === index ? { ...line, ...change } : line) }));
@@ -786,6 +813,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
               <label className="pr-line__part">
                 <span aria-hidden="true">Quantity</span>
                 <input aria-label={`Line ${String(index + 1)} quantity`} data-testid={`quote-qty-${String(index)}`} inputMode="numeric"
+                  ref={(element) => { quantityRefs.current[index] = element; }}
                   value={line.quantity} disabled={saving} onChange={(event) => { setLine(index, { quantity: event.target.value }); }} />
               </label>
               <label className="pr-line__part">
@@ -804,6 +832,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
               onClick={() => { setDraft((current) => ({ ...current, lines: [...current.lines, { ...EMPTY_LINE }] })); setFocusLine(draft.lines.length); }}>
               Add a line
             </button>
+            <PriceList venueId={proposal.venueId} event={priceEvent} rooms={rooms} disabled={saving} onAdd={addFromList} />
           </div>
         </div>
 
