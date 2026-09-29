@@ -1294,8 +1294,9 @@ Grouped by theme, with the themes that block the most work first. Every question
 - A10 took the default. The client's own layout goes with a proposal, staff may leave it out, venue-drawn layouts
   come later, and the client page's closing line becomes "Numbers and layout are planning estimates; the events
   team confirms them."
-- A client's own words on the proposal page (a question, a request for changes, a note with an acceptance) reach
-  the team as written. The claim guard stays on the venue's words.
+- A client's question on the proposal page reaches the team as written. A request for changes and a note with an
+  acceptance are the client's own words as well, so they are treated the same (an extension of the answer). The
+  claim guard stays on the venue's words.
 - Managers, as well as venue admins, change inventory stock. Each change records who made it and their role (part
   of C2).
 
