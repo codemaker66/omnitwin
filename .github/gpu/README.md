@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 395 cases. Four hosted CPU shards execute
-390 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 396 cases. Four hosted CPU shards execute
+391 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -83,7 +83,9 @@ is shown rather than accepted unseen; the page printed as a document
 latest version and calls no client route (`proposals-desk.spec.ts`). One on 28
 September adds one: the Proposals desk saying which layout goes out, the
 client's own, read across the panel on a desk and on a phone with no sideways
-scroll (`proposals-desk.spec.ts`).
+scroll (`proposals-desk.spec.ts`). One on 29 September adds one: a price
+picked from the venue's list in the proposal composer, priced for the event,
+from the keyboard on a desk and on phones (`proposals-desk.spec.ts`).
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and

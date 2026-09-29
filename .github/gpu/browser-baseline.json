@@ -503,6 +503,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-29",
+      "reason": "Add from price list in the proposal composer (T-635 X1). A price picked from the venue's list becomes a quote line priced for the event, so nothing is typed again; the pricing itself (quantities, least counts, tiers, adjustments, what is left out) is held in price-list-format.test.ts and the desk's behaviour in ProposalsDesk.test.tsx. The case opens the Crawford proposal with the venue's rooms and a price list, opens the list from the keyboard, checks the event's room's prices come first with the venue-wide ones and other rooms' behind their own button, adds a flat price and a price a head (160 guests) as lines 3 and 4 with each said, runs the accessibility audit with the list open, closes it with Escape without closing the proposal, saves version 2 with the four lines (\u00a322,800), and on 390 and 320 px phones checks each price sits under its name with no sideways scroll.",
+      "sourceCommit": "2d2f956558ea8af79f0982f5d35525fa132bb697",
+      "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
+      "sourceFileGitBlobSha256": "c8c3cef1ecb5043cf809d0f985e3fdd925b49c43031d4cb4eb1fcc71ed09dda1",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "4876568535fbad691db375d5648f826a2c3b326ec841844a63f478b004eb2750",
+      "caseIds": [
+        "3d60696039542bd5f8df-1c84e283bfd91fd18132"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -1057,6 +1071,17 @@
       "id": "3d60696039542bd5f8df-0244d81e64a8c4718988",
       "file": "proposals-desk.spec.ts",
       "title": "the proposal says which layout goes out, across the panel, on a desk and on a phone",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-1c84e283bfd91fd18132",
+      "file": "proposals-desk.spec.ts",
+      "title": "a price from the venue's list becomes a quote line priced for the event, from the keyboard, on a desk and on a phone",
       "suitePath": [
         "proposals-desk.spec.ts",
         "Proposals desk"
