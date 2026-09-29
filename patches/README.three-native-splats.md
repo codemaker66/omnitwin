@@ -32,6 +32,23 @@ the caller continues to own its source geometry. The patch also reinitializes
 sort/SH work when the rendering device changes and skips negligible-alpha quads.
 No application code reads underscore-prefixed addon internals.
 
+WebGPU sorts cull (T-640). The histogram pass tests each splat centre against the
+four side planes of the vertex stage's centre clip test and leaves out any splat
+outside a plane by more than 0.25 m + (distance + 0.25 m) × 2.5°, the most a centre
+can move while the camera travels 0.25 m and turns 2.5°. Perspective sorts also
+test the footprint: a splat whose projected ellipse cannot reach the screen at the
+nearest depth and widest angle those margins allow is left out even when its centre
+passes the 1.4× centre clip. The bound uses the kernel cutoff, the covariance trace
+times the mesh's largest axis scale², and the vertex stage's 2D dilation for any
+drawing buffer at least 256 px on its short side. `CountingSort` treats any
+bin at or above `binCount` as excluded (no atomics, no order slot) and its prefix
+pass writes the kept count into `drawIndirect[1]`; the mesh then draws with
+`drawIndexedIndirect`. A re-sort is forced, whatever `minSortIntervalMs` says, once
+the camera has travelled or turned 90% of those margins or the projection or mesh
+transform changes. WebGL2 has no indirect draws: its CPU orders keep every splat
+and the geometry draws directly. The public read-only `drawIndirect` lets the
+profiler read the kept count back.
+
 `native-splat-scene.ts` merges complete resident sources into one globally sorted
 draw. Affine positions/covariances are transformed into scene coordinates; inverse
 linear source transforms preserve SH direction. Room clipping uses scene-space
@@ -43,8 +60,8 @@ Inactive sources are absent from each snapshot's sort, not merely transparent.
 This supplies **whole capture level selection, not a native spatial LOD tree**.
 An unseen active set needs a merge and shader compilation; cached level switches
 reuse their buffers. Devices unable to bind a complete level receive an error
-requesting a coarser level; no arbitrary splats are dropped. WebGL fallback still
-uses upstream main-thread CPU counting sort. Memory includes decoded sources,
+requesting a coarser level; no arbitrary splats are dropped. The WebGL fallback
+sorts every splat on the CPU, in a worker through the `cpuSort` hook. Memory includes decoded sources,
 cached native buffers and one temporary staged replacement, so cache selection
 and motion/rest behavior need real-device verification.
 
