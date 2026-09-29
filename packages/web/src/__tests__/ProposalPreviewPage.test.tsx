@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ApiError } from "../api/client.js";
 import type { PublicProposal } from "../api/proposals.js";
@@ -88,7 +88,9 @@ describe("Preview as the client", () => {
     for (const name of ["getProposalShare", "getPublicProposal", "approveProposalShare", "commentOnProposalShare", "respondToProposal"] as const) {
       expect(mocks[name]).not.toHaveBeenCalled();
     }
-    expect(document.title).toBe("Preview — Crawford wedding proposal — Trades Hall Glasgow — version 3");
+    // An effect sets the title after the loaded preview renders; on a busy runner it can run
+    // after the heading is found, so wait for the title rather than reading it at once.
+    await waitFor(() => { expect(document.title).toBe("Preview — Crawford wedding proposal — Trades Hall Glasgow — version 3"); });
   });
 
   it("says which version the client's link shows, and when that link no longer opens", () => {
