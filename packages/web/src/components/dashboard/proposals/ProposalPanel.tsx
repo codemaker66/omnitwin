@@ -7,6 +7,7 @@ import type { WrittenDraft } from "./proposal-memory.js";
 import { formatMinorAsCurrency } from "../../../lib/money-input.js";
 import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYLE_LABELS } from "../../../lib/proposal-capacity-note.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
+import { commentAuthor } from "../../proposal/proposal-document-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
   EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
@@ -979,7 +980,7 @@ function Conversation({ comments, working, failure, onReply, onRetryComments }: 
           {rows.map((comment) => (
             <li key={comment.id} data-testid={`comment-${comment.authorType}`} data-author={comment.authorType}>
               <p className="pr-thread__who">
-                <strong>{comment.authorType === "client" ? (comment.authorName ?? "The client") : (comment.authorName ?? "The venue team")}</strong>
+                <strong>{commentAuthor({ authorName: comment.authorName, from: comment.authorType === "staff" ? "venue" : "client" })}</strong>
                 <span>{venueMoment(comment.createdAt) ?? ""}</span>
                 {comment.kind === "request_changes" && <span className="pr-thread__asked">asked for changes</span>}
               </p>

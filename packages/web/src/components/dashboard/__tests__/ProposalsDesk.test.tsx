@@ -2763,6 +2763,21 @@ describe("the conversation and the history", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("names who wrote each message as it was recorded, never by the name the client typed", async () => {
+    mocks.getProposalComments.mockResolvedValue([
+      clientComment({ id: "signed-as-venue", authorName: "Venue team", body: "Please hold the date for us." }),
+      clientComment({ id: "unsigned", authorName: "", body: "And a later finish?" }),
+      clientComment({ id: "reply", authorType: "staff", authorName: "Venue team", body: "We will hold it until Friday." }),
+    ]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const thread = within(await panel.findByTestId("conversation-thread"));
+    const who = (body: string): string | null | undefined => thread.getByText(body).closest("li")?.querySelector("strong")?.textContent;
+    expect(who("Please hold the date for us.")).toBe("Venue team (client)");
+    expect(who("And a later finish?")).toBe("The client");
+    expect(who("We will hold it until Friday.")).toBe("The venue team");
+  });
+
   it("says a step's words aloud again when they are the same", async () => {
     mocks.postProposalComment.mockResolvedValue(clientComment({ id: "c2", authorType: "staff" }));
     render(<ProposalsDesk />);

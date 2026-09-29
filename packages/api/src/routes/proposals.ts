@@ -13,6 +13,7 @@ import {
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
   type EventPlanAudienceRole,
   type EventPlanChangeSurface,
+  type ProposalCommentAuthorType,
   type ProposalFacts,
   type ProposalNextVersion,
   type ProposalVersionPayload,
@@ -231,9 +232,9 @@ const VersionParam = z.object({
 // question reaches the team as they wrote it (CreateProposalCommentSchema).
 const StaffCommentBody = z.object({ body: VenueReplyBodySchema });
 
-// Client-facing label for venue-team replies. The comment table has no
-// authorUserId; staff comments are distinguished structurally by a null
-// share_token_id, and present to the client under a single team identity.
+// Client-facing label for venue-team replies. A reply is recorded as the
+// staff's own (author_type) and presents to the client under a single team
+// identity.
 const STAFF_REPLY_AUTHOR_NAME = "Venue team";
 
 function boundedLifecycleSummary(summary: string): string {
@@ -242,21 +243,20 @@ function boundedLifecycleSummary(summary: string): string {
   return trimmed.length <= 800 ? trimmed : `${trimmed.slice(0, 797)}...`;
 }
 
-/** Project a stored comment row into the staff timeline shape, deriving the
- *  author type from the structural share-token link (client posts carry one;
- *  staff replies do not). */
+/** Project a stored comment row into the staff timeline shape, with the
+ *  author recorded when it was written. */
 function toStaffCommentView(row: {
   id: string;
   kind: string;
   authorName: string | null;
   body: string;
   isClientVisible: boolean;
-  shareTokenId: string | null;
+  authorType: ProposalCommentAuthorType;
   createdAt: Date;
 }): {
   id: string;
   kind: string;
-  authorType: "client" | "staff";
+  authorType: ProposalCommentAuthorType;
   authorName: string | null;
   body: string;
   isClientVisible: boolean;
@@ -265,7 +265,7 @@ function toStaffCommentView(row: {
   return {
     id: row.id,
     kind: row.kind,
-    authorType: row.shareTokenId === null ? "staff" : "client",
+    authorType: row.authorType,
     authorName: row.authorName,
     body: row.body,
     isClientVisible: row.isClientVisible,
@@ -911,8 +911,7 @@ export async function proposalRoutes(
   //
   // Returns BOTH client posts (made through the share link) and staff
   // replies, in chronological order, so the dashboard timeline shows the
-  // whole conversation. Author type is derived structurally from the
-  // share-token link, not a stored flag.
+  // whole conversation, each with the author recorded when it was written.
   server.get("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
@@ -935,7 +934,7 @@ export async function proposalRoutes(
       authorName: proposalComments.authorName,
       body: proposalComments.body,
       isClientVisible: proposalComments.isClientVisible,
-      shareTokenId: proposalComments.shareTokenId,
+      authorType: proposalComments.authorType,
       createdAt: proposalComments.createdAt,
     }).from(proposalComments)
       .where(eq(proposalComments.proposalId, params.data.id))
@@ -948,8 +947,8 @@ export async function proposalRoutes(
   // POST /proposals/:id/comments — staff reply to the client conversation.
   //
   // Claim-guarded (VenueReplyBodySchema) because the reply is the venue's
-  // words, shown to the client. Stored with a null share_token_id (staff origin)
-  // and client-visible so it appears on the share-link page.
+  // words, shown to the client. Recorded as the staff's, with no link, and
+  // client-visible so it appears on the share-link page.
   server.post("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
@@ -978,6 +977,7 @@ export async function proposalRoutes(
       authorEmail: null,
       body: parsed.data.body,
       isClientVisible: true,
+      authorType: "staff",
     }).returning();
     if (comment === undefined) {
       throw new Error("proposal comment insert returned no row");
@@ -1519,7 +1519,7 @@ interface ClientSafeProposalPayload {
     readonly authorName: string | null;
     readonly body: string;
     readonly createdAt: Date;
-    /** The venue team's replies are written without a link. */
+    /** Who wrote it, as recorded when it was written. */
     readonly from: "venue" | "client";
   }[];
 }
@@ -1594,13 +1594,13 @@ async function buildClientSafeProposal(
     authorName: proposalComments.authorName,
     body: proposalComments.body,
     createdAt: proposalComments.createdAt,
-    shareTokenId: proposalComments.shareTokenId,
+    authorType: proposalComments.authorType,
   }).from(proposalComments)
     .where(and(eq(proposalComments.proposalId, proposal.id), eq(proposalComments.isClientVisible, true)))
     .orderBy(desc(proposalComments.createdAt))
     .limit(100);
-  const comments = newest.reverse().map(({ shareTokenId, ...comment }) => ({
-    ...comment, from: shareTokenId === null ? "venue" as const : "client" as const,
+  const comments = newest.reverse().map(({ authorType, ...comment }) => ({
+    ...comment, from: authorType === "staff" ? "venue" as const : "client" as const,
   }));
 
   // Accepted: when, and the name given with the acceptance itself.
@@ -1885,6 +1885,7 @@ export async function proposalShareRoutes(
         authorEmail: parsed.data.authorEmail ?? null,
         body: parsed.data.body,
         isClientVisible: true,
+        authorType: "client",
       }).returning();
       if (comment === undefined) throw new Error("proposal comment insert returned no row");
 
@@ -2000,6 +2001,7 @@ export async function proposalShareRoutes(
         authorEmail: parsed.data.authorEmail ?? null,
         body: parsed.data.body ?? "Client approved the proposal.",
         isClientVisible: true,
+        authorType: "client",
       });
       return { accepted: sentVersionOf(held) };
     });

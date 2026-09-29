@@ -227,7 +227,7 @@ describe("the decision", () => {
 
   it("asks the name to accept in on a link, and sends it with the version", async () => {
     mockGetProposalShare.mockResolvedValue(fixtureProposal({
-      comments: [{ kind: "comment", authorName: "Elaine", body: "Looks good.", createdAt: "2026-06-11T10:00:00.000Z" }],
+      comments: [{ kind: "comment", authorName: "Elaine", body: "Looks good.", createdAt: "2026-06-11T10:00:00.000Z", from: "client" }],
     }));
     mockApproveProposalShare.mockResolvedValue({ status: "accepted" });
     renderTokenPage();
@@ -584,7 +584,7 @@ describe("the conversation", () => {
       .mockResolvedValueOnce(fixtureProposal({
         comments: [
           { kind: "comment", authorName: "Venue team", body: "Happy to hold the Saturday.", createdAt: "2026-06-11T10:00:00.000Z", from: "venue" },
-          { kind: "approval_note", authorName: null, body: "Client approved the proposal.", createdAt: "2026-06-11T10:30:00.000Z" },
+          { kind: "approval_note", authorName: null, body: "Client approved the proposal.", createdAt: "2026-06-11T10:30:00.000Z", from: "client" },
         ],
       }))
       .mockResolvedValueOnce(fixtureProposal({
@@ -618,6 +618,19 @@ describe("the conversation", () => {
     const thread = within(await screen.findByTestId("proposal-comments"));
     expect(thread.getByText("The venue team (client)")).toBeTruthy();
     expect(thread.getAllByText("The venue team")).toHaveLength(1);
+  });
+
+  it("takes a client who signs with the venue team's own name for the client", async () => {
+    mockGetProposalShare.mockResolvedValue(fixtureProposal({
+      comments: [
+        { kind: "comment", authorName: "Venue team", body: "Please hold the date for us.", createdAt: "2026-06-11T10:00:00.000Z", from: "client" },
+      ],
+    }));
+    renderTokenPage();
+    const thread = within(await screen.findByTestId("proposal-comments"));
+    expect(thread.getByText("Venue team (client)")).toBeTruthy();
+    expect(thread.queryByText("The venue team")).toBeNull();
+    expect(thread.getByText("Please hold the date for us.").closest("li")?.getAttribute("data-from")).toBe("client");
   });
 
   it("keeps a message the closed proposal would not take, and says why", async () => {

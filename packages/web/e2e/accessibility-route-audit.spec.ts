@@ -166,7 +166,7 @@ function publicProposalFixture(): PublicProposalPayload {
     },
     version: 1,
     comments: [
-      { kind: "comment", authorName: "Venue team", body: "We can adjust the arrival time.", createdAt: NOW },
+      { kind: "comment", authorName: "Venue team", body: "We can adjust the arrival time.", createdAt: NOW, from: "venue" },
     ],
     packages: [
       { label: "Dinner package", quantity: 1, totalMinor: 125_000, status: "included" },

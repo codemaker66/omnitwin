@@ -68,6 +68,7 @@ import type {
   EventArchitectStrategy,
   LayoutValidatorRun,
   PricingAssumptionInput,
+  ProposalCommentAuthorType,
   ProposalVersionPayload,
   ReconstructionQaReport,
   ReconstructionReleaseArtifactRef,
@@ -2239,10 +2240,16 @@ export const proposalComments = pgTable("proposal_comments", {
   authorEmail: varchar("author_email", { length: 255 }),
   body: text("body").notNull(),
   isClientVisible: boolean("is_client_visible").notNull().default(true),
+  // Who wrote it, named on every write (0084). Never read from the link: a
+  // deleted link sets share_token_id to null, and the client's words would
+  // read as the venue team's.
+  authorType: varchar("author_type", { length: 10 }).$type<ProposalCommentAuthorType>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("proposal_comments_proposal_created_idx").on(table.proposalId, table.createdAt),
   index("proposal_comments_share_token_idx").on(table.shareTokenId),
+  check("proposal_comments_author_type_check", sql`${table.authorType} IN ('client', 'staff')`),
+  check("proposal_comments_staff_without_link", sql`${table.authorType} = 'client' OR ${table.shareTokenId} IS NULL`),
 ]);
 
 // ---------------------------------------------------------------------------

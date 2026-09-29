@@ -99,10 +99,10 @@ export function roomPhotograph(venueSlug: string | null, roomSlug: string | null
   return roomPosterSources(roomSlug);
 }
 
-/** Who wrote a comment, as the client reads it. */
-export function commentAuthor(comment: { readonly authorName: string | null; readonly from?: "venue" | "client" | undefined }): string {
-  const from = comment.from ?? (comment.authorName === "Venue team" ? "venue" : "client");
-  if (from === "venue") return "The venue team";
+/** Who wrote a comment, as the client reads it: as the venue recorded it,
+ *  never from the name, which the client types. */
+export function commentAuthor(comment: { readonly authorName: string | null; readonly from: "venue" | "client" }): string {
+  if (comment.from === "venue") return "The venue team";
   // Said as the client's, whatever name was typed: a link reaches more than
   // one person, and a name alone could pass for the venue's.
   const name = comment.authorName?.trim() ?? "";

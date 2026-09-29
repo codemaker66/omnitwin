@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ProposalCommentAuthorTypeSchema,
   ProposalLayoutSnapshotSchema,
   ProposalNextVersionSchema,
   ProposalStatusSchema,
@@ -37,8 +38,9 @@ export const PublicProposalSchema = z.object({
     authorName: z.string().nullable(),
     body: z.string(),
     createdAt: z.string(),
-    /** Who wrote it; from an API before it, a "Venue team" author is the venue's. */
-    from: z.enum(["venue", "client"]).optional(),
+    /** Who wrote it, as the venue recorded it: never read from a name, which
+     *  the client types. */
+    from: z.enum(["venue", "client"]),
   })).optional(),
   packages: z.array(z.object({
     label: z.string(),
@@ -169,13 +171,13 @@ export const ProposalHistoryEntrySchema = z.object({
 
 export type ProposalHistoryEntry = z.infer<typeof ProposalHistoryEntrySchema>;
 
-// Conversation thread (T-427 phase 6). `authorType` is derived server-side
-// from the structural share-token link: "client" for share-link posts,
-// "staff" for venue-team replies.
+// Conversation thread (T-427 phase 6). `authorType` is recorded when the
+// comment is written: "client" for posts through the share link, "staff"
+// for venue-team replies.
 export const ProposalCommentRowSchema = z.object({
   id: z.string(),
   kind: z.string(),
-  authorType: z.string(),
+  authorType: ProposalCommentAuthorTypeSchema,
   authorName: z.string().nullable(),
   body: z.string(),
   isClientVisible: z.boolean(),
