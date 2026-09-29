@@ -2253,6 +2253,46 @@ export const proposalComments = pgTable("proposal_comments", {
 ]);
 
 // ---------------------------------------------------------------------------
+// proposal_templates — a venue's proposal words and quote lines, kept by room
+// (or any room) and occasion (or any occasion) so the next proposal starts
+// from them (T-635, roadmap X1; migration 0085).
+//
+// A template holds no price: a price-list line is a reference priced from the
+// live list each time it is used, and a typed line asks for its price. The
+// lines are unknown here on purpose: the API validates them on every write
+// and read, and a stored row that no longer parses is listed as unreadable.
+// Removed templates are kept so Remove can be undone; one live template per
+// name at a venue, whatever its case.
+// ---------------------------------------------------------------------------
+
+export const proposalTemplates = pgTable("proposal_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  spaceId: uuid("space_id"),
+  occasion: varchar("occasion", { length: 100 }),
+  name: varchar("name", { length: 120 }).notNull(),
+  message: text("message").notNull().default(""),
+  lines: jsonb("lines").$type<unknown>().notNull().default(sql`'[]'::jsonb`),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  deletedBy: uuid("deleted_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (table) => [
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "proposal_templates_space_venue_fk" }),
+  check("proposal_templates_name_shape", sql`${table.name} = btrim(${table.name}) AND ${table.name} <> ''`),
+  check("proposal_templates_occasion_shape", sql`${table.occasion} IS NULL OR (${table.occasion} = lower(btrim(${table.occasion})) AND ${table.occasion} <> '')`),
+  check("proposal_templates_message_length", sql`char_length(${table.message}) <= 4000`),
+  check("proposal_templates_lines_shape", sql`CASE WHEN jsonb_typeof(${table.lines}) = 'array' THEN jsonb_array_length(${table.lines}) <= 40 ELSE false END`),
+  check("proposal_templates_not_empty", sql`${table.message} <> '' OR CASE WHEN jsonb_typeof(${table.lines}) = 'array' THEN jsonb_array_length(${table.lines}) > 0 ELSE false END`),
+  check("proposal_templates_removal", sql`${table.deletedBy} IS NULL OR ${table.deletedAt} IS NOT NULL`),
+  uniqueIndex("proposal_templates_live_name")
+    .on(table.venueId, sql`lower(${table.name})`)
+    .where(sql`${table.deletedAt} IS NULL`),
+]);
+
+// ---------------------------------------------------------------------------
 // 23. quotes — priced component of a proposal (T-427 phase 1).
 //
 // Money is integer minor units (pence) ONLY — the services/money.ts exact
