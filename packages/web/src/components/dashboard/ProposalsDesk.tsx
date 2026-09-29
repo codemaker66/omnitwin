@@ -94,9 +94,9 @@ const MOVED_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   layout: "It changed before that arrived, so the layout did not change. It now shows where it stands.",
 };
 /** A change to the layout whose answer never came back, or came back broken:
- *  it may have been made, so the proposal is read again rather than said to
- *  be as it was. */
-const LAYOUT_UNCONFIRMED_WORDS = "The change could not be confirmed. It now shows the layout as it stands.";
+ *  it may have been made, so it is not said to be as it was. The proposal is
+ *  read again, which may fail too, so only what is known is said. */
+const LAYOUT_UNCONFIRMED_WORDS = "The change could not be confirmed. The layout shown is as last read.";
 /** A version refused because what it would take changed after its check, or
  *  its links changed as it arrived. The start line above says what is known
  *  of it now, checked again or not, so this claims nothing more. */

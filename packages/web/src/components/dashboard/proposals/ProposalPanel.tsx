@@ -278,7 +278,7 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         </p>
         {props.refreshing && <ActivityStatus className="enq-panel__activity">Refreshing the proposal…</ActivityStatus>}
 
-        <Facts proposal={proposal} nowMs={props.nowMs} latest={props.latest} working={props.working} failure={props.failure}
+        <Facts proposal={proposal} nowMs={props.nowMs} check={props.next.value} working={props.working} failure={props.failure}
           onLayout={props.onLayout} headingRef={headingRef} />
         {proposal.opportunityId !== null && props.onOpenDeal !== null && (
           <div className="enq-actions pr-deal">
@@ -302,8 +302,8 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
 // Who it is for, when, and what it comes to
 // ---------------------------------------------------------------------------
 
-function Facts({ proposal, nowMs, latest, working, failure, onLayout, headingRef }: {
-  readonly proposal: DeskProposal; readonly nowMs: number; readonly latest: PartRead<StaffProposalVersion>;
+function Facts({ proposal, nowMs, check, working, failure, onLayout, headingRef }: {
+  readonly proposal: DeskProposal; readonly nowMs: number; readonly check: ProposalNextVersion | null;
   readonly working: ProposalWork; readonly failure: ProposalFailure | null;
   readonly onLayout: ProposalPanelProps["onLayout"]; readonly headingRef: RefObject<HTMLHeadingElement>;
 }): ReactElement {
@@ -314,18 +314,24 @@ function Facts({ proposal, nowMs, latest, working, failure, onLayout, headingRef
   const layout = layoutFact(proposal, inHand);
   // Only while it is in hand: a version with the client keeps what it carried.
   const choice = inHand ? layoutChoice(proposal) : null;
-  const saved = savedLayoutWords(choice, latest.value, proposal.currentVersion);
+  const saved = savedLayoutWords(choice, check, proposal.currentVersion);
   const layoutFailed = failure?.where === "layout" ? failure.message : null;
   // Focus stays on the layout's control through its work and its new words:
   // it is marked unavailable while working, never disabled. If the control
-  // goes (the proposal moved on, or their layout went), focus goes to what
-  // is said in its place, or else to the proposal's name.
-  const heldRef = useRef<HTMLButtonElement | null>(null);
+  // goes while it has focus (the proposal moved on, or their layout went),
+  // focus goes to what is said in its place, or else to the proposal's name.
+  // React lets go of the control before it leaves the page, so whether it had
+  // focus is known whatever the browser does with focus as it goes.
+  const choiceNodeRef = useRef<HTMLButtonElement | null>(null);
+  const focusGoneRef = useRef(false);
+  const choiceRef = useCallback((node: HTMLButtonElement | null): void => {
+    if (node === null && choiceNodeRef.current !== null && document.activeElement === choiceNodeRef.current) focusGoneRef.current = true;
+    choiceNodeRef.current = node;
+  }, []);
   const actRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const held = heldRef.current;
-    if (held === null || held.isConnected) return;
-    heldRef.current = null;
+  useLayoutEffect(() => {
+    if (!focusGoneRef.current) return;
+    focusGoneRef.current = false;
     const active = document.activeElement;
     if (active === null || active === document.body) (actRef.current ?? headingRef.current)?.focus();
   });
@@ -362,13 +368,10 @@ function Facts({ proposal, nowMs, latest, working, failure, onLayout, headingRef
           {(choice !== null || layoutFailed !== null) && (
             <dd className="pr-facts__act" ref={actRef} tabIndex={-1}>
               {choice !== null && (
-                <button type="button" className="enq-quiet" data-testid="layout-choice" aria-disabled={working !== null}
-                  aria-busy={working === "layout"}
-                  onFocus={(event) => { heldRef.current = event.currentTarget; }}
-                  onBlur={(event) => { if (heldRef.current === event.currentTarget) heldRef.current = null; }}
-                  onClick={() => { if (working === null) void onLayout(choice.change); }}>
+                <button type="button" className="enq-quiet" data-testid="layout-choice" ref={choiceRef} aria-disabled={working !== null}
+                  aria-busy={working === "layout"} onClick={() => { if (working === null) void onLayout(choice.change); }}>
                   {working === "layout" && <ActivityIndicator size={18} />}
-                  {working === "layout" ? (choice.change === "leave_out" ? "Leaving their layout out…" : "Putting their layout back…") : choice.label}
+                  {working === "layout" ? (choice.change === "leave_out" ? "Leaving their layout out…" : "Including their layout…") : choice.label}
                 </button>
               )}
               {layoutFailed !== null && <span className="enq-confirm__error" role="alert">{layoutFailed}</span>}

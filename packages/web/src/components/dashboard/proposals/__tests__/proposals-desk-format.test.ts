@@ -341,10 +341,10 @@ describe("leaving the client's layout out, and putting it back", () => {
   const carried = { configurationId: "layout-1", ...theirs };
   const leftOut = { configurationId: null, ...theirs };
 
-  it("offers to leave their own layout out, and to put it back by naming it", () => {
+  it("offers to leave their own layout out, and to include it by naming it", () => {
     expect(layoutChoice(carried)).toEqual({ change: "leave_out", label: "Leave their layout out", room: "Grand Hall", configurationId: null });
     expect(layoutChoice(leftOut))
-      .toEqual({ change: "take_back", label: "Put back their Grand Hall layout", room: "Grand Hall", configurationId: "layout-1" });
+      .toEqual({ change: "take_back", label: "Include their Grand Hall layout", room: "Grand Hall", configurationId: "layout-1" });
   });
 
   it("offers nothing it could not undo, or the server would refuse", () => {
@@ -359,19 +359,23 @@ describe("leaving the client's layout out, and putting it back", () => {
     expect(layoutChoice({ ...leftOut, enquiryLayoutRoomName: undefined })).toBeNull();
   });
 
-  it("says when the version Send shares still carries otherwise than the choice made", () => {
-    const withTheirs = { version: 2, payload: { configurationId: "layout-1" } };
-    const withNone = { version: 2, payload: { configurationId: null } };
-    expect(savedLayoutWords(layoutChoice(leftOut), withTheirs, 2))
-      .toBe("Version 2, the one Send shares, still carries their layout. Save version 3 to send it without.");
-    expect(savedLayoutWords(layoutChoice(carried), withNone, 2))
-      .toBe("Version 2, the one Send shares, carries no layout. Save version 3 to send theirs.");
-    expect(savedLayoutWords(layoutChoice(carried), withTheirs, 2)).toBeNull();
-    expect(savedLayoutWords(layoutChoice(leftOut), withNone, 2)).toBeNull();
-    // Another layout in the version, a version not read or not the latest, or no choice: nothing.
-    expect(savedLayoutWords(layoutChoice(leftOut), { version: 2, payload: { configurationId: "layout-2" } }, 2)).toBeNull();
+  it("says when the version Send shares still shows otherwise than the choice made, as the check finds it", () => {
+    const check = (layout: ProposalNextVersion["layout"], basedOn = 2): Pick<ProposalNextVersion, "basedOn" | "layout"> => ({ basedOn, layout });
+    expect(savedLayoutWords(layoutChoice(leftOut), check("removed"), 2))
+      .toBe("Version 2, the one Send shares, still shows their layout. Save version 3 to send it without.");
+    expect(savedLayoutWords(layoutChoice(carried), check("added"), 2))
+      .toBe("Version 2, the one Send shares, shows no layout. Save version 3 to include theirs.");
+    // Nothing the client would see differently (their layout has nothing
+    // placed, or the drawing is as saved), which the composer's check says.
+    for (const layout of ["none", "same", "changed"] as const) {
+      expect(savedLayoutWords(layoutChoice(leftOut), check(layout), 2)).toBeNull();
+      expect(savedLayoutWords(layoutChoice(carried), check(layout), 2)).toBeNull();
+    }
+    // A check from before the choice, for another version, or none: nothing.
+    expect(savedLayoutWords(layoutChoice(leftOut), check("added"), 2)).toBeNull();
+    expect(savedLayoutWords(layoutChoice(carried), check("removed"), 2)).toBeNull();
+    expect(savedLayoutWords(layoutChoice(leftOut), check("removed", 1), 2)).toBeNull();
     expect(savedLayoutWords(layoutChoice(leftOut), null, 2)).toBeNull();
-    expect(savedLayoutWords(layoutChoice(leftOut), withTheirs, 3)).toBeNull();
-    expect(savedLayoutWords(null, withTheirs, 2)).toBeNull();
+    expect(savedLayoutWords(null, check("removed"), 2)).toBeNull();
   });
 });

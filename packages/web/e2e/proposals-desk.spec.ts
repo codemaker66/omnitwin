@@ -203,11 +203,15 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         return;
       }
       if (rest === "/versions/next") {
-        // What a save would take beside the words: here the same drawing and
-        // the same facts, as nothing else changes in this emulator.
+        // What a save would take beside the words: the same facts, and the
+        // drawing as the route finds it against the latest version's, here
+        // by whether each carries a layout.
         const facts = { eventDate: current.eventDate, guestCount: current.guestCount, occasion: current.eventType, roomName: "Grand Hall", roomSlug: "grand-hall" };
+        const saved = (emulator.versions.get(id) ?? []).at(-1)?.payload.configurationId ?? null;
+        const now = current.configurationId;
+        const layout = saved === null ? (now === null ? "none" : "added") : now === null ? "removed" : "same";
         void route.fulfill(current.currentVersion < 1 ? { status: 404, json: { error: "No version" } } : { json: { data: {
-          basedOn: current.currentVersion, layout: "same", facts: { saved: facts, now: facts }, basis: "0".repeat(64),
+          basedOn: current.currentVersion, layout, facts: { saved: facts, now: facts }, basis: "0".repeat(64),
         } } });
         return;
       }
@@ -386,7 +390,7 @@ test.describe("Proposals desk", () => {
     await page.screenshot({ path: test.info().outputPath("proposal-layout-desk.png") });
 
     // Staff may leave their layout out of the versions saved from now, and
-    // put it back (A10), from the keyboard, where focus stays; the facts, the
+    // include it again (A10), from the keyboard, where focus stays; the facts, the
     // composer and a line on the version Send shares say which goes out.
     const choice = panel.getByTestId("layout-choice");
     await expect(choice).toHaveText("Leave their layout out");
@@ -394,11 +398,11 @@ test.describe("Proposals desk", () => {
     await choice.focus();
     await page.keyboard.press("Enter");
     await expect(layout).toHaveText("None");
-    await expect(choice).toHaveText("Put back their Grand Hall layout");
+    await expect(choice).toHaveText("Include their Grand Hall layout");
     await expect(choice).toBeFocused();
     await expect(panel.getByTestId("composer-layout")).toHaveCount(0);
     await expect(panel.getByTestId("layout-saved"))
-      .toHaveText("Version 1, the one Send shares, still carries their layout. Save version 2 to send it without.");
+      .toHaveText("Version 1, the one Send shares, still shows their layout. Save version 2 to send it without.");
     await expect(panel.getByRole("status").filter({ hasText: "Their Grand Hall layout is left out of the versions you save from now." }))
       .toHaveCount(1);
     expect(emulator.proposals.get(CRAWFORD)?.configurationId).toBeNull();

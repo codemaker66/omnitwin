@@ -130,7 +130,8 @@ export function layoutFact(proposal: LayoutFields, inHand = true): { readonly wo
 }
 
 /** What staff may do with a proposal's layout while it is in hand (A10): leave
- *  the client's own out of the versions saved from now, or put it back. Only
+ *  the client's own out of the versions saved from now, or include it (put it
+ *  back, or add it where it never was). Only
  *  their enquiry's own layout, and only while the API names it (live, in a
  *  live room, with the proposal's links agreeing), so whatever is done here
  *  can be undone here and the server takes it. */
@@ -148,23 +149,25 @@ export function layoutChoice(proposal: Pick<DeskProposal, "configurationId" | "e
   const room = proposal.enquiryLayoutRoomName ?? null;
   if (theirs === null || room === null) return null;
   if (proposal.configurationId === theirs) return { change: "leave_out", label: "Leave their layout out", room, configurationId: null };
-  if (proposal.configurationId === null) return { change: "take_back", label: `Put back their ${room} layout`, room, configurationId: theirs };
+  if (proposal.configurationId === null) return { change: "take_back", label: `Include their ${room} layout`, room, configurationId: theirs };
   return null;
 }
 
-/** What Send would share while the saved version still says otherwise than
- *  the choice made (A10): leaving their layout out, or putting it back, is
- *  for versions saved from now. Nothing while the version is not read. */
-export function savedLayoutWords(choice: LayoutChoice | null, saved: {
-  readonly version: number; readonly payload: { readonly configurationId: string | null };
-} | null, currentVersion: number): string | null {
-  if (choice === null || saved === null || saved.version !== currentVersion) return null;
-  const next = String(saved.version + 1);
-  if (choice.change === "take_back" && saved.payload.configurationId === choice.configurationId) {
-    return `Version ${String(saved.version)}, the one Send shares, still carries their layout. Save version ${next} to send it without.`;
+/** What Send would still share after the choice made (A10), from the check of
+ *  what a version saved now would change against the saved one: the saved
+ *  version still shows their layout once it is left out, or shows none once
+ *  it is included. Nothing while no check is made for the saved version, or
+ *  when the client would see no difference (their layout has nothing placed). */
+export function savedLayoutWords(choice: LayoutChoice | null, check: Pick<ProposalNextVersion, "basedOn" | "layout"> | null,
+  currentVersion: number): string | null {
+  if (choice === null || check === null || check.basedOn !== currentVersion) return null;
+  const saved = String(check.basedOn);
+  const next = String(check.basedOn + 1);
+  if (choice.change === "take_back" && check.layout === "removed") {
+    return `Version ${saved}, the one Send shares, still shows their layout. Save version ${next} to send it without.`;
   }
-  if (choice.change === "leave_out" && saved.payload.configurationId === null) {
-    return `Version ${String(saved.version)}, the one Send shares, carries no layout. Save version ${next} to send theirs.`;
+  if (choice.change === "leave_out" && check.layout === "added") {
+    return `Version ${saved}, the one Send shares, shows no layout. Save version ${next} to include theirs.`;
   }
   return null;
 }
