@@ -831,6 +831,11 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   keeps what was typed. The accepting name is kept with the acceptance itself, so a comment cannot plant
   one.
 
+  Who wrote each comment is recorded when it is written (`proposal_comments.author_type`, migration 0084), no
+  longer read from its link, which a deleted link would have turned into the venue team's words. The staff desk
+  and the client's page both label a client who signs "Venue team" as the client. Live on `60d97c2b` (receipt
+  36642391351).
+
 **Acceptance**
 - **Task benchmark:** from an approved enquiry to a sent proposal takes 6 or fewer deliberate actions, with no retyping of date, guests or room. Measured before and after.
 - **Revisions:** after a client requests changes, the new version starts from the previous contents and shows a diff.
