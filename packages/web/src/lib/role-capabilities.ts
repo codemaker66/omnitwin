@@ -76,7 +76,8 @@ export const EVENT_WRITE_ROLES = ["admin", "manager", "staff"] as const;
  */
 export const DIARY_WRITE_ROLES = ["admin", "manager", "staff", "sales"] as const;
 
-/** Mirrors `canWriteInventory` — adjusting counted stock. */
+/** Who keeps a venue's inventory (its stock, reservations and internal
+ *  requests): the server's `INVENTORY_ADJUSTER_ROLES`, held equal by test. */
 export const INVENTORY_WRITE_ROLES = ["admin", "manager"] as const;
 
 /** Mirrors `DIARY_READ_ROLES` in `ws/diary-live.ts`. */

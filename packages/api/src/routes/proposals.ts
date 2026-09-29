@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { eq, and, desc, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, getTableColumns, inArray, isNull, sql, type AnyColumn } from "drizzle-orm";
 import {
   CreateProposalCommentSchema,
   VenueReplyBodySchema,
@@ -86,6 +86,8 @@ const UpdateProposalBody = z.object({
   opportunityId: z.string().uuid().nullable().optional(),
   enquiryId: z.string().uuid().nullable().optional(),
   configurationId: z.string().uuid().nullable().optional(),
+  /** Where the proposal stood on the screen the change was made from. */
+  expectedStatus: z.enum(PROPOSAL_STATES).optional(),
 });
 
 const TransitionBody = z.object({
@@ -131,6 +133,21 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
   const lastSentAt = sql`GREATEST(${proposals.sentAt}, (
     SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
     WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
+  // Whether its links agree as the link planner reads them: no deal, or its
+  // deal live here with no enquiry but the deal's own. A layout change the
+  // desk offers is then one the planner takes.
+  const linksAgree = sql`(${proposals.opportunityId} IS NULL OR (${opportunities.id} IS NOT NULL
+    AND (${proposals.enquiryId} IS NULL OR ${proposals.enquiryId} = ${opportunities.sourceEnquiryId})))`;
+  // A layout, or its room's name, only while it is live in a live room at the
+  // proposal's venue, so a removed one, or another venue's, reads as none.
+  const liveLayout = (field: "id" | "room", layoutId: AnyColumn) => sql`(
+    SELECT ${field === "id" ? configurations.id : spaces.name} FROM ${configurations}
+    INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
+    WHERE ${configurations.id} = ${layoutId}
+      AND ${configurations.venueId} = ${proposals.venueId}
+      AND ${configurations.deletedAt} IS NULL
+      AND ${spaces.venueId} = ${proposals.venueId}
+      AND ${spaces.deletedAt} IS NULL)`;
   return db.select({
     ...getTableColumns(proposals),
     dealTitle: opportunities.title,
@@ -138,18 +155,15 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     eventDate: sql<string | null>`COALESCE(${opportunities.preferredDate}, ${enquiries.preferredDate})::text`,
     guestCount: sql<number | null>`COALESCE(${opportunities.guestCount}, ${enquiries.estimatedGuests})`,
     eventType: sql<string | null>`COALESCE(${opportunities.eventType}, ${enquiries.eventType})`,
-    // The room of the layout it carries: only a live layout in a live room at
-    // its venue, so a removed one reads as none.
-    layoutRoomName: sql<string | null>`(
-      SELECT ${spaces.name} FROM ${configurations}
-      INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
-      WHERE ${configurations.id} = ${proposals.configurationId}
-        AND ${configurations.venueId} = ${proposals.venueId}
-        AND ${configurations.deletedAt} IS NULL
-        AND ${spaces.venueId} = ${proposals.venueId}
-        AND ${spaces.deletedAt} IS NULL)`,
+    // The room of the layout it carries.
+    layoutRoomName: sql<string | null>`${liveLayout("room", proposals.configurationId)}`,
     // Whether that layout is the client's own, from their enquiry.
     layoutFromEnquiry: sql<boolean>`COALESCE(${proposals.configurationId} = ${enquiries.configurationId}, false)`,
+    // Their enquiry's own layout and its room, whether or not the proposal
+    // carries it: what staff may leave out or put back (A10), only while its
+    // links agree, so the desk never offers a change the server refuses.
+    enquiryLayoutId: sql<string | null>`CASE WHEN ${linksAgree} THEN ${liveLayout("id", enquiries.configurationId)} END`,
+    enquiryLayoutRoomName: sql<string | null>`CASE WHEN ${linksAgree} THEN ${liveLayout("room", enquiries.configurationId)} END`,
     latestTotalMinor: sql<number | null>`(${latestQuote("totalMinor")})::int`,
     latestCurrency: sql<string | null>`${latestQuote("currency")}`,
     // When one of its links was last opened since it was last sent. The team
@@ -678,6 +692,11 @@ export async function proposalRoutes(
     if (!canManageCommercial(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
+    // A change made from a screen that showed it elsewhere is not made, even
+    // by a platform admin, who may change a proposal in any status.
+    if (parsed.data.expectedStatus !== undefined && parsed.data.expectedStatus !== proposal.status) {
+      return reply.status(409).send(STATUS_CHANGED);
+    }
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" });
     }
@@ -693,14 +712,14 @@ export async function proposalRoutes(
       Object.assign(updateData, linked.links);
     }
 
+    // Only from the status it was judged editable in: a move that lands first
+    // (a colleague's send, say) stands, and nothing is changed under it.
     const [updated] = await db.update(proposals)
       .set(updateData)
-      .where(eq(proposals.id, params.data.id))
+      .where(and(eq(proposals.id, params.data.id), eq(proposals.status, proposal.status), isNull(proposals.deletedAt)))
       .returning();
 
-    if (updated === undefined) {
-      return reply.status(500).send({ error: "Failed to update proposal", code: "PROPOSAL_UPDATE_FAILED" });
-    }
+    if (updated === undefined) return reply.status(409).send(STATUS_CHANGED);
 
     // The layout was touched when one was sent, or when the links worked out
     // to another.
@@ -1600,8 +1619,10 @@ async function buildClientSafeProposal(
     venueAddress: venue?.address ?? null,
     preparedAt: version.createdAt,
     // As the venue held them when the version was saved; a version from
-    // before facts were kept reads them as they are now.
-    facts: payload.data.facts ?? await clientFacts(db, proposal),
+    // before facts were kept reads them as they are now, naming the room of
+    // the layout it carried, so a layout left out since changes nothing here.
+    facts: payload.data.facts ?? await clientFacts(db, payload.data.configurationId === null
+      ? proposal : { ...proposal, configurationId: payload.data.configurationId }),
     accepted: acceptance === undefined ? null : { by: proposal.acceptedName, at: acceptance.at },
     clientMessage: payload.data.clientMessage,
     capacityNote: payload.data.capacityNote,

@@ -193,7 +193,24 @@ describe("InventoryPanel", () => {
     useAuthStore.getState().setUser({ id: actorId, name: "Platform", email: "platform@example.test", role,
       platformRole: "admin", venueId });
     render(<InventoryPanel />);
-    expect(screen.getByText("Venue administrator access required")).toBeTruthy();
+    expect(screen.getByText("Inventory is kept by the venue's administrators and managers")).toBeTruthy();
+    expect(mocks.list).not.toHaveBeenCalled();
+  });
+
+  // A venue's managers keep its inventory with its administrators (Blake, 29 September 2026).
+  it("opens the whole workspace, stock and demand, to the venue's manager", async () => {
+    useAuthStore.getState().setUser({ id: actorId, name: "Venue manager", email: "manager@example.test", role: "manager",
+      platformRole: "none", venueId });
+    await edit();
+    expect(mocks.list).toHaveBeenCalled();
+    expect(screen.getByTestId("demand-assessment")).toBeTruthy();
+  });
+
+  it("keeps a manager with no venue out, saying who keeps inventory", () => {
+    useAuthStore.getState().setUser({ id: actorId, name: "Venue manager", email: "manager@example.test", role: "manager",
+      platformRole: "none", venueId: null });
+    render(<InventoryPanel />);
+    expect(screen.getByText("Inventory is kept by the venue's administrators and managers")).toBeTruthy();
     expect(mocks.list).not.toHaveBeenCalled();
   });
 });

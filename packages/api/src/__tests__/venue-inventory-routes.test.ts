@@ -34,9 +34,19 @@ describe("venue inventory HTTP authority and validation", () => {
 
   // Reading the counts and changing them are different authorities: staff,
   // hallkeepers and planners read (venue-inventory-read-access.test.ts pins
-  // that), and only the venue's administrator adjusts.
-  it.each(["staff", "hallkeeper", "planner", "client"])("denies %s the adjustment surface", async (role) => {
+  // that), and only the venue's administrators and managers adjust (Blake,
+  // 29 September 2026).
+  it.each(["staff", "sales", "hallkeeper", "planner", "client"])("denies %s the adjustment surface", async (role) => {
     expect((await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`, headers: headers(role), payload: input })).statusCode).toBe(403);
+  });
+
+  it.each(["admin", "manager"])("lets the venue's own %s past the adjustment gate, and no other venue's", async (role) => {
+    const own = await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`, headers: headers(role), payload: input });
+    expect(own.statusCode).not.toBe(401);
+    expect(own.statusCode).not.toBe(403);
+    const otherVenue = "00000000-0000-4000-8000-000000000099";
+    const foreign = await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`, headers: headers(role, otherVenue), payload: input });
+    expect(foreign.statusCode).toBe(403);
   });
 
   it("denies a customer role every surface, read included", async () => {

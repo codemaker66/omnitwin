@@ -10,8 +10,8 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
   EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
-  layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft,
-  type TakenCheck,
+  layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, savedLayoutWords, type ComposerDraft,
+  type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
 
@@ -39,10 +39,10 @@ export interface PanelNavigation {
 }
 
 /** What the panel is doing, so only that control waits. */
-export type ProposalWork = "link" | "withdraw" | "archive" | "version" | "reply" | null;
+export type ProposalWork = "link" | "withdraw" | "archive" | "version" | "reply" | "layout" | null;
 
 export interface ProposalFailure {
-  readonly where: "step" | "version" | "reply";
+  readonly where: "step" | "version" | "reply" | "layout";
   readonly message: string;
   /** For a version: the composer whose save failed. */
   readonly composer?: number;
@@ -115,6 +115,9 @@ export interface ProposalPanelProps {
   /** Puts one kept version away once it has been copied. */
   readonly onDiscardKept: (composer: number) => void;
   readonly onReply: (body: string) => Promise<boolean>;
+  /** Leaves the client's own layout out of the versions saved from now, or
+   *  takes it back (A10). */
+  readonly onLayout: (change: LayoutChoice["change"]) => Promise<boolean>;
   readonly onRetryLatest: () => void;
   readonly onRetryHistory: () => void;
   readonly onRetryComments: () => void;
@@ -275,7 +278,8 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         </p>
         {props.refreshing && <ActivityStatus className="enq-panel__activity">Refreshing the proposal…</ActivityStatus>}
 
-        <Facts proposal={proposal} nowMs={props.nowMs} />
+        <Facts proposal={proposal} nowMs={props.nowMs} check={props.next.value} working={props.working} failure={props.failure}
+          onLayout={props.onLayout} headingRef={headingRef} />
         {proposal.opportunityId !== null && props.onOpenDeal !== null && (
           <div className="enq-actions pr-deal">
             <button type="button" className="enq-quiet" onClick={() => { if (proposal.opportunityId !== null) props.onOpenDeal?.(proposal.opportunityId); }}>
@@ -298,11 +302,39 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
 // Who it is for, when, and what it comes to
 // ---------------------------------------------------------------------------
 
-function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly nowMs: number }): ReactElement {
+function Facts({ proposal, nowMs, check, working, failure, onLayout, headingRef }: {
+  readonly proposal: DeskProposal; readonly nowMs: number; readonly check: ProposalNextVersion | null;
+  readonly working: ProposalWork; readonly failure: ProposalFailure | null;
+  readonly onLayout: ProposalPanelProps["onLayout"]; readonly headingRef: RefObject<HTMLHeadingElement>;
+}): ReactElement {
   const date = eventDateParts(proposal.eventDate);
   const weekday = eventWeekday(proposal.eventDate);
   const lead = eventLead(proposal.eventDate, nowMs);
-  const layout = layoutFact(proposal, COMPOSABLE.includes(proposal.status));
+  const inHand = COMPOSABLE.includes(proposal.status);
+  const layout = layoutFact(proposal, inHand);
+  // Only while it is in hand: a version with the client keeps what it carried.
+  const choice = inHand ? layoutChoice(proposal) : null;
+  const saved = savedLayoutWords(choice, check, proposal.currentVersion);
+  const layoutFailed = failure?.where === "layout" ? failure.message : null;
+  // Focus stays on the layout's control through its work and its new words:
+  // it is marked unavailable while working, never disabled. If the control
+  // goes while it has focus (the proposal moved on, or their layout went),
+  // focus goes to what is said in its place, or else to the proposal's name.
+  // React lets go of the control before it leaves the page, so whether it had
+  // focus is known whatever the browser does with focus as it goes.
+  const choiceNodeRef = useRef<HTMLButtonElement | null>(null);
+  const focusGoneRef = useRef(false);
+  const choiceRef = useCallback((node: HTMLButtonElement | null): void => {
+    if (node === null && choiceNodeRef.current !== null && document.activeElement === choiceNodeRef.current) focusGoneRef.current = true;
+    choiceNodeRef.current = node;
+  }, []);
+  const actRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!focusGoneRef.current) return;
+    focusGoneRef.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) (actRef.current ?? headingRef.current)?.focus();
+  });
   return (
     <dl className="enq-facts pr-facts">
       <div>
@@ -333,6 +365,19 @@ function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly 
         <div className="pr-facts__layout">
           <dt>layout</dt>
           <dd className={layout.muted ? "enq-facts__muted" : "enq-facts__room"} data-testid="proposal-layout">{layout.words}</dd>
+          {(choice !== null || layoutFailed !== null) && (
+            <dd className="pr-facts__act" ref={actRef} tabIndex={-1}>
+              {choice !== null && (
+                <button type="button" className="enq-quiet" data-testid="layout-choice" ref={choiceRef} aria-disabled={working !== null}
+                  aria-busy={working === "layout"} onClick={() => { if (working === null) void onLayout(choice.change); }}>
+                  {working === "layout" && <ActivityIndicator size={18} />}
+                  {working === "layout" ? (choice.change === "leave_out" ? "Leaving their layout out…" : "Including their layout…") : choice.label}
+                </button>
+              )}
+              {layoutFailed !== null && <span className="enq-confirm__error" role="alert">{layoutFailed}</span>}
+              {saved !== null && <span className="pr-facts__saved" data-testid="layout-saved">{saved}</span>}
+            </dd>
+          )}
         </div>
       )}
     </dl>

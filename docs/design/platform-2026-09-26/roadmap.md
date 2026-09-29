@@ -134,8 +134,8 @@ Where two audits scored the same surface differently, both scores are shown (for
 
 | Surface | Audience | Daily use | Conf. | Top three slog factors |
 |---|---|---|---|---|
-| Inventory workspace (`dashboard/inventory/InventoryPanel.tsx`) | Venue admins | Daily to weekly; stocktake bursts | 3–5 | (1) The catalogue hides behind an unlabelled count (`:31,77-79`). (2) Rows and tiles take the spring hover. (3) The search border measures 1.49:1 (`InventoryStyle.css:20`), and Georgia is used instead of Newsreader (`:17`). |
-| Reservation impact plane (`InventoryImpact.tsx`) | Venue admins | Every item opened | 3 | (1) The numbers vanish after every save (`InventoryDemand.tsx:80`; `InventoryPanel.tsx:73`). (2) Changing the period means a disclosure plus an Assess round-trip. (3) Captions show UTC offsets and IANA zone names (`inventory-window.ts:87-90`). |
+| Inventory workspace (`dashboard/inventory/InventoryPanel.tsx`) | Venue admins and managers | Daily to weekly; stocktake bursts | 3–5 | (1) The catalogue hides behind an unlabelled count (`:31,77-79`). (2) Rows and tiles take the spring hover. (3) The search border measures 1.49:1 (`InventoryStyle.css:20`), and Georgia is used instead of Newsreader (`:17`). |
+| Reservation impact plane (`InventoryImpact.tsx`) | Venue admins and managers | Every item opened | 3 | (1) The numbers vanish after every save (`InventoryDemand.tsx:80`; `InventoryPanel.tsx:73`). (2) Changing the period means a disclosure plus an Assess round-trip. (3) Captions show UTC offsets and IANA zone names (`inventory-window.ts:87-90`). |
 | Stock correction pane (`InventoryEditor.tsx`) | Venue admins | Bursts of dozens | 3 | (1) Plain text quantity inputs, no steppers (`:31-36`). (2) The "serviceable" figure is hidden inside a disclosure (`:206-208`). (3) History sits three disclosures deep (`InventoryReceipt.tsx:125,135`). |
 | Demand and decisions | Venue admins | Weekly | 1 | (1) A wall of bordered cards, not sorted by shortage (`InventoryDemandEvidence.tsx:19-35`). (2) Jargon and raw enums (`:51-57,73`). (3) The same caveat repeated five times. |
 | Review drawers (reservations, requests) | Venue admins | Several a week | 2 | (1) A modal drawer replaces the side-by-side context. (2) A mandatory reason plus checkbox (`InventoryReservationReview.tsx:173-180`). (3) Receipts lead with UUIDs. |
@@ -1293,12 +1293,14 @@ Grouped by theme, with the themes that block the most work first. Every question
 **Answered on 29 September**, through the question form:
 - A10 took the default. The client's own layout goes with a proposal, staff may leave it out, venue-drawn layouts
   come later, and the client page's closing line becomes "Numbers and layout are planning estimates; the events
-  team confirms them."
+  team confirms them." Built the same day: the desk's "Leave their layout out" and "Include their … layout", and
+  the new closing line.
 - A client's question on the proposal page reaches the team as written. A request for changes and a note with an
   acceptance are the client's own words as well, so they are treated the same (an extension of the answer). The
   claim guard stays on the venue's words.
-- Managers, as well as venue admins, change inventory stock. Each change records who made it and their role (part
-  of C2).
+- Managers, as well as venue admins, keep the inventory: they change stock, approve or revoke equipment
+  reservations, and prepare and approve internal requests. Each records who made it and their role (part of C2).
+  Built the same day.
 
 ### A. What we build first, and how money moves (blocks Tier A and X1)
 

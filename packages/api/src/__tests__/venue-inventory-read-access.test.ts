@@ -100,8 +100,8 @@ describe("venue inventory read access", () => {
     expect(queued).toEqual([]);
   });
 
-  it("still refuses every reader but the venue administrator an adjustment", async () => {
-    for (const role of ["staff", "hallkeeper", "planner", "client"]) {
+  it("still refuses every reader but the venue's administrators and managers an adjustment", async () => {
+    for (const role of ["staff", "sales", "hallkeeper", "planner", "client"]) {
       const response = await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`,
         headers: headers(role),
         payload: { commandId: "00000000-0000-4000-8000-000000000004", expectedRevision: null,

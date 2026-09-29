@@ -14,8 +14,8 @@ import "./ProposalDocument.css";
 // preview both render this, so the preview is the page.
 //
 // CLIENT-SAFE by construction: it renders only the public proposal shape.
-// Capacity and layout are the venue team's planning estimates, said once at
-// the foot; the price is the price.
+// Numbers and layout are planning estimates the events team confirms, said
+// once at the foot (Blake, 29 September 2026); the price is the price.
 // ---------------------------------------------------------------------------
 
 export interface ProposalDocumentProps {
@@ -158,7 +158,7 @@ export function ProposalDocument({ proposal, band, conversation, decision, showS
         {showStanding && <p className="pd-printed-decision">{printedDecision(proposal)}</p>}
 
         <footer className="pd-foot">
-          <p>Capacity and layout are the venue team's planning estimates. Nothing here is a safety, occupancy or compliance determination.</p>
+          <p>Numbers and layout are planning estimates; the events team confirms them. Nothing here is a safety, occupancy or compliance determination.</p>
           {venueLine !== "" && <p className="pd-foot__venue">{venueLine}</p>}
         </footer>
       </article>

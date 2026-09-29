@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getCanonicalAssetBySlug } from "@omnitwin/types";
 
@@ -11,6 +13,7 @@ const {
   deterministicUuid,
   parseCliOptions,
   planStockImport,
+  stockActor,
 } = await import("../import-venue-stock.js");
 type EquipmentIntake = Awaited<ReturnType<typeof import("../import-venue-stock.js").readIntake>>;
 
@@ -137,12 +140,48 @@ describe("parseCliOptions", () => {
   it("requires every identifying argument", () => {
     expect(() => parseCliOptions(["--source", "intake.json"])).toThrow(/--venue is required/u);
   });
+
+  it("refuses a venue or an account that is not named by its id, before any query", () => {
+    expect(() => parseCliOptions(["--source", "intake.json", "--venue", "trades-hall", "--actor", ACTOR, "--reason", REASON]))
+      .toThrow(/--venue must be an id/u);
+    expect(() => parseCliOptions(["--source", "intake.json", "--venue", VENUE, "--actor", "not-a-uuid", "--reason", REASON]))
+      .toThrow(/--actor must be an id/u);
+  });
 });
 
 describe("deterministicUuid", () => {
   it("reproduces the catalogue's own UUID v5 derivation", () => {
     expect(deterministicUuid("round-table-6ft")).toBe("a1ef4d89-7786-5878-bee1-87b3fac28200");
     expect(deterministicUuid("banquet-chair")).toBe("4dfcae64-b6e3-54f8-817f-af041edab935");
+  });
+});
+
+// Each receipt records the role its author holds (Blake, 29 September 2026:
+// a venue's administrators and managers both keep its stock).
+describe("stockActor", () => {
+  function accounts(rows: readonly { role: string; venueId: string | null }[]) {
+    return { select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(rows) }) }) }) } as never;
+  }
+
+  it("records the import as the account's own role", async () => {
+    await expect(stockActor(accounts([{ role: "manager", venueId: VENUE }]), ACTOR, VENUE))
+      .resolves.toEqual({ userId: ACTOR, role: "manager", venueId: VENUE });
+    await expect(stockActor(accounts([{ role: "admin", venueId: VENUE }]), ACTOR, VENUE))
+      .resolves.toEqual({ userId: ACTOR, role: "admin", venueId: VENUE });
+  });
+
+  // The import records whoever runs it as their account says, never a fixed role.
+  it("is what the import records its receipts as", async () => {
+    const source = await readFile(resolve("src/scripts/import-venue-stock.ts"), "utf-8");
+    expect(source).toContain("actor = await stockActor(connection.db, options.actorUserId, options.venueId);");
+    expect(source).not.toMatch(/role: "admin"/u);
+  });
+
+  it("refuses anyone who cannot keep this venue's stock, before anything is written", async () => {
+    await expect(stockActor(accounts([{ role: "staff", venueId: VENUE }]), ACTOR, VENUE)).rejects.toThrow(/cannot change its stock/u);
+    await expect(stockActor(accounts([{ role: "manager", venueId: "33333333-3333-4333-8333-333333333333" }]), ACTOR, VENUE))
+      .rejects.toThrow(/cannot change its stock/u);
+    await expect(stockActor(accounts([]), ACTOR, VENUE)).rejects.toThrow(/No account/u);
   });
 });
 

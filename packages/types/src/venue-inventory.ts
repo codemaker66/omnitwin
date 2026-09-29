@@ -80,10 +80,21 @@ export const InventoryActorSchema = z.object({
 }).strict();
 export type InventoryActor = z.infer<typeof InventoryActorSchema>;
 
+/** Who may change a venue's stock: its administrators and its managers (Blake,
+ *  29 September 2026). Each receipt records which of them it was. */
+export const INVENTORY_ADJUSTER_ROLES = ["admin", "manager"] as const;
+export const InventoryAdjusterRoleSchema = z.enum(INVENTORY_ADJUSTER_ROLES);
+export type InventoryAdjusterRole = z.infer<typeof InventoryAdjusterRoleSchema>;
+
 /** Actor fields must come from authenticated server authority, never a body. */
 export function canAdjustVenueInventory(actor: InventoryActor, venueId: string): boolean {
   const parsed = InventoryActorSchema.parse(actor);
-  return parsed.role === "admin" && parsed.venueId === Id.parse(venueId);
+  return InventoryAdjusterRoleSchema.safeParse(parsed.role).success && parsed.venueId === Id.parse(venueId);
+}
+
+/** The role a receipt records for an actor already allowed to change stock. */
+export function inventoryAdjusterRole(actor: InventoryActor): InventoryAdjusterRole {
+  return InventoryAdjusterRoleSchema.parse(InventoryActorSchema.parse(actor).role);
 }
 
 export const InventoryAdjustmentCommandSchema = z.object({
@@ -97,7 +108,7 @@ export type InventoryAdjustmentCommand = z.infer<typeof InventoryAdjustmentComma
 export const InventoryAdjustmentReceiptSchema = z.object({
   command: InventoryAdjustmentCommandSchema,
   actorUserId: Id,
-  actorRole: z.literal("admin"),
+  actorRole: InventoryAdjusterRoleSchema,
   reason: z.string().trim().min(1).max(1000),
   recordedAt: InventoryInstantSchema,
   before: InventoryStockSchema,

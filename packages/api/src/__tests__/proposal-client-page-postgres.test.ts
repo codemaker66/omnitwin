@@ -198,6 +198,21 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     expect((await clientPage()).facts.roomName).toBeNull();
   });
 
+  // A version saved before facts were kept reads them as they are now, but
+  // names the room of the layout it carried: leaving the layout out of the
+  // versions saved from now (A10) changes nothing on the page already sent.
+  it("names the room of the layout an older version carried, even once the proposal's is left out", async () => {
+    const saloon = await room("Saloon", "saloon");
+    const configuration = randomUUID();
+    await pool.query("INSERT INTO configurations (id, venue_id, space_id, name) VALUES ($1, $2, $3, 'Dinner rounds')", [configuration, VENUE, saloon]);
+    await pool.query("UPDATE proposal_versions SET payload = $2 WHERE proposal_id = $1 AND version = 1",
+      [PROPOSAL, JSON.stringify({ ...VERSION_PAYLOAD, configurationId: configuration })]);
+    await pool.query("UPDATE proposals SET configuration_id = $2 WHERE id = $1", [PROPOSAL, configuration]);
+    expect((await clientPage()).facts.roomName).toBe("Saloon");
+    await pool.query("UPDATE proposals SET configuration_id = NULL WHERE id = $1", [PROPOSAL]);
+    expect((await clientPage()).facts.roomName).toBe("Saloon");
+  });
+
   it("names who accepted it and when, as they gave their name", async () => {
     expect((await clientPage()).accepted).toBeNull();
     const approved = await server.inject({

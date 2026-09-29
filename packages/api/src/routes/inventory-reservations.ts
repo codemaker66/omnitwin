@@ -19,7 +19,7 @@ async function authorized(request: FastifyRequest, reply: FastifyReply): Promise
   const params = Params.safeParse(request.params);
   if (!params.success) { await invalid(reply, params.error.issues); return; }
   if (!canAdjustVenueInventory(actorFor(request), params.data.venueId)) {
-    await reply.status(403).send({ error: "Only this venue's administrator can approve inventory decisions", code: "FORBIDDEN" });
+    await reply.status(403).send({ error: "Only this venue's administrators and managers can decide its inventory", code: "FORBIDDEN" });
   }
 }
 async function execute<T>(reply: FastifyReply, action: () => Promise<T>): Promise<T | FastifyReply> {
