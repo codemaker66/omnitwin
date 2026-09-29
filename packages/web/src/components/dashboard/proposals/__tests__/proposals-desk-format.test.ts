@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ProposalFacts, ProposalNextVersion, ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
-  composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords,
+  composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutChoice, layoutFact, groupRows, historyMoments,
+  linkVersionWords,
   listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, sameWords, startedAgainWords,
   takenChanges,
 } from "../proposals-desk-format.js";
@@ -330,5 +331,31 @@ describe("the layout a proposal carries", () => {
       .toBe("The layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
     expect(composerLayoutLine({ ...linked, layoutRoomName: null })).toBeNull();
     expect(composerLayoutLine({ configurationId: null, layoutRoomName: null, layoutFromEnquiry: false })).toBeNull();
+  });
+});
+
+// A10 (Blake, 29 September 2026): the client's own layout goes with a
+// proposal, and staff may leave it out.
+describe("leaving the client's layout out, and putting it back", () => {
+  const theirs = { enquiryLayoutId: "layout-1", enquiryLayoutRoomName: "Grand Hall" };
+  const carried = { configurationId: "layout-1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true, ...theirs };
+  const leftOut = { configurationId: null, layoutRoomName: null, layoutFromEnquiry: false, ...theirs };
+
+  it("offers to leave their own live layout out, and to put it back by naming it", () => {
+    expect(layoutChoice(carried)).toEqual({ change: "leave_out", label: "Leave their layout out", room: "Grand Hall", configurationId: null });
+    expect(layoutChoice(leftOut))
+      .toEqual({ change: "take_back", label: "Put back their Grand Hall layout", room: "Grand Hall", configurationId: "layout-1" });
+  });
+
+  it("offers nothing it could not undo: another layout, a removed one, or theirs once it is gone", () => {
+    expect(layoutChoice({ ...carried, layoutFromEnquiry: false })).toBeNull();
+    expect(layoutChoice({ ...carried, layoutRoomName: null, enquiryLayoutId: null, enquiryLayoutRoomName: null })).toBeNull();
+    expect(layoutChoice({ ...leftOut, enquiryLayoutId: null, enquiryLayoutRoomName: null })).toBeNull();
+  });
+
+  it("offers nothing when the API does not say", () => {
+    expect(layoutChoice({ ...carried, layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
+    expect(layoutChoice({ ...leftOut, enquiryLayoutId: undefined, enquiryLayoutRoomName: undefined })).toBeNull();
+    expect(layoutChoice({ ...leftOut, enquiryLayoutRoomName: undefined })).toBeNull();
   });
 });

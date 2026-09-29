@@ -160,6 +160,28 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         void route.fulfill({ json: { data: current } });
         return;
       }
+      if (rest === "" && method === "PATCH") {
+        // As the route: only while in hand, and a layout named only if it is
+        // their enquiry's own (A10).
+        const body = request.postDataJSON() as { configurationId?: string | null };
+        const theirs = current.enquiryLayoutId ?? null;
+        if (current.status !== "draft" && current.status !== "changes_requested") {
+          void route.fulfill({ status: 422, json: { error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" } });
+          return;
+        }
+        if (typeof body.configurationId === "string" && body.configurationId !== theirs) {
+          void route.fulfill({ status: 422, json: { error: "That layout is not the one on their enquiry.", code: "LINK_MISMATCH" } });
+          return;
+        }
+        const configurationId = body.configurationId === undefined ? current.configurationId : body.configurationId;
+        const next: DeskProposal = {
+          ...current, configurationId, layoutRoomName: configurationId === null ? null : current.enquiryLayoutRoomName ?? null,
+          layoutFromEnquiry: configurationId !== null && configurationId === theirs, updatedAt: NOW.toISOString(),
+        };
+        emulator.proposals.set(id, next);
+        void route.fulfill({ json: { data: next } });
+        return;
+      }
       if (rest === "/preview" && method === "GET") {
         // The latest saved version, as the client's page would draw it.
         const latest = (emulator.versions.get(id) ?? []).at(-1);
@@ -337,8 +359,10 @@ test.describe("Proposals desk", () => {
     const emulator = await openDesk(page);
     const crawford = emulator.proposals.get(CRAWFORD);
     if (crawford === undefined) throw new Error("Missing the Crawford fixture");
+    const theirs = "00000000-0000-4000-8000-00000000c0f1";
     emulator.proposals.set(CRAWFORD, {
-      ...crawford, configurationId: "00000000-0000-4000-8000-00000000c0f1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true,
+      ...crawford, configurationId: theirs, layoutRoomName: "Grand Hall", layoutFromEnquiry: true,
+      enquiryLayoutId: theirs, enquiryLayoutRoomName: "Grand Hall",
     });
     await page.goto(`/dashboard?view=proposals&proposal=${CRAWFORD}`);
     const panel = page.getByRole("region", { name: "Crawford wedding proposal" });
@@ -353,11 +377,29 @@ test.describe("Proposals desk", () => {
     expect(fact / facts).toBeGreaterThan(0.9);
     await page.screenshot({ path: test.info().outputPath("proposal-layout-desk.png") });
 
+    // Staff may leave their layout out of the versions saved from now, and
+    // put it back (A10); the facts and the composer say which goes out.
+    const choice = panel.getByTestId("layout-choice");
+    await expect(choice).toHaveText("Leave their layout out");
+    await choice.click();
+    await expect(layout).toHaveText("None");
+    await expect(choice).toHaveText("Put back their Grand Hall layout");
+    await expect(panel.getByTestId("composer-layout")).toHaveCount(0);
+    await expect(panel.getByRole("status").filter({ hasText: "Their Grand Hall layout is left out of the versions you save from now." }))
+      .toHaveCount(1);
+    expect(emulator.proposals.get(CRAWFORD)?.configurationId).toBeNull();
+    await page.screenshot({ path: test.info().outputPath("proposal-layout-left-out.png") });
+    await choice.click();
+    await expect(layout).toHaveText("Their own, Grand Hall");
+    await expect(choice).toHaveText("Leave their layout out");
+    expect(emulator.proposals.get(CRAWFORD)?.configurationId).toBe(theirs);
+
     await page.setViewportSize({ width: 390, height: 844 });
     // The desk becomes one column when the page hears the new width, a moment
     // after it is set: measure once the proposal has replaced the ledger.
     await expect(panel.getByRole("button", { name: "Back to proposals" })).toBeVisible();
     await expect(layout).toBeVisible();
+    await expect(choice).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: test.info().outputPath("proposal-layout-phone.png"), fullPage: true });
   });

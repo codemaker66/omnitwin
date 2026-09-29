@@ -129,6 +129,31 @@ export function layoutFact(proposal: LayoutFields, inHand = true): { readonly wo
   };
 }
 
+/** What staff may do with a proposal's layout while it is in hand (A10): leave
+ *  the client's own out of the versions saved from now, or put it back. Only
+ *  ever their own, and only while it is live, so whatever is done here can be
+ *  undone here. */
+export interface LayoutChoice {
+  readonly change: "leave_out" | "take_back";
+  readonly label: string;
+  /** The room of their layout. */
+  readonly room: string;
+  /** What the proposal carries once it is done: none, or their layout. */
+  readonly configurationId: string | null;
+}
+
+export function layoutChoice(proposal: LayoutFields & Pick<DeskProposal, "enquiryLayoutId" | "enquiryLayoutRoomName">): LayoutChoice | null {
+  if (proposal.configurationId !== null) {
+    const room = proposal.layoutRoomName ?? null;
+    return proposal.layoutFromEnquiry === true && room !== null
+      ? { change: "leave_out", label: "Leave their layout out", room, configurationId: null } : null;
+  }
+  const theirs = proposal.enquiryLayoutId ?? null;
+  const room = proposal.enquiryLayoutRoomName ?? null;
+  return theirs === null || room === null ? null
+    : { change: "take_back", label: `Put back their ${room} layout`, room, configurationId: theirs };
+}
+
 /** What the composer says of the layout a version will carry, only while
  *  there is one to take. It promises no drawing: a layout with nothing
  *  placed has none. Preview shows only a saved version, so it is offered for

@@ -20,6 +20,12 @@
 .pr-facts dd { font-size: clamp(21px, 1.7vw, 27px); }
 /* The layout it carries reads across the panel, under the facts. */
 .pr-facts > .pr-facts__layout { grid-column: 1 / -1; padding-left: 0; border-left: 0; }
+/* Leaving their layout out, or taking it back (A10), sits under its label:
+   the cell stacks in reverse, so it comes first in that order. */
+.pr-facts__layout > dd.pr-facts__act {
+  order: -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px;
+  font-size: 16px; font-weight: 400; line-height: 1.4; letter-spacing: 0;
+}
 
 .pr-deal { margin-top: 14px; }
 .pr-deal .enq-quiet { gap: 6px; }

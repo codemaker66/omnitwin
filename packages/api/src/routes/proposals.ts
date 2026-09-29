@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { eq, and, desc, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, getTableColumns, inArray, isNull, sql, type AnyColumn } from "drizzle-orm";
 import {
   CreateProposalCommentSchema,
   VenueReplyBodySchema,
@@ -131,6 +131,16 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
   const lastSentAt = sql`GREATEST(${proposals.sentAt}, (
     SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
     WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
+  // A layout, or its room's name, only while it is live in a live room at the
+  // proposal's venue, so a removed one, or another venue's, reads as none.
+  const liveLayout = (field: "id" | "room", layoutId: AnyColumn) => sql`(
+    SELECT ${field === "id" ? configurations.id : spaces.name} FROM ${configurations}
+    INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
+    WHERE ${configurations.id} = ${layoutId}
+      AND ${configurations.venueId} = ${proposals.venueId}
+      AND ${configurations.deletedAt} IS NULL
+      AND ${spaces.venueId} = ${proposals.venueId}
+      AND ${spaces.deletedAt} IS NULL)`;
   return db.select({
     ...getTableColumns(proposals),
     dealTitle: opportunities.title,
@@ -138,18 +148,14 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     eventDate: sql<string | null>`COALESCE(${opportunities.preferredDate}, ${enquiries.preferredDate})::text`,
     guestCount: sql<number | null>`COALESCE(${opportunities.guestCount}, ${enquiries.estimatedGuests})`,
     eventType: sql<string | null>`COALESCE(${opportunities.eventType}, ${enquiries.eventType})`,
-    // The room of the layout it carries: only a live layout in a live room at
-    // its venue, so a removed one reads as none.
-    layoutRoomName: sql<string | null>`(
-      SELECT ${spaces.name} FROM ${configurations}
-      INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
-      WHERE ${configurations.id} = ${proposals.configurationId}
-        AND ${configurations.venueId} = ${proposals.venueId}
-        AND ${configurations.deletedAt} IS NULL
-        AND ${spaces.venueId} = ${proposals.venueId}
-        AND ${spaces.deletedAt} IS NULL)`,
+    // The room of the layout it carries.
+    layoutRoomName: sql<string | null>`${liveLayout("room", proposals.configurationId)}`,
     // Whether that layout is the client's own, from their enquiry.
     layoutFromEnquiry: sql<boolean>`COALESCE(${proposals.configurationId} = ${enquiries.configurationId}, false)`,
+    // Their enquiry's own layout and its room, whether or not the proposal
+    // carries it: what staff may put back once they have left it out (A10).
+    enquiryLayoutId: sql<string | null>`${liveLayout("id", enquiries.configurationId)}`,
+    enquiryLayoutRoomName: sql<string | null>`${liveLayout("room", enquiries.configurationId)}`,
     latestTotalMinor: sql<number | null>`(${latestQuote("totalMinor")})::int`,
     latestCurrency: sql<string | null>`${latestQuote("currency")}`,
     // When one of its links was last opened since it was last sent. The team
@@ -693,14 +699,14 @@ export async function proposalRoutes(
       Object.assign(updateData, linked.links);
     }
 
+    // Only from the status it was judged editable in: a move that lands first
+    // (a colleague's send, say) stands, and nothing is changed under it.
     const [updated] = await db.update(proposals)
       .set(updateData)
-      .where(eq(proposals.id, params.data.id))
+      .where(and(eq(proposals.id, params.data.id), eq(proposals.status, proposal.status), isNull(proposals.deletedAt)))
       .returning();
 
-    if (updated === undefined) {
-      return reply.status(500).send({ error: "Failed to update proposal", code: "PROPOSAL_UPDATE_FAILED" });
-    }
+    if (updated === undefined) return reply.status(409).send(STATUS_CHANGED);
 
     // The layout was touched when one was sent, or when the links worked out
     // to another.

@@ -289,6 +289,10 @@ export const DeskProposalSchema = StaffProposalSchema.extend({
   layoutRoomName: z.string().nullable().optional(),
   /** Whether that layout is the client's own, from their enquiry. */
   layoutFromEnquiry: z.boolean().optional(),
+  /** Their enquiry's own layout and its room while it is live, whether or not
+   *  the proposal carries it: what staff may put back once left out (A10). */
+  enquiryLayoutId: z.string().nullable().optional(),
+  enquiryLayoutRoomName: z.string().nullable().optional(),
 });
 
 export type DeskProposal = z.infer<typeof DeskProposalSchema>;
@@ -357,6 +361,13 @@ export async function createProposal(input: CreateProposalInput): Promise<StaffP
 
 export async function updateProposalTitle(id: string, title: string): Promise<StaffProposal> {
   return api.patch(`/proposals/${id}`, { title }, StaffProposalSchema);
+}
+
+/** Leaves the layout out of the versions saved from now (A10), with null, or
+ *  puts the client's own back by naming it: the server takes a layout only if
+ *  it is still the one on their enquiry. */
+export async function changeProposalLayout(id: string, configurationId: string | null): Promise<StaffProposal> {
+  return api.patch(`/proposals/${id}`, { configurationId }, StaffProposalSchema);
 }
 
 /** Moves it, answering with its row as the desk now reads it: the figure that

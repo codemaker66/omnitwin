@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   createQuote: vi.fn(),
   deleteQuote: vi.fn(),
   transitionProposal: vi.fn(),
+  changeProposalLayout: vi.fn(),
   listSpaces: vi.fn(),
 }));
 
@@ -46,6 +47,7 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   createQuote: mocks.createQuote,
   deleteQuote: mocks.deleteQuote,
   transitionProposal: mocks.transitionProposal,
+  changeProposalLayout: mocks.changeProposalLayout,
 }));
 vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
 
@@ -790,6 +792,119 @@ describe("the layout it carries", () => {
     await silent.findByTestId("composer-save");
     expect(silent.queryByTestId("proposal-layout")).toBeNull();
     expect(silent.queryByTestId("composer-layout")).toBeNull();
+  });
+
+  // A10 (Blake, 29 September 2026): the client's own layout goes with a
+  // proposal, and staff may leave it out, or put it back.
+  const THEIRS = { enquiryLayoutId: "layout-1", enquiryLayoutRoomName: "Grand Hall" };
+  function carrying(configurationId: string | null, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return proposal({
+      status: "changes_requested", currentVersion: 2, configurationId, layoutRoomName: configurationId === null ? null : "Grand Hall",
+      layoutFromEnquiry: configurationId !== null, ...THEIRS, ...overrides,
+    });
+  }
+  const said = (panel: { readonly getAllByRole: (role: "status") => HTMLElement[] }, words: string): HTMLElement | undefined =>
+    panel.getAllByRole("status").find((region) => region.textContent === words);
+
+  it("leaves their layout out of the versions saved from now, puts it back by naming it, and checks the next version again each time", async () => {
+    existing = [carrying("layout-1")];
+    const facts = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+    mocks.getProposalNextVersion.mockResolvedValue({ basedOn: 2, layout: "same", facts: { saved: facts, now: facts }, basis: "b".repeat(64) });
+    mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => {
+      existing = [carrying(configurationId)];
+      return Promise.resolve(existing[0]);
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect((await panel.findByTestId("proposal-layout")).textContent).toBe("Their own, Grand Hall");
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(1); });
+
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(said(panel, "Their Grand Hall layout is left out of the versions you save from now.")).toBeDefined(); });
+    expect(mocks.changeProposalLayout).toHaveBeenCalledWith("p1", null);
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("None"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Put back their Grand Hall layout");
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(2); });
+
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(said(panel, "Their Grand Hall layout goes with the versions you save from now.")).toBeDefined(); });
+    expect(mocks.changeProposalLayout).toHaveBeenLastCalledWith("p1", "layout-1");
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("Their own, Grand Hall"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Leave their layout out");
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(3); });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("waits while it changes, and says the proposal is as it was when it fails", async () => {
+    existing = [carrying("layout-1")];
+    let fail: (error: unknown) => void = () => undefined;
+    mocks.changeProposalLayout.mockReturnValue(new Promise((_resolve, reject) => { fail = reject; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    const waiting = panel.getByTestId<HTMLButtonElement>("layout-choice");
+    expect(waiting.textContent).toBe("Leaving their layout out…");
+    expect(waiting.disabled).toBe(true);
+    expect(waiting.getAttribute("aria-busy")).toBe("true");
+    const reads = mocks.getDeskProposal.mock.calls.length;
+    await act(async () => { fail(new Error("offline")); await Promise.resolve(); });
+    expect((await panel.findByRole("alert")).textContent).toBe("The layout did not change. The proposal is as it was.");
+    expect(panel.getByTestId("proposal-layout").textContent).toBe("Their own, Grand Hall");
+    const again = panel.getByTestId<HTMLButtonElement>("layout-choice");
+    expect(again.textContent).toBe("Leave their layout out");
+    expect(again.disabled).toBe(false);
+    expect(mocks.getDeskProposal).toHaveBeenCalledTimes(reads);
+  });
+
+  it("shows the proposal as it is when their layout went before it could be put back", async () => {
+    existing = [carrying(null)];
+    mocks.changeProposalLayout.mockImplementation(() => {
+      // Their layout was removed a moment before the booker's press arrived.
+      existing = [carrying(null, { enquiryLayoutId: null, enquiryLayoutRoomName: null })];
+      return Promise.reject(new ApiError(404, "Configuration not found", "NOT_FOUND"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    expect((await panel.findByRole("alert")).textContent).toBe("The layout did not change. The proposal is as it was.");
+    await waitFor(() => { expect(panel.queryByTestId("layout-choice")).toBeNull(); });
+    expect(panel.getByTestId("proposal-layout").textContent).toBe("None");
+    expect(panel.getByRole("alert").textContent).toBe("The layout did not change. The proposal is as it was.");
+  });
+
+  it("says the proposal moved first, and shows where it stands, when it was sent before the change arrived", async () => {
+    existing = [carrying("layout-1")];
+    mocks.changeProposalLayout.mockImplementation(() => {
+      // A colleague sent it a moment before.
+      existing = [carrying("layout-1", { status: "sent", currentVersion: 2, sentAt: "2026-10-02T09:59:00.000Z" })];
+      return Promise.reject(new ApiError(409, "The proposal changed", "PROPOSAL_STATUS_CHANGED"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    expect((await panel.findByRole("alert")).textContent)
+      .toBe("It changed before that arrived, so the layout did not change. It now shows where it stands.");
+    expect(await panel.findByText("With the client", { selector: ".enq-chip" })).toBeDefined();
+    expect(panel.queryByTestId("layout-choice")).toBeNull();
+  });
+
+  it("offers nothing once it is with the client, for a layout not theirs, or for one removed", async () => {
+    existing = [
+      carrying("layout-1", { status: "sent", sentAt: "2026-10-01T09:00:00.000Z" }),
+      carrying("layout-2", { id: "p2", title: "Burns supper", layoutFromEnquiry: false }),
+      carrying("layout-1", { id: "p3", title: "Hogmanay", layoutRoomName: null, enquiryLayoutId: null, enquiryLayoutRoomName: null }),
+    ];
+    render(<ProposalsDesk />);
+    const sent = within(await openProposal());
+    expect((await sent.findByTestId("proposal-layout")).textContent).toBe("Their own, Grand Hall");
+    expect(sent.queryByTestId("layout-choice")).toBeNull();
+    const other = within(await openProposal("p2", "Burns supper"));
+    expect((await other.findByTestId("proposal-layout")).textContent).toBe("Grand Hall");
+    expect(other.queryByTestId("layout-choice")).toBeNull();
+    const removed = within(await openProposal("p3", "Hogmanay"));
+    expect((await removed.findByTestId("proposal-layout")).textContent).toBe("Removed");
+    expect(removed.queryByTestId("layout-choice")).toBeNull();
+    expect(mocks.changeProposalLayout).not.toHaveBeenCalled();
   });
 });
 

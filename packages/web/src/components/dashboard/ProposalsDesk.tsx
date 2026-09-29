@@ -6,9 +6,9 @@ import {
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../../api/client.js";
 import {
-  createProposal, createProposalShareToken, createProposalVersion, createQuote, deleteQuote, getDeskProposal, getLatestProposalVersion,
-  getProposalComments, getProposalHistory, getProposalNextVersion, listProposalDesk, postProposalComment, transitionProposal,
-  type DeskProposal, type ProposalCommentRow, type ProposalDeskPage, type ProposalHistoryEntry, type StaffProposalVersion,
+  changeProposalLayout, createProposal, createProposalShareToken, createProposalVersion, createQuote, deleteQuote, getDeskProposal,
+  getLatestProposalVersion, getProposalComments, getProposalHistory, getProposalNextVersion, listProposalDesk, postProposalComment,
+  transitionProposal, type DeskProposal, type ProposalCommentRow, type ProposalDeskPage, type ProposalHistoryEntry, type StaffProposalVersion,
 } from "../../api/proposals.js";
 import { listSpaces, type Space } from "../../api/spaces.js";
 import { useMediaQuery } from "../../hooks/use-media-query.js";
@@ -24,7 +24,8 @@ import { recallDraft, recallKept, rememberDraft, subscribeKept, updateKept, type
 import { ProposalsLedger } from "./proposals/ProposalsLedger.js";
 import { ProposalsStages } from "./proposals/ProposalsStages.js";
 import {
-  groupRows, groupWords, proposalStatusWords, proposalsSummary, sameWords, startedAgainWords, type ComposerDraft, type KeptVersion, type ProposalFilter,
+  groupRows, groupWords, layoutChoice, proposalStatusWords, proposalsSummary, sameWords, startedAgainWords, type ComposerDraft, type KeptVersion, type LayoutChoice,
+  type ProposalFilter,
 } from "./proposals/proposals-desk-format.js";
 import "./enquiries/EnquiriesDesk.css";
 import "./pipeline/PipelineDesk.css";
@@ -79,6 +80,7 @@ const FAILURE_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   step: "That did not go through. The proposal is as it was.",
   version: "The version did not save. Your changes are still here.",
   reply: "The reply was not posted. Your words are still here.",
+  layout: "The layout did not change. The proposal is as it was.",
 };
 
 /** The proposal moved before the request arrived (a client's answer, or a
@@ -89,6 +91,7 @@ const MOVED_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   step: "It changed before that arrived, so nothing was done. It now shows where it stands.",
   version: "It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.",
   reply: "It changed before the reply arrived, so it was not posted. Your words are still here.",
+  layout: "It changed before that arrived, so the layout did not change. It now shows where it stands.",
 };
 /** A version refused because what it would take changed after its check, or
  *  its links changed as it arrived. The start line above says what is known
@@ -710,6 +713,24 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     return "The reply is posted.";
   });
 
+  // Leaves the client's own layout out of the versions saved from now, or puts
+  // it back (A10). The proposal is read again, and with its layout the check of
+  // what the next version takes is made again.
+  const onLayout = (change: LayoutChoice["change"]): Promise<boolean> => attempt("layout", "layout", async (id) => {
+    const choice = proposal === null ? null : layoutChoice(proposal);
+    if (choice?.change !== change) return null;
+    await changeProposalLayout(id, choice.configurationId).catch((error: unknown) => {
+      // Their layout, enquiry or deal changed under it: nothing was done, and
+      // the panel is read again to show it as it is.
+      if (error instanceof ApiError && (error.code === "NOT_FOUND" || error.code === "LINK_MISMATCH")) readAgain(id);
+      throw error;
+    });
+    readAgain(id);
+    return change === "leave_out"
+      ? `Their ${choice.room} layout is left out of the versions you save from now.`
+      : `Their ${choice.room} layout goes with the versions you save from now.`;
+  });
+
   // ---------------------------------------------------------------------------
   // The desk
   // ---------------------------------------------------------------------------
@@ -764,6 +785,7 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
     onStartAgain,
     onDiscardKept,
     onReply,
+    onLayout,
     onRetryLatest: () => { setReads((current) => ({ ...current, latest: current.latest + 1 })); },
     onRetryHistory: () => { setReads((current) => ({ ...current, history: current.history + 1 })); },
     onRetryComments: () => { setReads((current) => ({ ...current, comments: current.comments + 1 })); },

@@ -120,7 +120,7 @@ describe("the document", () => {
     expect(within(screen.getByTestId("proposal-total")).getByText("£2,650.00")).toBeTruthy();
     expect(screen.getByText("Version 1 comes to £2,650.00.")).toBeTruthy();
     expect(screen.getAllByText(/planning estimates/u)).toHaveLength(1);
-    expect(screen.getByText(/Capacity and layout are the venue team's planning estimates/u)).toBeTruthy();
+    expect(screen.getByText("Numbers and layout are planning estimates; the events team confirms them. Nothing here is a safety, occupancy or compliance determination.")).toBeTruthy();
     expect(screen.getByText("Trades Hall Glasgow, 85 Glassford Street, Glasgow G1 1UH")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Accept version 1" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Ask for changes…" })).toBeTruthy();
