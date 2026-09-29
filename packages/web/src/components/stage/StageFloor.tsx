@@ -83,9 +83,20 @@ async function loadTile(loader: TextureLoader, url: string, manifest: FloorSkinM
   }
 }
 
-async function loadFloor(url: string, roomSlug: string, tierName: FloorSkinTier, signal: AbortSignal): Promise<LoadedFloor> {
+/**
+ * Whether an answer means no floor-skin package is published here. A checkout
+ * without staged captures answers 404 or with the app's HTML shell; neither is
+ * an error, the room simply keeps its captured floor.
+ */
+function packageAbsent(response: Response): boolean {
+  return response.status === 404 || (response.ok && !(response.headers.get("content-type") ?? "").includes("json"));
+}
+
+/** Loads the room's floor skin, or resolves null when none is published. */
+async function loadFloor(url: string, roomSlug: string, tierName: FloorSkinTier, signal: AbortSignal): Promise<LoadedFloor | null> {
   const base = url.slice(0, url.lastIndexOf("/") + 1);
   const response = await fetch(url, { signal });
+  if (packageAbsent(response)) return null;
   if (!response.ok) throw new Error(`The floor skin could not be read (${String(response.status)}).`);
   const manifest = FloorSkinManifestSchema.parse(await response.json());
   // The package says what it was built for. One for another venue or room is
@@ -167,6 +178,7 @@ export function StageFloor({ roomSlug, transform, active }: {
     let delivered: LoadedFloor | null = null;
     loadFloor(url, roomSlug, tierName, controller.signal)
       .then((result) => {
+        if (result === null) return;
         // Superseded after the loader's last check: nothing will ever show it.
         if (controller.signal.aborted) { releaseFloor(result); return; }
         delivered = result;
@@ -175,8 +187,9 @@ export function StageFloor({ roomSlug, transform, active }: {
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
-        // Not fatal: the room is still shown through its Gaussian splats, so
-        // a missing or broken floor skin must not break the walk or the plan.
+        // Not fatal: the room is still shown through its Gaussian splats, so a
+        // broken floor skin must not break the walk or the plan. (An absent one
+        // resolves null above and is not an error at all.)
         globalThis.reportError(reason instanceof Error ? reason : new Error(String(reason)));
       });
     return () => {

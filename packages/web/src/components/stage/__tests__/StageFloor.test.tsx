@@ -97,10 +97,15 @@ async function settle(): Promise<void> {
   });
 }
 
+/** Replaces the manifest's answer, for the absent and broken package cases. */
+let manifestResponse: (() => Response) | null = null;
+
 beforeEach(() => {
   vi.stubGlobal("fetch", (url: string): Promise<Response> => {
     requests.push(url);
-    if (url.endsWith("/floor-skin.json")) return Promise.resolve(new Response(JSON.stringify(served)));
+    if (url.endsWith("/floor-skin.json")) {
+      return Promise.resolve(manifestResponse?.() ?? new Response(JSON.stringify(served), { headers: { "content-type": "application/json" } }));
+    }
     if (url.endsWith("/height.i16")) return Promise.resolve(new Response(new Int16Array(80 * 40).buffer));
     if (url.endsWith("/slab.u8")) return Promise.resolve(new Response(new Uint8Array(8 * 4).fill(255)));
     return Promise.resolve(new Response(null, { status: 404 }));
@@ -126,6 +131,7 @@ afterEach(() => {
   built.released.clear();
   built.failingTexture = null;
   served = MANIFEST;
+  manifestResponse = null;
   requests.length = 0;
   reported.mockReset();
   vi.restoreAllMocks();
@@ -198,6 +204,26 @@ describe("StageFloor load lifecycle (T-639)", () => {
     await settle();
     expect(reported).toHaveBeenCalledOnce();
     expect(built.textures).toHaveLength(0);
+    expect(tiles()).toHaveLength(0);
+  });
+
+  it.each([
+    ["answers 404", () => new Response(null, { status: 404 })],
+    ["answers with the app's HTML shell (a checkout without staged captures)", () => new Response("<!doctype html><html></html>", { headers: { "content-type": "text/html" } })],
+  ])("draws no floor and reports nothing when the package %s", async (_label, answer) => {
+    manifestResponse = answer;
+    mounted = mountInStubRoot(<Harness />);
+    await settle();
+    expect(reported).not.toHaveBeenCalled();
+    expect(built.textures).toHaveLength(0);
+    expect(tiles()).toHaveLength(0);
+  });
+
+  it("still reports a package that is there but broken", async () => {
+    manifestResponse = () => new Response(JSON.stringify({ schema: "venviewer.floor-skin.v1" }), { headers: { "content-type": "application/json" } });
+    mounted = mountInStubRoot(<Harness />);
+    await settle();
+    expect(reported).toHaveBeenCalledOnce();
     expect(tiles()).toHaveLength(0);
   });
 
