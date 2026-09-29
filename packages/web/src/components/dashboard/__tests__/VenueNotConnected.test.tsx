@@ -1,0 +1,143 @@
+import type { ReactElement } from "react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useAuthStore, type AuthUser } from "../../../stores/auth-store.js";
+import { VenueNotConnected } from "../VenueNotConnected.js";
+
+// ---------------------------------------------------------------------------
+// The notice an account not connected to a venue yet is shown. A connection
+// made meanwhile does not reach an open page, so it checks again in place,
+// quietly: still not connected, connected (the store's venue then opens the
+// view), or a check that did not finish.
+// ---------------------------------------------------------------------------
+
+const { mocks } = vi.hoisted(() => ({ mocks: { getCurrentAuthUser: vi.fn() } }));
+vi.mock("../../../api/auth.js", () => ({ getCurrentAuthUser: mocks.getCurrentAuthUser }));
+
+const UNPLACED: AuthUser = { id: "u1", email: "new@example.test", name: "New Colleague", role: "staff", platformRole: "none", venueId: null };
+
+function show(): void {
+  render(<VenueNotConnected title="Proposals" consequence="there are no proposals to show" />);
+}
+
+beforeEach(() => {
+  mocks.getCurrentAuthUser.mockReset();
+  useAuthStore.getState().setUser(UNPLACED);
+});
+
+afterEach(() => {
+  cleanup();
+  useAuthStore.getState().setUser(null);
+});
+
+describe("VenueNotConnected", () => {
+  it("says why there is nothing, who can connect it, and reads nothing until asked", () => {
+    show();
+    expect(screen.getByRole("heading", { level: 1, name: "Proposals" })).toBeDefined();
+    expect(screen.getByText("Your account is not connected to a venue yet, so there are no proposals to show.")).toBeDefined();
+    expect(screen.getByText("Your Venviewer contact can connect it.")).toBeDefined();
+    expect(mocks.getCurrentAuthUser).not.toHaveBeenCalled();
+  });
+
+  it("checks again and says so when it is still not connected", async () => {
+    let answer: (user: AuthUser) => void = () => undefined;
+    mocks.getCurrentAuthUser.mockReturnValue(new Promise<AuthUser>((resolve) => { answer = resolve; }));
+    show();
+    const button = screen.getByRole("button", { name: "Check again" });
+    button.focus();
+    fireEvent.click(button);
+    const checking = screen.getByRole("button", { name: "Checking…" });
+    // Held, not disabled: browsers move focus off a disabled button, and the
+    // keyboard would lose its place.
+    expect(checking.hasAttribute("disabled")).toBe(false);
+    expect(checking.getAttribute("aria-disabled")).toBe("true");
+    expect(checking.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(checking);
+    fireEvent.click(checking);
+    expect(mocks.getCurrentAuthUser).toHaveBeenCalledTimes(1);
+    // Said in one live region, there from the start.
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("");
+    answer(UNPLACED);
+    await waitFor(() => { expect(status.textContent).toBe("Not connected yet."); });
+    expect(screen.getByRole("button", { name: "Check again" }).getAttribute("aria-disabled")).toBe("false");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Check again" }));
+  });
+
+  /** The workspace as the dashboard frames it: the notice until the account
+   *  has a venue, then the view in its place. */
+  function Workspace(): ReactElement {
+    const connected = useAuthStore((state) => state.user?.venueId !== null);
+    return (
+      <>
+        <button type="button">Notifications</button>
+        <div className="dashboard-layout-popover"><button type="button">Venue settings</button></div>
+        <main id="dashboard-main" tabIndex={-1} aria-label="Proposals">
+          {connected ? <p>The proposals</p> : <VenueNotConnected title="Proposals" consequence="there are no proposals to show" />}
+        </main>
+      </>
+    );
+  }
+
+  it("takes a venue connected meanwhile into the account, and gives the workspace focus as the view opens", async () => {
+    mocks.getCurrentAuthUser.mockResolvedValue({ ...UNPLACED, venueId: "venue-1" });
+    render(<Workspace />);
+    const button = screen.getByRole("button", { name: "Check again" });
+    button.focus();
+    fireEvent.click(button);
+    expect(await screen.findByText("The proposals")).toBeDefined();
+    expect(useAuthStore.getState().user?.venueId).toBe("venue-1");
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("main", { name: "Proposals" })); });
+  });
+
+  it("leaves focus where someone put it while the check was on its way", async () => {
+    let answer: (user: AuthUser) => void = () => undefined;
+    mocks.getCurrentAuthUser.mockReturnValue(new Promise<AuthUser>((resolve) => { answer = resolve; }));
+    render(<Workspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    const menu = screen.getByRole("button", { name: "Notifications" });
+    menu.focus();
+    answer({ ...UNPLACED, venueId: "venue-1" });
+    expect(await screen.findByText("The proposals")).toBeDefined();
+    await new Promise((resolve) => { requestAnimationFrame(resolve); });
+    expect(document.activeElement).toBe(menu);
+  });
+
+  // A header menu closes as the account changes, and would drop focus with it.
+  it("takes focus left in a header menu to the workspace", async () => {
+    let answer: (user: AuthUser) => void = () => undefined;
+    mocks.getCurrentAuthUser.mockReturnValue(new Promise<AuthUser>((resolve) => { answer = resolve; }));
+    render(<Workspace />);
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    screen.getByRole("button", { name: "Venue settings" }).focus();
+    answer({ ...UNPLACED, venueId: "venue-1" });
+    expect(await screen.findByText("The proposals")).toBeDefined();
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByRole("main", { name: "Proposals" })); });
+  });
+
+  it("says calmly that a check did not finish, and keeps the account as it was", async () => {
+    mocks.getCurrentAuthUser.mockRejectedValue(new Error("offline"));
+    show();
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => { expect(screen.getByRole("status").textContent).toBe("That check did not finish. Try again in a moment."); });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(useAuthStore.getState().user).toEqual(UNPLACED);
+    expect(screen.getByRole("button", { name: "Check again" }).getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("writes nothing back once the account signed out, or another took its place, while it checked", async () => {
+    for (const meanwhile of [null, { ...UNPLACED, id: "u2", email: "other@example.test" }]) {
+      let answer: (user: AuthUser) => void = () => undefined;
+      mocks.getCurrentAuthUser.mockReturnValue(new Promise<AuthUser>((resolve) => { answer = resolve; }));
+      useAuthStore.getState().setUser(UNPLACED);
+      show();
+      fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+      useAuthStore.getState().setUser(meanwhile);
+      answer({ ...UNPLACED, venueId: "venue-1" });
+      // The button is offered again, and the session is left as it now is.
+      await waitFor(() => { expect(screen.getByRole("button", { name: "Check again" }).getAttribute("aria-disabled")).toBe("false"); });
+      expect(useAuthStore.getState().user).toEqual(meanwhile);
+      cleanup();
+    }
+  });
+});

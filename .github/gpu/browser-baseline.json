@@ -489,6 +489,20 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-28",
+      "reason": "Which layout goes out with a proposal (T-635 X1). A proposal carries its deal's enquiry and that enquiry's own layout, worked out on the server and never contradicting one another or the venue; that is held on real PostgreSQL in proposal-links-postgres.test.ts. The desk now says which layout goes out. The case opens the Crawford proposal linked to the client's own Grand Hall layout and checks the panel's layout fact (\"Their own, Grand Hall\"), the composer's line (\"Their layout is taken as it stands when you save. Preview as the client shows what they will see.\"), that the fact reads across the panel rather than squeezed into a column, and that on a 390 px phone it stays visible with no sideways scroll.",
+      "sourceCommit": "5d06a9c9a1629b55aef8d9ec1d807585609710ba",
+      "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
+      "sourceFileGitBlobSha256": "25e5800c836df6c677c328ac60a797ff6138045b653e9012e1b09ec40879f861",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "b3d9a31a69b41c7e54b45ff5eda5e73462047c9597bc68e58cc815def32bbea5",
+      "caseIds": [
+        "3d60696039542bd5f8df-0244d81e64a8c4718988"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -1032,6 +1046,17 @@
       "id": "3d60696039542bd5f8df-2ea22200879023ac08bc",
       "file": "proposals-desk.spec.ts",
       "title": "Preview as the client shows the latest version as the client's page draws it, and no client route is called",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-0244d81e64a8c4718988",
+      "file": "proposals-desk.spec.ts",
+      "title": "the proposal says which layout goes out, across the panel, on a desk and on a phone",
       "suitePath": [
         "proposals-desk.spec.ts",
         "Proposals desk"

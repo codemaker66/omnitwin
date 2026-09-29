@@ -455,6 +455,35 @@ export function proposalVersionPayloadDigest(payload: ProposalVersionPayload): s
 }
 
 // ---------------------------------------------------------------------------
+// What the next version would take (roadmap X1, the composer's check). A save
+// takes the layout's drawing and the event's facts as they stand, not as the
+// version it starts from had them; this says, before the save, whether they
+// differ. `basis` names exactly what was checked, and a save sent with it is
+// refused if what it would take has changed since. No prices and no ids.
+// ---------------------------------------------------------------------------
+
+/** The drawing the next version's page would show, against the one the
+ *  version it starts from shows: neither has one, the same drawing, a
+ *  different one, one where there was none, or none where there was one. */
+export const PROPOSAL_NEXT_LAYOUT_CHANGES = ["none", "same", "changed", "added", "removed"] as const;
+export const ProposalNextLayoutChangeSchema = z.enum(PROPOSAL_NEXT_LAYOUT_CHANGES);
+export type ProposalNextLayoutChange = z.infer<typeof ProposalNextLayoutChangeSchema>;
+
+export const ProposalNextVersionSchema = z.object({
+  /** The version compared against: the proposal's latest when checked. */
+  basedOn: z.number().int().positive(),
+  layout: ProposalNextLayoutChangeSchema,
+  facts: z.object({
+    /** As `basedOn` froze them; null for a version from before facts were
+     *  kept, whose page reads them as they are now. */
+    saved: ProposalFactsSchema.nullable(),
+    now: ProposalFactsSchema,
+  }).strict(),
+  basis: Sha256HexSchema,
+}).strict();
+export type ProposalNextVersion = z.infer<typeof ProposalNextVersionSchema>;
+
+// ---------------------------------------------------------------------------
 // Proposal — venue-scoped, soft-deleted, share-linked via the house nanoid
 // shortcode. `currentVersion` is 0 until the first version snapshot exists.
 // ---------------------------------------------------------------------------

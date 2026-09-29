@@ -188,14 +188,30 @@ afterEach(() => {
 });
 
 describe("DayBoardPage", () => {
-  it("keeps an unassigned account static without starting a calendar request", async () => {
+  it("tells an account not connected to a venue so, without starting a calendar request", async () => {
     const user = useAuthStore.getState().user;
     if (user === null) throw new Error("Expected test user");
     useAuthStore.getState().setUser({ ...user, venueId: null });
     renderBoard();
-    expect(screen.getByText(/No venue is linked to this account/u)).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "The Day Board" })).toBeTruthy();
+    expect(screen.getByText("Your account is not connected to a venue yet, so there are no bookings to show.")).toBeTruthy();
+    // Nothing is reconnecting, and there is no day to step through.
+    expect(screen.queryByText(/reconnecting/iu)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Previous day" })).toBeNull();
     expect(screen.queryByText("Loading the day’s bookings…")).toBeNull();
-    expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+    await act(async () => { await Promise.resolve(); });
+    expect(getCalendarMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps its own line for a platform admin with no venue, and says nothing of reconnecting", async () => {
+    const user = useAuthStore.getState().user;
+    if (user === null) throw new Error("Expected test user");
+    liveConnected.current = false;
+    useAuthStore.getState().setUser({ ...user, role: "admin", platformRole: "admin", venueId: null });
+    renderBoard();
+    expect(screen.getByText(/No venue is linked to this account/u)).toBeTruthy();
+    expect(screen.queryByText(/reconnecting/iu)).toBeNull();
+    expect(screen.queryByTestId("venue-not-connected")).toBeNull();
     await act(async () => { await Promise.resolve(); });
     expect(getCalendarMock).not.toHaveBeenCalled();
   });

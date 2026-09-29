@@ -470,7 +470,7 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
           </div>
         </section>
       ) : wide ? (
-        <PipelineOverview tasks={summary?.todayTasks ?? []} total={summary?.page?.taskTotal ?? null} nowMs={nowMs}
+        <PipelineOverview tasks={summary?.todayTasks ?? null} total={summary?.page?.taskTotal ?? null} nowMs={nowMs}
           onOpenDeal={(id) => { openDeal(id, true); }} />
       ) : null}
     </div>

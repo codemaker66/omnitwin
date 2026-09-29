@@ -170,7 +170,7 @@ describe.skipIf(target === undefined)("proposal links through real routes and Po
       .toEqual({ opportunityId: oddDeal.id, enquiryId: odd.id, configurationId: null });
   });
 
-  it("refuses a removed deal, and another client's layout with an enquiry, keeping nothing", async () => {
+  it("refuses a removed deal, and a layout not on the enquiry named with it, keeping nothing", async () => {
     const f = await fixture();
     await db.update(schema.opportunities).set({ deletedAt: new Date() }).where(eq(schema.opportunities.id, f.deal));
     const removed = await create(f, { opportunityId: f.deal });

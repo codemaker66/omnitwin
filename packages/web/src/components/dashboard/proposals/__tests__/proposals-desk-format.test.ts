@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ProposalVersionPayload } from "@omnitwin/types";
+import type { ProposalFacts, ProposalNextVersion, ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalHistoryEntry } from "../../../../api/proposals.js";
 import {
-  composerLayoutLine, draftChanges, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords, listWords, proposalTone, proposalsSummary, rowDetails, rowWhen,
+  composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutFact, groupRows, historyMoments, linkVersionWords,
+  listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, sameWords, startedAgainWords,
+  takenChanges,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -110,7 +112,7 @@ describe("the next version", () => {
     expect(draftChanges(from, { ...same, message: "  Planning-grade draft.  " })).toEqual([]);
     expect(draftChanges(from, { ...same, message: "A later finish." })).toEqual(["the message"]);
     expect(draftChanges(from, { ...same, capacityNote: "Around 100." })).toEqual(["the capacity note"]);
-    expect(draftChanges(from, { ...same, lines: same.lines.slice(0, 1) })).toEqual(["the quote, £4,520.50 to £4,400"]);
+    expect(draftChanges(from, { ...same, lines: same.lines.slice(0, 1) })).toEqual(["the quote from £4,520.50 to £4,400"]);
     // The same total from different lines is still a changed quote.
     expect(draftChanges(from, { ...same, lines: [{ description: "Everything", quantity: "1", pounds: "4520.50" }] })).toEqual(["the quote"]);
     // A line not yet readable changes the quote, without a total to show.
@@ -118,6 +120,148 @@ describe("the next version", () => {
     expect(draftChanges(null, same)).toEqual([]);
     expect(listWords(["the message", "the capacity note", "the quote"])).toBe("the message, the capacity note and the quote");
     expect(listWords(["the message"])).toBe("the message");
+    expect(listWords([])).toBe("");
+  });
+
+  it("sets a list apart more clearly only when its items carry their own comma or \"and\"", () => {
+    // A thousands separator is not a comma of the sentence.
+    expect(listWords(["the message", "the quote from £4,400 to £4,600"])).toBe("the message and the quote from £4,400 to £4,600");
+    expect(listWords(["the quote from £18,400 to £17,600", "the guest count from 120 to 1,500", "the layout drawing"]))
+      .toBe("the quote from £18,400 to £17,600, the guest count from 120 to 1,500 and the layout drawing");
+    expect(listWords(["the quote from £1,250,000 to £1,300,000", "the layout drawing"])).toBe("the quote from £1,250,000 to £1,300,000 and the layout drawing");
+    // Two items: a comma before the last. Wherever the "and" is.
+    expect(listWords(["the occasion from Wedding to Dinner and dance", "the layout drawing"]))
+      .toBe("the occasion from Wedding to Dinner and dance, and the layout drawing");
+    expect(listWords(["the message", "the room and layout descriptions (now left out)"]))
+      .toBe("the message, and the room and layout descriptions (now left out)");
+    // More: semicolons.
+    expect(listWords(["the message", "the room (another room named Hall, East)", "the layout drawing"]))
+      .toBe("the message; the room (another room named Hall, East); and the layout drawing");
+  });
+
+  it("knows when the words differ from where they started, a first version's at all", () => {
+    const from = payload();
+    const same = draftFromVersion(from);
+    expect(draftDiffers(from, same)).toBe(false);
+    expect(draftDiffers(from, { ...same, message: "  Planning-grade draft.  " })).toBe(false);
+    expect(draftDiffers(from, { ...same, message: "A later finish." })).toBe(true);
+    expect(draftDiffers(from, { ...same, capacityNote: "Around 100." })).toBe(true);
+    expect(draftDiffers(from, { ...same, lines: [...same.lines, { description: "", quantity: "1", pounds: "" }] })).toBe(true);
+    expect(draftDiffers(from, { ...same, lines: same.lines.map((line, index) => index === 0 ? { ...line, pounds: "4500" } : line) })).toBe(true);
+    // A first version has nothing to start from: anything written is something to lose.
+    expect(draftDiffers(null, draftFromVersion(null))).toBe(false);
+    expect(draftDiffers(null, { message: "Here is the dinner you asked about.", capacityNote: "", lines: [] })).toBe(true);
+  });
+
+  it("knows two drafts say the same as a version would keep them, however they were typed", () => {
+    const words = draftFromVersion(payload());
+    expect(sameWords(words, { ...words })).toBe(true);
+    expect(sameWords(words, { ...words, message: `  ${words.message}  `, capacityNote: ` ${words.capacityNote}` })).toBe(true);
+    expect(sameWords(words, { ...words, lines: words.lines.map((line) => ({ ...line, description: ` ${line.description} ` })) })).toBe(true);
+    expect(sameWords(words, { ...words, message: "A later finish." })).toBe(false);
+    expect(sameWords(words, { ...words, capacityNote: "Around 100." })).toBe(false);
+    expect(sameWords(words, { ...words, lines: words.lines.map((line, index) => index === 0 ? { ...line, quantity: "2" } : line) })).toBe(false);
+    expect(sameWords(words, { ...words, lines: [...words.lines, { description: "", quantity: "1", pounds: "" }] })).toBe(false);
+  });
+
+  it("says why words were put aside unsaved", () => {
+    expect(putAsideWords("draft", true, 3)).toBe("Version 3 was saved meanwhile, so the next version starts from it.");
+    expect(putAsideWords("changes_requested", true, 1)).toBe("Version 1 was saved meanwhile, so the next version starts from it.");
+    expect(putAsideWords("sent", false, 2)).toBe("It is with the client now, so a new version cannot be written.");
+    expect(putAsideWords("withdrawn", false, 2)).toBe("It has been withdrawn, so a new version cannot be written.");
+    expect(putAsideWords("accepted", false, 2)).toBe("It has been accepted, so a new version cannot be written.");
+    expect(putAsideWords("something new", false, 2)).toBe("A new version cannot be written now.");
+  });
+
+  it("says what starting again put aside, from the version the words began with", () => {
+    expect(startedAgainWords(2)).toBe("You started again from version 2.");
+    expect(startedAgainWords(null)).toBe("You started the first version again.");
+  });
+
+  // Until the check of what a save takes is back, what is typed here is all
+  // it speaks of: the drawing and the event's details are taken at the save,
+  // so "nothing is changed" would not yet be known to be true.
+  it("says where it starts and what the person has changed, and only that, until the check is back", () => {
+    const failed = { status: "failed" } as const;
+    const waiting = { status: "waiting" } as const;
+    expect(composerStartWords(null, [], failed, [])).toBe("The first version.");
+    expect(composerStartWords(null, [], waiting, [])).toBe("The first version.");
+    expect(composerStartWords(2, [], waiting, [])).toBe("Starts from version 2.");
+    expect(composerStartWords(2, ["the message", "the quote from £4,400 to £4,600"], waiting, []))
+      .toBe("Starts from version 2. You have changed the message and the quote from £4,400 to £4,600.");
+    // A check that could not be made says so, rather than leave the rest unknown without a word.
+    expect(composerStartWords(2, [], failed, []))
+      .toBe("Starts from version 2. You have not changed anything here yet. Whether the layout or the event's details have changed could not be checked.");
+    expect(composerStartWords(2, ["the message"], failed, []))
+      .toBe("Starts from version 2. You have changed the message. Whether the layout or the event's details have changed could not be checked.");
+  });
+
+  const FACTS: ProposalFacts = { eventDate: "2027-06-05", guestCount: 160, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+  function next(overrides: Partial<ProposalNextVersion> = {}, now: Partial<ProposalFacts> = {}): ProposalNextVersion {
+    return { basedOn: 2, layout: "same", facts: { saved: FACTS, now: { ...FACTS, ...now } }, basis: "a".repeat(64), ...overrides };
+  }
+
+  it("says, once the check is back, what the version changes: the words first, then what it takes", () => {
+    expect(composerStartWords(2, [], { status: "ready", next: next() }, [])).toBe("Starts from version 2. Nothing is changed from it yet.");
+    expect(composerStartWords(2, ["the quote from £18,400 to £17,600"], { status: "ready", next: next({ layout: "changed" }, { guestCount: 180 }) }, []))
+      .toBe("Starts from version 2. Changed: the quote from £18,400 to £17,600, the guest count from 160 to 180 and the layout drawing.");
+    expect(composerStartWords(2, ["the message"], { status: "ready", next: next({ layout: "changed" }) }, []))
+      .toBe("Starts from version 2. Changed: the message and the layout drawing.");
+    // A check made for another version is not yet this one's.
+    expect(composerStartWords(3, [], { status: "ready", next: next({ layout: "changed" }) }, [])).toBe("Starts from version 3.");
+  });
+
+  // A version from the editor's Share lens shows its client descriptions and
+  // a list the composer has no place for: never "nothing is changed" then.
+  it("counts what the new version leaves out among what it changes", () => {
+    const shared = payload({ roomSummary: "The room is 30 m by 15 m.", layoutSummary: "Ten rounds of ten.", packageSummary: ["Piper"] });
+    expect(droppedChanges(shared)).toEqual(["the room and layout descriptions (now left out)", "the list of what is included (now left out)"]);
+    expect(droppedChanges(payload({ layoutSummary: "Ten rounds of ten." }))).toEqual(["the layout description (now left out)"]);
+    expect(droppedChanges(payload({ roomSummary: "The room is 30 m by 15 m." }))).toEqual(["the room description (now left out)"]);
+    expect(droppedChanges(payload())).toEqual([]);
+    expect(droppedChanges(null)).toEqual([]);
+    expect(composerStartWords(2, [], { status: "ready", next: next() }, droppedChanges(shared)))
+      .toBe("Starts from version 2. Changed: the room and layout descriptions (now left out), and the list of what is included (now left out).");
+    // Until the check is back, it speaks only of what is typed.
+    expect(composerStartWords(2, [], { status: "waiting" }, droppedChanges(shared))).toBe("Starts from version 2.");
+  });
+
+  it("names what a save takes in the client's page's words and order", () => {
+    expect(takenChanges(next())).toEqual([]);
+    expect(takenChanges(next({ layout: "changed" }, { eventDate: "2027-06-12", guestCount: 1200, occasion: "dinner", roomName: "Saloon", roomSlug: "saloon" })))
+      .toEqual([
+        "the date from Saturday 5 June 2027 to Saturday 12 June 2027",
+        "the guest count from 160 to 1,200",
+        "the occasion from Wedding to Dinner",
+        "the room from Grand Hall to Saloon",
+        "the layout drawing",
+      ]);
+    expect(takenChanges(next({ layout: "added" }, { eventDate: null, guestCount: null }))).toEqual([
+      "the date (now left out)", "the guest count (now left out)", "the layout drawing (now included)",
+    ]);
+    expect(takenChanges({ ...next({ layout: "removed" }), facts: { saved: { ...FACTS, guestCount: null, occasion: null }, now: FACTS } }))
+      .toEqual(["the guest count (now 160)", "the occasion (now Wedding)", "the layout drawing (now left out)"]);
+  });
+
+  it("leaves out what the client's page never shows, and names a room changed under the same name", () => {
+    // No guests and none, or "other" and no occasion, read the same on the page.
+    expect(takenChanges({ ...next(), facts: { saved: { ...FACTS, guestCount: 0, occasion: "other" }, now: { ...FACTS, guestCount: null, occasion: null } } }))
+      .toEqual([]);
+    expect(takenChanges(next({}, { roomSlug: "grand-hall-2" }))).toEqual(["the room (another room named Grand Hall)"]);
+    // A version from before facts were kept reads them as they are now.
+    expect(takenChanges({ ...next(), facts: { saved: null, now: { ...FACTS, guestCount: 999 } } })).toEqual([]);
+  });
+
+  it("says what the version it starts from shows the client that the next one will not carry", () => {
+    expect(notCarriedWords(null)).toBeNull();
+    expect(notCarriedWords(payload())).toBeNull();
+    expect(notCarriedWords(payload({ roomSummary: "The room is 30 m by 15 m.", layoutSummary: "Ten rounds of ten." })))
+      .toBe("Its descriptions of the room and layout are not carried over.");
+    expect(notCarriedWords(payload({ roomSummary: "The room is 30 m by 15 m.", layoutSummary: null })))
+      .toBe("Its description of the room is not carried over.");
+    expect(notCarriedWords(payload({ layoutSummary: "Ten rounds of ten." }))).toBe("Its description of the layout is not carried over.");
+    expect(notCarriedWords(payload({ packageSummary: ["Piper"] }))).toBe("Its list of what is included is not carried over.");
+    expect(notCarriedWords(payload({ packageSummary: [] }))).toBeNull();
   });
 });
 
@@ -179,9 +323,11 @@ describe("the layout a proposal carries", () => {
     expect(composerLayoutLine({ configurationId: "layout-1", layoutRoomName: undefined, layoutFromEnquiry: undefined })).toBeNull();
   });
 
+  // Preview shows a saved version only, so it is offered for this one once saved.
   it("tells the composer the layout is taken as it stands, only while there is one", () => {
-    expect(composerLayoutLine(linked)).toBe("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
-    expect(composerLayoutLine({ ...linked, layoutFromEnquiry: false })).toBe("The layout is taken as it stands when you save. Preview as the client shows what they will see.");
+    expect(composerLayoutLine(linked)).toBe("Their layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
+    expect(composerLayoutLine({ ...linked, layoutFromEnquiry: false }))
+      .toBe("The layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
     expect(composerLayoutLine({ ...linked, layoutRoomName: null })).toBeNull();
     expect(composerLayoutLine({ configurationId: null, layoutRoomName: null, layoutFromEnquiry: false })).toBeNull();
   });

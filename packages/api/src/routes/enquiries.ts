@@ -6,7 +6,7 @@ import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
 import { canAccessResource, canManageCommercial, canManageVenue } from "../utils/query.js";
-import { canTransition, enquiryKind, ENQUIRY_STATES } from "../state-machines/enquiry.js";
+import { canTransition, enquiryKind, ENQUIRY_STATES, isCustomerMove } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
 import { enquiryApproved, enquiryRejected } from "../services/email-templates.js";
@@ -41,7 +41,17 @@ const UpdateEnquiryBody = z.object({
 const TransitionBody = z.object({
   status: z.enum(ENQUIRY_STATES),
   note: z.string().max(1000).nullable().optional(),
+  /** The status the person decided from, as their screen showed it. A move
+   *  from any other is refused: a screen read before a colleague's decision
+   *  never decides the enquiry again. */
+  from: z.enum(ENQUIRY_STATES).optional(),
 });
+
+/** Refused because the enquiry moved on after the screen deciding it read it. */
+const ENQUIRY_STATUS_CHANGED = {
+  error: "The enquiry changed after this screen read it, so nothing was done. Reload it to see where it stands.",
+  code: "ENQUIRY_STATUS_CHANGED",
+} as const;
 
 // `states` (comma-separated) and `order=created_desc` let one bounded page
 // hold exactly the states a caller shows, newest first — the Diary tray.
@@ -280,6 +290,9 @@ export async function enquiryRoutes(
     if (!canWorkEnquiry(request.user, enquiry)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
+    if (parsed.data.from !== undefined && parsed.data.from !== enquiry.state) {
+      return reply.status(409).send(ENQUIRY_STATUS_CHANGED);
+    }
 
     // An access request or an enquiry about Venviewer asked to book nothing,
     // and both decisions email the sender a booking outcome.
@@ -299,22 +312,39 @@ export async function enquiryRoutes(
       });
     }
 
+    // Owning an enquiry makes someone its customer, not the venue's team. The
+    // customer's own moves (submit, withdraw) are the owner's wherever the
+    // enquiry is; the venue's (review, decide, archive, reopen) are its own
+    // team's alone, whatever role the owner holds elsewhere or with no venue
+    // yet: a decision emails the venue's answer in the venue's name.
+    if (!isCustomerMove(enquiry.state, parsed.data.status, kind)
+      && !canManageVenue(request.user, enquiry.venueId)
+      && !canManageCommercial(request.user, enquiry.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
     const fromStatus = enquiry.state;
 
-    // Update enquiry state
-    const [updated] = await db.update(enquiries)
-      .set({ state: parsed.data.status, updatedAt: new Date() })
-      .where(eq(enquiries.id, params.data.id))
-      .returning();
-
-    // Write history record
-    await db.insert(enquiryStatusHistory).values({
-      enquiryId: params.data.id,
-      fromStatus,
-      toStatus: parsed.data.status,
-      changedBy: request.user.id,
-      note: parsed.data.note ?? null,
+    // The move and its history commit together, and only from the status it
+    // was judged from (the person's own screen's, when it says): a move that
+    // landed first (a colleague's decision, the client's withdrawal) stands,
+    // and no second decision is made or emailed on top of it.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(enquiries)
+        .set({ state: parsed.data.status, updatedAt: new Date() })
+        .where(and(eq(enquiries.id, params.data.id), eq(enquiries.state, fromStatus)))
+        .returning();
+      if (row === undefined) return null;
+      await tx.insert(enquiryStatusHistory).values({
+        enquiryId: params.data.id,
+        fromStatus,
+        toStatus: parsed.data.status,
+        changedBy: request.user.id,
+        note: parsed.data.note ?? null,
+      });
+      return row;
     });
+    if (updated === null) return reply.status(409).send(ENQUIRY_STATUS_CHANGED);
 
     // Send notification emails on approval/rejection
     if (parsed.data.status === "approved" || parsed.data.status === "rejected") {

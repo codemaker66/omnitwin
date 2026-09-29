@@ -1,6 +1,7 @@
-import { occasionLabel, type ProposalVersionPayload } from "@omnitwin/types";
+import { occasionLabel, type ProposalNextVersion, type ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalDeskGroup, ProposalHistoryEntry } from "../../../api/proposals.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
+import { documentFacts } from "../../proposal/proposal-document-format.js";
 import { proposalStatusWords } from "../clients/clients-desk-format.js";
 import { relativeAge, venueMoment, type SummaryPart } from "../enquiries/enquiry-desk-format.js";
 
@@ -130,11 +131,12 @@ export function layoutFact(proposal: LayoutFields, inHand = true): { readonly wo
 
 /** What the composer says of the layout a version will carry, only while
  *  there is one to take. It promises no drawing: a layout with nothing
- *  placed has none. */
+ *  placed has none. Preview shows only a saved version, so it is offered for
+ *  this one once it is saved. */
 export function composerLayoutLine(proposal: LayoutFields): string | null {
   if (proposal.configurationId === null || proposal.layoutRoomName === undefined || proposal.layoutRoomName === null) return null;
   const whose = proposal.layoutFromEnquiry === true ? "Their layout" : "The layout";
-  return `${whose} is taken as it stands when you save. Preview as the client shows what they will see.`;
+  return `${whose} is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.`;
 }
 
 /** Which version the client's link shows, beside the latest saved: "; the
@@ -214,10 +216,47 @@ export interface ComposerDraft {
 export const EMPTY_DRAFT: ComposerDraft = { message: "", capacityNote: "", lines: [] };
 
 /** A version that did not save, and which composer wrote it: that composer
- *  still holds the words; once it is gone they are shown to copy. */
+ *  still holds the words; once it is gone they are shown to copy. `why` says
+ *  why words never sent were put aside (the proposal moved on while they were
+ *  written); a refused save is explained by its refusal instead. */
 export interface KeptVersion {
   readonly draft: ComposerDraft;
   readonly composer: number;
+  readonly why: string | null;
+}
+
+const CLOSED_WORDS: Readonly<Record<string, string>> = {
+  sent: "It is with the client now, so a new version cannot be written.",
+  accepted: "It has been accepted, so a new version cannot be written.",
+  declined: "It has been declined, so a new version cannot be written.",
+  expired: "It has expired, so a new version cannot be written.",
+  withdrawn: "It has been withdrawn, so a new version cannot be written.",
+  archived: "It has been archived, so a new version cannot be written.",
+};
+
+/** Why a composer's words were put aside unsaved: another version was saved
+ *  meanwhile, so the composer starts again from it, or the proposal left the
+ *  booker's hands, so it closes. */
+export function putAsideWords(status: string, composable: boolean, startsFrom: number): string {
+  if (!composable) return CLOSED_WORDS[status] ?? "A new version cannot be written now.";
+  return `Version ${String(startsFrom)} was saved meanwhile, so the next version starts from it.`;
+}
+
+/** Why words were put aside when the booker started the version again. */
+export function startedAgainWords(fromVersion: number | null): string {
+  return fromVersion === null ? "You started the first version again." : `You started again from version ${String(fromVersion)}.`;
+}
+
+/** Whether two drafts say the same, as a version would keep them. */
+export function sameWords(a: ComposerDraft, b: ComposerDraft): boolean {
+  const lines = (of: ComposerDraft): string => JSON.stringify(of.lines.map((line) => [line.description.trim(), line.quantity.trim(), line.pounds.trim()]));
+  return a.message.trim() === b.message.trim() && a.capacityNote.trim() === b.capacityNote.trim() && lines(a) === lines(b);
+}
+
+/** Whether the words differ from those they started with, so there is
+ *  something to lose: for a first version, anything written at all. */
+export function draftDiffers(from: ProposalVersionPayload | null, draft: ComposerDraft): boolean {
+  return !sameWords(draftFromVersion(from), draft);
 }
 
 /** The latest version's words and quote, ready to be changed rather than
@@ -256,7 +295,7 @@ function sameLines(a: readonly ReadLine[], b: readonly ReadLine[]): boolean {
 }
 
 /** What the new version changes from the latest one: "the message", "the
- *  quote, £18,400 to £18,900". Empty when nothing is changed yet. A quote
+ *  quote from £18,400 to £18,900". Empty when nothing is changed yet. A quote
  *  whose lines cannot all be read yet is "the quote" without a total. */
 export function draftChanges(from: ProposalVersionPayload | null, draft: ComposerDraft): readonly string[] {
   if (from === null) return [];
@@ -272,15 +311,128 @@ export function draftChanges(from: ProposalVersionPayload | null, draft: Compose
     const currency = from.quote?.currency ?? "GBP";
     const beforeTotal = from.quote?.totalMinor ?? 0;
     const afterTotal = after.reduce((sum, line) => sum + line.quantity * line.unitMinor, 0);
-    changes.push(beforeTotal === afterTotal ? "the quote" : `the quote, ${money(beforeTotal, currency)} to ${money(afterTotal, currency)}`);
+    changes.push(beforeTotal === afterTotal ? "the quote" : `the quote from ${money(beforeTotal, currency)} to ${money(afterTotal, currency)}`);
   }
   return changes;
 }
 
-/** "the message, the capacity note and the quote". */
+/** Whether an item carries its own comma or "and", so it would run into the
+ *  next: a thousands separator ("£18,400") does not. */
+function runsOn(item: string): boolean {
+  // No lookbehind: older Safari cannot parse it, and would lose the module.
+  const words = item.replace(/(\d),(?=\d{3}(?!\d))/gu, "$1");
+  return words.includes(",") || words.includes(" and ");
+}
+
+/** "the message, the capacity note and the quote". A list whose items carry
+ *  their own comma or "and" is set apart more clearly: two items with a comma
+ *  ("the message, and the room and layout descriptions (now left out)"), more
+ *  with semicolons ("the date from Saturday 5 June 2027 to Saturday 12 June
+ *  2027; the occasion from Wedding to Dinner and dance; and the layout
+ *  drawing"). */
 export function listWords(items: readonly string[]): string {
   if (items.length <= 1) return items.join("");
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1] ?? ""}`;
+  const last = items[items.length - 1] ?? "";
+  const rest = items.slice(0, -1);
+  if (!items.some(runsOn)) return `${rest.join(", ")} and ${last}`;
+  return items.length === 2 ? `${rest.join("")}, and ${last}` : `${rest.join("; ")}; and ${last}`;
+}
+
+/** Where the composer's check of what a save would take stands: still on
+ *  its way, not answered, or answered (GET /proposals/:id/versions/next). */
+export type TakenCheck =
+  | { readonly status: "waiting" }
+  | { readonly status: "failed" }
+  | { readonly status: "ready"; readonly next: ProposalNextVersion };
+
+const FACT_NOUNS: readonly (readonly [string, string])[] = [
+  ["Date", "the date"],
+  ["Guests", "the guest count"],
+  ["Occasion", "the occasion"],
+  ["Room", "the room"],
+];
+
+/** What a version saved now would take that the latest does not show its
+ *  client, in the words and the order of the client's page: the event's
+ *  facts, then the drawing. What the page does not show (no guests against
+ *  none, an occasion of "other") is not said. */
+export function takenChanges(next: ProposalNextVersion): readonly string[] {
+  const saved = next.facts.saved ?? next.facts.now;
+  const was = documentFacts(saved);
+  const now = documentFacts(next.facts.now);
+  const changes: string[] = [];
+  for (const [label, noun] of FACT_NOUNS) {
+    const before = was.find((fact) => fact.label === label)?.value ?? null;
+    const after = now.find((fact) => fact.label === label)?.value ?? null;
+    if (before === after) {
+      // Another room of the same name: its photograph may not be the same.
+      if (label === "Room" && after !== null && saved.roomSlug !== next.facts.now.roomSlug) changes.push(`${noun} (another room named ${after})`);
+    } else if (before !== null && after !== null) {
+      changes.push(`${noun} from ${before} to ${after}`);
+    } else if (after !== null) {
+      changes.push(`${noun} (now ${after})`);
+    } else {
+      changes.push(`${noun} (now left out)`);
+    }
+  }
+  if (next.layout === "changed") changes.push("the layout drawing");
+  else if (next.layout === "added") changes.push("the layout drawing (now included)");
+  else if (next.layout === "removed") changes.push("the layout drawing (now left out)");
+  return changes;
+}
+
+/** What the version started from shows its client that a new one leaves
+ *  out, in the start line's words: the Share lens's descriptions and list,
+ *  which the composer has no place for. */
+export function droppedChanges(from: ProposalVersionPayload | null): readonly string[] {
+  if (from === null) return [];
+  const room = (from.roomSummary ?? null) !== null;
+  const layout = (from.layoutSummary ?? null) !== null;
+  const dropped: string[] = [];
+  if (room && layout) dropped.push("the room and layout descriptions (now left out)");
+  else if (room) dropped.push("the room description (now left out)");
+  else if (layout) dropped.push("the layout description (now left out)");
+  if ((from.packageSummary ?? []).length > 0) dropped.push("the list of what is included (now left out)");
+  return dropped;
+}
+
+/** Whether a check answers for the version the words came from. */
+export function checkIsFor(check: TakenCheck, fromVersion: number | null): check is { readonly status: "ready"; readonly next: ProposalNextVersion } {
+  return check.status === "ready" && fromVersion !== null && check.next.basedOn === fromVersion;
+}
+
+/** Where the composer starts, and what the version will change from it.
+ *  Until the check is back it speaks only of what is typed here, as the
+ *  drawing and the event's facts are taken when the version is saved; once
+ *  back, of those too, and of what the new version leaves out. A check for
+ *  another version is not yet this one's; one that could not be made says
+ *  so, rather than leave the rest unknown without a word. */
+export function composerStartWords(fromVersion: number | null, typed: readonly string[], check: TakenCheck, dropped: readonly string[]): string {
+  if (fromVersion === null) return "The first version.";
+  const start = `Starts from version ${String(fromVersion)}.`;
+  if (checkIsFor(check, fromVersion)) {
+    const changes = [...typed, ...takenChanges(check.next), ...dropped];
+    return changes.length === 0 ? `${start} Nothing is changed from it yet.` : `${start} Changed: ${listWords(changes)}.`;
+  }
+  if (check.status !== "failed") return typed.length > 0 ? `${start} You have changed ${listWords(typed)}.` : start;
+  const said = typed.length > 0 ? `You have changed ${listWords(typed)}.` : "You have not changed anything here yet.";
+  return `${start} ${said} Whether the layout or the event's details have changed could not be checked.`;
+}
+
+/** What the version started from shows its client that a new one does not
+ *  carry: the editor's Share lens writes descriptions of the room and layout
+ *  that the composer has no place for. Nothing when there is none. */
+export function notCarriedWords(from: ProposalVersionPayload | null): string | null {
+  if (from === null) return null;
+  const room = (from.roomSummary ?? null) !== null;
+  const layout = (from.layoutSummary ?? null) !== null;
+  const included = (from.packageSummary ?? []).length > 0;
+  const sentences: string[] = [];
+  if (room && layout) sentences.push("Its descriptions of the room and layout are not carried over.");
+  else if (room) sentences.push("Its description of the room is not carried over.");
+  else if (layout) sentences.push("Its description of the layout is not carried over.");
+  if (included) sentences.push("Its list of what is included is not carried over.");
+  return sentences.length === 0 ? null : sentences.join(" ");
 }
 
 // ---------------------------------------------------------------------------

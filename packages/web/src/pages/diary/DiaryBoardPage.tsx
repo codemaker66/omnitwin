@@ -9,7 +9,7 @@ import type {
   ConflictSeverity,
 } from "@omnitwin/types";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { DIARY_WRITE_ROLES, VENUE_ADMIN_ROLES, hasRole } from "../../lib/role-capabilities.js";
+import { DIARY_WRITE_ROLES, VENUE_ADMIN_ROLES, awaitsVenue, hasRole } from "../../lib/role-capabilities.js";
 import { ApiError } from "../../api/client.js";
 import { moveBooking } from "../../api/diary.js";
 import { BOARD_COPY } from "./board-copy.js";
@@ -59,6 +59,7 @@ import {
 import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
 import { EnquiryDragGhost } from "./components/EnquiryDragGhost.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
+import { VenueNotConnected } from "../../components/dashboard/VenueNotConnected.js";
 import "./diary-board.css";
 
 // ---------------------------------------------------------------------------
@@ -996,8 +997,14 @@ export function DiaryBoardPage(): ReactElement {
   );
 
 
+  // A venue's own account not connected to it yet is told so, as on every
+  // dashboard view; anyone else with no venue keeps the Diary's own line.
   if (user !== null && venueId === null) {
-    return (
+    return awaitsVenue(user) ? (
+      <DashboardLayout mainLabel={BOARD_COPY.title} surface="rota">
+        <VenueNotConnected title={BOARD_COPY.title} consequence="there is no diary to show" />
+      </DashboardLayout>
+    ) : (
       <DashboardLayout mainLabel={BOARD_COPY.title}>
         <div className="diary-page">
           <div className="diary-notice">{BOARD_COPY.noVenue}</div>

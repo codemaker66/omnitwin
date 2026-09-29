@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactElement } from "react";
 import {
-  findUnsupportedProposalClaim, PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION, ProposalVersionPayloadSchema, type ProposalVersionPayload,
+  findUnsupportedProposalClaim, PROPOSAL_VERSION_PAYLOAD_SCHEMA_VERSION, ProposalVersionPayloadSchema, type ProposalNextVersion,
+  type ProposalVersionPayload,
 } from "@omnitwin/types";
 import { Plus, X } from "lucide-react";
 import { ApiError } from "../../api/client.js";
 import {
-  createProposal, createProposalShareToken, createProposalVersion, createQuote, getDeskProposal, getLatestProposalVersion,
-  getProposalComments, getProposalHistory, listProposalDesk, postProposalComment, transitionProposal,
+  createProposal, createProposalShareToken, createProposalVersion, createQuote, deleteQuote, getDeskProposal, getLatestProposalVersion,
+  getProposalComments, getProposalHistory, getProposalNextVersion, listProposalDesk, postProposalComment, transitionProposal,
   type DeskProposal, type ProposalCommentRow, type ProposalDeskPage, type ProposalHistoryEntry, type StaffProposalVersion,
 } from "../../api/proposals.js";
 import { listSpaces, type Space } from "../../api/spaces.js";
@@ -17,12 +18,13 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { deskGreeting, venueYear, type SummaryPart } from "./enquiries/enquiry-desk-format.js";
 import {
-  ProposalPanel, type PartRead, type ProposalFailure, type ProposalPanelProps, type ProposalWork,
+  COMPOSABLE, ProposalPanel, type DraftMemory, type PartRead, type ProposalFailure, type ProposalPanelProps, type ProposalWork, type Said,
 } from "./proposals/ProposalPanel.js";
+import { recallDraft, recallKept, rememberDraft, subscribeKept, updateKept, type KeptCopies } from "./proposals/proposal-memory.js";
 import { ProposalsLedger } from "./proposals/ProposalsLedger.js";
 import { ProposalsStages } from "./proposals/ProposalsStages.js";
 import {
-  groupRows, groupWords, proposalStatusWords, proposalsSummary, type ComposerDraft, type KeptVersion, type ProposalFilter,
+  groupRows, groupWords, proposalStatusWords, proposalsSummary, sameWords, startedAgainWords, type ComposerDraft, type KeptVersion, type ProposalFilter,
 } from "./proposals/proposals-desk-format.js";
 import "./enquiries/EnquiriesDesk.css";
 import "./pipeline/PipelineDesk.css";
@@ -88,6 +90,10 @@ const MOVED_WORDS: Readonly<Record<ProposalFailure["where"], string>> = {
   version: "It changed before the version arrived, so it did not save. Your changes are still here, and it now shows where it stands.",
   reply: "It changed before the reply arrived, so it was not posted. Your words are still here.",
 };
+/** A version refused because what it would take changed after its check, or
+ *  its links changed as it arrived. The start line above says what is known
+ *  of it now, checked again or not, so this claims nothing more. */
+const TAKEN_CHANGED_WORDS = "The layout or the event's details changed before the version arrived, so it did not save. Your changes are still here.";
 
 function isEditable(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
@@ -123,7 +129,52 @@ function usePart<T>(id: string | null, read: string, load: (id: string) => Promi
   return [part.id === id ? part : { id, status: "loading", value: null }, seed];
 }
 
-export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }: ProposalsDeskProps = {}): ReactElement {
+/** The composer's check, as read and as it may be said. */
+interface CheckRead extends PartRead<ProposalNextVersion> {
+  /** The last answer for the proposal as it reads could not be made: what was
+   *  checked before is not said as current until a check answers (a save is
+   *  still held to it), and a check made again says it is checking. */
+  readonly failed: boolean;
+}
+
+/** The composer's check: read while `id` is set, and again at each `again`.
+ *  What was read stays while it is read again for the same proposal, version
+ *  and links; once any of those change, or the composer closes, it is of
+ *  something else and is dropped. */
+function useCheck(id: string | null, identity: string, again: number, load: (id: string) => Promise<ProposalNextVersion>): CheckRead {
+  const key = id === null ? null : `${id}:${identity}`;
+  const [check, setCheck] = useState<{ readonly key: string | null } & CheckRead>({ key: null, status: "loading", value: null, failed: false });
+  useEffect(() => {
+    if (id === null || key === null) {
+      setCheck({ key: null, status: "loading", value: null, failed: false });
+      return;
+    }
+    let current = true;
+    setCheck((previous) => previous.key === key ? { ...previous, status: "loading" } : { key, status: "loading", value: null, failed: false });
+    load(id)
+      .then((value) => { if (current) setCheck({ key, status: "ready", value, failed: false }); })
+      .catch(() => {
+        if (!current) return;
+        setCheck((previous) => previous.key === key
+          ? { ...previous, status: "error", failed: true }
+          : { key, status: "error", value: null, failed: true });
+      });
+    return () => { current = false; };
+  }, [id, key, again, load]);
+  return key !== null && check.key === key
+    ? { status: check.status, value: check.value, failed: check.failed }
+    : { status: "loading", value: null, failed: false };
+}
+
+/** Everything on the desk belongs to the person signed in: another account
+ *  signed in on this page is given a desk of its own, so nothing of the last
+ *  one's shows there (what they wrote, a link they made, their venue's rows). */
+export function ProposalsDesk(props: ProposalsDeskProps = {}): ReactElement {
+  const person = useAuthStore((state) => state.user?.id ?? "");
+  return <PersonalDesk key={person} {...props} person={person} />;
+}
+
+function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }: ProposalsDeskProps & { readonly person: string }): ReactElement {
   const wide = useMediaQuery(WIDE_DESK);
   const titleId = useId();
   const user = useAuthStore((state) => state.user);
@@ -134,33 +185,53 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
   const [detail, setDetail] = useState<DetailState>({ status: "idle" });
-  const [refreshing, setRefreshing] = useState(false);
   const [working, setWorking] = useState<ProposalWork>(null);
   const [failure, setFailure] = useState<ProposalFailure | null>(null);
-  const [announcement, setAnnouncement] = useState<string | null>(null);
+  // What a step says, and apart from it, so neither is lost, that words were
+  // kept to copy. Each saying is counted, so the same words said again are
+  // heard again.
+  const saidRef = useRef(0);
+  const [announcement, setAnnouncement] = useState<Said | null>(null);
+  const [keptNote, setKeptNote] = useState<Said | null>(null);
+  const say = (text: string): Said => { saidRef.current += 1; return { text, n: saidRef.current }; };
   const [stampKey, setStampKey] = useState<number | null>(null);
   const [links, setLinks] = useState<Readonly<Record<string, string>>>({});
-  // Versions that did not save, kept per proposal and per composer so each can
-  // be copied once the composer that wrote it is gone.
-  const [keptDrafts, setKeptDrafts] = useState<Readonly<Record<string, readonly KeptVersion[]>>>({});
+  // Versions that did not save, and words put aside, kept per proposal and
+  // per composer so each can be copied once the composer that wrote it is
+  // gone. They live for the page (proposal-memory.ts), so moving to another
+  // part of the dashboard and back loses none of them, and a save that
+  // answers after the desk was left still keeps or puts away its copy.
+  const keptDrafts = useSyncExternalStore(subscribeKept, () => recallKept(person));
+  const setKeptDrafts = useCallback((update: (current: KeptCopies) => KeptCopies): void => { updateKept(person, update); }, [person]);
   const [creating, setCreating] = useState(false);
-  const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0 });
+  const [reads, setReads] = useState({ latest: 0, history: 0, comments: 0, next: 0 });
   const listRequest = useLatestRequest();
   // The proposal that should be open, and each time it should be read again.
   // The read is an effect keyed on it, so a read cut short (a newer proposal,
   // React's development double run) is simply made again, and a late answer
   // for a proposal no longer open is never shown.
-  const [target, setTarget] = useState<{ readonly id: string; readonly read: number; readonly quietly: boolean } | null>(null);
+  // A quiet read keeps the proposal on screen while it is read; a silent one
+  // (someone coming back to the page) does not say it is reading either.
+  const [target, setTarget] = useState<{ readonly id: string; readonly read: number; readonly quietly: boolean; readonly silent?: boolean } | null>(null);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
   const focusPanelRef = useRef(false);
   const returnFocusRef = useRef<string | null>(null);
   const reportedRef = useRef<string | null>(null);
   const onShownRef = useRef(onProposalShown);
   useEffect(() => { onShownRef.current = onProposalShown; });
+  // A step of the booker's own that took the proposal out of their hands (a
+  // send, a withdrawal): words it puts aside are said without its reason,
+  // which the step has just said itself.
+  const stepClosedRef = useRef<{ readonly id: string; readonly status: string } | null>(null);
 
   const rows = list.status === "ready" ? list.rows : list.status === "error" ? list.previous?.rows ?? [] : [];
   const page = list.status === "ready" ? list.page : list.status === "error" ? list.previous?.page ?? null : null;
   const openId = target?.id ?? null;
+  // The words in the open proposal's composer, remembered for this person.
+  const memory = useMemo((): DraftMemory | null => openId === null ? null : {
+    recall: () => recallDraft(person, openId),
+    remember: (written) => { rememberDraft(person, openId, written); },
+  }, [person, openId]);
 
   /** Reads the list from its start; `keep` rows keeps as many as are shown.
    *  A read started later wins, and drops a next page still on its way. */
@@ -207,24 +278,34 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   // The open proposal and its parts
   // ---------------------------------------------------------------------------
 
+  // The read of the open proposal last answered, or given up on. A proposal
+  // read again while it stays on screen is then known to be on its way in the
+  // very render that asks for it, so nothing waiting on that read slips in
+  // first; said ("Refreshing the proposal…") unless it is silent.
+  const [answered, setAnswered] = useState<{ readonly id: string; readonly read: number } | null>(null);
+  const rereading = target !== null && target.quietly && (answered?.id !== target.id || answered.read !== target.read);
+  const refreshing = rereading && target.silent !== true;
   useEffect(() => {
     if (target === null) {
       setDetail({ status: "idle" });
-      setRefreshing(false);
       return;
     }
     let current = true;
-    const { id, quietly } = target;
-    if (quietly) setRefreshing(true);
-    else setDetail({ status: "loading", id });
+    const { id, read, quietly } = target;
+    if (!quietly) setDetail({ status: "loading", id });
     getDeskProposal(id)
-      .then((next) => { if (current) setDetail({ status: "ready", proposal: next }); })
-      .catch((error: unknown) => {
-        // A quiet re-read that fails keeps the proposal as it was last read.
-        if (!current || quietly) return;
-        setDetail(error instanceof ApiError && error.status === 404 ? { status: "missing", id } : { status: "error", id });
+      .then((next) => {
+        if (!current) return;
+        setDetail({ status: "ready", proposal: next });
+        setAnswered({ id, read });
       })
-      .finally(() => { if (current) setRefreshing(false); });
+      .catch((error: unknown) => {
+        if (!current) return;
+        setAnswered({ id, read });
+        // A quiet re-read that fails keeps the proposal as it was last read.
+        if (quietly) return;
+        setDetail(error instanceof ApiError && error.status === 404 ? { status: "missing", id } : { status: "error", id });
+      });
     return () => { current = false; };
   }, [target]);
 
@@ -268,7 +349,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     if (byReader) focusPanelRef.current = true;
     setFailure(null);
     setAnnouncement(null);
+    setKeptNote(null);
     setStampKey(null);
+    stepClosedRef.current = null;
     setTarget((current) => {
       if (current?.id === id) {
         if (byReader) panelHeadingRef.current?.focus();
@@ -278,9 +361,66 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     });
   }, []);
 
-  const readAgain = useCallback((id: string): void => {
-    setTarget((current) => current?.id === id ? { id, read: current.read + 1, quietly: true } : current);
+  const readAgain = useCallback((id: string, silent = false): void => {
+    setTarget((current) => current?.id === id ? { id, read: current.read + 1, quietly: true, silent } : current);
   }, []);
+
+  // What a version saved now would take that the latest does not show its
+  // client (the layout's drawing, the event's facts), for a proposal the
+  // composer is open on. Checked again when its version or links change, when
+  // someone comes back to the page (a layout changed in another tab, say; the
+  // proposal is read again with it, so its facts agree), and after a save is
+  // refused. A proposal sent meanwhile is read again, to say where it stands.
+  const nextFor = proposal !== null && openVersion !== null && openVersion > 0 && COMPOSABLE.includes(proposal.status) ? openId : null;
+  const loadNext = useCallback((id: string): Promise<ProposalNextVersion> => getProposalNextVersion(id).catch((error: unknown) => {
+    if (error instanceof ApiError && error.code === "NOT_EDITABLE") readAgain(id, true);
+    throw error;
+  }), [readAgain]);
+  const next = useCheck(nextFor, [openVersion, proposal?.configurationId, proposal?.opportunityId, proposal?.enquiryId].map(String).join(":"),
+    reads.next, loadNext);
+  // A check is not said as current while it is made again after a save was
+  // refused for it, or after it could not be made; a save is still held to it.
+  const [refusedBasis, setRefusedBasis] = useState<string | null>(null);
+  const nextShown: PartRead<ProposalNextVersion> = next.status === "loading" && next.value !== null && (next.failed || next.value.basis === refusedBasis)
+    ? { status: "loading", value: null } : { status: next.status, value: next.value };
+  // While the composer is open, coming back to the page reads the proposal
+  // again (a version saved or a send made elsewhere) and, once it has a
+  // version, makes the check again (a layout changed in another tab).
+  const composingFor = proposal !== null && COMPOSABLE.includes(proposal.status) ? openId : null;
+  useEffect(() => {
+    if (composingFor === null) return;
+    let last = -Infinity;
+    const checkAgain = (): void => {
+      // Coming back fires both; one read answers both.
+      if (document.visibilityState !== "visible" || performance.now() - last < 1000) return;
+      last = performance.now();
+      setReads((current) => ({ ...current, next: current.next + 1 }));
+      readAgain(composingFor, true);
+    };
+    window.addEventListener("focus", checkAgain);
+    document.addEventListener("visibilitychange", checkAgain);
+    return () => {
+      window.removeEventListener("focus", checkAgain);
+      document.removeEventListener("visibilitychange", checkAgain);
+    };
+  }, [composingFor, readAgain]);
+
+  // The open proposal and its ledger row are made to agree when either has
+  // moved on without the other (a proposal read again on coming back, a list
+  // read while a colleague changed it): whichever is behind is read again,
+  // once for each pair of states, and never while a read that would settle it
+  // is on its way or more rows are coming.
+  const ledgerSyncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (proposal === null || listReading || loadingMore || rereading) return;
+    const row = rows.find((candidate) => candidate.id === proposal.id);
+    if (row === undefined || (row.status === proposal.status && row.currentVersion === proposal.currentVersion)) return;
+    const pair = [proposal.id, proposal.status, proposal.currentVersion, row.status, row.currentVersion].map(String).join(":");
+    if (ledgerSyncedRef.current === pair) return;
+    ledgerSyncedRef.current = pair;
+    if (Date.parse(row.updatedAt) > Date.parse(proposal.updatedAt)) readAgain(proposal.id, true);
+    else readList(Math.max(PAGE, rows.length));
+  }, [proposal, rows, listReading, loadingMore, rereading, readList, readAgain]);
 
   const closeProposal = useCallback((): void => {
     setTarget((current) => {
@@ -340,22 +480,33 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
       ? { status: "ready", proposal: { ...state.proposal, ...next } } : state);
   };
 
-  const attempt = async (where: ProposalFailure["where"], work: ProposalWork, action: (id: string) => Promise<string | null>): Promise<boolean> => {
+  /** `composer` names the composer a version's failure belongs to. */
+  const attempt = async (where: ProposalFailure["where"], work: ProposalWork, action: (id: string) => Promise<string | null>,
+    composer?: number): Promise<boolean> => {
     if (proposal === null || working !== null) return false;
     const id = proposal.id;
     setWorking(work);
     setFailure(null);
+    stepClosedRef.current = null;
     try {
       const said = await action(id);
-      if (openIdRef.current === id && said !== null) setAnnouncement(said);
+      if (openIdRef.current === id && said !== null) setAnnouncement(say(said));
       return true;
     } catch (error: unknown) {
       if (openIdRef.current === id) {
         const moved = error instanceof ApiError && MOVED_CODES.includes(error.code);
-        setFailure({ where, message: error instanceof RefusedHere ? error.message : moved ? MOVED_WORDS[where] : FAILURE_WORDS[where] });
+        const taken = where === "version" && error instanceof ApiError && error.code === "REVISION_CONFLICT";
+        setFailure({
+          where,
+          message: error instanceof RefusedHere ? error.message : taken ? TAKEN_CHANGED_WORDS : moved ? MOVED_WORDS[where] : FAILURE_WORDS[where],
+          ...(composer === undefined ? {} : { composer }), moved,
+        });
         if (moved) {
           readAgain(id);
-          setReads((current) => ({ ...current, history: current.history + 1 }));
+          // The latest version too, even when the proposal's number has not
+          // changed since it was last read: a composer left starting from an
+          // older version would otherwise be refused at every save.
+          setReads((current) => ({ ...current, history: current.history + 1, latest: current.latest + 1, next: current.next + 1 }));
           readList(Math.max(PAGE, rows.length));
         }
       }
@@ -375,6 +526,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     // The API answers with its row as the desk now reads it: the version the
     // link shows, the send's stamp and that it has not been opened since.
     applyProposal(made.proposal);
+    if (!COMPOSABLE.includes(made.proposal.status)) stepClosedRef.current = { id, status: made.proposal.status };
     readAgain(id);
     setReads((current) => ({ ...current, history: current.history + 1 }));
     readList(Math.max(PAGE, rows.length));
@@ -382,7 +534,9 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
   });
 
   const onTransition = (to: "withdrawn" | "archived"): Promise<boolean> => attempt("step", to === "withdrawn" ? "withdraw" : "archive", async (id) => {
-    applyProposal(await transitionProposal(id, to));
+    const moved = await transitionProposal(id, to);
+    applyProposal(moved);
+    stepClosedRef.current = { id, status: moved.status };
     setStampKey(Date.now());
     readAgain(id);
     setReads((current) => ({ ...current, history: current.history + 1 }));
@@ -390,7 +544,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     return `The proposal is ${proposalStatusWords(to).toLowerCase()}.`;
   });
 
-  const saveVersion = (draft: ComposerDraft): Promise<boolean> => attempt("version", "version", async (id) => {
+  const saveVersion = (draft: ComposerDraft, composer: number, basedOn: number, basis: string | undefined): Promise<boolean> => attempt("version", "version", async (id) => {
     if (proposal === null) return null;
     const lines = readQuoteLines(draft);
     const candidate = {
@@ -407,6 +561,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     const checked = ProposalVersionPayloadSchema.safeParse(candidate);
     if (!checked.success) throw new RefusedHere(checked.error.issues[0]?.message ?? "The proposal's words are not valid.");
     let quote: ProposalVersionPayload["quote"] = null;
+    let madeQuoteId: string | null = null;
     if (lines.length > 0) {
       // Totals come back from the server's exact money engine; the snapshot
       // uses them as they are, never adding them up here.
@@ -414,6 +569,7 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
         venueId: proposal.venueId, opportunityId: proposal.opportunityId, proposalId: id,
         name: `${proposal.title} quote`, currency: "GBP", lineItems: [...lines],
       });
+      madeQuoteId = made.id;
       quote = {
         quoteId: made.id,
         currency: "GBP",
@@ -424,50 +580,123 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
         totalMinor: made.totalMinor,
       };
     }
-    const saved = await createProposalVersion(id, { ...checked.data, quote });
-    // The next version starts from this one at once; the proposal is then
-    // read again for what the server made of it.
-    seedLatest(id, saved);
+    let saved: StaffProposalVersion;
+    try {
+      saved = await createProposalVersion(id, { ...checked.data, quote }, basedOn, basis);
+    } catch (error) {
+      if (basis !== undefined && error instanceof ApiError && MOVED_CODES.includes(error.code)) setRefusedBasis(basis);
+      // A version refused outright leaves no draft quote for the deal to offer
+      // as its latest figure. One that may have saved (no answer, or the
+      // server's own failure) keeps it: the version would point at it.
+      if (madeQuoteId !== null && error instanceof ApiError && error.status >= 400 && error.status < 500) {
+        await deleteQuote(madeQuoteId).catch(() => undefined);
+      }
+      throw error;
+    }
+    // The words are the version now: nothing of them is left to remember,
+    // unless other words have taken their place (the desk was left and
+    // opened again while this save was on its way, and more was written, or
+    // the same written over a version saved since).
+    const written = recallDraft(person, id);
+    if (written !== null && written.start === basedOn && sameWords(written.draft, draft)) rememberDraft(person, id, null);
+    // The next version starts from this one at once, if it is still open; the
+    // proposal is then read again for what the server made of it.
+    if (openIdRef.current === id) seedLatest(id, saved);
     applyProposal({ id, currentVersion: saved.version, latestTotalMinor: quote?.totalMinor ?? null, latestCurrency: quote === null ? null : "GBP" });
     readAgain(id);
     readList(Math.max(PAGE, rows.length));
     return `Version ${String(saved.version)} is saved.`;
-  });
+  }, composer);
 
-  /** Forgets the proposal's kept versions: one composer's, or all of them. */
-  const forgetKept = (id: string, composer: number | null): void => {
+  /** Forgets those of the proposal's kept versions that `which` picks. */
+  const forgetKept = (id: string, which: (entry: KeptVersion) => boolean): void => {
     setKeptDrafts((current) => {
       const kept = current[id];
       if (kept === undefined) return current;
-      const left = composer === null ? [] : kept.filter((entry) => entry.composer !== composer);
+      const left = kept.filter((entry) => !which(entry));
       if (left.length === kept.length) return current;
       const { [id]: _done, ...rest } = current;
       return left.length === 0 ? rest : { ...rest, [id]: left };
     });
   };
 
-  // A version that did not save is kept, so it can still be copied once the
-  // composer that wrote it is gone. A composer's later failure replaces only
-  // its own; one kept from an earlier composer stays until it is put away or
-  // a version saves.
-  const onSaveVersion = async (draft: ComposerDraft, composer: number): Promise<boolean> => {
+  // The composer whose save is under way or has saved: its own save keeps or
+  // saves its words, so they are never put aside as though the proposal had
+  // moved on without them.
+  const savingRef = useRef<number | null>(null);
+  // Composers that went, words and all, while their save was on its way.
+  const goneWhileSavingRef = useRef(new Set<number>());
+
+  // A version that did not save is kept to copy when the composer that wrote
+  // it went while the save was on its way (a colleague's version or a send
+  // found meanwhile), taking the words with it; a composer still there holds
+  // them itself. A version that saves puts away the copies there were when
+  // it began, and any since of the very words it saved (a desk opened while
+  // it was on its way kept them), but no other words written since.
+  const onSaveVersion = async (draft: ComposerDraft, composer: number, basedOn: number, basis?: string): Promise<boolean> => {
     const id = proposal?.id ?? null;
-    const saved = await saveVersion(draft);
+    const before = id === null ? [] : recallKept(person)[id] ?? [];
+    savingRef.current = composer;
+    const saved = await saveVersion(draft, composer, basedOn, basis);
+    const gone = goneWhileSavingRef.current.delete(composer);
+    if (!saved && savingRef.current === composer) savingRef.current = null;
     if (id !== null) {
-      if (saved) forgetKept(id, null);
-      else {
+      if (saved) forgetKept(id, (entry) => before.includes(entry) || sameWords(entry.draft, draft));
+      else if (gone) {
         setKeptDrafts((current) => ({
           ...current,
-          [id]: [...(current[id] ?? []).filter((entry) => entry.composer !== composer), { draft, composer }],
+          [id]: [...(current[id] ?? []).filter((entry) => entry.composer !== composer), { draft, composer, why: null }],
         }));
       }
     }
     return saved;
   };
 
+  // A composer the proposal moved on from (a version saved elsewhere, a send
+  // or a withdrawal, words left when another proposal was opened): its words,
+  // if any, are kept to copy with why, and said. Its own save keeps or saves
+  // them instead. Replaced as its own refused save said it would be, its words
+  // are kept as that refusal left them, which the refusal explains; any other
+  // failure on screen belongs to a composer now gone and is put away.
+  const onComposerGone = (composer: number, draft: ComposerDraft | null, why: string): boolean => {
+    const id = proposal?.id ?? null;
+    if (id === null) return false;
+    const step = stepClosedRef.current;
+    const byStep = step !== null && step.id === id && step.status === proposal?.status;
+    if (byStep) stepClosedRef.current = null;
+    if (savingRef.current === composer) {
+      // Should that save be refused, the words it sent are kept then.
+      if (draft !== null) goneWhileSavingRef.current.add(composer);
+      return false;
+    }
+    const ownRefusal = failure?.where === "version" && failure.composer === composer && failure.moved === true;
+    if (failure?.where === "version" && !ownRefusal) setFailure(null);
+    if (draft === null) return false;
+    // Its own refusal explains itself, so the words it kept need no reason.
+    const entry = { draft, composer, why: ownRefusal ? null : why };
+    setKeptDrafts((current) => ({ ...current, [id]: [...(current[id] ?? []).filter((other) => other.composer !== composer), entry] }));
+    if (!ownRefusal) setKeptNote(say(byStep ? "What you wrote is kept here to copy." : `${why} What you wrote is kept here to copy.`));
+    return true;
+  };
+
+  // Starting again puts the words aside to copy, rather than throwing them
+  // away: one more step clears them for good.
+  const onStartAgain = (composer: number, draft: ComposerDraft, fromVersion: number | null): void => {
+    const id = proposal?.id ?? null;
+    if (id === null) return;
+    const why = startedAgainWords(fromVersion);
+    setKeptDrafts((current) => ({
+      ...current,
+      [id]: [...(current[id] ?? []).filter((entry) => entry.composer !== composer), { draft, composer, why }],
+    }));
+    if (failure?.where === "version") setFailure(null);
+    rememberDraft(person, id, null);
+    setKeptNote(say(`${why} What you wrote is kept here to copy.`));
+  };
+
   const onDiscardKept = (composer: number): void => {
     if (openId === null) return;
-    forgetKept(openId, composer);
+    forgetKept(openId, (entry) => entry.composer === composer);
     panelHeadingRef.current?.focus({ preventScroll: true });
   };
 
@@ -511,6 +740,16 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     announcement,
     stampKey,
     latest,
+    next: nextShown,
+    lastCheck: next.value,
+    checkRetrying: next.status === "loading" && next.failed,
+    // The proposal is read again with it, so the facts agree with what it says.
+    onRetryCheck: () => {
+      setReads((current) => ({ ...current, next: current.next + 1 }));
+      if (openId !== null) readAgain(openId, true);
+    },
+    memory,
+    keptNote,
     history,
     comments,
     spaces,
@@ -521,6 +760,8 @@ export function ProposalsDesk({ proposalId = null, onProposalShown, onOpenDeal }
     onMakeLink,
     onTransition,
     onSaveVersion,
+    onComposerGone,
+    onStartAgain,
     onDiscardKept,
     onReply,
     onRetryLatest: () => { setReads((current) => ({ ...current, latest: current.latest + 1 })); },

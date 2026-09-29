@@ -1,0 +1,126 @@
+/* ---------------------------------------------------------------------------
+   Not connected to a venue yet: one ivory sheet with a tilted edge on the
+   sage ground, as the Rota's. Colours come from the register's --reg-* names.
+   --------------------------------------------------------------------------- */
+
+.vnc {
+  box-sizing: border-box;
+  min-height: calc(100dvh - 80px);
+  padding: 24px;
+  color: var(--reg-text-1);
+  font-family: var(--house-sans);
+}
+
+.vnc :is(button):focus-visible {
+  outline: var(--vv-focus-ring);
+  outline-offset: 2px;
+}
+
+.vnc__sheet {
+  position: relative;
+  isolation: isolate;
+  max-width: 760px;
+  padding: 34px clamp(24px, 3vw, 44px) 44px;
+}
+
+.vnc__sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--reg-surface);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+
+.vnc__title {
+  margin: 0;
+  font: 400 clamp(38px, 3.6vw, 54px)/1.04 var(--house-serif);
+  letter-spacing: -0.022em;
+}
+
+.vnc__lede {
+  max-width: 60ch;
+  margin: 12px 0 0;
+  color: var(--reg-text-2);
+  font: 400 19px/1.5 var(--house-serif);
+  text-wrap: pretty;
+}
+
+.vnc__next {
+  max-width: 60ch;
+  margin: 8px 0 0;
+  color: var(--reg-text-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.vnc__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 24px;
+}
+
+.vnc__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--reg-edge);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--reg-text-1);
+  font: 600 14px/1 var(--house-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.vnc__button[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .vnc__button:hover:not([aria-disabled="true"]) {
+    background: var(--reg-surface-hover);
+  }
+}
+
+.vnc__button:active:not([aria-disabled="true"]) {
+  transform: scale(0.97);
+}
+
+.vnc__status {
+  margin: 0;
+  color: var(--reg-text-2);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+@media (max-width: 760px) {
+  .vnc {
+    padding: 16px;
+  }
+
+  .vnc__sheet {
+    padding: 22px 16px 32px;
+  }
+
+  .vnc__sheet::before {
+    clip-path: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vnc__button {
+    transition: none;
+  }
+
+  .vnc__button:active:not([aria-disabled="true"]) {
+    transform: none;
+  }
+}

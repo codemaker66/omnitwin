@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
   ProposalLayoutSnapshotSchema,
+  ProposalNextVersionSchema,
   ProposalStatusSchema,
   ProposalVersionPayloadSchema,
   QuoteSnapshotSchema,
   type CreateQuote,
+  type ProposalNextVersion,
   type ProposalVersionPayload,
 } from "@omnitwin/types";
 import { api } from "./client.js";
@@ -381,11 +383,27 @@ export async function postProposalComment(id: string, body: string): Promise<Pro
   return api.post(`/proposals/${id}/comments`, { body }, undefined, ProposalCommentRowSchema);
 }
 
+/** `basedOn` is the version the words were written from; the API then refuses
+ *  the save (PROPOSAL_VERSION_CHANGED) if another was saved meanwhile.
+ *  `basis` is the check the composer showed (getProposalNextVersion); the API
+ *  refuses the save (REVISION_CONFLICT) if it would now take anything else. */
 export async function createProposalVersion(
   id: string,
   payload: ProposalVersionPayload,
+  basedOn?: number,
+  basis?: string,
 ): Promise<StaffProposalVersion> {
-  return api.post(`/proposals/${id}/versions`, payload, undefined, StaffProposalVersionSchema);
+  const query = new URLSearchParams();
+  if (basedOn !== undefined) query.set("basedOn", String(basedOn));
+  if (basis !== undefined) query.set("basis", basis);
+  const search = query.toString() === "" ? "" : `?${query.toString()}`;
+  return api.post(`/proposals/${id}/versions${search}`, payload, undefined, StaffProposalVersionSchema);
+}
+
+/** What a version saved now would take that the latest does not show its
+ *  client: the layout's drawing and the event's facts (the composer's check). */
+export async function getProposalNextVersion(id: string): Promise<ProposalNextVersion> {
+  return api.get(`/proposals/${id}/versions/next`, ProposalNextVersionSchema);
 }
 
 export async function getLatestProposalVersion(id: string): Promise<StaffProposalVersion> {
@@ -394,4 +412,9 @@ export async function getLatestProposalVersion(id: string): Promise<StaffProposa
 
 export async function createQuote(input: CreateQuote): Promise<StaffQuoteWithItems> {
   return api.post("/quotes", input, undefined, StaffQuoteWithItemsSchema);
+}
+
+/** Removes a draft quote (a version that did not save leaves none behind). */
+export async function deleteQuote(id: string): Promise<void> {
+  return api.delete(`/quotes/${id}`);
 }

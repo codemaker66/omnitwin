@@ -75,12 +75,21 @@ describe("HallkeeperRoomPlansPage", () => {
     expect(getHallkeeperRoomPlan("north-gallery")?.cleanedSrc).toBeNull();
   });
 
-  it("does not request or display venue plans for an unassigned account", () => {
+  it("tells an account not connected to a venue so, and requests no venue plans", () => {
     setVenueId(null);
     renderLibrary();
-    expect(screen.getByText("No venue is linked to this account.")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Room plans" })).toBeTruthy();
+    expect(screen.getByText("Your account is not connected to a venue yet, so there are no room plans to show.")).toBeTruthy();
     expect(getVenueMock).not.toHaveBeenCalled();
     expect(screen.queryByRole("group", { name: "Plan version" })).toBeNull();
+  });
+
+  it("keeps its own line for a platform admin, who has no venue of its own", () => {
+    useAuthStore.getState().setUser({ id: "platform", email: "platform@example.test", role: "admin", platformRole: "admin", name: "Platform", venueId: null });
+    renderLibrary();
+    expect(screen.getByText("No venue is linked to this account.")).toBeTruthy();
+    expect(screen.queryByTestId("venue-not-connected")).toBeNull();
+    expect(getVenueMock).not.toHaveBeenCalled();
   });
 
   it("does not map another venue by its display name", async () => {

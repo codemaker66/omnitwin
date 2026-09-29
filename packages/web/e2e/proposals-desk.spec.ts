@@ -176,6 +176,15 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         } } });
         return;
       }
+      if (rest === "/versions/next") {
+        // What a save would take beside the words: here the same drawing and
+        // the same facts, as nothing else changes in this emulator.
+        const facts = { eventDate: current.eventDate, guestCount: current.guestCount, occasion: current.eventType, roomName: "Grand Hall", roomSlug: "grand-hall" };
+        void route.fulfill(current.currentVersion < 1 ? { status: 404, json: { error: "No version" } } : { json: { data: {
+          basedOn: current.currentVersion, layout: "same", facts: { saved: facts, now: facts }, basis: "0".repeat(64),
+        } } });
+        return;
+      }
       if (rest === "/versions/latest") {
         const latest = (emulator.versions.get(id) ?? []).at(-1);
         void route.fulfill(latest === undefined ? { status: 404, json: { error: "No version" } } : { json: { data: latest } });
@@ -263,7 +272,7 @@ test.describe("Proposals desk", () => {
     await expect(composer.getByTestId("composer-message")).toHaveValue("Planning-grade proposal for your wedding on 5 June.");
     await expect(composer.getByTestId("quote-price-1")).toHaveValue("87.50");
     await composer.getByTestId("quote-price-1").fill("82.50");
-    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 1. Changed: the quote, £18,400 to £17,600.");
+    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 1. Changed: the quote from £18,400 to £17,600.");
     await composer.getByRole("button", { name: "Save version 2" }).click();
     await expect.poll(() => emulator.quotes).toEqual([{ lines: 2, totalMinor: 1_760_000 }]);
     await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 2. Nothing is changed from it yet.");
@@ -336,7 +345,7 @@ test.describe("Proposals desk", () => {
     const layout = panel.getByTestId("proposal-layout");
     await expect(layout).toHaveText("Their own, Grand Hall");
     await expect(panel.getByTestId("composer-layout"))
-      .toHaveText("Their layout is taken as it stands when you save. Preview as the client shows what they will see.");
+      .toHaveText("Their layout is taken as it stands when you save. Once the version is saved, Preview as the client shows it as they will see it.");
     // It reads across the panel, under the other facts, not squeezed into a column.
     const [fact, facts] = await layout.evaluate((dd) => [
       dd.parentElement?.getBoundingClientRect().width ?? 0, dd.closest("dl")?.getBoundingClientRect().width ?? 1,
@@ -345,6 +354,9 @@ test.describe("Proposals desk", () => {
     await page.screenshot({ path: test.info().outputPath("proposal-layout-desk.png") });
 
     await page.setViewportSize({ width: 390, height: 844 });
+    // The desk becomes one column when the page hears the new width, a moment
+    // after it is set: measure once the proposal has replaced the ledger.
+    await expect(panel.getByRole("button", { name: "Back to proposals" })).toBeVisible();
     await expect(layout).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: test.info().outputPath("proposal-layout-phone.png"), fullPage: true });

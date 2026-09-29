@@ -5,6 +5,8 @@ import { WorkspaceAccessGate } from "../WorkspaceAccessGate.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { ApiError } from "../../../api/client.js";
 import type { AuthSessionUser } from "../../../api/auth.js";
+import { forgetProposalMemory, rememberDraft } from "../../dashboard/proposals/proposal-memory.js";
+import { letPageGo } from "../../../lib/page-leave.js";
 
 const mocks = vi.hoisted(() => ({
   getCurrentAuthUser: vi.fn<() => Promise<AuthSessionUser>>(),
@@ -53,7 +55,11 @@ beforeEach(() => {
   mocks.getToken.mockResolvedValue("test-token");
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  forgetProposalMemory();
+  letPageGo(false);
+});
 
 describe("authoritative account access", () => {
   it("waits for API confirmation instead of trusting Clerk role metadata", async () => {
@@ -252,6 +258,45 @@ describe("authoritative account access", () => {
     await screen.findByText("Venue operations");
     await act(async () => { old.reject(new ApiError(403, "No access", "INVITATION_REQUIRED")); await old.promise.catch(() => undefined); });
     expect(useAuthStore.getState().user?.id).toBe("db-user");
+  });
+
+  it("holds a reload for proposal words while access cannot be confirmed, and lets the page go for its own sign-out", async () => {
+    const reloadHeld = (): boolean => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    rememberDraft("db-user", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    mocks.getCurrentAuthUser.mockRejectedValue(new ApiError(503, "Unavailable", "SERVER_ERROR"));
+    const signout = deferred<undefined>();
+    mocks.signOut.mockReturnValueOnce(signout.promise);
+    render(<Flow />);
+    await screen.findByRole("heading", { name: "Connection unavailable" });
+    // Still signed in, and the words can be saved once access is confirmed.
+    expect(reloadHeld()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    expect(reloadHeld()).toBe(false);
+    // The sign-out does not finish: the page is not being left after all.
+    await act(async () => { signout.reject(new Error("offline")); await signout.promise.catch(() => undefined); });
+    expect(await screen.findByText("Sign out did not finish. Please try again.")).toBeDefined();
+    expect(reloadHeld()).toBe(true);
+  });
+
+  it("keeps the page let go once its own sign-out has gone through, while Clerk leaves it", async () => {
+    const reloadHeld = (): boolean => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    rememberDraft("db-user", "p1", { composer: 1, start: 1, draft: { message: "Words not yet saved.", capacityNote: "", lines: [] } });
+    mocks.getCurrentAuthUser.mockRejectedValue(new ApiError(503, "Unavailable", "SERVER_ERROR"));
+    mocks.signOut.mockResolvedValueOnce(undefined);
+    render(<Flow />);
+    await screen.findByRole("heading", { name: "Connection unavailable" });
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    await waitFor(() => { expect(mocks.signOut).toHaveBeenCalledWith({ redirectUrl: "/login" }); });
+    await act(async () => { await Promise.resolve(); });
+    expect(reloadHeld()).toBe(false);
   });
 
   it("keeps sign-out errors actionable without leaving a working indicator", async () => {

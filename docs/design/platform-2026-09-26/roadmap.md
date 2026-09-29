@@ -744,8 +744,20 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   Accepted and Closed, each row with who it is for, the event's date and guests, and what it comes to; the
   counts cover the whole list.
 - The composer is pre-filled from the latest version ("Editing version 3"), with a diff.
-  Done: the next version starts from the latest one's message, capacity note and quote lines, and says what it
-  changes ("Changed: the quote, £18,400 to £17,600.").
+  Done: the next version starts from the latest one's message, capacity note and quote lines. On 28 September
+  it was made true of the version. First it said only what the
+  person had changed, since the drawing and the event are taken afresh at each save; it names the version its
+  words came from; and a save written from a version since followed is refused rather than replacing it. Then
+  the server said what a save itself will change (`GET /proposals/:id/versions/next`). The composer now names
+  the drawing, the event's facts and what the new version leaves out, with the words ("Changed: the quote from
+  £18,400 to £17,600, the guest count from 160 to 180 and the layout drawing."), and a save is held to the last
+  check made for its version. Words written in a composer live for the page (`proposal-memory.ts`): they carry
+  on when the proposal is opened again, even after another part of the dashboard, and are kept to copy with
+  why when a version saved elsewhere, a send or Start again replaces them. A reload asks first while any are
+  unsaved, and the desk belongs to the person signed in, so another account on the same page never sees them.
+  Sign Out, and a refusal's Use another account, ask first while the person has any, and the browser never
+  asks once they have signed out.
+  That is live since 29 September (`ee68ec52`).
 - Inline "Send to client…" confirmation, a persistent link, and "Preview as the client".
   The confirmation is done ("Send version 2 to Elaine Crawford?"). A link can be shown only in the visit it is
   made, as links are kept hashed. Preview as the client is done (28 September):
@@ -759,7 +771,7 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   came from and that enquiry's own layout while it is live at the venue; links that contradict each other are
   refused, never mixed. A version's layout is the proposal's own, drawn by the server. The Proposals panel says
   which layout goes out ("Their own, Grand Hall", a room, "Removed" or "None"). Choosing another layout, or
-  leaving it out, waits on A10.
+  leaving it out, waits on A10. Live on 28 September (`1ebcc49c`).
 - Notify the owner of every client decision.
   Done on 28 September (`services/client-answer-notice.ts`). Every acceptance, request for changes and
   comment tells every commercial role at the venue, the proposal's owner among them, with or without an
@@ -1217,7 +1229,7 @@ Evidence and sources: [research/completeness.md](research/completeness.md), [res
 | `lib/venue-time.ts` | `enquiry-desk-format.ts:187-290`, `pages/diary/lib/board-time.ts` | 14 local helpers and 9 locale-less calls | N1 onward |
 | `describeFailure(error, {action, subject})` | New, at the `api/client.ts` boundary | 39 raw `error.message` renders | N1 onward |
 | `useListTriage` hook and legend | `EnquiryLedger.tsx:35`, `EnquiryPanel.tsx:76-103` | Tab-only lists | N3, X1, X2, X6 |
-| `useUnsavedChanges` | `InventoryNavigationGuard.tsx` | Nothing (only inventory has a guard today) | Settings, proposal composer, event details |
+| `useUnsavedChanges` | `InventoryNavigationGuard.tsx` | Nothing yet; the two guards today are inventory's and the proposal composer's (`proposal-memory.ts`, `sign-out-words.tsx`) | Settings, proposal composer, event details |
 | Persistent StaffLayout route | `DashboardLayout` | Each page wrapping its own layout | N2 |
 | Chart kit | Research palette in fixed order (forest, copper, sage, heather), a headline sentence, table fallback | Cyan bars and KPI card walls | X8 |
 

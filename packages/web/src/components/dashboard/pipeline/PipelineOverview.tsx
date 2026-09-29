@@ -8,7 +8,9 @@ import { dueIsPressing, dueWords } from "./pipeline-desk-format.js";
 // ---------------------------------------------------------------------------
 
 interface PipelineOverviewProps {
-  readonly tasks: readonly PipelineTask[];
+  /** The follow-ups owed, or null until the pipeline has been read: nothing
+   *  is said to be owed, or not, of a pipeline not yet read. */
+  readonly tasks: readonly PipelineTask[] | null;
   /** Every open follow-up, where the page shows only some. */
   readonly total: number | null;
   readonly nowMs: number;
@@ -16,12 +18,14 @@ interface PipelineOverviewProps {
 }
 
 export function PipelineOverview({ tasks, total, nowMs, onOpenDeal }: PipelineOverviewProps): ReactElement {
-  const more = total === null ? 0 : Math.max(0, total - tasks.length);
+  const more = total === null || tasks === null ? 0 : Math.max(0, total - tasks.length);
   return (
     <aside className="enq-panel pl-overview" data-register="forest" aria-label="Pipeline overview">
       <div className="enq-panel__body enq-overview">
         <h2>Follow-ups owed</h2>
-        {tasks.length === 0 ? (
+        {tasks === null ? (
+          <p>What is owed shows here once the pipeline is read.</p>
+        ) : tasks.length === 0 ? (
           <p>Nothing is owed on any deal. Follow-ups you add to a deal appear here, soonest first.</p>
         ) : (
           <ul className="pl-owed">

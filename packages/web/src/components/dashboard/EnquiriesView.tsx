@@ -173,6 +173,9 @@ export function EnquiriesView({
   const [history, setHistory] = useState<HistoryState>({ id: null, entries: [], status: "ready" });
   const [historyVersion, setHistoryVersion] = useState(0);
   const [confirming, setConfirming] = useState<ConfirmTarget | null>(null);
+  // The status the enquiry showed when its confirmation was opened: the one
+  // the person decided from, whatever a read landing meanwhile shows.
+  const confirmFromRef = useRef<string | null>(null);
   const [saving, setSaving] = useState<TransitionTarget | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [stamp, setStamp] = useState<LedgerStamp | null>(null);
@@ -417,15 +420,17 @@ export function EnquiriesView({
     setOpenedEnquiry((opened) => opened !== null && opened.id === updated.id ? updated : opened);
   };
 
-  const runTransition = async (enquiry: Enquiry, to: TransitionTarget, note: string | undefined): Promise<void> => {
+  const runTransition = async (enquiry: Enquiry, to: TransitionTarget, note: string | undefined, from: string = enquiry.state): Promise<void> => {
     setSaving(to);
     setFailure(null);
     const stillOpen = (): boolean => selectedIdRef.current === enquiry.id;
     try {
-      const updated = await enquiriesApi.transitionEnquiry(enquiry.id, to, note);
+      // Decided from what this screen showed: if the enquiry has moved on
+      // since, nothing is done and it is read again.
+      const updated = await enquiriesApi.transitionEnquiry(enquiry.id, to, note, from);
       applyUpdated(updated);
       setCounts((previous) => previous.value === null ? previous
-        : { ...previous, value: countsAfterMove(previous.value, enquiry.id, enquiry.state, updated.state) });
+        : { ...previous, value: countsAfterMove(previous.value, enquiry.id, from, updated.state) });
       setCountsVersion((version) => version + 1);
       setHistoryVersion((version) => version + 1);
       setStamp((previous) => ({ id: updated.id, key: (previous?.key ?? 0) + 1 }));
@@ -436,9 +441,11 @@ export function EnquiriesView({
         panelHeadingRef.current?.focus();
       }
     } catch (error) {
-      if (error instanceof ApiError && (error.code === "INVALID_TRANSITION" || error.code === "NOT_A_BOOKING")) {
-        // Someone else moved it on first, or it turned out to be a request:
-        // show where it really is, and the steps it really has.
+      if (error instanceof ApiError && (error.code === "INVALID_TRANSITION" || error.code === "ENQUIRY_STATUS_CHANGED"
+        || error.code === "NOT_A_BOOKING")) {
+        // Someone else moved it on first (before this was sent, or while it
+        // was on its way), or it turned out to be a request: show where it
+        // really is, and the steps it really has.
         try {
           const current = await enquiriesApi.getEnquiry(enquiry.id);
           applyUpdated(current);
@@ -473,13 +480,14 @@ export function EnquiriesView({
       void runTransition(selected, to, undefined);
       return;
     }
+    confirmFromRef.current = selected.state;
     setConfirming(to);
   };
 
   const confirmTransition = (note: string): void => {
     if (selected === undefined || confirming === null || saving !== null) return;
     const trimmed = note.trim();
-    void runTransition(selected, confirming, trimmed === "" ? undefined : trimmed);
+    void runTransition(selected, confirming, trimmed === "" ? undefined : trimmed, confirmFromRef.current ?? selected.state);
   };
 
   const cancelTransition = (): void => {

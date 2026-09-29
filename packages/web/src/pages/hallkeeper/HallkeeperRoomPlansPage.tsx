@@ -3,9 +3,11 @@ import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Building2 } from "lucide-react";
 import { getVenue, type VenueDetail } from "../../api/spaces.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
+import { VenueNotConnected } from "../../components/dashboard/VenueNotConnected.js";
 import { RoomPlanReference } from "../../components/hallkeeper/RoomPlanReference.js";
 import { ActivityStatus } from "../../components/shared/Activity.js";
 import { HALLKEEPER_PLAN_VENUE_SLUG, HALLKEEPER_ROOM_PLANS, getHallkeeperRoomPlan, type HallkeeperRoomPlan } from "../../data/hallkeeper-room-plans.js";
+import { awaitsVenue } from "../../lib/role-capabilities.js";
 import { roomPosterSources } from "../../lib/room-posters.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import "../../styles/hallkeeper-register.css";
@@ -27,6 +29,7 @@ function RoomPhotograph({ room }: { readonly room: HallkeeperRoomPlan }): ReactE
 /** Protected by the router; the current venue is also checked before choosing references. */
 export function HallkeeperRoomPlansPage(): ReactElement {
   const venueId = useAuthStore((state) => state.user?.venueId ?? null);
+  const notConnected = useAuthStore((state) => awaitsVenue(state.user));
   const [params, setParams] = useSearchParams();
   const [result, setResult] = useState<VenueResult | null>(null);
   const [retry, setRetry] = useState(0);
@@ -57,6 +60,16 @@ export function HallkeeperRoomPlansPage(): ReactElement {
       return next;
     });
   };
+
+  // A venue's own account not connected to one yet is told so, as on the
+  // Day Board this page is opened from.
+  if (notConnected) {
+    return (
+      <DashboardLayout mainLabel="Room reference plans" surface="rota">
+        <VenueNotConnected title="Room plans" consequence="there are no room plans to show" />
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout mainLabel="Room reference plans">

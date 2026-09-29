@@ -76,6 +76,17 @@ const REQUEST_TRANSITIONS: Record<string, readonly TransitionRole[]> = {
 const BOOKING_DECISIONS: readonly string[] = ["approved", "rejected"];
 
 /**
+ * True for the customer's own moves on an enquiry of this kind: submitting
+ * it and withdrawing it, which its owner may make wherever the enquiry is.
+ * Every other move (review, decide, archive, reopen) is the venue's, made
+ * only by its own team; an admin's move outside the tables is the venue's.
+ */
+export function isCustomerMove(currentState: string, nextState: string, kind: EnquiryKind = "booking"): boolean {
+  const allowed = (kind === "request" ? REQUEST_TRANSITIONS : TRANSITIONS)[`${currentState}→${nextState}`];
+  return allowed !== undefined && allowed.includes("planner");
+}
+
+/**
  * Returns true if the given role can perform a transition from
  * currentState to nextState on an enquiry of this kind.
  *

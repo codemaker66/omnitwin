@@ -10,6 +10,8 @@ import { ActivityStatus } from "../../components/shared/Activity.js";
 import { CALENDAR_REUSE_MS, useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
+import { VenueNotConnected } from "../../components/dashboard/VenueNotConnected.js";
+import { awaitsVenue } from "../../lib/role-capabilities.js";
 import { resolveEventLinkedLayouts, type LinkedLayoutChoice } from "../../lib/event-linked-layouts.js";
 import { DAY_BOARD_LEGEND, deriveDayBoard, type DayBoardSlot, type DayBoardState } from "./lib/day-board-state.js";
 import { describeSlotSheet, sheetProgressLine, type SlotSheetState } from "./lib/day-board-sheet.js";
@@ -417,6 +419,16 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
   const freeRooms = roomId === "" && busyLanes > 0 ? (board?.lanes ?? []).filter((lane) => lane.slots.length === 0).map((lane) => lane.room.name) : [];
   const readAt = readAtMs === null ? null : formatWallTime(readAtMs, timeZone);
 
+  // A venue's own account not connected to one yet is told so, as on every
+  // dashboard view, rather than shown a day that can never fill.
+  if (awaitsVenue(user)) {
+    return (
+      <DashboardLayout mainLabel="The Day Board" surface="rota">
+        <VenueNotConnected title="The Day Board" consequence="there are no bookings to show" />
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout mainLabel="The Day Board">
       <div className="dayboard" ref={boardRef}>
@@ -426,19 +438,22 @@ export function DayBoardPage({ slotRequests }: DayBoardPageProps = {}): ReactEle
             <p className="dayboard-subtitle">{formatWallDay(selectedMs, timeZone)}{zone === null ? "" : ` · ${zone}`}</p>
           </div>
           {/* Honest about how fresh the day is: the socket reconnects by
-              itself, and Refresh reads the day now. */}
-          <div className="dayboard-status" role="status">
-            <span
-              className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`}
-              aria-hidden="true"
-            />
-            {live.connected
-              ? <span>{readAt === null ? "Live" : `Live · updated ${readAt}`}</span>
-              : <>
-                <span>{readAt === null ? "Reconnecting…" : `Updated ${readAt} · reconnecting…`}</span>
-                {venueId !== null && <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>}
-              </>}
-          </div>
+              itself, and Refresh reads the day now. With no venue there is
+              no socket to reconnect, so nothing is said of one. */}
+          {venueId !== null && (
+            <div className="dayboard-status" role="status">
+              <span
+                className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`}
+                aria-hidden="true"
+              />
+              {live.connected
+                ? <span>{readAt === null ? "Live" : `Live · updated ${readAt}`}</span>
+                : <>
+                  <span>{readAt === null ? "Reconnecting…" : `Updated ${readAt} · reconnecting…`}</span>
+                  <button type="button" className="dayboard-refresh" onClick={refetch}>Refresh</button>
+                </>}
+            </div>
+          )}
         </header>
         <div className="dayboard-controls">
           <div

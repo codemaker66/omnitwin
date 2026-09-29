@@ -10,11 +10,12 @@ import { getUnreadNotificationCount } from "../../api/notifications.js";
 import { listensForFloorRequests, subscribeRequestsLive } from "../../lib/requests-live.js";
 import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
-import { StaffShellContext, useInStaffShell, useShellFrame, type ShellFrame, type StaffShell } from "./staff-shell.js";
+import { useSignOutWords } from "./proposals/sign-out-words.js";
+import { SignOutAskContext, StaffShellContext, useInStaffShell, useShellFrame, type AskBeforeSignOut, type ShellFrame, type StaffShell } from "./staff-shell.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
-  ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
+  ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, PLANNER_ROLES,
   REVIEW_QUEUE_ROLES, ROTA_TAB_ROLES, VENUE_DAY_ROLES, WORKSPACE_ROLES,
 } from "../../lib/role-capabilities.js";
@@ -130,11 +131,15 @@ export function canShowNavItem(
 
 export { NAV_ITEMS };
 
-function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
+interface SignOutButtonProps {
+  readonly onLocalSignOut: () => void;
+  readonly askFirst: AskBeforeSignOut;
+}
+
+function ClerkSignOutButton(props: SignOutButtonProps): React.ReactElement {
   const { signOut } = useClerk();
-  const requestExit = useInventoryExit();
   const handleSignOut = (): void => {
-    requestExit(() => { props.onLocalSignOut(); void signOut(); });
+    props.askFirst(() => { props.onLocalSignOut(); void signOut(); });
   };
 
   return (
@@ -144,10 +149,9 @@ function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): Rea
   );
 }
 
-function LocalSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
-  const requestExit = useInventoryExit();
+function LocalSignOutButton(props: SignOutButtonProps): React.ReactElement {
   return (
-    <button type="button" onClick={() => { requestExit(props.onLocalSignOut); }} className="dashboard-layout-signout">
+    <button type="button" onClick={() => { props.askFirst(props.onLocalSignOut); }} className="dashboard-layout-signout">
       Sign Out
     </button>
   );
@@ -211,19 +215,22 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
     }`;
 
   // Fetch venue name dynamically so the header reflects the actual venue,
-  // not the hardcoded placeholder (F28). Admin users without a venueId see
-  // "Admin Dashboard" instead.
+  // not the hardcoded placeholder (F28). With no venue it says why: a
+  // platform admin's is the platform's, and a venue's own account not
+  // connected to one yet is told so on every page.
   const cachedVenueName = user?.venueId === undefined || user.venueId === null
     ? undefined
     : knownVenueNames.get(user.venueId);
-  const [venueName, setVenueName] = useState(cachedVenueName ?? "Dashboard");
+  const noVenueTitle = user?.platformRole === "admin" ? "Venviewer Platform"
+    : awaitsVenue(user ?? null) ? "No venue yet" : "Dashboard";
+  const [venueName, setVenueName] = useState(cachedVenueName ?? noVenueTitle);
   // The name is known (read by this page or an earlier one), so the header
   // can say it; until then it says what it is waiting for.
   const [venueKnown, setVenueKnown] = useState(cachedVenueName !== undefined);
   const [venueLoading, setVenueLoading] = useState(false);
   useEffect(() => {
     if (user?.venueId === undefined || user.venueId === null) {
-      setVenueName(user?.platformRole === "admin" ? "Venviewer Platform" : "Dashboard");
+      setVenueName(noVenueTitle);
       setVenueKnown(false);
       setVenueLoading(false);
       return;
@@ -253,8 +260,17 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
       })
       .finally(() => { if (request.current) setVenueLoading(false); });
     return () => { request.current = false; };
-  }, [user?.platformRole, user?.venueId]);
+  }, [noVenueTitle, user?.platformRole, user?.venueId]);
 
+  // Signing out asks first about an unfinished stock correction, then about
+  // proposal words not yet saved; the workspace's own ways to sign out (a
+  // refusal's "Use another account") ask the same. Staying, focus goes back
+  // to the control signed out from, or to the account button when that is in
+  // its closed menu.
+  const requestExit = useInventoryExit();
+  const signOutWords = useSignOutWords(user?.id ?? null, () => { accountButtonRef.current?.focus(); });
+  const askWords = signOutWords.askFirst;
+  const askBeforeSignOut = useCallback<AskBeforeSignOut>((signOut) => { requestExit(() => { askWords(signOut); }); }, [requestExit, askWords]);
   const handleLocalSignOut = (): void => {
     setOpenMenu(null);
     // Whoever signs in next on this browser reads their own venue afresh.
@@ -461,18 +477,19 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
           <div className="dashboard-layout-popover dashboard-layout-account-panel" id={`${menuId}-account`} hidden={openMenu !== "account"}>
             <p className="dashboard-layout-account-email">{user?.email ?? ""}</p>
             {isE2EAuthBypassEnabled()
-              ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} />
-              : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} />}
+              ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={askBeforeSignOut} />
+              : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={askBeforeSignOut} />}
           </div>
         </div>
       </header>
       <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "desk" ? " dashboard-layout-main--desk" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
         <main ref={mainRef} className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
-          {children}
+          <SignOutAskContext.Provider value={askBeforeSignOut}>{children}</SignOutAskContext.Provider>
         </main>
       </div>
 
       <ToastContainer />
+      {signOutWords.question}
     </>
   );
 }

@@ -597,7 +597,29 @@ describe("DiaryBoardPage", () => {
       error: null,
     });
     renderPage();
+    expect(screen.getByRole("heading", { level: 1, name: "The Diary" })).toBeDefined();
+    expect(screen.getByText("Your account is not connected to a venue yet, so there is no diary to show.")).toBeDefined();
+    expect(screen.getByText("Your Venviewer contact can connect it.")).toBeDefined();
+    expect(getCalendarMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps its own line for a platform admin, who has no venue of its own", () => {
+    useAuthStore.setState({
+      user: {
+        id: "00000000-0000-4000-8000-0000000000fd",
+        email: "platform@test.com",
+        role: "admin",
+        platformRole: "admin",
+        venueId: null,
+        name: "Platform Admin",
+      },
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    });
+    renderPage();
     expect(screen.getByText(/no venue assigned/)).toBeDefined();
+    expect(screen.queryByTestId("venue-not-connected")).toBeNull();
     expect(getCalendarMock).not.toHaveBeenCalled();
   });
 });

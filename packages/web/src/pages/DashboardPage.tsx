@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  ANALYTICS_ROLES, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
+  ANALYTICS_ROLES, awaitsVenue, CLIENT_SEARCH_ROLES, COMMERCIAL_ROLES, CRM_PIPELINE_ROLES,
   DIARY_WRITE_ROLES, EVENT_SCOPED_ROLES, hasRole, INVENTORY_WRITE_ROLES, REVIEW_QUEUE_ROLES,
   ROTA_TAB_ROLES, WORKSPACE_ROLES,
 } from "../lib/role-capabilities.js";
-import { DashboardLayout, type DashboardView } from "../components/dashboard/DashboardLayout.js";
+import { DashboardLayout, NAV_ITEMS, type DashboardView } from "../components/dashboard/DashboardLayout.js";
+import { VenueNotConnected } from "../components/dashboard/VenueNotConnected.js";
 import { EnquiriesView } from "../components/dashboard/EnquiriesView.js";
 import { ReviewsView } from "../components/dashboard/ReviewsView.js";
 import { ClientsDesk } from "../components/dashboard/ClientsDesk.js";
@@ -74,6 +75,26 @@ const REVIEW_QUEUE_VIEWS = new Set<DashboardView>(["reviews"]);
 // lib/role-capabilities.ts ROTA_TAB_ROLES.
 const ROTA_VIEWS = new Set<DashboardView>(["rota"]);
 const ADMIN_ONLY_VIEWS = new Set<DashboardView>(["onboarding", "admin"]);
+/** The views of one venue's work: all but the platform's own. */
+type VenueView = Exclude<DashboardView, "onboarding" | "admin">;
+function isVenueView(view: DashboardView): view is VenueView {
+  return !ADMIN_ONLY_VIEWS.has(view);
+}
+/** What each venue view means to an account not connected to a venue yet:
+ *  it is shown this, in the view's name, and no venue read is made. Every
+ *  venue view has its line, so a view added later cannot skip the notice. */
+const NOT_CONNECTED: Readonly<Record<VenueView, string>> = {
+  enquiries: "there is no enquiry inbox to show",
+  pipeline: "there is no pipeline to show",
+  reviews: "there are no layouts to review",
+  analytics: "there are no figures to show",
+  proposals: "there are no proposals to show",
+  search: "there are no clients to show",
+  loadouts: "there are no reference loadouts to show",
+  settings: "there are no venue settings to show",
+  inventory: "there is no inventory to show",
+  rota: "there is no rota to show",
+};
 /** The views set as desks, full-bleed on the sage ground. */
 const DESK_VIEWS = new Set<DashboardView>(["enquiries", "reviews", "search", "pipeline", "proposals"]);
 type PlatformRole = "none" | "operator" | "admin";
@@ -162,6 +183,7 @@ export function DashboardPage(): React.ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
   const userRole = useAuthStore((state) => state.user?.role ?? null);
   const userPlatformRole = useAuthStore((state) => state.user?.platformRole ?? "none");
+  const notConnected = useAuthStore((state) => awaitsVenue(state.user));
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
     [searchParams],
@@ -322,6 +344,11 @@ export function DashboardPage(): React.ReactElement {
     setView("search");
   };
 
+  // An account that works at a venue but is not connected to one yet is told
+  // so in the view's own name, and the view, whose reads would each be
+  // refused, is never opened.
+  const notConnectedConsequence = notConnected && deniedRequestedView === null && isVenueView(view) ? NOT_CONNECTED[view] : undefined;
+
   const renderContent = (): React.ReactElement => {
     if (deniedRequestedView !== null) {
       return (
@@ -331,6 +358,10 @@ export function DashboardPage(): React.ReactElement {
           onOpenDefault={handleOpenDefaultView}
         />
       );
+    }
+    if (notConnectedConsequence !== undefined) {
+      const title = NAV_ITEMS.find((item) => item.view === view)?.label ?? "Dashboard";
+      return <VenueNotConnected title={title} consequence={notConnectedConsequence} />;
     }
 
     switch (view) {
@@ -390,7 +421,8 @@ export function DashboardPage(): React.ReactElement {
   };
 
   const surface = deniedRequestedView !== null ? undefined
-    : DESK_VIEWS.has(view) ? "desk" as const : view === "rota" ? "rota" as const : undefined;
+    : notConnectedConsequence !== undefined || view === "rota" ? "rota" as const
+    : DESK_VIEWS.has(view) ? "desk" as const : undefined;
 
   return (
     <DashboardLayout activeView={view} onViewChange={handleViewChange} surface={surface}>

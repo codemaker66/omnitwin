@@ -460,12 +460,13 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
       enquiryId: string,
       status: string,
       actor: Record<string, string | null> = staff,
+      from?: string,
     ): Promise<{ statusCode: number; code: string | undefined; state: string | undefined }> {
       const res = await server.inject({
         method: "POST",
         url: `/enquiries/${enquiryId}/transition`,
         headers: { authorization: `Bearer ${JSON.stringify(actor)}` },
-        payload: { status },
+        payload: from === undefined ? { status } : { status, from },
       });
       const body = JSON.parse(res.body) as { code?: string; data?: { state: string } };
       return { statusCode: res.statusCode, code: body.code, state: body.data?.state };
@@ -546,6 +547,88 @@ describe.skipIf(testUrl === undefined)("public enquiry side effects on isolated 
         const quote = await server.inject({ method: "GET", url: `/enquiries/${enquiryId}/quote`, headers: as(role) });
         expect(quote.statusCode, `${role}: ${quote.body}`).toBe(200);
       }
+    });
+
+    // Owning an enquiry makes someone its customer, not the venue's team: a
+    // venue role elsewhere, or with no venue yet, may withdraw their own but
+    // never review, approve or decline it, and no decision is emailed.
+    it("keeps the venue's moves to its own team, whoever owns the enquiry", async () => {
+      const elsewhere = { id: randomUUID(), email: "events@elsewhere.test", role: "staff", venueId: randomUUID() };
+      const unplaced = { id: randomUUID(), email: "new@example.test", role: "manager", venueId: null };
+      for (const owner of [elsewhere, unplaced]) {
+        const enquiryId = await submitEnquiry();
+        await pool.query("UPDATE enquiries SET user_id = $1 WHERE id = $2", [owner.id, enquiryId]);
+        expect(await transition(enquiryId, "under_review", owner), `${owner.email} review`).toMatchObject({ statusCode: 403, code: "FORBIDDEN" });
+        await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [enquiryId]);
+        for (const status of ["approved", "rejected"]) {
+          expect(await transition(enquiryId, status, owner), `${owner.email} ${status}`).toMatchObject({ statusCode: 403, code: "FORBIDDEN" });
+        }
+        expect(await storedState(enquiryId)).toBe("under_review");
+        // Their own move stands: they may withdraw what they sent.
+        expect(await transition(enquiryId, "withdrawn", owner)).toMatchObject({ statusCode: 200, state: "withdrawn" });
+      }
+      await new Promise((resolve) => { setTimeout(resolve, 600); });
+      const decisions = await pool.query<{ count: string }>(
+        "SELECT count(*) AS count FROM email_sends WHERE idempotency_key LIKE 'enquiry-approved:%' OR idempotency_key LIKE 'enquiry-rejected:%'",
+      );
+      expect(decisions.rows[0]?.count).toBe("0");
+    });
+
+    // Two decisions at once: the one that lands second must not overwrite the
+    // first, and the client must not be emailed both.
+    it("takes one decision when two arrive at once, and emails only that one", async () => {
+      const enquiryId = await submitEnquiry();
+      await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [enquiryId]);
+      const blocker = await pool.connect();
+      try {
+        await blocker.query("BEGIN");
+        await blocker.query("SELECT id FROM enquiries WHERE id = $1 FOR UPDATE", [enquiryId]);
+        const approving = transition(enquiryId, "approved");
+        await expect.poll(async () => {
+          const waiting = await pool.query<{ count: string }>(
+            "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+            [fixtureSchema],
+          );
+          return Number(waiting.rows[0]?.count);
+        }, { timeout: 5000 }).toBe(1);
+        // A colleague declines it meanwhile.
+        await blocker.query("UPDATE enquiries SET state = 'rejected' WHERE id = $1", [enquiryId]);
+        await blocker.query("COMMIT");
+        expect(await approving).toMatchObject({ statusCode: 409, code: "ENQUIRY_STATUS_CHANGED" });
+      } finally {
+        blocker.release();
+      }
+      expect(await storedState(enquiryId)).toBe("rejected");
+      await new Promise((resolve) => { setTimeout(resolve, 600); });
+      const approvals = await pool.query<{ count: string }>(
+        "SELECT count(*) AS count FROM email_sends WHERE idempotency_key = $1", [`enquiry-approved:${enquiryId}`],
+      );
+      expect(approvals.rows[0]?.count).toBe("0");
+      const history = await pool.query<{ to_status: string }>(
+        "SELECT to_status FROM enquiry_status_history WHERE enquiry_id = $1 AND to_status = 'approved'", [enquiryId],
+      );
+      expect(history.rowCount).toBe(0);
+    });
+
+    // A venue admin may make any move, reopening a declined enquiry among
+    // them, so the server alone cannot tell a stale screen from a decision.
+    // The desk says what its screen showed, and a move from anything else is
+    // refused before it decides again what a colleague already decided.
+    it("refuses a decision made from a screen read before a colleague's, and emails nothing more", async () => {
+      const enquiryId = await submitEnquiry();
+      await pool.query("UPDATE enquiries SET state = 'under_review' WHERE id = $1", [enquiryId]);
+      expect(await transition(enquiryId, "rejected", staff, "under_review")).toMatchObject({ statusCode: 200, state: "rejected" });
+      const venueAdmin = { ...staff, id: randomUUID(), role: "admin" };
+      expect(await transition(enquiryId, "approved", venueAdmin, "under_review"))
+        .toMatchObject({ statusCode: 409, code: "ENQUIRY_STATUS_CHANGED" });
+      expect(await storedState(enquiryId)).toBe("rejected");
+      await new Promise((resolve) => { setTimeout(resolve, 600); });
+      const approvals = await pool.query<{ count: string }>(
+        "SELECT count(*) AS count FROM email_sends WHERE idempotency_key = $1", [`enquiry-approved:${enquiryId}`],
+      );
+      expect(approvals.rows[0]?.count).toBe("0");
+      // From the screen that shows it declined, the same admin may still reopen it.
+      expect(await transition(enquiryId, "approved", venueAdmin, "rejected")).toMatchObject({ statusCode: 200, state: "approved" });
     });
 
     it("leaves a booking's decisions as they were: an approval still emails the client", async () => {

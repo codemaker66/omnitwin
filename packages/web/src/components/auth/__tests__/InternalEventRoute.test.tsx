@@ -1,3 +1,4 @@
+import { Suspense, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -13,13 +14,21 @@ vi.mock("@clerk/react", () => ({
   useClerk: () => { throw new Error("useClerk can only be used within <ClerkProvider />"); },
 }));
 vi.mock("../../../lib/e2e-auth-bypass.js", () => ({ isE2EAuthBypassEnabled: () => true }));
+// The page frame is the staff shell's; only what the route puts in it is under test.
+vi.mock("../../dashboard/DashboardLayout.js", () => ({
+  DashboardLayout: ({ children, mainLabel }: { readonly children: ReactNode; readonly mainLabel?: string }) =>
+    <main aria-label={mainLabel}>{children}</main>,
+}));
 
-function seedUser(role: string, platformRole: "none" | "admin" = "none"): void {
-  useAuthStore.getState().setUser({ id: "operator", role, platformRole, venueId: "venue", name: "Operator", email: "operator@example.test" });
+function seedUser(role: string, platformRole: "none" | "admin" = "none", venueId: string | null = "venue"): void {
+  useAuthStore.getState().setUser({ id: "operator", role, platformRole, venueId, name: "Operator", email: "operator@example.test" });
 }
 
+// The router's own boundaries hold the route while the notice's code loads.
 function showRoute(): void {
-  render(<MemoryRouter initialEntries={["/event-architect"]}><InternalEventRoute><div>Internal event tool</div></InternalEventRoute></MemoryRouter>);
+  render(<MemoryRouter initialEntries={["/event-architect"]}><Suspense fallback={null}>
+    <InternalEventRoute><div>Internal event tool</div></InternalEventRoute>
+  </Suspense></MemoryRouter>);
 }
 
 afterEach(() => { cleanup(); useAuthStore.getState().logout(); });
@@ -44,6 +53,31 @@ describe("InternalEventRoute", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Access needed" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Use another account" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Back to Venviewer" }).getAttribute("href")).toBe("/");
+  });
+
+  it.each(["staff", "admin", "manager", "hallkeeper"])("tells a %s not connected to a venue so, and opens no event tool", async (role) => {
+    seedUser(role, "none", null);
+    showRoute();
+    expect(await screen.findByRole("heading", { level: 1, name: "Events" })).toBeTruthy();
+    expect(screen.getByText("Your account is not connected to a venue yet, so there are no events to show.")).toBeTruthy();
+    expect(screen.queryByText("Internal event tool")).toBeNull();
+    expect(screen.queryByText(/Ask your venue admin/u)).toBeNull();
+  });
+
+  // Sales never opens internal events, connected or not, so being connected
+  // would not open them: it is refused as it always was.
+  it("refuses a sales account not connected to a venue as it refuses one that is", () => {
+    seedUser("sales", "none", null);
+    showRoute();
+    expect(screen.queryByText("Internal event tool")).toBeNull();
+    expect(screen.queryByText(/not connected to a venue/u)).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("Access needed");
+  });
+
+  it("admits a platform administrator with no venue of its own", () => {
+    seedUser("admin", "admin", null);
+    showRoute();
+    expect(screen.getByText("Internal event tool")).toBeTruthy();
   });
 
   it("admits a platform administrator with a customer base role", () => {
