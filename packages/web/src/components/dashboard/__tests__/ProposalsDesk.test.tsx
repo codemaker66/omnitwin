@@ -2949,7 +2949,7 @@ describe("Add from price list", () => {
     expect(unplaced.queryByTestId("price-list-other-rooms")).toBeNull();
   });
 
-  it("reads the list once, says when it could not, and tries again", async () => {
+  it("reads the list each time it opens, says when it could not, and tries again", async () => {
     mocks.listPricingRules.mockReset().mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
       .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR")).mockResolvedValue(PRICES);
     render(<ProposalsDesk />);
@@ -2971,7 +2971,22 @@ describe("Add from price list", () => {
     expect(document.activeElement).toBe(toggle);
     fireEvent.click(toggle);
     await panel.findByTestId("price-gh-evening");
-    expect(mocks.listPricingRules).toHaveBeenCalledTimes(3);
+    expect(mocks.listPricingRules).toHaveBeenCalledTimes(4);
+  });
+
+  it("adds the price as it stands when the list is opened again", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    expect((await panel.findByTestId("price-gh-evening")).textContent).toContain("£2,400");
+    fireEvent.click(panel.getByTestId("price-list-done"));
+    // A manager changes the price meanwhile.
+    mocks.listPricingRules.mockResolvedValue([price("gh-evening", { amount: "2600.00" })]);
+    fireEvent.click(toggle);
+    await waitFor(() => { expect(panel.getByTestId("price-gh-evening").textContent).toContain("£2,600"); });
+    fireEvent.click(panel.getByTestId("price-gh-evening"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-price-0").value).toBe("2600");
   });
 
   it("says when the price list is empty, and what it leaves out and why", async () => {
@@ -2988,6 +3003,23 @@ describe("Add from price list", () => {
     fireEvent.click(await other.findByTestId("price-list-toggle"));
     expect((await other.findByTestId("price-list-left-out")).textContent).toBe("Priced in another currency, and the quote is in pounds: Euro hire.");
     expect(other.queryByTestId("price-list-empty")).toBeNull();
+  });
+
+  it("closes on Escape from its button too, and only then leaves Escape to the proposal", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    await panel.findByTestId("price-gh-evening");
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: "Escape" });
+    expect(panel.queryByTestId("price-list")).toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+    expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
+    // With the list closed, Escape is the proposal's, as from any other button.
+    fireEvent.keyDown(toggle, { key: "Escape" });
+    await waitFor(() => { expect(screen.queryByRole("heading", { level: 2, name: "Autumn gala" })).toBeNull(); });
   });
 
   it("closes on Escape without closing the proposal, and gives focus back to its button", async () => {

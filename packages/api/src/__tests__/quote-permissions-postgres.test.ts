@@ -345,8 +345,9 @@ describe.skipIf(target === undefined)("quote permissions through real routes and
     expect(await quotesAtVenue()).toBe(before);
     expect((await stored(f)).lines).toHaveLength(1);
 
-    // The venue's own entry is kept with each line it priced, named once or twice.
-    const made = await make(own.id, own.id);
+    // The venue's own entry is kept with each line it priced, named twice,
+    // once in capitals: the same entry either way.
+    const made = await make(own.id, own.id.toUpperCase());
     expect(made.statusCode, made.body).toBe(201);
     expect(made.json<{ data: { lineItems: { pricingRuleId: string | null }[] } }>().data.lineItems.map((line) => line.pricingRuleId))
       .toEqual([own.id, own.id]);

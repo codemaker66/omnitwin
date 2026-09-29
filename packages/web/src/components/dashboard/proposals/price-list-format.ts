@@ -42,6 +42,8 @@ export interface PriceListOffer {
   readonly line: QuoteLineDraft;
   /** What one of the quantity is: a head, an hour, or the whole (null). */
   readonly per: "head" | "hour" | null;
+  /** The quantity is the price's minimum, above the event's guest count. */
+  readonly atMinimum: boolean;
   /** What the booker gives for the quantity: the hours, or the guests when
    *  the event has no count yet. */
   readonly asks: "hours" | "guests" | null;
@@ -71,6 +73,17 @@ function poundsText(minor: number): string {
 /** "£2,400", "£81.25". */
 function money(minor: number): string {
   return formatMinorAsCurrency(minor, QUOTE_CURRENCY).replace(/\.00$/u, "");
+}
+
+/** Rounds to a whole penny, a tie to the even penny, as the venue's money
+ *  engine does (api services/money.ts, roundToInt), so a price adjusted here
+ *  is the price the venue's own estimate gives for one. */
+function roundHalfEven(value: number): number {
+  const floor = Math.floor(value);
+  const fraction = value - floor;
+  if (fraction < 0.5) return floor;
+  if (fraction > 0.5) return floor + 1;
+  return floor % 2 === 0 ? floor : floor + 1;
 }
 
 /** "25%", "12.5%". */
@@ -139,7 +152,7 @@ function adjust(rule: PricingRule, baseMinor: number, date: string | null): Adju
     parts.push(`${MONTH_WORDS[when.month] ?? ""}: ${percentWords(monthFactor)} ${monthFactor > 1 ? "more" : "less"}`);
   }
   if (parts.length === 0) return { unitMinor: baseMinor, words: null };
-  const unitMinor = Math.round(baseMinor * multiplier);
+  const unitMinor = roundHalfEven(baseMinor * multiplier);
   return { unitMinor, words: `${parts.join("; ")}, so ${money(unitMinor)}` };
 }
 
@@ -158,7 +171,7 @@ export function priceEntry(rule: PricingRule, given: PriceListEvent): Priced {
   const event = onCalendar(given);
   if (rule.currency !== QUOTE_CURRENCY) return { offered: false, why: "currency" };
   const amountMinor = parsePoundsToMinor(rule.amount);
-  if (amountMinor === null) return { offered: false, why: "no_price" };
+  if (amountMinor === null) return { offered: false, why: "unreadable" };
   const window = event.eventDate === null ? windowWords(rule) : null;
   const guests = event.guestCount !== null && event.guestCount > 0 ? event.guestCount : null;
   let baseMinor = amountMinor;
@@ -166,6 +179,7 @@ export function priceEntry(rule: PricingRule, given: PriceListEvent): Priced {
   let price: string;
   let asks: PriceListOffer["asks"] = null;
   let per: PriceListOffer["per"] = null;
+  let atMinimum = false;
   switch (rule.type) {
     case "flat_rate":
       quantity = "1";
@@ -176,6 +190,7 @@ export function priceEntry(rule: PricingRule, given: PriceListEvent): Priced {
       per = "head";
       price = `${money(amountMinor)} a head${least === null ? "" : `, at least ${String(least)}`}`;
       if (guests !== null) {
+        atMinimum = least !== null && least > guests;
         quantity = String(Math.max(guests, least ?? 0));
       } else {
         quantity = least === null ? "" : String(least);
@@ -221,6 +236,7 @@ export function priceEntry(rule: PricingRule, given: PriceListEvent): Priced {
       adjustment: adjusted.words,
       line: { description: rule.name, quantity, pounds: poundsText(adjusted.unitMinor) },
       per,
+      atMinimum,
       asks,
     },
   };
@@ -300,6 +316,7 @@ export function addedWords(offer: PriceListOffer, lineNumber: number): string {
   const line = ` as line ${String(lineNumber)}`;
   if (offer.asks === "hours") return `Added ${offer.name}${at}${line}. Enter the hours.`;
   if (offer.asks === "guests") return `Added ${offer.name}${at}${line}. Enter the guests.`;
+  if (offer.per === "head" && offer.atMinimum) return `Added ${offer.name}${at} for the minimum of ${offer.line.quantity}${line}.`;
   if (offer.per === "head") return `Added ${offer.name}${at} for ${offer.line.quantity} guests${line}.`;
   return `Added ${offer.name}${at}${line}.`;
 }

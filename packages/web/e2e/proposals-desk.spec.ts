@@ -503,6 +503,13 @@ test.describe("Proposals desk", () => {
     await expect(list).toHaveCount(0);
     await expect(toggle).toBeFocused();
     await expect(panel.getByRole("heading", { level: 2, name: "Crawford wedding proposal" })).toBeVisible();
+    // And from its button, opened again (read afresh) and closed at once.
+    await page.keyboard.press("Enter");
+    await expect(list.getByRole("button", { name: /^Grand Hall — Evening Event/u })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(list).toHaveCount(0);
+    await expect(toggle).toBeFocused();
+    await expect(panel.getByRole("heading", { level: 2, name: "Crawford wedding proposal" })).toBeVisible();
 
     await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 1. Changed: the quote from £18,400 to £22,800.");
     await composer.getByRole("button", { name: "Save version 2" }).click();

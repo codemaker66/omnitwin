@@ -5,11 +5,12 @@ import { ActivityStatus } from "../../shared/Activity.js";
 import { addedWords, priceListView, type PriceListEvent, type PriceListGroup, type PriceListOffer } from "./price-list-format.js";
 
 // ---------------------------------------------------------------------------
-// Add from price list (roadmap X1), beside Add a line. Opening it reads the
-// venue's price list; a price picked is added as a line and said, and the
-// list stays open for another. A price an hour, or a head with no guest
-// count, hands focus to the new line's quantity. Done, or Escape, closes it
-// and gives focus back to the button that opened it.
+// Add from price list (roadmap X1), beside Add a line. Each opening reads the
+// venue's price list afresh, so a price changed meanwhile is the one added; a
+// price picked is added as a line and said, and the list stays open for
+// another. A price an hour, or a head with no guest count, hands focus to the
+// new line's quantity. Done, or Escape from the list or its button, closes
+// the list alone and gives focus back to the button that opened it.
 // ---------------------------------------------------------------------------
 
 type ListRead =
@@ -56,13 +57,13 @@ export function PriceList({ venueId, event, rooms, disabled, onAdd }: PriceListP
     }
     setOpen(true);
     setSaid("");
-    if (current.status === "idle" || current.status === "error") load();
+    load();
   };
   const close = (): void => {
     setOpen(false);
     toggleRef.current?.focus();
   };
-  const onKeyDown = (keyboard: KeyboardEvent<HTMLDivElement>): void => {
+  const onKeyDown = (keyboard: KeyboardEvent<HTMLElement>): void => {
     if (keyboard.key !== "Escape") return;
     // Only the list closes; the proposal stays open.
     keyboard.preventDefault();
@@ -76,7 +77,7 @@ export function PriceList({ venueId, event, rooms, disabled, onAdd }: PriceListP
   return (
     <>
       <button type="button" className="enq-quiet" ref={toggleRef} data-testid="price-list-toggle" aria-expanded={open}
-        aria-controls={open ? panelId : undefined} disabled={disabled} onClick={toggle}>
+        aria-controls={open ? panelId : undefined} disabled={disabled} onClick={toggle} onKeyDown={open ? onKeyDown : undefined}>
         Add from price list
       </button>
       {open && (

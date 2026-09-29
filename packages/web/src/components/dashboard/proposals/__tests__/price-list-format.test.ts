@@ -50,9 +50,10 @@ describe("an entry, priced for the event", () => {
 
   it("prices a head for the guests, and never fewer than its least", () => {
     const dinner = rule({ name: "Dinner", type: "per_head", amount: "65.00", minGuests: 100 });
-    expect(offered(priceEntry(dinner, EVENT))).toMatchObject({ price: "£65 a head, at least 100", per: "head", asks: null,
+    expect(offered(priceEntry(dinner, EVENT))).toMatchObject({ price: "£65 a head, at least 100", per: "head", asks: null, atMinimum: false,
       line: { quantity: "120", pounds: "65" } });
-    expect(offered(priceEntry(dinner, { ...EVENT, guestCount: 80 })).line.quantity).toBe("100");
+    expect(offered(priceEntry(dinner, { ...EVENT, guestCount: 80 }))).toMatchObject({ atMinimum: true, line: { quantity: "100" } });
+    expect(offered(priceEntry(dinner, { ...EVENT, guestCount: 100 })).atMinimum).toBe(false);
   });
 
   it("asks for the guests when the event has no count, starting from the least", () => {
@@ -83,9 +84,9 @@ describe("an entry, priced for the event", () => {
     expect(priceEntry({ ...tiered, tiers: undefined }, EVENT)).toEqual({ offered: false, why: "unreadable" });
   });
 
-  it("offers nothing in another currency, or with no price it can read", () => {
+  it("offers nothing in another currency, or with a price it cannot read", () => {
     expect(priceEntry(rule({ currency: "EUR" }), EVENT)).toEqual({ offered: false, why: "currency" });
-    expect(priceEntry(rule({ amount: "a lot" }), EVENT)).toEqual({ offered: false, why: "no_price" });
+    expect(priceEntry(rule({ amount: "a lot" }), EVENT)).toEqual({ offered: false, why: "unreadable" });
   });
 
   it("applies its own day's and month's adjustment on the event's date, and says so", () => {
@@ -95,8 +96,17 @@ describe("an entry, priced for the event", () => {
     expect(offered(priceEntry(saturday, { ...EVENT, eventDate: "2027-06-04" }))).toMatchObject({ adjustment: null, line: { pounds: "2400" } });
     const both = rule({ dayOfWeekModifiers: { saturday: 1.25 }, seasonalModifiers: { june: 0.9, july: 1.1 } });
     expect(offered(priceEntry(both, EVENT))).toMatchObject({ adjustment: "Saturdays: 25% more; June: 10% less, so £2,700", line: { pounds: "2700" } });
+  });
+
+  // As the venue's money engine rounds (api services/money.ts): to the penny,
+  // a tie to the even penny, so one entry priced here is what its estimate gives.
+  it("rounds an adjusted price to the penny as the venue's estimate does, a tie to the even penny", () => {
     expect(offered(priceEntry(rule({ amount: "65.00", seasonalModifiers: { june: 1.125 } }), EVENT)))
-      .toMatchObject({ adjustment: "June: 12.5% more, so £73.13", line: { pounds: "73.13" } });
+      .toMatchObject({ adjustment: "June: 12.5% more, so £73.12", line: { pounds: "73.12" } });
+    expect(offered(priceEntry(rule({ amount: "10.10", dayOfWeekModifiers: { saturday: 1.25 } }), EVENT)).line.pounds).toBe("12.62");
+    expect(offered(priceEntry(rule({ amount: "10.30", dayOfWeekModifiers: { saturday: 1.25 } }), EVENT)).line.pounds).toBe("12.88");
+    expect(offered(priceEntry(rule({ type: "per_head", amount: "65.33", seasonalModifiers: { june: 1.125 } }), EVENT)).line)
+      .toMatchObject({ quantity: "120", pounds: "73.50" });
   });
 
   it("says an adjustment is not applied when there is no date yet", () => {
@@ -179,8 +189,7 @@ describe("the price list for the event", () => {
       "Not priced for 5 June 2027: Summer terrace and Winter hire.",
       "Priced by the guest count, which the event does not have yet: Room by numbers.",
       "Priced in another currency, and the quote is in pounds: Euro hire.",
-      "No price set: Blank.",
-      "Could not be read: Garbled.",
+      "Could not be read: Blank and Garbled.",
     ]);
   });
 });
@@ -191,6 +200,8 @@ describe("what is said as a line is added", () => {
     expect(addedWords(offered(priceEntry(rule(), EVENT)), 2)).toBe("Added Grand Hall — Evening Event (19:00–00:30) at £2,400 as line 2.");
     const dinner = rule({ name: "Dinner", type: "per_head", amount: "65.00" });
     expect(addedWords(offered(priceEntry(dinner, EVENT)), 2)).toBe("Added Dinner at £65 a head for 120 guests as line 2.");
+    // A minimum above the guests is said as the minimum, not as the guest count.
+    expect(addedWords(offered(priceEntry({ ...dinner, minGuests: 150 }, EVENT)), 2)).toBe("Added Dinner at £65 a head for the minimum of 150 as line 2.");
     expect(addedWords(offered(priceEntry(dinner, { ...EVENT, guestCount: null })), 3)).toBe("Added Dinner at £65 a head as line 3. Enter the guests.");
     expect(addedWords(offered(priceEntry(rule({ name: "Bar staff", type: "per_hour", amount: "18.00" }), EVENT)), 4))
       .toBe("Added Bar staff at £18 an hour as line 4. Enter the hours.");

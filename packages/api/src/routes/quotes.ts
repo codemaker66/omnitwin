@@ -68,7 +68,8 @@ async function validatePricingRuleLinks(
   lines: readonly { readonly pricingRuleId?: string | null }[],
   venueId: string,
 ): Promise<"ok" | "missing" | "mismatch"> {
-  const ids = [...new Set(lines.flatMap((line) => line.pricingRuleId === undefined || line.pricingRuleId === null ? [] : [line.pricingRuleId]))];
+  // An id is one entry however its letters are cased, as PostgreSQL reads it.
+  const ids = [...new Set(lines.flatMap((line) => line.pricingRuleId === undefined || line.pricingRuleId === null ? [] : [line.pricingRuleId.toLowerCase()]))];
   if (ids.length === 0) return "ok";
   const rules = await db.select({ venueId: pricingRules.venueId })
     .from(pricingRules)
