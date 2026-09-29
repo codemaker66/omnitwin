@@ -63,9 +63,9 @@ details R1 and fixes the interfaces R2 to R4 build on.
 The light model comes from the capture, its LiDAR and the Matterport photographs, as in the proof:
 
 - **Sources.** Nine baked sources: sky light through each of the five windows (`W1`–`W5`), the cove lamp line
-  (`cove`), the end pair of chandeliers (`ch_end`), the centre chandeliers (`ch_centre`) and the 14 dome lamps
-  (`dome`). Each includes one bounce of light between the room's surfaces. Direct sun is not baked; it is computed live
-  (4.3).
+  (`cove`), the four end chandeliers (`ch_end`), the centre chandelier (`ch_centre`) and the 14 dome lamps
+  (`dome`). Direct sun is not baked; it is computed live (4.3). Light that bounces between the room's surfaces is
+  carried separately for each source by a small probe volume (4.2).
 - **Window stencils.** For each window, a mask in the window plane of what light can pass: glass, glazing bars,
   curtains and reveals, from the LiDAR and the splats.
 - **Captured light.** The mix of the sources, with their fitted weights and colours, that best explains the capture.
@@ -77,9 +77,13 @@ The light model comes from the capture, its LiDAR and the Matterport photographs
 One package per served splat model, published immutable to R2 beside it
 (`splats/trades-hall/grand-hall/relight/v1/`), like the floor skin. It holds:
 
-- For every splat, in served order and for every served level: the nine source values, the captured light, a surface
-  normal for the sun term, and a glass flag for splats that sit in a window's glass. Values are stored so that the
+- For every splat, in served order and for every served level: the nine sources' direct light, a surface normal for
+  the sun term, and flags (glass or outside the hall, reachable by the sun, lamp bulb). Values are stored so that the
   round trip is within 1/20 of a stop of the bake; the exact encoding is chosen in the plan and verified by test.
+- For every source, a probe volume of the light it contributes after bouncing between the room's surfaces (colour and
+  direction), on a coarse grid; bounce light varies slowly.
+- The captured light is not stored. The browser rebuilds it from the same values with the fitted capture weights, so
+  the captured setting is exactly neutral whatever the quantisation.
 - A manifest naming the splat model version it belongs to, the splat count per level, the source list, the encoding,
   the captured-light weights and colours, the lamp colours, the window stencils and their planes, the floor light
   maps, and a checksum for every file. The browser validates it at runtime and refuses a package whose model version
@@ -91,9 +95,10 @@ One package per served splat model, published immutable to R2 beside it
   strength and colour, each lamp group's level and colour (2,700 K by default) and exposure. In R1 it is set by a
   preview-only control with three presets (night with the lamps lit; sunny morning; overcast noon), an hour slider and
   a date.
-- **Per-splat multiplier.** When the light setting changes (not every frame), a compute pass writes one RGB multiplier
-  per splat: the weighted sources plus the sun term, divided by the captured light, clamped to between 1/16 and 8. The
-  splat shader multiplies each splat's colour by it, one extra buffer read per splat.
+- **Per-splat multiplier.** When the light setting changes (not every frame), a GPU compute pass writes one RGB
+  multiplier per splat: the weighted sources' direct light, the bounce light from the probe volumes and the sun term,
+  divided by the captured light rebuilt the same way, clamped to between 1/16 and 8. The splat shader multiplies each
+  splat's colour by it, one extra buffer read per splat.
 - **Sun term.** Sunlight reaches a splat only through glass. The pass follows the ray from the splat toward the sun to
   each window plane, samples that window's stencil, and weights by the angle to the splat's normal. So sun patches move
   with the hour.
@@ -129,7 +134,8 @@ Each unit has one job and can be tested alone:
 - A missing, invalid or mismatched relight package: the hall is drawn as captured, with one console warning and no
   visitor-facing error.
 - A missing floor skin v2: floor skin v1 as today; a missing v1: no floor, as today.
-- Devices below the desktop class keep the hall as captured until R4.
+- Devices below the desktop class, and browsers without WebGPU compute (the WebGL fallback), keep the hall as captured
+  until R4.
 - Multipliers are clamped, so dim corners of the capture cannot blow out or turn black.
 - The light control exists only in preview builds. venviewer.com keeps its hold.
 
@@ -160,8 +166,9 @@ Each unit has one job and can be tested alone:
 
 - **The shared patch.** T-640 changes the same `GaussianSplat` code. Mitigation: a small, isolated hook, and landing
   the two changes in sequence rather than in parallel.
-- **Package size.** About 12 bytes per splat before compression (about 72 MB at 6M splats): acceptable on desktop in
-  R1; R4 exists for phones.
+- **Package size.** 12 bytes per splat before compression (about 72 MB for the 6M splats of the finest level, about
+  138 MB across all 24 served tiles, of which a device loads only the levels it draws), plus a few megabytes of probe
+  volumes: acceptable on desktop in R1; R4 exists for phones.
 - **Sun on splats.** Splats have no exact normals; normals come from the LiDAR geometry, and sun patches on splats stay
   soft. On the floor they are sharp.
 - **The proof's open faults.** The glass flag and sky panel address the night glass. The dark arch tops by day are
