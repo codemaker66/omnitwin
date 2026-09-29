@@ -1,5 +1,5 @@
 import type { ColorSpace } from "three";
-import type { Camera, Node, Renderer } from "three/webgpu";
+import type { Camera, IndirectStorageBufferAttribute, Node, Renderer } from "three/webgpu";
 import "three/addons/objects/GaussianSplat.js";
 import "three/addons/gpgpu/CountingSort.js";
 
@@ -31,6 +31,8 @@ declare module "three/addons/objects/GaussianSplat.js" {
   interface GaussianSplat {
     minSortIntervalMs: number;
     cpuSort: ((request: GaussianSplatCpuSortRequest) => void) | null;
+    /** WebGPU drawIndexedIndirect arguments; element 1 is the splat count the last GPU sort kept after culling. */
+    readonly drawIndirect: IndirectStorageBufferAttribute;
     /** Copies a trusted sort permutation without transferring live GPU storage. */
     applySortOrder(order: Uint32Array): void;
     /** Restores main-camera CPU order before any asynchronous readback can yield. */

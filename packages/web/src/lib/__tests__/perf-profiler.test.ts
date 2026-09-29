@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RollingFrameProfiler, type RenderedFrameSample } from "../perf-profiler.js";
+import { classifyBottleneck, RollingFrameProfiler, type RenderedFrameSample } from "../perf-profiler.js";
 
 const frame = (timestampMs: number, extra: Partial<RenderedFrameSample> = {}): RenderedFrameSample => ({
   timestampMs, cpuSubmitMs: 2, drawCalls: 4, triangles: 100, ...extra,
@@ -88,6 +88,64 @@ describe("RollingFrameProfiler", () => {
     expect(profiler.snapshot(300).gpuTimeMs).toBe(6);
     expect(profiler.snapshot(300).gpuSampleCount).toBe(2);
     expect(profiler.snapshot(20_201).gpuTimeMs).toBeNull();
+  });
+
+  it("splits GPU draw and compute, counting a draw without compute as zero compute", () => {
+    const profiler = new RollingFrameProfiler();
+    profiler.reset(0);
+    profiler.recordGpu(100, 3, 1);
+    profiler.recordGpu(1100, 5);
+    const metrics = profiler.snapshot(1200);
+    expect(metrics.gpuRenderMs).toBe(4);
+    expect(metrics.gpuComputeMs).toBe(0.5);
+    expect(metrics.gpuTimeMs).toBe(4.5);
+    profiler.recordGpu(1300, 2, Number.NaN);
+    expect(profiler.snapshot(1400).gpuSampleCount).toBe(2);
+  });
+
+  it("reports the latest drawn-splat sample in the window and ages it out", () => {
+    const profiler = new RollingFrameProfiler();
+    profiler.reset(0);
+    profiler.record(frame(10, { splats: 6_000_000 }));
+    expect(profiler.snapshot(20).drawnSplats).toBeNull();
+    profiler.recordDrawnSplats(100, 2_000_000);
+    profiler.recordDrawnSplats(1100, 1_800_000);
+    expect(profiler.snapshot(1200).drawnSplats).toBe(1_800_000);
+    expect(profiler.snapshot(1200).splats).toBe(6_000_000);
+    expect(profiler.snapshot(21_101).drawnSplats).toBeNull();
+  });
+
+  it("counts long tasks in the window with their worst and total duration", () => {
+    const profiler = new RollingFrameProfiler();
+    profiler.reset(0);
+    expect(profiler.snapshot(10)).toMatchObject({ longTaskCount: 0, longTaskWorstMs: null, longTaskTotalMs: 0 });
+    profiler.recordLongTask(500, 60);
+    profiler.recordLongTask(900, 140);
+    expect(profiler.snapshot(1000)).toMatchObject({ longTaskCount: 2, longTaskWorstMs: 140, longTaskTotalMs: 200 });
+    expect(profiler.snapshot(20_600)).toMatchObject({ longTaskCount: 1, longTaskWorstMs: 140, longTaskTotalMs: 140 });
+    profiler.reset(21_000);
+    expect(profiler.snapshot(21_010).longTaskCount).toBe(0);
+  });
+
+  it("names the resource that sets the frame time", () => {
+    expect(classifyBottleneck(10, 1, 8, false)).toEqual({ kind: "gpu", busyPct: 80 });
+    expect(classifyBottleneck(10, 7, 2, false)).toEqual({ kind: "cpu", busyPct: 70 });
+    expect(classifyBottleneck(16.7, 1, 4, false).kind).toBe("headroom");
+    expect(classifyBottleneck(10, 3, null, false)).toEqual({ kind: "headroom", busyPct: 30 });
+    expect(classifyBottleneck(10, null, null, false).kind).toBe("unknown");
+    expect(classifyBottleneck(10, 5, 9, true).kind).toBe("idle");
+    expect(classifyBottleneck(5, 1, 20, false).busyPct).toBe(100);
+  });
+
+  it("classifies the live window and passes the heap figure through", () => {
+    const profiler = new RollingFrameProfiler();
+    profiler.reset(0);
+    for (let at = 10; at <= 1000; at += 10) profiler.record(frame(at, { cpuSubmitMs: 1 }));
+    profiler.recordGpu(500, 8, 1);
+    const metrics = profiler.snapshot(1005, "high", 512);
+    expect(metrics.bottleneck).toEqual({ kind: "gpu", busyPct: 90 });
+    expect(metrics.jsHeapMb).toBe(512);
+    expect(profiler.snapshot(1005).jsHeapMb).toBeNull();
   });
 
   it("counts genuine draws sharing a coarse clock tick without discarding their FPS", () => {

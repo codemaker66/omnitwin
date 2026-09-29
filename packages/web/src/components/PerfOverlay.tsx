@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { usePerfStore } from "../stores/perf-store.js";
 import { formatFrameTime, formatTriangles, TOGGLE_KEY } from "../lib/perf.js";
 import { PERF_REFRESH_MS } from "../lib/perf-profiler.js";
-import { profilerClipboardReport, refreshProfiler, setProfilerForeground } from "../lib/perf-runtime.js";
+import { profilerClipboardReport, refreshProfiler, setLongTaskObservation, setProfilerForeground } from "../lib/perf-runtime.js";
+import type { PerfMetrics } from "../lib/perf-profiler.js";
+
+const BOTTLENECK_LABELS: Record<PerfMetrics["bottleneck"]["kind"], string> = {
+  gpu: "GPU", cpu: "CPU", headroom: "Headroom", idle: "Idle", unknown: "—",
+};
 import { ActivityIndicator, ActivityStatus } from "./shared/Activity.js";
 import "./PerfOverlay.css";
 
@@ -59,9 +64,11 @@ export function PerfOverlay(): React.ReactElement | null {
     };
     visibility();
     document.addEventListener("visibilitychange", visibility);
+    setLongTaskObservation(true);
     return () => {
       if (timer !== undefined) clearInterval(timer);
       document.removeEventListener("visibilitychange", visibility);
+      setLongTaskObservation(false);
     };
   }, [visible, paused, generation]);
 
@@ -83,19 +90,24 @@ export function PerfOverlay(): React.ReactElement | null {
   };
   const ms = (value: number | null): string => value === null ? "—" : formatFrameTime(value);
   const count = (value: number | null): string => value === null ? "—" : formatTriangles(Math.round(value));
+  const { bottleneck } = metrics;
+  const drawnShare = metrics.drawnSplats !== null && metrics.splats !== null && metrics.splats > 0
+    ? ` · ${String(Math.round(100 * metrics.drawnSplats / metrics.splats))}%` : "";
+  // Twelve figures chosen to locate the cost: how fast, how steady, which side
+  // (CPU, GPU draw, GPU compute) sets the pace, and what the GPU is asked to do.
   const stats = [
     { label: "Rendered FPS", value: metrics.fps.toFixed(1), detail: "Main render submissions per wall-clock second, including idle time; not compositor presentation." },
     { label: "Frame mean", value: metrics.intervalCount ? ms(metrics.frameTimeMs) : "—", detail: "Mean complete frame interval ending in the rolling window; may start before its boundary. Long stalls are retained." },
     { label: "Frame p95", value: ms(metrics.frameP95Ms), detail: "95% of measured submitted-frame intervals are at or below this value (nearest rank)." },
-    { label: "Frame p99", value: ms(metrics.frameP99Ms), detail: "99% of measured submitted-frame intervals are at or below this value (nearest rank)." },
+    { label: "Frame p99", value: ms(metrics.frameP99Ms), detail: "99% of measured submitted-frame intervals are at or below this value (nearest rank). Spikes here with a steady mean point to hitches, not throughput." },
+    { label: "Bottleneck", value: bottleneck.busyPct === null ? BOTTLENECK_LABELS[bottleneck.kind] : `${BOTTLENECK_LABELS[bottleneck.kind]} ${String(Math.round(bottleneck.busyPct))}%`, detail: "Which side sets the frame time: the busier of CPU submission and GPU time as a share of the frame interval. GPU: reduce drawn splats or pixels; CPU: reduce per-frame script or draw calls; Headroom (under 60%): the display or on-demand rendering sets the pace." },
     { label: "CPU submission", value: ms(metrics.cpuSubmitMs), detail: "Mean synchronous draw and native scene update time. Other browser work is not included." },
-    { label: "GPU render + compute", value: ms(metrics.gpuTimeMs), detail: `WebGPU hardware timestamp mean, sampled at most once per second (${String(metrics.gpuSampleCount)} samples). Unavailable on WebGL or unsupported hardware; never inferred from queue completion.` },
+    { label: "GPU draw", value: ms(metrics.gpuRenderMs), detail: `WebGPU render-pass timestamps: splats, meshes and the output pass. Sampled at most once per second (${String(metrics.gpuSampleCount)} samples); unavailable on WebGL or unsupported hardware.` },
+    { label: "GPU sort + light", value: ms(metrics.gpuComputeMs), detail: "WebGPU compute timestamps: the splat depth sort and view-dependent lighting, averaged over sampled draws (0 when a draw needed neither)." },
+    { label: "Splats drawn", value: `${count(metrics.drawnSplats ?? metrics.splats)}${drawnShare}`, detail: `Splats the latest GPU sort kept after culling what the camera cannot see, of ${count(metrics.splats)} loaded. WebGL draws every loaded splat.` },
     { label: "Draw calls", value: count(metrics.drawCalls), detail: "Mean geometry draw calls per submitted frame." },
-    { label: "Triangles", value: count(metrics.triangles), detail: "Mean rendered triangle primitives per submitted frame, including splat quads." },
-    { label: "Gaussian splats", value: count(metrics.splats), detail: "Mean active native Gaussian instances per submitted frame." },
-    { label: "Tracked memory", value: metrics.rendererMb === null ? "—" : `${metrics.rendererMb.toFixed(1)} MiB`, detail: "Mean allocation tracked by Three for buffers, textures and other renderer resources. Not total physical VRAM or JS heap." },
-    { label: "Sort duration", value: ms(metrics.sortTimeMs), detail: "Mean reported completed sort duration at submitted frames; unavailable if the active path does not report it." },
-    { label: "Sort order age", value: ms(metrics.sortAgeMs), detail: "Mean age of the active sort order at submitted frames; unavailable if the active path does not report it." },
+    { label: "Long tasks", value: String(metrics.longTaskCount), detail: `Main-thread tasks over 50 ms in the window${metrics.longTaskWorstMs === null ? "" : `; worst ${formatFrameTime(metrics.longTaskWorstMs)}, total ${formatFrameTime(metrics.longTaskTotalMs)}`}. Each one is a visible hitch.` },
+    { label: "Tracked memory", value: metrics.rendererMb === null ? "—" : `${metrics.rendererMb.toFixed(1)} MiB`, detail: `Mean allocation tracked by Three for buffers, textures and other renderer resources. Not total physical VRAM.${metrics.jsHeapMb === null ? "" : ` JavaScript heap ${metrics.jsHeapMb.toFixed(0)} MiB.`}` },
   ];
 
   return (
@@ -120,7 +132,9 @@ export function PerfOverlay(): React.ReactElement | null {
         </button>
       </div>
       <p className="perf-note">{metrics.sampleCount.toLocaleString()} frames · averages unless marked p95/p99 · GPU sampled separately · — unavailable</p>
-      {metrics.sortBacklog !== null && <p className="perf-note">Sort requests pending, mean: {metrics.sortBacklog.toFixed(1)}</p>}
+      {(metrics.sortTimeMs !== null || metrics.sortAgeMs !== null) && <p className="perf-note">
+        Worker sort (WebGL): {ms(metrics.sortTimeMs)} per sort · order age {ms(metrics.sortAgeMs)}{metrics.sortBacklog === null ? "" : ` · ${metrics.sortBacklog.toFixed(1)} pending`}
+      </p>}
       {metrics.capacityLimited && <p className="perf-note" role="alert">Sample capacity reached; frame rate and percentiles are incomplete.</p>}
       <details className="perf-definitions"><summary>Measurement details</summary><ul>{stats.map((stat) => <li key={stat.label}><strong>{stat.label}.</strong> {stat.detail}</li>)}</ul></details>
       <p className="perf-copy-status" role="status">{copyState === "copied" ? "Report copied as JSON." : copyState === "failed" ? "Clipboard unavailable or permission denied. Try Copy report again." : ""}</p>

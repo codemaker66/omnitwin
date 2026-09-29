@@ -20,17 +20,36 @@ export interface RenderedFrameSample {
   readonly sortBacklog?: number | null;
 }
 
+/** Which resource sets the frame time: the GPU or CPU when it is busy for most
+ * of each frame interval, otherwise pacing (display or on-demand rendering). */
+export interface PerfBottleneck {
+  readonly kind: "gpu" | "cpu" | "headroom" | "idle" | "unknown";
+  /** Busiest resource's mean work as a share of the mean frame interval. */
+  readonly busyPct: number | null;
+}
+
 export interface PerfMetrics {
   readonly fps: number;
   readonly frameTimeMs: number;
   readonly frameP95Ms: number | null;
   readonly frameP99Ms: number | null;
   readonly cpuSubmitMs: number | null;
+  /** Sampled GPU render + compute; kept for comparison with earlier reports. */
   readonly gpuTimeMs: number | null;
+  readonly gpuRenderMs: number | null;
+  /** Compute passes (splat sort and view-dependent lighting); 0 on frames without any. */
+  readonly gpuComputeMs: number | null;
+  readonly bottleneck: PerfBottleneck;
   readonly drawCalls: number;
   readonly triangles: number;
   readonly splats: number | null;
+  /** Splats the last GPU sort left in the draw after culling, sampled once per second. */
+  readonly drawnSplats: number | null;
   readonly rendererMb: number | null;
+  readonly jsHeapMb: number | null;
+  readonly longTaskCount: number;
+  readonly longTaskWorstMs: number | null;
+  readonly longTaskTotalMs: number;
   readonly sortTimeMs: number | null;
   readonly sortAgeMs: number | null;
   readonly sortBacklog: number | null;
@@ -45,14 +64,37 @@ export interface PerfMetrics {
 
 export const INITIAL_PERF_METRICS: PerfMetrics = {
   fps: 0, frameTimeMs: 0, frameP95Ms: null, frameP99Ms: null,
-  cpuSubmitMs: null, gpuTimeMs: null, drawCalls: 0, triangles: 0,
-  splats: null, rendererMb: null, sortTimeMs: null, sortAgeMs: null, sortBacklog: null,
+  cpuSubmitMs: null, gpuTimeMs: null, gpuRenderMs: null, gpuComputeMs: null,
+  bottleneck: { kind: "unknown", busyPct: null }, drawCalls: 0, triangles: 0,
+  splats: null, drawnSplats: null, rendererMb: null, jsHeapMb: null,
+  longTaskCount: 0, longTaskWorstMs: null, longTaskTotalMs: 0,
+  sortTimeMs: null, sortAgeMs: null, sortBacklog: null,
   rating: "good", sampleCount: 0, intervalCount: 0, gpuSampleCount: 0,
   windowSeconds: 0, status: "warming", capacityLimited: false,
 };
 
+/** Below this share of the frame interval neither resource sets the frame rate. */
+const BOUND_SHARE = 0.6;
+
+export function classifyBottleneck(frameMs: number, cpuMs: number | null, gpuMs: number | null, idle: boolean): PerfBottleneck {
+  if (idle || !(frameMs > 0)) return { kind: "idle", busyPct: null };
+  if (cpuMs === null && gpuMs === null) return { kind: "unknown", busyPct: null };
+  const cpu = (cpuMs ?? 0) / frameMs;
+  const gpu = (gpuMs ?? 0) / frameMs;
+  const busiest = Math.max(cpu, gpu);
+  const kind = busiest < BOUND_SHARE ? "headroom" : gpu >= cpu ? "gpu" : "cpu";
+  return { kind, busyPct: Math.min(100, busiest * 100) };
+}
+
 function measured(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : NaN;
+}
+
+interface Timed { readonly timestampMs: number }
+function evictBefore(items: Timed[], cutoff: number): void {
+  let drop = 0;
+  while ((items[drop]?.timestampMs ?? Infinity) <= cutoff) drop += 1;
+  if (drop > 0) items.splice(0, drop);
 }
 
 /** Fixed storage: recording a frame never copies history or sorts an array.
@@ -66,7 +108,9 @@ export class RollingFrameProfiler {
     new Float64Array(CAPACITY), new Float64Array(CAPACITY), new Float64Array(CAPACITY),
     new Float64Array(CAPACITY), new Float64Array(CAPACITY), new Float64Array(CAPACITY),
   ] as const;
-  private readonly gpu: { timestampMs: number; value: number }[] = [];
+  private readonly gpu: { timestampMs: number; render: number; compute: number }[] = [];
+  private readonly drawn: { timestampMs: number; value: number }[] = [];
+  private readonly longTasks: { timestampMs: number; durationMs: number }[] = [];
   private head = 0;
   private count = 0;
   private startedAt = 0;
@@ -80,6 +124,8 @@ export class RollingFrameProfiler {
     this.previousFrame = null;
     this.overflowAt = null;
     this.gpu.length = 0;
+    this.drawn.length = 0;
+    this.longTasks.length = 0;
   }
 
   record(sample: RenderedFrameSample): void {
@@ -110,9 +156,24 @@ export class RollingFrameProfiler {
     this.previousFrame = now;
   }
 
-  recordGpu(timestampMs: number, value: number): void {
-    if (Number.isFinite(timestampMs) && timestampMs >= this.startedAt && Number.isFinite(measured(value))) {
-      this.gpu.push({ timestampMs, value });
+  /** One sampled draw's GPU timestamps; compute is 0 when that draw dispatched none. */
+  recordGpu(timestampMs: number, renderMs: number, computeMs = 0): void {
+    if (Number.isFinite(timestampMs) && timestampMs >= this.startedAt
+      && Number.isFinite(measured(renderMs)) && Number.isFinite(measured(computeMs))) {
+      this.gpu.push({ timestampMs, render: renderMs, compute: computeMs });
+    }
+  }
+
+  recordDrawnSplats(timestampMs: number, count: number): void {
+    if (Number.isFinite(timestampMs) && timestampMs >= this.startedAt && Number.isFinite(measured(count))) {
+      this.drawn.push({ timestampMs, value: count });
+    }
+  }
+
+  /** A main-thread task over 50 ms, stamped when it ended. */
+  recordLongTask(timestampMs: number, durationMs: number): void {
+    if (Number.isFinite(timestampMs) && timestampMs >= this.startedAt && Number.isFinite(measured(durationMs))) {
+      this.longTasks.push({ timestampMs, durationMs });
     }
   }
 
@@ -122,10 +183,12 @@ export class RollingFrameProfiler {
       this.head = (this.head + 1) % CAPACITY;
       this.count -= 1;
     }
-    while ((this.gpu[0]?.timestampMs ?? Infinity) <= cutoff) this.gpu.shift();
+    evictBefore(this.gpu, cutoff);
+    evictBefore(this.drawn, cutoff);
+    evictBefore(this.longTasks, cutoff);
   }
 
-  snapshot(now: number, tier: DeviceTier = "medium"): PerfMetrics {
+  snapshot(now: number, tier: DeviceTier = "medium", jsHeapMb: number | null = null): PerfMetrics {
     this.evict(now);
     const sums = new Float64Array(9);
     const counts = new Uint32Array(9);
@@ -150,12 +213,22 @@ export class RollingFrameProfiler {
     const elapsed = Math.max(0, Math.min(PERF_WINDOW_MS, now - this.startedAt));
     const frameTimeMs = mean(0) ?? 0;
     const idle = this.previousFrame === null ? now - this.startedAt >= 1000 : now - this.previousFrame >= 1000;
+    const gpuMean = (pick: (sample: { render: number; compute: number }) => number): number | null =>
+      this.gpu.length > 0 ? this.gpu.reduce((sum, sample) => sum + pick(sample), 0) / this.gpu.length : null;
+    const gpuTimeMs = gpuMean((sample) => sample.render + sample.compute);
+    const cpuSubmitMs = mean(1);
+    const latestDrawn = this.drawn.at(-1)?.value ?? null;
     return {
       fps: elapsed > 0 ? this.count * 1000 / elapsed : 0,
       frameTimeMs, frameP95Ms: percentile(0.95), frameP99Ms: percentile(0.99),
-      cpuSubmitMs: mean(1), gpuTimeMs: this.gpu.length > 0
-        ? this.gpu.reduce((sum, sample) => sum + sample.value, 0) / this.gpu.length : null,
-      drawCalls: mean(2) ?? 0, triangles: mean(3) ?? 0, splats: mean(4), rendererMb: mean(8),
+      cpuSubmitMs, gpuTimeMs,
+      gpuRenderMs: gpuMean((sample) => sample.render), gpuComputeMs: gpuMean((sample) => sample.compute),
+      bottleneck: classifyBottleneck(frameTimeMs, cpuSubmitMs, gpuTimeMs, idle || intervals.length === 0),
+      drawCalls: mean(2) ?? 0, triangles: mean(3) ?? 0, splats: mean(4), drawnSplats: latestDrawn,
+      rendererMb: mean(8), jsHeapMb: typeof jsHeapMb === "number" && Number.isFinite(jsHeapMb) ? jsHeapMb : null,
+      longTaskCount: this.longTasks.length,
+      longTaskWorstMs: this.longTasks.length > 0 ? Math.max(...this.longTasks.map((task) => task.durationMs)) : null,
+      longTaskTotalMs: this.longTasks.reduce((sum, task) => sum + task.durationMs, 0),
       sortTimeMs: mean(5), sortAgeMs: mean(6), sortBacklog: mean(7),
       rating: ratePerformance(frameTimeMs, getPerfBudget(tier)), sampleCount: this.count,
       intervalCount: intervals.length, gpuSampleCount: this.gpu.length,

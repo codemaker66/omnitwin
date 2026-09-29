@@ -5,7 +5,7 @@ import { PerfOverlay } from "../PerfOverlay.js";
 import { TOGGLE_KEY } from "../../lib/perf.js";
 
 vi.mock("../../lib/perf-runtime.js", () => ({
-  refreshProfiler: vi.fn(), setProfilerForeground: vi.fn(),
+  refreshProfiler: vi.fn(), setProfilerForeground: vi.fn(), setLongTaskObservation: vi.fn(),
   profilerClipboardReport: vi.fn(() => JSON.stringify({ schema: "venviewer.profiler.v1" })),
 }));
 
@@ -54,14 +54,18 @@ describe("PerfOverlay", () => {
   });
 
   it("displays exactly twelve meaningful statistics, averages and missing values", () => {
-    setMetrics({ fps: 60, frameTimeMs: 16.67, drawCalls: 42, triangles: 12_345 });
+    setMetrics({ fps: 60, frameTimeMs: 16.67, drawCalls: 42, triangles: 12_345, splats: 6_000_000, drawnSplats: 1_800_000,
+      bottleneck: { kind: "gpu", busyPct: 83.4 }, longTaskCount: 3, longTaskWorstMs: 120, longTaskTotalMs: 250 });
     const view = render(<PerfOverlay />);
     expect(view.container.querySelectorAll("dt").length).toBe(12);
     expect(view.getByText("Rendered FPS")).toBeDefined();
     expect(view.getByText("60.0")).toBeDefined();
     expect(view.getByText("16.7ms")).toBeDefined();
     expect(view.getByText("42")).toBeDefined();
-    expect(view.getByText("12.3K")).toBeDefined();
+    expect(view.getByText("GPU 83%")).toBeDefined();
+    expect(view.getByText("1.8M · 30%")).toBeDefined();
+    expect(view.getByText("3")).toBeDefined();
+    expect(view.queryByText("12.3K")).toBeNull();
     expect(view.getByText("Tracked memory")).toBeDefined();
     expect(view.getByText(/unavailable$/)).toBeDefined();
   });
@@ -78,6 +82,21 @@ describe("PerfOverlay", () => {
     fireEvent.click(view.getByRole("button", { name: "Play" }));
     expect(usePerfStore.getState().paused).toBe(false);
     expect(usePerfStore.getState().metrics.sampleCount).toBe(0);
+  });
+
+  it("observes long tasks only while the panel is open and running", async () => {
+    const { setLongTaskObservation } = await import("../../lib/perf-runtime.js");
+    const observe = vi.mocked(setLongTaskObservation);
+    observe.mockClear();
+    setMetrics();
+    const view = render(<PerfOverlay />);
+    expect(observe).toHaveBeenLastCalledWith(true);
+    fireEvent.click(view.getByRole("button", { name: "Pause" }));
+    expect(observe).toHaveBeenLastCalledWith(false);
+    fireEvent.click(view.getByRole("button", { name: "Play" }));
+    expect(observe).toHaveBeenLastCalledWith(true);
+    fireEvent.click(view.getByRole("button", { name: "Close performance profiler" }));
+    expect(observe).toHaveBeenLastCalledWith(false);
   });
 
   it("copies portable JSON with clear success feedback", async () => {

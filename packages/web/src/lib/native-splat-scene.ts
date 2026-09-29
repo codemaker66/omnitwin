@@ -130,6 +130,17 @@ export class NativeSplatScene {
     };
   }
 
+  /** Splats the active draw keeps after GPU culling. WebGPU reads the sort's
+   * indirect arguments back; WebGL has no culling and draws every loaded splat. */
+  async drawnSplats(renderer: WebGPURenderer): Promise<number | null> {
+    const active = this.active;
+    if (active === null || !active.mesh.visible || active.sortFailed || active.completionFailed) return null;
+    if ("isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true) return active.mesh.geometry.instanceCount;
+    if (active.mesh.geometry.indirect !== active.mesh.drawIndirect) return null; // no GPU sort has run yet
+    const words = new Uint32Array(await renderer.getArrayBufferAsync(active.mesh.drawIndirect));
+    return words[1] ?? null;
+  }
+
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
     if (this.renderer !== null && this.renderer !== renderer) throw new Error("A native splat scene must have one active renderer");
     // The first host after a full teardown finds exclusionTexture disposed (see below); its
@@ -617,6 +628,11 @@ const runtimes = new WeakMap<Scene, NativeSplatScene>();
 /** Profiling must never construct a native runtime for an unrelated scene. */
 export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerfStats | null {
   return runtimes.get(scene)?.perfStats(now) ?? null;
+}
+
+/** Profiler only: splats the active draw keeps after GPU culling. */
+export function nativeSceneDrawnSplats(scene: Scene, renderer: WebGPURenderer): Promise<number | null> {
+  return runtimes.get(scene)?.drawnSplats(renderer) ?? Promise.resolve(null);
 }
 
 export function nativeSplatScene(scene: Scene): NativeSplatScene {
