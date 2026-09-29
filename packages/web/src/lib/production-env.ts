@@ -53,6 +53,29 @@ export function getSentrySourceMapUploadConfig(
   };
 }
 
+/**
+ * The public R2 base that holds captured room assets, as
+ * `splats/<venue>/<room>/<file>`. It is a public bucket URL, not a secret.
+ *
+ * Preview deployments read it directly. Production cannot: under the founder
+ * hold `vercel.json` redirects the app's own `/splats` path to the
+ * work-in-progress page, and the bucket's CORS policy admits `*.vercel.app`
+ * origins (packages/api/src/scripts/configure-splat-cors.ts).
+ */
+export const PREVIEW_SPLAT_BASE_URL = "https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats";
+
+/**
+ * Where a build fetches captured room assets. An explicit, non-blank
+ * VITE_SPLAT_BASE_URL always wins; a Vercel preview build defaults to the
+ * public bucket; every other build keeps "" (the app's own `/splats`, served
+ * from SPLAT_STAGING_ROOT in development).
+ */
+export function resolveBuildSplatBaseUrl(env: Readonly<Record<string, string | undefined>>): string {
+  const explicit = env["VITE_SPLAT_BASE_URL"]?.trim() ?? "";
+  if (explicit.length > 0) return explicit;
+  return env["VERCEL_ENV"] === "preview" ? PREVIEW_SPLAT_BASE_URL : "";
+}
+
 export function assertRequiredProductionEnv(
   mode: string,
   env: Record<string, string | undefined> = loadEnv(mode, process.cwd(), ""),

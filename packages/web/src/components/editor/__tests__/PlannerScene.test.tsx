@@ -204,6 +204,46 @@ describe("PlannerScene", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("gives the stage floor the splat layer's own transform, and no room for a registered package", () => {
+    chooseGrandHall(); readyGrandHall();
+    const { rerender } = render(<PlannerScene />);
+    expect(useCockpitStore.getState().layerMode).toBe("splat");
+    const splatLayer = sceneComponent("CockpitSplatLayer");
+    const stageFloor = sceneComponent("StageFloor");
+    expect(stageFloor?.props.roomSlug).toBe("grand-hall");
+    expect(stageFloor?.props.transform).toBe(splatLayer?.props.transform);
+    expect(splatLayer?.props.active).toBe(true);
+    expect(stageFloor?.props.active).toBe(true);
+
+    // A registered package carries its own baked alignment; the floor-skin
+    // manifest is built for the staged capture's own frame only, so a package
+    // source must never hand StageFloor a room to load or draw (T-639 fix
+    // round 1, item 1). mockSplat already supports this source value; no new
+    // fixture was needed to cover it honestly.
+    mockSplat({ roomSlug: "grand-hall", status: "loaded", hasAsset: true, source: "package", splatUrls: ["/a.sog"] });
+    rerender(<PlannerScene />);
+    expect(sceneComponent("StageFloor")?.props.roomSlug).toBeNull();
+  });
+
+  // Combined mode draws the model floor (y = 0) with the capture; the measured
+  // floor (−10 to +3.9 cm, tilted 0.22°) would fight it. The stage floor and
+  // its slab cut belong to Capture mode only (T-639 final review).
+  it("shows the stage floor in Capture mode only, while the capture itself stays on in Combined mode", () => {
+    chooseGrandHall(); readyGrandHall();
+    render(<PlannerScene />);
+
+    act(() => { useCockpitStore.getState().setLayerMode("hybrid"); });
+    expect(sceneComponent("CockpitSplatLayer")?.props.active).toBe(true);
+    expect(sceneComponent("StageFloor")?.props.active).toBe(false);
+
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    expect(sceneComponent("CockpitSplatLayer")?.props.active).toBe(true);
+    expect(sceneComponent("StageFloor")?.props.active).toBe(true);
+
+    act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
+    expect(sceneComponent("StageFloor")?.props.active).toBe(false);
+  });
+
   it.each(["button", "escape"])("lets people enter immediately via %s while capture loading continues", (method) => {
     chooseGrandHall(); readyGrandHall();
     render(<PlannerScene />);

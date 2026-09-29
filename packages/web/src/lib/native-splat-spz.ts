@@ -30,6 +30,11 @@ function readHeader(bytes: Uint8Array, compressedV4: boolean): SpzHeader {
   if ((flags & 0x80) !== 0) {
     throw new Error("LOD-tree SPZ is not supported by native rendering. Select a leaf-only SPZ, SOG or PLY source.");
   }
+  // Native rendering draws every source without anti-aliasing compensation; the
+  // SOG loader refuses mip-anti-aliased archives for the same reason (T-639).
+  if ((flags & 0x01) !== 0) {
+    throw new Error("Anti-aliased SPZ requires conversion preserving its filter before native rendering.");
+  }
   const streamSizes = [count * 3 * (version === 1 ? 2 : 3), count, count * 3, count * 3,
     count * (version >= 3 ? 4 : 3), count * nativeValue(SH_VECTORS[degree]) * 3];
   return { version, count, flags, streamSizes };

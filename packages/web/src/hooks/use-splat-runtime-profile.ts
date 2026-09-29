@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDeviceStore } from "../stores/device-store.js";
-import { classifyDevice, getGpuRenderer, type DeviceTier } from "../lib/device-tier.js";
+import { classifyDeviceInContext, currentDeviceContext, getGpuRenderer, type DeviceTier } from "../lib/device-tier.js";
 import {
   resolveSplatRuntimeProfile,
   type SplatRuntimeProfile,
@@ -56,6 +56,35 @@ export function probeGpuRenderer(): string | null {
   }
 }
 
+/**
+ * Probed exactly once, during the first render (a throwaway context, released
+ * at once), so the first frame already reflects the right tier instead of
+ * re-creating the renderer a frame later. A store that has already detected
+ * is trusted and never probed again. Shared by `useAssetDeviceTier` and
+ * `useSplatRuntimeProfile` so a component tree using both (the walk route's
+ * captured room and its stage floor) probes the GPU once, not twice.
+ */
+function useProbedDeviceTier(probe: () => string | null): { readonly tier: DeviceTier; readonly probed: string | null } {
+  const storeTier = useDeviceStore((state) => state.tier);
+  const detected = useDeviceStore((state) => state.detected);
+  const [probed] = useState<string | null>(() => (detected ? null : probe()));
+  const tier: DeviceTier = detected || probed === null ? storeTier : classifyDeviceInContext(probed, currentDeviceContext());
+  return { tier, probed };
+}
+
+/**
+ * The device tier for asset-quality decisions made outside the splat runtime
+ * profile (T-639: the stage floor's texture resolution on `/plan`, which
+ * never mounts `useSplatRuntimeProfile` — that would also change the
+ * planner's other quality settings). Reads the store's tier once it has
+ * detected; otherwise classifies its own probe. Never writes the store or
+ * publishes to `window`: `useSplatRuntimeProfile` owns that, so only one
+ * caller across the page ever records a detection.
+ */
+export function useAssetDeviceTier(probe: () => string | null = probeGpuRenderer): DeviceTier {
+  return useProbedDeviceTier(probe).tier;
+}
+
 export function useSplatRuntimeProfile(
   options: UseSplatRuntimeProfileOptions = {},
 ): SplatRuntimeProfile {
@@ -66,14 +95,9 @@ export function useSplatRuntimeProfile(
     publish = import.meta.env.DEV,
   } = options;
 
-  const storeTier = useDeviceStore((state) => state.tier);
   const detected = useDeviceStore((state) => state.detected);
   const detect = useDeviceStore((state) => state.detect);
-
-  // Probed exactly once, during the first render, so the first frame already
-  // runs at the right tier instead of re-creating the renderer a frame later.
-  const [probed] = useState<string | null>(() => (detected ? null : probe()));
-  const tier: DeviceTier = detected || probed === null ? storeTier : classifyDevice(probed);
+  const { tier, probed } = useProbedDeviceTier(probe);
 
   useEffect(() => {
     if (!detected && probed !== null) detect(probed);

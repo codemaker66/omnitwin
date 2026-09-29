@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
-  classifyDevice,
+  classifyDeviceInContext,
+  currentDeviceContext,
   getQualitySettings,
   type DeviceTier,
   type QualitySettings,
@@ -41,7 +42,7 @@ export const useDeviceStore = create<DeviceState>()((set) => ({
   detected: false,
 
   detect: (rendererString: string) => {
-    const tier = classifyDevice(rendererString);
+    const tier = classifyDeviceInContext(rendererString, currentDeviceContext());
     set({
       tier,
       quality: getQualitySettings(tier),

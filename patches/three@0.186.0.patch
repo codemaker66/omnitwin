@@ -140,7 +140,7 @@ index 0ef0bd8442972a7209eb0adb6d14188c95d84278..1fd6a4ae0f3927c7c9e053f08ba9a1fa
  
  		if ( this._webGLBuffersEnabled === true ) return;
 diff --git a/examples/jsm/objects/GaussianSplat.js b/examples/jsm/objects/GaussianSplat.js
-index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..94f3fcd70ed69724410e01fb1f8afd407b3cc78e 100644
+index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..fefc2b43c6ba03fe02b66f5c4d2eeee2b669ac4c 100644
 --- a/examples/jsm/objects/GaussianSplat.js
 +++ b/examples/jsm/objects/GaussianSplat.js
 @@ -6,6 +6,7 @@ import {
@@ -175,7 +175,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..94f3fcd70ed69724410e01fb1f8afd40
  	 * @param {boolean} [options.autoSort=true] - Whether to sort automatically in `onBeforeRender`.
  	 */
 -	constructor( splatGeometry, { autoSort = true } = {} ) {
-+	constructor( splatGeometry, { autoSort = true, opacityNode = null, sphericalHarmonicsDirectionNode = null, colorSpace = NoColorSpace, kernelRadius = SPLAT_KERNEL_CUTOFF, minSortIntervalMs = 0, cpuSort = null, maxStorageBufferBindingSize = Infinity } = {} ) {
++	constructor( splatGeometry, { antialias = true, autoSort = true, opacityNode = null, sphericalHarmonicsDirectionNode = null, colorSpace = NoColorSpace, kernelRadius = SPLAT_KERNEL_CUTOFF, minSortIntervalMs = 0, cpuSort = null, maxStorageBufferBindingSize = Infinity } = {} ) {
 +
 +		if ( ! Number.isFinite( kernelRadius ) || kernelRadius <= 0 || kernelRadius > 4 ) throw new RangeError( 'GaussianSplat: kernelRadius must be in (0, 4].' );
 +		if ( cpuSort !== null && typeof cpuSort !== 'function' ) throw new TypeError( 'GaussianSplat: cpuSort must be a function or null.' );
@@ -202,7 +202,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..94f3fcd70ed69724410e01fb1f8afd40
 +		const sphericalHarmonicsComputeNode = createSphericalHarmonicsComputeNode( buffers, localCameraPosition, sphericalHarmonicsDirectionNode );
  		const sort = new CountingSort( count, { binCount: BIN_COUNT, workgroupSize: WORKGROUP_SIZE } );
 -		const materialNodes = createMaterialNodes( buffers, sort, localCameraPosition );
-+		const materialNodes = createMaterialNodes( buffers, sort, localCameraPosition, { opacityNode, sphericalHarmonicsDirectionNode, colorSpace, kernelRadius } );
++		const materialNodes = createMaterialNodes( buffers, sort, localCameraPosition, { opacityNode, sphericalHarmonicsDirectionNode, colorSpace, kernelRadius, antialias } );
  		const material = createMaterial( materialNodes.vertexNode, materialNodes.fragmentNode );
  
  		super( geometry, material );
@@ -587,7 +587,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..94f3fcd70ed69724410e01fb1f8afd40
  }
  
 -function createMaterialNodes( buffers, sort, localCameraPosition ) {
-+function createMaterialNodes( buffers, sort, localCameraPosition, { opacityNode, sphericalHarmonicsDirectionNode, colorSpace, kernelRadius } ) {
++function createMaterialNodes( buffers, sort, localCameraPosition, { opacityNode, sphericalHarmonicsDirectionNode, colorSpace, kernelRadius, antialias } ) {
  
  	const splatUv = varyingProperty( 'vec2', 'vSplatUv' );
  	const splatColor = varyingProperty( 'vec4', 'vSplatColor' );
@@ -634,9 +634,12 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..94f3fcd70ed69724410e01fb1f8afd40
  		const aBase = j00.mul( j00 ).mul( c00 )
  			.add( j00.mul( j02 ).mul( c02 ).mul( 2 ) )
  			.add( j02.mul( j02 ).mul( c22 ) )
-@@ -959,7 +1146,8 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -957,9 +1144,10 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+ 		const c = cBase.add( KERNEL_2D_SIZE ).toVar( 'cov2dC' );
+ 		const detBase = aBase.mul( cBase ).sub( b.mul( b ) ).toVar( 'detBase' );
  		const det = a.mul( c ).sub( b.mul( b ) ).toVar( 'det' );
- 		const alphaScale = sqrt( max( detBase.div( max( det, 0.000001 ) ), 0 ) ).toVar( 'alphaScale' );
+-		const alphaScale = sqrt( max( detBase.div( max( det, 0.000001 ) ), 0 ) ).toVar( 'alphaScale' );
++		const alphaScale = ( antialias ? sqrt( max( detBase.div( max( det, 0.000001 ) ), 0 ) ) : float( 1 ) ).toVar( 'alphaScale' );
  
 -		splatColor.assign( vec4( rgb.clamp( 0, 1 ), color.a.mul( alphaScale ) ) );
 +		const displayRgb = rgb.clamp( 0, 1 );
