@@ -1293,7 +1293,7 @@ Grouped by theme, with the themes that block the most work first. Every question
 **Answered on 29 September**, through the question form:
 - A10 took the default. The client's own layout goes with a proposal, staff may leave it out, venue-drawn layouts
   come later, and the client page's closing line becomes "Numbers and layout are planning estimates; the events
-  team confirms them." Built the same day: the desk's "Leave their layout out" and "Put back their … layout", and
+  team confirms them." Built the same day: the desk's "Leave their layout out" and "Include their … layout", and
   the new closing line.
 - A client's question on the proposal page reaches the team as written. A request for changes and a note with an
   acceptance are the client's own words as well, so they are treated the same (an extension of the answer). The
