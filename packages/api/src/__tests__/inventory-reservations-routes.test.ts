@@ -35,11 +35,20 @@ describe("inventory decision authority and command validation", () => {
       expect((await server.inject({ ...request, headers: { authorization: "Bearer invalid" } })).statusCode).toBe(401);
     }
   });
-  it.each(["staff", "hallkeeper", "client", "planner"])("denies %s across all decisions and readers", async (role) => {
+  it.each(["staff", "sales", "hallkeeper", "client", "planner"])("denies %s across all decisions and readers", async (role) => {
     for (const request of requests) expect((await server.inject({ ...request, headers: headers(role) })).statusCode).toBe(403);
   });
+  // A venue's administrators and managers decide its inventory (Blake, 29 September 2026).
+  it.each(["admin", "manager"])("lets the venue's own %s past every decision and reader gate", async (role) => {
+    for (const request of requests) {
+      const response = await server.inject({ ...request, headers: headers(role) });
+      const label = `${request.method ?? "GET"} ${typeof request.url === "string" ? request.url : "request"}`;
+      expect(response.statusCode, label).not.toBe(401);
+      expect(response.statusCode, label).not.toBe(403);
+    }
+  });
   it("rejects cross-venue and platform-only permission before database access", async () => {
-    for (const auth of [headers("admin", otherId), headers("admin", null, "admin"), headers("client", venueId, "admin")]) {
+    for (const auth of [headers("admin", otherId), headers("manager", otherId), headers("admin", null, "admin"), headers("client", venueId, "admin")]) {
       for (const request of requests) expect((await server.inject({ ...request, headers: auth })).statusCode).toBe(403);
     }
   });

@@ -19,6 +19,10 @@ describe("venue inventory persisted contracts", () => {
     expect(VenueInventoryReceiptSchema.parse(receipt).before).toBeNull();
     expect(VenueInventoryReceiptSchema.safeParse({ ...receipt, before: after }).success).toBe(false);
   });
+  // A venue's managers count stock too (Blake, 29 September 2026).
+  it("records a manager's first count as a manager's", () => {
+    expect(VenueInventoryReceiptSchema.parse({ ...receipt, actorRole: "manager" }).actorRole).toBe("manager");
+  });
   it.each([{ after: { ...after, ownedQuantity: 999 } }, { command: { ...command, expectedRevision: 0 } },
     { actorRole: "hallkeeper" }, { reason: "Another reason" }])("rejects contradictory creation receipts %j", (change) => {
     expect(VenueInventoryReceiptSchema.safeParse({ ...receipt, ...change }).success).toBe(false);

@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
-import { applyInventoryAdjustment, canAdjustVenueInventory, InventoryActorSchema, InventoryStockSchema,
+import { applyInventoryAdjustment, canAdjustVenueInventory, inventoryAdjusterRole, InventoryActorSchema, InventoryStockSchema,
   VenueInventoryHistoryResponseSchema, VenueInventoryListResponseSchema, VenueInventoryReceiptSchema,
   VenueInventoryWriteCommandSchema, VenueInventoryWriteResponseSchema,
   type InventoryActor, type InventoryStock, type VenueInventoryHistoryResponse,
@@ -19,9 +19,9 @@ export class VenueInventoryError extends Error {
   }
 }
 
-function assertAdmin(actor: InventoryActor, venueId: string): void {
+function assertMayChangeStock(actor: InventoryActor, venueId: string): void {
   if (!canAdjustVenueInventory(actor, venueId)) {
-    throw new VenueInventoryError(403, "FORBIDDEN", "Only this venue's administrator can manage inventory");
+    throw new VenueInventoryError(403, "FORBIDDEN", "Only this venue's administrators and managers can change its stock");
   }
 }
 
@@ -106,7 +106,7 @@ function makeReceipt(current: InventoryStock | null, command: VenueInventoryWrit
   actor: InventoryActor, recordedAt: string): VenueInventoryReceipt {
   if (current === null && command.expectedRevision === null) {
     const { commandId: _commandId, expectedRevision: _expectedRevision, reason: _reason, ...values } = command;
-    return VenueInventoryReceiptSchema.parse({ kind: "created", command, actorUserId: actor.userId, actorRole: "admin",
+    return VenueInventoryReceiptSchema.parse({ kind: "created", command, actorUserId: actor.userId, actorRole: inventoryAdjusterRole(actor),
       reason: command.reason, recordedAt, before: null, after: { ...values, revision: 1, effectiveAt: recordedAt } });
   }
   if (current === null || command.expectedRevision === null || current.revision !== command.expectedRevision) {
@@ -139,7 +139,7 @@ export async function writeVenueInventory(db: Database, actor: InventoryActor,
   input: VenueInventoryWriteCommand): Promise<VenueInventoryWriteResponse> {
   const command = normalizeCommand(input);
   const normalizedActor = InventoryActorSchema.parse(actor);
-  assertAdmin(normalizedActor, command.venueId);
+  assertMayChangeStock(normalizedActor, command.venueId);
   return db.transaction(async (tx) => {
     // A real row-version write makes a SERIALIZABLE decision waiting behind
     // this READ COMMITTED correction retry with a fresh snapshot. FOR UPDATE

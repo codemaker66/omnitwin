@@ -22,6 +22,7 @@ const NOW = "2026-09-04T10:00:00.000Z";
 const LATER = "2026-09-04T10:01:00.000Z";
 const WINDOW = { startsAt: "2026-09-07T10:00:00Z", endsAt: "2026-09-07T14:00:00Z" };
 const ADMIN = { userId: USER, venueId: VENUE, role: "admin" };
+const MANAGER = { ...ADMIN, role: "manager" };
 // This is an argument-limit correctness fixture, not a five-second performance
 // promise. Shared CI/workstation contention must not change its assertion.
 const LARGE_SCHEDULE_TEST_TIMEOUT_MS = 30_000;
@@ -71,12 +72,15 @@ describe("venue inventory contracts", () => {
       expect(InventoryCommitmentSchema.safeParse(commitment({ endsAt })).success).toBe(false);
     }
   });
-  it("grants only the same venue's admin, including after role revocation", () => {
+  it("grants only the same venue's administrators and managers, including after role revocation", () => {
     expect(canAdjustVenueInventory(ADMIN, VENUE)).toBe(true);
-    for (const role of ["staff", "hallkeeper", "planner", "client", "platform_admin"]) {
+    expect(canAdjustVenueInventory(MANAGER, VENUE)).toBe(true);
+    for (const role of ["staff", "sales", "hallkeeper", "planner", "client", "platform_admin"]) {
       expect(canAdjustVenueInventory({ ...ADMIN, role }, VENUE)).toBe(false);
     }
     expect(canAdjustVenueInventory({ ...ADMIN, venueId: OTHER }, VENUE)).toBe(false);
+    expect(canAdjustVenueInventory({ ...MANAGER, venueId: OTHER }, VENUE)).toBe(false);
+    expect(canAdjustVenueInventory({ ...MANAGER, venueId: null }, VENUE)).toBe(false);
   });
 });
 
@@ -164,6 +168,13 @@ describe("auditable inventory adjustments", () => {
     expect(result.receipt).toMatchObject({ actorUserId: USER, reason: command().reason, recordedAt: LATER });
     expect(original.damagedQuantity).toBe(0);
     expect(evaluateInventoryAvailability(result.receipt.after, [commitment()], WINDOW).maximumShortageQuantity).toBe(10);
+  });
+  it("records the role each change was made in", () => {
+    expect(applyInventoryAdjustment(stock(), command(), ADMIN, LATER).receipt.actorRole).toBe("admin");
+    const managers = applyInventoryAdjustment(stock(), command(), MANAGER, LATER);
+    expect(managers.receipt).toMatchObject({ actorUserId: USER, actorRole: "manager" });
+    expect(() => applyInventoryAdjustment(managers.receipt.after, command(), { ...MANAGER, role: "staff" }, LATER, managers.receipt))
+      .toThrow("INVENTORY_FORBIDDEN");
   });
   it("replays exactly the original receipt even after a later update", () => {
     const first = applyInventoryAdjustment(stock(), command(), ADMIN, LATER);

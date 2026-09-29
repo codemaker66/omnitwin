@@ -4,8 +4,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { getCanonicalAssetBySlug, type InventoryActor } from "@omnitwin/types";
+import { eq } from "drizzle-orm";
+import { canAdjustVenueInventory, getCanonicalAssetBySlug, type InventoryActor } from "@omnitwin/types";
 import { createDbConnection } from "../db/client.js";
+import { users } from "../db/schema.js";
 import { writeVenueInventory } from "../services/venue-inventory.js";
 
 // ---------------------------------------------------------------------------
@@ -37,7 +39,7 @@ import { writeVenueInventory } from "../services/venue-inventory.js";
 //
 //   Dry run (offline):
 //     pnpm --filter @omnitwin/api exec tsx src/scripts/import-venue-stock.ts \
-//       --source <intake>.json --venue <venue uuid> --actor <admin user uuid> \
+//       --source <intake>.json --venue <venue uuid> --actor <administrator or manager user uuid> \
 //       --reason "initial intake 2026-09-05" --plan-out plan.json
 //
 //   Apply (after the backup branch exists):
@@ -260,6 +262,21 @@ export interface ApplyOutcome {
  * production, that is the worst possible moment to have to reconstruct what
  * happened from the database.
  */
+/**
+ * The person the import is recorded as, read from their account: each receipt
+ * records the role they hold, and only this venue's administrators and
+ * managers may change its stock.
+ */
+export async function stockActor(db: Parameters<typeof writeVenueInventory>[0], userId: string, venueId: string): Promise<InventoryActor> {
+  const [account] = await db.select({ role: users.role, venueId: users.venueId }).from(users).where(eq(users.id, userId)).limit(1);
+  if (account === undefined) throw new Error(`No account ${userId}; nothing was written`);
+  const actor: InventoryActor = { userId, role: account.role, venueId: account.venueId };
+  if (!canAdjustVenueInventory(actor, venueId)) {
+    throw new Error(`${userId} is not an administrator or manager of this venue, so cannot change its stock; nothing was written`);
+  }
+  return actor;
+}
+
 export async function applyStockImport(
   db: Parameters<typeof writeVenueInventory>[0],
   actor: InventoryActor,
@@ -369,9 +386,15 @@ async function main(): Promise<void> {
     return;
   }
   const connection = createDbConnection(options.databaseUrl);
+  let actor: InventoryActor;
+  try {
+    actor = await stockActor(connection.db, options.actorUserId, options.venueId);
+  } catch (error) {
+    await connection.close();
+    throw error;
+  }
   let recorded = 0;
   try {
-    const actor: InventoryActor = { userId: options.actorUserId, role: "admin", venueId: options.venueId };
     // Print each receipt the moment it lands. If item n throws, the operator
     // still has the list of the n-1 already written, on screen, in order.
     const outcomes = await applyStockImport(connection.db, actor, plan, (outcome) => {

@@ -33,18 +33,15 @@ async function authorizeInventoryRead(request: FastifyRequest, reply: FastifyRep
   }
 }
 
-// Adjusting stock stays with the venue's administrator. Lane 8's
-// `canWriteInventory` also admits `manager`, but an adjustment produces an
-// audited receipt whose `actorRole` is pinned to "admin" in @omnitwin/types
-// (venue-inventory.ts, venue-inventory-api.ts) and re-checked inside the pure
-// `applyInventoryAdjustment`. Admitting a writer here that the receipt chain
-// would then reject is worse than a narrow gate, so widening the writer waits
-// on that receipt vocabulary and on the role set in Lane 8's file.
+// A venue's administrators and managers change its stock (Blake, 29 September
+// 2026). Every change is an audited receipt that records who made it and in
+// which of those roles; the pure `applyInventoryAdjustment` checks the same
+// rule again (`canAdjustVenueInventory` in @omnitwin/types).
 async function authorizeInventoryWrite(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const venueId = await venueIdFromParams(request, reply);
   if (venueId === null) return;
   if (!canAdjustVenueInventory(inventoryActor(request), venueId)) {
-    await reply.status(403).send({ error: "Only this venue's administrator can manage inventory", code: "FORBIDDEN" });
+    await reply.status(403).send({ error: "Only this venue's administrators and managers can change its stock", code: "FORBIDDEN" });
   }
 }
 

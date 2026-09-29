@@ -1,10 +1,11 @@
 import type { ReactElement } from "react";
 import type { VenueInventoryReceipt } from "@omnitwin/types";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { inventoryRoleName } from "./inventory-roles.js";
 
 export function InventoryReceipt({ receipt }: { readonly receipt: VenueInventoryReceipt }): ReactElement {
   const user = useAuthStore((state) => state.user);
-  const actorName = user?.id === receipt.actorUserId && user.name.trim() !== "" ? user.name : "Venue administrator";
+  const actorName = user?.id === receipt.actorUserId && user.name.trim() !== "" ? user.name : inventoryRoleName(receipt.actorRole);
   const before = receipt.before;
   const after = receipt.after;
   return <details className="inventory-receipt">
@@ -18,7 +19,7 @@ export function InventoryReceipt({ receipt }: { readonly receipt: VenueInventory
       <div><dt>Storage</dt><dd>{before?.storageLocation ?? "Not recorded"} → {after.storageLocation ?? "Not recorded"}</dd></div>
       <div><dt>Status</dt><dd>{before?.status ?? "Not recorded"} → {after.status}</dd></div>
       <div><dt>Recorded by</dt><dd>{actorName}<details><summary>Audit identifiers</summary>
-        <p>Administrator <code>{receipt.actorUserId}</code></p><p>Receipt <code>{receipt.command.commandId}</code></p>
+        <p>{receipt.actorRole === "manager" ? "Manager" : "Administrator"} <code>{receipt.actorUserId}</code></p><p>Receipt <code>{receipt.command.commandId}</code></p>
       </details></dd></div>
       <div><dt>Record version</dt><dd>{after.revision}</dd></div>
     </dl>

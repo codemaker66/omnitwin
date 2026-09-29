@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ArrowUpRight, List, MapPin, Search, SlidersHorizontal } from "lucide-react";
 import type { InventoryStock } from "@omnitwin/types";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { hasRole, INVENTORY_WRITE_ROLES } from "../../../lib/role-capabilities.js";
 import { listVenueInventory, type VenueInventoryData, type VenueInventoryItem } from "../../../api/venue-inventory.js";
 import { InventoryEditor, type InventoryEditorHandle } from "./InventoryEditor.js";
 import { InventoryDemand } from "./InventoryDemand.js";
@@ -130,7 +131,8 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
 
 export function InventoryPanel(): ReactElement {
   const user = useAuthStore((state) => state.user);
-  if (user?.role !== "admin" || user.venueId === null) return <section className="inventory-panel inventory-state" role="alert">
-    <h1>Venue administrator access required</h1><p>Inventory belongs to the venue assigned to your administrator account.</p></section>;
+  // A venue's administrators and managers keep its inventory (Blake, 29 September 2026).
+  if (user === null || !hasRole(INVENTORY_WRITE_ROLES, user.role) || user.venueId === null) return <section className="inventory-panel inventory-state" role="alert">
+    <h1>Inventory is kept by the venue's administrators and managers</h1><p>It belongs to the venue your account is assigned to.</p></section>;
   return <InventoryWorkspace key={`${user.id}:${user.venueId}`} actorId={user.id} venueId={user.venueId} />;
 }

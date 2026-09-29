@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { InventoryAdjustmentCommandSchema, InventoryAdjustmentReceiptSchema, InventoryIdSchema, InventoryInstantSchema,
-  InventoryQuantitySchema, InventoryStockSchema, validateInventoryStockCounts } from "./venue-inventory.js";
+import { InventoryAdjusterRoleSchema, InventoryAdjustmentCommandSchema, InventoryAdjustmentReceiptSchema, InventoryIdSchema,
+  InventoryInstantSchema, InventoryQuantitySchema, InventoryStockSchema, validateInventoryStockCounts } from "./venue-inventory.js";
 
 export const VenueInventoryParamsSchema = z.object({ venueId: InventoryIdSchema }).strict();
 export const VenueInventoryItemParamsSchema = VenueInventoryParamsSchema.extend({ assetDefinitionId: InventoryIdSchema });
@@ -17,7 +17,7 @@ export type VenueInventoryWriteCommand = z.infer<typeof VenueInventoryWriteComma
 
 const CreatedReceiptSchema = z.object({
   kind: z.literal("created"), command: VenueInventoryWriteCommandSchema,
-  actorUserId: InventoryIdSchema, actorRole: z.literal("admin"), reason: z.string().trim().min(1).max(1000),
+  actorUserId: InventoryIdSchema, actorRole: InventoryAdjusterRoleSchema, reason: z.string().trim().min(1).max(1000),
   recordedAt: InventoryInstantSchema, before: z.null(), after: InventoryStockSchema,
 }).strict().superRefine((receipt, context) => {
   const { command, after } = receipt;

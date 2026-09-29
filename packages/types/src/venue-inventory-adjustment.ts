@@ -1,6 +1,6 @@
 import {
   InventoryAdjustmentCommandSchema, InventoryAdjustmentReceiptSchema, InventoryActorSchema,
-  InventoryInstantSchema, InventoryStockSchema, addInventoryQuantities, canAdjustVenueInventory,
+  InventoryInstantSchema, InventoryStockSchema, addInventoryQuantities, canAdjustVenueInventory, inventoryAdjusterRole,
   type InventoryAdjustmentCommand, type InventoryAdjustmentReceipt, type InventoryActor, type InventoryStock,
 } from "./venue-inventory.js";
 
@@ -56,7 +56,7 @@ export function applyInventoryAdjustment(stockInput: InventoryStock, commandInpu
     revision: addInventoryQuantities(stock.revision, 1), ownedQuantity: command.ownedQuantity,
     damagedQuantity: command.damagedQuantity, unavailableQuantity: command.unavailableQuantity,
     hires: command.hires, status: command.status, storageLocation: command.storageLocation, effectiveAt: recordedAt });
-  const receipt = InventoryAdjustmentReceiptSchema.parse({ command, actorUserId: actor.userId, actorRole: "admin",
+  const receipt = InventoryAdjustmentReceiptSchema.parse({ command, actorUserId: actor.userId, actorRole: inventoryAdjusterRole(actor),
     reason: command.reason, recordedAt, before: stock, after });
   return { stock: after, receipt, replayed: false };
 }
