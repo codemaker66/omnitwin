@@ -145,20 +145,38 @@ describe("proposal-share and quote extension routes", () => {
     expect(wellFormed.statusCode).not.toBe(401);
   });
 
-  it("claim-guards client comments and approval notes", async () => {
-    const unsafeComment = await server.inject({
+  // The claim guard is for the venue's words. A client's comment or note with
+  // an acceptance passes as they wrote it (Blake, 29 September 2026); the
+  // isolated PostgreSQL client-page tests follow them through to the team.
+  it("takes client comments and acceptance notes as written, and claim-guards the venue's replies", async () => {
+    const clientComment = await server.inject({
       method: "POST",
       url: `/proposal-share/${SHARE_TOKEN}/comment`,
       payload: { body: "Please call this certified safe.", kind: "request_changes" },
     });
-    expect(unsafeComment.statusCode).toBe(400);
+    expect(clientComment.statusCode).not.toBe(400);
 
-    const unsafeApproval = await server.inject({
+    const clientAcceptance = await server.inject({
       method: "POST",
       url: `/proposal-share/${SHARE_TOKEN}/approve`,
       payload: { body: "Approved because it is legally compliant." },
     });
-    expect(unsafeApproval.statusCode).toBe(400);
+    expect(clientAcceptance.statusCode).not.toBe(400);
+
+    const blank = await server.inject({
+      method: "POST",
+      url: `/proposal-share/${SHARE_TOKEN}/comment`,
+      payload: { body: "   " },
+    });
+    expect(blank.statusCode).toBe(400);
+
+    const venueReply = await server.inject({
+      method: "POST",
+      url: `/proposals/${PROPOSAL_ID}/comments`,
+      headers: { authorization: `Bearer ${staffAToken()}` },
+      payload: { body: "Yes, it is certified safe." },
+    });
+    expect(venueReply.statusCode).toBe(400);
   });
 
   it("validates quote line item append and exact-money input", async () => {

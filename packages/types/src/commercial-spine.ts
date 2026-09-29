@@ -85,6 +85,17 @@ const RequiredSafeCommercialTextSchema = SafeCommercialTextSchema.refine(
   "Text is required",
 );
 
+// A client's own words (a question, a request for changes, a note with an
+// acceptance) reach the venue team as written, checked for length only. The
+// claim guard keeps the venue from promising what the platform cannot back;
+// a client asking "Is the Grand Hall guaranteed accessible?" promises nothing
+// (Blake, 29 September 2026).
+const ClientTextSchema = z.string().max(4000);
+const RequiredClientTextSchema = ClientTextSchema.refine(
+  (text) => text.trim().length > 0,
+  "Text is required",
+);
+
 const IsoDateTimeSchema = z.string().datetime();
 const DateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -194,7 +205,9 @@ export const ProposalCommentSchema = z.object({
   kind: ProposalCommentKindSchema,
   authorName: z.string().trim().max(200).nullable(),
   authorEmail: z.string().trim().email().max(255).nullable(),
-  body: SafeCommercialTextSchema,
+  // The client's words as written, or the venue's, guarded when written
+  // (VenueReplyBodySchema).
+  body: ClientTextSchema,
   isClientVisible: z.boolean(),
   createdAt: IsoDateTimeSchema,
 });
@@ -257,13 +270,17 @@ export const UpdateFollowUpTaskSchema = z.object({
 });
 export type UpdateFollowUpTask = z.infer<typeof UpdateFollowUpTaskSchema>;
 
+/** What a client writes through their link, in their own words. */
 export const CreateProposalCommentSchema = z.object({
   authorName: z.string().trim().max(200).nullable().optional(),
   authorEmail: z.string().trim().email().max(255).nullable().optional(),
-  body: RequiredSafeCommercialTextSchema,
+  body: RequiredClientTextSchema,
   kind: ProposalCommentKindSchema.default("comment"),
 });
 export type CreateProposalComment = z.infer<typeof CreateProposalCommentSchema>;
+
+/** The venue team's reply to a client: claim-guarded, as every version is. */
+export const VenueReplyBodySchema = RequiredSafeCommercialTextSchema;
 
 export const CreatePackageSelectionSchema = z.object({
   opportunityId: OpportunityIdSchema.nullable().optional(),

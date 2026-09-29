@@ -1212,6 +1212,7 @@ export {
   CreateFollowUpTaskSchema,
   UpdateFollowUpTaskSchema,
   CreateProposalCommentSchema,
+  VenueReplyBodySchema,
   CreatePackageSelectionSchema,
   CrmPipelineSummarySchema,
   isValidOpportunityStageTransition,
