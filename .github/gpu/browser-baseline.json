@@ -524,11 +524,11 @@
       "sourceBaseCommit": "a80ee2101480c448e6b4722933f9c42548990e08",
       "sourceState": "Reviewed working-tree source based on sourceBaseCommit; sourceFileSha256 binds the actual E2E bytes. This admission does not claim the new file already existed in that base commit.",
       "sourceFile": "packages/web/e2e/amissing-book-integration.spec.ts",
-      "sourceFileSha256": "129670071a89ee392f0fcb19f8b44a8e532033adff6dcdec70e1abd4935c97e0",
+      "sourceFileSha256": "61950ef08e22280bfc6612f039789988cc8aa99c978337fd84db79a07fd00c80",
       "retiredSourceFile": "packages/web/e2e/trades-house-craft-quiz-responsive.spec.ts",
       "retiredSourceFileGitBlobSha256": "741829aa6681d8079672de417fca035fb7f11ef6667cbc20f80e829f3722a679",
       "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
-      "inventorySha256": "6f95c94726113c32b93305fed1e9cc6ac9cb1638806f0f4c1d4f39da089c8d4a",
+      "inventorySha256": "8007a53353d3e8c9e8d656909caa49d0a0d79a51b28b3432b5a4fad656693d9c",
       "caseIds": [
         "14142275415b11e2c874-154e2ed4b2c70d3b3e21",
         "14142275415b11e2c874-23704f2eeca4af15d0bc",

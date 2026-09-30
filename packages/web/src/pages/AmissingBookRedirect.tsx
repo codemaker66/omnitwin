@@ -5,7 +5,10 @@ import { ActivityStatus } from "../components/shared/Activity.js";
  * is a standalone export, outside the React router. Production redirects these
  * legacy URLs at the edge before the application is downloaded. */
 export function AmissingBookRedirect(): ReactElement {
-  const destination = `/amissing-book/${window.location.search}${window.location.hash}`;
+  // Vite dev serves public files literally; directory-index rewrites belong to
+  // Vercel/preview. Use the explicit document only in development.
+  const entry = import.meta.env.DEV ? "/amissing-book/index.html" : "/amissing-book/";
+  const destination = `${entry}${window.location.search}${window.location.hash}`;
   useEffect(() => {
     window.location.replace(destination);
   }, [destination]);

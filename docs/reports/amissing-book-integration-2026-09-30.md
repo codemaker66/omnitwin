@@ -35,7 +35,10 @@ presentation. Resume returns to the most recent choice, not a mid-line timer.
 New saves remain local to the same browser and origin. Legacy partial saves
 cannot reconstruct a story position and are reported honestly.
 
-The raw game export and media in `public/amissing-book` remain unchanged.
+The authored game JavaScript and media in `public/amissing-book` remain unchanged.
+The entry HTML uses the existing site favicon so development and production do
+not request a missing icon. Vite dev opens the explicit `index.html`; deployed
+and preview links retain the canonical `/amissing-book/` address.
 `prepare-amissing-book-resume.mjs` adds the adapter only to build output and
 fails if the known bootstrap/replay boundaries drift. Then the existing
 `version-amissing-book-audio.mjs` versions that prepared output, including the
@@ -58,6 +61,24 @@ This is local candidate evidence, not live CMS publication or aesthetic approval
 Bulk screenshots, logs and baseline JSON are outside the repository at
 `D:/claude/amissing-book-integration-20260930/`.
 
-Implementation and game qualification are in progress. Production integration,
-deployment and post-release MP3 verification remain required. The CMS session
-is signed out; Blake has been asked to sign in before landing publication.
+Local qualification passes: seven browser cases on the exact packaged production
+build, including desktop 1440×900, touch phone 390×844 orientation prompt and
+844×390 gameplay, actual opening WebAudio playback, all five versioned opening
+takes, character creation, a Family branch, exact checkpoint reload/resume and
+continued choices/audio. Restored artwork, including the woman's ink mark, was
+visually checked. Corrupt-save and blocked-storage paths also pass. All three
+legacy URL browser cases pass separately on Vite dev. No collected browser
+errors or missing assets remain in these final runs.
+
+Focused Vitest checks include the route/leaflet/versioning contracts and bridges
+to 18 checkpoint/bootstrap and three CMS-transform Node cases. The 137 browser
+gate tooling tests pass; the reviewed inventory replaces 26 retired quiz cases
+with seven game cases while preserving all unrelated identities and policies.
+The exact Vercel build command passes locally. Failed attempts are retained:
+Vercel rejected the original command length, now guarded at 256 characters;
+browser checks exposed the missing favicon, cold dev entry and actor-restore
+ordering defects, all repaired before final qualification.
+
+Production integration, deployment and post-release MP3 verification remain
+required. The CMS session is signed out; Blake has been asked to sign in before
+landing publication.

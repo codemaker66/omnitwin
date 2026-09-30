@@ -221,8 +221,11 @@ for (const route of ["/quiz", "/quiz/", "/trades-house/discover-your-craft"]) {
   test(`old public entry ${route} opens the game`, async ({ page }) => {
     const errors = watchFailures(page);
     await page.goto(route);
-    await expect(page).toHaveURL(/\/amissing-book\/$/u);
-    await expect(page.getByRole("button", { name: "Begin", exact: true })).toBeVisible();
+    const packaged = process.env["E2E_WEB_SERVER"] === "preview" || process.env["E2E_AMISSING_GAME_URL"] !== undefined;
+    await expect(page).toHaveURL(packaged ? /\/amissing-book\/$/u : /\/amissing-book\/index\.html$/u);
+    // A cold development redirect boots the standalone renderer after Vite's
+    // first app transform. Observe readiness without treating a 5s default as a SLA.
+    await expect(page.getByRole("button", { name: "Begin", exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page).toHaveTitle("The Amissing Book");
     expect(errors).toEqual([]);
   });

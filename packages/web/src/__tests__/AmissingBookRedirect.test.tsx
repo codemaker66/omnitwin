@@ -4,15 +4,23 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AmissingBookRedirect } from "../pages/AmissingBookRedirect.js";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe("legacy Craft quiz entry points", () => {
   it("opens the standalone document and supplies an accessible fallback link", () => {
+    vi.stubEnv("DEV", false);
     const replace = vi.spyOn(window.location, "replace").mockImplementation(() => {});
     render(<AmissingBookRedirect />);
     expect(replace).toHaveBeenCalledWith("/amissing-book/");
     expect(screen.getByRole("status").textContent).toContain("Opening The Amissing Book");
     expect(screen.getByRole("link", { name: "Play the game" }).getAttribute("href")).toBe("/amissing-book/");
+  });
+
+  it("loads the explicit public document on Vite dev without its SPA fallback", () => {
+    vi.stubEnv("DEV", true);
+    const replace = vi.spyOn(window.location, "replace").mockImplementation(() => {});
+    render(<AmissingBookRedirect />);
+    expect(replace).toHaveBeenCalledWith("/amissing-book/index.html");
   });
 
   it("redirects every existing quiz URL at the edge before the SPA fallback", () => {
