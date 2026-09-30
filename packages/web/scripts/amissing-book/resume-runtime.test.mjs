@@ -150,11 +150,63 @@ test("bootstrap prioritizes the original title audio over speculative artwork", 
   assert.deepEqual(adapted, ["required opening artwork", "audio manifest ready", "original title shown",
     "audio unlocked", "original title audio requested", "story started"]);
 });
-test("rejects absent or duplicate speculative-artwork bootstrap markers", () => {
+test("scene transitions prioritize current artwork while retaining chapter cleanup", async () => {
   const source = readFileSync(new URL("../../public/amissing-book/assets/index-BvgeSwOx.js", import.meta.url), "utf8");
-  const marker = "d.preload();let f=new uf";
-  assert.throws(() => adaptEntry(source.replace(marker, "let f=new uf"), "revision"), /bootstrap changed/u);
-  assert.throws(() => adaptEntry(`${source}\n${marker}`, "revision"), /bootstrap changed/u);
+  async function journey(entry) {
+    const events = [], unloaded = [];
+    const scenes = Object.fromEntries(["intro", "fish", "plague", "craft", "global"].map((id) => [id, {
+      id, layers: [{ src: `${id}.webp` }, { src: "shared.webp" }], actors: { person: { src: `${id}-actor.webp` } },
+    }]));
+    const helpers = entry.indexOf("function jf("), helpersEnd = entry.indexOf("function Nf(", helpers);
+    const start = entry.indexOf("Bf=class"), end = entry.indexOf("},Vf=", start);
+    assert.ok(helpers >= 0 && helpersEnd > helpers && start >= 0 && end > start, "authored Director boundaries");
+    // Run the original chapter mapping, asset collection and Director methods;
+    // only the renderer/network boundaries are observed instead of executed.
+    const Director = runInNewContext(`${entry.slice(helpers, helpersEnd)};(${entry.slice(start + 3, end + 1)})`, {
+      Df: scenes, Of: ["intro", "fish", "plague", "craft"], Af: 4, kf: new Set(["global"]),
+      Vr: {
+        load: async (assets) => { events.push({ type: "warm", assets: [...assets] }); },
+        unload: async (assets) => { unloaded.push([...assets]); },
+      },
+    });
+    const director = new Director({
+      show: async (scene, duration) => { assert.equal(duration, 0); events.push({ type: "scene", id: scene.id }); },
+    }, {}, { overlays: { clearInk() {} } }, {}, {});
+    for (const scene of ["intro", "fish", "plague", "craft", "plague"]) await director.one("scene", `${scene} cut`, {});
+    assert.equal(director.reached, 3);
+    assert.deepEqual([...director.dropped], [0, 1]);
+    return { events, unloaded };
+  }
+  const original = await journey(source);
+  assert.equal(original.events[0].type, "warm");
+  assert.ok(original.events[0].assets.includes("fish.webp"));
+  assert.deepEqual(original.events[1], { type: "scene", id: "intro" });
+  const adapted = await journey(adaptEntry(source, "revision"));
+  assert.deepEqual(adapted.events, ["intro", "fish", "plague", "craft", "plague"].map((id) => ({ type: "scene", id })));
+  // Shared/global/current/previous assets survive; revisiting an earlier scene
+  // still renders it without unloading the same old chapter twice.
+  assert.deepEqual(adapted.unloaded, [["intro.webp", "intro-actor.webp"], ["fish.webp", "fish-actor.webp"]]);
+  assert.deepEqual(adapted.unloaded, original.unloaded);
+});
+test("creator retains selected-character narration and all choices without preloading unselected voices", () => {
+  const source = readFileSync(new URL("../../public/amissing-book/assets/index-BvgeSwOx.js", import.meta.url), "utf8");
+  const creator = (entry) => {
+    const start = entry.indexOf("async function Kl("), end = entry.indexOf("var ql=", start);
+    assert.ok(start >= 0 && end > start, "authored creator boundary");
+    return entry.slice(start, end);
+  };
+  const original = creator(source), adapted = creator(adaptEntry(source, "revision"));
+  assert.ok(original.includes("await n.voice?.(Kc(e.id))"));
+  assert.deepEqual(adapted, original.replace(",n.preload?.(Uc.map(e=>Kc(e.id)))", ""));
+  assert.ok(adapted.includes("await n.voice?.(Kc(e.id))"));
+});
+test("rejects absent or duplicate speculative preload markers", () => {
+  const source = readFileSync(new URL("../../public/amissing-book/assets/index-BvgeSwOx.js", import.meta.url), "utf8");
+  for (const marker of ["d.preload();let f=new uf", "this.reached=t,this.warm(t+1);let n=Mf",
+    ",n.preload?.(Uc.map(e=>Kc(e.id)));let h=Uc[0]"]) {
+    assert.throws(() => adaptEntry(source.replace(marker, ""), "revision"), /bootstrap changed/u);
+    assert.throws(() => adaptEntry(`${source}\n${marker}`, "revision"), /bootstrap changed/u);
+  }
 });
 test("uses the existing site icon instead of requesting a missing favicon.ico", () => {
   const source = '<html><head><title>The Amissing Book</title></head><body></body></html>';

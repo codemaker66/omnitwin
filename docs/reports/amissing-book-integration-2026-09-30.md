@@ -113,11 +113,31 @@ but later stalled behind the same burst. These are failed live checks, despite
 the successful local/CI tests and deployed byte checks. Earlier 5-second startup
 assertions also expired during the title image download and reveal.
 
-The hosting preparation now removes only that uniquely guarded bootstrap
-preload call. Scene and actor loaders still await required textures, portraits
-and crests still load on demand, and later chapter warming remains. All authored
-art, recordings, title timing, story logic and checkpoint compatibility remain
-unchanged. Qualification and release of this loading-order correction are pending.
+The first loading correction removed that uniquely guarded bootstrap preload
+call. It passed 20 Node contract cases, 23 focused Vitest checks, the production
+build, seven packaged browser cases and complete CI `36728952585`. PR #40 merged
+as `be4385e6477b067e135c5bbab234fecd70292b7f`; Vercel production
+`dpl_GvjMTHCy4wX4mDqLw4PSDFatcixb` serves that merge. A declared Chromium
+simulation (192,000 B/s download, 80 ms latency, fresh contexts) measured native
+opening playback at 34.884 seconds after Begin before this correction and
+9.339 seconds afterward. This is simulated-network evidence, not a production
+speed guarantee.
+
+The next live run reached the opening, but all three playthrough cases stalled
+after **Follow the bell**. Its trace identifies another speculative burst:
+`entered()` starts the future fish chapter before the required `P01b.webp`
+scene image. That required image remained without response headers through the
+60-second next-line check; the next narration could not be requested. Four
+route/storage cases passed. The complete failed run and trace are retained in
+`browser-production-startup-fixed/`.
+
+The preparation now also suppresses future-chapter artwork and the creator's
+unselected voice preloads. These are the remaining authored speculative fetch
+paths found in a complete call-site inspection. Required scene/actor textures,
+visible portraits and crests, selected character voices, title cues, and old
+chapter unloading remain. All original artwork, recordings, title timing,
+story logic and checkpoint compatibility are unchanged. Full constrained-network
+qualification and release of this scene-loading correction remain pending.
 
 The landing wording remains unpublished. Its CMS session was signed out;
 Blake has been asked to sign in. Browser control subsequently failed with
