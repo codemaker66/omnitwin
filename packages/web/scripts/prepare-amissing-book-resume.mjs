@@ -9,9 +9,11 @@ import { fileURLToPath } from "node:url";
 const bootstrap = "else await Qf(e,n,r,s);await i,await f.run()";
 const replay = "function nu(){try{localStorage.setItem(`amissing-replay`,`1`)}";
 const eagerArtwork = "d.preload();let f=new uf";
+const futureChapter = "this.reached=t,this.warm(t+1);let n=Mf";
+const unselectedVoices = ",n.preload?.(Uc.map(e=>Kc(e.id)));let h=Uc[0]";
 
 export function adaptEntry(entry, revision, audioIds = []) {
-  for (const marker of [bootstrap, replay, eagerArtwork]) {
+  for (const marker of [bootstrap, replay, eagerArtwork, futureChapter, unselectedVoices]) {
     if (entry.split(marker).length !== 2) {
       throw new Error("The Amissing Book bootstrap changed; review save/resume integration");
     }
@@ -20,8 +22,13 @@ export function adaptEntry(entry, revision, audioIds = []) {
     // The export queues 52 future images before Begin. On a cold connection
     // those requests can starve every title cue and prevent the opening from
     // starting. Scene/actor loaders still await the exact artwork on demand;
-    // retain later chapter warming, portraits and all authored audio timings.
+    // retain portraits and all authored audio timings.
     .replace(eagerArtwork, "let f=new uf")
+    // Chapter prewarming also queues unrelated images before Stage.show's
+    // required scene. Keep progress and old-chapter unloading, but fetch artwork
+    // when its scene needs it. Character previews likewise load on selection.
+    .replace(futureChapter, "this.reached=t;let n=Mf")
+    .replace(unselectedVoices, ";let h=Uc[0]")
     .replace(bootstrap, `else{await i;await installResume({host:e,stage:n,audio:r,runner:f,soul:c,director:d,scenes:Df,crafts:Mc,revision:${JSON.stringify(revision)},audioIds:${JSON.stringify(audioIds)}}).start(()=>Qf(e,n,r,s))}await i,await f.run()`)
     .replace(replay, "function nu(){clearCheckpoint();try{localStorage.setItem(`amissing-replay`,`1`)}");
 }
