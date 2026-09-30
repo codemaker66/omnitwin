@@ -2,7 +2,7 @@
 
 ## Finding
 
-Vercel production `dpl_H1NKSd5vkAbeoeYqYSfiRoBcXvbC` serves master
+Before the fix, Vercel production `dpl_H1NKSd5vkAbeoeYqYSfiRoBcXvbC` served master
 `f51af1686975450276d3a3d80dfeb43802213734`, which contains the 209 replacements in
 `5198fed537775f2a63462acb1b9c3a49fb89b20c`. Those MP3s have not changed since that
 commit. Ordinary and cache-busted GETs match the repository bytes, including the
@@ -88,7 +88,37 @@ The security audit failed on ten existing transitive-package advisories. The
 release prerequisite updates only the existing overrides for brace-expansion
 to 1.1.21, 2.1.7 and 5.0.12, and engine.io to 6.6.10, with pnpm 9.15.4's
 regenerated lockfile. No unrelated resolutions changed. The subsequent local
-audit reports zero vulnerabilities; full CI on those pins is pending.
-Deployment and exact live output checks are pending.
+audit reports zero vulnerabilities. Final candidate `319308857e259b6c7ccf024f2b589cca81dc4d5c`
+passed every applicable gate in
+[CI 36702572642](https://github.com/codemaker66/omnitwin/actions/runs/36702572642),
+including security audit, all four CPU browser shards and the browser release gate.
+Vercel's preview was READY and its commit status succeeded before merge.
 The CLI browser could not start, its Chromium download was invalid, and the
 cloud browser timed out. No successful visual/playback check is claimed.
+
+## Production verification: complete
+
+PR #38 merged as `540dce2e590dbd10359766760a56fb8e01b5da2d`; its tree is identical
+to the tested candidate. Production deployment `dpl_Bb1Rg9bfCbFSWBpswkJxFmXRm7U4`
+is READY at that commit and owns `venviewer.com` and `www.venviewer.com`.
+At 10:45 UTC on 30 September, live GETs verified:
+
+- The HTML, entry module, hashed manifest and all 14 packaged assets match the
+  build byte for byte. The module graph revision is
+  `0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd`.
+- Every one of the 222 manifest voice URLs contains its actual MP3 SHA-256.
+- Seven representative clips, including all five opening lines, a later narrator
+  line (`vo_fdd2dbc3`) and an unchanged character voice (`vo_face_B1a`), match both
+  current master and `5198fed5`. All 21 unversioned, versioned and additionally
+  cache-busted GETs returned HTTP 200, `audio/mpeg`, and the expected bytes.
+- The entry remains `public, max-age=0, must-revalidate`. The audio and manifest
+  retain `public, max-age=3600, stale-while-revalidate=604800`; their new URLs
+  remove reuse of responses stored under the earlier unversioned URLs.
+
+Full URLs, headers, SHA-256 values, and deployment/CI identity are recorded in
+[production.json](assets/amissing-book-narration-2026-09-30/production.json).
+Reloading [the game](https://venviewer.com/amissing-book/) fetches Claude's
+existing Mythia opening takes through this versioned chain. No recordings were
+regenerated and no voice settings were guessed. A game already open before the
+release needs a document reload. Delivery is verified; perceptual voice or visual
+acceptance is not claimed.

@@ -1,0 +1,796 @@
+{
+  "verified_at_utc": "2026-09-30T10:45:20.798153+00:00",
+  "production_url": "https://venviewer.com/amissing-book/",
+  "source_commit": "540dce2e590dbd10359766760a56fb8e01b5da2d",
+  "narration_commit": "5198fed537775f2a63462acb1b9c3a49fb89b20c",
+  "html": {
+    "url": "https://venviewer.com/amissing-book/",
+    "effective_url": "https://venviewer.com/amissing-book/",
+    "status": 200,
+    "bytes": 2830,
+    "sha256": "17f97b223041ec0385f89f84215ca3a4fe25c0a4f98d10627ad7f963b7938d28",
+    "headers": {
+      "age": "0",
+      "cache-control": "public, max-age=0, must-revalidate",
+      "content-length": "2830",
+      "content-type": "text/html; charset=utf-8",
+      "date": "Wed, 30 Sep 2026 10:44:18 GMT",
+      "etag": "\"c059e65199ed602dc25112e46be580db\"",
+      "last-modified": "Wed, 30 Sep 2026 10:44:18 GMT",
+      "x-vercel-cache": "MISS",
+      "x-vercel-id": "cle1::b9ssk-1790765058274-9a86c57410f0"
+    }
+  },
+  "entry": {
+    "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/index-BvgeSwOx.js",
+    "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/index-BvgeSwOx.js",
+    "status": 200,
+    "bytes": 683801,
+    "sha256": "8e5c7af7e6904c8c5bdd36d05d5389ab1d4df0cf7c1657e5cf1a0a7bffccd11f",
+    "headers": {
+      "age": "0",
+      "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+      "content-length": "683801",
+      "content-type": "application/javascript; charset=utf-8",
+      "date": "Wed, 30 Sep 2026 10:44:25 GMT",
+      "etag": "\"4e4b0bb414c30487b5e765c3982dc88d\"",
+      "last-modified": "Wed, 30 Sep 2026 10:44:25 GMT",
+      "x-vercel-cache": "MISS",
+      "x-vercel-id": "cle1::gzh2b-1790765065236-eff360d1fcf1"
+    }
+  },
+  "manifest": {
+    "url": "https://venviewer.com/amissing-book/audio/index-dcb2a1ce6ecfbf89267e375cc68f3af75c0a7afe36bdea312da43237c6f43732.json",
+    "effective_url": "https://venviewer.com/amissing-book/audio/index-dcb2a1ce6ecfbf89267e375cc68f3af75c0a7afe36bdea312da43237c6f43732.json",
+    "status": 200,
+    "bytes": 33403,
+    "sha256": "dcb2a1ce6ecfbf89267e375cc68f3af75c0a7afe36bdea312da43237c6f43732",
+    "headers": {
+      "age": "0",
+      "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+      "content-length": "33403",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Wed, 30 Sep 2026 10:44:31 GMT",
+      "etag": "\"169d91f38391360fc187e47ca83e48d7\"",
+      "last-modified": "Wed, 30 Sep 2026 10:44:31 GMT",
+      "x-vercel-cache": "MISS",
+      "x-vercel-id": "cle1::52lkb-1790765071485-37edb2e5ea14"
+    }
+  },
+  "versioned_voice_count": 222,
+  "packaged_assets": [
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/BufferResource-BQawTxSG.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/BufferResource-BQawTxSG.js",
+      "status": 200,
+      "bytes": 11068,
+      "sha256": "85230b44aa208ffbadd37092252d9e4850523080142be25b4d3e76610126160f",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "11068",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "etag": "\"aa352f38715880b55e19bbf1dacd8663\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::mw9t4-1790765078727-d5e1a9d0b889"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/Cache-DDo62lBW.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/Cache-DDo62lBW.js",
+      "status": 200,
+      "bytes": 1100,
+      "sha256": "94f3d177d09bfecefa8b80e646a55ff894635dd1723d6e7128d802477f3bae3a",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "1100",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "etag": "\"ff027a34e791c6bd50bea0a1c4220cab\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::sbc5z-1790765078747-70ea82764600"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/CanvasPool-DecUtJxW.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/CanvasPool-DecUtJxW.js",
+      "status": 200,
+      "bytes": 68480,
+      "sha256": "45335d161156296b274b89eb85b9040a0d08b1870125bfcc5e7100bb937589f1",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "68480",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "etag": "\"271da4c5354b2a19223e146199664a0c\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::4twjn-1790765078680-0773751a18cd"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/Filter-DVXD17oM.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/Filter-DVXD17oM.js",
+      "status": 200,
+      "bytes": 42005,
+      "sha256": "d5580a38bab8003770c242e0a715a2f0ef237b5766d3bfcba9da304e0930da08",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "42005",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "etag": "\"31c8b9d4518525e52607cf26af909ed1\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::sl662-1790765078696-fd16a1ea9570"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/GCManagedHash-BZeqvyQ1.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/GCManagedHash-BZeqvyQ1.js",
+      "status": 200,
+      "bytes": 19344,
+      "sha256": "50f192ab4ef01f59742fe45b184b05b1c3bc6fc9b844361acb2c1216cb786552",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "19344",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "etag": "\"0d0dcc25a1b07e81119f301d16d46c5a\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::qh4sf-1790765078651-1f0ca03b4836"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/GraphicsContext-aI7VjpSI.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/GraphicsContext-aI7VjpSI.js",
+      "status": 200,
+      "bytes": 61728,
+      "sha256": "856f1a217199a96abd8115451f4df747f8738ca649fab0f0bba8be56b9dec957",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "61728",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "etag": "\"0ef9dd02def16619232c1c5553320232\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:38 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::crl78-1790765078756-8d09fca7a331"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/RenderTargetSystem-B85sgqgc.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/RenderTargetSystem-B85sgqgc.js",
+      "status": 200,
+      "bytes": 58779,
+      "sha256": "c62674508de322c924b5c37f226d48ea9ef501f4268d68886ce11410dee49e72",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "58779",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "etag": "\"b9fb15b6ee9f7dd28146a2a8fadad5ed\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::vnkm6-1790765086291-1052d6560433"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/browserAll-DbyA78Cp.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/browserAll-DbyA78Cp.js",
+      "status": 200,
+      "bytes": 42676,
+      "sha256": "000926a086b46793539b9c15745911e216aa527675821fa05c02ccd029ef37c4",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "42676",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "etag": "\"2ee2b0ed6ed80f3fc91da42450495466\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::ckqzv-1790765086331-50230e018bf3"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/canvasUtils-CxYPZET9.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/canvasUtils-CxYPZET9.js",
+      "status": 200,
+      "bytes": 6054,
+      "sha256": "1e29f32d043bc9342dabb11cb033adf27013606f32f8d363cf3c2ff34bed5b03",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "6054",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "etag": "\"d7c691b18b3fddbbc24cb7f2dfbb064d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::tjcrp-1790765086363-597f463c3592"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/getTextureBatchBindGroup-DBCrgHVb.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/getTextureBatchBindGroup-DBCrgHVb.js",
+      "status": 200,
+      "bytes": 344,
+      "sha256": "f97cfacaed002298725cd05c62cb5668989473d0bfe5850c4c36dbd773b59766",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "344",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "etag": "\"6ab50dbab75914682334f8df0d93a1f9\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::wr5z5-1790765086367-dbb59e10dfdf"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/index-BvgeSwOx.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/index-BvgeSwOx.js",
+      "status": 200,
+      "bytes": 683801,
+      "sha256": "8e5c7af7e6904c8c5bdd36d05d5389ab1d4df0cf7c1657e5cf1a0a7bffccd11f",
+      "headers": {
+        "age": "21",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "683801",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "etag": "\"4e4b0bb414c30487b5e765c3982dc88d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:25 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::crl78-1790765086426-4a7219bed34d"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/index-CXdUy9y5.css",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/index-CXdUy9y5.css",
+      "status": 200,
+      "bytes": 31217,
+      "sha256": "123f8024ef92387752436b112699a863d5fef39a76bc1e3fa7cab6ad3b6587cf",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "31217",
+        "content-type": "text/css; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "etag": "\"7f3ce4671c63b0f4c1082cc3c99fab32\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:46 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::bdmtb-1790765086291-b3eb99a13513"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/init-BjPZm77M.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/init-BjPZm77M.js",
+      "status": 200,
+      "bytes": 15160,
+      "sha256": "fac8f1b518cceb7253c879819dc2676aaff5e05b6c2d1a0d2d1da1abc982d669",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "15160",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:52 GMT",
+        "etag": "\"89c707bc0fba1603efd3274b9a5c2f0c\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:52 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::f955b-1790765092497-9672ea221e70"
+      }
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/webworkerAll-zRoDEZYq.js",
+      "effective_url": "https://venviewer.com/amissing-book/assets/0ffeada815b66419a4f17462ac8b1344e69ebf9c8c843fb61b0ec4fbcde0c7dd/webworkerAll-zRoDEZYq.js",
+      "status": 200,
+      "bytes": 55,
+      "sha256": "909c8b7a91a52406d6aa6cdb9de3c6af2c05cf078ce65007c298e2d5d033212c",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "55",
+        "content-type": "application/javascript; charset=utf-8",
+        "date": "Wed, 30 Sep 2026 10:44:52 GMT",
+        "etag": "\"06e2cf4f12018d6ef99c110928922eb3\"",
+        "last-modified": "Wed, 30 Sep 2026 10:44:52 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::sk49n-1790765092556-5bcb5b34ba4a"
+      }
+    }
+  ],
+  "audio": [
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3",
+      "status": 200,
+      "bytes": 74858,
+      "sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "74858",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "etag": "\"a90bb56032af0429457a6be4ac4ba1d0\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::gdxtg-1790765100948-97d7da55da44"
+      },
+      "clip": "vo_de0b5e66",
+      "request_kind": "unversioned",
+      "expected_sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3?v=a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3?v=a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "status": 200,
+      "bytes": 74858,
+      "sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "74858",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "etag": "\"a90bb56032af0429457a6be4ac4ba1d0\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::hbwbz-1790765100942-8bb72bf2ec11"
+      },
+      "clip": "vo_de0b5e66",
+      "request_kind": "versioned",
+      "expected_sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3?v=a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6&verify=release-20260930",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3?v=a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6&verify=release-20260930",
+      "status": 200,
+      "bytes": 74858,
+      "sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "74858",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "etag": "\"a90bb56032af0429457a6be4ac4ba1d0\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::6c9rl-1790765100875-88fb03593bcf"
+      },
+      "clip": "vo_de0b5e66",
+      "request_kind": "versioned-cache-busted",
+      "expected_sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3",
+      "status": 200,
+      "bytes": 79247,
+      "sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "79247",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "etag": "\"2726867496c16202d0fcf5c6486e0421\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::xfb7n-1790765100951-14ac7cd8aa52"
+      },
+      "clip": "vo_5b1397cd",
+      "request_kind": "unversioned",
+      "expected_sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3?v=2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3?v=2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "status": 200,
+      "bytes": 79247,
+      "sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "79247",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "etag": "\"2726867496c16202d0fcf5c6486e0421\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::kqf66-1790765100923-6023fd57bff9"
+      },
+      "clip": "vo_5b1397cd",
+      "request_kind": "versioned",
+      "expected_sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3?v=2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897&verify=release-20260930",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3?v=2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897&verify=release-20260930",
+      "status": 200,
+      "bytes": 79247,
+      "sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "79247",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "etag": "\"2726867496c16202d0fcf5c6486e0421\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:00 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::5cj7p-1790765100983-74d186be5b98"
+      },
+      "clip": "vo_5b1397cd",
+      "request_kind": "versioned-cache-busted",
+      "expected_sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3",
+      "status": 200,
+      "bytes": 48527,
+      "sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "48527",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "etag": "\"dd8694738533c108f5ab0e2243dedd32\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::9wtvw-1790765107511-ec238b36df4e"
+      },
+      "clip": "vo_df3cc8e4",
+      "request_kind": "unversioned",
+      "expected_sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3?v=a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3?v=a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "status": 200,
+      "bytes": 48527,
+      "sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "48527",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "etag": "\"dd8694738533c108f5ab0e2243dedd32\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::cbk8h-1790765107455-369e0d7e561b"
+      },
+      "clip": "vo_df3cc8e4",
+      "request_kind": "versioned",
+      "expected_sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3?v=a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234&verify=release-20260930",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3?v=a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234&verify=release-20260930",
+      "status": 200,
+      "bytes": 48527,
+      "sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "48527",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "etag": "\"dd8694738533c108f5ab0e2243dedd32\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::49kv8-1790765107455-393a715a2d6e"
+      },
+      "clip": "vo_df3cc8e4",
+      "request_kind": "versioned-cache-busted",
+      "expected_sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3",
+      "status": 200,
+      "bytes": 81128,
+      "sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "81128",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "etag": "\"1effa86e481dee4a62ded881cceb602c\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::57bhx-1790765107466-4c189e072e19"
+      },
+      "clip": "vo_d789adc8",
+      "request_kind": "unversioned",
+      "expected_sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3?v=ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3?v=ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "status": 200,
+      "bytes": 81128,
+      "sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "81128",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "etag": "\"1effa86e481dee4a62ded881cceb602c\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::7zxcv-1790765107425-6490f12cb1b5"
+      },
+      "clip": "vo_d789adc8",
+      "request_kind": "versioned",
+      "expected_sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3?v=ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce&verify=release-20260930",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3?v=ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce&verify=release-20260930",
+      "status": 200,
+      "bytes": 81128,
+      "sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "81128",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "etag": "\"1effa86e481dee4a62ded881cceb602c\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:07 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::7zxcv-1790765107531-3c403e3cb4e3"
+      },
+      "clip": "vo_d789adc8",
+      "request_kind": "versioned-cache-busted",
+      "expected_sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3",
+      "status": 200,
+      "bytes": 53124,
+      "sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "53124",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "etag": "\"282bad53e7a062c708dcf8dadc713c9d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::7zxcv-1790765114670-585de48ea145"
+      },
+      "clip": "vo_c50ee102",
+      "request_kind": "unversioned",
+      "expected_sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3?v=f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3?v=f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "status": 200,
+      "bytes": 53124,
+      "sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "53124",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "etag": "\"282bad53e7a062c708dcf8dadc713c9d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::9zbhv-1790765114595-d988ca1efc93"
+      },
+      "clip": "vo_c50ee102",
+      "request_kind": "versioned",
+      "expected_sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3?v=f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae&verify=release-20260930",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3?v=f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae&verify=release-20260930",
+      "status": 200,
+      "bytes": 53124,
+      "sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "53124",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "etag": "\"282bad53e7a062c708dcf8dadc713c9d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::8rb55-1790765114615-8cccb53eae57"
+      },
+      "clip": "vo_c50ee102",
+      "request_kind": "versioned-cache-busted",
+      "expected_sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3",
+      "status": 200,
+      "bytes": 49781,
+      "sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "49781",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "etag": "\"8fdcf5be0942e7997a8e7ff2262fce6d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::ld8dn-1790765114659-3b142e9a2c1e"
+      },
+      "clip": "vo_fdd2dbc3",
+      "request_kind": "unversioned",
+      "expected_sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3?v=69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3?v=69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "status": 200,
+      "bytes": 49781,
+      "sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "49781",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "etag": "\"8fdcf5be0942e7997a8e7ff2262fce6d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::wdshg-1790765114716-5bc5d7f6402a"
+      },
+      "clip": "vo_fdd2dbc3",
+      "request_kind": "versioned",
+      "expected_sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3?v=69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899&verify=release-20260930",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3?v=69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899&verify=release-20260930",
+      "status": 200,
+      "bytes": 49781,
+      "sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "49781",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "etag": "\"8fdcf5be0942e7997a8e7ff2262fce6d\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:14 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::cwkq7-1790765114606-eb57613e48c1"
+      },
+      "clip": "vo_fdd2dbc3",
+      "request_kind": "versioned-cache-busted",
+      "expected_sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3",
+      "status": 200,
+      "bytes": 69843,
+      "sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "69843",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:20 GMT",
+        "etag": "\"87bf6d052c9c045b0f1171b62eec25f2\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:20 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::zntjr-1790765120751-c5c91ac7b3ce"
+      },
+      "clip": "vo_face_B1a",
+      "request_kind": "unversioned",
+      "expected_sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3?v=d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3?v=d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "status": 200,
+      "bytes": 69843,
+      "sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "69843",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:20 GMT",
+        "etag": "\"87bf6d052c9c045b0f1171b62eec25f2\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:20 GMT",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::s4tnw-1790765120734-ddb5d05bf5ad"
+      },
+      "clip": "vo_face_B1a",
+      "request_kind": "versioned",
+      "expected_sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "matches_target_and_source": true
+    },
+    {
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3?v=d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1&verify=release-20260930",
+      "effective_url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3?v=d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1&verify=release-20260930",
+      "status": 200,
+      "bytes": 69843,
+      "sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "headers": {
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "content-length": "69843",
+        "content-type": "audio/mpeg",
+        "date": "Wed, 30 Sep 2026 10:45:20 GMT",
+        "etag": "\"87bf6d052c9c045b0f1171b62eec25f2\"",
+        "last-modified": "Wed, 30 Sep 2026 10:45:20 GMT",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::974lq-1790765120703-bdeb529ff7ec"
+      },
+      "clip": "vo_face_B1a",
+      "request_kind": "versioned-cache-busted",
+      "expected_sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "matches_target_and_source": true
+    }
+  ],
+  "limits": "HTTP byte and header verification only; no perceptual or rendered playback acceptance claimed.",
+  "deployment": {
+    "id": "dpl_Bb1Rg9bfCbFSWBpswkJxFmXRm7U4",
+    "target": "production",
+    "ready": 1790765030702,
+    "source_commit": "540dce2e590dbd10359766760a56fb8e01b5da2d",
+    "aliases": [
+      "venviewer.com",
+      "www.venviewer.com"
+    ]
+  },
+  "ci": {
+    "run_id": 36702572642,
+    "head": "319308857e259b6c7ccf024f2b589cca81dc4d5c",
+    "conclusion": "success",
+    "merge_tree_equals_tested_tree": true
+  }
+}
