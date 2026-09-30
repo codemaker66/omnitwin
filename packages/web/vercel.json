@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "pnpm --filter @omnitwin/types build && pnpm --filter @omnitwin/web build",
+  "buildCommand": "pnpm --filter @omnitwin/types build && pnpm --filter @omnitwin/web build && pnpm --filter @omnitwin/web exec node scripts/version-amissing-book-audio.mjs",
   "outputDirectory": "dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "redirects": [
