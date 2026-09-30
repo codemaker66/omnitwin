@@ -96,6 +96,33 @@ Individual readiness and audio limits, native playback, all assertions and
 browser-error checks remain unchanged. No production behavior was changed for
 this adjustment.
 
-Production integration, deployment and post-release MP3 verification remain
-required. The CMS session is signed out; Blake has been asked to sign in before
-landing publication.
+PR #39 merged as `baad9133e87e85dc3f401365e60771e49a372251` after candidate
+`88b9a359` passed complete CI `36723009288`. Vercel production
+`dpl_3Q9suvZHFjSXkTpryp9KySfawWWr` is READY and serves that merge on
+`venviewer.com`. All four legacy URL forms return the game and preserve query
+strings. The deployed HTML, manifest and 15 packaged assets match source;
+all 222 voice versions, 21 representative MP3 GETs (including every opening
+take and cache-busted requests) and 551 audio/art availability checks pass.
+
+Live browser qualification then exposed a cold-network startup defect in the
+imported game's eager artwork loading. The original bootstrap queues 52 future
+images before Begin. A retained desktop trace shows all eight initial audio
+requests still without response headers nearly 60 seconds after clicking Begin;
+the opening narration was never requested. The phone reached its first narration
+but later stalled behind the same burst. These are failed live checks, despite
+the successful local/CI tests and deployed byte checks. Earlier 5-second startup
+assertions also expired during the title image download and reveal.
+
+The hosting preparation now removes only that uniquely guarded bootstrap
+preload call. Scene and actor loaders still await required textures, portraits
+and crests still load on demand, and later chapter warming remains. All authored
+art, recordings, title timing, story logic and checkpoint compatibility remain
+unchanged. Qualification and release of this loading-order correction are pending.
+
+The landing wording remains unpublished. Its CMS session was signed out;
+Blake has been asked to sign in. Browser control subsequently failed with
+`Unable to load browser request-header policy`, including a recovery attempt.
+No supported alternate CMS publisher was found. The verified v6 bundle,
+native embed template, exact page/block identifiers and rollback instructions
+are saved in `D:/claude/amissing-book-integration-20260930/cms/PUBLISH-LANDING-V6.md`.
+T-641 cannot be marked done until the landing copy is published and verified.
