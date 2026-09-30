@@ -22,7 +22,8 @@ class Config(unittest.TestCase):
             config.load(self.write({"schema": "venviewer.relight-config.v1", "paths": {}, "room": {}}))
 
     def test_refuses_outputs_on_c(self):
-        data = json.load(open(os.path.join(HERE, "config", "grand-hall.json")))
+        with open(os.path.join(HERE, "config", "grand-hall.json")) as f:
+            data = json.load(f)
         data["paths"]["work"] = "C:/tmp/relight"
         with self.assertRaises(ValueError):
             config.load(self.write(data))
