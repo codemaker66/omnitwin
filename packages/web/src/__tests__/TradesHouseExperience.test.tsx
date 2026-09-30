@@ -94,7 +94,7 @@ afterEach(() => {
 });
 
 describe("Trades House leaflet experience", () => {
-  it("embeds the print-faithful leaflet and exposes the connected quiz", () => {
+  it("embeds the print-faithful leaflet and links directly to The Amissing Book", () => {
     render(
       <MemoryRouter>
         <TradesHouseLeafletPage />
@@ -103,8 +103,8 @@ describe("Trades House leaflet experience", () => {
 
     const leaflet = screen.getByTitle("Trades House Glasgow two-sided leaflet");
     expect(leaflet.getAttribute("src")).toBe("/trades-house-media/leaflet.html");
-    expect(screen.getByRole("link", { name: "Discover your Craft" }).getAttribute("href")).toBe(
-      "/trades-house/discover-your-craft",
+    expect(screen.getByRole("link", { name: "Play the game" }).getAttribute("href")).toBe(
+      "/amissing-book/",
     );
     expect(screen.getByRole("link", { name: "Open printable leaflet" }).getAttribute("href")).toBe(
       "/trades-house-media/leaflet.html",

@@ -35,11 +35,12 @@ describe("Trades House leaflet artifact", () => {
     await Promise.all(requiredAssets.map((asset) => access(path.join(ASSET_ROOT, asset))));
   });
 
-  it("keeps both public experience routes lazy and separate from T-091 runtime pages", async () => {
+  it("keeps the leaflet lazy and the old quiz URL connected to the standalone game", async () => {
     const router = await readFile(path.resolve("src/router.tsx"), "utf-8");
 
     expect(router).toContain('import("./pages/TradesHouseLeafletPage.js")');
-    expect(router).toContain('import("./pages/TradesHouseCraftQuizPage.js")');
+    expect(router).toContain('element: <AmissingBookRedirect />');
+    expect(router).not.toContain('import("./pages/TradesHouseCraftQuizPage.js")');
     expect(router).toContain('path: "/trades-house/leaflet"');
     expect(router).toContain('path: "/trades-house/discover-your-craft"');
   });

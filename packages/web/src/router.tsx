@@ -13,11 +13,9 @@ import { gaussianSplatsAvailable } from "./lib/splat-access.js";
 import { lazyWithPreload, type Preloadable } from "./lib/lazy-with-preload.js";
 import { fontBuildFor, fontStylesheetHrefs, type FontStylesheets } from "./lib/self-hosted-fonts.js";
 import { SplatsWorkInProgressPage } from "./pages/SplatsWorkInProgressPage.js";
+import { AmissingBookRedirect } from "./pages/AmissingBookRedirect.js";
 import cockpitFontsHref from "./styles/fonts/cockpit.css?url";
 import cockpitFontsFirefoxWindowsHref from "./styles/fonts/cockpit.firefox-windows.css?url";
-import quizFontsHref from "./styles/fonts/quiz.css?url";
-import quizFontsFirefoxWindowsHref from "./styles/fonts/quiz.firefox-windows.css?url";
-import quizFontsMacosHref from "./styles/fonts/quiz.macos.css?url";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -40,15 +38,6 @@ import quizFontsMacosHref from "./styles/fonts/quiz.macos.css?url";
 const COCKPIT_FONTS: FontStylesheets = {
   href: cockpitFontsHref,
   overrides: { "firefox-windows": cockpitFontsFirefoxWindowsHref },
-};
-// The craft quiz's heraldic faces. Requested here rather than by an @import in
-// its route CSS: an @import failure fails that stylesheet's <link>, Vite then
-// rejects the route import, and the quiz crashed whenever the (then remote)
-// fonts were unreachable. Injected, the stylesheet never blocks the route;
-// font-display: swap keeps the Georgia fallbacks until the faces arrive.
-const QUIZ_FONTS: FontStylesheets = {
-  href: quizFontsHref,
-  overrides: { "firefox-windows": quizFontsFirefoxWindowsHref, macos: quizFontsMacosHref },
 };
 const requestedStylesheets = new Set<string>();
 function requestStylesheet(href: string): void {
@@ -125,10 +114,6 @@ const TradesHallVisualPage = lazy(() =>
 const TradesHouseLeafletPage = lazy(() =>
   import("./pages/TradesHouseLeafletPage.js").then((m) => ({ default: m.TradesHouseLeafletPage })),
 );
-const TradesHouseCraftQuizPage = lazy(() => {
-  requestFonts(QUIZ_FONTS);
-  return import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage }));
-});
 const RoomsHomePage = lazy(() =>
   // Fraunces, Newsreader and Geist (site.css): never the cockpit faces.
   import("./pages/RoomsHomePage.js").then((m) => ({ default: m.RoomsHomePage })),
@@ -577,12 +562,12 @@ export const router = createBrowserRouter([
   },
   {
     path: "/trades-house/discover-your-craft",
-    element: withSuspense(<TradesHouseCraftQuizPage />),
+    element: <AmissingBookRedirect />,
   },
   {
-    // The short shareable door to the same room — venviewer.com/quiz.
+    // Keep existing shared/printed quiz links opening the standalone game.
     path: "/quiz",
-    element: withSuspense(<TradesHouseCraftQuizPage />),
+    element: <AmissingBookRedirect />,
   },
   {
     // Room captures — the internal review console for every staged XGRIDS
