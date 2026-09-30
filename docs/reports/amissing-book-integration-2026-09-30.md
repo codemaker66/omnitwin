@@ -1,7 +1,7 @@
 # The Amissing Book replaces the public Craft quiz
 
-The game replacement is deployed and verified. The prepared Trades Hall landing
-wording remains unpublished because CMS access/browser control is unavailable.
+The game replacement and Trades Hall landing wording are deployed and verified.
+The public landing now introduces The Amissing Book and links to the live game.
 
 ## Scope and integration
 
@@ -11,8 +11,8 @@ Work started from `a80ee210` in the isolated `codex/amissing-book-integration`
 worktree. The unrelated dirty main checkout and earlier `/quiz/stage` work are
 not part of this release.
 
-The live CMS landing at `https://www.tradeshallglasgow.co.uk/landing` loads
-`/file-download/92/trades-hall-option-b-v5.js` in content block 78, page 10.
+Before this change, the CMS landing at `https://www.tradeshallglasgow.co.uk/landing`
+loaded `/file-download/92/trades-hall-option-b-v5.js` in content block 78, page 10.
 Its Craft action links to `https://venviewer.com/quiz`. Both `/quiz` and
 `/trades-house/discover-your-craft` now redirect to `/amissing-book/`, including
 trailing-slash variants. The React routes also perform document navigation for
@@ -206,17 +206,36 @@ bytes; no recordings were regenerated. See `audio-production-a2bdda84.json`.
 HEAD checks establish availability, not full-body equality of every asset;
 subjective voice quality and aesthetic acceptance are not claimed.
 
-The remaining delivery blocker is the external landing wording. V6 is locally
-verified but unpublished: the CMS session was signed out, and supported browser
-control fails with `Unable to load browser request-header policy`, including
-recovery attempts. Blake has already been asked to sign in. No supported
-alternate publisher was found. A read-only check at 15:20:20 UTC still found
-the original v5 script (`cms/live-landing-final-status.json`). Its existing
-`/quiz` destination now reaches the game, but its wording still needs replacement.
+The earlier CMS blocker is resolved. The retained 15:20 UTC check found v5;
+browser control had failed while loading its request-header policy. After Blake
+provided the CMS login, browser access recovered and normal sign-in succeeded.
+The credentials are stored outside Git in the shared local secrets directory;
+AGENTS.md and Claude's project memory contain only discovery pointers.
 
-The exact page 10/block 78 upload, embed and rollback handoff is
-`D:/claude/amissing-book-integration-20260930/cms/PUBLISH-LANDING-V6.md`.
-Upload the verified v6 as a new immutable file and use its actual verified URL
-in the native embed template; never publish the placeholder URL. Preserve v5
-and the captured block source for rollback. T-641 remains blocked on publishing
-the wording and checking the live landing-to-game journey.
+Page 10/block 78 was backed up as `cms/block-78-before-v6.html`. The normal CMS
+file-library flow uploaded v6 as file **94**. Its public URL is
+`https://www.tradeshallglasgow.co.uk/file-download/94/trades-hall-option-b-v6.js`.
+At 16:14 UTC, an anonymous download returned JavaScript, 940,550 bytes and SHA-256
+`86ee8903baf94ffc821dd5412b30df99f6df8cf38491509aa72b6d7beb6b3f7e`, exactly matching
+the reviewed candidate. The source editor received the completed embed with
+that verified URL; the CMS confirmed **Changes have been saved**. V5 remains
+unchanged for rollback. Publication used no guessed upload IDs or hidden API.
+
+Live browser checks at 1440x900, 390x844 and 320x740 verify the new welcome/game
+copy, all fourteen Craft stories, Escape/Back, narrow-screen story layout, the
+event construction notice and contact links. All sixteen landing images load;
+the checked landing console has no errors or warnings. Both desktop and phone
+**Find your Craft → Play the game** journeys reach the game start screen in the
+same tab. The ordinary homepage and cookie controls still render. Existing
+incomplete saves are preserved; no user save was replaced during this CMS check.
+
+The independent 16:15 UTC HTTP audit verifies ordinary and cache-busted landing
+and v6 responses, retained v5 bytes, and the query-preserving `/quiz` redirect.
+Game HTML, entry module and audio manifest still match the previously verified
+deployment fingerprint, so the full live narration/choices/save-resume evidence
+above remains applicable. See `cms/live-publication-http.json`,
+`cms/live-publication-browser.json` and `cms/screenshots/live-v6-*` under the
+external evidence directory. The upload/rollback record remains in
+`cms/PUBLISH-LANDING-V6.md`. **T-641 is done.** Physical iPhone/Safari testing,
+subjective voice/aesthetic acceptance and fast loading on slow connections are
+not claimed.
