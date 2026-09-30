@@ -79,6 +79,13 @@ Vercel rejected the original command length, now guarded at 256 characters;
 browser checks exposed the missing favicon, cold dev entry and actor-restore
 ordering defects, all repaired before final qualification.
 
+The first complete CI run (`36715462357`) passed the build, lint, typecheck,
+security and browser gates. Its sole unit failure was an older redirect guard
+that accepted only React routes. The guard now also verifies exact unconditional
+rewrites to real public HTML documents and their local module entries, with
+negative coverage for missing, malformed and catch-all destinations. It does
+not exempt the game by name or weaken the existing homepage-anchor protection.
+
 Production integration, deployment and post-release MP3 verification remain
 required. The CMS session is signed out; Blake has been asked to sign in before
 landing publication.
