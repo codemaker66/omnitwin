@@ -152,7 +152,10 @@ for (const device of ["desktop", "phone"] as const) {
     test.use({ viewport: device === "desktop" ? { width: 1440, height: 900 } : { width: 390, height: 844 },
       hasTouch: device === "phone" });
     test("starts the original narrated story, makes choices and resumes the same saved branch", async ({ page, gameUrl }, testInfo) => {
-      test.setTimeout(100_000);
+      // The real rendered/audio journey takes over 100s on slower CI runners
+      // before resume. Keep every readiness/error assertion below bounded while
+      // allowing the complete opening, branch and checkpoint round trip to run.
+      test.setTimeout(180_000);
       await page.emulateMedia({ reducedMotion: "reduce" });
       const errors = watchFailures(page);
       const voiceUrls: string[] = [];

@@ -86,6 +86,16 @@ rewrites to real public HTML documents and their local module entries, with
 negative coverage for missing, malformed and catch-all destinations. It does
 not exempt the game by name or weaken the existing homepage-anchor protection.
 
+The next run (`36718270820`) passed all unit suites but exhausted the desktop
+game journey's 100-second overall budget. Its preserved retry trace shows native
+clicks taking about two seconds each, and the Lammas transition reaching that
+deadline before resume could run. The opening font requests took 30-201 ms;
+the screenshot's font-wait message was not evidence of a stalled font download.
+The full opening/branch/resume journey now has a 180-second overall budget.
+Individual readiness and audio limits, native playback, all assertions and
+browser-error checks remain unchanged. No production behavior was changed for
+this adjustment.
+
 Production integration, deployment and post-release MP3 verification remain
 required. The CMS session is signed out; Blake has been asked to sign in before
 landing publication.
