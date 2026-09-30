@@ -1,0 +1,330 @@
+{
+  "master": "f51af1686975450276d3a3d80dfeb43802213734",
+  "narration_commit": "5198fed537775f2a63462acb1b9c3a49fb89b20c",
+  "expected": {
+    "vo_de0b5e66.mp3": {
+      "master_sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "commit_sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "previous_sha256": "bdc46ec8a7b45460765855c0bb229f9b24364fa1f9d1a73db0b101cd7de931bb",
+      "bytes": 74858
+    },
+    "vo_5b1397cd.mp3": {
+      "master_sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "commit_sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "previous_sha256": "d51a4e424eecc1dd0bb7c31c4338fbcdeba4f7648b2d5f4c6ae3f6a8ab2fd082",
+      "bytes": 79247
+    },
+    "vo_df3cc8e4.mp3": {
+      "master_sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "commit_sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "previous_sha256": "fe62a67534debcaaf8a533ac7afca93769a63cd0b1f6c0b98443e241afaec12d",
+      "bytes": 48527
+    },
+    "vo_d789adc8.mp3": {
+      "master_sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "commit_sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "previous_sha256": "5dfe9c1eaf200d9554815badc6573573b2cd6558f241b5b35762aad683c8ce01",
+      "bytes": 81128
+    },
+    "vo_c50ee102.mp3": {
+      "master_sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "commit_sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "previous_sha256": "daf86e98ce726e82a0bdc4db04ea34152916ce77f77a4e19d60c83c06d4db144",
+      "bytes": 53124
+    },
+    "vo_fdd2dbc3.mp3": {
+      "master_sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "commit_sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "previous_sha256": "9e964c7307f28ae1014fbcdd22ccd9eb7087ab3d8791abc965de52ac595da62c",
+      "bytes": 49781
+    },
+    "vo_face_B1a.mp3": {
+      "master_sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "commit_sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "previous_sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "bytes": 69843
+    }
+  },
+  "requests": [
+    {
+      "file": "vo_de0b5e66.mp3",
+      "variant": "ordinary",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3",
+      "status": "200",
+      "sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "age": "5435",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"a90bb56032af0429457a6be4ac4ba1d0\"",
+        "last-modified": "Wed, 30 Sep 2026 08:05:46 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "74858",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::s6mlk-1790760981342-6d78f50d1310"
+      }
+    },
+    {
+      "file": "vo_de0b5e66.mp3",
+      "variant": "cache-busted",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_de0b5e66.mp3?verify=mythia-5198fed5-20260930",
+      "status": "200",
+      "sha256": "a6bf140ca08b11c8cefad2de90f46676a3842d6ff7dca5788d7194eed05d7fd6",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "age": "5435",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"a90bb56032af0429457a6be4ac4ba1d0\"",
+        "last-modified": "Wed, 30 Sep 2026 08:05:46 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "74858",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::gdxtg-1790760981359-0846e4447e17"
+      }
+    },
+    {
+      "file": "vo_5b1397cd.mp3",
+      "variant": "ordinary",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3",
+      "status": "200",
+      "sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"2726867496c16202d0fcf5c6486e0421\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "79247",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::wdlkk-1790760981377-5cb29d2bd27f"
+      }
+    },
+    {
+      "file": "vo_5b1397cd.mp3",
+      "variant": "cache-busted",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_5b1397cd.mp3?verify=mythia-5198fed5-20260930",
+      "status": "200",
+      "sha256": "2b66650e7d692da6107f768aacf67c829ce3dac1aab0ecc6a03c0e76dff93897",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"2726867496c16202d0fcf5c6486e0421\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "79247",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::rvzn2-1790760981336-c46c6a5d0b28"
+      }
+    },
+    {
+      "file": "vo_df3cc8e4.mp3",
+      "variant": "ordinary",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3",
+      "status": "200",
+      "sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"dd8694738533c108f5ab0e2243dedd32\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "48527",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::6g7pt-1790760981297-fc09283fadcc"
+      }
+    },
+    {
+      "file": "vo_df3cc8e4.mp3",
+      "variant": "cache-busted",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_df3cc8e4.mp3?verify=mythia-5198fed5-20260930",
+      "status": "200",
+      "sha256": "a8345ebcc47aa09389f9a171e91b5301dad06dce9cb31881bada71e8fa9d1234",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"dd8694738533c108f5ab0e2243dedd32\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "48527",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::c2dbz-1790760981302-9492526d4596"
+      }
+    },
+    {
+      "file": "vo_d789adc8.mp3",
+      "variant": "ordinary",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3",
+      "status": "200",
+      "sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"1effa86e481dee4a62ded881cceb602c\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "81128",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::6jtwb-1790760981283-78c812122e47"
+      }
+    },
+    {
+      "file": "vo_d789adc8.mp3",
+      "variant": "cache-busted",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_d789adc8.mp3?verify=mythia-5198fed5-20260930",
+      "status": "200",
+      "sha256": "ee652932bdb1301e97c509da9136f37b5d3dccd65e3ee8ffc4eed7db914f56ce",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "age": "5",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"1effa86e481dee4a62ded881cceb602c\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:21 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "81128",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::7cx47-1790760986747-36fac332719d"
+      }
+    },
+    {
+      "file": "vo_c50ee102.mp3",
+      "variant": "ordinary",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3",
+      "status": "200",
+      "sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"282bad53e7a062c708dcf8dadc713c9d\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "53124",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "cle1::tjcrp-1790760986716-c3e171c76dbb"
+      }
+    },
+    {
+      "file": "vo_c50ee102.mp3",
+      "variant": "cache-busted",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_c50ee102.mp3?verify=mythia-5198fed5-20260930",
+      "status": "200",
+      "sha256": "f93cb4f1acf1e14226b2a81a2dc72e8e0ae5b2eb483b7cd4aff93c72a145e4ae",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "age": "0",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"282bad53e7a062c708dcf8dadc713c9d\"",
+        "last-modified": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "53124",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::2pk86-1790760986772-c9fe8ad98f71"
+      }
+    },
+    {
+      "file": "vo_fdd2dbc3.mp3",
+      "variant": "ordinary",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3",
+      "status": "200",
+      "sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "age": "5435",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"8fdcf5be0942e7997a8e7ff2262fce6d\"",
+        "last-modified": "Wed, 30 Sep 2026 08:05:51 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "49781",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::754cj-1790760986801-284730af7714"
+      }
+    },
+    {
+      "file": "vo_fdd2dbc3.mp3",
+      "variant": "cache-busted",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_fdd2dbc3.mp3?verify=mythia-5198fed5-20260930",
+      "status": "200",
+      "sha256": "69796f958b2c62c7469d2439bdab0f0aaade5e45fc31629b4cc01a66a1950899",
+      "matches_master": true,
+      "matches_previous": false,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "age": "5435",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"8fdcf5be0942e7997a8e7ff2262fce6d\"",
+        "last-modified": "Wed, 30 Sep 2026 08:05:51 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "49781",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::nx98m-1790760986746-3f61181f155f"
+      }
+    },
+    {
+      "file": "vo_face_B1a.mp3",
+      "variant": "ordinary",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3",
+      "status": "200",
+      "sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "matches_master": true,
+      "matches_previous": true,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "age": "5440",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"87bf6d052c9c045b0f1171b62eec25f2\"",
+        "last-modified": "Wed, 30 Sep 2026 08:05:46 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "69843",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::ww8nx-1790760986749-e39bce5ac1aa"
+      }
+    },
+    {
+      "file": "vo_face_B1a.mp3",
+      "variant": "cache-busted",
+      "url": "https://venviewer.com/amissing-book/audio/vo/vo_face_B1a.mp3?verify=mythia-5198fed5-20260930",
+      "status": "200",
+      "sha256": "d793d6bc03a53a491e17a4b8524afab07130653dea8dd9f82a55f0790f970bb1",
+      "matches_master": true,
+      "matches_previous": true,
+      "headers": {
+        "date": "Wed, 30 Sep 2026 09:36:26 GMT",
+        "age": "5440",
+        "cache-control": "public, max-age=3600, stale-while-revalidate=604800",
+        "etag": "\"87bf6d052c9c045b0f1171b62eec25f2\"",
+        "last-modified": "Wed, 30 Sep 2026 08:05:46 GMT",
+        "content-type": "audio/mpeg",
+        "content-length": "69843",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "cle1::52ms7-1790760986851-1954fbdd69c7"
+      }
+    }
+  ]
+}
