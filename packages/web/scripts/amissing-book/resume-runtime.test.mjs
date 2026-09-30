@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { adaptEntry } from "../prepare-amissing-book-resume.mjs";
+import { adaptEntry, adaptHtml } from "../prepare-amissing-book-resume.mjs";
 import { CHECKPOINT_KEY, clearCheckpoint, parseCheckpoint, restoreActors } from "./resume-runtime.mjs";
 
 const contract = {
@@ -86,4 +86,12 @@ test("bootstrap adaptation retains original opening and fails when upstream boot
   assert.ok(adapted.includes("function nu(){clearCheckpoint();"));
   assert.throws(() => adaptEntry(source.replace("else await Qf(e,n,r,s)", "else await upstreamTitle()"), "revision"));
   assert.throws(() => adaptEntry(source.replace("function nu(){", "function replacement(){"), "revision"));
+});
+test("uses the existing site icon instead of requesting a missing favicon.ico", () => {
+  const source = '<html><head><title>The Amissing Book</title></head><body></body></html>';
+  const adapted = adaptHtml(source);
+  assert.ok(adapted.includes('rel="icon" href="/favicon.svg"'));
+  assert.equal(adaptHtml(adapted), adapted);
+  assert.ok(adapted.includes('<title>The Amissing Book</title>'));
+  assert.throws(() => adaptHtml("<html>"));
 });

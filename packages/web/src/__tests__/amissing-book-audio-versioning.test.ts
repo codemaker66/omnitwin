@@ -55,8 +55,9 @@ describe("The Amissing Book narration cache identity", () => {
   it("packages the imported game after Vercel builds the web app", () => {
     const config = JSON.parse(readFileSync(join(web, "vercel.json"), "utf8")) as { buildCommand: string };
     expect(config.buildCommand).toContain(
-      "pnpm --filter @omnitwin/web build && pnpm --filter @omnitwin/web exec node scripts/prepare-amissing-book-resume.mjs && pnpm --filter @omnitwin/web exec node scripts/version-amissing-book-audio.mjs dist/amissing-book dist/amissing-book",
+      "pnpm -F @omnitwin/web build && pnpm -F @omnitwin/web exec node scripts/prepare-amissing-book-resume.mjs && pnpm -F @omnitwin/web exec node scripts/version-amissing-book-audio.mjs dist/amissing-book dist/amissing-book",
     );
+    expect(config.buildCommand.length).toBeLessThanOrEqual(256);
   });
 
   it("changes every URL leading to an overwritten take, even when its filename and words stay the same", () => {

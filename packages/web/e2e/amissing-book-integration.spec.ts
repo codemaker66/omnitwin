@@ -30,6 +30,7 @@ const test = base.extend<object, { gameUrl: string }>({
     });
     try {
       cpSync(join(web, "public/amissing-book"), output, { recursive: true });
+      cpSync(join(web, "public/favicon.svg"), join(root, "favicon.svg"));
       execFileSync(process.execPath, [join(web, "scripts/prepare-amissing-book-resume.mjs"), output], { stdio: "pipe" });
       execFileSync(process.execPath, [join(web, "scripts/version-amissing-book-audio.mjs"), output, output], { stdio: "pipe" });
       await new Promise<void>((ready, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", ready); });
@@ -88,7 +89,7 @@ async function observePlayback(page: Page): Promise<void> {
 function watchFailures(page: Page): string[] {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  page.on("console", (message) => { if (message.type() === "error") errors.push(`${message.text()} ${message.location().url}`); });
   page.on("response", (response) => {
     if (response.url().includes("/amissing-book/") && response.status() >= 400) errors.push(`${String(response.status())} ${response.url()}`);
   });

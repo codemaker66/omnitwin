@@ -20,6 +20,12 @@ export function adaptEntry(entry, revision, audioIds = []) {
     .replace(replay, "function nu(){clearCheckpoint();try{localStorage.setItem(`amissing-replay`,`1`)}");
 }
 
+export function adaptHtml(html) {
+  if (html.split("</head>").length !== 2) throw new Error("The Amissing Book document head changed");
+  if (/rel=["'](?:shortcut )?icon["']/u.test(html)) return html;
+  return html.replace("</head>", '    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />\n  </head>');
+}
+
 export function prepare(output, source) {
   const html = readFileSync(join(source, "index.html"), "utf8");
   const entryName = /<script[^>]+src="\/amissing-book\/assets\/([^"/]+\.js)"/u.exec(html)?.[1];
@@ -33,7 +39,7 @@ export function prepare(output, source) {
   writeFileSync(join(output, "assets", entryName), transformed);
   writeFileSync(join(output, "assets", "amissing-book-resume.js"),
     readFileSync(new URL("./amissing-book/resume-runtime.mjs", import.meta.url)));
-  writeFileSync(join(output, "index.html"), html);
+  writeFileSync(join(output, "index.html"), adaptHtml(html));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
