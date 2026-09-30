@@ -517,6 +517,57 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-09-30",
+      "reason": "T-641 replaces the retired Craft quiz at both public aliases with the existing Amissing Book game. Its 26 old threshold, questionnaire and result-layout cases no longer describe a reachable product. Seven ordinary game cases replace them: desktop and phone opening narration, choices and exact saved-branch resume; three legacy public entry aliases; malformed checkpoint preservation; and blocked storage with an honest warning while play continues. The game export is served after the same resume and content-based audio packaging steps as production.",
+      "sourceBaseCommit": "a80ee2101480c448e6b4722933f9c42548990e08",
+      "sourceState": "Reviewed working-tree source based on sourceBaseCommit; sourceFileSha256 binds the actual E2E bytes. This admission does not claim the new file already existed in that base commit.",
+      "sourceFile": "packages/web/e2e/amissing-book-integration.spec.ts",
+      "sourceFileSha256": "583d7dcb1244084b137c85347d167ac887f0ebe29d5a9b95ff5863aeb383b0c0",
+      "retiredSourceFile": "packages/web/e2e/trades-house-craft-quiz-responsive.spec.ts",
+      "retiredSourceFileGitBlobSha256": "741829aa6681d8079672de417fca035fb7f11ef6667cbc20f80e829f3722a679",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "cab4b723003c2679423482c471f91607f3421f120bfb040eb913ebd96a79e522",
+      "caseIds": [
+        "14142275415b11e2c874-154e2ed4b2c70d3b3e21",
+        "14142275415b11e2c874-23704f2eeca4af15d0bc",
+        "14142275415b11e2c874-5d46ce620e17e6acfbc6",
+        "14142275415b11e2c874-8c21765e28e540c79f99",
+        "14142275415b11e2c874-93ca956a6b8f7b0f401f",
+        "14142275415b11e2c874-c7058662ae54480e5136",
+        "14142275415b11e2c874-d03fe4fea92538ad6afb"
+      ],
+      "retiredCaseIds": [
+        "8729f5c7952d2ababb60-06dc7448310920144e6a",
+        "8729f5c7952d2ababb60-0db46fc8a32ad55f96d9",
+        "8729f5c7952d2ababb60-1c56b6d366c8e9efd1f6",
+        "8729f5c7952d2ababb60-1eb6913eeb1737a54606",
+        "8729f5c7952d2ababb60-249491c044965a1ce078",
+        "8729f5c7952d2ababb60-34ae9a1cabe1f88b7eec",
+        "8729f5c7952d2ababb60-3768f08b68307121f051",
+        "8729f5c7952d2ababb60-5edb21accbb780838cb6",
+        "8729f5c7952d2ababb60-703b1d879b43124e51e5",
+        "8729f5c7952d2ababb60-7f63681cacf4c96cf3f7",
+        "8729f5c7952d2ababb60-a58e3b96dcee0a7b36be",
+        "8729f5c7952d2ababb60-a5ac0a178dd96c7a2f7c",
+        "8729f5c7952d2ababb60-a6e9a7df689cb8bf5534",
+        "8729f5c7952d2ababb60-aa15aa1615547080dcad",
+        "8729f5c7952d2ababb60-b42daa711fffab50a9c5",
+        "8729f5c7952d2ababb60-b435800ddac84197c3fd",
+        "8729f5c7952d2ababb60-b6df34ebb17eae828751",
+        "8729f5c7952d2ababb60-ca1b35874c4f01cb5f4c",
+        "8729f5c7952d2ababb60-ccefdcb87801c7a6af9f",
+        "8729f5c7952d2ababb60-cf93a742f84799711e7a",
+        "8729f5c7952d2ababb60-dc9e211d2d2b60465c04",
+        "8729f5c7952d2ababb60-dea1b6dd5969c387be6d",
+        "8729f5c7952d2ababb60-debf0d518aeee3e1d76a",
+        "8729f5c7952d2ababb60-f37033146486fcc5cf67",
+        "8729f5c7952d2ababb60-fb99d3490a023af5ce83",
+        "8729f5c7952d2ababb60-fddfbcfce36af450f94c"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. The 26 retired cases were all ordinary passes; the original 42 skips, four expected failures, five GPU cases and all 370 unrelated identities/statuses remain unchanged. Every current case still requires execution in the hosted browser gate. The listing bytes carry absolute paths and its start time, so a re-listing reproduces identities, not this hash."
     }
   ],
   "cases": [
@@ -2436,266 +2487,6 @@
         "trades-hall-visual.spec.ts",
         "Trades Hall internal visual layer route",
         "procedural fallback"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-06dc7448310920144e6a",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 375x667",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-0db46fc8a32ad55f96d9",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 375x667",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-1c56b6d366c8e9efd1f6",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "lands the Craft reveal whole on desktop at 1280x800",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-1eb6913eeb1737a54606",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 1366x768",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-249491c044965a1ce078",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 430x932",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-34ae9a1cabe1f88b7eec",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 1920x1080",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-3768f08b68307121f051",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 393x852",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-5edb21accbb780838cb6",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "lands the Craft reveal whole on desktop at 2560x1440",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-703b1d879b43124e51e5",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 390x844",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-7f63681cacf4c96cf3f7",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 1024x768",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-a58e3b96dcee0a7b36be",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 768x1024",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-a5ac0a178dd96c7a2f7c",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "stages the quiz as a full-viewport invitation at 2048x1200",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-a6e9a7df689cb8bf5534",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "stages the quiz as a full-viewport invitation at 2000x930",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-aa15aa1615547080dcad",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 1512x945",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-b42daa711fffab50a9c5",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 1920x1080",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-b435800ddac84197c3fd",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 1280x720",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-b6df34ebb17eae828751",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "lands the Craft reveal whole on desktop at 1920x1080",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-ca1b35874c4f01cb5f4c",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 1512x945",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-ccefdcb87801c7a6af9f",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 430x932",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-cf93a742f84799711e7a",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "the deliberation can be skipped, and skipping does not change the Craft",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-dc9e211d2d2b60465c04",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 1366x768",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-dea1b6dd5969c387be6d",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 768x1024",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-debf0d518aeee3e1d76a",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 390x844",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-f37033146486fcc5cf67",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 1024x768",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-fb99d3490a023af5ce83",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits every Craft quiz state without page scrolling at 1280x720",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
-      ],
-      "project": "chromium",
-      "expectedStatus": "passed"
-    },
-    {
-      "id": "8729f5c7952d2ababb60-fddfbcfce36af450f94c",
-      "file": "trades-house-craft-quiz-responsive.spec.ts",
-      "title": "fits the threshold with every line told at 393x852",
-      "suitePath": [
-        "trades-house-craft-quiz-responsive.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
@@ -4726,6 +4517,78 @@
       "suitePath": [
         "diary-timetable.spec.ts",
         "Diary timetable on a phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "14142275415b11e2c874-154e2ed4b2c70d3b3e21",
+      "file": "amissing-book-integration.spec.ts",
+      "title": "old public entry /quiz opens the game",
+      "suitePath": [
+        "amissing-book-integration.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "14142275415b11e2c874-23704f2eeca4af15d0bc",
+      "file": "amissing-book-integration.spec.ts",
+      "title": "blocked storage does not prevent starting or pretend progress was saved",
+      "suitePath": [
+        "amissing-book-integration.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "14142275415b11e2c874-5d46ce620e17e6acfbc6",
+      "file": "amissing-book-integration.spec.ts",
+      "title": "old public entry /trades-house/discover-your-craft opens the game",
+      "suitePath": [
+        "amissing-book-integration.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "14142275415b11e2c874-8c21765e28e540c79f99",
+      "file": "amissing-book-integration.spec.ts",
+      "title": "starts the original narrated story, makes choices and resumes the same saved branch",
+      "suitePath": [
+        "amissing-book-integration.spec.ts",
+        "desktop"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "14142275415b11e2c874-93ca956a6b8f7b0f401f",
+      "file": "amissing-book-integration.spec.ts",
+      "title": "starts the original narrated story, makes choices and resumes the same saved branch",
+      "suitePath": [
+        "amissing-book-integration.spec.ts",
+        "phone"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "14142275415b11e2c874-c7058662ae54480e5136",
+      "file": "amissing-book-integration.spec.ts",
+      "title": "old public entry /quiz/ opens the game",
+      "suitePath": [
+        "amissing-book-integration.spec.ts"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "14142275415b11e2c874-d03fe4fea92538ad6afb",
+      "file": "amissing-book-integration.spec.ts",
+      "title": "keeps malformed checkpoints and allows a fresh opening with an honest warning",
+      "suitePath": [
+        "amissing-book-integration.spec.ts"
       ],
       "project": "chromium",
       "expectedStatus": "passed"

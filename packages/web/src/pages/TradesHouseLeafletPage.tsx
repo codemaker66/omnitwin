@@ -21,9 +21,9 @@ export function TradesHouseLeafletPage(): ReactElement {
           <h1>Visitor leaflet</h1>
         </div>
         <nav aria-label="Trades House campaign">
-          <a className="trades-house-leaflet-action is-primary" href="/trades-house/discover-your-craft">
+          <a className="trades-house-leaflet-action is-primary" href="/amissing-book/">
             <Sparkles aria-hidden="true" size={17} strokeWidth={1.5} />
-            Discover your Craft
+            Play the game
           </a>
           <a
             className="trades-house-leaflet-action"

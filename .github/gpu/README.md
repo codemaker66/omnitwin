@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 396 cases. Four hosted CPU shards execute
-391 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 377 cases. Four hosted CPU shards execute
+372 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -19,8 +19,8 @@ application shell and global styles, can still move the Twin byte budgets. Such
 a regression surfaces at the next in-scope run.
 
 The original 353 identities, 42 skips and four expected failures are retained,
-except one identity the role vocabulary retired and seven the front door
-retired. The 2026-09-24 admission adds three ordinary Hallkeeper regressions:
+except one identity the role vocabulary retired, seven the front door
+retired and the 26 old quiz cases replaced on 30 September. The 2026-09-24 admission adds three ordinary Hallkeeper regressions:
 approved sheet load failure and retry, approved PDF failure invalidating
 printable contents, and a successful non-PDF response being rejected. The first
 2026-09-26 admission adds three ordinary staff Enquiries regressions (T-632,
@@ -86,6 +86,19 @@ client's own, read across the panel on a desk and on a phone with no sideways
 scroll (`proposals-desk.spec.ts`). One on 29 September adds one: a price
 picked from the venue's list in the proposal composer, priced for the event,
 from the keyboard on a desk and on phones (`proposals-desk.spec.ts`).
+
+The 30 September admission follows Blake's replacement of the Craft quiz with
+The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
+layout cases retire with that public experience. Seven ordinary game cases in
+`amissing-book-integration.spec.ts` cover desktop and phone opening narration,
+branching choices and exact save/resume, three existing public entry aliases,
+malformed checkpoint preservation and denied storage. They serve the original
+game export after the same resume and content-based audio packaging as production.
+All 370 unrelated identities and statuses remain unchanged, including the 42
+skips, four expected failures and five GPU cases. The admission records the
+reviewed source's base commit and exact file hash without claiming the new file
+was already in that commit. This changes the required inventory from 396 to 377;
+it does not waive execution or turn a failed case into a skip.
 
 **Reviewed benchmark.** `source_manifest.py` and `verify-receipt.mjs` pin the
 SHA-256 of `packages/web/e2e/twin-performance.spec.ts`, and

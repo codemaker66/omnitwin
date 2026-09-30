@@ -1,10 +1,30 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "pnpm --filter @omnitwin/types build && pnpm --filter @omnitwin/web build && pnpm --filter @omnitwin/web exec node scripts/version-amissing-book-audio.mjs",
+  "buildCommand": "pnpm -F @omnitwin/types build && pnpm -F @omnitwin/web build && pnpm -F @omnitwin/web exec node scripts/prepare-amissing-book-resume.mjs && pnpm -F @omnitwin/web exec node scripts/version-amissing-book-audio.mjs dist/amissing-book dist/amissing-book",
   "outputDirectory": "dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "redirects": [
+    {
+      "source": "/quiz",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
+    {
+      "source": "/quiz/",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
+    {
+      "source": "/trades-house/discover-your-craft",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
+    {
+      "source": "/trades-house/discover-your-craft/",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
     {
       "source": "/splats/:path*",
       "destination": "/work-in-progress",

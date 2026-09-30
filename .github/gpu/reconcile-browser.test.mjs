@@ -60,11 +60,11 @@ function rejected(title, mutate, pattern) {
   test(title, () => { const input = fixture(); mutate(input); assert.throws(() => reconcileBrowser(input), pattern); });
 }
 
-test('full396 union requires391 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
+test('full377 union requires372 CPU and all5 GPU with original42 skips and4 executed expected failures', () => {
   const result = reconcileBrowser(fixture());
   assert.equal(result.verdict, 'complete-browser-gate-passed');
   assert.deepEqual(result.gpuScope, { required: true, cases: 5, executed: 5 });
-  assert.deepEqual(result.totals, { inventory: 396, cpu: 391, gpu: 5, ordinaryPasses: 350,
+  assert.deepEqual(result.totals, { inventory: 377, cpu: 372, gpu: 5, ordinaryPasses: 331,
     expectedFailures: 4, originalSkips: 42, failed: 0, flaky: 0, retries: 0,
     missing: 0, duplicated: 0, interrupted: 0, unrun: 0 });
 });
@@ -74,9 +74,9 @@ test('outside the GPU scope the complete CPU partition passes and the five GPU c
   const result = reconcileBrowser({ ...input, gpuReport: null, gpuRequired: false });
   assert.equal(result.verdict, 'cpu-browser-gate-passed-gpu-not-in-scope');
   assert.deepEqual(result.gpuScope, { required: false, cases: 5, executed: 0 });
-  assert.equal(result.totals.cpu, 391);
+  assert.equal(result.totals.cpu, 372);
   assert.equal(result.totals.gpu, 0);
-  assert.equal(result.totals.ordinaryPasses, 345);
+  assert.equal(result.totals.ordinaryPasses, 326);
   assert.match(result.limits.at(-1), /not in scope, not passed/);
 });
 rejected('outside the GPU scope a missing CPU case still fails', (input) => {
@@ -103,7 +103,7 @@ const approvedSheetAdditions = [
   'd04ac5b0eb52f15c1dda-3381bf636d92993e3b62',
 ];
 test('the approved-sheet inventory admission adds exactly three ordinary Hallkeeper cases', () => {
-  assert.equal(baseline.inventoryAdmissions.length, 34);
+  assert.equal(baseline.inventoryAdmissions.length, 35);
   assert.deepEqual(baseline.inventoryAdmissions[0].caseIds, [...approvedSheetAdditions].sort());
   for (const id of approvedSheetAdditions) {
     const row = baseline.cases.find((entry) => entry.id === id);
@@ -789,6 +789,52 @@ rejected(`new price list case ${priceListAddition} cannot become a skip`, (input
   spec.tests[0].results[0].status = 'skipped';
   spec.tests[0].status = 'skipped';
 }, /policy changed/);
+const amissingBookAdditions = [
+  '14142275415b11e2c874-154e2ed4b2c70d3b3e21',
+  '14142275415b11e2c874-23704f2eeca4af15d0bc',
+  '14142275415b11e2c874-5d46ce620e17e6acfbc6',
+  '14142275415b11e2c874-8c21765e28e540c79f99',
+  '14142275415b11e2c874-93ca956a6b8f7b0f401f',
+  '14142275415b11e2c874-c7058662ae54480e5136',
+  '14142275415b11e2c874-d03fe4fea92538ad6afb',
+];
+test('the Amissing Book admission replaces only the retired quiz with seven ordinary game cases', () => {
+  const admission = baseline.inventoryAdmissions.at(-1);
+  assert.equal(admission.date, '2026-09-30');
+  assert.equal(admission.sourceFile, 'packages/web/e2e/amissing-book-integration.spec.ts');
+  assert.match(admission.sourceBaseCommit, /^[0-9a-f]{40}$/u);
+  assert.match(admission.sourceFileSha256, /^[0-9a-f]{64}$/u);
+  assert.equal(admission.retiredSourceFile, 'packages/web/e2e/trades-house-craft-quiz-responsive.spec.ts');
+  assert.match(admission.retiredSourceFileGitBlobSha256, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(admission.caseIds, amissingBookAdditions);
+  assert.equal(admission.expectedStatus, 'passed');
+  assert.equal(admission.retiredCaseIds.length, 26);
+  assert.equal(new Set(admission.retiredCaseIds).size, 26);
+  for (const id of admission.retiredCaseIds) {
+    assert.match(id, /^8729f5c7952d2ababb60-/u);
+    assert.equal(baseline.cases.some((entry) => entry.id === id), false);
+  }
+  assert.equal(baseline.cases.some((entry) => entry.file === 'trades-house-craft-quiz-responsive.spec.ts'), false);
+  assert.equal(baseline.cases.filter((entry) => entry.file === 'amissing-book-integration.spec.ts').length, 7);
+  for (const id of amissingBookAdditions) {
+    const row = baseline.cases.find((entry) => entry.id === id);
+    assert.equal(row?.file, 'amissing-book-integration.spec.ts');
+    assert.equal(row?.expectedStatus, 'passed');
+  }
+});
+for (const id of amissingBookAdditions) {
+  rejected(`new Amissing Book case ${id} cannot become a skip`, (input) => {
+    const spec = input.cpuShards.flatMap((shard) => specs(shard.results)).find((row) => row.id === id);
+    spec.tests[0].expectedStatus = 'skipped';
+    spec.tests[0].results[0].status = 'skipped';
+    spec.tests[0].status = 'skipped';
+  }, /policy changed/);
+}
+rejected('a retired quiz identity cannot replace a current game case', (input) => {
+  specs(input.inventory).find((row) => row.id === amissingBookAdditions[0]).id =
+    '8729f5c7952d2ababb60-06dc7448310920144e6a';
+}, /missing or extra/);
+
 rejected('missing CPU shard cannot pass', (input) => input.cpuShards.pop(), /four CPU/);
 rejected('full inventory cannot silently omit a case', (input) => input.inventory.suites.shift(), /missing or extra/);
 rejected('new test identity requires reviewed baseline update', (input) => specs(input.inventory)[0].id = 'new-case', /missing or extra/);
