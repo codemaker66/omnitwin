@@ -1,10 +1,13 @@
 # The Amissing Book replaces the public Craft quiz
 
+The game replacement is deployed and verified. The prepared Trades Hall landing
+wording remains unpublished because CMS access/browser control is unavailable.
+
 ## Scope and integration
 
 Blake requested the current master game on the Trades Hall landing journey,
 preserving Claude's Mythia recordings, art, branching story and save/resume.
-Work starts from `a80ee210` in the isolated `codex/amissing-book-integration`
+Work started from `a80ee210` in the isolated `codex/amissing-book-integration`
 worktree. The unrelated dirty main checkout and earlier `/quiz/stage` work are
 not part of this release.
 
@@ -19,7 +22,7 @@ to the game. The printed leaflet and unrelated venue functionality remain intact
 The CMS transformer verifies the exact v5 SHA-256 before changing only welcome
 copy, the Craft scene's game introduction/action and the description. It writes
 a new immutable v6 asset; it refuses source drift or an existing output file.
-Welcome reads **Play the interactive game.** The Craft scene introduces **The
+The prepared v6 welcome reads **Play the interactive game.** Its Craft scene introduces **The
 Amissing Book**, Glasgow's 14 Incorporated Crafts and **Play the game**.
 
 - v5 SHA-256: `67c33a28fd3e42959ff2e2063b7947aada7a78157f6188c4caa75c378fc47e25`
@@ -61,16 +64,16 @@ This is local candidate evidence, not live CMS publication or aesthetic approval
 Bulk screenshots, logs and baseline JSON are outside the repository at
 `D:/claude/amissing-book-integration-20260930/`.
 
-Local qualification passes: seven browser cases on the exact packaged production
+Initial integration qualification passed: seven browser cases on the exact packaged production
 build, including desktop 1440×900, touch phone 390×844 orientation prompt and
 844×390 gameplay, actual opening WebAudio playback, all five versioned opening
 takes, character creation, a Family branch, exact checkpoint reload/resume and
 continued choices/audio. Restored artwork, including the woman's ink mark, was
 visually checked. Corrupt-save and blocked-storage paths also pass. All three
 legacy URL browser cases pass separately on Vite dev. No collected browser
-errors or missing assets remain in these final runs.
+errors or missing assets remained in those local runs.
 
-Focused Vitest checks include the route/leaflet/versioning contracts and bridges
+Initial focused Vitest checks included the route/leaflet/versioning contracts and bridges
 to 18 checkpoint/bootstrap and three CMS-transform Node cases. The 137 browser
 gate tooling tests pass; the reviewed inventory replaces 26 retired quiz cases
 with seven game cases while preserving all unrelated identities and policies.
@@ -98,7 +101,7 @@ this adjustment.
 
 PR #39 merged as `baad9133e87e85dc3f401365e60771e49a372251` after candidate
 `88b9a359` passed complete CI `36723009288`. Vercel production
-`dpl_3Q9suvZHFjSXkTpryp9KySfawWWr` is READY and serves that merge on
+`dpl_3Q9suvZHFjSXkTpryp9KySfawWWr` was READY and served that merge on
 `venviewer.com`. All four legacy URL forms return the game and preserve query
 strings. The deployed HTML, manifest and 15 packaged assets match source;
 all 222 voice versions, 21 representative MP3 GETs (including every opening
@@ -117,7 +120,7 @@ The first loading correction removed that uniquely guarded bootstrap preload
 call. It passed 20 Node contract cases, 23 focused Vitest checks, the production
 build, seven packaged browser cases and complete CI `36728952585`. PR #40 merged
 as `be4385e6477b067e135c5bbab234fecd70292b7f`; Vercel production
-`dpl_GvjMTHCy4wX4mDqLw4PSDFatcixb` serves that merge. A declared Chromium
+`dpl_GvjMTHCy4wX4mDqLw4PSDFatcixb` served that merge. A declared Chromium
 simulation (192,000 B/s download, 80 ms latency, fresh contexts) measured native
 opening playback at 34.884 seconds after Begin before this correction and
 9.339 seconds afterward. This is simulated-network evidence, not a production
@@ -131,18 +134,89 @@ scene image. That required image remained without response headers through the
 route/storage cases passed. The complete failed run and trace are retained in
 `browser-production-startup-fixed/`.
 
-The preparation now also suppresses future-chapter artwork and the creator's
-unselected voice preloads. These are the remaining authored speculative fetch
-paths found in a complete call-site inspection. Required scene/actor textures,
-visible portraits and crests, selected character voices, title cues, and old
-chapter unloading remain. All original artwork, recordings, title timing,
-story logic and checkpoint compatibility are unchanged. Full constrained-network
-qualification and release of this scene-loading correction remain pending.
+The final preparation suppresses three uniquely guarded speculative calls:
+bootstrap artwork, future-chapter artwork and unselected character voices.
+Required scene/actor textures, visible portraits and crests, selected character
+voices, title cues and old-chapter unloading remain. Original artwork,
+recordings, title timing, story logic and checkpoint compatibility are unchanged.
 
-The landing wording remains unpublished. Its CMS session was signed out;
-Blake has been asked to sign in. Browser control subsequently failed with
-`Unable to load browser request-header policy`, including a recovery attempt.
-No supported alternate CMS publisher was found. The verified v6 bundle,
-native embed template, exact page/block identifiers and rollback instructions
-are saved in `D:/claude/amissing-book-integration-20260930/cms/PUBLISH-LANDING-V6.md`.
-T-641 cannot be marked done until the landing copy is published and verified.
+Candidate `f715db2a` passes 22 Node contract cases, 23 focused Vitest checks,
+the production build and all seven original packaged-browser cases. Two full
+desktop/phone journeys also pass under a declared simulation: a shared
+192,000 B/s transfer limit, six response slots, and at least 80 ms header
+latency, including worker requests. All 264 game requests completed. The
+previously blocked required scene completed in about 1.67 seconds on each
+layout. These journeys used extended bounded waits with unchanged assertions;
+this simulation does not establish a production speed guarantee.
+
+CI `36733858451` attempt 1 completed its job suites, but the browser gate
+correctly rejected a retry in the unchanged planner reduced-motion case.
+A blank page, generic timeout and 61.478-second interval before retry strongly
+support a timeout in its fixture's 60-second R2 capture fetch before navigation.
+The failed request was not traced, so the exact tile/network cause is unknown.
+All seven game cases passed first time. Full attempt 2 passed on the identical
+candidate, with no source, timeout, assertion or gate-policy changes. The first
+attempt remains failed evidence in `scene-ci-attempt1-fixture-diagnosis.md` and
+its original artifact under the outside evidence directory.
+
+PR #41 passed every applicable gate in
+[CI 36733858451, attempt 2](https://github.com/codemaker66/omnitwin/actions/runs/36733858451)
+and merged at 15:39:55 UTC as `a2bdda84e9beacc346ff961b53aa42e76d46e4b9`.
+Vercel production `dpl_Exig4Ny5XZL1gpGTQS27Kggr8VLS` became READY on
+`venviewer.com` with that exact source. The working game is
+[The Amissing Book](https://venviewer.com/amissing-book/), also reached through
+the existing [/quiz](https://venviewer.com/quiz) entry. All four legacy forms
+return 307 then the correct game HTML with 200, preserving query strings;
+see `legacy-production-a2bdda84.json`.
+
+The first live run on this merge passed five route/storage cases, but the two
+full journeys exhausted their 60-second next-line limits on required transfers.
+Desktop's page/book images took 56.818 seconds before authored transitions;
+the next narration request began 372 ms after the deadline. Phone completed
+its Cross scene assets but still awaited the current audio at the deadline.
+Neither trace shows future-chapter downloads or browser/HTTP errors. These
+failures demonstrate slow delivery on the observed connection, without proving
+a particular client/network/CDN cause. Both traces and diagnostics remain in
+`browser-production-scene-fixed/`, `production-a2bdda84-desktop-touch-timeout.md`
+and `production-a2bdda84-phone-lammas-timeout.md`.
+
+Only those two journeys were repeated with live-only 120-second next-line
+limits and 600 seconds overall, retaining every behavioral assertion and the
+original repository/CI deadlines. Both passed in a 4.9-minute run:
+`browser-production-slow-transfers/results.json`. Together with the five
+passing cases in the first run, all seven integration cases are verified live.
+Desktop 1440x900 and touch phone 390x844 portrait guidance / 844x390 landscape
+play cover native opening playback, all five versioned opening takes,
+character creation, the Family branch, exact checkpoint equality after reload,
+restored choices/artwork and subsequent narration/choices. The passing cases
+record no browser errors or missing game assets. Opening and resumed screenshots
+were visually inspected. This is Chromium viewport evidence, not a physical
+iPhone/Safari test, and the slow-transfer failures are not a claim of fast loading.
+
+The final package/audio audit at 16:01 UTC compares the deployed release with
+canonical packaging from merged master `a2bdda84`. HTML, manifest and all 15
+packaged assets match exactly. All 14 JavaScript modules resolve through 37
+edges, including three cyclic back-edges, in graph
+`0a99d3a723252b5579a62f8777e125e4e432f8bf4c362ea0b3983fb93602d738`.
+All 222 voice version hashes match source. Seven MP3s, including all five
+opening takes, later narration and a character voice, match across all 21
+ordinary/versioned/cache-busted GETs. All 551 audio/art HEAD checks pass with
+correct media types. All 456 source audio files retain the baseline paths and
+bytes; no recordings were regenerated. See `audio-production-a2bdda84.json`.
+HEAD checks establish availability, not full-body equality of every asset;
+subjective voice quality and aesthetic acceptance are not claimed.
+
+The remaining delivery blocker is the external landing wording. V6 is locally
+verified but unpublished: the CMS session was signed out, and supported browser
+control fails with `Unable to load browser request-header policy`, including
+recovery attempts. Blake has already been asked to sign in. No supported
+alternate publisher was found. A read-only check at 15:20:20 UTC still found
+the original v5 script (`cms/live-landing-final-status.json`). Its existing
+`/quiz` destination now reaches the game, but its wording still needs replacement.
+
+The exact page 10/block 78 upload, embed and rollback handoff is
+`D:/claude/amissing-book-integration-20260930/cms/PUBLISH-LANDING-V6.md`.
+Upload the verified v6 as a new immutable file and use its actual verified URL
+in the native embed template; never publish the placeholder URL. Preserve v5
+and the captured block source for rollback. T-641 remains blocked on publishing
+the wording and checking the live landing-to-game journey.
