@@ -63,8 +63,8 @@ Byte equality proves delivery of the requested takes, not a perceptual voice ID.
 
 The eight `vo_face_B1a`–`vo_face_B8a` character-selection introductions were
 deliberately recorded in each character's own voice (`443dba75`). They are
-separate from the narrator and were not replaced. If Blake's "intro" refers to
-those, confirm that scope before replacing their authored voices. The older
+separate from the narrator and were not replaced. Blake confirmed that the
+reported problem is the opening story, not character selection. The older
 Convener/Chris Lee generation pipeline in this repository is not Mythia's.
 
 ## Verification and release state
@@ -80,6 +80,15 @@ Local qualification: 21 focused tests, affected ESLint and complete web/source
 and E2E TypeScript checks pass. The production-mode application build and the
 audio packaging step pass; every emitted voice query contains its MP3 SHA-256.
 Independent review found and corrected Vite's base-relative preload map before
-release. Deployment and exact live output checks are pending.
+release. PR [#38](https://github.com/codemaker66/omnitwin/pull/38) CI
+[36697781805](https://github.com/codemaker66/omnitwin/actions/runs/36697781805)
+passed lint, typecheck, builds, tests, all four CPU browser shards and the browser
+release gate; the unchanged GPU scope policy correctly excluded this change.
+The security audit failed on ten existing transitive-package advisories. The
+release prerequisite updates only the existing overrides for brace-expansion
+to 1.1.21, 2.1.7 and 5.0.12, and engine.io to 6.6.10, with pnpm 9.15.4's
+regenerated lockfile. No unrelated resolutions changed. The subsequent local
+audit reports zero vulnerabilities; full CI on those pins is pending.
+Deployment and exact live output checks are pending.
 The CLI browser could not start, its Chromium download was invalid, and the
 cloud browser timed out. No successful visual/playback check is claimed.
