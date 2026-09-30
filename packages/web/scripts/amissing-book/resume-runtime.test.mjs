@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { adaptEntry, adaptHtml } from "../prepare-amissing-book-resume.mjs";
 import { CHECKPOINT_KEY, clearCheckpoint, parseCheckpoint, restoreActors } from "./resume-runtime.mjs";
 
@@ -86,6 +87,74 @@ test("bootstrap adaptation retains original opening and fails when upstream boot
   assert.ok(adapted.includes("function nu(){clearCheckpoint();"));
   assert.throws(() => adaptEntry(source.replace("else await Qf(e,n,r,s)", "else await upstreamTitle()"), "revision"));
   assert.throws(() => adaptEntry(source.replace("function nu(){", "function replacement(){"), "revision"));
+});
+test("bootstrap prioritizes the original title audio over speculative artwork", async () => {
+  const source = readFileSync(new URL("../../public/amissing-book/assets/index-BvgeSwOx.js", import.meta.url), "utf8");
+  async function boot(entry, events) {
+    // Execute the actual title and bootstrap functions, without importing Pixi or
+    // fetching assets. These doubles observe orchestration, not audible playback.
+    const start = entry.indexOf("async function Qf(");
+    const end = entry.indexOf("}$f();export{", start);
+    assert.ok(start >= 0 && end > start, "original title/bootstrap extraction boundary");
+    const EmptyUi = class {};
+    const stage = class {
+      async init() {}
+      async show() { events.push("required opening artwork"); }
+      punch() {}
+      impact() {}
+      flash() {}
+    };
+    const audio = class {
+      async loadIndex() { await Promise.resolve(); events.push("audio manifest ready"); }
+      setVolume() {}
+      unlock() { events.push("audio unlocked"); }
+      ambience(ids) { assert.deepEqual([...ids], ["amb_now_street_night"]); }
+      async preload(ids) {
+        assert.ok(events.includes("audio manifest ready"));
+        assert.deepEqual([...ids], ["stg_title_slam", "sfx_bell_nobody", "sfx_strike_through", "sfx_unwrite_rise"]);
+        events.push("original title audio requested");
+      }
+      sfx() {}
+      async hit(_id, effect) { effect(); }
+    };
+    const node = (tag, className) => {
+      if (className === "title") events.push("original title shown");
+      return { append() {}, remove() {}, classList: { add() {} },
+        addEventListener(type, callback) {
+          assert.equal(tag, "button");
+          assert.equal(type, "click");
+          queueMicrotask(callback);
+        } };
+    };
+    await runInNewContext(`${entry.slice(start, end + 1)}\n$f()`, {
+      Xf() {}, Zf() {}, M: node, Tl: async () => {},
+      document: { getElementById: () => node(), body: node() },
+      Kf: stage, Mt: audio, Df: { glassford: {} }, Mc: [],
+      Fl: EmptyUi, jl: EmptyUi, Pl: EmptyUi, Il: EmptyUi, Ll: EmptyUi, Rl: EmptyUi,
+      sf: class { flags = new Set(); },
+      Bf: class { preload() { throw new Error("speculative artwork queued before title audio"); } },
+      uf: class { async run() { events.push("story started"); } },
+      installResume: ({ revision }) => {
+        assert.equal(revision, "unchanged-story-revision");
+        return { start: (originalTitle) => originalTitle() };
+      },
+      localStorage: { getItem: () => null }, location: { search: "" }, URLSearchParams,
+      xt: "", St: "", Ct: "", wt: "", Tt: "",
+    });
+  }
+  const original = [];
+  await assert.rejects(boot(source, original), /speculative artwork queued before title audio/u);
+  assert.ok(!original.includes("original title audio requested"));
+  const adapted = [];
+  await boot(adaptEntry(source, "unchanged-story-revision"), adapted);
+  assert.deepEqual(adapted, ["required opening artwork", "audio manifest ready", "original title shown",
+    "audio unlocked", "original title audio requested", "story started"]);
+});
+test("rejects absent or duplicate speculative-artwork bootstrap markers", () => {
+  const source = readFileSync(new URL("../../public/amissing-book/assets/index-BvgeSwOx.js", import.meta.url), "utf8");
+  const marker = "d.preload();let f=new uf";
+  assert.throws(() => adaptEntry(source.replace(marker, "let f=new uf"), "revision"), /bootstrap changed/u);
+  assert.throws(() => adaptEntry(`${source}\n${marker}`, "revision"), /bootstrap changed/u);
 });
 test("uses the existing site icon instead of requesting a missing favicon.ico", () => {
   const source = '<html><head><title>The Amissing Book</title></head><body></body></html>';

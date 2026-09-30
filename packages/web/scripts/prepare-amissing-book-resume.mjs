@@ -8,14 +8,20 @@ import { fileURLToPath } from "node:url";
 
 const bootstrap = "else await Qf(e,n,r,s);await i,await f.run()";
 const replay = "function nu(){try{localStorage.setItem(`amissing-replay`,`1`)}";
+const eagerArtwork = "d.preload();let f=new uf";
 
 export function adaptEntry(entry, revision, audioIds = []) {
-  for (const marker of [bootstrap, replay]) {
+  for (const marker of [bootstrap, replay, eagerArtwork]) {
     if (entry.split(marker).length !== 2) {
       throw new Error("The Amissing Book bootstrap changed; review save/resume integration");
     }
   }
   return 'import { installResume, clearCheckpoint } from "./amissing-book-resume.js";\n' + entry
+    // The export queues 52 future images before Begin. On a cold connection
+    // those requests can starve every title cue and prevent the opening from
+    // starting. Scene/actor loaders still await the exact artwork on demand;
+    // retain later chapter warming, portraits and all authored audio timings.
+    .replace(eagerArtwork, "let f=new uf")
     .replace(bootstrap, `else{await i;await installResume({host:e,stage:n,audio:r,runner:f,soul:c,director:d,scenes:Df,crafts:Mc,revision:${JSON.stringify(revision)},audioIds:${JSON.stringify(audioIds)}}).start(()=>Qf(e,n,r,s))}await i,await f.run()`)
     .replace(replay, "function nu(){clearCheckpoint();try{localStorage.setItem(`amissing-replay`,`1`)}");
 }
