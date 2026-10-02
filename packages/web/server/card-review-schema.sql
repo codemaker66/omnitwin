@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS card_review.responses (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   session_hash text NOT NULL UNIQUE CHECK (session_hash ~ '^[a-f0-9]{64}$'),
   reviewer_name text NOT NULL CHECK (length(reviewer_name) BETWEEN 1 AND 100),
-  favourite text CHECK (favourite IN ('38','43','46','35','29','32','33','21','22','15','02','01-v2','05')),
+  favourite text CHECK (favourite IN ('38','43','46','35','29','32','33','21','22','15','02','01-v2','05','nocturne','nocturne-2')),
   comments jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(comments) = 'object'),
   general_comment text NOT NULL DEFAULT '' CHECK (length(general_comment) <= 2000),
   revision integer NOT NULL DEFAULT 1 CHECK (revision > 0),

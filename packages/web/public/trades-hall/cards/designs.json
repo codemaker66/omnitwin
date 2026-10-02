@@ -102,5 +102,29 @@
     "shortTitle": "Ivory Architecture",
     "image": "./images/05.png",
     "proof": "./proofs/05.png"
+  },
+  {
+    "id": "nocturne",
+    "label": "N1",
+    "title": "Nocturne",
+    "shortTitle": "Nocturne",
+    "image": "./images/nocturne.png",
+    "proof": "./images/nocturne.png",
+    "proofLabel": "View original concept",
+    "imageFit": "cover",
+    "imagePosition": "center 34%",
+    "productionNote": "Landscape concept · original image"
+  },
+  {
+    "id": "nocturne-2",
+    "label": "N2",
+    "title": "Nocturne 2",
+    "shortTitle": "Nocturne 2",
+    "image": "./images/nocturne-2.png",
+    "proof": "./images/nocturne-2.png",
+    "proofLabel": "View original concept",
+    "imageFit": "cover",
+    "imagePosition": "center 34%",
+    "productionNote": "Landscape concept · original image"
   }
 ]

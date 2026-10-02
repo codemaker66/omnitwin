@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id);let designs=[],responses=[],busy=false;
 let ownerToken=location.hash.slice(1);
 if(/^[A-Za-z0-9_-]{43}$/.test(ownerToken)){try{sessionStorage.setItem('trades-hall-review-owner',ownerToken);}catch{}history.replaceState(null,'',location.pathname+location.search);}else{try{ownerToken=sessionStorage.getItem('trades-hall-review-owner')||'';}catch{ownerToken='';}}
 const design=id=>designs.find(d=>d.id===id);
-function label(id){return design(id)?.label||id;}
+function label(id){const item=design(id);return item?item.label+' — '+item.title:id;}
 function element(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el;}
 function date(value){return new Date(value).toLocaleString('en-GB',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});}
 function showResults(){

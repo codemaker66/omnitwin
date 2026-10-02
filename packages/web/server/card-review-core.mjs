@@ -1,6 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
-export const DESIGN_IDS = Object.freeze(['38', '43', '46', '35', '29', '32', '33', '21', '22', '15', '02', '01-v2', '05']);
+export const DESIGN_IDS = Object.freeze(['38', '43', '46', '35', '29', '32', '33', '21', '22', '15', '02', '01-v2', '05', 'nocturne', 'nocturne-2']);
 export const BODY_LIMIT = 40_960;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const allowedIds = new Set(DESIGN_IDS);

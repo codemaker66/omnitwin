@@ -1,7 +1,7 @@
 # Trades Hall card selection review
 
 The independent `/trades-hall/cards/` page lets invited staff choose one of the
-13 shortlisted business-card designs and leave comments. It is deliberately
+15 shortlisted business-card designs and leave comments. It is deliberately
 separate from event enquiries, venue operations, Clerk and the Railway API.
 
 `api/card-review.js` is a Node Vercel Function. It uses the dedicated
@@ -32,7 +32,7 @@ Initial POST uses revision 0. An edit supplies the saved revision. Unique insert
 and compare-and-swap UPDATE admit one simultaneous write; a stale save receives
 409 `STALE_RESPONSE`. The client must reload the saved response before an edit.
 
-Name is required (100 characters). Favourite is null or one of the 13 IDs.
+Name is required (100 characters). Favourite is null or one of the 15 IDs.
 Comments are keyed only by those IDs, with 2,000 characters each. Overall comment
 is at most 2,000 characters. At least one favourite or nonempty comment is needed.
 Unknown fields, malformed tokens, excessive bodies and invalid designs fail
@@ -59,13 +59,16 @@ logs, screenshots, documentation or commit messages. The owner should share only
 the ordinary selection URL, not the results link. Respondents can reopen/edit in
 the same browser; losing browser storage loses that response's edit capability.
 
-Schema changes and production restore remain explicit maintenance operations.
+The two added Nocturne IDs extend the dedicated review database's favourite
+constraint via `migrations/20261002-add-nocturne-designs.sql`; this does not
+touch the venue database or existing responses. Schema changes and production
+restore remain explicit maintenance operations.
 To roll back the page/function, restore the preceding Vercel deployment; this
 does not erase existing responses. The separate database retains them.
 
 ## Verification
 
-`node packages/web/scripts/verify-card-review.mjs` checks all thirteen selected
+`node packages/web/scripts/verify-card-review.mjs` checks all fifteen selected
 design IDs, their preview/proof assets and the form/results files before release.
 It also scans public text assets for configured server secret values. This runs
 at the start of the web test command without changing the Vite build pipeline.
