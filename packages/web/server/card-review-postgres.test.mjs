@@ -20,6 +20,11 @@ test('real database persists and reopens exact comments',async()=>{
   assert.equal(saved.revision,1);assert.deepEqual((await store.getResponse(session)).comments,{'43':'Reverse comment'});
   assert.equal(await store.getResponse(key()),null);
 });
+test('real database persists Nocturne and Nocturne 2 choices and comments',async()=>{
+  const session=key();const saved=await store.saveResponse(session,data({favourite:'nocturne',comments:{'nocturne-2':'Keep the illuminated windows.'}}));
+  assert.equal(saved.favourite,'nocturne');
+  assert.deepEqual((await store.getResponse(session)).comments,{'nocturne-2':'Keep the illuminated windows.'});
+});
 test('concurrent first submissions create exactly one response',async()=>{
   const session=key();const results=await Promise.all(Array.from({length:8},()=>store.saveResponse(session,data())));
   assert.equal(results.filter(Boolean).length,1);

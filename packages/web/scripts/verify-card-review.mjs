@@ -14,7 +14,7 @@ function file(path) {
   return absolute;
 }
 const designs = JSON.parse(readFileSync(resolve(root, 'designs.json'), 'utf8'));
-if (!Array.isArray(designs) || designs.length !== DESIGN_IDS.length) fail('all thirteen selections are required');
+if (!Array.isArray(designs) || designs.length !== DESIGN_IDS.length) fail('every listed client selection is required');
 if (new Set(designs.map(design => design.id)).size !== DESIGN_IDS.length) fail('design IDs must be unique');
 for (const id of DESIGN_IDS) if (!designs.some(design => design.id === id)) fail(`missing selected design ${id}`);
 for (const design of designs) {
@@ -37,4 +37,4 @@ function inspect(directory) {
   }
 }
 inspect(root);
-console.log('Card review release check passed: 13 selections, image/proof assets, form and protected results page.');
+console.log(`Card review release check passed: ${designs.length} selections, image/proof assets, form and protected results page.`);

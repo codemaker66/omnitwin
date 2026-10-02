@@ -68,6 +68,12 @@ test('unknown designs, fields and excessive text fail',async()=>{
   }
   assert.equal(records.size,0);
 });
+test('Nocturne favourites and comments are accepted with their distinct IDs',async()=>{
+  const response=await request({method:'POST',body:valid({favourite:'nocturne-2',comments:{nocturne:'Keep the single lit window.'}})});
+  assert.equal(response.status,200);
+  const saved=(await response.json()).response;
+  assert.equal(saved.favourite,'nocturne-2');assert.deepEqual(saved.comments,{nocturne:'Keep the single lit window.'});
+});
 test('comments-only response is accepted while empty response is rejected',async()=>{
   assert.equal((await request({method:'POST',body:valid({favourite:null,comments:{},generalComment:'Consider a warmer gold.'})})).status,200);
   assert.equal((await request({method:'POST',token:otherToken,body:valid({favourite:null,comments:{},generalComment:'  '})})).status,400);
