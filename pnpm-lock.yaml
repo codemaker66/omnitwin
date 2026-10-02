@@ -65,7 +65,7 @@ importers:
         version: 3.4.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@clerk/fastify':
         specifier: 3.1.19
-        version: 3.1.19(fastify@5.12.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 3.1.19(fastify@5.12.5)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@fastify/compress':
         specifier: 9.2.0
         version: 9.2.0
@@ -106,8 +106,8 @@ importers:
         specifier: 0.45.2
         version: 0.45.2(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.1)(@types/pg@8.11.6)(gel@2.2.0)(pg@8.22.0)
       fastify:
-        specifier: 5.12.1
-        version: 5.12.1
+        specifier: 5.12.5
+        version: 5.12.5
       fastify-raw-body:
         specifier: 5.0.0
         version: 5.0.0
@@ -252,6 +252,9 @@ importers:
       '@jsquash/webp':
         specifier: 1.5.0
         version: 1.5.0
+      '@neondatabase/serverless':
+        specifier: 0.10.4
+        version: 0.10.4
       '@omnitwin/types':
         specifier: workspace:*
         version: link:../types
@@ -2907,8 +2910,8 @@ packages:
     resolution: {integrity: sha512-2qfoaQ3BQDhZ1gtbkKZd6n0kKxJISJGM6u/skD9ljdWItAscjXrtZ1lnjr7PavmXX9j4EyCPmBDiIsLn07d5vA==}
     engines: {node: '>= 10'}
 
-  fastify@5.12.1:
-    resolution: {integrity: sha512-FWi+tQvwxR/PeRX7Z2mhfEF5ozJ3jn9asiiclzKXNSzJRHAYcU924aIOKAdHFJ+YIKieh3cqr1IwCOvTr41B3Q==}
+  fastify@5.12.5:
+    resolution: {integrity: sha512-OB2k1dlxs5/NAABqeKV2FUHkSD2BbENsCak8yULVcymn3fHIPDVa9TI3SDnJSWYSllZmSYuZXy2gTnsT+Sut1A==}
 
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
@@ -5065,12 +5068,12 @@ snapshots:
       - react
       - react-dom
 
-  '@clerk/fastify@3.1.19(fastify@5.12.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@clerk/fastify@3.1.19(fastify@5.12.5)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@clerk/backend': 3.4.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@clerk/shared': 4.8.5(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       cookies: 0.9.1
-      fastify: 5.12.1
+      fastify: 5.12.5
       fastify-plugin: 5.1.0
     transitivePeerDependencies:
       - react
@@ -7200,7 +7203,7 @@ snapshots:
       raw-body: 3.0.2
       secure-json-parse: 2.7.0
 
-  fastify@5.12.1:
+  fastify@5.12.5:
     dependencies:
       '@fastify/ajv-compiler': 4.0.5
       '@fastify/error': 4.2.0
