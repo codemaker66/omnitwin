@@ -252,6 +252,9 @@ importers:
       '@jsquash/webp':
         specifier: 1.5.0
         version: 1.5.0
+      '@neondatabase/serverless':
+        specifier: 0.10.4
+        version: 0.10.4
       '@omnitwin/types':
         specifier: workspace:*
         version: link:../types

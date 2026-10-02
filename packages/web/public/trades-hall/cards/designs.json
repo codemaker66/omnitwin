@@ -1,0 +1,132 @@
+[
+  {
+    "id": "38",
+    "label": "38",
+    "title": "The Architectural Folio",
+    "shortTitle": "Architectural Folio",
+    "image": "./images/38.png",
+    "proof": "./proofs/38.png",
+    "critique": "The architectural front has presence, but the old reverse split the venue and contact details into competing columns and left no natural place for a planner code. The email was too small relative to the headline.",
+    "improvement": "The architectural front is preserved. A calmer reverse gives direct enquiries one clear column and the planner QR its own space."
+  },
+  {
+    "id": "43",
+    "label": "43",
+    "title": "The Venue Cipher",
+    "shortTitle": "Venue Cipher",
+    "image": "./images/43.png",
+    "proof": "./proofs/43.png",
+    "critique": "The favourite reverse has an excellent expressive invitation, but its three lines compete with the contact column. Repeating all event categories in the lower left would crowd a new QR.",
+    "improvement": "The expressive reverse is retained, with a wider contact column and a QR beneath the invitation. The complete facade remains a quiet venue signature."
+  },
+  {
+    "id": "46",
+    "label": "46",
+    "title": "The Private Invitation",
+    "shortTitle": "Private Invitation",
+    "image": "./images/46.png",
+    "proof": "./proofs/46.png",
+    "critique": "The admired ivory front is already coherent. Its former centred reverse has no suitable QR position without weakening its symmetry or making the contact details smaller.",
+    "improvement": "The admired ivory front is unchanged. A navy reverse pairs a gold invitation with clear enquiries and a separate planner QR."
+  },
+  {
+    "id": "35",
+    "label": "35",
+    "title": "The Architectural Invitation",
+    "shortTitle": "Architectural Invitation",
+    "image": "./images/35.png",
+    "proof": "./proofs/35.png",
+    "critique": "The original counterchange is strong. The reverse repeated the front tagline and squeezed the email into a narrow blue column; adding a QR to that version would make the hierarchy worse.",
+    "improvement": "The architectural front keeps its strong navy-and-ivory balance. A wider reverse contact panel improves reading, while the QR sits within the ivory invitation."
+  },
+  {
+    "id": "29",
+    "label": "29",
+    "title": "The Architectural Address",
+    "shortTitle": "Architectural Address",
+    "image": "./images/29.png",
+    "proof": "./proofs/29.png",
+    "critique": "The ceremonial centre was visually strong, but its heraldry no longer fits the venue brief. The sweeping reverse left too little space for a useful planner route.",
+    "improvement": "The complete facade replaces the crest inside one broad pressed field. The staggered invitation survives, with enquiries aligned beside the planner QR."
+  },
+  {
+    "id": "32",
+    "label": "32",
+    "title": "The House Invitation",
+    "shortTitle": "House Invitation",
+    "image": "./images/32.png",
+    "proof": "./proofs/32.png",
+    "critique": "The classical TH and expansive invitation are strong. The old reverse disperses the venue address and contact details into two small columns, while a planner QR needs protected space of its own.",
+    "improvement": "The original TH silhouette and generous invitation are retained. Larger front captions and an ordered reverse make both the venue and the next step clearer."
+  },
+  {
+    "id": "33",
+    "label": "33",
+    "title": "The Glassford Address",
+    "shortTitle": "Glassford Address",
+    "image": "./images/33.png",
+    "proof": "./proofs/33.png",
+    "critique": "The memorable 85 and large venue name worked. The obsolete motto and crowded two-column reverse weakened the venue purpose and offered no route to planning.",
+    "improvement": "The distinctive 85 and venue name are retained with improved alignment. The complete facade balances the invitation, above a clear contact and planner panel."
+  },
+  {
+    "id": "21",
+    "label": "21",
+    "title": "The Glassford Counterchange",
+    "shortTitle": "Glassford Counterchange",
+    "image": "./images/21.png",
+    "proof": "./proofs/21.png",
+    "critique": "The selected counterchange composition is memorable, but its armorial shield, motto, Roman numerals and two impressed faces no longer serve the venue brief. The small right-hand email also needs a deliberate scale.",
+    "improvement": "The original colour balance is retained, with the complete facade and Glassford Street address replacing heraldry. The reverse separates planning from direct enquiries."
+  },
+  {
+    "id": "22",
+    "label": "22",
+    "title": "House Cipher Invitation",
+    "shortTitle": "House Cipher Invitation",
+    "image": "./images/22.png",
+    "proof": "./proofs/22.png",
+    "critique": "XIV and Union occupy the focal column while the contacts are undersized.",
+    "improvement": "The classical TH mark is optically centred. An ivory reverse replaces the old inscription with an invitation, complete facade and a clear planner route."
+  },
+  {
+    "id": "15",
+    "label": "15",
+    "title": "Architectural Counterchange",
+    "shortTitle": "Architectural Counterchange",
+    "image": "./images/15.png",
+    "proof": "./proofs/15.png",
+    "critique": "Crest and shield are the main subject and do not serve the new venue-only brief; repeating the badge on reverse weakens contact function.",
+    "improvement": "The favourite navy-and-ivory composition is preserved. The complete gold facade replaces the shield, with an invitation and QR facing a clear contact panel."
+  },
+  {
+    "id": "02",
+    "label": "02",
+    "title": "House Cipher",
+    "shortTitle": "House Cipher",
+    "image": "./images/02.png",
+    "proof": "./proofs/02.png",
+    "critique": "Front type must align optically with the monogram; reverse crest and huge stacked name compete with contacts.",
+    "improvement": "The signature TH and navy reverse are retained. The complete facade replaces the crest, with clearer contact hierarchy and a discreet white QR square."
+  },
+  {
+    "id": "01-v2",
+    "label": "01 v2",
+    "title": "Oculus, Reconsidered",
+    "shortTitle": "Oculus, Reconsidered",
+    "image": "./images/01-v2.png",
+    "proof": "./proofs/01-v2.png",
+    "critique": "The original portrait card invents coffered concentric stepped relief; it cannot be retained as tooling and lacks verified architectural fidelity.",
+    "improvement": "Grand Hall photography gives the circular idea an authentic subject. One broad deboss replaces the stepped relief, and the landscape reverse adds a clear planner route."
+  },
+  {
+    "id": "05",
+    "label": "05",
+    "title": "Ivory Architectural Object",
+    "shortTitle": "Ivory Architectural Object",
+    "image": "./images/05.png",
+    "proof": "./proofs/05.png",
+    "critique": "Portrait format, crest, motto and armorial recess conflict with the current brief; original oxblood is outside the native palette.",
+    "improvement": "The ivory front and leaflet-blue reverse are retained in landscape. A complete gold facade replaces heraldry, balanced by the venue name and planner QR."
+  }
+]

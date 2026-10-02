@@ -6,6 +6,11 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "redirects": [
     {
+      "source": "/trades-hall/cards",
+      "destination": "/trades-hall/cards/",
+      "permanent": false
+    },
+    {
       "source": "/quiz",
       "destination": "/amissing-book/",
       "permanent": false
@@ -95,6 +100,14 @@
     {
       "source": "/amissing-book/",
       "destination": "/amissing-book/index.html"
+    },
+    {
+      "source": "/api/card-review",
+      "destination": "/api/card-review"
+    },
+    {
+      "source": "/trades-hall/cards/",
+      "destination": "/trades-hall/cards/index.html"
     },
     {
       "source": "/(.*)",
@@ -249,6 +262,20 @@
           "key": "Cache-Control",
           "value": "public, max-age=3600, stale-while-revalidate=604800"
         }
+      ]
+    },
+    {
+      "source": "/trades-hall/cards/:path*",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }
+      ]
+    },
+    {
+      "source": "/trades-hall/cards/results.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "private, no-store" }
       ]
     }
   ]
