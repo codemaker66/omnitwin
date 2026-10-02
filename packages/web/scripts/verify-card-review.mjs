@@ -18,7 +18,8 @@ if (!Array.isArray(designs) || designs.length !== DESIGN_IDS.length) fail('all t
 if (new Set(designs.map(design => design.id)).size !== DESIGN_IDS.length) fail('design IDs must be unique');
 for (const id of DESIGN_IDS) if (!designs.some(design => design.id === id)) fail(`missing selected design ${id}`);
 for (const design of designs) {
-  for (const key of ['title', 'label', 'critique', 'improvement']) if (typeof design[key] !== 'string' || !design[key].trim()) fail(`${design.id} needs ${key}`);
+  for (const key of ['title', 'label']) if (typeof design[key] !== 'string' || !design[key].trim()) fail(`${design.id} needs ${key}`);
+  for (const key of ['critique', 'improvement']) if (Object.hasOwn(design, key)) fail(`${design.id} exposes internal ${key} notes`);
   file(design.image); file(design.proof);
 }
 for (const path of ['./index.html','./review.js','./review.css','./api.js','./activity.js','./activity.css','./results.html','./results.js','./results.css']) file(path);
