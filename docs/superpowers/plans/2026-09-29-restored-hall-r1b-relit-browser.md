@@ -4,9 +4,34 @@
 
 **Goal:** On development and preview builds, a desktop visitor with WebGPU walks the Grand Hall relit live from the R1a relight package — night with the lamps lit, sunny morning, overcast noon, or any hour and date from a preview-only light control — on the restored floor drawn lit by the same light, with a dark or bright sky panel in each window; anything missing, and every other device, keeps the hall exactly as captured, and venviewer.com keeps the founder hold.
 
-**Architecture:** A worker fetches and verifies the package (`venviewer.relight.v1`, SHA-256 per file) and decodes probes, stencils and floor light maps; each splat layer loads its tile's 12-byte records beside its geometry and hands both to the native splat host. The host keeps one `RelightFrame` per scene (uniforms, probe volumes, stencil atlas, floor light texture) and one `RelightDraw` per cached snapshot (records merged in snapshot order, a TSL compute pass writing one packed multiplier word per splat); the pass reruns when the light setting changes or a snapshot is built, never per frame, and never rebuilds a snapshot. A new optional `workingColorNode` on the patched `GaussianSplat` multiplies each splat's linear colour by its multiplier and applies the shared display function (exposure, 60% white balance, highlight roll-off above a knee: the splat's own captured brightest channel, at least 0.8; 0.8 for the floor and sky panels); hidden splats lose their alpha through the existing opacity hook. A TypeScript twin of every GPU formula (`relight-kernel.ts`, `display.ts`, `floor-light.ts`) is driven by R1a's test vectors and compared with GPU read-backs in the browser. Spec: `docs/superpowers/specs/2026-09-29-the-restored-hall-design.md` (§3 slice R1, §4.3, §4.4, §5, §6); contract: `docs/engineering/relight-package.md`; normative multiplier: R1a plan section "The multiplier".
+**Architecture:** A worker fetches and verifies the package (`venviewer.relight.v1`, SHA-256 per file) and decodes probes, stencils and floor light maps; each splat layer loads its tile's 12-byte records beside its geometry and hands both to the native splat host. The host keeps one `RelightFrame` per scene (uniforms, probe volumes, stencil atlas, floor light texture) and one `RelightDraw` per cached snapshot (records merged in snapshot order, a TSL compute pass writing one packed multiplier word per splat); the pass reruns when the light setting changes or a snapshot is built, never per frame, and never rebuilds a snapshot. A new optional `workingColorNode` on the patched `GaussianSplat` multiplies each splat's linear colour by its multiplier and applies the shared display function (exposure, 60% white balance, highlight roll-off above a knee: the splat's own captured brightest channel, at least 0.8; 0.8 for the floor and sky panels); hidden splats lose their alpha through the existing opacity hook. A TypeScript twin of every GPU formula (`relight-kernel.ts`, `display.ts`, `floor-light.ts`) is tested on the CPU, the kernel against R1a's test vectors. In the browser, the multiplier words and the display function are compared with GPU read-backs (Tasks 17 and 18); the floor material is covered by its TypeScript twin's tests and the rendered checks. Spec: `docs/superpowers/specs/2026-09-29-the-restored-hall-design.md` (§3 slice R1, §4.3, §4.4, §5, §6); contract: `docs/engineering/relight-package.md`; normative multiplier: R1a plan section "The multiplier".
 
 **Tech Stack:** React 18.3 + @react-three/fiber 8.18, three 0.186 (WebGPURenderer, TSL compute, pnpm patch), Zod 3.24, zustand 5.0, Vitest 4.1 + happy-dom 20, TypeScript 5.7, pnpm 9.15.4, Node 22, Playwright 1.59 (headed Chromium on the RTX 4090), Python 3.13 (`C:/Python313/python.exe`, numpy, Pillow, `unittest`) for the photo check in `tools/relight`.
+
+## Revisions (30 September, pre-flight)
+
+Applied from the pre-flight scan (`.superpowers/sdd/2026-09-29-restored-hall-r1b-relit-browser/preflight-scan.md`; finding numbers as there) and the controller's decision on each. R1a Tasks 4–7 changed to match (see its note).
+- 1: Task 5: `RelightModelData.probes` is `Uint16Array`.
+- 2: Task 7: the sky-panel test expects the displayed top, `displayColour([0.85, 0.85, 0.85], NEUTRAL_DISPLAY)` (0.84); `SKY_TOP` stays 0.85.
+- 3: Task 13: `relightBackendSupported` returns false for a renderer without a backend object before reading a device; the layer test keeps its default (WebGL2) stub.
+- 4: Task 17 commits the view capture on its own (`capture-commit.txt`). Task 18 Step 8 cherry-picks exactly that commit onto the base in the baseline worktree, keeps the base's code in conflicts, checks the applied diff and records "I1a + capture instrumentation" (`baseline.txt`). The base's `__roomPosterCapture` was not used: it renders only the live camera, as JPEG, and the base has no page hook that moves the camera.
+- 5: Task 18: the fallback check counts only package requests (path starts `/splats/`, contains `/relight/v`).
+- 6: Tasks 11, 12 and 15 time the relight main-thread work as `performance.measure` spans (new `relight-spans.ts`). Task 18 reads spans, long tasks and messages at load completion, passes each span at ≤ 50 ms, and reports long tasks and `loadMs` as information. The merge-per-tile remedy is written into Tasks 12 and 18.
+- 7: Task 19 Step 4 builds both bundles with `vite build --mode bundle-check` into D: and greps those. Checked: that mode skips the live-key guard, and `DEV`, `VITE_DEPLOY_ENV` and the splat base resolve as on Vercel.
+- 8: Task 2: `capture.gamma` accepts a finite number within 1e-6 of 1 (a refusal case added: 14 tests).
+- 9: Contract 1 and Task 4's schema: the vectors' probe table is the package's global grid, with global indices.
+- 10: Global Constraints and Tasks 0, 9, 12 and 19. Task 0 Step 7 measures the adapter's per-stage limit in Playwright's Chromium and stops before Task 9 if it is below 9. The relit vertex stage binds 9 once T-640 lands; Task 19 Step 1 then sets `RELIT_VERTEX_STORAGE_BUFFERS = 9` and reruns Tasks 9, 12 and 13's tests.
+- 11: Task 19 Step 1 overwrites `base-commit.txt` with the merged master's state before R1b, and reruns Task 18 Steps 8–11 with the baseline rebuilt.
+- 12: Task 18: `captureViews` empties each job's folder before writing.
+- 13: Task 19 Step 7 holds the GPU lock around the preview check.
+- 14: Task 15: the provider falls back on any failure in frame construction, the first `apply` or `setRelight`. It warns, sets status `off`, publishes a null frame and disposes the partial frame. A test with a zero `texelToModel` was added.
+- 15: Task 13: the sentence is corrected. A tile's geometry waits for its records at most `RELIGHT_GRACE_MS` (10 s); later records go through Task 12's late-records path. Task 12 now also writes records that arrive while a draw is being built (that path missed them). New tests in Tasks 12 and 13. Then, by the controller's follow-up decision, Task 15's provider stops waiting for the package after the same `RELIGHT_GRACE_MS`: the whole session stays as captured, a later package is ignored, and `onSettled` keeps the tiles from loading records. A fake-timer provider test was added (Task 15: 7 tests).
+- 16: Task 12 exports `nativeRelightSupported`; the host, the tiles and the provider all use it; test stubs carry `maxStorageBuffersPerShaderStage`.
+- 17: One `smoothstep`, one `floorMod` and one `weightedColours`, all in the kernel. `browsercheck.py` decodes renders only through the proof's `07_compare` (`shots.one_x`, `common.srgb_to_linear`, `valid_mask`); it keeps one mask variant, fixtures kept, which the proof lacks. The shared TSL plane-ray block in Tasks 11 and 14 was written before the window-volume decision and is superseded by the window-volume revision.
+- 18: Architecture restated. Task 17 adds a display read-back (16 probes); Task 18 holds it to 1e-5 relative.
+- 19, 20: R1a only (its note).
+- 21: Task 19 Step 1 names every file T-640 also edits (`NativeCanvas.test.tsx` included), keeps both sides, and reruns Tasks 9, 12 and 13's tests.
+- 22: Task 4's schema gains `floorTexels`; Task 5's staged test decodes the floor PNGs at them.
 
 ## Global Constraints
 
@@ -22,15 +47,15 @@
 - The multiplier is normative in `docs/superpowers/plans/2026-09-29-restored-hall-r1a-light-bake.md`, section "The multiplier", with R1a's two amendments. The emitter boost is a setting: `Mlit = 1 + (β − 1) × smoothstep(0.45, 0.9, L)` for lit bulbs, where β (`emitterBoost`) is 1 at the captured light, 4 for the night preset and 1 otherwise. And the horizon test: a window counts, for the direct sun and for the sun-bounce glass area, only while `asin(σ·up)` in degrees is strictly greater than `horizon[w][round((atan2(σ·east, σ·north) in degrees) mod 360) mod 360]` (Python's round, halves to even; floored mod). R1b computes that gate once per setting on the CPU (`horizonGates` in Task 4) and the GPU reads the same five values, so the two match exactly.
 - Display (decision 3, knee per call): `display(rgb, k) = rolloff_k(rgb × exposure × whiteBalance)`, the identity while the brightest channel is at most k, above it the Khronos-neutral highlight curve generalised to the knee, `newPeak = 1 − (1 − k)² / (peak + 1 − 2k)`, with desaturation 0.15. The floor and the sky panels use k = 0.8; a splat uses k = min(max(0.8, the brightest channel of its captured linear colour), 0.999), so at the captured light (multiplier 1, exposure 1, white balance 1) every splat's display is exactly the identity. No canvas tone mapping changes (I1a's "no film curve on a capture" holds).
 - Presets (decision 4, from `presetsFromProof` and the proof's `work/exposure.json`): night = lamps lit with emitter boost 4, clear weather, 29 September 2026 22:00 (dark: sun −25°), exposure 0.825 (−0.3 EV), white balance [0.9161, 1, 1.2254]; sunny morning = lamps off, clear, 31 May 2026 09:00 BST, exposure 0.629 (−0.7 EV), white balance [1.1078, 1, 0.8304]; overcast noon = lamps off, overcast, 31 May 2026 13:00 BST, exposure 3.461 (+1.8 EV), white balance [1.2428, 1, 0.7361]; as captured = the capture's own light, emitter boost 1, exposure 1, white balance 1. At a preset's own hour and date these are exact; when the hour or date moves, exposure adapts by half the change in the floor's mean light and white balance by 60% of the change in its colour. The hour slider runs 06:00–22:00 (Europe/London time).
-- Relighting is WebGPU-only (`nativeRendererStorageLimit(renderer) !== null`) and desktop-class only (device tier `high`). The splat vertex stage then binds 8 storage buffers (order, centre, covariance A, covariance B, colour, SH contribution, tile ids, multiplier words), exactly WebGPU's default per-stage limit, so the native canvas requests the adapter's `maxStorageBuffersPerShaderStage` whenever the adapter offers more than 8 (Task 12); the multiplier pass binds 6 (records, centres, colours, the two probe volumes, words) and the probe fold 2.
+- Relighting is WebGPU-only and desktop-class only (device tier `high`). One predicate, `nativeRelightSupported` in `native-splat-scene.ts` (Task 12: a negotiated storage-buffer size, and a per-stage storage-buffer limit that reaches `RELIT_VERTEX_STORAGE_BUFFERS`), decides it for the host, the tiles and the provider. On today's patch the relit vertex stage binds 8 storage buffers (order, centre, covariance A, covariance B, colour, SH contribution, tile ids, multiplier words), exactly WebGPU's default per-stage limit. T-640's patch (`claude/perf-20260929`, head `fae58daf` and later) adds a ninth, `keptRead` (the sort's kept count), so once T-640 is merged the relit vertex stage binds 9 and Task 19 Step 1 sets `RELIT_VERTEX_STORAGE_BUFFERS = 9`. The native canvas requests the adapter's `maxStorageBuffersPerShaderStage` whenever the adapter offers more than 8 (Task 12). The build PC's RTX 4090 reports 16 in Chrome 152 (Dawn, D3D12; measured by the controller on 30 September); Task 0 re-measures it in Playwright's Chromium. The multiplier pass binds 6 storage buffers (records, centres, colours, the two probe volumes, words) and the probe fold 2.
 - The probe volume is R1a's coarse bounce grid (0.5 m over the hall box x −1.823..19.307, y −10.329..0.301, z 0.02..6.78: about 43 × 22 × 14 ≈ 13,000 probes, about 4 MB as binary16). The manifest's `probes.shape` is the only source of its size (the schema refuses more than 2,000,000 probes); nothing in R1b assumes a grid size.
-- The shared patch: T-640 (GPU sort culling, branch `claude/perf-20260929`) edits `patches/three@0.186.0.patch` too. R1b's hook is one constructor option and one output line whose anchors T-640 leaves unchanged. Regenerate the patch the I1a Task 2 way; if T-640 is on master when R1b ships, merge master first and regenerate on top of it; if both are ready at once, T-640 lands first.
+- The shared patch: T-640 (GPU sort culling, branch `claude/perf-20260929`) edits `patches/three@0.186.0.patch` too. R1b's hook is one constructor option and one output line whose anchors T-640 leaves unchanged; T-640 does add the ninth vertex-stage storage buffer above, which Task 19 Step 1 accounts for. Regenerate the patch the I1a Task 2 way; if T-640 is on master when R1b ships, merge master first and regenerate on top of it; if both are ready at once, T-640 lands first.
 
 ## Contracts R1b relies on from R1a's outputs
 
-Items 1 and 2 are R1b's reading of R1a's outputs; items 3–6 are produced by R1a as amended on 29 September. Every one is still checked: 1 by Task 4's tests, 2–5 by Task 0 Step 2, 4 and 5 again in the browser by Task 18 (the fixture splats found at their model positions), and 6 by Task 19 Step 5. A mismatch is reported, not designed around.
+Items 1 and 2 are R1b's reading of R1a's outputs; items 3–6 are produced by R1a as amended on 29 September. Every one is still checked: 1 by Task 4's tests (its floor texels by Task 5 Step 6), 2–5 by Task 0 Step 2, 4 and 5 again in the browser by Task 18 (the fixture splats found at their model positions), and 6 by Task 19 Step 5. A mismatch is reported, not designed around.
 
-1. **Test vectors.** `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` has exactly the shape of `RelightVectorsSchema` in Task 4 (schema `venviewer.relight-vectors.v1`): the manifest slice, the three settings `captured`, `night`, `sunny_morning` in full (weights, sky level and colour, lamp levels, `emitterBoost`, sun direction and RGB), a sparse probe table holding every probe corner the 64 splats touch (float16, base64), the five windows' planes with their stencils as base64 PNGs and their 360 horizon elevations, and per splat its record (24 hex digits), model-frame position, captured linear colour and expected `m`, `alpha` and packed `word` per setting. The splats may include horizon-blocked cases.
+1. **Test vectors.** `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` has exactly the shape of `RelightVectorsSchema` in Task 4 (schema `venviewer.relight-vectors.v1`): the manifest slice, the three settings `captured`, `night`, `sunny_morning` in full (weights, sky level and colour, lamp levels, `emitterBoost`, sun direction and RGB), a sparse probe table (float16, base64), the five windows' planes with their stencils as base64 PNGs and their 360 horizon elevations, per splat its record (24 hex digits), model-frame position, captured linear colour and expected `m`, `alpha` and packed `word` per setting, and eight floor texels (`floorTexels`: column, row and the nine direct values of R1a's `floor-light.npz`). The probe table is on the package's global grid: `probes.origin`, `spacing` and `shape` are the manifest's `probes`, each entry's `index` is the global linear index `(ix·ny + iy)·nz + iz`, and `entries` holds every corner that each splat's trilinear lookup touches after clamping, with its validity. The splats may include horizon-blocked cases.
 2. **Tiles** are matched by `tiles[].tileSha256`, which equals the bundle's `sha256` of the served `.sog` (`packages/web/src/data/generated/trades-hall-splat-bundles.ts`); `count` equals the decoded splat count.
 3. **Floor skin v2** (produced by R1a) is `floor-skin/v2/floor-skin.json`, schema string `venviewer.floor-skin.v1`, `provenance.kind` `"restored-albedo"`, texture already scaled to the fitted albedo (`colour.albedoScale` records the factor; R1b does not apply it again).
 4. **`floor.texelToModel`** (produced by R1a) maps the texel-centre coordinates `(col, row, 0, 1)` of the 5 cm floor light maps to the model frame; row 0 is the first PNG row.
@@ -63,8 +88,9 @@ Items 1 and 2 are R1b's reading of R1a's outputs; items 3–6 are produced by R1
 | `packages/web/src/lib/relight/relight-tile-load.ts` | Create | Geometry and records for one tile; relight promises per tile |
 | `packages/web/src/lib/relight/floor-material.ts` | Create | The lit floor material |
 | `packages/web/src/lib/relight/sky-panels.ts` | Create | Sky panel geometry and material |
-| `packages/web/src/lib/relight/relight-debug.ts` | Create | DEV-only read-back instruments (`window.__relight`) |
-| `packages/web/src/lib/native-splat-scene.ts` | Modify | Relight frame, per-source records, key, pass runs, the relit stage's storage-buffer count |
+| `packages/web/src/lib/relight/relight-debug.ts` | Create | DEV-only read-back instruments (`window.__relight`): multiplier words and the display function |
+| `packages/web/src/lib/relight/relight-spans.ts` | Create | `performance.measure` spans around main-thread relight work (Task 18's loading check) |
+| `packages/web/src/lib/native-splat-scene.ts` | Modify | Relight frame, per-source records, key, pass runs, the relit stage's storage-buffer count and `nativeRelightSupported` |
 | `packages/web/src/components/scene/NativeCanvas.tsx`, `packages/web/src/lib/native-renderer.ts` | Modify | Request the adapter's storage buffers per stage above 8; read the negotiated value |
 | `packages/web/src/lib/native-gaussian-addon.d.ts` | Modify | `workingColorNode` type |
 | `patches/three@0.186.0.patch`, `pnpm-lock.yaml` | Modify (regenerated) | `workingColorNode` option |
@@ -155,6 +181,27 @@ Expected: every file passes. A failure means the base is broken: stop.
 cd D:/claude/real-hall/repo && git fetch origin && git log origin/master --oneline -5 -- patches/three@0.186.0.patch && git log --oneline -3 claude/perf-20260929
 ```
 Expected: two lists. Record in the task report whether T-640's commits (`711c4346`, `3eb5b9b6`) are on origin/master; Tasks 9 and 19 act on it.
+
+- [ ] **Step 7: Read the build PC adapter's storage buffers per shader stage, in Playwright's Chromium**
+
+Once T-640 is merged, a relit draw's vertex stage binds 9 storage buffers (Global Constraints). This checks now that the browser Task 18 drives offers at least that. It requests an adapter and renders nothing, but it starts a headed Chromium on the shared GPU, so it holds the GPU lock (if the first command fails with `EEXIST`, wait for the holder and rerun):
+
+```bash
+cd D:/claude/real-hall/repo/packages/web && LOCK=D:/claude/visual-firstprinciples-20260928/gpu.lock && node -e "require('fs').writeFileSync(process.argv[1], JSON.stringify({owner:'relight adapter limits (T-639 R1b)',since:new Date().toISOString()}),{flag:'wx'})" "$LOCK" && { node -e "
+const { chromium } = require('@playwright/test');
+(async () => {
+  const browser = await chromium.launch({ headless: false });
+  try {
+    const page = await browser.newPage();
+    const adapter = await page.evaluate(async () => {
+      const found = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
+      return found ? { maxStorageBuffersPerShaderStage: found.limits.maxStorageBuffersPerShaderStage, maxStorageBufferBindingSize: found.limits.maxStorageBufferBindingSize, vendor: found.info?.vendor ?? null, architecture: found.info?.architecture ?? null } : null;
+    });
+    console.log(JSON.stringify({ browser: browser.version(), adapter }));
+  } finally { await browser.close(); }
+})().catch((error) => { console.error(error); process.exitCode = 1; });" | tee D:/claude/relight/grand-hall/evidence/r1b/adapter-limits.json; node -e "require('fs').rmSync(process.argv[1])" "$LOCK"; }
+```
+Expected: one line of JSON with the Chromium version and `maxStorageBuffersPerShaderStage` (the controller measured 16 in Chrome 152 on this RTX 4090). Record the value in the task report. If `adapter` is null or the value is below 9, stop before Task 9 and report it: the build PC would draw the hall as captured once T-640 lands. Tasks 1–8 use no GPU and may go ahead.
 
 ---
 
@@ -582,6 +629,8 @@ describe("relight package manifest (T-639 R1b)", () => {
     const parsed = RelightManifestSchema.parse(manifest);
     expect(parsed.tiles[0]?.count).toBe(3);
     expect(parsed.windows.map((window) => window.id)).toEqual(["W1", "W2", "W3", "W4", "W5"]);
+    // R1a writes γ = 1 exactly; the fit's own bound (0.9999999990000007) would pass too.
+    expect(RelightManifestSchema.safeParse({ ...manifest, capture: { ...manifest.capture, gamma: 0.9999999990000007 } }).success).toBe(true);
   });
 
   it.each([
@@ -594,6 +643,7 @@ describe("relight package manifest (T-639 R1b)", () => {
     ["an absolute path", { ...manifest, floor: { ...manifest.floor, files: ["/etc/light-0.png", "floor/light-1.png", "floor/light-2.png"] } }],
     ["a URL for a file", { ...manifest, probes: { ...manifest.probes, validFile: "https://elsewhere.test/valid.gz" } }],
     ["a dot segment", { ...manifest, probes: { ...manifest.probes, file: "../probes.bin.gz" } }],
+    ["a capture contrast other than 1 (the kernel has no γ term)", { ...manifest, capture: { ...manifest.capture, gamma: 1.01 } }],
   ])("refuses %s", (_label, candidate) => {
     expect(RelightManifestSchema.safeParse(candidate).success).toBe(false);
   });
@@ -743,7 +793,8 @@ export const RelightManifestSchema = z.object({
     colours: z.array(rgb).length(SOURCE_COUNT),
     daylightColour: rgb,
     skyBandWeights: z.array(finite).length(4),
-    gamma: z.literal(1),
+    /** R1a writes exactly 1; within 1e-6 of 1 is accepted, anything else refused (the kernel has no γ term). */
+    gamma: finite.refine((gamma) => Math.abs(gamma - 1) <= 1e-6, "The capture contrast must be 1: the relight kernel has no γ term."),
   }),
   lamps: z.object({
     measuredColour: rgb, cct: finite.positive(),
@@ -858,7 +909,7 @@ export function relightTileLookup(manifest: RelightManifest, baseUrl: string, ti
 - [ ] **Step 6: Run the tests**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-manifest.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 14 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-warning.test.ts`
 Expected: PASS, 1 test.
@@ -1113,7 +1164,7 @@ Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/reli
 Expected: PASS, 6 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-manifest.test.ts`
-Expected: PASS, 13 tests (the helper change keeps the package byte-identical).
+Expected: PASS, 14 tests (the helper change keeps the package byte-identical).
 
 - [ ] **Step 6: Commit**
 
@@ -1134,7 +1185,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 1 (codec), Task 2 (`ProofScenarioSchema`), Task 3 (`decodePng`, `base64Bytes`).
-- Produces (`relight-kernel.ts`): `type Rgb = Vec3`; `LUMINANCE`; `LAMP_GROUPS`, `type LampGroup`, `type LampLevels`; `PROBE_VALUES = 162`; `PROBE_FOLDED = 18`; `interface StencilImage`, `StencilPlane`, `WindowPlanes`, `ProbeField`, `KernelSite { north; east; up }`, `RelightKernelModel` (with `horizons: readonly (readonly number[])[]` and `site: KernelSite`), `RelightSetting` (with `emitterBoost: number`), `KernelFrame` (with `windowOpen`, the horizon gates), `SplatMultiplier`; `smoothstep(low, high, x): number`; `capturedSetting(model: Pick<RelightKernelModel, "captureWeights" | "daylightColour">): RelightSetting` (emitter boost 1); `sunElevationDegrees(sun: Vec3, site: KernelSite): number`; `sunAzimuthIndex(sun: Vec3, site: KernelSite): number`; `horizonGates(model: Pick<RelightKernelModel, "windows" | "horizons" | "site">, sun: Vec3 | null): number[]`; `fresnelAt(fresnel: ArrayLike<number>, sun: Vec3): number`; `stencilSample(plane: StencilPlane, point: Vec3): number`; `windowVisibility(planes: WindowPlanes, point: Vec3, sun: Vec3): number`; `sunlitGlassArea(windows: readonly WindowPlanes[], sun: Vec3): number[]`; `sunBounceWeights(area: readonly number[], skyFlux: readonly number[], beta: number): number[]`; `foldProbeCube(cube: ArrayLike<number>, weights: readonly Rgb[], sunRgb: Rgb, bounce: readonly number[], out: Float64Array): void`; `trilinearCorners(field: ProbeField, position: Vec3): { readonly indices: number[]; readonly weights: number[] }`; `cubeEval(cube: ArrayLike<number>, normal: Vec3, iso: boolean): Rgb`; `prepareKernelFrame(model: RelightKernelModel, setting: RelightSetting): KernelFrame` (computes the horizon gates itself); `relightSplat(model: RelightKernelModel, frame: KernelFrame, record: Uint8Array, position: Vec3, colour: Rgb): SplatMultiplier`.
+- Produces (`relight-kernel.ts`): `type Rgb = Vec3`; `LUMINANCE`; `LAMP_GROUPS`, `type LampGroup`, `type LampLevels`; `PROBE_VALUES = 162`; `PROBE_FOLDED = 18`; `interface StencilImage`, `StencilPlane`, `WindowPlanes`, `ProbeField`, `KernelSite { north; east; up }`, `RelightKernelModel` (with `horizons: readonly (readonly number[])[]` and `site: KernelSite`), `RelightSetting` (with `emitterBoost: number`), `KernelFrame` (with `windowOpen`, the horizon gates), `SplatMultiplier`; `smoothstep(low, high, x): number` and `floorMod(value, modulus): number` (the one copy of each: `daylight.ts` and `sun.ts` import them); `weightedColours(weights: readonly number[], colours: readonly Rgb[]): Rgb[]` (w[k] × c[k], the one helper for that mapping: the vectors, the package, the frame and the light setting use it); `capturedSetting(model: Pick<RelightKernelModel, "captureWeights" | "daylightColour">): RelightSetting` (emitter boost 1); `sunElevationDegrees(sun: Vec3, site: KernelSite): number`; `sunAzimuthIndex(sun: Vec3, site: KernelSite): number`; `horizonGates(model: Pick<RelightKernelModel, "windows" | "horizons" | "site">, sun: Vec3 | null): number[]`; `fresnelAt(fresnel: ArrayLike<number>, sun: Vec3): number`; `stencilSample(plane: StencilPlane, point: Vec3): number`; `windowVisibility(planes: WindowPlanes, point: Vec3, sun: Vec3): number`; `sunlitGlassArea(windows: readonly WindowPlanes[], sun: Vec3): number[]`; `sunBounceWeights(area: readonly number[], skyFlux: readonly number[], beta: number): number[]`; `foldProbeCube(cube: ArrayLike<number>, weights: readonly Rgb[], sunRgb: Rgb, bounce: readonly number[], out: Float64Array): void`; `trilinearCorners(field: ProbeField, position: Vec3): { readonly indices: number[]; readonly weights: number[] }`; `cubeEval(cube: ArrayLike<number>, normal: Vec3, iso: boolean): Rgb`; `prepareKernelFrame(model: RelightKernelModel, setting: RelightSetting): KernelFrame` (computes the horizon gates itself); `relightSplat(model: RelightKernelModel, frame: KernelFrame, record: Uint8Array, position: Vec3, colour: Rgb): SplatMultiplier`.
 - Produces (`relight-vectors.ts`): `RELIGHT_VECTOR_SETTINGS = ["captured", "night", "sunny_morning"]`, `type RelightVectorSetting`, `isRelightVectorSetting(name: string): name is RelightVectorSetting`, `RelightVectorsSchema`, `type RelightVectors`, `settingFromVectors(value: RelightVectors["settings"][RelightVectorSetting]): RelightSetting`, `kernelModelFromVectors(vectors: RelightVectors): Promise<RelightKernelModel>`.
 
 The folded formulation: bounce light is linear in the sources, so `Σk w[k]·I[k]` equals the ambient-cube evaluation of `Σk w[k]·probes[k]` trilinearly interpolated. The kernel folds each probe's nine source cubes by the capture weighting and by the scenario weighting (with the sun's bounce `sunRgb·b[w]` added to the window sources) and evaluates two 18-value cubes per splat; the GPU pass (Task 11) reads the same two folded volumes. The test vectors, written by `reference.py`'s per-source formulation, prove the two agree.
@@ -1427,6 +1478,19 @@ export function smoothstep(low: number, high: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** Python's %: the result takes the divisor's sign. */
+export function floorMod(value: number, modulus: number): number {
+  return ((value % modulus) + modulus) % modulus;
+}
+
+/** w[k] × c[k]: each source's weight times its colour. */
+export function weightedColours(weights: readonly number[], colours: readonly Rgb[]): Rgb[] {
+  return weights.map((weight, k): Rgb => {
+    const colour = colours[k] ?? [0, 0, 0];
+    return [weight * colour[0], weight * colour[1], weight * colour[2]];
+  });
+}
+
 /** Setting.captured of reference.py: the capture's own light, bulbs unboosted. */
 export function capturedSetting(model: Pick<RelightKernelModel, "captureWeights" | "daylightColour">): RelightSetting {
   return {
@@ -1439,9 +1503,6 @@ export function capturedSetting(model: Pick<RelightKernelModel, "captureWeights"
     sunRgb: [0, 0, 0],
   };
 }
-
-/** Python's %: the result takes the divisor's sign. */
-const floorMod = (value: number, modulus: number): number => ((value % modulus) + modulus) % modulus;
 
 /** The sun's elevation, asin(σ·up), in degrees. */
 export function sunElevationDegrees(sun: Vec3, site: KernelSite): number {
@@ -1684,7 +1745,7 @@ export function relightSplat(model: RelightKernelModel, frame: KernelFrame, reco
 ```ts
 import { z } from "zod";
 import { decodeHalfFloat } from "./relight-codec.js";
-import type { ProbeField, RelightKernelModel, RelightSetting, Rgb, StencilPlane, WindowPlanes } from "./relight-kernel.js";
+import { weightedColours, type ProbeField, type RelightKernelModel, type RelightSetting, type StencilPlane, type WindowPlanes } from "./relight-kernel.js";
 import { ProofScenarioSchema } from "./relight-manifest.js";
 import { base64Bytes, decodePng } from "./relight-png.js";
 
@@ -1726,11 +1787,16 @@ export const RelightVectorsSchema = z.object({
   sun: z.object({ beta: finite.nonnegative(), skyFlux: z.array(finite.positive()).length(5), fresnel: z.array(finite).length(101) }),
   /** Each window's two planes and its 360 horizon elevations (degrees) by whole azimuth degree. */
   windows: z.array(z.object({ id: z.string(), inner: plane, glass: plane, horizon: z.array(finite.min(-90).max(90)).length(360) })).length(5),
+  /** The package's global probe grid (the manifest's `probes`), not a local block around the splats. */
   probes: z.object({
     origin: vec3,
     spacing: finite.positive(),
     shape: z.tuple([z.number().int().positive(), z.number().int().positive(), z.number().int().positive()]),
-    /** Every probe the 64 splats' trilinear corners touch; `cube` is 162 float16 values, little-endian, base64. */
+    /**
+     * Every corner each of the 64 splats' trilinear lookups touches after clamping to the grid, valid or not.
+     * `index` is the global linear index (ix·ny + iy)·nz + iz over `shape`; `cube` is 162 float16 values,
+     * little-endian, base64.
+     */
     entries: z.array(z.object({ index: z.number().int().nonnegative(), valid: z.boolean(), cube: z.string().min(1) })).min(1),
   }),
   presetsFromProof: z.object({ night: ProofScenarioSchema, sunny_morning: ProofScenarioSchema, overcast_noon: ProofScenarioSchema }),
@@ -1743,6 +1809,12 @@ export const RelightVectorsSchema = z.object({
     colour: vec3,
     expected: z.object({ captured: expectation, night: expectation, sunny_morning: expectation }),
   })).length(64),
+  /** Eight texels of R1a's floor-light.npz: column and row in the floor light maps, the nine direct values in source order. */
+  floorTexels: z.array(z.object({
+    col: z.number().int().nonnegative(),
+    row: z.number().int().nonnegative(),
+    direct: z.array(finite.nonnegative()).length(9),
+  })).length(8),
 });
 export type RelightVectors = z.infer<typeof RelightVectorsSchema>;
 
@@ -1797,10 +1869,7 @@ export async function kernelModelFromVectors(vectors: RelightVectors): Promise<R
   for (const window of vectors.windows) windows.push({ inner: await stencilPlane(window.inner), glass: await stencilPlane(window.glass) });
   return {
     ranges: vectors.encoding.sources,
-    captureWeights: vectors.capture.weights.map((weight, k): Rgb => {
-      const colour = vectors.capture.colours[k] ?? [0, 0, 0];
-      return [weight * colour[0], weight * colour[1], weight * colour[2]];
-    }),
+    captureWeights: weightedColours(vectors.capture.weights, vectors.capture.colours),
     daylightColour: vectors.capture.daylightColour,
     probes,
     windows,
@@ -1839,7 +1908,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Tasks 1–4.
-- Produces (`relight-assets.ts`): `PROBE_CAPTURE_STRIDE = 19`; `type FetchLike = (url: string, init: { readonly signal?: AbortSignal }) => Promise<Response>`; `interface StencilAtlas { width; height; data: Uint8Array; rects: Float32Array }`; `interface RelightModelData { manifest: RelightManifest; baseUrl: string; probeCount: number; probes: Uint16Array (binary16 bits, 162 per probe); probeValid: Uint8Array; probeCapture: Float32Array; stencils: readonly Image8[]; atlas: StencilAtlas; floorDirect: Float32Array; floorBounce: Float32Array }` (readonly fields); `RelightWorkerRequestSchema`, `type RelightWorkerRequest`, `type RelightWorkerResult`, `type RelightWorkerResponse`; `sha256Hex(bytes): Promise<string>`; `fetchVerified(fetchFn, url, expected: { sha256: string; bytes: number }, signal?): Promise<Uint8Array>`; `texelCentre(texelToModel: readonly number[], column: number, row: number): Vec3`; `denseProbeField(manifest: RelightManifest, probes: Uint16Array, valid: Uint8Array): ProbeField` (decodes a probe's 162 values when read, a bounded cache); `captureWeightsOf(manifest): Rgb[]`; `packStencilAtlas(stencils: readonly Image8[]): StencilAtlas`; `decodeFloorDirect(maps, ranges, texels): Float32Array`; `floorBounceField(field, texelToModel, width, height): Float32Array`; `loadRelightModelData(fetchFn, manifestUrl, signal?): Promise<RelightModelData>`; `loadRelightRecords(fetchFn, source: RelightTileSource, signal?): Promise<Uint8Array>`; `transferablesOf(data: RelightModelData): ArrayBuffer[]`.
+- Produces (`relight-assets.ts`): `PROBE_CAPTURE_STRIDE = 19`; `type FetchLike = (url: string, init: { readonly signal?: AbortSignal }) => Promise<Response>`; `interface StencilAtlas { width; height; data: Uint8Array; rects: Float32Array }`; `interface RelightModelData { manifest: RelightManifest; baseUrl: string; probeCount: number; probes: Uint16Array (binary16 bits, 162 per probe); probeValid: Uint8Array; probeCapture: Float32Array; stencils: readonly Image8[]; atlas: StencilAtlas; floorDirect: Float32Array; floorBounce: Float32Array }` (readonly fields); `RelightWorkerRequestSchema`, `type RelightWorkerRequest`, `type RelightWorkerResult`, `type RelightWorkerResponse`; `sha256Hex(bytes): Promise<string>`; `fetchVerified(fetchFn, url, expected: { sha256: string; bytes: number }, signal?): Promise<Uint8Array>`; `texelCentre(texelToModel: readonly number[], column: number, row: number): Vec3`; `denseProbeField(manifest: RelightManifest, probes: Uint16Array, valid: Uint8Array): ProbeField` (decodes a probe's 162 values when read, a bounded cache); `packStencilAtlas(stencils: readonly Image8[]): StencilAtlas`; `decodeFloorDirect(maps, ranges, texels): Float32Array`; `floorBounceField(field, texelToModel, width, height): Float32Array`; `loadRelightModelData(fetchFn, manifestUrl, signal?): Promise<RelightModelData>`; `loadRelightRecords(fetchFn, source: RelightTileSource, signal?): Promise<Uint8Array>`; `transferablesOf(data: RelightModelData): ArrayBuffer[]`.
 - Produces (`relight-worker-client.ts`): `runRelightWorker(request: RelightWorkerRequest, signal?: AbortSignal): Promise<RelightWorkerResult>`.
 - Produces (`relight-package.ts`, the spec's unit): `loadRelightPackage(manifestUrl: string): Promise<RelightModelData | null>` (cached per URL; any failure warns once and resolves null), `loadRelightRecords(source: RelightTileSource, signal: AbortSignal): Promise<Uint8Array>`, `resetRelightPackages(): void` (tests).
 
@@ -1926,19 +1995,22 @@ describe("relight package decoding (T-639 R1b)", () => {
 });
 ```
 
-`packages/web/src/lib/relight/__tests__/relight-assets.staged.test.ts` (runs only when `RELIGHT_STAGED_PACKAGE` names the staged folder; CI has no D:):
+`packages/web/src/lib/relight/__tests__/relight-assets.staged.test.ts` (runs only when `RELIGHT_STAGED_PACKAGE` names the staged folder; CI has no D:). It also decodes the floor light maps at R1a's eight vector texels, so a source written to the wrong channel (a BGRA write would swap two sources) fails here rather than as a subtly wrong floor:
 
 ```ts
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadRelightModelData } from "../relight-assets.js";
+import { LOG_STEPS, SOURCE_COUNT } from "../relight-codec.js";
+import { RelightVectorsSchema } from "../relight-vectors.js";
 
 const folder = process.env["RELIGHT_STAGED_PACKAGE"];
 const BASE = "https://staged.test/relight/v1/";
 
 describe.runIf(folder !== undefined)("the staged Grand Hall relight package (T-639 R1b)", () => {
-  it("validates, verifies every checksum and decodes", async () => {
+  it("validates, verifies every checksum and decodes, each floor source in its contract channel", async () => {
     const root = folder ?? "";
     const fetchFile = async (url: string): Promise<Response> => {
       const bytes = await readFile(join(root, url.slice(BASE.length)));
@@ -1947,7 +2019,26 @@ describe.runIf(folder !== undefined)("the staged Grand Hall relight package (T-6
     const data = await loadRelightModelData(fetchFile, `${BASE}manifest.json`);
     expect(data.manifest.tiles.reduce((sum, tile) => sum + tile.count, 0)).toBe(11_487_038);
     expect(data.stencils).toHaveLength(10);
-    expect(data.floorDirect.length).toBe(data.manifest.floor.size[0] * data.manifest.floor.size[1] * 9);
+    const [width, height] = data.manifest.floor.size;
+    expect(data.floorDirect.length).toBe(width * height * SOURCE_COUNT);
+    // R1a's vectors carry eight texels of floor-light.npz; each decodes to its value within half a log code.
+    const vectors = RelightVectorsSchema.parse(JSON.parse(readFileSync(new URL("../__fixtures__/relight-vectors.json", import.meta.url), "utf8")));
+    for (const texel of vectors.floorTexels) {
+      expect(texel.col < width && texel.row < height, `floor texel (${String(texel.col)}, ${String(texel.row)}) on the map`).toBe(true);
+      texel.direct.forEach((value, k) => {
+        const range = data.manifest.encoding.floor[k];
+        if (range === undefined) throw new Error("The package has nine floor ranges.");
+        const [lo, hi] = range;
+        const actual = data.floorDirect[(texel.row * width + texel.col) * SOURCE_COUNT + k] ?? Number.NaN;
+        const where = `floor texel (${String(texel.col)}, ${String(texel.row)}) source ${String(k)}`;
+        if (value === 0) {
+          expect(actual, where).toBe(0);
+          return;
+        }
+        const coded = Math.min(Math.max(value, 2 ** lo), 2 ** hi);
+        expect(Math.abs(Math.log2(actual) - Math.log2(coded)), where).toBeLessThanOrEqual((hi - lo) / LOG_STEPS / 2 + 1e-6);
+      });
+    }
   }, 120_000);
 });
 ```
@@ -2008,7 +2099,7 @@ Expected: FAIL — cannot find module `../relight-package.js`.
 ```ts
 import { z } from "zod";
 import { RECORD_BYTES, SOURCE_COUNT, decodeHalfFloat, decodeLog, type Vec3 } from "./relight-codec.js";
-import { PROBE_FOLDED, PROBE_VALUES, foldProbeCube, trilinearCorners, type ProbeField, type Rgb } from "./relight-kernel.js";
+import { PROBE_FOLDED, PROBE_VALUES, foldProbeCube, trilinearCorners, weightedColours, type ProbeField } from "./relight-kernel.js";
 import { RelightManifestSchema, type RelightManifest, type RelightTileSource } from "./relight-manifest.js";
 import { decodePng, inflate, type Image8 } from "./relight-png.js";
 
@@ -2030,7 +2121,8 @@ export interface RelightModelData {
   readonly manifest: RelightManifest;
   readonly baseUrl: string;
   readonly probeCount: number;
-  readonly probes: Float32Array;
+  /** The probe volume as the file holds it: binary16 bits, 162 per probe. */
+  readonly probes: Uint16Array;
   readonly probeValid: Uint8Array;
   readonly probeCapture: Float32Array;
   readonly stencils: readonly Image8[];
@@ -2096,14 +2188,6 @@ export function denseProbeField(manifest: RelightManifest, probes: Uint16Array, 
       return cube;
     },
   };
-}
-
-/** w[k] × c[k] for each source. */
-export function captureWeightsOf(manifest: RelightManifest): Rgb[] {
-  return manifest.capture.weights.map((weight, k): Rgb => {
-    const colour = manifest.capture.colours[k] ?? [0, 0, 0];
-    return [weight * colour[0], weight * colour[1], weight * colour[2]];
-  });
 }
 
 export function packStencilAtlas(stencils: readonly Image8[]): StencilAtlas {
@@ -2173,7 +2257,7 @@ export async function loadRelightModelData(fetchFn: FetchLike, manifestUrl: stri
   const probeValid = await inflate(await read(manifest.probes.validFile), "gzip", probeCount);
   if (probeValid.length !== probeCount) throw new Error("The probe validity does not match its grid.");
   const field = denseProbeField(manifest, probes, probeValid);
-  const captureWeights = captureWeightsOf(manifest);
+  const captureWeights = weightedColours(manifest.capture.weights, manifest.capture.colours);
   const probeCapture = new Float32Array(probeCount * PROBE_CAPTURE_STRIDE);
   const folded = new Float64Array(PROBE_FOLDED);
   for (let probe = 0; probe < probeCount; probe += 1) {
@@ -2384,7 +2468,7 @@ Expected: 1 test skipped (no `RELIGHT_STAGED_PACKAGE`).
 - [ ] **Step 6: Check the staged Grand Hall package**
 
 Run: `cd D:/claude/real-hall/repo && RELIGHT_STAGED_PACKAGE=D:/claude/splats/trades-hall/grand-hall/relight/v1 pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-assets.staged.test.ts`
-Expected: PASS, 1 test: the real manifest validates, every checksum matches and everything decodes. A Zod issue or checksum failure is a contract mismatch with R1a: stop and report it.
+Expected: PASS, 1 test: the real manifest validates, every checksum matches, everything decodes, and the eight vector floor texels decode within half a log code. A Zod issue, a checksum failure or a floor texel off by more (a source in the wrong channel) is a contract mismatch with R1a: stop and report it.
 
 - [ ] **Step 7: Typecheck**
 
@@ -2408,10 +2492,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/__tests__/sun.test.ts`
 
 **Interfaces:**
-- Consumes: Task 1 (`Vec3`).
+- Consumes: Task 1 (`Vec3`), Task 4 (`floorMod`).
 - Produces: `interface SolarPosition { readonly azimuth: number; readonly elevation: number }` (degrees; azimuth clockwise from north; elevation with atmospheric refraction above −0.575°, geometric below, as NOAA and the proof); `TRADES_HALL_LATITUDE = 55.8593`; `TRADES_HALL_LONGITUDE = -4.2491`; `interface SiteFrame { readonly north: Vec3; readonly east: Vec3; readonly up: Vec3 }`; `solarPosition(utc: Date, latitude?: number, longitude?: number): SolarPosition`; `sunDirection(position: SolarPosition, frame: SiteFrame): Vec3` (toward the sun, model frame).
 
-The port is the proof's `common.solar_position` (NOAA's spreadsheet algorithm) line for line; Python's `%` is a floored modulo, so the port uses one. NOAA's published Glasgow times below are from the NOAA Solar Calculator (gml.noaa.gov/grad/solcalc) for 55.8593 N, 4.2491 W, converted to UTC; they are given to the minute, so the elevation at a published sunrise or sunset minute is within 0.1° of −0.833°.
+The port is the proof's `common.solar_position` (NOAA's spreadsheet algorithm) line for line; Python's `%` is a floored modulo, so the port uses the kernel's `floorMod`. NOAA's published Glasgow times below are from the NOAA Solar Calculator (gml.noaa.gov/grad/solcalc) for 55.8593 N, 4.2491 W, converted to UTC; they are given to the minute, so the elevation at a published sunrise or sunset minute is within 0.1° of −0.833°.
 
 - [ ] **Step 1: Write the failing test** — create `packages/web/src/lib/__tests__/sun.test.ts`:
 
@@ -2486,6 +2570,7 @@ Expected: FAIL — cannot find module `../sun.js`.
 
 ```ts
 import type { Vec3 } from "./relight/relight-codec.js";
+import { floorMod } from "./relight/relight-kernel.js";
 
 /**
  * The sun's direction for a date, time and place (spec §4.4): NOAA's solar
@@ -2510,8 +2595,6 @@ export interface SiteFrame {
 }
 
 const RAD = Math.PI / 180;
-/** Python's %: the result takes the divisor's sign. */
-const floorMod = (value: number, modulus: number): number => ((value % modulus) + modulus) % modulus;
 
 function julianDay(year: number, month: number, day: number): number {
   let y = year, m = month;
@@ -2631,7 +2714,9 @@ describe("the relight display (T-639 R1b)", () => {
   it("draws the sky panel dark at night and brighter at the top by day", () => {
     expect(skyPanelColour(0, [1, 1, 1], 0.5, NEUTRAL_DISPLAY)).toEqual([...SKY_NIGHT]);
     const top = skyPanelColour(1, [1, 1, 1], 1, NEUTRAL_DISPLAY), bottom = skyPanelColour(1, [1, 1, 1], 0, NEUTRAL_DISPLAY);
-    expect(top[1]).toBeCloseTo(0.85, 12);
+    // The panels are displayed like the floor (knee 0.8): the top's 0.85 is rolled off (to 0.84), the bottom's 0.55 is not.
+    expect(top[1]).toBeCloseTo(displayColour([0.85, 0.85, 0.85], NEUTRAL_DISPLAY)[1], 12);
+    expect(top[0]).toBeCloseTo(top[1], 12);
     expect(bottom[1]).toBeCloseTo(0.55, 12);
   });
 });
@@ -2749,7 +2834,10 @@ export const HIGHLIGHT_KNEE = 0.8;
 /** The curve is undefined at a knee of 1. */
 export const SPLAT_KNEE_MAX = 0.999;
 export const HIGHLIGHT_DESATURATION = 0.15;
-/** Linear sky panel radiance: the night floor, and the gradient's top and bottom at sky level 1. */
+/**
+ * Linear sky panel radiance: the night floor, and the gradient's top and bottom at sky level 1. The panels go
+ * through the display with the floor's knee, 0.8, so the top (0.85) is displayed rolled off, at 0.84.
+ */
 export const SKY_NIGHT: Rgb = [0.01, 0.013, 0.024];
 export const SKY_TOP = 0.85;
 export const SKY_BOTTOM = 0.55;
@@ -2939,7 +3027,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/relight/__tests__/daylight.test.ts`, `packages/web/src/lib/__tests__/light-setting.test.ts`, `packages/web/src/stores/__tests__/light-setting-store.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 (`ProofScenario`, `RelightManifest`), Task 4 (`capturedSetting`, `LUMINANCE`, `RelightSetting`, `Rgb`; `RelightVectorsSchema` in the test), Task 6 (`solarPosition`, `sunDirection`, `SiteFrame`, `SolarPosition`, Trades Hall defaults), Task 7 (`DisplayParams`, `NEUTRAL_DISPLAY`); `DeviceTier` from `./device-tier.js`.
+- Consumes: Task 2 (`ProofScenario`, `RelightManifest`), Task 4 (`capturedSetting`, `LUMINANCE`, `RelightSetting`, `Rgb`, `smoothstep`, `weightedColours`; `RelightVectorsSchema` in the test), Task 6 (`solarPosition`, `sunDirection`, `SiteFrame`, `SolarPosition`, Trades Hall defaults), Task 7 (`DisplayParams`, `NEUTRAL_DISPLAY`); `DeviceTier` from `./device-tier.js`.
 - Produces (`daylight.ts`): `CAPTURE_DAYLIGHT_CCT = 6500`; `daylightRgb(cct: number): Rgb`; `cctShift(cct: number): Rgb`; `skyFactor(elevation: number): number`.
 - Produces (`light-setting.ts`): `LIGHT_PRESETS = ["captured", "night", "sunny", "overcast"]`, `type LightPresetId`; `MIN_MINUTES = 360`, `MAX_MINUTES = 1320`; `interface LightChoice { readonly preset: LightPresetId; readonly date: string; readonly minutes: number }`; `PRESET_DEFAULTS`; `PRESET_DISPLAY`; `PRESET_EMITTER_BOOST` (captured 1, night 4, sunny 1, overcast 1); `defaultChoice(preset?: LightPresetId): LightChoice`; `londonOffsetHours(utc: Date): number`; `isIsoDate(value: string): boolean`; `londonLocalToUtc(date: string, minutes: number): Date`; `formatMinutes(minutes: number): string`; `clampMinutes(minutes: number): number`; `interface WeatherModel`; `interface LightInputs`; `interface LightParts`; `lightInputsFromParts(parts: LightParts): LightInputs`; `lightInputsFromManifest(manifest: RelightManifest): LightInputs`; `interface ChoiceLight { readonly setting: RelightSetting; readonly sun: SolarPosition | null }` (the horizon gates are the kernel's, Task 4); `settingForChoice(inputs: LightInputs, choice: LightChoice): ChoiceLight`; `adaptDisplay(preset: DisplayParams, reference: Rgb, current: Rgb): DisplayParams`; `lightPresetFromSearch(search: string, previewable: boolean): LightPresetId | null`; `relightOffBySearch(search: string, previewable: boolean): boolean`; `relightEligible(previewable: boolean, deviceTier: DeviceTier, off: boolean): boolean`.
 - Produces (store): `type RelightStatus = "off" | "loading" | "ready"`; `useLightSettingStore` with `choice: LightChoice`, `status: RelightStatus`, `selectPreset(preset: LightPresetId): void`, `setMinutes(minutes: number): void`, `setDate(date: string): void`, `setStatus(status: RelightStatus): void`.
@@ -3165,7 +3253,7 @@ Expected: FAIL — cannot find module `../light-setting-store.js`.
 - [ ] **Step 3: Implement daylight** — create `packages/web/src/lib/relight/daylight.ts`:
 
 ```ts
-import type { Rgb } from "./relight-kernel.js";
+import { smoothstep, type Rgb } from "./relight-kernel.js";
 
 /** The capture's daylight was diffuse; its white is taken as 6,500 K (05_relight.T_DAY_CAPTURE). */
 export const CAPTURE_DAYLIGHT_CCT = 6500;
@@ -3190,11 +3278,6 @@ export function cctShift(cct: number): Rgb {
   return [r / g, g / g, b / g];
 }
 
-function smoothstep(low: number, high: number, x: number): number {
-  const t = Math.min(Math.max((x - low) / (high - low), 0), 1);
-  return t * t * (3 - 2 * t);
-}
-
 /** Diffuse sky brightness by solar elevation (degrees), 1 overhead: none below civil twilight, √sin(elevation) from 3° up. */
 export function skyFactor(elevation: number): number {
   return smoothstep(-6, 3, elevation) * Math.sqrt(Math.sin(Math.max(elevation, 3) * Math.PI / 180));
@@ -3208,7 +3291,7 @@ import type { DeviceTier } from "./device-tier.js";
 import { WINDOW_COUNT } from "./relight/relight-codec.js";
 import { CAPTURE_DAYLIGHT_CCT, cctShift, skyFactor } from "./relight/daylight.js";
 import { NEUTRAL_DISPLAY, type DisplayParams } from "./relight/display.js";
-import { LUMINANCE, capturedSetting, type RelightSetting, type Rgb } from "./relight/relight-kernel.js";
+import { LUMINANCE, capturedSetting, weightedColours, type RelightSetting, type Rgb } from "./relight/relight-kernel.js";
 import type { ProofScenario, RelightManifest } from "./relight/relight-manifest.js";
 import { solarPosition, sunDirection, type SiteFrame, type SolarPosition } from "./sun.js";
 
@@ -3337,10 +3420,7 @@ export function lightInputsFromParts(parts: LightParts): LightInputs {
   const clear = weatherFrom(parts.presets.sunny_morning, "sunny", parts.site);
   const lamps = (scenario: ProofScenario): { house: number; lampLevel: number } => ({ house: scenario.house, lampLevel: scenario.emit === "lit" ? 1 : 0 });
   return {
-    captureWeights: parts.weights.map((weight, k): Rgb => {
-      const colour = parts.colours[k] ?? [0, 0, 0];
-      return [weight * colour[0], weight * colour[1], weight * colour[2]];
-    }),
+    captureWeights: weightedColours(parts.weights, parts.colours),
     windowWeights,
     meanWindowWeight: windowWeights.reduce((sum, value) => sum + value, 0) / WINDOW_COUNT,
     daylightColour: parts.daylightColour,
@@ -3489,7 +3569,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: the constructor option `workingColorNode?: (index: Node<"uint">, center: Node<"vec3">, rgb: Node<"vec3">) => Node<"vec3">`, applied to each splat's linear working RGB after SH and colour-space decoding and before the quad's alpha; absent (the default `null`), the node graph is exactly today's.
 
-The hook's three anchors (the constructor's option list, the two `createMaterialNodes` option lists, the `splatColor.assign` line) are unchanged by T-640's patch (checked against `claude/perf-20260929`), so the edit applies on either base. If T-640 is already on master when this task runs, run Task 19 Step 1 first so the patch is regenerated on top of it.
+The hook's three anchors (the constructor's option list, the two `createMaterialNodes` option lists, the `splatColor.assign` line) are unchanged by T-640's patch (checked against `claude/perf-20260929`), so the edit applies on either base. If T-640 is already on master when this task runs, run Task 19 Step 1 first so the patch is regenerated on top of it. Start this task only if Task 0 Step 7 recorded at least 9 storage buffers per shader stage.
 
 - [ ] **Step 1: Write the failing test** — create `packages/web/src/lib/__tests__/native-addon-working-colour.test.ts`:
 
@@ -3756,10 +3836,10 @@ import { lightInputsFromManifest, type ChoiceLight, type LightInputs } from "../
 import type { SolarPosition } from "../sun.js";
 import type { DisplayParams, DisplayUniforms, SkyUniforms } from "./display.js";
 import { floorBaseLight, modelToLightUvMatrix, roomLight, type FloorLightData } from "./floor-light.js";
-import { captureWeightsOf, denseProbeField, type RelightModelData } from "./relight-assets.js";
+import { denseProbeField, type RelightModelData } from "./relight-assets.js";
 import { SOURCE_COUNT, WINDOW_COUNT } from "./relight-codec.js";
 import {
-  PROBE_FOLDED, PROBE_VALUES, prepareKernelFrame,
+  PROBE_FOLDED, PROBE_VALUES, prepareKernelFrame, weightedColours,
   type KernelFrame, type RelightKernelModel, type RelightSetting, type Rgb, type StencilPlane,
 } from "./relight-kernel.js";
 import type { RelightManifest } from "./relight-manifest.js";
@@ -3792,7 +3872,7 @@ export function kernelModelFromData(data: RelightModelData): RelightKernelModel 
   };
   return {
     ranges: manifest.encoding.sources,
-    captureWeights: captureWeightsOf(manifest),
+    captureWeights: weightedColours(manifest.capture.weights, manifest.capture.colours),
     daylightColour: manifest.capture.daylightColour,
     probes: denseProbeField(manifest, data.probes, data.probeValid),
     windows: manifest.windows.map((window, w) => ({ inner: plane(window.planes.inner, 2 * w), glass: plane(window.planes.glass, 2 * w + 1) })),
@@ -3829,7 +3909,7 @@ function createRelightUniforms(data: RelightModelData) {
     /** The arrays behind three uniform arrays, written in place by apply. */
     values: { sourceWeights, windowOpen, sunBounce },
     sourceWeights: uniformArray<"vec3">(sourceWeights, "vec3"),
-    captureWeights: uniformArray<"vec3">(captureWeightsOf(manifest).map(([r, g, b]) => new Vector3(r, g, b)), "vec3"),
+    captureWeights: uniformArray<"vec3">(weightedColours(manifest.capture.weights, manifest.capture.colours).map(([r, g, b]) => new Vector3(r, g, b)), "vec3"),
     ranges: uniformArray<"vec2">(manifest.encoding.sources.map(([lo, hi]) => new Vector2(lo, hi)), "vec2"),
     windowOpen: uniformArray<"float">(windowOpen, "float"),
     sunBounce: uniformArray<"float">(sunBounce, "float"),
@@ -4036,16 +4116,38 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 11: The multiplier pass and the render hooks of one draw
 
 **Files:**
+- Create: `packages/web/src/lib/relight/relight-spans.ts`
 - Create: `packages/web/src/lib/relight/relight-draw.ts`
-- Test: `packages/web/src/lib/relight/__tests__/relight-draw.test.ts`
+- Test: `packages/web/src/lib/relight/__tests__/relight-spans.test.ts`, `packages/web/src/lib/relight/__tests__/relight-draw.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1 (`RECORD_BYTES`, `packMultiplierWord`, `LOG_STEPS`), Task 5 (`PROBE_CAPTURE_STRIDE`), Task 4 (`PROBE_FOLDED`, `LUMINANCE`), Task 7 (`displayNode`, `splatKneeNode`), Task 10 (`RelightFrame`, its `emitterBoost` and `windowOpen` uniforms).
-- Produces: `PASSTHROUGH_FLAGS = 0xff`; `PASSTHROUGH_WORD = packMultiplierWord([1, 1, 1], 1)`; `mergeRelightRecords(sources: readonly { readonly count: number; readonly records: Uint8Array | null }[]): Uint32Array` (three words per splat, little-endian record bytes; a source without records, or with a record count other than its splat count, is passed through); `sharedPlacement(matrices: readonly Matrix4[]): Matrix4 | null`; `interface RelightHooks { alpha(index: Node<"uint">): Node<"float">; workingColour(index: Node<"uint">, center: Node<"vec3">, rgb: Node<"vec3">): Node<"vec3"> }`; `interface RelightDraw { readonly count: number; readonly recordsAttribute: StorageBufferAttribute; readonly wordsAttribute: StorageBufferAttribute; readonly positions: Float32Array; readonly colours: Uint32Array; readonly sceneToModel: Matrix4; readonly hooks: RelightHooks; setSourceRecords(offset: number, count: number, records: Uint8Array | null): void; run(renderer: WebGPURenderer): void; dispose(): void }`; `createRelightDraw(frame: RelightFrame, geometry: BufferGeometry, records: Uint32Array, sceneToModel: Matrix4): RelightDraw`.
+- Produces (`relight-spans.ts`): `RELIGHT_SPANS = ["relight:merge-records", "relight:words", "relight:frame", "relight:apply", "relight:pass"]`, `type RelightSpan`, `measureRelight<T>(name: RelightSpan, work: () => T): T` (runs `work` and records its duration as a `performance.measure` span, also when it throws). Task 18's loading check reads these spans; Tasks 11, 12 and 15 wrap every piece of main-thread relight work in one.
+- Produces (`relight-draw.ts`): `type StencilSampler = (rect: Node<"vec4">, column: Node<"float">, row: Node<"float">) => Node<"float">`; `planeTransmittance(frame: RelightFrame, index: number, p: Node<"vec3">, sun: Node<"vec3">, sample: StencilSampler): Node<"float">` (the plane-ray and inside test shared with the floor material, Task 14); `nearestStencilCell(frame: RelightFrame): StencilSampler`; `PASSTHROUGH_FLAGS = 0xff`; `PASSTHROUGH_WORD = packMultiplierWord([1, 1, 1], 1)`; `mergeRelightRecords(sources: readonly { readonly count: number; readonly records: Uint8Array | null }[]): Uint32Array` (three words per splat, little-endian record bytes; a source without records, or with a record count other than its splat count, is passed through); `sharedPlacement(matrices: readonly Matrix4[]): Matrix4 | null`; `interface RelightHooks { alpha(index: Node<"uint">): Node<"float">; workingColour(index: Node<"uint">, center: Node<"vec3">, rgb: Node<"vec3">): Node<"vec3"> }`; `interface RelightDraw { readonly count: number; readonly recordsAttribute: StorageBufferAttribute; readonly wordsAttribute: StorageBufferAttribute; readonly positions: Float32Array; readonly colours: Uint32Array; readonly sceneToModel: Matrix4; readonly hooks: RelightHooks; setSourceRecords(offset: number, count: number, records: Uint8Array | null): void; run(renderer: WebGPURenderer): void; dispose(): void }`; `createRelightDraw(frame: RelightFrame, geometry: BufferGeometry, records: Uint32Array, sceneToModel: Matrix4): RelightDraw`.
 
-The pass is `relightSplat` (Task 4) in TSL, one invocation per splat of the snapshot, writing one `u32` word (contract packing). Positions are the merged scene-frame centres (`native-splat-merge.ts` applies each source's matrix), taken to the model frame by `sceneToModel = tileToModel × placement⁻¹`; colours are the merged sRGB bytes, linearised as the proof's `C`. The two probe volumes are folded, so bounce light costs two 18-value lookups per corner, evaluated at the splat's normal and accumulated per corner (`cubeEval` is linear, so this equals evaluating the interpolated cube). The stencils are read with `textureLoad` at the nearest cell, rounding halves to even like the CPU. Each window's horizon gate is the `windowOpen` uniform the frame copied from the CPU kernel's `horizonGates`, so the GPU applies exactly the CPU's gate. Lit bulbs use the `emitterBoost` uniform. The pass binds six storage buffers (records, positions, colours, the two probe volumes, words); the render hooks read only the words, and the working-colour hook calls `displayNode` with `splatKneeNode` of the splat's captured colour (the hook's `rgb`, before the multiplier). The pass runs on a setting change, a snapshot build and late records — never per frame.
+The pass is `relightSplat` (Task 4) in TSL, one invocation per splat of the snapshot, writing one `u32` word (contract packing). Positions are the merged scene-frame centres (`native-splat-merge.ts` applies each source's matrix), taken to the model frame by `sceneToModel = tileToModel × placement⁻¹`; colours are the merged sRGB bytes, linearised as the proof's `C`. The two probe volumes are folded, so bounce light costs two 18-value lookups per corner, evaluated at the splat's normal and accumulated per corner (`cubeEval` is linear, so this equals evaluating the interpolated cube). The stencils are read with `textureLoad` at the nearest cell, rounding halves to even like the CPU. Each window's horizon gate is the `windowOpen` uniform the frame copied from the CPU kernel's `horizonGates`, so the GPU applies exactly the CPU's gate. Lit bulbs use the `emitterBoost` uniform. The pass binds six storage buffers (records, positions, colours, the two probe volumes, words); the render hooks read only the words, and the working-colour hook calls `displayNode` with `splatKneeNode` of the splat's captured colour (the hook's `rgb`, before the multiplier). The pass runs on a setting change, a snapshot build and late records — never per frame. The ray to a stencil plane and its inside test (`planeTransmittance`) are written once here and shared with the floor material (Task 14), which passes a bilinear sampler where the pass reads the nearest cell. The main-thread work a draw adds is timed as `performance.measure` spans (`relight-spans.ts`): the words' allocation and fill (`relight:words`) and each run's encode (`relight:pass`; the first run also builds the pass's pipeline).
 
-- [ ] **Step 1: Write the failing test** — create `packages/web/src/lib/relight/__tests__/relight-draw.test.ts`:
+- [ ] **Step 1: Write the failing tests** — create `packages/web/src/lib/relight/__tests__/relight-spans.test.ts`:
+
+```ts
+import { beforeEach, describe, expect, it } from "vitest";
+import { RELIGHT_SPANS, measureRelight } from "../relight-spans.js";
+
+beforeEach(() => { performance.clearMeasures(); });
+
+describe("relight spans (T-639 R1b)", () => {
+  it("times each piece of main-thread relight work as a named performance span, also when it throws", () => {
+    expect(measureRelight("relight:words", () => 42)).toBe(42);
+    expect(() => measureRelight("relight:pass", () => { throw new Error("The pass failed."); })).toThrow("The pass failed.");
+    const spans = performance.getEntriesByType("measure");
+    expect(spans.map((entry) => entry.name)).toEqual(["relight:words", "relight:pass"]);
+    expect(spans.every((entry) => entry.duration >= 0)).toBe(true);
+    expect(RELIGHT_SPANS).toEqual(["relight:merge-records", "relight:words", "relight:frame", "relight:apply", "relight:pass"]);
+  });
+});
+```
+
+and `packages/web/src/lib/relight/__tests__/relight-draw.test.ts`:
 
 ```ts
 import { BufferAttribute, BufferGeometry, Matrix4 } from "three";
@@ -4096,6 +4198,7 @@ describe("one relit draw (T-639 R1b)", () => {
   });
 
   it("starts every splat passed through; a run folds the probes once per light change, then runs its pass", () => {
+    performance.clearMeasures();
     const draw = createRelightDraw(frame, geometry(3), mergeRelightRecords([{ count: 3, records: null }]), new Matrix4());
     expect(Array.from(draw.wordsAttribute.array)).toEqual([PASSTHROUGH_WORD, PASSTHROUGH_WORD, PASSTHROUGH_WORD]);
     expect([typeof draw.hooks.alpha, typeof draw.hooks.workingColour]).toEqual(["function", "function"]);
@@ -4105,6 +4208,8 @@ describe("one relit draw (T-639 R1b)", () => {
     expect(compute).toHaveBeenCalledTimes(2);
     draw.run(renderer);
     expect(compute).toHaveBeenCalledTimes(3);
+    // The main-thread work a draw adds is timed for Task 18's loading check.
+    expect(performance.getEntriesByType("measure").map((entry) => entry.name)).toEqual(["relight:words", "relight:pass", "relight:pass"]);
     draw.dispose();
   });
 
@@ -4121,12 +4226,37 @@ describe("one relit draw (T-639 R1b)", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [ ] **Step 2: Run them to see them fail**
+
+Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-spans.test.ts`
+Expected: FAIL — cannot find module `../relight-spans.js`.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-draw.test.ts`
 Expected: FAIL — cannot find module `../relight-draw.js`.
 
-- [ ] **Step 3: Implement** — create `packages/web/src/lib/relight/relight-draw.ts`:
+- [ ] **Step 3: Implement** — create `packages/web/src/lib/relight/relight-spans.ts`:
+
+```ts
+/**
+ * Main-thread relight work, each piece timed as a `performance.measure` span (T-639 R1b). Task 18's loading
+ * check reads the spans at load completion: each must stay within 50 ms, which is what the spec's "loading
+ * adds no main-thread task over 50 ms" asks of the work relighting adds.
+ */
+export const RELIGHT_SPANS = ["relight:merge-records", "relight:words", "relight:frame", "relight:apply", "relight:pass"] as const;
+export type RelightSpan = (typeof RELIGHT_SPANS)[number];
+
+/** Runs `work` and records how long it took as the span `name`, also when it throws. */
+export function measureRelight<T>(name: RelightSpan, work: () => T): T {
+  const start = performance.now();
+  try {
+    return work();
+  } finally {
+    performance.measure(name, { start, end: performance.now() });
+  }
+}
+```
+
+and `packages/web/src/lib/relight/relight-draw.ts`:
 
 ```ts
 import { Matrix4, type BufferGeometry } from "three";
@@ -4140,6 +4270,7 @@ import { PROBE_CAPTURE_STRIDE } from "./relight-assets.js";
 import { LOG_STEPS, RECORD_BYTES, SOURCE_COUNT, WINDOW_COUNT, packMultiplierWord } from "./relight-codec.js";
 import type { RelightFrame } from "./relight-frame.js";
 import { LUMINANCE, PROBE_FOLDED } from "./relight-kernel.js";
+import { measureRelight } from "./relight-spans.js";
 
 /** Flags byte 0xff (class 7 is unused) marks a splat whose tile has no records: it is drawn as captured. */
 export const PASSTHROUGH_FLAGS = 0xff;
@@ -4212,8 +4343,17 @@ function octahedral(byteU: Node<"uint">, byteV: Node<"uint">): Node<"vec3"> {
   return normalize(vec3(x, y, z));
 }
 
-/** Transmittance through stencil plane `index` along p + t·sun (t > 0), nearest cell (windows._sample). */
-function planeTransmittance(frame: RelightFrame, index: number, p: Node<"vec3">, sun: Node<"vec3">): Node<"float"> {
+/**
+ * How a stencil is read at a point of its plane: `rect` is its atlas rectangle (x0, y0, width, height in texels),
+ * `column` and `row` its continuous cell coordinates, 0 at the first cell's centre and width − 1 at the last.
+ */
+export type StencilSampler = (rect: Node<"vec4">, column: Node<"float">, row: Node<"float">) => Node<"float">;
+
+/**
+ * Transmittance through stencil plane `index` along p + t·sun (t > 0), and 0 outside its opening (windows._sample).
+ * The multiplier pass reads the nearest cell; the floor material (Task 14) passes a bilinear sampler.
+ */
+export function planeTransmittance(frame: RelightFrame, index: number, p: Node<"vec3">, sun: Node<"vec3">, sample: StencilSampler): Node<"float"> {
   const u = frame.uniforms;
   const origin = u.planeOrigin.element(index), normal = u.planeNormal.element(index);
   const size = u.planeSize.element(index), rect = u.atlasRect.element(index);
@@ -4223,10 +4363,16 @@ function planeTransmittance(frame: RelightFrame, index: number, p: Node<"vec3">,
   const a = dot(d, u.planeU.element(index)), b = dot(d, u.planeV.element(index));
   const inside = denominator.greaterThan(1e-6).and(t.greaterThan(0))
     .and(a.greaterThanEqual(0)).and(a.lessThanEqual(size.x)).and(b.greaterThanEqual(0)).and(b.lessThanEqual(size.y));
-  const column = clamp(round(a.div(size.x).mul(rect.z.sub(1))), 0, rect.z.sub(1));
-  const row = clamp(round(b.div(size.y).mul(rect.w.sub(1))), 0, rect.w.sub(1));
-  const value = textureLoad(frame.stencilAtlas, ivec2(int(rect.x.add(column)), int(rect.y.add(row)))).r;
-  return select(inside, value, float(0));
+  return select(inside, sample(rect, a.div(size.x).mul(rect.z.sub(1)), b.div(size.y).mul(rect.w.sub(1))), float(0));
+}
+
+/** The nearest cell, halves to even like the CPU kernel's stencilSample (WGSL round). */
+export function nearestStencilCell(frame: RelightFrame): StencilSampler {
+  return (rect, column, row) => {
+    const x = clamp(round(column), 0, rect.z.sub(1));
+    const y = clamp(round(row), 0, rect.w.sub(1));
+    return textureLoad(frame.stencilAtlas, ivec2(int(rect.x.add(x)), int(rect.y.add(y)))).r;
+  };
 }
 
 function encodeMultiplier(value: Node<"float">): Node<"uint"> {
@@ -4244,9 +4390,10 @@ export function createRelightDraw(frame: RelightFrame, geometry: BufferGeometry,
   const recordsAttribute = new StorageBufferAttribute(records, 1);
   const positionsAttribute = new StorageBufferAttribute(positions, 1);
   const coloursAttribute = new StorageBufferAttribute(colours, 1);
-  const wordsAttribute = new StorageBufferAttribute(new Uint32Array(count).fill(PASSTHROUGH_WORD), 1);
+  const wordsAttribute = new StorageBufferAttribute(measureRelight("relight:words", () => new Uint32Array(count).fill(PASSTHROUGH_WORD)), 1);
   const sceneToModel = uniform(sceneToModelMatrix.clone());
   const u = frame.uniforms;
+  const nearest = nearestStencilCell(frame);
   const recordRead = storage(recordsAttribute, "uint", count * RECORD_WORDS).toReadOnly();
   const positionRead = storage(positionsAttribute, "float", count * 3).toReadOnly();
   const colourRead = storage(coloursAttribute, "uint", count).toReadOnly();
@@ -4308,7 +4455,7 @@ export function createRelightDraw(frame: RelightFrame, geometry: BufferGeometry,
     If(u.sunOn.greaterThan(0.5).and(reach), () => {
       let visibility: Node<"float"> = float(0);
       for (let w = 0; w < WINDOW_COUNT; w += 1) {
-        visibility = visibility.add(u.windowOpen.element(w).mul(planeTransmittance(frame, 2 * w, p, u.sunDir)).mul(planeTransmittance(frame, 2 * w + 1, p, u.sunDir)));
+        visibility = visibility.add(u.windowOpen.element(w).mul(planeTransmittance(frame, 2 * w, p, u.sunDir, nearest)).mul(planeTransmittance(frame, 2 * w + 1, p, u.sunDir, nearest)));
       }
       const cosine = select(iso, float(0.25), max(dot(normal, u.sunDir), 0));
       e.addAssign(u.sunRgb.mul(visibility.mul(u.fresnelAtSun).mul(cosine)));
@@ -4358,8 +4505,11 @@ export function createRelightDraw(frame: RelightFrame, geometry: BufferGeometry,
       recordsAttribute.needsUpdate = true;
     },
     run: (renderer) => {
-      frame.prepare(renderer);
-      void renderer.compute(pass);
+      // The encode of the fold and the pass; the first run also builds the pass's pipeline (Task 18 times it).
+      measureRelight("relight:pass", () => {
+        frame.prepare(renderer);
+        void renderer.compute(pass);
+      });
     },
     dispose: () => {
       recordsAttribute.dispose();
@@ -4372,7 +4522,10 @@ export function createRelightDraw(frame: RelightFrame, geometry: BufferGeometry,
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [ ] **Step 4: Run the tests**
+
+Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-spans.test.ts`
+Expected: PASS, 1 test.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-draw.test.ts`
 Expected: PASS, 5 tests. (The TSL graph is built lazily at compile time; the GPU check of the pass itself is Task 18's read-back against the CPU kernel.)
@@ -4385,7 +4538,7 @@ Expected: both exit 0. A TSL typing complaint is fixed by changing the annotatio
 - [ ] **Step 6: Commit**
 
 ```bash
-cd D:/claude/real-hall/repo && git add packages/web/src/lib/relight/relight-draw.ts packages/web/src/lib/relight/__tests__/relight-draw.test.ts && git diff --cached --stat && git commit -m "feat(relight): the per-splat multiplier pass in TSL and its render hooks (T-639 R1b)
+cd D:/claude/real-hall/repo && git add packages/web/src/lib/relight/relight-spans.ts packages/web/src/lib/relight/relight-draw.ts packages/web/src/lib/relight/__tests__/relight-spans.test.ts packages/web/src/lib/relight/__tests__/relight-draw.test.ts && git diff --cached --stat && git commit -m "feat(relight): the per-splat multiplier pass in TSL and its render hooks (T-639 R1b)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -4400,11 +4553,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/__tests__/native-splat-scene.test.ts`, `packages/web/src/components/scene/__tests__/NativeCanvas.test.tsx`
 
 **Interfaces:**
-- Consumes: Task 10 (`RelightFrame`), Task 11 (`createRelightDraw`, `mergeRelightRecords`, `sharedPlacement`, `RelightDraw`), Task 2 (`warnRelightFallback`); `MergedNativeSplats` from `./native-splat-merge.js`.
-- Produces (device): the native canvas's `requestDevice` asks for `requiredLimits.maxStorageBuffersPerShaderStage` equal to the adapter's value whenever the adapter reports more than 8, and leaves the limit out otherwise (so every existing request is unchanged); `nativeRendererStorageBuffersPerStage(renderer: WebGPURenderer): number | null` in `native-renderer.ts`; `RELIT_VERTEX_STORAGE_BUFFERS = 8` in `native-splat-scene.ts` (the relit vertex stage's storage buffers; Task 19 Step 1 raises it if T-640 adds one), and the default `relightSupported` also requires the device's per-stage limit to reach it.
-- Produces: `interface NativeSourceHandle { readonly setGeometry: (geometry: BufferGeometry) => void; readonly setRelight: (records: Uint8Array | null) => void; readonly dispose: () => void }` (the return type of `register`); `NativeSplatScene` constructor gains a third parameter `relightSupported: (renderer: WebGPURenderer) => boolean` (default: `nativeRendererStorageLimit(renderer) !== null`); methods `setRelight(owner: object, frame: RelightFrame | null): void`, `clearRelight(owner: object): void`, `runRelight(): void`, `relightState(): { readonly supported: boolean; readonly relit: boolean }`, `activeRelightDraw(): RelightDraw | null`.
+- Consumes: Task 10 (`RelightFrame`), Task 11 (`createRelightDraw`, `mergeRelightRecords`, `sharedPlacement`, `RelightDraw`, `measureRelight`), Task 2 (`warnRelightFallback`); `MergedNativeSplats` from `./native-splat-merge.js`.
+- Produces (device): the native canvas's `requestDevice` asks for `requiredLimits.maxStorageBuffersPerShaderStage` equal to the adapter's value whenever the adapter reports more than 8, and leaves the limit out otherwise (so every existing request is unchanged); `nativeRendererStorageBuffersPerStage(renderer: WebGPURenderer): number | null` in `native-renderer.ts`; in `native-splat-scene.ts`, `RELIT_VERTEX_STORAGE_BUFFERS = 8` (the relit vertex stage's storage buffers on today's patch; 9 once T-640 is merged, which Task 19 Step 1 sets; write 9 here if T-640 is already merged into this branch) and `nativeRelightSupported(renderer: WebGPURenderer): boolean` (a negotiated storage-buffer size and a per-stage limit that reaches `RELIT_VERTEX_STORAGE_BUFFERS`): the one predicate the host's default, the tiles (Task 13) and the provider (Task 15) all use.
+- Produces: `interface NativeSourceHandle { readonly setGeometry: (geometry: BufferGeometry) => void; readonly setRelight: (records: Uint8Array | null) => void; readonly dispose: () => void }` (the return type of `register`); `NativeSplatScene` constructor gains a third parameter `relightSupported: (renderer: WebGPURenderer) => boolean` (default: `nativeRendererStorageLimit(renderer) !== null` in Step 3, `nativeRelightSupported` from Step 8); methods `setRelight(owner: object, frame: RelightFrame | null): void`, `clearRelight(owner: object): void`, `runRelight(): void`, `relightState(): { readonly supported: boolean; readonly relit: boolean }`, `activeRelightDraw(): RelightDraw | null`.
 
-A draw's key gains `relit` or `captured`, so setting or clearing the frame builds a new draw beside the old one (which stays on screen until the new one is ready) and a change of light never rebuilds. A new relit draw runs its pass after compilation and before it is first shown; late records rerun the pass of every cached draw holding that source; `runRelight` reruns every cached relit draw after `RelightFrame.apply`. Tiles placed differently cannot share one scene-to-model transform: the draw is then drawn as captured with one warning.
+A draw's key gains `relit` or `captured`, so setting or clearing the frame builds a new draw beside the old one (which stays on screen until the new one is ready) and a change of light never rebuilds. A new relit draw runs its pass after compilation and before it is first shown; late records rerun the pass of every cached draw holding that source, and records that reach a source while a draw holding it is being built (between its merge and its first pass) are written into it before that pass, so none is lost; `runRelight` reruns every cached relit draw after `RelightFrame.apply`. This late-records path is how Task 13 delivers records that miss its grace. Tiles placed differently cannot share one scene-to-model transform: the draw is then drawn as captured with one warning. The records merge is timed as the `relight:merge-records` span; if Task 18 finds it over 50 ms, the remedy is to merge per tile off the build task (a passthrough-filled records buffer, each tile's records then written with `RelightDraw.setSourceRecords` in its own task before the first pass), never to relax the threshold.
 
 - [ ] **Step 1: Write the failing tests** — in `packages/web/src/lib/__tests__/native-splat-scene.test.ts`:
 
@@ -4526,6 +4679,18 @@ describe("relit native draws (T-639 R1b)", () => {
     expect(evidence.created).toBe(1);
   });
 
+  it("writes records that arrive while a relit draw is being built into it before its first pass", async () => {
+    const state = setup(false, true);
+    const source = state.add(3);
+    state.runtime.setRelight({}, frame);
+    await vi.advanceTimersByTimeAsync(20);                 // merged without records; waiting for its first sort
+    source.setRelight(Uint8Array.from({ length: 36 }, (_, index) => index));
+    state.sortWorker.complete(0);
+    await vi.advanceTimersByTimeAsync(20);
+    const words = state.runtime.activeRelightDraw()?.recordsAttribute.array;
+    expect([words?.[0], words?.[8]]).toEqual([0x03020100, 0x23222120]);
+  });
+
   it("reruns every cached relit draw when the light changes, and never rebuilds", async () => {
     const state = setup(true, true);
     state.add(3);
@@ -4586,6 +4751,7 @@ Directly after `import { NativeCpuSortPool, type NativeCpuSortHandle } from "./n
 ```ts
 import { createRelightDraw, mergeRelightRecords, sharedPlacement, type RelightDraw } from "./relight/relight-draw.js";
 import type { RelightFrame } from "./relight/relight-frame.js";
+import { measureRelight } from "./relight/relight-spans.js";
 import { warnRelightFallback } from "./relight/relight-warning.js";
 ```
 
@@ -4615,6 +4781,8 @@ In `interface Snapshot`, directly after `  readonly cpuSort: NativeCpuSortHandle
   /** Each source's first splat and splat count in the merged draw. */
   readonly offsets: readonly number[];
   readonly counts: readonly number[];
+  /** Each source's records as merged into this draw, to catch records that arrived while it was being built. */
+  readonly mergedRecords: readonly (Uint8Array | null)[];
 ```
 
 Directly after `  private cpuSortPool: NativeCpuSortPool | null = null;` add:
@@ -4752,7 +4920,9 @@ with:
 
 ```ts
       } else {
-        // The multipliers are written before the draw is first shown, and never per frame.
+        // The multipliers are written before the draw is first shown, and never per frame. Records that
+        // reached a source during the build were not in its merge: they go in first.
+        this.syncRelightRecords(snapshot);
         snapshot.relight?.run(renderer);
         this.snapshots.set(key, snapshot);
 ```
@@ -4829,6 +4999,7 @@ with:
     merged.counts.reduce((offset, count) => { offsets.push(offset); return offset + count; }, 0);
     const snapshot: Snapshot = {
       key, mesh, geometry: merged.geometry, tileAttribute, sources, opacityValues, relight, offsets, counts: merged.counts,
+      mergedRecords: sources.map((source) => source.relightRecords),
 ```
 
 and replace `        mesh.removeFromParent(); mesh.dispose(); tileAttribute.dispose(); merged.geometry.dispose();` with:
@@ -4850,15 +5021,28 @@ Directly after the `createSnapshot` method add:
       warnRelightFallback("placement", "The hall's splat tiles are not placed together, so it is drawn as captured.");
       return null;
     }
-    const records = mergeRelightRecords(sources.map((source, index) => ({ count: merged.counts[index] ?? 0, records: source.relightRecords })));
+    const records = measureRelight("relight:merge-records", () => mergeRelightRecords(
+      sources.map((source, index) => ({ count: merged.counts[index] ?? 0, records: source.relightRecords })),
+    ));
     return createRelightDraw(frame, merged.geometry, records, frame.tileToModel.clone().multiply(placement.invert()));
+  }
+
+  /** Records that reached a source while this draw was being built, written in before its first pass. */
+  private syncRelightRecords(snapshot: Snapshot): void {
+    const relight = snapshot.relight;
+    if (relight === null) return;
+    snapshot.sources.forEach((source, index) => {
+      const offset = snapshot.offsets[index], count = snapshot.counts[index];
+      if (offset === undefined || count === undefined || snapshot.mergedRecords[index] === source.relightRecords) return;
+      relight.setSourceRecords(offset, count, source.relightRecords);
+    });
   }
 ```
 
 - [ ] **Step 4: Run the tests**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/native-splat-scene.test.ts`
-Expected: PASS, the Task 0 count plus 7.
+Expected: PASS, the Task 0 count plus 8.
 
 - [ ] **Step 5: Typecheck**
 
@@ -4873,7 +5057,7 @@ cd D:/claude/real-hall/repo && git add packages/web/src/lib/native-splat-scene.t
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 7: Storage-buffer headroom — write the failing tests.** A relit draw's vertex stage binds 8 storage buffers (Global Constraints), exactly WebGPU's default `maxStorageBuffersPerShaderStage`, and T-640's work (Task 19 Step 1) may add another. The device is created before any draw exists, in `components/scene/NativeCanvas.tsx` (`lib/native-renderer.ts` only reads the negotiated limits). So the canvas asks for the adapter's own limit whenever it is higher, which never fails, and the host relights only where the negotiated limit reaches the relit stage's count.
+- [ ] **Step 7: Storage-buffer headroom — write the failing tests.** A relit draw's vertex stage binds 8 storage buffers on today's patch (Global Constraints), exactly WebGPU's default `maxStorageBuffersPerShaderStage`, and T-640's patch adds a ninth (`keptRead`); Task 19 Step 1 sets the count to 9 after that merge. The device is created before any draw exists, in `components/scene/NativeCanvas.tsx` (`lib/native-renderer.ts` only reads the negotiated limits). So the canvas asks for the adapter's own limit whenever it is higher, which never fails, and the host, the tiles and the provider relight only where the negotiated limit reaches the relit stage's count (`nativeRelightSupported`, Step 8).
 
 In `packages/web/src/lib/__tests__/native-splat-scene.test.ts`, replace the import line `import { NativeSplatScene } from "../native-splat-scene.js";` with `import { NativeSplatScene, RELIT_VERTEX_STORAGE_BUFFERS } from "../native-splat-scene.js";`, and append inside the `describe("relit native draws (T-639 R1b)", …)` block, before its closing `});`:
 
@@ -4946,20 +5130,26 @@ In `packages/web/src/lib/native-splat-scene.ts`, replace `import { afterNativeCa
 import { afterNativeCanvasGpuWork, isNativeCanvasRender, nativeRendererStorageBuffersPerStage, nativeRendererStorageLimit } from "./native-renderer.js";
 ```
 
-directly after the `NativeSourceHandle` interface add:
+directly after the `NativeSourceHandle` interface add (write `9` instead of `8` if T-640's patch is already merged into this branch):
 
 ```ts
-/** Storage buffers a relit draw's vertex stage binds (order, centre, covariance A and B, colour, SH contribution,
- * tile ids, multiplier words). Task 19 Step 1 raises it if the rebased patch's vertex stage binds more. */
+/** Storage buffers a relit draw's vertex stage binds: order, centre, covariance A and B, colour, SH contribution,
+ * tile ids and the multiplier words. T-640's patch adds a ninth (`keptRead`, the sort's kept count): Task 19
+ * Step 1 sets this to 9 when T-640 is merged. */
 export const RELIT_VERTEX_STORAGE_BUFFERS = 8;
+
+/**
+ * Whether a renderer can draw the hall relit: WebGPU compute (a negotiated storage-buffer size) and a vertex
+ * stage with room for the multiplier words. The host's default, the tiles and the provider all ask this one
+ * predicate, so a control never appears, and no records are fetched, where the host would draw as captured.
+ */
+export function nativeRelightSupported(renderer: WebGPURenderer): boolean {
+  return nativeRendererStorageLimit(renderer) !== null
+    && (nativeRendererStorageBuffersPerStage(renderer) ?? 0) >= RELIT_VERTEX_STORAGE_BUFFERS;
+}
 ```
 
-and in the constructor replace the default `(renderer) => nativeRendererStorageLimit(renderer) !== null` with:
-
-```ts
-(renderer) => nativeRendererStorageLimit(renderer) !== null
-      && (nativeRendererStorageBuffersPerStage(renderer) ?? 0) >= RELIT_VERTEX_STORAGE_BUFFERS
-```
+and in the constructor replace the default `(renderer) => nativeRendererStorageLimit(renderer) !== null` with `nativeRelightSupported`.
 
 Then, in `packages/web/src/components/scene/NativeCanvas.tsx`:
 
@@ -5004,8 +5194,8 @@ with:
               requiredLimits: {
                 maxStorageBufferBindingSize: Math.min(adapter.limits.maxStorageBufferBindingSize, 268_435_456),
                 maxBufferSize: Math.min(adapter.limits.maxBufferSize, 536_870_912),
-                // A relit splat draw binds 8 storage buffers in its vertex stage, WebGPU's default limit (T-639 R1b):
-                // take the adapter's headroom whenever it has more, so one more binding cannot fail the pipeline.
+                // A relit splat draw binds 8 storage buffers in its vertex stage (9 with T-640's kept count), and
+                // WebGPU's default limit is 8 (T-639 R1b): take the adapter's headroom whenever it has more.
                 ...(perStage !== undefined && perStage > 8 ? { maxStorageBuffersPerShaderStage: perStage } : {}),
               },
             });
@@ -5017,7 +5207,7 @@ Run: `pnpm --filter @omnitwin/web exec vitest run src/components/scene/__tests__
 Expected: PASS (the Task 0 count plus 3).
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/native-splat-scene.test.ts`
-Expected: PASS, the Task 0 count plus 8.
+Expected: PASS, the Task 0 count plus 9.
 
 Run: `cd D:/claude/real-hall/repo && pnpm --filter @omnitwin/web typecheck`
 Expected: exit 0.
@@ -5038,10 +5228,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/relight/__tests__/relight-tile-load.test.ts`, `packages/web/src/components/scene/__tests__/NativeSplatLayer.test.tsx`
 
 **Interfaces:**
-- Consumes: Task 2 (`relightTileLookup`, `RelightTileSource`, `warnRelightFallback`), Task 5 (`loadRelightRecords`, `RelightModelData`), Task 12 (`NativeSourceHandle.setRelight`); `getNativeRenderer`, `nativeRendererStorageLimit` from `../native-renderer.js`; `nativeSplatCount` from `../native-splat-merge.js`.
-- Produces: `relightBackendSupported(gl: unknown): boolean`; `interface RelightBundleTile { readonly file: string; readonly sha256: string; readonly isEnvironment: boolean }`; `relightTilePromises(tiles: readonly RelightBundleTile[], relightPackage: Promise<RelightModelData | null>): ReadonlyMap<string, Promise<RelightTileSource | null>>` (keyed by tile file); `interface TileLoad { readonly geometry: BufferGeometry; readonly records: Uint8Array | null }`; `loadTileWithRelight(loadGeometry: () => Promise<BufferGeometry>, relight: Promise<RelightTileSource | null> | undefined, supported: boolean, signal: AbortSignal): Promise<TileLoad>`; `NativeSplatLayerProps.relight?: Promise<RelightTileSource | null>`.
+- Consumes: Task 2 (`relightTileLookup`, `RelightTileSource`, `warnRelightFallback`), Task 5 (`loadRelightRecords`, `RelightModelData`), Task 12 (`NativeSourceHandle.setRelight` and its late-records path, `nativeRelightSupported`); `getNativeRenderer` from `../native-renderer.js`; `nativeSplatCount` from `../native-splat-merge.js`.
+- Produces: `relightBackendSupported(gl: unknown): boolean` (false for anything but a WebGPU renderer with a backend object, then Task 12's `nativeRelightSupported`); `interface RelightBundleTile { readonly file: string; readonly sha256: string; readonly isEnvironment: boolean }`; `relightTilePromises(tiles: readonly RelightBundleTile[], relightPackage: Promise<RelightModelData | null>): ReadonlyMap<string, Promise<RelightTileSource | null>>` (keyed by tile file); `RELIGHT_GRACE_MS = 10_000` (the one 10 s grace: a tile's geometry waits this long for its records, and the provider this long for the package, Task 15); `interface TileLoad { readonly geometry: BufferGeometry; readonly records: Uint8Array | null; readonly lateRecords: Promise<Uint8Array | null> | null }`; `loadTileWithRelight(loadGeometry: () => Promise<BufferGeometry>, relight: Promise<RelightTileSource | null> | undefined, supported: boolean, signal: AbortSignal, graceMs?: number): Promise<TileLoad>`; `NativeSplatLayerProps.relight?: Promise<RelightTileSource | null>`.
 
-A tile never waits on, or fails because of, its records: both load together and settle independently. A refused tile (another capture of it, no records, a count other than its splat count, an unreadable file) is drawn as captured with one `tile` warning; the sky shell is refused silently (the sky panels cover the windows).
+A tile's geometry and its records load together, and the geometry waits for its records so that the first draw is built relit (one records merge, not a captured draw and then a relit one). The records themselves wait for the package (`relightTilePromises`, which RoomSplatScene feeds with the provider's decision, Task 15), so a slow package or records file would hold the tile; the wait is therefore bounded: if the records have not settled `RELIGHT_GRACE_MS` (10 s) after the geometry has loaded, the geometry is registered without them and the records reach the host when they arrive, through Task 12's late-records path (`NativeSourceHandle.setRelight`: the pass of every draw holding the tile reruns, no draw is rebuilt, and a draw still being built takes them before its first pass). Records never fail a tile. The provider gives up on the package after the same `RELIGHT_GRACE_MS` (Task 15), and the tiles then load no records at all. A refused tile (another capture of it, no records, a count other than its splat count, an unreadable file) is drawn as captured with one `tile` warning; the sky shell is refused silently (the sky panels cover the windows). Task 18 reports the walk's load time, relit against off.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5054,8 +5244,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const records = vi.hoisted(() => ({ load: vi.fn<(source: unknown, signal: AbortSignal) => Promise<Uint8Array>>() }));
 vi.mock("../../relight-package.js", () => ({ loadRelightRecords: records.load }));
 
+import { RELIT_VERTEX_STORAGE_BUFFERS } from "../../native-splat-scene.js";
 import { loadRelightModelData } from "../relight-assets.js";
-import { loadTileWithRelight, relightBackendSupported, relightTilePromises } from "../relight-tile-load.js";
+import { RELIGHT_GRACE_MS, loadTileWithRelight, relightBackendSupported, relightTilePromises } from "../relight-tile-load.js";
 import { resetRelightWarnings } from "../relight-warning.js";
 import { TEST_TILE_SHA, buildTestPackage } from "./relight-test-package.js";
 
@@ -5069,9 +5260,13 @@ const SOURCE = { url: "https://cdn.test/t.relight.gz", sha256: "a".repeat(64), b
 afterEach(() => { resetRelightWarnings(); records.load.mockReset(); vi.restoreAllMocks(); });
 
 describe("a tile's relight records (T-639 R1b)", () => {
-  it("relights only on WebGPU", () => {
-    expect(relightBackendSupported({ isWebGPURenderer: true, backend: { device: { limits: { maxStorageBufferBindingSize: 134_217_728 } } } })).toBe(true);
+  it("relights only where the host would: WebGPU with room for the multiplier words", () => {
+    const device = (perStage: number) => ({ device: { limits: { maxStorageBufferBindingSize: 134_217_728, maxStorageBuffersPerShaderStage: perStage } } });
+    expect(relightBackendSupported({ isWebGPURenderer: true, backend: device(16) })).toBe(true);
+    expect(relightBackendSupported({ isWebGPURenderer: true, backend: device(RELIT_VERTEX_STORAGE_BUFFERS - 1) })).toBe(false);
     expect(relightBackendSupported({ isWebGPURenderer: true, backend: {} })).toBe(false);
+    // No backend object at all (a renderer stub): the WebGL2 fallback's answer, never an error.
+    expect(relightBackendSupported({ isWebGPURenderer: true })).toBe(false);
     expect([relightBackendSupported({}), relightBackendSupported(undefined)]).toEqual([false, false]);
   });
 
@@ -5097,7 +5292,25 @@ describe("a tile's relight records (T-639 R1b)", () => {
     const loaded = geometry(1), bytes = new Uint8Array(12);
     records.load.mockResolvedValue(bytes);
     const result = await loadTileWithRelight(() => Promise.resolve(loaded), Promise.resolve(SOURCE), true, new AbortController().signal);
-    expect(result).toEqual({ geometry: loaded, records: bytes });
+    expect(result).toEqual({ geometry: loaded, records: bytes, lateRecords: null });
+  });
+
+  it("registers the geometry without records still loading after the grace, and hands them over when they arrive", async () => {
+    vi.useFakeTimers();
+    try {
+      const loaded = geometry(1), bytes = new Uint8Array(12);
+      let deliver: (value: Uint8Array) => void = () => undefined;
+      records.load.mockReturnValue(new Promise<Uint8Array>((resolve) => { deliver = resolve; }));
+      const pending = loadTileWithRelight(() => Promise.resolve(loaded), Promise.resolve(SOURCE), true, new AbortController().signal);
+      await vi.advanceTimersByTimeAsync(RELIGHT_GRACE_MS);
+      const result = await pending;
+      expect([result.geometry, result.records]).toEqual([loaded, null]);
+      if (result.lateRecords === null) throw new Error("Records still loading after the grace come late.");
+      deliver(bytes);
+      await expect(result.lateRecords).resolves.toBe(bytes);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("draws a tile as captured when its records fail or hold another count, with one warning", async () => {
@@ -5125,6 +5338,17 @@ Replace `  gl: { isWebGPURenderer: true },` with `  gl: { isWebGPURenderer: true
 
 Replace `  setGeometry: vi.fn(), dispose: vi.fn(),` with `  setGeometry: vi.fn(), setRelight: vi.fn(), dispose: vi.fn(),`.
 
+The layer now reaches `native-splat-scene.js` for `nativeRelightSupported` too (through `relight-tile-load.ts`), and this file mocks that module, so the mock must carry the real predicate. Replace `vi.mock("../../../lib/native-splat-scene.js", () => ({ nativeSplatScene: () => ({` with:
+
+```ts
+vi.mock("../../../lib/native-splat-scene.js", async (importOriginal) => ({
+  // The real predicate (T-639 R1b): the layer relights exactly where the host would.
+  nativeRelightSupported: (await importOriginal<typeof import("../../../lib/native-splat-scene.js")>()).nativeRelightSupported,
+  nativeSplatScene: () => ({
+```
+
+(the mock's closing `}) }));` stays as it is).
+
 Replace `    return { setGeometry: runtime.setGeometry, dispose: runtime.dispose };` with `    return { setGeometry: runtime.setGeometry, setRelight: runtime.setRelight, dispose: runtime.dispose };`.
 
 Directly after `vi.mock("../../../lib/native-splat-loader.js", () => ({ loadNativeSplatGeometry: loader.load }));` add:
@@ -5132,11 +5356,11 @@ Directly after `vi.mock("../../../lib/native-splat-loader.js", () => ({ loadNati
 ```ts
 const relightRecords = vi.hoisted(() => ({ load: vi.fn<(source: unknown, signal: AbortSignal) => Promise<Uint8Array>>() }));
 vi.mock("../../../lib/relight-package.js", () => ({ loadRelightRecords: relightRecords.load }));
-const WEBGPU = { isWebGPURenderer: true, backend: { device: { limits: { maxStorageBufferBindingSize: 134_217_728 } } } };
+const WEBGPU = { isWebGPURenderer: true, backend: { device: { limits: { maxStorageBufferBindingSize: 134_217_728, maxStorageBuffersPerShaderStage: 16 } } } };
 const RELIGHT_SOURCE = { url: "https://cdn.test/t.relight.gz", sha256: "a".repeat(64), bytes: 30, count: 1 };
 ```
 
-In `beforeEach`, replace `  state.scene = new Scene(); state.camera = new PerspectiveCamera(); runtime.registration = null;` with:
+In `beforeEach`, replace `  state.scene = new Scene(); state.camera = new PerspectiveCamera(); runtime.registration = null;` with the line below. The default renderer stays a WebGPU renderer without a backend object: the WebGL2 fallback, which `relightBackendSupported` answers false for without reading a device:
 
 ```ts
   state.scene = new Scene(); state.camera = new PerspectiveCamera(); runtime.registration = null; state.gl = { isWebGPURenderer: true };
@@ -5186,19 +5410,33 @@ Expected: FAIL — the three new tests (`setRelight` is never called); the four 
 
 ```ts
 import type { BufferGeometry } from "three";
-import { getNativeRenderer, nativeRendererStorageLimit } from "../native-renderer.js";
+import { getNativeRenderer } from "../native-renderer.js";
 import { nativeSplatCount } from "../native-splat-merge.js";
+import { nativeRelightSupported } from "../native-splat-scene.js";
 import { loadRelightRecords } from "../relight-package.js";
 import type { RelightModelData } from "./relight-assets.js";
 import { RECORD_BYTES } from "./relight-codec.js";
 import { relightTileLookup, type RelightTileSource } from "./relight-manifest.js";
 import { warnRelightFallback } from "./relight-warning.js";
 
-/** Relighting needs the WebGPU backend; the WebGL2 fallback keeps the hall as captured (spec §5). */
+/**
+ * The one grace relighting allows, in milliseconds: a tile's geometry waits this long, once loaded, for records
+ * that have not settled (then they come late), and the provider this long for the package (Task 15: then the
+ * whole session stays as captured).
+ */
+export const RELIGHT_GRACE_MS = 10_000;
+
+/**
+ * Whether this canvas's renderer relights (spec §5): the host's own predicate, `nativeRelightSupported`, so the
+ * provider, the tiles and the host always agree. A renderer without a backend object (a stub, the WebGL2
+ * fallback's test double) cannot: nativeRendererStorageLimit would read `device` from it.
+ */
 export function relightBackendSupported(gl: unknown): boolean {
   if (typeof gl !== "object" || gl === null) return false;
   const renderer = getNativeRenderer(gl);
-  return renderer !== null && nativeRendererStorageLimit(renderer) !== null;
+  if (renderer === null) return false;
+  const backend: unknown = renderer.backend;
+  return typeof backend === "object" && backend !== null && nativeRelightSupported(renderer);
 }
 
 export interface RelightBundleTile {
@@ -5224,34 +5462,58 @@ export function relightTilePromises(tiles: readonly RelightBundleTile[], relight
 
 export interface TileLoad {
   readonly geometry: BufferGeometry;
+  /** The tile's records, when they settled within the grace; null otherwise (and for a refused tile). */
   readonly records: Uint8Array | null;
+  /** Records still loading when the grace ran out: they resolve (checked, or null) for the host's late-records path. */
+  readonly lateRecords: Promise<Uint8Array | null> | null;
 }
 
-/** A tile's geometry and its relight records, loaded together; the records never fail the tile. */
+type RecordsOutcome = { readonly ok: true; readonly records: Uint8Array | null } | { readonly ok: false; readonly reason: unknown };
+
+/** A settled records outcome, checked against the tile's splats; null (with one warning) draws the tile as captured. */
+function checkedRecords(outcome: RecordsOutcome, geometry: BufferGeometry, signal: AbortSignal): Uint8Array | null {
+  if (!outcome.ok) {
+    if (!signal.aborted) warnRelightFallback("tile", "Part of the hall stays as captured: its relight records could not be read.", outcome.reason);
+    return null;
+  }
+  if (outcome.records !== null && outcome.records.length !== nativeSplatCount(geometry) * RECORD_BYTES) {
+    warnRelightFallback("tile", "Part of the hall stays as captured: its relight records do not match its splats.");
+    return null;
+  }
+  return outcome.records;
+}
+
+/**
+ * A tile's geometry and its relight records, loaded together. The geometry waits for its records so the first
+ * draw is built relit, but never more than `graceMs` after it has loaded; records never fail the tile.
+ */
 export async function loadTileWithRelight(
   loadGeometry: () => Promise<BufferGeometry>,
   relight: Promise<RelightTileSource | null> | undefined,
   supported: boolean,
   signal: AbortSignal,
+  graceMs = RELIGHT_GRACE_MS,
 ): Promise<TileLoad> {
   const pending = relight === undefined || !supported
     ? Promise.resolve(null)
     : relight.then((source) => (source === null ? null : loadRelightRecords(source, signal)));
-  const [geometry, records] = await Promise.allSettled([loadGeometry(), pending]);
-  if (geometry.status === "rejected") {
-    const reason: unknown = geometry.reason;
+  // Settled at once, so records that fail while the geometry loads are never an unhandled rejection.
+  const settled = pending.then(
+    (records): RecordsOutcome => ({ ok: true, records }),
+    (reason: unknown): RecordsOutcome => ({ ok: false, reason }),
+  );
+  let geometry: BufferGeometry;
+  try {
+    geometry = await loadGeometry();
+  } catch (reason: unknown) {
     throw reason instanceof Error ? reason : new Error(String(reason));
   }
-  if (records.status === "rejected") {
-    const reason: unknown = records.reason;
-    if (!signal.aborted) warnRelightFallback("tile", "Part of the hall stays as captured: its relight records could not be read.", reason);
-    return { geometry: geometry.value, records: null };
-  }
-  if (records.value !== null && records.value.length !== nativeSplatCount(geometry.value) * RECORD_BYTES) {
-    warnRelightFallback("tile", "Part of the hall stays as captured: its relight records do not match its splats.");
-    return { geometry: geometry.value, records: null };
-  }
-  return { geometry: geometry.value, records: records.value };
+  const checked = settled.then((outcome) => checkedRecords(outcome, geometry, signal));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const grace = new Promise<"late">((resolve) => { timer = setTimeout(() => { resolve("late"); }, graceMs); });
+  const first = await Promise.race([checked, grace]);
+  clearTimeout(timer);
+  return first === "late" ? { geometry, records: null, lateRecords: checked } : { geometry, records: first, lateRecords: null };
 }
 ```
 
@@ -5308,11 +5570,13 @@ with:
       .then(({ loadNativeSplatGeometry }) => loadTileWithRelight(
         () => loadNativeSplatGeometry(url, { signal: controller.signal }), relight, relightable, controller.signal,
       ))
-      .then(({ geometry: loaded, records }) => {
+      .then(({ geometry: loaded, records, lateRecords }) => {
         if (disposed) { loaded.dispose(); return; }
         geometry = loaded;
         registration.setGeometry(loaded);
         registration.setRelight(records);
+        // Records slower than the grace reach the host's late-records path: its pass reruns, no draw is rebuilt.
+        if (lateRecords !== null) void lateRecords.then((late) => { if (!disposed && late !== null) registration.setRelight(late); });
 ```
 
 and replace `  }, [host, anchor, url, invalidate]);` with:
@@ -5324,7 +5588,7 @@ and replace `  }, [host, anchor, url, invalidate]);` with:
 - [ ] **Step 5: Run the tests**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-tile-load.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/components/scene/__tests__/NativeSplatLayer.test.tsx`
 Expected: PASS, 7 tests.
@@ -5349,12 +5613,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/__tests__/floor-skin.test.ts`, `packages/web/src/components/stage/__tests__/StageFloor.test.tsx`
 
 **Interfaces:**
-- Consumes: Task 7 (`displayNode`, `HIGHLIGHT_KNEE`: the floor's knee is 0.8), Task 10 (`RelightFrame`: `uniforms` including the kernel's `windowOpen` horizon gates, `stencilAtlas`, `floorLight`), Task 2 (`warnRelightFallback`).
+- Consumes: Task 7 (`displayNode`, `HIGHLIGHT_KNEE`: the floor's knee is 0.8), Task 10 (`RelightFrame`: `uniforms` including the kernel's `windowOpen` horizon gates, `stencilAtlas`, `floorLight`), Task 11 (`planeTransmittance`, `StencilSampler`: the plane-ray and inside test, shared with the multiplier pass), Task 2 (`warnRelightFallback`).
 - Produces (`floor-skin.ts`): `provenance.kind` is `"measured-photographic" | "restored-albedo"`; `colour.albedoScale?: number` (recorded, never applied again, contract 3); `type FloorSkinVersion = "v1" | "v2"`; `floorSkinPackageUrl(roomSlug: string, version: FloorSkinVersion, configuredBaseUrl: string | undefined): string | null`; `floorSkinVersionOverride(search: string, previewable: boolean): "v1" | null` (`?floorskin=v1`, used by the captured-light check in Task 18).
 - Produces (`floor-material.ts`): `litFloorMaterial(map: Texture, frame: RelightFrame): MeshBasicNodeMaterial` (name `stage-floor-lit`).
 - Produces (`relight-context.ts`): `interface RelightState { readonly frame: RelightFrame | null; readonly pending: boolean }`; `RelightContext`; `useRelightState(): RelightState`.
 
-The floor geometry is in the tiles' capture frame (`floor-skin.ts`), so `tileToModel × positionLocal` is the model-frame point; `modelToLightUv` finds its 5 cm light texel. The sun on the floor is computed per pixel by projecting each window's two stencils along the sun, sampled bilinearly, so the patches keep sharp edges (spec §4.3). While the relight package loads the floor waits (so v1 is never fetched and dropped); relit, it is v2 drawn lit, else v1 as today; a missing or broken v2 falls back to v1 with one `floor-skin-v2` warning (spec §5).
+The floor geometry is in the tiles' capture frame (`floor-skin.ts`), so `tileToModel × positionLocal` is the model-frame point; `modelToLightUv` finds its 5 cm light texel. The sun on the floor is computed per pixel by projecting each window's two stencils along the sun, sampled bilinearly, so the patches keep sharp edges (spec §4.3). While the relight package loads the floor waits (so v1 is never fetched and dropped), for at most the provider's grace (`RELIGHT_GRACE_MS`, 10 s, Task 15); relit, it is v2 drawn lit, else v1 as today; a missing or broken v2 falls back to v1 with one `floor-skin-v2` warning (spec §5).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5517,26 +5781,20 @@ export function useRelightState(): RelightState {
 ```ts
 import { FrontSide, type Texture } from "three";
 import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
-import { Fn, dot, float, max, positionLocal, select, texture as textureNode, uv, vec2, vec4 } from "three/tsl";
+import { Fn, float, max, positionLocal, texture as textureNode, uv, vec2, vec4 } from "three/tsl";
 import { HIGHLIGHT_KNEE, displayNode } from "./display.js";
 import { WINDOW_COUNT } from "./relight-codec.js";
+import { planeTransmittance, type StencilSampler } from "./relight-draw.js";
 import type { RelightFrame } from "./relight-frame.js";
 
-/** Stencil plane `index`'s transmittance along the sun from a floor point, sampled bilinearly: sharp patch edges. */
-function planeTransmittance(frame: RelightFrame, index: number, p: Node<"vec3">): Node<"float"> {
-  const u = frame.uniforms;
-  const origin = u.planeOrigin.element(index), normal = u.planeNormal.element(index);
-  const size = u.planeSize.element(index), rect = u.atlasRect.element(index);
-  const denominator = dot(u.sunDir, normal);
-  const t = dot(origin.sub(p), normal).div(max(denominator, 1e-6));
-  const d = p.add(u.sunDir.mul(t)).sub(origin);
-  const a = dot(d, u.planeU.element(index)), b = dot(d, u.planeV.element(index));
-  const inside = denominator.greaterThan(1e-6).and(t.greaterThan(0))
-    .and(a.greaterThanEqual(0)).and(a.lessThanEqual(size.x)).and(b.greaterThanEqual(0)).and(b.lessThanEqual(size.y));
-  // Cell (col, row) centres at atlas texel (x0 + col + 0.5, y0 + row + 0.5); a blank row separates stencils.
+/**
+ * The floor reads each stencil bilinearly (sharp patch edges): cell (col, row) centres sit at atlas texel
+ * (x0 + col + 0.5, y0 + row + 0.5), and a blank row separates stencils. The plane-ray and inside test are the
+ * multiplier pass's own (`planeTransmittance`, Task 11).
+ */
+function bilinearStencilCell(frame: RelightFrame): StencilSampler {
   const atlas = vec2(frame.stencilAtlas.image.width, frame.stencilAtlas.image.height);
-  const texel = vec2(rect.x.add(a.div(size.x).mul(rect.z.sub(1))).add(0.5), rect.y.add(b.div(size.y).mul(rect.w.sub(1))).add(0.5));
-  return select(inside, textureNode(frame.stencilAtlas, texel.div(atlas)).level(float(0)).r, float(0));
+  return (rect, column, row) => textureNode(frame.stencilAtlas, vec2(rect.x.add(column).add(0.5), rect.y.add(row).add(0.5)).div(atlas)).level(float(0)).r;
 }
 
 /**
@@ -5548,13 +5806,15 @@ export function litFloorMaterial(map: Texture, frame: RelightFrame): MeshBasicNo
   const u = frame.uniforms;
   const material = new MeshBasicNodeMaterial({ side: FrontSide, fog: false, toneMapped: false });
   material.name = "stage-floor-lit";
+  const bilinear = bilinearStencilCell(frame);
   material.colorNode = Fn(() => {
     const albedo = textureNode(map, uv());
     const model = u.tileToModel.mul(vec4(positionLocal, 1)).xyz.toVar();
     const base = textureNode(frame.floorLight, u.modelToLightUv.mul(vec4(model, 1)).xy).level(float(0)).rgb;
     let visibility: Node<"float"> = float(0);
     for (let w = 0; w < WINDOW_COUNT; w += 1) {
-      visibility = visibility.add(u.windowOpen.element(w).mul(planeTransmittance(frame, 2 * w, model)).mul(planeTransmittance(frame, 2 * w + 1, model)));
+      visibility = visibility.add(u.windowOpen.element(w)
+        .mul(planeTransmittance(frame, 2 * w, model, u.sunDir, bilinear)).mul(planeTransmittance(frame, 2 * w + 1, model, u.sunDir, bilinear)));
     }
     // The floor faces up the model frame (e57, z up).
     const sun = u.sunRgb.mul(visibility.mul(u.fresnelAtSun).mul(max(u.sunDir.z, 0)).mul(u.sunOn));
@@ -5712,11 +5972,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/relight/__tests__/sky-panels.test.ts`, `packages/web/src/components/scene/__tests__/RelightProvider.test.tsx`, `packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx`, `packages/web/src/lib/__tests__/splat-staging-plugin.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 5, 7 (`skyPanelNode`, which displays the sky with a knee of 0.8), 8, 10, 12, 13, 14.
+- Consumes: Tasks 5, 7 (`skyPanelNode`, which displays the sky with a knee of 0.8), 8, 10, 11 (`measureRelight`), 12, 13 (`relightBackendSupported`, which asks Task 12's `nativeRelightSupported`; `RELIGHT_GRACE_MS`, the one 10 s grace; `relightTilePromises`), 14; Task 2 (`warnRelightFallback`).
 - Produces (`sky-panels.ts`): `SKY_PANEL_OFFSET = 0.01`; `skyPanelGeometry(planes: readonly Pick<StencilPlane, "origin" | "u" | "v" | "width" | "height" | "normal">[]): BufferGeometry` (model frame, 1 cm outside each glass plane, `uv.y` 0 at the sill and 1 at the top); `skyPanelMaterial(frame: RelightFrame): MeshBasicNodeMaterial` (name `relight-sky-panel`).
-- Produces: `RelightSkyPanels({ frame, transform })`; `RelightProvider({ relightPackage: Promise<RelightModelData | null> | null, transform: RuntimeAssetViewTransform, children })` providing `RelightContext`, setting the frame on the host, applying the store's choice once per animation frame and setting the store's `status`.
+- Produces: `RelightSkyPanels({ frame, transform })`; `RelightProvider({ relightPackage: Promise<RelightModelData | null> | null, transform: RuntimeAssetViewTransform, onSettled?: (data: RelightModelData | null) => void, children })` providing `RelightContext`, setting the frame on the host, applying the store's choice once per animation frame and setting the store's `status`. If the frame cannot be made or applied, or the host refuses it, the provider warns once (`package`), takes the partial frame back off the host and disposes it, sets `status` to `off` and publishes a null frame (not pending), so the floor falls back and the control never hangs (spec §5). The frame's construction and its first `apply` are the `relight:frame` and `relight:apply` spans.
+- The provider waits for the package at most `RELIGHT_GRACE_MS` (10 s, the tiles' grace too). On timeout it falls back for the whole session, that is for as long as the walk is mounted (a reload or a new visit tries again). It warns once (`package`, cause `"timed out"`), sets `status` to `off` and publishes a null frame, so the floor goes ahead with floor skin v1. A package that arrives later is ignored, so relit splats never stand on an unlit floor, nor the reverse. `onSettled` reports the session's single outcome: the package once the hall is relit from it, or null for any fallback (no package, WebGL2, a failed frame, a timeout). RoomSplatScene feeds the tiles' `relightTilePromises` from it, so the tiles load records only for a relit session.
 - Produces (`stub-r3f-root.tsx`): `mountInStubRoot(element, width?, height?, renderer?: Record<string, unknown>)` (fields merged into the stub renderer).
-- Produces (`RoomSplatScene`): the relit walk scene; each `NativeSplatLayer` receives `relight`; `?light=<preset>` selects a preset where previewable.
+- Produces (`RoomSplatScene`): the relit walk scene; each `NativeSplatLayer` receives `relight`, a promise that follows the provider's `onSettled` outcome; `?light=<preset>` selects a preset where previewable.
 
 The relight package (`venviewer.relight.v1`) holds `.json`, `.gz` and `.png` files under `relight/`; the development server serves them only inside a `relight` or `floor-skin` directory.
 
@@ -5753,6 +6014,8 @@ import { PRESET_DISPLAY } from "../../../lib/light-setting.js";
 import { NativeSplatScene } from "../../../lib/native-splat-scene.js";
 import { loadRelightModelData, type RelightModelData } from "../../../lib/relight/relight-assets.js";
 import { RelightFrame } from "../../../lib/relight/relight-frame.js";
+import { RELIGHT_GRACE_MS } from "../../../lib/relight/relight-tile-load.js";
+import { resetRelightWarnings } from "../../../lib/relight/relight-warning.js";
 import { buildTestPackage } from "../../../lib/relight/__tests__/relight-test-package.js";
 import { useLightSettingStore } from "../../../stores/light-setting-store.js";
 import { mountInStubRoot, type StubRoot } from "../../__tests__/stub-r3f-root.js";
@@ -5760,7 +6023,7 @@ import { RelightProvider } from "../RelightProvider.js";
 import { useRelightState } from "../relight-context.js";
 import type { RuntimeAssetViewTransform } from "../../../lib/runtime-package-resolution.js";
 
-const WEBGPU = { isWebGPURenderer: true, backend: { device: { limits: { maxStorageBufferBindingSize: 134_217_728 } } } };
+const WEBGPU = { isWebGPURenderer: true, backend: { device: { limits: { maxStorageBufferBindingSize: 134_217_728, maxStorageBuffersPerShaderStage: 16 } } } };
 const IDENTITY: RuntimeAssetViewTransform = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, note: "identity" };
 const seen: { frame: RelightFrame | null; pending: boolean }[] = [];
 function Probe(): null {
@@ -5776,7 +6039,7 @@ beforeAll(async () => {
   data = await loadRelightModelData(pkg.fetch, pkg.manifestUrl);
 });
 beforeEach(() => { useLightSettingStore.setState(initial, true); seen.length = 0; });
-afterEach(() => { mounted?.unmount(); mounted = null; vi.restoreAllMocks(); });
+afterEach(() => { mounted?.unmount(); mounted = null; resetRelightWarnings(); vi.restoreAllMocks(); });
 
 async function settle(ms = 60): Promise<void> {
   await act(async () => { await new Promise<void>((resolve) => { setTimeout(resolve, ms); }); });
@@ -5843,6 +6106,48 @@ describe("the relight provider (T-639 R1b)", () => {
     expect(clearRelight).toHaveBeenCalledOnce();
     expect(useLightSettingStore.getState().status).toBe("off");
   });
+
+  it("draws the hall as captured, with one warning, when a valid package cannot be made into a frame", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const setRelight = vi.spyOn(NativeSplatScene.prototype, "setRelight");
+    // Sixteen finite numbers pass the schema, but a zero texelToModel has no light-map mapping: the frame throws.
+    const broken: RelightModelData = { ...data, manifest: { ...data.manifest, floor: { ...data.manifest.floor, texelToModel: Array.from({ length: 16 }, () => 0) } } };
+    mounted = mountInStubRoot(<RelightProvider relightPackage={Promise.resolve(broken)} transform={IDENTITY}><Probe /></RelightProvider>, 1440, 900, WEBGPU);
+    await settle();
+    expect(setRelight).not.toHaveBeenCalled();
+    expect(seen.at(-1)).toEqual({ frame: null, pending: false });
+    expect(useLightSettingStore.getState().status).toBe("off");
+    expect(skyPanels()).toHaveLength(0);
+    expect(warn.mock.calls.filter(([message]) => String(message).startsWith("VenViewer: The relight package could not be used"))).toHaveLength(1);
+  });
+
+  it("stops waiting after the grace: the session stays as captured, and a package arriving later changes nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const setRelight = vi.spyOn(NativeSplatScene.prototype, "setRelight");
+      const onSettled = vi.fn();
+      let release: (value: RelightModelData) => void = () => undefined;
+      const late = new Promise<RelightModelData>((resolve) => { release = resolve; });
+      mounted = mountInStubRoot(<RelightProvider relightPackage={late} transform={IDENTITY} onSettled={onSettled}><Probe /></RelightProvider>, 1440, 900, WEBGPU);
+      expect(seen.at(-1)?.pending).toBe(true);
+      expect(useLightSettingStore.getState().status).toBe("loading");
+      await act(async () => { await vi.advanceTimersByTimeAsync(RELIGHT_GRACE_MS); });
+      expect(useLightSettingStore.getState().status).toBe("off");
+      expect(seen.at(-1)).toEqual({ frame: null, pending: false });   // the floor goes ahead with floor skin v1
+      expect(onSettled).toHaveBeenCalledExactlyOnceWith(null);       // the tiles load no records
+      expect(warn.mock.calls.filter(([message, cause]) => String(message).startsWith("VenViewer: The relight package") && cause === "timed out")).toHaveLength(1);
+      release(data);
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      expect(setRelight).not.toHaveBeenCalled();
+      expect(useLightSettingStore.getState().status).toBe("off");
+      expect(seen.at(-1)).toEqual({ frame: null, pending: false });
+      expect(onSettled).toHaveBeenCalledOnce();
+      expect(skyPanels()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 ```
 
@@ -5853,6 +6158,8 @@ In the `recorded` hoisted object, directly after `  floor: null as Record<string
 ```ts
   /** The relight provider's package, as last rendered. */
   relight: undefined as unknown,
+  /** The relight provider's onSettled, as last rendered. */
+  settle: undefined as ((data: null) => void) | undefined,
   loadPackage: vi.fn((_url: string) => Promise.resolve(null)),
 ```
 
@@ -5860,8 +6167,9 @@ Directly after the `vi.mock("../../stage/StageFloor.js", …)` block add:
 
 ```ts
 vi.mock("../../scene/RelightProvider.js", () => ({
-  RelightProvider: ({ children, relightPackage }: { readonly children?: ReactNode; readonly relightPackage: unknown }) => {
+  RelightProvider: ({ children, relightPackage, onSettled }: { readonly children?: ReactNode; readonly relightPackage: unknown; readonly onSettled?: (data: null) => void }) => {
     recorded.relight = relightPackage;
+    recorded.settle = onSettled;
     return <>{children}</>;
   },
 }));
@@ -5877,6 +6185,7 @@ describe("RoomSplatScene relit (T-639 R1b)", () => {
     recorded.mounted.clear();
     recorded.loadPackage.mockClear();
     recorded.relight = undefined;
+    recorded.settle = undefined;
     if (typeof window.matchMedia !== "function") {
       Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
     }
@@ -5893,9 +6202,12 @@ describe("RoomSplatScene relit (T-639 R1b)", () => {
     expect(recorded.relight).toBeInstanceOf(Promise);
     expect(mountedLayers().length).toBeGreaterThan(0);
     expect(mountedLayers().every((layer) => layer["relight"] instanceof Promise)).toBe(true);
-    created({ isWebGPURenderer: true, backend: { device: { limits: { maxStorageBufferBindingSize: 134_217_728 } } } });
+    created({ isWebGPURenderer: true, backend: { device: { limits: { maxStorageBufferBindingSize: 134_217_728, maxStorageBuffersPerShaderStage: 16 } } } });
     await act(async () => { await Promise.resolve(); });
     expect(recorded.loadPackage).toHaveBeenCalledWith("/splats/trades-hall/grand-hall/relight/v1/manifest.json");
+    // The tiles follow the provider's outcome: once it falls back (a timeout, say), no tile has records to load.
+    recorded.settle?.(null);
+    await expect(Promise.all(mountedLayers().map((layer) => layer["relight"]))).resolves.toEqual(mountedLayers().map(() => null));
   });
 
   it("never loads the package on the WebGL2 fallback", async () => {
@@ -6026,13 +6338,15 @@ export function RelightSkyPanels({ frame, transform }: {
 - [ ] **Step 5: The provider** — create `packages/web/src/components/scene/RelightProvider.tsx`:
 
 ```tsx
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { useThree } from "@react-three/fiber";
 import { nativeSplatScene } from "../../lib/native-splat-scene.js";
 import type { RelightModelData } from "../../lib/relight/relight-assets.js";
 import { applicationForChoice } from "../../lib/relight/relight-apply.js";
 import { RelightFrame } from "../../lib/relight/relight-frame.js";
-import { relightBackendSupported } from "../../lib/relight/relight-tile-load.js";
+import { measureRelight } from "../../lib/relight/relight-spans.js";
+import { RELIGHT_GRACE_MS, relightBackendSupported } from "../../lib/relight/relight-tile-load.js";
+import { warnRelightFallback } from "../../lib/relight/relight-warning.js";
 import type { RuntimeAssetViewTransform } from "../../lib/runtime-package-resolution.js";
 import { useLightSettingStore } from "../../stores/light-setting-store.js";
 import { RelightContext, type RelightState } from "./relight-context.js";
@@ -6042,6 +6356,11 @@ export interface RelightProviderProps {
   /** The room's relight package, or null to draw the hall as captured. */
   readonly relightPackage: Promise<RelightModelData | null> | null;
   readonly transform: RuntimeAssetViewTransform;
+  /**
+   * The session's one outcome, reported once: the package when the hall is relit from it, null for any fallback
+   * (no package, WebGL2, a frame that cannot be made, a package later than the grace). The tiles follow it.
+   */
+  readonly onSettled?: (data: RelightModelData | null) => void;
   readonly children?: ReactNode;
 }
 
@@ -6049,9 +6368,10 @@ export interface RelightProviderProps {
  * The relit hall (T-639 R1b): the package becomes a frame on the native host,
  * the store's light choice is applied to it (once per animation frame while the
  * slider moves) and every cached draw reruns its pass; the sky panels draw
- * behind the windows. No package, no WebGPU: the hall as captured.
+ * behind the windows. No package, no WebGPU, or no package within the grace:
+ * the hall as captured for the whole session.
  */
-export function RelightProvider({ relightPackage, transform, children }: RelightProviderProps): ReactElement {
+export function RelightProvider({ relightPackage, transform, onSettled, children }: RelightProviderProps): ReactElement {
   const scene = useThree((state) => state.scene);
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
@@ -6061,44 +6381,82 @@ export function RelightProvider({ relightPackage, transform, children }: Relight
   const [loaded, setLoaded] = useState<{ readonly from: Promise<RelightModelData | null>; readonly frame: RelightFrame | null } | null>(null);
   const frame = loaded !== null && loaded.from === wanted ? loaded.frame : null;
   const state = useMemo<RelightState>(() => ({ frame, pending: wanted !== null && loaded?.from !== wanted }), [frame, wanted, loaded]);
+  const settledRef = useRef(onSettled);
+  useEffect(() => { settledRef.current = onSettled; }, [onSettled]);
 
   useEffect(() => {
     const { setStatus } = useLightSettingStore.getState();
-    if (wanted === null) { setStatus("off"); return; }
+    if (wanted === null) { setStatus("off"); settledRef.current?.(null); return; }
     setStatus("loading");
     const owner = {};
     let cancelled = false;
+    // The session's outcome is decided once: relit from this package, or as captured. A package that arrives
+    // after the grace is ignored, so relit splats never stand on an unlit floor, nor the reverse.
+    let settled = false;
     let created: RelightFrame | null = null;
     let request = 0;
     let stop: (() => void)[] = [];
+    const settle = (data: RelightModelData | null): void => {
+      settled = true;
+      clearTimeout(timer);
+      settledRef.current?.(data);
+    };
+    // Anything missing, invalid or late draws the hall as captured (spec §5): not pending, so the floor goes ahead
+    // with floor skin v1 and the light control never hangs on "Preparing the light…".
+    const fallBack = (reason: unknown): void => {
+      if (cancelled || settled) return;
+      warnRelightFallback("package", "The relight package could not be used; the hall is drawn as captured.", reason);
+      setStatus("off");
+      setLoaded({ from: wanted, frame: null });
+      settle(null);
+    };
+    // `settle` and `fallBack` only run after this line (from the timer or the package's promise).
+    const timer = setTimeout(() => { fallBack("timed out"); }, RELIGHT_GRACE_MS);
     void wanted.then((data) => {
-      if (cancelled) return;
+      if (cancelled || settled) return;
       if (data === null) {
         setStatus("off");
         setLoaded({ from: wanted, frame: null });
+        settle(null);
         return;
       }
-      const next = new RelightFrame(data);
+      let next: RelightFrame | null = null;
+      try {
+        // Each piece of main-thread relight work is a performance span (Task 18's loading check).
+        const frame = measureRelight("relight:frame", () => new RelightFrame(data));
+        next = frame;
+        const apply = (): void => {
+          frame.apply(applicationForChoice(frame.inputs, useLightSettingStore.getState().choice, (light) => frame.meanLight(light)));
+        };
+        measureRelight("relight:apply", apply);
+        host.setRelight(owner, frame);
+        stop = [
+          frame.onApply(() => { host.runRelight(); invalidate(); }),
+          useLightSettingStore.subscribe((current, previous) => {
+            if (current.choice === previous.choice) return;
+            cancelAnimationFrame(request);
+            request = requestAnimationFrame(apply);
+          }),
+        ];
+      } catch (reason: unknown) {
+        // A package that passed its schema can still fail here (a degenerate floor matrix, say):
+        // take the partial frame back off the host and dispose of it.
+        for (const unsubscribe of stop) unsubscribe();
+        stop = [];
+        host.clearRelight(owner);
+        next?.dispose();
+        fallBack(reason);
+        return;
+      }
       created = next;
-      const apply = (): void => {
-        next.apply(applicationForChoice(next.inputs, useLightSettingStore.getState().choice, (light) => next.meanLight(light)));
-      };
-      apply();
-      stop = [
-        next.onApply(() => { host.runRelight(); invalidate(); }),
-        useLightSettingStore.subscribe((current, previous) => {
-          if (current.choice === previous.choice) return;
-          cancelAnimationFrame(request);
-          request = requestAnimationFrame(apply);
-        }),
-      ];
-      host.setRelight(owner, next);
       setLoaded({ from: wanted, frame: next });
       setStatus("ready");
       invalidate();
-    });
+      settle(data);
+    }, fallBack);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       cancelAnimationFrame(request);
       for (const unsubscribe of stop) unsubscribe();
       host.clearRelight(owner);
@@ -6143,6 +6501,7 @@ Directly after `import { StageFloor } from "../stage/StageFloor.js";` add:
 import { RelightProvider } from "../scene/RelightProvider.js";
 import { lightPresetFromSearch, relightEligible, relightOffBySearch } from "../../lib/light-setting.js";
 import { loadRelightPackage } from "../../lib/relight-package.js";
+import type { RelightModelData } from "../../lib/relight/relight-assets.js";
 import { relightManifestUrl } from "../../lib/relight/relight-manifest.js";
 import { relightBackendSupported, relightTilePromises } from "../../lib/relight/relight-tile-load.js";
 import { gaussianSplatsAvailable } from "../../lib/splat-access.js";
@@ -6177,9 +6536,17 @@ Directly after the `settledDpr` constant (the statement ending `typeof window ==
     () => (relightUrl === null ? null : relightBackend.promise.then((supported) => (supported ? loadRelightPackage(relightUrl) : null))),
     [relightUrl, relightBackend],
   );
+  // The tiles follow the provider's one outcome for this session (its onSettled): the package once the hall
+  // is relit from it, null for any fallback, a timeout included, so no tile loads records for an unlit hall.
+  // One deferred per package, hence the dependency.
+  const relightSettled = useMemo(() => {
+    let settle: (data: RelightModelData | null) => void = () => undefined;
+    const promise = new Promise<RelightModelData | null>((resolve) => { settle = resolve; });
+    return { promise, resolve: (data: RelightModelData | null): void => { settle(data); } };
+  }, [relightPackage]);
   const relightTiles = useMemo(
-    () => (relightPackage === null || bundle === null ? null : relightTilePromises(bundle.tiles, relightPackage)),
-    [relightPackage, bundle],
+    () => (relightPackage === null || bundle === null ? null : relightTilePromises(bundle.tiles, relightSettled.promise)),
+    [relightPackage, relightSettled, bundle],
   );
   useEffect(() => {
     const preset = lightPresetFromSearch(window.location.search, previewable);
@@ -6190,7 +6557,7 @@ Directly after the `settledDpr` constant (the statement ending `typeof window ==
 In the returned JSX, replace everything from `      <ambientLight intensity={1} />` through the line before `    </Canvas>` (the `InteriorCamera` block's closing `      )}`) with:
 
 ```tsx
-      <RelightProvider relightPackage={relightPackage} transform={transform}>
+      <RelightProvider relightPackage={relightPackage} transform={transform} onSettled={relightSettled.resolve}>
         <ambientLight intensity={1} />
         {/* One renderer host per scene, owned by no tile: the ladder drops the
             coarse room when the finest level lands, and a host riding on that
@@ -6267,7 +6634,7 @@ and in `stagedContentType`, directly after `  if (lower.endsWith(".webp")) retur
 
 Run each, one per command, from `D:/claude/real-hall/repo`:
 - `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/sky-panels.test.ts` — Expected: PASS, 1 test.
-- `pnpm --filter @omnitwin/web exec vitest run src/components/scene/__tests__/RelightProvider.test.tsx` — Expected: PASS, 5 tests.
+- `pnpm --filter @omnitwin/web exec vitest run src/components/scene/__tests__/RelightProvider.test.tsx` — Expected: PASS, 7 tests.
 - `pnpm --filter @omnitwin/web exec vitest run src/components/rooms/__tests__/RoomSplatScene.test.tsx` — Expected: PASS (the Task 0 count plus 3).
 - `pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/splat-staging-plugin.test.ts` — Expected: PASS (the Task 0 count plus 2).
 - `pnpm --filter @omnitwin/web exec vitest run src/components/stage/__tests__/StageFloor.test.tsx` — Expected: PASS (unchanged from Task 14; the stub root's new parameter is optional).
@@ -6577,12 +6944,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/relight/__tests__/relight-debug.test.ts`, `packages/web/src/lib/__tests__/native-current-view-capture.test.ts`, `packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx`
 
 **Interfaces:**
-- Consumes: Tasks 1, 4, 8, 10, 11, 12.
-- Produces (`relight-debug.ts`): `interface WordCheck { readonly checked: number; readonly worstCodeDistance: number; readonly alphaMismatches: number; readonly missing: number }`; `interface RelightDebug { state(): { status: RelightStatus; relit: boolean; supported: boolean; applyMs: number | null; choice: LightChoice }; select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>; sample(stride: number): Promise<WordCheck>; fixture(vectors: unknown, setting: string): Promise<WordCheck>; timings(): Promise<{ readonly applyMs: number | null; readonly passMs: number }> }` on `window.__relight` (DEV only); `findSplatsByRecord(records: Uint32Array, positions: Float32Array, sceneToModel: Matrix4, wanted: readonly { readonly record: Uint8Array; readonly position: readonly [number, number, number] }[], tolerance?: number): number[]`; `installRelightDebug(frame: RelightFrame, host: NativeSplatScene, renderer: WebGPURenderer): () => void`.
+- Consumes: Tasks 1, 4, 7 (`displayNode`, `displayColour`, `NEUTRAL_DISPLAY`, `DisplayParams`, `DisplayUniforms`), 8 (`PRESET_DISPLAY`), 10, 11, 12.
+- Produces (`relight-debug.ts`): `interface WordCheck { readonly checked: number; readonly worstCodeDistance: number; readonly alphaMismatches: number; readonly missing: number }`; `interface DisplayProbe { readonly rgb: Rgb; readonly params: DisplayParams; readonly knee: number }`; `DISPLAY_PROBES: readonly DisplayProbe[]` (16: eight in the display's identity region, eight rolled off above the knee, at the floor's and sky's knee 0.8 and at splat knees); `interface DisplayCheck { readonly checked: number; readonly worstRelative: number }`; `interface RelightDebug { state(): { status: RelightStatus; relit: boolean; supported: boolean; applyMs: number | null; choice: LightChoice }; select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>; sample(stride: number): Promise<WordCheck>; fixture(vectors: unknown, setting: string): Promise<WordCheck>; display(): Promise<DisplayCheck>; timings(): Promise<{ readonly applyMs: number | null; readonly passMs: number }> }` on `window.__relight` (DEV only); `findSplatsByRecord(records: Uint32Array, positions: Float32Array, sceneToModel: Matrix4, wanted: readonly { readonly record: Uint8Array; readonly position: readonly [number, number, number] }[], tolerance?: number): number[]`; `installRelightDebug(frame: RelightFrame, host: NativeSplatScene, renderer: WebGPURenderer): () => void`.
 - Produces (capture): `interface NativeCaptureOptions { readonly width?: number; readonly height?: number; readonly mimeType?: "image/jpeg" | "image/png" }`; `captureNativeCurrentView(scene, camera, options?)`.
 - Produces (`RoomSplatScene`): `interface RoomViewCaptureRequest { readonly position: readonly [number, number, number]; readonly target: readonly [number, number, number]; readonly fov: number; readonly width: number; readonly height: number }`; `window.__roomViewCapture(request)` (DEV, `captureReadback` only) — a PNG of that view at that size, the live camera restored.
 
-These are the only ways Task 18 reads the GPU: the multiplier words against the CPU kernel (`sample`), the R1a fixture splats found in the live draw by record and model position (`fixture`), and lossless renders at the proof's stations. They are imported only inside `import.meta.env.DEV` branches, so no production bundle carries them.
+These are the only ways Task 18 reads the GPU: the multiplier words against the CPU kernel (`sample`), the R1a fixture splats found in the live draw by record and model position (`fixture`), the display function itself (`display`: a one-invocation compute pass writes `displayNode` for the sixteen `DISPLAY_PROBES`, compared with `displayColour`; worst relative error, which Task 18 holds to 1e-5), and lossless renders at the proof's stations. They are imported only inside `import.meta.env.DEV` branches, so no production bundle carries them.
+
+The view capture (Steps 5 and 6: the optional size and PNG in `native-current-view-capture.ts`, and `window.__roomViewCapture`) is instrumentation only: it changes no rendering. It is committed on its own (Step 8), so Task 18 can apply exactly that commit to the I1a baseline, which otherwise has no way to render the proof's views.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -6591,9 +6960,19 @@ These are the only ways Task 18 reads the GPU: the multiplier words against the 
 ```ts
 import { Matrix4 } from "three";
 import { describe, expect, it } from "vitest";
-import { findSplatsByRecord } from "../relight-debug.js";
+import { DISPLAY_PROBES, findSplatsByRecord } from "../relight-debug.js";
 
 describe("the relight instruments (T-639 R1b)", () => {
+  it("reads the display back on both sides of the knee, at the floor's knee and at splat knees", () => {
+    const peak = (probe: (typeof DISPLAY_PROBES)[number]): number =>
+      Math.max(...probe.rgb.map((value, channel) => value * probe.params.exposure * (probe.params.whiteBalance[channel] ?? 1)));
+    expect(DISPLAY_PROBES).toHaveLength(16);
+    // Clear of the knee either way, so float32 rounding on the GPU cannot change the branch.
+    expect(DISPLAY_PROBES.filter((probe) => peak(probe) < probe.knee - 0.01)).toHaveLength(8);
+    expect(DISPLAY_PROBES.filter((probe) => peak(probe) > probe.knee + 0.01)).toHaveLength(8);
+    expect(new Set(DISPLAY_PROBES.map((probe) => probe.knee))).toEqual(new Set([0.8, 0.9, 0.95, 0.999]));
+  });
+
   it("finds fixture splats by record and model position, and reports the ones it cannot", () => {
     const record = Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     const other = Uint8Array.from([9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9]);
@@ -6672,10 +7051,12 @@ Expected: FAIL — the new test (`window.__roomViewCapture` is undefined).
 
 ```ts
 import { Vector3, type Matrix4 } from "three";
-import type { WebGPURenderer } from "three/webgpu";
-import type { LightChoice, LightPresetId } from "../light-setting.js";
+import { StorageBufferAttribute, type WebGPURenderer } from "three/webgpu";
+import { Fn, float, storage, uniform, vec3 } from "three/tsl";
+import { PRESET_DISPLAY, type LightChoice, type LightPresetId } from "../light-setting.js";
 import type { NativeSplatScene } from "../native-splat-scene.js";
 import { useLightSettingStore, type RelightStatus } from "../../stores/light-setting-store.js";
+import { NEUTRAL_DISPLAY, displayColour, displayNode, type DisplayParams, type DisplayUniforms } from "./display.js";
 import { RECORD_BYTES, multiplierCodeDistance, packMultiplierWord, recordFromHex } from "./relight-codec.js";
 import { PASSTHROUGH_FLAGS, type RelightDraw } from "./relight-draw.js";
 import type { RelightFrame } from "./relight-frame.js";
@@ -6689,11 +7070,44 @@ export interface WordCheck {
   readonly missing: number;
 }
 
+export interface DisplayProbe {
+  readonly rgb: Rgb;
+  readonly params: DisplayParams;
+  readonly knee: number;
+}
+
+export interface DisplayCheck {
+  readonly checked: number;
+  /** The largest |GPU − displayColour| / max(|displayColour|, 1e-6) over every channel of every probe. */
+  readonly worstRelative: number;
+}
+
+/** Known display inputs: eight in the identity region, eight rolled off above the knee (the floor's and sky's 0.8, splat knees). */
+export const DISPLAY_PROBES: readonly DisplayProbe[] = [
+  { rgb: [0.2, 0.4, 0.6], params: NEUTRAL_DISPLAY, knee: 0.8 },
+  { rgb: [0.05, 0.1, 0.02], params: NEUTRAL_DISPLAY, knee: 0.8 },
+  { rgb: [0.3, 0.25, 0.2], params: PRESET_DISPLAY.night, knee: 0.8 },
+  { rgb: [0.5, 0.45, 0.4], params: PRESET_DISPLAY.sunny, knee: 0.8 },
+  { rgb: [0.1, 0.12, 0.15], params: PRESET_DISPLAY.overcast, knee: 0.8 },
+  { rgb: [0.9, 0.6, 0.3], params: NEUTRAL_DISPLAY, knee: 0.95 },
+  { rgb: [0.97, 0.97, 0.97], params: NEUTRAL_DISPLAY, knee: 0.999 },
+  { rgb: [0.01, 0.013, 0.024], params: NEUTRAL_DISPLAY, knee: 0.8 },
+  { rgb: [2, 1, 0.5], params: NEUTRAL_DISPLAY, knee: 0.8 },
+  { rgb: [1.2, 1.1, 1], params: PRESET_DISPLAY.night, knee: 0.8 },
+  { rgb: [3, 2.5, 2], params: PRESET_DISPLAY.sunny, knee: 0.8 },
+  { rgb: [0.5, 0.4, 0.3], params: PRESET_DISPLAY.overcast, knee: 0.8 },
+  { rgb: [0.85, 0.85, 0.85], params: NEUTRAL_DISPLAY, knee: 0.8 },
+  { rgb: [1.9, 1, 0.4], params: NEUTRAL_DISPLAY, knee: 0.95 },
+  { rgb: [12, 6, 1], params: NEUTRAL_DISPLAY, knee: 0.999 },
+  { rgb: [1.5, 0.2, 0.1], params: PRESET_DISPLAY.night, knee: 0.9 },
+];
+
 export interface RelightDebug {
   state(): { readonly status: RelightStatus; readonly relit: boolean; readonly supported: boolean; readonly applyMs: number | null; readonly choice: LightChoice };
   select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>;
   sample(stride: number): Promise<WordCheck>;
   fixture(vectors: unknown, setting: string): Promise<WordCheck>;
+  display(): Promise<DisplayCheck>;
   timings(): Promise<{ readonly applyMs: number | null; readonly passMs: number }>;
 }
 
@@ -6747,6 +7161,37 @@ function recordWords(draw: RelightDraw): Uint32Array {
 
 async function readWords(renderer: WebGPURenderer, draw: RelightDraw): Promise<Uint32Array> {
   return new Uint32Array(await renderer.getArrayBufferAsync(draw.wordsAttribute));
+}
+
+/** displayNode on the GPU for every probe (one invocation, unrolled), read back against displayColour. */
+async function readDisplay(renderer: WebGPURenderer): Promise<DisplayCheck> {
+  const output = new StorageBufferAttribute(new Float32Array(DISPLAY_PROBES.length * 3), 1);
+  const write = storage(output, "float", DISPLAY_PROBES.length * 3);
+  const pass = Fn(() => {
+    DISPLAY_PROBES.forEach((probe, index) => {
+      const display: DisplayUniforms = { exposure: uniform(probe.params.exposure), whiteBalance: uniform(new Vector3(...probe.params.whiteBalance)) };
+      const shown = displayNode(vec3(...probe.rgb), display, float(probe.knee));
+      write.element(index * 3).assign(shown.x);
+      write.element(index * 3 + 1).assign(shown.y);
+      write.element(index * 3 + 2).assign(shown.z);
+    });
+  })().compute(1).setName("RelightDisplayReadback");
+  try {
+    void renderer.compute(pass);
+    const values = new Float32Array(await renderer.getArrayBufferAsync(output));
+    let worst = 0;
+    DISPLAY_PROBES.forEach((probe, index) => {
+      displayColour(probe.rgb, probe.params, probe.knee).forEach((expected, channel) => {
+        const actual = values[index * 3 + channel] ?? Number.NaN;
+        // NaN never passes: Task 18 reads a NaN (null in JSON) as a failure.
+        worst = Math.max(worst, Math.abs(actual - expected) / Math.max(Math.abs(expected), 1e-6));
+      });
+    });
+    return { checked: DISPLAY_PROBES.length, worstRelative: worst };
+  } finally {
+    pass.dispose();
+    output.dispose();
+  }
 }
 
 function afterFrames(count: number): Promise<void> {
@@ -6815,6 +7260,7 @@ export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene,
       });
       return { checked, worstCodeDistance: worst, alphaMismatches, missing };
     },
+    display: () => readDisplay(renderer),
     timings: async () => {
       const draw = activeDraw();
       const started = performance.now();
@@ -6830,11 +7276,11 @@ export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene,
 
 - [ ] **Step 4: Install them from the provider in development** — in `packages/web/src/components/scene/RelightProvider.tsx`:
 
-Replace `import { relightBackendSupported } from "../../lib/relight/relight-tile-load.js";` with:
+Replace `import { RELIGHT_GRACE_MS, relightBackendSupported } from "../../lib/relight/relight-tile-load.js";` with:
 
 ```ts
 import { getNativeRenderer } from "../../lib/native-renderer.js";
-import { relightBackendSupported } from "../../lib/relight/relight-tile-load.js";
+import { RELIGHT_GRACE_MS, relightBackendSupported } from "../../lib/relight/relight-tile-load.js";
 ```
 
 and directly before `  return (\n    <RelightContext.Provider value={state}>` add:
@@ -6995,7 +7441,7 @@ with:
 - [ ] **Step 7: Run the tests**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-debug.test.ts`
-Expected: PASS, 1 test.
+Expected: PASS, 2 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/native-current-view-capture.test.ts`
 Expected: PASS (the Task 0 count plus 1).
@@ -7004,15 +7450,26 @@ Run: `pnpm --filter @omnitwin/web exec vitest run src/components/rooms/__tests__
 Expected: PASS (the Task 0 count plus 5).
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/components/scene/__tests__/RelightProvider.test.tsx`
-Expected: PASS, 5 tests.
+Expected: PASS, 7 tests.
 
 Run: `cd D:/claude/real-hall/repo && pnpm --filter @omnitwin/web typecheck`
 Expected: exit 0.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Commit, the view capture on its own**
+
+First the capture instrumentation alone (Steps 5 and 6 and their tests; no rendering change), and record its hash for Task 18 Step 8:
 
 ```bash
-cd D:/claude/real-hall/repo && git add packages/web/src/lib/relight/relight-debug.ts packages/web/src/components/scene/RelightProvider.tsx packages/web/src/lib/native-current-view-capture.ts packages/web/src/components/rooms/RoomSplatScene.tsx packages/web/src/lib/relight/__tests__/relight-debug.test.ts packages/web/src/lib/__tests__/native-current-view-capture.test.ts packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx && git diff --cached --stat && git commit -m "feat(relight): DEV instruments: GPU words against the CPU kernel and the fixture, PNG view renders (T-639 R1b)
+cd D:/claude/real-hall/repo && git add packages/web/src/lib/native-current-view-capture.ts packages/web/src/lib/__tests__/native-current-view-capture.test.ts packages/web/src/components/rooms/RoomSplatScene.tsx packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx && git diff --cached --stat && git commit -m "feat(splats): a DEV-only lossless render of a requested view, instrumentation only (T-639 R1b)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" && git rev-parse HEAD > D:/claude/relight/grand-hall/evidence/r1b/capture-commit.txt && git show --stat --format=%H HEAD
+```
+Expected: `git diff --cached --stat` and `git show --stat` list exactly those four files; the hash is in `capture-commit.txt`. If any other file is staged, unstage it: this commit must carry nothing but the capture.
+
+Then the relight instruments:
+
+```bash
+cd D:/claude/real-hall/repo && git add packages/web/src/lib/relight/relight-debug.ts packages/web/src/components/scene/RelightProvider.tsx packages/web/src/lib/relight/__tests__/relight-debug.test.ts && git diff --cached --stat && git commit -m "feat(relight): DEV instruments: GPU words and the display against the CPU, and the fixture splats (T-639 R1b)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -7026,19 +7483,19 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `tools/relight/relight/browsercheck.py`, `tools/relight/tests/test_browsercheck.py`
 - Create (moved, only if R1a did not): `tools/relight/proof/shots.py` (copied unchanged from `D:/claude/real-hall/renovation/relight/scripts/shots.py`; `07_compare.py` imports it)
 - Modify: `tools/relight/relight/__main__.py` (the `browser-check` command)
-- Outputs (D:, never committed): `D:/claude/relight/grand-hall/renders/{I1a_a,I1a_b,R1b_off,R1b_captured,R1b_night,R1b_sunny,R1b_overcast}/<view>@2x.png`, `D:/claude/relight/grand-hall/evidence/r1b/{r1b-baseline-run.json,r1b-browser-run.json,r1b-browser-checks.json,r1b-off.json,r1b-night.json}`
+- Outputs (D:, never committed): `D:/claude/relight/grand-hall/renders/{I1a_a,I1a_b,R1b_off,R1b_captured,R1b_night,R1b_sunny,R1b_overcast}/<view>@2x.png` (each job's folder emptied before it is written, so no check reads an earlier run's images), `D:/claude/relight/grand-hall/evidence/r1b/{baseline.txt,r1b-baseline-run.json,r1b-browser-run.json,r1b-browser-checks.json,r1b-off.json,r1b-night.json}`
 
 **Interfaces:**
-- Consumes: Task 17's `window.__relight` and `window.__roomViewCapture`; the walk's `window.__roomWalk`; the proof's `work/views.json`, `renders/A_mask/*` and `work/cmp/photo_*.png`; the moved `07_compare.py` (`photo`, `render`, `valid_mask`, `cells`, `metrics`); `config.load(...).paths` (`work`, `proofWork`, `evidence`).
-- Produces: `python -m relight browser-check --config config/grand-hall.json` (exit 0 only if every section passes); pure functions `srgb_to_linear`, `load_1x(path2x) -> uint8 RGB`, `pixel_difference(a, b) -> {max, fraction}`, `identity_verdict(noise, change) -> bool`, `stop_difference(a, b, valid) -> ndarray`, `comparison_mask(mask, *renders, fixtures=False) -> ndarray[bool]`, `captured_verdict(stops) -> dict`, `photo_verdict(relit_r, served_r, threshold) -> bool`.
+- Consumes: Task 17's `window.__relight` (`fixture`, `sample`, `display`, `timings`, `select`, `state`) and `window.__roomViewCapture`, and its capture-instrumentation commit (`evidence/r1b/capture-commit.txt`); the `relight:*` performance spans of Tasks 11, 12 and 15; the walk's `window.__roomWalk`; the proof's `work/views.json`, `renders/A_mask/*` and `work/cmp/photo_*.png`; the moved `07_compare.py` (`photo`, `render`, `valid_mask`, `cells`, `metrics`; its `render` reads a job's `@2x` render through `shots.one_x` and `common.srgb_to_linear`); `config.load(...).paths` (`work`, `proofWork`, `evidence`).
+- Produces: `python -m relight browser-check --config config/grand-hall.json` (exit 0 only if every section passes); pure functions on decoded images and run records, importing nothing from the proof (so the unit tests need no D: inputs): `pixel_difference(a, b) -> {max, fraction}`, `identity_verdict(noise, change) -> bool`, `stop_difference(lin_a, lin_b, valid) -> ndarray`, `comparison_mask(mask_lin, *srgbs) -> ndarray[bool]` (07_compare.valid_mask with the fixtures kept: the one mask the proof lacks), `captured_verdict(stops) -> dict`, `photo_verdict(relit_r, served_r, threshold) -> bool`, `gpu_report(run) -> dict`, `loading_report(run) -> dict`. The renders are decoded only by the proof's own `07_compare`, imported in `run` after `python -m relight` has made the proof importable.
 
 What each check proves (spec §6):
-- **No change when off:** `R1b_off` (`?relight=off`) against two I1a renders from the base commit (`I1a_a`, `I1a_b`): the change may not exceed I1a's own run-to-run difference (zero if I1a is deterministic, which then means pixel for pixel).
+- **No change when off:** `R1b_off` (`?relight=off`) against two I1a renders (`I1a_a`, `I1a_b`) from the base commit with Task 17's capture instrumentation applied ("I1a + capture instrumentation": the base has no `__roomViewCapture`, and that commit changes no rendering): the change may not exceed I1a's own run-to-run difference (zero if I1a is deterministic, which then means pixel for pixel).
 - **Captured light:** `R1b_captured` (`?light=captured&floorskin=v1`, so the floor is the same photographed floor) against `R1b_off`: the 99th percentile of the luminance difference is at most 1/20 of a stop everywhere but the view out of the windows (the glass splats are hidden by design and the sky panels show; the red channel of the proof's `A_mask`). The fixtures are included: with emitter boost 1 the captured light is exactly neutral for bulbs too, and the display's knee is each splat's own brightest channel.
-- **Compute against CPU:** the words read back from the GPU for every 97th splat against `relightSplat` + `packMultiplierWord` for the setting applied, and for R1a's 64 fixture splats (found in the live draw by record and model position, which also tests contracts 4 and 5) against their expected words: at most one log code, alpha bytes equal, none missing.
+- **Compute against CPU:** the words read back from the GPU for every 97th splat against `relightSplat` + `packMultiplierWord` for the setting applied, and for R1a's 64 fixture splats (found in the live draw by record and model position, which also tests contracts 4 and 5) against their expected words: at most one log code, alpha bytes equal, none missing. The display function too: `displayNode` read back for the sixteen `DISPLAY_PROBES` (identity region and roll-off) is within 1e-5 relative of `displayColour`. (The floor material is covered by its TypeScript twin's tests and the rendered checks.)
 - **Photographs:** `R1b_night` against Matterport's night photographs with `07_compare`'s cells and correlation: r ≥ 0.85 at station 43 and ≥ 0.80 at station 45, and at both at least the r of the hall as served.
-- **Fallbacks:** `?nativeWebGL=1` (the WebGL2 fallback) and `?splat=tier:medium` (below desktop) make no `/relight/` request and install no instruments.
-- **Loading:** the relit run adds no main-thread task over 50 ms (its longest task is at most the larger of the served run's longest and 50 ms, and it has no more tasks over 50 ms), and no console warning or error the served run did not have.
+- **Fallbacks:** `?nativeWebGL=1` (the WebGL2 fallback) and `?splat=tier:medium` (below desktop) request nothing of the relight package and install no instruments. A package request is one whose URL path starts with `/splats/` and contains `/relight/v` (the dev server or the R2 host); Vite's own `/src/lib/relight/*` modules, which every run loads, are not.
+- **Loading:** the spec's "loading adds no main-thread task over 50 ms", for the work relighting adds: every `relight:*` performance span (the records merge, the words' allocation and fill, the `RelightFrame` construction, its first `apply` and each pass encode; Tasks 11, 12 and 15) is at most 50 ms, every kind was measured, and relighting brings no console warning or error the served run did not have. The spans, long tasks and console messages are read at load completion: right after `__roomWalk.complete` (and, relit, `window.__relight.state().relit === true`), before any capture or instrument runs. Both runs' long tasks and load times (`loadMs`) at that moment are reported as information. If the merge span misses 50 ms, the remedy is to merge per tile off the build task (Task 12's note), never to relax the threshold.
 - **Speed:** the drag budget with `light=night` has a median p95 frame of at most 16.7 ms and at most 1 ms above `relight=off`.
 
 - [ ] **Step 1: Make the proof's comparison importable**
@@ -7058,11 +7515,6 @@ import numpy as np
 from relight import browsercheck as bc
 
 
-def to_srgb8(lin: np.ndarray) -> np.ndarray:
-    s = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(lin, 1 / 2.4) - 0.055)
-    return np.clip(s * 255 + 0.5, 0, 255).astype(np.uint8)
-
-
 class BrowserChecks(unittest.TestCase):
     def test_identical_renders_differ_by_nothing_and_any_change_fails_without_noise(self):
         a = np.full((4, 4, 3), 120, np.uint8)
@@ -7079,25 +7531,54 @@ class BrowserChecks(unittest.TestCase):
 
     def test_captured_light_passes_within_a_twentieth_of_a_stop_only(self):
         lin = np.linspace(0.05, 0.6, 64 * 64 * 3).reshape(64, 64, 3)
-        a = to_srgb8(lin)
         valid = np.ones((64, 64), bool)
-        self.assertTrue(bc.captured_verdict(bc.stop_difference(a, a, valid))["pass"])
-        shifted = to_srgb8(lin * 2 ** 0.1)
-        verdict = bc.captured_verdict(bc.stop_difference(shifted, a, valid))
+        self.assertTrue(bc.captured_verdict(bc.stop_difference(lin, lin, valid))["pass"])
+        verdict = bc.captured_verdict(bc.stop_difference(lin * 2 ** 0.1, lin, valid))
         self.assertFalse(verdict["pass"])
         self.assertAlmostEqual(verdict["median"], 0.1, delta=0.02)
 
-    def test_comparison_mask_leaves_out_windows_fixtures_and_clipped_pixels(self):
-        mask = np.zeros((2, 2, 3), np.uint8); mask[0, 0] = (255, 0, 0); mask[0, 1] = (0, 255, 0)
-        render = np.full((2, 2, 3), 128, np.uint8); render[1, 1] = 255
-        self.assertEqual(bc.comparison_mask(mask, render).tolist(), [[False, False], [True, False]])
-        # the captured-light check keeps the fixtures: only the view out is left out
-        self.assertEqual(bc.comparison_mask(mask, render, fixtures=True).tolist(), [[False, True], [True, False]])
+    def test_captured_mask_leaves_out_the_view_out_and_clipped_pixels_and_keeps_the_fixtures(self):
+        mask = np.zeros((2, 2, 3)); mask[0, 0] = (1.0, 0, 0); mask[0, 1] = (0, 1.0, 0)
+        render = np.full((2, 2, 3), 0.5); render[1, 1] = 1.0
+        # 07_compare.valid_mask would also leave out the fixture (green); the captured-light check keeps it
+        self.assertEqual(bc.comparison_mask(mask, render).tolist(), [[False, True], [True, False]])
 
     def test_photo_check_needs_the_threshold_and_never_worse_than_served(self):
         self.assertTrue(bc.photo_verdict(0.82, 0.62, 0.80))
         self.assertFalse(bc.photo_verdict(0.79, 0.62, 0.80))
         self.assertFalse(bc.photo_verdict(0.86, 0.88, 0.85))
+
+    def test_gpu_check_needs_every_word_check_and_the_display_read_back(self):
+        word = {"checked": 64, "worstCodeDistance": 1, "alphaMismatches": 0, "missing": 0}
+
+        def run(display, **extra):
+            gpu = {"fixture_night": word, "sample_night": dict(word, checked=60000), "timings_night": {"applyMs": 4, "passMs": 3}, "display": display}
+            gpu.update(extra)
+            return {"runs": {"relit": {"gpu": gpu}}}
+
+        self.assertTrue(bc.gpu_report(run({"checked": 16, "worstRelative": 2e-7}))["pass"])
+        self.assertFalse(bc.gpu_report(run({"checked": 16, "worstRelative": 2e-5}))["pass"])
+        self.assertFalse(bc.gpu_report(run({"checked": 16, "worstRelative": None}))["pass"])   # a NaN in the browser
+        self.assertFalse(bc.gpu_report(run({"checked": 16, "worstRelative": 0.0}, fixture_captured=dict(word, worstCodeDistance=2)))["pass"])
+
+    def test_loading_passes_on_relight_spans_within_50_ms_and_reports_long_tasks_as_information(self):
+        spans = [{"name": name, "ms": 12.0} for name in bc.RELIGHT_SPANS]
+
+        def run(relit_spans, extra_messages=()):
+            return {"runs": {
+                "off": {"atLoad": {"loadMs": 9000, "longTasks": [80, 30], "messages": ["warning: a"], "spans": []}},
+                "relit": {"atLoad": {"loadMs": 9500, "longTasks": [120, 90, 40], "messages": ["warning: a", *extra_messages], "spans": relit_spans}},
+            }}
+
+        report = bc.loading_report(run(spans))
+        self.assertTrue(report["pass"])                      # long tasks at load are reported, not judged
+        self.assertEqual(report["longTasks"], {"off": [80], "relit": [120, 90]})
+        self.assertEqual(report["loadMs"], {"off": 9000, "relit": 9500})
+        slow = [dict(span, ms=51.0) if span["name"] == "relight:merge-records" else span for span in spans]
+        self.assertEqual([span["name"] for span in bc.loading_report(run(slow))["overBudget"]], ["relight:merge-records"])
+        self.assertFalse(bc.loading_report(run(slow))["pass"])
+        self.assertFalse(bc.loading_report(run(spans[1:]))["pass"])  # a span never measured
+        self.assertFalse(bc.loading_report(run(spans, ("error: a WebGPU validation error",)))["pass"])
 
 
 if __name__ == "__main__":
@@ -7116,9 +7597,14 @@ Expected: FAIL — `ImportError: cannot import name 'browsercheck'`.
 
 Reads the renders relight-verify.mjs wrote under <root>/renders (root = the parent of paths.work) and its run
 records under <evidence>/r1b, and writes <evidence>/r1b/r1b-browser-checks.json. Sections: identity (relight off
-against I1a), captured (the captured light within 1/20 stop), gpu (read-back against the CPU kernel and R1a's
-vectors), photo (night against Matterport, 07_compare's r), fallback (WebGL2 and below desktop stay captured),
-loading (no new main-thread task over 50 ms, no new console messages)."""
+against I1a with the capture instrumentation), captured (the captured light within 1/20 stop), gpu (the multiplier
+words against the CPU kernel and R1a's vectors, and the display function), photo (night against Matterport,
+07_compare's r), fallback (WebGL2 and below desktop stay captured), loading (each span of relight main-thread work
+within 50 ms at load completion, no new console messages).
+
+Renders are decoded only by the proof's own 07_compare (its render() uses shots.one_x and common.srgb_to_linear),
+imported in run() once `python -m relight` has made the proof importable. The verdicts below take decoded arrays
+and run records, so the unit tests need no D: inputs."""
 from __future__ import annotations
 
 import importlib
@@ -7127,23 +7613,14 @@ import os
 import shutil
 
 import numpy as np
-from PIL import Image
 
 LUMW = np.array([0.2126, 0.7152, 0.0722])
 NIGHT_STATIONS = {"mp43_night_end": 0.85, "mp45_night_windows": 0.80}
 CAPTURED_STOPS = 0.05
 LONG_TASK_MS = 50
-
-
-def srgb_to_linear(c: np.ndarray) -> np.ndarray:
-    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
-
-
-def load_1x(path2x: str) -> np.ndarray:
-    """A DPR-2 render box-averaged to 1x exactly as shots.one_x does."""
-    a = np.asarray(Image.open(path2x).convert("RGB"), dtype=np.float32)
-    h, w = a.shape[0] // 2, a.shape[1] // 2
-    return np.clip(a[:2 * h, :2 * w].reshape(h, 2, w, 2, 3).mean((1, 3)) + 0.5, 0, 255).astype(np.uint8)
+DISPLAY_TOLERANCE = 1e-5
+# The browser's spans of main-thread relight work (packages/web/src/lib/relight/relight-spans.ts, RELIGHT_SPANS).
+RELIGHT_SPANS = ("relight:merge-records", "relight:words", "relight:frame", "relight:apply", "relight:pass")
 
 
 def pixel_difference(a: np.ndarray, b: np.ndarray) -> dict:
@@ -7155,19 +7632,20 @@ def identity_verdict(noise: dict, change: dict) -> bool:
     return change["max"] <= noise["max"] and change["fraction"] <= 1.5 * noise["fraction"] + 1e-9
 
 
-def stop_difference(a: np.ndarray, b: np.ndarray, valid: np.ndarray) -> np.ndarray:
-    la = srgb_to_linear(a / 255.0) @ LUMW
-    lb = srgb_to_linear(b / 255.0) @ LUMW
+def stop_difference(lin_a: np.ndarray, lin_b: np.ndarray, valid: np.ndarray) -> np.ndarray:
+    """|log2| of the luminance ratio of two linear renders, at the valid pixels."""
+    la, lb = lin_a @ LUMW, lin_b @ LUMW
     return np.abs(np.log2(np.maximum(la, 1e-5) / np.maximum(lb, 1e-5)))[valid]
 
 
-def comparison_mask(mask: np.ndarray, *renders: np.ndarray, fixtures: bool = False) -> np.ndarray:
-    """07_compare.valid_mask: not the view out (red), not a fixture (green) unless `fixtures`, no render clipped or black."""
-    m = srgb_to_linear(mask / 255.0)
-    ok = (m[..., 0] < 0.05) & ((m[..., 1] < 0.05) | fixtures)
-    for render in renders:
-        peak = (render / 255.0).max(-1)
-        ok &= (peak < 0.98) & (peak > 0.03)
+def comparison_mask(mask_lin: np.ndarray, *srgbs: np.ndarray) -> np.ndarray:
+    """07_compare.valid_mask with the fixtures kept: not the view out (red), no render clipped or black.
+
+    The proof's valid_mask always leaves the fixtures (green) out as well; the captured-light check keeps them,
+    because at the captured light the bulbs are exactly neutral too. The thresholds are valid_mask's."""
+    ok = mask_lin[..., 0] < 0.05
+    for s in srgbs:
+        ok &= (s.max(-1) < 0.98) & (s.max(-1) > 0.03)
     return ok
 
 
@@ -7187,25 +7665,31 @@ def _views(renders: str, job: str) -> list[str]:
     return sorted(n[:-len("@2x.png")] for n in os.listdir(folder) if n.endswith("@2x.png")) if os.path.isdir(folder) else []
 
 
-def identity_report(renders: str) -> dict:
+def _srgb8(srgb: np.ndarray) -> np.ndarray:
+    """07_compare's sRGB (0..1, read from an 8-bit PNG) back to its exact 8-bit pixels."""
+    return np.rint(srgb * 255.0).astype(np.uint8)
+
+
+def identity_report(cmp, renders: str) -> dict:
     views = {}
     for view in _views(renders, "I1a_a"):
-        a, b, off = (load_1x(os.path.join(renders, job, f"{view}@2x.png")) for job in ("I1a_a", "I1a_b", "R1b_off"))
+        # cmp.render: the @2x render box-averaged to 1x by shots.one_x (cached as <job>/<view>.png).
+        a, b, off = (_srgb8(cmp.render(job, view)[1]) for job in ("I1a_a", "I1a_b", "R1b_off"))
         noise, change = pixel_difference(a, b), pixel_difference(off, a)
         views[view] = {"noise": noise, "change": change, "pass": identity_verdict(noise, change)}
     return {"views": views, "pass": bool(views) and all(v["pass"] for v in views.values())}
 
 
-def captured_report(renders: str) -> dict:
+def captured_report(cmp, renders: str) -> dict:
     views = {}
     for view in _views(renders, "R1b_captured"):
-        mask = os.path.join(renders, "A_mask", f"{view}@2x.png")
-        if not os.path.exists(mask):
+        if not os.path.exists(os.path.join(renders, "A_mask", f"{view}@2x.png")):
             continue
-        off = load_1x(os.path.join(renders, "R1b_off", f"{view}@2x.png"))
-        captured = load_1x(os.path.join(renders, "R1b_captured", f"{view}@2x.png"))
+        mask_lin, _ = cmp.render("A_mask", view)
+        off_lin, off_s = cmp.render("R1b_off", view)
+        captured_lin, captured_s = cmp.render("R1b_captured", view)
         # Fixtures included: at the captured light bulbs are exactly neutral (emitter boost 1); only the view out differs.
-        views[view] = captured_verdict(stop_difference(captured, off, comparison_mask(load_1x(mask), off, captured, fixtures=True)))
+        views[view] = captured_verdict(stop_difference(captured_lin, off_lin, comparison_mask(mask_lin, off_s, captured_s)))
     return {"views": views, "pass": bool(views) and all(v["pass"] for v in views.values())}
 
 
@@ -7227,10 +7711,15 @@ def photo_report(cmp) -> dict:
 
 
 def gpu_report(run: dict) -> dict:
-    checks = {k: v for k, v in run["runs"]["relit"]["gpu"].items() if k.startswith(("fixture_", "sample_"))}
+    gpu = run["runs"]["relit"]["gpu"]
+    checks = {k: v for k, v in gpu.items() if k.startswith(("fixture_", "sample_"))}
     ok = {k: v["checked"] > 0 and v["worstCodeDistance"] <= 1 and v["alphaMismatches"] == 0 and v["missing"] == 0 for k, v in checks.items()}
-    timings = {k: v for k, v in run["runs"]["relit"]["gpu"].items() if k.startswith("timings_")}
-    return {"checks": checks, "timings": timings, "pass": bool(checks) and all(ok.values())}
+    # The display function read back on the GPU (a NaN arrives as null and fails).
+    display = gpu.get("display") or {}
+    worst = display.get("worstRelative")
+    display_ok = display.get("checked", 0) > 0 and isinstance(worst, (int, float)) and worst <= DISPLAY_TOLERANCE
+    timings = {k: v for k, v in gpu.items() if k.startswith("timings_")}
+    return {"checks": checks, "display": display, "timings": timings, "pass": bool(checks) and all(ok.values()) and display_ok}
 
 
 def fallback_report(run: dict) -> dict:
@@ -7239,12 +7728,20 @@ def fallback_report(run: dict) -> dict:
 
 
 def loading_report(run: dict) -> dict:
-    off, relit = run["runs"]["off"], run["runs"]["relit"]
-    long_off = [t for t in off["longTasks"] if t > LONG_TASK_MS]
-    long_relit = [t for t in relit["longTasks"] if t > LONG_TASK_MS]
+    """Pass: every relight span read at load completion is at most 50 ms, every kind was measured, and relighting
+    brought no new console message. Both runs' long tasks and load times at load completion are information only."""
+    off, relit = run["runs"]["off"]["atLoad"], run["runs"]["relit"]["atLoad"]
+    spans = relit["spans"]
+    over = [s for s in spans if s["ms"] > LONG_TASK_MS]
+    measured = {s["name"] for s in spans}
+    missing = [name for name in RELIGHT_SPANS if name not in measured]
     new_messages = sorted(set(relit["messages"]) - set(off["messages"]))
-    ok = max(relit["longTasks"], default=0) <= max(max(off["longTasks"], default=0), LONG_TASK_MS) and len(long_relit) <= len(long_off)
-    return {"offLongTasks": long_off, "relitLongTasks": long_relit, "newMessages": new_messages, "pass": ok and not new_messages}
+    return {
+        "spans": spans, "overBudget": over, "missingSpans": missing, "newMessages": new_messages,
+        "longTasks": {"off": [t for t in off["longTasks"] if t > LONG_TASK_MS], "relit": [t for t in relit["longTasks"] if t > LONG_TASK_MS]},
+        "loadMs": {"off": off["loadMs"], "relit": relit["loadMs"]},
+        "pass": not over and not missing and not new_messages,
+    }
 
 
 def prepare(cfg) -> str:
@@ -7270,9 +7767,10 @@ def run(cfg, _args) -> int:
     evidence = os.path.join(cfg.paths["evidence"], "r1b")
     with open(os.path.join(evidence, "r1b-browser-run.json"), encoding="utf-8") as f:
         browser = json.load(f)
+    # The proof's comparison, importable now that `python -m relight` has run use_proof: it decodes every render.
     cmp = importlib.import_module("07_compare")
     report = {
-        "identity": identity_report(renders), "captured": captured_report(renders), "gpu": gpu_report(browser),
+        "identity": identity_report(cmp, renders), "captured": captured_report(cmp, renders), "gpu": gpu_report(browser),
         "photo": photo_report(cmp), "fallback": fallback_report(browser), "loading": loading_report(browser),
     }
     report["pass"] = all(section["pass"] for section in report.values())
@@ -7297,7 +7795,7 @@ COMMANDS["browser-check"] = browsercheck.run
 - [ ] **Step 5: Run the tests**
 
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_browsercheck -v`
-Expected: PASS, 5 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 6: The browser driver** — create `packages/web/scripts/relight-verify.mjs`:
 
@@ -7311,9 +7809,11 @@ import { join } from "node:path";
 // the REAL GPU (headed Chromium), holding the build PC's GPU lock throughout:
 // renders the proof's seven views as served, relit at the captured light and at
 // the three presets; reads the GPU's multiplier words back against the CPU
-// kernel and R1a's test vectors; checks the WebGL2 fallback and a below-desktop
-// tier stay as captured; records long tasks and console messages. The Python
-// `browser-check` command judges what this writes.
+// kernel and R1a's test vectors, and the display function against displayColour;
+// checks the WebGL2 fallback and a below-desktop tier make no relight package
+// request; records, at load completion, long tasks, console messages and the
+// relight spans. The Python `browser-check` command judges what this writes.
+// In the baseline, the I1a worktree carries Task 17's capture commit (Step 8).
 //
 //   node scripts/relight-verify.mjs                                   (R1b, dev server on 5192)
 //   RELIGHT_VERIFY_BASELINE=1 RELIGHT_VERIFY_BASE_URL=http://127.0.0.1:5193 node scripts/relight-verify.mjs
@@ -7370,8 +7870,20 @@ async function openWalk(browser, query) {
   return { context, page, messages, requests, loadMs: Date.now() - started };
 }
 
+/** A request for the relight package itself, on the dev server or R2; never Vite's /src/lib/relight/* modules. */
+function isPackageRequest(url) {
+  try {
+    const { pathname } = new URL(url);
+    return pathname.startsWith("/splats/") && pathname.includes("/relight/v");
+  } catch {
+    return false;
+  }
+}
+
 async function captureViews(page, views, label) {
   const folder = join(ROOT, "renders", label);
+  // A rerun never leaves an earlier run's images (07_compare caches <view>.png beside each @2x) for a check to judge.
+  await rm(folder, { recursive: true, force: true });
   await mkdir(folder, { recursive: true });
   for (const view of views) {
     const dataUrl = await page.evaluate(async (request) => (await window.__roomViewCapture(request)).dataUrl,
@@ -7380,12 +7892,25 @@ async function captureViews(page, views, label) {
   }
 }
 
-async function summary(walk) {
+/**
+ * What loading cost, read at load completion (the walk complete; relit, also relit), before any capture or
+ * instrument adds its own main-thread work: long tasks, console messages and the relight spans.
+ */
+async function atLoad(walk) {
   return {
     loadMs: walk.loadMs,
-    messages: walk.messages,
-    longTasks: await walk.page.evaluate(() => window.__longTasks),
-    relightRequests: walk.requests.filter((url) => url.includes("/relight/")).length,
+    messages: [...walk.messages],
+    longTasks: await walk.page.evaluate(() => [...window.__longTasks]),
+    spans: await walk.page.evaluate(() => performance.getEntriesByType("measure")
+      .filter((entry) => entry.name.startsWith("relight:"))
+      .map((entry) => ({ name: entry.name, ms: Math.round(entry.duration * 10) / 10 }))),
+  };
+}
+
+async function summary(walk, load) {
+  return {
+    atLoad: load,
+    relightRequests: walk.requests.filter(isPackageRequest).length,
     relightInstalled: await walk.page.evaluate(() => window.__relight !== undefined),
   };
 }
@@ -7409,22 +7934,26 @@ async function main() {
       }
     } else {
       const off = await openWalk(browser, "relight=off");
+      const offLoad = await atLoad(off);
       await captureViews(off.page, views, "R1b_off");
-      record.runs.off = await summary(off);
+      record.runs.off = await summary(off, offLoad);
       await off.context.close();
 
       const captured = await openWalk(browser, "light=captured&floorskin=v1");
       await captured.page.waitForFunction(() => window.__relight?.state().relit === true, undefined, { timeout: 120_000 });
+      const capturedLoad = await atLoad(captured);
       await captureViews(captured.page, views, "R1b_captured");
-      record.runs.captured = await summary(captured);
+      record.runs.captured = await summary(captured, capturedLoad);
       await captured.context.close();
 
       const relit = await openWalk(browser, "light=night");
       await relit.page.waitForFunction(() => window.__relight?.state().relit === true, undefined, { timeout: 120_000 });
+      const relitLoad = await atLoad(relit);
       const gpu = {};
       for (const setting of ["captured", "night", "sunny_morning"]) {
         gpu[`fixture_${setting}`] = await relit.page.evaluate(([value, name]) => window.__relight.fixture(value, name), [vectors, setting]);
       }
+      gpu.display = await relit.page.evaluate(() => window.__relight.display());
       for (const [preset, label] of [["night", "R1b_night"], ["sunny", "R1b_sunny"], ["overcast", "R1b_overcast"]]) {
         await relit.page.evaluate((name) => window.__relight.select(name), preset);
         gpu[`sample_${preset}`] = await relit.page.evaluate(() => window.__relight.sample(97));
@@ -7435,13 +7964,14 @@ async function main() {
         await relit.page.evaluate((value) => window.__relight.select("sunny", value), minutes);
         gpu[`sample_sunny_${String(minutes)}`] = await relit.page.evaluate(() => window.__relight.sample(97));
       }
-      record.runs.relit = { ...(await summary(relit)), state: await relit.page.evaluate(() => window.__relight.state()), gpu };
+      record.runs.relit = { ...(await summary(relit, relitLoad)), state: await relit.page.evaluate(() => window.__relight.state()), gpu };
       await relit.context.close();
 
       for (const [label, query] of [["webgl", "light=night&nativeWebGL=1"], ["medium", "light=night&splat=tier:medium"]]) {
         const walk = await openWalk(browser, query);
+        const load = await atLoad(walk);
         await sleep(3000);
-        record.runs[label] = await summary(walk);
+        record.runs[label] = await summary(walk, load);
         await walk.context.close();
       }
     }
@@ -7471,17 +8001,26 @@ curl -s -o /dev/null -w "%{http_code} %{content_type}\n" http://127.0.0.1:5192/s
 ```
 Expected: `200 application/json`.
 
-- [ ] **Step 8: Render the I1a baseline from the base commit** (a second worktree and server on 5193, same staged captures)
+- [ ] **Step 8: Render the I1a baseline: the base commit plus the capture instrumentation** (a second worktree and server on 5193, same staged captures)
+
+The base commit has no `window.__roomViewCapture` (its only capture hook, `__roomPosterCapture`, renders the live camera as JPEG, and no page hook moves the camera), so apply Task 17's capture-instrumentation commit to it, and nothing else. That commit changes no rendering: the baseline is "I1a + capture instrumentation".
 
 ```bash
-cd D:/claude/real-hall/repo && git worktree add D:/claude/relight/grand-hall/i1a-baseline "$(cat D:/claude/relight/grand-hall/evidence/r1b/base-commit.txt)" && cd D:/claude/relight/grand-hall/i1a-baseline && pnpm install --frozen-lockfile && pnpm --filter @omnitwin/types build
+cd D:/claude/real-hall/repo && git worktree add --detach D:/claude/relight/grand-hall/i1a-baseline "$(cat D:/claude/relight/grand-hall/evidence/r1b/base-commit.txt)" && cd D:/claude/relight/grand-hall/i1a-baseline && git cherry-pick --no-commit "$(cat D:/claude/relight/grand-hall/evidence/r1b/capture-commit.txt)"; git status --short
 ```
+Expected: `native-current-view-capture.ts`, its test and `RoomSplatScene.tsx` apply cleanly (Task 15's edits to `RoomSplatScene.tsx` lie outside the capture's lines), and `packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx` conflicts: its new test sits in R1b's relit `describe` block, which the base lacks. Resolve every conflict by keeping the base's code and adding only the hook's lines. For that test file, keep the base's version (`git checkout HEAD -- packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx`): the baseline renders and runs no tests. In a source file, keep the base's lines and add only the capture's (the `PerspectiveCamera` import, `RoomViewCaptureRequest`, the `__roomViewCapture` declaration and hook, and the capture's `options`). The worktree is never committed from; Step 12 removes it. Then check that what was applied is the instrumentation and nothing else, record the baseline, and install:
+
+```bash
+cd D:/claude/relight/grand-hall/i1a-baseline && git diff --cached --name-only && git diff --cached | grep -E '^\+[^+]' | grep -iE 'relight|light-setting|floorskin'; printf 'I1a + capture instrumentation: base %s, capture commit %s\n' "$(cat D:/claude/relight/grand-hall/evidence/r1b/base-commit.txt)" "$(cat D:/claude/relight/grand-hall/evidence/r1b/capture-commit.txt)" > D:/claude/relight/grand-hall/evidence/r1b/baseline.txt && pnpm install --frozen-lockfile && pnpm --filter @omnitwin/types build
+```
+Expected: the file names printed are among `packages/web/src/lib/native-current-view-capture.ts`, `packages/web/src/lib/__tests__/native-current-view-capture.test.ts` and `packages/web/src/components/rooms/RoomSplatScene.tsx`; the `grep` prints nothing (no relight code came with the hook); `baseline.txt` names both commits; the install and build exit 0. Anything else: stop and report.
+
 Start its server in the background: `cd D:/claude/relight/grand-hall/i1a-baseline/packages/web && SPLAT_STAGING_ROOT='D:\claude\splats' pnpm exec vite --host 127.0.0.1 --port 5193 --strictPort`. Then:
 
 ```bash
 cd D:/claude/real-hall/repo/packages/web && RELIGHT_VERIFY_BASELINE=1 RELIGHT_VERIFY_BASE_URL=http://127.0.0.1:5193 node scripts/relight-verify.mjs
 ```
-Expected: `wrote D:/claude/relight/grand-hall/evidence/r1b/r1b-baseline-run.json`, and seven PNGs in each of `renders/I1a_a` and `renders/I1a_b`. Stop the 5193 server afterwards.
+Expected: `wrote D:/claude/relight/grand-hall/evidence/r1b/r1b-baseline-run.json`, and seven PNGs in each of `renders/I1a_a` and `renders/I1a_b` (each folder emptied first). Stop the 5193 server afterwards.
 
 - [ ] **Step 9: Run the R1b verification**
 
@@ -7495,7 +8034,7 @@ Expected: `wrote D:/claude/relight/grand-hall/evidence/r1b/r1b-browser-run.json`
 ```bash
 cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m relight browser-check --config config/grand-hall.json
 ```
-Expected: `identity: pass`, `captured: pass`, `gpu: pass`, `photo: pass` (with the two stations' r printed, relit ≥ 0.85 at mp43 and ≥ 0.80 at mp45, each ≥ served), `fallback: pass`, `loading: pass`, exit 0. On any `FAIL`, keep the evidence file, find the cause (for example: `fixture_*` `missing` > 0 means contract 4 or 5 differs — the live positions do not map onto the vectors' model frame; `identity` failing means the hook changed the unrelit graph; `loading` failing on a single long task names the step to split) and fix it; never loosen a threshold.
+Expected: `identity: pass`, `captured: pass`, `gpu: pass` (word checks and the display read-back), `photo: pass` (with the two stations' r printed, relit ≥ 0.85 at mp43 and ≥ 0.80 at mp45, each ≥ served), `fallback: pass`, `loading: pass`, exit 0. The report's `loading.longTasks` and `loading.loadMs` (off and relit, at load completion) are information: copy them into the session log. On any `FAIL`, keep the evidence file, find the cause and fix it; never loosen a threshold. For example: `fixture_*` `missing` > 0 means contract 4 or 5 differs (the live positions do not map onto the vectors' model frame); `identity` failing means the hook changed the unrelit graph; `gpu.display` failing means `displayNode` and `displayColour` disagree; `loading.missingSpans` means a span was never recorded (an instrumentation gap, not a pass); `loading.overBudget` names the span over 50 ms. For `relight:merge-records`, the remedy is to merge per tile off the build task (a passthrough-filled records buffer, then each tile's records written with `RelightDraw.setSourceRecords` in its own task before the first pass; Task 12), never to relax the threshold; for another span, split that step the same way.
 
 - [ ] **Step 11: The drag budget, relit and off** (the lock is taken exclusively; if the first command fails with `EEXIST`, wait for the holder and rerun)
 
@@ -7526,6 +8065,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `docs/engineering/native-splats.md`, `docs/engineering/relight-package.md`, `docs/sessions/<the day's date>.md`, `docs/state/tasks.md`
 - Possibly regenerated: `patches/three@0.186.0.patch`, `pnpm-lock.yaml` (Step 1)
+- Possibly modified by Step 1's merge with T-640: `packages/web/src/lib/native-splat-scene.ts` (`RELIT_VERTEX_STORAGE_BUFFERS = 9`), and the conflict resolutions Step 1 lists
+- Outputs (D:): `D:/claude/relight/grand-hall/evidence/r1b/base-commit.txt` (overwritten after a merge with T-640)
 
 **Interfaces:**
 - Consumes: every earlier task; Task 18's evidence under `D:/claude/relight/grand-hall/evidence/r1b/`.
@@ -7538,14 +8079,25 @@ The delivery contract (`.claude/conventions/shipping-changes.md`) applies, with 
 ```bash
 cd D:/claude/real-hall/repo && git fetch origin && git log --oneline origin/master -8 -- patches/three@0.186.0.patch && git merge-base --is-ancestor origin/master HEAD && echo "master already merged" || echo "master has new commits"
 ```
-If `origin/master` has commits this branch lacks: `git merge origin/master`. If `patches/three@0.186.0.patch` or `pnpm-lock.yaml` conflict (T-640 changed the patch), take master's versions (`git checkout --theirs patches/three@0.186.0.patch pnpm-lock.yaml && pnpm install`), then redo Task 9 Step 3 on top (the three `once()` anchors are unchanged by T-640, so `apply-working-colour.mjs` applies as is), and run:
+If `origin/master` has commits this branch lacks: `git merge origin/master`. T-640 (`claude/perf-20260929`) and R1b both edit the files below. Resolve every conflict in them by keeping both sides (T-640's lines and R1b's), never one side:
+- `patches/three@0.186.0.patch` and `pnpm-lock.yaml`, which are generated: take master's versions (`git checkout --theirs patches/three@0.186.0.patch pnpm-lock.yaml && pnpm install`), then redo Task 9 Step 3 on top (the three `once()` anchors are unchanged by T-640, so `apply-working-colour.mjs` applies as is). The regenerated patch holds both sides.
+- `packages/web/src/components/scene/NativeCanvas.tsx` and `packages/web/src/components/scene/__tests__/NativeCanvas.test.tsx` (T-640's drawn-splat profiling and its mock of `native-splat-scene.js`; R1b's storage-buffer request and its test).
+- `packages/web/src/lib/native-splat-scene.ts` (T-640's `KEPT_SPLATS_ELEMENT`, `drawnSplats`, `nativeSceneDrawnSplats` and `mesh.splatCount`; R1b's relight host) and `packages/web/src/lib/__tests__/native-splat-scene.test.ts`. In the test, T-640 inserts `readonly splatCount: number;` directly above the mock constructor line Task 12 rewrites and assigns it inside that constructor, so expect an adjacent-line conflict. The merged mock keeps `splatCount` and the `workingColorNode` option.
+- `packages/web/src/lib/native-gaussian-addon.d.ts` (T-640's `drawIndirect` and `splatCount`; R1b's `workingColorNode`) and `patches/README.three-native-splats.md` (each documents its own patch change).
+
+T-640's patch adds a ninth storage buffer to the relit vertex stage. It is `keptRead`, the sort's kept count, read in `createMaterialNodes`' WebGPU vertex node (from head `fae58daf`; still so at `6fbfb39d`, whose own commit adds a storage read only to the spherical-harmonics compute pass). So once merged, the relit vertex stage binds 9: set `RELIT_VERTEX_STORAGE_BUFFERS = 9` in `packages/web/src/lib/native-splat-scene.ts`. Confirm the count on the merged patch first: the eight listed in Global Constraints plus every storage buffer T-640's patch reads in that vertex node (each `buffers.<name>Read` or `storage(…)`). If it is not 9, stop and report. The canvas keeps requesting the adapter's maximum, since it exceeds 8; Task 0 Step 7 recorded the build PC's (16 in Chrome 152). Then rerun the tests of Tasks 9, 12 and 13, and T-640's own addon test, one file per command:
 
 ```bash
-cd D:/claude/real-hall/repo && pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/native-addon-working-colour.test.ts && pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/native-addon-performance.test.ts && pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/native-splat-scene.test.ts
+cd D:/claude/real-hall/repo && for f in src/lib/__tests__/native-addon-working-colour.test.ts src/lib/__tests__/native-addon-antialias.test.ts src/lib/__tests__/native-addon-performance.test.ts src/lib/__tests__/native-splat-scene.test.ts src/components/scene/__tests__/NativeCanvas.test.tsx src/lib/relight/__tests__/relight-tile-load.test.ts src/components/scene/__tests__/NativeSplatLayer.test.tsx; do pnpm --filter @omnitwin/web exec vitest run "$f" || { echo "FAILED: $f"; break; }; done && pnpm --filter @omnitwin/web typecheck
 ```
-Expected: all pass. Commit the merge with the regenerated patch and lockfile (explicit pathspecs; message `Merge origin/master into claude/real-hall (T-640 first; R1b's hook regenerated on top)` plus the Co-Authored-By line). If T-640 is ready but not yet on master, tell the controller: T-640 lands first, then this step.
+Expected: every file passes and the typecheck exits 0. Commit the merge with the regenerated patch and lockfile and the constant (explicit pathspecs; message `Merge origin/master into claude/real-hall (T-640 first; R1b's hook regenerated on top, the relit vertex stage binds 9)` plus the Co-Authored-By line). If T-640 is ready but not yet on master, tell the controller: T-640 lands first, then this step.
 
-After such a merge, count the relit vertex stage's storage buffers on the merged patch: the eight listed in Global Constraints plus every storage buffer T-640 adds to `createMaterialNodes`' vertex node (each `buffers.<name>Read` or `storage(…)` it reads). If the count is above 8, set `RELIT_VERTEX_STORAGE_BUFFERS` in `packages/web/src/lib/native-splat-scene.ts` to it and rerun `src/lib/__tests__/native-splat-scene.test.ts` (its default-support test reads the constant). Task 12's canvas then requests the adapter's headroom and the host relights only devices whose negotiated limit reaches the count; record the build PC adapter's `maxStorageBuffersPerShaderStage` (`(await navigator.gpu.requestAdapter()).limits`) in the session log. Commit that with the merge. Then rerun Task 18 Steps 7–11 on the merged code, because the evidence must describe what ships; the relit run's `loading` check fails on any WebGPU validation error, a storage-buffer overflow included.
+After such a merge the I1a baseline must include T-640 too, or the identity check would judge R1b against a hall without T-640's culling, batching and sort order. The new baseline is the merged master's state before R1b, the merge commit's second parent. Overwrite `base-commit.txt` with it:
+
+```bash
+cd D:/claude/real-hall/repo && git rev-parse HEAD^2 > D:/claude/relight/grand-hall/evidence/r1b/base-commit.txt && git log --oneline -1 "$(cat D:/claude/relight/grand-hall/evidence/r1b/base-commit.txt)"
+```
+Expected: the `origin/master` commit just merged. Then serve the merged code (Task 18 Step 7) and rerun Task 18 Steps 8–11. Step 8 rebuilds the I1a baseline from this commit plus the same capture-instrumentation commit (`capture-commit.txt`), so the evidence describes what ships. The relit run's `loading` check fails on any WebGPU validation error, a storage-buffer overflow included.
 
 - [ ] **Step 2: Record the change in the engineering notes**
 
@@ -7565,8 +8117,15 @@ probe fold runs once per light change before it. The patched `GaussianSplat` app
 `workingColorNode` (multiplier and display) and the opacity hook (alpha 0 for the glass and the view
 outside). Without a package, on WebGL2 and below desktop class, the host builds exactly the I1a draw.
 Tiles placed differently in one draw cannot share its scene-to-model transform; that draw is drawn as
-captured with one warning. The DEV instruments on `window.__relight` read the words back against the
-CPU kernel (`lib/relight/relight-kernel.ts`) and R1a's test vectors.
+captured with one warning. A tile's geometry waits for its records at most 10 s after it has loaded;
+records slower than that arrive late and only rerun the pass. The provider waits for the package at most
+the same 10 s (`RELIGHT_GRACE_MS`); after that the walk stays as captured until it is reloaded, and a
+package that arrives later is ignored, so relit splats never stand on an unlit floor. Whether a renderer relights is one
+predicate, `nativeRelightSupported` (its per-stage storage-buffer limit must reach
+`RELIT_VERTEX_STORAGE_BUFFERS`), shared by the host, the tiles and the provider. The DEV instruments on
+`window.__relight` read the words back against the CPU kernel (`lib/relight/relight-kernel.ts`) and
+R1a's test vectors, and the display function against `displayColour`; the main-thread relight work is
+timed as `relight:*` performance spans.
 ```
 
 Append to `docs/engineering/relight-package.md`:
@@ -7592,23 +8151,36 @@ the compressed bytes).
 
 - [ ] **Step 3: The session log and the task board**
 
-Append to `docs/sessions/<the day's date>.md` a section `## T-639 R1b: relit in the browser` stating: the branch and commits, what was built (one line per task group), and Task 18's measured results copied from `r1b-browser-checks.json` (identity, captured p99 per view, GPU worst code distances, photo r relit/served at stations 43 and 45, the fallbacks, long tasks, the drag budget p95 relit/off), plus the preview link once Step 7 has it, and any failed check with its cause. In `docs/state/tasks.md`, add a dated line above the 2026-09-29 T-639 lines: `- <date> T-639 R1b (relit in the browser) built on claude/real-hall: <one-sentence result>; preview <link>; merge waits for Blake.` and append the same sentence to the T-639 row's notes.
+Append to `docs/sessions/<the day's date>.md` a section `## T-639 R1b: relit in the browser` stating: the branch and commits, what was built (one line per task group), and Task 18's measured results copied from `r1b-browser-checks.json` (identity against "I1a + capture instrumentation" with both commits from `baseline.txt`, captured p99 per view, GPU worst code distances and the display read-back's worst relative error, photo r relit/served at stations 43 and 45, the fallbacks, the relight spans, and the long tasks and load times of both runs at load completion, the drag budget p95 relit/off, the adapter's storage buffers per stage from Task 0 Step 7), plus the preview link once Step 7 has it, and any failed check with its cause. In `docs/state/tasks.md`, add a dated line above the 2026-09-29 T-639 lines: `- <date> T-639 R1b (relit in the browser) built on claude/real-hall: <one-sentence result>; preview <link>; merge waits for Blake.` and append the same sentence to the T-639 row's notes.
 
 - [ ] **Step 4: Full verification** (one test file per command; stop at the first failure and fix its cause)
 
 ```bash
 cd D:/claude/real-hall/repo
-for f in src/lib/relight/__tests__/relight-codec.test.ts src/lib/relight/__tests__/relight-manifest.test.ts src/lib/relight/__tests__/relight-warning.test.ts src/lib/relight/__tests__/relight-png.test.ts src/lib/relight/__tests__/relight-kernel.test.ts src/lib/relight/__tests__/relight-assets.test.ts src/lib/__tests__/relight-package.test.ts src/lib/__tests__/sun.test.ts src/lib/relight/__tests__/display.test.ts src/lib/relight/__tests__/floor-light.test.ts src/lib/relight/__tests__/daylight.test.ts src/lib/__tests__/light-setting.test.ts src/stores/__tests__/light-setting-store.test.ts src/lib/__tests__/native-addon-working-colour.test.ts src/lib/__tests__/native-addon-antialias.test.ts src/lib/relight/__tests__/relight-frame.test.ts src/lib/relight/__tests__/relight-apply.test.ts src/lib/relight/__tests__/relight-draw.test.ts src/lib/__tests__/native-splat-scene.test.ts src/lib/relight/__tests__/relight-tile-load.test.ts src/components/scene/__tests__/NativeSplatLayer.test.tsx src/lib/__tests__/floor-skin.test.ts src/components/stage/__tests__/StageFloor.test.tsx src/lib/relight/__tests__/sky-panels.test.ts src/components/scene/__tests__/RelightProvider.test.tsx src/components/rooms/__tests__/RoomSplatScene.test.tsx src/lib/__tests__/splat-staging-plugin.test.ts src/components/rooms/__tests__/LightControl.test.tsx src/lib/relight/__tests__/relight-debug.test.ts src/lib/__tests__/native-current-view-capture.test.ts src/components/scene/__tests__/NativeCanvas.test.tsx; do pnpm --filter @omnitwin/web exec vitest run "$f" || { echo "FAILED: $f"; break; }; done
+for f in src/lib/relight/__tests__/relight-codec.test.ts src/lib/relight/__tests__/relight-manifest.test.ts src/lib/relight/__tests__/relight-warning.test.ts src/lib/relight/__tests__/relight-png.test.ts src/lib/relight/__tests__/relight-kernel.test.ts src/lib/relight/__tests__/relight-assets.test.ts src/lib/__tests__/relight-package.test.ts src/lib/__tests__/sun.test.ts src/lib/relight/__tests__/display.test.ts src/lib/relight/__tests__/floor-light.test.ts src/lib/relight/__tests__/daylight.test.ts src/lib/__tests__/light-setting.test.ts src/stores/__tests__/light-setting-store.test.ts src/lib/__tests__/native-addon-working-colour.test.ts src/lib/__tests__/native-addon-antialias.test.ts src/lib/relight/__tests__/relight-frame.test.ts src/lib/relight/__tests__/relight-apply.test.ts src/lib/relight/__tests__/relight-spans.test.ts src/lib/relight/__tests__/relight-draw.test.ts src/lib/__tests__/native-splat-scene.test.ts src/lib/relight/__tests__/relight-tile-load.test.ts src/components/scene/__tests__/NativeSplatLayer.test.tsx src/lib/__tests__/floor-skin.test.ts src/components/stage/__tests__/StageFloor.test.tsx src/lib/relight/__tests__/sky-panels.test.ts src/components/scene/__tests__/RelightProvider.test.tsx src/components/rooms/__tests__/RoomSplatScene.test.tsx src/lib/__tests__/splat-staging-plugin.test.ts src/components/rooms/__tests__/LightControl.test.tsx src/lib/relight/__tests__/relight-debug.test.ts src/lib/__tests__/native-current-view-capture.test.ts src/components/scene/__tests__/NativeCanvas.test.tsx; do pnpm --filter @omnitwin/web exec vitest run "$f" || { echo "FAILED: $f"; break; }; done
 pnpm --filter @omnitwin/web typecheck && pnpm exec eslint packages/web/src && cd tools/relight && C:/Python313/python.exe -m unittest tests.test_browsercheck tests.test_codec -v
 ```
 Expected: every file passes, typecheck and lint exit 0, the Python tests pass.
 
-Then the production bundle must not contain the control or the instruments, and the preview bundle must. `vite.config.ts` defines `import.meta.env.VITE_DEPLOY_ENV` from `VERCEL_ENV` at build time, so the unused branch and its dynamic import are removed:
+Then the production bundle must not contain the control or the instruments, and the preview bundle must. `vite.config.ts` defines `import.meta.env.VITE_DEPLOY_ENV` from `VERCEL_ENV` at build time, so the unused branch and its dynamic import are removed.
+
+These bundles are built in a mode other than `production`. A local `vite build` in mode `production` stops at `assertRequiredProductionEnv`, which demands a live Clerk key (`pk_live_…`, `src/lib/production-env.ts`) that this PC does not have and that must not be invented. Mode `bundle-check` skips that guard and the Sentry upload; both run only when `mode === "production"` (`vite.config.ts`). The founder-hold gate's inputs are the same as on Vercel:
+- `VITE_DEPLOY_ENV` is defined from `VERCEL_ENV` in the environment, because `loadEnv(mode, cwd, "")` includes `process.env`;
+- `VITE_SPLAT_BASE_URL` follows `VERCEL_ENV` (`resolveBuildSplatBaseUrl`);
+- `import.meta.env.DEV` is false: Vite 6.4.3 builds with `NODE_ENV=production` whatever the mode, set explicitly below so a development shell cannot change it;
+- `packages/web` has no `.env.production`, so both modes load the same env files, and no app code reads `import.meta.env.MODE`.
+
+The output goes to D:, not `packages/web/dist`, emptied first so no earlier bundle is grepped:
 
 ```bash
-cd D:/claude/real-hall/repo && VERCEL_ENV=production pnpm --filter @omnitwin/web build && (grep -rl "Preparing the light" packages/web/dist && echo "LEAK: the light control is in the production bundle" || echo "production bundle clean") && (grep -rl "__relight" packages/web/dist && echo "LEAK: the DEV instruments are in the production bundle" || echo "no instruments") && VERCEL_ENV=preview pnpm --filter @omnitwin/web build && grep -rl "Preparing the light" packages/web/dist >/dev/null && echo "preview bundle has the control"
+cd D:/claude/real-hall/repo && B=D:/claude/relight/grand-hall \
+  && NODE_ENV=production VERCEL_ENV=production pnpm --filter @omnitwin/web exec vite build --mode bundle-check --outDir $B/bundle-production --emptyOutDir \
+  && NODE_ENV=production VERCEL_ENV=preview pnpm --filter @omnitwin/web exec vite build --mode bundle-check --outDir $B/bundle-preview --emptyOutDir \
+  && (grep -rl "Preparing the light" $B/bundle-production && echo "LEAK: the light control is in the production bundle" || echo "production bundle clean") \
+  && (grep -rl "__relight" $B/bundle-production && echo "LEAK: the DEV instruments are in the production bundle" || echo "no instruments") \
+  && (grep -rl "Preparing the light" $B/bundle-preview >/dev/null && echo "preview bundle has the control" || echo "MISSING: the preview bundle lacks the control")
 ```
-Expected: `production bundle clean`, `no instruments`, `preview bundle has the control`. A leak is fixed at its cause (a static import of the module), never by weakening the check.
+Expected: both builds exit 0, then `production bundle clean`, `no instruments`, `preview bundle has the control`. A build that fails stops the chain before any grep, so a failed build never reads as clean. A leak is fixed at its cause (a static import of the module), never by weakening the check.
 
 - [ ] **Step 5: The package is published where previews read it** (contract 6; R1b does not publish)
 
@@ -7636,9 +8208,9 @@ The Grand Hall in the walk view relights live from the R1a relight package, on p
 Verification (evidence D:/claude/relight/grand-hall/evidence/r1b on the build PC):
 - relight off against I1a from the base commit: <identity result>
 - captured light against relight off, outside windows and fixtures: p99 <value> stops (limit 0.05)
-- GPU words against the CPU kernel and R1a's 64 test-vector splats: worst <n> code (limit 1), alpha exact
+- GPU words against the CPU kernel and R1a's 64 test-vector splats: worst <n> code (limit 1), alpha exact; the display function read back within <value> relative (limit 1e-5)
 - night against Matterport's photographs: r <relit>/<served> at station 43 (needs 0.85), <relit>/<served> at station 45 (needs 0.80)
-- WebGL2 and below-desktop tiers: no relight request; loading adds no task over 50 ms
+- WebGL2 and below-desktop tiers: no request for the relight package; loading: every span of relight main-thread work within 50 ms (longest <value> ms), load time <relit> ms relit, <off> ms off
 - drag budget p95: <relit> ms relit, <off> ms off (limit 16.7 ms and +1 ms)
 
 Blake judges the presets and the hour slider on the Vercel preview; merge waits for his go-ahead.
@@ -7654,11 +8226,21 @@ Fill each `<…>` from `r1b-browser-checks.json`, `r1b-night.json` and `r1b-off.
 Run: `cd D:/claude/real-hall/repo && gh pr checks --watch`
 Expected: every check green except "GPU performance (required)" waiting for its operator. Run the GPU gate as its operator on this PC within its 25-minute window, following `.github/gpu/README.md` and `.github/gpu/PUBLISHING.md`: fetch the request's `sourceCommit` (the PR merge ref), archive it and check `python .github/gpu/source_manifest.py --repo D:/claude/real-hall/repo --commit <sha>` against `trusted.json`; in WSL Ubuntu install with `pnpm install --frozen-lockfile --prefer-offline`, delete `<workspace>/node-compile-cache`, run `.github/gpu/run-worker.py` holding `D:/claude/visual-firstprinciples-20260928/gpu.lock` (with `--pnpm /root/.local/share/pnpm/.tools/pnpm/9.15.4`), then publish with `node .github/gpu/publish-result.mjs … --run-id <run> --attempt <attempt> --source <sha>` from the controller extracted from that commit. Do not push to the branch after publishing. Expected: the gate job and "Browser release gate" pass.
 
-Open the Vercel preview for the PR (the deployment URL from `gh pr view --json comments` or the Vercel check), and on it check with the Browser tools: `/room/grand-hall` loads, the light control appears once the package is ready, "Night, lamps lit" darkens the windows and lights the lamps, the hour slider on "Sunny morning" moves the sun patches on the floor, and the console has no errors. Record the preview URL in the session log and the PR. Deployment Protection may require Blake's Vercel login: give him the link.
+Open the Vercel preview for the PR (the deployment URL from `gh pr view --json comments` or the Vercel check), and on it check with the Browser tools: `/room/grand-hall` loads, the light control appears once the package is ready, "Night, lamps lit" darkens the windows and lights the lamps, the hour slider on "Sunny morning" moves the sun patches on the floor, and the console has no errors. The preview renders the relit hall (6 M splats) on the build PC's GPU, so hold the GPU lock for the whole check, as Task 18 Step 11 does. Before opening the preview, take it (if this fails with `EEXIST`, wait for the holder and rerun):
+
+```bash
+node -e "require('fs').writeFileSync(process.argv[1], JSON.stringify({owner:'relight preview check (T-639 R1b)',since:new Date().toISOString()}),{flag:'wx'})" D:/claude/visual-firstprinciples-20260928/gpu.lock
+```
+When the check is done, or fails, close the preview's tab and release it:
+
+```bash
+node -e "require('fs').rmSync(process.argv[1])" D:/claude/visual-firstprinciples-20260928/gpu.lock
+```
+Record the preview URL in the session log and the PR. Deployment Protection may require Blake's Vercel login: give him the link.
 
 - [ ] **Step 8: Hand the preview to Blake, and merge only on his go-ahead**
 
-Send the controller: the preview link, the PR link, the verification summary (Step 6's bullets) and any failed check. Merge only after Blake's explicit go-ahead in chat (`gh pr merge --merge`), then confirm production kept its hold: `https://venviewer.com/room/grand-hall` shows no splats, makes no `/relight/` request and has no light control, checked with the Browser tools. Update the session log and `docs/state/tasks.md` with the merge commit and the production check (explicit pathspecs, pushed to master through the normal path).
+Send the controller: the preview link, the PR link, the verification summary (Step 6's bullets) and any failed check. Merge only after Blake's explicit go-ahead in chat (`gh pr merge --merge`), then confirm production kept its hold: `https://venviewer.com/room/grand-hall` shows no splats, makes no request for the relight package (a path under `/splats/` containing `/relight/v`) and has no light control, checked with the Browser tools. Update the session log and `docs/state/tasks.md` with the merge commit and the production check (explicit pathspecs, pushed to master through the normal path).
 
 ---
 
@@ -7677,13 +8259,13 @@ Send the controller: the preview link, the PR link, the verification summary (St
 | §4.3: sun term along the ray to each window plane through its stencil, weighted by the normal, each window gated by its horizon exactly as reference.py | 4, 7, 11, 14 |
 | §4.3: linear relighting, exposure, 60% white balance, neutral roll-off above a per-call knee (the splat's own captured peak, 0.8 for floor and sky), no film curve; captured light as I1a | 7, 8, 10, 11, 14, 15 |
 | R1a's emitter boost as a setting (1 captured, 4 night, 1 otherwise) | 4, 8, 10, 11 |
-| WebGPU's 8 storage buffers per stage: the canvas takes the adapter's headroom, the host relights only where the limit covers a relit draw | 12, 19 |
+| WebGPU's 8 storage buffers per stage (9 in the relit vertex stage once T-640 lands): the build PC's limit read up front, the canvas takes the adapter's headroom, and one predicate lets the host, the tiles and the provider relight only where the limit covers a relit draw | 0, 12, 13, 15, 19 |
 | §4.4: `relight-package.ts` (worker decode, null when absent or invalid), `sun.ts` (NOAA), `light-setting.ts` and store, the patch hook, floor lighting in the floor-skin path, the preview-only control | 5, 6, 8, 9, 14, 16 |
-| §5: missing/invalid/mismatched package → as captured with one warning; v2 → v1 → none; below desktop and WebGL2 → as captured; clamps; control only in previews | 2, 5, 8, 13, 14, 15, 16, 19 |
-| §6: unit tests (manifest and decoder with refusals, sun within 0.1° of NOAA, weights and clamps, compute against a CPU reference) | 1–8, 11, 17, 18 |
+| §5: missing/invalid/mismatched package → as captured with one warning (a package that validates but cannot be made into a frame too, and a package later than the 10 s grace, for the whole session); v2 → v1 → none; below desktop and WebGL2 → as captured; clamps; control only in previews | 2, 5, 8, 13, 14, 15, 16, 19 |
+| §6: unit tests (manifest and decoder with refusals, sun within 0.1° of NOAA, weights and clamps, compute against a CPU reference, the floor maps' channels against R1a's texels) | 1–8, 11, 17, 18 |
 | §6: photo check (≥ 0.80 at station 45, ≥ 0.85 at 43, never worse than captured) | 18 |
-| §6: no change when off; captured light within 1/20 stop | 18 |
-| §6: Twin budgets, the GPU benchmark, decoding in a worker, no main-thread task over 50 ms | 5, 10, 18, 19 |
+| §6: no change when off (against I1a with only the capture instrumentation applied, rebuilt after T-640); captured light within 1/20 stop | 17, 18, 19 |
+| §6: Twin budgets, the GPU benchmark, decoding in a worker, no main-thread task over 50 ms (each span of relight main-thread work, read at load completion) | 5, 10, 11, 12, 15, 18, 19 |
 | §6: Blake judges the presets and slider on the Vercel preview | 19 |
 | §8: the shared patch sequenced after T-640 | 9, 19 |
 
@@ -7691,9 +8273,12 @@ Send the controller: the preview link, the PR link, the verification summary (St
 - "Pixel for pixel" with no package is judged against I1a's own run-to-run difference: if the GPU sort makes two I1a renders differ, R1b off may differ by no more than that.
 - The captured-light check leaves out only the view out of the windows (the glass is hidden by design) and keeps the photographed floor (`?floorskin=v1`), since the restored floor is meant to differ. With emitter boost 1 and each splat's own knee, everything else, fixtures included, must match within 1/20 of a stop; the only remaining difference is the multiplier word's quantisation of 1 (−0.004 stop).
 - The photo check is run on the night preset at the two night stations the proof has photographs for (43 and 45); the day photographs have the house lights on and match no R1 preset.
-- The probe grid's size is whatever the manifest's `probes.shape` says (R1a's coarse 0.5 m grid, about 13,000 probes, 4 MB); loading's long tasks are measured in Task 18, not assumed.
-- If T-640 adds a vertex-stage storage buffer, an adapter that offers only 8 draws the hall as captured (Task 12's check, the count raised in Task 19 Step 1).
+- The probe grid's size is whatever the manifest's `probes.shape` says (R1a's coarse 0.5 m grid, about 13,000 probes, 4 MB); the main-thread cost of loading is measured in Task 18 (spans, long tasks and load times), not assumed.
+- "Loading adds no main-thread task over 50 ms" is judged on the work relighting adds (the `relight:*` spans), not on whole tasks: the build task that merges records also does I1a's own merge, so its length is reported, not judged.
+- T-640 adds a ninth vertex-stage storage buffer, so after it lands an adapter that offers only 8 per stage draws the hall as captured (Task 12's predicate, the count raised in Task 19 Step 1). The build PC's adapter offers 16.
+- Relighting waits at most `RELIGHT_GRACE_MS` (10 s): a tile's geometry for its records once it has loaded, and the provider for the package. After a provider timeout the session (the walk's mount) stays as captured and ignores a later package; a reload tries again.
+- The display function and the multiplier words are read back from the GPU; the floor material is not, and rests on its TypeScript twin's tests and the rendered checks.
 
 **Placeholder scan:** no "TBD", "TODO" or "similar to Task N"; every code step carries its code. The only `<…>` fields are in Task 19's PR body and session-log entry, which must be filled from Task 18's measured evidence before use.
 
-**Type and name consistency** (checked across tasks): `RelightModelData.probes` is `Uint16Array` everywhere (Tasks 5, 10); `denseProbeField(manifest, probes, valid)`; `prepareKernelFrame(model, setting)` takes no gates, since `horizonGates` inside it is the only source of `windowOpen` (Tasks 4, 7, 10, 17), and `RelightKernelModel` carries `horizons` and `site` in both builders (`kernelModelFromVectors`, `kernelModelFromData`); `RelightSetting.emitterBoost` is set by `capturedSetting`, `settingForChoice` (`PRESET_EMITTER_BOOST`), `settingFromVectors` and read by the kernel and the `emitterBoost` uniform (Tasks 4, 8, 10, 11); `DisplayParams` and `DisplayUniforms` have no roll-off switch, and every `displayNode` call passes a knee (`splatKneeNode(rgb)` in Task 11, `float(HIGHLIGHT_KNEE)` in Task 14 and inside `skyPanelNode` for Task 15); `ChoiceLight` and `RelightApplication` carry no `windowOpen`; `RelightFrame.prepare` is called by `RelightDraw.run` (Tasks 10, 11) and counted in Tasks 10–12's compute expectations; `RELIT_VERTEX_STORAGE_BUFFERS` and `nativeRendererStorageBuffersPerStage` (Task 12) are what Task 19 Step 1 adjusts; `NativeSourceHandle.setRelight` (Task 12) is what `NativeSplatLayer` calls (Task 13); `relightBackendSupported(gl: unknown)` is used by Tasks 13, 15; `RelightState { frame, pending }` by Tasks 14, 15; `LightPresetId` values `captured | night | sunny | overcast` in Tasks 8, 16, 17, 18; `findSplatsByRecord` (Task 17) is what `fixture` uses; `window.__relight`, `window.__roomViewCapture` and `window.__roomWalk` are what the Task 18 driver calls; `browsercheck.run(cfg, args)` is the registered command.
+**Type and name consistency** (checked across tasks): `RelightModelData.probes` is `Uint16Array` everywhere (Tasks 5, 10); `denseProbeField(manifest, probes, valid)`; `prepareKernelFrame(model, setting)` takes no gates, since `horizonGates` inside it is the only source of `windowOpen` (Tasks 4, 7, 10, 17), and `RelightKernelModel` carries `horizons` and `site` in both builders (`kernelModelFromVectors`, `kernelModelFromData`); `RelightSetting.emitterBoost` is set by `capturedSetting`, `settingForChoice` (`PRESET_EMITTER_BOOST`), `settingFromVectors` and read by the kernel and the `emitterBoost` uniform (Tasks 4, 8, 10, 11); `DisplayParams` and `DisplayUniforms` have no roll-off switch, and every `displayNode` call passes a knee (`splatKneeNode(rgb)` in Task 11, `float(HIGHLIGHT_KNEE)` in Task 14 and inside `skyPanelNode` for Task 15); `ChoiceLight` and `RelightApplication` carry no `windowOpen`; `RelightFrame.prepare` is called by `RelightDraw.run` (Tasks 10, 11) and counted in Tasks 10–12's compute expectations; `RELIT_VERTEX_STORAGE_BUFFERS` (Task 12) is what Task 19 Step 1 sets to 9, and `nativeRelightSupported` (Task 12, built on `nativeRendererStorageLimit` and `nativeRendererStorageBuffersPerStage`) is the host's default and the one predicate behind `relightBackendSupported(gl: unknown)` (Task 13), which Tasks 13 and 15 use; `NativeSourceHandle.setRelight` (Task 12) is what `NativeSplatLayer` calls with a tile's records and again with its `lateRecords` (Task 13); `RELIGHT_GRACE_MS` (Task 13) is the one 10 s grace, used by `loadTileWithRelight` and by the provider (Task 15), whose `onSettled` outcome is what RoomSplatScene feeds the tiles' `relightTilePromises`; `weightedColours` (Task 4) is the one w[k] × c[k] mapping (Tasks 4, 5, 8, 10), and `smoothstep` and `floorMod` exist once, in the kernel (Tasks 4, 6, 8); `measureRelight` and the five `RELIGHT_SPANS` (Task 11) are used in Tasks 11, 12 and 15 and listed again in `browsercheck.RELIGHT_SPANS` (Task 18); `DISPLAY_PROBES` and `display()` (Task 17) are what the driver's `gpu.display` and `gpu_report` read (Task 18); `RelightVectorsSchema.floorTexels` (Task 4) is what Task 5's staged test decodes; `RelightState { frame, pending }` by Tasks 14, 15; `LightPresetId` values `captured | night | sunny | overcast` in Tasks 8, 16, 17, 18; `findSplatsByRecord` (Task 17) is what `fixture` uses; `window.__relight`, `window.__roomViewCapture` and `window.__roomWalk` are what the Task 18 driver calls; `browsercheck.run(cfg, args)` is the registered command.
