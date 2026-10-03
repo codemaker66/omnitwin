@@ -1,10 +1,35 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "buildCommand": "pnpm --filter @omnitwin/types build && pnpm --filter @omnitwin/web build",
+  "buildCommand": "pnpm -F @omnitwin/types build && pnpm -F @omnitwin/web build && pnpm -F @omnitwin/web exec node scripts/prepare-amissing-book-resume.mjs && pnpm -F @omnitwin/web exec node scripts/version-amissing-book-audio.mjs dist/amissing-book dist/amissing-book",
   "outputDirectory": "dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "redirects": [
+    {
+      "source": "/trades-hall/cards",
+      "destination": "/trades-hall/cards/",
+      "permanent": false
+    },
+    {
+      "source": "/quiz",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
+    {
+      "source": "/quiz/",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
+    {
+      "source": "/trades-house/discover-your-craft",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
+    {
+      "source": "/trades-house/discover-your-craft/",
+      "destination": "/amissing-book/",
+      "permanent": false
+    },
     {
       "source": "/splats/:path*",
       "destination": "/work-in-progress",
@@ -75,6 +100,14 @@
     {
       "source": "/amissing-book/",
       "destination": "/amissing-book/index.html"
+    },
+    {
+      "source": "/api/card-review",
+      "destination": "/api/card-review"
+    },
+    {
+      "source": "/trades-hall/cards/",
+      "destination": "/trades-hall/cards/index.html"
     },
     {
       "source": "/(.*)",
@@ -229,6 +262,36 @@
           "key": "Cache-Control",
           "value": "public, max-age=3600, stale-while-revalidate=604800"
         }
+      ]
+    },
+    {
+      "source": "/trades-hall/cards",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }
+      ]
+    },
+    {
+      "source": "/trades-hall/cards/",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }
+      ]
+    },
+    {
+      "source": "/trades-hall/cards/:path*",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }
+      ]
+    },
+    {
+      "source": "/trades-hall/cards/results.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "private, no-store" }
       ]
     }
   ]

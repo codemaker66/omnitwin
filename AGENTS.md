@@ -12,6 +12,13 @@ founder instruction supersedes older local-only handoffs, blanket freezes and
 owner-only deployment restrictions in the documents below. Ownership coordinates
 safe releases; the originating task remains responsible for delivery.
 
+## Local CMS credentials
+
+Trades Hall fuzzylime CMS credentials are stored outside Git at
+`C:/Users/blake/deploy-secrets/trades-hall-fuzzylime.json`.
+Local filesystem access is required. Read only for authorized CMS work; never
+print or commit the contents.
+
 ## Start with the actual task
 
 Follow the current user request and existing authorization. Host system/developer

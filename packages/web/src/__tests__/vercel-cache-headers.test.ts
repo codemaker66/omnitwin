@@ -97,7 +97,8 @@ describe("vercel.json static caching", () => {
   });
 
   it("never caches the app document or its routes", () => {
-    for (const path of ["/", "/index.html", "/plan", "/room/grand-hall", "/images", "/diary"]) {
+    for (const path of ["/", "/index.html", "/plan", "/room/grand-hall", "/images", "/diary",
+      "/amissing-book", "/amissing-book/", "/amissing-book/index.html"]) {
       expect(cacheControl(path), path).toEqual([]);
     }
   });

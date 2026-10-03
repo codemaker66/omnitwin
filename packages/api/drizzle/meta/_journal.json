@@ -575,6 +575,20 @@
       "when": 1791039600000,
       "tag": "0083_proposal_sent_version_refill",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1791126000000,
+      "tag": "0084_proposal_comment_author",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1791212400000,
+      "tag": "0085_proposal_templates",
+      "breakpoints": true
     }
   ]
 }

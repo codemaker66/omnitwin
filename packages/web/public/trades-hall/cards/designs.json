@@ -1,0 +1,130 @@
+[
+  {
+    "id": "38",
+    "label": "38",
+    "title": "The Architectural Folio",
+    "shortTitle": "Architectural Folio",
+    "image": "./images/38.png",
+    "proof": "./proofs/38.png"
+  },
+  {
+    "id": "43",
+    "label": "43",
+    "title": "The Venue Cipher",
+    "shortTitle": "Venue Cipher",
+    "image": "./images/43.png",
+    "proof": "./proofs/43.png"
+  },
+  {
+    "id": "46",
+    "label": "46",
+    "title": "The Private Invitation",
+    "shortTitle": "Private Invitation",
+    "image": "./images/46.png",
+    "proof": "./proofs/46.png"
+  },
+  {
+    "id": "35",
+    "label": "35",
+    "title": "The Architectural Invitation",
+    "shortTitle": "Venue Invitation",
+    "image": "./images/35.png",
+    "proof": "./proofs/35.png"
+  },
+  {
+    "id": "29",
+    "label": "29",
+    "title": "The Architectural Address",
+    "shortTitle": "The Hall Address",
+    "image": "./images/29.png",
+    "proof": "./proofs/29.png"
+  },
+  {
+    "id": "32",
+    "label": "32",
+    "title": "The House Invitation",
+    "shortTitle": "House Invitation",
+    "image": "./images/32.png",
+    "proof": "./proofs/32.png"
+  },
+  {
+    "id": "33",
+    "label": "33",
+    "title": "The Glassford Address",
+    "shortTitle": "Glassford Address",
+    "image": "./images/33.png",
+    "proof": "./proofs/33.png"
+  },
+  {
+    "id": "21",
+    "label": "21",
+    "title": "The Glassford Counterchange",
+    "shortTitle": "Glassford Balance",
+    "image": "./images/21.png",
+    "proof": "./proofs/21.png"
+  },
+  {
+    "id": "22",
+    "label": "22",
+    "title": "House Cipher Invitation",
+    "shortTitle": "Cipher Invitation",
+    "image": "./images/22.png",
+    "proof": "./proofs/22.png"
+  },
+  {
+    "id": "15",
+    "label": "15",
+    "title": "Architectural Counterchange",
+    "shortTitle": "Counterchange",
+    "image": "./images/15.png",
+    "proof": "./proofs/15.png"
+  },
+  {
+    "id": "02",
+    "label": "02",
+    "title": "House Cipher",
+    "shortTitle": "House Cipher",
+    "image": "./images/02.png",
+    "proof": "./proofs/02.png"
+  },
+  {
+    "id": "01-v2",
+    "label": "01 v2",
+    "title": "The Grand Hall Oculus",
+    "shortTitle": "Oculus",
+    "image": "./images/01-v2.png",
+    "proof": "./proofs/01-v2.png"
+  },
+  {
+    "id": "05",
+    "label": "05",
+    "title": "Ivory Architectural Object",
+    "shortTitle": "Ivory Architecture",
+    "image": "./images/05.png",
+    "proof": "./proofs/05.png"
+  },
+  {
+    "id": "nocturne",
+    "label": "N1",
+    "title": "Nocturne",
+    "shortTitle": "Nocturne",
+    "image": "./images/nocturne.png",
+    "proof": "./images/nocturne.png",
+    "proofLabel": "View original concept",
+    "imageFit": "cover",
+    "imagePosition": "center 34%",
+    "productionNote": "Landscape concept · original image"
+  },
+  {
+    "id": "nocturne-2",
+    "label": "N2",
+    "title": "Nocturne 2",
+    "shortTitle": "Nocturne 2",
+    "image": "./images/nocturne-2.png",
+    "proof": "./images/nocturne-2.png",
+    "proofLabel": "View original concept",
+    "imageFit": "cover",
+    "imagePosition": "center 34%",
+    "productionNote": "Landscape concept · original image"
+  }
+]

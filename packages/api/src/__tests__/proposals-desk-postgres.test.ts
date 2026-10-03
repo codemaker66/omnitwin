@@ -54,6 +54,8 @@ interface DeskRow {
   readonly linkOpen: boolean;
   readonly layoutRoomName: string | null;
   readonly layoutFromEnquiry: boolean;
+  readonly enquiryLayoutId: string | null;
+  readonly enquiryLayoutRoomName: string | null;
 }
 
 interface DeskBody {
@@ -348,5 +350,136 @@ describe.skipIf(testUrl === undefined)("the Proposals desk's ledger on isolated 
     const opened = await server.inject({ method: "GET", url: `/proposals/${cases[0]?.[0] ?? ""}`, headers: headers() });
     expect(opened.statusCode, opened.body).toBe(200);
     expect(JSON.parse(opened.body)).toMatchObject({ data: { layoutRoomName: "Grand Hall", layoutFromEnquiry: true } });
+  });
+
+  // A10: what staff may put back once they have left the client's layout out.
+  it("names their enquiry's own layout and its room, carried or not, only while both are live here", async () => {
+    const hall = randomUUID(), foreignHall = randomUUID(), removedHall = randomUUID();
+    await pool.query(
+      `INSERT INTO spaces (id, venue_id, name, slug, deleted_at) VALUES
+       ($1, $2, 'Grand Hall', 'grand-hall', NULL), ($3, $4, 'Elsewhere', 'elsewhere', NULL), ($5, $2, 'Old Room', 'old-room', now())`,
+      [hall, VENUE, foreignHall, OTHER_VENUE, removedHall],
+    );
+    const own = randomUUID(), removed = randomUUID(), foreign = randomUUID(), inRemovedRoom = randomUUID(), roomElsewhere = randomUUID();
+    await pool.query(
+      `INSERT INTO configurations (id, venue_id, space_id, name, layout_style, deleted_at) VALUES
+       ($1, $6, $7, 'Their layout', 'dinner-rounds', NULL), ($2, $6, $7, 'Removed', 'dinner-rounds', now()),
+       ($3, $8, $9, 'Theirs', 'dinner-rounds', NULL), ($4, $6, $10, 'Old room', 'dinner-rounds', NULL),
+       ($5, $6, $9, 'Room elsewhere', 'dinner-rounds', NULL)`,
+      [own, removed, foreign, inRemovedRoom, roomElsewhere, VENUE, hall, OTHER_VENUE, foreignHall, removedHall],
+    );
+    const enquiryWith = async (layout: string, venueId = VENUE): Promise<string> => {
+      const id = randomUUID();
+      await pool.query(
+        `INSERT INTO enquiries (id, venue_id, name, email, state, configuration_id) VALUES ($1, $2, 'Ailsa Henderson', 'ailsa@example.test', 'new', $3)`,
+        [id, venueId, layout],
+      );
+      return id;
+    };
+    const theirs = await enquiryWith(own);
+    const deal = randomUUID(), removedDeal = randomUUID();
+    await pool.query(
+      `INSERT INTO opportunities (id, venue_id, title, source_enquiry_id, deleted_at) VALUES
+       ($1, $3, 'Henderson wedding', $4, NULL), ($2, $3, 'Removed wedding', $4, now())`,
+      [deal, removedDeal, VENUE, theirs],
+    );
+    const carrying = async (title: string, layout: string | null, links: { enquiry?: string; deal?: string } = {}): Promise<string> => {
+      const id = await proposal(title, "draft", "2026-09-10T10:00:00Z", links);
+      await pool.query("UPDATE proposals SET configuration_id = $2 WHERE id = $1", [id, layout]);
+      return id;
+    };
+    const cases: readonly (readonly [string, readonly [string | null, string | null, boolean]])[] = [
+      [await carrying("Carried", own, { enquiry: theirs }), [own, "Grand Hall", true]],
+      [await carrying("Left out", null, { enquiry: theirs }), [own, "Grand Hall", false]],
+      [await carrying("Left out, through the deal", null, { deal }), [own, "Grand Hall", false]],
+      [await carrying("Removed", null, { enquiry: await enquiryWith(removed) }), [null, null, false]],
+      [await carrying("Another venue's", null, { enquiry: await enquiryWith(foreign) }), [null, null, false]],
+      [await carrying("In a removed room", null, { enquiry: await enquiryWith(inRemovedRoom) }), [null, null, false]],
+      [await carrying("In another venue's room", null, { enquiry: await enquiryWith(roomElsewhere) }), [null, null, false]],
+      [await carrying("Another venue's enquiry", null, { enquiry: await enquiryWith(own, OTHER_VENUE) }), [null, null, false]],
+      [await carrying("No enquiry", null), [null, null, false]],
+      // Links that disagree, which the link planner refuses to change: an
+      // enquiry other than its deal's own, or a removed deal.
+      [await carrying("Another enquiry than its deal's", null, { deal, enquiry: await enquiryWith(own) }), [null, null, false]],
+      [await carrying("Removed deal", null, { deal: removedDeal, enquiry: theirs }), [null, null, false]],
+    ];
+    const byId = new Map((await desk()).data.map((row) => [row.id, [row.enquiryLayoutId, row.enquiryLayoutRoomName, row.layoutFromEnquiry] as const]));
+    for (const [id, expected] of cases) expect(byId.get(id)).toEqual(expected);
+
+    const opened = await server.inject({ method: "GET", url: `/proposals/${cases[1]?.[0] ?? ""}`, headers: headers() });
+    expect(opened.statusCode, opened.body).toBe(200);
+    expect(JSON.parse(opened.body)).toMatchObject({ data: { enquiryLayoutId: own, enquiryLayoutRoomName: "Grand Hall", layoutRoomName: null } });
+  });
+
+  it("changes no link once a colleague's send lands while the change waits, and says it moved", async () => {
+    const hall = randomUUID(), layout = randomUUID(), enquiry = randomUUID();
+    await pool.query("INSERT INTO spaces (id, venue_id, name, slug) VALUES ($1, $2, 'Grand Hall', 'grand-hall')", [hall, VENUE]);
+    await pool.query("INSERT INTO configurations (id, venue_id, space_id, name, layout_style) VALUES ($1, $2, $3, 'Their layout', 'dinner-rounds')",
+      [layout, VENUE, hall]);
+    await pool.query(
+      "INSERT INTO enquiries (id, venue_id, name, email, state, configuration_id) VALUES ($1, $2, 'Ailsa Henderson', 'ailsa@example.test', 'new', $3)",
+      [enquiry, VENUE, layout],
+    );
+    const id = await proposal("Henderson wedding", "draft", "2026-09-10T10:00:00Z", { enquiry, version: 1 });
+    await pool.query("UPDATE proposals SET configuration_id = $2 WHERE id = $1", [id, layout]);
+    const leaveOut = () => server.inject({ method: "PATCH", url: `/proposals/${id}`, headers: headers(), payload: { configurationId: null } });
+
+    const blocker = await pool.connect();
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("SELECT id FROM proposals WHERE id = $1 FOR UPDATE", [id]);
+      const waiting = leaveOut();
+      await expect.poll(async () => {
+        const rows = await pool.query<{ count: string }>(
+          "SELECT count(*)::text AS count FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+          [fixtureSchema],
+        );
+        return Number(rows.rows[0]?.count);
+      }, { timeout: 5000 }).toBe(1);
+      await blocker.query("UPDATE proposals SET status = 'sent', sent_at = now(), sent_version = 1 WHERE id = $1", [id]);
+      await blocker.query("COMMIT");
+      const refused = await waiting;
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(JSON.parse(refused.body)).toMatchObject({ code: "PROPOSAL_STATUS_CHANGED" });
+    } finally {
+      blocker.release();
+    }
+    const kept = await pool.query<{ configuration_id: string | null; status: string }>("SELECT configuration_id, status FROM proposals WHERE id = $1", [id]);
+    expect(kept.rows[0]).toEqual({ configuration_id: layout, status: "sent" });
+
+    // While it is in hand, the same request leaves it out.
+    await pool.query("UPDATE proposals SET status = 'changes_requested' WHERE id = $1", [id]);
+    const done = await leaveOut();
+    expect(done.statusCode, done.body).toBe(200);
+    expect((await pool.query("SELECT configuration_id FROM proposals WHERE id = $1", [id])).rows[0]).toEqual({ configuration_id: null });
+  });
+
+  it("changes nothing from a screen that showed the proposal elsewhere, even for a platform admin", async () => {
+    const hall = randomUUID(), layout = randomUUID(), enquiry = randomUUID();
+    await pool.query("INSERT INTO spaces (id, venue_id, name, slug) VALUES ($1, $2, 'Grand Hall', 'grand-hall')", [hall, VENUE]);
+    await pool.query("INSERT INTO configurations (id, venue_id, space_id, name, layout_style) VALUES ($1, $2, $3, 'Their layout', 'dinner-rounds')",
+      [layout, VENUE, hall]);
+    await pool.query(
+      "INSERT INTO enquiries (id, venue_id, name, email, state, configuration_id) VALUES ($1, $2, 'Ailsa Henderson', 'ailsa@example.test', 'new', $3)",
+      [enquiry, VENUE, layout],
+    );
+    const id = await proposal("Henderson wedding", "sent", "2026-09-10T10:00:00Z", { enquiry, version: 1 });
+    await pool.query("UPDATE proposals SET configuration_id = $2, sent_at = now(), sent_version = 1 WHERE id = $1", [id, layout]);
+    const platformAdmin = { authorization: `Bearer ${JSON.stringify({ id: randomUUID(), email: "platform@example.test", role: "client",
+      platformRole: "admin", venueId: null })}` };
+    const change = (expectedStatus: string, as = headers()) => server.inject({ method: "PATCH", url: `/proposals/${id}`, headers: as,
+      payload: { configurationId: null, expectedStatus } });
+
+    // The desk showed a draft; it has since been sent.
+    const stale = await change("draft", platformAdmin);
+    expect(stale.statusCode, stale.body).toBe(409);
+    expect(JSON.parse(stale.body)).toMatchObject({ code: "PROPOSAL_STATUS_CHANGED" });
+    expect((await change("draft")).statusCode).toBe(409);
+    expect((await pool.query("SELECT configuration_id FROM proposals WHERE id = $1", [id])).rows[0]).toEqual({ configuration_id: layout });
+
+    // Where the screen showed it, the change is made as before.
+    await pool.query("UPDATE proposals SET status = 'changes_requested' WHERE id = $1", [id]);
+    expect((await change("changes_requested")).statusCode).toBe(200);
+    expect((await pool.query("SELECT configuration_id FROM proposals WHERE id = $1", [id])).rows[0]).toEqual({ configuration_id: null });
   });
 });

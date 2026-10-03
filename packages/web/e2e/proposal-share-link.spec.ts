@@ -73,7 +73,7 @@ test.describe("proposal share link", () => {
     // Capacity is guidance; one line at the foot says so, and leaves the price alone.
     await expect(page.getByRole("heading", { level: 2, name: "Capacity" })).toBeVisible();
     await expect(page.getByText(/comfortable for around 140 guests/u)).toBeVisible();
-    await expect(page.getByText("Capacity and layout are the venue team's planning estimates. Nothing here is a safety, occupancy or compliance determination.")).toBeVisible();
+    await expect(page.getByText("Numbers and layout are planning estimates; the events team confirms them. Nothing here is a safety, occupancy or compliance determination.")).toBeVisible();
 
     // The decision, last, while it is the client's to make.
     await expect(page.getByRole("button", { name: "Accept version 1" })).toBeVisible();

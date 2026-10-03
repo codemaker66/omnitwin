@@ -28,7 +28,9 @@ const mocks = vi.hoisted(() => ({
   createQuote: vi.fn(),
   deleteQuote: vi.fn(),
   transitionProposal: vi.fn(),
+  changeProposalLayout: vi.fn(),
   listSpaces: vi.fn(),
+  listPricingRules: vi.fn(),
 }));
 
 vi.mock("../../../api/proposals.js", async (importOriginal) => ({
@@ -46,8 +48,13 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   createQuote: mocks.createQuote,
   deleteQuote: mocks.deleteQuote,
   transitionProposal: mocks.transitionProposal,
+  changeProposalLayout: mocks.changeProposalLayout,
 }));
 vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
+vi.mock("../../../api/pricing.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/pricing.js")>(),
+  listPricingRules: mocks.listPricingRules,
+}));
 
 const authState = vi.hoisted(() => ({
   user: { id: "u1", role: "staff", platformRole: "none" as const, venueId: "v1" as string | null, email: "staff@test.com", name: "Catherine Tait" },
@@ -176,6 +183,7 @@ beforeEach(() => {
   mocks.getProposalHistory.mockResolvedValue([]);
   mocks.getProposalComments.mockResolvedValue([]);
   mocks.listSpaces.mockResolvedValue([]);
+  mocks.listPricingRules.mockResolvedValue([]);
   mocks.postProposalComment.mockResolvedValue(clientComment({ id: "comment-staff", authorType: "staff", authorName: "Venue team" }));
   wideDesk();
 });
@@ -790,6 +798,212 @@ describe("the layout it carries", () => {
     await silent.findByTestId("composer-save");
     expect(silent.queryByTestId("proposal-layout")).toBeNull();
     expect(silent.queryByTestId("composer-layout")).toBeNull();
+  });
+
+  // A10 (Blake, 29 September 2026): the client's own layout goes with a
+  // proposal, and staff may leave it out, or include it again.
+  const THEIRS = { enquiryLayoutId: "layout-1", enquiryLayoutRoomName: "Grand Hall" };
+  function carrying(configurationId: string | null, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return proposal({
+      status: "changes_requested", currentVersion: 2, configurationId, layoutRoomName: configurationId === null ? null : "Grand Hall",
+      layoutFromEnquiry: configurationId !== null, ...THEIRS, ...overrides,
+    });
+  }
+  const said = (panel: { readonly getAllByRole: (role: "status") => HTMLElement[] }, words: string): HTMLElement | undefined =>
+    panel.getAllByRole("status").find((region) => region.textContent === words);
+  const FACTS = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+
+  it("leaves their layout out of the versions saved from now, includes it by naming it, and checks the next version again each time", async () => {
+    existing = [carrying("layout-1")];
+    mocks.getProposalNextVersion.mockResolvedValue({ basedOn: 2, layout: "same", facts: { saved: FACTS, now: FACTS }, basis: "b".repeat(64) });
+    mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => {
+      existing = [carrying(configurationId)];
+      return Promise.resolve(existing[0]);
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    expect((await panel.findByTestId("proposal-layout")).textContent).toBe("Their own, Grand Hall");
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(1); });
+    const lists = mocks.listProposalDesk.mock.calls.length;
+
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(said(panel, "Their Grand Hall layout is left out of the versions you save from now.")).toBeDefined(); });
+    // Only while it stands where the screen shows it.
+    expect(mocks.changeProposalLayout).toHaveBeenCalledWith("p1", null, "changes_requested");
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("None"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Include their Grand Hall layout");
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(2); });
+    // The ledger is read again, so its row says when it changed.
+    await waitFor(() => { expect(mocks.listProposalDesk.mock.calls.length).toBeGreaterThan(lists); });
+
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(said(panel, "Their Grand Hall layout goes with the versions you save from now.")).toBeDefined(); });
+    expect(mocks.changeProposalLayout).toHaveBeenLastCalledWith("p1", "layout-1", "changes_requested");
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("Their own, Grand Hall"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Leave their layout out");
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(3); });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the answer at once, before the proposal is read again", async () => {
+    existing = [carrying("layout-1")];
+    mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => Promise.resolve(carrying(configurationId)));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await panel.findByTestId("layout-choice");
+    // The read that follows never answers.
+    mocks.getDeskProposal.mockReturnValue(new Promise(() => undefined));
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("None"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Include their Grand Hall layout");
+  });
+
+  it("keeps focus on the control while it works and as its words change", async () => {
+    existing = [carrying("layout-1")];
+    let answer: (value: unknown) => void = () => undefined;
+    mocks.changeProposalLayout.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const control = await panel.findByTestId<HTMLButtonElement>("layout-choice");
+    control.focus();
+    fireEvent.click(control);
+    // Unavailable while it works, but never disabled, so focus stays on it.
+    expect(control.textContent).toBe("Leaving their layout out…");
+    expect(control.getAttribute("aria-disabled")).toBe("true");
+    expect(control.getAttribute("aria-busy")).toBe("true");
+    expect(control.disabled).toBe(false);
+    expect(document.activeElement).toBe(control);
+    // Pressed again while it works, nothing more is sent.
+    fireEvent.click(control);
+    expect(mocks.changeProposalLayout).toHaveBeenCalledTimes(1);
+    existing = [carrying(null)];
+    await act(async () => { answer(carrying(null)); await Promise.resolve(); });
+    await waitFor(() => { expect(control.textContent).toBe("Include their Grand Hall layout"); });
+    expect(panel.getByTestId("layout-choice")).toBe(control);
+    expect(control.getAttribute("aria-disabled")).toBe("false");
+    expect(document.activeElement).toBe(control);
+  });
+
+  it("says when the version Send shares still shows their layout once it is left out, as the check finds it", async () => {
+    existing = [carrying("layout-1")];
+    // Version 2 was saved with their drawing: the check finds it removed while the layout is left out.
+    mocks.getProposalNextVersion.mockImplementation(() => Promise.resolve({ basedOn: 2, facts: { saved: FACTS, now: FACTS }, basis: "b".repeat(64),
+      layout: existing[0]?.["configurationId"] === null ? "removed" : "same" }));
+    mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => {
+      existing = [carrying(configurationId)];
+      return Promise.resolve(existing[0]);
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    await panel.findByTestId("layout-choice");
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(1); });
+    expect(panel.queryByTestId("layout-saved")).toBeNull();
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    expect((await panel.findByTestId("layout-saved")).textContent)
+      .toBe("Version 2, the one Send shares, still shows their layout. Save version 3 to send it without.");
+    // Included again, the saved version and the next agree.
+    fireEvent.click(panel.getByTestId("layout-choice"));
+    await waitFor(() => { expect(panel.queryByTestId("layout-saved")).toBeNull(); });
+  });
+
+  it("says nothing of the saved version when the client would see no difference, as their layout has nothing placed", async () => {
+    existing = [carrying("layout-1")];
+    mocks.getProposalNextVersion.mockResolvedValue({ basedOn: 2, facts: { saved: FACTS, now: FACTS }, basis: "b".repeat(64), layout: "none" });
+    mocks.changeProposalLayout.mockImplementation((_id: string, configurationId: string | null) => {
+      existing = [carrying(configurationId)];
+      return Promise.resolve(existing[0]);
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    await waitFor(() => { expect(panel.getByTestId("layout-choice").textContent).toBe("Include their Grand Hall layout"); });
+    await waitFor(() => { expect(mocks.getProposalNextVersion).toHaveBeenCalledTimes(2); });
+    expect(panel.queryByTestId("layout-saved")).toBeNull();
+  });
+
+  it("says the proposal is as it was when the change is refused, and shows it as it is", async () => {
+    existing = [carrying("layout-1")];
+    mocks.changeProposalLayout.mockRejectedValue(new ApiError(422, "Validation failed", "VALIDATION_ERROR"));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const reads = mocks.getDeskProposal.mock.calls.length;
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    expect((await panel.findByRole("alert")).textContent).toBe("The layout did not change. The proposal is as it was.");
+    await waitFor(() => { expect(mocks.getDeskProposal.mock.calls.length).toBeGreaterThan(reads); });
+    expect(panel.getByTestId("proposal-layout").textContent).toBe("Their own, Grand Hall");
+    const again = panel.getByTestId<HTMLButtonElement>("layout-choice");
+    expect(again.textContent).toBe("Leave their layout out");
+    expect(again.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("does not claim nothing changed when the answer is lost, and reads the proposal again", async () => {
+    existing = [carrying("layout-1")];
+    mocks.changeProposalLayout.mockImplementation(() => {
+      // It landed, and the answer never came back.
+      existing = [carrying(null)];
+      return Promise.reject(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    expect((await panel.findByRole("alert")).textContent).toBe("The change could not be confirmed. The layout shown is as last read.");
+    await waitFor(() => { expect(panel.getByTestId("proposal-layout").textContent).toBe("None"); });
+    expect(panel.getByTestId("layout-choice").textContent).toBe("Include their Grand Hall layout");
+  });
+
+  it("shows the proposal as it is when their layout went before it could be put back, keeping focus on what is said", async () => {
+    existing = [carrying(null)];
+    mocks.changeProposalLayout.mockImplementation(() => {
+      // Their layout was removed a moment before the booker's press arrived.
+      existing = [carrying(null, { enquiryLayoutId: null, enquiryLayoutRoomName: null })];
+      return Promise.reject(new ApiError(404, "Configuration not found", "NOT_FOUND"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const control = await panel.findByTestId("layout-choice");
+    control.focus();
+    fireEvent.click(control);
+    expect((await panel.findByRole("alert")).textContent).toBe("The layout did not change. The proposal is as it was.");
+    await waitFor(() => { expect(panel.queryByTestId("layout-choice")).toBeNull(); });
+    expect(panel.getByTestId("proposal-layout").textContent).toBe("None");
+    // Focus goes to what is said where the control was.
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByRole("alert").closest("dd")); });
+  });
+
+  it("says the proposal moved first, and shows where it stands, when it was sent before the change arrived", async () => {
+    existing = [carrying("layout-1")];
+    mocks.changeProposalLayout.mockImplementation(() => {
+      // A colleague sent it a moment before.
+      existing = [carrying("layout-1", { status: "sent", currentVersion: 2, sentAt: "2026-10-02T09:59:00.000Z" })];
+      return Promise.reject(new ApiError(409, "The proposal changed", "PROPOSAL_STATUS_CHANGED"));
+    });
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("layout-choice"));
+    expect((await panel.findByRole("alert")).textContent)
+      .toBe("It changed before that arrived, so the layout did not change. It now shows where it stands.");
+    expect(await panel.findByText("With the client", { selector: ".enq-chip" })).toBeDefined();
+    expect(panel.queryByTestId("layout-choice")).toBeNull();
+  });
+
+  it("offers nothing once it is with the client, for a layout not theirs, or for one the API does not name", async () => {
+    existing = [
+      carrying("layout-1", { status: "sent", sentAt: "2026-10-01T09:00:00.000Z" }),
+      carrying("layout-2", { id: "p2", title: "Burns supper", layoutFromEnquiry: false }),
+      // Removed, or its links disagreeing with its deal: the API names no layout of theirs.
+      carrying("layout-1", { id: "p3", title: "Hogmanay", layoutRoomName: null, enquiryLayoutId: null, enquiryLayoutRoomName: null }),
+    ];
+    render(<ProposalsDesk />);
+    const sent = within(await openProposal());
+    expect((await sent.findByTestId("proposal-layout")).textContent).toBe("Their own, Grand Hall");
+    expect(sent.queryByTestId("layout-choice")).toBeNull();
+    const other = within(await openProposal("p2", "Burns supper"));
+    expect((await other.findByTestId("proposal-layout")).textContent).toBe("Grand Hall");
+    expect(other.queryByTestId("layout-choice")).toBeNull();
+    const removed = within(await openProposal("p3", "Hogmanay"));
+    expect((await removed.findByTestId("proposal-layout")).textContent).toBe("Removed");
+    expect(removed.queryByTestId("layout-choice")).toBeNull();
+    expect(mocks.changeProposalLayout).not.toHaveBeenCalled();
   });
 });
 
@@ -2549,6 +2763,21 @@ describe("the conversation and the history", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("names who wrote each message as it was recorded, never by the name the client typed", async () => {
+    mocks.getProposalComments.mockResolvedValue([
+      clientComment({ id: "signed-as-venue", authorName: "Venue team", body: "Please hold the date for us." }),
+      clientComment({ id: "unsigned", authorName: "", body: "And a later finish?" }),
+      clientComment({ id: "reply", authorType: "staff", authorName: "Venue team", body: "We will hold it until Friday." }),
+    ]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const thread = within(await panel.findByTestId("conversation-thread"));
+    const who = (body: string): string | null | undefined => thread.getByText(body).closest("li")?.querySelector("strong")?.textContent;
+    expect(who("Please hold the date for us.")).toBe("Venue team (client)");
+    expect(who("And a later finish?")).toBe("The client");
+    expect(who("We will hold it until Friday.")).toBe("The venue team");
+  });
+
   it("says a step's words aloud again when they are the same", async () => {
     mocks.postProposalComment.mockResolvedValue(clientComment({ id: "c2", authorType: "staff" }));
     render(<ProposalsDesk />);
@@ -2619,5 +2848,205 @@ describe("a new proposal", () => {
     await screen.findByTestId("proposal-row-p1");
     fireEvent.click(screen.getByRole("button", { name: "New proposal" }));
     expect(screen.getByText("Your account is not linked to a venue, so a proposal cannot be started here.")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Add from price list (roadmap X1): a price picked is a line, priced for the
+// event, with nothing retyped; the booker gives only what the list cannot know.
+// ---------------------------------------------------------------------------
+
+describe("Add from price list", () => {
+  const room = (id: string, name: string, slug: string): Record<string, unknown> => ({
+    id, venueId: "v1", name, slug, widthM: "30", lengthM: "15", heightM: "10", floorPlanOutline: [],
+  });
+  const price = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id, venueId: "v1", spaceId: "room-gh", name: "Grand Hall — Evening Event (19:00–00:30)", type: "flat_rate", amount: "2400.00",
+    currency: "GBP", minHours: null, minGuests: null, tiers: null, dayOfWeekModifiers: null, seasonalModifiers: null,
+    isActive: true, validFrom: null, validTo: null, ...overrides,
+  });
+  const PRICES = [
+    price("gh-evening"),
+    price("venue", { spaceId: null, name: "Exclusive Use of Full Venue", amount: "2500" }),
+    price("saloon", { spaceId: "room-sal", name: "Saloon — Evening Event (19:00–00:30)", amount: "900" }),
+    price("bar", { spaceId: null, name: "Bar staff", type: "per_hour", amount: "18.00", minHours: 4 }),
+  ];
+  const FACTS = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+  const said = (panel: { readonly getAllByRole: (role: "status") => HTMLElement[] }, words: string): HTMLElement | undefined =>
+    panel.getAllByRole("status").find((region) => region.textContent === words);
+  const headings = (list: HTMLElement): string[] => Array.from(list.querySelectorAll(".pr-prices__heading")).map((node) => node.textContent ?? "");
+
+  beforeEach(() => {
+    existing = [proposal({ currentVersion: 1 })];
+    mocks.listSpaces.mockResolvedValue([room("room-gh", "Grand Hall", "grand-hall"), room("room-sal", "Saloon", "saloon")]);
+    mocks.listPricingRules.mockResolvedValue(PRICES);
+    mocks.getProposalNextVersion.mockResolvedValue({ basedOn: 1, layout: "none", facts: { saved: FACTS, now: FACTS }, basis: "b".repeat(64) });
+  });
+
+  it("adds the event's room's price as a line, says so, keeps the list open for another, and saves them as typed lines", async () => {
+    let saved: (value: unknown) => void = () => undefined;
+    mocks.createQuote.mockImplementation((input: { readonly lineItems: readonly { description: string; quantity: number; unitAmountMinor: number }[] }) => {
+      const lineItems = input.lineItems.map((line, index) => ({ ...line, id: `line-${String(index)}`, quoteId: "q1", pricingRuleId: null,
+        lineTotalMinor: line.quantity * line.unitAmountMinor, sortOrder: index }));
+      const total = lineItems.reduce((sum, line) => sum + line.lineTotalMinor, 0);
+      return Promise.resolve({ id: "33333333-3333-4333-8333-333333333333", venueId: "v1", opportunityId: null, proposalId: "p1", enquiryId: null,
+        spaceId: null, name: "Autumn gala quote", status: "draft", currency: "GBP", subtotalMinor: total, totalMinor: total, validUntil: null,
+        supersededByQuoteId: null, notes: null, createdBy: "u1", createdAt: NOW, updatedAt: NOW, deletedAt: null, lineItems });
+    });
+    mocks.createProposalVersion.mockReturnValue(new Promise((resolve) => { saved = resolve; }));
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const listElement = await panel.findByTestId("price-list");
+    const list = within(listElement);
+    // The event's room first, then what any room takes; the other rooms wait.
+    await waitFor(() => { expect(headings(listElement)).toEqual(["Grand Hall", "Venue-wide"]); });
+    expect(list.queryByTestId("price-saloon")).toBeNull();
+    expect(list.getByTestId("price-gh-evening").textContent).toBe("Grand Hall — Evening Event (19:00–00:30)£2,400");
+
+    fireEvent.click(list.getByTestId("price-gh-evening"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-desc-0").value).toBe("Grand Hall — Evening Event (19:00–00:30)");
+    expect(panel.getByTestId<HTMLInputElement>("quote-qty-0").value).toBe("1");
+    expect(panel.getByTestId<HTMLInputElement>("quote-price-0").value).toBe("2400");
+    expect(said(panel, "Added Grand Hall — Evening Event (19:00–00:30) at £2,400 as line 1.")).toBeDefined();
+    fireEvent.click(list.getByTestId("price-venue"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-desc-1").value).toBe("Exclusive Use of Full Venue");
+    expect(said(panel, "Added Exclusive Use of Full Venue at £2,500 as line 2.")).toBeDefined();
+    expect(panel.getByTestId("price-list")).toBe(listElement);
+
+    fireEvent.click(panel.getByTestId("composer-save"));
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalled(); });
+    expect(mocks.createQuote).toHaveBeenCalledWith(expect.objectContaining({ lineItems: [
+      { description: "Grand Hall — Evening Event (19:00–00:30)", quantity: 1, unitAmountMinor: 240_000 },
+      { description: "Exclusive Use of Full Venue", quantity: 1, unitAmountMinor: 250_000 },
+    ] }));
+    // Nothing is picked while the version saves.
+    expect(list.getByTestId<HTMLButtonElement>("price-venue").disabled).toBe(true);
+    expect(panel.getByTestId<HTMLButtonElement>("price-list-toggle").disabled).toBe(true);
+    await act(async () => { saved(version(2)); await Promise.resolve(); });
+  });
+
+  it("hands focus to the hours of a price an hour, which the proposal does not hold", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("price-list-toggle"));
+    fireEvent.click(await panel.findByTestId("price-bar"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-qty-0").value).toBe("4");
+    expect(panel.getByTestId<HTMLInputElement>("quote-price-0").value).toBe("18");
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("quote-qty-0")); });
+    expect(said(panel, "Added Bar staff at £18 an hour as line 1. Enter the hours.")).toBeDefined();
+  });
+
+  it("keeps other rooms' prices behind a button, and shows every room's when the event's room is not known", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("price-list-toggle"));
+    const listElement = await panel.findByTestId("price-list");
+    await waitFor(() => { expect(headings(listElement)).toEqual(["Grand Hall", "Venue-wide"]); });
+    const others = panel.getByTestId("price-list-other-rooms");
+    expect(others.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(others);
+    expect(others.getAttribute("aria-expanded")).toBe("true");
+    expect(headings(listElement)).toEqual(["Grand Hall", "Venue-wide", "Saloon"]);
+    expect(panel.getByTestId("price-saloon").textContent).toBe("Saloon — Evening Event (19:00–00:30)£900");
+    cleanup();
+
+    // No check yet, so no room: every room's prices, and the proposal's own date and guests.
+    mocks.getProposalNextVersion.mockRejectedValue(new ApiError(404, "Not found", "NOT_FOUND"));
+    render(<ProposalsDesk />);
+    const unplaced = within(await openProposal());
+    fireEvent.click(await unplaced.findByTestId("price-list-toggle"));
+    const allRooms = await unplaced.findByTestId("price-list");
+    await waitFor(() => { expect(headings(allRooms)).toEqual(["Venue-wide", "Grand Hall", "Saloon"]); });
+    expect(unplaced.queryByTestId("price-list-other-rooms")).toBeNull();
+  });
+
+  it("reads the list each time it opens, says when it could not, and tries again", async () => {
+    mocks.listPricingRules.mockReset().mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"))
+      .mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR")).mockResolvedValue(PRICES);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    expect((await panel.findByTestId("price-list-error")).textContent).toBe("The price list could not be read.");
+    // Closed and opened again after a failure, it reads again.
+    fireEvent.click(panel.getByTestId("price-list-done"));
+    fireEvent.click(toggle);
+    await waitFor(() => { expect(mocks.listPricingRules).toHaveBeenCalledTimes(2); });
+    await panel.findByTestId("price-list-error");
+    fireEvent.click(panel.getByTestId("price-list-retry"));
+    await panel.findByTestId("price-gh-evening");
+    expect(mocks.listPricingRules).toHaveBeenCalledTimes(3);
+    expect(mocks.listPricingRules).toHaveBeenLastCalledWith("v1");
+    fireEvent.click(panel.getByTestId("price-list-done"));
+    expect(panel.queryByTestId("price-list")).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    fireEvent.click(toggle);
+    await panel.findByTestId("price-gh-evening");
+    expect(mocks.listPricingRules).toHaveBeenCalledTimes(4);
+  });
+
+  it("adds the price as it stands when the list is opened again", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    expect((await panel.findByTestId("price-gh-evening")).textContent).toContain("£2,400");
+    fireEvent.click(panel.getByTestId("price-list-done"));
+    // A manager changes the price meanwhile.
+    mocks.listPricingRules.mockResolvedValue([price("gh-evening", { amount: "2600.00" })]);
+    fireEvent.click(toggle);
+    await waitFor(() => { expect(panel.getByTestId("price-gh-evening").textContent).toContain("£2,600"); });
+    fireEvent.click(panel.getByTestId("price-gh-evening"));
+    expect(panel.getByTestId<HTMLInputElement>("quote-price-0").value).toBe("2600");
+  });
+
+  it("says when the price list is empty, and what it leaves out and why", async () => {
+    mocks.listPricingRules.mockResolvedValue([]);
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    fireEvent.click(await panel.findByTestId("price-list-toggle"));
+    expect((await panel.findByTestId("price-list-empty")).textContent).toBe("The venue's price list is empty.");
+    cleanup();
+
+    mocks.listPricingRules.mockResolvedValue([price("euro", { name: "Euro hire", currency: "EUR" })]);
+    render(<ProposalsDesk />);
+    const other = within(await openProposal());
+    fireEvent.click(await other.findByTestId("price-list-toggle"));
+    expect((await other.findByTestId("price-list-left-out")).textContent).toBe("Priced in another currency, and the quote is in pounds: Euro hire.");
+    expect(other.queryByTestId("price-list-empty")).toBeNull();
+  });
+
+  it("closes on Escape from its button too, and only then leaves Escape to the proposal", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    await panel.findByTestId("price-gh-evening");
+    toggle.focus();
+    fireEvent.keyDown(toggle, { key: "Escape" });
+    expect(panel.queryByTestId("price-list")).toBeNull();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+    expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
+    // With the list closed, Escape is the proposal's, as from any other button.
+    fireEvent.keyDown(toggle, { key: "Escape" });
+    await waitFor(() => { expect(screen.queryByRole("heading", { level: 2, name: "Autumn gala" })).toBeNull(); });
+  });
+
+  it("closes on Escape without closing the proposal, and gives focus back to its button", async () => {
+    render(<ProposalsDesk />);
+    const panel = within(await openProposal());
+    const toggle = await panel.findByTestId("price-list-toggle");
+    fireEvent.click(toggle);
+    const pick = await panel.findByTestId("price-gh-evening");
+    pick.focus();
+    fireEvent.keyDown(pick, { key: "Escape" });
+    expect(panel.queryByTestId("price-list")).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
   });
 });

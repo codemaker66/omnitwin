@@ -98,6 +98,15 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
       });
       await pool.query(`CREATE TABLE "${config.name}" (${columns.join(", ")})`);
     }
+    // A comment as production holds it: deleting its link keeps the comment
+    // and forgets the link (0034), and its author is named by whoever writes
+    // it (0084, without the trigger that fills one the previous release left
+    // unnamed), so every case here fails if a write leaves it out.
+    await pool.query(`ALTER TABLE proposal_comments
+      ADD FOREIGN KEY (share_token_id) REFERENCES proposal_share_tokens(id) ON DELETE SET NULL,
+      ALTER COLUMN author_type SET NOT NULL,
+      ADD CONSTRAINT proposal_comments_author_type_check CHECK (author_type IN ('client', 'staff')),
+      ADD CONSTRAINT proposal_comments_staff_without_link CHECK (author_type = 'client' OR share_token_id IS NULL)`);
     const db = drizzle(pool, { schema });
     server = Fastify();
     await server.register(proposalRoutes, { db, prefix: "/proposals" });
@@ -196,6 +205,21 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     expect((await clientPage()).facts.roomName).toBeNull();
     await pool.query("UPDATE configurations SET deleted_at = NULL, venue_id = $2 WHERE id = $1", [configuration, OTHER_VENUE]);
     expect((await clientPage()).facts.roomName).toBeNull();
+  });
+
+  // A version saved before facts were kept reads them as they are now, but
+  // names the room of the layout it carried: leaving the layout out of the
+  // versions saved from now (A10) changes nothing on the page already sent.
+  it("names the room of the layout an older version carried, even once the proposal's is left out", async () => {
+    const saloon = await room("Saloon", "saloon");
+    const configuration = randomUUID();
+    await pool.query("INSERT INTO configurations (id, venue_id, space_id, name) VALUES ($1, $2, $3, 'Dinner rounds')", [configuration, VENUE, saloon]);
+    await pool.query("UPDATE proposal_versions SET payload = $2 WHERE proposal_id = $1 AND version = 1",
+      [PROPOSAL, JSON.stringify({ ...VERSION_PAYLOAD, configurationId: configuration })]);
+    await pool.query("UPDATE proposals SET configuration_id = $2 WHERE id = $1", [PROPOSAL, configuration]);
+    expect((await clientPage()).facts.roomName).toBe("Saloon");
+    await pool.query("UPDATE proposals SET configuration_id = NULL WHERE id = $1", [PROPOSAL]);
+    expect((await clientPage()).facts.roomName).toBe("Saloon");
   });
 
   it("names who accepted it and when, as they gave their name", async () => {
@@ -304,6 +328,45 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
       { kind: "request_changes", body: "We need it fire approved before we sign." },
       { kind: "approval_note", body: "Accepted, as it is certified safe for our guests." },
     ]);
+  });
+
+  // Who wrote a comment is recorded when it is written. It was read from the
+  // link it came through, and a deleted link would have made the client's
+  // words the venue team's, to the team and on the client's page.
+  it("keeps the client's words the client's once their link is deleted", async () => {
+    const asked = await server.inject({
+      method: "POST", url: `/proposal-share/${TOKEN}/comment`,
+      payload: { kind: "comment", authorName: "Venue team", body: "Could we have the Saloon for drinks first?", version: 1 },
+    });
+    expect(asked.statusCode, asked.body).toBe(201);
+    const replied = await server.inject({
+      method: "POST", url: `/proposals/${PROPOSAL}/comments`, headers: headers(),
+      payload: { body: "The Saloon is free that evening; we will add it to the next version." },
+    });
+    expect(replied.statusCode, replied.body).toBe(201);
+
+    // A second link, then the first one deleted.
+    const second = "clientPageToken_second_0123456789abcdefghijklmn";
+    await pool.query("INSERT INTO proposal_share_tokens (proposal_id, token_hash, token_prefix) VALUES ($1, $2, 'client-s')",
+      [PROPOSAL, createHash("sha256").update(second, "utf8").digest("hex")]);
+    await pool.query("DELETE FROM proposal_share_tokens WHERE token_prefix = 'client-p'");
+    const links = await pool.query<{ share_token_id: string | null }>("SELECT share_token_id FROM proposal_comments");
+    expect(links.rows).toEqual([{ share_token_id: null }, { share_token_id: null }]);
+
+    const thread = await server.inject({ method: "GET", url: `/proposals/${PROPOSAL}/comments`, headers: headers() });
+    expect(thread.statusCode, thread.body).toBe(200);
+    expect(thread.json<{ data: { body: string; authorType: string }[] }>().data.map(({ body, authorType }) => ({ body, authorType })))
+      .toEqual([
+        { body: "Could we have the Saloon for drinks first?", authorType: "client" },
+        { body: "The Saloon is free that evening; we will add it to the next version.", authorType: "staff" },
+      ]);
+    const page = await server.inject({ method: "GET", url: `/proposal-share/${second}` });
+    expect(page.statusCode, page.body).toBe(200);
+    expect(page.json<{ data: { comments: { body: string; from: string }[] } }>().data.comments.map(({ body, from }) => ({ body, from })))
+      .toEqual([
+        { body: "Could we have the Saloon for drinks first?", from: "client" },
+        { body: "The Saloon is free that evening; we will add it to the next version.", from: "venue" },
+      ]);
   });
 
   it("still keeps the venue's own replies to what the platform can back", async () => {
@@ -558,8 +621,8 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
     // One written before this release is never taken for the acceptance's.
     const token = (await pool.query<{ id: string }>("SELECT id FROM proposal_share_tokens")).rows[0]?.id;
     await pool.query(
-      `INSERT INTO proposal_comments (proposal_id, share_token_id, kind, author_name, body, is_client_visible)
-       VALUES ($1, $2, 'approval_note', 'Mallory', 'Approved.', true)`,
+      `INSERT INTO proposal_comments (proposal_id, share_token_id, kind, author_name, body, is_client_visible, author_type)
+       VALUES ($1, $2, 'approval_note', 'Mallory', 'Approved.', true, 'client')`,
       [PROPOSAL, token],
     );
     const accepted = await server.inject({ method: "POST", url: `/proposal-share/${TOKEN}/approve`, payload: { version: 1 } });

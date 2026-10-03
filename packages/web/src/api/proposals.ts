@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ProposalCommentAuthorTypeSchema,
   ProposalLayoutSnapshotSchema,
   ProposalNextVersionSchema,
   ProposalStatusSchema,
@@ -37,8 +38,9 @@ export const PublicProposalSchema = z.object({
     authorName: z.string().nullable(),
     body: z.string(),
     createdAt: z.string(),
-    /** Who wrote it; from an API before it, a "Venue team" author is the venue's. */
-    from: z.enum(["venue", "client"]).optional(),
+    /** Who wrote it, as the venue recorded it: never read from a name, which
+     *  the client types. */
+    from: z.enum(["venue", "client"]),
   })).optional(),
   packages: z.array(z.object({
     label: z.string(),
@@ -169,13 +171,13 @@ export const ProposalHistoryEntrySchema = z.object({
 
 export type ProposalHistoryEntry = z.infer<typeof ProposalHistoryEntrySchema>;
 
-// Conversation thread (T-427 phase 6). `authorType` is derived server-side
-// from the structural share-token link: "client" for share-link posts,
-// "staff" for venue-team replies.
+// Conversation thread (T-427 phase 6). `authorType` is recorded when the
+// comment is written: "client" for posts through the share link, "staff"
+// for venue-team replies.
 export const ProposalCommentRowSchema = z.object({
   id: z.string(),
   kind: z.string(),
-  authorType: z.string(),
+  authorType: ProposalCommentAuthorTypeSchema,
   authorName: z.string().nullable(),
   body: z.string(),
   isClientVisible: z.boolean(),
@@ -289,6 +291,10 @@ export const DeskProposalSchema = StaffProposalSchema.extend({
   layoutRoomName: z.string().nullable().optional(),
   /** Whether that layout is the client's own, from their enquiry. */
   layoutFromEnquiry: z.boolean().optional(),
+  /** Their enquiry's own layout and its room while it is live, whether or not
+   *  the proposal carries it: what staff may put back once left out (A10). */
+  enquiryLayoutId: z.string().nullable().optional(),
+  enquiryLayoutRoomName: z.string().nullable().optional(),
 });
 
 export type DeskProposal = z.infer<typeof DeskProposalSchema>;
@@ -357,6 +363,14 @@ export async function createProposal(input: CreateProposalInput): Promise<StaffP
 
 export async function updateProposalTitle(id: string, title: string): Promise<StaffProposal> {
   return api.patch(`/proposals/${id}`, { title }, StaffProposalSchema);
+}
+
+/** Leaves the layout out of the versions saved from now (A10), with null, or
+ *  puts the client's own back by naming it: the server takes a layout only if
+ *  it is still the one on their enquiry, and only while the proposal stands
+ *  where the screen showed it. */
+export async function changeProposalLayout(id: string, configurationId: string | null, expectedStatus: string): Promise<StaffProposal> {
+  return api.patch(`/proposals/${id}`, { configurationId, expectedStatus }, StaffProposalSchema);
 }
 
 /** Moves it, answering with its row as the desk now reads it: the figure that

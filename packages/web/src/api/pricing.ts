@@ -15,6 +15,13 @@ import { api } from "./client.js";
 
 export type { LineItem };
 
+// A price by guest count, and a day's or month's adjustment (a multiplier),
+// as the rule was written. One the API holds in another shape reads as
+// undefined, never as none, so nothing is priced without it.
+const PricingTiersSchema = z.array(z.object({ upTo: z.number().positive(), amount: z.number().nonnegative() }))
+  .nullable().optional().catch(undefined);
+const PricingModifiersSchema = z.record(z.number().positive()).nullable().optional().catch(undefined);
+
 const PricingRuleResponseSchema = z.object({
   id: z.string(),
   venueId: z.string(),
@@ -25,6 +32,9 @@ const PricingRuleResponseSchema = z.object({
   currency: z.string(),
   minHours: z.number().nullable(),
   minGuests: z.number().nullable(),
+  tiers: PricingTiersSchema,
+  dayOfWeekModifiers: PricingModifiersSchema,
+  seasonalModifiers: PricingModifiersSchema,
   isActive: z.boolean(),
   validFrom: z.string().nullable(),
   validTo: z.string().nullable(),

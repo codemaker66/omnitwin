@@ -4,6 +4,7 @@ import type { InventoryPendingAction } from "./inventory-action-pending.js";
 import { InventoryInterval } from "./InventoryDemandEvidence.js";
 import { inventoryTime } from "./inventory-window.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
+import { inventoryRoleName, inventoryRoleWords } from "./inventory-roles.js";
 
 export function InventoryRemedyForm({ item, assessment, busy, onAction, onClose }: {
   readonly item: InventoryAssessmentItem; readonly assessment: InventoryAssessment; readonly busy: boolean;
@@ -78,8 +79,9 @@ export function InventoryRemedyReview({ remedy, timeZone, actorId, busy, canAct,
     </div>
     <details className="inventory-evidence"><summary>Request record and audit identifiers</summary><dl className="inventory-audit">
       <div><dt>Status</dt><dd>{remedy.status}</dd></div><div><dt>Prepared</dt><dd>{inventoryTime(remedy.preparedAt, timeZone)}</dd></div>
-      <div><dt>Prepared by</dt><dd>{own ? "You" : "Venue administrator"}<code>{remedy.preparedBy}</code></dd></div>
-      {remedy.approvedAt !== null ? <div><dt>Approved</dt><dd>{inventoryTime(remedy.approvedAt, timeZone)}<code>{remedy.approvedBy}</code></dd></div> : null}
+      <div><dt>Prepared by</dt><dd>{own ? "You" : inventoryRoleName(remedy.preparedByRole)}<code>{remedy.preparedBy}</code></dd></div>
+      {remedy.approvedAt !== null ? <div><dt>Approved</dt><dd>{inventoryTime(remedy.approvedAt, timeZone)}, by {remedy.approvedBy === actorId ? "you"
+        : inventoryRoleWords(remedy.approvedByRole)}<code>{remedy.approvedBy}</code></dd></div> : null}
       <div><dt>Request</dt><dd>{remedy.id}</dd></div><div><dt>Evidence</dt><dd>{remedy.assessmentDigest}</dd></div>
     </dl></details>
   </>;

@@ -129,6 +129,49 @@ export function layoutFact(proposal: LayoutFields, inHand = true): { readonly wo
   };
 }
 
+/** What staff may do with a proposal's layout while it is in hand (A10): leave
+ *  the client's own out of the versions saved from now, or include it (put it
+ *  back, or add it where it never was). Only
+ *  their enquiry's own layout, and only while the API names it (live, in a
+ *  live room, with the proposal's links agreeing), so whatever is done here
+ *  can be undone here and the server takes it. */
+export interface LayoutChoice {
+  readonly change: "leave_out" | "take_back";
+  readonly label: string;
+  /** The room of their layout. */
+  readonly room: string;
+  /** What the proposal carries once it is done: none, or their layout. */
+  readonly configurationId: string | null;
+}
+
+export function layoutChoice(proposal: Pick<DeskProposal, "configurationId" | "enquiryLayoutId" | "enquiryLayoutRoomName">): LayoutChoice | null {
+  const theirs = proposal.enquiryLayoutId ?? null;
+  const room = proposal.enquiryLayoutRoomName ?? null;
+  if (theirs === null || room === null) return null;
+  if (proposal.configurationId === theirs) return { change: "leave_out", label: "Leave their layout out", room, configurationId: null };
+  if (proposal.configurationId === null) return { change: "take_back", label: `Include their ${room} layout`, room, configurationId: theirs };
+  return null;
+}
+
+/** What Send would still share after the choice made (A10), from the check of
+ *  what a version saved now would change against the saved one: the saved
+ *  version still shows their layout once it is left out, or shows none once
+ *  it is included. Nothing while no check is made for the saved version, or
+ *  when the client would see no difference (their layout has nothing placed). */
+export function savedLayoutWords(choice: LayoutChoice | null, check: Pick<ProposalNextVersion, "basedOn" | "layout"> | null,
+  currentVersion: number): string | null {
+  if (choice === null || check === null || check.basedOn !== currentVersion) return null;
+  const saved = String(check.basedOn);
+  const next = String(check.basedOn + 1);
+  if (choice.change === "take_back" && check.layout === "removed") {
+    return `Version ${saved}, the one Send shares, still shows their layout. Save version ${next} to send it without.`;
+  }
+  if (choice.change === "leave_out" && check.layout === "added") {
+    return `Version ${saved}, the one Send shares, shows no layout. Save version ${next} to include theirs.`;
+  }
+  return null;
+}
+
 /** What the composer says of the layout a version will carry, only while
  *  there is one to take. It promises no drawing: a layout with nothing
  *  placed has none. Preview shows only a saved version, so it is offered for

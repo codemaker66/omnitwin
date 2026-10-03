@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
-import { eq, and, desc, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, getTableColumns, inArray, isNull, sql, type AnyColumn } from "drizzle-orm";
 import {
   CreateProposalCommentSchema,
   VenueReplyBodySchema,
@@ -13,6 +13,7 @@ import {
   PROPOSAL_STATUSES_REQUIRING_SENT_AT,
   type EventPlanAudienceRole,
   type EventPlanChangeSurface,
+  type ProposalCommentAuthorType,
   type ProposalFacts,
   type ProposalNextVersion,
   type ProposalVersionPayload,
@@ -86,6 +87,8 @@ const UpdateProposalBody = z.object({
   opportunityId: z.string().uuid().nullable().optional(),
   enquiryId: z.string().uuid().nullable().optional(),
   configurationId: z.string().uuid().nullable().optional(),
+  /** Where the proposal stood on the screen the change was made from. */
+  expectedStatus: z.enum(PROPOSAL_STATES).optional(),
 });
 
 const TransitionBody = z.object({
@@ -131,6 +134,21 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
   const lastSentAt = sql`GREATEST(${proposals.sentAt}, (
     SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
     WHERE ${proposalStatusHistory.proposalId} = ${proposals.id} AND ${proposalStatusHistory.toStatus} = 'sent'))`;
+  // Whether its links agree as the link planner reads them: no deal, or its
+  // deal live here with no enquiry but the deal's own. A layout change the
+  // desk offers is then one the planner takes.
+  const linksAgree = sql`(${proposals.opportunityId} IS NULL OR (${opportunities.id} IS NOT NULL
+    AND (${proposals.enquiryId} IS NULL OR ${proposals.enquiryId} = ${opportunities.sourceEnquiryId})))`;
+  // A layout, or its room's name, only while it is live in a live room at the
+  // proposal's venue, so a removed one, or another venue's, reads as none.
+  const liveLayout = (field: "id" | "room", layoutId: AnyColumn) => sql`(
+    SELECT ${field === "id" ? configurations.id : spaces.name} FROM ${configurations}
+    INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
+    WHERE ${configurations.id} = ${layoutId}
+      AND ${configurations.venueId} = ${proposals.venueId}
+      AND ${configurations.deletedAt} IS NULL
+      AND ${spaces.venueId} = ${proposals.venueId}
+      AND ${spaces.deletedAt} IS NULL)`;
   return db.select({
     ...getTableColumns(proposals),
     dealTitle: opportunities.title,
@@ -138,18 +156,15 @@ function selectDeskProposals(db: Pick<ProposalTransaction, "select">) {
     eventDate: sql<string | null>`COALESCE(${opportunities.preferredDate}, ${enquiries.preferredDate})::text`,
     guestCount: sql<number | null>`COALESCE(${opportunities.guestCount}, ${enquiries.estimatedGuests})`,
     eventType: sql<string | null>`COALESCE(${opportunities.eventType}, ${enquiries.eventType})`,
-    // The room of the layout it carries: only a live layout in a live room at
-    // its venue, so a removed one reads as none.
-    layoutRoomName: sql<string | null>`(
-      SELECT ${spaces.name} FROM ${configurations}
-      INNER JOIN ${spaces} ON ${spaces.id} = ${configurations.spaceId}
-      WHERE ${configurations.id} = ${proposals.configurationId}
-        AND ${configurations.venueId} = ${proposals.venueId}
-        AND ${configurations.deletedAt} IS NULL
-        AND ${spaces.venueId} = ${proposals.venueId}
-        AND ${spaces.deletedAt} IS NULL)`,
+    // The room of the layout it carries.
+    layoutRoomName: sql<string | null>`${liveLayout("room", proposals.configurationId)}`,
     // Whether that layout is the client's own, from their enquiry.
     layoutFromEnquiry: sql<boolean>`COALESCE(${proposals.configurationId} = ${enquiries.configurationId}, false)`,
+    // Their enquiry's own layout and its room, whether or not the proposal
+    // carries it: what staff may leave out or put back (A10), only while its
+    // links agree, so the desk never offers a change the server refuses.
+    enquiryLayoutId: sql<string | null>`CASE WHEN ${linksAgree} THEN ${liveLayout("id", enquiries.configurationId)} END`,
+    enquiryLayoutRoomName: sql<string | null>`CASE WHEN ${linksAgree} THEN ${liveLayout("room", enquiries.configurationId)} END`,
     latestTotalMinor: sql<number | null>`(${latestQuote("totalMinor")})::int`,
     latestCurrency: sql<string | null>`${latestQuote("currency")}`,
     // When one of its links was last opened since it was last sent. The team
@@ -217,9 +232,9 @@ const VersionParam = z.object({
 // question reaches the team as they wrote it (CreateProposalCommentSchema).
 const StaffCommentBody = z.object({ body: VenueReplyBodySchema });
 
-// Client-facing label for venue-team replies. The comment table has no
-// authorUserId; staff comments are distinguished structurally by a null
-// share_token_id, and present to the client under a single team identity.
+// Client-facing label for venue-team replies. A reply is recorded as the
+// staff's own (author_type) and presents to the client under a single team
+// identity.
 const STAFF_REPLY_AUTHOR_NAME = "Venue team";
 
 function boundedLifecycleSummary(summary: string): string {
@@ -228,21 +243,20 @@ function boundedLifecycleSummary(summary: string): string {
   return trimmed.length <= 800 ? trimmed : `${trimmed.slice(0, 797)}...`;
 }
 
-/** Project a stored comment row into the staff timeline shape, deriving the
- *  author type from the structural share-token link (client posts carry one;
- *  staff replies do not). */
+/** Project a stored comment row into the staff timeline shape, with the
+ *  author recorded when it was written. */
 function toStaffCommentView(row: {
   id: string;
   kind: string;
   authorName: string | null;
   body: string;
   isClientVisible: boolean;
-  shareTokenId: string | null;
+  authorType: ProposalCommentAuthorType;
   createdAt: Date;
 }): {
   id: string;
   kind: string;
-  authorType: "client" | "staff";
+  authorType: ProposalCommentAuthorType;
   authorName: string | null;
   body: string;
   isClientVisible: boolean;
@@ -251,7 +265,7 @@ function toStaffCommentView(row: {
   return {
     id: row.id,
     kind: row.kind,
-    authorType: row.shareTokenId === null ? "staff" : "client",
+    authorType: row.authorType,
     authorName: row.authorName,
     body: row.body,
     isClientVisible: row.isClientVisible,
@@ -678,6 +692,11 @@ export async function proposalRoutes(
     if (!canManageCommercial(request.user, proposal.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
+    // A change made from a screen that showed it elsewhere is not made, even
+    // by a platform admin, who may change a proposal in any status.
+    if (parsed.data.expectedStatus !== undefined && parsed.data.expectedStatus !== proposal.status) {
+      return reply.status(409).send(STATUS_CHANGED);
+    }
     if (!isPlatformAdmin(request.user) && !isProposalEditable(proposal.status as ProposalStatus)) {
       return reply.status(422).send({ error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" });
     }
@@ -693,14 +712,14 @@ export async function proposalRoutes(
       Object.assign(updateData, linked.links);
     }
 
+    // Only from the status it was judged editable in: a move that lands first
+    // (a colleague's send, say) stands, and nothing is changed under it.
     const [updated] = await db.update(proposals)
       .set(updateData)
-      .where(eq(proposals.id, params.data.id))
+      .where(and(eq(proposals.id, params.data.id), eq(proposals.status, proposal.status), isNull(proposals.deletedAt)))
       .returning();
 
-    if (updated === undefined) {
-      return reply.status(500).send({ error: "Failed to update proposal", code: "PROPOSAL_UPDATE_FAILED" });
-    }
+    if (updated === undefined) return reply.status(409).send(STATUS_CHANGED);
 
     // The layout was touched when one was sent, or when the links worked out
     // to another.
@@ -892,8 +911,7 @@ export async function proposalRoutes(
   //
   // Returns BOTH client posts (made through the share link) and staff
   // replies, in chronological order, so the dashboard timeline shows the
-  // whole conversation. Author type is derived structurally from the
-  // share-token link, not a stored flag.
+  // whole conversation, each with the author recorded when it was written.
   server.get("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
@@ -916,7 +934,7 @@ export async function proposalRoutes(
       authorName: proposalComments.authorName,
       body: proposalComments.body,
       isClientVisible: proposalComments.isClientVisible,
-      shareTokenId: proposalComments.shareTokenId,
+      authorType: proposalComments.authorType,
       createdAt: proposalComments.createdAt,
     }).from(proposalComments)
       .where(eq(proposalComments.proposalId, params.data.id))
@@ -929,8 +947,8 @@ export async function proposalRoutes(
   // POST /proposals/:id/comments — staff reply to the client conversation.
   //
   // Claim-guarded (VenueReplyBodySchema) because the reply is the venue's
-  // words, shown to the client. Stored with a null share_token_id (staff origin)
-  // and client-visible so it appears on the share-link page.
+  // words, shown to the client. Recorded as the staff's, with no link, and
+  // client-visible so it appears on the share-link page.
   server.post("/:id/comments", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {
@@ -959,6 +977,7 @@ export async function proposalRoutes(
       authorEmail: null,
       body: parsed.data.body,
       isClientVisible: true,
+      authorType: "staff",
     }).returning();
     if (comment === undefined) {
       throw new Error("proposal comment insert returned no row");
@@ -1500,7 +1519,7 @@ interface ClientSafeProposalPayload {
     readonly authorName: string | null;
     readonly body: string;
     readonly createdAt: Date;
-    /** The venue team's replies are written without a link. */
+    /** Who wrote it, as recorded when it was written. */
     readonly from: "venue" | "client";
   }[];
 }
@@ -1575,13 +1594,13 @@ async function buildClientSafeProposal(
     authorName: proposalComments.authorName,
     body: proposalComments.body,
     createdAt: proposalComments.createdAt,
-    shareTokenId: proposalComments.shareTokenId,
+    authorType: proposalComments.authorType,
   }).from(proposalComments)
     .where(and(eq(proposalComments.proposalId, proposal.id), eq(proposalComments.isClientVisible, true)))
     .orderBy(desc(proposalComments.createdAt))
     .limit(100);
-  const comments = newest.reverse().map(({ shareTokenId, ...comment }) => ({
-    ...comment, from: shareTokenId === null ? "venue" as const : "client" as const,
+  const comments = newest.reverse().map(({ authorType, ...comment }) => ({
+    ...comment, from: authorType === "staff" ? "venue" as const : "client" as const,
   }));
 
   // Accepted: when, and the name given with the acceptance itself.
@@ -1600,8 +1619,10 @@ async function buildClientSafeProposal(
     venueAddress: venue?.address ?? null,
     preparedAt: version.createdAt,
     // As the venue held them when the version was saved; a version from
-    // before facts were kept reads them as they are now.
-    facts: payload.data.facts ?? await clientFacts(db, proposal),
+    // before facts were kept reads them as they are now, naming the room of
+    // the layout it carried, so a layout left out since changes nothing here.
+    facts: payload.data.facts ?? await clientFacts(db, payload.data.configurationId === null
+      ? proposal : { ...proposal, configurationId: payload.data.configurationId }),
     accepted: acceptance === undefined ? null : { by: proposal.acceptedName, at: acceptance.at },
     clientMessage: payload.data.clientMessage,
     capacityNote: payload.data.capacityNote,
@@ -1864,6 +1885,7 @@ export async function proposalShareRoutes(
         authorEmail: parsed.data.authorEmail ?? null,
         body: parsed.data.body,
         isClientVisible: true,
+        authorType: "client",
       }).returning();
       if (comment === undefined) throw new Error("proposal comment insert returned no row");
 
@@ -1979,6 +2001,7 @@ export async function proposalShareRoutes(
         authorEmail: parsed.data.authorEmail ?? null,
         body: parsed.data.body ?? "Client approved the proposal.",
         isClientVisible: true,
+        authorType: "client",
       });
       return { accepted: sentVersionOf(held) };
     });

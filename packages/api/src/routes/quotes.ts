@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import { CreateQuoteLineItemSchema, CreateQuoteSchema, MAX_MINOR_UNIT_AMOUNT } from "@omnitwin/types";
-import { quotes, quoteLineItems, proposals, opportunities, enquiries, spaces } from "../db/schema.js";
+import { quotes, quoteLineItems, proposals, opportunities, enquiries, pricingRules, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
@@ -58,6 +58,24 @@ async function validateOpportunityLink(db: Database, opportunityId: string | nul
     .limit(1);
   if (opportunity === undefined) return "missing";
   return opportunity.venueId === venueId ? "ok" : "mismatch";
+}
+
+/** A line priced from the price list names the entry it came from, which must
+ *  be one of the quote's own venue's: a removed entry is gone, and another
+ *  venue's is refused like any other link across venues. */
+async function validatePricingRuleLinks(
+  db: Database,
+  lines: readonly { readonly pricingRuleId?: string | null }[],
+  venueId: string,
+): Promise<"ok" | "missing" | "mismatch"> {
+  // An id is one entry however its letters are cased, as PostgreSQL reads it.
+  const ids = [...new Set(lines.flatMap((line) => line.pricingRuleId === undefined || line.pricingRuleId === null ? [] : [line.pricingRuleId.toLowerCase()]))];
+  if (ids.length === 0) return "ok";
+  const rules = await db.select({ venueId: pricingRules.venueId })
+    .from(pricingRules)
+    .where(and(inArray(pricingRules.id, ids), isNull(pricingRules.deletedAt)));
+  if (rules.length !== ids.length) return "missing";
+  return rules.every((rule) => rule.venueId === venueId) ? "ok" : "mismatch";
 }
 
 export async function quoteRoutes(
@@ -183,6 +201,13 @@ export async function quoteRoutes(
       if (space.venueId !== parsed.data.venueId) {
         return reply.status(422).send({ error: "Space belongs to a different venue", code: "VENUE_MISMATCH" });
       }
+    }
+    const pricingStatus = await validatePricingRuleLinks(db, parsed.data.lineItems, parsed.data.venueId);
+    if (pricingStatus === "missing") {
+      return reply.status(404).send({ error: "Price list entry not found", code: "NOT_FOUND" });
+    }
+    if (pricingStatus === "mismatch") {
+      return reply.status(422).send({ error: "Price list entry belongs to a different venue", code: "VENUE_MISMATCH" });
     }
 
     // Quote + line items in one transaction — no orphan headers.
@@ -347,6 +372,14 @@ export async function quoteRoutes(
     }
     if (!isPlatformAdmin(request.user) && quote.status !== "draft") {
       return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
+    }
+
+    const pricingStatus = await validatePricingRuleLinks(db, [parsed.data], quote.venueId);
+    if (pricingStatus === "missing") {
+      return reply.status(404).send({ error: "Price list entry not found", code: "NOT_FOUND" });
+    }
+    if (pricingStatus === "mismatch") {
+      return reply.status(422).send({ error: "Price list entry belongs to a different venue", code: "VENUE_MISMATCH" });
     }
 
     const created = await db.transaction(async (tx) => {

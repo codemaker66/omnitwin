@@ -7,13 +7,16 @@ import type { WrittenDraft } from "./proposal-memory.js";
 import { formatMinorAsCurrency } from "../../../lib/money-input.js";
 import { buildProposalCapacityGuidance, buildProposalCapacityNote, CAPACITY_STYLE_LABELS } from "../../../lib/proposal-capacity-note.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
+import { commentAuthor } from "../../proposal/proposal-document-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
   EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
-  layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, type ComposerDraft, type KeptVersion, type QuoteLineDraft,
-  type TakenCheck,
+  layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, savedLayoutWords, type ComposerDraft,
+  type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
 import { ProposalChip } from "./ProposalsStages.js";
+import { PriceList } from "./PriceList.js";
+import type { PriceListEvent, PriceListOffer } from "./price-list-format.js";
 
 // ---------------------------------------------------------------------------
 // One proposal in the forest panel beside the ledger: who it is for and what
@@ -39,10 +42,10 @@ export interface PanelNavigation {
 }
 
 /** What the panel is doing, so only that control waits. */
-export type ProposalWork = "link" | "withdraw" | "archive" | "version" | "reply" | null;
+export type ProposalWork = "link" | "withdraw" | "archive" | "version" | "reply" | "layout" | null;
 
 export interface ProposalFailure {
-  readonly where: "step" | "version" | "reply";
+  readonly where: "step" | "version" | "reply" | "layout";
   readonly message: string;
   /** For a version: the composer whose save failed. */
   readonly composer?: number;
@@ -115,6 +118,9 @@ export interface ProposalPanelProps {
   /** Puts one kept version away once it has been copied. */
   readonly onDiscardKept: (composer: number) => void;
   readonly onReply: (body: string) => Promise<boolean>;
+  /** Leaves the client's own layout out of the versions saved from now, or
+   *  takes it back (A10). */
+  readonly onLayout: (change: LayoutChoice["change"]) => Promise<boolean>;
   readonly onRetryLatest: () => void;
   readonly onRetryHistory: () => void;
   readonly onRetryComments: () => void;
@@ -275,7 +281,8 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
         </p>
         {props.refreshing && <ActivityStatus className="enq-panel__activity">Refreshing the proposal…</ActivityStatus>}
 
-        <Facts proposal={proposal} nowMs={props.nowMs} />
+        <Facts proposal={proposal} nowMs={props.nowMs} check={props.next.value} working={props.working} failure={props.failure}
+          onLayout={props.onLayout} headingRef={headingRef} />
         {proposal.opportunityId !== null && props.onOpenDeal !== null && (
           <div className="enq-actions pr-deal">
             <button type="button" className="enq-quiet" onClick={() => { if (proposal.opportunityId !== null) props.onOpenDeal?.(proposal.opportunityId); }}>
@@ -298,11 +305,39 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
 // Who it is for, when, and what it comes to
 // ---------------------------------------------------------------------------
 
-function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly nowMs: number }): ReactElement {
+function Facts({ proposal, nowMs, check, working, failure, onLayout, headingRef }: {
+  readonly proposal: DeskProposal; readonly nowMs: number; readonly check: ProposalNextVersion | null;
+  readonly working: ProposalWork; readonly failure: ProposalFailure | null;
+  readonly onLayout: ProposalPanelProps["onLayout"]; readonly headingRef: RefObject<HTMLHeadingElement>;
+}): ReactElement {
   const date = eventDateParts(proposal.eventDate);
   const weekday = eventWeekday(proposal.eventDate);
   const lead = eventLead(proposal.eventDate, nowMs);
-  const layout = layoutFact(proposal, COMPOSABLE.includes(proposal.status));
+  const inHand = COMPOSABLE.includes(proposal.status);
+  const layout = layoutFact(proposal, inHand);
+  // Only while it is in hand: a version with the client keeps what it carried.
+  const choice = inHand ? layoutChoice(proposal) : null;
+  const saved = savedLayoutWords(choice, check, proposal.currentVersion);
+  const layoutFailed = failure?.where === "layout" ? failure.message : null;
+  // Focus stays on the layout's control through its work and its new words:
+  // it is marked unavailable while working, never disabled. If the control
+  // goes while it has focus (the proposal moved on, or their layout went),
+  // focus goes to what is said in its place, or else to the proposal's name.
+  // React lets go of the control before it leaves the page, so whether it had
+  // focus is known whatever the browser does with focus as it goes.
+  const choiceNodeRef = useRef<HTMLButtonElement | null>(null);
+  const focusGoneRef = useRef(false);
+  const choiceRef = useCallback((node: HTMLButtonElement | null): void => {
+    if (node === null && choiceNodeRef.current !== null && document.activeElement === choiceNodeRef.current) focusGoneRef.current = true;
+    choiceNodeRef.current = node;
+  }, []);
+  const actRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!focusGoneRef.current) return;
+    focusGoneRef.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) (actRef.current ?? headingRef.current)?.focus();
+  });
   return (
     <dl className="enq-facts pr-facts">
       <div>
@@ -333,6 +368,19 @@ function Facts({ proposal, nowMs }: { readonly proposal: DeskProposal; readonly 
         <div className="pr-facts__layout">
           <dt>layout</dt>
           <dd className={layout.muted ? "enq-facts__muted" : "enq-facts__room"} data-testid="proposal-layout">{layout.words}</dd>
+          {(choice !== null || layoutFailed !== null) && (
+            <dd className="pr-facts__act" ref={actRef} tabIndex={-1}>
+              {choice !== null && (
+                <button type="button" className="enq-quiet" data-testid="layout-choice" ref={choiceRef} aria-disabled={working !== null}
+                  aria-busy={working === "layout"} onClick={() => { if (working === null) void onLayout(choice.change); }}>
+                  {working === "layout" && <ActivityIndicator size={18} />}
+                  {working === "layout" ? (choice.change === "leave_out" ? "Leaving their layout out…" : "Including their layout…") : choice.label}
+                </button>
+              )}
+              {layoutFailed !== null && <span className="enq-confirm__error" role="alert">{layoutFailed}</span>}
+              {saved !== null && <span className="pr-facts__saved" data-testid="layout-saved">{saved}</span>}
+            </dd>
+          )}
         </div>
       )}
     </dl>
@@ -659,6 +707,8 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLine, setFocusLine] = useState<number | null>(null);
+  const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [focusQuantity, setFocusQuantity] = useState<number | null>(null);
   // Check again stays where it was pressed while it checks, so focus stays
   // with it. Answered, focus goes to what the start line now says; not
   // answered, it is said, and Check again is there to press again. Only a
@@ -693,6 +743,29 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     lineRefs.current[focusLine]?.focus();
     setFocusLine(null);
   }, [focusLine]);
+  useEffect(() => {
+    if (focusQuantity === null) return;
+    quantityRefs.current[focusQuantity]?.focus();
+    setFocusQuantity(null);
+  }, [focusQuantity]);
+
+  // The price list is priced for the event as the version would take it: the
+  // check's facts once answered, else the proposal's own date and guests.
+  const facts = checkRead.value?.facts.now ?? null;
+  const rooms = spaces.value ?? [];
+  const priceEvent: PriceListEvent = {
+    spaceId: facts === null || facts.roomSlug === null ? null : rooms.find((room) => room.slug === facts.roomSlug)?.id ?? null,
+    eventDate: facts?.eventDate ?? proposal.eventDate,
+    guestCount: facts?.guestCount ?? proposal.guestCount,
+  };
+  // A price picked is a line like any typed one; the booker gives the
+  // quantity it cannot know.
+  const addFromList = (offer: PriceListOffer): number => {
+    const at = draft.lines.length;
+    setDraft((current) => ({ ...current, lines: [...current.lines, { ...offer.line }] }));
+    if (offer.asks !== null) setFocusQuantity(at);
+    return at + 1;
+  };
 
   const setLine = (index: number, change: Partial<QuoteLineDraft>): void => {
     setDraft((current) => ({ ...current, lines: current.lines.map((line, at) => at === index ? { ...line, ...change } : line) }));
@@ -741,6 +814,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
               <label className="pr-line__part">
                 <span aria-hidden="true">Quantity</span>
                 <input aria-label={`Line ${String(index + 1)} quantity`} data-testid={`quote-qty-${String(index)}`} inputMode="numeric"
+                  ref={(element) => { quantityRefs.current[index] = element; }}
                   value={line.quantity} disabled={saving} onChange={(event) => { setLine(index, { quantity: event.target.value }); }} />
               </label>
               <label className="pr-line__part">
@@ -759,6 +833,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
               onClick={() => { setDraft((current) => ({ ...current, lines: [...current.lines, { ...EMPTY_LINE }] })); setFocusLine(draft.lines.length); }}>
               Add a line
             </button>
+            <PriceList venueId={proposal.venueId} event={priceEvent} rooms={rooms} disabled={saving} onAdd={addFromList} />
           </div>
         </div>
 
@@ -905,7 +980,7 @@ function Conversation({ comments, working, failure, onReply, onRetryComments }: 
           {rows.map((comment) => (
             <li key={comment.id} data-testid={`comment-${comment.authorType}`} data-author={comment.authorType}>
               <p className="pr-thread__who">
-                <strong>{comment.authorType === "client" ? (comment.authorName ?? "The client") : (comment.authorName ?? "The venue team")}</strong>
+                <strong>{commentAuthor({ authorName: comment.authorName, from: comment.authorType === "staff" ? "venue" : "client" })}</strong>
                 <span>{venueMoment(comment.createdAt) ?? ""}</span>
                 {comment.kind === "request_changes" && <span className="pr-thread__asked">asked for changes</span>}
               </p>

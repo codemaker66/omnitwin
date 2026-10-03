@@ -351,11 +351,11 @@ async function recordFrameAndVisualState(
 }
 
 function proposalFixture(status: PublicProposal["status"] = "sent", extraComment?: string): PublicProposalPayload {
-  const comments = [
-    { kind: "comment" as const, authorName: "Venue team", body: "We can adjust the arrival time.", createdAt: NOW },
+  const comments: NonNullable<PublicProposalPayload["comments"]> = [
+    { kind: "comment", authorName: "Venue team", body: "We can adjust the arrival time.", createdAt: NOW, from: "venue" },
   ];
   if (extraComment !== undefined) {
-    comments.push({ kind: "comment", authorName: "Client", body: extraComment, createdAt: NOW });
+    comments.push({ kind: "comment", authorName: "Client", body: extraComment, createdAt: NOW, from: "client" });
   }
   return {
     title: "Reception Room wedding proposal",

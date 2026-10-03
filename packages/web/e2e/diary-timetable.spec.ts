@@ -251,9 +251,14 @@ test.describe("Diary timetable", () => {
     await details.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("Saved MacLeod wedding.")).toBeVisible();
     expect(emulated.updates).toEqual([{ bookingId: MACLEOD, payload: { notes: "Ceremony in the Saloon at 14:00, dinner in the Grand Hall." } }]);
+    // The save reads the tray again once its render has settled, so the
+    // second read can reach the emulator after the saved line shows.
+    await expect.poll(() => emulated.enquiryRequests.length).toBe(2);
+    // Once next week is read and on screen, the tray has still been read
+    // only at load and after the save.
     await page.getByRole("button", { name: "Later" }).click();
-    await expect(page.getByText(/^Week of /u)).toBeVisible();
-    // Once at load, once after the save; not for the move to next week.
+    await expect(page.getByText(/^Week of Mon,? 21 Sept? 2026$/u)).toBeVisible();
+    await expect(page.locator(".diary-status-slot")).toBeEmpty();
     expect(emulated.enquiryRequests).toHaveLength(2);
   });
 

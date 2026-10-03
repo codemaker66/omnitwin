@@ -67,6 +67,13 @@ export const PROPOSAL_COMMENT_KINDS = ["comment", "request_changes", "approval_n
 export const ProposalCommentKindSchema = z.enum(PROPOSAL_COMMENT_KINDS);
 export type ProposalCommentKind = z.infer<typeof ProposalCommentKindSchema>;
 
+/** Who wrote a proposal comment: the client, through their link, or the
+ *  venue team. Recorded when it is written (migration 0084), never read from
+ *  the link, which a deleted link would forget. */
+export const PROPOSAL_COMMENT_AUTHOR_TYPES = ["client", "staff"] as const;
+export const ProposalCommentAuthorTypeSchema = z.enum(PROPOSAL_COMMENT_AUTHOR_TYPES);
+export type ProposalCommentAuthorType = z.infer<typeof ProposalCommentAuthorTypeSchema>;
+
 export const PACKAGE_SELECTION_STATUSES = ["draft", "included", "removed", "superseded"] as const;
 export const PackageSelectionStatusSchema = z.enum(PACKAGE_SELECTION_STATUSES);
 export type PackageSelectionStatus = z.infer<typeof PackageSelectionStatusSchema>;
@@ -209,7 +216,12 @@ export const ProposalCommentSchema = z.object({
   // (VenueReplyBodySchema).
   body: ClientTextSchema,
   isClientVisible: z.boolean(),
+  authorType: ProposalCommentAuthorTypeSchema,
   createdAt: IsoDateTimeSchema,
+}).refine((comment) => comment.authorType === "client" || comment.shareTokenId === null, {
+  // A client's comment may lose its link; the venue's never had one.
+  message: "A venue reply carries no share link",
+  path: ["shareTokenId"],
 });
 export type ProposalComment = z.infer<typeof ProposalCommentSchema>;
 

@@ -17,6 +17,20 @@ const OPPORTUNITY_ID = "33333333-3333-4333-8333-333333333333";
 const PROPOSAL_ID = "44444444-4444-4444-8444-444444444444";
 const NOW = "2026-06-12T10:00:00.000Z";
 
+/** A question the client asked through their link. */
+const storedComment = {
+  id: "44444444-4444-4444-8444-444444444444",
+  proposalId: "55555555-5555-4555-8555-555555555555",
+  shareTokenId: "66666666-6666-4666-8666-666666666666",
+  kind: "comment",
+  authorName: null,
+  authorEmail: null,
+  body: "Is the Grand Hall guaranteed accessible?",
+  isClientVisible: true,
+  authorType: "client",
+  createdAt: "2026-09-29T09:00:00.000Z",
+} as const;
+
 describe("commercial spine schemas", () => {
   it("declares the opportunity stage vocabulary and transitions", () => {
     expect(OPPORTUNITY_STAGES).toEqual([
@@ -125,16 +139,18 @@ describe("commercial spine schemas", () => {
     expect(CreateProposalCommentSchema.safeParse({ body: "x".repeat(4000) }).success).toBe(true);
 
     // A stored comment holds the client's words as written.
-    expect(ProposalCommentSchema.safeParse({
-      id: "44444444-4444-4444-8444-444444444444",
-      proposalId: "55555555-5555-4555-8555-555555555555",
-      shareTokenId: "66666666-6666-4666-8666-666666666666",
-      kind: "comment",
-      authorName: null,
-      authorEmail: null,
-      body: "Is the Grand Hall guaranteed accessible?",
-      isClientVisible: true,
-      createdAt: "2026-09-29T09:00:00.000Z",
-    }).success).toBe(true);
+    expect(ProposalCommentSchema.safeParse(storedComment).success).toBe(true);
+  });
+
+  it("records who wrote a comment, and keeps a link off the venue's replies", () => {
+    // A client's comment keeps its author once its link is deleted.
+    expect(ProposalCommentSchema.safeParse({ ...storedComment, shareTokenId: null }).success).toBe(true);
+    expect(ProposalCommentSchema.safeParse({ ...storedComment, authorType: "staff", shareTokenId: null }).success).toBe(true);
+    const linked = ProposalCommentSchema.safeParse({ ...storedComment, authorType: "staff" });
+    expect(linked.success).toBe(false);
+    expect(linked.error?.issues[0]?.path).toEqual(["shareTokenId"]);
+    expect(ProposalCommentSchema.safeParse({ ...storedComment, authorType: "venue" }).success).toBe(false);
+    const { authorType: _dropped, ...unnamed } = storedComment;
+    expect(ProposalCommentSchema.safeParse(unnamed).success).toBe(false);
   });
 });

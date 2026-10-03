@@ -1,6 +1,10 @@
 import { z } from "zod";
-import { InventoryIdSchema as Id, InventoryInstantSchema as Instant, InventoryQuantitySchema as Quantity,
-  InventoryWindowSchema as Window } from "./venue-inventory.js";
+import { InventoryAdjusterRoleSchema, InventoryIdSchema as Id, InventoryInstantSchema as Instant,
+  InventoryQuantitySchema as Quantity, InventoryWindowSchema as Window } from "./venue-inventory.js";
+
+// Who decided, and in which role. A decision recorded before 29 September 2026
+// has no role: only a venue's administrators could decide until then.
+const DeciderRole = InventoryAdjusterRoleSchema;
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/u);
 const Reason = z.string().trim().min(1).max(1000);
@@ -37,7 +41,7 @@ export const InventoryReservationReleaseSchema = z.object({ id: Id, venueId: Id,
   supersedesReleaseId: Id.nullable(), sourceDigest: Digest, occupiedWindow: Window,
   occupiedWindowConfirmed: z.literal(true), demands: z.array(InventoryReservationDemandSchema),
   bookings: z.array(InventoryReservationBookingSchema), phases: z.array(InventoryReservationPhaseSchema),
-  actorUserId: Id, recordedAt: Instant, reason: Reason,
+  actorUserId: Id, actorRole: DeciderRole.optional(), recordedAt: Instant, reason: Reason,
 }).strict().superRefine((release, context) => {
   const peak = new Map<string, number>();
   for (const phase of release.phases) {
@@ -108,12 +112,14 @@ export const InventoryRemedyEvidenceSchema = z.object({ stockRevision: Quantity.
 export const InventoryRemedySchema = z.object({ id: Id, venueId: Id, kind: z.enum(["hire_request", "stock_inspection"]),
   assetDefinitionId: Id, assetName: z.string(), quantity: Quantity.refine((value) => value > 0), window: Window,
   status: z.enum(["prepared", "approved"]), assessmentDigest: Digest, reason: Reason,
-  preparedBy: Id, preparedAt: Instant, approvedBy: Id.nullable(), approvedAt: Instant.nullable(),
+  preparedBy: Id, preparedByRole: DeciderRole.optional(), preparedAt: Instant,
+  approvedBy: Id.nullable(), approvedByRole: DeciderRole.nullable().optional(), approvedAt: Instant.nullable(),
   effect: z.literal("internal_request_only"),
   evidence: InventoryRemedyEvidenceSchema,
   check: z.enum(["current", "stale", "not_checked"]),
 }).strict().superRefine((remedy, context) => {
-  if (remedy.status === "prepared" ? remedy.approvedBy !== null || remedy.approvedAt !== null
+  const approvedByRole = remedy.approvedByRole ?? null;
+  if (remedy.status === "prepared" ? remedy.approvedBy !== null || remedy.approvedAt !== null || approvedByRole !== null
     : remedy.approvedBy === null || remedy.approvedAt === null || Date.parse(remedy.approvedAt) < Date.parse(remedy.preparedAt)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Inventory remedy approval lineage is inconsistent" });
   }

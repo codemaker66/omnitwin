@@ -72,4 +72,32 @@ describe("inventory reservation approval contracts", () => {
     expect(InventoryRemedySchema.safeParse(request).success).toBe(false);
     expect(InventoryRemedySchema.safeParse({ ...request, approvedBy: id, approvedAt: window.startsAt }).success).toBe(true);
   });
+  // Administrators and managers both decide (Blake, 29 September 2026); a
+  // decision from before then carries no role, as only administrators could.
+  it("records the role a reservation was decided in, and reads one decided before roles were kept", () => {
+    const release = { id, venueId: id, eventId: id, spaceId: id, revision: 1, action: "approved",
+      supersedesReleaseId: null, sourceDigest: "a".repeat(64), occupiedWindow: window, occupiedWindowConfirmed: true,
+      demands: [], bookings: [{ id, window, updatedAt: window.startsAt }], actorUserId: id,
+      phases: [{ phaseId: id, name: "Empty layout", window, mode: "frozen_layout", snapshotId: id,
+        canonicalSnapshotId: id, proofDigest: "a".repeat(64), snapshotDigest: "b".repeat(64), objects: [] }],
+      recordedAt: window.startsAt, reason: "An empty room is intentional" };
+    expect(InventoryReservationReleaseSchema.parse({ ...release, actorRole: "manager" }).actorRole).toBe("manager");
+    expect(InventoryReservationReleaseSchema.parse({ ...release, actorRole: "admin" }).actorRole).toBe("admin");
+    expect(InventoryReservationReleaseSchema.parse(release).actorRole).toBeUndefined();
+    expect(InventoryReservationReleaseSchema.safeParse({ ...release, actorRole: "staff" }).success).toBe(false);
+  });
+  it("records who prepared and approved a request in which role, and no approver on a request still prepared", () => {
+    const prepared = { id, venueId: id, kind: "hire_request", assetDefinitionId: id, assetName: "Chair", quantity: 2, window,
+      status: "prepared", assessmentDigest: "a".repeat(64), reason: "Shortage", preparedBy: id, preparedAt: window.startsAt,
+      approvedBy: null, approvedAt: null, effect: "internal_request_only", check: "current",
+      evidence: { stockRevision: 1, shortageSegments: [], affectedReservations: [], missingFacts: ["Supplier unconfirmed"] } };
+    expect(InventoryRemedySchema.safeParse(prepared).success).toBe(true);
+    expect(InventoryRemedySchema.safeParse({ ...prepared, preparedByRole: "manager", approvedByRole: null }).success).toBe(true);
+    expect(InventoryRemedySchema.safeParse({ ...prepared, preparedByRole: "manager", approvedByRole: "admin" }).success).toBe(false);
+    expect(InventoryRemedySchema.safeParse({ ...prepared, preparedByRole: "hallkeeper" }).success).toBe(false);
+    const approved = { ...prepared, status: "approved", approvedBy: id, approvedAt: window.startsAt };
+    expect(InventoryRemedySchema.parse({ ...approved, preparedByRole: "admin", approvedByRole: "manager" })).toMatchObject({
+      preparedByRole: "admin", approvedByRole: "manager" });
+    expect(InventoryRemedySchema.safeParse(approved).success).toBe(true);
+  });
 });

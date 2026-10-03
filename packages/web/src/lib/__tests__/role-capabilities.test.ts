@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { USER_ROLES } from "@omnitwin/types";
+import { INVENTORY_ADJUSTER_ROLES, USER_ROLES } from "@omnitwin/types";
 import {
   ANALYTICS_ROLES,
   CLIENT_SEARCH_ROLES,
@@ -118,6 +118,10 @@ describe("nav offers are reachable", () => {
       expect(canOpenDashboardView("inventory", role, "none"), `inventory for ${role}`)
         .toBe(hasRole(INVENTORY_WRITE_ROLES, role));
     }
+  });
+
+  it("offers inventory to exactly the roles the server lets keep it", () => {
+    expect([...INVENTORY_WRITE_ROLES]).toEqual([...INVENTORY_ADJUSTER_ROLES]);
   });
 
   it("never lets a platform admin inherit venue stock authority", () => {

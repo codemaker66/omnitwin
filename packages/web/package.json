@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p e2e --noEmit",
-    "test": "vitest run",
+    "test": "node scripts/verify-card-review.mjs && node --test server/card-review.test.mjs && vitest run",
+    "test:card-review": "node --test server/card-review.test.mjs",
     "test:watch": "vitest watch",
     "lint": "eslint src/ e2e/",
     "e2e": "playwright test",
@@ -23,6 +24,7 @@
     "voice:generate": "node --experimental-strip-types --import ./scripts/convener-voice/register.mjs scripts/convener-voice/generate.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "0.10.4",
     "@clerk/react": "6.11.0",
     "@omnitwin/types": "workspace:*",
     "@react-spring/web": "10.0.3",

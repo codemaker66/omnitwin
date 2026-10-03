@@ -213,6 +213,21 @@ describe.skipIf(target === undefined)("proposal links through real routes and Po
     expect(await linksOf(draft.id)).toEqual({ opportunityId: f.deal, enquiryId: f.bare, configurationId: f.layout });
   });
 
+  // A10 (Blake, 29 September 2026): staff may leave the client's own layout
+  // out, and the desk puts it back by naming it.
+  it("puts back only the client's own layout, and only while it is live", async () => {
+    const f = await fixture();
+    const made = await created(f, { opportunityId: f.deal });
+    expect((await patch(f, made.id, { configurationId: null })).statusCode).toBe(200);
+    expect(await linksOf(made.id)).toEqual({ opportunityId: f.deal, enquiryId: f.enquiry, configurationId: null });
+
+    await db.update(schema.configurations).set({ deletedAt: new Date() }).where(eq(schema.configurations.id, f.layout));
+    const gone = await patch(f, made.id, { configurationId: f.layout });
+    expect(gone.statusCode, gone.body).toBe(404);
+    expect(gone.json()).toMatchObject({ code: "NOT_FOUND" });
+    expect(await linksOf(made.id)).toEqual({ opportunityId: f.deal, enquiryId: f.enquiry, configurationId: null });
+  });
+
   async function saveVersion(f: Fixture, id: string, body: Record<string, unknown>) {
     const response = await server.inject({ method: "POST", url: `/proposals/${id}/versions`, headers: f.headers, payload: body });
     expect(response.statusCode, response.body).toBe(201);

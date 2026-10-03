@@ -6,6 +6,7 @@ import { InventoryAvailability, InventoryInterval } from "./InventoryDemandEvide
 import { inventoryErrorMessage } from "./inventory-form.js";
 import { inventoryTime } from "./inventory-window.js";
 import type { InventoryPendingAction } from "./inventory-action-pending.js";
+import { inventoryRoleWords } from "./inventory-roles.js";
 
 export function ReservationReceipt({ release, actorId, timeZone }: {
   readonly release: InventoryReservationRelease; readonly actorId: string; readonly timeZone: string;
@@ -15,9 +16,10 @@ export function ReservationReceipt({ release, actorId, timeZone }: {
     <p><InventoryInterval window={release.occupiedWindow} timeZone={timeZone} /></p>
     <p>{release.reason}</p>
     <ul>{release.demands.map((demand) => <li key={demand.assetDefinitionId}>{demand.quantity.toLocaleString("en-GB")} × {demand.name}</li>)}</ul>
-    <p className="inventory-muted">Recorded by {release.actorUserId === actorId ? "you" : "a venue administrator"}. Equipment setup through return was confirmed.</p>
+    <p className="inventory-muted">Recorded by {release.actorUserId === actorId ? "you" : inventoryRoleWords(release.actorRole)}. Equipment setup through return was confirmed.</p>
     <details className="inventory-evidence"><summary>Audit identifiers</summary><dl className="inventory-audit">
-      <div><dt>Receipt</dt><dd>{release.id}</dd></div><div><dt>Actor</dt><dd>{release.actorUserId}</dd></div>
+      <div><dt>Receipt</dt><dd>{release.id}</dd></div>
+      <div><dt>{release.actorRole === "manager" ? "Manager" : "Administrator"}</dt><dd>{release.actorUserId}</dd></div>
       <div><dt>Source evidence</dt><dd>{release.sourceDigest}</dd></div>
     </dl></details>
   </div>;

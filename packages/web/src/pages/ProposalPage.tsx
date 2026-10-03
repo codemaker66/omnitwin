@@ -471,7 +471,7 @@ function Conversation({ proposal, token, onPosted }: {
       {thread.length > 0 && (
         <ol className="pd-thread">
           {thread.map((comment, index) => (
-            <li key={index} data-from={comment.from ?? (comment.authorName === "Venue team" ? "venue" : "client")}>
+            <li key={index} data-from={comment.from}>
               <p className="pd-thread__who">
                 <strong>{commentAuthor(comment)}</strong>{venueLongDate(comment.createdAt) === null ? "" : ` · ${venueLongDate(comment.createdAt) ?? ""}`}
               </p>

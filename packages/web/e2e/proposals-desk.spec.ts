@@ -68,7 +68,13 @@ function version(proposalId: string, n: number, payload: Partial<StaffProposalVe
   };
 }
 
-async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulator> {
+/** The venue's rooms and price list, which most cases leave empty. */
+interface World {
+  readonly rooms?: readonly Record<string, unknown>[];
+  readonly prices?: readonly Record<string, unknown>[];
+}
+
+async function openDesk(page: Page, width = 1440, height = 900, world: World = {}): Promise<Emulator> {
   await page.setViewportSize({ width, height });
   await page.clock.setFixedTime(NOW);
   await page.addInitScript(({ venueId, staffId }) => {
@@ -160,6 +166,32 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         void route.fulfill({ json: { data: current } });
         return;
       }
+      if (rest === "" && method === "PATCH") {
+        // As the route: only where the screen showed it, while in hand, and a
+        // layout named only if it is their enquiry's own (A10).
+        const body = request.postDataJSON() as { configurationId?: string | null; expectedStatus?: string };
+        const theirs = current.enquiryLayoutId ?? null;
+        if (body.expectedStatus !== undefined && body.expectedStatus !== current.status) {
+          void route.fulfill({ status: 409, json: { error: "The proposal changed", code: "PROPOSAL_STATUS_CHANGED" } });
+          return;
+        }
+        if (current.status !== "draft" && current.status !== "changes_requested") {
+          void route.fulfill({ status: 422, json: { error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" } });
+          return;
+        }
+        if (typeof body.configurationId === "string" && body.configurationId !== theirs) {
+          void route.fulfill({ status: 422, json: { error: "That layout is not the one on their enquiry.", code: "LINK_MISMATCH" } });
+          return;
+        }
+        const configurationId = body.configurationId === undefined ? current.configurationId : body.configurationId;
+        const next: DeskProposal = {
+          ...current, configurationId, layoutRoomName: configurationId === null ? null : current.enquiryLayoutRoomName ?? null,
+          layoutFromEnquiry: configurationId !== null && configurationId === theirs, updatedAt: NOW.toISOString(),
+        };
+        emulator.proposals.set(id, next);
+        void route.fulfill({ json: { data: next } });
+        return;
+      }
       if (rest === "/preview" && method === "GET") {
         // The latest saved version, as the client's page would draw it.
         const latest = (emulator.versions.get(id) ?? []).at(-1);
@@ -177,11 +209,15 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
         return;
       }
       if (rest === "/versions/next") {
-        // What a save would take beside the words: here the same drawing and
-        // the same facts, as nothing else changes in this emulator.
+        // What a save would take beside the words: the same facts, and the
+        // drawing as the route finds it against the latest version's, here
+        // by whether each carries a layout.
         const facts = { eventDate: current.eventDate, guestCount: current.guestCount, occasion: current.eventType, roomName: "Grand Hall", roomSlug: "grand-hall" };
+        const saved = (emulator.versions.get(id) ?? []).at(-1)?.payload.configurationId ?? null;
+        const now = current.configurationId;
+        const layout = saved === null ? (now === null ? "none" : "added") : now === null ? "removed" : "same";
         void route.fulfill(current.currentVersion < 1 ? { status: 404, json: { error: "No version" } } : { json: { data: {
-          basedOn: current.currentVersion, layout: "same", facts: { saved: facts, now: facts }, basis: "0".repeat(64),
+          basedOn: current.currentVersion, layout, facts: { saved: facts, now: facts }, basis: "0".repeat(64),
         } } });
         return;
       }
@@ -225,7 +261,9 @@ async function openDesk(page: Page, width = 1440, height = 900): Promise<Emulato
       }
     }
     if (path === `/venues/${VENUE_ID}/spaces`) {
-      void route.fulfill({ json: { data: [] } });
+      void route.fulfill({ json: { data: world.rooms ?? [] } });
+    } else if (path === `/venues/${VENUE_ID}/pricing`) {
+      void route.fulfill({ json: { data: world.prices ?? [] } });
     } else if (path === `/venues/${VENUE_ID}` || path === "/venues") {
       void route.fulfill({ json: { data: path === "/venues" ? [VENUE] : VENUE } });
     } else if (path === "/notifications/unread-count") {
@@ -337,9 +375,15 @@ test.describe("Proposals desk", () => {
     const emulator = await openDesk(page);
     const crawford = emulator.proposals.get(CRAWFORD);
     if (crawford === undefined) throw new Error("Missing the Crawford fixture");
+    const theirs = "00000000-0000-4000-8000-00000000c0f1";
     emulator.proposals.set(CRAWFORD, {
-      ...crawford, configurationId: "00000000-0000-4000-8000-00000000c0f1", layoutRoomName: "Grand Hall", layoutFromEnquiry: true,
+      ...crawford, configurationId: theirs, layoutRoomName: "Grand Hall", layoutFromEnquiry: true,
+      enquiryLayoutId: theirs, enquiryLayoutRoomName: "Grand Hall",
     });
+    // Version 1 was saved carrying their layout.
+    const [saved] = emulator.versions.get(CRAWFORD) ?? [];
+    if (saved === undefined) throw new Error("Missing the Crawford version");
+    emulator.versions.set(CRAWFORD, [{ ...saved, payload: { ...saved.payload, configurationId: theirs } }]);
     await page.goto(`/dashboard?view=proposals&proposal=${CRAWFORD}`);
     const panel = page.getByRole("region", { name: "Crawford wedding proposal" });
     const layout = panel.getByTestId("proposal-layout");
@@ -353,13 +397,137 @@ test.describe("Proposals desk", () => {
     expect(fact / facts).toBeGreaterThan(0.9);
     await page.screenshot({ path: test.info().outputPath("proposal-layout-desk.png") });
 
+    // Staff may leave their layout out of the versions saved from now, and
+    // include it again (A10), from the keyboard, where focus stays; the facts, the
+    // composer and a line on the version Send shares say which goes out.
+    const choice = panel.getByTestId("layout-choice");
+    await expect(choice).toHaveText("Leave their layout out");
+    await expect(panel.getByTestId("layout-saved")).toHaveCount(0);
+    await choice.focus();
+    await page.keyboard.press("Enter");
+    await expect(layout).toHaveText("None");
+    await expect(choice).toHaveText("Include their Grand Hall layout");
+    await expect(choice).toBeFocused();
+    await expect(panel.getByTestId("composer-layout")).toHaveCount(0);
+    await expect(panel.getByTestId("layout-saved"))
+      .toHaveText("Version 1, the one Send shares, still shows their layout. Save version 2 to send it without.");
+    await expect(panel.getByRole("status").filter({ hasText: "Their Grand Hall layout is left out of the versions you save from now." }))
+      .toHaveCount(1);
+    expect(emulator.proposals.get(CRAWFORD)?.configurationId).toBeNull();
+    await page.screenshot({ path: test.info().outputPath("proposal-layout-left-out.png") });
+    await page.keyboard.press("Enter");
+    await expect(layout).toHaveText("Their own, Grand Hall");
+    await expect(choice).toHaveText("Leave their layout out");
+    await expect(choice).toBeFocused();
+    await expect(panel.getByTestId("layout-saved")).toHaveCount(0);
+    expect(emulator.proposals.get(CRAWFORD)?.configurationId).toBe(theirs);
+
     await page.setViewportSize({ width: 390, height: 844 });
     // The desk becomes one column when the page hears the new width, a moment
     // after it is set: measure once the proposal has replaced the ledger.
     await expect(panel.getByRole("button", { name: "Back to proposals" })).toBeVisible();
     await expect(layout).toBeVisible();
+    await expect(choice).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
     await page.screenshot({ path: test.info().outputPath("proposal-layout-phone.png"), fullPage: true });
+  });
+
+  test("a price from the venue's list becomes a quote line priced for the event, from the keyboard, on a desk and on a phone", async ({ page }) => {
+    const room = (id: string, name: string, slug: string): Record<string, unknown> => ({
+      id, venueId: VENUE_ID, name, slug, widthM: "30", lengthM: "15", heightM: "10", floorPlanOutline: [],
+    });
+    const price = (id: string, spaceId: string | null, name: string, type: string, amount: string): Record<string, unknown> => ({
+      id, venueId: VENUE_ID, spaceId, name, type, amount, currency: "GBP", minHours: null, minGuests: null, tiers: null,
+      dayOfWeekModifiers: null, seasonalModifiers: null, isActive: true, validFrom: null, validTo: null,
+    });
+    const GRAND_HALL = "00000000-0000-4000-8000-00000000c001";
+    const SALOON = "00000000-0000-4000-8000-00000000c002";
+    const emulator = await openDesk(page, 1440, 900, {
+      rooms: [room(GRAND_HALL, "Grand Hall", "grand-hall"), room(SALOON, "Saloon", "saloon")],
+      prices: [
+        price("00000000-0000-4000-8000-00000000b001", GRAND_HALL, "Grand Hall — Evening Event (19:00–00:30)", "flat_rate", "2400.00"),
+        price("00000000-0000-4000-8000-00000000b002", SALOON, "Saloon — Evening Event (19:00–00:30)", "flat_rate", "900.00"),
+        price("00000000-0000-4000-8000-00000000b003", null, "Exclusive Use of Full Venue", "flat_rate", "2500.00"),
+        price("00000000-0000-4000-8000-00000000b004", null, "Drinks reception", "per_head", "12.50"),
+      ],
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const problems = watchPageProblems(page);
+    await page.goto(`/dashboard?view=proposals&proposal=${CRAWFORD}`);
+    const panel = page.getByRole("region", { name: "Crawford wedding proposal" });
+    const composer = panel.getByTestId("composer");
+    await expect(composer.getByTestId("quote-price-1")).toHaveValue("87.50");
+
+    // The list opens from the keyboard: the event's room first, then any room's.
+    const toggle = composer.getByRole("button", { name: "Add from price list" });
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const list = composer.getByRole("region", { name: "Price list" });
+    await expect(list.locator(".pr-prices__heading")).toHaveText(["Grand Hall", "Venue-wide"]);
+    await expect(list.getByRole("button", { name: /^Saloon/u })).toHaveCount(0);
+
+    // Each pick is a line, said, and the list stays for the next.
+    const evening = list.getByRole("button", { name: /^Grand Hall — Evening Event/u });
+    await evening.focus();
+    await page.keyboard.press("Enter");
+    await expect(composer.getByTestId("quote-desc-2")).toHaveValue("Grand Hall — Evening Event (19:00–00:30)");
+    await expect(composer.getByTestId("quote-qty-2")).toHaveValue("1");
+    await expect(composer.getByTestId("quote-price-2")).toHaveValue("2400");
+    await expect(list.getByRole("status").filter({ hasText: "Added" })).toHaveText("Added Grand Hall — Evening Event (19:00–00:30) at £2,400 as line 3.");
+    await expect(evening).toBeFocused();
+    const drinks = list.getByRole("button", { name: /^Drinks reception/u });
+    await expect(drinks).toContainText("£12.50 a head");
+    await drinks.focus();
+    await page.keyboard.press("Enter");
+    // A price a head is for the event's 160 guests; nothing is typed again.
+    await expect(composer.getByTestId("quote-qty-3")).toHaveValue("160");
+    await expect(composer.getByTestId("quote-price-3")).toHaveValue("12.50");
+    await expect(list.getByRole("status").filter({ hasText: "Added" })).toHaveText("Added Drinks reception at £12.50 a head for 160 guests as line 4.");
+
+    // Other rooms' prices wait behind their own button.
+    const others = list.getByRole("button", { name: "Other rooms' prices" });
+    await others.click();
+    await expect(others).toHaveAttribute("aria-expanded", "true");
+    await expect(list.locator(".pr-prices__heading")).toHaveText(["Grand Hall", "Venue-wide", "Saloon"]);
+
+    // Read cleanly with the list open: contrast, names, focus and motion.
+    const result = await collectAccessibilityAudit(page, {
+      name: "proposals desk with the price list open", path: `/dashboard?view=proposals&proposal=${CRAWFORD}`, problems, maxFocusSteps: 16,
+    });
+    expectAccessibilityAuditClean(result);
+
+    // Escape closes the list and nothing else; focus goes back to its button.
+    await list.getByRole("button", { name: /^Exclusive Use of Full Venue/u }).focus();
+    await page.keyboard.press("Escape");
+    await expect(list).toHaveCount(0);
+    await expect(toggle).toBeFocused();
+    await expect(panel.getByRole("heading", { level: 2, name: "Crawford wedding proposal" })).toBeVisible();
+    // And from its button, opened again (read afresh) and closed at once.
+    await page.keyboard.press("Enter");
+    await expect(list.getByRole("button", { name: /^Grand Hall — Evening Event/u })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(list).toHaveCount(0);
+    await expect(toggle).toBeFocused();
+    await expect(panel.getByRole("heading", { level: 2, name: "Crawford wedding proposal" })).toBeVisible();
+
+    await expect(composer.getByTestId("composer-start")).toHaveText("Starts from version 1. Changed: the quote from £18,400 to £22,800.");
+    await composer.getByRole("button", { name: "Save version 2" }).click();
+    await expect.poll(() => emulator.quotes).toEqual([{ lines: 4, totalMinor: 2_280_000 }]);
+
+    // On a phone each price sits under its name, and nothing scrolls sideways.
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      if (await list.count() === 0) await toggle.click();
+      const first = list.getByRole("button", { name: /^Grand Hall — Evening Event/u });
+      await expect(first).toBeVisible();
+      const name = await first.locator(".pr-price__name").boundingBox();
+      const figure = await first.locator(".pr-price__figure").boundingBox();
+      if (name === null || figure === null) throw new Error("expected the price's name and figure on screen");
+      expect(figure.y, `at ${String(width)} px`).toBeGreaterThanOrEqual(name.y + name.height - 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `at ${String(width)} px`)
+        .toBeLessThanOrEqual(0);
+    }
   });
 
   test("on a phone the proposal replaces the ledger, Back to proposals returns to it, and nothing scrolls sideways", async ({ page }) => {

@@ -5,9 +5,9 @@ import { InventoryActorSchema, InventoryAssessmentResponseSchema, InventoryAsses
   InventoryRemedyPrepareResponseSchema, InventoryRemedyResponseSchema, InventoryRemedySchema,
   InventoryReservationApprovalInputSchema, InventoryReservationHistoryResponseSchema, InventoryReservationMutationResponseSchema,
   InventoryReservationReleaseSchema, InventoryReservationRevokeInputSchema, InventoryWindowSchema,
-  canAdjustVenueInventory, deterministicEventArchitectUuid, evaluateInventoryAvailability,
+  canAdjustVenueInventory, deterministicEventArchitectUuid, evaluateInventoryAvailability, inventoryAdjusterRole,
   type InventoryActor, type InventoryAssessment, type InventoryAssessmentItem, type InventoryCommitment,
-  type InventoryRemedyApproveInput, type InventoryRemedyPrepareInput, type InventoryReservationApprovalInput,
+  type InventoryRemedy, type InventoryRemedyApproveInput, type InventoryRemedyPrepareInput, type InventoryReservationApprovalInput,
   type InventoryReservationRelease, type InventoryReservationRevokeInput, type InventoryReservationSource, type InventoryStock, type InventoryWindow,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
@@ -21,7 +21,7 @@ type Loaded = Awaited<ReturnType<typeof loadInventorySources>>;
 function authorize(actor: InventoryActor, venueId: string) {
   const normalized = InventoryActorSchema.parse(actor);
   const scope = InventoryIdSchema.parse(venueId);
-  if (!canAdjustVenueInventory(normalized, scope)) throw new InventoryDecisionError(403, "FORBIDDEN", "Only this venue's administrator can approve inventory decisions");
+  if (!canAdjustVenueInventory(normalized, scope)) throw new InventoryDecisionError(403, "FORBIDDEN", "Only this venue's administrators and managers can decide its inventory");
   return { actor: normalized, venueId: scope };
 }
 
@@ -86,7 +86,7 @@ export function buildInventoryAssessment(loaded: Loaded, venueId: string, window
   const assessmentDigest = inventoryDecisionDigest({ ...digestFacts, approvedRequests });
   return InventoryAssessmentSchema.parse({ venueId, timeZone: loaded.timeZone, window, assessedAt: now,
     assessmentDigest, coverage, demandScope: "frozen_placed_catalogue_objects_only",
-    scopeDisclosure: "Counts cover verified placed catalogue objects only. Implied accessories are not included. Each room holds its item peak across its recorded footprint; the administrator confirms setup through return before approval.",
+    scopeDisclosure: "Counts cover verified placed catalogue objects only. Implied accessories are not included. Each room holds its item peak across its recorded footprint; the person approving confirms setup through return before approval.",
     issues, sources, items, remedies: loaded.remedies.filter((remedy) => inventoryWindowsOverlap(remedy.window, window))
       .map((remedy) => ({ ...remedy, check: inventoryDecisionDigest(remedy.window) !== inventoryDecisionDigest(window) ? "not_checked"
         : remedy.assessmentDigest === inventoryDecisionDigest({ ...digestFacts,
@@ -147,6 +147,30 @@ function currentAssessment(assessment: InventoryAssessment, expected: string): v
   if (assessment.coverage === "historical_unsupported") throw new InventoryDecisionError(400, "INVENTORY_HISTORY_UNSUPPORTED", "Historical inventory decisions are not supported");
 }
 
+// Each decision records who made it and the role they made it in (Blake, 29
+// September 2026: a venue's administrators and managers both decide). Built
+// here, apart from the transactions, so what is recorded is tested on its own.
+
+/** A reservation approved or revoked by `actor`: whoever decided an earlier
+ *  release, this one is theirs. */
+export function decidedRelease(actor: InventoryActor,
+  release: Omit<InventoryReservationRelease, "actorUserId" | "actorRole">): InventoryReservationRelease {
+  return InventoryReservationReleaseSchema.parse({ ...release, actorUserId: actor.userId, actorRole: inventoryAdjusterRole(actor) });
+}
+
+/** An internal request as `actor` prepares it, approved by no one yet. */
+export function preparedRemedy(actor: InventoryActor, remedy: Omit<InventoryRemedy,
+  "status" | "preparedBy" | "preparedByRole" | "approvedBy" | "approvedByRole" | "approvedAt">): InventoryRemedy {
+  return InventoryRemedySchema.parse({ ...remedy, status: "prepared", preparedBy: actor.userId, preparedByRole: inventoryAdjusterRole(actor),
+    approvedBy: null, approvedByRole: null, approvedAt: null });
+}
+
+/** The request approved by `actor`; who prepared it, in which role, stands. */
+export function approvedRemedy(prepared: InventoryRemedy, actor: InventoryActor, approvedAt: string): InventoryRemedy {
+  return InventoryRemedySchema.parse({ ...prepared, status: "approved", approvedBy: actor.userId,
+    approvedByRole: inventoryAdjusterRole(actor), approvedAt, check: "current" });
+}
+
 async function writeReservation(db: Database, actorInput: InventoryActor, venueInput: string,
   command: InventoryReservationApprovalInput | InventoryReservationRevokeInput, action: "approved" | "revoked") {
   const { actor, venueId } = authorize(actorInput, venueInput);
@@ -166,9 +190,9 @@ async function writeReservation(db: Database, actorInput: InventoryActor, venueI
     let release: InventoryReservationRelease;
     if (action === "revoked") {
       if (source.approvedRelease === null) throw new InventoryDecisionError(409, "INVENTORY_NO_ACTIVE_RELEASE", "This room has no approved reservation to revoke");
-      release = InventoryReservationReleaseSchema.parse({ ...source.approvedRelease, id: randomUUID(), action,
+      release = decidedRelease(actor, { ...source.approvedRelease, id: randomUUID(), action,
         revision: source.releaseRevision + 1, supersedesReleaseId: source.latestReleaseId,
-        actorUserId: actor.userId, recordedAt: new Date().toISOString(), reason: command.reason });
+        recordedAt: new Date().toISOString(), reason: command.reason });
     } else {
       if (["incomplete", "inactive"].includes(source.state) || source.occupiedWindow === null) {
         throw new InventoryDecisionError(409, "INVENTORY_SOURCE_INCOMPLETE", "Resolve the missing source evidence before approving this reservation");
@@ -177,10 +201,10 @@ async function writeReservation(db: Database, actorInput: InventoryActor, venueI
         || source.proposalImpact.some((item) => item.unavailableReason === "historical_unsupported")) {
         throw new InventoryDecisionError(400, "INVENTORY_HISTORY_UNSUPPORTED", "The full occupied footprint needs historical stock or demand evidence that is not supported. Review future occupied times without clipping the reservation.");
       }
-      release = InventoryReservationReleaseSchema.parse({ id: randomUUID(), venueId, eventId: source.eventId, spaceId: source.spaceId,
+      release = decidedRelease(actor, { id: randomUUID(), venueId, eventId: source.eventId, spaceId: source.spaceId,
         revision: source.releaseRevision + 1, action, supersedesReleaseId: source.latestReleaseId, sourceDigest: source.sourceDigest,
         occupiedWindow: source.occupiedWindow, occupiedWindowConfirmed: true, demands: source.demands, phases: source.phases,
-        bookings: input.bookings, actorUserId: actor.userId, recordedAt: new Date().toISOString(), reason: command.reason });
+        bookings: input.bookings, recordedAt: new Date().toISOString(), reason: command.reason });
     }
     await tx.insert(inventoryReservationReleases).values({ id: release.id, venueId, eventId: release.eventId, spaceId: release.spaceId,
       revision: release.revision, actorUserId: actor.userId, recordedAt: new Date(release.recordedAt), payload: release });
@@ -221,9 +245,9 @@ export async function prepareInventoryRemedy(db: Database, actorInput: Inventory
       && (command.kind !== "hire_request" || commitmentsFor(source).some((commitment) => shortageCommitments.has(commitment.id))))
       .flatMap((source) => source.approvedRelease === null ? [] : [{ releaseId: source.approvedRelease.id, eventId: source.eventId,
         eventName: source.eventName, spaceId: source.spaceId, spaceName: source.spaceName }]);
-    const remedy = InventoryRemedySchema.parse({ id: randomUUID(), venueId, kind: command.kind, assetDefinitionId: item.assetDefinitionId,
-      assetName: item.name, quantity: command.quantity, window: command.window, status: "prepared", assessmentDigest: assessment.assessmentDigest,
-      reason: command.reason, preparedBy: actor.userId, preparedAt: new Date().toISOString(), approvedBy: null, approvedAt: null,
+    const remedy = preparedRemedy(actor, { id: randomUUID(), venueId, kind: command.kind, assetDefinitionId: item.assetDefinitionId,
+      assetName: item.name, quantity: command.quantity, window: command.window, assessmentDigest: assessment.assessmentDigest,
+      reason: command.reason, preparedAt: new Date().toISOString(),
       effect: "internal_request_only", check: "current", evidence: { stockRevision: item.stockRevision, shortageSegments, affectedReservations,
         missingFacts: command.kind === "hire_request" ? ["Supplier, price and delivery/return feasibility are unconfirmed.", "No external supply has been booked."]
           : ["Recoverable quantity and inspection outcome are unconfirmed.", "No physical stock has been changed."] } });
@@ -245,7 +269,7 @@ export async function approveInventoryRemedy(db: Database, actorInput: Inventory
     const { assessment } = await assessmentIn(tx, venueId, prepared.window);
     currentAssessment(assessment, command.expectedAssessmentDigest);
     currentAssessment(assessment, prepared.assessmentDigest);
-    const remedy = InventoryRemedySchema.parse({ ...prepared, status: "approved", approvedBy: actor.userId, approvedAt: new Date().toISOString(), check: "current" });
+    const remedy = approvedRemedy(prepared, actor, new Date().toISOString());
     await tx.update(inventoryRemedyRequests).set({ payload: remedy }).where(eq(inventoryRemedyRequests.id, id));
     await recordCommand(tx, actor, venueId, "remedy_approve", command, remedy);
     return InventoryRemedyApproveResponseSchema.parse({ data: { remedy, replayed: false } });

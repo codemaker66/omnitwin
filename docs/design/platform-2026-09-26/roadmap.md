@@ -134,8 +134,8 @@ Where two audits scored the same surface differently, both scores are shown (for
 
 | Surface | Audience | Daily use | Conf. | Top three slog factors |
 |---|---|---|---|---|
-| Inventory workspace (`dashboard/inventory/InventoryPanel.tsx`) | Venue admins | Daily to weekly; stocktake bursts | 3–5 | (1) The catalogue hides behind an unlabelled count (`:31,77-79`). (2) Rows and tiles take the spring hover. (3) The search border measures 1.49:1 (`InventoryStyle.css:20`), and Georgia is used instead of Newsreader (`:17`). |
-| Reservation impact plane (`InventoryImpact.tsx`) | Venue admins | Every item opened | 3 | (1) The numbers vanish after every save (`InventoryDemand.tsx:80`; `InventoryPanel.tsx:73`). (2) Changing the period means a disclosure plus an Assess round-trip. (3) Captions show UTC offsets and IANA zone names (`inventory-window.ts:87-90`). |
+| Inventory workspace (`dashboard/inventory/InventoryPanel.tsx`) | Venue admins and managers | Daily to weekly; stocktake bursts | 3–5 | (1) The catalogue hides behind an unlabelled count (`:31,77-79`). (2) Rows and tiles take the spring hover. (3) The search border measures 1.49:1 (`InventoryStyle.css:20`), and Georgia is used instead of Newsreader (`:17`). |
+| Reservation impact plane (`InventoryImpact.tsx`) | Venue admins and managers | Every item opened | 3 | (1) The numbers vanish after every save (`InventoryDemand.tsx:80`; `InventoryPanel.tsx:73`). (2) Changing the period means a disclosure plus an Assess round-trip. (3) Captions show UTC offsets and IANA zone names (`inventory-window.ts:87-90`). |
 | Stock correction pane (`InventoryEditor.tsx`) | Venue admins | Bursts of dozens | 3 | (1) Plain text quantity inputs, no steppers (`:31-36`). (2) The "serviceable" figure is hidden inside a disclosure (`:206-208`). (3) History sits three disclosures deep (`InventoryReceipt.tsx:125,135`). |
 | Demand and decisions | Venue admins | Weekly | 1 | (1) A wall of bordered cards, not sorted by shortage (`InventoryDemandEvidence.tsx:19-35`). (2) Jargon and raw enums (`:51-57,73`). (3) The same caveat repeated five times. |
 | Review drawers (reservations, requests) | Venue admins | Several a week | 2 | (1) A modal drawer replaces the side-by-side context. (2) A mandatory reason plus checkbox (`InventoryReservationReview.tsx:173-180`). (3) Receipts lead with UUIDs. |
@@ -766,12 +766,17 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
     shows, or that the link no longer opens.
   - It stamps nothing.
 - "Add from price list" (`api/pricing.ts:66-78`).
+  Done on 29 September (`PriceList.tsx`, `price-list-format.ts`): beside Add a line, the venue's prices for the
+  event, its room's first, each added as a line with its name, a quantity from the event and its price; a price
+  an hour asks for the hours. What cannot be offered is said. A line records no price-list entry yet (a saved
+  version's quote keeps none), and prices are copied as listed until A3 settles VAT. Live on `815e12e8`.
 - Link the deal, enquiry and configuration; derive `configurationId` on the server.
   Done on 28 September (`services/proposal-links.ts`). A proposal made from a deal carries the enquiry the deal
   came from and that enquiry's own layout while it is live at the venue; links that contradict each other are
   refused, never mixed. A version's layout is the proposal's own, drawn by the server. The Proposals panel says
-  which layout goes out ("Their own, Grand Hall", a room, "Removed" or "None"). Choosing another layout, or
-  leaving it out, waits on A10. Live on 28 September (`1ebcc49c`).
+  which layout goes out ("Their own, Grand Hall", a room, "Removed" or "None"). Live on 28 September
+  (`1ebcc49c`). Since 29 September staff may leave the client's layout out and include it again (A10's
+  default, live on `db66bebe`); sending a layout the venue drew comes later.
 - Notify the owner of every client decision.
   Done on 28 September (`services/client-answer-notice.ts`). Every acceptance, request for changes and
   comment tells every commercial role at the venue, the proposal's owner among them, with or without an
@@ -825,6 +830,11 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   It shipped in three steps: 0082, then the writers and 0083, then the reading side (`a76e2ee1`). An answer on a version since replaced is refused, and the page reads it again and
   keeps what was typed. The accepting name is kept with the acceptance itself, so a comment cannot plant
   one.
+
+  Who wrote each comment is recorded when it is written (`proposal_comments.author_type`, migration 0084), no
+  longer read from its link, which a deleted link would have turned into the venue team's words. The staff desk
+  and the client's page both label a client who signs "Venue team" as the client. Live on `60d97c2b` (receipt
+  36642391351).
 
 **Acceptance**
 - **Task benchmark:** from an approved enquiry to a sent proposal takes 6 or fewer deliberate actions, with no retyping of date, guests or room. Measured before and after.
@@ -1293,12 +1303,14 @@ Grouped by theme, with the themes that block the most work first. Every question
 **Answered on 29 September**, through the question form:
 - A10 took the default. The client's own layout goes with a proposal, staff may leave it out, venue-drawn layouts
   come later, and the client page's closing line becomes "Numbers and layout are planning estimates; the events
-  team confirms them."
+  team confirms them." Built the same day and live on `db66bebe`: the desk's "Leave their layout out" and
+  "Include their … layout", and the new closing line.
 - A client's question on the proposal page reaches the team as written. A request for changes and a note with an
   acceptance are the client's own words as well, so they are treated the same (an extension of the answer). The
   claim guard stays on the venue's words.
-- Managers, as well as venue admins, change inventory stock. Each change records who made it and their role (part
-  of C2).
+- Managers, as well as venue admins, keep the inventory: they change stock, approve or revoke equipment
+  reservations, and prepare and approve internal requests. Each records who made it and their role (part of C2).
+  Built the same day, live on `db66bebe`.
 
 ### A. What we build first, and how money moves (blocks Tier A and X1)
 
