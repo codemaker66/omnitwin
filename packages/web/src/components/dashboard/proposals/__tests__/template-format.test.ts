@@ -4,6 +4,7 @@ import type { PricingRule } from "../../../../api/pricing.js";
 import { EMPTY_DRAFT, type ComposerDraft } from "../proposals-desk-format.js";
 import {
   applyTemplate,
+  hasKeepableWords,
   hasWords,
   occasionKeyOf,
   suggestedTemplateName,
@@ -377,6 +378,23 @@ describe("saving the composer as a template", () => {
     expect(kept.said).toContain("Dinner is priced differently since it was added, so its quantity is not kept.");
   });
 
+  it("lists a line repriced from a head to an hour by its name alone, keeping no hours", () => {
+    const hourly = RULES.map((one) => (one.id === DINNER ? { ...one, type: "per_hour" as const, minGuests: null } : one));
+    const listed = { pricingRuleId: DINNER, ruleType: "per_head", description: "Dinner" } as const;
+    const kept = templateFromDraft({ ...EMPTY_DRAFT, lines: [{ description: "Dinner", quantity: "120", pounds: "65", listed }] }, hourly, EVENT, GRAND_HALL, roomName);
+    expect(kept.lines).toEqual([priceList(DINNER, "Dinner", "per_hour", null)]);
+    expect(kept.said).toContain("From the price list, priced each time it is used: Dinner.");
+  });
+
+  it("says a line with a price but no description is not kept, and offers nothing to keep from it alone", () => {
+    const unnamed = { description: "", quantity: "1", pounds: "450" };
+    const kept = templateFromDraft({ ...EMPTY_DRAFT, message: "Dear Elaine,", lines: [unnamed] }, RULES, EVENT, GRAND_HALL, roomName);
+    expect(kept.lines).toEqual([]);
+    expect(kept.said).toEqual(["The message.", "Line 1 has no description, so it is not kept."]);
+    expect(hasKeepableWords({ ...EMPTY_DRAFT, lines: [unnamed] })).toBe(false);
+    expect(hasKeepableWords({ ...EMPTY_DRAFT, message: "Dear Elaine,", lines: [unnamed] })).toBe(true);
+  });
+
   it("says when the hours kept are fewer than the entry's least, which using it raises them to", () => {
     const listed = { pricingRuleId: BAR, ruleType: "per_hour", description: "Late bar" } as const;
     const kept = templateFromDraft({ ...EMPTY_DRAFT, lines: [{ description: "Late bar", quantity: "2", pounds: "180", listed }] }, RULES, EVENT, GRAND_HALL, roomName);
@@ -401,7 +419,7 @@ describe("saving the composer as a template", () => {
     expect(templateFromDraft(priced, RULES, EVENT, null, roomName).refusal)
       .toBe("Grand Hall — Evening Event is priced for the Grand Hall, so this template needs a room.");
     expect(templateFromDraft(EMPTY_DRAFT, RULES, EVENT, null, roomName).refusal)
-      .toBe("There is nothing to keep yet. Write the message or add a line first.");
+      .toBe("There is nothing to keep yet. Write the message, or a line with its description, first.");
     const many = Array.from({ length: 41 }, (_, index) => ({ description: `Line ${String(index + 1)}`, quantity: "1", pounds: "1" }));
     expect(templateFromDraft({ ...EMPTY_DRAFT, lines: many }, RULES, EVENT, GRAND_HALL, roomName).refusal)
       .toBe("A template keeps up to 40 lines; this quote has 41.");

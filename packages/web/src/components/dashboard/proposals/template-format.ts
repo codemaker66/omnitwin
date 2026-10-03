@@ -393,9 +393,14 @@ export function templateFromDraft(
   const differs: string[] = [];
   const roomPrices: PricingRule[] = [];
   const lines: ProposalTemplateLine[] = [];
-  for (const line of draft.lines) {
+  const unnamed: number[] = [];
+  for (const [index, line] of draft.lines.entries()) {
     const description = line.description.trim();
-    if (description === "") continue;
+    // A line with a price or quantity but no words yet cannot be kept, and is said.
+    if (description === "") {
+      if (lineHasWords(line)) unnamed.push(index + 1);
+      continue;
+    }
     const quantity = Number(line.quantity);
     const whole = Number.isInteger(quantity) && quantity >= 1 ? quantity : null;
     const rule = line.listed === undefined ? carriedEntry(line, rules, event)
@@ -428,12 +433,15 @@ export function templateFromDraft(
     ...(draft.message.trim() === "" ? [] : ["The message."]),
     ...(listed.length > 0 ? [`From the price list, priced each time it is used: ${unique(listed).join("; ")}.`] : []),
     ...(typed.length > 0 ? [`Typed, with the price entered each time: ${listNames(typed)}.`] : []),
+    ...(unnamed.length > 0
+      ? [`${unnamed.length === 1 ? "Line" : "Lines"} ${listNames(unnamed.map(String))} ${unnamed.length === 1 ? "has" : "have"} no description, so ${unnamed.length === 1 ? "it is" : "they are"} not kept.`]
+      : []),
     ...differs,
     ...(draft.capacityNote.trim() === "" ? [] : ["The capacity note is not kept."]),
   ]);
   const firstRoomPrice = roomPrices[0];
   const refusal = lines.length === 0 && draft.message.trim() === ""
-    ? "There is nothing to keep yet. Write the message or add a line first."
+    ? "There is nothing to keep yet. Write the message, or a line with its description, first."
     : lines.length > MAX_TEMPLATE_LINES
       ? `A template keeps up to ${String(MAX_TEMPLATE_LINES)} lines; this quote has ${String(lines.length)}.`
       : firstRoomPrice !== undefined
@@ -456,6 +464,12 @@ function roomPriceWords(rule: PricingRule, roomName: (spaceId: string) => string
  *  version or typed here. */
 export function hasWords(draft: ComposerDraft): boolean {
   return draft.message.trim() !== "" || draft.lines.some(lineHasWords);
+}
+
+/** Whether the composer holds anything a template can keep: a message, or a
+ *  line with words. A line with only a price is written, but not keepable. */
+export function hasKeepableWords(draft: ComposerDraft): boolean {
+  return draft.message.trim() !== "" || draft.lines.some((line) => line.description.trim() !== "");
 }
 
 /** What a template would replace: "The composer already has a message and

@@ -17,7 +17,7 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { venueSince } from "../enquiries/enquiry-desk-format.js";
 import type { ComposerDraft } from "./proposals-desk-format.js";
 import { focusIsFree } from "./TemplatePicker.js";
-import { hasWords, occasionKeyOf, suggestedTemplateName, templateFromDraft, type TemplateEvent } from "./template-format.js";
+import { hasKeepableWords, occasionKeyOf, suggestedTemplateName, templateFromDraft, type TemplateEvent } from "./template-format.js";
 
 // ---------------------------------------------------------------------------
 // Save as template (roadmap X1; Tier B #16), beside Start again. The form
@@ -277,7 +277,7 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
   const theirs = question === null ? null : question.kind === "taken" ? question.existing : question.current;
   return (
     <>
-      {(hasWords(draft) || open) && (
+      {(hasKeepableWords(draft) || open) && (
         <button type="button" className="enq-quiet" ref={toggleRef} data-testid="template-save-toggle" aria-expanded={open}
           aria-controls={open ? formId : undefined} aria-disabled={disabled && !open} onClick={toggle} onKeyDown={open ? onKeyDown : undefined}>
           Save as template
