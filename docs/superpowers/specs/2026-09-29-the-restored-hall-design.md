@@ -246,3 +246,11 @@ occupancy through `windows.volumes_from_occupancy`).
 package holds the volumes, their frames, the horizons, the glass table and the sunlit-area table), 4.3 (the sun term
 and the floor), 6 (the compute pass against its CPU reference) and 8 (package size and the cost of the sun). The
 wording of 4.4 and 7 follows them.
+
+## Amendment (3 October): R1 polished
+
+Blake decided on 3 October that the first relit preview waits until R1 is fully polished: surface skins for the large
+flat surfaces (drawn like the floor, with real sheen), the frieze band recovered without a site day, a clutter toggle, crisp
+lamps and cinematic light (live gradual time, smooth time-lapse scrubbing, real shadows, eye adaptation, reflections, sun
+shafts). R1 becomes four plans (R1a bake, R1b browser, R1c skins, R1d cinematic light). The design is
+[R1 polished](2026-10-03-r1-polished-design.md); this document stays the parent design.
