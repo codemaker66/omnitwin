@@ -187,7 +187,7 @@ index 0ef0bd8442972a7209eb0adb6d14188c95d84278..341ee41aa68f8b2122722a2902a79fad
  
  		if ( this._webGLBuffersEnabled === true ) return;
 diff --git a/examples/jsm/objects/GaussianSplat.js b/examples/jsm/objects/GaussianSplat.js
-index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59af370b81 100644
+index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..c28ed6965b03d0d907d84416bf9700b003ee7375 100644
 --- a/examples/jsm/objects/GaussianSplat.js
 +++ b/examples/jsm/objects/GaussianSplat.js
 @@ -1,16 +1,19 @@
@@ -913,12 +913,12 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59
 +			const splatIndex = sort.orderRead.element( instanceIndex ).toVar( 'splatIndex' );
 +			const center = buffers.centerRead.element( splatIndex ).xyz.toVar( 'center' );
 +			const rgb = vec3( 0 ).toVar( 'sphericalHarmonicsContribution' );
-+
-+			applySphericalHarmonics( rgb, center, localCameraPosition, splatIndex, buffers, directionNode );
-+			buffers.sphericalHarmonicsContributionWrite.element( splatIndex ).assign( vec4( rgb, 0 ) );
  
 -		applySphericalHarmonics( rgb, center, localCameraPosition, splatIndex, buffers );
 -		buffers.sphericalHarmonicsContributionWrite.element( splatIndex ).assign( vec4( rgb, 0 ) );
++			applySphericalHarmonics( rgb, center, localCameraPosition, splatIndex, buffers, directionNode );
++			buffers.sphericalHarmonicsContributionWrite.element( splatIndex ).assign( vec4( rgb, 0 ) );
++
 +		} );
  
  	} )().compute( buffers.count, [ WORKGROUP_SIZE ] ).setName( 'GaussianSplatSphericalHarmonics' );
@@ -952,7 +952,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59
  		const rgb = color.rgb.toVar( 'splatRgb' );
  
  		if ( buffers.sphericalHarmonicsDegree > 0 ) {
-@@ -898,17 +1268,19 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -898,17 +1268,18 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  
  			} else {
  
@@ -964,7 +964,6 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59
  		}
  
 -		splatUv.assign( positionGeometry.xy );
-+		splatUv.assign( corner );
  
  		const viewCenter4 = highpModelViewMatrix.mul( vec4( center, 1 ) ).toVar( 'viewCenter4' );
  		const viewCenter = viewCenter4.xyz.toVar( 'viewCenter' );
@@ -974,7 +973,7 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59
  
  		const m = highpModelViewMatrix;
  		const r0 = vec3( m[ 0 ].x, m[ 1 ].x, m[ 2 ].x ).toVar( 'r0' );
-@@ -940,6 +1312,16 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -940,6 +1311,16 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  		const j02 = focal.x.mul( viewCenter.x ).mul( invZ2 ).toVar( 'j02' );
  		const j12 = focal.y.mul( viewCenter.y ).mul( invZ2 ).toVar( 'j12' );
  
@@ -991,25 +990,32 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59
  		const aBase = j00.mul( j00 ).mul( c00 )
  			.add( j00.mul( j02 ).mul( c02 ).mul( 2 ) )
  			.add( j02.mul( j02 ).mul( c22 ) )
-@@ -957,9 +1339,10 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -957,9 +1338,17 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  		const c = cBase.add( KERNEL_2D_SIZE ).toVar( 'cov2dC' );
  		const detBase = aBase.mul( cBase ).sub( b.mul( b ) ).toVar( 'detBase' );
  		const det = a.mul( c ).sub( b.mul( b ) ).toVar( 'det' );
 -		const alphaScale = sqrt( max( detBase.div( max( det, 0.000001 ) ), 0 ) ).toVar( 'alphaScale' );
 +		const alphaScale = ( antialias ? sqrt( max( detBase.div( max( det, 0.000001 ) ), 0 ) ) : float( 1 ) ).toVar( 'alphaScale' );
- 
--		splatColor.assign( vec4( rgb.clamp( 0, 1 ), color.a.mul( alphaScale ) ) );
++
 +		const displayRgb = rgb.clamp( 0, 1 );
 +		splatColor.assign( vec4( colorSpace === NoColorSpace ? displayRgb : colorSpaceToWorking( vec4( displayRgb, 1 ), colorSpace ).rgb, color.a.mul( alphaScale ) ) );
  
+-		splatColor.assign( vec4( rgb.clamp( 0, 1 ), color.a.mul( alphaScale ) ) );
++		// Fragments below 1/255 opacity are not blended, as in the reference rasterizer, so the
++		// quad only reaches that contour: alpha * exp(-r^2/2) = 1/255 at r = sqrt(2 ln(255 alpha)).
++		const splatAlpha = color.a.mul( alphaScale ).toVar( 'splatAlpha' );
++		const contourScale = min( max( splatAlpha.mul( 255 ).log(), 0 ).mul( 2 ).sqrt().div( kernelRadius ), 1 ).toVar( 'contourScale' );
++		const contourCorner = corner.mul( contourScale ).toVar( 'contourCorner' );
++		splatUv.assign( contourCorner );
+ 
  		const halfTrace = a.add( c ).mul( 0.5 ).toVar( 'halfTrace' );
  		const radius = sqrt( max( a.sub( c ).mul( 0.5 ).pow2().add( b.mul( b ) ), 0.0000001 ) ).toVar( 'radius' );
-@@ -978,13 +1361,15 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -978,13 +1367,15 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  
  		const scale1 = min( sqrt( lambda1 ), MAX_SCREEN_SPACE_SPLAT_SIZE ).toVar( 'scale1' );
  		const scale2 = min( sqrt( lambda2 ), MAX_SCREEN_SPACE_SPLAT_SIZE ).toVar( 'scale2' );
 -		const offsetPixels = axis1.mul( positionGeometry.x ).mul( scale1 ).add( axis2.mul( positionGeometry.y ).mul( scale2 ) ).toVar( 'offsetPixels' );
-+		const offsetPixels = axis1.mul( corner.x ).mul( scale1 ).add( axis2.mul( corner.y ).mul( scale2 ) ).toVar( 'offsetPixels' );
++		const offsetPixels = axis1.mul( contourCorner.x ).mul( scale1 ).add( axis2.mul( contourCorner.y ).mul( scale2 ) ).toVar( 'offsetPixels' );
  		const offsetNdc = offsetPixels.mul( 2 ).div( cameraViewport.zw ).toVar( 'offsetNdc' );
  		const clip = centerClip.add( vec4( offsetNdc.mul( centerClip.w ), 0, 0 ) ).toVar( 'clip' );
  
@@ -1017,12 +1023,12 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59
  
 -		If( viewCenter.z.greaterThanEqual( - 0.01 )
 +		If( inRange.not()
-+			.or( color.a.lessThanEqual( 0.002 ) )
++			.or( splatAlpha.lessThan( 1 / 255 ) )
 +			.or( isOrthographic.not().and( viewCenter.z.greaterThanEqual( - 0.01 ) ) )
  			.or( centerClip.z.lessThan( centerClip.w.negate() ) )
  			.or( centerClip.z.greaterThan( centerClip.w ) )
  			.or( centerClip.x.lessThan( clipLimit.negate() ) )
-@@ -1000,14 +1385,16 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
+@@ -1000,20 +1391,24 @@ function createMaterialNodes( buffers, sort, localCameraPosition ) {
  
  	} )();
  
@@ -1037,7 +1043,16 @@ index 06d37fe6af583cf8cbdf8bd93565403bc3b94691..7b73205f431bd8d1575b2828e2064e59
  		const r2 = dot( splatUv, splatUv ).toVar( 'r2' );
  
 -		If( r2.greaterThan( 4 ), () => {
-+		If( r2.greaterThan( kernelRadius * kernelRadius ), () => {
++		const alpha = exp( r2.mul( - 0.5 ) ).mul( splatColor.a ).toVar( 'fragmentAlpha' );
++
++		If( r2.greaterThan( kernelRadius * kernelRadius ).or( alpha.lessThan( 1 / 255 ) ), () => {
  
  			Discard();
+ 
+ 		} );
+ 
+-		return vec4( splatColor.rgb, exp( r2.mul( - 0.5 ) ).mul( splatColor.a ) );
++		return vec4( splatColor.rgb, alpha );
+ 
+ 	} )();
  
