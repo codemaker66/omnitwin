@@ -4108,19 +4108,24 @@ describe("proposal templates", () => {
       const panel = within(element);
       await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
       const send = (): HTMLButtonElement => panel.getByTestId<HTMLButtonElement>("send-open");
+      const withdraw = (): HTMLButtonElement => panel.getByTestId<HTMLButtonElement>("withdraw-button");
       expect(send().disabled).toBe(false);
+      expect(withdraw().disabled).toBe(false);
       fireEvent.click(panel.getByTestId("template-toggle"));
       fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
       fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Add its lines" }));
       await waitFor(() => { expect(send().disabled).toBe(true); });
+      expect(withdraw().disabled).toBe(true);
       await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
       await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
       await waitFor(() => { expect(send().disabled).toBe(false); });
+      expect(withdraw().disabled).toBe(false);
 
       mocks.removeProposalTemplate.mockReturnValueOnce(removing.promise);
       fireEvent.click(panel.getByTestId("template-toggle"));
       fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
       await waitFor(() => { expect(send().disabled).toBe(true); });
+      expect(withdraw().disabled).toBe(true);
       stored = [];
       await act(async () => { removing.resolve(undefined); await Promise.resolve(); });
       await panel.findByTestId("template-undo");
@@ -4138,6 +4143,7 @@ describe("proposal templates", () => {
       const form = within(await openSave(element));
       fireEvent.click(form.getByTestId("template-save-submit"));
       await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(1); });
+      await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("withdraw-button").disabled).toBe(true); });
       // A colleague sends it meanwhile, and the booker comes back to the page: the composer closes.
       existing = [proposal({ status: "sent", currentVersion: 1, sentAt: "2026-10-02T09:00:00.000Z" })];
       act(() => { document.dispatchEvent(new Event("visibilitychange")); });
@@ -4201,6 +4207,35 @@ describe("proposal templates", () => {
       expect(replace.getAttribute("aria-disabled")).toBe("true");
       fireEvent.click(replace);
       expect(mocks.replaceProposalTemplate).not.toHaveBeenCalled();
+    });
+
+    it("offers Save as template only for what a template keeps, and keeps its button for focus when that goes", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("add-quote-line"));
+      fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: "450" } });
+      expect(panel.queryByTestId("template-save-toggle")).toBeNull();
+      fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Dear Elaine," } });
+      const form = within(await openSave(element));
+      expect(form.getByTestId("template-kept").textContent).toContain("Line 1 has no description, so it is not kept.");
+      fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "" } });
+      const cancel = form.getByRole("button", { name: "Cancel" });
+      cancel.focus();
+      fireEvent.click(cancel);
+      const toggle = panel.getByTestId("template-save-toggle");
+      expect(document.activeElement).toBe(toggle);
+      expect(toggle.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(toggle);
+      expect(panel.queryByTestId("template-save")).toBeNull();
+      // The window losing focus blurs it while it is still focused: it stays.
+      fireEvent.blur(toggle);
+      expect(panel.getByTestId("template-save-toggle")).toBe(toggle);
+      // Focus moving on within the page takes it away.
+      panel.getByTestId("composer-message").focus();
+      await waitFor(() => { expect(panel.queryByTestId("template-save-toggle")).toBeNull(); });
+      fireEvent.change(panel.getByTestId("quote-desc-0"), { target: { value: "Piper" } });
+      expect(panel.getByTestId("template-save-toggle")).toBeDefined();
     });
 
     it("offers a name in the event's own words for an occasion typed in free", async () => {

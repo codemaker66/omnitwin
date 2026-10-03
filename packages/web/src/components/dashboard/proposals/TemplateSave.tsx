@@ -28,9 +28,12 @@ import { hasKeepableWords, occasionKeyOf, suggestedTemplateName, templateFromDra
 // read afresh each time the form opens, so a price is never said to differ
 // from the list's when the list gave it. A name already used offers to
 // replace that template; a template a colleague changed meanwhile is never
-// overwritten unseen. A save on its way is never dropped: the form waits for
-// its answer, the composer holds what would replace it meanwhile, and what
-// came of it is said.
+// overwritten unseen. A save on its way is not dropped while the booker
+// stays: the form waits for its answer, the composer holds what would
+// replace it meanwhile, and what came of it is said. If the composer closes
+// under it (the proposal is sent from elsewhere, or the booker leaves), the
+// answer is not said, as with every answer on the desk; Start from a
+// template shows whether it was kept.
 // ---------------------------------------------------------------------------
 
 type RulesRead =
@@ -103,6 +106,8 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
   // An answer draws a new question or a refusal; focus follows it there when
   // the button pressed has gone.
   const [answeredCount, setAnsweredCount] = useState(0);
+  // Whether the button keeps its place after the form closes, while it has focus.
+  const [lingering, setLingering] = useState(false);
   const formId = useId();
   const titleId = useId();
   const keptId = useId();
@@ -152,15 +157,20 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
     setOpen(false);
     setSaid(words);
     if (free) toggleRef.current?.focus();
+    // The button that takes focus back stays while it has it, even with
+    // nothing left to keep, so focus never falls to the page.
+    setLingering(free || document.activeElement === toggleRef.current);
   };
+  const keepable = hasKeepableWords(draft);
   const toggle = (): void => {
     if (open) {
       // A save on its way is answered before the form closes.
       if (!saving) close("");
       return;
     }
-    // Held, it stays where focus can rest, and opens once the work it waits for is done.
-    if (disabled) return;
+    // Held, it stays where focus can rest, and opens once the work it waits
+    // for is done; with nothing to keep, it does not open.
+    if (disabled || !keepable) return;
     setOpen(true);
     setSaid("");
     setPhase({ kind: "editing" });
@@ -277,9 +287,13 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
   const theirs = question === null ? null : question.kind === "taken" ? question.existing : question.current;
   return (
     <>
-      {(hasKeepableWords(draft) || open) && (
+      {(keepable || open || lingering) && (
         <button type="button" className="enq-quiet" ref={toggleRef} data-testid="template-save-toggle" aria-expanded={open}
-          aria-controls={open ? formId : undefined} aria-disabled={disabled && !open} onClick={toggle} onKeyDown={open ? onKeyDown : undefined}>
+          aria-controls={open ? formId : undefined} aria-disabled={(disabled || !keepable) && !open} onClick={toggle}
+          onKeyDown={open ? onKeyDown : undefined}
+          // A blur while it is still the focused element is the window or tab
+          // losing focus; the button stays, so focus is on it on return.
+          onBlur={(event) => { if (document.activeElement !== event.currentTarget) setLingering(false); }}>
           Save as template
         </button>
       )}
