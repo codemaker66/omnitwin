@@ -1,4 +1,4 @@
-/** Sort-time culling in the patched native addon (T-640).
+/** Sort-time culling in the patched native addon (T-644).
  * A WebGPU sort leaves out splats the vertex stage would discard and draws the
  * rest indirectly. These tests pin the plane derivation, the margin arithmetic
  * and the forced re-sort triggers with the actual addon and intercepted GPU
