@@ -260,6 +260,13 @@ export interface QuoteLineDraft {
 
 export const EMPTY_LINE: QuoteLineDraft = { description: "", quantity: "1", pounds: "" };
 
+/** Whether the booker has written anything in a line: its words, a price,
+ *  or a quantity other than a new line's. */
+export function lineHasWords(line: QuoteLineDraft): boolean {
+  const quantity = line.quantity.trim();
+  return line.description.trim() !== "" || line.pounds.trim() !== "" || (quantity !== "" && quantity !== EMPTY_LINE.quantity);
+}
+
 export interface ComposerDraft {
   readonly message: string;
   readonly capacityNote: string;

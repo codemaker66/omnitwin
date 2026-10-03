@@ -10,7 +10,7 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { commentAuthor } from "../../proposal/proposal-document-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, checkIsFor, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
+  EMPTY_LINE, checkIsFor, lineHasWords, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
   layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, savedLayoutWords, type ComposerDraft,
   type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
@@ -187,6 +187,9 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
   const start = composerStart(proposal, props.latest);
   const formRef = useRef<FormOnScreen | null>(null);
   const focusKeptRef = useRef(false);
+  // A template being priced, saved, removed or brought back holds what would
+  // close the composer (Send, Withdraw), so what comes of it is put in or said.
+  const [templateWork, setTemplateWork] = useState(false);
   // A composer form says, as it goes, what had focus in it, if anything.
   // Focus went with it only once that has left the page: React's development
   // rehearsal of a form going leaves everything where it was.
@@ -298,8 +301,8 @@ export function ProposalPanel(props: ProposalPanelProps): ReactElement {
           </div>
         )}
 
-        <NextStep {...props} />
-        {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onGoing={onFormGoing} />}
+        <NextStep {...props} templateWork={templateWork} />
+        {start === "closed" ? <KeptDraft {...props} holder={null} /> : <Composer {...props} start={start} report={report} onGoing={onFormGoing} onTemplateWork={setTemplateWork} />}
         <LatestQuote {...props} />
         <Conversation {...props} />
         <History {...props} />
@@ -398,7 +401,7 @@ function Facts({ proposal, nowMs, check, working, failure, onLayout, headingRef 
 // The one next step, asked first where it cannot be taken back
 // ---------------------------------------------------------------------------
 
-function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransition }: ProposalPanelProps): ReactElement {
+function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransition, templateWork }: ProposalPanelProps & { readonly templateWork: boolean }): ReactElement {
   const headingId = useId();
   const questionId = useId();
   const [asking, setAsking] = useState<"link" | "withdraw" | null>(null);
@@ -407,7 +410,7 @@ function NextStep({ proposal, shareUrl, working, failure, onMakeLink, onTransiti
   // A version saved since the one the client's link shows goes with the link.
   const sendsNewer = sent && proposal.sentVersion !== null && proposal.sentVersion !== proposal.currentVersion;
   const canLink = LINKABLE.includes(proposal.status) && proposal.currentVersion >= 1;
-  const busy = working !== null;
+  const busy = working !== null || templateWork;
 
   // Once the link is made, focus goes to copying it, the booker's next step,
   // unless they have moved on meanwhile.
@@ -546,6 +549,8 @@ interface ComposerProps extends ProposalPanelProps {
   readonly report: ReportForm;
   /** The form is going: what had focus in it, or null. */
   readonly onGoing: (focused: Element | null) => void;
+  /** Whether template work is on its way in the form, so the panel holds what would close it. */
+  readonly onTemplateWork: (busy: boolean) => void;
 }
 
 type EventRead =
@@ -638,7 +643,7 @@ function KeptDraft({ proposal, keptDrafts, failure, onDiscardKept, holder }: Pro
       {!composing && failure?.where === "version" && <p className="enq-confirm__error" role="alert">{failure.message}</p>}
       <p className="enq-next__hint">What you wrote is kept here to copy.</p>
       {shown.map(({ draft, composer, why }) => {
-        const lines = draft.lines.filter((line) => line.description.trim() !== "");
+        const lines = draft.lines.filter(lineHasWords);
         return (
           <div key={composer} className="pr-kept__one">
             {why !== null && <p className="enq-next__hint" data-testid="kept-version-why">{why}</p>}
@@ -647,7 +652,7 @@ function KeptDraft({ proposal, keptDrafts, failure, onDiscardKept, holder }: Pro
             {lines.length > 0 && (
               <ul className="pr-kept__lines">
                 {lines.map((line, index) => (
-                  <li key={index}>{line.description} · {line.quantity} × £{line.pounds === "" ? "0" : line.pounds}</li>
+                  <li key={index}>{line.description.trim() === "" ? "A line with no description" : line.description} · {line.quantity} × £{line.pounds === "" ? "0" : line.pounds}</li>
                 ))}
               </ul>
             )}
@@ -670,7 +675,7 @@ let composers = 0;
 function ComposerForm(props: ComposerFormProps): ReactElement {
   const {
     proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain, seeded, nowMs,
-    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onGoing, onSeed, report,
+    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onGoing, onSeed, onTemplateWork, report,
   } = props;
   const layoutLine = composerLayoutLine(proposal);
   const headingId = useId();
@@ -849,6 +854,10 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const [pickerBusy, setPickerBusy] = useState(false);
   const [templateSaving, setTemplateSaving] = useState(false);
   const held = saving || working !== null || pickerBusy || templateSaving;
+  useEffect(() => { onTemplateWork(pickerBusy || templateSaving); }, [onTemplateWork, pickerBusy, templateSaving]);
+  useEffect(() => () => { onTemplateWork(false); }, [onTemplateWork]);
+  // Work that would replace this form; a reply or a layout choice does not.
+  const replacing = working !== null && working !== "reply" && working !== "layout";
   const startFromTemplate = (template: ProposalTemplate, rules: readonly PricingRule[], mode: ApplyMode, focusFrom: Element | null): void => {
     if (templateEvent === null || saving) return;
     const words = draftNow.current;
@@ -894,7 +903,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
         {notCarried !== null && <p className="enq-next__hint" id={notCarriedId} data-testid="composer-not-carried">{notCarried}</p>}
 
         <TemplatePicker venueId={proposal.venueId} event={templateEvent} eventStatus={eventRead.status} onNeedEvent={needEvent}
-          draft={draft} disabled={saving || working !== null || templateSaving} nowMs={nowMs} onUse={startFromTemplate} onBusy={setPickerBusy} />
+          draft={draft} disabled={replacing || templateSaving} nowMs={nowMs} onUse={startFromTemplate} onBusy={setPickerBusy} />
         <div className="pr-template-said" role="status" data-testid="template-said">
           {templateSaid !== null && (
             <>
@@ -970,7 +979,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
             </button>
           )}
           <TemplateSave venueId={proposal.venueId} event={templateEvent} eventStatus={eventRead.status} onNeedEvent={needEvent}
-            rooms={rooms} draft={draft} disabled={saving || working !== null || pickerBusy} nowMs={nowMs} onSaving={setTemplateSaving} />
+            rooms={rooms} draft={draft} disabled={replacing || pickerBusy} nowMs={nowMs} onSaving={setTemplateSaving} />
         </div>
       </section>
     </>

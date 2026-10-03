@@ -11,7 +11,7 @@ import type { PricingRule } from "../../../api/pricing.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
 import { venueLongDate } from "../../proposal/proposal-document-format.js";
 import { leftOutWords, priceEntry, priceForEvent, type PriceListEvent, type PriceListOffer, type WhyLeftOut } from "./price-list-format.js";
-import type { ComposerDraft, QuoteLineDraft } from "./proposals-desk-format.js";
+import { lineHasWords, type ComposerDraft, type QuoteLineDraft } from "./proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
 // Proposal templates in the composer (roadmap X1; Tier B #16). A template
@@ -333,7 +333,10 @@ export interface KeptTemplate {
  *  length a name may have. */
 export function suggestedTemplateName(roomName: string | null, occasion: string | null): string {
   const label = occasionLabel(occasionToSay(occasion));
-  const occasionWords = label === null ? null : roomName === null ? label : label.charAt(0).toLowerCase() + label.slice(1);
+  // The venue's own occasions read in lower case after a room ("Grand Hall
+  // wedding"); one typed in free keeps its own capitals ("Grand Hall AGM").
+  const venues = ENQUIRY_OCCASION_KEYS.includes(occasionKeyOf(occasion) ?? "");
+  const occasionWords = label === null ? null : roomName === null || !venues ? label : label.charAt(0).toLowerCase() + label.slice(1);
   const words = [roomName, occasionWords].filter((part): part is string => part !== null && part.trim() !== "");
   const cut = words.join(" ").slice(0, MAX_TEMPLATE_NAME_LENGTH);
   // A cut between the two halves of a character (an emoji) would leave half of it.
@@ -402,11 +405,17 @@ export function templateFromDraft(
       typed.push(description);
       continue;
     }
-    const keepsQuantity = rule.type === "per_hour" || rule.type === "flat_rate";
-    lines.push({ kind: "price_list", pricingRuleId: rule.id.toLowerCase(), name: rule.name, ruleType: rule.type, quantity: keepsQuantity ? whole : null });
+    // A line added under one way of pricing whose entry is now priced another
+    // way (a head became a flat rate) has a quantity meaning something else:
+    // it is not kept, so the template asks for it or takes it from the event.
+    const repriced = line.listed !== undefined && line.listed.ruleType !== rule.type;
+    const keepsQuantity = (rule.type === "per_hour" || rule.type === "flat_rate") && !repriced;
+    const kept = keepsQuantity ? whole : null;
+    lines.push({ kind: "price_list", pricingRuleId: rule.id.toLowerCase(), name: rule.name, ruleType: rule.type, quantity: kept });
     listed.push(rule.type === "per_head" || rule.type === "tiered"
       ? `${rule.name}, for the event's guests`
-      : rule.type === "per_hour" && whole !== null ? `${rule.name}, ${hoursWords(whole)}${belowMinimum(rule, whole)}` : rule.name);
+      : rule.type === "per_hour" && kept !== null ? `${rule.name}, ${hoursWords(kept)}${belowMinimum(rule, kept)}` : rule.name);
+    if (repriced) differs.push(`${rule.name} is priced differently since it was added, so its quantity is not kept.`);
     if (rule.spaceId !== null && spaceId === null) roomPrices.push(rule);
     const priced = priceForEvent(rule, event);
     const yours = parsePoundsToMinor(line.pounds);
@@ -443,15 +452,16 @@ function roomPriceWords(rule: PricingRule, roomName: (spaceId: string) => string
 // ---------------------------------------------------------------------------
 
 /** Whether the composer holds words a template would replace: a message or
- *  any line, carried from the last version or written here. */
+ *  any line written in (words, a price or a quantity), carried from the last
+ *  version or typed here. */
 export function hasWords(draft: ComposerDraft): boolean {
-  return draft.message.trim() !== "" || draft.lines.some((line) => line.description.trim() !== "");
+  return draft.message.trim() !== "" || draft.lines.some(lineHasWords);
 }
 
 /** What a template would replace: "The composer already has a message and
  *  3 lines." Said before asking, so Replace sets aside nothing unnamed. */
 export function wordsInComposer(draft: ComposerDraft): string {
-  const lines = draft.lines.filter((line) => line.description.trim() !== "").length;
+  const lines = draft.lines.filter(lineHasWords).length;
   const parts = [...(draft.message.trim() === "" ? [] : ["a message"]), ...(lines > 0 ? [lineCount(lines)] : [])];
   return `The composer already has ${parts.length === 0 ? "nothing" : parts.join(" and ")}.`;
 }

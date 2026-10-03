@@ -16,6 +16,7 @@ import type { Space } from "../../../api/spaces.js";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { venueSince } from "../enquiries/enquiry-desk-format.js";
 import type { ComposerDraft } from "./proposals-desk-format.js";
+import { focusIsFree } from "./TemplatePicker.js";
 import { hasWords, occasionKeyOf, suggestedTemplateName, templateFromDraft, type TemplateEvent } from "./template-format.js";
 
 // ---------------------------------------------------------------------------
@@ -117,7 +118,7 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
   useEffect(() => () => { readNumber.current += 1; saveNumber.current += 1; }, []);
   useEffect(() => {
     if (!open || event === null) return;
-    if (!touched.has("name")) setName(suggestedTemplateName(event.roomName, occasionKeyOf(event.occasion)));
+    if (!touched.has("name")) setName(suggestedTemplateName(event.roomName, event.occasion));
     if (!touched.has("room")) setSpaceId(event.spaceId ?? "");
     if (!touched.has("occasion")) setOccasion(occasionKey(event.occasion));
   }, [open, touched, event]);
@@ -141,11 +142,16 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
       .catch(() => { if (readNumber.current === mine) setRules({ status: "error" }); });
   }, [venueId]);
 
-  const close = (words: string): void => {
+  /** Closes the form; focus goes back to its button unless the booker has
+   *  gone elsewhere while a save was on its way. */
+  const close = (words: string, from: Element | null = null): void => {
     saveNumber.current += 1;
+    // Inside the form is found by the form's id: a form element may be
+    // wrapped, so the one a ref holds need not be the one focus is in.
+    const free = document.activeElement?.closest("form")?.id === formId || focusIsFree(from);
     setOpen(false);
     setSaid(words);
-    toggleRef.current?.focus();
+    if (free) toggleRef.current?.focus();
   };
   const toggle = (): void => {
     if (open) {
@@ -153,6 +159,8 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
       if (!saving) close("");
       return;
     }
+    // Held, it stays where focus can rest, and opens once the work it waits for is done.
+    if (disabled) return;
     setOpen(true);
     setSaid("");
     setPhase({ kind: "editing" });
@@ -236,7 +244,9 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
     : phase.kind === "saving" ? phase.asking : null;
   const save = (overwrite: ProposalTemplate | null): void => {
     const sent = body();
-    if (sent === null || refusal !== null || saving) return;
+    // Nothing is saved while the composer could be replaced before the answer comes.
+    if (sent === null || refusal !== null || saving || disabled) return;
+    const from = document.activeElement;
     saveNumber.current += 1;
     const mine = saveNumber.current;
     setPhase({ kind: "saving", asking: overwrite === null ? null : question });
@@ -247,7 +257,7 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
       .then((template) => {
         if (saveNumber.current !== mine) return;
         setPhase({ kind: "editing" });
-        close(overwrite === null ? `Saved the template ${template.name}.` : `Replaced the template ${template.name}.`);
+        close(overwrite === null ? `Saved the template ${template.name}.` : `Replaced the template ${template.name}.`, from);
       })
       .catch((error: unknown) => {
         if (saveNumber.current !== mine) return;
@@ -269,7 +279,7 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
     <>
       {(hasWords(draft) || open) && (
         <button type="button" className="enq-quiet" ref={toggleRef} data-testid="template-save-toggle" aria-expanded={open}
-          aria-controls={open ? formId : undefined} disabled={disabled} onClick={toggle} onKeyDown={open ? onKeyDown : undefined}>
+          aria-controls={open ? formId : undefined} aria-disabled={disabled && !open} onClick={toggle} onKeyDown={open ? onKeyDown : undefined}>
           Save as template
         </button>
       )}
@@ -337,7 +347,7 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
                   : `${theirs.updatedByName ?? "Someone"} changed ${theirs.name}${changedWhen(theirs.updatedAt, nowMs)}.`}
               </p>
               <div className="enq-actions">
-                <button type="button" className="enq-quiet" ref={replaceRef} aria-disabled={saving} aria-busy={saving}
+                <button type="button" className="enq-quiet" ref={replaceRef} aria-disabled={saving || disabled} aria-busy={saving}
                   data-testid={question.kind === "taken" ? "template-replace-existing" : "template-replace-changed"}
                   onClick={() => { save(theirs); }}>
                   {saving && <ActivityIndicator size={18} />}
@@ -359,7 +369,7 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
           )}
           <div className="enq-actions">
             <button type="submit" className="enq-quiet" ref={submitRef} data-testid="template-save-submit"
-              aria-disabled={saving || refusal !== null || kept === null} aria-busy={saving && question === null}
+              aria-disabled={saving || disabled || refusal !== null || kept === null} aria-busy={saving && question === null}
               aria-describedby={refusal !== null && kept !== null ? refusalId : kept !== null ? keptId : undefined}>
               {saving && question === null && <ActivityIndicator size={18} />}
               {saving && question === null ? "Saving…" : "Save template"}

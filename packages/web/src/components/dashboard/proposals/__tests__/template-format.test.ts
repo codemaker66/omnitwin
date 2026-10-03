@@ -368,6 +368,15 @@ describe("saving the composer as a template", () => {
     expect(kept.said).toContain("The capacity note is not kept.");
   });
 
+  it("keeps no quantity for a line whose entry is priced another way since it was added, and says so", () => {
+    // Added as a price a head for 120 guests; the entry is now a flat rate.
+    const flat = RULES.map((one) => (one.id === DINNER ? { ...one, type: "flat_rate" as const, amount: "6000.00", minGuests: null } : one));
+    const listed = { pricingRuleId: DINNER, ruleType: "per_head", description: "Dinner" } as const;
+    const kept = templateFromDraft({ ...EMPTY_DRAFT, lines: [{ description: "Dinner", quantity: "120", pounds: "65", listed }] }, flat, EVENT, GRAND_HALL, roomName);
+    expect(kept.lines).toEqual([priceList(DINNER, "Dinner", "flat_rate", null)]);
+    expect(kept.said).toContain("Dinner is priced differently since it was added, so its quantity is not kept.");
+  });
+
   it("says when the hours kept are fewer than the entry's least, which using it raises them to", () => {
     const listed = { pricingRuleId: BAR, ruleType: "per_hour", description: "Late bar" } as const;
     const kept = templateFromDraft({ ...EMPTY_DRAFT, lines: [{ description: "Late bar", quantity: "2", pounds: "180", listed }] }, RULES, EVENT, GRAND_HALL, roomName);
@@ -505,6 +514,9 @@ describe("the templates offered for an event", () => {
     expect(hasWords({ ...EMPTY_DRAFT, lines: [{ description: "  ", quantity: "1", pounds: "" }] })).toBe(false);
     expect(hasWords({ ...EMPTY_DRAFT, message: "Dear Elaine," })).toBe(true);
     expect(hasWords({ ...EMPTY_DRAFT, lines: [{ description: "Hire", quantity: "1", pounds: "" }] })).toBe(true);
+    // A price or a quantity typed before any words is written in too.
+    expect(hasWords({ ...EMPTY_DRAFT, lines: [{ description: "", quantity: "1", pounds: "450" }] })).toBe(true);
+    expect(hasWords({ ...EMPTY_DRAFT, lines: [{ description: "", quantity: "3", pounds: "" }] })).toBe(true);
   });
 });
 
@@ -516,6 +528,13 @@ describe("the name a template is offered under", () => {
     expect(suggestedTemplateName("Grand Hall", null)).toBe("Grand Hall");
     expect(suggestedTemplateName(null, null)).toBe("");
     expect(suggestedTemplateName("R".repeat(200), "wedding")).toHaveLength(120);
+  });
+
+  it("keeps the capitals of an occasion typed in free, and lower-cases only the venue's own", () => {
+    expect(suggestedTemplateName("Grand Hall", "AGM")).toBe("Grand Hall AGM");
+    expect(suggestedTemplateName("Grand Hall", "Christmas Party")).toBe("Grand Hall Christmas Party");
+    expect(suggestedTemplateName(null, "AGM")).toBe("AGM");
+    expect(suggestedTemplateName("Grand Hall", "Wedding")).toBe("Grand Hall wedding");
   });
 
   it("never cuts a character in two at the limit", () => {

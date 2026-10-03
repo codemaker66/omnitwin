@@ -167,6 +167,8 @@ export function TemplatePicker(props: TemplatePickerProps): ReactElement {
       close();
       return;
     }
+    // Held, it stays where focus can rest, and opens once the work it waits for is done.
+    if (disabled) return;
     setOpen(true);
     setSaid("");
     setStep({ kind: "idle" });
@@ -211,7 +213,7 @@ export function TemplatePicker(props: TemplatePickerProps): ReactElement {
         if (useNumber.current !== mine) return;
         setStep({ kind: "idle" });
         if (latest.current.disabled) {
-          setSaid(`${template.name} was not used, as the proposal changed while it was priced. Use it again to put it in.`);
+          setSaid(`${template.name} was not used, as the proposal began to be saved, sent, withdrawn or archived while it was priced. Use it again to put it in.`);
           setFocusTo({ kind: "said" });
           return;
         }
@@ -266,7 +268,7 @@ export function TemplatePicker(props: TemplatePickerProps): ReactElement {
     })();
   };
   const undo = (template: ProposalTemplate): void => {
-    if (working !== null) return;
+    if (busy) return;
     mark();
     setWorking(template.id);
     void (async () => {
@@ -294,7 +296,7 @@ export function TemplatePicker(props: TemplatePickerProps): ReactElement {
     <>
       <div className="enq-actions">
         <button type="button" className="enq-quiet" ref={toggleRef} data-testid="template-toggle" aria-expanded={open}
-          aria-controls={open ? panelId : undefined} disabled={disabled} onClick={toggle} onKeyDown={open ? onKeyDown : undefined}>
+          aria-controls={open ? panelId : undefined} aria-disabled={disabled && !open} onClick={toggle} onKeyDown={open ? onKeyDown : undefined}>
           Start from a template
         </button>
       </div>
@@ -353,7 +355,7 @@ export function TemplatePicker(props: TemplatePickerProps): ReactElement {
           <p className="enq-next__hint" role="status" ref={saidRef} tabIndex={-1} data-testid="templates-said">{said}</p>
           {removed !== null && (
             <div className="enq-actions">
-              <button type="button" className="enq-quiet" ref={undoRef} data-testid="template-undo" aria-disabled={working !== null}
+              <button type="button" className="enq-quiet" ref={undoRef} data-testid="template-undo" aria-disabled={busy}
                 aria-busy={working === removed.id} onClick={() => { undo(removed); }}>
                 {working === removed.id && <ActivityIndicator size={18} />}
                 Undo
