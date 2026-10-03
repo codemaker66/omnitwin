@@ -1,4 +1,4 @@
-import { occasionLabel, type ProposalNextVersion, type ProposalVersionPayload } from "@omnitwin/types";
+import { occasionLabel, type PricingType, type ProposalNextVersion, type ProposalVersionPayload } from "@omnitwin/types";
 import type { DeskProposal, ProposalDeskGroup, ProposalHistoryEntry } from "../../../api/proposals.js";
 import { formatMinorAsCurrency, parsePoundsToMinor } from "../../../lib/money-input.js";
 import { documentFacts } from "../../proposal/proposal-document-format.js";
@@ -242,10 +242,20 @@ export function proposalsSummary(counts: Readonly<Record<string, number>> | null
 // A new version starts from the latest one, and says what it changes
 // ---------------------------------------------------------------------------
 
+/** The price-list entry a line was added from, as it was added, so the line
+ *  can be kept in a template as the entry while its words are unchanged. It
+ *  is never part of a saved version. */
+export interface ListedLine {
+  readonly pricingRuleId: string;
+  readonly ruleType: PricingType;
+  readonly description: string;
+}
+
 export interface QuoteLineDraft {
   readonly description: string;
   readonly quantity: string;
   readonly pounds: string;
+  readonly listed?: ListedLine;
 }
 
 export const EMPTY_LINE: QuoteLineDraft = { description: "", quantity: "1", pounds: "" };

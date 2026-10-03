@@ -17,6 +17,12 @@ import {
 import { ProposalChip } from "./ProposalsStages.js";
 import { PriceList } from "./PriceList.js";
 import type { PriceListEvent, PriceListOffer } from "./price-list-format.js";
+import { getProposalEvent } from "../../../api/proposal-templates.js";
+import { TemplatePicker, focusIsFree } from "./TemplatePicker.js";
+import { TemplateSave } from "./TemplateSave.js";
+import { applyTemplate, hasWords, type AppliedTemplate, type ApplyMode, type TemplateEvent } from "./template-format.js";
+import type { PricingRule } from "../../../api/pricing.js";
+import type { ProposalEvent, ProposalTemplate } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // One proposal in the forest panel beside the ledger: who it is for and what
@@ -113,8 +119,9 @@ export interface ProposalPanelProps {
    *  from where it started: kept to copy, saying why. Says whether any were
    *  kept (a composer's own save keeps or saves its words instead). */
   readonly onComposerGone: (composer: number, draft: ComposerDraft | null, why: string) => boolean;
-  /** Puts a composer's words aside to copy as it starts again. */
-  readonly onStartAgain: (composer: number, draft: ComposerDraft, fromVersion: number | null) => void;
+  /** Puts a composer's words aside to copy as it starts again, saying why
+   *  when it is not the booker's own Start again (a template replaced them). */
+  readonly onStartAgain: (composer: number, draft: ComposerDraft, fromVersion: number | null, reason?: string) => void;
   /** Puts one kept version away once it has been copied. */
   readonly onDiscardKept: (composer: number) => void;
   readonly onReply: (body: string) => Promise<boolean>;
@@ -541,6 +548,10 @@ interface ComposerProps extends ProposalPanelProps {
   readonly onGoing: (focused: Element | null) => void;
 }
 
+type EventRead =
+  | { readonly status: "idle" | "loading" | "error" }
+  | { readonly status: "ready"; readonly event: ProposalEvent };
+
 interface ComposerFormProps extends ComposerProps {
   readonly start: number;
   /** This form began with Start again: its message field takes focus. */
@@ -549,13 +560,29 @@ interface ComposerFormProps extends ComposerProps {
   readonly onFresh: () => void;
   /** Its message field has taken focus, so no later form does. */
   readonly onFocused: () => void;
+  /** This form began from a template that replaced the words before it:
+   *  its words, what to say and where to go. */
+  readonly seeded: TemplateSeed | null;
+  /** Starts a new composer from a template, the words before it kept to copy. */
+  readonly onSeed: (seed: TemplateSeed) => void;
+}
+
+/** A template that starts a new composer, and where focus was when its Use
+ *  was pressed: focus moves into the new composer only from there or from nowhere. */
+interface TemplateSeed {
+  readonly applied: AppliedTemplate;
+  readonly from: Element | null;
 }
 
 function Composer(props: ComposerProps): ReactElement {
   const { proposal, latest, start } = props;
   // Starting again is a new composer, so the words put aside are shown to
   // copy beside it; its message field then takes focus to write afresh.
-  const [again, setAgain] = useState({ count: 0, focus: false });
+  // A template's seed belongs to the one form it started, for the version it
+  // was made from: a form after a save starts from the version saved.
+  const [again, setAgain] = useState<{
+    readonly count: number; readonly focus: boolean; readonly seed: { readonly seed: TemplateSeed; readonly start: number } | null;
+  }>({ count: 0, focus: false, seed: null });
   // Until the version to start from has been read once, the form waits; read
   // again later, the form it started stays.
   if (start === "reading") {
@@ -584,7 +611,9 @@ function Composer(props: ComposerProps): ReactElement {
   // A new version starts from the latest one, read again whenever that changes.
   return (
     <ComposerForm key={`${proposal.id}:${String(start)}:${String(again.count)}`} {...props} start={start} startedAgain={again.focus}
-      onFresh={() => { setAgain((current) => ({ count: current.count + 1, focus: true })); }}
+      seeded={again.seed !== null && again.seed.start === start ? again.seed.seed : null}
+      onFresh={() => { setAgain((current) => ({ count: current.count + 1, focus: true, seed: null })); }}
+      onSeed={(seed) => { setAgain((current) => ({ count: current.count + 1, focus: false, seed: { seed, start } })); }}
       onFocused={() => { setAgain((current) => current.focus ? { ...current, focus: false } : current); }} />
   );
 }
@@ -640,8 +669,8 @@ let composers = 0;
 
 function ComposerForm(props: ComposerFormProps): ReactElement {
   const {
-    proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain,
-    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onGoing, report,
+    proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain, seeded, nowMs,
+    onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onGoing, onSeed, report,
   } = props;
   const layoutLine = composerLayoutLine(proposal);
   const headingId = useId();
@@ -653,7 +682,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   // another part of the dashboard) carry on where they were, in the composer
   // that wrote them, if they start where this one does.
   const [resumed] = useState(() => {
-    const written = startedAgain ? null : memory?.recall() ?? null;
+    const written = startedAgain || seeded !== null ? null : memory?.recall() ?? null;
     return written !== null && written.start === basedOn ? written : null;
   });
   const [composer] = useState(() => {
@@ -661,7 +690,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     composers += 1;
     return composers;
   });
-  const [draft, setDraft] = useState<ComposerDraft>(() => resumed?.draft ?? draftFromVersion(from));
+  const [draft, setDraft] = useState<ComposerDraft>(() => seeded?.applied.draft ?? resumed?.draft ?? draftFromVersion(from));
   const next = basedOn + 1;
   const changes = draftChanges(from, draft);
   // The panel knows this form, and its words while there is something to
@@ -709,6 +738,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const [focusLine, setFocusLine] = useState<number | null>(null);
   const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusQuantity, setFocusQuantity] = useState<number | null>(null);
+  const priceRefs = useRef<(HTMLInputElement | null)[]>([]);
   // Check again stays where it was pressed while it checks, so focus stays
   // with it. Answered, focus goes to what the start line now says; not
   // answered, it is said, and Check again is there to press again. Only a
@@ -762,13 +792,85 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   // quantity it cannot know.
   const addFromList = (offer: PriceListOffer): number => {
     const at = draft.lines.length;
-    setDraft((current) => ({ ...current, lines: [...current.lines, { ...offer.line }] }));
+    setLines((lines) => [...lines, { ...offer.line }]);
     if (offer.asks !== null) setFocusQuantity(at);
     return at + 1;
   };
 
+  // Templates are matched to the event, read when first wanted: before any
+  // version exists, only it names the event's room.
+  const [eventRead, setEventRead] = useState<EventRead>({ status: "idle" });
+  const eventNumber = useRef(0);
+  useEffect(() => () => { eventNumber.current += 1; }, []);
+  const needEvent = useCallback(() => {
+    eventNumber.current += 1;
+    const mine = eventNumber.current;
+    setEventRead({ status: "loading" });
+    getProposalEvent(proposal.id)
+      .then((event) => { if (eventNumber.current === mine) setEventRead({ status: "ready", event }); })
+      .catch(() => { if (eventNumber.current === mine) setEventRead({ status: "error" }); });
+  }, [proposal.id]);
+  const templateEvent: TemplateEvent | null = eventRead.status !== "ready" ? null : {
+    spaceId: eventRead.event.spaceId,
+    eventDate: eventRead.event.facts.eventDate ?? proposal.eventDate,
+    guestCount: eventRead.event.facts.guestCount ?? proposal.guestCount,
+    roomName: eventRead.event.facts.roomName,
+    occasion: eventRead.event.facts.occasion,
+  };
+  // What a template put in is said, and focus goes where the booker is
+  // needed first. A form a template started says it once it is on the page.
+  // What is said of particular lines holds only until the lines change.
+  const [templateSaid, setTemplateSaid] = useState<AppliedTemplate | null>(null);
+  const [lineNotes, setLineNotes] = useState<readonly string[]>([]);
+  const [templateFocus, setTemplateFocus] = useState<{ readonly to: AppliedTemplate["focus"]; readonly from: Element | null } | null>(null);
+  useEffect(() => {
+    if (seeded === null) return;
+    setTemplateSaid(seeded.applied);
+    setLineNotes(seeded.applied.lineSaid);
+    setTemplateFocus({ to: seeded.applied.focus, from: seeded.from });
+  }, [seeded]);
+  // The words as they stand when a template's prices arrive, typed meanwhile or not.
+  const draftNow = useRef(draft);
+  useEffect(() => { draftNow.current = draft; }, [draft]);
+  // Focus goes to what the template needs only from where Use was pressed,
+  // or from nowhere (the Use pressed has gone with the list): never away
+  // from a field the booker went to while it was priced.
+  useEffect(() => {
+    if (templateFocus === null) return;
+    setTemplateFocus(null);
+    if (!focusIsFree(templateFocus.from)) return;
+    const to = templateFocus.to;
+    if (to === "message") messageRef.current?.focus();
+    else (to.field === "quantity" ? quantityRefs : priceRefs).current[to.line]?.focus();
+  }, [templateFocus]);
+  // While a template is priced, removed or brought back, or one is saved,
+  // nothing that would replace this form or its words can be pressed: what
+  // comes of it is put in, or said, here.
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const held = saving || working !== null || pickerBusy || templateSaving;
+  const startFromTemplate = (template: ProposalTemplate, rules: readonly PricingRule[], mode: ApplyMode, focusFrom: Element | null): void => {
+    if (templateEvent === null || saving) return;
+    const words = draftNow.current;
+    const applied = applyTemplate(template, rules, templateEvent, words, mode, (id) => rooms.find((room) => room.id === id)?.name ?? null);
+    // Words replaced are kept to copy, beside a new composer the template starts.
+    if (mode === "replace" && hasWords(words)) {
+      onStartAgain(composer, words, from === null ? null : basedOn, `You started from ${template.name}.`);
+      onSeed({ applied, from: focusFrom });
+      return;
+    }
+    setDraft(applied.draft);
+    setTemplateSaid(applied);
+    setLineNotes(applied.lineSaid);
+    setTemplateFocus({ to: applied.focus, from: focusFrom });
+  };
+
+  const setLines = (change: (lines: readonly QuoteLineDraft[]) => readonly QuoteLineDraft[]): void => {
+    setDraft((current) => ({ ...current, lines: change(current.lines) }));
+    setLineNotes([]);
+  };
   const setLine = (index: number, change: Partial<QuoteLineDraft>): void => {
-    setDraft((current) => ({ ...current, lines: current.lines.map((line, at) => at === index ? { ...line, ...change } : line) }));
+    setLines((lines) => lines.map((line, at) => at === index ? { ...line, ...change } : line));
   };
 
   return (
@@ -790,6 +892,17 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
         )}
         <p className="vv-sr-only" role="status" data-testid="composer-check-said">{checkSaid}</p>
         {notCarried !== null && <p className="enq-next__hint" id={notCarriedId} data-testid="composer-not-carried">{notCarried}</p>}
+
+        <TemplatePicker venueId={proposal.venueId} event={templateEvent} eventStatus={eventRead.status} onNeedEvent={needEvent}
+          draft={draft} disabled={saving || working !== null || templateSaving} nowMs={nowMs} onUse={startFromTemplate} onBusy={setPickerBusy} />
+        <div className="pr-template-said" role="status" data-testid="template-said">
+          {templateSaid !== null && (
+            <>
+              <p>{templateSaid.summary}</p>
+              {[...templateSaid.said, ...lineNotes].map((sentence, index) => <p key={`${String(index)}:${sentence}`} className="enq-next__hint">{sentence}</p>)}
+            </>
+          )}
+        </div>
 
         <label className="pr-field">
           <span>Message to the client</span>
@@ -820,17 +933,18 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
               <label className="pr-line__part">
                 <span aria-hidden="true">Unit price, £</span>
                 <input aria-label={`Line ${String(index + 1)} unit price (£)`} data-testid={`quote-price-${String(index)}`} inputMode="decimal"
+                  ref={(element) => { priceRefs.current[index] = element; }}
                   placeholder="0.00" value={line.pounds} disabled={saving} onChange={(event) => { setLine(index, { pounds: event.target.value }); }} />
               </label>
               <button type="button" className="enq-quiet" aria-label={`Remove quote line ${String(index + 1)}`} disabled={saving}
-                onClick={() => { setDraft((current) => ({ ...current, lines: current.lines.filter((_, at) => at !== index) })); }}>
+                onClick={() => { setLines((lines) => lines.filter((_, at) => at !== index)); }}>
                 Remove
               </button>
             </div>
           ))}
           <div className="enq-actions">
             <button type="button" className="enq-quiet" data-testid="add-quote-line" disabled={saving}
-              onClick={() => { setDraft((current) => ({ ...current, lines: [...current.lines, { ...EMPTY_LINE }] })); setFocusLine(draft.lines.length); }}>
+              onClick={() => { setLines((lines) => [...lines, { ...EMPTY_LINE }]); setFocusLine(draft.lines.length); }}>
               Add a line
             </button>
             <PriceList venueId={proposal.venueId} event={priceEvent} rooms={rooms} disabled={saving} onAdd={addFromList} />
@@ -843,7 +957,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
         <div className="enq-actions">
           {/* Save is described by what the version starts from and changes, so
               it is heard at the moment of saving, however it came to change. */}
-          <button type="button" className="enq-cta" data-testid="composer-save" disabled={saving || working !== null} aria-busy={saving}
+          <button type="button" className="enq-cta" data-testid="composer-save" disabled={held} aria-busy={saving}
             aria-describedby={notCarried === null ? startId : `${startId} ${notCarriedId}`}
             onClick={() => { void onSaveVersion(draft, composer, basedOn, heldTo); }}>
             {saving && <ActivityIndicator size={18} />}
@@ -851,10 +965,12 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
           </button>
           {/* Nothing written is thrown away: starting again keeps it to copy. */}
           {differs && (
-            <button type="button" className="enq-quiet" data-testid="composer-start-again" disabled={saving || working !== null} onClick={startAgain}>
+            <button type="button" className="enq-quiet" data-testid="composer-start-again" disabled={held} onClick={startAgain}>
               {from === null ? "Start again" : `Start again from version ${String(basedOn)}`}
             </button>
           )}
+          <TemplateSave venueId={proposal.venueId} event={templateEvent} eventStatus={eventRead.status} onNeedEvent={needEvent}
+            rooms={rooms} draft={draft} disabled={saving || working !== null || pickerBusy} nowMs={nowMs} onSaving={setTemplateSaving} />
         </div>
       </section>
     </>

@@ -28,6 +28,15 @@ type TakenFrom = Pick<typeof proposals.$inferSelect, "venueId" | "opportunityId"
  * enquiry's. Everything is read at the proposal's own venue only.
  */
 export async function clientFacts(db: Database, proposal: TakenFrom): Promise<ProposalFacts> {
+  return (await clientEvent(db, proposal)).facts;
+}
+
+/**
+ * The event as the composer needs it before any version exists: the facts a
+ * version would take, and the room's id, so templates and the price list can
+ * be matched to it. The same reads as clientFacts, which takes only the facts.
+ */
+export async function clientEvent(db: Database, proposal: TakenFrom): Promise<{ readonly facts: ProposalFacts; readonly spaceId: string | null }> {
   const [deal] = proposal.opportunityId === null ? [] : await db.select({
     preferredDate: opportunities.preferredDate,
     guestCount: opportunities.guestCount,
@@ -46,7 +55,7 @@ export async function clientFacts(db: Database, proposal: TakenFrom): Promise<Pr
   }).from(enquiries)
     .where(and(eq(enquiries.id, enquiryId), eq(enquiries.venueId, proposal.venueId)))
     .limit(1);
-  const [layoutRoom] = proposal.configurationId === null ? [] : await db.select({ name: spaces.name, slug: spaces.slug })
+  const [layoutRoom] = proposal.configurationId === null ? [] : await db.select({ id: spaces.id, name: spaces.name, slug: spaces.slug })
     .from(configurations)
     .innerJoin(spaces, eq(spaces.id, configurations.spaceId))
     .where(and(
@@ -58,17 +67,20 @@ export async function clientFacts(db: Database, proposal: TakenFrom): Promise<Pr
     ))
     .limit(1);
   // An enquiry filed under a room the guest never chose names no room.
-  const [enquiryRoom] = layoutRoom !== undefined || enquiry === undefined || !enquiry.roomChosen ? [] : await db.select({ name: spaces.name, slug: spaces.slug })
+  const [enquiryRoom] = layoutRoom !== undefined || enquiry === undefined || !enquiry.roomChosen ? [] : await db.select({ id: spaces.id, name: spaces.name, slug: spaces.slug })
     .from(spaces)
     .where(and(eq(spaces.id, enquiry.spaceId), eq(spaces.venueId, proposal.venueId), isNull(spaces.deletedAt)))
     .limit(1);
   const room = layoutRoom ?? enquiryRoom ?? null;
   return {
-    eventDate: deal?.preferredDate ?? enquiry?.preferredDate ?? null,
-    guestCount: deal?.guestCount ?? enquiry?.estimatedGuests ?? null,
-    occasion: deal?.eventType ?? enquiry?.eventType ?? null,
-    roomName: room?.name ?? null,
-    roomSlug: room?.slug ?? null,
+    facts: {
+      eventDate: deal?.preferredDate ?? enquiry?.preferredDate ?? null,
+      guestCount: deal?.guestCount ?? enquiry?.estimatedGuests ?? null,
+      occasion: deal?.eventType ?? enquiry?.eventType ?? null,
+      roomName: room?.name ?? null,
+      roomSlug: room?.slug ?? null,
+    },
+    spaceId: room?.id ?? null,
   };
 }
 

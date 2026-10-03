@@ -14,6 +14,7 @@ import {
   type EventPlanAudienceRole,
   type EventPlanChangeSurface,
   type ProposalCommentAuthorType,
+  type ProposalEvent,
   type ProposalFacts,
   type ProposalNextVersion,
   type ProposalVersionPayload,
@@ -46,7 +47,7 @@ import {
   getAvailableProposalTransitions,
 } from "../state-machines/proposal.js";
 import { generateUniqueShortCode } from "../services/shortcode.js";
-import { clientFacts, layoutChange, nextVersionBasis, takenAtSave } from "../services/proposal-taken.js";
+import { clientEvent, clientFacts, layoutChange, nextVersionBasis, takenAtSave } from "../services/proposal-taken.js";
 import { patchLinkRequest, resolveProposalLinks, type ProposalLinkRefusal } from "../services/proposal-links.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { COMMERCIAL_AUDIENCE_ROLES, notifyCommercialTeam, notifyVenueRoles } from "../services/commercial-notifications.js";
@@ -1345,6 +1346,28 @@ export async function proposalRoutes(
       basis: nextVersionBasis(proposal.currentVersion, proposal, taken),
     };
     return { data: next };
+  });
+
+  // GET /proposals/:id/event — the event the proposal is for, as a version
+  // saved now would take it, and its room's id: what the composer matches
+  // templates and orders the price list by, before any version exists.
+  // Nothing is stamped or changed.
+  server.get("/:id/event", { preHandler: [authenticate] }, async (request, reply) => {
+    const params = IdParam.safeParse(request.params);
+    if (!params.success) {
+      return reply.status(400).send({ error: "Invalid ID", code: "VALIDATION_ERROR" });
+    }
+    const [proposal] = await db.select().from(proposals)
+      .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
+      .limit(1);
+    if (proposal === undefined) {
+      return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
+    }
+    if (!canManageCommercial(request.user, proposal.venueId)) {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    const event: ProposalEvent = await clientEvent(db, proposal);
+    return { data: event };
   });
 
   // GET /proposals/:id/versions/:version — specific snapshot

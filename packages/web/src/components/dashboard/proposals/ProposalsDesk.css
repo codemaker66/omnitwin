@@ -142,6 +142,26 @@
 .pr-price__figure { font-variant-numeric: tabular-nums; text-align: right; }
 .pr-price__note { grid-column: 1 / -1; color: var(--enq-forest-ink-2); font-size: 13px; }
 
+/* A template: its name, what it is for and holds, and what can be done with it. */
+.pr-template { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--enq-forest-rule); border-radius: 3px; }
+.pr-template__name { margin: 0; color: var(--enq-forest-ink); font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.pr-template__about { margin: 0; color: var(--enq-forest-ink-2); font-size: 13px; overflow-wrap: anywhere; }
+.pr-template .enq-actions { margin-top: 6px; }
+.pr-template__choice { display: grid; gap: 6px; margin-top: 6px; }
+.pr-template__choice .enq-actions { margin-top: 0; }
+/* The templates sit under their button as the price list sits under its own. */
+.pr-templates { margin-top: 10px; }
+/* What a template put in, said once under the start line, spaced from the button above. */
+.pr-template-said { display: grid; gap: 4px; }
+.pr-template-said:not(:empty) { margin-top: 10px; }
+.pr-template-said p { margin: 0; }
+.pr-template-said > p:first-child { color: var(--enq-forest-ink); font-size: 14.5px; }
+/* Saving a template is said on a line of its own under the actions. Empty,
+   it leaves the row's flow (no line, no gap) but stays in the accessibility
+   tree, so what is said into it is heard. */
+.pr-template-save-said { flex-basis: 100%; margin: 0; }
+.pr-template-save-said:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+
 .pr-quote-table { width: 100%; border-collapse: collapse; color: var(--enq-forest-ink); font-size: 14.5px; font-variant-numeric: tabular-nums; }
 .pr-quote-table td { padding: 8px 0; border-bottom: 1px solid var(--enq-forest-rule); }
 .pr-quote-table .pr-num { padding-left: 12px; text-align: right; white-space: nowrap; }
