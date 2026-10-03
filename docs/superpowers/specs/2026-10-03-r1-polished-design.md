@@ -129,7 +129,26 @@ in the package's provenance record. External photographs are used only after Bla
 - Sun shafts: soft volumetric sunbeams through the windows with faint dust, occluded by the window volumes and the shadow
   map, subtle by design.
 
-### 4.5 Performance
+### 4.5 Moonlight and the clock (added 3 October, Blake)
+
+Blake: "not only sunlight true to life shading but also moonlight as well shading that we can move, as if we are moving
+the sun and moon in the sky, controlled by the clock/time of the event".
+
+- **The moon is a light source like the sun.** Its true position and phase for the chosen date and time (a cited lunar
+  ephemeris, tested against published positions for Glasgow), at moonlight's true level (about 0.1–0.3 lux at full
+  moon high in the sky, with the phase's opposition surge). It goes through the sun's machinery: the window-volume march,
+  the shadow map, the bounce basis (widened in R1a to the moon's band of the sky: declination up to ±28.6° plus
+  parallax) and the shafts. When both bodies are up, both count.
+- **Night vision.** At low light the display adds a restrained, physically motivated scotopic shift (desaturation and a
+  slight blue shift) as part of eye adaptation, so a moonlit hall reads as moonlit rather than as a dim day.
+- **The night sky in the windows** shows the moon's disc when it is in view, at its true phase; the sky's brightness
+  follows the moon. R2's full real sky builds on this.
+- **The clock is a crafted object.** It shows the sun's and the moon's arcs for the chosen date and lets you drag either
+  body or the time itself; spring physics from the repo's spring core, gentle detents at sunrise, golden hour, sunset and
+  moonrise, and the light sweeping continuously while you drag. Beautiful at rest, fully keyboard and screen-reader
+  accessible, reduced motion honoured.
+
+### 4.6 Performance
 
 On the build PC's RTX 4090: 60 fps while scrubbing the clock and while walking (p99 frame ≤ 16.7 ms), no dropped frames
 during light motion, no main-thread task over 50 ms while loading. The per-splat multiplier pass and the skins' sun pass
@@ -145,7 +164,7 @@ R1 is delivered as four plans, executed in order, with one preview at the end:
    floor drawn lit, sky panels.
 3. **R1c, surface skins** (to plan): §3, including the frieze recovery, the clutter masks and the skins' rendering and
    lighting.
-4. **R1d, cinematic light** (to plan): §4 and the clutter toggle.
+4. **R1d, cinematic light** (to plan): §4 (including the moon and the clock, §4.5) and the clutter toggle.
 
 The new splat-training track (decided 3 October: one hall dataset, LiDAR-anchored training, fair held-out tests) starts
 after R1a's CPU-heavy steps and feeds the 3D splat parts later; R1 does not wait for it.
