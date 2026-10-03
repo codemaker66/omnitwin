@@ -186,20 +186,27 @@ COMMANDS["windows"] = cmd_windows
 
 CHECK_SUNS = ((2026, 5, 31, 8, 0), (2026, 6, 21, 6, 0), (2026, 6, 21, 9, 0), (2026, 3, 20, 9, 0), (2026, 12, 21, 10, 30))
 SPLAT_SAMPLE, SPLAT_SEED = 200_000, 20260930
+GATE = {"iou": 0.85, "meanAbsDiff": 0.1, "floatAlphaMaxAbsDiff": 1e-4, "reachMissed": 0}
 
 
 def _agreement(t3, twin, exact):
-    """The twin against the proof's march: lit-cell overlap and mean |dT| (the thresholds), largest |dT| and the
-    share over 0.01; `exact` (float alpha) isolates the march from the alpha quantisation."""
+    """The twin against the proof's march, unrounded: lit-cell overlap and mean |dT| over the cells either lights
+    (scored when there are any), largest |dT| and the share over 0.01; `exact` (float alpha) isolates the march from
+    the alpha quantisation."""
     import numpy as np
     a, b = t3 > 0.3, twin > 0.3
     union = a | b
     d, de = np.abs(t3 - twin), np.abs(t3 - exact)
-    return {"iou": round(float((a & b).sum() / max(union.sum(), 1)), 4),
-            "meanAbsDiff": round(float(d[union].mean()) if union.any() else 0.0, 6),
+    return {"scored": bool(union.any()), "iou": float((a & b).sum() / max(union.sum(), 1)),
+            "meanAbsDiff": float(d[union].mean()) if union.any() else 0.0,
             "maxAbsDiff": float(d.max()), "shareAbove001": float((d > 0.01).mean()),
             "lit3d": int(a.sum()), "litTwin": int(b.sum()),
             "floatAlphaMaxAbsDiff": float(de.max()), "floatAlphaShareAbove001": float((de > 0.01).mean())}
+
+
+def _passes(row):
+    return row["floatAlphaMaxAbsDiff"] <= GATE["floatAlphaMaxAbsDiff"] and \
+        (not row["scored"] or (row["iou"] >= GATE["iou"] and row["meanAbsDiff"] <= GATE["meanAbsDiff"]))
 
 
 def _step_stats(steps):
@@ -212,16 +219,17 @@ def _step_stats(steps):
 
 
 def _random_suns(common, n, seed):
-    """n sun directions facing the window wall at random days and times of 2026 (for the reach flag's coverage)."""
+    """n sun directions facing the window wall at random days and times of 2026, any time of day with the sun up
+    (so the northernmost summer sunrises are included), for the reach flag's coverage."""
     import datetime
     import numpy as np
     rng, out = np.random.default_rng(seed), []
     while len(out) < n:
         day = datetime.date(2026, 1, 1) + datetime.timedelta(days=int(rng.integers(0, 365)))
-        minute = int(rng.integers(4 * 60, 22 * 60))
+        minute = int(rng.integers(0, 24 * 60))
         az, el = common.solar_position(2026, day.month, day.day, minute // 60, minute % 60)
         s = common.sun_vec_e57(az, el)
-        if el > 0.5 and s[1] < -1e-3:
+        if el > 0.0 and s[1] < -1e-3:
             out.append(s)
     return out
 
@@ -264,9 +272,8 @@ def cmd_check_sun(cfg, args) -> int:
     lit = [np.any([W.ray_survives(v, sets["splats"], s) for v in vols.values()], axis=0)
            for s in _random_suns(common, 48, SPLAT_SEED)]
     missed = int(sum(int((on & ~flagged[pick]).sum()) for on in lit))
-    ok = missed == 0 and all(r[k]["iou"] >= 0.85 and r[k]["meanAbsDiff"] <= 0.1
-                             for r in report for k in sets if r[k]["lit3d"] > 0)
-    out = {"threshold": {"iou": 0.85, "meanAbsDiff": 0.1, "reachMissed": 0}, "pass": ok,
+    ok = missed <= GATE["reachMissed"] and all(_passes(r[k]) for r in report for k in sets)
+    out = {"threshold": GATE, "pass": ok,
            "points": {"floor": len(sets["floor"]), "splats": SPLAT_SAMPLE, "splatSeed": SPLAT_SEED},
            "sunReach": {"latitude": lat, "finestSplats": len(pos), "flaggedShare": float(flagged.mean()),
                         "flaggedSampleShare": float(flagged[pick].mean()), "randomSuns": len(lit),

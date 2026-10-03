@@ -55,6 +55,23 @@ class Entry(unittest.TestCase):
         out = lit(volume(), [from_entry((2.4, 1.5), s), from_entry((2.0, 1.5), s)], s)
         np.testing.assert_array_equal(out, [0, 1])        # leaves at x = 2.775 (outside 2.67) / 2.375
 
+    def test_the_exit_keeps_3_cm_inside_the_jamb(self):
+        s = unit(0.6, -0.8, 0.0)                          # leaves the glass 0.375 m along x from where it entered
+        entries = [2.285, 2.290, 2.300, 2.310]            # leaves at 2.66, 2.665 (inside 2.67), 2.675, 2.685 (outside)
+        out = lit(volume(), [from_entry((x, 1.5), s) for x in entries], s)
+        np.testing.assert_array_equal(out, [1, 1, 0, 0])
+
+    def test_the_exit_keeps_3_cm_below_the_head(self):
+        s = unit(0.0, -0.8, 0.6)                          # leaves the glass 0.375 m higher than it entered
+        out = lit(volume(), [from_entry((1.5, z), s) for z in (2.290, 2.300)], s)
+        np.testing.assert_array_equal(out, [1, 0])        # leaves at 2.665 (inside 2.67) / 2.675
+
+    def test_the_exit_keeps_3_cm_inside_the_arch(self):
+        s = unit(0.0, -0.8, 0.6)
+        head = 1.5 + np.sqrt(1.17 ** 2 - 0.7 ** 2)        # the 3 cm-shrunk semicircle (radius 1.17) at x = 2.2
+        out = lit(volume(window=ARCH), [from_entry((2.2, head - 0.375 + d), s) for d in (-0.005, 0.005)], s)
+        np.testing.assert_array_equal(out, [1, 0])
+
     def test_rays_longer_than_the_cap_are_dark(self):
         far, near = unit(0.96, -0.25, 0.0), unit(0.96, -0.27, 0.0)   # 0.57 m deep: 2.26 m / 2.11 m of ray
         self.assertEqual(float(lit(volume(), from_entry((0.4, 1.5), far), far)[0]), 0.0)
@@ -107,6 +124,12 @@ class March(unittest.TestCase):
         occ[:, 10:20, :] = 1.0                             # every sample adds 0.5 x -log(0.005) = 2.65
         out = float(lit(volume(occ), [1.5, 3.0, 1.5], HEAD_ON)[0])
         self.assertAlmostEqual(out, float(np.exp(-3 * 0.5 * -np.log(0.005))), delta=1e-6)
+
+    def test_the_march_stops_at_the_first_sample_past_6(self):
+        occ = grid()
+        occ[:, 10:20, :] = 0.9                             # each sample adds 0.5 x -log(0.1): 6.91 after six, 8.06 after seven
+        out = float(lit(volume(occ, quantise=False), [1.5, 3.0, 1.5], HEAD_ON)[0])
+        self.assertAlmostEqual(out, 0.1 ** 3, delta=1e-6)
 
     def test_a_bar_shades_its_own_shadow(self):
         occ = grid()
@@ -268,8 +291,10 @@ class Reach(unittest.TestCase):
                           [179.9, 180.1, 9.0, 9.5],      # below it
                           [29.5, 30.5, 0.0, 5.0],        # north of the summer sunrise (44.8)
                           [49.9, 50.1, 3.0, 4.0],        # a summer morning just after sunrise
-                          [160.0, 200.0, 57.5, 57.6]])   # wide over noon, just under the peak: only its middle meets
-        np.testing.assert_array_equal(windows.sun_band_meets(*boxes.T, LAT), [True, False, True, False, False, True, True])
+                          [160.0, 200.0, 57.5, 57.6],    # wide over noon, just under the peak: only its middle meets
+                          [179.9, 180.1, 58.65, 58.7]])  # reached only with the full margins: 0.5 pad + 0.6 refraction
+        expected = [True, False, True, False, False, True, True, True]  # down to 57.55, and 23.45 degrees reaches 57.59
+        np.testing.assert_array_equal(windows.sun_band_meets(*boxes.T, LAT), expected)
 
     def test_ray_survives_is_where_the_march_is_lit(self):
         rng = np.random.default_rng(5)
@@ -278,6 +303,19 @@ class Reach(unittest.TestCase):
         P = rng.uniform([-1.0, -0.7, 0.0], [4.0, 4.0, 3.0], (3000, 3))
         for s in real_suns(rng, 20):
             np.testing.assert_array_equal(windows.ray_survives(vol, P, s), lit(vol, P, s) > 0)
+
+
+class CheckGate(unittest.TestCase):
+    def test_check_sun_scores_any_lit_union_unrounded_and_bounds_the_march_everywhere(self):
+        from relight import __main__ as cli
+        rows = [dict(scored=False, iou=0.0, meanAbsDiff=0.0, floatAlphaMaxAbsDiff=0.0),      # nothing lit: not scored
+                dict(scored=True, iou=0.84999, meanAbsDiff=0.0, floatAlphaMaxAbsDiff=0.0),   # would round to 0.85
+                dict(scored=True, iou=1.0, meanAbsDiff=0.1000001, floatAlphaMaxAbsDiff=0.0),
+                dict(scored=False, iou=0.0, meanAbsDiff=0.0, floatAlphaMaxAbsDiff=2e-4),     # the march itself drifts
+                dict(scored=True, iou=0.9999, meanAbsDiff=0.0004, floatAlphaMaxAbsDiff=8e-6)]
+        self.assertEqual([cli._passes(r) for r in rows], [True, False, False, False, True])
+        a = cli._agreement(np.zeros(4, np.float32), np.array([0, 0.5, 0, 0], np.float32), np.zeros(4, np.float32))
+        self.assertTrue(a["scored"] and a["lit3d"] == 0 and a["iou"] == 0.0)                 # the twin alone lights
 
 
 class Tables(unittest.TestCase):

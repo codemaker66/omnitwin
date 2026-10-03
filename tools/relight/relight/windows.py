@@ -9,8 +9,13 @@ sample adding the cell's -log(1 - alpha) x step / cell), is dark if that is long
 it crosses the glass plane inside the outline shrunk by 3 cm. It is lit while the sun is above the window's
 opposite-facade horizon (interpolated at the sun's azimuth), times the glass transmission at |s_y|.
 
-The arithmetic is float32 in the proof's order of operations, so the twin reproduces the proof's cells exactly;
-the stored alpha's 8-bit quantisation is the only intended difference.
+Every derived constant (the grown outline edges, the arch's xc, zs and r^2, x0 - 0.25, x1 + 0.25, y0 - depth,
+y0 - depth - 0.07 and 0.015 / res) is formed in float64 from the frame and rounded once to float32 where it meets
+the float32 points; the march itself is float32 in the proof's order of operations, so the twin reproduces the
+proof's cells exactly. Intended differences: the stored alpha's 8-bit quantisation; the glass transmission read
+from its 101-entry table, interpolated linearly (within about 1e-4 of the proof's glass_t); and the horizon read
+from its 360-entry table, interpolated linearly, which matches lt.horizon_deg except on [179, 180) degrees (up to
+0.0042 degrees there).
 """
 from __future__ import annotations
 
@@ -36,7 +41,7 @@ FRAME_FIELDS = ("origin_x", "origin_y", "origin_z", "res", "nx", "ny", "nz", "x0
                 "arch", "y0", "x_bearing", "offset_x", "offset_y", "offset_z", "grid_lo_x", "grid_lo_y", "grid_lo_z")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class WindowVolume:
     name: str
     origin: np.ndarray    # (3,) model-frame corner of cell (0, 0, 0) = grid_lo + offset * res
@@ -241,7 +246,8 @@ def fresnel_at(fresnel, s) -> float:
 def sun_visibility(volumes, horizon_tables, fresnel_table, P, s, steps=None) -> np.ndarray:
     """lt.sun_direct from the window volumes and tables: each ray goes to the first window (in order) that claims
     it, counts while the sun is above that window's horizon, and is scaled by the glass transmission. (N,) float32.
-    steps: an optional (N,) integer array that receives the samples marched per point (0 where none)."""
+    steps: an optional (N,) integer array; each marched point's entry is set to its number of samples, and every
+    other entry is left as it was, so pass zeros."""
     D = np.asarray(s, F32)
     out = np.zeros(len(P), F32)
     if float(D[1]) >= -MIN_DOWN:
@@ -298,7 +304,11 @@ def sun_directions(solar_position, sun_vec, year=2026, step_min=15):
 def ray_survives(vol: WindowVolume, P, s) -> np.ndarray:
     """Where march_visibility(vol, P, s) is non-zero: the window takes the ray, it is within the cap and it leaves
     through the glass outline (the march's geometry alone, occupancy ignored). (N,) bool."""
-    return _rays(vol, np.asarray(P, F32), np.asarray(s, F32))[1]
+    D = np.asarray(s, F32)
+    out = np.zeros(len(P), bool)
+    for a in range(0, len(P), CHUNK):
+        out[a:a + CHUNK] = _rays(vol, np.asarray(P[a:a + CHUNK], F32), D)[1]
+    return out
 
 
 SUN_DECLINATION_MAX = 23.45   # degrees; the proof's solar model (NOAA) peaks at 23.4385 in 2026
