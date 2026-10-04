@@ -793,6 +793,16 @@ The scope keeps the flat ivory workspace Blake selected on 7 September (`product
   who opened a link, which reaches whoever it is forwarded to.
 - "Use in proposal" for AI drafts.
 - Templates by room and event type.
+  Done on 3 October (migration 0085; `routes/proposal-templates.ts`, `TemplatePicker.tsx`, `TemplateSave.tsx`,
+  `template-format.ts`). A booker keeps a proposal's message and quote lines as a template for a room (or any
+  room) and an occasion (or any), from Save as template beside Save version; the form fills its name, room and
+  occasion from the event and says what it keeps. A template holds no price: a price-list line is the entry,
+  priced from the list as it stands each time it is used (a price a head takes that event's guests), and a
+  typed line asks for its price. Start from a template lists the event's own first; over words already written
+  it asks Replace (the words kept to copy beside a new composer) or Add its lines (only what is not already
+  quoted), and says what could not be used. A name already used offers to replace it, a template a colleague
+  changed is never overwritten unseen, and a removed one comes back with Undo. Live on `daa69ca7` (receipt
+  37173246881).
 
 *Clients*
 - Extend the search API to accounts, contacts, deals and proposals, tolerant of typos (`api/routes/clients.ts:30-130,68-70`).
