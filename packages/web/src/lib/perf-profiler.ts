@@ -24,7 +24,7 @@ export interface RenderedFrameSample {
  * of each frame interval, otherwise pacing (display or on-demand rendering). */
 export interface PerfBottleneck {
   readonly kind: "gpu" | "cpu" | "headroom" | "idle" | "unknown";
-  /** Busiest resource's mean work as a share of the mean frame interval. */
+  /** Busiest resource's mean work as a share of the median frame interval. */
   readonly busyPct: number | null;
 }
 
@@ -79,11 +79,13 @@ const BOUND_SHARE = 0.6;
 export function classifyBottleneck(frameMs: number, cpuMs: number | null, gpuMs: number | null, idle: boolean): PerfBottleneck {
   if (idle || !(frameMs > 0)) return { kind: "idle", busyPct: null };
   if (cpuMs === null && gpuMs === null) return { kind: "unknown", busyPct: null };
-  const cpu = (cpuMs ?? 0) / frameMs;
-  const gpu = (gpuMs ?? 0) / frameMs;
-  const busiest = Math.max(cpu, gpu);
-  const kind = busiest < BOUND_SHARE ? "headroom" : gpu >= cpu ? "gpu" : "cpu";
-  return { kind, busyPct: Math.min(100, busiest * 100) };
+  const cpu = cpuMs === null ? null : cpuMs / frameMs;
+  const gpu = gpuMs === null ? null : gpuMs / frameMs;
+  const busiest = Math.max(cpu ?? 0, gpu ?? 0);
+  const busyPct = Math.min(100, busiest * 100);
+  if (busiest >= BOUND_SHARE) return { kind: gpu !== null && (cpu === null || gpu >= cpu) ? "gpu" : "cpu", busyPct };
+  // An unmeasured side (no GPU timestamps on WebGL) could still fill the interval.
+  return { kind: cpu === null || gpu === null ? "unknown" : "headroom", busyPct };
 }
 
 function measured(value: number | null | undefined): number {
@@ -223,7 +225,8 @@ export class RollingFrameProfiler {
       frameTimeMs, frameP95Ms: percentile(0.95), frameP99Ms: percentile(0.99),
       cpuSubmitMs, gpuTimeMs,
       gpuRenderMs: gpuMean((sample) => sample.render), gpuComputeMs: gpuMean((sample) => sample.compute),
-      bottleneck: classifyBottleneck(frameTimeMs, cpuSubmitMs, gpuTimeMs, idle || intervals.length === 0),
+      // The median interval is the cadence while rendering; on-demand pauses would inflate a mean.
+      bottleneck: classifyBottleneck(percentile(0.5) ?? frameTimeMs, cpuSubmitMs, gpuTimeMs, idle || intervals.length === 0),
       drawCalls: mean(2) ?? 0, triangles: mean(3) ?? 0, splats: mean(4), drawnSplats: latestDrawn,
       rendererMb: mean(8), jsHeapMb: typeof jsHeapMb === "number" && Number.isFinite(jsHeapMb) ? jsHeapMb : null,
       longTaskCount: this.longTasks.length,

@@ -131,8 +131,30 @@ describe("RollingFrameProfiler", () => {
     expect(classifyBottleneck(10, 1, 8, false)).toEqual({ kind: "gpu", busyPct: 80 });
     expect(classifyBottleneck(10, 7, 2, false)).toEqual({ kind: "cpu", busyPct: 70 });
     expect(classifyBottleneck(16.7, 1, 4, false).kind).toBe("headroom");
-    expect(classifyBottleneck(10, 3, null, false)).toEqual({ kind: "headroom", busyPct: 30 });
     expect(classifyBottleneck(10, null, null, false).kind).toBe("unknown");
+  });
+
+  it("never claims headroom when one side was not measured", () => {
+    // WebGL has no GPU timestamps: a light CPU says nothing about the GPU.
+    expect(classifyBottleneck(10, 3, null, false)).toEqual({ kind: "unknown", busyPct: 30 });
+    expect(classifyBottleneck(10, 7, null, false)).toEqual({ kind: "cpu", busyPct: 70 });
+    expect(classifyBottleneck(10, null, 8, false)).toEqual({ kind: "gpu", busyPct: 80 });
+    expect(classifyBottleneck(10, null, 3, false)).toEqual({ kind: "unknown", busyPct: 30 });
+  });
+
+  it("measures the busy share against the rendering cadence, not on-demand pauses", () => {
+    const profiler = new RollingFrameProfiler();
+    profiler.reset(0);
+    // Two bursts of 5 ms frames with a 1.5 s on-demand pause between them.
+    for (let at = 5; at <= 500; at += 5) profiler.record(frame(at, { cpuSubmitMs: 1 }));
+    for (let at = 2000; at <= 2500; at += 5) profiler.record(frame(at, { cpuSubmitMs: 1 }));
+    profiler.recordGpu(2400, 4);
+    const metrics = profiler.snapshot(2505);
+    expect(metrics.frameTimeMs).toBeGreaterThan(10);
+    expect(metrics.bottleneck).toEqual({ kind: "gpu", busyPct: 80 });
+  });
+
+  it("keeps the remaining bottleneck cases", () => {
     expect(classifyBottleneck(10, 5, 9, true).kind).toBe("idle");
     expect(classifyBottleneck(5, 1, 20, false).busyPct).toBe(100);
   });

@@ -237,6 +237,11 @@ export function sampleDrawnSplats(renderer: object, timestampMs: number, read: (
 
 let longTaskObserver: PerformanceObserver | null = null;
 
+/** Whether this browser reports main-thread long tasks (Chromium does; Safari and Firefox do not). */
+export function longTasksSupported(): boolean {
+  return typeof PerformanceObserver !== "undefined" && PerformanceObserver.supportedEntryTypes.includes("longtask");
+}
+
 /** Long tasks are observed only while the panel is open and running. */
 export function setLongTaskObservation(active: boolean): void {
   if (!active) {
@@ -244,8 +249,7 @@ export function setLongTaskObservation(active: boolean): void {
     longTaskObserver = null;
     return;
   }
-  if (longTaskObserver !== null || typeof PerformanceObserver === "undefined"
-    || !PerformanceObserver.supportedEntryTypes.includes("longtask")) return;
+  if (longTaskObserver !== null || !longTasksSupported()) return;
   longTaskObserver = new PerformanceObserver((list) => {
     if (!shouldProfileFrames()) return;
     for (const entry of list.getEntries()) {
@@ -277,6 +281,7 @@ export function profilerClipboardReport(): string {
       devicePixelRatio: globalThis.devicePixelRatio,
       logicalCpuCount: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : null,
       deviceMemoryGbEstimate: typeof deviceMemory === "number" ? deviceMemory : null,
+      longTasksSupported: longTasksSupported(),
     },
     renderer: {
       backend: active?.backend ?? null, registeredCanvasCount: renderers.size,
@@ -293,11 +298,11 @@ export function profilerClipboardReport(): string {
       gpuTimeMs: "Mean sampled WebGPU render plus compute timestamp durations; at most one sampled draw per second; excludes queue and presentation delay; unavailable on WebGL because its query API does not expose disjoint validity",
       gpuRenderMs: "Render-pass share of gpuTimeMs: drawing splats, meshes and the output pass",
       gpuComputeMs: "Compute-pass share of gpuTimeMs: the splat depth sort and view-dependent lighting; 0 for sampled draws that dispatched none",
-      bottleneck: "Busiest of CPU submission and GPU time as a share of the mean frame interval; below 60% the frame rate is set by pacing (display refresh or on-demand rendering), not by work",
+      bottleneck: "Busiest of CPU submission and GPU time as a share of the median frame interval (on-demand pauses excluded); below 60% the frame rate is set by pacing (display refresh or on-demand rendering), not by work; unknown when the busier side could be the unmeasured one (no GPU timestamps on WebGL)",
       drawnSplats: "Splats the latest GPU sort kept in the draw after conservative culling, read back at most once per second; WebGL draws every loaded splat",
       splats: "Loaded splats in the active draw (before culling)",
       jsHeapMb: "Chrome's used JavaScript heap at the latest refresh; unavailable in other browsers",
-      longTaskCount: "Main-thread tasks over 50 ms that ended in the window; longTaskWorstMs and longTaskTotalMs describe them",
+      longTaskCount: "Main-thread tasks over 50 ms that ended in the window; longTaskWorstMs and longTaskTotalMs describe them; not reported (always 0) where device.longTasksSupported is false",
       triangles: "Three's CPU-side count; indirect splat draws are counted at their loaded, not drawn, size",
       rendererMb: "Mean MiB of Three-tracked renderer resources; not total physical VRAM",
       sortTimeMs: "Mean reported completed sort duration at submitted frames; null if unavailable",

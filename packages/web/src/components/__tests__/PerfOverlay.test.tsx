@@ -5,7 +5,7 @@ import { PerfOverlay } from "../PerfOverlay.js";
 import { TOGGLE_KEY } from "../../lib/perf.js";
 
 vi.mock("../../lib/perf-runtime.js", () => ({
-  refreshProfiler: vi.fn(), setProfilerForeground: vi.fn(), setLongTaskObservation: vi.fn(),
+  refreshProfiler: vi.fn(), setProfilerForeground: vi.fn(), setLongTaskObservation: vi.fn(), longTasksSupported: vi.fn(() => true),
   profilerClipboardReport: vi.fn(() => JSON.stringify({ schema: "venviewer.profiler.v1" })),
 }));
 
@@ -82,6 +82,19 @@ describe("PerfOverlay", () => {
     fireEvent.click(view.getByRole("button", { name: "Play" }));
     expect(usePerfStore.getState().paused).toBe(false);
     expect(usePerfStore.getState().metrics.sampleCount).toBe(0);
+  });
+
+  it("shows long tasks as unavailable where the browser does not report them", async () => {
+    const { longTasksSupported } = await import("../../lib/perf-runtime.js");
+    vi.mocked(longTasksSupported).mockReturnValue(false);
+    try {
+      setMetrics({ longTaskCount: 0 });
+      const view = render(<PerfOverlay />);
+      expect(view.getByText("This browser does not report main-thread long tasks.")).toBeDefined();
+      expect(view.container.querySelectorAll("dt").length).toBe(12);
+    } finally {
+      vi.mocked(longTasksSupported).mockReturnValue(true);
+    }
   });
 
   it("observes long tasks only while the panel is open and running", async () => {

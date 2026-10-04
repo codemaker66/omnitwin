@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { usePerfStore } from "../stores/perf-store.js";
 import { formatFrameTime, formatTriangles, TOGGLE_KEY } from "../lib/perf.js";
 import { PERF_REFRESH_MS } from "../lib/perf-profiler.js";
-import { profilerClipboardReport, refreshProfiler, setLongTaskObservation, setProfilerForeground } from "../lib/perf-runtime.js";
+import { longTasksSupported, profilerClipboardReport, refreshProfiler, setLongTaskObservation, setProfilerForeground } from "../lib/perf-runtime.js";
 import type { PerfMetrics } from "../lib/perf-profiler.js";
 
 const BOTTLENECK_LABELS: Record<PerfMetrics["bottleneck"]["kind"], string> = {
@@ -106,7 +106,9 @@ export function PerfOverlay(): React.ReactElement | null {
     { label: "GPU sort + light", value: ms(metrics.gpuComputeMs), detail: "WebGPU compute timestamps: the splat depth sort and view-dependent lighting, averaged over sampled draws (0 when a draw needed neither)." },
     { label: "Splats drawn", value: `${count(metrics.drawnSplats ?? metrics.splats)}${drawnShare}`, detail: `Splats the latest GPU sort kept after culling what the camera cannot see, of ${count(metrics.splats)} loaded. WebGL draws every loaded splat.` },
     { label: "Draw calls", value: count(metrics.drawCalls), detail: "Mean geometry draw calls per submitted frame." },
-    { label: "Long tasks", value: String(metrics.longTaskCount), detail: `Main-thread tasks over 50 ms in the window${metrics.longTaskWorstMs === null ? "" : `; worst ${formatFrameTime(metrics.longTaskWorstMs)}, total ${formatFrameTime(metrics.longTaskTotalMs)}`}. Each one is a visible hitch.` },
+    longTasksSupported()
+      ? { label: "Long tasks", value: String(metrics.longTaskCount), detail: `Main-thread tasks over 50 ms in the window${metrics.longTaskWorstMs === null ? "" : `; worst ${formatFrameTime(metrics.longTaskWorstMs)}, total ${formatFrameTime(metrics.longTaskTotalMs)}`}. Each one is a visible hitch.` }
+      : { label: "Long tasks", value: "—", detail: "This browser does not report main-thread long tasks." },
     { label: "Tracked memory", value: metrics.rendererMb === null ? "—" : `${metrics.rendererMb.toFixed(1)} MiB`, detail: `Mean allocation tracked by Three for buffers, textures and other renderer resources. Not total physical VRAM.${metrics.jsHeapMb === null ? "" : ` JavaScript heap ${metrics.jsHeapMb.toFixed(0)} MiB.`}` },
   ];
 
