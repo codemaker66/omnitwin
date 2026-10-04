@@ -5,10 +5,10 @@ import { describe, expect, it } from "vitest";
 
 async function sourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const groups = await Promise.all(entries.map((entry) => {
+  const groups = await Promise.all(entries.map((entry): Promise<string[]> => {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) return entry.name === "__tests__" ? [] : sourceFiles(path);
-    return /\.(tsx|css)$/.test(entry.name) ? [path] : [];
+    if (entry.isDirectory()) return entry.name === "__tests__" ? Promise.resolve([]) : sourceFiles(path);
+    return Promise.resolve(/\.(tsx|css)$/.test(entry.name) ? [path] : []);
   }));
   return groups.flat();
 }

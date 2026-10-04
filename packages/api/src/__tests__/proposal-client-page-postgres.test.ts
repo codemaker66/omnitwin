@@ -434,7 +434,7 @@ describe.skipIf(testUrl === undefined)("the client's proposal page on isolated P
 
     const preview = await server.inject({ method: "GET", url: `/proposals/${PROPOSAL}/preview`, headers: headers() });
     expect(preview.statusCode, preview.body).toBe(200);
-    expect((JSON.parse(preview.body) as { data: ClientPage & { title: string } }).data.title).toBe("Crawford wedding proposal");
+    expect((JSON.parse(preview.body) as { data: ClientPage }).data.title).toBe("Crawford wedding proposal");
     const after = (await pool.query<{ last_viewed_at: Date }>("SELECT last_viewed_at FROM proposal_share_tokens")).rows[0]?.last_viewed_at;
     expect(after?.toISOString()).toBe("2026-09-01T10:00:00.000Z");
 

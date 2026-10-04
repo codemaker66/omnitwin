@@ -234,7 +234,12 @@ export function priceEntry(rule: PricingRule, given: PriceListEvent): Priced {
       name: rule.name,
       price: window === null ? price : `${price}, ${window}`,
       adjustment: adjusted.words,
-      line: { description: rule.name, quantity, pounds: poundsText(adjusted.unitMinor) },
+      line: {
+        description: rule.name,
+        quantity,
+        pounds: poundsText(adjusted.unitMinor),
+        listed: { pricingRuleId: rule.id.toLowerCase(), ruleType: rule.type, description: rule.name },
+      },
       per,
       atMinimum,
       asks,
@@ -242,12 +247,28 @@ export function priceEntry(rule: PricingRule, given: PriceListEvent): Priced {
   };
 }
 
-const LEFT_OUT_WORDS: Readonly<Record<"currency" | "unreadable" | "guests" | "no_price", (names: string) => string>> = {
+const LEFT_OUT_WORDS: Readonly<Record<WhyLeftOut, (names: string) => string>> = {
   currency: (names) => `Priced in another currency, and the quote is in pounds: ${names}.`,
   unreadable: (names) => `Could not be read: ${names}.`,
   guests: (names) => `Priced by the guest count, which the event does not have yet: ${names}.`,
   no_price: (names) => `No price set: ${names}.`,
 };
+
+/** Why an entry priced for the event's date cannot be offered. */
+export type WhyLeftOut = "currency" | "unreadable" | "guests" | "no_price";
+
+/** An entry for the event, as the list offers it: not priced for the event's
+ *  date, or priced, or left out and why. */
+export function priceForEvent(rule: PricingRule, given: PriceListEvent): Priced | { readonly offered: false; readonly why: "not_on_date" } {
+  const event = onCalendar(given);
+  if (event.eventDate !== null && !pricedOn(rule, event.eventDate)) return { offered: false, why: "not_on_date" };
+  return priceEntry(rule, event);
+}
+
+/** What is said of entries left out for one reason, as the list says it. */
+export function leftOutWords(why: WhyLeftOut, names: readonly string[]): string {
+  return LEFT_OUT_WORDS[why](listNames(names));
+}
 
 /**
  * The venue's price list for the event: its room's entries and the

@@ -31,6 +31,12 @@ const mocks = vi.hoisted(() => ({
   changeProposalLayout: vi.fn(),
   listSpaces: vi.fn(),
   listPricingRules: vi.fn(),
+  listProposalTemplates: vi.fn(),
+  createProposalTemplate: vi.fn(),
+  replaceProposalTemplate: vi.fn(),
+  removeProposalTemplate: vi.fn(),
+  restoreProposalTemplate: vi.fn(),
+  getProposalEvent: vi.fn(),
 }));
 
 vi.mock("../../../api/proposals.js", async (importOriginal) => ({
@@ -54,6 +60,14 @@ vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
 vi.mock("../../../api/pricing.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../api/pricing.js")>(),
   listPricingRules: mocks.listPricingRules,
+}));
+vi.mock("../../../api/proposal-templates.js", () => ({
+  listProposalTemplates: mocks.listProposalTemplates,
+  createProposalTemplate: mocks.createProposalTemplate,
+  replaceProposalTemplate: mocks.replaceProposalTemplate,
+  removeProposalTemplate: mocks.removeProposalTemplate,
+  restoreProposalTemplate: mocks.restoreProposalTemplate,
+  getProposalEvent: mocks.getProposalEvent,
 }));
 
 const authState = vi.hoisted(() => ({
@@ -3048,5 +3062,1404 @@ describe("Add from price list", () => {
     expect(panel.queryByTestId("price-list")).toBeNull();
     expect(document.activeElement).toBe(toggle);
     expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Proposal templates (roadmap X1; Tier B #16): a venue's message and quote
+// lines for a room and an occasion. Used, a template's price-list lines are
+// priced from the list as it stands; its typed lines ask for their price.
+// Saved, the form says what is kept. Nothing is read until it is wanted.
+// ---------------------------------------------------------------------------
+
+describe("proposal templates", () => {
+  const VENUE = "00000000-0000-4000-8000-000000000001";
+  const GH = "00000000-0000-4000-8000-000000000011";
+  const SALOON = "00000000-0000-4000-8000-000000000012";
+  const GONE_ROOM = "00000000-0000-4000-8000-000000000013";
+  const HIRE = "00000000-0000-4000-8000-0000000000a1";
+  const DINNER = "00000000-0000-4000-8000-0000000000a2";
+  const BAR = "00000000-0000-4000-8000-0000000000a3";
+  const HIRE_NAME = "Grand Hall — Evening Event (19:00–00:30)";
+  const room = (id: string, name: string, slug: string): Record<string, unknown> => ({
+    id, venueId: "v1", name, slug, widthM: "30", lengthM: "15", heightM: "10", floorPlanOutline: [],
+  });
+  const price = (id: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id, venueId: "v1", spaceId: GH, name: HIRE_NAME, type: "flat_rate", amount: "2400.00",
+    currency: "GBP", minHours: null, minGuests: null, tiers: null, dayOfWeekModifiers: null, seasonalModifiers: null,
+    isActive: true, validFrom: null, validTo: null, ...overrides,
+  });
+  const PRICES = [
+    price(HIRE),
+    price(DINNER, { spaceId: null, name: "Dinner", type: "per_head", amount: "65.00", minGuests: 100 }),
+    price(BAR, { spaceId: null, name: "Late bar", type: "per_hour", amount: "180.00", minHours: 3 }),
+  ];
+  const FACTS = { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" };
+  const MESSAGE = "Thank you for thinking of the Grand Hall.";
+  /** A template as the API lists it: by default the Grand Hall's for a
+   *  wedding, its hire saved under an older name. */
+  const template = (key: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: `00000000-0000-4000-8000-0000000000${key}`, venueId: VENUE, spaceId: GH, roomName: "Grand Hall", roomListed: true,
+    occasion: "wedding", name: "Grand Hall wedding", message: MESSAGE,
+    lines: [
+      { kind: "price_list", pricingRuleId: HIRE, name: "Grand Hall hire", ruleType: "flat_rate", quantity: 1 },
+      { kind: "price_list", pricingRuleId: DINNER, name: "Dinner", ruleType: "per_head", quantity: null },
+      { kind: "typed", description: "Piper", quantity: 1 },
+    ],
+    readable: true, createdAt: "2026-09-29T10:00:00.000Z", updatedAt: "2026-09-29T10:00:00.000Z", updatedByName: "Anna Reid",
+    ...overrides,
+  });
+  const WEDDING = template("f1");
+  /** The templates the venue has; Remove and Undo change them. */
+  let stored: Record<string, unknown>[] = [];
+
+  function held<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void; readonly reject: (error: unknown) => void } {
+    let resolve: (value: T) => void = () => undefined;
+    let reject: (error: unknown) => void = () => undefined;
+    const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+    return { promise, resolve, reject };
+  }
+  /** Each quote line as [description, quantity, price]. */
+  const quoteLines = (panel: HTMLElement): string[][] =>
+    Array.from(panel.querySelectorAll<HTMLInputElement>("[data-testid^='quote-desc-']")).map((description, index) => {
+      const field = (part: string): string => panel.querySelector<HTMLInputElement>(`[data-testid='quote-${part}-${String(index)}']`)?.value ?? "";
+      return [description.value, field("qty"), field("price")];
+    });
+  const sentences = (region: HTMLElement): string[] => Array.from(region.querySelectorAll("p")).map((node) => node.textContent ?? "");
+  const names = (group: HTMLElement): string[] => Array.from(group.querySelectorAll(".pr-template__name")).map((node) => node.textContent ?? "");
+  const messageOf = (panel: HTMLElement): string =>
+    within(panel).getByTestId<HTMLTextAreaElement>("composer-message").value;
+
+  /** A version-2 composer carrying version 1's message, hire line and capacity note. */
+  function carried(): void {
+    existing = [proposal({ currentVersion: 1 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1, {
+      clientMessage: "Dear Elaine, here is the hall for your day.",
+      capacityNote: "Up to 120 at dinner rounds.",
+      quote: quoteSnapshot([{ description: HIRE_NAME, quantity: 1, unitAmountMinor: 240_000 }]),
+    }));
+  }
+
+  /** Writes a first version: a message, the hire and 4 hours of the bar
+   *  from the price list, a typed piper, and a capacity note. */
+  async function compose(panel: HTMLElement, message = MESSAGE): Promise<void> {
+    const inPanel = within(panel);
+    fireEvent.change(await inPanel.findByTestId("composer-message"), { target: { value: message } });
+    fireEvent.click(inPanel.getByTestId("price-list-toggle"));
+    fireEvent.click(await inPanel.findByTestId(`price-${HIRE}`));
+    fireEvent.click(inPanel.getByTestId(`price-${BAR}`));
+    fireEvent.change(inPanel.getByTestId("quote-qty-1"), { target: { value: "4" } });
+    fireEvent.click(inPanel.getByTestId("price-list-done"));
+    fireEvent.click(inPanel.getByTestId("add-quote-line"));
+    fireEvent.change(inPanel.getByTestId("quote-desc-2"), { target: { value: "Piper" } });
+    fireEvent.change(inPanel.getByTestId("quote-price-2"), { target: { value: "150" } });
+    fireEvent.change(inPanel.getByTestId("composer-capacity"), { target: { value: "Up to 120 at dinner rounds." } });
+  }
+
+  /** Opens Save as template and waits for the event and the price list. */
+  async function openSave(panel: HTMLElement): Promise<HTMLElement> {
+    const inPanel = within(panel);
+    fireEvent.click(inPanel.getByTestId("template-save-toggle"));
+    const form = await inPanel.findByTestId("template-save");
+    await within(form).findByTestId("template-kept");
+    await waitFor(() => { expect(within(form).getByTestId<HTMLInputElement>("template-name").value).toBe("Grand Hall wedding"); });
+    return form;
+  }
+
+  const SENT_LINES = [
+    { kind: "price_list", pricingRuleId: HIRE, name: HIRE_NAME, ruleType: "flat_rate", quantity: 1 },
+    { kind: "price_list", pricingRuleId: BAR, name: "Late bar", ruleType: "per_hour", quantity: 4 },
+    { kind: "typed", description: "Piper", quantity: 1 },
+  ];
+
+  beforeEach(() => {
+    existing = [proposal()];
+    stored = [WEDDING];
+    mocks.listSpaces.mockResolvedValue([room(GH, "Grand Hall", "grand-hall"), room(SALOON, "Saloon", "saloon")]);
+    mocks.listPricingRules.mockResolvedValue(PRICES);
+    mocks.listProposalTemplates.mockImplementation(() => Promise.resolve(stored));
+    mocks.getProposalEvent.mockResolvedValue({ facts: FACTS, spaceId: GH });
+    mocks.removeProposalTemplate.mockImplementation((_venue: string, id: string) => {
+      stored = stored.filter((one) => one["id"] !== id);
+      return Promise.resolve();
+    });
+  });
+
+  describe("Start from a template", () => {
+    it("reads nothing more for templates until one of their panels is opened, and reads the event afresh each time one opens", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "Dear Elaine." } });
+      expect(mocks.getProposalEvent).not.toHaveBeenCalled();
+      expect(mocks.listProposalTemplates).not.toHaveBeenCalled();
+      expect(mocks.listPricingRules).not.toHaveBeenCalled();
+
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      expect(mocks.getProposalEvent).toHaveBeenCalledTimes(1);
+      expect(mocks.getProposalEvent).toHaveBeenCalledWith("p1");
+      expect(mocks.listProposalTemplates).toHaveBeenCalledWith("v1");
+      // The event and the templates are read afresh each time, so a template takes the event as it now is.
+      fireEvent.click(panel.getByTestId("templates-done"));
+      await openSave(element);
+      expect(mocks.getProposalEvent).toHaveBeenCalledTimes(2);
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      await waitFor(() => { expect(mocks.listProposalTemplates).toHaveBeenCalledTimes(2); });
+      expect(mocks.getProposalEvent).toHaveBeenCalledTimes(3);
+    });
+
+    it("says it is reading, and says when there are no templates yet", async () => {
+      const list = held<Record<string, unknown>[]>();
+      mocks.listProposalTemplates.mockReturnValueOnce(list.promise);
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      const toggle = await panel.findByTestId("template-toggle");
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(toggle);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(panel.getByText("Reading the templates…")).toBeDefined();
+      await act(async () => { list.resolve([]); await Promise.resolve(); });
+      expect((await panel.findByTestId("templates-empty")).textContent)
+        .toBe("No templates yet. Save as template, beside Save version, keeps one from the proposal you are writing.");
+      expect(panel.queryByText("Reading the templates…")).toBeNull();
+    });
+
+    it("says when the templates could not be read, and reads them again on Try again", async () => {
+      mocks.listProposalTemplates.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      expect((await panel.findByTestId("templates-error")).textContent).toBe("The templates could not be read.");
+      expect(panel.queryByRole("button", { name: "Use Grand Hall wedding" })).toBeNull();
+      fireEvent.click(panel.getByTestId("templates-retry"));
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      expect(panel.queryByTestId("templates-error")).toBeNull();
+      expect(mocks.listProposalTemplates).toHaveBeenCalledTimes(2);
+    });
+
+    it("offers no Use until the event is read, says when it could not be, and reads it again on Try again", async () => {
+      mocks.getProposalEvent.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      expect((await panel.findByTestId("templates-event-error")).textContent)
+        .toBe("The event's details could not be read, so a template cannot be priced for it yet.");
+      await panel.findByTestId(`template-${String(WEDDING["id"])}`);
+      expect(panel.queryByRole("button", { name: "Use Grand Hall wedding" })).toBeNull();
+      // Remove does not need the event.
+      expect(panel.getByRole("button", { name: "Remove Grand Hall wedding" })).toBeDefined();
+      fireEvent.click(panel.getByTestId("templates-event-retry"));
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      expect(panel.queryByTestId("templates-event-error")).toBeNull();
+      expect(mocks.getProposalEvent).toHaveBeenCalledTimes(2);
+    });
+
+    it("lists this event's templates first, closest first, and the others with why they are not this event's", async () => {
+      stored = [
+        template("a5", { name: "Saloon wedding", spaceId: SALOON, roomName: "Saloon" }),
+        template("a4", { name: "House style", spaceId: null, roomName: null, occasion: null }),
+        template("a6", { name: "Conference day", spaceId: null, roomName: null, occasion: "conference" }),
+        template("a2", { name: "Grand Hall, any occasion", occasion: null }),
+        template("a7", { name: "Old room dinner", spaceId: GONE_ROOM, roomName: null, roomListed: false, occasion: null }),
+        template("a3", { name: "Weddings anywhere", spaceId: null, roomName: null }),
+        template("a1", { name: "Grand Hall wedding" }),
+      ];
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      const list = within(await panel.findByTestId("templates"));
+      const forEvent = await list.findByRole("group", { name: "For this event" });
+      expect(names(forEvent)).toEqual(["Grand Hall wedding", "Grand Hall, any occasion", "Weddings anywhere", "House style"]);
+      const others = list.getByRole("group", { name: "Other templates" });
+      expect(names(others)).toEqual(["Conference day", "Old room dinner", "Saloon wedding"]);
+
+      const about = (key: string): string[] => Array.from(list.getByTestId(`template-00000000-0000-4000-8000-0000000000${key}`)
+        .querySelectorAll(".pr-template__about")).map((node) => node.textContent ?? "");
+      expect(about("a1")[0]).toBe("Grand Hall · Wedding");
+      expect(about("a1")[1]).toMatch(/^The message and 3 lines · Saved by Anna Reid, /u);
+      expect(about("a4")[0]).toBe("Any room · Any occasion");
+      expect(about("a5")[0]).toBe("Saloon · Wedding · For the Saloon");
+      expect(about("a6")[0]).toBe("Any room · Conference · For a conference");
+      expect(about("a7")[0]).toBe("A room no longer listed · Any occasion · Its room is no longer listed");
+      expect(list.getByRole("button", { name: "Use Saloon wedding" })).toBeDefined();
+    });
+
+    it("starts an empty first version from a template, priced from the list as it stands, says so, and goes to the first thing to fill in", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      const toggle = await panel.findByTestId("template-toggle");
+      fireEvent.click(toggle);
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      await waitFor(() => { expect(messageOf(element)).toBe(MESSAGE); });
+      expect(mocks.listPricingRules).toHaveBeenCalledWith("v1");
+      // The hire is named and priced as the list has it now, not as the template saved it.
+      expect(quoteLines(element)).toEqual([
+        [HIRE_NAME, "1", "2400"],
+        ["Dinner", "120", "65"],
+        ["Piper", "1", ""],
+      ]);
+      const said = panel.getByTestId("template-said");
+      expect(said.getAttribute("role")).toBe("status");
+      expect(sentences(said)).toEqual(["Started from Grand Hall wedding: the message and its 3 lines.", "Enter the price for Piper (line 3)."]);
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("quote-price-2")); });
+      expect(panel.queryByTestId("templates")).toBeNull();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      // Nothing was put aside: there was nothing to keep.
+      expect(panel.queryByTestId("kept-version")).toBeNull();
+    });
+
+    it("asks before changing words already in the composer: Replace them, Add its lines, or Cancel", async () => {
+      carried();
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      const choice = within(panel.getByTestId("template-choice"));
+      expect(panel.getByTestId("template-choice").getAttribute("role")).toBe("group");
+      expect(panel.getByRole("group", { name: "The composer already has a message and 1 line. Replace keeps what is there now to copy. The capacity note stays." }))
+        .toBeDefined();
+      expect(choice.getByRole("button", { name: "Replace them" })).toBeDefined();
+      expect(choice.getByRole("button", { name: "Add its lines" })).toBeDefined();
+      fireEvent.click(choice.getByRole("button", { name: "Cancel" }));
+      expect(panel.queryByTestId("template-choice")).toBeNull();
+      expect(panel.getByRole("button", { name: "Use Grand Hall wedding" })).toBeDefined();
+      // Nothing was priced and nothing changed.
+      expect(mocks.listPricingRules).not.toHaveBeenCalled();
+      expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day.");
+      expect(quoteLines(element)).toEqual([[HIRE_NAME, "1", "2400"]]);
+    });
+
+    it("closes the choice on Escape first, then the list, gives focus back to its button and leaves the proposal open", async () => {
+      carried();
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      const toggle = panel.getByTestId("template-toggle");
+      fireEvent.click(toggle);
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      const replace = within(panel.getByTestId("template-choice")).getByRole("button", { name: "Replace them" });
+      replace.focus();
+      fireEvent.keyDown(replace, { key: "Escape" });
+      expect(panel.queryByTestId("template-choice")).toBeNull();
+      expect(panel.getByTestId("templates")).toBeDefined();
+      const use = panel.getByRole("button", { name: "Use Grand Hall wedding" });
+      use.focus();
+      fireEvent.keyDown(use, { key: "Escape" });
+      expect(panel.queryByTestId("templates")).toBeNull();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(toggle);
+      expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
+      expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day.");
+    });
+
+    it("replaces the words in a new composer started from the template, keeping the old ones to copy and the capacity note", async () => {
+      carried();
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.change(panel.getByTestId("quote-qty-0"), { target: { value: "2" } });
+      const before = panel.getByTestId("composer");
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Replace them" }));
+
+      await waitFor(() => { expect(messageOf(element)).toBe(MESSAGE); });
+      // A new composer, so the words before it are shown to copy beside it.
+      expect(panel.getByTestId("composer")).not.toBe(before);
+      const kept = within(panel.getByTestId("kept-version"));
+      expect(kept.getByRole("heading", { name: "What you were writing" })).toBeDefined();
+      expect(kept.getByTestId("kept-version-why").textContent).toBe("You started from Grand Hall wedding.");
+      expect(kept.getByText("What you wrote is kept here to copy.")).toBeDefined();
+      expect(kept.getByText("Dear Elaine, here is the hall for your day.")).toBeDefined();
+      expect(kept.getByText("Capacity: Up to 120 at dinner rounds.")).toBeDefined();
+      expect(kept.getByText(`${HIRE_NAME} · 2 × £2400`)).toBeDefined();
+
+      expect(quoteLines(element)).toEqual([[HIRE_NAME, "1", "2400"], ["Dinner", "120", "65"], ["Piper", "1", ""]]);
+      expect(panel.getByTestId<HTMLInputElement>("composer-capacity").value).toBe("Up to 120 at dinner rounds.");
+      await waitFor(() => {
+        expect(sentences(panel.getByTestId("template-said")))
+          .toEqual(["Started from Grand Hall wedding: the message and its 3 lines.", "Enter the price for Piper (line 3)."]);
+      });
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("quote-price-2")); });
+    });
+
+    it("adds its lines after the ones there, keeps the message, and does not add a line already in the quote", async () => {
+      carried();
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      const before = panel.getByTestId("composer");
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Add its lines" }));
+
+      await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
+      expect(quoteLines(element)).toEqual([[HIRE_NAME, "1", "2400"], ["Dinner", "120", "65"], ["Piper", "1", ""]]);
+      expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day.");
+      expect(panel.getByTestId("composer")).toBe(before);
+      expect(panel.queryByTestId("kept-version")).toBeNull();
+      expect(sentences(panel.getByTestId("template-said"))).toEqual([
+        "Added 2 of Grand Hall wedding's 3 lines.",
+        `Already in the quote, so not added again: ${HIRE_NAME}.`,
+        "Enter the price for Piper (line 3).",
+      ]);
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("quote-price-2")); });
+    });
+
+    it("changes nothing when the price list cannot be read on Use, says so, and uses the template on Try again", async () => {
+      mocks.listPricingRules.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      expect((await panel.findByTestId("templates-price-error")).textContent)
+        .toBe("The price list could not be read, so Grand Hall wedding was not used.");
+      expect(messageOf(element)).toBe("");
+      expect(quoteLines(element)).toEqual([]);
+      expect(sentences(panel.getByTestId("template-said"))).toEqual([]);
+      fireEvent.click(panel.getByTestId("templates-price-retry"));
+      await waitFor(() => { expect(messageOf(element)).toBe(MESSAGE); });
+      expect(quoteLines(element)).toHaveLength(3);
+      expect(mocks.listPricingRules).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops a price read overtaken by closing the list and using another template", async () => {
+      stored = [WEDDING, template("f2", { name: "House style", spaceId: null, roomName: null, occasion: null, message: "Our house words.",
+        lines: [{ kind: "typed", description: "Flowers", quantity: 10 }] })];
+      const first = held<Record<string, unknown>[]>();
+      const second = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      expect(panel.getByText("Pricing Grand Hall wedding…")).toBeDefined();
+      // While it prices, nothing else can be used, and the buttons keep their place for focus.
+      expect(panel.getByRole("button", { name: "Use House style" }).getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(panel.getByTestId("templates-done"));
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use House style" }));
+      await act(async () => { second.resolve(PRICES); await Promise.resolve(); });
+      await waitFor(() => { expect(messageOf(element)).toBe("Our house words."); });
+      await act(async () => { first.resolve(PRICES); await Promise.resolve(); });
+      expect(messageOf(element)).toBe("Our house words.");
+      expect(quoteLines(element)).toEqual([["Flowers", "10", ""]]);
+      expect(sentences(panel.getByTestId("template-said"))[0]).toBe("Started from House style: the message and its 1 line.");
+    });
+
+    it("drops a price read that arrives after the list was closed by Escape or by its button", async () => {
+      const first = held<Record<string, unknown>[]>();
+      const second = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      const toggle = await panel.findByTestId("template-toggle");
+      fireEvent.click(toggle);
+      const use = await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      fireEvent.click(use);
+      fireEvent.keyDown(panel.getByTestId("templates"), { key: "Escape" });
+      expect(panel.queryByTestId("templates")).toBeNull();
+      expect(document.activeElement).toBe(toggle);
+      await act(async () => { first.resolve(PRICES); await Promise.resolve(); });
+      expect(messageOf(element)).toBe("");
+      expect(quoteLines(element)).toEqual([]);
+
+      fireEvent.click(toggle);
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(toggle);
+      expect(panel.queryByTestId("templates")).toBeNull();
+      await act(async () => { second.resolve(PRICES); await Promise.resolve(); });
+      expect(messageOf(element)).toBe("");
+      expect(quoteLines(element)).toEqual([]);
+      expect(sentences(panel.getByTestId("template-said"))).toEqual([]);
+    });
+
+    it("removes a template for everyone, and Undo brings it back", async () => {
+      mocks.restoreProposalTemplate.mockImplementation(() => {
+        stored = [WEDDING];
+        return Promise.resolve(WEDDING);
+      });
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
+      const said = panel.getByTestId("templates-said");
+      await waitFor(() => { expect(said.textContent).toBe("Removed Grand Hall wedding for everyone at the venue."); });
+      expect(mocks.removeProposalTemplate).toHaveBeenCalledWith("v1", WEDDING["id"]);
+      await panel.findByTestId("templates-empty");
+      fireEvent.click(panel.getByTestId("template-undo"));
+      await waitFor(() => { expect(said.textContent).toBe("Grand Hall wedding is back."); });
+      expect(mocks.restoreProposalTemplate).toHaveBeenCalledWith("v1", WEDDING["id"]);
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      expect(panel.queryByTestId("template-undo")).toBeNull();
+    });
+
+    it("says when Undo cannot bring a template back because its name is used again", async () => {
+      mocks.restoreProposalTemplate.mockRejectedValue(new ApiError(409, "Name taken", "NAME_TAKEN"));
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
+      fireEvent.click(await panel.findByTestId("template-undo"));
+      await waitFor(() => {
+        expect(panel.getByTestId("templates-said").textContent)
+          .toBe("Another template is now called Grand Hall wedding, so this one cannot come back.");
+      });
+      expect(panel.queryByTestId("template-undo")).toBeNull();
+    });
+
+    it("says when a template was already removed by someone else", async () => {
+      mocks.removeProposalTemplate.mockImplementation(() => {
+        stored = [];
+        return Promise.reject(new ApiError(404, "Not found", "NOT_FOUND"));
+      });
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
+      await waitFor(() => { expect(panel.getByTestId("templates-said").textContent).toBe("Grand Hall wedding was already removed."); });
+      expect(panel.queryByTestId("template-undo")).toBeNull();
+      await panel.findByTestId("templates-empty");
+    });
+  });
+
+  describe("what a template puts in is never lost, stale or misstated", () => {
+    it("starts the version after one saved from a template from the version saved, not the template", async () => {
+      carried();
+      const saved = version(2, {
+        clientMessage: "Dear Elaine, our own words.",
+        quote: quoteSnapshot([{ description: HIRE_NAME, quantity: 1, unitAmountMinor: 240_000 }]),
+      });
+      mocks.createQuote.mockResolvedValue({
+        id: "33333333-3333-4333-8333-333333333333", venueId: "v1", opportunityId: null, proposalId: "p1", enquiryId: null, spaceId: null,
+        name: "Autumn gala quote", status: "draft", currency: "GBP", subtotalMinor: 240_000, totalMinor: 240_000, validUntil: null,
+        supersededByQuoteId: null, notes: null, createdBy: "u1", createdAt: "2026-09-30T09:00:00.000Z", updatedAt: "2026-09-30T09:00:00.000Z",
+        deletedAt: null,
+        lineItems: [{
+          id: "44444444-4444-4444-8444-444444444444", quoteId: "33333333-3333-4333-8333-333333333333", pricingRuleId: HIRE,
+          description: HIRE_NAME, quantity: 1, unitAmountMinor: 240_000, lineTotalMinor: 240_000, sortOrder: 0,
+        }],
+      });
+      mocks.createProposalVersion.mockResolvedValue(saved);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Replace them" }));
+      await waitFor(() => { expect(messageOf(element)).toBe(MESSAGE); });
+      fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Dear Elaine, our own words." } });
+      fireEvent.click(panel.getByRole("button", { name: "Remove quote line 3" }));
+      fireEvent.click(panel.getByRole("button", { name: "Remove quote line 2" }));
+      existing = [proposal({ currentVersion: 2 })];
+      mocks.getLatestProposalVersion.mockResolvedValue(saved);
+      fireEvent.click(panel.getByRole("button", { name: "Save version 2" }));
+
+      await panel.findByRole("button", { name: "Save version 3" });
+      expect(messageOf(element)).toBe("Dear Elaine, our own words.");
+      expect(quoteLines(element)).toEqual([[HIRE_NAME, "1", "2400"]]);
+      expect(sentences(panel.getByTestId("template-said"))).toEqual([]);
+    });
+
+    it("keeps words typed while a template is priced: replaced, they are kept to copy", async () => {
+      const prices = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(prices.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      // The composer is empty when Use is pressed; words arrive before the prices do.
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Typed while it priced." } });
+      await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
+
+      await waitFor(() => { expect(messageOf(element)).toBe(MESSAGE); });
+      const kept = within(panel.getByTestId("kept-version"));
+      expect(kept.getByTestId("kept-version-why").textContent).toBe("You started from Grand Hall wedding.");
+      expect(kept.getByText("Typed while it priced.")).toBeDefined();
+    });
+
+    it("keeps words typed while a template's lines are priced to add", async () => {
+      carried();
+      const prices = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(prices.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      const before = panel.getByTestId("composer");
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Add its lines" }));
+      fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Dear Elaine, written while it priced." } });
+      await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
+
+      await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
+      expect(messageOf(element)).toBe("Dear Elaine, written while it priced.");
+      expect(panel.getByTestId("composer")).toBe(before);
+      expect(panel.queryByTestId("kept-version")).toBeNull();
+    });
+
+    it("gives focus back to the template's Use after Cancel, to Undo after Remove, to what is said after Undo, and to Try again when pricing fails", async () => {
+      carried();
+      mocks.restoreProposalTemplate.mockImplementation(() => {
+        stored = [WEDDING];
+        return Promise.resolve(WEDDING);
+      });
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Cancel" }));
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByRole("button", { name: "Use Grand Hall wedding" })); });
+
+      fireEvent.click(panel.getByRole("button", { name: "Remove Grand Hall wedding" }));
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("template-undo")); });
+      fireEvent.click(panel.getByTestId("template-undo"));
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("templates-said")); });
+      expect(panel.getByTestId("templates-said").textContent).toBe("Grand Hall wedding is back.");
+
+      mocks.listPricingRules.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Add its lines" }));
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("templates-price-retry")); });
+    });
+
+    it("says a Remove with no answer, or a failure on the venue's side, could not be confirmed, and offers no Undo", async () => {
+      for (const failure of [new ApiError(0, "Network error", "NETWORK_ERROR"), new ApiError(503, "Unavailable", "UNAVAILABLE")]) {
+        mocks.removeProposalTemplate.mockReset().mockRejectedValue(failure);
+        render(<ProposalsDesk />);
+        const panel = within(await openProposal());
+        fireEvent.click(await panel.findByTestId("template-toggle"));
+        fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
+        const said = panel.getByTestId("templates-said");
+        await waitFor(() => {
+          expect(said.textContent)
+            .toBe("Removing Grand Hall wedding could not be confirmed. The list shows the templates as the venue now has them.");
+        });
+        await waitFor(() => { expect(document.activeElement).toBe(said); });
+        expect(panel.queryByTestId("template-undo")).toBeNull();
+        cleanup();
+      }
+    });
+
+    it("drops what it said about particular lines once the lines change, and keeps what it said of the whole", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      await waitFor(() => {
+        expect(sentences(panel.getByTestId("template-said")))
+          .toEqual(["Started from Grand Hall wedding: the message and its 3 lines.", "Enter the price for Piper (line 3)."]);
+      });
+      fireEvent.change(panel.getByTestId("quote-price-2"), { target: { value: "150" } });
+      expect(sentences(panel.getByTestId("template-said"))).toEqual(["Started from Grand Hall wedding: the message and its 3 lines."]);
+    });
+  });
+
+  describe("Save as template, never lost or misstated", () => {
+    it("closes on Escape from its own button, and leaves the proposal open", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      await openSave(element);
+      const toggle = within(element).getByTestId("template-save-toggle");
+      toggle.focus();
+      fireEvent.keyDown(toggle, { key: "Escape" });
+      expect(within(element).queryByTestId("template-save")).toBeNull();
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(toggle);
+      expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
+      expect(messageOf(element)).toBe(MESSAGE);
+    });
+
+    it("fills in the name, room and occasion once the event is read on Try again", async () => {
+      mocks.getProposalEvent.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      fireEvent.click(within(element).getByTestId("template-save-toggle"));
+      const form = within(await within(element).findByTestId("template-save"));
+      expect((await form.findByTestId("template-save-event-error")).textContent)
+        .toBe("The event's details could not be read, so what the template keeps cannot be checked against its prices yet.");
+      expect(form.getByTestId<HTMLInputElement>("template-name").value).toBe("");
+      // Nothing is said to be kept, and nothing can be saved, until the event is read.
+      await waitFor(() => { expect(mocks.listPricingRules).toHaveBeenCalled(); });
+      expect(form.queryByTestId("template-kept")).toBeNull();
+      expect(form.getByTestId("template-save-submit").getAttribute("aria-disabled")).toBe("true");
+      const tryAgain = form.getByRole("button", { name: "Try again" });
+      tryAgain.focus();
+      fireEvent.click(tryAgain);
+      // Its block goes as the event is read again, so focus goes to the form's title.
+      expect(document.activeElement?.textContent).toBe("Save as a template");
+      await waitFor(() => { expect(form.getByTestId<HTMLInputElement>("template-name").value).toBe("Grand Hall wedding"); });
+      await form.findByTestId("template-kept");
+      expect(form.getByTestId<HTMLSelectElement>("template-room").value).toBe(GH);
+      expect(form.getByTestId<HTMLSelectElement>("template-occasion").value).toBe("wedding");
+      expect(form.queryByTestId("template-save-event-error")).toBeNull();
+      expect(mocks.getProposalEvent).toHaveBeenCalledTimes(2);
+    });
+
+    it("fills in from the event only the fields not typed in or chosen before it arrived", async () => {
+      const late = held<Record<string, unknown>>();
+      mocks.getProposalEvent.mockReturnValueOnce(late.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      fireEvent.click(within(element).getByTestId("template-save-toggle"));
+      const form = within(await within(element).findByTestId("template-save"));
+      fireEvent.change(form.getByTestId("template-name"), { target: { value: "Our autumn wedding" } });
+      await act(async () => { late.resolve({ facts: FACTS, spaceId: GH }); await Promise.resolve(); });
+      await waitFor(() => { expect(form.getByTestId<HTMLSelectElement>("template-room").value).toBe(GH); });
+      expect(form.getByTestId<HTMLSelectElement>("template-occasion").value).toBe("wedding");
+      expect(form.getByTestId<HTMLInputElement>("template-name").value).toBe("Our autumn wedding");
+    });
+
+    it("shows the event's room as the one chosen even when the venue's rooms could not be read", async () => {
+      mocks.listSpaces.mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      const select = form.getByTestId<HTMLSelectElement>("template-room");
+      expect(select.value).toBe(GH);
+      expect(select.selectedOptions[0]?.textContent).toBe("Grand Hall");
+    });
+
+    it("waits for a save on its way: Cancel, Escape and its button do nothing until it answers, and what came of it is said", async () => {
+      const saving = held<Record<string, unknown>>();
+      mocks.createProposalTemplate.mockReturnValueOnce(saving.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      // The status line is there before anything is said, so what is said is heard.
+      const said = within(element).getByTestId("template-save-said");
+      expect(said.getAttribute("role")).toBe("status");
+      expect(said.textContent).toBe("");
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(1); });
+      fireEvent.click(form.getByRole("button", { name: "Cancel" }));
+      fireEvent.keyDown(form.getByTestId("template-name"), { key: "Escape" });
+      fireEvent.click(within(element).getByTestId("template-save-toggle"));
+      expect(within(element).getByTestId("template-save")).toBeDefined();
+      await act(async () => { saving.resolve(template("s1")); await Promise.resolve(); });
+      await waitFor(() => { expect(within(element).queryByTestId("template-save")).toBeNull(); });
+      expect(within(element).getByTestId("template-save-said")).toBe(said);
+      expect(said.textContent).toBe("Saved the template Grand Hall wedding.");
+    });
+  });
+
+  describe("held, focused and said as it is", () => {
+    it("holds Save version and Start again while a template is priced, and lets them go once it is in", async () => {
+      carried();
+      const prices = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(prices.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.change(panel.getByTestId("quote-qty-0"), { target: { value: "2" } });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Add its lines" }));
+      expect(panel.getByTestId<HTMLButtonElement>("composer-save").disabled).toBe(true);
+      expect(panel.getByTestId<HTMLButtonElement>("composer-start-again").disabled).toBe(true);
+      expect(panel.getByTestId("template-save-toggle").getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(panel.getByTestId("composer-save"));
+      expect(mocks.createProposalVersion).not.toHaveBeenCalled();
+      await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
+      await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
+      expect(panel.getByTestId<HTMLButtonElement>("composer-save").disabled).toBe(false);
+      expect(panel.getByTestId<HTMLButtonElement>("composer-start-again").disabled).toBe(false);
+    });
+
+    it("holds what would replace the composer while a template is saved, so its answer is said", async () => {
+      const saving = held<Record<string, unknown>>();
+      mocks.createProposalTemplate.mockReturnValueOnce(saving.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(1); });
+      expect(panel.getByTestId<HTMLButtonElement>("composer-save").disabled).toBe(true);
+      expect(panel.getByTestId<HTMLButtonElement>("composer-start-again").disabled).toBe(true);
+      expect(panel.getByTestId("template-toggle").getAttribute("aria-disabled")).toBe("true");
+      await act(async () => { saving.reject(new ApiError(409, "Name taken", "NAME_TAKEN", template("c1"))); await Promise.resolve(); });
+      expect((await panel.findByTestId("template-name-taken")).textContent).toContain("A template is already called Grand Hall wedding.");
+      expect(panel.getByTestId<HTMLButtonElement>("composer-save").disabled).toBe(false);
+    });
+
+    it("takes focus to the question when Use finds words in the composer, and Escape from there answers it", async () => {
+      carried();
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      const use = await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      use.focus();
+      fireEvent.click(use);
+      const question = panel.getByTestId("template-question");
+      await waitFor(() => { expect(document.activeElement).toBe(question); });
+      expect(question.textContent).toBe("The composer already has a message and 1 line. Replace keeps what is there now to copy. The capacity note stays.");
+      fireEvent.keyDown(question, { key: "Escape" });
+      expect(panel.queryByTestId("template-choice")).toBeNull();
+      await waitFor(() => { expect(document.activeElement).toBe(panel.getByRole("button", { name: "Use Grand Hall wedding" })); });
+      expect(panel.getByTestId("templates")).toBeDefined();
+    });
+
+    it("never moves focus from a field the booker went to while a template was priced or removed", async () => {
+      const prices = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(prices.promise);
+      const removing = held<undefined>();
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      const message = panel.getByTestId("composer-message");
+      message.focus();
+      await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
+      await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
+      expect(document.activeElement).toBe(message);
+
+      stored = [WEDDING];
+      mocks.removeProposalTemplate.mockReturnValueOnce(removing.promise);
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      // Remove is pressed (so has focus), then the booker goes back to the message.
+      const remove = await panel.findByRole("button", { name: "Remove Grand Hall wedding" });
+      remove.focus();
+      fireEvent.click(remove);
+      message.focus();
+      stored = [];
+      await act(async () => { removing.resolve(undefined); await Promise.resolve(); });
+      await waitFor(() => { expect(panel.getByTestId("templates-said").textContent).toBe("Removed Grand Hall wedding for everyone at the venue."); });
+      expect(document.activeElement).toBe(message);
+    });
+
+    it("says the list is as it was last read when a removal is unconfirmed and the templates cannot be read again", async () => {
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      mocks.removeProposalTemplate.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      mocks.listProposalTemplates.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      fireEvent.click(panel.getByRole("button", { name: "Remove Grand Hall wedding" }));
+      await waitFor(() => {
+        expect(panel.getByTestId("templates-said").textContent).toBe("Removing Grand Hall wedding could not be confirmed. The list is as it was last read.");
+      });
+      expect(panel.getByTestId("templates-error").textContent).toBe("The templates could not be read.");
+    });
+
+    it("takes a template known to be removed out of the list even when the templates cannot be read again", async () => {
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      mocks.listProposalTemplates.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      fireEvent.click(panel.getByRole("button", { name: "Remove Grand Hall wedding" }));
+      await waitFor(() => { expect(panel.getByTestId("templates-said").textContent).toBe("Removed Grand Hall wedding for everyone at the venue."); });
+      expect(panel.queryByTestId(`template-${String(WEDDING["id"])}`)).toBeNull();
+      expect(panel.getByTestId("template-undo")).toBeDefined();
+    });
+
+    it("keeps the list open while a removal is on its way, says what came of it, and steals no focus on opening again", async () => {
+      const removing = held<undefined>();
+      mocks.removeProposalTemplate.mockReturnValueOnce(removing.promise);
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      const toggle = await panel.findByTestId("template-toggle");
+      fireEvent.click(toggle);
+      fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
+      expect(panel.getByTestId("templates-done").getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(panel.getByTestId("templates-done"));
+      fireEvent.keyDown(panel.getByTestId("templates"), { key: "Escape" });
+      expect(panel.getByTestId("templates")).toBeDefined();
+      stored = [];
+      await act(async () => { removing.reject(new ApiError(503, "Unavailable", "UNAVAILABLE")); await Promise.resolve(); });
+      await waitFor(() => {
+        expect(panel.getByTestId("templates-said").textContent)
+          .toBe("Removing Grand Hall wedding could not be confirmed. The list shows the templates as the venue now has them.");
+      });
+      fireEvent.click(panel.getByTestId("templates-done"));
+      expect(panel.queryByTestId("templates")).toBeNull();
+      toggle.focus();
+      fireEvent.click(toggle);
+      await panel.findByTestId("templates-empty");
+      expect(document.activeElement).toBe(toggle);
+    });
+
+    it("prices a template for the event's guests as they are now, reading the event each time the list opens", async () => {
+      mocks.getProposalEvent.mockResolvedValueOnce({ facts: FACTS, spaceId: GH }).mockResolvedValue({ facts: { ...FACTS, guestCount: 160 }, spaceId: GH });
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      fireEvent.click(panel.getByTestId("templates-done"));
+      // The deal's guests change elsewhere; the list is opened again.
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      await waitFor(() => { expect(mocks.getProposalEvent).toHaveBeenCalledTimes(2); });
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
+      expect(quoteLines(element)[1]).toEqual(["Dinner", "160", "65"]);
+    });
+
+    it("keeps focus on Replace it while the replace is on its way and when the answer asks again", async () => {
+      mocks.createProposalTemplate.mockRejectedValueOnce(new ApiError(409, "Name taken", "NAME_TAKEN", template("c1")));
+      const replacing = held<Record<string, unknown>>();
+      mocks.replaceProposalTemplate.mockReturnValueOnce(replacing.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      const replace = await form.findByTestId("template-replace-existing");
+      replace.focus();
+      fireEvent.click(replace);
+      await waitFor(() => { expect(mocks.replaceProposalTemplate).toHaveBeenCalledTimes(1); });
+      expect(replace.isConnected).toBe(true);
+      expect(replace.getAttribute("aria-busy")).toBe("true");
+      expect(document.activeElement).toBe(replace);
+      await act(async () => {
+        replacing.reject(new ApiError(409, "Changed", "TEMPLATE_CHANGED", template("c1", { updatedByName: "Morag Bell", updatedAt: "2026-10-02T09:30:00.000Z" })));
+        await Promise.resolve();
+      });
+      const changed = await form.findByTestId("template-changed");
+      expect(changed.textContent).toContain("Morag Bell changed Grand Hall wedding at 10:30.");
+      expect(document.activeElement?.textContent).toBe("Replace it");
+    });
+
+    it("moves focus to the list's title when Try again takes its own block away", async () => {
+      mocks.listProposalTemplates.mockRejectedValueOnce(new ApiError(0, "Network error", "NETWORK_ERROR"));
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      const retry = await panel.findByTestId("templates-retry");
+      retry.focus();
+      fireEvent.click(retry);
+      expect(document.activeElement?.textContent).toBe("Templates");
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      expect(document.activeElement?.textContent).toBe("Templates");
+    });
+
+    it("gives the year of a template saved in an earlier year, so it never reads as recent", async () => {
+      stored = [template("a9", { name: "Old wedding", updatedAt: "2025-09-22T09:14:00.000Z" })];
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      const row = await panel.findByTestId("template-00000000-0000-4000-8000-0000000000a9");
+      expect(row.textContent).toContain("Saved by Anna Reid, 22 Sep 2025");
+    });
+  });
+
+  describe("held both ways, so nothing on its way is lost", () => {
+    it("saves no template from the open form while a version saves, and holds Undo then too", async () => {
+      carried();
+      // The version's quote is made first; held there, the version save stays on its way.
+      const quoting = held<Record<string, unknown>>();
+      mocks.createQuote.mockReturnValueOnce(quoting.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
+      const undo = await panel.findByTestId("template-undo");
+      // The removal's hold lifts a render after Undo appears.
+      await waitFor(() => { expect(panel.getByTestId("template-save-toggle").getAttribute("aria-disabled")).toBe("false"); });
+      const form = within(await openSave(element));
+      fireEvent.click(panel.getByRole("button", { name: "Save version 2" }));
+      await waitFor(() => { expect(mocks.createQuote).toHaveBeenCalledTimes(1); });
+      expect(form.getByTestId("template-save-submit").getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      expect(mocks.createProposalTemplate).not.toHaveBeenCalled();
+      expect(undo.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(undo);
+      expect(mocks.restoreProposalTemplate).not.toHaveBeenCalled();
+    });
+
+    it("holds Send to the client while a template is saved", async () => {
+      carried();
+      const saving = held<Record<string, unknown>>();
+      mocks.createProposalTemplate.mockReturnValueOnce(saving.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      expect(panel.getByTestId<HTMLButtonElement>("send-open").disabled).toBe(false);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(1); });
+      expect(panel.getByTestId<HTMLButtonElement>("send-open").disabled).toBe(true);
+      await act(async () => { saving.resolve(template("s1")); await Promise.resolve(); });
+      await waitFor(() => { expect(panel.getByTestId("template-save-said").textContent).toBe("Saved the template Grand Hall wedding."); });
+      expect(panel.getByTestId<HTMLButtonElement>("send-open").disabled).toBe(false);
+    });
+
+    it("still puts in a template priced while a reply posts, which replaces nothing", async () => {
+      const prices = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(prices.promise);
+      const posting = held<Record<string, unknown>>();
+      mocks.postProposalComment.mockReturnValueOnce(posting.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.change(panel.getByTestId("reply-input"), { target: { value: "Thanks Elaine." } });
+      fireEvent.click(panel.getByTestId("reply-submit"));
+      await waitFor(() => { expect(mocks.postProposalComment).toHaveBeenCalledTimes(1); });
+      await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
+      await waitFor(() => { expect(messageOf(element)).toBe(MESSAGE); });
+      expect(quoteLines(element)).toHaveLength(3);
+    });
+
+    it("leaves focus where the booker went while a template saved, whatever the answer", async () => {
+      for (const answer of ["saved", "refused"] as const) {
+        const saving = held<Record<string, unknown>>();
+        mocks.createProposalTemplate.mockReturnValueOnce(saving.promise);
+        render(<ProposalsDesk />);
+        const element = await openProposal();
+        const panel = within(element);
+        await compose(element);
+        const form = within(await openSave(element));
+        const submit = form.getByTestId("template-save-submit");
+        submit.focus();
+        fireEvent.click(submit);
+        await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalled(); });
+        const message = panel.getByTestId("composer-message");
+        message.focus();
+        await act(async () => {
+          if (answer === "saved") saving.resolve(template("s1"));
+          else saving.reject(new ApiError(422, "Changed", "PRICE_ENTRY_CHANGED"));
+          await Promise.resolve();
+        });
+        if (answer === "saved") await waitFor(() => { expect(panel.queryByTestId("template-save")).toBeNull(); });
+        else await panel.findByTestId("template-save-error");
+        expect(document.activeElement).toBe(message);
+        cleanup();
+        mocks.createProposalTemplate.mockReset();
+      }
+    });
+
+    it("keeps focus on the list's button when the list closes while a template saves, and opens it only once answered", async () => {
+      const saving = held<Record<string, unknown>>();
+      mocks.createProposalTemplate.mockReturnValueOnce(saving.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await compose(element);
+      const toggle = panel.getByTestId("template-toggle");
+      fireEvent.click(toggle);
+      await panel.findByRole("button", { name: "Use Grand Hall wedding" });
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(1); });
+      fireEvent.click(panel.getByTestId("templates-done"));
+      expect(panel.queryByTestId("templates")).toBeNull();
+      expect(document.activeElement).toBe(toggle);
+      expect(toggle.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(toggle);
+      expect(panel.queryByTestId("templates")).toBeNull();
+    });
+
+    it("asks before a template replaces a line with a price but no words yet, and keeps it to copy", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("add-quote-line"));
+      fireEvent.change(panel.getByTestId("quote-qty-0"), { target: { value: "3" } });
+      fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: "450" } });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      expect(panel.getByTestId("template-question").textContent).toContain("The composer already has 1 line.");
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Replace them" }));
+      await waitFor(() => { expect(messageOf(element)).toBe(MESSAGE); });
+      expect(within(panel.getByTestId("kept-version")).getByText("A line with no description · 3 × £450")).toBeDefined();
+    });
+  });
+
+  describe("the panel holds Send and Withdraw for template work, and lets them go", () => {
+    it("holds Send and Withdraw while a template is priced and while one is removed, and lets them go after", async () => {
+      carried();
+      const prices = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(prices.promise);
+      const removing = held<undefined>();
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      const send = (): HTMLButtonElement => panel.getByTestId<HTMLButtonElement>("send-open");
+      const withdraw = (): HTMLButtonElement => panel.getByTestId<HTMLButtonElement>("withdraw-button");
+      expect(send().disabled).toBe(false);
+      expect(withdraw().disabled).toBe(false);
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Add its lines" }));
+      await waitFor(() => { expect(send().disabled).toBe(true); });
+      expect(withdraw().disabled).toBe(true);
+      await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
+      await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
+      await waitFor(() => { expect(send().disabled).toBe(false); });
+      expect(withdraw().disabled).toBe(false);
+
+      mocks.removeProposalTemplate.mockReturnValueOnce(removing.promise);
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Remove Grand Hall wedding" }));
+      await waitFor(() => { expect(send().disabled).toBe(true); });
+      expect(withdraw().disabled).toBe(true);
+      stored = [];
+      await act(async () => { removing.resolve(undefined); await Promise.resolve(); });
+      await panel.findByTestId("template-undo");
+      await waitFor(() => { expect(send().disabled).toBe(false); });
+    });
+
+    it("lets Withdraw go when the composer closes with a template save on its way", async () => {
+      carried();
+      const saving = held<Record<string, unknown>>();
+      mocks.createProposalTemplate.mockReturnValueOnce(saving.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(1); });
+      await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("withdraw-button").disabled).toBe(true); });
+      // A colleague sends it meanwhile, and the booker comes back to the page: the composer closes.
+      existing = [proposal({ status: "sent", currentVersion: 1, sentAt: "2026-10-02T09:00:00.000Z" })];
+      act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+      await waitFor(() => { expect(panel.queryByTestId("composer")).toBeNull(); });
+      await waitFor(() => { expect(panel.getByTestId<HTMLButtonElement>("withdraw-button").disabled).toBe(false); });
+    });
+
+    it("refuses to open Save as template while a template is priced, and the template still goes in", async () => {
+      carried();
+      const prices = held<Record<string, unknown>[]>();
+      mocks.listPricingRules.mockReturnValueOnce(prices.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      fireEvent.click(panel.getByTestId("template-toggle"));
+      fireEvent.click(await panel.findByRole("button", { name: "Use Grand Hall wedding" }));
+      fireEvent.click(within(panel.getByTestId("template-choice")).getByRole("button", { name: "Add its lines" }));
+      const toggle = panel.getByTestId("template-save-toggle");
+      await waitFor(() => { expect(toggle.getAttribute("aria-disabled")).toBe("true"); });
+      fireEvent.click(toggle);
+      expect(panel.queryByTestId("template-save")).toBeNull();
+      expect(mocks.getProposalEvent).toHaveBeenCalledTimes(1);
+      await act(async () => { prices.resolve(PRICES); await Promise.resolve(); });
+      await waitFor(() => { expect(quoteLines(element)).toHaveLength(3); });
+      expect(sentences(panel.getByTestId("template-said"))[0]).toBe("Added 2 of Grand Hall wedding's 3 lines.");
+    });
+
+    it("saves a template while a reply posts, which replaces nothing", async () => {
+      const posting = held<Record<string, unknown>>();
+      mocks.postProposalComment.mockReturnValueOnce(posting.promise);
+      mocks.createProposalTemplate.mockResolvedValueOnce(template("s1"));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.change(panel.getByTestId("reply-input"), { target: { value: "Thanks Elaine." } });
+      fireEvent.click(panel.getByTestId("reply-submit"));
+      await waitFor(() => { expect(mocks.postProposalComment).toHaveBeenCalledTimes(1); });
+      expect(form.getByTestId("template-save-submit").getAttribute("aria-disabled")).toBe("false");
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(panel.getByTestId("template-save-said").textContent).toBe("Saved the template Grand Hall wedding."); });
+    });
+
+    it("marks Replace it unavailable while a version saves", async () => {
+      carried();
+      mocks.createProposalTemplate.mockRejectedValueOnce(new ApiError(409, "Name taken", "NAME_TAKEN", template("c1")));
+      const quoting = held<Record<string, unknown>>();
+      mocks.createQuote.mockReturnValueOnce(quoting.promise);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      await waitFor(() => { expect(messageOf(element)).toBe("Dear Elaine, here is the hall for your day."); });
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      const replace = await form.findByTestId("template-replace-existing");
+      expect(replace.getAttribute("aria-disabled")).toBe("false");
+      fireEvent.click(panel.getByRole("button", { name: "Save version 2" }));
+      await waitFor(() => { expect(mocks.createQuote).toHaveBeenCalledTimes(1); });
+      expect(replace.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(replace);
+      expect(mocks.replaceProposalTemplate).not.toHaveBeenCalled();
+    });
+
+    it("offers Save as template only for what a template keeps, and keeps its button for focus when that goes", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      fireEvent.click(await panel.findByTestId("add-quote-line"));
+      fireEvent.change(panel.getByTestId("quote-price-0"), { target: { value: "450" } });
+      expect(panel.queryByTestId("template-save-toggle")).toBeNull();
+      fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Dear Elaine," } });
+      const form = within(await openSave(element));
+      expect(form.getByTestId("template-kept").textContent).toContain("Line 1 has no description, so it is not kept.");
+      fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "" } });
+      const cancel = form.getByRole("button", { name: "Cancel" });
+      cancel.focus();
+      fireEvent.click(cancel);
+      const toggle = panel.getByTestId("template-save-toggle");
+      expect(document.activeElement).toBe(toggle);
+      expect(toggle.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(toggle);
+      expect(panel.queryByTestId("template-save")).toBeNull();
+      // The window losing focus blurs it while it is still focused: it stays.
+      fireEvent.blur(toggle);
+      expect(panel.getByTestId("template-save-toggle")).toBe(toggle);
+      // Focus moving on within the page takes it away.
+      panel.getByTestId("composer-message").focus();
+      await waitFor(() => { expect(panel.queryByTestId("template-save-toggle")).toBeNull(); });
+      fireEvent.change(panel.getByTestId("quote-desc-0"), { target: { value: "Piper" } });
+      expect(panel.getByTestId("template-save-toggle")).toBeDefined();
+    });
+
+    it("offers a name in the event's own words for an occasion typed in free", async () => {
+      mocks.getProposalEvent.mockResolvedValue({ facts: { ...FACTS, occasion: "AGM" }, spaceId: GH });
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      fireEvent.click(within(element).getByTestId("template-save-toggle"));
+      const form = within(await within(element).findByTestId("template-save"));
+      await waitFor(() => { expect(form.getByTestId<HTMLInputElement>("template-name").value).toBe("Grand Hall AGM"); });
+    });
+  });
+
+  describe("Save as template", () => {
+    it("is offered only once the composer has words", async () => {
+      render(<ProposalsDesk />);
+      const panel = within(await openProposal());
+      const message = await panel.findByTestId("composer-message");
+      expect(panel.queryByTestId("template-save-toggle")).toBeNull();
+      fireEvent.change(message, { target: { value: "Dear Elaine." } });
+      expect(panel.getByTestId("template-save-toggle").textContent).toBe("Save as template");
+      fireEvent.change(message, { target: { value: "   " } });
+      expect(panel.queryByTestId("template-save-toggle")).toBeNull();
+    });
+
+    it("offers the event's room and occasion, names it from them, and says what is kept and what is not", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      // A price of your own differs from the list's.
+      fireEvent.change(within(element).getByTestId("quote-price-0"), { target: { value: "2200" } });
+      const form = within(await openSave(element));
+      expect(form.getByTestId<HTMLSelectElement>("template-room").value).toBe(GH);
+      expect(Array.from(form.getByTestId<HTMLSelectElement>("template-room").options).map((option) => option.text))
+        .toEqual(["Any room", "Grand Hall", "Saloon"]);
+      expect(form.getByTestId<HTMLSelectElement>("template-occasion").value).toBe("wedding");
+      expect(sentences(form.getByTestId("template-kept"))).toEqual([
+        "The message.",
+        `From the price list, priced each time it is used: ${HIRE_NAME}; Late bar, 4 hours.`,
+        "Typed, with the price entered each time: Piper.",
+        `Your price for ${HIRE_NAME}, £2,200, differs from the list's £2,400. The template takes the list's price each time.`,
+        "The capacity note is not kept.",
+      ]);
+      const submit = form.getByTestId("template-save-submit");
+      expect(submit.getAttribute("aria-disabled")).toBe("false");
+      expect(document.getElementById(submit.getAttribute("aria-describedby") ?? "")).toBe(form.getByTestId("template-kept"));
+    });
+
+    it("refuses an any-room template holding a room's price, and a message with a claim the venue cannot show", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      const submit = form.getByTestId("template-save-submit");
+      fireEvent.change(form.getByTestId("template-room"), { target: { value: "" } });
+      const refusal = form.getByTestId("template-save-refusal");
+      expect(refusal.textContent).toBe(`${HIRE_NAME} is priced for the Grand Hall, so this template needs a room.`);
+      expect(submit.getAttribute("aria-disabled")).toBe("true");
+      expect(submit.getAttribute("aria-describedby")).toBe(refusal.id);
+      fireEvent.click(submit);
+      expect(mocks.createProposalTemplate).not.toHaveBeenCalled();
+
+      fireEvent.change(form.getByTestId("template-room"), { target: { value: GH } });
+      expect(form.queryByTestId("template-save-refusal")).toBeNull();
+      fireEvent.change(within(element).getByTestId("composer-message"), { target: { value: "The hall is certified safe for 300." } });
+      expect(form.getByTestId("template-save-refusal").textContent)
+        .toBe("The message says \"certified safe\", a certainty the venue cannot show a client. Reword it first.");
+      expect(submit.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(submit);
+      expect(mocks.createProposalTemplate).not.toHaveBeenCalled();
+    });
+
+    it("saves the template with the lines as references and typed lines, says so, and gives focus back to its button", async () => {
+      mocks.createProposalTemplate.mockImplementation((_venue: string, input: Record<string, unknown>) =>
+        Promise.resolve(template("b1", input)));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      const toggle = within(element).getByTestId("template-save-toggle");
+      await waitFor(() => { expect(within(element).queryByTestId("template-save")).toBeNull(); });
+      expect(mocks.createProposalTemplate).toHaveBeenCalledWith("v1", {
+        name: "Grand Hall wedding", spaceId: GH, occasion: "wedding", message: MESSAGE, lines: SENT_LINES,
+      });
+      expect(within(element).getByTestId("template-save-said").textContent).toBe("Saved the template Grand Hall wedding.");
+      expect(document.activeElement).toBe(toggle);
+      // The composer's own words are untouched.
+      expect(messageOf(element)).toBe(MESSAGE);
+    });
+
+    it("offers to replace a template of the same name, as it was read, or to choose another name", async () => {
+      const existingOne = template("c1", { updatedAt: "2026-09-30T08:00:00.000Z" });
+      mocks.createProposalTemplate.mockRejectedValue(new ApiError(409, "Name taken", "NAME_TAKEN", existingOne));
+      mocks.replaceProposalTemplate.mockImplementation((_venue: string, id: string) => Promise.resolve({ ...existingOne, id }));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      const taken = within(await form.findByTestId("template-name-taken"));
+      expect(taken.getByRole("alert").textContent).toBe("A template is already called Grand Hall wedding.");
+      fireEvent.click(taken.getByRole("button", { name: "Choose another name" }));
+      expect(form.queryByTestId("template-name-taken")).toBeNull();
+      expect(document.activeElement).toBe(form.getByTestId("template-name"));
+
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      fireEvent.click(await form.findByTestId("template-replace-existing"));
+      await waitFor(() => { expect(within(element).queryByTestId("template-save")).toBeNull(); });
+      expect(mocks.replaceProposalTemplate).toHaveBeenCalledWith("v1", existingOne["id"], {
+        name: "Grand Hall wedding", spaceId: GH, occasion: "wedding", message: MESSAGE, lines: SENT_LINES,
+        expectedUpdatedAt: "2026-09-30T08:00:00.000Z",
+      });
+      expect(within(element).getByTestId("template-save-said").textContent).toBe("Replaced the template Grand Hall wedding.");
+      expect(document.activeElement).toBe(within(element).getByTestId("template-save-toggle"));
+    });
+
+    it("never overwrites a template a colleague changed meanwhile unseen: it names them and offers Replace it or Keep theirs", async () => {
+      const existingOne = template("c1", { updatedAt: "2026-09-30T08:00:00.000Z" });
+      const theirs = template("c1", { updatedAt: "2026-10-02T09:59:00.000Z", updatedByName: "Anna Reid" });
+      mocks.createProposalTemplate.mockRejectedValue(new ApiError(409, "Name taken", "NAME_TAKEN", existingOne));
+      mocks.replaceProposalTemplate.mockRejectedValueOnce(new ApiError(409, "Changed", "TEMPLATE_CHANGED", theirs))
+        .mockResolvedValueOnce(theirs);
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      fireEvent.click(await form.findByTestId("template-replace-existing"));
+      const changed = within(await form.findByTestId("template-changed"));
+      expect(changed.getByRole("alert").textContent).toBe("Anna Reid changed Grand Hall wedding at 10:59.");
+      expect(changed.getByRole("button", { name: "Keep theirs" })).toBeDefined();
+      fireEvent.click(changed.getByRole("button", { name: "Replace it" }));
+      await waitFor(() => { expect(within(element).queryByTestId("template-save")).toBeNull(); });
+      expect(mocks.replaceProposalTemplate).toHaveBeenLastCalledWith("v1", theirs["id"],
+        expect.objectContaining({ expectedUpdatedAt: "2026-10-02T09:59:00.000Z" }));
+      expect(within(element).getByTestId("template-save-said").textContent).toBe("Replaced the template Grand Hall wedding.");
+    });
+
+    it("keeps the colleague's template on Keep theirs", async () => {
+      const existingOne = template("c1", { updatedAt: "2026-09-30T08:00:00.000Z" });
+      const theirs = template("c1", { updatedAt: "2026-10-02T09:59:00.000Z", updatedByName: "Anna Reid" });
+      mocks.createProposalTemplate.mockRejectedValue(new ApiError(409, "Name taken", "NAME_TAKEN", existingOne));
+      mocks.replaceProposalTemplate.mockRejectedValue(new ApiError(409, "Changed", "TEMPLATE_CHANGED", theirs));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      fireEvent.click(await form.findByTestId("template-replace-existing"));
+      // Pressed, as a browser does, so focus is on it.
+      const keep = await form.findByTestId("template-keep-theirs");
+      keep.focus();
+      fireEvent.click(keep);
+      expect(within(element).queryByTestId("template-save")).toBeNull();
+      expect(within(element).getByTestId("template-save-said").textContent).toBe("Kept Anna Reid's Grand Hall wedding.");
+      expect(mocks.replaceProposalTemplate).toHaveBeenCalledTimes(1);
+      expect(document.activeElement).toBe(within(element).getByTestId("template-save-toggle"));
+    });
+
+    it("reads the price list again when an entry changed while saving, and says to check what is kept", async () => {
+      mocks.createProposalTemplate.mockRejectedValue(new ApiError(422, "A price-list entry is priced differently now", "PRICE_ENTRY_CHANGED",
+        { names: ["Late bar"] }));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      const reads = mocks.listPricingRules.mock.calls.length;
+      // The bar is taken off the list meanwhile.
+      mocks.listPricingRules.mockResolvedValue([PRICES[0], PRICES[1]]);
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      expect((await form.findByTestId("template-save-error")).textContent)
+        .toBe("The price list changed while you saved. Check what is kept and save again.");
+      expect(mocks.listPricingRules).toHaveBeenCalledTimes(reads + 1);
+      await waitFor(() => {
+        expect(sentences(form.getByTestId("template-kept"))).toContain("Typed, with the price entered each time: Late bar and Piper.");
+      });
+    });
+
+    it("says a save with no answer could not be confirmed, whether the connection failed or the request did", async () => {
+      mocks.createProposalTemplate.mockRejectedValueOnce(new ApiError(0, "Network error — check your connection", "NETWORK_ERROR"))
+        .mockRejectedValueOnce(new ApiError(502, "Bad gateway", "UNKNOWN")).mockRejectedValueOnce(new Error("offline"));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      const words = "The save could not be confirmed. Start from a template shows whether it was kept.";
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      expect((await form.findByTestId("template-save-error")).textContent).toBe(words);
+      // Every field is kept to try again.
+      expect(form.getByTestId<HTMLInputElement>("template-name").value).toBe("Grand Hall wedding");
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(2); });
+      expect((await form.findByTestId("template-save-error")).textContent).toBe(words);
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(mocks.createProposalTemplate).toHaveBeenCalledTimes(3); });
+      expect((await form.findByTestId("template-save-error")).textContent).toBe(words);
+    });
+
+    it("says a refusal is a refusal: a room no longer listed, or a template the API will not keep", async () => {
+      mocks.createProposalTemplate.mockRejectedValueOnce(new ApiError(422, "Room not at venue", "ROOM_NOT_AT_VENUE"))
+        .mockRejectedValueOnce(new ApiError(400, "Validation failed", "VALIDATION_ERROR"));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      expect((await form.findByTestId("template-save-error")).textContent).toBe("That room is no longer listed. Choose another room.");
+      fireEvent.click(form.getByTestId("template-save-submit"));
+      await waitFor(() => { expect(form.getByTestId("template-save-error").textContent).toBe("The template could not be saved as it stands."); });
+    });
+
+    it("closes on Escape without closing the proposal, and gives focus back to its button", async () => {
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await compose(element);
+      const form = within(await openSave(element));
+      const name = form.getByTestId("template-name");
+      name.focus();
+      fireEvent.keyDown(name, { key: "Escape" });
+      expect(within(element).queryByTestId("template-save")).toBeNull();
+      expect(document.activeElement).toBe(within(element).getByTestId("template-save-toggle"));
+      expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
+      expect(mocks.createProposalTemplate).not.toHaveBeenCalled();
+    });
   });
 });

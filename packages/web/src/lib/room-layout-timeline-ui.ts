@@ -175,12 +175,12 @@ export function timelineScopedRequestRange(
  * minimum so short events still have a useful scrub axis. The lens is not
  * clamped to midnight, allowing an event day to finish after 00:00.
  */
-export function timelineDisplayRange<Frame extends {
-  readonly startsAt: string;
-  readonly endsAt: string;
-}>(
+export function timelineDisplayRange(
   queryRange: BoardRange,
-  frames: readonly Frame[],
+  frames: readonly {
+    readonly startsAt: string;
+    readonly endsAt: string;
+  }[],
   scope: "day" | "week",
 ): BoardRange {
   if (scope === "week" || frames.length === 0) return queryRange;
@@ -259,10 +259,10 @@ export function layoutTimelineTicks(
   });
 }
 
-export function availableFrameIndices<Frame extends {
-  readonly keyframe: { readonly state: string; readonly snapshotStatus?: string | null };
-}>(
-  frames: readonly Frame[],
+export function availableFrameIndices(
+  frames: readonly {
+    readonly keyframe: { readonly state: string; readonly snapshotStatus?: string | null };
+  }[],
 ): readonly number[] {
   return frames.flatMap((frame, index) =>
     frame.keyframe.state === "available" && frame.keyframe.snapshotStatus === "frozen"
@@ -316,11 +316,11 @@ export function availableFrameSegment(
  * when every frame between them is an explicit canonical room-flip gap.
  * Missing/invalid phases and skipped saved phases require a static replace.
  */
-export function timelineFramesAllowSpatialMorph<Frame extends {
-  readonly kind?: string;
-  readonly keyframe?: { readonly state: string; readonly reason?: string };
-}>(
-  frames: readonly Frame[],
+export function timelineFramesAllowSpatialMorph(
+  frames: readonly {
+    readonly kind?: string;
+    readonly keyframe?: { readonly state: string; readonly reason?: string };
+  }[],
   fromIndex: number,
   toIndex: number,
 ): boolean {
@@ -338,10 +338,13 @@ export function timelineFramesAllowSpatialMorph<Frame extends {
  * Resolves overlapping schedule ownership consistently. The phase with the
  * latest start wins; equal starts preserve the API's stable order.
  */
-export function activeTimelineFrameIndexAtTime<Frame extends {
-  readonly startsAt: string;
-  readonly endsAt?: string;
-}>(frames: readonly Frame[], atMs: number): number | null {
+export function activeTimelineFrameIndexAtTime(
+  frames: readonly {
+    readonly startsAt: string;
+    readonly endsAt?: string;
+  }[],
+  atMs: number,
+): number | null {
   if (!Number.isFinite(atMs)) return null;
   let selectedIndex: number | null = null;
   let selectedStart = Number.NEGATIVE_INFINITY;
@@ -364,13 +367,13 @@ export function activeTimelineFrameIndexAtTime<Frame extends {
  * is confined to explicit room flips and genuine schedule gaps; invalid or
  * unsnapshotted phases are never bridged over.
  */
-export function availableFrameCursorAtTime<Frame extends {
-  readonly startsAt: string;
-  readonly endsAt?: string;
-  readonly kind?: string;
-  readonly keyframe?: { readonly state: string; readonly reason?: string };
-}>(
-  frames: readonly Frame[],
+export function availableFrameCursorAtTime(
+  frames: readonly {
+    readonly startsAt: string;
+    readonly endsAt?: string;
+    readonly kind?: string;
+    readonly keyframe?: { readonly state: string; readonly reason?: string };
+  }[],
   availableIndices: readonly number[],
   atMs: number,
 ): number | null {
@@ -461,11 +464,11 @@ export function linkedEventTimelineAnchorMs(
 }
 
 /** Places scheduled phases on the real wall-clock axis and assigns overlap lanes. */
-export function timelinePhaseBlocks<Frame extends {
-  readonly startsAt: string;
-  readonly endsAt: string;
-}>(
-  frames: readonly Frame[],
+export function timelinePhaseBlocks(
+  frames: readonly {
+    readonly startsAt: string;
+    readonly endsAt: string;
+  }[],
   fromMs: number,
   toMs: number,
 ): readonly TimelinePhaseBlock[] {
@@ -500,8 +503,8 @@ export function timelinePhaseBlocks<Frame extends {
 }
 
 /** Maps playback elapsed time onto the real time span between keyframes. */
-export function wallClockPlaybackCursor<Frame extends { readonly startsAt: string }>(
-  frames: readonly Frame[],
+export function wallClockPlaybackCursor(
+  frames: readonly { readonly startsAt: string }[],
   availableIndices: readonly number[],
   elapsedMs: number,
   durationMs: number,

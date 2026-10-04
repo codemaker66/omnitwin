@@ -325,8 +325,7 @@ export const FoundryLocalSandboxExecutionRequestV0Schema = z
       request.command.commandKind !== authorization.commandKind ||
       request.command.commandId !== authorization.commandId ||
       request.command.commandSequence !== authorization.commandSequence ||
-      request.command.fencingToken !==
-        authorization.execution.fencingToken.toString() ||
+      request.command.fencingToken !== authorization.execution.fencingToken ||
       request.command.providerCommandRef !== actionReference ||
       !canonicalValuesEqual(request.command.action, authorization.action)
     ) {

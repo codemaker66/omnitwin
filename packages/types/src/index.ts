@@ -1026,6 +1026,7 @@ export {
   EnquirySourceSchema,
   occasionLabel,
   occasionPhrase,
+  ENQUIRY_OCCASION_KEYS,
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
   TRADES_HALL_ASSET_SLUG,
   VENUE_ACCESS_ENQUIRY_TYPE,
@@ -2493,3 +2494,6 @@ export * from "./client-event-schedule.js";
 
 // Ship Friday slice 10: the one-tap request from the floor and its ladder.
 export * from "./requests.js";
+
+// T-635 X1: proposal templates by room and occasion (migration 0085).
+export * from "./proposal-template.js";

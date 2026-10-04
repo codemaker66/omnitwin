@@ -687,11 +687,12 @@ function PersonalDesk({ proposalId = null, onProposalShown, onOpenDeal, person }
   };
 
   // Starting again puts the words aside to copy, rather than throwing them
-  // away: one more step clears them for good.
-  const onStartAgain = (composer: number, draft: ComposerDraft, fromVersion: number | null): void => {
+  // away: one more step clears them for good. Starting from a template does
+  // the same, and says so.
+  const onStartAgain = (composer: number, draft: ComposerDraft, fromVersion: number | null, reason?: string): void => {
     const id = proposal?.id ?? null;
     if (id === null) return;
-    const why = startedAgainWords(fromVersion);
+    const why = reason ?? startedAgainWords(fromVersion);
     setKeptDrafts((current) => ({
       ...current,
       [id]: [...(current[id] ?? []).filter((entry) => entry.composer !== composer), { draft, composer, why }],

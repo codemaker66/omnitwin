@@ -487,13 +487,9 @@ export function HallkeeperPage(): React.ReactElement {
     </main>;
   }
 
-  const payload = data as HallkeeperSheetV2 & {
-    readonly instructions?: HallkeeperSheetV2["instructions"];
-    readonly approval?: SheetApproval | null;
-  };
-  const parsedInstructions = EventInstructionsSchema.nullable().safeParse(payload.instructions ?? null);
+  const parsedInstructions = EventInstructionsSchema.nullable().safeParse(data.instructions ?? null);
   const instructions = parsedInstructions.success ? parsedInstructions.data : null;
-  const approval = payload.approval ?? null;
+  const approval = data.approval ?? null;
   const doorSummary = instructions === null ? null : buildDoorScheduleSummary(instructions.doorSchedule);
 
   return <main className="hk-page hk-focused-page" aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}>

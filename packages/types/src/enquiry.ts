@@ -212,6 +212,9 @@ const ENQUIRY_OCCASIONS: Readonly<Record<string, OccasionWords>> = {
   other: { label: "Other occasion", phrase: "another occasion" },
 };
 
+/** The occasions the venue names, in the order it offers them. */
+export const ENQUIRY_OCCASION_KEYS: readonly string[] = Object.keys(ENQUIRY_OCCASIONS);
+
 function occasionWords(eventType: string | null | undefined): { readonly typed: string; readonly known: OccasionWords | undefined } | null {
   const typed = eventType?.trim() ?? "";
   if (typed === "") return null;

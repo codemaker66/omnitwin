@@ -568,6 +568,21 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. The 26 retired cases were all ordinary passes; the original 42 skips, four expected failures, five GPU cases and all 370 unrelated identities/statuses remain unchanged. Every current case still requires execution in the hosted browser gate. The listing bytes carry absolute paths and its start time, so a re-listing reproduces identities, not this hash."
+    },
+    {
+      "date": "2026-10-03",
+      "reason": "Proposal templates in the proposal composer (T-635 X1; Tier B #16). A proposal's message and quote lines are kept for a room and an occasion and start the next proposal, so nothing is typed again; a template holds no price, so each use is priced from the venue's list as it stands. What a template keeps and puts in (references, quantities, guests, what is left out and why) is held in template-format.test.ts, the desk's behaviour in ProposalsDesk.test.tsx and the routes, tenancy and concurrency in proposal-templates-postgres.test.ts on PostgreSQL. The first case keeps Crawford's quote as a template from the keyboard (name, room and occasion filled from the event), changes the price list, starts the spring gala's first version from it (priced at the new hire, 120 guests, the withdrawn late bar said, focus on the one price to enter), runs the accessibility audit with the templates open, saves version 1 (\u00a310,650) and checks the list fits 390 and 320 px phones with no sideways scroll. The second, over words already written, asks Replace or Add, takes the question back with Escape, adds only the line not already quoted, replaces the words keeping them to copy, runs the accessibility audit with the question open, removes the template for everyone and brings it back with Undo, and checks the question fits 390 and 320 px phones.",
+      "sourceCommit": "8847302d72f22ffbc1014c8f162148a950d71e1f",
+      "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
+      "sourceFileGitBlobSha256": "2b5633691b0f19c4461ca62c55f7b1ad08de273018222718c4bdc0d1a4d1651f",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "0c7c81f0812dc531cea7a0479d4a63387c352e4aaaf5bb2a9f3fd177b68f8d5d",
+      "caseIds": [
+        "3d60696039542bd5f8df-610a694deacee71e83fe",
+        "3d60696039542bd5f8df-c5e643ce945c7965e556"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -1133,6 +1148,28 @@
       "id": "3d60696039542bd5f8df-1c84e283bfd91fd18132",
       "file": "proposals-desk.spec.ts",
       "title": "a price from the venue's list becomes a quote line priced for the event, from the keyboard, on a desk and on a phone",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-c5e643ce945c7965e556",
+      "file": "proposals-desk.spec.ts",
+      "title": "a proposal kept as a template starts the next, priced from the list as it stands, from the keyboard, on a desk and on a phone",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-610a694deacee71e83fe",
+      "file": "proposals-desk.spec.ts",
+      "title": "a template over words already written adds only what is new or keeps them to copy, and a removed one comes back with Undo",
       "suitePath": [
         "proposals-desk.spec.ts",
         "Proposals desk"
