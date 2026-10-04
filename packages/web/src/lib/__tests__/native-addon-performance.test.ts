@@ -382,5 +382,7 @@ describe("native SH for the drawn set", () => {
     const source = readFileSync(require.resolve("three/examples/jsm/objects/GaussianSplat.js"), "utf8");
     expect(source).toContain("If( instanceIndex.lessThan( drawCount.element( 5 ) ), () => {");
     expect(source).toContain("const splatIndex = sort.orderRead.element( instanceIndex ).toVar( 'splatIndex' );");
+    // A split band-3 store lights every splat in place instead (storage-buffer limit).
+    expect(source).toContain("if ( buffers.sphericalHarmonics3TailRead !== undefined ) {");
   });
 });

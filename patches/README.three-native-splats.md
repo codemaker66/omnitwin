@@ -64,7 +64,12 @@ one thread per entry of the current draw order and shades the first
 `drawIndirect[5]` entries; a new order counts as a change, like camera movement,
 because it can keep splats the previous pass did not shade. While walking through
 the Grand Hall this cut the lighting pass from 0.567 to 0.345 ms on an RTX 4090.
-WebGL still evaluates lighting per vertex.
+WebGL still evaluates lighting per vertex. Storage-buffer budget: following the
+order reads the order and the kept count, eight storage buffers in the compute
+stage with the host's tile-id direction node, which is WebGPU's default per-stage
+limit (the app requests no higher one). A split band-3 store (the 128 MiB binding
+case) adds a ninth, so a split store lights every splat in place as before; a
+direction node that read another storage buffer would need the same fallback.
 
 Quads end at the 1/255 opacity contour (T-644). The reference 3DGS rasterizer
 skips fragments below 1/255 opacity, so a faint splat's light never reaches its
