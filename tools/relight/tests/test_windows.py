@@ -179,6 +179,23 @@ class Sun(unittest.TestCase):
         swapped = {"B": vols["B"], "A": vols["A"]}
         self.assertEqual(float(windows.sun_visibility(swapped, flat, fresnel, np.atleast_2d(P), s)[0]), 1.0)
 
+    def test_the_per_window_march_gives_each_ray_to_the_window_that_claims_it(self):
+        a, b = (0.3, 1.5, 0.5, 0.3, 2.7, "rect"), (1.0, 2.7, 0.5, 0.3, 2.7, "rect")
+        vols = windows.volumes_from_occupancy(grid(), LO, RES, {"A": a, "B": b}, 0.0, x_bearing=14.3)
+        s = unit(0.6, -0.8, 0.2)                           # leaves the glass 0.375 m along x from where it entered
+        P = np.array([from_entry((0.6, 1.5), s),           # enters A's outline only, leaves A's at 0.975: lit through A
+                      from_entry((2.2, 1.5), s),           # enters B's only, leaves at 2.575: lit through B
+                      from_entry((1.4, 1.5), s),           # enters both, A claims it, leaves A's at 1.775: dark, B never sees it
+                      from_entry((5.0, 1.5), s)])          # enters neither
+        fresnel = np.full(101, 0.5)
+        out = windows.sun_visibility_by_window(vols, fresnel, P, s)
+        self.assertEqual((out.shape, out.dtype), ((2, 4), np.float32))
+        np.testing.assert_array_equal(out, [[0.5, 0.0, 0.0, 0.0], [0.0, 0.5, 0.0, 0.0]])
+        flat = {"A": np.zeros(360), "B": np.zeros(360)}
+        np.testing.assert_array_equal(out.sum(0), windows.sun_visibility(vols, flat, fresnel, P, s))    # no horizon: the same rays
+        np.testing.assert_array_equal(windows.sun_visibility_by_window(vols, fresnel, P, unit(0.6, 0.8, 0.2)), np.zeros((2, 4), np.float32))
+        np.testing.assert_array_equal(windows.sun_visibility_by_window(list(vols.values()), fresnel, P, s), out)   # a list works too
+
     def test_the_horizon_is_interpolated_at_the_suns_azimuth(self):
         horizon = np.zeros(360)
         horizon[99], horizon[100] = 10.0, 30.0             # 20 degrees at azimuth 99.5
@@ -200,6 +217,7 @@ class Sun(unittest.TestCase):
         self.assertLess(abs(area - 2.3 * 2.3), 2 * 2.3 * RES)
 
 LAT = 55.8593
+NEEDED_4DEG = 935         # the 4-degree grid's needed nodes, pinned from the code on 4 October (two processes agree)
 
 
 def sun_positions(dec, ha):
@@ -219,6 +237,28 @@ def real_suns(rng, n):
     plus n/2 on the two solstice paths, above the horizon."""
     dec = np.concatenate([rng.uniform(-23.44, 23.44, n), np.repeat([23.44, -23.44], n // 4)])
     az, el = sun_positions(dec, rng.uniform(-180.0, 180.0, dec.size))
+    return [sun_toward(a, e) for a, e in zip(az, el) if e > 0.0]
+
+
+def moon_positions(dec, ha, hp):
+    """Apparent topocentric compass azimuth and elevation (degrees) at LAT of a moon at geocentric declination dec and
+    hour angle ha with horizontal parallax hp (degrees): lowered along its vertical circle by asin(sin hp cos el) (a
+    spherical Earth), then refracted as the proof refracts."""
+    lat, d, h = np.radians(LAT), np.radians(np.asarray(dec, np.float64)), np.radians(np.asarray(ha, np.float64))
+    east = -np.cos(d) * np.sin(h)
+    north = np.sin(d) * np.cos(lat) - np.cos(d) * np.cos(h) * np.sin(lat)
+    el = np.degrees(np.arcsin(np.sin(d) * np.sin(lat) + np.cos(d) * np.cos(h) * np.cos(lat)))
+    el = el - np.degrees(np.arcsin(np.sin(np.radians(hp)) * np.cos(np.radians(el))))
+    up = el > -0.575
+    el[up] += 1.02 / np.tan(np.radians(el[up] + 10.3 / (el[up] + 5.11))) / 60.0
+    return np.degrees(np.arctan2(east, north)) % 360.0, el
+
+
+def real_moons(rng, n):
+    """Unit vectors toward n random real moon positions at LAT (declinations up to the major standstill's 28.72, any
+    hour angle, horizontal parallax 0.9..1.025), plus n/2 at the standstill's extremes, above the horizon."""
+    dec = np.concatenate([rng.uniform(-28.72, 28.72, n), np.repeat([28.72, -28.72], n // 4)])
+    az, el = moon_positions(dec, rng.uniform(-180.0, 180.0, dec.size), rng.uniform(0.9, 1.025, dec.size))
     return [sun_toward(a, e) for a, e in zip(az, el) if e > 0.0]
 
 
@@ -251,6 +291,33 @@ class Reach(unittest.TestCase):
         self.assertTrue(all(float(lit(vol, p, s)[0]) > 0 for p, s in zip(P, suns)))
         np.testing.assert_array_equal(windows.sun_reach({"W": vol}, P, LAT), np.ones(len(P), bool))
 
+    def test_sun_reach_covers_moons_at_the_major_standstill_from_rise_to_transit(self):
+        # moons at declination +-28.6 and +-28.72 (2006's standstill), at both ends of the parallax range, every
+        # degree of hour angle while up and facing the wall: points 200 m back along each, through a 10 cm deep window
+        # that passes even the oblique transits (a deeper one darkens them by the 2.2 m cap)
+        vol, X = volume(window=(0.3, 2.7, 0.1, 0.3, 2.7, "rect")), np.array([1.5, -0.05, 1.5])
+        dec = np.repeat([28.6, -28.6, 28.72, -28.72], 2 * 360)
+        hp = np.tile(np.repeat([0.9, 1.025], 360), 4)
+        ha = np.tile(np.arange(-180.0, 180.0), 8)
+        az, el = moon_positions(dec, ha, hp)
+        moons = [(sun_toward(a, e), h, e) for a, e, h in zip(az, el, ha)]
+        moons = [(s, h, e) for s, h, e in moons if e > 0.0 and s[1] < -0.08]     # within the cap: 0.17 m / 0.08 < 2.2 m
+        self.assertTrue(any(h == 0.0 for _s, h, _e in moons))                      # transits
+        self.assertTrue(any(e < 1.0 for _s, _h, e in moons))                       # just after moonrise
+        P = np.array([X - s * 200.0 for s, _h, _e in moons])
+        self.assertTrue(all(float(lit(vol, p, s)[0]) > 0 for p, (s, _h, _e) in zip(P, moons)))
+        np.testing.assert_array_equal(windows.sun_reach({"W": vol}, P, LAT), np.ones(len(P), bool))
+
+    def test_sun_reach_covers_every_moon_position_the_march_can_use(self):
+        rng = np.random.default_rng(17)
+        vol = volume(window=ARCH)
+        P = np.concatenate([rng.uniform([-4.0, 0.01, -1.0], [7.0, 6.0, 4.0], (1500, 3)),
+                            rng.uniform([-0.5, -0.7, -1.0], [3.5, 0.0, 4.0], (500, 3))])
+        reach = windows.sun_reach({"W": vol}, P, LAT)
+        for s in real_moons(rng, 600):
+            on = lit(vol, P, s) > 0
+            self.assertTrue(bool(np.all(reach[on])), f"lit but not flagged toward {s}")
+
     def test_the_opening_box_holds_every_direction_through_the_opening(self):
         rng = np.random.default_rng(3)
         vol = volume(window=ARCH)
@@ -278,22 +345,44 @@ class Reach(unittest.TestCase):
             if e1[i] >= 0.0 and np.any(np.abs(g) <= band):
                 self.assertTrue(bool(meets[i]), f"box {a0[i]:.1f}..{a1[i]:.1f} x {e0[i]:.1f}..{e1[i]:.1f}")
 
-    def test_sun_reach_leaves_out_points_no_sun_can_reach(self):
+    def test_the_band_test_misses_no_moon_in_a_box(self):
+        # a box of apparent directions holds a moon when one of them, raised by a parallax of up to 1.025 degrees,
+        # lies on a declination circle within the major standstill's 28.72
+        rng = np.random.default_rng(19)
+        a0, e0 = rng.uniform(15.0, 190.0, 400), rng.uniform(-3.0, 70.0, 400)
+        a1, e1 = a0 + rng.uniform(0.0, 40.0, 400), e0 + rng.uniform(0.0, 15.0, 400)
+        meets = windows.sun_band_meets(a0, a1, e0, e1, LAT)
+        lat, band = np.radians(LAT), np.sin(np.radians(28.72))
+        for i in range(400):
+            for p in (0.0, 0.5, 1.025):
+                az, el = np.meshgrid(np.radians(np.linspace(a0[i], a1[i], 60)), np.radians(np.linspace(max(e0[i], 0.0), e1[i], 60) + p))
+                g = np.cos(el) * np.cos(az) * np.cos(lat) + np.sin(el) * np.sin(lat)
+                if e1[i] >= 0.0 and np.any(np.abs(g) <= band):
+                    self.assertTrue(bool(meets[i]), f"box {a0[i]:.1f}..{a1[i]:.1f} x {e0[i]:.1f}..{e1[i]:.1f}")
+
+    def test_sun_reach_leaves_out_points_no_sun_or_moon_can_reach(self):
         P = np.array([[1.5, 3.0, 1.5],                   # in front of the window: morning sun much of the year
                       [1.5, 2.0, 12.0],                  # far above it: sees the opening only looking down
-                      [-30.0, 2.0, 1.5]])                # far along the wall: only at bearings near 19 degrees
+                      [-30.0, 2.0, 1.5]])                # far along the wall: bearings 18.7..19.0, north of every moonrise
         np.testing.assert_array_equal(windows.sun_reach({"W": volume()}, P, LAT), [True, False, False])
 
-    def test_the_sun_band_at_this_latitude(self):
-        boxes = np.array([[179.9, 180.1, 57.0, 57.1],    # summer noon is at 57.58
-                          [179.9, 180.1, 59.8, 60.2],    # above it, beyond refraction and padding
-                          [179.9, 180.1, 10.5, 10.6],    # winter noon is at 10.70
-                          [179.9, 180.1, 9.0, 9.5],      # below it
-                          [29.5, 30.5, 0.0, 5.0],        # north of the summer sunrise (44.8)
+    def test_the_sky_band_at_this_latitude(self):
+        # due south a direction's declination is its elevation - 34.14; the box reaches 1.1 degrees lower (0.5 pad +
+        # 0.6 refraction) and 1.53 higher (0.5 pad + 1.03 parallax); the band holds declinations within 28.75
+        boxes = np.array([[179.9, 180.1, 57.0, 57.1],    # summer noon's sun (57.58)
+                          [179.9, 180.1, 59.8, 60.2],    # above every sun; a moon up to 27.6
+                          [179.9, 180.1, 10.5, 10.6],    # winter noon's sun (10.70)
+                          [179.9, 180.1, 9.0, 9.5],      # below every sun; a moon down to -26.2
+                          [29.5, 30.5, 0.0, 5.0],        # north of every sunrise (44.8); the standstill moon rises at 31
                           [49.9, 50.1, 3.0, 4.0],        # a summer morning just after sunrise
-                          [160.0, 200.0, 57.5, 57.6],    # wide over noon, just under the peak: only its middle meets
-                          [179.9, 180.1, 58.65, 58.7]])  # reached only with the full margins: 0.5 pad + 0.6 refraction
-        expected = [True, False, True, False, False, True, True, True]  # down to 57.55, and 23.45 degrees reaches 57.59
+                          [160.0, 200.0, 57.5, 57.6],    # wide over noon
+                          [179.9, 180.1, 58.65, 58.7],
+                          [179.9, 180.1, 64.1, 64.2],    # reaches no lower than declination 28.85: above every moon
+                          [179.9, 180.1, 63.8, 63.9],    # reaches 28.55
+                          [179.9, 180.1, 3.0, 3.4],      # reaches no higher than -29.21: below every moon
+                          [179.9, 180.1, 3.9, 4.0],      # reaches -28.61
+                          [20.0, 21.0, 0.0, 2.0]])       # north of every moonrise: declination 30.4 and up
+        expected = [True, True, True, True, True, True, True, True, False, True, False, True, False]
         np.testing.assert_array_equal(windows.sun_band_meets(*boxes.T, LAT), expected)
 
     def test_ray_survives_is_where_the_march_is_lit(self):
@@ -316,6 +405,41 @@ class CheckGate(unittest.TestCase):
         self.assertEqual([cli._passes(r) for r in rows], [True, False, False, False, True])
         a = cli._agreement(np.zeros(4, np.float32), np.array([0, 0.5, 0, 0], np.float32), np.zeros(4, np.float32))
         self.assertTrue(a["scored"] and a["lit3d"] == 0 and a["iou"] == 0.0)                 # the twin alone lights
+
+
+class SunGrid(unittest.TestCase):
+    def test_the_4_degree_grid_spans_the_sky_band_and_every_real_sun_and_moon_cell(self):
+        # derived by hand: the highest band cell is [62, 66] (the standstill moon transits at 62.89, the cell reaches
+        # 1.1 lower) and the northernmost moonrise box edge is at bearing 27.72 (31.03 at the horizon, the box reaching
+        # 1.1 below it), so the first cell starts at 24 and the last at 332
+        az0, el0, needed = windows.sun_nodes(LAT, 4.0)
+        self.assertEqual((az0, el0, needed.shape, int(needed.sum())), (24.0, -2.0, (18, 79), NEEDED_4DEG))
+        rng = np.random.default_rng(13)
+        for s in real_suns(rng, 400) + real_moons(rng, 400):
+            az, el = windows.sun_az_el(s, 14.3)
+            corners = windows.sun_corners(az0, el0, 4.0, needed.shape, az, el)
+            j, i, _w = corners[0]
+            self.assertTrue(0 <= i <= 77 and 0 <= j <= 16, f"sun or moon at {az:.2f}, {el:.2f}")
+            self.assertTrue(all(bool(needed[jj, ii]) for jj, ii, _ in corners), f"sun or moon at {az:.2f}, {el:.2f}")
+
+    def test_the_corners_are_bilinear_and_read_the_edge_beyond_the_grid(self):
+        table = (np.arange(4)[None, :] + 10.0 * np.arange(3)[:, None])                      # t[j, i] = i + 10 j
+
+        def at(az, el):
+            return sum(w * table[j, i] for j, i, w in windows.sun_corners(40.0, -2.0, 4.0, table.shape, az, el))
+        self.assertAlmostEqual(at(45.0, 0.0), 6.25, places=12)                               # x = 1.25, y = 0.5
+        self.assertEqual(at(52.0, 6.0), 23.0)                                                # the last node itself
+        self.assertEqual(at(30.0, 70.0), 20.0)                                               # beyond the grid: its edge
+        self.assertEqual([(j, i) for j, i, _w in windows.sun_corners(40.0, -2.0, 4.0, (3, 4), 45.0, 0.0)],
+                         [(0, 1), (0, 2), (1, 1), (1, 2)])
+
+    def test_sun_vector_points_at_its_azimuth_and_elevation(self):
+        for az, el in ((98.944851, 32.713999), (180.0, 10.0), (60.0, 0.0)):
+            s = windows.sun_vector(az, el, 14.3)
+            np.testing.assert_allclose(s, sun_toward(az, el), rtol=0, atol=1e-15)
+            back_az, back_el = windows.sun_az_el(s, 14.3)
+            self.assertAlmostEqual(back_az, az, places=9)
+            self.assertAlmostEqual(back_el, el, places=9)
 
 
 class Tables(unittest.TestCase):

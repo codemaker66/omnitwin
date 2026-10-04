@@ -267,6 +267,29 @@ def sun_visibility(volumes, horizon_tables, fresnel_table, P, s, steps=None) -> 
     return out * F32(fresnel_at(fresnel_table, D))
 
 
+def sun_visibility_by_window(volumes, fresnel_table, P, s) -> np.ndarray:
+    """sun_visibility split by the window that takes each ray, with every horizon open: (windows, N) float32, row w the
+    transmittance times the glass transmission of the rays that window w claims (the first window, in order, whose
+    room-side outline or embrasure they enter, as lt.trace_to_windows), zero in the other rows and for a ray that does
+    not survive its window. A caller gates each row by its window's horizon (above_horizon); summed over the rows this is
+    sun_visibility with every horizon open. volumes: a dict or a sequence of WindowVolume, in window order."""
+    vols = list(volumes.values()) if isinstance(volumes, dict) else list(volumes)
+    D = np.asarray(s, F32)
+    out = np.zeros((len(vols), len(P)), F32)
+    if float(D[1]) >= -MIN_DOWN:
+        return out
+    for a in range(0, len(P), CHUNK):
+        Pc = np.asarray(P[a:a + CHUNK], F32)
+        free = np.ones(len(Pc), bool)
+        for w, vol in enumerate(vols):
+            claimed, survives, Q, start, length = _rays(vol, Pc, D)
+            idx = np.nonzero(free & survives)[0]
+            free &= ~claimed
+            if idx.size:
+                out[w, a + idx] = _march(vol, Q[idx], D, length[idx], start[idx])[0]
+    return out * F32(fresnel_at(fresnel_table, D))
+
+
 def sunlit_area(vol: WindowVolume, s) -> float:
     """The glass area lit through the embrasure (m2) times the cosine to the wall normal: points 1 cm into the room
     at the grid's cell centres across the opening's bounding box, marched, times the cell area and |s_y|.
@@ -311,8 +334,12 @@ def ray_survives(vol: WindowVolume, P, s) -> np.ndarray:
     return out
 
 
-SUN_DECLINATION_MAX = 23.45   # degrees; the proof's solar model (NOAA) peaks at 23.4385 in 2026
-SUN_REFRACTION_MAX = 0.6      # degrees; the proof's refraction peaks at 0.574 on the horizon
+SKY_DECLINATION_MAX = 28.75   # degrees; the moon's geocentric declination is bounded by the obliquity plus its largest
+                              # ecliptic latitude, 23.44 + 5.30 = 28.74 (the 2006 major standstill reached about 28.72);
+                              # the sun's, 23.4385 at most in 2026 by the proof's solar model (NOAA), lies inside it
+SKY_PARALLAX_MAX = 1.03       # degrees; the moon's horizontal parallax at the closest perigee, asin(6378.14 / 356,400 km)
+                              # = 1.025: a geocentric elevation is the apparent one plus up to this
+REFRACTION_MAX = 0.6          # degrees; the proof's refraction peaks at 0.574 on the horizon
 REACH_PAD = 0.5               # degrees, on both axes of every opening's direction box
 
 
@@ -342,14 +369,19 @@ def opening_directions(vol: WindowVolume, P):
 
 
 def sun_band_meets(bearing_lo, bearing_hi, el_lo, el_hi, latitude) -> np.ndarray:
-    """True where the box of directions (degrees, padded by REACH_PAD) holds a possible apparent sun: its elevation
-    less up to SUN_REFRACTION_MAX lies on a daily circle of declination within +-SUN_DECLINATION_MAX at this
-    latitude, above the horizon. A direction's declination is asin(g), g = D . pole = cos(el) cos(az) cos(lat) +
-    sin(el) sin(lat); over the box g is extremal only at its corners, on the lines of azimuth -180, 0, 180, 360,
-    540 (where dg/daz = 0) and where dg/del = 0 (el = theta(az) or theta(az) - 180), so its range is exact."""
+    """True where the box of directions (degrees, padded by REACH_PAD) holds a possible apparent sun or moon: its
+    elevation, less up to REFRACTION_MAX and raised by up to SKY_PARALLAX_MAX, lies on a daily circle of declination
+    within +-SKY_DECLINATION_MAX at this latitude, above the horizon. (A moon's geocentric elevation is its apparent
+    one plus its parallax, which only lowers it along its vertical circle, minus the refraction; the sun's parallax is
+    nine arc-seconds, inside the padding, and its declination inside the moon's, so one band serves both bodies.
+    The lateral part of the moon's parallax, from the geodetic and geocentric verticals differing by 0.19 degrees, is
+    under 0.01 degrees: the padding covers it.) A direction's declination is asin(g), g = D . pole =
+    cos(el) cos(az) cos(lat) + sin(el) sin(lat); over the box g is extremal only at its corners, on the lines of
+    azimuth -180, 0, 180, 360, 540 (where dg/daz = 0) and where dg/del = 0 (el = theta(az) or theta(az) - 180), so its
+    range is exact."""
     a0, a1 = np.asarray(bearing_lo, np.float64) - REACH_PAD, np.asarray(bearing_hi, np.float64) + REACH_PAD
-    e1 = np.minimum(np.asarray(el_hi, np.float64) + REACH_PAD, 90.0)
-    e0 = np.maximum(np.asarray(el_lo, np.float64) - REACH_PAD - SUN_REFRACTION_MAX, -SUN_REFRACTION_MAX - REACH_PAD)
+    e1 = np.minimum(np.asarray(el_hi, np.float64) + REACH_PAD + SKY_PARALLAX_MAX, 90.0)
+    e0 = np.maximum(np.asarray(el_lo, np.float64) - REACH_PAD - REFRACTION_MAX, -REFRACTION_MAX - REACH_PAD)
     lat = np.radians(latitude)
     g_lo, g_hi = np.full(a0.shape, np.inf), np.full(a0.shape, -np.inf)
     for az in [a0, a1] + [np.where((a0 < c) & (c < a1), c, a0) for c in (-180.0, 0.0, 180.0, 360.0, 540.0)]:
@@ -359,18 +391,61 @@ def sun_band_meets(bearing_lo, bearing_hi, el_lo, el_hi, latitude) -> np.ndarray
             el = np.radians(np.where((e0 <= el) & (el <= e1), el, e0))
             g = np.cos(el) * ca * np.cos(lat) + np.sin(el) * np.sin(lat)
             g_lo, g_hi = np.minimum(g_lo, g), np.maximum(g_hi, g)
-    band = np.sin(np.radians(SUN_DECLINATION_MAX))
+    band = np.sin(np.radians(SKY_DECLINATION_MAX))
     return (e0 <= e1) & (g_lo <= band) & (g_hi >= -band)
 
 
 def sun_reach(volumes, P, latitude, chunk=CHUNK) -> np.ndarray:
-    """True where some real sun position can light the point through some window: the directions through a window's
-    glass rectangle (opening_directions) meet the sun's annual envelope (sun_band_meets). A non-zero march needs
-    the ray to leave through the glass outline, inside that rectangle, so this is a superset of where
-    march_visibility can be non-zero for any sun; occupancy, the entry, the cap and the horizon are ignored."""
+    """True where some real sun or moon position can light the point through some window: the directions through a
+    window's glass rectangle (opening_directions) meet the sky band of the sun's and the moon's possible apparent
+    positions (sun_band_meets). A non-zero march needs the ray to leave through the glass outline, inside that
+    rectangle, so this is a superset of where march_visibility can be non-zero for any sun or moon; occupancy, the
+    entry, the cap and the horizon are ignored."""
     reach = np.zeros(len(P), bool)
     for a in range(0, len(P), chunk):
         Pc = np.asarray(P[a:a + chunk], np.float64)
         for vol in volumes.values():
             reach[a:a + chunk] |= sun_band_meets(*opening_directions(vol, Pc), latitude)
     return reach
+
+
+def sun_vector(az, el, x_bearing):
+    """Unit vector toward a sun at compass azimuth az and elevation el (degrees), in the model frame whose +x axis has
+    compass bearing x_bearing: the proof's common.sun_vec_e57 with the volume's own bearing."""
+    th, e = np.radians(x_bearing - az), np.radians(el)
+    return np.array([np.cos(th) * np.cos(e), np.sin(th) * np.cos(e), np.sin(e)])
+
+
+def sun_nodes(latitude, step):
+    """A sun-direction grid at this latitude: nodes every `step` degrees of compass azimuth (from 0) and elevation (from
+    -2). A cell [a, a + step] x [e, e + step] is in the band when sun_band_meets finds a possible apparent sun or moon in
+    it: the reach test's own band (declination within SKY_DECLINATION_MAX, the parallax, refraction and padding
+    included). The grid is the smallest rectangle of nodes holding every band cell's corners. Returns (az0, el0,
+    needed): node (row j, column i) is the sun or moon at azimuth az0 + i step and elevation el0 + j step; needed marks
+    the corners of band cells, the only nodes a real sun's or moon's bilinear lookup (sun_corners) reads."""
+    a = step * np.arange(int(np.ceil(360.0 / step)))
+    e = -2.0 + step * np.arange(int(np.ceil(92.0 / step)))
+    A, E = np.meshgrid(a, e)
+    band = sun_band_meets(A, A + step, E, E + step, latitude)
+    rows, cols = np.nonzero(band)
+    j0, j1, i0, i1 = int(rows.min()), int(rows.max()) + 1, int(cols.min()), int(cols.max()) + 1
+    cells = band[j0:j1, i0:i1]
+    needed = np.zeros((cells.shape[0] + 1, cells.shape[1] + 1), bool)
+    for dj in (0, 1):
+        for di in (0, 1):
+            needed[dj:dj + cells.shape[0], di:di + cells.shape[1]] |= cells
+    return float(a[i0]), float(e[j0]), needed
+
+
+def sun_corners(az0, el0, step, shape, az, el):
+    """The four nodes of a (rows, columns) sun_nodes grid that a sun at compass azimuth az and elevation el (degrees)
+    reads, with their bilinear weights, in float64 in this order (the browser's twin repeats it): x = (az - az0) / step
+    and y = (el - el0) / step, clamped to [0, columns - 1] and [0, rows - 1]; i = min(floor(x), columns - 2),
+    j = min(floor(y), rows - 2); fx = x - i, fy = y - j. Returns ((j, i, (1 - fx)(1 - fy)), (j, i + 1, fx (1 - fy)),
+    (j + 1, i, (1 - fx) fy), (j + 1, i + 1, fx fy)). A sun beyond the grid reads its edge; no real sun lies beyond it."""
+    rows, columns = shape
+    x = min(max((float(az) - az0) / step, 0.0), columns - 1.0)
+    y = min(max((float(el) - el0) / step, 0.0), rows - 1.0)
+    i, j = min(int(x), columns - 2), min(int(y), rows - 2)
+    fx, fy = x - i, y - j
+    return ((j, i, (1.0 - fx) * (1.0 - fy)), (j, i + 1, fx * (1.0 - fy)), (j + 1, i, (1.0 - fx) * fy), (j + 1, i + 1, fx * fy))
