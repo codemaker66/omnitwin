@@ -1091,6 +1091,7 @@ export {
   findUnsupportedProposalClaim,
   MAX_QUOTE_LINE_ITEMS,
   MAX_LINE_ITEM_QUANTITY,
+  MAX_CLIENT_MESSAGE_LENGTH,
   QuoteLineItemSchema,
   QuoteSchema,
   QuoteWithLineItemsSchema,
@@ -1162,6 +1163,7 @@ export {
   CreateAIDraftRequestSchema,
   AIAssistantStatusSchema,
   AIDraftSchema,
+  ProposalMessageDraftSchema,
   findUnsafeAIDraftClaims,
   sanitizeAIDraftText,
   aiDraftDigest,
@@ -1174,6 +1176,7 @@ export {
   type CreateAIDraftRequest,
   type AIAssistantStatus,
   type AIDraft,
+  type ProposalMessageDraft,
 } from "./ai-assistant.js";
 
 export {

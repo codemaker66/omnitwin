@@ -37,7 +37,12 @@ const mocks = vi.hoisted(() => ({
   removeProposalTemplate: vi.fn(),
   restoreProposalTemplate: vi.fn(),
   getProposalEvent: vi.fn(),
+  draftProposalMessage: vi.fn(),
+  markAIDraftsUnavailable: vi.fn(),
 }));
+
+/** Whether an AI drafting provider is configured; by default, as where none is. */
+const ai = vi.hoisted(() => ({ available: false as boolean | undefined }));
 
 vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../api/proposals.js")>(),
@@ -57,6 +62,14 @@ vi.mock("../../../api/proposals.js", async (importOriginal) => ({
   changeProposalLayout: mocks.changeProposalLayout,
 }));
 vi.mock("../../../api/spaces.js", () => ({ listSpaces: mocks.listSpaces }));
+vi.mock("../../../api/ai-assistant.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../api/ai-assistant.js")>(),
+  draftProposalMessage: mocks.draftProposalMessage,
+}));
+vi.mock("../../../hooks/use-ai-drafts-available.js", () => ({
+  useAIDraftsAvailable: (): boolean | undefined => ai.available,
+  markAIDraftsUnavailable: mocks.markAIDraftsUnavailable,
+}));
 vi.mock("../../../api/pricing.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../api/pricing.js")>(),
   listPricingRules: mocks.listPricingRules,
@@ -172,6 +185,7 @@ function reloadHeld(): boolean {
 
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
+  ai.available = false;
   // What the booker wrote lives for the page; each test is a fresh page.
   forgetProposalMemory();
   authState.user = { ...authState.user, id: "u1", name: "Catherine Tait", venueId: "v1" };
@@ -4460,6 +4474,454 @@ describe("proposal templates", () => {
       expect(document.activeElement).toBe(within(element).getByTestId("template-save-toggle"));
       expect(screen.getByRole("heading", { level: 2, name: "Autumn gala" })).toBeDefined();
       expect(mocks.createProposalTemplate).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("Draft the message with AI", () => {
+  const BODY = "Dear Elaine, thank you for thinking of Trades Hall for your wedding on Friday 20 November.";
+  const WRITTEN = "Dear Elaine, here is the hall for your day.";
+  const DREW_ON = { event: true, enquiry: true, clientWords: false };
+  /** A draft as the API answers one, with what it drew on; only its words,
+   *  its notes and what it drew on are read here. */
+  const draft = (overrides: Record<string, unknown> = {}, drewOn: Record<string, boolean> = DREW_ON): Record<string, unknown> => ({
+    draft: {
+      schemaVersion: "ai_assistant.v0", useCase: "proposal_draft", title: "Proposal draft", body: BODY,
+      blockedUnsafeClaims: [], safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated",
+      evidenceStatus: "unverified", sendState: "draft_only", generatedAt: NOW, digest: "c".repeat(64), ...overrides,
+    },
+    drewOn,
+  });
+  function later<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
+    let resolve: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((yes) => { resolve = yes; });
+    return { promise, resolve };
+  }
+  const messageOf = (panel: HTMLElement): string =>
+    within(panel).getByTestId<HTMLTextAreaElement>("composer-message").value;
+  /** Asks for a draft and waits until it is shown. */
+  async function drafted(panel: HTMLElement, answer: Record<string, unknown> = draft()): Promise<HTMLElement> {
+    mocks.draftProposalMessage.mockResolvedValueOnce(answer);
+    fireEvent.click(await within(panel).findByTestId("ai-draft-ask"));
+    return within(panel).findByTestId("ai-draft-block");
+  }
+  /** A version-2 composer carrying version 1's message, capacity note and hire line. */
+  function carried(): void {
+    existing = [proposal({ currentVersion: 1 })];
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1, {
+      clientMessage: WRITTEN, capacityNote: "Up to 120 at dinner rounds.",
+      quote: quoteSnapshot([{ description: "Grand Hall hire", quantity: 1, unitAmountMinor: 240_000 }]),
+    }));
+  }
+
+  beforeEach(() => { ai.available = true; });
+
+  it("offers nothing about AI where no provider is configured, or until that is known", async () => {
+    for (const answer of [false, undefined]) {
+      ai.available = answer;
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      await within(element).findByTestId("composer-message");
+      expect(within(element).queryByTestId("ai-draft")).toBeNull();
+      expect(within(element).queryByText(/\bAI\b/u)).toBeNull();
+      cleanup();
+    }
+    expect(mocks.draftProposalMessage).not.toHaveBeenCalled();
+  });
+
+  it("drafts from the proposal alone, says so while it does, and shows the draft in heather as AI wording not checked", async () => {
+    const answer = later<Record<string, unknown>>();
+    mocks.draftProposalMessage.mockReturnValueOnce(answer.promise);
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    const ask = await panel.findByTestId("ai-draft-ask");
+    expect(ask.textContent).toBe("Draft the message with AI");
+    fireEvent.click(ask);
+    expect(ask.getAttribute("aria-busy")).toBe("true");
+    expect(ask.getAttribute("aria-disabled")).toBe("true");
+    expect(ask.textContent).toBe("Drafting…");
+    fireEvent.click(ask);
+    expect(mocks.draftProposalMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.draftProposalMessage).toHaveBeenCalledWith("p1");
+
+    await act(async () => { answer.resolve(draft()); await answer.promise; });
+    const block = panel.getByRole("region", { name: "AI draft of the message" });
+    expect(block).toBe(panel.getByTestId("ai-draft-block"));
+    expect(block.getAttribute("data-register")).toBe("ivory");
+    const inBlock = within(block);
+    expect(inBlock.getByText("Written by AI from the event's details and the client's enquiry. Not checked.")).toBeDefined();
+    const body = inBlock.getByTestId<HTMLTextAreaElement>("ai-draft-body");
+    expect(body.value).toBe(BODY);
+    expect(body.readOnly).toBe(true);
+    expect(inBlock.queryByText("Unsupported certainty was taken out of it.")).toBeNull();
+    await waitFor(() => { expect(document.activeElement).toBe(block.querySelector(".pr-ai__heading")); });
+    // Nothing changes in the composer until the draft is used.
+    expect(messageOf(element)).toBe("");
+  });
+
+  it("leaves focus where the booker put it while the draft was being written", async () => {
+    const answer = later<Record<string, unknown>>();
+    mocks.draftProposalMessage.mockReturnValueOnce(answer.promise);
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(await panel.findByTestId("ai-draft-ask"));
+    const capacity = panel.getByTestId("composer-capacity");
+    capacity.focus();
+    await act(async () => { answer.resolve(draft()); await answer.promise; });
+    expect(panel.getByTestId("ai-draft-block")).toBeDefined();
+    expect(document.activeElement).toBe(capacity);
+  });
+
+  it("used on an empty message, puts the draft in marked as not yet read through, and holds Save until it is", async () => {
+    mocks.createProposalVersion.mockResolvedValue(version(1));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    const before = await panel.findByTestId("composer");
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+
+    expect(messageOf(element)).toBe(BODY);
+    expect(panel.getByTestId("composer")).toBe(before);
+    expect(panel.queryByTestId("kept-version")).toBeNull();
+    expect(panel.queryByTestId("ai-draft-block")).toBeNull();
+    expect(panel.getByTestId("ai-draft-ask")).toBeDefined();
+    const marker = panel.getByTestId("ai-unread");
+    expect(marker.textContent).toBe("DraftAI wording, not yet read through.I have read it");
+    expect(panel.getByTestId("composer-message").hasAttribute("data-ai-unread")).toBe(true);
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("composer-message")); });
+
+    const save = panel.getByRole("button", { name: "Save version 1" });
+    const sentence = marker.querySelector("span[id]");
+    if (sentence === null) throw new Error("The marker's sentence has no id");
+    expect((save.getAttribute("aria-describedby") ?? "").split(" ")).toContain(sentence.id);
+    fireEvent.click(save);
+    expect(mocks.createProposalVersion).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(panel.getByTestId("ai-read"));
+    expect(panel.getByTestId("ai-said").textContent).toBe("Read the AI wording through first, then press I have read it.");
+
+    fireEvent.click(panel.getByTestId("ai-read"));
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+    expect(panel.getByTestId("ai-said").textContent).toBe("");
+    expect(document.activeElement).toBe(panel.getByTestId("composer-message"));
+    expect(panel.getByTestId("composer-message").hasAttribute("data-ai-unread")).toBe(false);
+    expect((save.getAttribute("aria-describedby") ?? "").split(" ")).not.toContain(sentence.id);
+    fireEvent.click(save);
+    await waitFor(() => { expect(mocks.createProposalVersion).toHaveBeenCalledTimes(1); });
+    const payload = mocks.createProposalVersion.mock.calls[0]?.[1] as { clientMessage: string };
+    expect(payload.clientMessage).toBe(BODY);
+  });
+
+  it("used over words written here and not saved, starts a new composer carrying the rest, and keeps those words to copy", async () => {
+    carried();
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    await waitFor(() => { expect(messageOf(element)).toBe(WRITTEN); });
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "Dear Elaine, a few words of my own." } });
+    const before = panel.getByTestId("composer");
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+
+    await waitFor(() => { expect(messageOf(element)).toBe(BODY); });
+    expect(panel.getByTestId("composer")).not.toBe(before);
+    const kept = within(panel.getByTestId("kept-version"));
+    expect(kept.getByTestId("kept-version-why").textContent).toBe("Kept when you used the AI draft.");
+    expect(kept.getByText("Dear Elaine, a few words of my own.")).toBeDefined();
+    expect(kept.queryByTestId("kept-ai-unread")).toBeNull();
+    expect(panel.getByTestId<HTMLInputElement>("composer-capacity").value).toBe("Up to 120 at dinner rounds.");
+    expect(panel.getByTestId<HTMLInputElement>("quote-desc-0").value).toBe("Grand Hall hire");
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("composer-message")); });
+  });
+
+  it("replaces a message as the version holds it where it is, the version keeping it", async () => {
+    carried();
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    await waitFor(() => { expect(messageOf(element)).toBe(WRITTEN); });
+    const before = panel.getByTestId("composer");
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+    expect(messageOf(element)).toBe(BODY);
+    expect(panel.getByTestId("composer")).toBe(before);
+    expect(panel.queryByTestId("kept-version")).toBeNull();
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+  });
+
+  it("keeps the mark through edits, and lets it go once the message is emptied", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: `${BODY} With warm wishes.` } });
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "  " } });
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: "My own words." } });
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+  });
+
+  it("puts the draft away with the message unchanged, back to its button", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-away"));
+    expect(panel.queryByTestId("ai-draft-block")).toBeNull();
+    expect(messageOf(element)).toBe("My own words.");
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("ai-draft-ask")); });
+  });
+
+  it("says when a draft could not be written, leaves the message, and drafts again on Try again", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(502, "The AI draft could not be generated.", "AI_DRAFT_GENERATION_FAILED"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
+    fireEvent.click(panel.getByTestId("ai-draft-ask"));
+    const failed = await panel.findByTestId("ai-draft-failed");
+    expect(failed.getAttribute("role")).toBe("alert");
+    expect(failed.textContent).toBe("The draft could not be written. The message is unchanged.");
+    expect(messageOf(element)).toBe("My own words.");
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("ai-draft-retry")); });
+
+    mocks.draftProposalMessage.mockResolvedValueOnce(draft());
+    fireEvent.click(panel.getByTestId("ai-draft-retry"));
+    expect(await panel.findByTestId("ai-draft-block")).toBeDefined();
+    expect(panel.queryByTestId("ai-draft-failed")).toBeNull();
+    expect(mocks.draftProposalMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes AI drafting away for the visit when the server says it is not available now", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(503, "AI drafting is not configured.", "AI_ASSISTANT_DISABLED"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(await panel.findByTestId("ai-draft-ask"));
+    const gone = await panel.findByTestId("ai-draft-gone");
+    expect(gone.getAttribute("role")).toBe("status");
+    expect(gone.textContent).toBe("AI drafts are not available now. The message is unchanged.");
+    expect(mocks.markAIDraftsUnavailable).toHaveBeenCalledTimes(1);
+    expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
+    await waitFor(() => { expect(document.activeElement).toBe(gone); });
+  });
+
+  it("says what a draft holds that cannot go as it is, and offers Use only for one a message can hold", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    let block = await drafted(element, draft({ body: "a".repeat(4001) }));
+    expect(within(block).getByTestId("ai-draft-too-long").textContent)
+      .toBe("It is longer than a message can hold (4,000 characters). Draft again, or copy what you need.");
+    expect(within(block).queryByTestId("ai-draft-use")).toBeNull();
+
+    mocks.draftProposalMessage.mockResolvedValueOnce(draft({ body: "a".repeat(4000) }));
+    fireEvent.click(within(block).getByTestId("ai-draft-again"));
+    block = await panel.findByTestId("ai-draft-block");
+    expect(within(block).queryByTestId("ai-draft-too-long")).toBeNull();
+    expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
+    fireEvent.click(within(block).getByTestId("ai-draft-away"));
+
+    block = await drafted(element, draft({ body: "Our photoreal digital twins show the hall as it is.", safeLanguageApplied: true }));
+    expect(within(block).getByTestId("ai-draft-claim").textContent)
+      .toBe("It includes \"photoreal digital twin\", which a proposal may not say. Change it before saving.");
+    expect(within(block).getByText("Unsupported certainty was taken out of it.")).toBeDefined();
+    expect(within(block).getByTestId("ai-draft-use")).toBeDefined();
+  });
+
+  it("holds Use while a save is on its way, and puts nothing in", async () => {
+    const saving = later<Record<string, unknown>>();
+    mocks.createProposalVersion.mockReturnValueOnce(saving.promise);
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
+    const block = await drafted(element);
+    fireEvent.click(panel.getByRole("button", { name: "Save version 1" }));
+    const use = within(block).getByTestId("ai-draft-use");
+    await waitFor(() => { expect(use.getAttribute("aria-disabled")).toBe("true"); });
+    fireEvent.click(use);
+    expect(messageOf(element)).toBe("My own words.");
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+    await act(async () => { saving.resolve(version(1)); await saving.promise; });
+  });
+
+  it("drops a draft that answers after its proposal was left", async () => {
+    existing = [proposal(), proposal({ id: "p2", title: "Spring ball" })];
+    const answer = later<Record<string, unknown>>();
+    mocks.draftProposalMessage.mockReturnValueOnce(answer.promise);
+    render(<ProposalsDesk />);
+    const first = await openProposal();
+    fireEvent.click(await within(first).findByTestId("ai-draft-ask"));
+    const second = await openProposal("p2", "Spring ball");
+    await within(second).findByTestId("composer-message");
+    await act(async () => { answer.resolve(draft()); await answer.promise; });
+    expect(within(second).queryByTestId("ai-draft-block")).toBeNull();
+    expect(messageOf(second)).toBe("");
+    expect(within(second).getByTestId("ai-draft-ask").textContent).toBe("Draft the message with AI");
+  });
+
+  it("notes unread AI wording in a copy kept by Start again", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+    fireEvent.click(panel.getByTestId("composer-start-again"));
+    const kept = within(await panel.findByTestId("kept-version"));
+    expect(kept.getByText(BODY)).toBeDefined();
+    expect(kept.getByTestId("kept-ai-unread").textContent).toBe("It holds AI wording not yet read through.");
+    await waitFor(() => { expect(messageOf(element)).toBe(""); });
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+  });
+
+  it("remembers the mark with the words when the booker leaves the proposal and comes back", async () => {
+    existing = [proposal(), proposal({ id: "p2", title: "Spring ball" })];
+    render(<ProposalsDesk />);
+    const first = await openProposal();
+    fireEvent.click(within(await drafted(first)).getByTestId("ai-draft-use"));
+    await openProposal("p2", "Spring ball");
+    const back = await openProposal();
+    await waitFor(() => { expect(messageOf(back)).toBe(BODY); });
+    expect(within(back).getByTestId("ai-unread")).toBeDefined();
+  });
+  it("says what a draft was written from, and only that", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    const said: string[] = [];
+    for (const drewOn of [
+      { event: false, enquiry: true, clientWords: true },
+      { event: true, enquiry: false, clientWords: false },
+      { event: true, enquiry: true, clientWords: true },
+    ]) {
+      const block = await drafted(element, draft({}, drewOn));
+      said.push(within(block).getByTestId("ai-draft-from").textContent ?? "");
+      fireEvent.click(within(block).getByTestId("ai-draft-away"));
+      await panel.findByTestId("ai-draft-ask");
+    }
+    expect(said).toEqual([
+      "Written by AI from the client's enquiry and the client's latest message. Not checked.",
+      "Written by AI from the event's details. Not checked.",
+      "Written by AI from the event's details, the client's enquiry and the client's latest message. Not checked.",
+    ]);
+  });
+
+  it("says when there is nothing to draft from, and leaves the message as it is", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(422, "Nothing to draft from", "NOTHING_TO_DRAFT_FROM"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
+    fireEvent.click(panel.getByTestId("ai-draft-ask"));
+    const nothing = await panel.findByTestId("ai-draft-nothing");
+    expect(nothing.getAttribute("role")).toBe("status");
+    expect(nothing.textContent).toBe(
+      "There is nothing for AI to draft from yet: this proposal has no event details, enquiry or message from the client. The message is unchanged.");
+    expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
+    expect(messageOf(element)).toBe("My own words.");
+    expect(mocks.markAIDraftsUnavailable).not.toHaveBeenCalled();
+    await waitFor(() => { expect(document.activeElement).toBe(nothing); });
+  });
+
+  it("takes a 503 that is not the server's own word as a failure to try again, and Try again waits on the button drafting", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(503, "Service Unavailable", "UNKNOWN"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(await panel.findByTestId("ai-draft-ask"));
+    expect(await panel.findByTestId("ai-draft-failed")).toBeDefined();
+    expect(mocks.markAIDraftsUnavailable).not.toHaveBeenCalled();
+    expect(panel.queryByTestId("ai-draft-gone")).toBeNull();
+
+    const answer = later<Record<string, unknown>>();
+    mocks.draftProposalMessage.mockReturnValueOnce(answer.promise);
+    const retry = await panel.findByTestId("ai-draft-retry");
+    retry.focus();
+    fireEvent.click(retry);
+    await waitFor(() => { expect(document.activeElement).toBe(panel.getByTestId("ai-draft-ask")); });
+    expect(panel.getByTestId("ai-draft-ask").textContent).toBe("Drafting…");
+    expect(panel.getByTestId("ai-draft-said").textContent).toBe("Drafting the message with AI.");
+    await act(async () => { answer.resolve(draft()); await answer.promise; });
+    const block = panel.getByTestId("ai-draft-block");
+    await waitFor(() => { expect(document.activeElement).toBe(block.querySelector(".pr-ai__heading")); });
+    expect(panel.getByTestId("ai-draft-said").textContent).toBe("");
+  });
+
+  it("never takes focus out of another part's flow when the draft arrives, and says it is ready instead", async () => {
+    const answer = later<Record<string, unknown>>();
+    mocks.draftProposalMessage.mockReturnValueOnce(answer.promise);
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    // Asked from its button, as a press in a browser leaves focus there.
+    const ask = await panel.findByTestId("ai-draft-ask");
+    ask.focus();
+    fireEvent.click(ask);
+    // The panel's heading, where another flow (a template's question, a
+    // reply) parks focus.
+    const heading = screen.getByRole("heading", { level: 2, name: "Autumn gala" });
+    heading.focus();
+    expect(document.activeElement).toBe(heading);
+    await act(async () => { answer.resolve(draft()); await answer.promise; });
+    expect(panel.getByTestId("ai-draft-block")).toBeDefined();
+    expect(document.activeElement).toBe(heading);
+    expect(panel.getByTestId("ai-draft-said").textContent).toBe("The AI draft is ready, under the message.");
+  });
+
+  it("describes the message by its mark, says the draft is now the message, and marks its words again if they come back", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+    const message = panel.getByTestId("composer-message");
+    const marker = panel.getByTestId("ai-unread");
+    expect(marker.querySelector("svg")).not.toBeNull();
+    expect(message.getAttribute("aria-describedby")).toBe(marker.querySelector("span[id]")?.id);
+    expect(panel.getByTestId("ai-said").textContent).toBe("The AI draft is now the message, marked until you have read it through.");
+
+    // Emptied, the mark and what was said go; the AI's words brought back
+    // (an undo, a paste) are marked again.
+    fireEvent.change(message, { target: { value: "" } });
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+    expect(message.hasAttribute("aria-describedby")).toBe(false);
+    expect(panel.getByTestId("ai-said").textContent).toBe("");
+    fireEvent.change(message, { target: { value: BODY } });
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+    fireEvent.change(message, { target: { value: `Hello. ${BODY}` } });
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+
+    // Read through, it is the booker's: emptied and brought back, it stays unmarked.
+    fireEvent.click(panel.getByTestId("ai-read"));
+    fireEvent.change(message, { target: { value: "" } });
+    fireEvent.change(message, { target: { value: BODY } });
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+  });
+
+  it("holds Save as template while the message holds AI wording not yet read through", async () => {
+    mocks.listProposalTemplates.mockResolvedValue([]);
+    mocks.getProposalEvent.mockResolvedValue({
+      facts: { eventDate: "2026-11-20", guestCount: 120, occasion: "wedding", roomName: "Grand Hall", roomSlug: "grand-hall" }, spaceId: null,
+    });
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+    fireEvent.click(panel.getByTestId("template-save-toggle"));
+    const form = await panel.findByTestId("template-save");
+    const refusal = await within(form).findByTestId("template-save-refusal");
+    expect(refusal.textContent).toBe("The message holds AI wording not yet read through. Press I have read it under the message first.");
+    const save = within(form).getByRole("button", { name: "Save template" });
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(save);
+    expect(mocks.createProposalTemplate).not.toHaveBeenCalled();
+
+    fireEvent.click(panel.getByTestId("ai-read"));
+    await waitFor(() => {
+      expect(within(form).queryByText("The message holds AI wording not yet read through. Press I have read it under the message first.")).toBeNull();
     });
   });
 });

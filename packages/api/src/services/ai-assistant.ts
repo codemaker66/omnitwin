@@ -133,10 +133,21 @@ export function titleForAIDraft(useCase: AIDraftUseCase): string {
   }
 }
 
+// Who a draft is written for. A proposal's message goes to the client, from
+// the venue's events team, so it is told so and kept to the facts it is
+// given; every other draft is internal planning support.
+const AUDIENCE: Partial<Record<CreateAIDraftRequest["useCase"], { readonly audience: string; readonly tone: string }>> = {
+  proposal_draft: {
+    audience: "You are drafting the message a venue's events team sends their client with a proposal, written to the client named in the context if one is named. Use only the facts in the context: a fact that is missing or null is unknown, so do not invent dates, rooms, guest numbers, prices, availability or confirmations. clientNotes are the client's words from their enquiry; clientLatestMessage, when present, is the client's latest message on this proposal, which the draft answers.",
+    tone: "Warm, plain British English, brief, from the venue's events team to their client.",
+  },
+};
+
 export function buildAIDraftPrompt(input: CreateAIDraftRequest): string {
-  const tone = input.requestedTone ?? "Plain English, concise, internal staff draft.";
+  const reader = AUDIENCE[input.useCase];
+  const tone = input.requestedTone ?? reader?.tone ?? "Plain English, concise, internal staff draft.";
   return [
-    "You are drafting internal Venviewer planning support text.",
+    reader?.audience ?? "You are drafting internal Venviewer planning support text.",
     "Do not claim certification, legal compliance, fire approval, occupancy approval, guaranteed accessibility, production readiness, or photoreal digital-twin status.",
     "The output is draft-only, AI-generated, unverified, and requires human review before it is used.",
     `Use case: ${input.useCase}.`,

@@ -544,9 +544,10 @@ function EnquiryTools({ enquiry, canCreateOpportunity, creatingOpportunity, oppo
 }
 
 function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement | null {
-  // AI drafting is offered only where a provider is configured: the panels
-  // render nothing without one, so the section would open onto an empty body.
-  // The panels still mount only once someone opens the section.
+  // AI drafting is offered only where a provider is configured: the panel
+  // renders nothing without one, so the section would open onto an empty body.
+  // The panel still mounts only once someone opens the section. A proposal's
+  // message is drafted in the proposal itself, where it can be used.
   const available = useAIDraftsAvailable();
   const [open, setOpen] = useState(false);
   if (available !== true) return null;
@@ -568,20 +569,6 @@ function EnquiryDrafts({ enquiry }: { readonly enquiry: Enquiry }): ReactElement
                 preferredDate: enquiry.preferredDate,
                 estimatedGuests: enquiry.estimatedGuests,
                 message: enquiry.message,
-                currentStatus: enquiry.state,
-              }}
-            />
-            <AIDraftPanel
-              title="Proposal wording"
-              useCase="proposal_draft"
-              actionLabel="Draft proposal copy"
-              context={{
-                enquiryId: enquiry.id,
-                clientName: enquiry.guestName ?? enquiry.name,
-                eventType: enquiry.eventType,
-                preferredDate: enquiry.preferredDate,
-                estimatedGuests: enquiry.estimatedGuests,
-                clientNotes: enquiry.message,
                 currentStatus: enquiry.state,
               }}
             />

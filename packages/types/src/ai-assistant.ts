@@ -89,6 +89,20 @@ export const AIDraftSchema = z.object({
 }).strict();
 export type AIDraft = z.infer<typeof AIDraftSchema>;
 
+/** An AI draft of a proposal's message to its client, with what the server
+ *  gave the AI to draw on, so the screen claims only what was used: the
+ *  event's details, the client's enquiry, the client's latest words on the
+ *  proposal. */
+export const ProposalMessageDraftSchema = z.object({
+  draft: AIDraftSchema,
+  drewOn: z.object({
+    event: z.boolean(),
+    enquiry: z.boolean(),
+    clientWords: z.boolean(),
+  }).strict(),
+}).strict();
+export type ProposalMessageDraft = z.infer<typeof ProposalMessageDraftSchema>;
+
 function escapedPhrase(phrase: string): string {
   return phrase.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }

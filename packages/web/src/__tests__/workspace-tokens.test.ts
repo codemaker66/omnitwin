@@ -93,7 +93,7 @@ describe("workspace register — contrast of every allowed pairing (design syste
   });
 
   it("every tone reads as text on the sheet, as chip text on its wash, and lit on forest", () => {
-    for (const tone of ["copper", "amber", "sage", "brick", "slate"] as const) {
+    for (const tone of ["copper", "amber", "sage", "brick", "slate", "heather"] as const) {
       text(`${tone}-text` as WorkspaceColour, "sheet");
       text(`${tone}-lit` as WorkspaceColour, "forest");
     }
@@ -101,6 +101,14 @@ describe("workspace register — contrast of every allowed pairing (design syste
       text(`${tone}-chip` as WorkspaceColour, `${tone}-wash` as WorkspaceColour);
     }
     text("slate-text", "slate-wash");
+  });
+
+  it("an AI draft's heather card carries both inks, its ring and its controls' edges", () => {
+    for (const fg of ["ink-1", "ink-2", "heather-text"] as const) text(fg, "heather-wash");
+    text("heather-wash", "heather-text");
+    text("edge", "heather-wash", 3);
+    text("ink-1", "heather-wash", 3);
+    text("heather-wash", "forest", 3);
   });
 
   it("control boundaries and focus rings reach 3:1 on every surface they sit on", () => {

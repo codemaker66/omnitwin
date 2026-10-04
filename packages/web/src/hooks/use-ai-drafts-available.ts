@@ -13,6 +13,14 @@ import { getAIAssistantStatus } from "../api/ai-assistant.js";
 // ---------------------------------------------------------------------------
 
 let pending: Promise<boolean> | null = null;
+const listeners = new Set<(available: boolean) => void>();
+
+/** For the rest of the visit, offers no AI drafting: the server said it is
+ *  not available now (503), so a control that cannot work is taken away. */
+export function markAIDraftsUnavailable(): void {
+  pending = Promise.resolve(false);
+  for (const listener of listeners) listener(false);
+}
 
 function aiDraftsAvailable(): Promise<boolean> {
   pending ??= getAIAssistantStatus().then(
@@ -33,7 +41,8 @@ export function useAIDraftsAvailable(): boolean | undefined {
       (configured) => { if (!cancelled) setAvailable(configured); },
       () => { if (!cancelled) setAvailable(false); },
     );
-    return () => { cancelled = true; };
+    listeners.add(setAvailable);
+    return () => { cancelled = true; listeners.delete(setAvailable); };
   }, []);
   return available;
 }

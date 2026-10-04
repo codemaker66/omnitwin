@@ -22,6 +22,7 @@ import { uploadRoutes } from "./routes/uploads.js";
 import { pricingRuleRoutes } from "./routes/pricing-rules.js";
 import { turnaroundRuleRoutes } from "./routes/turnaround-rules.js";
 import { proposalTemplateRoutes } from "./routes/proposal-templates.js";
+import { proposalMessageDraftRoutes } from "./routes/proposal-message-draft.js";
 import { rotaRoutes } from "./routes/rota.js";
 import { referenceLoadoutRoutes } from "./routes/reference-loadouts.js";
 import { referencePhotoRoutes } from "./routes/reference-photos.js";
@@ -463,6 +464,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(analyticsRoutes, { db, prefix: "/analytics" });
   await server.register(aiAssistantRoutes, { env, prefix: "/ai" });
   await server.register(proposalRoutes, { db, prefix: "/proposals" });
+  await server.register(proposalMessageDraftRoutes, { db, env, prefix: "/proposals" });
   await server.register(quoteRoutes, { db, prefix: "/quotes" });
   await server.register(proposalShareRoutes, { db, prefix: "/proposal-share" });
   await server.register(supplierShareRoutes, { db, prefix: "/supplier-share" });

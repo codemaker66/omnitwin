@@ -205,7 +205,9 @@ export function TemplateSave({ venueId, event, eventStatus, onNeedEvent, rooms, 
   const kept = rules.status === "ready" && event !== null
     ? templateFromDraft(draft, rules.rules, event, spaceId === "" ? null : spaceId, roomName) : null;
   const claim = findUnsupportedProposalClaim(draft.message);
+  // AI wording not yet read through is never kept for the venue to reuse.
   const refusal = kept?.refusal
+    ?? (draft.aiUnread === true ? "The message holds AI wording not yet read through. Press I have read it under the message first." : null)
     ?? (claim === null ? null : `The message says "${claim}", a certainty the venue cannot show a client. Reword it first.`)
     ?? (name.trim() === "" ? "Give the template a name." : null);
   const typedOccasion = occasion !== "" && !ENQUIRY_OCCASION_KEYS.includes(occasion);

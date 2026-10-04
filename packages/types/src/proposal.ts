@@ -190,7 +190,8 @@ export function findUnsupportedProposalClaim(text: string): string | null {
 const MAX_TITLE_LENGTH = 200;
 const MAX_NAME_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 500;
-const MAX_CLIENT_MESSAGE_LENGTH = 4000;
+/** The longest message to a client a proposal version holds. */
+export const MAX_CLIENT_MESSAGE_LENGTH = 4000;
 const MAX_CAPACITY_NOTE_LENGTH = 500;
 const MAX_NOTES_LENGTH = 2000;
 

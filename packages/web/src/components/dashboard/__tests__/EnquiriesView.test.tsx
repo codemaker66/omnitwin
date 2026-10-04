@@ -57,7 +57,7 @@ vi.mock("../../../stores/auth-store.js", () => ({
 }));
 
 vi.mock("../../ai/AIDraftPanel.js", () => ({
-  AIDraftPanel: () => <div>AI draft</div>,
+  AIDraftPanel: ({ useCase }: { readonly useCase: string }) => <div data-use-case={useCase}>AI draft</div>,
 }));
 
 vi.mock("../../../hooks/use-ai-drafts-available.js", () => ({
@@ -763,7 +763,7 @@ describe("EnquiriesView decisions", () => {
     expect(mocks.addToast).not.toHaveBeenCalled();
   });
 
-  it("mounts the AI drafting panels only once they are asked for", async () => {
+  it("mounts the enquiry summary draft only once it is asked for, and leaves proposal wording to the proposal", async () => {
     mocks.listEnquiryPage.mockResolvedValue(page([enquiry(3)], {}));
     render(<EnquiriesView />);
 
@@ -773,7 +773,7 @@ describe("EnquiriesView decisions", () => {
     if (drafts === null) throw new Error("Expected the drafting disclosure");
     drafts.open = true;
     fireEvent(drafts, new Event("toggle"));
-    expect(screen.getAllByText("AI draft")).toHaveLength(2);
+    expect(screen.getAllByText("AI draft").map((panel) => panel.getAttribute("data-use-case"))).toEqual(["enquiry_summary"]);
   });
 
   it("offers AI drafting only where a provider is configured", async () => {

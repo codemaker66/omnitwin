@@ -92,6 +92,17 @@ describe("starting from a template", () => {
     expect(applied.focus).toEqual({ line: 3, field: "pounds" });
   });
 
+  it("keeps the mark of AI wording not yet read through on a message it keeps, and drops it with a message it replaces", () => {
+    const unread = { ...EMPTY_DRAFT, message: "Dear Elaine, an AI draft not yet read through.", aiUnread: true };
+    const kept = applyTemplate(template({ message: "" }), RULES, EVENT, unread, "replace", nameOfRoom);
+    expect(kept.draft.message).toBe(unread.message);
+    expect(kept.draft.aiUnread).toBe(true);
+    const replaced = applyTemplate(template(), RULES, EVENT, unread, "replace", nameOfRoom);
+    expect(replaced.draft.message).toBe("Thank you for thinking of the Grand Hall.");
+    expect(replaced.draft.aiUnread).toBeUndefined();
+    expect(applyTemplate(template(), RULES, EVENT, unread, "add", nameOfRoom).draft.aiUnread).toBe(true);
+  });
+
   it("marks each priced line as the list's, so saving it again keeps the entry", () => {
     const applied = applyTemplate(template(), RULES, EVENT, EMPTY_DRAFT, "replace", nameOfRoom);
     expect(applied.draft.lines[1]?.listed).toEqual({ pricingRuleId: DINNER, ruleType: "per_head", description: "Dinner" });

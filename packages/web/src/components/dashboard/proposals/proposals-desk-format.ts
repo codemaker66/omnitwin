@@ -271,6 +271,9 @@ export interface ComposerDraft {
   readonly message: string;
   readonly capacityNote: string;
   readonly lines: readonly QuoteLineDraft[];
+  /** The message is an AI draft not yet read through: marked until the booker
+   *  says they have read it, or empties it. Never part of a version. */
+  readonly aiUnread?: boolean;
 }
 
 export const EMPTY_DRAFT: ComposerDraft = { message: "", capacityNote: "", lines: [] };
