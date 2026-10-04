@@ -634,7 +634,7 @@ async function reviewsForRelease(db: FoundryDatabase, releaseId: string): Promis
     .where(eq(reconstructionReleaseReviews.releaseId, releaseId));
   if (rows.length === 0) return rows;
   if (rows.length === 1) {
-    if (rows[0]?.reviewSequence !== 1 || rows[0]?.supersedesReviewId !== null) {
+    if (rows[0]?.reviewSequence !== 1 || rows[0].supersedesReviewId !== null) {
       throw new ReconstructionFoundryEvidenceError(`Release ${releaseId} has an invalid root review.`);
     }
     return rows;
@@ -883,7 +883,9 @@ export type ReconstructionChannelTransitionPlan =
 
 export function planReconstructionChannelTransition(input: {
   readonly action: "promote" | "rollback";
-  readonly request: ReconstructionReleasePromoteInput | ReconstructionReleaseRollbackInput;
+  // A rollback input is a promote input with a non-null expected active
+  // release, so this one type accepts both.
+  readonly request: ReconstructionReleasePromoteInput;
   readonly requestDigest: string;
   readonly actorUserId: string;
   readonly target: ReconstructionChannelTransitionTarget;
@@ -2394,7 +2396,8 @@ export class ReconstructionFoundryService implements ReconstructionFoundryServic
 
   private async transitionProductionChannel(
     action: "promote" | "rollback",
-    input: ReconstructionReleasePromoteInput | ReconstructionReleaseRollbackInput,
+    // Rollback inputs are promote inputs with a non-null expected active release.
+    input: ReconstructionReleasePromoteInput,
     actorUserId: string,
   ): Promise<ReconstructionReleaseChannelEvent> {
     const requestDigest = digestJson({ action, ...input });

@@ -81,7 +81,7 @@ export function catalogueIcon(item: CatalogueItem): string {
   const s = ICON_STROKE;
   const f = ICON_FILL;
   // Dispatch on slug (stable developer ID) rather than UUID.
-  switch ((item as CatalogueItem & { slug: string }).slug) {
+  switch (item.slug) {
     case "round-table-6ft":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="20" r="14" fill="${f}" stroke="${s}" stroke-width="1.5"/><circle cx="20" cy="20" r="3" fill="${s}" opacity="0.3"/></svg>`;
     case "trestle-6ft":

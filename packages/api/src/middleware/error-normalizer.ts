@@ -157,7 +157,7 @@ export function registerErrorNormalizer(
     // directly would cause Fastify's built-in error serializer to
     // re-shape it as `{ statusCode, error, message }`, undoing our work.
     if (isEnvelopeShaped(err)) {
-      const v = err as ApiErrorBody & { details?: unknown };
+      const v = err as ApiErrorBody;
       const passThrough: ApiErrorBody = v.details === undefined
         ? { error: v.error, code: v.code }
         : { error: v.error, code: v.code, details: v.details };

@@ -345,7 +345,7 @@ export function compileFoundryLocalOsSandboxInstanceSpec(
     {
       executionId: authorization.execution.executionId,
       attemptId: authorization.execution.attemptId,
-      fencingToken: authorization.execution.fencingToken.toString(),
+      fencingToken: authorization.execution.fencingToken,
       stage,
       workerRunnerProfileId: request.sandbox.runnerProfileId,
       reviewedIngestManifestSha256:
@@ -364,7 +364,7 @@ export function compileFoundryLocalOsSandboxInstanceSpec(
     executionId: authorization.execution.executionId,
     attemptId: authorization.execution.attemptId,
     attemptOrdinal: authorization.execution.attemptOrdinal,
-    fencingToken: authorization.execution.fencingToken.toString(),
+    fencingToken: authorization.execution.fencingToken,
     subjectId: authorization.execution.subjectId,
     projectId: authorization.execution.projectId,
     jobId: authorization.execution.jobId,

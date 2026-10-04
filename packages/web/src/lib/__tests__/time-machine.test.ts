@@ -62,8 +62,8 @@ function entry(ordinal: number, overrides: Partial<AuditLogEntry> = {}): AuditLo
 function place(ordinal: number, object: PlanObject, index = 0): AuditLogEntry {
   return entry(ordinal, {
     intent: "object.place",
-    payload: { label: `Place ${String(object.kind)}`, added: [{ object, index }], removed: [], updated: [] },
-    inverse: { label: `Place ${String(object.kind)}`, added: [], removed: [{ object, index }], updated: [] },
+    payload: { label: `Place ${object.kind}`, added: [{ object, index }], removed: [], updated: [] },
+    inverse: { label: `Place ${object.kind}`, added: [], removed: [{ object, index }], updated: [] },
   });
 }
 

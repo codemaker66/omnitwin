@@ -44,7 +44,7 @@ export function buildTopBarModel(input: TopBarModelInput): TopBarModel {
   const status = deriveEditorSaveStatus(input.save);
   const room = input.spaceName ?? "Opening layout";
   const hasVenue = input.venueName !== undefined && input.venueName !== null && input.venueName.length > 0;
-  const venueLabel = hasVenue ? `${String(input.venueName)} / ${room}` : room;
+  const venueLabel = hasVenue ? `${input.venueName} / ${room}` : room;
   const formattedCount = input.objectCount.toLocaleString("en-GB");
   const summaryLabel = input.objectCount === 1 ? "1 placed item" : `${formattedCount} placed items`;
   return {

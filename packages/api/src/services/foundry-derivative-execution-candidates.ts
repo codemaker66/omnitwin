@@ -395,7 +395,7 @@ function serializeCandidate(
     candidate.bindingSet.bindings[0]?.workerProfileSha256 !==
       row.workerProfileSha256 ||
     !runtimeValueEquals(
-      candidate.bindingSet.bindings[0]?.operationClass,
+      candidate.bindingSet.bindings[0].operationClass,
       row.operationClass,
     ) ||
     row.recordedAt.getTime() !== row.assembledAt.getTime()

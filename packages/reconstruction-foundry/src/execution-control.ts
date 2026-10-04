@@ -466,7 +466,7 @@ function copySubject(subject: FoundryExecutionSubjectV0): FoundryExecutionSubjec
 export function assertFoundryExecutionSubjectV0(
   subject: FoundryExecutionSubjectV0,
 ): void {
-  if (String(subject.schemaVersion) !== FOUNDRY_EXECUTION_SUBJECT_V0) {
+  if (String(subject.schemaVersion as unknown) !== FOUNDRY_EXECUTION_SUBJECT_V0) {
     fail("INVALID_EXECUTION_SUBJECT_VERSION", "Execution subject uses an unsupported schema version.");
   }
   assertId(subject.subjectId, "subjectId");
@@ -525,10 +525,10 @@ export function assertFoundryExecutionSubjectV0(
   if (dispatchDeadline <= createdAt || dispatchDeadline > pricingSnapshotExpiresAt) {
     fail("INVALID_EXECUTION_DISPATCH_WINDOW", "Dispatch deadline must follow creation and not outlive the pricing snapshot.");
   }
-  if (Number(subject.maximumAttempts) !== FOUNDRY_EXECUTION_MAX_ATTEMPTS_V0) {
+  if (Number(subject.maximumAttempts as unknown) !== FOUNDRY_EXECUTION_MAX_ATTEMPTS_V0) {
     fail("EXECUTION_RETRIES_FORBIDDEN", "Execution V0 requires maximumAttempts to equal one.");
   }
-  if (String(subject.budgetPolicy.currency) !== "USD") {
+  if (String(subject.budgetPolicy.currency as unknown) !== "USD") {
     fail("INVALID_EXECUTION_CURRENCY", "Execution V0 accounts for provider cost in USD microunits only.");
   }
   const warning = parseMicroUsd(subject.budgetPolicy.costWarningMicroUsd, "costWarningMicroUsd");
@@ -611,8 +611,8 @@ export function validateFoundryCheckpointCompatibility(
   );
   const verifiedAt = assertUtc(checkpoint.verifiedAt, "checkpoint verifiedAt");
   if (!isLiteralTrue(checkpoint.complete)) mismatches.push("complete");
-  if (String(checkpoint.verificationResult) !== "verified_compatible") mismatches.push("verificationResult");
-  if (!["inactive", "terminal"].includes(String(checkpoint.producerProviderState))) {
+  if (String(checkpoint.verificationResult as unknown) !== "verified_compatible") mismatches.push("verificationResult");
+  if (!["inactive", "terminal"].includes(String(checkpoint.producerProviderState as unknown))) {
     mismatches.push("producerProviderState");
   }
   if (producerStateVerifiedAt < createdAt || verifiedAt < producerStateVerifiedAt) {
@@ -1414,7 +1414,7 @@ export function assertFoundryExecutionControlStateV0(
     fail("EXECUTION_SUBJECT_CHANGED", "State subject digest does not match its immutable subject.");
   }
   assertId(state.attemptId, "attemptId");
-  if (Number(state.attemptNumber) !== 1) fail("EXECUTION_RETRIES_FORBIDDEN", "Execution V0 contains exactly one attempt.");
+  if (Number(state.attemptNumber as unknown) !== 1) fail("EXECUTION_RETRIES_FORBIDDEN", "Execution V0 contains exactly one attempt.");
   assertPositiveSafeInteger(state.sequence, "sequence");
   assertPositiveSafeInteger(state.revision, "revision");
   if (state.sequence !== state.revision) {

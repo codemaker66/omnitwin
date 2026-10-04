@@ -97,7 +97,7 @@ describe("CATALOGUE_ITEMS", () => {
 
   it("items have stable slugs for icon dispatch", () => {
     for (const item of CATALOGUE_ITEMS) {
-      expect((item as CatalogueItem & { slug: string }).slug.length).toBeGreaterThan(0);
+      expect(item.slug.length).toBeGreaterThan(0);
     }
   });
 

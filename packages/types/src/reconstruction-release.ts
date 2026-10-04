@@ -162,7 +162,7 @@ export const ReconstructionReleaseManifestSchema = z
     if (
       sourceManifest.length !== 1 ||
       sourceManifest[0]?.role !== "manifest" ||
-      sourceManifest[0]?.sha256 !== manifest.sourceManifestSha256
+      sourceManifest[0].sha256 !== manifest.sourceManifestSha256
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -593,7 +593,7 @@ export const ReconstructionReleaseSigningStatementSchema = z
       `reconstruction-release/${predicate.venueSlug}/${predicate.releaseDigest}`;
     if (
       statement.subject[0]?.name !== expectedSubjectName ||
-      statement.subject[0]?.digest.sha256 !== predicate.releaseDigest
+      statement.subject[0].digest.sha256 !== predicate.releaseDigest
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
