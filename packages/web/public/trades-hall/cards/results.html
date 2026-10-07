@@ -1,1 +1,48 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Trades Hall — Saved responses</title><link rel="stylesheet" href="./review.css"><link rel="stylesheet" href="./activity.css"><link rel="stylesheet" href="./results.css"></head><body class="results-page"><header class="masthead"><a class="wordmark" href="./">TRADES HALL<span>OF GLASGOW</span></a><span class="review-label">Design review</span></header><main class="results-main"><div class="results-heading"><div><h1>Your saved responses</h1><p class="intro">Choices and comments from the card selection form.</p></div><div class="result-actions"><button id="refresh-results" class="primary" type="button">Refresh</button><button id="export-results" class="text-button" type="button" disabled>Export CSV</button></div></div><p id="results-status" role="status" aria-live="polite"></p><div id="results-content" hidden><div class="result-summary"><span>Responses <strong id="response-count">0</strong></span><span>Most selected <strong id="leading-design">—</strong></span></div><section><h2>Favourite choices</h2><table><thead><tr><th scope="col">Design</th><th scope="col">Votes</th></tr></thead><tbody id="vote-counts"></tbody></table></section><section class="responses"><h2>Comments &amp; responses</h2><div id="responses-list"></div><p id="empty-results" class="empty">No responses yet.<br><span>When someone sends their feedback, it will appear here.</span></p></section></div><a class="back-link" href="./"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" stroke="currentColor" stroke-width="1.5"/></svg>Open selection form</a></main><script type="module" src="./results.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>Trades Hall — Design feedback</title>
+<link rel="stylesheet" href="./review.css"><link rel="stylesheet" href="./activity.css"><link rel="stylesheet" href="./results.css">
+</head>
+<body class="results-page">
+<a class="skip" href="#feedback">Skip to feedback</a>
+<header class="masthead"><a class="wordmark" href="./">TRADES HALL<span>OF GLASGOW</span></a><span class="review-label">Private review</span></header>
+<main class="results-main">
+  <div class="results-heading">
+    <div><p class="eyebrow">The business card collection</p><h1>Design feedback</h1><p class="intro">See what stands out. Read what matters.</p></div>
+    <div class="result-actions"><button id="refresh-results" class="secondary" type="button">Refresh responses</button><button id="export-results" class="text-button" type="button" disabled>Export all to CSV</button></div>
+  </div>
+  <p id="results-status" role="status" aria-live="polite"></p>
+  <div id="results-content" hidden>
+    <dl class="result-summary">
+      <div><dt>People responded</dt><dd id="response-count">0</dd></div>
+      <div><dt>Written comments</dt><dd id="comment-count">0</dd></div>
+      <div class="leading-summary"><dt id="leading-label">Most selected</dt><dd id="leading-design">No favourites yet</dd></div>
+    </dl>
+    <div class="feedback-workspace">
+      <aside class="design-rail" aria-label="Design overview">
+        <div class="rail-heading"><h2>The collection</h2><span>Favourites · Comments</span></div>
+        <p class="rail-hint">Choose a design to focus its feedback.</p>
+        <nav id="design-list" aria-label="Filter feedback by design"></nav>
+      </aside>
+      <section id="feedback" class="feedback-panel" aria-labelledby="feedback-heading" tabindex="-1">
+        <div class="feedback-topline"><h2 id="feedback-heading">The responses</h2><div class="view-switch" role="group" aria-label="Organise feedback"><button id="view-designs" type="button" aria-pressed="true">By design</button><button id="view-people" type="button" aria-pressed="false">By person</button></div></div>
+        <div class="feedback-tools">
+          <label class="search-field"><span class="visually-hidden">Search feedback</span><svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m15.5 15.5 5 5" stroke="currentColor" stroke-width="1.5"/></svg><input id="results-search" type="search" placeholder="Search names or comments…" autocomplete="off"></label>
+          <label class="filter-field"><span>Design</span><select id="design-filter"><option value="all">All designs</option><option value="overall">Overall comments</option></select></label>
+          <label class="sort-field"><span>Order</span><select id="results-sort"><option value="newest">Latest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option></select></label>
+        </div>
+        <div class="results-context"><p id="match-count" role="status" aria-live="polite"></p><button id="clear-filters" type="button" class="text-button" hidden>Clear filters</button></div>
+        <div id="results-list"></div>
+        <div id="empty-results" class="empty" hidden><h3>No responses yet</h3><p>Share the selection form with your client. Their choices and comments will appear here.</p><a href="./" target="_blank" rel="noopener noreferrer">Open selection form ↗</a></div>
+        <div id="no-matches" class="empty" hidden><h3>No matching feedback</h3><p>Try another search or choose a different design.</p><button id="reset-empty" class="secondary" type="button">Show all feedback</button></div>
+      </section>
+    </div>
+  </div>
+  <footer class="results-footer"><span>Trades Hall of Glasgow · Business card review</span><a href="./" target="_blank" rel="noopener noreferrer">Open selection form ↗</a></footer>
+</main>
+<dialog id="preview-dialog" aria-labelledby="preview-title"><div class="dialog-bar"><h2 id="preview-title">Design preview</h2><button id="close-preview" class="secondary" type="button">Close</button></div><img id="preview-image" alt=""><p id="preview-note"></p></dialog>
+<script type="module" src="./results.js"></script>
+</body>
+</html>
