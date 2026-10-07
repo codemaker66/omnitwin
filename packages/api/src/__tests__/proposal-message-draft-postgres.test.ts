@@ -330,6 +330,12 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       expect(adapter.calls[1]?.context["occasion"]).not.toBe("reception");
     });
 
+    it("keeps a name written with a non-breaking space", async () => {
+      await proposal({ enquiryId: await enquiry(VENUE, WORDS, { name: "Elaine\u00a0Crawford", guestName: null }) });
+      await ask(STAFF);
+      expect(adapter.calls[0]?.context["clientName"]).toBe("Elaine\u00a0Crawford");
+    });
+
     it("prefers the name the guest gave to the enquiry's stored name", async () => {
       await proposal({ enquiryId: await enquiry(VENUE, WORDS, { name: "elaine@example.org", guestName: "Elaine Crawford" }) });
       await ask(STAFF);
@@ -492,7 +498,30 @@ describe("finding phone numbers in the client's words", () => {
       "12.06.2027-14.06.2027, 12-14.06.2027, 12.06-14.06.2027, budget 15000-20000, 15000 (20000 max)"],
     ["rooms, tables, times and seasons", "Room 3, table 12, 19:30-01:00, 1 June 2027, 2027-2028 season",
       "Room 3, table 12, 19:30-01:00, 1 June 2027, 2027-2028 season"],
+    ["timetables, and a number beside a date or time", "0930 - 1700 - 2200, 0900-1700  1800-2300, 05.06.2027 - 07700 900123, 0930 - 07700 900123",
+      "0930 - 1700 - 2200, 0900-1700  1800-2300, 05.06.2027 - (phone number), 0930 - (phone number)"],
+    ["hyphens, minus signs and figure dashes", "0141\u2011552\u20111234, 0141\u2212552\u22121234 and 0141\u2012552\u20121234",
+      "(phone number), (phone number) and (phone number)"],
+    ["a number with no 0 joined by a dash", "7700-900123", "(phone number)"],
+    ["brackets around a bracketed code", "(Tel: (0141) 552 1234)", "(Tel: (phone number))"],
+    ["fractions, powers and Arabic-Indic digits", "1\u00bd hours in 120 m\u00b2, \u0660\u0667\u0667\u0660\u0660 \u0669\u0660\u0660\u0661\u0662\u0663",
+      "1\u00bd hours in 120 m\u00b2, (phone number)"],
+    ["a bracketed 0 or a 0 that is no number", "(0) 7 people, 0 guests - 150 seats", "(0) 7 people, 0 guests - 150 seats"],
   ])("%s", (_, written, passed) => {
     expect(clientWords(written)).toBe(passed);
+  });
+
+  it.each([
+    ["times", "01.30  ".repeat(571)],
+    ["short parts with times between", "0  01.30  ".repeat(400)],
+    ["four-figure parts", "0141  ".repeat(666)],
+    ["zeros", "0 ".repeat(2000)],
+    ["zeros and dashes", "0 - ".repeat(1000)],
+    ["brackets", "(0".repeat(2000)],
+    ["numbers", "07700 900123 ".repeat(300)],
+  ])("reads 4,000 characters of %s in time in proportion to them", (_, written) => {
+    const started = performance.now();
+    clientWords(written);
+    expect(performance.now() - started).toBeLessThan(250);
   });
 });
