@@ -138,6 +138,7 @@ a:focus-visible { outline: 3px solid #a9622f; outline-offset: 4px; }
 .platform-footer .platform-wordmark { font-size: 27px; }
 .platform-footer p { color: var(--platform-muted); font-size: 11px; line-height: 1.8; }
 .platform-footer div p { margin-top: 8px; }
+.platform-contact { display: inline-flex; align-items: center; min-height: 44px; font-size: 12px; text-underline-offset: 4px; }
 .platform-footer nav { display: flex; gap: 20px; font-size: 11px; }
 .platform-footer nav a { display: inline-flex; align-items: center; min-height: 44px; }
 

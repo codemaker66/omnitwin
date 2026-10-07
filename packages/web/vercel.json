@@ -94,20 +94,20 @@
   ],
   "rewrites": [
     {
-      "source": "/platform",
-      "destination": "/platform/index.html"
-    },
-    {
-      "source": "/platform/",
-      "destination": "/platform/index.html"
-    },
-    {
       "source": "/amissing-book",
       "destination": "/amissing-book/index.html"
     },
     {
       "source": "/amissing-book/",
       "destination": "/amissing-book/index.html"
+    },
+    {
+      "source": "/platform",
+      "destination": "/platform/index.html"
+    },
+    {
+      "source": "/platform/",
+      "destination": "/platform/index.html"
     },
     {
       "source": "/api/card-review",
