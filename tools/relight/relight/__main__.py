@@ -413,7 +413,7 @@ def _lit_directions(candidates, lt, SB, occ, rays, normals, used=()):
     return out, drawn, skipped
 
 
-SUN_INFO_KS = (8, 16, 24, 32, 48, 64, 96, 128, 192)    # K values at which the check draws are also scored, for information only
+SUN_INFO_KS = (8, 16, 17, 18, 19, 20, 24, 30, 32, 48, 64, 96, 128, 192)    # K at which the check draws are also scored, for information only
 
 
 def _score_through(SB, PR, lumw, table, basis, volumes, hz, fresnel, room, xb, to05, valid05, suns, exact05):
@@ -489,8 +489,10 @@ def cmd_sun_bounce(cfg, args) -> int:
     largest value) and the coefficient table at the wall-facing nodes of the 4-degree sun grid over the sky band compress
     and interpolate (sunbounce.bake_table: a node without real power in a window takes the nearest real node's
     coefficients). The grid covers the sun's and the moon's band and the bounce is per unit irradiance, so one table
-    serves both. K is the smallest that passes sunbounce.GATE on SUN_HELD_OUT held-out real suns plus as many real
-    moons, rebuilt from the stored values and scored against their exact bounce at the valid 0.5 m probes; the same gate
+    serves both. K is chosen on SUN_HELD_OUT held-out real suns plus as many real moons, rebuilt from the stored values
+    and scored against their exact bounce at the valid 0.5 m probes (sunbounce.choose_k): the smallest K from which
+    sunbounce.GATE passes with the worst bright direction at most sunbounce.MARGIN at that K and every larger K, else the
+    smallest K that passes; the same gate
     then checks that K, unchanged, on independent draws of suns and moons (SUN_CHECK_SEED, MOON_CHECK_SEED; every
     selection direction and grid node excluded), which are also scored at other K for information only.
     <evidence>/sun-bounce-check.json holds both gates, per body too, the faint directions, and the power and floor
@@ -570,7 +572,7 @@ def cmd_sun_bounce(cfg, args) -> int:
         per_k = np.array([float(np.median(d[k])) for d in logs])
         results.append(SB.gate(per_k, brightness, np.concatenate([d[k] for d in logs])))
     passing = [k + 1 for k, r in enumerate(results) if r["pass"]]
-    K = passing[0] if passing else kmax
+    K, k_rule = SB.choose_k(results)                                  # fixed on the selection set; the check is scored after
     rel = brightness / np.median(brightness)
     per_sun = [float(np.median(d[K - 1])) for d in logs]
     floor_err = [abs(float(np.cumsum(c[:, None] * floor_mean, 0)[K - 1] @ lumw) - fe) / fe for c, fe in zip(cs, floor_exact) if fe > 0]
@@ -599,8 +601,9 @@ def cmd_sun_bounce(cfg, args) -> int:
     # for information only (K was fixed on the selection set above and is not chosen again): the check draws at other K
     info_ks = sorted({k for k in SUN_INFO_KS if k <= kmax} | {K})
     check_power = [SB.window_power(volumes, hz, fresnel, room, s) for s, _g, _e in check]
-    logs_ci, bright_ci, _az_el, _cs, _fe = _scan(SB, PR, W, lumw, lum_basis, table, check_power, check, exact_check, valid05, xb,
-                                                 floor05, info_ks)
+    logs_ci, bright_ci, _az_el, cs_c, floor_exact_c = _scan(SB, PR, W, lumw, lum_basis, table, check_power, check, exact_check,
+                                                            valid05, xb, floor05, info_ks)
+    floor_err_c = [abs(float(np.cumsum(c[:, None] * floor_mean, 0)[K - 1] @ lumw) - fe) / fe for c, fe in zip(cs_c, floor_exact_c) if fe > 0]
     check_by_k = [{"K": k, **{name: (v if not isinstance(v, float) or np.isfinite(v) else None) for name, v in SB.gate(
         np.array([float(np.median(d[i])) for d in logs_ci]), bright_ci, np.concatenate([d[i] for d in logs_ci])).items()}}
                   for i, k in enumerate(info_ks)]       # a median that is not finite at a small K is written as null
@@ -612,7 +615,9 @@ def cmd_sun_bounce(cfg, args) -> int:
                         gridShape=np.asarray(shape1, np.int64), gridSpacing=np.float64(SB.SPACING), valid=valid1,
                         real=baked.real, nodePower=node_power_grid, patchRays=room.rays, patchNormal=room.normals,
                         patchArea=room.areas)
-    out = {"gate": SB.GATE, "pass": ok, "K": K, "kmax": kmax, "rank": rank, "energyAtK": float(lam[:K].sum() / lam.sum()),
+    out = {"gate": SB.GATE, "pass": ok, "K": K, "kRule": {"rule": k_rule, "margin": SB.MARGIN,
+                                                          "smallestPassingK": passing[0] if passing else None},
+           "kmax": kmax, "rank": rank, "energyAtK": float(lam[:K].sum() / lam.sum()),
            "result": results[K - 1], "splitMaxAbsDiff": split, "throughSunBounceMaxDiff": through,
            "throughCheckMaxDiff": through_check,
            "resultByBody": _gate_by_body(SB, bodies, per_sun, brightness, [d[K - 1] for d in logs]),
@@ -621,6 +626,7 @@ def cmd_sun_bounce(cfg, args) -> int:
                                 "pass": independent["pass"], "result": independent,
                                 "resultByBody": _gate_by_body(SB, check_bodies, medians_c, bright_c, logs_c),
                                 "faint": _faint(SB, check_bodies, check_az_el, rel_c, medians_c),
+                                "floorMean": {"medianRelErr": float(np.median(floor_err_c)), "maxRelErr": float(max(floor_err_c))},
                                 "informationalByK": check_by_k},
            "model": {"factored": True, "realFraction": SB.REAL_FRACTION,
                      "realNodeWindows": [int(baked.real[..., w].sum()) for w in range(5)],
@@ -636,9 +642,10 @@ def cmd_sun_bounce(cfg, args) -> int:
            "floorMean": {"medianRelErr": float(np.median(floor_err)), "maxRelErr": float(max(floor_err))}}
     with open(os.path.join(cfg.paths["evidence"], "sun-bounce-check.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1, allow_nan=False)
-    print(f"sun-bounce.npz written: K {K} of rank {rank}, {json.dumps(results[K - 1])}; power {json.dumps(out['power'])}; "
-          f"floor {json.dumps(out['floorMean'])}; independent check ({len(chk_suns)} suns and {len(chk_moons)} moons of "
-          f"{drawn_s + drawn_m} drawn, {skipped_s + skipped_m} reused skipped) {json.dumps(independent)}; "
+    print(f"sun-bounce.npz written: K {K} ({k_rule}; smallest passing {passing[0] if passing else None}) of rank {rank}, "
+          f"{json.dumps(results[K - 1])}; power {json.dumps(out['power'])}; floor {json.dumps(out['floorMean'])}; independent "
+          f"check ({len(chk_suns)} suns and {len(chk_moons)} moons of {drawn_s + drawn_m} drawn, {skipped_s + skipped_m} "
+          f"reused skipped) {json.dumps(independent)}, floor {json.dumps(out['independentCheck']['floorMean'])}; "
           f"{'PASS' if ok else 'FAIL'}, {time.time() - started:.0f} s", flush=True)
     return 0 if ok else 1
 

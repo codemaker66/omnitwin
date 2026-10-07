@@ -226,6 +226,30 @@ def gate(per_sun, brightness, pooled) -> dict:
             "worstBright": float(per_sun[bright].max()), "worst": float(per_sun.max()), "medianOfSuns": float(np.median(per_sun))}
 
 
+MARGIN = 0.20    # K keeps this much room under the gate: the worst bright direction's median |dlog2| on the selection set (a fifth under 0.25), from K up
+
+
+def choose_k(results) -> tuple[int, str]:
+    """(K, rule) from the gate's result at each K (results[k - 1], from `gate`, on the selection set), the stable
+    margin rule (the ruling of 7 October): the smallest K from which the gate passes and the worst bright direction is at
+    most MARGIN at that K and at every larger K up to the last one tried ("margin"). A dip that rises above MARGIN again
+    is luck, not a margin, so it is not taken. When no K is stable the smallest K that passes is kept
+    ("smallestPassing"); when none passes, the last K ("none")."""
+    n = len(results)
+    stable = n + 1                                  # the smallest K of the unbroken run of good K that ends at the last one
+    for k in range(n, 0, -1):
+        if results[k - 1]["pass"] and results[k - 1]["worstBright"] <= MARGIN:
+            stable = k
+        else:
+            break
+    if stable <= n:
+        return stable, "margin"
+    for k, r in enumerate(results, 1):
+        if r["pass"]:
+            return k, "smallestPassing"
+    return n, "none"
+
+
 def reused(s, used) -> bool:
     """True when the unit vector s is one of the directions in `used` (unit vectors the same to REUSE_TOL in every
     component, which is float noise, not a nearby direction): the independent check must not score a direction the

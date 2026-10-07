@@ -247,6 +247,37 @@ class Gate(unittest.TestCase):
     def test_the_pooled_median_must_meet_the_gate(self):
         self.assertFalse(SB.gate(np.array([0.1, 0.1]), np.array([1.0, 1.0]), np.full(100, 0.26))["pass"])
 
+    @staticmethod
+    def curve(worst, passes=None):
+        """Gate results for K = 1, 2, ...: each K's worst bright direction, and whether its gate passes (default: when
+        the worst bright direction is within the gate's 0.25)."""
+        return [{"pass": (w <= SB.GATE["median"]) if passes is None else passes[k], "worstBright": w} for k, w in enumerate(worst)]
+
+    def test_k_is_the_smallest_whose_worst_bright_direction_stays_within_the_margin_from_there_up(self):
+        # a clean curve: over the margin up to K 3, within it from K 4 on
+        self.assertEqual(SB.choose_k(self.curve([0.30, 0.26, 0.22, 0.19, 0.18, 0.17])), (4, "margin"))
+
+    def test_a_dip_under_the_margin_that_rises_again_is_not_taken(self):
+        # the run 9 shape: K 2 has the margin, K 3 to 5 do not, K 6 on do. A dip is luck, so the choice is K 6
+        worst = [0.30, 0.18, 0.21, 0.22, 0.205, 0.19, 0.17, 0.16]
+        self.assertEqual(SB.choose_k(self.curve(worst)), (6, "margin"))
+
+    def test_the_margin_is_a_fifth_under_the_gate_and_exactly_met_counts(self):
+        self.assertEqual(SB.MARGIN, 0.20)
+        self.assertEqual(SB.choose_k(self.curve([0.2000000001, 0.20, 0.20])), (2, "margin"))
+
+    def test_a_k_whose_gate_fails_is_not_taken_even_with_a_small_worst_bright_direction(self):
+        # the pooled median can fail the gate while every bright direction is fine
+        self.assertEqual(SB.choose_k(self.curve([0.10, 0.19, 0.19], passes=[False, True, True])), (2, "margin"))
+        self.assertEqual(SB.choose_k(self.curve([0.19, 0.19, 0.19], passes=[True, False, True])), (3, "margin"))
+
+    def test_a_curve_that_ends_above_the_margin_has_no_stable_k_and_keeps_the_smallest_passing_k(self):
+        worst = [0.40, 0.24, 0.18, 0.17, 0.21]                          # within the margin for K 3 and 4, then above it at the last K
+        self.assertEqual(SB.choose_k(self.curve(worst)), (2, "smallestPassing"))
+
+    def test_without_a_passing_k_the_last_is_returned(self):
+        self.assertEqual(SB.choose_k(self.curve([0.4, 0.4, 0.4], passes=[False] * 3)), (3, "none"))
+
     def test_a_sun_already_used_is_recognised_and_a_different_one_is_not(self):
         used = [sun_toward(120.0, 30.0), sun_toward(150.0, 40.0)]
         self.assertTrue(SB.reused(sun_toward(150.0, 40.0), used))
