@@ -485,6 +485,7 @@ describe("finding phone numbers in the client's words", () => {
     ["a number after an abbreviation", "Tel.07700 900123, No.0141 552 1234", "Tel.(phone number), No.(phone number)"],
     ["country codes before brackets", "+44 (0)141 552 1234, +1 (415) 555-0123 or +44 (0) 141 552 1234.", "(phone number), (phone number) or (phone number)."],
     ["a code in brackets", "(+353) 87 123 4567", "(phone number)"],
+    ["an area code in brackets", "(415) 555-0123, 1 (415) 555-0123 or (0141) 552 1234", "(phone number), 1 (phone number) or (phone number)"],
     ["a number in brackets, or beside some", "07700 900123 (150 guests), (07700 900123), (mobile 07700 900123).",
       "(phone number) (150 guests), (phone number), (mobile (phone number))."],
     ["spaces of other widths, and doubled", `07700${space}900123, 0141\t552 1234, 07700  900123 and 0141  552  1234`,

@@ -72,6 +72,9 @@ const DATE_OR_TIME = new RegExp(
   "u",
 );
 const PHONE_START = /^\(?\+|^[+(]?0/u;
+// Where a number written in parts may start: as above, or a closed bracketed
+// area code ("(415) 555-0123"), never a bare bracket ("(15000 - 20000)").
+const CHAIN_START = /^\(?\+|^[+(]?0|^\(\d{2,5}\)$/u;
 // A time of day written as four figures or with a dot or colon ("0930", "19.30").
 const TIME_LIKE = /^(?:[01]\d|2[0-3])[0-5]\d$|^\d{1,2}[.:]\d{2}$/u;
 // A country code or "(0)" that a whole number after it belongs with.
@@ -121,7 +124,7 @@ function scrubRun(found: string): string {
   while (at < parts.length) {
     const part = parts[at] ?? "";
     const alone = scrubNumber(part);
-    if (alone === part && PHONE_START.test(part.trim()) && !DATE_OR_TIME.test(part)) {
+    if (alone === part && CHAIN_START.test(part.trim()) && !DATE_OR_TIME.test(part)) {
       let text = part;
       let end = at;
       let digits = digitsIn(part);
