@@ -25,6 +25,9 @@ restored 2 mm floor). The others live in the splats themselves. His decisions on
 - **Cinematic light, with sun shafts.** The light changes gradually and live like real life, with real shadows; moving
   the clock speeds it up in a refined, smooth way. Hollywood and AAA cinematic polish; nothing janky or amateur.
 
+Source rule (Blake, 7 October): we have full permission to use everything we have and everything the venue has
+(including its Virtual Museum photographs); for every surface and look, choose the most aesthetically pleasing source.
+
 ## 2. What the inventory established (measured)
 
 - Below about 5.4 m almost every large surface fits a base surface plus a single-valued height field: plaster fields,
@@ -100,8 +103,9 @@ in the package's provenance record. External photographs are used only after Bla
 - **Live by default:** the hall shows the real hour; the light moves continuously (the sun creeps across the floor, the
   sky warms and dims). Weather joins in R2.
 - **Moving the clock:** the displayed time follows the chosen time through a critically damped spring, so the light
-  sweeps through the hours as a smooth time-lapse and never jumps. Lamps fade with an incandescent warm-up (colour
-  shifts warm as they dim), never switch.
+  sweeps through the hours as a smooth time-lapse and never jumps. Lamps fade, never switch, with a warm-down as they dim. The hall's lamps are LED (installer's record for the cove
+  tape and dome pin spots; the chandeliers' frosted candles almost certainly), which do not warm when dimmed: the
+  warm dim is Blake's deliberate artistic choice (7 October). At full level each lamp group keeps its measured colour.
 
 ### 4.2 Shadows
 
