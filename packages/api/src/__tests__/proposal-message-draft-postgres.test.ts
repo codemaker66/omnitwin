@@ -86,7 +86,7 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
   const adapter = new RecordingAdapter();
   const fixtureSchema = `proposal_message_draft_${randomUUID().replaceAll("-", "")}`;
   const looseTables: PgTable[] = [schema.venues, schema.users, schema.spaces, schema.proposals, schema.enquiries,
-    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments, schema.proposalVersions];
+    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments, schema.proposalVersions, schema.proposalStatusHistory];
 
   async function ask(who: Person | null, id = PROPOSAL, payload?: Record<string, unknown>): Promise<{
     statusCode: number; code?: string; draft?: AIDraft; drewOn?: ProposalMessageDraft["drewOn"];
@@ -291,7 +291,8 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       const prompt = adapter.calls[0]?.prompt ?? "";
       expect(prompt).toContain("You are drafting the message a venue's events team sends their client with a proposal");
       expect(prompt).toContain("a fact that is missing or null is unknown, so do not invent dates, rooms, guest numbers, prices, availability or confirmations");
-      expect(prompt).toContain("Tone: Warm, plain British English, brief, from the venue's events team to their client.");
+      expect(prompt).toContain("Tone: Warm, plain British English, brief, from the venue's events team to their client.\n");
+      expect(prompt).not.toContain("..");
       expect(prompt).not.toContain("internal Venviewer planning support text");
     });
 
@@ -310,6 +311,21 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       expect(told?.context["clientName"]).toBeNull();
       expect(JSON.stringify(told?.context)).not.toContain("@");
       expect(told?.prompt).not.toContain("@");
+    });
+
+    it.each([
+      ["two numbers on a line", "0141 552 1234 / 07700 900123", "(phone number) / (phone number)"],
+      ["two on consecutive lines", "07700 900123\n0141 552 1234", "(phone number)\n(phone number)"],
+      ["a number above a date", "07700 900123\n12.06.2027", "(phone number)\n12.06.2027"],
+      ["numbers with no 0 or + to start", "Call 415-555-0123 or 44 7700 900123", "Call (phone number) or (phone number)"],
+      ["dotted pairs", "Mobile 06.12.34.56.78", "Mobile (phone number)"],
+      ["a number after an abbreviation", "Tel.07700 900123, No.0141 552 1234", "Tel.(phone number), No.(phone number)"],
+      ["a country code before a bracketed 0", "+44 (0)141 552 1234.", "(phone number)."],
+      ["a number in brackets, or beside some", "07700 900123 (150 guests), (07700 900123).", "(phone number) (150 guests), (phone number)."],
+      ["dates, times, ranges, counts and budgets", "(15000 - 20000), 12.06.2027 19.30, 2027-06-05, 01.06.2027 - 03.06.2027, 0930 - 1700, £12,000.",
+        "(15000 - 20000), 12.06.2027 19.30, 2027-06-05, 01.06.2027 - 03.06.2027, 0930 - 1700, £12,000."],
+    ])("finds phone numbers however they are written: %s", (_, written, passed) => {
+      expect(clientWords(written)).toBe(passed);
     });
 
     it("never takes a name holding a phone number, and says the occasion in words with contact details taken out", async () => {
@@ -368,13 +384,21 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       expect(answer.drewOn).toEqual({ event: true, enquiry: true, clientWords: true });
       expect(adapter.calls[0]?.context["clientLatestMessage"]).toBe("And could we finish at one rather than midnight?");
 
-      // A version saved since answers them: only words after it are passed on.
+      // A version saved since and not yet sent has not answered them.
       await pool.query("INSERT INTO proposal_versions (id, proposal_id, version, payload, created_at) VALUES ($1, $2, 2, '{}', '2026-10-01T14:00:00Z')", [randomUUID(), PROPOSAL]);
       await ask(STAFF);
-      expect(adapter.calls[1]?.context["clientLatestMessage"]).toBeNull();
+      expect(adapter.calls[1]?.context["clientLatestMessage"]).toBe("And could we finish at one rather than midnight?");
+      // Sent since, it has: only words after the send are passed on.
+      await pool.query("UPDATE proposals SET sent_at = '2026-09-30T09:00:00Z' WHERE id = $1", [PROPOSAL]);
+      await pool.query(
+        "INSERT INTO proposal_status_history (id, proposal_id, from_status, to_status, created_at) VALUES ($1, $2, 'changes_requested', 'sent', '2026-10-01T14:30:00Z')",
+        [randomUUID(), PROPOSAL],
+      );
+      await ask(STAFF);
+      expect(adapter.calls[2]?.context["clientLatestMessage"]).toBeNull();
       await comment("client", "request_changes", "One more change, please: a later bar.", "2026-10-01T15:00:00Z");
       await ask(STAFF);
-      expect(adapter.calls[2]?.context["clientLatestMessage"]).toBe("One more change, please: a later bar.");
+      expect(adapter.calls[3]?.context["clientLatestMessage"]).toBe("One more change, please: a later bar.");
     });
 
     it("passes on only so much of the client's words", async () => {

@@ -5010,4 +5010,23 @@ describe("Draft the message with AI", () => {
       cleanup();
     }
   });
+  it("marks words copied from a draft even after it is put away", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-away"));
+    await panel.findByTestId("ai-draft-ask");
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: `My own start. ${BODY.slice(13)}` } });
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+  });
+
+  it("offers Try again when the sign-in has lapsed, rather than calling the draft refused", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(401, "Session expired", "UNAUTHORIZED"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(await panel.findByTestId("ai-draft-ask"));
+    expect(await panel.findByTestId("ai-draft-retry")).toBeDefined();
+    expect(panel.queryByTestId("ai-draft-refused")).toBeNull();
+  });
 });

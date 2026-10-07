@@ -753,16 +753,20 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const [aiSaid, setAiSaid] = useState<{ readonly n: number; readonly text: string } | null>(null);
   const sayAI = (text: string): void => { setAiSaid((said) => ({ n: (said?.n ?? 0) + 1, text })); };
   useEffect(() => { if (draft.aiUnread !== true) setAiSaid(null); }, [draft.aiUnread]);
-  // The AI texts in play here: the draft used (until read through, and still
-  // when the words come back from memory), the one the card shows, and unread
-  // AI words kept to copy. AI words brought into the message from any of them
-  // (an undo, a paste, a copy) are marked again.
-  const [aiUsed, setAiUsed] = useState<string | null>(() => (draft.aiUnread === true ? draft.message : null));
-  const [aiShown, setAiShown] = useState<string | null>(null);
+  // The AI texts in play here: every draft the card has shown or the booker
+  // used (and unread words the composer began with, from memory or a seed),
+  // and unread AI words kept to copy; less what the booker has said they read
+  // through. AI words brought into the message from any of them (an undo, a
+  // paste, a copy, even after the draft is put away) are marked again.
+  const [aiSeen, setAiSeen] = useState<readonly string[]>(() => (draft.aiUnread === true ? [draft.message] : []));
+  const [aiRead, setAiRead] = useState<readonly string[]>([]);
+  const seeAI = useCallback((body: string | null): void => {
+    if (body !== null) setAiSeen((seen) => (seen.includes(body) ? seen : [...seen, body]));
+  }, []);
   const keptAI = keptDrafts.filter((kept) => kept.draft.aiUnread === true).map((kept) => kept.draft.message).join("\u0000");
   const aiWatch = useMemo(
-    () => aiWordsWatch([aiUsed ?? "", aiShown ?? "", ...(keptAI === "" ? [] : keptAI.split("\u0000"))]),
-    [aiUsed, aiShown, keptAI],
+    () => aiWordsWatch([...aiSeen, ...(keptAI === "" ? [] : keptAI.split("\u0000"))], aiRead),
+    [aiSeen, aiRead, keptAI],
   );
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -897,7 +901,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     const words = draftNow.current;
     const used: ComposerDraft = { ...words, message: body, aiUnread: true };
     const unsaved = words.message.trim() !== "" && words.message.trim() !== (from?.clientMessage ?? "").trim();
-    setAiUsed(body);
+    seeAI(body);
     if (unsaved) {
       onStartAgain(composer, words, from === null ? null : basedOn, "Kept when you used the AI draft.");
       onSeed({ draft: used, applied: null, focus: "message", from: focusFrom });
@@ -982,13 +986,13 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
             <span className="pr-ai__chip" aria-hidden="true">Draft</span>
             <span id={aiMarkerId}>AI wording, not yet read through.</span>
             <button type="button" className="enq-quiet" ref={aiReadRef} data-testid="ai-read" disabled={saving}
-              onClick={() => { setAiUsed(null); setDraft((current) => ({ ...current, aiUnread: false })); messageRef.current?.focus(); }}>
+              onClick={() => { setAiRead((read) => [...read, draft.message]); setDraft((current) => ({ ...current, aiUnread: false })); messageRef.current?.focus(); }}>
               I have read it
             </button>
           </p>
         )}
         <p className="vv-sr-only" role="status" data-testid="ai-said">{aiSaid !== null && <span key={aiSaid.n}>{aiSaid.text}</span>}</p>
-        <AIMessageDraft proposalId={proposal.id} canUse={!held} onUse={takeAIDraft} onShown={setAiShown} />
+        <AIMessageDraft proposalId={proposal.id} canUse={!held} onUse={takeAIDraft} onShown={seeAI} />
         <label className="pr-field">
           <span>Capacity note</span>
           <input data-testid="composer-capacity" maxLength={500} value={draft.capacityNote} disabled={saving}

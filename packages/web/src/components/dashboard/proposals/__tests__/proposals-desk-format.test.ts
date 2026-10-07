@@ -407,11 +407,25 @@ describe("AI words coming back into the message", () => {
     expect(watch(AI, `${AI} With warm wishes.`)).toBe(false);
   });
 
-  it("sees a short AI text only whole, and nothing when no AI text is in play", () => {
-    const short = aiWordsWatch(["Thank you, Elaine."]);
-    expect(short("", "Thank you, Elaine. See you soon.")).toBe(true);
-    expect(short("", "Thank you, Iain.")).toBe(false);
+  it("sees a short AI text only whole, none under twenty characters, and nothing when no AI text is in play", () => {
+    const short = aiWordsWatch(["Thank you so much, Elaine."]);
+    expect(short("", "Thank you so much, Elaine. See you soon.")).toBe(true);
+    expect(short("", "Thank you so much, Iain.")).toBe(false);
+    expect(aiWordsWatch(["Dear Elaine,"])("", "Dear Elaine, my own words.")).toBe(false);
     expect(aiWordsWatch([])("", AI)).toBe(false);
     expect(aiWordsWatch(["", "  "])("", AI)).toBe(false);
+  });
+
+  it("never sees words the booker has read through, moved or brought back, and still sees a second draft's own words", () => {
+    const SECOND = "Dear Elaine, thank you for thinking of Trades Hall for your wedding on Friday 20 November. The Grand Hall seats 160 at rounds, with a dance floor beneath the dome.";
+    const watch = aiWordsWatch([AI, SECOND], [AI]);
+    // The first draft, read: cut, moved or undone, it is the booker's.
+    expect(watch("", AI)).toBe(false);
+    const moved = `We would be glad to welcome you. ${AI.slice(0, AI.indexOf(" We would"))}`;
+    expect(watch(AI, moved)).toBe(false);
+    // The second draft's opening is the first's, already read; its own words are not.
+    expect(watch(AI, `${AI} The Grand Hall seats 160 at rounds, with a dance floor beneath the dome.`)).toBe(true);
+    // A short text held in what was read is not watched.
+    expect(aiWordsWatch(["Thank you so much, Elaine."], ["Thank you so much, Elaine. See you."])("", "Thank you so much, Elaine.")).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
-import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { occasionLabel, type CanonicalJsonValue, type ProposalMessageDraft } from "@omnitwin/types";
-import { contacts, enquiries, opportunities, proposalComments, proposalVersions, proposals } from "../db/schema.js";
+import { contacts, enquiries, opportunities, proposalComments, proposalStatusHistory, proposals } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { clientEvent } from "./proposal-taken.js";
 
@@ -8,8 +8,8 @@ import { clientEvent } from "./proposal-taken.js";
 // What the AI is told of a proposal to draft its message to the client
 // (roadmap X1, "Use in proposal"): the event as the venue holds it, the
 // client's name, the client's words from their enquiry and their latest
-// words on the proposal since its latest version (a change they asked for,
-// not one a version has already answered). It is built here, at the
+// words on the proposal since it was last sent (a change they asked for, not
+// one a version sent since has answered). It is built here, at the
 // proposal's own venue, never taken from the browser, so nothing of another
 // venue's can be sent and nothing can be added to it. It carries no id, no
 // price and no email address or phone number: a name holding either (a
@@ -31,21 +31,67 @@ export interface MessageDraftContext {
 }
 
 const EMAIL = /[^\s@<>()[\]]+@[^\s@<>()[\]]+\.[^\s@<>()[\].,;:!?]+/gu;
-// A phone number as people write one: from a "+", a leading 0 or a bracket,
-// digits in groups split by spaces, dots, dashes, slashes or brackets, 9 to
-// 15 digits in all. A date (12.06.2027), a date range, a time, a guest count
-// or a budget (15000 - 20000) is never one.
-const PHONE_LIKE = /(?:\+|\(|(?<![\d.,])\b0)[\d\s().\-–/]{7,}\d/gu;
-const DATE_LIKE = /\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/u;
+
+// Phone numbers are found as people write them. A run of digits and the marks
+// numbers are written with (spaces, dots, dashes, slashes, brackets), on one
+// line, is split where one number ends and another begins; a date or a time
+// in it is kept; what is left is a phone number when it holds ten digits or
+// more, or nine from a "+", a bracket or a leading 0. So "0141 552 1234 /
+// 07700 900123" is two numbers, "415-555-0123" and "06.12.34.56.78" are
+// numbers, and "12.06.2027 19.30", "15000 - 20000" and "(150 guests)" are not.
+const NUMBER_RUN = /(?<![\d+(])[+(]?\d(?:[\d ().\-–/]*[\d)])?/gu;
+const NUMBER_BREAK = /(\s+\/\s+|\s{2,}|\s+[-–]\s+|\s+(?=\()|(?<=\))\s+)/u;
+const DATE_OR_TIME = /((?<![\d./:-])(?:\d{1,2}[./-]\d{1,2}[./-](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}|\d{1,2}[.:]\d{2})(?![./:-]?\d))/u;
+const PHONE_START = /^[+(]?0|^\+/u;
+
+function phoneShaped(text: string): boolean {
+  const digits = text.replace(/\D/gu, "").length;
+  return digits >= 10 || (digits === 9 && PHONE_START.test(text.trim()));
+}
+
+/** One written number, its dates and times kept and the rest replaced when
+ *  it is a phone number. */
+function scrubNumber(part: string): string {
+  return part.split(DATE_OR_TIME).map((piece, index) => {
+    if (index % 2 === 1 || !phoneShaped(piece)) return piece;
+    const lead = /^\s*/u.exec(piece)?.[0] ?? "";
+    const trail = /\s*$/u.exec(piece)?.[0] ?? "";
+    return `${lead}(phone number)${trail}`;
+  }).join("");
+}
+
+function scrubRun(run: string): string {
+  const pieces = run.split(NUMBER_BREAK);
+  const parts: string[] = [];
+  const breaks: string[] = [];
+  pieces.forEach((piece, index) => { (index % 2 === 0 ? parts : breaks).push(piece); });
+  const out = parts.map(scrubNumber);
+  // A number written across a spaced dash from a leading 0 or "+" ("0141 –
+  // 552 1234"), or across its brackets ("(0141) 552 1234"), is one number
+  // when neither half is one alone; a country code before one goes with it.
+  for (let at = 0; at + 1 < parts.length; at += 1) {
+    const left = parts[at] ?? "";
+    const right = parts[at + 1] ?? "";
+    const gap = breaks[at] ?? "";
+    const dashed = /[-–]/u.test(gap) && PHONE_START.test(left.trim());
+    const bracketed = left.endsWith(")") || right.startsWith("(");
+    const untouched = out[at] === left && out[at + 1] === right;
+    const joined = scrubNumber(`${left}${gap}${right}`);
+    if ((dashed || bracketed) && untouched && joined !== `${left}${gap}${right}`) {
+      out[at] = joined;
+      out[at + 1] = "";
+      breaks[at] = "";
+      parts[at + 1] = joined;
+    } else if (/^\+\d{1,3}$/u.test(left.trim()) && out[at + 1] !== right) {
+      out[at] = "";
+      breaks[at] = "";
+    }
+  }
+  return out.map((part, index) => `${part}${breaks[index] ?? ""}`).join("");
+}
 
 function scrub(text: string | null | undefined): string {
-  return (text ?? "")
-    .replace(EMAIL, "(email address)")
-    .replace(PHONE_LIKE, (run) => {
-      const digits = run.replace(/\D/gu, "").length;
-      return digits >= 9 && digits <= 15 && !DATE_LIKE.test(run) ? "(phone number)" : run;
-    })
-    .trim();
+  return (text ?? "").replace(EMAIL, "(email address)").replace(NUMBER_RUN, scrubRun).trim();
 }
 
 /** The client's words with any email address or phone number taken out,
@@ -89,21 +135,23 @@ export async function messageDraftContext(db: Database, proposal: DraftFrom): Pr
     .from(enquiries)
     .where(and(eq(enquiries.id, enquiryId), eq(enquiries.venueId, proposal.venueId)))
     .limit(1);
-  // The client's latest words on this proposal since its latest version: a
-  // question, or the change they asked for, that no version has answered
-  // yet. The proposal is already known to be this venue's.
-  const [version] = await db.select({ createdAt: proposalVersions.createdAt })
-    .from(proposalVersions)
-    .where(eq(proposalVersions.proposalId, proposal.id))
-    .orderBy(desc(proposalVersions.version))
-    .limit(1);
+  // The client's latest words on this proposal since it was last sent: a
+  // question, or the change they asked for, that no version sent since has
+  // answered (a version saved and not yet sent has not). The latest send is
+  // read as the desk reads it: its stamp, or a move to "sent" after it. The
+  // proposal is already known to be this venue's.
+  const lastSent = sql`COALESCE(GREATEST(
+    (SELECT ${proposals.sentAt} FROM ${proposals} WHERE ${proposals.id} = ${proposal.id}),
+    (SELECT max(${proposalStatusHistory.createdAt}) FROM ${proposalStatusHistory}
+      WHERE ${proposalStatusHistory.proposalId} = ${proposal.id} AND ${proposalStatusHistory.toStatus} = 'sent')
+  ), '-infinity'::timestamptz)`;
   const [latest] = await db.select({ body: proposalComments.body })
     .from(proposalComments)
     .where(and(
       eq(proposalComments.proposalId, proposal.id),
       eq(proposalComments.authorType, "client"),
       inArray(proposalComments.kind, ["comment", "request_changes"]),
-      ...(version === undefined ? [] : [gt(proposalComments.createdAt, version.createdAt)]),
+      gt(proposalComments.createdAt, lastSent),
     ))
     .orderBy(desc(proposalComments.createdAt))
     .limit(1);

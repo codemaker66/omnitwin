@@ -57,7 +57,8 @@ interface AIMessageDraftProps {
   readonly canUse: boolean;
   /** Puts the draft's words in as the message; `from` is where focus was. */
   readonly onUse: (body: string, from: Element | null) => void;
-  /** The draft shown, or null: its words, copied into the message, are AI words. */
+  /** Each draft as it is shown (null between): its words, copied into the
+   *  message even after it is put away, are AI words. */
   readonly onShown: (body: string | null) => void;
 }
 
@@ -86,9 +87,11 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
       : focusTo === "retry" ? retryRef.current : saidRef.current;
     if (target === null) return;
     setFocusTo(null);
-    // Where focus cannot go, the card's one live region says it instead.
+    // Where focus cannot go, the card's one live region says what came; a
+    // failure says itself (an alert), and a button is never read out bare.
     if (focusFree(askedFrom.current, cardRef.current)) target.focus();
-    else setSaid(focusTo === "draft" ? "The AI draft is ready, under the message." : target.textContent ?? "");
+    else if (focusTo === "draft") setSaid("The AI draft is ready, under the message.");
+    else if (focusTo === "said") setSaid(target.textContent ?? "");
   }, [focusTo, step]);
 
   // Try again and Draft again take away the button pressed, so focus waits
@@ -124,8 +127,9 @@ export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessage
           return;
         }
         // Refused for this proposal as it stands (sent from elsewhere meanwhile,
-        // say): asking again would be refused again.
-        if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+        // say): asking again would be refused again. A lapsed sign-in, a
+        // timeout or too many asks can be tried again.
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500 && ![401, 408, 429].includes(error.status)) {
           setStep({ kind: "refused" });
           setFocusTo("said");
           return;

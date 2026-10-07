@@ -281,6 +281,8 @@ export const EMPTY_DRAFT: ComposerDraft = { message: "", capacityNote: "", lines
 /** How much AI wording, in characters, a message must take in to count as
  *  bringing AI words back: more than any greeting or phrase two writers share. */
 export const AI_WORDS_RUN = 40;
+/** An AI text shorter than this ("Dear Elaine,") is not watched at all. */
+export const AI_WORDS_SHORTEST = 20;
 
 function flat(text: string): string {
   return text.replace(/\s+/gu, " ").trim();
@@ -293,18 +295,27 @@ function runsOf(text: string): Set<string> {
 }
 
 /** Watches for AI wording the booker has not read coming into the message:
- *  given the AI texts in play (a draft used, one shown, an unread kept copy),
- *  whether a change from `before` to `after` brings in a run of their words
- *  (or a short one whole) that `before` did not hold, as an undo, a paste or
- *  a copy from the draft does. Typing, deleting a little at a time and
- *  editing words already there never do. */
-export function aiWordsWatch(sources: readonly string[]): (before: string, after: string) => boolean {
+ *  given the AI texts in play (drafts used or shown, unread kept copies) and
+ *  the messages the booker has said they read through, whether a change from
+ *  `before` to `after` brings in a run of unread AI words (or a short text
+ *  whole) that `before` did not hold, as an undo, a paste or a copy from the
+ *  draft does. Typing, deleting a little at a time, and moving or editing
+ *  words already there or already read do not; a 40-character run the
+ *  booker types that an AI text also holds would, and errs towards asking. */
+export function aiWordsWatch(sources: readonly string[], read: readonly string[] = []): (before: string, after: string) => boolean {
+  const readFlat = read.map(flat);
+  const readRuns = new Set<string>();
+  for (const text of readFlat) for (const run of runsOf(text)) readRuns.add(run);
   const watched = new Set<string>();
   const whole: string[] = [];
   for (const source of sources.map(flat)) {
-    if (source.length >= AI_WORDS_RUN) for (const run of runsOf(source)) watched.add(run);
-    else if (source !== "") whole.push(source);
+    if (source.length >= AI_WORDS_RUN) {
+      for (const run of runsOf(source)) if (!readRuns.has(run)) watched.add(run);
+    } else if (source.length >= AI_WORDS_SHORTEST && !readFlat.some((text) => text.includes(source))) {
+      whole.push(source);
+    }
   }
+  if (watched.size === 0 && whole.length === 0) return () => false;
   return (before, after) => {
     const now = flat(after);
     const was = flat(before);
