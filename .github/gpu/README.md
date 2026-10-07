@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 379 cases. Four hosted CPU shards execute
-374 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 381 cases. Four hosted CPU shards execute
+376 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -89,6 +89,10 @@ from the keyboard on a desk and on phones (`proposals-desk.spec.ts`). One on
 3 October adds two: a proposal kept as a template starting the next,
 priced from the list as it stands, and a template over words already written
 adding only what is new or keeping them to copy, with Undo after Remove
+(`proposals-desk.spec.ts`). One on 4 October adds two: an AI draft of the
+message used and read through before Save, from the keyboard on a desk and
+on phones, and nothing about AI without a provider, a failed draft drafted
+again, words kept to copy and AI taken away when it is not available
 (`proposals-desk.spec.ts`).
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
