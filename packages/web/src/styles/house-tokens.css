@@ -204,6 +204,11 @@
   --house-brick-wash: #f1d8cf;   --house-brick-dot: #b4513a;    --house-brick-lit: #ffcdb7;
   --house-slate-text: #545e59;   --house-slate-wash: #e3e3db;   --house-slate-dot: #8e9992;
   --house-slate-lit: #c9d1cb;
+  /* Heather marks words an AI wrote that no one has yet read through: a
+   * provenance, never a status, always with its glyph and the word "Draft"
+   * (the research's measured tone). Its wash carries ink-1 and ink-2 too. */
+  --house-heather-text: #5a4577; --house-heather-wash: #e7e0ea; --house-heather-dot: #8b76a6;
+  --house-heather-lit: #cdbfe3;
 
   /* -- On the copper plane (only these besides ink-1 and plane-ink) ------- */
   --house-plane-attention: #7e2d1b;

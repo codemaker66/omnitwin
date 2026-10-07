@@ -162,6 +162,27 @@
 .pr-template-save-said { flex-basis: 100%; margin: 0; }
 .pr-template-save-said:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 
+/* An AI draft of the message, in heather: words a machine wrote that no one
+   has yet read through. The card is a light inset on the forest panel, set in
+   the ivory register so its ring and its controls take the light ink. */
+.pr-ai { margin-top: 10px; }
+.pr-ai > .enq-actions, .pr-ai .enq-confirm__error { margin-top: 0; }
+.pr-ai__draft { display: grid; gap: 8px; padding: 14px 16px; border-radius: 3px; background: var(--enq-heather-wash); color: var(--enq-ink); }
+.pr-ai__heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--enq-heather); font: 500 17px/1.3 var(--enq-serif); }
+.pr-ai__about { margin: 0; color: var(--enq-ink-2); font-size: 13.5px; }
+.pr-ai__marker svg { flex: 0 0 auto; }
+.pr-ai__chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; background: var(--enq-heather); color: var(--enq-heather-wash); font: 600 12px/1.3 var(--enq-sans); letter-spacing: 0.04em; }
+.pr-panel .pr-ai__body { min-height: 132px; border-color: var(--house-edge); background: var(--house-paper); color: var(--enq-ink); }
+.pr-ai__draft .enq-actions { margin-top: 2px; }
+.pr-ai__draft .enq-quiet { border-color: var(--house-edge); color: var(--enq-ink); }
+/* Used, the message keeps a heather edge, and says so, until it is read through. */
+.pr-panel textarea[data-ai-unread] { border-color: var(--enq-heather-lit); }
+.pr-ai__marker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 8px 0 0; color: var(--enq-heather-lit); font-size: 13.5px; }
+.pr-ai__marker .pr-ai__chip { background: var(--enq-heather-wash); color: var(--enq-heather); }
+@media (hover: hover) and (pointer: fine) {
+  .pr-ai__draft .enq-quiet:hover { border-color: var(--enq-ink-2); background: #14302a0f; }
+}
+
 .pr-quote-table { width: 100%; border-collapse: collapse; color: var(--enq-forest-ink); font-size: 14.5px; font-variant-numeric: tabular-nums; }
 .pr-quote-table td { padding: 8px 0; border-bottom: 1px solid var(--enq-forest-rule); }
 .pr-quote-table .pr-num { padding-left: 12px; text-align: right; white-space: nowrap; }

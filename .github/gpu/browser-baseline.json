@@ -583,6 +583,21 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-04",
+      "reason": "AI draft of a proposal's message in the proposal composer (T-635 X1, Use in proposal). Where a provider is configured, the booker asks for a draft written on the server from the proposal alone (the event, the client's name and their enquiry's words, at the proposal's own venue); it is shown apart in heather as AI wording not checked, put in only when the booker uses it, and marked until they say they have read it through, Save waiting for that. The route's roles, statuses, tenancy and failures are held in proposal-message-draft-postgres.test.ts on PostgreSQL, the desk's behaviour in ProposalsDesk.test.tsx. The first case drafts from the keyboard, runs the accessibility audit with the draft open, uses it, has Save send focus to I have read it and save nothing, then saves version 1 with the drafted words, and checks the draft fits 390 and 320 px phones with no sideways scroll. The second shows nothing about AI with no provider; with one, says a failed draft and drafts again, keeps words written here to copy when a draft replaces them, and takes the control away when the server says AI is not available now, leaving the message as it was.",
+      "sourceCommit": "a481d35b51c285628cbd06f4aea7024d14a853d6",
+      "sourceFile": "packages/web/e2e/proposals-desk.spec.ts",
+      "sourceFileGitBlobSha256": "c13d58c001e9a344f20afb41fe0e839349b6bdad9e86fbbfaa011dc7c573b706",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "91b0a9d96c0a15bfc4200b38ae5fa64133dee44780494d7778ee5c24ee388b78",
+      "caseIds": [
+        "3d60696039542bd5f8df-3eeb146a3cede34f9695",
+        "3d60696039542bd5f8df-5976f4a719210163edba"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -1170,6 +1185,28 @@
       "id": "3d60696039542bd5f8df-610a694deacee71e83fe",
       "file": "proposals-desk.spec.ts",
       "title": "a template over words already written adds only what is new or keeps them to copy, and a removed one comes back with Undo",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-3eeb146a3cede34f9695",
+      "file": "proposals-desk.spec.ts",
+      "title": "an AI draft becomes the message only once used and read through, from the keyboard, on a desk and on a phone",
+      "suitePath": [
+        "proposals-desk.spec.ts",
+        "Proposals desk"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "3d60696039542bd5f8df-5976f4a719210163edba",
+      "file": "proposals-desk.spec.ts",
+      "title": "with no AI provider nothing about AI shows; with one, a draft over words written keeps them to copy, and AI that goes away leaves the message",
       "suitePath": [
         "proposals-desk.spec.ts",
         "Proposals desk"

@@ -323,6 +323,7 @@ export const WORKSPACE_COLOURS = {
   "sage-text": "#2f5a3a", "sage-chip": "#2c5537", "sage-wash": "#dbe5d3", "sage-dot": "#5d8963", "sage-lit": "#9fc7ae",
   "brick-text": "#8a3522", "brick-strong": "#6f2616", "brick-chip": "#83311f", "brick-wash": "#f1d8cf", "brick-dot": "#b4513a", "brick-lit": "#ffcdb7",
   "slate-text": "#545e59", "slate-wash": "#e3e3db", "slate-dot": "#8e9992", "slate-lit": "#c9d1cb",
+  "heather-text": "#5a4577", "heather-wash": "#e7e0ea", "heather-dot": "#8b76a6", "heather-lit": "#cdbfe3",
   // On the copper plane
   "plane-attention": "#7e2d1b",
   "plane-dot-new": "#9a4a25",

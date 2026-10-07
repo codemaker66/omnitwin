@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
-import { LAYOUT_STYLES, occasionLabel, type LayoutStyle, type ProposalNextVersion } from "@omnitwin/types";
-import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, X } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import { LAYOUT_STYLES, MAX_CLIENT_MESSAGE_LENGTH, occasionLabel, type LayoutStyle, type ProposalNextVersion } from "@omnitwin/types";
+import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, Sparkles, X } from "lucide-react";
 import type { DeskProposal, ProposalCommentRow, ProposalHistoryEntry, StaffProposalVersion } from "../../../api/proposals.js";
 import type { Space } from "../../../api/spaces.js";
 import type { WrittenDraft } from "./proposal-memory.js";
@@ -10,7 +10,7 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { commentAuthor } from "../../proposal/proposal-document-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, checkIsFor, lineHasWords, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
+  EMPTY_LINE, aiWordsWatch, checkIsFor, lineHasWords, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
   layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, savedLayoutWords, type ComposerDraft,
   type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
@@ -18,6 +18,7 @@ import { ProposalChip } from "./ProposalsStages.js";
 import { PriceList } from "./PriceList.js";
 import type { PriceListEvent, PriceListOffer } from "./price-list-format.js";
 import { getProposalEvent } from "../../../api/proposal-templates.js";
+import { AIMessageDraft } from "./AIMessageDraft.js";
 import { TemplatePicker, focusIsFree } from "./TemplatePicker.js";
 import { TemplateSave } from "./TemplateSave.js";
 import { applyTemplate, hasWords, type AppliedTemplate, type ApplyMode, type TemplateEvent } from "./template-format.js";
@@ -565,17 +566,22 @@ interface ComposerFormProps extends ComposerProps {
   readonly onFresh: () => void;
   /** Its message field has taken focus, so no later form does. */
   readonly onFocused: () => void;
-  /** This form began from a template that replaced the words before it:
-   *  its words, what to say and where to go. */
-  readonly seeded: TemplateSeed | null;
-  /** Starts a new composer from a template, the words before it kept to copy. */
-  readonly onSeed: (seed: TemplateSeed) => void;
+  /** This form began from a template, or an AI draft, that replaced the
+   *  words before it: its words, what to say and where to go. */
+  readonly seeded: ComposerSeed | null;
+  /** Starts a new composer from a template or an AI draft, the words before it kept to copy. */
+  readonly onSeed: (seed: ComposerSeed) => void;
 }
 
-/** A template that starts a new composer, and where focus was when its Use
- *  was pressed: focus moves into the new composer only from there or from nowhere. */
-interface TemplateSeed {
-  readonly applied: AppliedTemplate;
+/** What starts a new composer in place of the one before, whose words are
+ *  kept to copy: a template, or an AI draft used over a message already
+ *  written. Focus moves into the new composer only from where it was when
+ *  Use was pressed, or from nowhere. */
+interface ComposerSeed {
+  readonly draft: ComposerDraft;
+  /** What a template put in, said once the form is on the page; none for an AI draft. */
+  readonly applied: AppliedTemplate | null;
+  readonly focus: AppliedTemplate["focus"];
   readonly from: Element | null;
 }
 
@@ -586,7 +592,7 @@ function Composer(props: ComposerProps): ReactElement {
   // A template's seed belongs to the one form it started, for the version it
   // was made from: a form after a save starts from the version saved.
   const [again, setAgain] = useState<{
-    readonly count: number; readonly focus: boolean; readonly seed: { readonly seed: TemplateSeed; readonly start: number } | null;
+    readonly count: number; readonly focus: boolean; readonly seed: { readonly seed: ComposerSeed; readonly start: number } | null;
   }>({ count: 0, focus: false, seed: null });
   // Until the version to start from has been read once, the form waits; read
   // again later, the form it started stays.
@@ -648,6 +654,7 @@ function KeptDraft({ proposal, keptDrafts, failure, onDiscardKept, holder }: Pro
           <div key={composer} className="pr-kept__one">
             {why !== null && <p className="enq-next__hint" data-testid="kept-version-why">{why}</p>}
             {draft.message.trim() !== "" && <p className="pr-kept">{draft.message}</p>}
+            {draft.aiUnread === true && <p className="enq-next__hint" data-testid="kept-ai-unread">It holds AI wording not yet read through.</p>}
             {draft.capacityNote.trim() !== "" && <p className="pr-kept">Capacity: {draft.capacityNote}</p>}
             {lines.length > 0 && (
               <ul className="pr-kept__lines">
@@ -674,7 +681,7 @@ let composers = 0;
 
 function ComposerForm(props: ComposerFormProps): ReactElement {
   const {
-    proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain, seeded, nowMs,
+    proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain, seeded, nowMs, keptDrafts,
     onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onGoing, onSeed, onTemplateWork, report,
   } = props;
   const layoutLine = composerLayoutLine(proposal);
@@ -695,7 +702,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     composers += 1;
     return composers;
   });
-  const [draft, setDraft] = useState<ComposerDraft>(() => seeded?.applied.draft ?? resumed?.draft ?? draftFromVersion(from));
+  const [draft, setDraft] = useState<ComposerDraft>(() => seeded?.draft ?? resumed?.draft ?? draftFromVersion(from));
   const next = basedOn + 1;
   const changes = draftChanges(from, draft);
   // The panel knows this form, and its words while there is something to
@@ -738,6 +745,32 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const notCarried = checked ? null : notCarriedWords(from);
   const startId = useId();
   const notCarriedId = useId();
+  // AI wording not yet read through: its marker, its button, and what is said
+  // when Save is pressed before it has been.
+  const aiMarkerId = useId();
+  const aiReadRef = useRef<HTMLButtonElement>(null);
+  // Keyed, so the same words said again are heard again; gone with the mark.
+  const [aiSaid, setAiSaid] = useState<{ readonly n: number; readonly text: string } | null>(null);
+  const sayAI = (text: string): void => { setAiSaid((said) => ({ n: (said?.n ?? 0) + 1, text })); };
+  useEffect(() => { if (draft.aiUnread !== true) setAiSaid(null); }, [draft.aiUnread]);
+  // The AI texts in play here: every draft the card has shown or the booker
+  // used (and unread words the composer began with, from memory or a seed),
+  // and unread AI words kept to copy; less what the booker has said they read
+  // through. AI words brought into the message from any of them (an undo, a
+  // paste, a copy, even after the draft is put away) are marked again.
+  const [aiSeen, setAiSeen] = useState<readonly string[]>(() => (draft.aiUnread === true ? [draft.message] : []));
+  const [aiRead, setAiRead] = useState<readonly string[]>([]);
+  const seeAI = useCallback((body: string | null): void => {
+    if (body !== null) setAiSeen((seen) => (seen.includes(body) ? seen : [...seen, body]));
+  }, []);
+  const keptAI = keptDrafts.filter((kept) => kept.draft.aiUnread === true).map((kept) => kept.draft.message).join("\u0000");
+  // The version's own message is the venue's saved words, read as surely as
+  // any the booker said they read.
+  const savedMessage = from?.clientMessage ?? "";
+  const aiWatch = useMemo(
+    () => aiWordsWatch([...aiSeen, ...(keptAI === "" ? [] : keptAI.split("\u0000"))], [...aiRead, savedMessage]),
+    [aiSeen, aiRead, keptAI, savedMessage],
+  );
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLine, setFocusLine] = useState<number | null>(null);
@@ -830,9 +863,13 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const [templateFocus, setTemplateFocus] = useState<{ readonly to: AppliedTemplate["focus"]; readonly from: Element | null } | null>(null);
   useEffect(() => {
     if (seeded === null) return;
-    setTemplateSaid(seeded.applied);
-    setLineNotes(seeded.applied.lineSaid);
-    setTemplateFocus({ to: seeded.applied.focus, from: seeded.from });
+    if (seeded.applied !== null) {
+      setTemplateSaid(seeded.applied);
+      setLineNotes(seeded.applied.lineSaid);
+    } else if (seeded.draft.aiUnread === true) {
+      setAiSaid({ n: 1, text: "The AI draft is now the message, marked until you have read it through. What you had written is kept to copy." });
+    }
+    setTemplateFocus({ to: seeded.focus, from: seeded.from });
   }, [seeded]);
   // The words as they stand when a template's prices arrive, typed meanwhile or not.
   const draftNow = useRef(draft);
@@ -858,6 +895,25 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   useEffect(() => () => { onTemplateWork(false); }, [onTemplateWork]);
   // Work that would replace this form; a reply or a layout choice does not.
   const replacing = working !== null && working !== "reply" && working !== "layout";
+  // An AI draft used as the message, marked until it is read through. Over
+  // words written here and not saved it starts a new composer, those words
+  // kept to copy, as a template's Replace does; a message as the version
+  // holds it is replaced where it is, the version keeping it.
+  const takeAIDraft = (body: string, focusFrom: Element | null): void => {
+    if (held) return;
+    const words = draftNow.current;
+    const used: ComposerDraft = { ...words, message: body, aiUnread: true };
+    const unsaved = words.message.trim() !== "" && words.message.trim() !== (from?.clientMessage ?? "").trim();
+    seeAI(body);
+    if (unsaved) {
+      onStartAgain(composer, words, from === null ? null : basedOn, "Kept when you used the AI draft.");
+      onSeed({ draft: used, applied: null, focus: "message", from: focusFrom });
+      return;
+    }
+    setDraft(used);
+    sayAI("The AI draft is now the message, marked until you have read it through.");
+    setTemplateFocus({ to: "message", from: focusFrom });
+  };
   const startFromTemplate = (template: ProposalTemplate, rules: readonly PricingRule[], mode: ApplyMode, focusFrom: Element | null): void => {
     if (templateEvent === null || saving) return;
     const words = draftNow.current;
@@ -865,7 +921,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     // Words replaced are kept to copy, beside a new composer the template starts.
     if (mode === "replace" && hasWords(words)) {
       onStartAgain(composer, words, from === null ? null : basedOn, `You started from ${template.name}.`);
-      onSeed({ applied, from: focusFrom });
+      onSeed({ draft: applied.draft, applied, focus: applied.focus, from: focusFrom });
       return;
     }
     setDraft(applied.draft);
@@ -915,9 +971,31 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
 
         <label className="pr-field">
           <span>Message to the client</span>
-          <textarea ref={messageRef} data-testid="composer-message" rows={4} maxLength={4000} value={draft.message} disabled={saving}
-            onChange={(event) => { setDraft((current) => ({ ...current, message: event.target.value })); }} />
+          <textarea ref={messageRef} data-testid="composer-message" rows={4} maxLength={MAX_CLIENT_MESSAGE_LENGTH} value={draft.message} disabled={saving}
+            data-ai-unread={draft.aiUnread === true ? "" : undefined} aria-describedby={draft.aiUnread === true ? aiMarkerId : undefined}
+            onChange={(event) => {
+              // An emptied message holds no AI wording left to read through;
+              // AI words brought in are marked again.
+              const message = event.target.value;
+              let aiUnread = draft.aiUnread === true;
+              if (aiUnread && message.trim() === "") aiUnread = false;
+              else if (!aiUnread && aiWatch(draft.message, message)) aiUnread = true;
+              setDraft((current) => ({ ...current, message, aiUnread }));
+            }} />
         </label>
+        {draft.aiUnread === true && (
+          <p className="pr-ai__marker" data-testid="ai-unread">
+            <Sparkles aria-hidden="true" size={14} />
+            <span className="pr-ai__chip" aria-hidden="true">Draft</span>
+            <span id={aiMarkerId}>AI wording, not yet read through.</span>
+            <button type="button" className="enq-quiet" ref={aiReadRef} data-testid="ai-read" disabled={saving}
+              onClick={() => { setAiRead((read) => [...read, draft.message]); setDraft((current) => ({ ...current, aiUnread: false })); messageRef.current?.focus(); }}>
+              I have read it
+            </button>
+          </p>
+        )}
+        <p className="vv-sr-only" role="status" data-testid="ai-said">{aiSaid !== null && <span key={aiSaid.n}>{aiSaid.text}</span>}</p>
+        <AIMessageDraft proposalId={proposal.id} canUse={!held} onUse={takeAIDraft} onShown={seeAI} />
         <label className="pr-field">
           <span>Capacity note</span>
           <input data-testid="composer-capacity" maxLength={500} value={draft.capacityNote} disabled={saving}
@@ -967,8 +1045,16 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
           {/* Save is described by what the version starts from and changes, so
               it is heard at the moment of saving, however it came to change. */}
           <button type="button" className="enq-cta" data-testid="composer-save" disabled={held} aria-busy={saving}
-            aria-describedby={notCarried === null ? startId : `${startId} ${notCarriedId}`}
-            onClick={() => { void onSaveVersion(draft, composer, basedOn, heldTo); }}>
+            aria-describedby={[startId, ...(notCarried === null ? [] : [notCarriedId]), ...(draft.aiUnread === true ? [aiMarkerId] : [])].join(" ")}
+            onClick={() => {
+              // AI wording goes to the client only once the booker has read it through.
+              if (draft.aiUnread === true) {
+                sayAI("Read the AI wording through first, then press I have read it.");
+                aiReadRef.current?.focus();
+                return;
+              }
+              void onSaveVersion(draft, composer, basedOn, heldTo);
+            }}>
             {saving && <ActivityIndicator size={18} />}
             {saving ? "Saving…" : `Save version ${String(next)}`}
           </button>

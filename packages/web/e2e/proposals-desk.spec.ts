@@ -51,6 +51,11 @@ interface Emulator {
   /** The venue's templates, live and removed, as the templates route keeps them. */
   readonly templates: Map<string, ProposalTemplate>;
   readonly removedTemplates: Set<string>;
+  /** With an AI provider configured, what each draft request answers in
+   *  turn: its words, or an error status; null where none is configured. */
+  ai: (string | number)[] | null;
+  /** Each request for an AI draft of a proposal's message, as sent. */
+  readonly aiAsks: { readonly id: string; readonly body: unknown }[];
 }
 
 function proposal(id: string, title: string, status: string, extra: Partial<DeskProposal> = {}): DeskProposal {
@@ -81,6 +86,8 @@ interface World {
   readonly prices?: readonly Record<string, unknown>[];
   readonly templates?: readonly ProposalTemplate[];
   readonly events?: Readonly<Record<string, ProposalEvent>>;
+  /** An AI provider, and what each draft request answers in turn. */
+  readonly ai?: readonly (string | number)[];
 }
 
 async function openDesk(page: Page, width = 1440, height = 900, world: World = {}): Promise<Emulator> {
@@ -128,6 +135,8 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
     prices: [...(world.prices ?? [])],
     templates: new Map((world.templates ?? []).map((template) => [template.id, template])),
     removedTemplates: new Set(),
+    ai: world.ai === undefined ? null : [...world.ai],
+    aiAsks: [],
   };
 
   // Templates as the route keeps them: one live template per name whatever
@@ -171,6 +180,12 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
     const method = request.method();
     if (path === "/proposals/desk") {
       void route.fulfill({ json: desk(url) });
+      return;
+    }
+    if (path === "/ai/status") {
+      void route.fulfill({ json: { data: emulator.ai === null
+        ? { configured: false, provider: null, model: null, disabledReason: "No AI provider is configured." }
+        : { configured: true, provider: "anthropic", model: "claude-sonnet-5-5", disabledReason: null } } });
       return;
     }
     if (path === "/quotes" && method === "POST") {
@@ -336,6 +351,42 @@ async function openDesk(page: Page, width = 1440, height = 900, world: World = {
           }]);
         }
         void route.fulfill({ status: 201, json: { data: { token: TOKEN, shareUrl: `/proposal-share/${TOKEN}`, tokenPrefix: TOKEN.slice(0, 8), proposal: next } } });
+        return;
+      }
+      if (rest === "/message-draft" && method === "POST") {
+        // As the route: only while the proposal is in hand, with a provider,
+        // and with something to draw on; the draft is written from the
+        // proposal, not the request, and says what it drew on.
+        emulator.aiAsks.push({ id, body: request.postDataJSON() as unknown });
+        if (current.status !== "draft" && current.status !== "changes_requested") {
+          void route.fulfill({ status: 422, json: { error: "Proposal is not editable in its current status", code: "NOT_EDITABLE" } });
+          return;
+        }
+        if (emulator.ai === null) {
+          void route.fulfill({ status: 503, json: { error: "AI drafting is not available.", code: "AI_ASSISTANT_DISABLED" } });
+          return;
+        }
+        const facts = world.events?.[id]?.facts ?? { eventDate: current.eventDate, guestCount: current.guestCount, occasion: current.eventType };
+        const event = Object.values(facts).some((fact) => fact !== null);
+        if (!event) {
+          void route.fulfill({ status: 422, json: { error: "Nothing to draft from", code: "NOTHING_TO_DRAFT_FROM" } });
+          return;
+        }
+        const answer = emulator.ai.shift() ?? 502;
+        if (typeof answer === "number") {
+          void route.fulfill({ status: answer, json: answer === 503
+            ? { error: "AI drafting is not available.", code: "AI_ASSISTANT_DISABLED" }
+            : { error: "The AI draft could not be written.", code: "AI_DRAFT_GENERATION_FAILED" } });
+          return;
+        }
+        void route.fulfill({ json: { data: {
+          draft: {
+            schemaVersion: "ai_assistant.v0", useCase: "proposal_draft", title: "Proposal draft", body: answer, blockedUnsafeClaims: [],
+            safeLanguageApplied: false, humanReviewRequired: true, provenance: "ai_generated", evidenceStatus: "unverified",
+            sendState: "draft_only", generatedAt: NOW.toISOString(), digest: "d".repeat(64),
+          },
+          drewOn: { event, enquiry: false, clientWords: false },
+        } } });
         return;
       }
       if (rest === "/history") {
@@ -837,6 +888,120 @@ test.describe("Proposals desk", () => {
       await page.screenshot({ path: test.info().outputPath(`template-choice-phone-${String(width)}.png`), fullPage: true });
       await list.getByRole("button", { name: "Cancel" }).click();
     }
+  });
+
+  test("an AI draft becomes the message only once used and read through, from the keyboard, on a desk and on a phone", async ({ page }) => {
+    const WORDS = "Dear Iain, thank you for thinking of Trades Hall for the spring gala. We would be glad to welcome your guests.";
+    const emulator = await openDesk(page, 1440, 900, {
+      ai: [WORDS, WORDS, WORDS],
+      events: { [ROBERTSON]: { facts: { eventDate: "2027-04-17", guestCount: 220, occasion: "gala", roomName: null, roomSlug: null }, spaceId: null } },
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const problems = watchPageProblems(page);
+    await page.goto(`/dashboard?view=proposals&proposal=${ROBERTSON}`);
+    const composer = page.getByRole("region", { name: "Spring gala proposal" }).getByTestId("composer");
+    const message = composer.getByTestId("composer-message");
+
+    // Drafted from the keyboard, from the proposal alone, and shown apart from the message.
+    const ask = composer.getByRole("button", { name: "Draft the message with AI" });
+    await ask.focus();
+    await page.keyboard.press("Enter");
+    const draft = composer.getByRole("region", { name: "AI draft of the message" });
+    await expect(draft.getByRole("textbox", { name: "AI draft of the message" })).toHaveValue(WORDS);
+    await expect(draft.locator(".pr-ai__heading")).toBeFocused();
+    await expect(draft.getByTestId("ai-draft-from")).toHaveText("Written by AI from the event's details. Not checked.");
+    await expect(message).toHaveValue("");
+    expect(emulator.aiAsks).toEqual([{ id: ROBERTSON, body: {} }]);
+    const audit = await collectAccessibilityAudit(page, {
+      name: "proposals desk with an AI draft", path: `/dashboard?view=proposals&proposal=${ROBERTSON}`, problems, maxFocusSteps: 16,
+    });
+    expectAccessibilityAuditClean(audit);
+    await page.screenshot({ path: test.info().outputPath("ai-draft-desk.png") });
+
+    // Used, it is the message, marked until it is read through; Save waits for that.
+    await draft.getByRole("button", { name: "Use as the message" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(message).toHaveValue(WORDS);
+    await expect(message).toBeFocused();
+    const marker = composer.getByTestId("ai-unread");
+    await expect(marker).toContainText("AI wording, not yet read through.");
+    const save = composer.getByRole("button", { name: "Save version 1" });
+    await save.focus();
+    await page.keyboard.press("Enter");
+    const read = composer.getByRole("button", { name: "I have read it" });
+    await expect(read).toBeFocused();
+    await expect(composer.getByTestId("ai-said")).toHaveText("Read the AI wording through first, then press I have read it.");
+    expect(emulator.versions.get(ROBERTSON)).toBeUndefined();
+    await page.screenshot({ path: test.info().outputPath("ai-draft-unread-desk.png") });
+    await page.keyboard.press("Enter");
+    await expect(marker).toHaveCount(0);
+    await expect(message).toBeFocused();
+    await save.focus();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => emulator.versions.get(ROBERTSON)?.map((saved) => saved.payload.clientMessage)).toEqual([WORDS]);
+
+    // On a phone the draft fits, and nothing scrolls sideways.
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(`/dashboard?view=proposals&proposal=${ROBERTSON}`);
+      const again = page.getByRole("region", { name: "Spring gala proposal" }).getByTestId("composer");
+      await again.getByRole("button", { name: "Draft the message with AI" }).click();
+      const block = again.getByRole("region", { name: "AI draft of the message" });
+      await expect(block.getByRole("button", { name: "Use as the message" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `at ${String(width)} px`)
+        .toBeLessThanOrEqual(0);
+      await page.screenshot({ path: test.info().outputPath(`ai-draft-phone-${String(width)}.png`), fullPage: true });
+    }
+  });
+
+  test("with no AI provider nothing about AI shows; with one, a draft over words written keeps them to copy, and AI that goes away leaves the message", async ({ page }) => {
+    const WORDS = "Dear Elaine, thank you for your note. A later finish is possible, and the dinner can be priced again.";
+    const OWN = "Dear Elaine, a later finish is possible.";
+    const emulator = await openDesk(page);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const path = `/dashboard?view=proposals&proposal=${CRAWFORD}`;
+    const region = page.getByRole("region", { name: "Crawford wedding proposal" });
+    const composer = region.getByTestId("composer");
+    const message = composer.getByTestId("composer-message");
+
+    // No provider: the status is asked once, and nothing about AI is offered.
+    let status = page.waitForResponse((response) => response.url().endsWith("/ai/status"));
+    await page.goto(path);
+    await status;
+    await expect(message).toHaveValue("Planning-grade proposal for your wedding on 5 June.");
+    await expect(composer.getByTestId("ai-draft")).toHaveCount(0);
+    await expect(region.getByText(/\bAI\b/u)).toHaveCount(0);
+
+    // A provider: a draft that fails says so and is drafted again.
+    emulator.ai = [502, WORDS, 503];
+    status = page.waitForResponse((response) => response.url().endsWith("/ai/status"));
+    await page.goto(path);
+    await status;
+    await message.fill(OWN);
+    await composer.getByRole("button", { name: "Draft the message with AI" }).click();
+    await expect(composer.getByTestId("ai-draft-failed")).toHaveText("The draft could not be written. The message is unchanged.");
+    await expect(message).toHaveValue(OWN);
+    await expect(composer.getByTestId("ai-draft-retry")).toBeFocused();
+    await page.keyboard.press("Enter");
+    const draft = composer.getByRole("region", { name: "AI draft of the message" });
+    await expect(draft.getByRole("textbox")).toHaveValue(WORDS);
+
+    // Used over words written here, it starts a new composer and keeps them to copy.
+    await draft.getByRole("button", { name: "Use as the message" }).click();
+    await expect(message).toHaveValue(WORDS);
+    const kept = region.getByTestId("kept-version");
+    await expect(kept.getByTestId("kept-version-why")).toHaveText("Kept when you used the AI draft.");
+    await expect(kept).toContainText(OWN);
+    await expect(composer.getByTestId("quote-desc-0")).toHaveValue("Grand Hall hire");
+    await expect(composer.getByTestId("ai-unread")).toContainText("AI wording, not yet read through.");
+    await page.screenshot({ path: test.info().outputPath("ai-draft-kept-desk.png"), fullPage: true });
+
+    // AI goes away: its control goes with it, and the message stays as it is.
+    await composer.getByRole("button", { name: "Draft the message with AI" }).click();
+    await expect(composer.getByTestId("ai-draft-gone")).toHaveText("AI drafts are not available now. The message is unchanged.");
+    await expect(composer.getByRole("button", { name: "Draft the message with AI" })).toHaveCount(0);
+    await expect(message).toHaveValue(WORDS);
+    expect(emulator.aiAsks.map((asked) => [asked.id, asked.body])).toEqual([[CRAWFORD, {}], [CRAWFORD, {}], [CRAWFORD, {}]]);
   });
 
   test("on a phone the proposal replaces the ledger, Back to proposals returns to it, and nothing scrolls sideways", async ({ page }) => {

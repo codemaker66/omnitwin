@@ -34,6 +34,9 @@
   --enq-slate: var(--house-slate-text);
   --enq-slate-dot: var(--house-slate-dot);
   --enq-slate-wash: var(--house-slate-wash);
+  --enq-heather: var(--house-heather-text);
+  --enq-heather-wash: var(--house-heather-wash);
+  --enq-heather-lit: var(--house-heather-lit);
   --enq-forest: var(--house-forest);
   --enq-forest-deep: var(--house-forest-deep);
   --enq-forest-ink: var(--house-forest-ink-1);

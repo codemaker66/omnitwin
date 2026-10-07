@@ -292,8 +292,12 @@ export function applyTemplate(
 
   const newLines = plans.map((plan) => plan.line);
   const usesMessage = mode === "replace" && template.message !== "";
+  // A message kept as it was keeps its mark of AI wording not yet read through.
   const draft: ComposerDraft = mode === "replace"
-    ? { message: usesMessage ? template.message : current.message, capacityNote: current.capacityNote, lines: linesKept ? current.lines : newLines }
+    ? {
+      message: usesMessage ? template.message : current.message, capacityNote: current.capacityNote, lines: linesKept ? current.lines : newLines,
+      ...(!usesMessage && current.aiUnread === true ? { aiUnread: true } : {}),
+    }
     : { ...current, lines: [...current.lines, ...newLines] };
 
   return {

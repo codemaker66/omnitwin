@@ -181,7 +181,7 @@ describe("WORKSPACE_COLOURS", () => {
   });
 
   it("carries a word-bearing set for every tone: text, wash and dot, plus a lit form for forest", () => {
-    for (const tone of ["copper", "amber", "sage", "brick", "slate"] as const) {
+    for (const tone of ["copper", "amber", "sage", "brick", "slate", "heather"] as const) {
       for (const part of ["text", "wash", "dot", "lit"] as const) {
         expect(WORKSPACE_COLOURS, `${tone}-${part}`).toHaveProperty(`${tone}-${part}`);
       }
