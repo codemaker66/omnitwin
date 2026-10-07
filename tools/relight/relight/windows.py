@@ -293,7 +293,14 @@ def sun_visibility_by_window(volumes, fresnel_table, P, s) -> np.ndarray:
 def sunlit_area(vol: WindowVolume, s) -> float:
     """The glass area lit through the embrasure (m2) times the cosine to the wall normal: points 1 cm into the room
     at the grid's cell centres across the opening's bounding box, marched, times the cell area and |s_y|.
-    No horizon, no glass transmission: callers apply them."""
+    No horizon, no glass transmission: callers apply them.
+
+    Reference only, not used by the bake or the browser: this 3 cm area march is the finer, physically better estimate
+    of a window's entering power. The factored sun bounce (sunbounce.window_power) deliberately uses the proof's own
+    16-rays-per-patch sampling instead, because the reference bounce the gate scores against is made from it; at oblique
+    suns (azimuth about 155 degrees and beyond) that sampling aliases and the two differ by 24-73% at the worst
+    selection sun and up to a factor 2-3 at the weakest nodes. This function stays as the documented known-limit
+    reference to revisit with a finer physical reference (T-639 R1a Task 4 report)."""
     s = np.asarray(s, np.float64)
     if not s[1] < -MIN_DOWN:
         return 0.0

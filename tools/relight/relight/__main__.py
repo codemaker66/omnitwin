@@ -24,6 +24,49 @@ def _save_atomic(path: str, a: np.ndarray) -> None:
     os.replace(tmp, path)
 
 
+def _save_npz_if(path: str, passed: bool, failed_dir: str, **arrays) -> str:
+    """Write the arrays as a compressed .npz, but into work/ only when the command's checks passed. Passed: written to a
+    partial name beside `path` and renamed over it once complete, so an error or a crash leaves the previous artifact
+    and no partial file. Not passed: written to <failed_dir>/<stem>-FAILED.npz for diagnosis and never beside `path`,
+    where a later step could mistake it for a good artifact (the previous good one stays). Returns the path written."""
+    if not passed:
+        os.makedirs(failed_dir, exist_ok=True)
+        kept = os.path.join(failed_dir, os.path.splitext(os.path.basename(path))[0] + "-FAILED.npz")
+        with open(kept, "wb") as f:
+            np.savez_compressed(f, **arrays)
+        return kept
+    part = path + ".part"
+    try:
+        with open(part, "wb") as f:
+            np.savez_compressed(f, **arrays)
+        os.replace(part, path)
+    except BaseException:
+        if os.path.exists(part):
+            os.remove(part)
+        raise
+    return path
+
+
+def _finite(x):
+    """A JSON-safe copy of the evidence: non-finite floats (inf, -inf, nan; Python or numpy) become None, so a gate that
+    measures an infinite error at a small K is written down instead of raising at the write; numpy scalars and arrays
+    become Python numbers and lists."""
+    if isinstance(x, dict):
+        return {k: _finite(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_finite(v) for v in x]
+    if isinstance(x, np.ndarray):
+        return _finite(x.tolist())
+    if isinstance(x, np.bool_):
+        return bool(x)
+    if isinstance(x, np.integer):
+        return int(x)
+    if isinstance(x, (float, np.floating)):
+        v = float(x)
+        return v if math.isfinite(v) else None
+    return x
+
+
 def split_tables(cfg: config.Config) -> None:
     """work/{splats,geom,bases}.npz -> work/npy/<archive>_<key>.npy, dtypes unchanged. sun_cap_E.npy (the
     capture-period sun) is written as NaN: 03b_window_fresnel.py computes it, but store.Store maps it first."""
@@ -320,6 +363,7 @@ FLOOR_W3_SHARE = 0.9        # W3 lights more than this share of the floor's texe
 SUN_HELD_OUT, SUN_HELD_SEED = 48, SPLAT_SEED + 7    # the sun-bounce gate's held-out real suns (they choose K)
 SUN_CHECK_SEED = SPLAT_SEED + 13                    # an independent draw of as many, which checks the chosen K
 MOON_HELD_SEED, MOON_CHECK_SEED = SPLAT_SEED + 17, SPLAT_SEED + 19   # the same for real moons (_random_moons)
+SUN_STRICT_SEED, MOON_STRICT_SEED = SPLAT_SEED + 23, SPLAT_SEED + 29   # a third draw (suns, moons) that excludes the check draw too
 SUN_BATCH = 24              # sun directions per radiosity solve
 SUN_KMAX = 192              # the most basis volumes the sun-bounce search tries
 
@@ -339,7 +383,8 @@ def cmd_probes(cfg, args) -> int:
     """<work>/probes-coarse.npz: each source's bounce (white, unit; the windows with the capture's sky weights) as
     ambient cubes on the hall box's 0.5 m grid, solved by the proof's radiosity (spec 4.2). <evidence>/probes-check.json:
     the capture's bounce rebuilt from the float16 cubes the package carries against the proof's own solve (linearity),
-    median relative luminance difference at the valid probes within LINEARITY_GATE. CPU only."""
+    median relative luminance difference at the valid probes within LINEARITY_GATE; the cubes go into work/ only once
+    that check passes (a failing run keeps them as <evidence>/probes-coarse-FAILED.npz). CPU only."""
     import json, time
     from . import probes as PR
     _common, _lt, radiosity, fit04 = _proof_modules()
@@ -360,11 +405,9 @@ def cmd_probes(cfg, args) -> int:
     if not np.isfinite(cubes16).all() or (cubes16 < 0).any():
         print("FAIL: the cubes are not finite and non-negative in float16", flush=True)
         return 1
-    np.savez_compressed(os.path.join(work, "probes-coarse.npz"), cubes=cubes16, valid=valid, origin=origin,
-                        shape=np.asarray(shape, np.int64), spacing=np.float64(spacing))
     shipped = cubes16.astype(np.float64)
     positive = shipped[valid][shipped[valid] > 0]
-    print(f"probes-coarse.npz written: cubes {cubes16.shape} float16, {time.time() - started:.0f} s; valid values "
+    print(f"probes: cubes {cubes16.shape} float16, {time.time() - started:.0f} s; valid values "
           f"{positive.size} > 0 of {shipped[valid].size}, {float(positive.min()):.3g} .. {float(positive.max()):.3g}, "
           f"{int((positive < 6.103515625e-05).sum())} subnormal", flush=True)
 
@@ -384,9 +427,12 @@ def cmd_probes(cfg, args) -> int:
            "linearityMaxRel": float(rel.max()), "probes": int(scored.sum()), "threshold": LINEARITY_GATE}
     out["pass"] = bool(out["linearityMedianRel"] <= LINEARITY_GATE)
     with open(os.path.join(cfg.paths["evidence"], "probes-check.json"), "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=1, allow_nan=False)
+        json.dump(_finite(out), f, indent=1, allow_nan=False)
+    kept = _save_npz_if(os.path.join(work, "probes-coarse.npz"), out["pass"], cfg.paths["evidence"], cubes=cubes16, valid=valid,
+                        origin=origin, shape=np.asarray(shape, np.int64), spacing=np.float64(spacing))
     print(f"linearity: {json.dumps(out)} (capture bounce luminance median {float(np.median(lum_proof[scored])):.4g}), "
-          f"{'PASS' if out['pass'] else 'FAIL'}, {time.time() - started:.0f} s", flush=True)
+          f"{'PASS' if out['pass'] else 'FAIL'}; {'probes-coarse.npz written' if out['pass'] else 'the failing cubes kept at ' + kept}, "
+          f"{time.time() - started:.0f} s", flush=True)
     return 0 if out["pass"] else 1
 
 
@@ -411,9 +457,6 @@ def _lit_directions(candidates, lt, SB, occ, rays, normals, used=()):
         if len(out) == SUN_HELD_OUT:
             break
     return out, drawn, skipped
-
-
-SUN_INFO_KS = (8, 16, 17, 18, 19, 20, 24, 30, 32, 48, 64, 96, 128, 192)    # K at which the check draws are also scored, for information only
 
 
 def _score_through(SB, PR, lumw, table, basis, volumes, hz, fresnel, room, xb, to05, valid05, suns, exact05):
@@ -492,11 +535,12 @@ def cmd_sun_bounce(cfg, args) -> int:
     serves both. K is chosen on SUN_HELD_OUT held-out real suns plus as many real moons, rebuilt from the stored values
     and scored against their exact bounce at the valid 0.5 m probes (sunbounce.choose_k): the smallest K from which
     sunbounce.GATE passes with the worst bright direction at most sunbounce.MARGIN at that K and every larger K, else the
-    smallest K that passes; the same gate
-    then checks that K, unchanged, on independent draws of suns and moons (SUN_CHECK_SEED, MOON_CHECK_SEED; every
-    selection direction and grid node excluded), which are also scored at other K for information only.
-    <evidence>/sun-bounce-check.json holds both gates, per body too, the faint directions, and the power and floor
-    checks. CPU only."""
+    smallest K that passes. The same gate then scores that K, unchanged and at no other K, on two further draws of suns
+    and moons: the check draw (SUN_CHECK_SEED, MOON_CHECK_SEED; every selection direction and grid node excluded) and the
+    strict draw (SUN_STRICT_SEED, MOON_STRICT_SEED; those and every direction of the check draw excluded). Both must pass.
+    <evidence>/sun-bounce-check.json holds the gates, per body too, the faint directions, and the power and floor
+    checks (non-finite numbers written as null). The artifact goes into work/ only when every check passed; a failing run
+    keeps its arrays as <evidence>/sun-bounce-FAILED.npz. CPU only."""
     import json, time
     import torch
     from . import probes as PR, sunbounce as SB, windows as W
@@ -584,50 +628,42 @@ def cmd_sun_bounce(cfg, args) -> int:
     basis_k = b64[:K].reshape(K, len(P1), 3, 6)
     medians_h, _logs_h, _bright_h = _score_through(SB, PR, LUMW, table_k, basis_k, volumes, hz, fresnel, room, xb, to05, valid05, held, exact05)
     through = float(np.abs(medians_h - np.array(per_sun)).max())      # the search keeps its log errors in float32
-    # K checked on an independent draw of suns and of moons: other seeds, every selection direction and grid node
-    # excluded, K not chosen again
+    # K, fixed on the selection set above, is scored once on each of two draws of suns and moons (never chosen again, and
+    # never scored at any other K): the check draw, and then the strict draw, whose directions exclude every selection
+    # direction, every grid node and every direction of the check draw
+    def score_draw(sun_seed, moon_seed, excluded):
+        suns_, drawn_s, skipped_s = _lit_directions(_random_suns(common, 400, sun_seed), lt, SB, occ, rays, patches["N"], excluded)
+        moons_, drawn_m, skipped_m = _lit_directions(_random_moons(cfg, 400, moon_seed), lt, SB, occ, rays, patches["N"],
+                                                     excluded + [s for s, _g, _e in suns_])
+        dirs, kinds = suns_ + moons_, ["sun"] * len(suns_) + ["moon"] * len(moons_)
+        exact = _bounce_fields(radiosity, F, rho, patches, [e for _s, _g, e in dirs], P05)
+        medians, logs_d, bright_d = _score_through(SB, PR, LUMW, table_k, basis_k, volumes, hz, fresnel, room, xb, to05, valid05, dirs, exact)
+        verdict = SB.gate(medians, bright_d, np.concatenate(logs_d))
+        powers = [SB.window_power(volumes, hz, fresnel, room, s) for s, _g, _e in dirs]
+        logs_k, _b, _ae, cs_d, floor_exact_d = _scan(SB, PR, W, lumw, lum_basis, table, powers, dirs, exact, valid05, xb, floor05, [K])
+        del exact
+        f_err = [abs(float(np.cumsum(c[:, None] * floor_mean, 0)[K - 1] @ lumw) - fe) / fe for c, fe in zip(cs_d, floor_exact_d) if fe > 0]
+        through_d = float(np.abs(medians - np.array([float(np.median(d[0])) for d in logs_k])).max())
+        record = {"sunSeed": sun_seed, "moonSeed": moon_seed, "suns": len(suns_), "moons": len(moons_),
+                  "drawn": drawn_s + drawn_m, "skippedReused": skipped_s + skipped_m, "pass": verdict["pass"], "result": verdict,
+                  "resultByBody": _gate_by_body(SB, kinds, medians, bright_d, logs_d),
+                  "faint": _faint(SB, kinds, [W.sun_az_el(np.asarray(s, np.float32), xb) for s, _g, _e in dirs],
+                                  bright_d / np.median(bright_d), medians),
+                  "floorMean": {"medianRelErr": float(np.median(f_err)), "maxRelErr": float(max(f_err))},
+                  "throughMaxDiff": through_d}
+        return dirs, record
+
     used = [s for s, _g, _e in held] + [node_suns[n] for n in facing]
-    chk_suns, drawn_s, skipped_s = _lit_directions(_random_suns(common, 400, SUN_CHECK_SEED), lt, SB, occ, rays,
-                                                   patches["N"], used)
-    chk_moons, drawn_m, skipped_m = _lit_directions(_random_moons(cfg, 400, MOON_CHECK_SEED), lt, SB, occ, rays,
-                                                    patches["N"], used + [s for s, _g, _e in chk_suns])
-    check, check_bodies = chk_suns + chk_moons, ["sun"] * len(chk_suns) + ["moon"] * len(chk_moons)
-    exact_check = _bounce_fields(radiosity, F, rho, patches, [e for _s, _g, e in check], P05)
-    medians_c, logs_c, bright_c = _score_through(SB, PR, LUMW, table_k, basis_k, volumes, hz, fresnel, room, xb, to05, valid05,
-                                                 check, exact_check)
-    independent = SB.gate(medians_c, bright_c, np.concatenate(logs_c))
-    rel_c = bright_c / np.median(bright_c)
-    check_az_el = [W.sun_az_el(np.asarray(s, np.float32), xb) for s, _g, _e in check]
-    # for information only (K was fixed on the selection set above and is not chosen again): the check draws at other K
-    info_ks = sorted({k for k in SUN_INFO_KS if k <= kmax} | {K})
-    check_power = [SB.window_power(volumes, hz, fresnel, room, s) for s, _g, _e in check]
-    logs_ci, bright_ci, _az_el, cs_c, floor_exact_c = _scan(SB, PR, W, lumw, lum_basis, table, check_power, check, exact_check,
-                                                            valid05, xb, floor05, info_ks)
-    floor_err_c = [abs(float(np.cumsum(c[:, None] * floor_mean, 0)[K - 1] @ lumw) - fe) / fe for c, fe in zip(cs_c, floor_exact_c) if fe > 0]
-    check_by_k = [{"K": k, **{name: (v if not isinstance(v, float) or np.isfinite(v) else None) for name, v in SB.gate(
-        np.array([float(np.median(d[i])) for d in logs_ci]), bright_ci, np.concatenate([d[i] for d in logs_ci])).items()}}
-                  for i, k in enumerate(info_ks)]       # a median that is not finite at a small K is written as null
-    through_check = float(np.abs(medians_c - np.array([float(np.median(d[info_ks.index(K)])) for d in logs_ci])).max())
-    ok = bool(passing) and split == 0.0 and through < 1e-6 and through_check < 1e-6 and independent["pass"]
-    np.savez_compressed(os.path.join(work, "sun-bounce.npz"), basis=basis[:K], coeffs=baked.coeffs[..., :K],
-                        floorMean=floor_mean[:K].astype(np.float32), needed=needed, azimuth0=np.float64(az0),
-                        elevation0=np.float64(el0), step=np.float64(SB.STEP), gridOrigin=origin1,
-                        gridShape=np.asarray(shape1, np.int64), gridSpacing=np.float64(SB.SPACING), valid=valid1,
-                        real=baked.real, nodePower=node_power_grid, patchRays=room.rays, patchNormal=room.normals,
-                        patchArea=room.areas)
+    check, independent = score_draw(SUN_CHECK_SEED, MOON_CHECK_SEED, used)
+    _strict_dirs, strict_check = score_draw(SUN_STRICT_SEED, MOON_STRICT_SEED, used + [s for s, _g, _e in check])
+    ok = (bool(passing) and split == 0.0 and through < 1e-6 and independent["throughMaxDiff"] < 1e-6 and independent["pass"]
+          and strict_check["throughMaxDiff"] < 1e-6 and strict_check["pass"])
     out = {"gate": SB.GATE, "pass": ok, "K": K, "kRule": {"rule": k_rule, "margin": SB.MARGIN,
                                                           "smallestPassingK": passing[0] if passing else None},
            "kmax": kmax, "rank": rank, "energyAtK": float(lam[:K].sum() / lam.sum()),
            "result": results[K - 1], "splitMaxAbsDiff": split, "throughSunBounceMaxDiff": through,
-           "throughCheckMaxDiff": through_check,
            "resultByBody": _gate_by_body(SB, bodies, per_sun, brightness, [d[K - 1] for d in logs]),
-           "independentCheck": {"sunSeed": SUN_CHECK_SEED, "moonSeed": MOON_CHECK_SEED, "suns": len(chk_suns),
-                                "moons": len(chk_moons), "drawn": drawn_s + drawn_m, "skippedReused": skipped_s + skipped_m,
-                                "pass": independent["pass"], "result": independent,
-                                "resultByBody": _gate_by_body(SB, check_bodies, medians_c, bright_c, logs_c),
-                                "faint": _faint(SB, check_bodies, check_az_el, rel_c, medians_c),
-                                "floorMean": {"medianRelErr": float(np.median(floor_err_c)), "maxRelErr": float(max(floor_err_c))},
-                                "informationalByK": check_by_k},
+           "independentCheck": independent, "strictCheck": strict_check,
            "model": {"factored": True, "realFraction": SB.REAL_FRACTION,
                      "realNodeWindows": [int(baked.real[..., w].sum()) for w in range(5)],
                      "litNodeWindows": [int((node_power_grid[..., w] > 0).sum()) for w in range(5)]},
@@ -641,12 +677,21 @@ def cmd_sun_bounce(cfg, args) -> int:
            "power": {"medianRelErr": float(np.median(power_err)), "maxRelErr": float(max(power_err))},
            "floorMean": {"medianRelErr": float(np.median(floor_err)), "maxRelErr": float(max(floor_err))}}
     with open(os.path.join(cfg.paths["evidence"], "sun-bounce-check.json"), "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=1, allow_nan=False)
-    print(f"sun-bounce.npz written: K {K} ({k_rule}; smallest passing {passing[0] if passing else None}) of rank {rank}, "
-          f"{json.dumps(results[K - 1])}; power {json.dumps(out['power'])}; floor {json.dumps(out['floorMean'])}; independent "
-          f"check ({len(chk_suns)} suns and {len(chk_moons)} moons of {drawn_s + drawn_m} drawn, {skipped_s + skipped_m} "
-          f"reused skipped) {json.dumps(independent)}, floor {json.dumps(out['independentCheck']['floorMean'])}; "
-          f"{'PASS' if ok else 'FAIL'}, {time.time() - started:.0f} s", flush=True)
+        json.dump(_finite(out), f, indent=1, allow_nan=False)
+    kept = _save_npz_if(os.path.join(work, "sun-bounce.npz"), ok, cfg.paths["evidence"], basis=basis[:K],
+                        coeffs=baked.coeffs[..., :K], floorMean=floor_mean[:K].astype(np.float32), needed=needed,
+                        azimuth0=np.float64(az0), elevation0=np.float64(el0), step=np.float64(SB.STEP), gridOrigin=origin1,
+                        gridShape=np.asarray(shape1, np.int64), gridSpacing=np.float64(SB.SPACING), valid=valid1,
+                        real=baked.real, nodePower=node_power_grid, patchRays=room.rays, patchNormal=room.normals,
+                        patchArea=room.areas)
+
+    def line(name, c):
+        return (f"{name} ({c['suns']} suns and {c['moons']} moons of {c['drawn']} drawn, {c['skippedReused']} reused skipped) "
+                f"{json.dumps(_finite(c['result']))}, floor {json.dumps(c['floorMean'])}")
+    print(f"K {K} ({k_rule}; smallest passing {passing[0] if passing else None}) of rank {rank}, "
+          f"{json.dumps(_finite(results[K - 1]))}; power {json.dumps(out['power'])}; floor {json.dumps(out['floorMean'])}; "
+          f"{line('check', independent)}; {line('strict check', strict_check)}; "
+          f"{'PASS: sun-bounce.npz written' if ok else 'FAIL: the failing arrays kept at ' + kept}, {time.time() - started:.0f} s", flush=True)
     return 0 if ok else 1
 
 
@@ -658,7 +703,9 @@ def cmd_floor(cfg, args) -> int:
     capture's sky weights) at the floor skin's 5 cm texel centres 2 cm above its fitted plane, normal +z, computed as
     the proof computes its patches' direct light; texelToModel (4, 4) takes a texel centre's (col, row, 0, 1) to the
     model frame, row 0 the first PNG row (floorlight.py). The proof's patches, recomputed the same way, check it first:
-    the house lights exactly, the windows within the float16 rounding of the stored window cubes. CPU only."""
+    the house lights exactly, the windows within the float16 rounding of the stored window cubes. The light maps go into
+    work/ only once W3 lights more than FLOOR_W3_SHARE of the texels (a failing run keeps them as
+    <evidence>/floor-light-FAILED.npz). CPU only."""
     import importlib, json, time
     from . import floorlight as FL, probes as PR
     common, lt, _radiosity, fit04 = _proof_modules()
@@ -708,14 +755,15 @@ def cmd_floor(cfg, args) -> int:
     if not np.isfinite(D).all() or (D < 0).any():
         print("FAIL: the floor's direct light is not finite and non-negative", flush=True)
         return 1
-    np.savez_compressed(os.path.join(work, "floor-light.npz"), D=D, texelToModel=texel_to_model)
     share = {name: float((D[..., k] > 0).mean()) for k, name in enumerate(SOURCES)}
     for k, name in enumerate(SOURCES):
         print(f"  {name}: max {float(D[..., k].max()):.6g}, mean {float(D[..., k].mean()):.6g}, "
               f"non-zero on {share[name]:.4f} of the texels", flush=True)
     lit_ok = share["W3"] > FLOOR_W3_SHARE
-    print(f"floor-light.npz written: D {D.shape} float32; W3 lights {share['W3']:.4f} of the floor "
-          f"({'PASS' if lit_ok else 'FAIL'}: above {FLOOR_W3_SHARE}), {time.time() - started:.0f} s", flush=True)
+    kept = _save_npz_if(os.path.join(work, "floor-light.npz"), lit_ok, cfg.paths["evidence"], D=D, texelToModel=texel_to_model)
+    print(f"floor: D {D.shape} float32; W3 lights {share['W3']:.4f} of the floor ({'PASS' if lit_ok else 'FAIL'}: above "
+          f"{FLOOR_W3_SHARE}); {'floor-light.npz written' if lit_ok else 'the failing light maps kept at ' + kept}, "
+          f"{time.time() - started:.0f} s", flush=True)
     return 0 if lit_ok else 1
 
 

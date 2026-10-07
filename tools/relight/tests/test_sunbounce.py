@@ -224,12 +224,6 @@ class Mix(unittest.TestCase):
         np.testing.assert_array_equal(SB.sun_bounce(t, basis, vols, hz, fresnel, patches, 14.3, s), SB.bounce(basis, SB.coefficients(t, P, az, el)))
         np.testing.assert_array_equal(SB.sun_bounce(t, basis, vols, hz, fresnel, patches, 14.3, sun_toward(290.0, 30.0)), np.zeros((3, 3, 6)))
 
-    def test_window_gates_open_where_the_sun_faces_the_wall_and_clears_each_horizon(self):
-        flat, high = np.zeros(360), np.full(360, 40.0)
-        gates = SB.window_gates([flat, high, flat, high, flat], 14.3, sun_toward(110.0, 30.0))
-        self.assertEqual(gates.tolist(), [True, False, True, False, True])
-        self.assertEqual(SB.window_gates([flat] * 5, 14.3, sun_toward(290.0, 30.0)).tolist(), [False] * 5)   # behind the wall
-
 
 class Gate(unittest.TestCase):
     def test_log2_errors_score_only_where_the_exact_bounce_is_lit(self):

@@ -105,5 +105,94 @@ class ProofCli(unittest.TestCase):
         self.assertEqual(os.getcwd(), cwd)
 
 
+class GatedArtifacts(unittest.TestCase):
+    """A command writes its artifact into work/ only after its checks pass; a failing run leaves its arrays under the
+    evidence directory, never in work/."""
+
+    def setUp(self):
+        from relight import __main__ as cli
+        import numpy as np
+        self.cli, self.np = cli, np
+        root = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, root)
+        self.work, self.evidence = os.path.join(root, "work"), os.path.join(root, "evidence")
+        os.makedirs(self.work), os.makedirs(self.evidence)
+        self.path = os.path.join(self.work, "thing.npz")
+
+    def arrays(self, v):
+        return {"a": self.np.full(3, v, self.np.float32), "b": self.np.arange(4)}
+
+    def save(self, passed, v):
+        return self.cli._save_npz_if(self.path, passed, self.evidence, **self.arrays(v))
+
+    def test_a_passing_run_writes_the_artifact_and_nothing_else(self):
+        self.assertEqual(self.save(True, 1.0), self.path)
+        with self.np.load(self.path) as z:
+            self.assertEqual((sorted(z.files), z["a"].dtype.name, z["a"].tolist()), (["a", "b"], "float32", [1.0] * 3))
+        self.assertEqual(os.listdir(self.work), ["thing.npz"])
+        self.assertEqual(os.listdir(self.evidence), [])
+
+    def test_a_failing_run_leaves_no_artifact_in_work_and_keeps_its_arrays_in_the_evidence(self):
+        kept = self.save(False, 2.0)
+        self.assertEqual(os.listdir(self.work), [])
+        self.assertEqual(kept, os.path.join(self.evidence, "thing-FAILED.npz"))
+        with self.np.load(kept) as z:
+            self.assertEqual(z["a"].tolist(), [2.0] * 3)
+
+    def test_a_failing_run_leaves_the_previous_good_artifact_untouched(self):
+        self.save(True, 1.0)
+        with open(self.path, "rb") as f:
+            before = f.read()
+        self.save(False, 9.0)
+        with open(self.path, "rb") as f:
+            self.assertEqual(f.read(), before)
+        self.assertEqual(os.listdir(self.work), ["thing.npz"])
+
+    def test_a_passing_run_replaces_the_previous_artifact_without_leaving_a_partial_file(self):
+        self.save(True, 1.0)
+        self.save(True, 5.0)
+        with self.np.load(self.path) as z:
+            self.assertEqual(z["a"].tolist(), [5.0] * 3)
+        self.assertEqual(os.listdir(self.work), ["thing.npz"])
+
+    def test_a_write_that_fails_half_way_does_not_leave_the_target_or_a_partial_file(self):
+        self.save(True, 1.0)
+        with open(self.path, "rb") as f:
+            before = f.read()
+        from unittest import mock
+
+        def disk_full(f, **arrays):
+            f.write(b"partial")
+            raise OSError("disk full")
+        with mock.patch.object(self.np, "savez_compressed", side_effect=disk_full), self.assertRaises(OSError):
+            self.cli._save_npz_if(self.path, True, self.evidence, a=self.np.zeros(2))
+        with open(self.path, "rb") as f:
+            self.assertEqual(f.read(), before)
+        self.assertEqual(os.listdir(self.work), ["thing.npz"])
+
+    def test_non_finite_numbers_in_the_evidence_become_null(self):
+        np = self.np
+        out = self.cli._finite({"a": float("inf"), "b": [float("nan"), 1.5, {"c": -np.inf}], "d": np.float32("nan"),
+                                "e": np.float64(2.5), "f": np.int64(3), "g": True, "h": "x", "i": None, "j": np.bool_(False)})
+        self.assertEqual(out, {"a": None, "b": [None, 1.5, {"c": None}], "d": None, "e": 2.5, "f": 3, "g": True, "h": "x",
+                               "i": None, "j": False})
+        json.dumps(out, allow_nan=False)                                    # serialises: nothing non-finite is left
+        self.assertIsInstance(out["e"], float)
+        self.assertIsInstance(out["f"], int)
+
+    def test_a_gate_result_with_an_infinite_error_serialises(self):
+        from relight import sunbounce as SB
+        result = SB.gate(self.np.array([self.np.inf, 0.1, 0.1]), self.np.array([1.0, 1.0, 1.0]), self.np.full(10, self.np.inf))
+        self.assertFalse(result["pass"])
+        with self.assertRaises(ValueError):
+            json.dumps(result, allow_nan=False)
+        json.dumps(self.cli._finite(result), allow_nan=False)
+
+    def test_every_sun_bounce_draw_has_its_own_seed(self):
+        c = self.cli
+        seeds = [c.SUN_HELD_SEED, c.MOON_HELD_SEED, c.SUN_CHECK_SEED, c.MOON_CHECK_SEED, c.SUN_STRICT_SEED, c.MOON_STRICT_SEED, c.SPLAT_SEED]
+        self.assertEqual(len(set(seeds)), len(seeds))
+
+
 if __name__ == "__main__":
     unittest.main()

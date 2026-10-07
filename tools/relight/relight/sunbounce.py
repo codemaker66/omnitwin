@@ -195,15 +195,6 @@ def bake_table(fields, power, nodes, needed, valid, kmax, fraction=REAL_FRACTION
     return Baked(coeffs, (U / scale).T.reshape((k,) + shape).astype(np.float16), real, lam, rank)
 
 
-def window_gates(horizons, x_bearing, s) -> np.ndarray:
-    """(windows,) bool: the sun faces the window wall (s_y < -MIN_DOWN) and stands above each window's horizon
-    (windows.above_horizon), both at the sun rounded to float32 as the browser has it."""
-    s32 = np.asarray(s, np.float32)
-    if not float(s32[1]) < -W.MIN_DOWN:
-        return np.zeros(len(horizons), bool)
-    return np.array([W.above_horizon(h, s32, x_bearing) for h in horizons], bool)
-
-
 def log2_errors(rec, exact) -> np.ndarray:
     """|log2(rec / exact)| wherever exact > 0, inf where the reconstruction is not positive there."""
     rec, exact = np.asarray(rec, np.float64), np.asarray(exact, np.float64)
