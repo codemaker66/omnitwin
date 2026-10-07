@@ -44,7 +44,7 @@
         <nav aria-label="Platform navigation">
           <a href="#workflow">The platform</a>
           <a href="#story">Our starting point</a>
-          <a class="platform-nav-next" href="#next">What’s next <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.5" /></svg></a>
+          <a class="platform-nav-next" href="#film">Watch the film <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m9 5 10 7-10 7V5Z" stroke="currentColor" stroke-width="1.5" /></svg></a>
         </nav>
       </header>
 
@@ -58,7 +58,10 @@
               Venviewer is connecting room layouts, approvals and setup
               instructions in one venue workspace.
             </p>
-            <a class="platform-primary-link" href="#workflow">Explore the platform <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.5" /></svg></a>
+            <div class="platform-hero-actions">
+              <a class="platform-primary-link" href="#film">Watch the film <span class="platform-film-duration">1:40</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m9 5 10 7-10 7V5Z" stroke="currentColor" stroke-width="1.5" /></svg></a>
+              <a class="platform-hero-secondary" href="#workflow">Explore the platform</a>
+            </div>
             <p class="platform-stage"><span aria-hidden="true"></span>Founder-funded · In development</p>
           </div>
           <figure class="platform-hero-image">
@@ -74,6 +77,47 @@
               <span>Venue photograph</span>
             </figcaption>
           </figure>
+        </section>
+
+        <section class="platform-film" id="film" aria-labelledby="film-title">
+          <div class="platform-width">
+            <div class="platform-film-heading">
+              <div>
+                <p class="platform-eyebrow">Trades Hall · A short film</p>
+                <h2 id="film-title">A room full of possibilities.</h2>
+              </div>
+              <p>A glimpse of the visual ambition behind Venviewer, through the place where it all begins.</p>
+            </div>
+            <figure class="platform-film-figure">
+              <video
+                class="platform-film-player"
+                controls
+                playsinline
+                preload="none"
+                poster="/platform/media/trades-hall-concept-v9-poster.jpg"
+                width="1920"
+                height="1080"
+                tabindex="0"
+                aria-label="Trades Hall concept film"
+                aria-describedby="film-caption"
+              >
+                <source src="/platform/media/trades-hall-concept-v9-1080p.mp4" type="video/mp4">
+                <track kind="captions" src="/platform/media/trades-hall-concept-v9-en.vtt" srclang="en" label="English">
+                <p><a href="/platform/media/trades-hall-concept-v9-1080p.mp4">Open the Trades Hall film</a>.</p>
+              </video>
+              <figcaption id="film-caption">
+                <span><strong>Trades Hall concept film</strong><br>3D animation, venue imagery and AI-assisted scenes illustrating our visual direction.</span>
+                <span>1 min 40 sec · Original score</span>
+              </figcaption>
+            </figure>
+            <div class="platform-film-notes">
+              <details>
+                <summary>Read the film description</summary>
+                <p>A gold-lit journey from the globe and Glasgow’s skyline into Trades Hall. The Grand Hall transforms through imagined wedding, conference, dining, exhibition and reception layouts, before a finale celebrating the 14 Incorporated Trades. The closing title reads “One landmark. Every occasion. Planned with Venviewer.” An original instrumental score accompanies the film; there is no spoken narration.</p>
+              </details>
+              <a href="/platform/media/trades-hall-concept-v9-1080p.mp4" target="_blank" rel="noopener">Open film in a new tab <span aria-hidden="true">↗</span></a>
+            </div>
+          </div>
         </section>
 
         <section class="platform-workflow platform-width" id="workflow" aria-labelledby="workflow-title">
