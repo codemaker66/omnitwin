@@ -49,6 +49,8 @@ function lede(container: HTMLElement): string {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-28T12:00:00.000Z"));
   media.phone = false;
   media.turnTaking = false;
   mocks.week.mockResolvedValue(rotaWeek());
@@ -59,7 +61,11 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => { cleanup(); useAuthStore.getState().setUser(null); });
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  useAuthStore.getState().setUser(null);
+});
 
 describe("RotaView", () => {
   it("shows Activity while the week loads, then the week with the Diary's functions along the top", async () => {
@@ -192,6 +198,14 @@ describe("RotaView", () => {
     fireEvent.keyDown(saturday, { key: "ArrowRight" });
     expect(screen.getByRole("heading", { name: "Sunday 11 October", level: 2 })).toBeDefined();
     expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Sunday 11 October, 0 shifts" }));
+  });
+
+  it("opens today's day on a phone when the displayed week contains today", async () => {
+    vi.setSystemTime(new Date("2026-10-07T12:00:00.000Z"));
+    media.phone = true;
+    renderView();
+    expect(await screen.findByRole("heading", { name: "Wednesday 7 October", level: 2 })).toBeDefined();
+    expect(screen.getByRole("tab", { name: "Wednesday 7 October, 0 shifts" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("puts a saved staff record on the week at once, so the same change is never offered twice", async () => {
