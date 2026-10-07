@@ -1,0 +1,202 @@
+/* The same self-hosted Latin faces used by the app, copied without changes.
+   Source/provenance: src/styles/fonts/provenance.json. Licences accompany them. */
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("/platform/fonts/fraunces-normal-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: italic;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("/platform/fonts/fraunces-italic-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 300 600;
+  font-display: swap;
+  src: url("/platform/fonts/geist-normal-latin.woff2") format("woff2");
+}
+
+/* Public-page register from src/styles/house-tokens.css. This standalone page
+   has no app bundle or loading state; its content works without JavaScript. */
+:root {
+  --vv-forest: #1b3a2f;
+  --vv-forest-2: #294b3b;
+  --vv-forest-soft: #4c6055;
+  --vv-copper: #a9622f;
+  --vv-copper-ink: #7e4620;
+  --vv-sage-ink: #4a6650;
+  --vv-rule: #bfc4b2;
+  color-scheme: light;
+  background: #f7f4ea;
+  -webkit-font-smoothing: antialiased;
+}
+body { margin: 0; min-width: 320px; }
+a:focus-visible { outline: 3px solid #a9622f; outline-offset: 4px; }
+.vv-skip-link { position: absolute; z-index: 10; top: 8px; left: 8px; padding: 10px 16px; border: 1px solid var(--vv-forest); background: #fbf8ee; color: var(--vv-forest); font-size: 14px; transform: translateY(-160%); }
+.vv-skip-link:focus-visible { transform: translateY(0); }
+
+.platform-page {
+  --platform-paper: #f7f4ea;
+  --platform-ink: var(--vv-forest);
+  --platform-muted: var(--vv-forest-soft);
+  background: var(--platform-paper);
+  color: var(--platform-ink);
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  min-height: 100dvh;
+}
+
+.platform-page *,
+.platform-page *::before,
+.platform-page *::after { box-sizing: border-box; }
+.platform-page a { color: inherit; text-underline-offset: 5px; }
+.platform-page a:hover { color: var(--vv-copper-ink); }
+.platform-page p,
+.platform-page h1,
+.platform-page h2,
+.platform-page h3,
+.platform-page figure { margin: 0; }
+.platform-page svg { flex: 0 0 24px; width: 24px; height: 24px; }
+.platform-page section[id] { scroll-margin-top: 32px; }
+.platform-page main:focus { outline: none; }
+.platform-width { width: min(1320px, calc(100% - 112px)); margin-inline: auto; }
+
+.platform-header { display: flex; align-items: center; justify-content: space-between; gap: 32px; min-height: 112px; border-bottom: 1px solid var(--vv-rule); }
+.platform-wordmark { font-family: "Fraunces", Georgia, serif; font-size: 31px; font-weight: 500; letter-spacing: -1.4px; line-height: 1.2; text-decoration: none; }
+.platform-wordmark > span { color: var(--vv-copper-ink); }
+.platform-header nav { display: flex; align-items: center; gap: 34px; font-size: 13px; }
+.platform-header nav a { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; text-decoration: none; }
+.platform-nav-next { border-bottom: 1px solid var(--vv-copper); }
+
+.platform-eyebrow { color: var(--vv-copper-ink); font-size: 11px; font-weight: 600; line-height: 1.6; letter-spacing: 1.7px; text-transform: uppercase; }
+.platform-hero { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; padding-block: 68px 86px; }
+.platform-hero-copy { padding-block: 18px; }
+.platform-page h1,
+.platform-page h2,
+.platform-page h3 { font-family: "Fraunces", Georgia, serif; font-weight: 400; }
+.platform-page h1 { margin-top: 24px; font-size: clamp(56px, 5.5vw, 80px); line-height: 1.06; letter-spacing: -3.5px; }
+.platform-page h1 em,
+.platform-page h2 em { font-weight: 400; color: var(--vv-copper-ink); }
+.platform-intro { margin-top: 29px !important; max-width: 420px; color: var(--platform-muted); font-size: 16px; line-height: 1.8; }
+.platform-primary-link { display: inline-flex; align-items: center; justify-content: space-between; gap: 36px; margin-top: 30px; min-height: 52px; padding: 10px 22px; border: 1px solid var(--platform-ink); background: var(--platform-ink); color: var(--platform-paper) !important; font-size: 13px; text-decoration: none; transition: background-color 160ms ease; }
+.platform-primary-link:hover { background: var(--vv-forest-2); }
+.platform-stage { display: flex; align-items: center; gap: 8px; margin-top: 25px !important; font-size: 11px; color: var(--platform-muted); }
+.platform-stage > span { width: 6px; height: 6px; border: 1px solid var(--vv-sage-ink); border-radius: 50%; }
+.platform-hero-image { position: relative; align-self: stretch; min-height: 575px; background: var(--vv-forest); }
+.platform-hero-image::before { content: ""; position: absolute; inset: 14px; border: 1px solid rgba(247, 244, 234, 0.33); pointer-events: none; z-index: 1; }
+.platform-hero-image img { display: block; width: 100%; height: 100%; position: absolute; inset: 0; object-fit: cover; object-position: 52% center; }
+.platform-hero-image figcaption { position: absolute; bottom: 0; left: 0; right: 0; display: flex; flex-direction: column; gap: 2px; padding: 76px 32px 29px; background: linear-gradient(transparent, rgba(14, 29, 22, 0.92)); color: #fffaf0; font-size: 12px; line-height: 1.6; }
+.platform-hero-image figcaption span:last-child { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; }
+
+.platform-workflow { padding-block: 65px 86px; border-top: 1px solid var(--vv-rule); }
+.platform-section-heading { display: grid; grid-template-columns: 1fr 2fr; gap: 18px 40px; align-items: start; }
+.platform-section-heading .platform-eyebrow { grid-row: span 2; padding-top: 9px; }
+.platform-page h2 { font-size: clamp(34px, 3.5vw, 49px); line-height: 1.15; letter-spacing: -1.6px; }
+.platform-section-heading > p:last-child { max-width: 450px; color: var(--platform-muted); font-size: 15px; }
+.platform-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; margin: 52px 0 0; padding: 0; list-style: none; }
+.platform-steps li { padding-top: 22px; border-top: 1px solid var(--vv-rule); }
+.platform-step-number { display: block; color: var(--vv-copper-ink); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.platform-steps h3 { margin-top: 21px; font-size: 29px; line-height: 1.2; letter-spacing: -0.7px; }
+.platform-steps p { margin-top: 14px; max-width: 320px; color: var(--platform-muted); font-size: 14px; line-height: 1.8; }
+.platform-step-detail { display: block; margin-top: 25px; font-size: 11px; letter-spacing: 0.2px; }
+.platform-build-note { display: grid; grid-template-columns: 1fr 2fr; gap: 40px; margin-top: 52px; padding: 22px 26px; background: #ebece1; }
+.platform-build-note > span { padding-top: 2px; font-size: 11px; font-weight: 600; }
+.platform-build-note p { color: var(--platform-muted); font-size: 12px; line-height: 1.8; }
+
+.platform-story { background: var(--vv-forest); color: var(--platform-paper); }
+.platform-story-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 92px; padding-block: 78px 84px; }
+.platform-story .platform-eyebrow { color: #dcb99a; }
+.platform-story h2 { margin-top: 23px; font-size: clamp(38px, 3.9vw, 55px); }
+.platform-place { margin-top: 40px !important; font-family: "Fraunces", Georgia, serif; font-size: 22px; }
+.platform-place span { display: block; margin-top: 4px; font-family: "Geist", system-ui, sans-serif; font-size: 11px; color: #d9dece; letter-spacing: 0.3px; }
+.platform-story-copy { padding-top: 42px; }
+.platform-story-copy p { color: #e0e3d5; font-size: 15px; line-height: 1.85; }
+.platform-story-copy p + p { margin-top: 19px; }
+.platform-text-link { display: inline-flex; align-items: center; gap: 30px; min-height: 44px; margin-top: 26px; border-bottom: 1px solid #b8c3aa; font-size: 12px; text-decoration: none; }
+.platform-story a:hover { color: #efd0b5; }
+
+.platform-next { display: grid; grid-template-columns: 1fr 1fr; gap: 92px; padding-block: 90px; }
+.platform-next h2 { margin-top: 21px; font-size: clamp(32px, 3vw, 43px); }
+.platform-next-heading > p:not(.platform-eyebrow, .platform-next-status) { max-width: 405px; margin-top: 24px; color: var(--platform-muted); font-size: 14px; line-height: 1.85; }
+.platform-next-status { display: inline-block; margin-top: 26px !important; border: 1px solid var(--vv-rule); padding: 5px 10px; font-size: 10px; letter-spacing: 0.3px; }
+.platform-ai-flow { padding-top: 1px; }
+.platform-ai-flow ol { display: grid; gap: 22px; padding: 0; margin: 0; list-style: none; }
+.platform-ai-flow li { display: flex; gap: 20px; padding-top: 21px; border-top: 1px solid var(--vv-rule); }
+.platform-ai-flow li > span { padding-top: 4px; color: var(--vv-copper-ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+.platform-ai-flow h3 { font-size: 23px; line-height: 1.3; letter-spacing: -0.4px; }
+.platform-ai-flow li p { margin-top: 7px; color: var(--platform-muted); font-size: 13px; line-height: 1.8; }
+.platform-evaluation { margin-top: 24px !important; padding-top: 19px; border-top: 1px solid var(--vv-rule); color: var(--platform-muted); font-size: 11px; line-height: 1.8; }
+
+.platform-footer { display: grid; grid-template-columns: 1fr 1fr auto; align-items: center; gap: 30px; padding-block: 34px 44px; border-top: 1px solid var(--vv-rule); }
+.platform-footer .platform-wordmark { font-size: 27px; }
+.platform-footer p { color: var(--platform-muted); font-size: 11px; line-height: 1.8; }
+.platform-footer div p { margin-top: 8px; }
+.platform-footer nav { display: flex; gap: 20px; font-size: 11px; }
+.platform-footer nav a { display: inline-flex; align-items: center; min-height: 44px; }
+
+@media (min-width: 1600px) {
+  .platform-hero-image { min-height: 640px; }
+}
+
+@media (max-width: 1050px) {
+  .platform-width { width: calc(100% - 64px); }
+  .platform-header { min-height: 96px; }
+  .platform-header nav { gap: 23px; }
+  .platform-hero { gap: 34px; padding-block: 46px 62px; }
+  .platform-page h1 { font-size: clamp(48px, 6vw, 62px); letter-spacing: -2.5px; }
+  .platform-hero-image { min-height: 540px; }
+  .platform-story-inner,
+  .platform-next { gap: 50px; }
+  .platform-steps { gap: 26px; }
+  .platform-steps h3 { font-size: 26px; }
+}
+
+@media (max-width: 720px) {
+  .platform-width { width: calc(100% - 40px); }
+  .platform-header { min-height: 84px; gap: 20px; }
+  .platform-wordmark { font-size: 28px; }
+  .platform-header nav { gap: 0; font-size: 12px; }
+  .platform-header nav a:not(.platform-nav-next) { display: none; }
+  .platform-hero { grid-template-columns: 1fr; gap: 35px; padding-block: 36px 48px; }
+  .platform-hero-copy { padding: 0; }
+  .platform-page h1 { font-size: clamp(49px, 10vw, 67px); line-height: 1.04; letter-spacing: -2.5px; }
+  .platform-intro { max-width: 460px; margin-top: 24px !important; font-size: 15px; }
+  .platform-primary-link { margin-top: 24px; }
+  .platform-stage { margin-top: 20px !important; }
+  .platform-hero-image { min-height: 420px; }
+  .platform-hero-image img { object-position: 50% center; }
+  .platform-hero-image figcaption { padding-inline: 27px; }
+  .platform-workflow { padding-block: 43px 48px; }
+  .platform-section-heading { grid-template-columns: 1fr; gap: 16px; }
+  .platform-section-heading .platform-eyebrow { grid-row: auto; padding: 0; }
+  .platform-page h2 { font-size: 36px; letter-spacing: -1.2px; }
+  .platform-steps { grid-template-columns: 1fr; gap: 29px; margin-top: 33px; }
+  .platform-steps li { position: relative; padding-left: 42px; }
+  .platform-step-number { position: absolute; top: 28px; left: 0; }
+  .platform-steps h3 { margin-top: 0; font-size: 29px; }
+  .platform-steps p { max-width: 470px; margin-top: 10px; }
+  .platform-step-detail { margin-top: 17px; }
+  .platform-build-note { grid-template-columns: 1fr; gap: 8px; margin-top: 34px; padding: 20px; }
+  .platform-story-inner { grid-template-columns: 1fr; gap: 28px; padding-block: 48px; }
+  .platform-story h2 { font-size: 42px; }
+  .platform-place { margin-top: 24px !important; }
+  .platform-story-copy { padding: 0; }
+  .platform-story-copy p { font-size: 14px; }
+  .platform-text-link { margin-top: 21px; }
+  .platform-next { grid-template-columns: 1fr; gap: 34px; padding-block: 49px; }
+  .platform-next h2 { font-size: 35px; }
+  .platform-next-heading > p:not(.platform-eyebrow, .platform-next-status) { max-width: 470px; margin-top: 19px; }
+  .platform-next-status { margin-top: 19px !important; }
+  .platform-footer { grid-template-columns: 1fr; gap: 22px; padding-block: 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-primary-link { transition: none; }
+}
