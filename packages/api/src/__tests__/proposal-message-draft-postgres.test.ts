@@ -313,21 +313,6 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       expect(told?.prompt).not.toContain("@");
     });
 
-    it.each([
-      ["two numbers on a line", "0141 552 1234 / 07700 900123", "(phone number) / (phone number)"],
-      ["two on consecutive lines", "07700 900123\n0141 552 1234", "(phone number)\n(phone number)"],
-      ["a number above a date", "07700 900123\n12.06.2027", "(phone number)\n12.06.2027"],
-      ["numbers with no 0 or + to start", "Call 415-555-0123 or 44 7700 900123", "Call (phone number) or (phone number)"],
-      ["dotted pairs", "Mobile 06.12.34.56.78", "Mobile (phone number)"],
-      ["a number after an abbreviation", "Tel.07700 900123, No.0141 552 1234", "Tel.(phone number), No.(phone number)"],
-      ["a country code before a bracketed 0", "+44 (0)141 552 1234.", "(phone number)."],
-      ["a number in brackets, or beside some", "07700 900123 (150 guests), (07700 900123).", "(phone number) (150 guests), (phone number)."],
-      ["dates, times, ranges, counts and budgets", "(15000 - 20000), 12.06.2027 19.30, 2027-06-05, 01.06.2027 - 03.06.2027, 0930 - 1700, £12,000.",
-        "(15000 - 20000), 12.06.2027 19.30, 2027-06-05, 01.06.2027 - 03.06.2027, 0930 - 1700, £12,000."],
-    ])("finds phone numbers however they are written: %s", (_, written, passed) => {
-      expect(clientWords(written)).toBe(passed);
-    });
-
     it("never takes a name holding a phone number, and says the occasion in words with contact details taken out", async () => {
       const enquiryId = await enquiry(VENUE, WORDS, { name: "Elaine Crawford 07700 900123", guestName: null });
       await pool.query("UPDATE enquiries SET event_type = 'birthday, call 07700 900123' WHERE id = $1", [enquiryId]);
@@ -399,6 +384,11 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       await comment("client", "request_changes", "One more change, please: a later bar.", "2026-10-01T15:00:00Z");
       await ask(STAFF);
       expect(adapter.calls[3]?.context["clientLatestMessage"]).toBe("One more change, please: a later bar.");
+      // A send stamped on the proposal with no move recorded (a send after
+      // changes were asked for) counts as the latest send too.
+      await pool.query("UPDATE proposals SET sent_at = '2026-10-01T15:30:00Z' WHERE id = $1", [PROPOSAL]);
+      await ask(STAFF);
+      expect(adapter.calls[4]?.context["clientLatestMessage"]).toBeNull();
     });
 
     it("passes on only so much of the client's words", async () => {
@@ -474,5 +464,35 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       expect(answer.statusCode).toBe(200);
       expect(answer.drewOn).toEqual({ event: false, enquiry: true, clientWords: false });
     });
+  });
+});
+
+// The scrub itself, with no database: every written form a review found.
+describe("finding phone numbers in the client's words", () => {
+  const space = " ";
+  it.each([
+    ["two numbers on a line", "0141 552 1234 / 07700 900123", "(phone number) / (phone number)"],
+    ["two on consecutive lines", "07700 900123\n0141 552 1234", "(phone number)\n(phone number)"],
+    ["a number above a date", "07700 900123\n12.06.2027", "(phone number)\n12.06.2027"],
+    ["numbers with no 0 or + to start", "Call 415-555-0123 or 44 7700 900123", "Call (phone number) or (phone number)"],
+    ["dotted pairs", "Mobile 06.12.34.56.78", "Mobile (phone number)"],
+    ["a number after an abbreviation", "Tel.07700 900123, No.0141 552 1234", "Tel.(phone number), No.(phone number)"],
+    ["country codes before brackets", "+44 (0)141 552 1234, +1 (415) 555-0123 or +44 (0) 141 552 1234.", "(phone number), (phone number) or (phone number)."],
+    ["a code in brackets", "(+353) 87 123 4567", "(phone number)"],
+    ["a number in brackets, or beside some", "07700 900123 (150 guests), (07700 900123), (mobile 07700 900123).",
+      "(phone number) (150 guests), (phone number), (mobile (phone number))."],
+    ["spaces of other widths, and doubled", `07700${space}900123, 0141\t552 1234, 07700  900123 and 0141  552  1234`,
+      "(phone number), (phone number), (phone number) and (phone number)"],
+    ["dashes of every kind, and a chain of parts", "0141 – 552 1234, 0141 — 552 1234 and 0141 - 552 - 1234",
+      "(phone number), (phone number) and (phone number)"],
+    ["full-width digits", "０７７００ ９００１２３", "(phone number)"],
+    ["dates, times, ranges, counts and budgets", "(15000 - 20000), 12.06.2027 19.30, 2027-06-05, 01.06.2027 - 03.06.2027, 0930 - 1700, £12,000.",
+      "(15000 - 20000), 12.06.2027 19.30, 2027-06-05, 01.06.2027 - 03.06.2027, 0930 - 1700, £12,000."],
+    ["ranges written joined up", "12.06.2027-14.06.2027, 12-14.06.2027, 12.06-14.06.2027, budget 15000-20000, 15000 (20000 max)",
+      "12.06.2027-14.06.2027, 12-14.06.2027, 12.06-14.06.2027, budget 15000-20000, 15000 (20000 max)"],
+    ["rooms, tables, times and seasons", "Room 3, table 12, 19:30-01:00, 1 June 2027, 2027-2028 season",
+      "Room 3, table 12, 19:30-01:00, 1 June 2027, 2027-2028 season"],
+  ])("%s", (_, written, passed) => {
+    expect(clientWords(written)).toBe(passed);
   });
 });

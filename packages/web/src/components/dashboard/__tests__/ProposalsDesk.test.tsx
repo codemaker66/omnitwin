@@ -5029,4 +5029,18 @@ describe("Draft the message with AI", () => {
     expect(await panel.findByTestId("ai-draft-retry")).toBeDefined();
     expect(panel.queryByTestId("ai-draft-refused")).toBeNull();
   });
+  it("never marks the version's own saved words, brought back, as AI words not read", async () => {
+    carried();
+    mocks.getLatestProposalVersion.mockResolvedValue(version(1, { clientMessage: BODY }));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    await waitFor(() => { expect(messageOf(element)).toBe(BODY); });
+    // The same words shown again as a draft, then the message emptied and undone.
+    await drafted(element);
+    const message = panel.getByTestId("composer-message");
+    fireEvent.change(message, { target: { value: "" } });
+    fireEvent.change(message, { target: { value: BODY } });
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+  });
 });

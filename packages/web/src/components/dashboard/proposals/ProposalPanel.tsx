@@ -764,9 +764,12 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     if (body !== null) setAiSeen((seen) => (seen.includes(body) ? seen : [...seen, body]));
   }, []);
   const keptAI = keptDrafts.filter((kept) => kept.draft.aiUnread === true).map((kept) => kept.draft.message).join("\u0000");
+  // The version's own message is the venue's saved words, read as surely as
+  // any the booker said they read.
+  const savedMessage = from?.clientMessage ?? "";
   const aiWatch = useMemo(
-    () => aiWordsWatch([...aiSeen, ...(keptAI === "" ? [] : keptAI.split("\u0000"))], aiRead),
-    [aiSeen, aiRead, keptAI],
+    () => aiWordsWatch([...aiSeen, ...(keptAI === "" ? [] : keptAI.split("\u0000"))], [...aiRead, savedMessage]),
+    [aiSeen, aiRead, keptAI, savedMessage],
   );
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);

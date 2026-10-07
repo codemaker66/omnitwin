@@ -33,20 +33,36 @@ export interface MessageDraftContext {
 const EMAIL = /[^\s@<>()[\]]+@[^\s@<>()[\]]+\.[^\s@<>()[\].,;:!?]+/gu;
 
 // Phone numbers are found as people write them. A run of digits and the marks
-// numbers are written with (spaces, dots, dashes, slashes, brackets), on one
-// line, is split where one number ends and another begins; a date or a time
-// in it is kept; what is left is a phone number when it holds ten digits or
-// more, or nine from a "+", a bracket or a leading 0. So "0141 552 1234 /
-// 07700 900123" is two numbers, "415-555-0123" and "06.12.34.56.78" are
-// numbers, and "12.06.2027 19.30", "15000 - 20000" and "(150 guests)" are not.
-const NUMBER_RUN = /(?<![\d+(])[+(]?\d(?:[\d ().\-–/]*[\d)])?/gu;
-const NUMBER_BREAK = /(\s+\/\s+|\s{2,}|\s+[-–]\s+|\s+(?=\()|(?<=\))\s+)/u;
-const DATE_OR_TIME = /((?<![\d./:-])(?:\d{1,2}[./-]\d{1,2}[./-](?:\d{4}|\d{2})|\d{4}-\d{2}-\d{2}|\d{1,2}[.:]\d{2})(?![./:-]?\d))/u;
-const PHONE_START = /^[+(]?0|^\+/u;
+// numbers are written with (spaces and tabs, dots, dashes, slashes,
+// brackets), on one line, is split where one number may end and another
+// begin (wide and non-breaking spaces read as spaces once the text is
+// normalised); a date, a date range or a time in it is kept; a part is a phone
+// number when it holds ten digits or more, or nine from "+", a bracket or a
+// leading 0; and parts too short alone are joined, from one that starts like
+// a phone number, until they make one. So "0141 552 1234 / 07700 900123" is
+// two numbers, "0141 - 552 - 1234", "(+353) 87 123 4567" and "06.12.34.56.78"
+// are one each, and "12.06.2027 19.30", "15000-20000" and "(150 guests)" are
+// none.
+const NUMBER_RUN = /(?<![\d+(])[+(]{0,2}\d(?:[\d \t().\-\u2013\u2014/]*[\d)])?/gu;
+const NUMBER_BREAK = /(\s+\/\s+|\s{2,}|\s+[-\u2013\u2014]\s+|\s+(?=\()|(?<=\))\s+)/u;
+const DATE_OR_TIME = new RegExp(
+  "((?<![\\d./:-])(?:"
+    + "\\d{1,2}(?:[./]\\d{1,2}(?:[./]\\d{2,4})?)?[-\\u2013]\\d{1,2}[./]\\d{1,2}[./](?:\\d{4}|\\d{2})"
+    + "|\\d{1,2}[./-]\\d{1,2}[./-](?:\\d{4}|\\d{2})"
+    + "|\\d{4}-\\d{2}-\\d{2}"
+    + "|\\d{1,2}[.:]\\d{2}"
+    + ")(?![./:-]?\\d))",
+  "u",
+);
+// Two amounts joined by a dash, neither from a 0 ("15000-20000"): a range.
+const AMOUNT_RANGE = /^[1-9]\d{2,6}\s?[-\u2013\u2014]\s?[1-9]\d{2,6}$/u;
+const PHONE_START = /^\(?\+|^[+(]?0/u;
 
 function phoneShaped(text: string): boolean {
-  const digits = text.replace(/\D/gu, "").length;
-  return digits >= 10 || (digits === 9 && PHONE_START.test(text.trim()));
+  const trimmed = text.trim();
+  if (AMOUNT_RANGE.test(trimmed)) return false;
+  const digits = trimmed.replace(/\D/gu, "").length;
+  return digits >= 10 || (digits === 9 && PHONE_START.test(trimmed));
 }
 
 /** One written number, its dates and times kept and the rest replaced when
@@ -60,38 +76,46 @@ function scrubNumber(part: string): string {
   }).join("");
 }
 
-function scrubRun(run: string): string {
+function scrubRun(found: string): string {
+  // A closing bracket the run did not open belongs to the words around it.
+  const unopened = found.endsWith(")") && !found.includes("(");
+  const run = unopened ? found.slice(0, -1) : found;
   const pieces = run.split(NUMBER_BREAK);
   const parts: string[] = [];
   const breaks: string[] = [];
   pieces.forEach((piece, index) => { (index % 2 === 0 ? parts : breaks).push(piece); });
-  const out = parts.map(scrubNumber);
-  // A number written across a spaced dash from a leading 0 or "+" ("0141 –
-  // 552 1234"), or across its brackets ("(0141) 552 1234"), is one number
-  // when neither half is one alone; a country code before one goes with it.
-  for (let at = 0; at + 1 < parts.length; at += 1) {
-    const left = parts[at] ?? "";
-    const right = parts[at + 1] ?? "";
-    const gap = breaks[at] ?? "";
-    const dashed = /[-–]/u.test(gap) && PHONE_START.test(left.trim());
-    const bracketed = left.endsWith(")") || right.startsWith("(");
-    const untouched = out[at] === left && out[at + 1] === right;
-    const joined = scrubNumber(`${left}${gap}${right}`);
-    if ((dashed || bracketed) && untouched && joined !== `${left}${gap}${right}`) {
-      out[at] = joined;
-      out[at + 1] = "";
-      breaks[at] = "";
-      parts[at + 1] = joined;
-    } else if (/^\+\d{1,3}$/u.test(left.trim()) && out[at + 1] !== right) {
-      out[at] = "";
-      breaks[at] = "";
+  const out: string[] = [];
+  let at = 0;
+  while (at < parts.length) {
+    const part = parts[at] ?? "";
+    const alone = scrubNumber(part);
+    // A part too short to be a number alone, starting like one, takes in the
+    // parts after it (never across a spaced slash) until together they are one.
+    if (alone === part && PHONE_START.test(part.trim())) {
+      let text = part;
+      let end = at;
+      while (end + 1 < parts.length && !/\//u.test(breaks[end] ?? "")) {
+        text = `${text}${breaks[end] ?? ""}${parts[end + 1] ?? ""}`;
+        end += 1;
+        if (scrubNumber(text) !== text) break;
+      }
+      const joined = scrubNumber(text);
+      if (joined !== text) {
+        out.push(joined, breaks[end] ?? "");
+        at = end + 1;
+        continue;
+      }
     }
+    out.push(alone, breaks[at] ?? "");
+    at += 1;
   }
-  return out.map((part, index) => `${part}${breaks[index] ?? ""}`).join("");
+  return `${out.join("")}${unopened ? ")" : ""}`;
 }
 
 function scrub(text: string | null | undefined): string {
-  return (text ?? "").replace(EMAIL, "(email address)").replace(NUMBER_RUN, scrubRun).trim();
+  // Full-width digits read as digits ("０７７００" is a phone number too), and
+  // non-breaking and other wide spaces as spaces.
+  return (text ?? "").normalize("NFKC").replace(EMAIL, "(email address)").replace(NUMBER_RUN, scrubRun).trim();
 }
 
 /** The client's words with any email address or phone number taken out,
