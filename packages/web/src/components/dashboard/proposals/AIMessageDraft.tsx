@@ -25,6 +25,7 @@ type Step =
   | { readonly kind: "drafting" }
   | { readonly kind: "ready"; readonly draft: AIDraft; readonly drewOn: DrewOn }
   | { readonly kind: "failed" }
+  | { readonly kind: "refused" }
   | { readonly kind: "nothing" }
   | { readonly kind: "gone" };
 
@@ -56,9 +57,11 @@ interface AIMessageDraftProps {
   readonly canUse: boolean;
   /** Puts the draft's words in as the message; `from` is where focus was. */
   readonly onUse: (body: string, from: Element | null) => void;
+  /** The draft shown, or null: its words, copied into the message, are AI words. */
+  readonly onShown: (body: string | null) => void;
 }
 
-export function AIMessageDraft({ proposalId, canUse, onUse }: AIMessageDraftProps): ReactElement | null {
+export function AIMessageDraft({ proposalId, canUse, onUse, onShown }: AIMessageDraftProps): ReactElement | null {
   const available = useAIDraftsAvailable();
   const [step, setStep] = useState<Step>({ kind: "idle" });
   // Said to a screen reader: the draft on its way, or ready where focus could not go.
@@ -73,6 +76,8 @@ export function AIMessageDraft({ proposalId, canUse, onUse }: AIMessageDraftProp
   // has gone, is dropped.
   const askNumber = useRef(0);
   useEffect(() => () => { askNumber.current += 1; }, []);
+  useEffect(() => { onShown(step.kind === "ready" ? step.draft.body : null); }, [step, onShown]);
+  useEffect(() => () => { onShown(null); }, [onShown]);
   const askedFrom = useRef<Element | null>(null);
   const [focusTo, setFocusTo] = useState<"draft" | "button" | "retry" | "said" | null>(null);
   useEffect(() => {
@@ -81,8 +86,9 @@ export function AIMessageDraft({ proposalId, canUse, onUse }: AIMessageDraftProp
       : focusTo === "retry" ? retryRef.current : saidRef.current;
     if (target === null) return;
     setFocusTo(null);
+    // Where focus cannot go, the card's one live region says it instead.
     if (focusFree(askedFrom.current, cardRef.current)) target.focus();
-    else if (focusTo === "draft") setSaid("The AI draft is ready, under the message.");
+    else setSaid(focusTo === "draft" ? "The AI draft is ready, under the message." : target.textContent ?? "");
   }, [focusTo, step]);
 
   // Try again and Draft again take away the button pressed, so focus waits
@@ -117,19 +123,19 @@ export function AIMessageDraft({ proposalId, canUse, onUse }: AIMessageDraftProp
           setFocusTo("said");
           return;
         }
+        // Refused for this proposal as it stands (sent from elsewhere meanwhile,
+        // say): asking again would be refused again.
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) {
+          setStep({ kind: "refused" });
+          setFocusTo("said");
+          return;
+        }
         setStep({ kind: "failed" });
         setFocusTo("retry");
       });
   };
 
-  if (step.kind === "gone") {
-    return (
-      <p className="enq-next__hint" role="status" ref={saidRef} tabIndex={-1} data-testid="ai-draft-gone">
-        AI drafts are not available now. The message is unchanged.
-      </p>
-    );
-  }
-  if (available !== true) return null;
+  if (step.kind !== "gone" && available !== true) return null;
 
   const drafting = step.kind === "drafting";
   const ready = step.kind === "ready" ? step : null;
@@ -139,6 +145,16 @@ export function AIMessageDraft({ proposalId, canUse, onUse }: AIMessageDraftProp
   return (
     <div className="pr-ai" ref={cardRef} data-testid="ai-draft">
       <p className="vv-sr-only" role="status" data-testid="ai-draft-said">{said}</p>
+      {step.kind === "gone" && (
+        <p className="enq-next__hint" ref={saidRef} tabIndex={-1} data-testid="ai-draft-gone">
+          AI drafts are not available now. The message is unchanged.
+        </p>
+      )}
+      {step.kind === "refused" && (
+        <p className="enq-next__hint" ref={saidRef} tabIndex={-1} data-testid="ai-draft-refused">
+          A draft cannot be written for this proposal as it stands. The message is unchanged.
+        </p>
+      )}
       {(step.kind === "idle" || drafting) && (
         <div className="enq-actions">
           <button type="button" className="enq-quiet" ref={buttonRef} data-testid="ai-draft-ask" aria-busy={drafting}
@@ -149,7 +165,7 @@ export function AIMessageDraft({ proposalId, canUse, onUse }: AIMessageDraftProp
         </div>
       )}
       {step.kind === "nothing" && (
-        <p className="enq-next__hint" role="status" ref={saidRef} tabIndex={-1} data-testid="ai-draft-nothing">
+        <p className="enq-next__hint" ref={saidRef} tabIndex={-1} data-testid="ai-draft-nothing">
           There is nothing for AI to draft from yet: this proposal has no event details, enquiry or message from the client. The message is unchanged.
         </p>
       )}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { LAYOUT_STYLES, MAX_CLIENT_MESSAGE_LENGTH, occasionLabel, type LayoutStyle, type ProposalNextVersion } from "@omnitwin/types";
 import { ArrowLeft, ArrowUpRight, ChevronDown, ChevronUp, Sparkles, X } from "lucide-react";
 import type { DeskProposal, ProposalCommentRow, ProposalHistoryEntry, StaffProposalVersion } from "../../../api/proposals.js";
@@ -10,7 +10,7 @@ import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { commentAuthor } from "../../proposal/proposal-document-format.js";
 import { eventDateParts, eventLead, eventWeekday, venueMoment } from "../enquiries/enquiry-desk-format.js";
 import {
-  EMPTY_LINE, checkIsFor, lineHasWords, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
+  EMPTY_LINE, aiWordsWatch, checkIsFor, lineHasWords, composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, droppedChanges, historyMoments,
   layoutChoice, layoutFact, linkOpenedSentence, linkVersionWords, notCarriedWords, putAsideWords, savedLayoutWords, type ComposerDraft,
   type KeptVersion, type LayoutChoice, type QuoteLineDraft, type TakenCheck,
 } from "./proposals-desk-format.js";
@@ -681,7 +681,7 @@ let composers = 0;
 
 function ComposerForm(props: ComposerFormProps): ReactElement {
   const {
-    proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain, seeded, nowMs,
+    proposal, latest, next: checkRead, lastCheck, checkRetrying, spaces, working, failure, memory, startedAgain, seeded, nowMs, keptDrafts,
     onSaveVersion, onRetryCheck, onStartAgain, onFresh, onFocused, onGoing, onSeed, onTemplateWork, report,
   } = props;
   const layoutLine = composerLayoutLine(proposal);
@@ -753,9 +753,17 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
   const [aiSaid, setAiSaid] = useState<{ readonly n: number; readonly text: string } | null>(null);
   const sayAI = (text: string): void => { setAiSaid((said) => ({ n: (said?.n ?? 0) + 1, text })); };
   useEffect(() => { if (draft.aiUnread !== true) setAiSaid(null); }, [draft.aiUnread]);
-  // AI wording emptied from the message, so that brought back (an undo, a
-  // paste) is marked again rather than slipping past the read-through.
-  const aiCleared = useRef<string | null>(null);
+  // The AI texts in play here: the draft used (until read through, and still
+  // when the words come back from memory), the one the card shows, and unread
+  // AI words kept to copy. AI words brought into the message from any of them
+  // (an undo, a paste, a copy) are marked again.
+  const [aiUsed, setAiUsed] = useState<string | null>(() => (draft.aiUnread === true ? draft.message : null));
+  const [aiShown, setAiShown] = useState<string | null>(null);
+  const keptAI = keptDrafts.filter((kept) => kept.draft.aiUnread === true).map((kept) => kept.draft.message).join("\u0000");
+  const aiWatch = useMemo(
+    () => aiWordsWatch([aiUsed ?? "", aiShown ?? "", ...(keptAI === "" ? [] : keptAI.split("\u0000"))]),
+    [aiUsed, aiShown, keptAI],
+  );
   const saving = working === "version";
   const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLine, setFocusLine] = useState<number | null>(null);
@@ -889,7 +897,7 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
     const words = draftNow.current;
     const used: ComposerDraft = { ...words, message: body, aiUnread: true };
     const unsaved = words.message.trim() !== "" && words.message.trim() !== (from?.clientMessage ?? "").trim();
-    aiCleared.current = null;
+    setAiUsed(body);
     if (unsaved) {
       onStartAgain(composer, words, from === null ? null : basedOn, "Kept when you used the AI draft.");
       onSeed({ draft: used, applied: null, focus: "message", from: focusFrom });
@@ -960,15 +968,11 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
             data-ai-unread={draft.aiUnread === true ? "" : undefined} aria-describedby={draft.aiUnread === true ? aiMarkerId : undefined}
             onChange={(event) => {
               // An emptied message holds no AI wording left to read through;
-              // the AI's words brought back are marked again.
+              // AI words brought in are marked again.
               const message = event.target.value;
               let aiUnread = draft.aiUnread === true;
-              if (aiUnread && message.trim() === "") {
-                aiCleared.current = draft.message;
-                aiUnread = false;
-              } else if (!aiUnread && aiCleared.current !== null && message.trim() !== "" && message.includes(aiCleared.current.trim())) {
-                aiUnread = true;
-              }
+              if (aiUnread && message.trim() === "") aiUnread = false;
+              else if (!aiUnread && aiWatch(draft.message, message)) aiUnread = true;
               setDraft((current) => ({ ...current, message, aiUnread }));
             }} />
         </label>
@@ -978,13 +982,13 @@ function ComposerForm(props: ComposerFormProps): ReactElement {
             <span className="pr-ai__chip" aria-hidden="true">Draft</span>
             <span id={aiMarkerId}>AI wording, not yet read through.</span>
             <button type="button" className="enq-quiet" ref={aiReadRef} data-testid="ai-read" disabled={saving}
-              onClick={() => { aiCleared.current = null; setDraft((current) => ({ ...current, aiUnread: false })); messageRef.current?.focus(); }}>
+              onClick={() => { setAiUsed(null); setDraft((current) => ({ ...current, aiUnread: false })); messageRef.current?.focus(); }}>
               I have read it
             </button>
           </p>
         )}
         <p className="vv-sr-only" role="status" data-testid="ai-said">{aiSaid !== null && <span key={aiSaid.n}>{aiSaid.text}</span>}</p>
-        <AIMessageDraft proposalId={proposal.id} canUse={!held} onUse={takeAIDraft} />
+        <AIMessageDraft proposalId={proposal.id} canUse={!held} onUse={takeAIDraft} onShown={setAiShown} />
         <label className="pr-field">
           <span>Capacity note</span>
           <input data-testid="composer-capacity" maxLength={500} value={draft.capacityNote} disabled={saving}

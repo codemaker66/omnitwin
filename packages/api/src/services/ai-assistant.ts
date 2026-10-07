@@ -151,7 +151,7 @@ export function buildAIDraftPrompt(input: CreateAIDraftRequest): string {
     "Do not claim certification, legal compliance, fire approval, occupancy approval, guaranteed accessibility, production readiness, or photoreal digital-twin status.",
     "The output is draft-only, AI-generated, unverified, and requires human review before it is used.",
     `Use case: ${input.useCase}.`,
-    `Tone: ${tone}.`,
+    `Tone: ${tone.replace(/\.+$/u, "")}.`,
     "Structured context:",
     stableCanonicalJson(input.context),
   ].join("\n");

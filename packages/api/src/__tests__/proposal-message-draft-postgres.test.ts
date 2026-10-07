@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { AIAssistantStatusSchema, ProposalMessageDraftSchema, type AIAssistantStatus, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
+import { AIAssistantStatusSchema, ProposalMessageDraftSchema, occasionLabel, type AIAssistantStatus, type AIDraft, type ProposalMessageDraft } from "@omnitwin/types";
 import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
 import { proposalMessageDraftRoutes } from "../routes/proposal-message-draft.js";
@@ -86,7 +86,7 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
   const adapter = new RecordingAdapter();
   const fixtureSchema = `proposal_message_draft_${randomUUID().replaceAll("-", "")}`;
   const looseTables: PgTable[] = [schema.venues, schema.users, schema.spaces, schema.proposals, schema.enquiries,
-    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments];
+    schema.opportunities, schema.configurations, schema.contacts, schema.proposalComments, schema.proposalVersions];
 
   async function ask(who: Person | null, id = PROPOSAL, payload?: Record<string, unknown>): Promise<{
     statusCode: number; code?: string; draft?: AIDraft; drewOn?: ProposalMessageDraft["drewOn"];
@@ -274,7 +274,7 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       // The deal's facts over the enquiry's, its contact's name, the enquiry's words.
       expect(told?.context).toEqual({
         clientName: "Elaine Crawford-Bell",
-        occasion: "wedding",
+        occasion: occasionLabel("wedding"),
         eventDate: "2027-06-05",
         guestCount: 160,
         roomName: "Grand Hall",
@@ -291,7 +291,7 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       const prompt = adapter.calls[0]?.prompt ?? "";
       expect(prompt).toContain("You are drafting the message a venue's events team sends their client with a proposal");
       expect(prompt).toContain("a fact that is missing or null is unknown, so do not invent dates, rooms, guest numbers, prices, availability or confirmations");
-      expect(prompt).toContain("Tone: Warm, plain British English, brief, from the venue's events team to their client..");
+      expect(prompt).toContain("Tone: Warm, plain British English, brief, from the venue's events team to their client.");
       expect(prompt).not.toContain("internal Venviewer planning support text");
     });
 
@@ -312,16 +312,41 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       expect(told?.prompt).not.toContain("@");
     });
 
+    it("never takes a name holding a phone number, and says the occasion in words with contact details taken out", async () => {
+      const enquiryId = await enquiry(VENUE, WORDS, { name: "Elaine Crawford 07700 900123", guestName: null });
+      await pool.query("UPDATE enquiries SET event_type = 'birthday, call 07700 900123' WHERE id = $1", [enquiryId]);
+      await proposal({ enquiryId });
+      await ask(STAFF);
+      expect(adapter.calls[0]?.context["clientName"]).toBeNull();
+      expect(adapter.calls[0]?.context["occasion"]).toBe("birthday, call (phone number)");
+      expect(JSON.stringify(adapter.calls[0]?.context)).not.toMatch(/07700/u);
+
+      await pool.query("DELETE FROM proposals");
+      await pool.query("UPDATE enquiries SET event_type = 'reception' WHERE id = $1", [enquiryId]);
+      await proposal({ enquiryId });
+      await ask(STAFF);
+      expect(adapter.calls[1]?.context["occasion"]).toBe(occasionLabel("reception"));
+      expect(adapter.calls[1]?.context["occasion"]).not.toBe("reception");
+    });
+
     it("prefers the name the guest gave to the enquiry's stored name", async () => {
       await proposal({ enquiryId: await enquiry(VENUE, WORDS, { name: "elaine@example.org", guestName: "Elaine Crawford" }) });
       await ask(STAFF);
       expect(adapter.calls[0]?.context["clientName"]).toBe("Elaine Crawford");
     });
 
-    it("takes email addresses and phone numbers out of the client's words, and keeps dates and numbers of guests", async () => {
-      await proposal({ enquiryId: await enquiry(VENUE, "Call me on 07700 900123, or +44 141 552 1234, or write to elaine.c@example.org. We're 150 on 05-06-2027.") });
+    it("takes email addresses and phone numbers out of the client's words, and keeps dates, times, guests and budgets", async () => {
+      await proposal({ enquiryId: await enquiry(VENUE, [
+        "Call me on 07700 900123, +44 141 552 1234, 0141 – 552 1234, 07700/900123, (0141) 552 1234 or Dublin 01 234 5678,",
+        "or write to elaine.c@example.org.",
+        "We're 150 on 05-06-2027, or 12.06.2027 - 14.06.2027 at 19.30, budget 15000 - 20000, 12.06.2027 (150 guests), 0930 - 1700, 12.06.2027 19.30.",
+      ].join(" ")) });
       await ask(STAFF);
-      expect(adapter.calls[0]?.context["clientNotes"]).toBe("Call me on (phone number), or (phone number), or write to (email address). We're 150 on 05-06-2027.");
+      expect(adapter.calls[0]?.context["clientNotes"]).toBe([
+        "Call me on (phone number), (phone number), (phone number), (phone number), (phone number) or Dublin (phone number),",
+        "or write to (email address).",
+        "We're 150 on 05-06-2027, or 12.06.2027 - 14.06.2027 at 19.30, budget 15000 - 20000, 12.06.2027 (150 guests), 0930 - 1700, 12.06.2027 19.30.",
+      ].join(" "));
       expect(clientWords("  ")).toBeNull();
       expect(clientWords("Budget 12,000 to 15,000.")).toBe("Budget 12,000 to 15,000.");
     });
@@ -332,9 +357,24 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       await comment("client", "comment", "And could we finish at one rather than midnight?", "2026-10-01T12:00:00Z");
       await comment("client", "approval_note", "An approval note is not a message.", "2026-10-01T12:30:00Z");
       await comment("staff", "comment", "We will look at both.", "2026-10-01T13:00:00Z");
+      // Another proposal's client, later still, is not this client.
+      const other = randomUUID();
+      await pool.query("INSERT INTO proposals (id, venue_id, title, status, current_version, created_by) VALUES ($1, $2, 'Another', 'draft', 0, $3)", [other, VENUE, STAFF.id]);
+      await pool.query(
+        "INSERT INTO proposal_comments (id, proposal_id, kind, body, is_client_visible, author_type, created_at) VALUES ($1, $2, 'comment', 'Another proposal client.', true, 'client', '2026-10-02T09:00:00Z')",
+        [randomUUID(), other],
+      );
       const answer = await ask(STAFF);
       expect(answer.drewOn).toEqual({ event: true, enquiry: true, clientWords: true });
       expect(adapter.calls[0]?.context["clientLatestMessage"]).toBe("And could we finish at one rather than midnight?");
+
+      // A version saved since answers them: only words after it are passed on.
+      await pool.query("INSERT INTO proposal_versions (id, proposal_id, version, payload, created_at) VALUES ($1, $2, 2, '{}', '2026-10-01T14:00:00Z')", [randomUUID(), PROPOSAL]);
+      await ask(STAFF);
+      expect(adapter.calls[1]?.context["clientLatestMessage"]).toBeNull();
+      await comment("client", "request_changes", "One more change, please: a later bar.", "2026-10-01T15:00:00Z");
+      await ask(STAFF);
+      expect(adapter.calls[2]?.context["clientLatestMessage"]).toBe("One more change, please: a later bar.");
     });
 
     it("passes on only so much of the client's words", async () => {
@@ -359,6 +399,14 @@ describe.skipIf(testUrl === undefined)("proposal message drafts on isolated Post
       await proposal({ opportunityId: await dealWithContact(theirs, "Removed Deal Contact", { dealDeleted: true }), enquiryId });
       await ask(STAFF);
       expect(adapter.calls[1]?.context).toMatchObject({ clientName: "Elaine Crawford", clientNotes: WORDS });
+
+      // A removed deal alone: its enquiry is not read either, so there is
+      // nothing to draft from.
+      await pool.query("DELETE FROM proposals");
+      await proposal({ opportunityId: await dealWithContact(theirs, "Removed Deal Only", { dealDeleted: true }) });
+      const nothing = await ask(STAFF);
+      expect(nothing.statusCode).toBe(422);
+      expect(adapter.calls).toHaveLength(2);
 
       // A removed contact on a live deal: the enquiry's name stands.
       await pool.query("DELETE FROM proposals");

@@ -278,6 +278,48 @@ export interface ComposerDraft {
 
 export const EMPTY_DRAFT: ComposerDraft = { message: "", capacityNote: "", lines: [] };
 
+/** How much AI wording, in characters, a message must take in to count as
+ *  bringing AI words back: more than any greeting or phrase two writers share. */
+export const AI_WORDS_RUN = 40;
+
+function flat(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
+}
+
+function runsOf(text: string): Set<string> {
+  const runs = new Set<string>();
+  for (let at = 0; at + AI_WORDS_RUN <= text.length; at += 1) runs.add(text.slice(at, at + AI_WORDS_RUN));
+  return runs;
+}
+
+/** Watches for AI wording the booker has not read coming into the message:
+ *  given the AI texts in play (a draft used, one shown, an unread kept copy),
+ *  whether a change from `before` to `after` brings in a run of their words
+ *  (or a short one whole) that `before` did not hold, as an undo, a paste or
+ *  a copy from the draft does. Typing, deleting a little at a time and
+ *  editing words already there never do. */
+export function aiWordsWatch(sources: readonly string[]): (before: string, after: string) => boolean {
+  const watched = new Set<string>();
+  const whole: string[] = [];
+  for (const source of sources.map(flat)) {
+    if (source.length >= AI_WORDS_RUN) for (const run of runsOf(source)) watched.add(run);
+    else if (source !== "") whole.push(source);
+  }
+  return (before, after) => {
+    const now = flat(after);
+    const was = flat(before);
+    if (whole.some((source) => now.includes(source) && !was.includes(source))) return true;
+    let had: Set<string> | null = null;
+    for (let at = 0; at + AI_WORDS_RUN <= now.length; at += 1) {
+      const run = now.slice(at, at + AI_WORDS_RUN);
+      if (!watched.has(run)) continue;
+      had ??= runsOf(was);
+      if (!had.has(run)) return true;
+    }
+    return false;
+  };
+}
+
 /** A version that did not save, and which composer wrote it: that composer
  *  still holds the words; once it is gone they are shown to copy. `why` says
  *  why words never sent were put aside (the proposal moved on while they were

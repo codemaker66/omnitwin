@@ -5,7 +5,7 @@ import {
   composerLayoutLine, composerStartWords, draftChanges, draftDiffers, draftFromVersion, groupOf, layoutChoice, layoutFact, groupRows, historyMoments,
   linkVersionWords, savedLayoutWords,
   listWords, droppedChanges, notCarriedWords, proposalTone, proposalsSummary, putAsideWords, rowDetails, rowWhen, sameWords, startedAgainWords,
-  takenChanges,
+  takenChanges, aiWordsWatch,
 } from "../proposals-desk-format.js";
 
 // ---------------------------------------------------------------------------
@@ -377,5 +377,41 @@ describe("leaving the client's layout out, and putting it back", () => {
     expect(savedLayoutWords(layoutChoice(leftOut), check("removed", 1), 2)).toBeNull();
     expect(savedLayoutWords(layoutChoice(leftOut), null, 2)).toBeNull();
     expect(savedLayoutWords(null, check("removed"), 2)).toBeNull();
+  });
+});
+
+describe("AI words coming back into the message", () => {
+  const AI = "Dear Elaine, thank you for thinking of Trades Hall for your wedding on Friday 20 November. We would be glad to welcome you.";
+
+  it("sees an undo or a paste of the AI's words, whole or in part, and a copy from the draft", () => {
+    const watch = aiWordsWatch([AI]);
+    expect(watch("", AI)).toBe(true);
+    expect(watch("My own words. ", `My own words. ${AI.slice(13, 70)}`)).toBe(true);
+    // Line breaks and doubled spaces in the paste do not hide it.
+    expect(watch("", AI.replace(/ /gu, "\n  "))).toBe(true);
+  });
+
+  it("never sees typing, deleting a little at a time, or editing words already there", () => {
+    const watch = aiWordsWatch([AI]);
+    let before = AI;
+    for (let cut = AI.length - 1; cut >= 0; cut -= 1) {
+      expect(watch(before, AI.slice(0, cut))).toBe(false);
+      before = AI.slice(0, cut);
+    }
+    let typed = "";
+    for (const letter of "Dear Mr Crawford, thank you for your note.") {
+      expect(watch(typed, typed + letter)).toBe(false);
+      typed += letter;
+    }
+    expect(watch(AI, AI.replace("Friday", "Saturday"))).toBe(false);
+    expect(watch(AI, `${AI} With warm wishes.`)).toBe(false);
+  });
+
+  it("sees a short AI text only whole, and nothing when no AI text is in play", () => {
+    const short = aiWordsWatch(["Thank you, Elaine."]);
+    expect(short("", "Thank you, Elaine. See you soon.")).toBe(true);
+    expect(short("", "Thank you, Iain.")).toBe(false);
+    expect(aiWordsWatch([])("", AI)).toBe(false);
+    expect(aiWordsWatch(["", "  "])("", AI)).toBe(false);
   });
 });

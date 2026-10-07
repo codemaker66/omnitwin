@@ -4531,7 +4531,7 @@ describe("Draft the message with AI", () => {
     expect(mocks.draftProposalMessage).not.toHaveBeenCalled();
   });
 
-  it("drafts from the proposal alone, says so while it does, and shows the draft in heather as AI wording not checked", async () => {
+  it("drafts from the proposal alone, says so while it does, and shows the draft apart, in its ivory card, as AI wording not checked", async () => {
     const answer = later<Record<string, unknown>>();
     mocks.draftProposalMessage.mockReturnValueOnce(answer.promise);
     render(<ProposalsDesk />);
@@ -4703,7 +4703,6 @@ describe("Draft the message with AI", () => {
     const panel = within(element);
     fireEvent.click(await panel.findByTestId("ai-draft-ask"));
     const gone = await panel.findByTestId("ai-draft-gone");
-    expect(gone.getAttribute("role")).toBe("status");
     expect(gone.textContent).toBe("AI drafts are not available now. The message is unchanged.");
     expect(mocks.markAIDraftsUnavailable).toHaveBeenCalledTimes(1);
     expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
@@ -4818,7 +4817,6 @@ describe("Draft the message with AI", () => {
     fireEvent.change(await panel.findByTestId("composer-message"), { target: { value: "My own words." } });
     fireEvent.click(panel.getByTestId("ai-draft-ask"));
     const nothing = await panel.findByTestId("ai-draft-nothing");
-    expect(nothing.getAttribute("role")).toBe("status");
     expect(nothing.textContent).toBe(
       "There is nothing for AI to draft from yet: this proposal has no event details, enquiry or message from the client. The message is unchanged.");
     expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
@@ -4923,5 +4921,93 @@ describe("Draft the message with AI", () => {
     await waitFor(() => {
       expect(within(form).queryByText("The message holds AI wording not yet read through. Press I have read it under the message first.")).toBeNull();
     });
+  });
+  it("never marks the booker's own words after a draft is deleted a little at a time", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(within(await drafted(element)).getByTestId("ai-draft-use"));
+    const message = panel.getByTestId("composer-message");
+    for (let cut = BODY.length - 1; cut >= 0; cut -= 7) fireEvent.change(message, { target: { value: BODY.slice(0, cut) } });
+    fireEvent.change(message, { target: { value: "" } });
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+    let typed = "";
+    for (const letter of "Dear Mr Crawford, thank you for your note.") {
+      typed += letter;
+      fireEvent.change(message, { target: { value: typed } });
+    }
+    expect(panel.queryByTestId("ai-unread")).toBeNull();
+    // The draft brought back whole (an undo) is marked again.
+    fireEvent.change(message, { target: { value: `${typed} ${BODY}` } });
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+  });
+
+  it("marks words copied from the draft shown, and from a kept copy not yet read through", async () => {
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    await drafted(element);
+    const message = panel.getByTestId("composer-message");
+    fireEvent.change(message, { target: { value: `My own start. ${BODY.slice(13)}` } });
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+
+    // Kept to copy by Start again, then pasted into the fresh composer.
+    fireEvent.click(within(panel.getByTestId("ai-draft-block")).getByTestId("ai-draft-away"));
+    fireEvent.click(panel.getByTestId("composer-start-again"));
+    expect(within(await panel.findByTestId("kept-version")).getByTestId("kept-ai-unread")).toBeDefined();
+    await waitFor(() => { expect(messageOf(element)).toBe(""); });
+    fireEvent.change(panel.getByTestId("composer-message"), { target: { value: `My own start. ${BODY.slice(13)}` } });
+    expect(panel.getByTestId("ai-unread")).toBeDefined();
+  });
+
+  it("still marks AI words brought back after the booker leaves the proposal and comes back", async () => {
+    existing = [proposal(), proposal({ id: "p2", title: "Spring ball" })];
+    render(<ProposalsDesk />);
+    const first = await openProposal();
+    fireEvent.click(within(await drafted(first)).getByTestId("ai-draft-use"));
+    await openProposal("p2", "Spring ball");
+    const back = await openProposal();
+    await waitFor(() => { expect(messageOf(back)).toBe(BODY); });
+    const message = within(back).getByTestId("composer-message");
+    fireEvent.change(message, { target: { value: "" } });
+    expect(within(back).queryByTestId("ai-unread")).toBeNull();
+    fireEvent.change(message, { target: { value: BODY } });
+    expect(within(back).getByTestId("ai-unread")).toBeDefined();
+  });
+
+  it("says plainly when a draft is refused for the proposal as it stands, with no Try again that cannot work", async () => {
+    mocks.draftProposalMessage.mockRejectedValueOnce(new ApiError(422, "Proposal content is frozen", "NOT_EDITABLE"));
+    render(<ProposalsDesk />);
+    const element = await openProposal();
+    const panel = within(element);
+    fireEvent.click(await panel.findByTestId("ai-draft-ask"));
+    const refused = await panel.findByTestId("ai-draft-refused");
+    expect(refused.textContent).toBe("A draft cannot be written for this proposal as it stands. The message is unchanged.");
+    expect(panel.queryByTestId("ai-draft-retry")).toBeNull();
+    expect(panel.queryByTestId("ai-draft-ask")).toBeNull();
+    expect(mocks.markAIDraftsUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("says that AI is not available, or that there is nothing to draft from, where focus cannot go", async () => {
+    for (const [error, words] of [
+      [new ApiError(503, "Off", "AI_ASSISTANT_DISABLED"), "AI drafts are not available now. The message is unchanged."],
+      [new ApiError(422, "Nothing", "NOTHING_TO_DRAFT_FROM"),
+        "There is nothing for AI to draft from yet: this proposal has no event details, enquiry or message from the client. The message is unchanged."],
+    ] as const) {
+      let refuse: (reason: unknown) => void = () => undefined;
+      mocks.draftProposalMessage.mockReturnValueOnce(new Promise((_, no) => { refuse = no; }));
+      render(<ProposalsDesk />);
+      const element = await openProposal();
+      const panel = within(element);
+      const ask = await panel.findByTestId("ai-draft-ask");
+      ask.focus();
+      fireEvent.click(ask);
+      const capacity = panel.getByTestId("composer-capacity");
+      capacity.focus();
+      await act(async () => { refuse(error); await Promise.resolve(); });
+      await waitFor(() => { expect(panel.getByTestId("ai-draft-said").textContent).toBe(words); });
+      expect(document.activeElement).toBe(capacity);
+      cleanup();
+    }
   });
 });
