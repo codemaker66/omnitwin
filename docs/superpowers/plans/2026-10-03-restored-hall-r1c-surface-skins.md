@@ -12302,7 +12302,7 @@ Expected: `OK`. Then:
 ```bash
 R=D:/claude/real-hall/runpod/remote-relight.sh       # R1a's runner: v1 was built on the pod, so v2 is too
 P=/workspace/relight/D/claude                            # the pod's mirror of D:/claude
-cd /d && find claude/skins/grand-hall/work/geometry claude/relight/grand-hall/work/skin-light claude/splats/trades-hall/grand-hall/skins/v1 -type f | sort | xargs -d '\n' sha256sum -b > claude/real-hall/runpod/manifests/task15-inputs.sha256
+cd /d && find claude/skins/grand-hall/work/geometry claude/relight/grand-hall/work/skin-light claude/relight/grand-hall/evidence/skin-light.json claude/splats/trades-hall/grand-hall/skins/v1 -type f | sort | xargs -d '\n' sha256sum -b > claude/real-hall/runpod/manifests/task15-inputs.sha256   # skin-light.json: records --skin-light reads the folder only when this evidence matches (R1a Task 5)
 $R start
 $R sync-inputs D:/claude/real-hall/runpod/manifests/task15-inputs.sha256
 $R run --name t15-records-run1 -- records --skins $P/skins/grand-hall/work/geometry --skin-light $P/relight/grand-hall/work/skin-light --skin-package $P/splats/trades-hall/grand-hall/skins/v1 --out $P/splats/trades-hall/grand-hall/relight/v2

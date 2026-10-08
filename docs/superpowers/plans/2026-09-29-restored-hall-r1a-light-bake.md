@@ -85,7 +85,7 @@ The controller's decision of 30 September, confirmed on 3 October: the runtime m
     - The tool on the pod must be a git checkout of the committed HEAD, so P1's `git status` and `rev-parse` checks run unchanged there. No GitHub credential goes to the pod:
       - `git bundle create <file> HEAD` on the PC;
       - the bundle goes up with its SHA-256;
-      - `git clone <bundle> /workspace/relight/repo` then `git checkout <commit>` on the pod;
+      - `git clone <bundle> /workspace/relight/D/claude/real-hall/repo` then `git checkout <commit>` on the pod (the path the runner's `launch` runs `tools/relight` from, the pod's mirror of `D:/claude/real-hall/repo`);
       - `git rev-parse HEAD` on the pod must equal the PC's.
     - Today the runner's `push-tool` sends a `git archive`. Task 4b's implementer changes it to this bundle path (in `D:/claude/real-hall/runpod/remote-relight.sh` and its README) before any step whose output is kept.
   - **Returning outputs.** Outputs come back only by exact path, through `pull`, which writes nothing unless the SHA-256 matches.
