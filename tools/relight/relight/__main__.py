@@ -165,6 +165,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("command")
     ap.add_argument("step", nargs="?")
     ap.add_argument("--config", required=True)
+    ap.add_argument("--from", dest="source", default=None)   # refit-house promote: the staging work folder (Task 4b)
+    ap.add_argument("--w-crown", dest="w_crown", type=float, default=None)   # refit-house refit: a sensitivity run's w_crown
+    ap.add_argument("--tag", default=None)                    # refit-house compare | install: a refit's folder (default refit)
     args = ap.parse_args(argv)
     cfg_path = os.path.abspath(args.config)
     cfg = config.load(cfg_path)
@@ -768,6 +771,185 @@ def cmd_floor(cfg, args) -> int:
 
 
 COMMANDS["floor"] = cmd_floor
+
+
+def cmd_refit_house(cfg, args) -> int:
+    """The house lights refitted (Task 4b, housefit.py). `proof` runs 04_fit.py's own model through the loop (the
+    baseline: it must reproduce this work's fit.json); `refit` the refit at the table's measured w_crown (with
+    bulb-intensities.json), or with --w-crown <w> a sensitivity run at that w (folder refit-wcrown-<w>); each writes
+    <work>/refit/<folder>/ and never touches the fit the work uses. `compare [--tag <folder>]` checks a refit's two runs
+    (refit/<folder> against refit/<folder>-run1; default the refit); `install [--tag <folder>]` puts a refit into this
+    (staging) work, the default only when accepted and reproduced, a sensitivity run when its two runs agree;
+    `photo-gate` holds 07_compare's night metrics (<work>/cmp/metrics.json) to the baseline's; `sensitivity` compares
+    the refit with both sensitivity runs (data cost, the ch_centre share at the floor and the ceiling, the night photos
+    against their run-to-run noise) and fails when the photos clearly prefer an end; `promote --from <staging work>`
+    keeps this work's proof fit in <work>/fit-proof/ and copies the accepted refit, its embrasure light and its
+    multipliers in, and only when every gate passed, the range-aware balance of ruling L4 included; refused, it copies
+    nothing and records why. Evidence: <evidence>/refit/*.json (staging) and <evidence>/refit.json (promote, either way).
+    CPU only."""
+    from . import housefit as HF
+    mode, work = args.step, cfg.paths["work"]
+    refit_dir, ev_dir = os.path.join(work, "refit"), os.path.join(cfg.paths["evidence"], "refit")
+    os.makedirs(ev_dir, exist_ok=True)
+    tag = args.tag or HF.DEFAULT_TAG
+    suffix = "" if tag == HF.DEFAULT_TAG else f"-{tag}"            # evidence names: compare.json, compare-<tag>.json
+
+    def write_json(path, data):
+        part = path + ".part"
+        with open(part, "w", encoding="utf-8") as f:
+            json.dump(_finite(data), f, indent=1, sort_keys=True, allow_nan=False)
+        os.replace(part, path)
+
+    def read_json(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    if mode in ("proof", "refit"):
+        common, lt, radiosity, fit04 = _proof_modules()
+        import torch
+        import store as store_mod
+        if fit04.LAMP_RATIO is None:
+            print(f"FAIL: {work}/lamp_daylight_ratio.json is missing (04_fit.LAMP_RATIO)", flush=True)
+            return 1
+        current = read_json(os.path.join(work, "fit.json"))
+        if (current.get("model") or {}).get("name") == "refit":
+            print("FAIL: this work's fit.json is already the refit; both fits start from the proof fit's tables", flush=True)
+            return 1
+        k = HF.FitConstants.of(fit04)
+        mods = {"fit04": fit04, "radiosity": radiosity, "store": store_mod, "lt": lt, "torch": torch}
+        out_dir, bulbs, counts = os.path.join(refit_dir, mode), None, None
+        if mode == "proof":
+            model = HF.ProofModel(fit04.LAMP_RATIO)
+        else:
+            with np.load(os.path.join(work, "geom.npz")) as z:
+                centres = np.asarray(z["chandeliers"], np.float64)
+            bulbs = HF.read_bulbs(cfg.paths["emitters"], centres, common.T_JE)
+            if args.w_crown is None:
+                counts = HF.lamp_counts(bulbs, bulbs["crownWeight"]["wCrown"])
+            else:
+                counts = HF.lamp_counts(bulbs, args.w_crown)
+                out_dir = os.path.join(refit_dir, HF.variant_tag(args.w_crown))
+            model = HF.RefitModel(fit04.LAMP_RATIO, counts, HF.colour_priors(read_json(cfg.paths["lampColours"])))
+        started = time.time()
+        report = HF.run_capture_fit(model, k, mods, out_dir, write_ecap=(mode == "refit"), log=lambda line: print(line, flush=True))
+        report["threads"] = THREADS
+        ok = True
+        if mode == "proof":
+            a, b = np.asarray(current["weights"], np.float64), np.asarray(report["weights"], np.float64)
+            both = (a >= 1e-6) & (b >= 1e-6)
+            change = float(np.max(np.abs(b[both] - a[both]) / a[both]))
+            ok = bool(change <= HF.REPRODUCE_TOLERANCE and int(both.sum()) >= 8)
+            report["reproduction"] = {"maxRelWeightChange": change, "weightsCompared": int(both.sum()),
+                                      "tolerance": HF.REPRODUCE_TOLERANCE, "pass": ok}
+        else:
+            report["bulbs"] = {"path": cfg.paths["emitters"], "sha256": bulbs["sha256"], "notLamps": bulbs["notLamps"],
+                               "counts": {str(c): n for c, n in bulbs["counts"].items()}, "crowns": bulbs["crowns"],
+                               "crownWeightMeasured": bulbs["crownWeight"], "wCrown": counts.w_crown,
+                               "blobBalance": bulbs["blobBalance"]}
+            write_json(os.path.join(out_dir, "bulb-intensities.json"),
+                       HF.bulb_shares(bulbs, counts, report, HF.sha256_file(os.path.join(out_dir, "fit.json"))))
+            report["bulbs"]["rangeBalance"] = bulbs["rangeBalance"]
+            if args.w_crown is None:   # ruling L4: the bulb table's own check, a gate of promote
+                write_json(os.path.join(ev_dir, "range-balance.json"), bulbs["rangeBalance"])
+            rb = bulbs["rangeBalance"]
+            print(f"range balance (L4): centre {rb['balance']} log2 against the ends, limit {rb['limit']} "
+                  f"(end spreads {json.dumps(rb['endSpreads'])}): {'PASS' if rb['pass'] else 'STOP: ' + str(rb['reason'])}", flush=True)
+        write_json(os.path.join(out_dir, "report.json"), report)
+        print(f"refit-house {mode} -> {out_dir}: data cost {report['dataCost']:.6f}, weights {json.dumps(report['weights'])}, "
+              f"{'PASS' if ok else 'FAIL'}, {time.time() - started:.0f} s", flush=True)
+        return 0 if ok else 1
+    if mode == "compare":
+        run_a, run_b = os.path.join(refit_dir, f"{tag}-run1"), os.path.join(refit_dir, tag)
+        differ = HF.same_run(run_a, run_b)
+        write_json(os.path.join(ev_dir, f"compare{suffix}.json"), {"runA": run_a, "runB": run_b, "differ": differ, "pass": not differ,
+                                                                  "sha256": {n: HF.sha256_file(os.path.join(run_b, n)) for n in sorted(os.listdir(run_b))}})
+        print(f"refit-house compare {tag}: {'identical' if not differ else 'DIFFER: ' + ', '.join(differ)}", flush=True)
+        return 0 if not differ else 1
+    if mode == "install":
+        compare = read_json(os.path.join(ev_dir, f"compare{suffix}.json"))
+        if tag == HF.DEFAULT_TAG:
+            proof = read_json(os.path.join(refit_dir, "proof", "report.json"))
+            refit = read_json(os.path.join(refit_dir, tag, "report.json"))
+            c = refit["describe"]["lampCounts"]
+            verdict = HF.accept_fit(proof, refit, HF.LampCounts(c["endMean"], c["centreCandles"], c["crowns"], c["wCrown"]))
+            verdict.update(reproduction=proof["reproduction"], runsIdentical=compare["pass"])
+            verdict["pass"] = bool(verdict["pass"] and proof["reproduction"]["pass"] and compare["pass"])
+            write_json(os.path.join(ev_dir, "accept.json"), verdict)
+        else:
+            verdict = {"tag": tag, "runsIdentical": compare["pass"], "pass": bool(compare["pass"])}   # evidence, not accepted
+        if not verdict["pass"]:
+            print(f"FAIL: {tag} is not installed: {json.dumps(_finite(verdict))}", flush=True)
+            return 1
+        snapshot = HF.snapshot_fit(work)
+        src = os.path.join(refit_dir, tag)
+        installed = {name: HF.copy_verified(os.path.join(src, os.path.basename(name)), os.path.join(work, name))
+                     for name in ("fit.json", "fit_state.npz", "npy/E_cap.npy")}
+        write_json(os.path.join(ev_dir, f"install{suffix}.json"), {"tag": tag, "snapshot": snapshot, "installed": installed})
+        print(f"refit-house install {tag}: {json.dumps(installed)}", flush=True)
+        return 0
+    if mode == "photo-gate":
+        verdict = HF.photo_gate(read_json(os.path.join(ev_dir, "photo-baseline.json")), read_json(os.path.join(work, "cmp", "metrics.json")))
+        write_json(os.path.join(ev_dir, "photo-gate.json"), verdict)
+        print(f"refit-house photo-gate: {json.dumps(verdict)}", flush=True)
+        return 0 if verdict["pass"] else 1
+    if mode == "sensitivity":
+        runs = {}
+        for name in (HF.DEFAULT_TAG,) + tuple(HF.variant_tag(w) for w in HF.CROWN_ENDS):
+            report = read_json(os.path.join(refit_dir, name, "report.json"))
+            runs[name] = {"wCrown": report["describe"]["lampCounts"]["wCrown"], "dataCost": report["dataCost"],
+                          "budget": read_json(os.path.join(refit_dir, name, "fit.json"))["budget"],
+                          "photo": read_json(os.path.join(ev_dir, f"photo-{name}.json"))}
+        verdict = HF.crown_sensitivity(runs, read_json(os.path.join(ev_dir, f"photo-{HF.DEFAULT_TAG}-repeat.json")))
+        write_json(os.path.join(ev_dir, "sensitivity.json"), verdict)
+        print(f"refit-house sensitivity: {json.dumps(_finite(verdict))}", flush=True)
+        if not verdict["pass"]:
+            print(f"STOP: the night photographs clearly prefer w_crown {verdict['preferredEnd']}: report to the controller", flush=True)
+        return 0 if verdict["pass"] else 1
+    if mode == "promote":
+        if args.source is None:
+            print("promote needs --from <the staging work folder>", flush=True)
+            return 2
+        src = os.path.abspath(args.source)
+        src_ev = os.path.join(os.path.dirname(src), "evidence", "refit")
+
+        def gate(name):
+            path = os.path.join(src_ev, f"{name}.json")
+            return read_json(path) if os.path.exists(path) else {"pass": False, "missing": path}
+
+        gates = {name: gate(name) for name in ("accept", "compare", "photo-gate", "sensitivity", "range-balance")}
+        failed = [name for name, g in gates.items() if g.get("pass") is not True]
+        refusal = None
+        if failed:
+            refusal = f"gates failed or missing: {', '.join(failed)}"
+        elif ((read_json(os.path.join(src, "fit.json")).get("model") or {}).get("name") != "refit"
+              or HF.sha256_file(os.path.join(src, "fit.json")) != HF.sha256_file(os.path.join(src, "refit", HF.DEFAULT_TAG, "fit.json"))):
+            refusal = "the staging work's fit.json is not the refit at the measured w_crown (a sensitivity run is installed)"
+        else:
+            geometry = ("bases_n", "bases_iso", "bases_E_win", "bases_E_ch", "bases_E_dome", "bases_E_cove", "emb_idx", "emb_E_back_win")
+            moved = [n for n in geometry if HF.sha256_file(os.path.join(src, "npy", f"{n}.npy")) != HF.sha256_file(os.path.join(work, "npy", f"{n}.npy"))]
+            if moved:
+                refusal = f"the fit-independent tables differ between the two works: {moved}"
+        if refusal is not None:
+            write_json(os.path.join(cfg.paths["evidence"], "refit.json"),
+                       {"staging": src, "pass": False, "refusal": refusal, "gates": gates, "copied": {}})
+            print(f"FAIL: nothing promoted: {refusal}", flush=True)
+            return 1
+        snapshot = HF.snapshot_fit(work)
+        names = HF.FIT_FILES + tuple(f"mult/{s}.{e}" for s in HF.SCENARIOS for e in ("f16", "json"))
+        copied = {name: HF.copy_verified(os.path.join(src, name), os.path.join(work, name)) for name in names}
+        copied["bulb-intensities.json"] = HF.copy_verified(os.path.join(src, "refit", HF.DEFAULT_TAG, "bulb-intensities.json"),
+                                                           os.path.join(work, "bulb-intensities.json"))
+        refit = read_json(os.path.join(src, "refit", HF.DEFAULT_TAG, "report.json"))
+        write_json(os.path.join(cfg.paths["evidence"], "refit.json"),
+                   {"staging": src, "pass": True, "gates": gates, "snapshot": snapshot, "copied": copied, "bulbs": refit["bulbs"],
+                    "weights": refit["weights"], "colours": refit["colours"], "describe": refit["describe"]})
+        print(f"refit-house promote: {len(copied)} files from {src}", flush=True)
+        return 0
+    print("refit-house needs a mode: proof, refit, compare, install, photo-gate, sensitivity or promote", flush=True)
+    return 2
+
+
+COMMANDS["refit-house"] = cmd_refit_house
 
 
 if __name__ == "__main__":

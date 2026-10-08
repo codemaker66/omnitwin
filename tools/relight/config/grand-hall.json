@@ -6,6 +6,8 @@
     "audit": "D:/claude/splat-quality-20260923/capture-lighting-audit",
     "panoramas": "F:/downloads (some very important)/TH Panoramic",
     "horizon": "D:/claude/splat-quality-20260923/weather-daylight/horizon.json",
+    "emitters": "D:/claude/real-hall/frontier/splats/evidence/bulbs.json",
+    "lampColours": "D:/claude/real-hall/frontier/light/evidence/lamp_colours.json",
     "proofWork": "D:/claude/real-hall/renovation/relight/work",
     "work": "D:/claude/relight/grand-hall/work",
     "out": "D:/claude/splats/trades-hall/grand-hall/relight/v1",
