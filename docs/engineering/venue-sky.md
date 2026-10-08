@@ -125,23 +125,88 @@ built from the documented structure with synthetic numbers. The first live
 response must be checked: run the verifier below and read the
 `venue_sky_forecast_partial` / `venue_sky_upstream_failed` logs.
 
-## Source 2: monthly normals (blocked)
+## Source 2: monthly normals (HadUK-Grid 1991–2020)
 
-Intended source: Met Office HadUK-Grid v1.3.2.ceda, 1 km `mon-30y` 1991–2020
-climatologies of `raindays1mm`, `snowLying`, `sun`, `tas` and `sfcWind`
-(Open Government Licence v3.0) on the CEDA Archive, e.g.
-`https://dap.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.3.2.ceda/1km/sun/mon-30y/v20260512/sun_hadukgrid_uk_1km_mon-30y_199101-202012.nc`.
-Directory listings are public, but every file download redirects to the CEDA
-login (checked 8 October 2026), so no generator was written and no normals file
-is committed. Until one is, a request that needs normals answers 503.
+Met Office HadUK-Grid v1.3.2.ceda, 1 km `mon-30y` climatologies for
+1991–2020 (Open Government Licence v3.0), from the CEDA Archive. The archive
+serves the files only to a signed-in user; a CEDA account is free. Cite them
+as the catalogue record says (doi:10.5285/789b3065d74a4c948ab05d33556c86d0).
+The attribution for normals is the OGL statement ("Contains public sector
+information licensed under the Open Government Licence v3.0.") followed by
+that citation.
 
-The reading side exists: `SkyNormalsFileSchema` in
-[`normals.ts`](../../packages/api/src/services/sky/normals.ts) defines the file a
-generator must write (dataset version and citation, `generatedAt`, input URLs
-with sha256, the cell centre, twelve months), and `createVenueSkyService`
-takes the parsed files (`normals: []` in `src/index.ts` today). Attribution for
-normals is the OGL statement ("Contains public sector information licensed under
-the Open Government Licence v3.0.") followed by the dataset citation.
+| Variable | File (version directory `v20260512`) | sha256 |
+| --- | --- | --- |
+| `raindays1mm` | `raindays1mm_hadukgrid_uk_1km_mon-30y_199101-202012.nc` | `7cc522b1875e07314ceb4ae2df95fc332e7060dd31f71f25f1a5941117bb5c01` |
+| `sfcWind` | `sfcWind_hadukgrid_uk_1km_mon-30y_199101-202012.nc` | `c64bcb33922c95215354b0507d54fe1ff56bc279f6685b88bbb39307050efacc` |
+| `snowLying` | `snowLying_hadukgrid_uk_1km_mon-30y_199101-202012.nc` | `920bc0c79fe8eb90e9768a65d937a30a49b29ed8fbfe1db178d9fd377b5f992e` |
+| `sun` | `sun_hadukgrid_uk_1km_mon-30y_199101-202012.nc` | `d1cda0d700368a29f61dc26a51e3ebb427ee3a866402c0976412b731cd3109a0` |
+| `tas` | `tas_hadukgrid_uk_1km_mon-30y_199101-202012.nc` | `a68aa595f8a05e63ce904e7025377758d3c056a280fe87d0b6d29e9b0fba6876` |
+
+Each URL is
+`https://dap.ceda.ac.uk/badc/ukmo-hadobs/data/insitu/MOHC/HadOBS/HadUK-Grid/v1.3.2.ceda/1km/<variable>/mon-30y/v20260512/<file>`.
+
+**Generator.** With the five files in a directory, run:
+
+```bash
+pnpm --filter @omnitwin/api sky:normals -- --inputs <directory>
+```
+
+([`generate-sky-normals.ts`](../../packages/api/src/scripts/generate-sky-normals.ts)).
+It needs no login and no network. It stops on any sha256 mismatch, and on a
+file whose CF standard name, units, version (`source` HadUK-Grid_v1.3.2,
+`version` v20260512) or month coordinate is not what it expects. For
+`raindays1mm` and `snowLying` it also checks the 1 mm and 50% scalar
+coordinates.
+
+It finds the cell from the files' own grid mapping. The site is moved from
+WGS84 to OSGB36 with the Ordnance Survey's 7-parameter Helmert transform,
+projected with the file's own `transverse_mercator` parameters (OS guide
+formulae), and located in the files' `projection_x/y_coordinate_bnds`. The
+cell is then checked against the files' own `latitude`/`longitude`.
+
+The files are NetCDF-4 (HDF5) and the stack has no HDF5 library, so
+[`sky-normals/hdf5.ts`](../../packages/api/src/scripts/sky-normals/hdf5.ts) is a
+strict read-only reader for exactly what these pinned files use. Values are
+written as stored: nothing is rounded or filled in. The generator prints a
+plausibility report, which is not used to change values.
+
+**The Trades Hall cell**
+([`haduk-grid-1km-1991-2020-e259500-n665500.json`](../../packages/api/src/services/sky/normals/haduk-grid-1km-1991-2020-e259500-n665500.json),
+loaded by [`normals-data.ts`](../../packages/api/src/services/sky/normals-data.ts)
+and validated at startup):
+
+- The site (55.8593, −4.2491) is E 259327.0, N 665189.0 on the National Grid.
+- The cell is x=459, y=865, centred on E 259500, N 665500 = 55.862142, −4.246499
+  (WGS84), 355.3 m from the site. The site is 189 m from the nearest cell edge.
+- The files' own latitude/longitude for that cell are OSGB36 values, and they
+  agree with the computed centre to 0.00 m.
+
+| Month | Rain days ≥ 1 mm | Snow lying, days | Sunshine, h | Mean temp, °C | Wind, m/s |
+| --- | --- | --- | --- | --- | --- |
+| Jan | 17.00 | 2.08 | 39.7 | 5.02 | 4.32 |
+| Feb | 14.17 | 1.65 | 68.6 | 5.40 | 4.36 |
+| Mar | 13.10 | 0.93 | 101.8 | 6.66 | 4.35 |
+| Apr | 12.33 | 0.11 | 146.9 | 9.09 | 4.15 |
+| May | 12.47 | 0.01 | 192.3 | 11.85 | 3.90 |
+| Jun | 12.13 | 0.00 | 160.0 | 14.46 | 3.56 |
+| Jul | 13.53 | 0.00 | 159.7 | 16.04 | 3.40 |
+| Aug | 14.03 | 0.00 | 149.3 | 15.81 | 3.26 |
+| Sep | 13.60 | 0.00 | 118.5 | 13.62 | 3.54 |
+| Oct | 15.70 | 0.00 | 87.5 | 10.49 | 3.60 |
+| Nov | 16.57 | 0.29 | 55.2 | 7.47 | 3.75 |
+| Dec | 16.40 | 1.85 | 36.3 | 5.19 | 3.77 |
+
+The plausibility checks all pass:
+- Coldest month January 5.0 °C, warmest July 16.0 °C.
+- Sunshine peaks in May (192 h), least in December (36 h), 1316 h a year.
+- 15.9 rain days a month in Dec–Feb against 12.3 in Apr–Jun, 171 a year.
+- 6.9 snow-lying days a year, 81% of them in Dec–Feb.
+- Windier in winter (4.15 m/s) than summer (3.41 m/s).
+
+The file's few non-zero summer snow-lying values (at most 2×10⁻⁵ days, June
+and August) are interpolation residue in the published grid. They are kept as
+published.
 
 ## Venue location and deployment
 
@@ -149,8 +214,11 @@ Migration 0086 adds nullable `venues.latitude`/`longitude` (double precision,
 both or neither, `BETWEEN` ±90/±180, which also refuses NaN and infinities) and
 sets Trades Hall (`trades-hall-glasgow`) to 55.8593, −4.2491, the site agreed
 with T-639 (`claude/real-hall:tools/relight/config/grand-hall.json`, room.site),
-only while it has no location. Schema first: venue routes select every venue
-column, so 0086 must be applied before the API that reads it serves traffic.
+only while it has no location. Schema first: venue routes select every
+declared venue column, so 0086 must be applied before the API that declares
+it serves traffic. It shipped on its own as step 1 (PR #58, merged as
+`ac1e463e`, applied by the Deploy workflow after CI). The code that reads it
+(PR #53) merges only after that.
 
 After deployment, check from anywhere (public endpoints, no credentials):
 
