@@ -253,6 +253,46 @@ describe("Diary Board render budget", () => {
     expect(screen.queryByRole("option", { name: /^Chamber dinner/u })).toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "chamber" } });
     expect(screen.getByRole("option", { name: /^Chamber dinner, booking/u })).toBeDefined();
+    // Once the board shows released and cancelled bookings, Find offers them too.
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Find" }), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show released & cancelled" }));
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "lunch" } });
+    expect(screen.getByRole("option", { name: /^Released lunch, booking/u })).toBeDefined();
+  });
+
+  it("offers a room only where the board draws it: the overview's row, never the phone's agenda", async () => {
+    renderPage(DATED_URL);
+    await settled();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "grand" } });
+    expect(screen.getByRole("option", { name: /^Grand Hall, room/u })).toBeDefined();
+    cleanup();
+
+    // A phone: the week reads as an agenda, with no room rows to bring into view.
+    const matchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (query: string) => ({
+        matches: query === "(max-width: 760px)", media: query, onchange: null,
+        addEventListener: () => undefined, removeEventListener: () => undefined,
+        addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false,
+      }),
+    });
+    try {
+      renderPage(DATED_URL);
+      await settled();
+      fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+      fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "grand" } });
+      expect(screen.queryByRole("option", { name: /^Grand Hall, room/u })).toBeNull();
+      // Its bookings are still there to be found and focused.
+      fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "chamber" } });
+      fireEvent.keyDown(screen.getByRole("combobox", { name: "Find" }), { key: "Enter" });
+      expect(document.activeElement?.id).toBe("diary-block-00000000-0000-4000-8000-0000000000c1");
+    } finally {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: matchMedia });
+    }
   });
 
   it("brings the board's findings into an open Find once its week arrives", async () => {

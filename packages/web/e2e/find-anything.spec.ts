@@ -61,13 +61,21 @@ interface Emulator {
   readonly searches: string[];
 }
 
-async function openWorkspace(page: Page, { role, path, width = 1440, height = 900 }: {
-  readonly role: "staff" | "sales";
+const PEOPLE = {
+  staff: "00000000-0000-4000-8000-000000009791",
+  sales: "00000000-0000-4000-8000-000000009792",
+  admin: "00000000-0000-4000-8000-000000009793",
+} as const;
+
+async function openWorkspace(page: Page, { role, path, width = 1440, height = 900, unread = 0 }: {
+  readonly role: keyof typeof PEOPLE;
   readonly path: string;
   readonly width?: number;
   readonly height?: number;
+  /** Unread notices, which put the bell on the header's row. */
+  readonly unread?: number;
 }): Promise<Emulator> {
-  const personId = role === "staff" ? "00000000-0000-4000-8000-000000009791" : "00000000-0000-4000-8000-000000009792";
+  const personId = PEOPLE[role];
   await page.setViewportSize({ width, height });
   await page.clock.setFixedTime(NOW);
   await page.addInitScript(({ venueId, id, seededRole }) => {
@@ -113,7 +121,7 @@ async function openWorkspace(page: Page, { role, path, width = 1440, height = 90
     } else if (at === `/venues/${VENUE_ID}/requests`) {
       void route.fulfill({ json: { data: [] } });
     } else if (at === "/notifications/unread-count") {
-      void route.fulfill({ json: { data: { unread: 0 } } });
+      void route.fulfill({ json: { data: { unread } } });
     } else if (at.startsWith("/notifications")) {
       void route.fulfill({ json: { data: [] } });
     } else {
@@ -244,5 +252,25 @@ test.describe("Find", () => {
     expect(salesSearches.searches).toEqual([]);
     await expect(salesFind.getByRole("option")).toHaveCount(0);
     await sales.close();
+
+    // The header holds an admin's full row, the unread bell included, at every
+    // width it changes at: Find is a magnifier below 1536 px and the row
+    // draws in below 1365, 1100 and 1000 px, so the nav never overflows.
+    const admin = await page.context().newPage();
+    await openWorkspace(admin, { role: "admin", path: "/dashboard?view=search", unread: 3 });
+    await expect(admin.getByTestId("nav-unread-notifications")).toBeVisible();
+    for (const width of [1920, 1536, 1535, 1366, 1365, 1281, 1280, 1200, 1151, 1100, 1024, 1000, 961]) {
+      await admin.setViewportSize({ width, height: 900 });
+      const overflow = await admin.evaluate(() => {
+        const nav = document.querySelector<HTMLElement>(".dashboard-layout-navigation");
+        return nav === null ? Number.NaN : nav.scrollWidth - nav.clientWidth;
+      });
+      expect(overflow, `the nav overflows by ${String(overflow)} px at ${String(width)} px`).toBeLessThanOrEqual(0);
+    }
+    await admin.setViewportSize({ width: 1536, height: 900 });
+    await expect(admin.locator(".dashboard-layout-find-key")).toBeVisible();
+    await admin.setViewportSize({ width: 1535, height: 900 });
+    await expect(admin.locator(".dashboard-layout-find-key")).toBeHidden();
+    await admin.close();
   });
 });

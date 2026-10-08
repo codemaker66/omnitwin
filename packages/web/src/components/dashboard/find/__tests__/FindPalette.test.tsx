@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchResults } from "../../../../api/clients.js";
 import { useAuthStore, type AuthUser } from "../../../../stores/auth-store.js";
@@ -38,7 +38,13 @@ function person(role: string): AuthUser {
 
 function Route(): React.ReactElement {
   const location = useLocation();
-  return <output aria-label="Route">{location.pathname}{location.search}</output>;
+  const navigationType = useNavigationType();
+  return (
+    <>
+      <output aria-label="Route">{location.pathname}{location.search}</output>
+      <output aria-label="Navigation">{navigationType}</output>
+    </>
+  );
 }
 
 /** The router's own navigate, for a test to move the address as a page would. */
@@ -232,13 +238,16 @@ describe("Find in the staff header", () => {
   it("opens a layout in the planner in a new tab, as the Clients desk does", async () => {
     mocks.search.mockResolvedValue(HENDERSON);
     const open = vi.spyOn(window, "open").mockReturnValue(null);
-    renderShell();
-    openFind();
-    fireEvent.change(field(), { target: { value: "henderson" } });
-    fireEvent.click(await screen.findByRole("option", { name: /^Henderson rounds, layout, opens in a new tab/u }));
-    expect(open).toHaveBeenCalledWith(`/plan/${LAYOUT}`, "_blank", "noopener,noreferrer");
-    expect(route()).toBe("/dashboard?view=enquiries");
-    open.mockRestore();
+    try {
+      renderShell();
+      openFind();
+      fireEvent.change(field(), { target: { value: "henderson" } });
+      fireEvent.click(await screen.findByRole("option", { name: /^Henderson rounds, layout, opens in a new tab/u }));
+      expect(open).toHaveBeenCalledWith(`/plan/${LAYOUT}`, "_blank", "noopener,noreferrer");
+      expect(route()).toBe("/dashboard?view=enquiries");
+    } finally {
+      open.mockRestore();
+    }
   });
 
   it("offers sales dates and pages, and never searches the clients its role is refused", async () => {
@@ -288,12 +297,56 @@ describe("Find in the staff header", () => {
     const backdrop = find.parentElement as HTMLElement;
     // A drag out of the sheet that ends on the backdrop keeps Find.
     fireEvent.pointerDown(field());
+    fireEvent.pointerUp(backdrop);
     fireEvent.click(backdrop);
     expect(screen.getByRole("dialog", { name: "Find" })).toBeDefined();
-    // The press alone does nothing yet, so a tap cannot fall through to the page.
+    // So does a press that begins on the backdrop and ends in the sheet.
     fireEvent.pointerDown(backdrop);
+    fireEvent.pointerUp(field());
+    fireEvent.click(backdrop);
+    expect(screen.getByRole("dialog", { name: "Find" })).toBeDefined();
+    // The press does not take the cursor off the field, and alone closes nothing,
+    // so a tap cannot fall through to the page.
+    expect(fireEvent.mouseDown(backdrop)).toBe(false);
+    fireEvent.pointerDown(backdrop);
+    fireEvent.pointerUp(backdrop);
     expect(screen.getByRole("dialog", { name: "Find" })).toBeDefined();
     fireEvent.click(backdrop);
+    expect(screen.queryByRole("dialog", { name: "Find" })).toBeNull();
+  });
+
+  it("leaves Enter and Escape to an input method in Safari's order, which ends the composition first", async () => {
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "quotes" } });
+    fireEvent.compositionStart(field());
+    fireEvent.compositionEnd(field());
+    // The key that ended the composition arrives after compositionend, not composing.
+    fireEvent.keyDown(field(), { key: "Enter" });
+    fireEvent.keyDown(field(), { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Find" })).toBeDefined();
+    expect(route()).toBe("/dashboard?view=enquiries");
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(route()).toBe("/dashboard?view=proposals");
+  });
+
+  it("opens the page already showing in place, so Back leaves it with one press", () => {
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "enquiries" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(screen.queryByRole("dialog", { name: "Find" })).toBeNull();
+    expect(screen.getByRole("status", { name: "Navigation" }).textContent).toBe("REPLACE");
+    openFind();
+    fireEvent.change(field(), { target: { value: "proposals" } });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(screen.getByRole("status", { name: "Navigation" }).textContent).toBe("PUSH");
+  });
+
+  it("never opens over a confirmation that asks first", () => {
+    renderShell(<div role="alertdialog" aria-label="Move the confirmed booking?"><button type="button">Move</button></div>);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(screen.queryByRole("dialog", { name: "Find" })).toBeNull();
   });
 

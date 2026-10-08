@@ -149,6 +149,11 @@ const GO_TO_CLOSED: GoToState = { open: false, text: "", sought: null, unread: f
 /** No enquiries for Find to offer, one value so it never reads as a change. */
 const NO_ENQUIRIES: readonly Enquiry[] = [];
 
+/** A room's row in the overview or its lane in the timeline, where drawn. */
+function roomOnBoard(roomId: string): Element | null {
+  return document.querySelector(`[data-diary-room="${CSS.escape(roomId)}"], [data-diary-lane="${CSS.escape(roomId)}"]`);
+}
+
 export function DiaryBoardPage(): ReactElement {
   const user = useAuthStore((state) => state.user);
   const venueId = user?.venueId ?? null;
@@ -993,9 +998,7 @@ export function DiaryBoardPage(): ReactElement {
         return;
       }
       if (kind === "room") {
-        document
-          .querySelector(`[data-diary-room="${CSS.escape(id)}"], [data-diary-lane="${CSS.escape(id)}"]`)
-          ?.scrollIntoView({ block: "center", inline: "nearest" });
+        roomOnBoard(id)?.scrollIntoView({ block: "center", inline: "nearest" });
         return;
       }
       if (writable) openConvertDrawer(id);
@@ -1016,6 +1019,9 @@ export function DiaryBoardPage(): ReactElement {
   const [findSource] = useState<FindSource>(() => ({
     label: BOARD_COPY.palette.label,
     find: (query) => findPaletteResults(query, boardForFind.current.calendar, boardForFind.current.enquiries)
+      // A room is offered only where the board draws it (the phone's agenda
+      // has no room rows to bring into view).
+      .filter((result) => result.kind !== "room" || roomOnBoard(result.id) !== null)
       .map((result) => ({
         id: `${result.kind}:${result.id}`, title: result.label, detail: result.detail, kind: BOARD_COPY.palette.kinds[result.kind],
       })),

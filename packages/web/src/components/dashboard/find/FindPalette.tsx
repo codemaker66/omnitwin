@@ -47,12 +47,18 @@ export function FindPalette({ places, canSearchClients, source, onOpen, onClose 
   const [cursor, setCursor] = useState<{ readonly key: string | null; readonly moved: boolean }>({ key: null, moved: false });
   // The venue's own day, for "14 Nov" and "today".
   const [today] = useState(() => msToWallInput(Date.now()).slice(0, 10));
-  // Whether a press began on the backdrop: only a press that begins and ends
-  // there puts Find away, and on the click, so a tap never falls through to
-  // the page beneath once Find has gone.
+  // Whether a press began and ended on the backdrop: only such a press puts
+  // Find away, and on its click, so a tap never falls through to the page
+  // beneath once Find has gone, and a drag between sheet and backdrop never
+  // closes it.
   const pressedBackdrop = useRef(false);
+  const releasedBackdrop = useRef(false);
+  // An input method's composition owns Enter, Escape and the arrows. Safari
+  // ends the composition before the key that ended it arrives, so the flag
+  // stays up until that key has passed.
+  const composing = useRef(false);
   const dialogRef = useFocusTrap<HTMLDivElement>();
-  useEscapeToClose(onClose);
+  useEscapeToClose(() => { if (!composing.current) onClose(); });
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -104,7 +110,7 @@ export function FindPalette({ places, canSearchClients, source, onOpen, onClose 
   };
 
   const onInputKey = (event: KeyboardEvent<HTMLInputElement>): void => {
-    if (event.nativeEvent.isComposing) return;
+    if (event.nativeEvent.isComposing || composing.current) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       move(1);
@@ -134,10 +140,18 @@ export function FindPalette({ places, canSearchClients, source, onOpen, onClose 
     <div
       className="find-backdrop"
       onPointerDown={(event) => { pressedBackdrop.current = event.target === event.currentTarget; }}
+      onPointerUp={(event) => { releasedBackdrop.current = event.target === event.currentTarget; }}
       onClick={(event) => {
-        const fromBackdrop = pressedBackdrop.current;
+        const onBackdrop = pressedBackdrop.current && releasedBackdrop.current;
         pressedBackdrop.current = false;
-        if (fromBackdrop && event.target === event.currentTarget) onClose();
+        releasedBackdrop.current = false;
+        if (onBackdrop && event.target === event.currentTarget) onClose();
+      }}
+      // A press anywhere but Find's field and buttons, the backdrop included,
+      // keeps the cursor in the field, so no keystroke falls to the page.
+      onMouseDown={(event) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest("input, button") === null) event.preventDefault();
       }}
     >
       <div
@@ -147,12 +161,6 @@ export function FindPalette({ places, canSearchClients, source, onOpen, onClose 
         aria-modal="true"
         aria-label="Find"
         data-register="ivory"
-        // A press anywhere in Find but its field and buttons keeps the cursor
-        // in the field, so no keystroke falls to the page behind it.
-        onMouseDown={(event) => {
-          const target = event.target;
-          if (target instanceof Element && target.closest("input, button") === null) event.preventDefault();
-        }}
       >
         <div className="find__field">
           <Search size={20} aria-hidden="true" className="find__icon" />
@@ -176,6 +184,8 @@ export function FindPalette({ places, canSearchClients, source, onOpen, onClose 
               setText(event.target.value);
               setCursor({ key: null, moved: false });
             }}
+            onCompositionStart={() => { composing.current = true; }}
+            onCompositionEnd={() => { window.setTimeout(() => { composing.current = false; }, 0); }}
             onKeyDown={onInputKey}
           />
           <button type="button" className="find__close" aria-label="Close Find" aria-keyshortcuts="Escape" onClick={onClose}>

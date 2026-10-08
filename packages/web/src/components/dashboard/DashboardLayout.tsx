@@ -169,9 +169,10 @@ function findShortcut(): string {
   return /Macintosh|Mac OS X|iPhone|iPad/u.test(agent) ? "⌘K" : "Ctrl K";
 }
 
-/** Whether a modal dialog other than Find is open: Find never opens over one. */
+/** Whether a modal dialog or a confirmation that asks first (the Diary's
+ *  ink-move alert) is open: Find never opens over one. */
 function anotherDialogOpen(): boolean {
-  return document.querySelector('[aria-modal="true"]') !== null;
+  return document.querySelector('[aria-modal="true"], [role="alertdialog"]') !== null;
 }
 
 function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, children }: DashboardLayoutProps): React.ReactElement {
@@ -240,7 +241,9 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
       void navigate(`/diary?${next.toString()}`);
       return;
     }
-    void navigate(target.href);
+    // The page already showing is not a new place: Back should not need two
+    // presses to leave it, as with the header's own links.
+    void navigate(target.href, { replace: target.href === `${location.pathname}${location.search}` });
   }, [findSource, location.pathname, location.search, navigate]);
   const closeFind = useCallback(() => { setFindOpen(false); }, []);
   useEffect(() => {
