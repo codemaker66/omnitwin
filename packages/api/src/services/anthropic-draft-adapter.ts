@@ -41,6 +41,16 @@ export class AIDraftNotProducedError extends Error {
 export type AnthropicDraftRequest = Anthropic.Beta.MessageCreateParamsNonStreaming;
 export type AnthropicDraftSend = (request: AnthropicDraftRequest) => Promise<Anthropic.Beta.BetaMessage>;
 
+/** The context as JSON that cannot close its own tags. A client's words can
+ *  hold "</context>"; written with JSON's < escapes they read the same to
+ *  a JSON reader but cannot end the data early and pass as instructions. */
+export function contextTagJson(context: AIGenerationInput["context"]): string {
+  return stableCanonicalJson(context)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026");
+}
+
 export function buildAnthropicDraftRequest(model: string, input: AIGenerationInput): AnthropicDraftRequest {
   const request: AnthropicDraftRequest = {
     model,
@@ -49,7 +59,7 @@ export function buildAnthropicDraftRequest(model: string, input: AIGenerationInp
     system: input.instructions,
     messages: [{
       role: "user",
-      content: `<context>\n${stableCanonicalJson(input.context)}\n</context>`,
+      content: `<context>\n${contextTagJson(input.context)}\n</context>`,
     }],
   };
   if (!MODELS_WITH_SERVER_FALLBACK.has(model)) return request;
