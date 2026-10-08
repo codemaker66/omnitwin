@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13 (`C:/Python313/python.exe`) with numpy 2.4, scipy 1.17, OpenCV 5 (`cv2`, DIS optical flow, ECC, `inpaint`), Pillow 12 (WebP), PyAV 16.1 (H.264 decoding with exported macroblock quantisers), `unittest`; no torch and no CUDA in `tools/skins` (R1a's `tools/relight` keeps its CPU torch for its own commands). React 18.3 + @react-three/fiber 8.18, three 0.186 (WebGPURenderer, TSL compute, pnpm patch), Zod 3.24, zustand 5.0, Vitest 4.1 + happy-dom 20, TypeScript 5.7, pnpm 9.15.4, Node 22, Playwright 1.59 (headed Chromium on the RTX 4090).
 
-**The frieze band:** Task 12 follows the frieze research's final findings (`D:/claude/real-hall/renovation/frieze/findings.md`, 7 October, with its sections "Holdout" and "Venue photographs (7 October)"). The band is measured, not lost: 99% of it has a view with every channel unclipped, and clipping is per channel. It is recovered by per-channel multi-view fusion through fitted camera response curves, divided by the light model with a fitted uplight correction, and synthesised (and labelled) only where no view measures it. The venue's own photographs of the 14 craft sections (the Trades House Virtual Museum, mostly by George Mahoney; cleared by the owner on 7 October) then give the frieze its colour and broad tone, and the drawing of the lowest 5 cm on the door and fireplace walls, where the research's independent check showed our fusion does not reproduce the paint. The frieze's ground is gilded, so its brightness depends on the view: the material maps carry a gilding mask, gold's specular colour and a roughness for it (Tasks 12–13). Task 12's thresholds are reconciled with the research's measured numbers (its section "The thresholds, reconciled").
+**The frieze band:** Task 12 follows the frieze research's final findings (`D:/claude/real-hall/renovation/frieze/findings.md`, 7 October, with its sections "Holdout" and "Venue photographs (7 October)"). The band is measured, not lost: 99% of it has a view with every channel unclipped, and clipping is per channel. It is recovered by per-channel multi-view fusion through fitted camera response curves, divided by the light model and by a fitted residual light (one decaying exponential, kept only when it predicts held-out rows), and synthesised (and labelled) only where no view measures it. The venue's own photographs of the 14 craft sections (the Trades House Virtual Museum, mostly by George Mahoney; cleared by the owner on 7 October) then give the frieze its colour and broad tone, and the drawing of the lowest 5 cm on the door and fireplace walls, where the research's independent check showed our fusion does not reproduce the paint. The frieze's ground is gilded, so its brightness depends on the view: the material maps carry a gilding mask, gold's specular colour and a roughness for it (Tasks 12–13). Task 12's thresholds are reconciled with the research's measured numbers (its section "The thresholds, reconciled").
 
 **The XGRIDS frames (the resolution research, 7 October):** `D:/claude/real-hall/frontier/resolution/proposal.md` §2 measured three things.
 
@@ -26,7 +26,7 @@ Applied in one pass, before any task was started, from the plan-amendment brief 
 - **Header:** the frieze band paragraph (final findings, the venue's photographs, the gilded ground); the Architecture; Global Constraints: the double run's record names every settled file's SHA-256, the packaging rule, lamp colour (R1c encodes none: the capture's per-group colours are package values from R1a Task 4b, the warm-down a setting of R1b), the venue's photographs cleared and credited, R1d's hooks gain `SkinSurface.specularColour`. Contracts 1 and 3 cite R1a Task 4c's two corrections (`skin_group_of` widened to int64 under NumPy 2; `windows_volumes` returns a tuple); contract 6 the pass order; contract 7 the factored sky-body basis (`B_w = P_w × R_w`, both bodies, folded at the 0.5 m probes) as normative, β, the area-scaled bounce and the sunlit-area table gone. No R1c code used the old model; Tasks 8, 17, 19 and 23 now say so explicitly and check the new one.
 - **File Structure:** `tools/skins/skins/venue.py`; the work tree's `venue/`.
 - **Task 0:** 20 greps (R1a Task 4c's `_artifact` and `record-artifacts`, R1d's `skyBody` added); the 14 venue photographs against `sources.json`'s SHA-256; SIFT in the stack check.
-- **Task 1:** `twice` records `base` and, once settled, every kept file's SHA-256 (`artifacts`), also as the command's latest record; `verified(evidence, name, path)` (22 tests: 4 config, 9 twice, 9 frames).
+- **Task 1:** `twice` records `base` and, once settled, every kept file's SHA-256 (`artifacts`), also as the command's latest record; `verified(evidence, name, path)` (22 tests then: 4 config, 9 twice, 9 frames; 23 since the pre-flight fixes of 8 October, with 10 twice).
 - **Task 2:** the frieze style starts at 4.20 m, not 4.30 m: the research measured the frieze's bottom edge at 4.281, 4.239 and 4.369 m, so the lowest 5 cm on the fireplace wall lay outside the skin.
 - **Task 5:** `frieze_edge` (the research's rule: the moulding 12 mm proud below 4.40 m) cuts the moulding from each frieze skin; `skins.json` `frieze: { bottom, bottomRow, bandRow }` (10 tests). **Task 6:** `SkinGeometry` carries them.
 - **Task 8:** the capture's per-group lamp colours from the package; `check_relight_artifacts` (the probes against `probes-check.json` and the package's `evidence.artifacts`, the skin-light folder against `skin-light.json`); the skin-light third-run rule keeps R1a's evidence true (7 tests).
@@ -45,6 +45,40 @@ Applied in one pass, before any task was started, from the plan-amendment brief 
   - M1: `test_frames.py` holds 9 tests: Task 1 22, Task 6 19, Task 6A 22. M2: Task 21, R1b's manifest test file holds 23.
   - M3 and M4 (R1a, seam A I-3 and I-4): Task 15 Step 7's double run relies on R1a's `tool` and `createdAt` from HEAD; Step 8 drops the `git checkout`, requires the fixture untouched and reads `checks-v2.json`.
   - M5: light texels are 5 cm, 2 cm on the frieze (Architecture, contract 3, Tasks 14 and 19). M6: Task 17's `skin-light.ts` re-exports R1b's `SKY_BODIES`, with `SkyBodyName` = R1b's `SkyBody`.
+- **Pre-flight fixes (8 October)** (`D:/claude/real-hall/plan-amendments-0710/scans/r1c-a-scan.md` (A), `r1c-b-scan.md` (B) and the controller's rulings `scans/rulings-0810.md`; the changed Python run on a scratch copy on this PC, numpy 2.4.2, OpenCV 5.0.0, PyAV 16.1, single-threaded, every data product twice; F1, A-B7 and A-B8 from the controller's frieze-photo experiment, `D:/claude/real-hall/plan-amendments-0710/frieze-photo/results.md`, applied in a second round with the controller's three further items):
+  - A-B1: Task 0 Step 3 counts the hall sweeps with a panorama by `panorama_path`'s name (47; the folder's 148 files include two `pg` names and two four-digit ones).
+  - A-B2: Task 1's panorama test points where the faces look (`[[-0.1, 1, 0], [0.1, 1, 0]]`).
+  - A-B3 and F5: Task 5's `fill_heights` and Task 10's `heal.inpaint_fill` (was `telea_fill`) use `INPAINT_NS`: OpenCV 5.0's Telea fills float32 holes with values far outside their range. Task 12's holdout Telea baseline is recomputed on 8-bit input (`telea_baseline`) and recorded beside the float32 numbers.
+  - A-B4: Task 10's `along_grain_median` casts its remap maps to float32 (NumPy 2).
+  - A-B5: Task 6A's quantiser test asserts 0.625 × 2^(32/6) = 25.198 to 9 places.
+  - A-B6: Task 7's ECC test asserts the window's shift at the image centre, (−2.6, +1.8) px; `MAX_SHIFT` is judged there (`window_shift_px`).
+  - A-I1: Task 1's `twice` keeps a file whole only when every array is the majority's (`majority`, `settle`, `settledWrong`); `verified(..., data)` checks given bytes (B-M3).
+  - A-I2, A-I3 and F6: Task 6A decodes the Y/U/V planes (`decode_record`) and converts at full range (`frames.yuv_to_bgr`, BT.601); `FrameStore` keeps the planes, cropped to the chosen blocks, with `projected_store_bytes` (0.75 B/px) against `STORE_BUDGET_BYTES` (200 GB) and three times that free on D:; "The range (measured 8 October)" records how much of the band's "clipping" the limited-range conversion made (R ≥ 250: 46–97% of door-band pixels limited, 24–68% full).
+  - A-I4: Task 8's `lampShare` is the lamps' share of the fitted light. A-M9: `check_relight_artifacts` asserts `index.json`'s skins are the records'.
+  - A-I5 and F2: Task 12 divides the residual light out on every row of the frieze skin, so wherever it exceeds 2% of its edge strength (`light_log`, defined on every row), and checks the seams up the wall at 5 cm, the band's top and 2 cm above it (`vertical_seam`, the `verticalSeams` gate); both as F1 below made them (the first round's `uplightLog`, `uplight_reach` and `band_top_check` are gone).
+  - A-I6 and F3: Task 12 linearises the E57 faces by sRGB and down-weights their top values (`FACE_TOP_Z`, `FACE_TOP_WEIGHT`, `value_weight`); `frieze-crf` fits the XGRIDS frames only.
+  - A-I7 and F4: Task 12's gilt-direction check applies only where gilt and paint lie under the photograph (`GILT_MIN`); the gate needs one check where the door wall has gilt.
+  - A-M1: Task 2 Step 7 expects 96,208,920 texels. A-M2: Task 5's `frieze_edge` takes its row medians over uncarved columns. A-M3: Task 3's LiDAR gate reads the residual measured at round 2's poses (`pairs-report.json`). A-M4: Task 6A Step 9 changes directory first. A-M5: Task 9 Step 7 writes the albedo and albedo × Ecap. A-M6: Task 12's Interfaces name `gilt_direction` (and named `photo_light` until F1 removed it), and the blue gains are door 0.52, fireplace 0.324, window 1.455. A-M7: Task 12 records the holdout under the plan's own measures.
+  - A-M8, not applied (ruling): the owner's brief names the door and fireplace walls for the photograph-only lowest 5 cm (`D:/claude/real-hall/renovation/frieze/original-brief.md:34`); `end_xmin` follows the measured detail rule (Task 12).
+  - B-B1: Task 16's texel bound is 0.05 m, as `package.MAX_TEXEL`. B-B2: the test package's `ceiling-1` is right-handed. B-B3: Task 24 Step 1 uses R1b Task 19's bundle-check builds on D:.
+  - B-I1, refined by the controller: Task 15's `v2-check` measures the skins' own wall-face rate over every sun-grid texel with R1a's own public `windows.wall_face_rate` (R1a Task 5 Step 7; `skin_wall_face_rate` sums its two directions; the first round's copy of the measurement and its use of the private `_sample_depth` are gone; `skinWallFaceRate`, in `relight-v2.json`; a feasibility run on R1a's windows found 8.6% of marched rays sensitive at the 31 May 08:00 sun); Task 22's `SkinSunCheck.marched`; Task 23 caps the excused texels at twice that rate of the texels marched (R1b's `_wall_face_rate` and `_excused_ok`: integers, at least one, a missing rate fails). The Global Constraint allows `relight.windows`.
+  - B-I2: Task 9 keeps the rejected highlight's colour (`highlight_colour`, `excessRgb`); Task 13's gilding needs a gold highlight.
+  - B-I3: Task 20 states R1d's reading of `specularColour` as a requirement on R1d.
+  - B-I4 and T1: `toggleBoxes` (Tasks 5, 14 and 16), `toggleGroups` (Tasks 16 and 18); `skinVisibility` hides a toggle's splats only while every group holding its clean version is drawn (Tasks 20 and 21: loading, a refused group and `?skins=off` keep the objects); the contract's "Toggles and fallback" says so, and Task 24 adds the note to `relight-package.md` (B-M14).
+  - B-I5: Task 21 moves R1b's `RoomSplatScene.test.tsx` URL to v2 and runs it. B-M13: Task 24's loop runs it and R1b's `light-setting-store.test.ts`.
+  - B-I6: Task 21 uploads each skin's textures in its `skins:skin` span (`initTexture`) and measures `skins:first-frame`; Task 23 gates all three span kinds and records long tasks as information. B-M10: the visibility is set in a layout effect.
+  - B-M1: Task 14's fixture is right-handed, and `entry_problem` mirrors Task 16's checks. B-M2: `specularColour` is stored as float64. B-M3: Task 14 reads only the bytes it verified (`read_verified`; `verified_inputs` is gone). B-M4: Task 15 Step 8 runs R1a's check twice and compares. B-M5: the contract's light texels (5 cm; 2 cm on the frieze). B-M6: `roughness_map` without `nviews`.
+  - B-M7, the controller's direction: R1b writes its log decode inline in its pass and exports none, so Task 19's light pass reads a table built with R1b's own `decodeLog` (`skinDecodeTable`), and a test holds the table to it on every code; the octahedral decoder's repetition is noted where it stands.
+  - B-M8: `gpu_verdict` needs every check (`GPU_KEYS`). B-M9: Task 22 times the passes with R1b's `timedCompute` where the adapter has timestamps (`timing`). B-M11: Task 13's layer format is normative, the clean patch follows a measured layer (`measured_clean`), and both region products and layers name the light by `light_model_id` (Tasks 9 and 13). B-M12: `SkinPackageData.credits`.
+  - Task 0 Step 2: 25 greps (R1a's `volume_from_arrays` and public `wall_face_rate`, R1b's `decodeLog` and timer added).
+  - F1, A-B7 and A-B8 (the frieze-photo experiment, its section 9, applied as listed):
+    - `frieze.py`: `fit_vertical_light`, `light_log`, `apply_light` and `light_of` replace the bounded line-source fit (`RESIDUAL_GATE`, `fit_uplight_residual`, `uplight_log`, `apply_uplight` gone): one decaying exponential, fitted by unbounded linear least squares over a scan of decay lengths and kept only when it predicts held-out 5 cm row blocks; `recover_band` fits it on the probe relative to the clean frieze and divides it out on every row; the frieze npz stores it (`lightEdge`, `lightLam`, `lightK`, `lightAccepted`) and the recovery's own rows (`fused`); the holdout relights its truth with it.
+    - `venue.py`: `harmonise` and `photo_light` gone; each photograph's tone (a gain and power per channel) and light fitted on matte texels over all its skins (`viewdep_from_spread`, `matte_mask`, `tone_fit_skins`, `photo_to_frame_skins`, `colour_check_skins`, `product_frame_skins`, the experiment's Appendix A); `lay_band(img, prov, frieze, v)`; registration per metre (`refine_stretches`, `register`, `photo_on_skin` with the metres' cross-fade; one homography per footprint passed for 1 of 13); the colour gate 3.6 / 7.8 (the worst measured, 2.80 / 5.63, plus a weaker fusion's measured cost, +0.71 / +2.08, rounded up); a photograph that fails is detail and outline only (`blend_skin`'s `colour` flag, a verdict per photograph); the seams up the wall against each colour photograph and, elsewhere, the recovery's own rows (not the healed mosaic, which holds the band's clipped values); the experiment's per-photograph verdicts set beside this task's in Step 10, every provisional one re-measured.
+    - The XGRIDS blue curve (fitted 0.28–0.46 ln below sRGB from code 200, 10.95 DN of scatter, where the research used sRGB) is not addressed by the experiment: recorded in Task 12 and reported in Step 10.
+  - The skins' own wall-face rate through R1a's function (above).
+  - The skin-top seam (the controller's item, 8 October): Task 22's `frieze-top-*` crops (`SkinCrop.at`, `distance`) and Task 23's `skin_top_seam`, the skin's top edge against the cornice's splats at the captured light, with and without the skins, under Task 12's seam criterion (the larger of the skin's own steps and 0.5 ΔE00, which is 0.023 ln on the frieze's paint); no earlier check compared the two.
+  - Material provenance (the controller's item, 8 October): designed values are labelled priors, measured ones measured: Task 13's `material_basis` and npz `roughnessBasis` and `specularBasis`, Task 14's manifest `material.basis` (refused when missing), the contract, Task 16's `MaterialBasisSchema` (the specular colour's basis null exactly when the colour is), Task 20's provenance view (a designed metal striped violet, `metalIsPrior`).
+  - Test counts now: Task 1 23 (4 config, 10 twice, 9 frames); Task 6A 23 (8 xbin, 6 sources, 9 frames); Task 9 12; Task 12 40 (12 frieze, 22 venue, 6 sources); Task 13 7; Task 14 11; Task 15 5; Task 16 20; Task 19 6; Task 20 `skin-visibility` 3 and `skin-material` 6; Task 23 6. The Python tests were run from the plan's text. The TypeScript tests need R1b's modules, which are not built yet, so they were not run; the changed logic that stands alone (`skinVisibility`, `skinDecodeTable`, the test package's handedness) was run in node.
 
 ## Global Constraints
 
@@ -52,7 +86,7 @@ Applied in one pass, before any task was started, from the plan-amendment brief 
 - Commit with explicit pathspecs only; inspect `git diff --cached --stat` before each commit; every message ends with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Prerequisites: R1a and R1b are executed with every amendment of `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md` applied (Task 0 checks each one by name). A missing amendment is reported to the controller, never re-implemented inside an R1c task.
 - Founder hold (19 September 2026, amended 28 September 2026): splats, the relit hall, the skins and every preview control exist only where `gaussianSplatsAvailable()` is true (development and Vercel preview builds, never a venviewer.com host). No query, saved state or role may override it; `?skins=off` and `?skinview=provenance` are honoured only where it is true.
-- `tools/skins` is CPU only: numpy, scipy, OpenCV and Pillow; it imports no torch. It calls R1a's `tools/relight` only through its CLI (`python -m relight <command>`) or its numpy modules (`relight.codec`, `relight.reference`), never its torch proof code.
+- `tools/skins` is CPU only: numpy, scipy, OpenCV and Pillow; it imports no torch. It calls R1a's `tools/relight` only through its CLI (`python -m relight <command>`) or its numpy modules (`relight.codec`, `relight.reference`, and `relight.windows` for Task 15's wall-face measurement), never its torch proof code.
 - The double-run rule (this PC silently corrupts some heavy computations): every data-producing `tools/skins` command runs through `python -m skins twice <command> ...`, which runs it twice in separate processes, compares every output array by array (dtype, shape and bytes; JSON by parsed value; every other file byte for byte), and on a mismatch runs it a third time and keeps, per file, the version two runs agree on; `<evidence>/twice/<command>.json` records every comparison and, once the outputs are settled, every kept file's SHA-256 and size (`artifacts`; amended 7 October). R1a commands run twice by hand, as R1a's Task 2 as-built note says.
 - Packaging (the owner's rule, 7 October; R1a's Global Constraints): a package is built only from exact, named work artifacts, never a glob, and each is read only when its SHA-256 equals the one its evidence JSON records (for R1c's own artifacts, the `artifacts` of the `twice` record of the command that made them; for R1a's, the evidence R1a Task 4c writes). The skin package's manifest SHA-256 is recorded in `package-check.json` (Task 14) and checked before relight package v2 names it (Task 15); a folder is published only when it holds exactly its manifest's files (Task 24).
 - Lamp colour (the owner's decision of 7 October, spec §4.1 as amended, commit `475acd2e`): R1c encodes no lamp colour. The skins are de-lit by the capture light the relight package carries (`capture.weights` and `capture.colours`, a colour per lamp group from R1a Task 4b's refit), never by a constant; the 2,700–2,800 K figure is not established; how the lamps warm as they dim is a setting of R1b (`lampTints`), which reaches the skins through the setting's source weights.
@@ -103,8 +137,8 @@ The amendments file is normative for these, except contracts 1 and 3: R1a Task 4
 | `tools/skins/skins/lightstates.py` | Create | The skins' light from R1a's records, the capture states' fit, de-lighting |
 | `tools/skins/skins/blend.py` | Create | Glare rejection across views, codec-aware censoring, the two-band blend, the region-product import |
 | `tools/skins/skins/heal.py` | Create | Healing per material, hole filling |
-| `tools/skins/skins/frieze.py` | Create | The frieze band's recovery: camera response curves, per-channel fusion, uplight model, labelled synthesis, each texel's spread across views (Task 12) |
-| `tools/skins/skins/venue.py` | Create | The venue's photographs on the frieze: registration per wall, one hall-wide colour frame, the photographs' own uplight removed, the gilded ground's mask, the blend, its provenance and credit, and its independent checks (Task 12) |
+| `tools/skins/skins/frieze.py` | Create | The frieze band's recovery: camera response curves, per-channel fusion, the residual light, labelled synthesis, each texel's spread across views (Task 12) |
+| `tools/skins/skins/venue.py` | Create | The venue's photographs on the frieze: registration per metre, one hall-wide colour frame (a tone per photograph), the photographs' own light removed, a colour verdict per photograph, the gilded ground's mask, the blend, its provenance and credit, and its independent checks (Task 12) |
 | `tools/skins/skins/clutter.py` | Create | Flat-clutter masks and clean versions |
 | `tools/skins/skins/materials.py` | Create | Roughness, gilding (metal, gold's specular colour) and provenance maps; the import of a measured material layer |
 | `tools/skins/skins/package.py` | Create | The skin package writer and its checks |
@@ -176,7 +210,7 @@ Offline (Tasks 0–15) runs first and ends with relight package v2 and the skin 
 | 9 | The de-lit, glare-free, codec-aware mosaic and the region-product contract |
 | 10 | Healing per material and hole filling |
 | 11 | Clutter masks and clean versions |
-| 12 | The frieze band, measured: per-channel fusion, response curves, uplight model, labelled synthesis; the venue's photographs: colour and tone, the lowest 5 cm, the gilded ground |
+| 12 | The frieze band, measured: per-channel fusion, response curves, the residual light, labelled synthesis; the venue's photographs: colour and tone, the lowest 5 cm, the gilded ground |
 | 13 | Material maps: roughness, gilding, provenance |
 | 14 | The skin package and its contract |
 | 15 | Relight package v2: covers, toggles and the skins' light |
@@ -234,13 +268,18 @@ cd D:/claude/real-hall/repo && for p in \
   "SkinsSectionSchema:packages/web/src/lib/relight/relight-manifest.ts" \
   "def _artifact:tools/relight/relight/__main__.py" \
   "COMMANDS\[\"record-artifacts\"\]:tools/relight/relight/__main__.py" \
-  "export function skyBody:packages/web/src/lib/relight/relight-frame.ts" ; do \
+  "export function skyBody:packages/web/src/lib/relight/relight-frame.ts" \
+  "def volume_from_arrays:tools/relight/relight/windows.py" \
+  "def wall_face_rate(volumes, horizon_tables, fresnel_table, P, s):tools/relight/relight/windows.py" \
+  "export function decodeLog:packages/web/src/lib/relight/relight-codec.ts" \
+  "export function computeTimestamps:packages/web/src/lib/relight/relight-debug.ts" \
+  "export async function timedCompute:packages/web/src/lib/relight/relight-debug.ts" ; do \
   pattern="${p%:*}"; file="${p##*:}"; if grep -q "$pattern" "$file"; then echo "ok   $pattern"; else echo "MISSING $pattern in $file"; fi; done
 ```
 
 (Each entry is split at its last colon: two patterns contain colons, and no path does.)
 
-Expected: 20 lines starting `ok`. Any `MISSING` line: stop and report it to the controller (the amendments file, `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, says where each of the first 17 belongs, except that R1a Task 4c, not that file's code, is normative for A1's Python part and A4; the next two are R1a Task 4c's artifact records, which Tasks 8 and 15 check R1a's work against (the packaging rule); the last is R1d A5's sky body in R1b's frame, which Tasks 19 and 20 use).
+Expected: 25 lines starting `ok`. Any `MISSING` line: stop and report it to the controller (the amendments file, `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, says where each of the first 17 belongs, except that R1a Task 4c, not that file's code, is normative for A1's Python part and A4; the next two are R1a Task 4c's artifact records, which Tasks 8 and 15 check R1a's work against (the packaging rule); the next is R1d A5's sky body in R1b's frame, which Tasks 19 and 20 use; the last five, added with the pre-flight fixes of 8 October, are R1a's `volume_from_arrays` and public `wall_face_rate`, with which Task 15 measures the skins' own wall-face rate, R1b's `decodeLog`, with which Task 19 builds its decode table, and R1b Task 17's timestamp timer, with which Task 22 times the skins' passes).
 
 - [ ] **Step 3: Check the inputs**
 
@@ -254,7 +293,8 @@ checks = {
   "faces (47 sweeps x 6)": len([p for s in [*range(18), *range(19, 48)] for p in glob.glob(f"D:/venviewer-evidence/trades-hall-grand-hall-e57-image2d-v1/images/scan_{s:03d}/image2d_*_skybox_*.jpg")]),
   "e57 headers": len(json.load(open("D:/claude/splat-quality-20260923/lidar-fusion/e57_headers.json"))),
   "face bases": len(json.load(open("F:/E57/equirect_fixed/_equirect_v2_report.json"))["sweeps"]),
-  "panoramas": len(glob.glob("F:/downloads (some very important)/TH Panoramic/sweep_*jpg.jpg")),
+  "hall sweeps with a panorama": sum(os.path.exists("F:/downloads (some very important)/TH Panoramic/sweep_%03djpg.jpg" % (s + 1))
+                                     for s in [*range(18), *range(19, 48)]),
   "panorama alignments": len(json.load(open("D:/claude/splat-quality-20260923/capture-lighting-audit/out/B_pano_e57_alignment.json"))),
   "lidar chunks door": len(glob.glob("D:/claude/real-hall/renovation/surfaces/work/lidar/door/s*.npz")),
   "lidar chunks ceiling": len(glob.glob("D:/claude/real-hall/renovation/surfaces/work/lidar/ceiling/s*.npz")),
@@ -276,7 +316,7 @@ for k, v in checks.items():
 EOF
 ```
 
-Expected: faces 282, e57 headers 149, face bases at least 48, panoramas 148, panorama alignments 49, lidar chunks 50 each, z-buffers 50, research height fields 5 (the four walls and the ceiling), xgrids images above 3,000, relight probes 1, relight splat tables 1, relight package v1 1, xbin GB 41.1, xbin records 51,460, all-frame poses 51,432 (12,858 instants × 4 cameras, E57 frame), frieze findings 1 (the final findings of 7 October, which Task 12's thresholds are reconciled with), venue photos 14 (the 14 craft sections, each file's SHA-256 equal to `sources.json`'s; checked on 7 October). Any miss: stop and report.
+Expected: faces 282, e57 headers 149, face bases at least 48, hall sweeps with a panorama 47 (each at `panorama_path`'s name, `sweep_<s + 1, three digits>jpg.jpg`; the folder holds 148 files, but two are named `sweep_099pg.jpg` and `sweep_145pg.jpg` and two have four digits, so a count of the folder proves nothing; checked on 8 October: all 47), panorama alignments 49, lidar chunks 50 each, z-buffers 50, research height fields 5 (the four walls and the ceiling), xgrids images above 3,000, relight probes 1, relight splat tables 1, relight package v1 1, xbin GB 41.1, xbin records 51,460, all-frame poses 51,432 (12,858 instants × 4 cameras, E57 frame), frieze findings 1 (the final findings of 7 October, which Task 12's thresholds are reconciled with), venue photos 14 (the 14 craft sections, each file's SHA-256 equal to `sources.json`'s; checked on 7 October). Any miss: stop and report.
 
 - [ ] **Step 4: Check the Python stack**
 
@@ -306,7 +346,7 @@ Expected: D: has at least 300 GB free (the pose-solve orthos and the per-view re
 
 **Interfaces:**
 - Produces (`config.py`): `SCHEMA = "venviewer.skins-config.v1"`; `GROUPS = ("door", "window", "end_xmin", "end_xmax", "ceiling")` (the records' wall groups 0–4, in this order); `@dataclass(frozen=True) class Config: paths: dict[str, str]; room: dict[str, Any]; root: str` with `resolve(key) -> str` (a relative path made absolute against the config file's folder); `load(path: str) -> Config`.
-- Produces (`twice.py`): `VOLATILE_KEYS = frozenset({"seconds", "elapsedSeconds", "startedAt", "finishedAt"})`; `file_digest(path: str, rel: str) -> dict[str, str]` (per array for `.npz` and `.npy`, per canonical JSON without volatile keys for `.json`, else the bytes; keys `"<relative path>"` or `"<relative path>::<array>"`); `tree_digest(paths: list[str], base: str) -> dict[str, str]`; `compare(a, b) -> list[str]`; `decide(h1, h2, h3) -> dict[str, str]` (per key: `"run3"` when run 3 agrees with run 1 or run 2, `"run2"` when only runs 1 and 2 agree, `"none"` when all three differ); `file_sha256(path) -> {sha256, bytes}`; `artifacts_of(outputs, base) -> {relative path: {sha256, bytes}}`; `verified(evidence, name, path) -> str` (the file's SHA-256, or `ValueError` unless the passing record `<evidence>/twice/<name>.json` names it with those bytes); `run_twice(command: list[str], outputs: list[str], base: str, evidence: str, name: str, runner=subprocess.run, latest: str | None = None) -> int` (its record holds `base` and, when it passes, `artifacts`: every settled output file's SHA-256 and size; also written as `<latest>.json`, the command's latest record, which is how a package finds it; amended 7 October for the packaging rule).
+- Produces (`twice.py`): `VOLATILE_KEYS = frozenset({"seconds", "elapsedSeconds", "startedAt", "finishedAt"})`; `file_digest(path: str, rel: str) -> dict[str, str]` (per array for `.npz` and `.npy`, per canonical JSON without volatile keys for `.json`, else the bytes; keys `"<relative path>"` or `"<relative path>::<array>"`); `tree_digest(paths: list[str], base: str) -> dict[str, str]`; `compare(a, b) -> list[str]`; `SPLIT`; `majority(h1, h2, h3) -> dict[str, str | None]` (per key, the digest two runs agree on, `None` when two runs did not write it, `SPLIT` when all three differ); `settle(h1, h2, h3) -> dict[str, str]` (per file: `"run3"` when every key of run 3's file is its majority value, `"run2"` when every key of run 2's is, else `"none"`; a file is settled whole, pre-flight fix of 8 October); `file_sha256(path) -> {sha256, bytes}`; `artifacts_of(outputs, base) -> {relative path: {sha256, bytes}}`; `verified(evidence, name, path, data=None) -> str` (the file's SHA-256, or `ValueError` unless the passing record `<evidence>/twice/<name>.json` names it with those bytes; with `data`, the bytes the caller read once and will use are checked, not the file again: pre-flight fix, 8 October); `run_twice(command: list[str], outputs: list[str], base: str, evidence: str, name: str, runner=subprocess.run, latest: str | None = None) -> int` (its record holds `base` and, when it passes, `artifacts`: every settled output file's SHA-256 and size; also written as `<latest>.json`, the command's latest record, which is how a package finds it; amended 7 October for the packaging rule).
 - Produces (`frames.py`): `xform(T, X)`; `@dataclass(frozen=True) class Frames: json_from_e57: ndarray (4, 4); e57_from_json: ndarray (4, 4)`; `load_frames(path) -> Frames`; `quat_to_mat(q) -> (3, 3)` (q = w, x, y, z); `parse_basis(name) -> (forward, right, down)`; `rotvec_mat(omega) -> (3, 3)`; `@dataclass(frozen=True) class Sweep: s: int; c: ndarray; R: ndarray; M: dict[int, ndarray]` (face k's E57 columns forward, right, down); `FACE_SIZE = 4096`, `FACE_F = 2048.0`, `FACE_C = 2048.0`; `load_sweeps(headers_path, bases_path, sweeps) -> dict[int, Sweep]`; `face_path(faces_dir, s, k) -> str`; `panorama_path(panorama_dir, s) -> str`; `PANO_W = 8192`, `PANO_H = 4096`; `pano_pixel(sweep: Sweep, align: dict, P, width: int, height: int) -> (px, py)`; `@dataclass(frozen=True) class XgCamera: model: str; params: ndarray; w: int; h: int` with `project(x, y, z, margin=8) -> (px, py, ok)`; `read_cameras(poses_dir) -> dict[int, XgCamera]`; `read_xgrids_poses(poses_dir, frames: Frames) -> dict` (`C` (n, 3) E57, `Rcw` (n, 3, 3) with x_cam = Rcw (X_e57 − C), `cam`, `name`, `t_s`, `omega`); `@dataclass(frozen=True) class Surface: name, kind, origin, u, v, n, length, height` with `to_local(X) -> (..., 3)` (u, v, w) and `to_e57(u, v, w=0) -> (..., 3)`; `load_surfaces(data: dict) -> dict[str, Surface]` (the research's `surfaces.json` format) and `read_surfaces(path) -> dict[str, Surface]`.
 - Produces (`__main__.py`): `@dataclass(frozen=True) class Command: run: Callable[[Config, list[str]], int]; outputs: Callable[[Config, list[str]], list[str]]`; `COMMANDS: dict[str, Command]`; `main(argv=None) -> int`; the `twice` command (`python -m skins twice <command> [args] --config <path>`); `THREADS` (`SKINS_THREADS`, default 6), applied before numpy loads (`OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`) and to OpenCV (`cv2.setNumThreads`). Every later task registers its commands in the block marked `# ---- commands`.
 
@@ -408,12 +448,15 @@ class Digest(unittest.TestCase):
         self.assertEqual(twice.compare(d1, twice.tree_digest([self.path("out")], self.dir)), ["out/sub/k.bin"])
 
 
-class Decide(unittest.TestCase):
-    def test_majority_per_key(self):
-        h1 = {"a": "1", "b": "1", "c": "1", "d": "1"}
-        h2 = {"a": "1", "b": "2", "c": "1", "d": "2"}
-        h3 = {"a": "1", "b": "1", "c": "3", "d": "3"}
-        self.assertEqual(twice.decide(h1, h2, h3), {"a": "run3", "b": "run3", "c": "run2", "d": "none"})
+class Settle(unittest.TestCase):
+    def test_majority_per_key_and_whole_files(self):
+        h1 = {"a": "1", "b": "1", "c": "1", "d": "1", "e.npz::x": "1", "e.npz::y": "1"}
+        h2 = {"a": "1", "b": "2", "c": "1", "d": "2", "e.npz::x": "2", "e.npz::y": "1"}
+        h3 = {"a": "1", "b": "1", "c": "3", "d": "3", "e.npz::x": "1", "e.npz::y": "3"}
+        self.assertEqual(twice.majority(h1, h2, h3),
+                         {"a": "1", "b": "1", "c": "1", "d": twice.SPLIT, "e.npz::x": "1", "e.npz::y": "1"})
+        # e.npz: run 3 is wrong in y and run 2 in x, so neither whole file is the majority's
+        self.assertEqual(twice.settle(h1, h2, h3), {"a": "run3", "b": "run3", "c": "run2", "d": "none", "e.npz": "none"})
 
 
 class RunTwice(unittest.TestCase):
@@ -455,6 +498,24 @@ class RunTwice(unittest.TestCase):
         with open(os.path.join(out, "2"), "rb") as f:
             self.assertEqual(f.read(), b"p")      # runs 1 and 3 agree
 
+    def test_a_file_is_kept_only_when_every_array_is_the_majority(self):
+        base = tempfile.mkdtemp()
+        out = os.path.join(base, "a.npz")
+        evidence = os.path.join(base, "evidence")
+        runs = iter([(1, 10), (2, 10), (1, 30)])                # x: runs 1 and 3 agree; y: runs 1 and 2 agree
+
+        def runner(cmd, check):
+            x, y = next(runs)
+            np.savez(out, x=np.array([x]), y=np.array([y]))
+            return None
+        self.assertEqual(twice.run_twice(["cmd"], [out], base, evidence, "t6", runner=runner), 1)
+        with open(os.path.join(evidence, "twice", "t6.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["decision"], {"a.npz": "none"})
+        runs = iter([(1, 10), (2, 10), (1, 10)])                # run 3's whole file is the majority's
+        self.assertEqual(twice.run_twice(["cmd"], [out], base, evidence, "t7", runner=runner), 0)
+        with np.load(out) as d:
+            self.assertEqual((int(d["x"][0]), int(d["y"][0])), (1, 10))
+
     def test_three_different_runs_fail(self):
         base = tempfile.mkdtemp()
         out = os.path.join(base, "o.bin")
@@ -484,6 +545,9 @@ class RunTwice(unittest.TestCase):
             with open(os.path.join(evidence, "twice", f"{name}.json"), encoding="utf-8") as f:
                 self.assertEqual(json.load(f)["artifacts"], expected)
         self.assertEqual(twice.verified(evidence, "t5", os.path.join(out, "k.bin")), hashlib.sha256(b"kept").hexdigest())
+        self.assertEqual(twice.verified(evidence, "t5", os.path.join(out, "k.bin"), b"kept"), hashlib.sha256(b"kept").hexdigest())
+        with self.assertRaises(ValueError):                     # bytes read once and used must be the recorded ones
+            twice.verified(evidence, "t5", os.path.join(out, "k.bin"), b"kept, then changed")
         with open(os.path.join(out, "k.bin"), "wb") as f:
             f.write(b"changed")
         with self.assertRaises(ValueError):
@@ -560,7 +624,7 @@ class Panorama(unittest.TestCase):
     def test_flipped_columns_mirror_azimuth(self):
         sweep = frames.Sweep(s=0, c=np.zeros(3), R=np.eye(3), M={})
         align = {"best_row_shift": 0, "roll_cols_at_3600": 0, "pano_cols_flipped": True}
-        P = np.array([[1.0, 0.1, 0.0], [1.0, -0.1, 0.0]])
+        P = np.array([[-0.1, 1.0, 0.0], [0.1, 1.0, 0.0]])          # azimuths 95.7 and 84.3 degrees, far from the wrap at 0
         px, py = frames.pano_pixel(sweep, align, P, 3600, 1800)
         self.assertAlmostEqual(float(py[0]), float(py[1]), places=9)
         self.assertLess(float(px[0]), float(px[1]))            # flipped: +azimuth runs to the left
@@ -571,7 +635,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-(The door test's round trip holds to 1e-6, not 1e-9: the rounded surface axes are orthonormal only to about 1e-7.)
+(The door test's round trip holds to 1e-6, not 1e-9: the rounded surface axes are orthonormal only to about 1e-7. The panorama test's two points sit at azimuths 95.7° and 84.3°: flipped, their columns are 2642.4 and 2756.6; unflipped, 956.6 and 842.4, so the test fails if the flip is ignored. Points either side of azimuth 0 would land at opposite ends of the panorama; corrected 8 October.)
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -609,7 +673,8 @@ Expected: FAIL, `ModuleNotFoundError: No module named 'skins'` (or `skins.config
     "relightWork": "D:/claude/relight/grand-hall/work",
     "relightEvidence": "D:/claude/relight/grand-hall/evidence",
     "splats": "D:/claude/splats/trades-hall/grand-hall",
-    "frieze": "D:/claude/real-hall/renovation/frieze"
+    "frieze": "D:/claude/real-hall/renovation/frieze",
+    "relightVectors": "D:/claude/real-hall/repo/packages/web/src/lib/relight/__fixtures__/relight-vectors.json"
   },
   "room": {
     "slug": "grand-hall",
@@ -658,7 +723,7 @@ SCHEMA = "venviewer.skins-config.v1"
 PATH_KEYS = ("work", "evidence", "out", "layout", "canonicalFrame", "e57Headers", "faceBases", "faces", "panoramas",
              "panoramaAlignment", "xgridsPoses", "xgridsImages", "xbin", "xbinIndex", "xgridsAllPoses", "surfaceResearch",
              "surfaces", "floorResearch", "relightTool",
-             "relightConfig", "relightWork", "relightEvidence", "splats", "frieze")
+             "relightConfig", "relightWork", "relightEvidence", "splats", "frieze", "relightVectors")
 ROOM_KEYS = ("slug", "venue", "hallSweeps", "daySweeps", "eveningSweeps", "groups", "zenithConeDeg",
              "nadirConeDeg", "obliquityMaxDeg", "effectiveFactor", "steadyOmegaDegS", "heightCell", "lightTexel",
              "sunTexel", "registrationTexel", "pairMaxDistance", "xgridsEdgeFactor", "framesPerBlock", "facesPerBlock")
@@ -706,9 +771,10 @@ def load(path: str) -> Config:
 """The build PC's double-run rule: a data product is accepted only when two runs in separate processes agree.
 
 Run 1 and run 2 each leave their outputs in place and are digested (per array for .npz/.npy, per canonical JSON without
-volatile keys, otherwise the bytes). Equal digests: accepted. Otherwise run 2's differing files are copied aside, run 3
-runs, and per key the version two runs agree on is kept (run 3's in place, or run 2's copied back); three different
-values fail the command. Every comparison is written to <evidence>/twice/<name>.json (and to <latest>.json, the
+volatile keys, otherwise the bytes). Equal digests: accepted. Otherwise run 2's outputs are copied aside, run 3 runs,
+and per file the whole file whose every key holds the value two runs agree on is kept (run 3's in place, or run 2's
+copied back); a file neither run holds whole, or a key with three different values, fails the command, and the settled
+tree is digested again to prove every key holds its majority value. Every comparison is written to <evidence>/twice/<name>.json (and to <latest>.json, the
 command's latest record whatever its arguments), and once the outputs are settled the record names every kept file
 with its SHA-256 and size (`artifacts`): the packaging rule's evidence (the owner's rule, 7 October), which `verified`
 checks before a package reads a work artifact.
@@ -773,20 +839,40 @@ def compare(a: dict[str, str], b: dict[str, str]) -> list[str]:
     return sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
 
 
-def decide(h1: dict[str, str], h2: dict[str, str], h3: dict[str, str]) -> dict[str, str]:
-    out = {}
+def _files_of(keys) -> list[str]:
+    return sorted({k.split("::")[0] for k in keys})
+
+
+SPLIT = "<three different values>"
+
+
+def majority(h1: dict[str, str], h2: dict[str, str], h3: dict[str, str]) -> dict[str, str | None]:
+    """Per key, the digest two of the three runs agree on (None when two runs did not write the key), or SPLIT when
+    all three differ."""
+    out: dict[str, str | None] = {}
     for k in sorted(set(h1) | set(h2) | set(h3)):
-        if h3.get(k) is not None and (h3.get(k) == h1.get(k) or h3.get(k) == h2.get(k)):
-            out[k] = "run3"
-        elif h1.get(k) is not None and h1.get(k) == h2.get(k):
-            out[k] = "run2"
-        else:
-            out[k] = "none"
+        a, b, c = h1.get(k), h2.get(k), h3.get(k)
+        out[k] = a if a == b else c if c in (a, b) else SPLIT
     return out
 
 
-def _files_of(keys) -> list[str]:
-    return sorted({k.split("::")[0] for k in keys})
+def settle(h1: dict[str, str], h2: dict[str, str], h3: dict[str, str]) -> dict[str, str]:
+    """Per file: "run3" when every key of the file in run 3 is its majority value, "run2" when every key in run 2 is,
+    "none" otherwise. A file is settled whole (one .npz holds several arrays), so it is kept only when all its arrays
+    are the majority's: two corrupt runs with a different corrupt array each never leave a minority array in place."""
+    maj = majority(h1, h2, h3)
+    out = {}
+    for f in _files_of(maj):
+        keys = {k: v for k, v in maj.items() if k.split("::")[0] == f}
+        if SPLIT in keys.values():
+            out[f] = "none"
+        elif all(h3.get(k) == v for k, v in keys.items()):
+            out[f] = "run3"
+        elif all(h2.get(k) == v for k, v in keys.items()):
+            out[f] = "run2"
+        else:
+            out[f] = "none"
+    return out
 
 
 def file_sha256(path: str) -> dict:
@@ -810,14 +896,15 @@ def artifacts_of(outputs: list[str], base: str) -> dict[str, dict]:
     return out
 
 
-def verified(evidence: str, name: str, path: str) -> str:
+def verified(evidence: str, name: str, path: str, data: bytes | None = None) -> str:
     """The SHA-256 of the work artifact `path`, refused (ValueError) unless the passing twice record `name` names that
-    file with exactly these bytes: the packaging rule for R1c's own artifacts."""
+    file with exactly these bytes: the packaging rule for R1c's own artifacts. With `data`, those bytes (the file as
+    the caller read it once, and will use) are checked instead of the file on disk."""
     with open(os.path.join(evidence, "twice", f"{name}.json"), encoding="utf-8") as f:
         record = json.load(f)
     rel = os.path.relpath(os.path.abspath(path), record["base"]).replace(os.sep, "/")
     entry = record.get("artifacts", {}).get(rel)
-    actual = file_sha256(path)
+    actual = file_sha256(path) if data is None else {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
     if not record.get("pass") or entry != actual:
         raise ValueError(f"{path} is not an artifact the passing record {name} names (recorded {entry}, found {actual})")
     return actual["sha256"]
@@ -850,16 +937,23 @@ def run_twice(command: list[str], outputs: list[str], base: str, evidence: str, 
                 shutil.copy2(src, os.path.join(aside, rel))
         runner(command, check=True)
         h3 = tree_digest(outputs, base)
-        changed = set(differ) | set(compare(h2, h3))
-        decision = {k: v for k, v in decide(h1, h2, h3).items() if k in changed}
+        changed = set(_files_of(set(differ) | set(compare(h2, h3))))
+        decision = {f: how for f, how in settle(h1, h2, h3).items() if f in changed}
         record["runs"] = 3
         record["decision"] = decision
-        for k, how in decision.items():
-            rel = k.split("::")[0]
+        for rel, how in decision.items():
             if how == "run2":
-                shutil.copy2(os.path.join(aside, rel), os.path.join(base, rel))
+                kept, here = os.path.join(aside, rel), os.path.join(base, rel)
+                if os.path.exists(kept):
+                    shutil.copy2(kept, here)
+                elif os.path.exists(here):
+                    os.remove(here)                                  # run 2 (and run 1) wrote no such file
             elif how == "none":
                 status = 1
+        if status == 0:
+            final = tree_digest(outputs, base)                       # every key now holds its majority value
+            record["settledWrong"] = sorted(k for k, v in majority(h1, h2, h3).items() if final.get(k) != v)
+            status = 1 if record["settledWrong"] else 0
         if status == 0:
             shutil.rmtree(aside, ignore_errors=True)
     record["finishedAt"] = datetime.datetime.now().astimezone().isoformat()
@@ -875,7 +969,7 @@ def run_twice(command: list[str], outputs: list[str], base: str, evidence: str, 
     return status
 ```
 
-In `test_a_corrupt_third_run_is_replaced_by_the_agreeing_pair`, file `1` is `a, a, z` (runs 1 and 2 agree and run 3 is corrupt, so run 2's copy is restored) and file `2` is `p, q, p` (runs 1 and 3 agree, so run 3's stays). Run 2's whole output is copied aside before run 3, because run 3 may corrupt a file that runs 1 and 2 agreed on; the copy is deleted once the command passes.
+In `test_a_corrupt_third_run_is_replaced_by_the_agreeing_pair`, file `1` is `a, a, z` (runs 1 and 2 agree and run 3 is corrupt, so run 2's copy is restored) and file `2` is `p, q, p` (runs 1 and 3 agree, so run 3's stays). Run 2's whole output is copied aside before run 3, because run 3 may corrupt a file that runs 1 and 2 agreed on; the copy is deleted once the command passes. A file is settled whole (pre-flight fix, 8 October): in `test_a_file_is_kept_only_when_every_array_is_the_majority`, `a.npz`'s array `x` is 1, 2, 1 and `y` is 10, 10, 30, so run 2's file is wrong in `x` and run 3's in `y`; keeping one file per key's winner would leave a minority array behind a passing record, so the command fails instead. With `y` 10, 10, 10, run 3's whole file is the majority's and is kept.
 
 - [ ] **Step 5: Write the frames**
 
@@ -1173,7 +1267,7 @@ if __name__ == "__main__":
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_config tests.test_twice tests.test_frames -v`
-Expected: PASS, 22 tests (4 config, 9 twice, 9 frames).
+Expected: PASS, 23 tests (4 config, 10 twice, 9 frames).
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m skins nothing --config config/grand-hall.json; echo exit $?`
 Expected: `unknown command nothing; known: []` and `exit 2`.
@@ -1791,7 +1885,7 @@ Expected: PASS, 11 tests.
 - [ ] **Step 7: Run the check and look at it**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m skins layout-check --config config/grand-hall.json`
-Expected: exit 0; `"skins": 98`, `"problems": []`, and the total texel count printed (about 1.1 × 10^8). Open `D:/claude/skins/grand-hall/evidence/layout/{door,window,end_xmin,end_xmax,ceiling}.jpg` and check by eye that every rectangle sits on the surface it names: canvases inside their gilt frames, the board panels on the panels, the frieze bays on the painted frieze, the door leaves on the closed doors, the toggle boxes (red) on the two loudspeakers and the AV cabinet, and the keep boxes (green) on the extinguisher and the exit signs. A rectangle visibly off its element by more than 5 cm is corrected in the JSON (the layout is data) and the check rerun; record every correction in the task report.
+Expected: exit 0; `"skins": 98`, `"problems": []`, and the total texel count printed (`"texels": 96208920`, about 0.96 × 10^8, the frieze from 4.20 m included; computed from this layout on 8 October). Open `D:/claude/skins/grand-hall/evidence/layout/{door,window,end_xmin,end_xmax,ceiling}.jpg` and check by eye that every rectangle sits on the surface it names: canvases inside their gilt frames, the board panels on the panels, the frieze bays on the painted frieze, the door leaves on the closed doors, the toggle boxes (red) on the two loudspeakers and the AV cabinet, and the keep boxes (green) on the extinguisher and the exit signs. A rectangle visibly off its element by more than 5 cm is corrected in the JSON (the layout is data) and the check rerun; record every correction in the task report.
 
 - [ ] **Step 8: Commit**
 
@@ -1815,13 +1909,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: Task 1 (`frames.load_sweeps`, `Sweep`, `Surface`, `read_surfaces`, `face_path`, `rotvec_mat`, `FACE_F`, `FACE_C`, `FACE_SIZE`; `config`; `Command`, `COMMANDS`); the surface research's `work/lidar/<surface>/sNN.npz` (`u`, `v`, `w` float32 against its nominal frames, `r`, `cosi` float16), `work/hf/<surface>_h1cm.npy` and `_meta.json` (`U0`, `V1`; rows from `V1` downward, columns from `U0`), `work/zbuf/sNN.npy` (float16 (1800, 3600) minimum range per 0.1° bin of scan-local azimuth and elevation).
 - Produces (`surfaces.py`): `SURFACE_NAMES = ("door", "window", "end_xmin", "end_xmax", "ceiling")`; `RESEARCH_NOMINAL`, `CEILING_NOMINAL`; `nominal_to_e57(name, u, v, w) -> (n, 3)`; `lidar_chunk(research_dir, name, s) -> dict | None` (`X` (n, 3) E57 at the nominal pose, `r`, `cosi`); `repose(X, c, delta, omega) -> (n, 3)` (`c + delta + R(omega)(X − c)`); `@dataclass(frozen=True) class HeightField: name; h; filled; cell; u0; v_top`; `load_height(research_dir, name, which="h1cm") -> HeightField`; `height_at(hf, u, v) -> (n,)`; `surface_points(surface, hf, u, v) -> (n, 3)`; `load_poses(path_or_none, sweeps) -> dict[int, tuple[ndarray, ndarray]]` and `save_poses(path, poses, extra)` (the floor research's `{"sweeps": {"<s>": {"delta_m", "omega_rad"}}}` format).
 - Produces (`views.py`): `remap_points(img, px, py) -> ndarray`; `srgb_to_linear(u8) -> float32`; `@dataclass class ZBuffer` with `load(path)` and `visible(R, d, r) -> bool array`; `class E57View(sweep, faces_dir, zbuf=None, delta=(0, 0, 0), omega=(0, 0, 0), zenith_deg=12.0, nadir_deg=28.0, gray=False)` with `centre`, `sample(P) -> (values (n,) or (n, 3) float32 0..255 BGR, ok (n,) bool, r (n,))`, `angular_gsd(P, n) -> (n,)` (range / (2048 cos obliquity), the inventory's "E57 angular"), `obliquity_cos(P, n) -> (n,)`.
-- Produces (`posesolve.py`): `CELL = 0.004`, `RANGE_MAX = 6.5`, `OBLIQUE_MAX_DEG = 70.0`, `GSD_MAX = 0.006`, `STEP = 6`, `AGG = 0.2`, `AGG_MIN = 8`, `LIDAR_PER = 300`, `SIGMA_FLOW = 0.001`, `LIDAR_SIGMA = 0.004`, `HUBER_FLOW = 0.004`, `HUBER_LIDAR = 0.006`; `skew(r) -> (n, 3, 3)`; `surface_jacobian(P, c, n, tu, tv) -> (n, 2, 6)`; `lidar_jacobian(X, c, n) -> (n, 6)`; `@dataclass(frozen=True) class Grid: name; cell; u0; v_top; cols; rows` with `centres(r0, r1, c0, c1) -> (U, V)`; `surface_grid(hf: HeightField, surface: Surface, cell) -> Grid`; `normalise(gray, valid) -> (uint8 image, normalised float32)`; `pair_measurements(A, B, grid, ...) -> dict | None`; `aggregate(P_uv, m, L, cell, min_count) -> dict`; `solve(Ja, Jb, a, b, m, L, Jl, sl, el, count, iters=10) -> (x (count, 6), report)`; the commands `reg-lidar`, `reg-orthos --round N`, `reg-pairs --round N`, `reg-solve --round N`; outputs `<work>/reg/lidar.npz`, `<work>/reg/r<N>/<surface>/sNN.npz`, `<work>/reg/r<N>/pairs.npz` and `pairs-report.json`, `<work>/reg/poses_r<N+1>.json`.
+- Produces (`posesolve.py`): `CELL = 0.004`, `RANGE_MAX = 6.5`, `OBLIQUE_MAX_DEG = 70.0`, `GSD_MAX = 0.006`, `STEP = 6`, `AGG = 0.2`, `AGG_MIN = 8`, `LIDAR_PER = 300`, `SIGMA_FLOW = 0.001`, `LIDAR_SIGMA = 0.004`, `HUBER_FLOW = 0.004`, `HUBER_LIDAR = 0.006`; `skew(r) -> (n, 3, 3)`; `surface_jacobian(P, c, n, tu, tv) -> (n, 2, 6)`; `lidar_jacobian(X, c, n) -> (n, 6)`; `@dataclass(frozen=True) class Grid: name; cell; u0; v_top; cols; rows` with `centres(r0, r1, c0, c1) -> (U, V)`; `surface_grid(hf: HeightField, surface: Surface, cell) -> Grid`; `normalise(gray, valid) -> (uint8 image, normalised float32)`; `pair_measurements(A, B, grid, ...) -> dict | None`; `aggregate(P_uv, m, L, cell, min_count) -> dict`; `solve(Ja, Jb, a, b, m, L, Jl, sl, el, count, iters=10) -> (x (count, 6), report)`; `lidar_residuals(cfg, sweeps, S, meta, poses) -> (el, Jl, sweep)` (the LiDAR samples re-posed with `poses`, measured) and `lidar_median_mm(el, sweep, sweeps) -> {sweep: mm}`; the commands `reg-lidar`, `reg-orthos --round N`, `reg-pairs --round N`, `reg-solve --round N`; outputs `<work>/reg/lidar.npz`, `<work>/reg/r<N>/<surface>/sNN.npz`, `<work>/reg/r<N>/pairs.npz` and `pairs-report.json` (`round`, `surfaces`, and `lidarMedianMmPerSweep` measured at round N's poses), `<work>/reg/poses_r<N+1>.json` (its `solve` holds `lidarMeasuredMmPerSweep` at round N's poses and `lidarPredictedMmPerSweep`, the linear prediction at round N+1's).
 
 The floor's solve (`D:/claude/visual-firstprinciples-20260928/floor/scripts/arm_b_register.py`) measured dense optical flow between 4 mm orthophotos of sweep pairs and solved a linearised 6-DOF correction per sweep (true centre `c + δ`, true ray `R(ω)` × nominal ray). It is generalised here to any surface and joined with a LiDAR term, so a wall seen from one side and the ceiling seen from below pin every axis:
 - **Photo term.** A sweep's nominal ortho at surface point P shows the true surface at `P + f(P)`. With `r = P − c`, the true ray through P's pixel meets the surface plane (normal `n`) at `P + A (δ + ω × r)`, `A = I − r nᵀ / (n·r)`, so in the surface's tangents `T = [t_u t_v]`: `f = Tᵀ A [I | −[r]×] x` (2 × 6). For the floor (`n = +z`) this is exactly the floor's `jac`. A measured flow m between sweeps a and b (`ortho_a(P) = ortho_b(P + m)`) obeys `m = f_a(P) − f_b(P)`.
 - **LiDAR term.** A sweep's LiDAR moves with its pose: `X' = c + δ + R(ω)(X − c)`. Its distance from the consensus height field (the research's sweep-corrected 1 cm median) changes by `nᵀ δ + ((X − c) × n)ᵀ ω`, which must cancel the measured residual `e`. Flat cells only, 300 returns per sweep and surface, σ 4 mm.
 - **Robust IRLS** (Huber, 4 mm on whitened flows, 6 mm on LiDAR) with a weak prior (5 cm, 0.5°). The consensus surfaces are fixed, so the LiDAR term also fixes the gauge.
-Two rigid rounds run (round 0's measurements give `poses_r1`, round 1's give `poses_r2`), and round 2's pairs measure the result. The gate (this task): on every surface, the pair flow magnitudes of round 2 have p50 at most 3.5 mm and p90 at most 7.0 mm (the floor's rigid step went 7.54/15.46 → 3.41/6.75 mm), and the median |LiDAR residual| per sweep is at most 2 mm. Task 4's warps then take the photos to millimetre consistency.
+Two rigid rounds run (round 0's measurements give `poses_r1`, round 1's give `poses_r2`), and round 2's pairs measure the result. The gate (this task): on every surface, the pair flow magnitudes of round 2 have p50 at most 3.5 mm and p90 at most 7.0 mm (the floor's rigid step went 7.54/15.46 → 3.41/6.75 mm), and the median |LiDAR residual| per sweep, measured at round 2's poses (`reg-pairs --round 2` writes it to `r2/pairs-report.json`; the solve's own `lidarPredictedMmPerSweep` is only its linear prediction), is at most 2 mm. Task 4's warps then take the photos to millimetre consistency.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2487,6 +2581,31 @@ def poses_path(cfg, rnd):
     return None if rnd == 0 else os.path.join(cfg.paths["work"], "reg", f"poses_r{rnd}.json")
 
 
+def lidar_residuals(cfg, sweeps, S, meta, poses):
+    """The LiDAR samples (`<work>/reg/lidar.npz`) re-posed with `poses`: each return's distance from the research's 1 cm
+    consensus along the normal (`el`, metres; measured, not predicted), its Jacobian (`Jl`, n x 6) and its sweep."""
+    index = {s: i for i, s in enumerate(sweeps)}
+    centre = np.array([meta[s].c + poses[s][0] for s in sweeps])
+    with np.load(os.path.join(cfg.paths["work"], "reg", "lidar.npz")) as z:
+        X0, ls, lk = z["X"], z["sweep"].astype(int), z["surface"].astype(int)
+    Xr = np.zeros_like(X0); el = np.zeros(len(X0)); Jl = np.zeros((len(X0), 6))
+    for s in sweeps:
+        sel = ls == s
+        Xr[sel] = SU.repose(X0[sel], meta[s].c, poses[s][0], poses[s][1])
+    for k, name in enumerate(SU.SURFACE_NAMES):
+        sel = lk == k
+        hf = SU.load_height(cfg.paths["surfaceResearch"], name, "h1cm")
+        loc = S[name].to_local(Xr[sel])
+        el[sel] = loc[:, 2] - SU.height_at(hf, loc[:, 0], loc[:, 1])
+        Jl[sel] = lidar_jacobian(Xr[sel], centre[np.array([index[s] for s in ls[sel]])], S[name].n)
+    return el, Jl, ls
+
+
+def lidar_median_mm(el, ls, sweeps) -> dict[str, float]:
+    """The median |LiDAR residual| per sweep, in mm."""
+    return {str(s): round(float(np.median(np.abs(el[ls == s]))) * 1000, 3) for s in sweeps if (ls == s).any()}
+
+
 def cmd_reg_lidar(cfg, rest) -> int:
     """<work>/reg/lidar.npz: LIDAR_PER returns per sweep and surface on flat cells of the research's consensus (1 cm),
     at the nominal pose, with each one's surface index."""
@@ -2609,8 +2728,9 @@ def cmd_reg_pairs(cfg, rest) -> int:
         print(f"reg-pairs r{rnd} {name}: {report.get(name)}", flush=True)
     out = reg_dir(cfg, rnd)
     np.savez(os.path.join(out, "pairs.npz"), **{k: np.concatenate(v) for k, v in rec.items()})
+    el, _jl, ls = lidar_residuals(cfg, sweeps, S, meta, poses)           # measured at this round's poses
     with open(os.path.join(out, "pairs-report.json"), "w", encoding="utf-8") as f:
-        json.dump({"round": rnd, "surfaces": report}, f, indent=1)
+        json.dump({"round": rnd, "surfaces": report, "lidarMedianMmPerSweep": lidar_median_mm(el, ls, sweeps)}, f, indent=1)
     return 0
 
 
@@ -2636,18 +2756,7 @@ def cmd_reg_solve(cfg, rest) -> int:
     L = P["L"]
     tr = np.trace(L, axis1=1, axis2=2)
     L = L / max(float(np.median(tr)), 1e-12) * 2.0 / SIGMA_FLOW ** 2 + np.eye(2)[None] * 1e-3 / SIGMA_FLOW ** 2
-    with np.load(os.path.join(cfg.paths["work"], "reg", "lidar.npz")) as z:
-        X0, ls, lk = z["X"], z["sweep"].astype(int), z["surface"].astype(int)
-    Xr = np.zeros_like(X0); el = np.zeros(len(X0)); Jl = np.zeros((len(X0), 6))
-    for s in sweeps:
-        sel = ls == s
-        Xr[sel] = SU.repose(X0[sel], meta[s].c, poses[s][0], poses[s][1])
-    for k, name in enumerate(SU.SURFACE_NAMES):
-        sel = lk == k
-        hf = SU.load_height(cfg.paths["surfaceResearch"], name, "h1cm")
-        loc = S[name].to_local(Xr[sel])
-        el[sel] = loc[:, 2] - SU.height_at(hf, loc[:, 0], loc[:, 1])
-        Jl[sel] = lidar_jacobian(Xr[sel], centre[np.array([index[s] for s in ls[sel]])], S[name].n)
+    el, Jl, ls = lidar_residuals(cfg, sweeps, S, meta, poses)
     sl = np.array([index[s] for s in ls])
     xs, report = solve(Ja, Jb, a, b, P["m"], L, Jl, sl, el, len(sweeps))
     new = {s: (poses[s][0] + xs[index[s], :3], poses[s][1] + xs[index[s], 3:]) for s in sweeps}
@@ -2655,14 +2764,13 @@ def cmd_reg_solve(cfg, rest) -> int:
     report.update({"round": rnd, "measurements": int(len(a)), "lidarReturns": int(len(el)),
                    "stepMmAbsMax": (steps[:, :3].max(0) * 1000).round(2).tolist(),
                    "stepDegAbsMax": np.degrees(steps[:, 3:].max(0)).round(4).tolist()})
-    perSweep = {}
-    for s in sweeps:
-        sel = ls == s
-        if sel.any():
-            perSweep[str(s)] = round(float(np.median(np.abs(el[sel] + Jl[sel] @ xs[index[s]]))) * 1000, 3)
-    report["lidarMedianMmPerSweep"] = perSweep
+    # measured at round N's poses, and the solve's linear prediction at round N+1's (Task 3's gate reads the
+    # measurement at round 2's poses, which reg-pairs --round 2 writes)
+    report["lidarMeasuredMmPerSweep"] = lidar_median_mm(el, ls, sweeps)
+    report["lidarPredictedMmPerSweep"] = lidar_median_mm(el + np.einsum("ij,ij->i", Jl, xs[sl]), ls, sweeps)
     SU.save_poses(os.path.join(cfg.paths["work"], "reg", f"poses_r{rnd + 1}.json"), new, {"solve": report})
-    print(json.dumps({k: v for k, v in report.items() if k != "lidarMedianMmPerSweep"}, indent=1), flush=True)
+    print(json.dumps({k: v for k, v in report.items() if not k.startswith("lidar") or not k.endswith("PerSweep")},
+                     indent=1), flush=True)
     return 0
 ```
 
@@ -2742,7 +2850,7 @@ import json
 w = "D:/claude/skins/grand-hall/work/reg"
 before = json.load(open(f"{w}/r0/pairs-report.json"))["surfaces"]
 after = json.load(open(f"{w}/r2/pairs-report.json"))["surfaces"]
-lidar = json.load(open(f"{w}/poses_r2.json"))["solve"]["lidarMedianMmPerSweep"]
+lidar = json.load(open(f"{w}/r2/pairs-report.json"))["lidarMedianMmPerSweep"]   # measured at round 2's poses
 ok = True
 for name, a in after.items():
     b = before[name]
@@ -3192,8 +3300,9 @@ The files R1a's amended commands read (contracts 3 and 4) are fixed here:
 - `light-grids.json`: `{ "skins": [{ "id", "group", "lightTexel", "size": [w, h], "texelToModel": [16], "normals": "<id>/light-normals.npy", "sun": { "size": [w, h], "texelToModel": [16] } }] }`, every skin in layout order. A light texel's point is 2 cm in front of the bay plane (`LIGHT_LIFT`, the floor's lift); a sun texel's is 5 mm in front (`SUN_LIFT`).
 - `covers.npz`: `ids` (S,) str, `groups` (S,) int8, `frames` (S, 12) float64 (origin, u axis, v axis, normal), `cell` (0.05), `shapes` (S, 2) int64 (rows, cols), `offsets` (S,) int64 into `wmin` and `wmax` (float32, row-major per skin; NaN where the skin covers nothing). A splat covers-test is R1a's (A3): the cell under its centre and its depth `w` along the normal within `[wmin − 0.10, wmax + 0.03 + min(2 σmax, 0.05)]`.
 - `toggles.json`: `{ "toggles": [{ "id", "toggle", "bit", "lo": [3], "hi": [3], "returns": n }], "keep": [{ "id", "lo", "hi" }] }` (E57 boxes; `bit` from `layout.TOGGLES`).
+- `skins.json` gives each skin `toggleBoxes`: the bits of the toggles whose boxes stand in front of it and fall on its rectangle. Its region holds those objects' clean version, so the browser hides a toggle's splats only while every wall group holding its clean version is drawn as skins (the controller's ruling T1, 8 October; Tasks 14, 16 and 21).
 
-The region of a skin: its rectangle, minus what `carve` returns (own-plane skins over a bay, explicit exclusions), minus every 1 cm cell the LiDAR says is 3D (relief beyond the style's limit, steeper than 60°, or at least 3 hidden returns making more than 20% of the cell: the inventory's "plane + HF" criteria), dilated by 1 cm, plus the forced cells: the footprint of every toggle box standing in front of the skin (so a hidden object reveals the skin, never a hole) and every flat-clutter and damage rectangle on it. Heights under forced cells are inpainted from the wall around them. Covers are taken over the region eroded by 1 cm (`BOUNDARY`), so the splats at a skin's edge stay and the edge never opens a gap. A frieze skin's region also ends at the frieze's bottom edge (amended 7 October): the top of the highest 5 mm row below 4.40 m whose median height stands more than 12 mm proud, the picture-rail moulding (`frieze_edge`, the frieze research's rule); the rows below it stay splats, and `skins.json` records the edge and the first rows of the moulding and of the 15 cm glare band (`frieze: { bottom, bottomRow, bandRow }`), which Tasks 10, 12 and 14 read.
+The region of a skin: its rectangle, minus what `carve` returns (own-plane skins over a bay, explicit exclusions), minus every 1 cm cell the LiDAR says is 3D (relief beyond the style's limit, steeper than 60°, or at least 3 hidden returns making more than 20% of the cell: the inventory's "plane + HF" criteria), dilated by 1 cm, plus the forced cells: the footprint of every toggle box standing in front of the skin (so a hidden object reveals the skin, never a hole) and every flat-clutter and damage rectangle on it. Heights under forced cells are inpainted from the wall around them. Covers are taken over the region eroded by 1 cm (`BOUNDARY`), so the splats at a skin's edge stay and the edge never opens a gap. A frieze skin's region also ends at the frieze's bottom edge (amended 7 October): the top of the highest 5 mm row below 4.40 m whose median height, over the columns no canvas or exclusion carves, stands more than 12 mm proud, the picture-rail moulding (`frieze_edge`, the frieze research's rule); the rows below it stay splats, and `skins.json` records the edge and the first rows of the moulding and of the 15 cm glare band (`frieze: { bottom, bottomRow, bandRow }`), which Tasks 10, 12 and 14 read.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3530,11 +3639,13 @@ def frieze_edge(h5, skin, cell=HEIGHT_CELL):
 
 
 def fill_heights(h5, valid):
-    """Finite everywhere: OpenCV's Telea inpainting (float32) of the invalid cells, then the nearest valid cell."""
+    """Finite everywhere: OpenCV's Navier-Stokes inpainting (float32) of the invalid cells (all zero when no cell is
+    valid). Not Telea: OpenCV 5.0's Telea returns values far outside the known range on float32 input (on a ramp of
+    0.2-0.58 it filled -0.98 to 1.68; measured 8 October), while Navier-Stokes stays within it."""
     h = np.where(valid & np.isfinite(h5), h5, 0.0).astype(np.float32)
     hole = (~(valid & np.isfinite(h5))).astype(np.uint8)
     if hole.any() and (hole == 0).any():
-        h = cv2.inpaint(h, hole, 3, cv2.INPAINT_TELEA)
+        h = cv2.inpaint(h, hole, 3, cv2.INPAINT_NS)
     return h.astype(np.float32)
 
 
@@ -3602,18 +3713,24 @@ def _gather(cfg, surface: F.Surface, skins, meta, poses):
 
 
 def _forced(skin, frame, surface, L):
-    rects = []
+    """The surface rectangles forced into the skin's region, and the toggles (their `layout.TOGGLES` bits) whose boxes
+    stand in front of it: the skin holds those objects' clean version, so the browser may hide them only while it
+    draws this skin's group (the controller's ruling T1, 8 October)."""
+    rects, boxes = [], set()
     for t in L.toggles:
         corners = np.array([[x, y, z] for x in (t.lo[0], t.hi[0]) for y in (t.lo[1], t.hi[1]) for z in (t.lo[2], t.hi[2])])
         a, b, w = frame.to_grid(corners)
         if w.max() < -0.05 or w.min() > 1.0:
             continue
         loc = surface.to_local(corners)
-        rects.append((loc[:, 0].min(), loc[:, 0].max(), loc[:, 1].min(), loc[:, 1].max()))
+        rect = (loc[:, 0].min(), loc[:, 0].max(), loc[:, 1].min(), loc[:, 1].max())
+        rects.append(rect)
+        if rect[0] < skin.u1 and rect[1] > skin.u0 and rect[2] < skin.v1 and rect[3] > skin.v0:
+            boxes.add(LY.TOGGLES[t.toggle])
     for c in list(L.flat) + list(L.damage):
         if c.surface == skin.surface:
             rects.append((c.u0, c.u1, c.v0, c.v1))
-    return rects
+    return rects, sorted(boxes)
 
 
 def cmd_geometry(cfg, rest) -> int:
@@ -3644,11 +3761,15 @@ def cmd_geometry(cfg, rest) -> int:
             h1, n1 = front_heights(a, b, w, 0.01, int(math.ceil(frame.width / 0.01)), int(math.ceil(frame.height / 0.01)))
             hidden, total = hidden_counts(a, b, w, h1, 0.01)
             three = three_d_mask(h1, hidden, total, skin.relief)
-            forced = _forced(skin, frame, S[name], L)
+            forced, toggle_boxes = _forced(skin, frame, S[name], L)
             region = region_mask(frame, skin, LY.carve(skin, L), three, forced)
             frieze = None
             if skin.style == "frieze":
-                edge = frieze_edge(h5, skin)
+                # the row medians run over the columns no own-plane skin or exclusion carves: a canvas reaching up into
+                # the frieze stands proud over up to 47% of a bay's columns, close to flipping a whole-row median
+                uncarved = region_mask(frame, skin, LY.carve(skin, L), np.zeros(three.shape, bool), []) > 0
+                uncarved5 = cv2.resize(uncarved.astype(np.uint8), (hc, hr), interpolation=cv2.INTER_NEAREST) > 0
+                edge = frieze_edge(np.where(uncarved5, h5, np.nan), skin)
                 if edge is not None:                                  # the moulding below the edge stays splats
                     bottom_row = max(0, int(math.ceil((skin.v1 - edge) / frame.texel - 0.5)))
                     band_row = max(0, int(math.ceil((skin.v1 - edge - FRIEZE_BAND_M) / frame.texel - 0.5)))
@@ -3680,7 +3801,7 @@ def cmd_geometry(cfg, rest) -> int:
                             "origin": frame.origin.tolist(), "uAxis": frame.u_axis.tolist(), "vAxis": frame.v_axis.tolist(),
                             "normal": frame.normal.tolist(), "planeRmsMm": round(rms * 1000, 3),
                             "regionShare": round(float((region > 0).mean()), 4), "lidarShare": round(lidar_share, 4),
-                            "frieze": frieze,
+                            "frieze": frieze, "toggleBoxes": toggle_boxes,
                             "height": {"cell": HEIGHT_CELL, "cols": hc, "rows": hr},
                             "envelope": {"cell": ENVELOPE_CELL, "cols": int(wmin.shape[1]), "rows": int(wmin.shape[0])},
                             "light": {"texel": skin.light_texel, "size": [lw, lh], "texelToModel": frame.texel_to_model(skin.light_texel, LIGHT_LIFT)},
@@ -4302,8 +4423,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `D:/claude/xbag/keyframes_repo.csv`, 51,460 records: `record_offset`, `seq`, `ts_us`, `codec_tag`, `width`, `height`, `payload_offset`, `payload_length`;
   - `D:/claude/real-hall/renovation/surfaces/work/xg_allposes.npz`, the inventory's `allposes.py`: every instant's fused pose for each of the 4 cameras, E57 frame; 51,432 rows of `seq`, `cam`, `C`, `Rcw`, `ts`, `omega`, `keyframe`;
   - PyAV 16.1, whose decoder exports each macroblock's quantiser (`export_side_data=venc_params`).
-- Produces (`frames.py`): `@dataclass(frozen=True) class DecodedFrame: bgr; qp; x0: int; y0: int`; `class FrameStore(folder)` with `path(name)`, `has(name)`, `load(name) -> DecodedFrame`, `save(name, frame, stats)`; `frame_name(cam: int, seq: int) -> str` (`"c<cam>_s<seq:05d>"`); `read_all_poses(path) -> dict` (`C` (n, 3) E57, `Rcw` (n, 3, 3) with x_cam = Rcw (X − C), `cam` (1–4), `seq`, `name`, `t_s`, `omega` (deg/s), `keyframe` bool).
-- Produces (`xbin.py`): `MB = 16`; `FRAME_W = 4000`, `FRAME_H = 3000`; `DEADZONE_FRACTION = 2/3`; `COEFF_PER_GREY = 2.4`; `CENSUS_STRIDE = 4`; `CENSUS_RANGE = 9.0`; `CENSUS_COVERAGE = 0.2`; `CROP_MARGIN_PX = 64`; `qstep(qp)` (H.264's step, `0.625 × 2^(qp/6)`); `deadzone_amplitude(qp)` (the faintest sinusoid, in grey levels, a 4×4 block keeps: `2/3 × step / 2.4`, about 7.9 at QP 33); `record_index(path) -> dict[(seq, slot), (payload_offset, payload_length)]`; `record_stats(b: bytes) -> list[int]`; `decode_record(buf: bytes) -> (bgr (H, W, 3) uint8, qp (H/16, W/16) uint8)`; `crop_box(boxes, width=FRAME_W, height=FRAME_H, margin=CROP_MARGIN_PX) -> (x0, y0, x1, y1)` (macroblock-aligned); `DecodedFrame` and `FrameStore` re-exported from `frames.py`; `census_skin(src, geom, edge_factor: dict, texel_limit: float, per_block: int) -> dict[int, (x0, y0, x1, y1)]`; the commands `frames-census` (`<work>/frames/census.json`) and `frames-decode` (`<work>/frames/store/<name>.npz`, `<work>/frames/index.json`).
+- Produces (`frames.py`): `@dataclass(frozen=True) class DecodedFrame: bgr; qp; x0: int; y0: int` (`bgr` converted from the stored planes, or a keyframe JPEG); `yuv_to_bgr(y (h, w), u (h/2, w/2), v (h/2, w/2)) -> (h, w, 3) uint8` (full-range BT.601, chroma at H.264's default location; pre-flight fix F6, 8 October); `class FrameStore(folder)` with `path(name)`, `has(name)`, `load(name) -> DecodedFrame` (converts with `yuv_to_bgr`), `save(name, y, u, v, qp, x0, y0, stats)` (the planes as decoded, compressed); `frame_name(cam: int, seq: int) -> str` (`"c<cam>_s<seq:05d>"`); `read_all_poses(path) -> dict` (`C` (n, 3) E57, `Rcw` (n, 3, 3) with x_cam = Rcw (X − C), `cam` (1–4), `seq`, `name`, `t_s`, `omega` (deg/s), `keyframe` bool).
+- Produces (`xbin.py`): `MB = 16`; `FRAME_W = 4000`, `FRAME_H = 3000`; `DEADZONE_FRACTION = 2/3`; `COEFF_PER_GREY = 2.4`; `CENSUS_STRIDE = 4`; `CENSUS_RANGE = 9.0`; `CENSUS_COVERAGE = 0.2`; `CROP_MARGIN_PX = 64`; `STORE_BYTES_PER_PX = 0.75`, `STORE_BUDGET_BYTES = 200e9`; `qstep(qp)` (H.264's step, `0.625 × 2^(qp/6)`: 25.198 at QP 32, where H.264's integer table has 26); `deadzone_amplitude(qp)` (the faintest sinusoid, in grey levels, a 4×4 block keeps: `2/3 × step / 2.4`, about 7.9 at QP 33); `record_index(path) -> dict[(seq, slot), (payload_offset, payload_length)]`; `record_stats(b: bytes) -> list[int]`; `decode_record(buf: bytes) -> (y (H, W), u (H/2, W/2), v (H/2, W/2) uint8, qp (H/16, W/16) uint8)` (the planes as decoded, no colour conversion); `crop_box(boxes, width=FRAME_W, height=FRAME_H, margin=CROP_MARGIN_PX) -> (x0, y0, x1, y1)` (macroblock-aligned); `projected_store_bytes(crops) -> int`; `DecodedFrame` and `FrameStore` re-exported from `frames.py`; `census_skin(src, geom, edge_factor: dict, texel_limit: float, per_block: int) -> dict[int, (x0, y0, x1, y1)]` (each chosen frame's box over the census blocks it was chosen for); the commands `frames-census` (`<work>/frames/census.json`, with `projectedStoreBytes`; exit 1 when the projection exceeds `STORE_BUDGET_BYTES` or a third of the work drive's free space) and `frames-decode` (`<work>/frames/store/<name>.npz`: `y`, `u`, `v`, `qp`, `x0`, `y0`, `stats`; `<work>/frames/index.json`, with each frame's `bytes`).
 - Produces (`views.py`): `XgView(name, camera, C, Rcw, images: str | FrameStore, occupancy=None)` (a keyframe folder, as before, or the decoded-frame store); `XgView.qp_at(P) -> (n,) float` (the quantiser of the macroblock each point projects into; NaN without a QP map or outside the crop); `render(..., raw=False, qp=False)`: `raw=True` adds `"raw"` (h, w, 3) float32, the sampled RGB bytes before any linearisation, and `qp=True` adds `"qp"` (h, w) float32; `Sources.store: FrameStore`; `Sources.edge_factor(key) -> float` (for an XGRIDS frame the config's `xgridsEdgeFactor` of its camera kind, otherwise `factor(key)`); `load_sources` now holds every frame of `xg_allposes.npz`, keyed `xg:c<cam>_s<seq>`.
 
 The resolution research measured the XGRIDS frames directly (`D:/claude/real-hall/frontier/resolution/proposal.md` §2.1, §2.4, checkpoint of 7 October). Three findings change this plan.
@@ -4318,11 +4439,15 @@ The resolution research measured the XGRIDS frames directly (`D:/claude/real-hal
 
 The census is cheap geometry, and it decides what is decoded. It looks at every 4th 2 cm block of every XGRIDS skin and projects each block into every frame within 9 m whose view of the skin is less oblique than 75°. Each block keeps the `framesPerBlock` (16) frames with the finest edge-equivalent GSD at or under the skin's spec texel (`layout.MAX_TEXEL`). The selection runs over all instants, whatever their speed: the research measured that steady frames are not sharper than moving ones.
 
-A chosen frame is decoded once, cropped to the union of every skin footprint it serves (on macroblock boundaries, 64 px of margin), and stored with its QP map and its record's statistics field. Each decoded frame then serves every skin and tile it sees. Decoding follows the research's `scripts/decode_frames.py`:
+A chosen frame is decoded once, cropped to the union of the census blocks it was chosen for (each grown by half a block, then 64 px of margin, on macroblock boundaries; not every block it sees, which made a pole-pass frieze frame's crop about half the frame), and stored with its QP map and its record's statistics field. Each decoded frame then serves every skin and tile it sees. Decoding follows the research's `scripts/decode_frames.py`:
 
 - slot k of an instant is its k-th record in file order, and it is COLMAP camera k + 1;
-- the colour conversion is libswscale's `bgr24`;
+- the Y, U and V planes are stored as decoded (4:2:0), with no colour conversion; `FrameStore.load` converts them with full-range BT.601 (pre-flight fix F6, 8 October);
 - the statistics are the four varints that follow each payload.
+
+**The range (measured 8 October).** The stream is `yuv420p` with no range flag, and its luma runs over the full 0–255 (0.6–4.3% of the door-wall band's pixels above 235 in 16 frames). libswscale's default `bgr24`, which the colmap keyframes went through, reads it as limited range and pushes every Y from 235 up to 255. In the door wall's band (u 10.05–10.55 m, 4.30–4.42 m; 8 pinhole and 8 fisheye frames, the resolution study's sharpest), red at 250 or more falls from 46–97% of pixels under that conversion to 24–68% under full range, green from 8–36% to 0.1–2.3%, and blue from up to 2.5% to under 0.05%. So about half of red's "clipping" in the band, and nearly all of green's, was the conversion, not the sensor: the frieze research's "XGRIDS R clipped in 73–90%" was measured through the keyframes. Full range also makes the bytes' BT.601 luma equal to the coded Y the dead zone acts on (Task 9's `coded_mask`); the limited-range bytes were 1.164 × Y. (Scratch: `D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/f6/band_range.py` and `keyframe_check.py`, each run twice, identical.)
+
+**The store's size.** The planes take 1.5 bytes per pixel before compression and 0.53–0.75 after (16 full frames and 6 central crops), against 1.2–1.6 for compressed BGR (16.9 MB for one full frame). The census projects the store at 0.75 bytes per pixel of every crop and refuses a selection above `STORE_BUDGET_BYTES` (200 GB) or above a third of the work drive's free space (the store, run 2's copy set aside if the double run must settle it, and as much again for the rest of the build).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4337,7 +4462,7 @@ from skins import frames, views, xbin
 
 class Codec(unittest.TestCase):
     def test_the_dead_zone_grows_with_the_quantiser(self):
-        self.assertAlmostEqual(float(xbin.qstep(32)), 25.0, delta=0.05)
+        self.assertAlmostEqual(float(xbin.qstep(32)), 0.625 * 2 ** (32 / 6), places=9)   # 25.198; H.264's table: 26
         self.assertAlmostEqual(float(xbin.deadzone_amplitude(33)), 2 / 3 * 0.625 * 2 ** 5.5 / 2.4, places=9)
         self.assertAlmostEqual(float(xbin.deadzone_amplitude(33)), 7.86, delta=0.01)
         self.assertGreater(float(xbin.deadzone_amplitude(41)), float(xbin.deadzone_amplitude(33)))
@@ -4365,22 +4490,37 @@ class Store(unittest.TestCase):
     def test_crops_lie_on_macroblocks_inside_the_frame(self):
         self.assertEqual(xbin.crop_box([(100.2, 50.0, 300.0, 120.5), (90.0, 70.0, 110.0, 200.0)]), (16, 0, 368, 272))
         self.assertEqual(xbin.crop_box([(3990.0, 2990.0, 3999.0, 2999.0)]), (3920, 2912, 4000, 3000))
+        self.assertEqual(xbin.projected_store_bytes([(0, 0, 4000, 3000), (16, 0, 368, 272)]), int((12e6 + 352 * 272) * 0.75))
 
     def test_a_decoded_frame_round_trips(self):
         store = xbin.FrameStore(tempfile.mkdtemp())
-        f = xbin.DecodedFrame(np.arange(32 * 48 * 3, dtype=np.uint8).reshape(32, 48, 3), np.full((2, 3), 33, np.uint8), 16, 32)
-        store.save("c1_s00007", f, [1, 2, 3, 4])
+        rng = np.random.default_rng(7)
+        y = rng.integers(0, 256, (32, 48), dtype=np.uint8)
+        u, v = rng.integers(0, 256, (16, 24), dtype=np.uint8), rng.integers(0, 256, (16, 24), dtype=np.uint8)
+        qp = np.full((2, 3), 33, np.uint8)
+        store.save("c1_s00007", y, u, v, qp, 16, 32, [1, 2, 3, 4])
         g = store.load("c1_s00007")
         self.assertTrue(store.has("c1_s00007"))
-        np.testing.assert_array_equal(g.bgr, f.bgr); np.testing.assert_array_equal(g.qp, f.qp)
+        np.testing.assert_array_equal(g.bgr, frames.yuv_to_bgr(y, u, v)); np.testing.assert_array_equal(g.qp, qp)
         self.assertEqual((g.x0, g.y0), (16, 32))
+        with np.load(store.path("c1_s00007")) as z:                     # the planes are stored as decoded
+            np.testing.assert_array_equal(z["y"], y); np.testing.assert_array_equal(z["u"], u)
+
+    def test_luma_is_full_range_bt601(self):
+        flat = lambda yv, uv, vv: frames.yuv_to_bgr(np.full((4, 4), yv, np.uint8), np.full((2, 2), uv, np.uint8),
+                                                    np.full((2, 2), vv, np.uint8))[1, 1].tolist()
+        self.assertEqual(flat(240, 128, 128), [240, 240, 240])          # limited range would push 240 to 255
+        self.assertEqual(flat(16, 128, 128), [16, 16, 16])              # and 16 to 0
+        self.assertEqual(flat(150, 44, 21), [1, 255, 0])                # BGR: green, as JFIF converts it
 
     def test_a_view_samples_through_the_crop_and_reads_the_macroblock_quantiser(self):
         store = xbin.FrameStore(tempfile.mkdtemp())
         # the full frame is 400 x 300; the crop is x 160..240, y 128..176 (macroblock-aligned)
-        bgr = np.full((48, 80, 3), 30, np.uint8); bgr[146 - 128:155 - 128, 196 - 160:205 - 160] = (0, 255, 0)
+        y = np.full((48, 80), 30, np.uint8); y[146 - 128:155 - 128, 196 - 160:205 - 160] = 150
+        u = np.full((24, 40), 128, np.uint8); u[9:14, 18:23] = 44                 # the patch's chroma: green
+        v = np.full((24, 40), 128, np.uint8); v[9:14, 18:23] = 21
         qp = np.array([[30, 31, 32, 33, 34], [35, 36, 37, 38, 39], [40, 41, 42, 43, 44]], np.uint8)
-        store.save("c1_s00001", xbin.DecodedFrame(bgr, qp, 160, 128), [0, 0, 0, 0])
+        store.save("c1_s00001", y, u, v, qp, 160, 128, [0, 0, 0, 0])
         cam = frames.XgCamera("OPENCV", np.array([200.0, 200.0, 200.0, 150.0, 0, 0, 0, 0]), 400, 300)
         Rcw = np.array([[0, -1.0, 0], [0, 0, -1.0], [1.0, 0, 0]])
         v = views.XgView("c1_s00001", cam, np.zeros(3), Rcw, store)
@@ -4435,14 +4575,35 @@ def read_all_poses(path: str) -> dict:
 
 @dataclass(frozen=True)
 class DecodedFrame:
-    bgr: np.ndarray        # (h, w, 3) uint8: the crop
+    bgr: np.ndarray        # (h, w, 3) uint8: the crop, converted from its stored planes (yuv_to_bgr), or a keyframe JPEG
     qp: np.ndarray | None  # (ceil(h / 16), ceil(w / 16)) uint8: its macroblocks' quantisers
     x0: int
     y0: int
 
 
+def yuv_to_bgr(y, u, v) -> np.ndarray:
+    """4:2:0 planes -> BGR uint8, full-range BT.601 (JFIF). The XGRIDS stream's luma runs over 0-255 with no range flag
+    (yuv420p, color_range unspecified), so libswscale's default bgr24 reads it as limited range and pushes every Y from
+    235 up to 255: in the frieze band that alone made about half of red's "clipping" and nearly all of green's (Task 6A).
+    Chroma is upsampled bilinearly at H.264's default chroma location (co-sited with the even luma columns, midway
+    between luma rows)."""
+    import cv2
+    y = np.asarray(y)
+    h, w = y.shape
+    M = np.float32([[0.5, 0.0, 0.0], [0.0, 0.5, -0.25]])                 # luma pixel -> chroma pixel
+
+    def up(c):
+        return cv2.warpAffine(np.asarray(c, np.float32), M, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+                              borderMode=cv2.BORDER_REPLICATE)
+    yy, cb, cr = y.astype(np.float32), up(u) - 128.0, up(v) - 128.0
+    bgr = np.stack([yy + 1.772 * cb, yy - 0.344136 * cb - 0.714136 * cr, yy + 1.402 * cr], -1)
+    return np.clip(np.rint(bgr), 0, 255).astype(np.uint8)
+
+
 class FrameStore:
-    """Decoded XGRIDS frames (Task 6A), one compressed .npz per frame: bgr, qp, x0, y0, stats."""
+    """Decoded XGRIDS frames (Task 6A), one compressed .npz per frame: the crop's Y, U and V planes as decoded (4:2:0,
+    no colour conversion, as the research's decode_frames.py keeps them; 0.53-0.75 bytes per pixel compressed), qp,
+    x0, y0, stats. load() converts the planes to BGR (yuv_to_bgr)."""
 
     def __init__(self, folder: str):
         self.folder = folder
@@ -4455,11 +4616,11 @@ class FrameStore:
 
     def load(self, name: str) -> DecodedFrame:
         with np.load(self.path(name)) as z:
-            return DecodedFrame(z["bgr"], z["qp"], int(z["x0"]), int(z["y0"]))
+            return DecodedFrame(yuv_to_bgr(z["y"], z["u"], z["v"]), z["qp"], int(z["x0"]), int(z["y0"]))
 
-    def save(self, name: str, frame: DecodedFrame, stats) -> None:
+    def save(self, name: str, y, u, v, qp, x0: int, y0: int, stats) -> None:
         os.makedirs(self.folder, exist_ok=True)
-        np.savez_compressed(self.path(name), bgr=frame.bgr, qp=frame.qp, x0=np.int64(frame.x0), y0=np.int64(frame.y0),
+        np.savez_compressed(self.path(name), y=y, u=u, v=v, qp=qp, x0=np.int64(x0), y0=np.int64(y0),
                             stats=np.asarray(stats, np.int64))
 ```
 
@@ -4474,7 +4635,7 @@ skins need. The census picks, for every 4th 2 cm block of every XGRIDS skin, the
 edge-equivalent GSD among all instants and cameras, not only the keyframes."""
 from __future__ import annotations
 
-import hashlib, json, math, os, time
+import hashlib, json, math, os, shutil, time
 
 import numpy as np
 
@@ -4490,6 +4651,8 @@ CENSUS_RANGE = 9.0                  # metres
 CENSUS_COVERAGE = 0.2
 CROP_MARGIN_PX = 64
 BLOCK = 0.02
+STORE_BYTES_PER_PX = 0.75           # measured 8 October: compressed planes, 0.53-0.75 B per pixel (16 frames, 6 crops)
+STORE_BUDGET_BYTES = 200e9          # the frame store's budget on D:; the census refuses a selection above it
 
 
 def qstep(qp):
@@ -4539,7 +4702,8 @@ def record_stats(b):
 
 
 def decode_record(buf):
-    """One all-intra H.264 access unit -> (BGR uint8, the macroblock QP map), PyAV with the encoder parameters exported."""
+    """One all-intra H.264 access unit -> (Y (H, W), U (H/2, W/2), V (H/2, W/2) uint8 planes as decoded, the macroblock
+    QP map), PyAV with the encoder parameters exported. No colour conversion here: FrameStore.load converts, full range."""
     import av
     cc = av.CodecContext.create("h264", "r")
     cc.options = {"export_side_data": "venc_params"}
@@ -4555,7 +4719,11 @@ def decode_record(buf):
             qp = np.asarray(q() if callable(q) else q).astype(np.uint8)
     if qp is None:
         raise ValueError("the decoder exported no QP map")
-    return frame.to_ndarray(format="bgr24"), qp
+    if frame.format.name != "yuv420p":
+        raise ValueError(f"a {frame.format.name} picture; the stream is yuv420p")
+    H, W = frame.height, frame.width
+    yuv = frame.to_ndarray()                                   # yuv420p: (H * 3 / 2, W), Y then U then V
+    return yuv[:H], yuv[H:H + H // 4].reshape(H // 2, W // 2), yuv[H + H // 4:].reshape(H // 2, W // 2), qp
 
 
 def crop_box(boxes, width=FRAME_W, height=FRAME_H, margin=CROP_MARGIN_PX):
@@ -4567,6 +4735,11 @@ def crop_box(boxes, width=FRAME_W, height=FRAME_H, margin=CROP_MARGIN_PX):
     return x0, y0, x1, y1
 
 
+def projected_store_bytes(crops):
+    """The frame store's projected size: every crop's pixels at STORE_BYTES_PER_PX."""
+    return int(sum((x1 - x0) * (y1 - y0) for x0, y0, x1, y1 in crops) * STORE_BYTES_PER_PX)
+
+
 def _census_points(geom):
     k = max(1, int(round(BLOCK / geom.texel))) * CENSUS_STRIDE
     rr, cc = np.mgrid[0:int(math.ceil(geom.rows / k)), 0:int(math.ceil(geom.cols / k))].astype(np.float64)
@@ -4576,13 +4749,13 @@ def _census_points(geom):
 
 def census_skin(src, geom, edge_factor, texel_limit, per_block):
     """Per census block, the per_block frames of finest edge-equivalent GSD (<= texel_limit); for every chosen frame the
-    pixel box of the skin's census points it sees, grown by half a census block."""
+    pixel box of the census blocks it was chosen for (not every block it sees), each grown by half a census block."""
     P, step = _census_points(geom)
     centre = geom.points(np.array([geom.cols / 2]), np.array([geom.rows / 2]))[0]
     reach = CENSUS_RANGE + 0.5 * math.hypot(geom.cols * geom.texel, geom.rows * geom.texel)
     near = np.flatnonzero(np.linalg.norm(src.xg["C"] - centre, axis=1) < reach)
     cos_max = math.cos(math.radians(src.cfg.room["obliquityMaxDeg"]))
-    rows, boxes, idx = [], {}, []
+    rows, idx = [], []
     for j in near:
         cam = src.cams[int(src.xg["cam"][j])]
         v = VW.XgView(src.xg["name"][j], cam, src.xg["C"][j], src.xg["Rcw"][j], src.store, None)
@@ -4595,15 +4768,27 @@ def census_skin(src, geom, edge_factor, texel_limit, per_block):
         g[g > texel_limit] = np.inf
         if not np.isfinite(g).any():
             continue
-        half = 0.5 * step / np.maximum(g[ok], 1e-6)
-        boxes[int(j)] = (float((px[ok] - half).min()), float((py[ok] - half).min()), float((px[ok] + half).max()), float((py[ok] + half).max()))
         rows.append(g); idx.append(int(j))
     if not rows:
         return {}
     G = np.stack(rows)
     order = np.argsort(G, axis=0, kind="stable")[:per_block]
-    chosen = {idx[i] for col in range(G.shape[1]) for i in order[:, col] if np.isfinite(G[i, col])}
-    return {j: boxes[j] for j in sorted(chosen)}
+    chosen = {}
+    for col in range(G.shape[1]):
+        for i in order[:, col]:
+            if np.isfinite(G[i, col]):
+                chosen.setdefault(int(i), []).append(col)
+    boxes = {}
+    for i, cols in chosen.items():
+        j = idx[i]
+        cam = src.cams[int(src.xg["cam"][j])]
+        v = VW.XgView(src.xg["name"][j], cam, src.xg["C"][j], src.xg["Rcw"][j], src.store, None)
+        sel = np.asarray(cols)
+        px, py, _ok = v._project(P[sel])
+        nominal = G[i, sel] / float(edge_factor["pinhole" if cam.model == "OPENCV" else "fisheye"])
+        half = 0.5 * step / np.maximum(nominal, 1e-6)                  # half a census block, in pixels
+        boxes[j] = (float((px - half).min()), float((py - half).min()), float((px + half).max()), float((py + half).max()))
+    return {j: boxes[j] for j in sorted(boxes)}
 
 
 def cmd_frames_census(cfg, rest) -> int:
@@ -4630,12 +4815,18 @@ def cmd_frames_census(cfg, rest) -> int:
     out = {"frames": {n: {"cam": e["cam"], "seq": e["seq"], "keyframe": e["keyframe"], "crop": list(crop_box(e["boxes"])),
                           "skins": sorted(e["skins"])} for n, e in sorted(frames.items())},
            "skins": skins}
+    out["projectedStoreBytes"] = projected_store_bytes([e["crop"] for e in out["frames"].values()])
     os.makedirs(os.path.join(cfg.paths["work"], "frames"), exist_ok=True)
     with open(os.path.join(cfg.paths["work"], "frames", "census.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1)
     keyframes = sum(1 for e in out["frames"].values() if e["keyframe"])
-    print(f"frames-census: {len(out['frames'])} frames for {len(skins)} skins, {keyframes} keyframes", flush=True)
-    return 0
+    # the store, run 2's copy aside if the double run must settle it, and as much again for the rest of the build
+    free = shutil.disk_usage(cfg.paths["work"]).free
+    fits = out["projectedStoreBytes"] <= STORE_BUDGET_BYTES and free >= 3 * out["projectedStoreBytes"]
+    print(f"frames-census: {len(out['frames'])} frames for {len(skins)} skins, {keyframes} keyframes; projected store "
+          f"{out['projectedStoreBytes'] / 1e9:.1f} GB (budget {STORE_BUDGET_BYTES / 1e9:.0f} GB; free on the work drive "
+          f"{free / 1e9:.0f} GB, three times the store needed) {'fits' if fits else 'OVER: stop and report'}", flush=True)
+    return 0 if fits else 1
 
 
 def cmd_frames_decode(cfg, rest) -> int:
@@ -4651,20 +4842,24 @@ def cmd_frames_decode(cfg, rest) -> int:
             f.seek(po)
             buf = f.read(pl)
             stats = record_stats(f.read(24))
-            bgr, qp = decode_record(buf)
-            if bgr.shape[:2] != (FRAME_H, FRAME_W):
-                raise ValueError(f"{name}: a {bgr.shape[1]} x {bgr.shape[0]} picture")
-            x0, y0, x1, y1 = e["crop"]
-            frame = DecodedFrame(np.ascontiguousarray(bgr[y0:y1, x0:x1]),
-                                 np.ascontiguousarray(qp[y0 // MB:(y1 + MB - 1) // MB, x0 // MB:(x1 + MB - 1) // MB]), x0, y0)
-            store.save(name, frame, stats)
-            entries[name] = {"sha256": hashlib.sha256(frame.bgr.tobytes()).hexdigest(), "qpP50": float(np.median(frame.qp)),
-                             "qpRange": [int(frame.qp.min()), int(frame.qp.max())], "stats": stats}
+            Y, U, V, qp = decode_record(buf)
+            if Y.shape != (FRAME_H, FRAME_W):
+                raise ValueError(f"{name}: a {Y.shape[1]} x {Y.shape[0]} picture")
+            x0, y0, x1, y1 = e["crop"]                                     # macroblock-aligned, so even
+            planes = [np.ascontiguousarray(Y[y0:y1, x0:x1]), np.ascontiguousarray(U[y0 // 2:y1 // 2, x0 // 2:x1 // 2]),
+                      np.ascontiguousarray(V[y0 // 2:y1 // 2, x0 // 2:x1 // 2])]
+            q = np.ascontiguousarray(qp[y0 // MB:(y1 + MB - 1) // MB, x0 // MB:(x1 + MB - 1) // MB])
+            store.save(name, *planes, q, x0, y0, stats)
+            entries[name] = {"sha256": hashlib.sha256(b"".join(p.tobytes() for p in planes)).hexdigest(),
+                             "qpP50": float(np.median(q)), "qpRange": [int(q.min()), int(q.max())], "stats": stats,
+                             "bytes": os.path.getsize(store.path(name))}
             if k % 500 == 0:
                 print(f"frames-decode: {k} of {len(census['frames'])}, {time.time() - started:.0f} s", flush=True)
     with open(os.path.join(cfg.paths["work"], "frames", "index.json"), "w", encoding="utf-8") as f:
         json.dump({"frames": entries}, f, indent=1)
-    print(f"frames-decode: {len(entries)} frames in {time.time() - started:.0f} s", flush=True)
+    stored = sum(e["bytes"] for e in entries.values())
+    print(f"frames-decode: {len(entries)} frames in {time.time() - started:.0f} s; store {stored / 1e9:.1f} GB "
+          f"against {census['projectedStoreBytes'] / 1e9:.1f} GB projected", flush=True)
     return 0
 ```
 
@@ -4842,7 +5037,7 @@ COMMANDS["frames-decode"] = Command(run=_lazy("xbin", "cmd_frames_decode"),
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_xbin tests.test_sources tests.test_frames -v`
-Expected: PASS, 22 tests (7 xbin, 6 sources, 9 frames).
+Expected: PASS, 23 tests (8 xbin, 6 sources, 9 frames).
 
 - [ ] **Step 8: Commit the code**
 
@@ -4863,17 +5058,17 @@ C:/Python313/python.exe -m skins twice frames-census --config config/grand-hall.
 C:/Python313/python.exe -m skins twice frames-decode --config config/grand-hall.json
 ```
 
-Expected: both `PASS`.
+Expected: both `PASS`. The census's last line prints the projected store size and `fits`; `OVER` stops the task (report the projection and the free space).
 
 The census prints, per XGRIDS skin, how many frames it chose and how many of them are keyframes. Hall-wide, most chosen frames should not be keyframes: the research found about 6 in 7 of the sharp board frames were never decoded. If keyframes make up more than half of the frames, the census is not reaching the other instants; stop and report.
 
 The decoded QP maps lie between 8 and 48 (the encoder's range, `index.json`'s `qpRange`). The board's crops should sit around QP 31–43 and the frieze's around 30–34; report each skin group's median.
 
-Then check the decoder against the colmap keyframes of the same instants:
+Then check the decoder against the colmap keyframes of the same instants. The keyframe JPEGs went through libswscale's limited-range `bgr24` and a JPEG layer, so the stored planes are compared with them under that same conversion (OpenCV's I420 conversion), which proves the slot-to-camera mapping and the record, and under the store's own full-range conversion, which differs by the range:
 
 ```bash
-C:/Python313/python.exe - <<'EOF'
-import json, os
+cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe - <<'EOF'
+import json
 import numpy as np, cv2
 work = "D:/claude/skins/grand-hall/work"
 census = json.load(open(f"{work}/frames/census.json"))
@@ -4886,13 +5081,17 @@ for name in keys:
     if jpg is None:
         print(name, "no keyframe jpeg under that name"); continue
     f = store.load(name)
-    crop = jpg[f.y0:f.y0 + f.bgr.shape[0], f.x0:f.x0 + f.bgr.shape[1]].astype(np.float64)
-    a = f.bgr.astype(np.float64)
-    print(name, round(float(np.corrcoef(a.ravel(), crop.ravel())[0, 1]), 4), round(float(np.abs(a - crop).mean()), 2))
+    with np.load(store.path(name)) as z:
+        y, u, v = z["y"], z["u"], z["v"]
+    h, w = y.shape
+    limited = cv2.cvtColor(np.concatenate([y, u.reshape(h // 4, w), v.reshape(h // 4, w)]), cv2.COLOR_YUV2BGR_I420)
+    crop = jpg[f.y0:f.y0 + h, f.x0:f.x0 + w].astype(np.float64)
+    for label, a in (("limited", limited.astype(np.float64)), ("full", f.bgr.astype(np.float64))):
+        print(name, label, round(float(np.corrcoef(a.ravel(), crop.ravel())[0, 1]), 5), round(float(np.abs(a - crop).mean()), 2))
 EOF
 ```
 
-Expected: a correlation of at least 0.99 per frame, the two decodings differing only by the JPEG layer the keyframes went through (the keyframes are `slot<k>/seq<seq:05d>.jpg`, `D:/claude/colmap-gh/hall/manifest.json` `instants[].slots[].image`). A correlation under 0.99 means a wrong slot-to-camera mapping or record; stop and report. Save the printouts as `D:/claude/skins/grand-hall/evidence/task6a-frames.txt`, with the decoded count, the total size of `frames/store` (expected tens of GB on D:) and the decode time.
+Expected: under `limited`, a correlation of at least 0.99 per frame (measured on six keyframes on 8 October: 0.99962–0.99977, mean |Δ| 1.42–1.49 grey levels, only the JPEG layer between them; the keyframes are `slot<k>/seq<seq:05d>.jpg`, `D:/claude/colmap-gh/hall/manifest.json` `instants[].slots[].image`). A correlation under 0.99 means a wrong slot-to-camera mapping or record; stop and report. Under `full`, a correlation near 0.999 and a mean |Δ| of about 6–10 grey levels (measured 0.99898–0.99948 and 5.75–9.70): that is the range difference, not an error. Save the printouts as `D:/claude/skins/grand-hall/evidence/task6a-frames.txt`, with the decoded count, the store's size against the census's projection (`frames-decode` prints both; measured 0.53–0.75 bytes per pixel on 8 October) and the decode time.
 
 ### Task 7: The XGRIDS frames' registration, measured effective sharpness and each skin's candidate views
 
@@ -4904,11 +5103,11 @@ Expected: a correlation of at least 0.99 per frame, the two decodings differing 
 **Interfaces:**
 - Consumes: Task 6 (`views.Sources`, `load_sources`, `load_geometry`, `geometry_ids`, `render`, `E57View`, `PanoView`, `XgView`, `SkinGeometry`, `COS_MAX_OBLIQUE`), Task 6A (`<work>/frames/census.json` `skins`: each XGRIDS skin's chosen frames; the decoded frames in `<work>/frames/store`; `Sources.edge_factor`), Task 2 (`layout.load_layout`: each skin's `xgrids` flag), the config's `effectiveFactor`, `xgridsEdgeFactor`, `facesPerBlock` and `framesPerBlock`.
 - Produces (`views.py`): `E57View.check(P)`, `PanoView.check(P)`, `XgView.check(P, occlusion=True)`, each `-> (ok (n,), r (n,))`.
-- Produces (`xgrids.py`): `KAPPA = 0.7368` (the inventory's measured blur per unit of E57 angular GSD), `MAX_FRAMES = 240`, `MIN_CORR = 0.7`, `MAX_SHIFT = 0.025`, `MIN_OVERLAP = 4000` (texels), `BLOCK = 0.02`, `SIGMAS` (0 to 4 texels by 0.25); `luma(rgb) -> (h, w) float32`; `band(img) -> float32` (difference of Gaussians, σ 0.7 and 6 texels); `ecc_to_texel_affine(W) -> (2, 3)`; `shift_affine(A, c0, r0) -> (2, 3)` (an affine on a window's texel coordinates, as one on the skin's); `register(ref, ref_valid, img, valid, levels=(4, 2, 1)) -> (W (2, 3) pixel coordinates, corr: float)`; `blur_fit(ref, img, valid) -> float` (texels; positive when `img` is blurrier); `measured_gsd(ref_gsd, sigma_rel, kappa=KAPPA) -> float` (metres, E57-equivalent); `select_top(gsd (V, BR, BC), k) -> (idx (BR, BC, k) int16, val (BR, BC, k) float32)` (`-1` and `inf` where fewer than k views see a block); `top_faces_and_frames(face_rows, frame_rows, k_faces, k_frames, shape) -> (idx, val)` (each block's `k_faces` sharpest faces and panoramas, then its `k_frames` sharpest XGRIDS frames, indices into faces then frames); the commands `xgrids-register` (`<work>/xgrids/<id>.json` for every skin whose layout says `xgrids`) and `views` (`<work>/views/<id>.npz`: `keys` (V,) str, `top` (BR, BC, facesPerBlock + framesPerBlock) int16, `gsd` (same) float32 metres, `block` 0.02).
+- Produces (`xgrids.py`): `KAPPA = 0.7368` (the inventory's measured blur per unit of E57 angular GSD), `MAX_FRAMES = 240`, `MIN_CORR = 0.7`, `MAX_SHIFT = 0.025`, `MIN_OVERLAP = 4000` (texels), `BLOCK = 0.02`, `SIGMAS` (0 to 4 texels by 0.25); `luma(rgb) -> (h, w) float32`; `band(img) -> float32` (difference of Gaussians, σ 0.7 and 6 texels); `ecc_to_texel_affine(W) -> (2, 3)`; `shift_affine(A, c0, r0) -> (2, 3)` (an affine on a window's texel coordinates, as one on the skin's); `window_shift_px(W, shape) -> (2,)` (how far W moves the window's centre, in pixels: `MAX_SHIFT` is judged there, not at the window's corner, where ECC trades a small scale against translation); `register(ref, ref_valid, img, valid, levels=(4, 2, 1)) -> (W (2, 3) pixel coordinates, corr: float)`; `blur_fit(ref, img, valid) -> float` (texels; positive when `img` is blurrier); `measured_gsd(ref_gsd, sigma_rel, kappa=KAPPA) -> float` (metres, E57-equivalent); `select_top(gsd (V, BR, BC), k) -> (idx (BR, BC, k) int16, val (BR, BC, k) float32)` (`-1` and `inf` where fewer than k views see a block); `top_faces_and_frames(face_rows, frame_rows, k_faces, k_frames, shape) -> (idx, val)` (each block's `k_faces` sharpest faces and panoramas, then its `k_frames` sharpest XGRIDS frames, indices into faces then frames); the commands `xgrids-register` (`<work>/xgrids/<id>.json` for every skin whose layout says `xgrids`) and `views` (`<work>/views/<id>.npz`: `keys` (V,) str, `top` (BR, BC, facesPerBlock + framesPerBlock) int16, `gsd` (same) float32 metres, `block` 0.02).
 
 `xgrids/<id>.json`: `{ "reference": "face:<s>", "referenceGsdMm": number, "frames": [{ "key": "xg:<name>", "affine": [[a, b, c], [d, e, f]], "corr": number, "sigmaRelMm": number, "effectiveGsdMm": number, "edgeGsdMm": number, "nominalGsdMm": number, "coverage": number }] }`. `affine` maps a texel's coordinates (centres at +0.5) to the coordinates the frame is rendered at (`views.render(..., affine=...)`).
 
-Every frame Task 6A's census chose for the skin is considered, from all instants and at any speed (the research measured that steady frames are not sharper than moving ones). A frame is registered when its edge-equivalent GSD (nominal × `xgridsEdgeFactor`, Task 6A) could beat 1.2 × the skin's best E57 face; at most 240 per skin, the finest first. Each is rendered on the window of the skin it covers (its census blocks with a two-block margin, so a close frame that sees a few percent of a large skin costs a few percent of a render) and registered to the face there, posed and warped, by ECC: affine, on band-passed luma, coarse to fine at 4, 2 and 1 texels. It is accepted at a correlation of at least 0.7, a shift under 25 mm and at least 4,000 overlapping texels. Each accepted frame is rendered again at its correction and its blur against the face is fitted as the inventory's `effres.py` did (the Gaussian σ that best turns the sharper of the two into the blurrier). Its E57-equivalent GSD is `sqrt(σ_face² ± σ_rel²) / κ`, with `σ_face = κ × the face's angular GSD` and κ = 0.7368. This measured, correlation-based number describes texture, which the codec erases (Task 6A), so it is recorded as `effectiveGsdMm` and does not rank the frame. The ranking uses `edgeGsdMm`, and Task 9 decides texel by texel where a frame's texture was coded. Faces count at their angular GSD and panoramas at 0.79 × their nominal GSD (the inventory's measured factors). Each 2 cm block keeps its 6 sharpest faces and panoramas, for faint texture, and separately its 16 sharpest frames, for edges. A frame-rich block can therefore never push out the faces that alone recorded its shading.
+Every frame Task 6A's census chose for the skin is considered, from all instants and at any speed (the research measured that steady frames are not sharper than moving ones). A frame is registered when its edge-equivalent GSD (nominal × `xgridsEdgeFactor`, Task 6A) could beat 1.2 × the skin's best E57 face; at most 240 per skin, the finest first. Each is rendered on the window of the skin it covers (its census blocks with a two-block margin, so a close frame that sees a few percent of a large skin costs a few percent of a render) and registered to the face there, posed and warped, by ECC: affine, on band-passed luma, coarse to fine at 4, 2 and 1 texels. It is accepted at a correlation of at least 0.7, a shift under 25 mm at the window's centre and at least 4,000 overlapping texels. Each accepted frame is rendered again at its correction and its blur against the face is fitted as the inventory's `effres.py` did (the Gaussian σ that best turns the sharper of the two into the blurrier). Its E57-equivalent GSD is `sqrt(σ_face² ± σ_rel²) / κ`, with `σ_face = κ × the face's angular GSD` and κ = 0.7368. This measured, correlation-based number describes texture, which the codec erases (Task 6A), so it is recorded as `effectiveGsdMm` and does not rank the frame. The ranking uses `edgeGsdMm`, and Task 9 decides texel by texel where a frame's texture was coded. Faces count at their angular GSD and panoramas at 0.79 × their nominal GSD (the inventory's measured factors). Each 2 cm block keeps its 6 sharpest faces and panoramas, for faint texture, and separately its 16 sharpest frames, for edges. A frame-rich block can therefore never push out the faces that alone recorded its shading.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4949,7 +5148,9 @@ class Registration(unittest.TestCase):
         valid = np.ones(ref.shape, bool)
         W, corr = X.register(ref, valid, img, valid)
         self.assertGreater(corr, 0.9)
-        np.testing.assert_allclose(W[:, 2], [2.6, -1.8], atol=0.1)
+        # img(x) = ref(x + t) and ECC's W maps img(W x) onto ref(x), so W moves a point by -t; measured at the image's
+        # centre, where a small scale change cannot trade against the translation as it does at the origin
+        np.testing.assert_allclose(X.window_shift_px(W, ref.shape), [-2.6, 1.8], atol=0.1)
 
     def test_blur_fit_measures_the_extra_blur(self):
         ref = texture(2)
@@ -5086,6 +5287,12 @@ def shift_affine(A, c0, r0):
     out = A.copy()
     out[:, 2] = A[:, 2] + np.array([c0, r0], np.float64) - A[:, :2] @ np.array([c0, r0], np.float64)
     return out
+
+
+def window_shift_px(W, shape):
+    """How far the ECC warp W moves the window's centre, in pixels (x, y); shape (rows, cols)."""
+    c = np.array([(shape[1] - 1) / 2, (shape[0] - 1) / 2, 1.0])
+    return np.asarray(W, np.float64) @ c - c[:2]
 
 
 def register(ref, ref_valid, img, valid, levels=(4, 2, 1)):
@@ -5234,7 +5441,7 @@ def cmd_xgrids_register(cfg, rest) -> int:
         for est, key, nominal, (r0, r1, c0, c1) in cand[:MAX_FRAMES]:
             raw = VW.render(src.view(key), geom, r0, r1, c0, c1, occlusion_block=10)
             W, corr = register(ref_l[r0:r1, c0:c1], ref["valid"][r0:r1, c0:c1], luma(raw["rgb"]), raw["valid"])
-            shift = float(np.hypot(*W[:, 2])) * geom.texel
+            shift = float(np.hypot(*window_shift_px(W, (r1 - r0, c1 - c0)))) * geom.texel   # at the window's centre
             if corr < MIN_CORR or shift > MAX_SHIFT:
                 continue
             A = shift_affine(ecc_to_texel_affine(W), c0, r0)
@@ -5362,9 +5569,9 @@ Expected: on most frieze bays a registered XGRIDS frame beats the best face at e
 
 **Interfaces:**
 - Consumes: Task 5 (`<work>/geometry/light-grids.json`, `covers.npz`), Task 6 (`views.load_sources`, `load_geometry`, `geometry_ids`, `render`, `view_state`, `SkinGeometry`), Task 7 (`<work>/views/<id>.npz`); R1a as amended: `python -m relight skin-light` (A4) and its `<relight work>/skin-light/<id>.records` and `index.json`; `relight.codec.unpack_records(buf, ranges) -> (direct (N, 9), normals (N, 3), flags (N,))` (R1a Task 1); `relight.reference.trilinear(model, pos) -> (idx (N, 8), wts (N, 8))` (reads only `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid`) and `relight.reference.cube_eval(cubes (N, K, 3, 6), n (N, 3), iso (N,)) -> (N, K, 3)` (R1a Task 5); `<relight work>/probes-coarse.npz` (`cubes` float16 (M, 9, 3, 6), `valid`, `origin`, `shape`, `spacing`), checked against R1a's `<relight evidence>/probes-check.json` (`pass`, `artifact.sha256`; R1a Task 4c) and the package's `evidence.artifacts["probes-coarse.npz"]`; the skin-light folder checked against `<relight evidence>/skin-light.json` (`artifact` the index, `records` `{ id: sha256 }`; R1a Task 4c); relight package v1's `manifest.json` (`capture.weights` (9,), `capture.colours` (9, 3): R1a Task 4b's refit, a colour per lamp group, never a constant); the splat tables `<relight work>/npy/splats_pos.npy` (float32 e57), `splats_rgb.npy` (uint8 sRGB), `splats_opa.npy` (float16).
-- Produces (`lightstates.py`): `relight_modules(cfg) -> (codec, reference)` (R1a's numpy modules, imported from `paths.relightTool`); `sha256_of(path) -> str`; `check_relight_artifacts(relight_work, relight_evidence, manifest) -> None` (`ValueError` unless the probes and every skin-light file are the bytes R1a's evidence records and the probes the ones the package was built from; amended 7 October, the packaging rule); `@dataclass(frozen=True) class ProbeField: cubes (M, 9, 3, 6) float64; valid; origin; spacing; shape` with `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid` (the names `reference.trilinear` reads); `load_probes(path) -> ProbeField`; `source_light(reference, probes, P, n) -> (N, 9, 3)` (each source's white unit light at P with normal n: its direct light comes separately; this is its bounce, `cube_eval` of the trilinear cubes); `light_of(direct (N, 9), bounce (N, 9, 3)) -> (N, 9, 3)` (`D[k] + I[k]` per channel); `mix(L (…, 9, 3), W (9, 3)) -> (…, 3)`; `bilinear(grid (lh, lw, C), x, y) -> (n, C)` (light-grid coordinates, centres at whole numbers, clamped: the browser twin's formula, Task 17); `texel_light_coords(geom, light_texel, cc, rr) -> (x, y)` (texel coordinates → light-grid coordinates); `anchor(splats, geom, covers_row, Ecap, light_texel) -> (lh, lw, 3)` (the covered splats' opacity-weighted mean linear colour over Ecap; NaN where fewer than 5 splats); `fit_states(rows: dict, W0 (9, 3), iters=8) -> (W (9, 3), gains dict, report)`; files `<work>/light/<id>.npz` (`L` (lh, lw, 9, 3) float32, `Ecap` (lh, lw, 3) float32, `anchor` (lh, lw, 3) float32, `size` [lw, lh], `texel`) and `<work>/light/states.json` (`{ "capture": { "W": [[r, g, b] × 9] }, "day": { "W": … }, "evening": { "W": … }, "fit": { "day": { "rows", "medianAbsLog2", "lampShare" }, "evening": { … } } }`); the commands `light-model` and `light-states`.
+- Produces (`lightstates.py`): `relight_modules(cfg) -> (codec, reference)` (R1a's numpy modules, imported from `paths.relightTool`); `sha256_of(path) -> str`; `check_relight_artifacts(relight_work, relight_evidence, manifest) -> None` (`ValueError` unless the probes and every skin-light file are the bytes R1a's evidence records, the probes the ones the package was built from, and the skins `index.json` lists exactly the ones `skin-light.json` records; amended 7 October, the packaging rule; the last check 8 October); `@dataclass(frozen=True) class ProbeField: cubes (M, 9, 3, 6) float64; valid; origin; spacing; shape` with `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid` (the names `reference.trilinear` reads); `load_probes(path) -> ProbeField`; `source_light(reference, probes, P, n) -> (N, 9, 3)` (each source's white unit light at P with normal n: its direct light comes separately; this is its bounce, `cube_eval` of the trilinear cubes); `light_of(direct (N, 9), bounce (N, 9, 3)) -> (N, 9, 3)` (`D[k] + I[k]` per channel); `mix(L (…, 9, 3), W (9, 3)) -> (…, 3)`; `bilinear(grid (lh, lw, C), x, y) -> (n, C)` (light-grid coordinates, centres at whole numbers, clamped: the browser twin's formula, Task 17); `texel_light_coords(geom, light_texel, cc, rr) -> (x, y)` (texel coordinates → light-grid coordinates); `anchor(splats, geom, covers_row, Ecap, light_texel) -> (lh, lw, 3)` (the covered splats' opacity-weighted mean linear colour over Ecap; NaN where fewer than 5 splats); `fit_states(rows: dict, W0 (9, 3), iters=8) -> (W (9, 3), gains dict, report)`; files `<work>/light/<id>.npz` (`L` (lh, lw, 9, 3) float32, `Ecap` (lh, lw, 3) float32, `anchor` (lh, lw, 3) float32, `size` [lw, lh], `texel`) and `<work>/light/states.json` (`{ "capture": { "W": [[r, g, b] × 9] }, "day": { "W": … }, "evening": { "W": … }, "fit": { "day": { "rows", "medianAbsLog2", "lampShare" (the lamps' share of the fitted light) }, "evening": { … } } }`); the commands `light-model` and `light-states`.
 
-The browser lights a skin texel with R1b's bounce and the nine sources' direct light from the records R1a bakes for the skin (contract 3), so the captured light the skin is de-lit by must be that same light: `Ecap = Σk w[k] c[k] ⊙ (D[k] + I[k])` per light texel from the decoded log codes and the float16 probe cubes the package carries, read bilinearly at each texel exactly as the browser reads its light buffer. The capture's own light (the XGRIDS frames, the splats) is that `Ecap`. The E57 sweeps were taken in two other light states (the floor research's daylight sweeps 0–17 and 19–25, evening 26–47), so each state's light is the same nine sources with their own RGB weights, `E_s = Σk W_s[k] ⊙ (D[k] + I[k])`, fitted on the plaster skins against the splats: `observation_i(t) ≈ g_i ⊙ A(t) ⊙ E_s(t)` with A the covered splats' colour over `Ecap` (what the relight model calls the albedo) and `g_i` the view's exposure and white balance. Weights by non-negative least squares per channel, gains by medians, alternating 8 times; each state's median gain is 1 (its weights carry the scale). The gate: each state's median |log2(model / observation)| over the plaster light texels at most 0.15, the evening's lamp weights above its windows' and the day's windows' above its lamps'. A miss stops the build: the relight model cannot explain that state, and the controller decides.
+The browser lights a skin texel with R1b's bounce and the nine sources' direct light from the records R1a bakes for the skin (contract 3), so the captured light the skin is de-lit by must be that same light: `Ecap = Σk w[k] c[k] ⊙ (D[k] + I[k])` per light texel from the decoded log codes and the float16 probe cubes the package carries, read bilinearly at each texel exactly as the browser reads its light buffer. The capture's own light (the XGRIDS frames, the splats) is that `Ecap`. The E57 sweeps were taken in two other light states (the floor research's daylight sweeps 0–17 and 19–25, evening 26–47), so each state's light is the same nine sources with their own RGB weights, `E_s = Σk W_s[k] ⊙ (D[k] + I[k])`, fitted on the plaster skins against the splats: `observation_i(t) ≈ g_i ⊙ A(t) ⊙ E_s(t)` with A the covered splats' colour over `Ecap` (what the relight model calls the albedo) and `g_i` the view's exposure and white balance. Weights by non-negative least squares per channel, gains by medians, alternating 8 times; each state's median gain is 1 (its weights carry the scale). The gate: each state's median |log2(model / observation)| over the plaster light texels at most 0.15, and the lamps' share of the state's fitted light on those texels (`lampShare`: `Σ mix(L[lamps], W[lamps]) / Σ mix(L, W)`) above one half in the evening and below one half by day. The share is of the light, not of the weights: a unit of window weight and a unit of lamp weight give very different light (the capture fit has window weights of 29–51 and lamp weights of 0–2.2, a weight share of 0.02), and the evening sweeps were taken at dusk, so a small window weight could outweigh the lamps' sum (pre-flight fix, 8 October). A miss stops the build: the relight model cannot explain that state, and the controller decides.
 
 (Amended 7 October.) The capture light is R1a Task 4b's house-light refit as the package carries it: `capture.weights` give the centre chandelier its share by bulb count, and `capture.colours` hold a colour per lamp group (cove, the chandeliers, the dome). R1c reads them from the manifest and holds no lamp colour of its own; each E57 state's weights start from them and are fitted per channel. The skins are de-lit only by artifacts R1a's evidence vouches for: `light-model` first checks that `probes-coarse.npz` has the SHA-256 that `probes-check.json` records and that relight package v1 was built from (its `evidence.artifacts`), and that the skin-light folder's `index.json` and every `<id>.records` have the SHA-256 that `skin-light.json` records. The sky bodies' bounce has no part here: the capture light has no sky body (R1a's "The multiplier": `Ecap` is the nine sources only), and the scenario's bounce reaches the skins in the browser (contract 7).
 
@@ -5434,6 +5641,8 @@ class Fit(unittest.TestCase):
         self.assertLess(report["medianAbsLog2"], 1e-3)
         np.testing.assert_allclose(model, obs, rtol=1e-3)
         self.assertAlmostEqual(float(np.median(gains[:, 0])), 1.0, places=9)
+        light_share = LS.mix(L[:, 5:], W_true[5:]).sum() / LS.mix(L, W_true).sum()   # the lamps' share of the light
+        self.assertAlmostEqual(report["lampShare"], float(light_share), places=3)
 
 
 class Anchor(unittest.TestCase):
@@ -5457,7 +5666,8 @@ class Artifacts(unittest.TestCase):
         root = tempfile.mkdtemp()
         work, ev = os.path.join(root, "work"), os.path.join(root, "evidence")
         os.makedirs(os.path.join(work, "skin-light")); os.makedirs(ev)
-        files = {"probes-coarse.npz": b"probes", "skin-light/index.json": b"{}", "skin-light/door-w2.records": b"rec"}
+        files = {"probes-coarse.npz": b"probes", "skin-light/index.json": b'{"skins": [{"id": "door-w2"}]}',
+                 "skin-light/door-w2.records": b"rec"}
         for rel, data in files.items():
             with open(os.path.join(work, *rel.split("/")), "wb") as f:
                 f.write(data)
@@ -5473,6 +5683,16 @@ class Artifacts(unittest.TestCase):
         with open(os.path.join(work, "skin-light", "door-w2.records"), "wb") as f:
             f.write(b"other")
         with self.assertRaises(ValueError):                                   # a record file the evidence does not name
+            LS.check_relight_artifacts(work, ev, manifest)
+        with open(os.path.join(work, "skin-light", "door-w2.records"), "wb") as f:
+            f.write(b"rec")
+        index = b'{"skins": [{"id": "door-w2"}, {"id": "door-w3"}]}'
+        with open(os.path.join(work, "skin-light", "index.json"), "wb") as f:
+            f.write(index)
+        with open(os.path.join(ev, "skin-light.json"), "w", encoding="utf-8") as f:
+            json.dump({"artifact": {"sha256": hashlib.sha256(index).hexdigest()},
+                       "records": {"door-w2": sha["skin-light/door-w2.records"]}}, f)
+        with self.assertRaises(ValueError):                                   # an indexed skin with no vouched-for record
             LS.check_relight_artifacts(work, ev, manifest)
 
 
@@ -5542,6 +5762,10 @@ def check_relight_artifacts(relight_work: str, relight_evidence: str, manifest: 
         light = json.load(f)
     if (light.get("artifact") or {}).get("sha256") != sha256_of(os.path.join(folder, "index.json")):
         raise ValueError("skin-light/index.json is not the artifact R1a's skin-light.json records")
+    with open(os.path.join(folder, "index.json"), encoding="utf-8") as f:
+        indexed = {s["id"] for s in json.load(f)["skins"]}
+    if indexed != set(light["records"]):                       # every skin the index lists has its record vouched for
+        raise ValueError(f"skin-light/index.json and skin-light.json's records differ: {sorted(indexed ^ set(light['records']))}")
     for sid, sha in light["records"].items():
         if sha256_of(os.path.join(folder, f"{sid}.records")) != sha:
             raise ValueError(f"skin-light/{sid}.records is not the file R1a's skin-light.json records")
@@ -5663,9 +5887,11 @@ def fit_states(rows: dict, W0, iters: int = 8):
         W *= scale
     model = gains[view] * A * mix(L, W)
     err = np.abs(np.log2(np.maximum(model, 1e-12) / np.maximum(obs, 1e-12)))
-    lamp = float(W[LAMPS].sum()); win = float(W[WINDOWS].sum())
+    # the lamps' share of the fitted light on these rows, not of the weights: a unit of window weight and a unit of lamp
+    # weight give very different light (the capture fit's window weights are 29-51, its lamp weights 0-2.2)
+    lamp = float(mix(L[:, LAMPS], W[LAMPS]).sum()); total = float(mix(L, W).sum())
     return W, gains, {"rows": int(len(obs)), "medianAbsLog2": float(np.median(err)), "p90AbsLog2": float(np.percentile(err, 90)),
-                      "lampShare": lamp / max(lamp + win, 1e-12)}
+                      "lampShare": lamp / max(total, 1e-12)}
 
 
 def cmd_light_model(cfg, rest) -> int:
@@ -5847,7 +6073,7 @@ Expected: both `PASS` (the second also needs its gate: `states.json` `"pass": tr
 
 **Interfaces:**
 - Consumes: Task 6 (`views.load_sources`, `load_geometry`, `geometry_ids`, `render`, `view_state`, `srgb_to_linear`, `COS_MAX_OBLIQUE`, `Sources.factor`, `Sources.sweep_of`), Task 6A (`render(..., raw=True, qp=True)`, `Sources.edge_factor`, `xbin.deadzone_amplitude`), Task 7 (`<work>/views/<id>.npz`, `<work>/xgrids/<id>.json`, `xgrids._block_points`, `xgrids.BLOCK`), Task 8 (`<work>/light/<id>.npz` (`L`, `Ecap`, `anchor`, `size`, `texel`), `<work>/light/states.json` (`capture.W`, `day.W`, `evening.W`), `lightstates.mix`, `lightstates.bilinear`, `lightstates.texel_light_coords`, `lightstates.SUB`).
-- Produces (`blend.py`): `EPS = 0.004`, `TILE = 512`, `SIG_LOW_M = 0.06`, `TAU_LOW = 0.15`, `GLARE_Q = 0.35`, `GLARE_RATIO = 1.25`, `GLARE_MIN_VIEWS = 3`, `CLIP = 0.955` (linear: sRGB 250, a clipped observation); `wmedian(vals (n, P), wts (n, P)) -> (P,)`; `quantile_weighted(vals, wts, q) -> (P,)`; `smoothstep(x)`; `glare_masks(lum_low (n, H, W), valid (n, H, W), weights (n, H, W)) -> (mask (n, H, W) bool, excess (H, W) float32, count (H, W) uint8)`; `blend(X (n, H, W, 3) log albedo, valid, wlow (n, H, W), whigh (n, H, W), sigma_low_px) -> (log albedo (H, W, 3), nviews (H, W) uint8)`; `view_gain(rgb_light (lh, lw, 3), anchor, E) -> (3,)`; `light_fields(light_npz, states) -> {"capture", "day", "evening"}: (lh, lw, 3)`; `HIGH_K = 8`; `CENSOR_SIGMAS_PX = (0.6, 2.4)`; `CENSOR_WINDOW_PX = 2.0`; `coded_mask(raw (h, w, 3) bytes, qp (h, w) float (NaN: no map), texels_per_px: float) -> bool (h, w)`; `REGION_SCHEMA = "venviewer.skin-region.v1"`; `REGION_PROVENANCE` (0 none, 1 observed in one view, 2 observed and certified across views, 3 recovered, 4 reconstructed); `import_region_product(folder, geom, light, gains, light_model_sha) -> dict` (`albedo` (rows, cols, 3), `take` bool, `recovered` bool, `method`, `certifiedShare`); the command `python -m skins mosaic [--skin <id>] [--region-products <root>]` writing `<work>/mosaic/<id>.npz` (`albedo` (rows, cols, 3) float16 linear, `observed` bool, `recovered` bool (texels a region product recovered), `nviews` uint8, `gsd` float16 metres (the best view's effective GSD), `glare` uint8 (views rejected as glare), `excess` float16 (the largest rejected excess ratio), `clipped` uint8 (views dropped as clipped), `censored` uint8 (XGRIDS views whose texture the codec erased there)) and `<work>/mosaic/<id>.json` (gains per view, shares, median GSD, the region product used).
+- Produces (`blend.py`): `EPS = 0.004`, `TILE = 512`, `SIG_LOW_M = 0.06`, `TAU_LOW = 0.15`, `GLARE_Q = 0.35`, `GLARE_RATIO = 1.25`, `GLARE_MIN_VIEWS = 3`, `CLIP = 0.955` (linear: sRGB 250, a clipped observation); `wmedian(vals (n, P), wts (n, P)) -> (P,)`; `quantile_weighted(vals, wts, q) -> (P,)`; `smoothstep(x)`; `glare_masks(lum_low (n, H, W), valid (n, H, W), weights (n, H, W)) -> (mask (n, H, W) bool, excess (H, W) float32, count (H, W) uint8)`; `highlight_colour(rgb_low (n, H, W, 3), mask (n, H, W), est_low (H, W, 3)) -> (H, W, 3)` (the median, over the views rejected as glare, of their low-passed de-lit RGB minus the estimate's; 0 where none; pre-flight fix, 8 October); `blend(X (n, H, W, 3) log albedo, valid, wlow (n, H, W), whigh (n, H, W), sigma_low_px) -> (log albedo (H, W, 3), nviews (H, W) uint8)`; `view_gain(rgb_light (lh, lw, 3), anchor, E) -> (3,)`; `light_fields(light_npz, states) -> {"capture", "day", "evening"}: (lh, lw, 3)`; `HIGH_K = 8`; `CENSOR_SIGMAS_PX = (0.6, 2.4)`; `CENSOR_WINDOW_PX = 2.0`; `coded_mask(raw (h, w, 3) bytes, qp (h, w) float (NaN: no map), texels_per_px: float) -> bool (h, w)`; `REGION_SCHEMA = "venviewer.skin-region.v1"`; `REGION_PROVENANCE` (0 none, 1 observed in one view, 2 observed and certified across views, 3 recovered, 4 reconstructed); `LIGHT_MODEL_VOLATILE = ("evidence", "createdAt", "tool")`; `light_model_id(manifest_path) -> str` (the light model's identity: the SHA-256 of relight package v1's manifest without those keys, as canonical JSON; pre-flight fix M11, 8 October); `import_region_product(folder, geom, light, gains, light_model_sha) -> dict` (`albedo` (rows, cols, 3), `take` bool, `recovered` bool, `method`, `certifiedShare`); the command `python -m skins mosaic [--skin <id>] [--region-products <root>]` writing `<work>/mosaic/<id>.npz` (`albedo` (rows, cols, 3) float16 linear, `observed` bool, `recovered` bool (texels a region product recovered), `nviews` uint8, `gsd` float16 metres (the best view's effective GSD), `glare` uint8 (views rejected as glare), `excess` float16 (the largest rejected excess ratio), `excessRgb` float16 (rows, cols, 3) (the rejected highlights' colour, `highlight_colour`: gold over gilding, neutral over varnish and paint, which Task 13 tells apart), `clipped` uint8 (views dropped as clipped), `censored` uint8 (XGRIDS views whose texture the codec erased there)) and `<work>/mosaic/<id>.json` (gains per view, shares, median GSD, the region product used).
 
 Each candidate view (the union of the 6 best faces and panoramas and the 16 best XGRIDS frames per 2 cm block of a 512-texel tile and its margin) is rendered on the skin's grid at the skin's texel: faces and panoramas at their sweep's pose and warp, XGRIDS frames at their registered affine. Every observation is divided by the light modelled for it (spec §3.2.4): `ρ = rgb / (g ⊙ E_state)`, with `E_state` the state's nine-source light read bilinearly at the texel exactly as the browser reads its light, and `g` the view's gain on this skin (the median over its light texels of its observation over `A ⊙ E_state`, the splat anchor of Task 8). Clipped observations (sRGB 250 or above in any channel: the uplights) are dropped. Glare and window reflections are removed across views (a highlight moves between views, the surface does not): on 8 mm-smoothed de-lit luminance, a view more than 25% above the weighted 35th percentile of the views at that texel is rejected there (where at least 3 views see it), dilated by 3 texels. The rest are blended as the floor's Arm C was (log domain, two bands): the low band (6 cm) is a soft robust mean about the weighted median (τ 0.15) with broad weights (feather × cos obliquity), the high band the robust mean of the 8 sharpest views by GSD⁻⁴, an XGRIDS frame at its edge-equivalent GSD and only where its texture was coded (below). Texels no view observes stay unobserved for Task 10.
 
@@ -5859,7 +6085,7 @@ Its low band still counts. Faint texture (the frieze's painted shading, the wood
 
 **The region-product contract** (stable, so a better reconstruction can replace or augment this baseline mosaic without touching what follows it). The frontier method is certified surface reconstruction (`proposal.md` §3 and §5): multi-frame, codec-aware, its resolution certified per texel by half-set agreement and held-out prediction, its edges localised to about ±0.05–0.1 mm. Its experiment reports later. Any such method writes, per skin, `<root>/<skin id>/region/v1/` with:
 
-- `region.json`: `{ "schema": "venviewer.skin-region.v1", "skin", "texel", "cols", "rows", "lightModel": <SHA-256 of relight package v1's manifest>, "reference": "capture", "method", "certifiedShare" }`;
+- `region.json`: `{ "schema": "venviewer.skin-region.v1", "skin", "texel", "cols", "rows", "lightModel": <light_model_id of relight package v1's manifest>, "reference": "capture", "method", "certifiedShare" }`;
 - `base_linear.npy` (rows, cols, 3) float32: the captured radiance on this skin's own texel grid, in `views.srgb_to_linear`'s units, harmonised to the XGRIDS frames' exposure;
 - `provenance.npy` (rows, cols) uint8 (`REGION_PROVENANCE`);
 - optionally `sigma.npy` (the luma posterior standard deviation) and `cert_period_mm.npy` (the certified period per texel);
@@ -5867,7 +6093,7 @@ Its low band still counts. Faint texture (the frieze's painted shading, the wood
 
 `mosaic --region-products <root>` de-lights `base_linear` exactly as the views are de-lit, by the median gain of the skin's XGRIDS views times `Ecap` read at each texel. It takes the product wherever its provenance is 1–3: observed, certified or recovered. Recovered texels are marked so Task 10 labels them recovered. Where the product's provenance is 0 or 4, the baseline stays: R1c's own restoration, labelled, handles what nothing measured.
 
-A product made under another light model or on another grid is refused with its reason, and the skin keeps the baseline.
+A product made under another light model or on another grid is refused with its reason, and the skin keeps the baseline. The light model's identity is `light_model_id`: the SHA-256 of v1's manifest without `evidence`, `createdAt` and `tool`, as canonical JSON. A second `check` of v1, which extends its `evidence`, or a rebuild of the same light at another commit leaves it unchanged, and any change to the light's files changes it (pre-flight fix M11, 8 October: the manifest's own SHA-256 changed with every check).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5897,6 +6123,18 @@ class Glare(unittest.TestCase):
         self.assertTrue(mask[2, 7, 7]); self.assertFalse(mask[0, 7, 7]); self.assertFalse(mask[2, 18, 18])
         self.assertEqual(int(count[7, 7]), 1)
         self.assertAlmostEqual(float(excess[7, 7]), 2.0, places=5)
+
+    def test_the_highlights_colour_is_kept_gold_or_white(self):
+        rgb = np.full((5, 6, 6, 3), 0.2, np.float32)
+        rgb[1, :, :3] += [0.30, 0.22, 0.08]                                # a gold highlight in views 1 and 2, left
+        rgb[2, :, :3] += [0.26, 0.20, 0.06]
+        rgb[3, :, 3:] += [0.25, 0.25, 0.25]                                # a white one in view 3, right
+        mask = np.zeros((5, 6, 6), bool); mask[1:3, :, :3] = True; mask[3, :, 3:] = True
+        c = B.highlight_colour(rgb, mask, np.full((6, 6, 3), 0.2, np.float32))
+        np.testing.assert_allclose(c[0, 0], [0.28, 0.21, 0.07], atol=1e-6)
+        np.testing.assert_allclose(c[0, 5], [0.25, 0.25, 0.25], atol=1e-6)
+        mask[:] = False
+        self.assertEqual(float(np.abs(B.highlight_colour(rgb, mask, rgb[0])).max()), 0.0)
 
     def test_two_views_are_too_few_to_judge(self):
         lum = np.full((2, 10, 10), 0.3, np.float32); lum[1] = 0.9
@@ -5978,6 +6216,23 @@ class RegionProduct(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.write(f := tempfile.mkdtemp(), cols=5); B.import_region_product(f, G, {}, {}, "a" * 64)
 
+    def test_the_light_models_identity_survives_a_check_but_not_a_new_light(self):
+        import json, os, tempfile
+        path = os.path.join(tempfile.mkdtemp(), "manifest.json")
+
+        def identity(**changes):
+            manifest = {"schema": "venviewer.relight.v1", "room": "grand-hall", "createdAt": "2026-10-01T00:00:00+01:00", "tool": "abc",
+                        "files": {"tiles/0.records.gz": {"sha256": "1" * 64, "bytes": 10}}, "evidence": {"determinism": True}}
+            manifest.update(changes)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f)
+            return B.light_model_id(path)
+        first = identity()
+        self.assertEqual(len(first), 64)
+        self.assertEqual(identity(evidence={"determinism": True, "wallFaceRate": {"marched": 9, "wallFace": 1}}, tool="def",
+                                  createdAt="2026-10-08T00:00:00+01:00"), first)            # a check, a rebuild at another commit
+        self.assertNotEqual(identity(files={"tiles/0.records.gz": {"sha256": "2" * 64, "bytes": 10}}), first)   # another light
+
 
 class Delight(unittest.TestCase):
     def test_gain_is_the_median_ratio_to_the_anchor_lit_by_the_state(self):
@@ -6005,7 +6260,7 @@ window reflections rejected across views, clipped observations dropped, the rest
 research's Arm C (arm_b_blend.py): a robust low band with broad weights, a high band from the sharpest views."""
 from __future__ import annotations
 
-import json, math, os, time
+import hashlib, json, math, os, time
 
 import cv2
 import numpy as np
@@ -6024,7 +6279,7 @@ GLARE_SMOOTH_M = 0.008
 CLIP = 0.955                 # srgb_to_linear(250 / 255)
 FEATHER = 20                 # texels
 LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
-LUMA601 = np.array([0.299, 0.587, 0.114], np.float32)   # the frames' Y, from their decoded bytes
+LUMA601 = np.array([0.299, 0.587, 0.114], np.float32)   # the frames' coded Y, exactly: Task 6A converts at full range
 HIGH_K = 8                   # views fused in the high band
 CENSOR_SIGMAS_PX = (0.6, 2.4)  # the encoder's erasing band, in the frame's own pixels (proposal.md 3.9)
 CENSOR_WINDOW_PX = 2.0       # the local energy's Gaussian window (about 4 pixels across)
@@ -6042,6 +6297,20 @@ def coded_mask(raw, qp, texels_per_px):
     energy = np.sqrt(cv2.GaussianBlur(band * band, (0, 0), max(CENSOR_WINDOW_PX * texels_per_px, 1.0)))
     q = np.asarray(qp, np.float64)
     return ~np.isfinite(q) | (energy >= np.where(np.isfinite(q), deadzone_amplitude(np.nan_to_num(q)), 0.0))
+
+
+LIGHT_MODEL_VOLATILE = ("evidence", "createdAt", "tool")
+
+
+def light_model_id(manifest_path) -> str:
+    """The light model a region product or a measured-material layer was made under: the SHA-256 of relight package v1's
+    manifest without the keys a check or a rebuild at another commit rewrites (`evidence`, which R1a's `check` extends,
+    `createdAt` and `tool`), as canonical JSON. `files` keeps every data file's SHA-256, so a change to the light itself
+    changes the identity."""
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+    kept = {k: v for k, v in manifest.items() if k not in LIGHT_MODEL_VOLATILE}
+    return hashlib.sha256(json.dumps(kept, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def import_region_product(folder, geom, light, gains, light_model_sha):
@@ -6099,6 +6368,17 @@ def glare_masks(lum_low, valid, weights):
     mask = (ratio > GLARE_RATIO) & enough[None] & valid.reshape(n, -1)
     excess = np.where(mask, ratio - 1.0, 0.0).max(0)
     return mask.reshape(n, H, W), excess.reshape(H, W).astype(np.float32), mask.sum(0).reshape(H, W).astype(np.uint8)
+
+
+def highlight_colour(rgb_low, mask, est_low):
+    """The colour of the rejected highlights per texel: the median, over the views rejected as glare there, of the
+    view's low-passed de-lit RGB minus the estimate's (linear albedo units; 0 where no view was rejected). Gilding
+    reflects gold; varnish and paint reflect the light's own colour, which de-lighting makes neutral (Task 13)."""
+    m = np.asarray(mask, bool)
+    any_ = m.any(0)
+    d = np.where(m[..., None], np.asarray(rgb_low, np.float32) - np.asarray(est_low, np.float32)[None], np.nan)
+    med = np.nanmedian(np.where(any_[None, ..., None], d, 0.0), axis=0)
+    return np.where(any_[..., None], med, 0.0).astype(np.float32)
 
 
 def blend(X, valid, wlow, whigh, sigma_low_px):
@@ -6203,6 +6483,7 @@ def mosaic_skin(cfg, src, geom, light, states):
     out = {"albedo": np.zeros((geom.rows, geom.cols, 3), np.float16), "observed": np.zeros((geom.rows, geom.cols), bool),
            "nviews": np.zeros((geom.rows, geom.cols), np.uint8), "gsd": np.full((geom.rows, geom.cols), np.inf, np.float16),
            "glare": np.zeros((geom.rows, geom.cols), np.uint8), "excess": np.zeros((geom.rows, geom.cols), np.float16),
+           "excessRgb": np.zeros((geom.rows, geom.cols, 3), np.float16),
            "clipped": np.zeros((geom.rows, geom.cols), np.uint8), "censored": np.zeros((geom.rows, geom.cols), np.uint8),
            "recovered": np.zeros((geom.rows, geom.cols), bool)}
     sig = SIG_LOW_M / geom.texel
@@ -6218,7 +6499,7 @@ def mosaic_skin(cfg, src, geom, light, states):
             tile_keys = [keys[i] for i in sorted({int(i) for i in b.ravel() if i >= 0})]
             if not tile_keys:
                 continue
-            X, valid, wlow, whigh, lum, gts = [], [], [], [], [], []
+            X, valid, wlow, whigh, lum, gts, rgb_low = [], [], [], [], [], [], []
             clipped_count = np.zeros((R1 - R0, C1 - C0), np.uint8)
             censored_count = np.zeros((R1 - R0, C1 - C0), np.uint8)
             rr, cc = np.mgrid[R0:R1, C0:C1].astype(np.float64)
@@ -6251,10 +6532,11 @@ def mosaic_skin(cfg, src, geom, light, states):
                     censored_count += (ok & ~coded).astype(np.uint8)
                 whigh.append((feather * np.maximum(gt, 1e-4) ** -4.0 * coded).astype(np.float32))
                 gts.append(np.where(ok, gt, np.inf).astype(np.float32))
-                lum.append(cv2.GaussianBlur((np.maximum(rho, 0) @ LUMA).astype(np.float32), (0, 0), GLARE_SMOOTH_M / geom.texel))
-            X, valid, wlow, whigh, lum = (np.stack(a) for a in (X, valid, wlow, whigh, lum))
-            gmask, excess, gcount = glare_masks(lum, valid, wlow)
-            gmask = np.stack([cv2.dilate(m.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0 for m in gmask]) & valid
+                rgb_low.append(cv2.GaussianBlur(np.maximum(rho, 0).astype(np.float32), (0, 0), GLARE_SMOOTH_M / geom.texel))
+                lum.append((rgb_low[-1] @ LUMA).astype(np.float32))
+            X, valid, wlow, whigh, lum, rgb_low = (np.stack(a) for a in (X, valid, wlow, whigh, lum, rgb_low))
+            glare_raw, excess, gcount = glare_masks(lum, valid, wlow)
+            gmask = np.stack([cv2.dilate(m.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0 for m in glare_raw]) & valid
             valid2 = valid & ~gmask
             lo, nv = blend(X, valid2, wlow, whigh, sig)
             sl = (slice(t0 - R0, t1 - R0), slice(u0 - C0, u1 - C0))
@@ -6266,6 +6548,8 @@ def mosaic_skin(cfg, src, geom, light, states):
             gbest = np.where(valid2, np.stack(gts), np.inf).min(0)
             out["gsd"][t0:t1, u0:u1] = gbest[sl].astype(np.float16)
             out["glare"][t0:t1, u0:u1] = gcount[sl]; out["excess"][t0:t1, u0:u1] = excess[sl].astype(np.float16)
+            est_low = cv2.GaussianBlur(np.maximum(np.exp(lo) - EPS, 0).astype(np.float32), (0, 0), GLARE_SMOOTH_M / geom.texel)
+            out["excessRgb"][t0:t1, u0:u1] = highlight_colour(rgb_low, glare_raw, est_low)[sl].astype(np.float16)
             out["clipped"][t0:t1, u0:u1] = clipped_count[sl]
             out["censored"][t0:t1, u0:u1] = censored_count[sl]
     region = geom.region > 0
@@ -6282,9 +6566,7 @@ def cmd_mosaic(cfg, rest) -> int:
     started = time.time()
     only = rest[rest.index("--skin") + 1] if "--skin" in rest else None
     products = rest[rest.index("--region-products") + 1] if "--region-products" in rest else None
-    import hashlib
-    with open(os.path.join(cfg.paths["splats"], "relight", "v1", "manifest.json"), "rb") as f:
-        light_sha = hashlib.sha256(f.read()).hexdigest()
+    light_sha = light_model_id(os.path.join(cfg.paths["splats"], "relight", "v1", "manifest.json"))
     src = VW.load_sources(cfg, xgrids=True)
     surfaces = F.read_surfaces(cfg.paths["surfaces"])
     with open(os.path.join(cfg.paths["work"], "light", "states.json"), encoding="utf-8") as f:
@@ -6331,7 +6613,7 @@ COMMANDS["mosaic"] = Command(run=_lazy("blend", "cmd_mosaic"),
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_blend -v`
-Expected: PASS, 10 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 6: Commit the code**
 
@@ -6354,18 +6636,28 @@ C:/Python313/python.exe -m skins twice mosaic --skin door-f3 --config config/gra
 C:/Python313/python.exe -m skins twice mosaic --skin end_xmax-l2 --config config/grand-hall.json
 ```
 
-Expected: both `PASS`. Write each `albedo × Ecap` (the skin as it would show at the captured light) and the albedo itself to PNGs with this snippet and look at them at 1:1:
+Expected: both `PASS`. Write each `albedo × Ecap` (the skin as it would show at the captured light; `Ecap` read bilinearly at every texel from the skin's light grid, as Task 9 reads it) and the albedo itself to PNGs with this snippet and look at them at 1:1:
 
 ```bash
-C:/Python313/python.exe - <<'EOF'
-import numpy as np, cv2, json
+cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe - <<'EOF'
+import json
+import numpy as np, cv2
+from skins import config, frames as F, lightstates as LS, views as VW
+cfg = config.load("config/grand-hall.json")
+surfaces = F.read_surfaces(cfg.paths["surfaces"])
+work = cfg.paths["work"]
 for sid in ("door-f3", "end_xmax-l2"):
-    m = np.load(f"D:/claude/skins/grand-hall/work/mosaic/{sid}.npz")
-    a = m["albedo"].astype(np.float32)
-    for name, lin in (("albedo", a / max(np.percentile(a, 99.5), 1e-6) * 0.8),):
+    a = np.load(f"{work}/mosaic/{sid}.npz")["albedo"].astype(np.float32)
+    light = np.load(f"{work}/light/{sid}.npz")
+    geom = VW.load_geometry(work, sid, surfaces)
+    rr, cc = np.mgrid[0:geom.rows, 0:geom.cols].astype(np.float64)
+    lx, ly = LS.texel_light_coords(geom, float(light["texel"]), cc.ravel() + 0.5, rr.ravel() + 0.5)
+    ecap = LS.bilinear(light["Ecap"].astype(np.float64), lx, ly).reshape(geom.rows, geom.cols, 3).astype(np.float32)
+    for name, img in (("albedo", a), ("captured", a * ecap)):
+        lin = img / max(float(np.percentile(img, 99.5)), 1e-6) * 0.8
         s = np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * np.power(np.clip(lin, 0, 1), 1 / 2.4) - 0.055)
-        cv2.imwrite(f"D:/claude/skins/grand-hall/evidence/mosaic-{sid}-{name}.png", (np.clip(s, 0, 1)[..., ::-1] * 255).astype(np.uint8))
-    print(sid, json.load(open(f"D:/claude/skins/grand-hall/work/mosaic/{sid}.json"))["observedShare"])
+        cv2.imwrite(f"{cfg.paths['evidence']}/mosaic-{sid}-{name}.png", (np.clip(s, 0, 1)[..., ::-1] * 255).astype(np.uint8))
+    print(sid, json.load(open(f"{work}/mosaic/{sid}.json"))["observedShare"])
 EOF
 ```
 
@@ -6386,7 +6678,7 @@ Expected: `PASS`; every skin's `<id>.json`. Save a table of each skin's `observe
 
 **Interfaces:**
 - Consumes: Task 2 (`layout.load_layout`: `Skin.heal`, `Skin.style`, `damage`), Task 6 (`views.load_geometry`, `geometry_ids`), Task 9 (`<work>/mosaic/<id>.npz`: `albedo`, `observed`).
-- Produces (`heal.py`): `PROV_OBSERVED = 0` (observed, our fusion), `PROV_RECOVERED = 1`, `PROV_RECONSTRUCTED = 2`, `PROV_PHOTO = 3` (observed, venue photo; amended 7 October, written by Task 12), `PROV_OUTSIDE = 255`; `FRIEZE_BAND_M` (Task 5's 0.15, imported); `band_rows(skin, texel, rows) -> slice` (the frieze band, left to Task 12: from the measured edge, `skin.frieze_band_row`, to the skin's bottom, whose rows below the edge are outside the region; the bottom 15 cm when a skin has no measured edge); `structure_orientation(lum, sigma) -> (theta (H, W), coherence (H, W))`; `grain_orientation(lum, texel)` (the same on a 1 cm median, so thin marks cannot turn it); `along_grain_median(lum, theta, length_px) -> (H, W)`; `grain_damage(lum, valid, texel) -> bool (H, W)`; `plaster_damage(lum, valid, texel, k=4.0) -> bool`; `copy_fill(img (H, W, 3), hole, known, search_px, ring_px) -> (filled, ok)` (each connected hole takes the block, shifted along rows or columns, whose ring around the hole matches best); `telea_fill(img, hole) -> img` (per channel, float32); `heal_skin(albedo, observed, region, method, texel, damage_boxes, band) -> (albedo, prov, report)`; the command `python -m skins heal` writing `<work>/heal/<id>.npz` (`albedo` float16 linear, `prov` uint8, `band` bool) and `<work>/heal/<id>.json`.
+- Produces (`heal.py`): `PROV_OBSERVED = 0` (observed, our fusion), `PROV_RECOVERED = 1`, `PROV_RECONSTRUCTED = 2`, `PROV_PHOTO = 3` (observed, venue photo; amended 7 October, written by Task 12), `PROV_OUTSIDE = 255`; `FRIEZE_BAND_M` (Task 5's 0.15, imported); `band_rows(skin, texel, rows) -> slice` (the frieze band, left to Task 12: from the measured edge, `skin.frieze_band_row`, to the skin's bottom, whose rows below the edge are outside the region; the bottom 15 cm when a skin has no measured edge); `structure_orientation(lum, sigma) -> (theta (H, W), coherence (H, W))`; `grain_orientation(lum, texel)` (the same on a 1 cm median, so thin marks cannot turn it); `along_grain_median(lum, theta, length_px) -> (H, W)`; `grain_damage(lum, valid, texel) -> bool (H, W)`; `plaster_damage(lum, valid, texel, k=4.0) -> bool`; `copy_fill(img (H, W, 3), hole, known, search_px, ring_px) -> (filled, ok)` (each connected hole takes the block, shifted along rows or columns, whose ring around the hole matches best); `inpaint_fill(img, hole) -> img` (per channel, float32, OpenCV's Navier-Stokes inpainting: OpenCV 5.0's Telea is wrong on float32, pre-flight fix B3 and F5, 8 October); `heal_skin(albedo, observed, region, method, texel, damage_boxes, band) -> (albedo, prov, report)`; the command `python -m skins heal` writing `<work>/heal/<id>.npz` (`albedo` float16 linear, `prov` uint8, `band` bool) and `<work>/heal/<id>.json`.
 
 Healing follows the floor restoration (`D:/claude/real-hall/renovation/floor/scripts/step4_heal.py`): damage is judged against along-grain medians on wood (the grain survives a median along it; marks that cross it do not), against a 3 cm median on plaster, and only inside the layout's damage boxes on lettering, canvas and the clock (the inventory found damage at 5 mm minor: wainscot scuffs, the frieze stain, nothing on the canvases). Healed and filled texels are `reconstructed`. Holes (unobserved texels inside the region: behind the toggled objects, occlusion shadows) are filled by copying the best-matching block of the same skin, shifted along its rows or columns (panels and plaster repeat along a wall), feathered over 1 cm; Telea inpainting where no block matches. The frieze band (the 15 cm above each frieze skin's measured bottom edge, where the uplights clip; Task 5) is left untouched for Task 12.
 
@@ -6434,7 +6726,8 @@ class Plaster(unittest.TestCase):
         img[40:46, 40:46] = 0.2
         observed = np.ones((100, 100), bool); observed[70:80, 10:30] = False
         out, prov, rep = H.heal_skin(img, observed, np.ones((100, 100), bool), "plaster", 0.0025, [], slice(0, 0))
-        self.assertGreater(float(out[42, 42, 0]), 0.5)
+        stain = out[40:46, 40:46]                                 # the whole stain lies within the wall's range
+        self.assertTrue(bool(((stain >= 0.55) & (stain <= 0.65)).all()), (float(stain.min()), float(stain.max())))
         self.assertGreater(float(out[75, 20, 0]), 0.5)
         self.assertEqual(int(prov[75, 20]), H.PROV_RECONSTRUCTED)
         self.assertGreater(rep["filledShare"], 0.0)
@@ -6540,7 +6833,10 @@ def along_grain_median(lum, theta, length_px):
     H, W = lum.shape
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
     c, s = np.cos(theta), np.sin(theta)
-    samples = [cv2.remap(np.asarray(lum, np.float32), xx + t * c, yy + t * s, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    # the maps are cast: t is a float64 scalar, which promotes float32 arrays to float64 under NumPy 2 (NEP 50), and
+    # cv2.remap refuses float64 maps
+    samples = [cv2.remap(np.asarray(lum, np.float32), (xx + t * c).astype(np.float32), (yy + t * s).astype(np.float32),
+                         cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
                for t in np.linspace(-length_px / 2, length_px / 2, max(3, int(length_px) | 1))]
     return np.median(np.stack(samples), axis=0)
 
@@ -6581,12 +6877,14 @@ def plaster_damage(lum, valid, texel, k=4.0):
     return mark
 
 
-def telea_fill(img, hole):
+def inpaint_fill(img, hole):
+    """OpenCV's Navier-Stokes inpainting per channel, float32. Not Telea: OpenCV 5.0's Telea returns values far
+    outside the known range on float32 input (measured 8 October), while Navier-Stokes stays within it."""
     out = np.asarray(img, np.float32).copy()
     if hole.any():
         m = hole.astype(np.uint8)
         for c in range(out.shape[2]):
-            out[..., c] = cv2.inpaint(out[..., c], m, 3, cv2.INPAINT_TELEA)
+            out[..., c] = cv2.inpaint(out[..., c], m, 3, cv2.INPAINT_NS)
     return out
 
 
@@ -6643,14 +6941,14 @@ def heal_skin(albedo, observed, region, method, texel, damage_boxes, band):
             for c in range(3):
                 img[..., c] = np.where(damage, along_grain_median(img[..., c], theta, GRAIN_LENGTH_M / texel), img[..., c])
         else:
-            img = telea_fill(img, damage)
+            img = inpaint_fill(img, damage)
         prov[damage] = PROV_RECONSTRUCTED
     hole = region & ~observed & ~keep
     if hole.any():
         known = region & observed & ~damage
         search = int(round(1.5 / texel)) if method != "none" else 0
         img2, ok = copy_fill(img, hole, known, search_px=search, ring_px=max(2, int(round(FEATHER_M / texel))))
-        img2 = telea_fill(img2, hole & ~ok)
+        img2 = inpaint_fill(img2, hole & ~ok)
         img = np.where(hole[..., None], img2, img)
         prov[hole] = PROV_RECONSTRUCTED
     total = max(int(region.sum()), 1)
@@ -6900,7 +7198,7 @@ cd tools/skins && C:/Python313/python.exe -m skins twice clutter --config config
 
 Expected: `PASS`; `index.json` lists the SSW wainscot bays the cable crosses (`end_xmin-w2` and `end_xmin-w3` for u 3.55–7.15) with toggle `[1]` and a mask share under 1%. Write each one's object and clean versions side by side at 1:1 into `D:/claude/skins/grand-hall/evidence/clutter-<id>.png` (as Task 9 Step 7 writes albedos) and check the cable is gone in the clean one with the skirting's grain continuous through it.
 
-### Task 12: The frieze band, measured, and the venue's photographs: per-channel fusion, response curves, uplight model, labelled synthesis, colour and tone, the gilded ground
+### Task 12: The frieze band, measured, and the venue's photographs: per-channel fusion, response curves, the residual light, labelled synthesis, colour and tone, the gilded ground
 
 (Revised 7 October from the frieze research's final findings and the venue's photographs; see "Revisions (7 October, consolidated)" at the top of this plan.)
 
@@ -6910,31 +7208,31 @@ Expected: `PASS`; `index.json` lists the SSW wainscot bays the cable crosses (`e
 - Test: `tools/skins/tests/test_frieze.py`, `tools/skins/tests/test_venue.py`
 
 **Interfaces:**
-- Consumes: Task 5 as amended (a frieze skin's measured bottom edge and band row: `views.SkinGeometry.frieze_bottom`, `frieze_band_row`), Task 6A (`views.render(..., raw=True)`: the sampled bytes of every view, the XGRIDS frames decoded from the raw H.264), Task 6 (`views.render`, `load_sources`, `load_geometry`, `view_state`, `srgb_to_linear`, `Sources.kind_of`, `Sources.view`, `Sources.sweep_of`, `Sources.warps`; `frames.read_surfaces`, `Surface.name`, `Surface.to_local`), Task 7 (`xgrids._block_points`; `<work>/views/<id>.npz` `keys`; `<work>/xgrids/<id>.json` frames with `affine`, `effectiveGsdMm`, `nominalGsdMm`), Task 8 (`lightstates.bilinear`, `texel_light_coords`; `<work>/light/<id>.npz`, `states.json`), Task 9 (`blend.blend`, `blend.light_fields`, `blend._view_gsd_blocks`, `blend.EPS`, `blend.SIG_LOW_M`, `blend.TILE`; `<work>/mosaic/<id>.json` `gains`), Task 10 (`heal.band_rows`, `heal.copy_fill`, `heal.telea_fill`, `heal.PROV_*` with `PROV_PHOTO`; `<work>/heal/<id>.npz` `albedo`, `prov`); the venue's photographs, read-only, `<paths.frieze>/venue-photos/` (`sources.json`: `source`, `credit`, `copyright`, `photos[]` with `craft`, `file`, `url`, `size_px`, `sha256`; the 14 JPEGs); `room.registrationTexel` (0.004 m).
-- Produces (`frieze.py`): `Z_LO = 6`, `Z_HI = 249`, `CLIP = 250`, `SHARP_M = 0.004` (the research's `EFF_OK`), `CLEAN_V = (4.60, 5.30)`, `PROBE_Q = 80`, `RESIDUAL_GATE = 0.05`, `OVERLAP_M = 0.02`, `STRETCH_M = 1.0`, `SPREAD_M = 0.01`, `HOLDOUT_V0 = 4.62`, `HOLDOUT_H = 0.14`, `HOLDOUT_STRETCHES = (("door-f3", 9.55), ("end_xmax-f1", 1.60), ("window-f3", 14.10))`, `HOLDOUT_GATE = {"de00Mean": 7.5, "de00P95": 12.5, "ssim": 0.93, "gradCorr": 0.90}` (every stretch), `HOLDOUT_MEAN_GATE = {"de00Mean": 5.0, "de00P95": 9.0, "ssim": 0.95, "gradCorr": 0.94}` (the mean of the three); `crf_solve(Z (P, K) int16 (−1 missing), lam=40.0) -> (g (256,) float64, lnE (K,), lnL (P,))` (Debevec and Malik 1997; `g(128) = 0` and `g(64) = ln(lin(64) / lin(128))`, so the curve agrees with sRGB in the mid-tones); `channel_valid(raw_c (h, w)) -> bool (h, w)` (`Z_LO ≤ Z ≤ Z_HI` and no value ≥ `CLIP` within one texel, this channel only); `crf_linear(raw_c, g) -> (h, w)` (`lin(128) × exp(g(Z))`, interpolated between whole codes: linear in the same units as `views.srgb_to_linear`); `h_line(v, vs, d, p) -> (n,)` (the frieze research's trough-uplight profile, `light.py` `h_of`); `fit_uplight_residual(v (rows,), probe (rows, 3), clean (rows,) bool) -> dict | None` (`{vs, d, p, B: [3], offset: [3], vBottom, residualBefore, residualAfter}`; None when the residual is within `RESIDUAL_GATE`); `uplight_log(fit, v) -> (rows, 3)`; `apply_uplight(rho (rows, w, 3), v, fit) -> rho`; `transfer_detail(lnrho (h, w, 3), has_sharp (h, w, 3) bool, clean (h, w) bool) -> (lnrho, borrowed (h, w, 3) bool)`; `classify(valid_any (h, w, 3), valid_sharp (h, w, 3)) -> uint8 (h, w)`; `view_spread(X (n, h, w), valid (n, h, w) bool, sigma_px, q_hi=90) -> (spread (h, w), excess (h, w))` (amended 7 October: per texel, 1.4826 × the median absolute deviation across the valid views of each view's low-passed de-lit log value, and the excess, in linear terms, of the `q_hi`-th percentile view over the median; NaN under 3 views); `frieze_ids(work) -> list[str]` (skins of style `frieze`); `render_stack(cfg, src, geom, keys, reg, r0, r1, c0, c1, cache) -> list[dict]` (per E57 face or XGRIDS view: `key`, `family` `"face" | "xgrids"`, `state`, `raw`, `valid`, `cos`, `gsd` per texel); `fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread_px=None) -> (lnrho, valid_any, valid_sharp, spread | None, excess | None)` (the spread of green, the excess per channel); `recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, cols=None, *, damage=None, light_v=None, cache=None, spread=False) -> dict` (`albedo` (h, w, 3) float32, `prov` (h, w) uint8, `uplight`, `borrowedShare`, `v` (h,), and with `spread` `spread` (h, w), `excess` (h, w, 3); the uplight is fitted on the rows from the skin's measured edge up); `srgb_to_lab(rgb) -> (…, 3)`; `ciede2000(lab1, lab2) -> (n,)`; `ssim_luma(a, b) -> float`; `gradient_correlation(a, b, mask) -> float`; files `<work>/frieze/crf.json` (`{ "face": {"g": [[256] × 3], "parts": n}, "xgrids": {…} }`), `<work>/frieze/<id>.npz` (`albedo` float16 over rows `[rows[0], rows[1])`, which start `OVERLAP_M` above the band; `prov` uint8 over the same rows; `rows` int [2]; `band0` int, the band's first row; `spread` float16 (h, w) and `excess` float16 (h, w, 3) over rows `spreadRows` int [2], from v = 5.30 m to the skin's bottom), `<work>/frieze/<id>.json`, `<work>/frieze/band.json` and `<evidence>/frieze-holdout.json`.
-- Produces (`venue.py`): `PHOTO_DIR = "venue-photos"`, `CREDIT_ID = "trades-house-virtual-museum"`, `WALLS`, `REG_CORR_MIN = 0.60`, `MATCH_V = (4.50, 5.36)`, `ECC_V = (4.55, 5.35)`, `MIN_GOOD = 12`, `RANSAC_PX = 6.0`, `COVER_ERODE_PX = 2`, `FEATHER_M = 0.05`, `SPLIT_V = 4.95`, `DETAIL_OFF_GROUPS = (0, 3)`, `LOWER_M = 0.05`, `BAND_M = 0.15`, `RAMP_M = 0.02`, `DETAIL_FLOOR = 0.5`, `GILT_TRUST_M = 0.05`, `GILT_MIN = 200`, `GOLD_BR_MAX = 0.55`, `VENUE_GATE = {"registration": 0.60, "colourMean": 6.5, "colourP95": 16.5}`; `load_photos(folder) -> (sources: dict, photos: list[dict])` (`ValueError` unless every file has the SHA-256 `sources.json` lists); `lay_band(img, prov, frieze) -> (img, prov)` (Task 12's recovered band feathered into Task 10's healed albedo; moved here from Task 13's `_lay_band`); `skin_to_wall(geom) -> (M (2, 3), Minv (2, 3))` (texel coordinates ↔ the wall's (u, v) metres); `wall_grid(geoms, texel) -> dict` (`u0`, `v1`, `texel`, `width`, `height`); `wall_reference(geoms, images, grid) -> (ref (H, W, 3) float32 linear, valid (H, W) bool)`; `rows_mask(grid, v_range) -> (H, W) bool`; `band_pass(g, lo_px) -> float32`; `match_photo(photo_bgr, ref_bgr8, mask) -> (H (3, 3) | None, inliers)`; `refine(photo_bgr, ref_bgr8, H, mask) -> (H, corr)`; `register(photo_bgr, walls, hint=None) -> dict` (`wall` or None, `H`, `inliers`, `corr`, `pixelM`, `tried`); `photo_on_skin(photo, H, geom, grid) -> (img (rows, cols, 3) float32, cover (rows, cols) bool)`; `harmonise(ours (n, 3), photo (n, 3)) -> (3,) | None`; `gilt_from_spread(spread, excess, trusted, texel) -> (m (h, w) float32, report)`; `gilt_from_photo(photo_lo, m, train, apply) -> (m, used)`; `detail_weights(v, vb, keep_lower, keep_upper) -> (rows,)`; `ground_tone(lo_ours, gilt, region, v, vb, texel) -> (cols, 3) | None`; `masked_blur_log(img, cover, sigma) -> (lo, hi)`; `blend_skin(ours, prov, photos, gilt, w_row, band, restored, region, v, vb, texel) -> (albedo, prov, info)` (`info`: `lo`, `weights`, `photoShare`, `photoDrawnShare`); `seam_steps(lo, weights, rows, region, texel) -> dict`; `at_photo_resolution(img, px) -> img`; `zone_gradient_correlation(ours, photo, zone, px) -> float | None`; `colour_deltas(ours, photo, zone, px) -> (n,)`; the command `python -m skins frieze-venue [--hints <json: craft → wall>]` writing `<work>/venue/<id>.npz` for every frieze skin (`albedo` float16 (rows, cols, 3) over the whole skin, `prov` uint8 with `PROV_PHOTO`, `gilt` float16 (rows, cols) in [0, 1], `photos` the crafts used, `bandRow`), `<work>/venue/photos.json` (the credit and every photograph's registration, gains and uplight) and `<evidence>/frieze-venue.json` (every check and gate).
+- Consumes: Task 5 as amended (a frieze skin's measured bottom edge and band row: `views.SkinGeometry.frieze_bottom`, `frieze_band_row`), Task 6A (`views.render(..., raw=True)`: the sampled bytes of every view, the XGRIDS frames decoded from the raw H.264), Task 6 (`views.render`, `load_sources`, `load_geometry`, `view_state`, `srgb_to_linear`, `Sources.kind_of`, `Sources.view`, `Sources.sweep_of`, `Sources.warps`; `frames.read_surfaces`, `Surface.name`, `Surface.to_local`), Task 7 (`xgrids._block_points`; `<work>/views/<id>.npz` `keys`; `<work>/xgrids/<id>.json` frames with `affine`, `effectiveGsdMm`, `nominalGsdMm`), Task 8 (`lightstates.bilinear`, `texel_light_coords`; `<work>/light/<id>.npz`, `states.json`), Task 9 (`blend.blend`, `blend.light_fields`, `blend._view_gsd_blocks`, `blend.EPS`, `blend.SIG_LOW_M`, `blend.TILE`; `<work>/mosaic/<id>.json` `gains`), Task 10 (`heal.band_rows`, `heal.copy_fill`, `heal.inpaint_fill`, `heal.PROV_*` with `PROV_PHOTO`; `<work>/heal/<id>.npz` `albedo`, `prov`); the venue's photographs, read-only, `<paths.frieze>/venue-photos/` (`sources.json`: `source`, `credit`, `copyright`, `photos[]` with `craft`, `file`, `url`, `size_px`, `sha256`; the 14 JPEGs); `room.registrationTexel` (0.004 m).
+- Produces (`frieze.py`): `Z_LO = 6`, `Z_HI = 249`, `CLIP = 250`, `SHARP_M = 0.004` (the research's `EFF_OK`), `CLEAN_V = (4.60, 5.30)`, `PROBE_Q = 80`, `OVERLAP_M = 0.02`, `STRETCH_M = 1.0`, `SPREAD_M = 0.01`, `HOLDOUT_V0 = 4.62`, `HOLDOUT_H = 0.14`, `HOLDOUT_STRETCHES = (("door-f3", 9.55), ("end_xmax-f1", 1.60), ("window-f3", 14.10))`, `HOLDOUT_GATE = {"de00Mean": 7.5, "de00P95": 12.5, "ssim": 0.93, "gradCorr": 0.90}` (every stretch), `HOLDOUT_MEAN_GATE = {"de00Mean": 5.0, "de00P95": 9.0, "ssim": 0.95, "gradCorr": 0.94}` (the mean of the three); `FACE_TOP_Z = 235`, `FACE_TOP_WEIGHT = 0.25`, `SRGB_G` (sRGB as a log curve: `crf_linear(z, SRGB_G)` is sRGB's linear value), `LIGHT_BLOCK_M = 0.05`, `LIGHT_LAMBDAS` (60 decay lengths, log-spaced from 0.01 to 2.0 m), `LIGHT_ACCEPT = 0.75`, `LIGHT_MIN_ROWS = 40`, `LIGHT_FLOOR = 0.02` (pre-flight fixes, 8 October); `crf_solve(Z (P, K) int16 (−1 missing), lam=40.0) -> (g (256,) float64, lnE (K,), lnL (P,))` (Debevec and Malik 1997; `g(128) = 0` and `g(64) = ln(lin(64) / lin(128))`, so the curve agrees with sRGB in the mid-tones); `channel_valid(raw_c (h, w)) -> bool (h, w)` (`Z_LO ≤ Z ≤ Z_HI` and no value ≥ `CLIP` within one texel, this channel only); `crf_linear(raw_c, g) -> (h, w)` (`lin(128) × exp(g(Z))`, interpolated between whole codes: linear in the same units as `views.srgb_to_linear`); `family_curve(crfs, family, c) -> (256,)` (the fitted XGRIDS curve, or `SRGB_G` for the E57 faces, which have no single curve); `value_weight(family, raw_c) -> (h, w)` (`FACE_TOP_WEIGHT` for a face's codes from `FACE_TOP_Z` up, else 1); `h_line(v, vs, d, p) -> (n,)` (the frieze research's trough-uplight profile, `light.py` `h_of`); `fit_vertical_light(v (k,), r (k, 3), rows (k,) bool, edge) -> dict` (`{accepted, reason, edge, lam, lamIndex, k, kFitted, offset, cvNone, cvLight, v2pct, rows}`: one decaying exponential `c_c + k_c exp(−(v − edge)/λ)` fitted to the residuals by linear least squares at each decay length of the scan, kept only when λ is inside the scan and it predicts held-out `LIGHT_BLOCK_M` row blocks with at most `LIGHT_ACCEPT` × the error of no light; no parameter is bounded; `v2pct` its 2% height); `light_log(fit, v) -> (rows, 3)` (zero without a kept light, defined on every row); `apply_light(rho (rows, w, 3), v, fit) -> rho`; `light_of(npz) -> dict` (the light a frieze npz stores) (pre-flight fix F1, 8 October); `transfer_detail(lnrho (h, w, 3), has_sharp (h, w, 3) bool, clean (h, w) bool) -> (lnrho, borrowed (h, w, 3) bool)`; `classify(valid_any (h, w, 3), valid_sharp (h, w, 3)) -> uint8 (h, w)`; `view_spread(X (n, h, w), valid (n, h, w) bool, sigma_px, q_hi=90) -> (spread (h, w), excess (h, w))` (amended 7 October: per texel, 1.4826 × the median absolute deviation across the valid views of each view's low-passed de-lit log value, and the excess, in linear terms, of the `q_hi`-th percentile view over the median; NaN under 3 views); `frieze_ids(work) -> list[str]` (skins of style `frieze`); `render_stack(cfg, src, geom, keys, reg, r0, r1, c0, c1, cache) -> list[dict]` (per E57 face or XGRIDS view: `key`, `family` `"face" | "xgrids"`, `state`, `raw`, `valid`, `cos`, `gsd` per texel); `fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread_px=None) -> (lnrho, valid_any, valid_sharp, spread | None, excess | None)` (the spread of green, the excess per channel); `recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, cols=None, *, damage=None, light_v=None, cache=None, spread=False) -> dict` (`albedo` (h, w, 3) float32, `prov` (h, w) uint8, `light`, `borrowedShare`, `v` (h,), and with `spread` `spread` (h, w), `excess` (h, w, 3); the residual light is fitted on the rows from the skin's measured edge up, each row's 80th-percentile ground relative to the clean frieze's, and divided out on every row); `srgb_to_lab(rgb) -> (…, 3)`; `ciede2000(lab1, lab2) -> (n,)`; `ssim_luma(a, b) -> float`; `gradient_correlation(a, b, mask) -> float`; `telea_baseline(hidden, mask, scale) -> (h, w, 3)` (the holdout's Telea baseline on the 8-bit display, as the research computed it); files `<work>/frieze/crf.json` (`{ "xgrids": {"g": [[256] × 3], "parts": n} }`: the E57 faces get no curve), `<work>/frieze/<id>.npz` (`albedo` float16 over rows `[rows[0], rows[1])`, which start `OVERLAP_M` above the band; `prov` uint8 over the same rows; `rows` int [2]; `band0` int, the band's first row; `spread` float16 (h, w) and `excess` float16 (h, w, 3) over rows `spreadRows` int [2], from v = 5.30 m to the skin's bottom; `fused` float16 (h, w, 3), the recovery's own rows over `spreadRows` (the reference of `frieze-venue`'s seams up the wall); `lightEdge`, `lightLam` (NaN without a light), `lightK` float64 (3,) and `lightAccepted`: the residual light), `<work>/frieze/<id>.json` (with `light`, and `lightAtTopLn`: the light divided out at the skin's top row, which the cornice's splats above keep; Task 23 measures that seam), `<work>/frieze/band.json` and `<evidence>/frieze-holdout.json`.
+- Produces (`venue.py`): `PHOTO_DIR = "venue-photos"`, `CREDIT_ID = "trades-house-virtual-museum"`, `WALLS`, `REG_CORR_MIN = 0.60`, `MATCH_V = (4.50, 5.36)`, `ECC_V = (4.55, 5.35)`, `MIN_GOOD = 12`, `RANSAC_PX = 6.0`, `COVER_ERODE_PX = 2`, `FEATHER_M = 0.05`, `SPLIT_V = 4.95`, `DETAIL_OFF_GROUPS = (0, 3)`, `LOWER_M = 0.05`, `BAND_M = 0.15`, `RAMP_M = 0.02`, `DETAIL_FLOOR = 0.5`, `GILT_TRUST_M = 0.05`, `GILT_MIN = 200`, `GOLD_BR_MAX = 0.55`, `REG_STRETCH_M = 1.0`, `REG_MARGIN_M = 0.25`, `VENUE_GATE = {"registration": 0.60, "colourMean": 3.6, "colourP95": 7.8}`, `MATTE_MAX = 0.5`, `MATTE_ERODE_PX = 1.5`, `TONE_SIGMA_PX = 1.0`, `TONE_MIN = 500`, `ROW_MIN = 40`, `LIGHT_TRUST_M = GILT_TRUST_M`, `ITERATIONS = 3`, `SEAM_W = 0.02`, `SEAM_STEP = 0.01`, `SEAM_MIN = 200`, `SEAM_FLOOR = 0.5` (pre-flight fix F1, 8 October); `load_photos(folder) -> (sources: dict, photos: list[dict])` (`ValueError` unless every file has the SHA-256 `sources.json` lists); `lay_band(img, prov, frieze, v) -> (img, prov)` (Task 12's recovered band feathered into Task 10's healed albedo, which is first divided by the frieze's residual light, `frieze.light_of`, on every row; moved here from Task 13's `_lay_band`); `gilt_direction(gilt_dl, paint_dl) -> {giltTexels, paintTexels, checked, difference, pass}` (checked only where the gilt mask is under the photograph); `skin_to_wall(geom) -> (M (2, 3), Minv (2, 3))` (texel coordinates ↔ the wall's (u, v) metres); `wall_grid(geoms, texel) -> dict` (`u0`, `v1`, `texel`, `width`, `height`); `wall_reference(geoms, images, grid) -> (ref (H, W, 3) float32 linear, valid (H, W) bool)`; `rows_mask(grid, v_range) -> (H, W) bool`; `band_pass(g, lo_px) -> float32`; `match_photo(photo_bgr, ref_bgr8, mask) -> (H (3, 3) | None, inliers)`; `refine(photo_bgr, ref_bgr8, H, mask) -> (H, corr)`; `refine_stretches(photo_bgr, W, H) -> list[{u0, u1, H, corr, accepted}]` (ECC per metre of the wall the photograph covers); `register(photo_bgr, walls, hint=None) -> dict` (`wall` or None, `H` (SIFT's), `stretches` (the accepted metres, each with its refined `H` and `corr`), `inliers`, `corr` (the best metre's), `pixelM`, `tried`); `photo_on_skin(photo, stretches, geom, grid) -> (img (rows, cols[, C]) float32, cover (rows, cols) bool)` (each metre drawn by its own homography, cross-faded over `REG_MARGIN_M`); `gilt_from_spread(spread, excess, trusted, texel) -> (m (h, w) float32, report)`; `gilt_from_photo(photo_lo, m, train, apply) -> (m, used)`; `detail_weights(v, vb, keep_lower, keep_upper) -> (rows,)`; `ground_tone(lo_ours, gilt, region, v, vb, texel) -> (cols, 3) | None`; `masked_blur_log(img, cover, sigma) -> (lo, hi)`; `blend_skin(ours, prov, photos, gilt, w_row, band, restored, region, v, vb, texel) -> (albedo, prov, info)` (each photograph `{img, cover, px, colour}`: one without `colour` gives detail and outline only; `info`: `lo`, `weights` (the colour photographs'), `photoShare`, `photoDrawnShare`); `seam_steps(lo, weights, rows, region, texel) -> dict`; `at_photo_resolution(img, px) -> img`; `zone_gradient_correlation(ours, photo, zone, px) -> float | None`; `colour_deltas(ours, photo, zone, px) -> (n,)` (unchanged); `viewdep_from_spread(spread, trusted, texel) -> (map (h, w) float32, report)`; `matte_mask(viewdep, cover, px) -> bool (h, w)`; `tone_fit_skins(parts, px) -> {a, g, r, texels} | None`; `tone_fit(ours, photo, sel, px)`; `tone_apply(tone, photo) -> img`; `row_residual(a, b, sel) -> (r (rows, 3), n)`; `row_residual_skins(parts) -> (v, r)`; `photo_to_frame_skins(skins, edge, tone_rows, light_rows) -> {tone, light, images} | None`; `colour_check_skins(skins, edge) -> (deltas, result | None)`; `product_frame_skins(skins, edge)`; `colour_check(ours, photo, matte, v, edge, px)`; `product_frame(ours, photo, matte, v, edge, px)`; `vertical_seam(rho, ref, sel, v, lines, control=(4.62, 5.28)) -> {controlP95, controlMedian, lines: {name: {v, de00, logStep, pass}}, pass}` (the experiment's Appendix A, with its references to `venue` made local; pre-flight fix F1, 8 October); the command `python -m skins frieze-venue [--hints <json: craft → wall>]` writing `<work>/venue/<id>.npz` for every frieze skin (`albedo` float16 (rows, cols, 3) over the whole skin, `prov` uint8 with `PROV_PHOTO`, `gilt` float16 (rows, cols) in [0, 1], `photos` the crafts used, `bandRow`), `<work>/venue/photos.json` (the credit and every photograph's registration with its metres, its tone, its light and its verdict) and `<evidence>/frieze-venue.json` (every check and gate).
 
-What the research established (`D:/claude/real-hall/renovation/frieze/findings.md`, 7 October; numbers in `evidence/numbers.json`, `work/holdout/<stretch>_hold_metrics.json` and `work/venue/<stretch>.json`): the band is measured, not lost. Across every view, 99% of band points on all four walls have at least one view with all three channels below 250 (6.4 m² of band, 15,044 XGRIDS frames and 47 E57 stations). Clipping is per channel: in the E57 band views R is clipped in 22%, G in 8% and B in 0.7%; XGRIDS frames clip R in 73–90% and B in 1–4%. The uplight acts as a near-continuous line source: at the frieze's bottom edge (4.24–4.37 m) the painted ground is 3.6–4.8× brighter in green than at 5.0–5.3 m, smooth with height, and dividing the fitted line source out leaves the ground level within ±8%. XGRIDS G and R follow sRGB within 0.07 ln; the E57 faces have no single curve, so their top values are down-weighted rather than expanded. The mural reaches down to the picture rail (feet, the bases of vats and barrels, animals' legs) with no repeating border, so synthesis can honestly supply only plain ground. The recipe has four steps: fit each camera family's response curve, fuse each channel from unclipped values only, divide by the light model, and synthesise and label only what no view measures.
+What the research established (`D:/claude/real-hall/renovation/frieze/findings.md`, 7 October; numbers in `evidence/numbers.json`, `work/holdout/<stretch>_hold_metrics.json` and `work/venue/<stretch>.json`): the band is measured, not lost. Across every view, 99% of band points on all four walls have at least one view with all three channels below 250 (6.4 m² of band, 15,044 XGRIDS frames and 47 E57 stations). Clipping is per channel: in the E57 band views R is clipped in 22%, G in 8% and B in 0.7%; XGRIDS frames clip R in 73–90% and B in 1–4%. (Those XGRIDS shares were measured through the keyframes' limited-range conversion. Decoded at full range, as Task 6A now stores them, red at 250 or more in the door wall's band falls from 46–97% to 24–68% and green from 8–36% to 0.1–2.3%: 16 frames, 8 October, Task 6A "The range". `frieze-crf` fits the XGRIDS curve on the full-range bytes.) The uplight acts as a near-continuous line source: at the frieze's bottom edge (4.24–4.37 m) the painted ground is 3.6–4.8× brighter in green than at 5.0–5.3 m, smooth with height, and dividing the fitted line source out leaves the ground level within ±8%. XGRIDS G and R follow sRGB within 0.07 ln; the E57 faces have no single curve, so their top values are down-weighted rather than expanded. The mural reaches down to the picture rail (feet, the bases of vats and barrels, animals' legs) with no repeating border, so synthesis can honestly supply only plain ground. The recipe has four steps: fit each camera family's response curve, fuse each channel from unclipped values only, divide by the light model, and synthesise and label only what no view measures.
 
 Here, inside the light model this plan already uses, each step works as follows.
 
-- **Linearise by the fitted curve.** Each view's band texels are linearised by its family's fitted curve instead of sRGB, because the shoulder is the camera's, not the standard's. The curve is anchored to sRGB in the mid-tones, so the result is in the mosaic's units.
+- **Linearise by the fitted curve.** Each XGRIDS frame's band texels are linearised by the frames' fitted curve instead of sRGB, because the shoulder is the camera's, not the standard's. The curve is anchored to sRGB in the mid-tones, so the result is in the mosaic's units. The E57 faces get no single curve (pre-flight fix F3, 8 October). The research found Matterport's tone mapping station- and light-state-dependent: its fitted E57 corrections at code 249 are +1.23 ln in blue and −0.41 and −0.56 in green and red, with 10–16 DN of scatter (`evidence/numbers.json` `camera_curve_diagnostics.e57`). It kept its fitted curves as diagnostics and used sRGB downstream (`scripts/crf.py:125-130`). So faces are linearised by sRGB and their top values are down-weighted rather than expanded: from code 235 a face value's weight is 0.25, the research's own rule (`scripts/fuse2.py:44`). XGRIDS blue is the case the research left open and the frieze-photo experiment does not address: its fitted correction falls 0.28–0.46 ln below sRGB from code 200 up with 10.95 DN of scatter (G and R within 0.07 ln, 7.5–7.6 DN; `camera_curve_diagnostics.xg`), and the research used sRGB downstream for every family (`scripts/crf.py:125-130`), while this plan applies the fitted blue curve. Blue rarely reaches the curve's top in the band (the XGRIDS frames clip blue in 1–4%), so the choice moves few texels; Step 10 reports how many, and the controller decides (recorded 8 October).
 - **Keep unclipped channels and de-light.** Each channel is kept only where it is unclipped. Each view is de-lit exactly as Task 9 de-lit it, using its gain on the skin and its light state's nine-source light at the texel.
 - **Fuse per channel.** The channels are fused separately through Task 9's two-band blend.
 - **Borrow detail from blue.** A channel with no sharp valid view borrows its high band from blue, with a slope fitted on the clean frieze above. The paint is sepia, so the channels' detail is nearly proportional in log.
-- **Remove the uplight residual.** The de-lit painted ground may still rise toward the trough, with the 80th-percentile probe per row more than `RESIDUAL_GATE` above the clean frieze's. That residual is the relight model's uplight error. It is fitted with the research's line-source form, `A + B_c h(v)` (`light.py`), on the rows from the frieze's measured bottom edge up (Task 5; the moulding below it stays splats), divided out, and its parameters are recorded.
+- **Remove the residual light.** The de-lit painted ground may still rise toward the trough: that residual is the relight model's error in the uplight. Each row's 80th-percentile ground, relative to the clean frieze's median, is fitted from the frieze's measured bottom edge up (Task 5; the moulding below it stays splats) with one decaying exponential, `c_c + k_c exp(−(v − edge)/λ)`, by linear least squares at each of 60 decay lengths from 1 cm to 2 m (`fit_vertical_light`). The light is kept only when its decay length is inside the scan and it predicts held-out 5 cm row blocks with at most 0.75 times the error of no light; otherwise there is none (k = 0), by model selection, not by a bound (pre-flight fix F1, 8 October; the frieze-photo experiment, `D:/claude/real-hall/plan-amendments-0710/frieze-photo/results.md`, sections 3, 4 and 7). The line-source form this plan fitted before (`A + B_c h(v)`, with bounded `vs`, `d` and `p` and its offset dropped) ran to its bounds on every stretch, chased the paint (the 80th-percentile probe swings by up to ±0.26 ln with the paint even on our fusion, so the 5% gate always fired) and, with the offset dropped, divided the whole recovery by e^0.22–0.61. On the research's already de-lit fusion the new fit finds no light on all three stretches, where the old one fitted one on all three. The light is divided out on every row of the frieze skin (`light_log` is defined on every row), from the recovered rows to Task 10's healed rows above them (`lay_band`), so it is removed wherever its profile exceeds 2% of its strength at the edge (F2) and leaves no cut. Above the skin the cornice stays splats and keeps whatever light the correction removed below it: `frieze/<id>.json` records it at the skin's top row (`lightAtTopLn`), and Task 23 measures that seam at the captured light.
 - **Synthesise and label.** Texels no view measures in any channel are filled from the same rows (plain ground) and labelled reconstructed.
 - **Leave panoramas out.** The panoramas are left out of the band. They are stitched and tone-mapped, so no camera curve describes them.
-- **Feather the seam.** The band is written with a 2 cm overlap above it, which `frieze-venue` feathers into the healed mosaic (`lay_band`), so no seam shows at the band's top.
+- **Feather the seam.** The band is written with a 2 cm overlap above it, which `frieze-venue` feathers into the healed mosaic (`lay_band`, after the same light correction), so no seam shows at the band's top; `vertical_seam` measures it (the seams up the wall, below).
 - **Measure how each texel's appearance varies with the view.** With the fusion, every texel keeps the spread of its views' de-lit, 1 cm low-passed green (a robust deviation across views; the views are already normalised by their gains and de-lit by their states) and the excess of its brightest views over its median, per channel. Matte paint de-lit by the right light looks the same from every view; gilding does not.
 
-**The venue's photographs** (`frieze-venue`; the research's "Venue photographs (7 October)", its `scripts/venue.py` and `venue_blend.py`). The owner cleared the Trades House Virtual Museum's 14 craft-section photographs (800–1,100 px; credit: George Mahoney and the Trades House of Glasgow, copyright 2015 Trades House of Glasgow, used with the owner's permission of 7 October). The research registered three of them (door wall Bonnetmakers and Dyers, 147 inliers, clean-zone correlation 0.83, 3.4 mm per pixel; fireplace wall Maltmen, 61, 0.63, 6.2 mm; window wall Wrights, 75, 0.86, 5.4 mm) and found that on the door and fireplace walls our fusion does not reproduce the photograph's drawing in the lowest 5 cm (gradient correlation 0.11 and 0.09, against 0.80 and 0.64 on the clean frieze above), while on the window wall it does (0.63). It also found that the photographs' colour balance differs widely: the gains mapping our fusion onto each differ by up to 4.5× in blue (0.52, 1.455 and 0.324), so grading each section to its own photograph would put colour seams at the section joins.
+**The venue's photographs** (`frieze-venue`; the research's "Venue photographs (7 October)", its `scripts/venue.py` and `venue_blend.py`). The owner cleared the Trades House Virtual Museum's 14 craft-section photographs (800–1,100 px; credit: George Mahoney and the Trades House of Glasgow, copyright 2015 Trades House of Glasgow, used with the owner's permission of 7 October). The research registered three of them (door wall Bonnetmakers and Dyers, 147 inliers, clean-zone correlation 0.83, 3.4 mm per pixel; fireplace wall Maltmen, 61, 0.63, 6.2 mm; window wall Wrights, 75, 0.86, 5.4 mm) and found that on the door and fireplace walls our fusion does not reproduce the photograph's drawing in the lowest 5 cm (gradient correlation 0.11 and 0.09, against 0.80 and 0.64 on the clean frieze above), while on the window wall it does (0.63). It also found that the photographs' colour balance differs widely: the gains mapping our fusion onto each differ by up to 4.5× in blue (door 0.52, fireplace 0.324, window 1.455), so grading each section to its own photograph would put colour seams at the section joins.
 
-- **Register every photograph to its wall.** Each wall's frieze skins are drawn into one reference at 4 mm in the wall's (u, v) (our healed albedo with the recovered band, display-scaled). Each photograph is matched to each wall by SIFT on the clean frieze (the band masked, so its glare cannot drive the match), RANSAC and an ECC homography refined on band-passed luma, as the research did; it belongs to the wall where its refined correlation on the clean frieze is at least 0.60 and its inliers most. (The research accepted 0.63–0.86 and refused a match at 0.005: the Coopers photograph SIFT preferred for the window wall; the correlation check refuses that match by itself, so no pairing by eye is needed unless the check fails, when `--hints` may name a photograph's wall.)
-- **One hall-wide colour frame.** The hall's colour is the relight model's: our fusion, which is continuous along every wall, and which the captured-light identity holds to the splats (Task 14). Each photograph is brought into it by its own white balance and exposure, a diagonal gain (per channel, the median of ours over the photograph) fitted on the clean frieze's paint. This is the research's alternative, "harmonise the 14 photos first": the photographs' 4.5× differences are their own white balances, removed once per photograph; our frieze is never graded to a photograph, so no section join can show a seam (the seam check below measures it).
-- **Clear each photograph of its own light.** The door photograph still shows uplight (its band ground 1.3–2.2× its upper ground; the fireplace's 1.1–1.3×, the window's none). Each photograph's vertical profile is fitted with the same line-source form as our band's (`fit_uplight_residual` on its own 80th-percentile ground probe per row, from the frieze's edge to the clean frieze's top) and divided out, so the photograph gives the paint's colour, not its light.
-- **Blend: colour and broad tone from the photograph, fine detail from our fusion.** In log space, the low band (a Gaussian of one photograph pixel) is the photograph's and the high band ours. Where photographs overlap or end, they cross-fade over 5 cm.
-- **The lowest 5 cm.** On the door and fireplace walls the photograph alone gives the drawing of the lowest 5 cm above the frieze's edge (3.4 mm per pixel on the door wall and 6.2 mm on the fireplace wall; the owner's decision), our detail returning over the 2 cm above (the research's ramp). Elsewhere our detail is kept in the lowest 5 cm and in the 10 cm above where its gradient correlation with the photograph reaches at least half that of the same photograph's clean frieze, and is off where it does not; this measured rule reproduces all three research decisions (off at 0.11 against 0.40 and 0.09 against 0.32; kept at 0.63 against 0.39 and in every upper 10 cm, 0.48–0.71). Band texels our recovery could only reconstruct take the photograph's drawing too.
+- **Register every photograph to its wall, metre by metre.** Each wall's frieze skins are drawn into one reference at 4 mm in the wall's (u, v) (our healed albedo with the recovered band, display-scaled). Each photograph is matched to each wall by SIFT on the clean frieze (the band masked, so its glare cannot drive the match) and RANSAC, as the research did. An ECC homography is then refined on band-passed luma separately for every metre of the wall the photograph covers, over the metre and 25 cm either side, and a metre is accepted when its refined correlation on the clean frieze is at least 0.60 (`refine_stretches`). The photograph belongs to the wall with accepted metres and the most inliers, and each accepted metre draws its part of the photograph by its own homography, cross-fading into its neighbours over those 25 cm (`photo_on_skin`). One homography does not hold across a photograph's 3–5 m: refined over its whole footprint, 12 of the 13 registered photographs reach only 0.12–0.56 (Bonnetmakers 0.68), while per metre their best stretches reach 0.65–0.86 and the scale varies by 1–6% along a photograph (pre-flight fix F1, 8 October; the experiment's `out/register/footprint_run1.json` and `logs/register_all_run1.log`; its reference was each wall's E57 colour elevation, not this mosaic, which is inferred to transfer). (The research accepted 0.63–0.86 and refused a match at 0.005: the Coopers photograph SIFT preferred for the window wall; the correlation check refuses that match by itself, so no pairing by eye is needed unless the check fails, when `--hints` may name a photograph's wall. The Weavers photograph's best metre reaches 0.487, so it is expected to stay unregistered unless a hint lets a metre pass.)
+- **One hall-wide colour frame.** The hall's colour is the relight model's: our fusion, which is continuous along every wall, and which the captured-light identity holds to the splats (Task 14). Each photograph is brought into it by its own tone, a gain and a power per channel, `ln ours = a_c + g_c ln photo_c` (the photograph's code linearised by sRGB: 13 of the 14 files embed the sRGB profile, Bonnetmakers carries none). The tone is fitted once over every skin the photograph covers, by matching the mean and spread of log values (the standardised major axis) at one photograph pixel, on matte texels only: those where the views agree (`viewdep_from_spread`, the gilt mask's map without its gold test, below 0.5), kept 1.5 photograph pixels clear of the rest because the photograph's blur spreads the gilt's glow (`matte_mask`, `tone_fit_skins`). A diagonal gain, which this plan used before 8 October, cannot hold: the photographs carry 1.2–3.2 times our log contrast (their cameras' processing; 8 of the 13 with EXIF fired a flash), and a gain alone leaves 3.27–6.86 / 6.60–16.13 on held-out rows. A channel with no increasing relation gives no tone, and such a photograph gives no colour. This is still the research's alternative, "harmonise the 14 photos first": our frieze is never graded to a photograph, so no section join can show a seam (the seam check below measures it).
+- **Clear each photograph of its own light.** A photograph's vertical light relative to our de-lit frieze is fitted on per-row medians of ln(photograph / ours) over its matte texels, where the paint cancels, with the same model and acceptance as our band's (`fit_vertical_light`), on rows from 5 cm above the edge (where the views' spread is trusted) to 5.30 m; tone and light alternate three times (`photo_to_frame_skins`), and the light is divided out on every row. The probe this plan fitted before (each photograph's own 80th-percentile ground per row, B7) measured the paint, the view-dependent gilt ground and the steeper tone, not the light: every fit sat at a bound, and the window photograph, which has no uplight, was darkened 2.63 times over the very rows its gain was fitted on. Measured: the door photograph keeps a light (λ 0.254 m, its 2% height at 5.27 m); the fireplace's does not predict held-out rows, and the window's decay length runs to the end of the scan, so neither keeps one. The fireplace's "uplight" the research read as 1.1–1.3 times was a bright gilt ground between the legs at 4.40–4.66 m.
+- **Blend: colour and broad tone from the photograph, fine detail from our fusion.** In log space, the low band (a Gaussian of one photograph pixel) is the photograph's and the high band ours. Where photographs overlap or end, they cross-fade over 5 cm. A photograph that fails the colour check (below) gives detail and outline only: it adds no low band, so our tone stays, while its high band still draws where our detail is off and on texels our recovery could only reconstruct (F1: a failure is a verdict, not a stop).
+- **The lowest 5 cm.** On the door and fireplace walls the photograph alone gives the drawing of the lowest 5 cm above the frieze's edge (3.4 mm per pixel on the door wall and 6.2 mm on the fireplace wall; the owner's decision: the brief of 7 October names these two walls, while the research's hall-wide note says "door and end walls", so the SSW end wall `end_xmin` follows the measured rule below, which keeps our detail there only where it passes), our detail returning over the 2 cm above (the research's ramp). Elsewhere our detail is kept in the lowest 5 cm and in the 10 cm above where its gradient correlation with the photograph reaches at least half that of the same photograph's clean frieze, and is off where it does not; this measured rule reproduces all three research decisions (off at 0.11 against 0.40 and 0.09 against 0.32; kept at 0.63 against 0.39 and in every upper 10 cm, 0.48–0.71). Band texels our recovery could only reconstruct take the photograph's drawing too.
 - **The gilded ground.** In the door photograph the ground is bright gold and the legs darker; in our captures the reverse (the research, inferred: the museum calls the frieze "painted and gilded"). A matte texture cannot hold both looks. The ground's mask is measured from the spread across views: on each frieze skin, from 5 cm above the edge to 5.30 m, the spread splits in two (Otsu on its logarithm), and the more variable class is the gilding when its brightest views' excess is gold (R > G > B and B/R below 0.55, Task 13's rule); in the rows where our views cannot say (the photograph-only rows), the photograph's own colour classifies each texel by the nearer of the two classes' centres learnt from the same photograph above. The gilt ground keeps the capture's own tone (our fusion's low band: the photograph's view of gold is a reflection, not an albedo), continued downward from the 5 cm above where the photograph alone draws; Task 13 makes it a metal with gold's specular colour, so its brightness follows the view (R1d's sheen). Its outline in the lowest 5 cm is the photograph's, labelled recovered.
 - **Provenance and credit.** Every texel is labelled: observed (our fusion) where its drawing is ours from a sharp unclipped view, observed (venue photo) where its drawing is the photograph's (`PROV_PHOTO`), recovered, or reconstructed. Texels Task 10 healed or filled outside the band keep their restoration (no photograph overrides a removed stain). Each skin lists the photographs it used, and `photos.json` carries the credit to the package (Task 14).
 
@@ -6949,16 +7247,28 @@ Here, inside the light model this plan already uses, each step works as follows.
 | exemplar guided by blue (`c_guided`) | 2.38 / 2.22 / 2.29; 2.30 | 5.36 / 4.86 / 5.20; 5.14 | 0.793 / 0.798 / 0.837; 0.809 | 0.677 / 0.607 / 0.394; 0.560 |
 | fused, not de-lit | 14.90 / 15.90 / 13.07; 14.62 | 18.83 / 20.22 / 17.60; 18.88 | 0.846 / 0.778 / 0.893; 0.839 | 0.809 / 0.615 / 0.548; 0.657 |
 
+**The same holdout under this plan's own measures (8 October; pre-flight fixes M7 and F5).** The research scored with a 7×7 uniform SSIM, the correlation of gradient magnitudes and a display scale of 0.85 (`scripts/holdout.py:89-101`). This plan scores with `_measures`: `ssim_luma` (Gaussian, σ 1.5), the correlation of the signed Sobel gradients, and 0.8 at the strip's 99th percentile. Rescored with `_measures` on the research's saved holdout displays (`work/holdout/<stretch>_hold_disp.npz`, linearised from sRGB; door / fireplace / window; mean of the three):
+
+| Recipe | ΔE00 mean | ΔE00 p95 | SSIM | Gradient corr. |
+|---|---|---|---|---|
+| `a_model` | 3.71 / 3.46 / 6.77; 4.65 | 6.21 / 7.02 / 11.63; 8.29 | 0.969 / 0.952 / 0.986; 0.969 | 0.964 / 0.912 / 0.985; 0.954 |
+| `e_real` (R1c's recipe) | 3.91 / 3.41 / 6.70; 4.68 | 7.47 / 6.85 / 11.32; 8.55 | 0.968 / 0.964 / 0.985; 0.972 | 0.964 / 0.941 / 0.980; 0.962 |
+| Telea, as `telea_baseline` computes it | 3.03 / 2.57 / 2.61; 2.74 | 10.14 / 7.23 / 6.69; 8.02 | 0.725 / 0.760 / 0.889; 0.791 | 0.163 / 0.107 / 0.134; 0.135 |
+| Telea on float32 (this plan before 8 October) | 45.64 / 45.57 / 46.53; 45.91 | 76.80 / 76.81 / 79.72; 77.78 | 0.005 / 0.005 / 0.005; 0.005 | 0.020 / 0.008 / 0.011; 0.013 |
+
+Every gate below keeps its verdict under the plan's measures; the thinnest margin is the fireplace's `a_model` gradient correlation, 0.912 against 0.90. The baseline was recomputed because OpenCV 5.0's Telea is wrong on float32 input: it filled the holdout's linear strips with −1.4 to 2.5, which made "above both baselines" half vacuous. `telea_baseline` runs Telea, radius 5, on the 8-bit display, as the research did (`scripts/holdout.py:165-167`, `inpaint.py:11-12`). It reproduces the research's saved Telea within 0.1 in ΔE00 and 0.005 in SSIM and gradient correlation (the saved display differs from a fresh 8-bit run by at most 3 DN). Script: `D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/f5/holdout_telea.py`; output `f5/holdout_telea.json`, run twice, identical.
+
 R1c's recovery is the estimated-light recipe (the true light is the oracle used to damage the strips; no real recovery has it). Against it the old proposal fails: the window stretch's ΔE00 is 6.84 / 11.62, and Telea's colour beats every de-lit fusion's in every stretch (it copies the colour around the strip and invents the drawing: gradient correlation 0.08–0.16). Structure is where the fusion is unmatched, and colour now comes from the venue's photographs. So:
 
 - **`HOLDOUT_GATE`, every stretch:** ΔE00 mean ≤ 7.5, p95 ≤ 12.5, SSIM ≥ 0.93, gradient correlation ≥ 0.90; SSIM and gradient correlation strictly above both baselines (Telea, and the best block copied from rows above or below). The structure limits sit 0.011–0.027 and 0.016–0.046 below the research's worst estimated-light stretches (0.941–0.957, 0.916–0.946), and the colour limits 0.59 and 0.55 above its worst (6.91 and 11.95, the window wall). That tolerance covers what differs here, the relight model's light in place of the research's own fit and the door and window stretches moved 5 and 50 cm to lie inside one skin, and nothing more: a broken de-light (14.6 / 18.9) or invented drawing (Telea's 0.08–0.16) fails by a wide margin.
 - **`HOLDOUT_MEAN_GATE`, the mean of the three:** ΔE00 mean ≤ 5.0, p95 ≤ 9.0, SSIM ≥ 0.95, gradient correlation ≥ 0.94: the research's own estimated-light result (4.74–4.77, 8.49–8.76, 0.963–0.967, 0.954–0.962) with margins of 0.23 and 0.24 in ΔE00 and 0.013 and 0.014 in SSIM and gradient correlation, so R1c's recovery must be as good as the research's on average.
 - **The venue photographs as independent validation** (`frieze-venue`, every photograph). The blend's own scores against a photograph are not independent (its colour is the photograph's), so they are never quoted or gated. Each check below compares two captures where neither was fitted to the other:
-  - **Registration:** refined band-passed correlation on the clean frieze ≥ 0.60 (the research accepted 0.63, 0.83 and 0.86 and refused a wrong section at 0.005).
-  - **Colour:** each photograph harmonised on the upper clean frieze only (5.30 down to 4.95 m) and compared with our fusion on the lower clean frieze (4.95 down to 4.60 m), its paint only, at the photograph's resolution: ΔE00 mean ≤ 6.5 and p95 ≤ 16.5. These are the research's worst measured agreements between our fusion and a venue photograph on clean frieze (fireplace: 6.34 and 16.51; door 4.24 and 12.27; window 3.62 and 7.80), rounded up; a mis-registration or a wrong harmonisation is far beyond them (E57 as recorded against the photographs in the band: 22.8–37.3).
+  - **Registration:** refined band-passed correlation on the clean frieze ≥ 0.60 for every metre a photograph draws (the research accepted 0.63, 0.83 and 0.86 and refused a wrong section at 0.005); a photograph with no metre at 0.60 is recorded unregistered with its best metre (expected: Weavers, 0.487) and gives nothing.
+  - **Colour:** each photograph's tone fitted on the upper clean frieze only (5.30 down to 4.95 m) and its light on rows other than the compared ones, then compared with our fusion on the lower clean frieze (4.95 down to 4.60 m), its matte texels only, at the photograph's resolution, by `colour_deltas` (unchanged): ΔE00 mean ≤ 3.6 and p95 ≤ 7.8, pooled over the skins the photograph covers (pre-flight fixes A-B8 and F1, 8 October). The derivation: the worst agreement this pipeline measured against the research's fusion is the fireplace's (Maltmen, 2.80 / 5.63; door 1.99 / 4.77; window 1.65 / 3.87), and the margin is the measured cost of a weaker fusion than the research's, the largest increase of an E57-only fusion over the research's on the same stretch and registration (+0.71 mean and +2.08 p95, the window), because R1c's mosaic is not built yet; 3.51 / 7.71, rounded up. Run to run the measures vary by nothing (every product was run twice, identical). The research's 6.34 / 16.51, which this plan cited before, came from another protocol (a per-row normalisation and no exposure scaling); under `colour_deltas` the plan's former pipeline read 7.6–19.3 / 12.6–24.3 and failed every photograph. The gate separates: without matte texels 2.57–4.05 / 6.12–10.64 and a diagonal gain 3.27–6.86 / 6.60–16.13 fail on two of three photographs, a 1 cm mis-registration (2.01–3.41 / 5.23–10.22) on one; on the low-contrast window wall a 3 cm shift still reads 2.35 / 5.95, which the registration gate catches instead. A photograph that fails is detail and outline only (the blend above), and its verdict is recorded; the gate is that every registered photograph has a verdict.
   - **Detail:** where our detail is kept, its gradient correlation with the photograph is at least half that of the clean frieze (the rule above, which the research's six measurements obey); the lowest 5 cm on the door and fireplace walls use the photograph whatever the measurement (the owner's decision), and their measurements are recorded.
   - **Seams:** at every edge of a photograph's cover (against another photograph or our fusion), the colour step across 7 cm (the cross-fade and 2 cm) in the band rows and in the clean rows is no larger than the 95th percentile of the same step inside that photograph's cover: no seam steps more than the paint itself does.
-  - **The gilded ground:** on every door-wall photograph, the photograph's gilt-to-paint brightness exceeds our capture's (the median of log(photograph / ours) over the gilt texels above that over the paint): the independent view agrees with the mask's direction.
+  - **The seams up the wall:** on every frieze skin, at 5 cm above the edge, at the band's top (15 cm) and 2 cm above it, the step of the profile ln(blend / reference) is no larger than the larger of the same step's 95th percentile at lines every 1 cm across the clean frieze and 0.5 ΔE00, half a just-noticeable difference (`vertical_seam`, the `verticalSeams` gate; pre-flight fixes F1 and F2, 8 October). The profile is each row's median over the texels compared; the step at a line is the jump between straight lines fitted over the 2 cm on each side, so a smooth gradient, such as a light divided out, is no step; it is expressed as ΔE00 at `colour_deltas`'s display exposure. The reference is each colour photograph that drew the texels, over its cover, and elsewhere the recovery's own rows over the whole frieze (`frieze/<id>.npz` `fused`: one processing with no cut at the lines, the experiment's reference in its band-top simulation, `scripts/sim_i5.py:69-71`; not Task 10's healed mosaic, which in the band holds the clipped and healed values the recovery replaces). In that simulation (the research's fusion re-lit, the mosaic keeping the whole or half of the uplight) the former correction left 0.79–14.38 ΔE00 at the band's top and the light divided out on every row 0.00–0.01; with the photographs every line passes (the experiment's section 7).
+  - **The gilded ground:** under every door-wall photograph with the gilt mask present beneath it (at least `GILT_MIN` gilt and `GILT_MIN` paint texels; pre-flight fix F4, 8 October), the photograph's gilt-to-paint brightness exceeds our capture's (the median of log(photograph / ours) over the gilt texels above that over the paint): the independent view agrees with the mask's direction. A photograph with no gilding under it is recorded as not checked and fails nothing. If the door wall's mask holds at least `GILT_MIN` gilt texels, at least one photograph must check it, so the metal Task 13 makes of it is never unvalidated.
 - **Coverage of the real band:** hall-wide, observed (our fusion) plus observed (venue photo) plus recovered texels are at least 99% of the band (the research's survey: 99.2% observed).
 - A miss stops the task with its numbers; no threshold is loosened to pass.
 
@@ -6971,6 +7281,9 @@ import math, unittest
 import numpy as np
 import cv2
 from skins import frieze as FZ, heal as H
+
+
+TEXEL, EDGE = 0.002, 4.28
 
 
 def srgb_lin(z):
@@ -7002,20 +7315,56 @@ class Curve(unittest.TestCase):
         self.assertFalse(v[2, 2]); self.assertFalse(v[1, 2]); self.assertFalse(v[0, 0]); self.assertTrue(v[4, 4])
 
 
-class Uplight(unittest.TestCase):
-    def test_the_line_source_residual_is_fitted_and_divided_out(self):
-        v = np.linspace(4.30, 5.30, 200)
-        vs, d, p = 4.18, 0.12, 2.0
-        boost = 1 + 0.8 * FZ.h_line(v, vs, d, p) / FZ.h_line(np.array([4.30]), vs, d, p)[0]
-        probe = np.log(np.stack([boost * 0.5, boost * 0.4, boost * 0.3], 1))
+class OurBand(unittest.TestCase):
+    """The residual light on our own band's probe (recover_band), as fit_vertical_light fits it (pre-flight fix F1)."""
+
+    def test_a_line_source_residual_is_fitted_and_divided_out_on_every_row(self):
+        v = np.linspace(4.30, 5.30, 500)
+        h = FZ.h_line(v, 4.18, 0.12, 2.0) / FZ.h_line(np.array([4.30]), 4.18, 0.12, 2.0)[0]
+        probe = np.log(np.outer(1 + 0.8 * h, [0.5, 0.4, 0.3]))
         clean = (v >= 4.60) & (v <= 5.30)
-        fit = FZ.fit_uplight_residual(v, probe, clean)
-        self.assertIsNotNone(fit)
-        self.assertLess(fit["residualAfter"], 0.01)
-        flat = FZ.apply_uplight(np.exp(probe)[:, None, :], v, fit)[:, 0, :]
-        self.assertLess(float(np.abs(np.log(flat[:, 0] / np.median(flat[clean, 0]))).max()), 0.03)
-        self.assertIsNone(FZ.fit_uplight_residual(v, np.log(np.full((200, 3), 0.5)), clean))
-        np.testing.assert_array_equal(FZ.uplight_log(None, v), np.zeros((200, 3)))
+        fit = FZ.fit_vertical_light(v, probe - np.median(probe[clean], 0), np.ones(len(v), bool), 4.30)
+        self.assertTrue(fit["accepted"])
+        self.assertTrue(0 < fit["lamIndex"] < len(FZ.LIGHT_LAMBDAS) - 1)
+        flat = probe - FZ.light_log(fit, v)
+        self.assertLess(float(np.abs(flat - np.median(flat[clean], 0)).max()), 0.02)
+
+    def test_a_probe_that_varies_only_with_the_paint_gets_no_light(self):
+        v = np.linspace(4.30, 5.30, 500)
+        rng = np.random.default_rng(2)
+        paint = 0.12 * np.convolve(rng.normal(0, 1, 540), np.ones(40) / np.sqrt(40), "same")[20:520]
+        probe = np.log(0.5) + paint[:, None] * np.ones(3)
+        clean = (v >= 4.60) & (v <= 5.30)
+        r = probe - np.median(probe[clean], 0)
+        self.assertGreater(float(np.abs(r).max()), 0.05)                     # the 5% gate this plan used before 8 October fitted it
+        fit = FZ.fit_vertical_light(v, r, np.ones(len(v), bool), 4.30)
+        self.assertFalse(fit["accepted"])
+        np.testing.assert_array_equal(FZ.light_log(fit, v), np.zeros((len(v), 3)))
+
+
+class Light(unittest.TestCase):
+    def test_the_light_is_divided_out_on_every_row_down_to_two_percent(self):
+        v = 5.40 - (np.arange(600) + 0.5) * TEXEL
+        fit = {"accepted": True, "edge": EDGE, "lam": 0.2, "k": [0.5, 1.0, 2.0]}
+        L = FZ.light_log(fit, v)
+        v2 = EDGE + 0.2 * math.log(1 / FZ.LIGHT_FLOOR)
+        above = v >= v2
+        self.assertTrue((L[above] <= FZ.LIGHT_FLOOR * np.array([0.5, 1.0, 2.0]) + 1e-12).all())
+        self.assertTrue((L[(v >= EDGE) & ~above] > 0).all())
+        self.assertLess(float(np.abs(np.diff(L, axis=0)).max()), 0.03)          # no cut anywhere
+        np.testing.assert_allclose(L[v < EDGE], np.tile([0.5, 1.0, 2.0], ((v < EDGE).sum(), 1)))
+        stored = {"lightAccepted": np.array(True), "lightEdge": np.array(EDGE), "lightLam": np.array(0.2), "lightK": np.array([0.5, 1.0, 2.0])}
+        np.testing.assert_array_equal(FZ.light_log(FZ.light_of(stored), v), L)  # as the frieze npz stores it (lay_band reads it)
+
+
+class Faces(unittest.TestCase):
+    def test_face_values_follow_srgb_and_their_top_is_down_weighted(self):
+        z = np.array([64.0, 128.0, 240.0])
+        np.testing.assert_allclose(FZ.crf_linear(z, FZ.family_curve({}, "face", 0)), srgb_lin(z), rtol=1e-9)
+        crfs = {"xgrids": {"g": [np.zeros(256)] * 3}}
+        self.assertIs(FZ.family_curve(crfs, "xgrids", 1), crfs["xgrids"]["g"][1])
+        np.testing.assert_array_equal(FZ.value_weight("face", np.array([200, 234, 235, 249])), [1.0, 1.0, 0.25, 0.25])
+        np.testing.assert_array_equal(FZ.value_weight("xgrids", np.array([200, 249])), [1.0, 1.0])
 
 
 class Detail(unittest.TestCase):
@@ -7049,6 +7398,17 @@ class Measures(unittest.TestCase):
         img = np.random.default_rng(3).uniform(0, 1, (40, 40)).astype(np.float32)
         self.assertAlmostEqual(FZ.ssim_luma(img, img), 1.0, places=6)
         self.assertAlmostEqual(FZ.gradient_correlation(img, img, np.ones((40, 40), bool)), 1.0, places=6)
+
+
+class Baseline(unittest.TestCase):
+    def test_the_telea_baseline_fills_a_strip_within_the_known_range(self):
+        yy, xx = np.mgrid[0:80, 0:120]
+        truth = np.stack([0.20 + 0.003 * xx + 0.001 * yy] * 3, -1).astype(np.float32)       # a smooth linear ramp
+        mask = np.zeros((80, 120), bool); mask[35:45] = True                                   # a full-width strip
+        hidden = np.where(mask[..., None], 0, truth).astype(np.float32)
+        out = FZ.telea_baseline(hidden, mask, 0.8 / float(truth[mask].max()))
+        self.assertTrue(float(truth.min()) <= float(out[mask].min()) and float(out[mask].max()) <= float(truth.max()))
+        self.assertLess(float(np.median(np.abs(out[mask] - truth[mask]))), 0.01)   # float32 Telea: -0.98 to 1.68
 
 
 class Spread(unittest.TestCase):
@@ -7090,8 +7450,9 @@ Expected: one line. If it is missing, Task 6A did not land; stop and report.
 """The frieze band, measured (R1 polished 3.3; the frieze research's recipe, findings.md of 7 October): every view's
 band texels linearised by its camera family's fitted response curve, kept per channel only where unclipped, de-lit as
 the mosaic de-lit them, fused per channel, detail borrowed from blue where a channel has no sharp view, the relight
-model's residual uplight error fitted and divided out from the frieze's measured edge up, and synthesis (plain ground
-from the same rows) only where no view measures any channel. Every texel is labelled observed, recovered or
+model's residual vertical light (one decaying exponential, kept only when it predicts held-out rows) fitted from the
+frieze's measured edge up and divided out on every row, and synthesis (plain ground from the same rows) only where no
+view measures any channel. Every texel is labelled observed, recovered or
 reconstructed, and keeps how much its de-lit appearance varies across the views (the gilding's evidence, venue.py)."""
 from __future__ import annotations
 
@@ -7100,7 +7461,6 @@ import json, math, os, time, warnings
 import cv2
 import numpy as np
 import scipy.sparse as sp
-from scipy.optimize import least_squares
 from scipy.sparse.linalg import lsqr
 
 from . import blend as B, frames as F, heal as HL, lightstates as LS, views as VW, xgrids as XG
@@ -7109,7 +7469,6 @@ Z_LO, Z_HI, CLIP = 6, 249, 250
 SHARP_M = 0.004
 CLEAN_V = (4.60, 5.30)
 PROBE_Q = 80
-RESIDUAL_GATE = 0.05
 OVERLAP_M = 0.02
 STRETCH_M = 1.0
 HOLDOUT_V0, HOLDOUT_H = 4.62, 0.14
@@ -7118,6 +7477,18 @@ SPREAD_M = 0.01           # each view's de-lit value is low-passed by 1 cm befor
 # Reconciled 7 October with the research's holdout (Task 12, "The thresholds, reconciled"): every stretch, and the mean.
 HOLDOUT_GATE = {"de00Mean": 7.5, "de00P95": 12.5, "ssim": 0.93, "gradCorr": 0.90}
 HOLDOUT_MEAN_GATE = {"de00Mean": 5.0, "de00P95": 9.0, "ssim": 0.95, "gradCorr": 0.94}
+# The E57 faces have no single response curve (the research: station- and light-state-dependent; its crf.py kept the
+# fitted curves as diagnostics and used sRGB downstream), so they are linearised by sRGB and their top values are
+# down-weighted (its fuse2.py: weight x 0.25 from code 235, "tone roll-off and JPEG ringing, trust less").
+FACE_TOP_Z, FACE_TOP_WEIGHT = 235, 0.25
+# The residual vertical light (the frieze-photo experiment, 8 October): one decaying exponential, fitted by linear least
+# squares at each decay length of a log scan and kept only when its decay length is inside the scan and it predicts
+# held-out 5 cm row blocks with at most LIGHT_ACCEPT x the error of no light. No parameter has a bound.
+LIGHT_BLOCK_M = 0.05      # cross-validation blocks
+LIGHT_LAMBDAS = tuple(float(x) for x in np.round(np.exp(np.linspace(math.log(0.01), math.log(2.0), 60)), 6))   # decay lengths, m
+LIGHT_ACCEPT = 0.75
+LIGHT_MIN_ROWS = 40
+LIGHT_FLOOR = 0.02        # F2: the light's profile matters down to 2% of its strength at the edge
 
 
 def _lin(z):
@@ -7126,6 +7497,7 @@ def _lin(z):
 
 
 LIN128 = float(_lin(128))
+SRGB_G = np.log(np.maximum(_lin(np.arange(256)), 1e-6) / LIN128)    # sRGB as a log curve: crf_linear(z, SRGB_G) = lin(z)
 
 
 def crf_solve(Z, lam=40.0):
@@ -7165,49 +7537,95 @@ def crf_linear(raw_c, g):
     return LIN128 * np.exp(np.interp(np.asarray(raw_c, np.float64), np.arange(256), np.asarray(g, np.float64)))
 
 
+def family_curve(crfs, family, c):
+    """Channel c's log response curve for a view family: the fitted XGRIDS curve, or sRGB for the E57 faces."""
+    return SRGB_G if family == "face" else crfs[family]["g"][c]
+
+
+def value_weight(family, raw_c):
+    """Each value's weight in the fusion: FACE_TOP_WEIGHT for an E57 face's codes from FACE_TOP_Z up, else 1."""
+    raw_c = np.asarray(raw_c)
+    if family != "face":
+        return np.ones(raw_c.shape, np.float32)
+    return np.where(raw_c >= FACE_TOP_Z, FACE_TOP_WEIGHT, 1.0).astype(np.float32)
+
+
 def h_line(v, vs, d, p):
     v = np.asarray(v, np.float64)
     return d ** (p - 1) / ((v - vs) ** 2 + d * d) ** (p / 2)
 
 
-def _shape(v, vs, d, p, vb):
-    return h_line(v, vs, d, p) / h_line(np.array([vb]), vs, d, p)[0]
+def _design(x, lam):
+    return np.c_[np.ones(len(x)), np.exp(-np.maximum(x, 0) / lam)]
 
 
-def fit_uplight_residual(v, probe, clean):
-    """probe (rows, 3): log of the de-lit ground per row. The residual above the clean frieze's median is fitted as
-    offset_c + ln(1 + B_c h(v) / h(v_bottom)) with shared vs, d, p (the research's A + B h form, light.py).
-    None when the residual is within RESIDUAL_GATE."""
+def _scan(x, r):
+    """Least squares at each decay length of the scan: (index, lam, coef (2, 3), sse) of the best."""
+    best = None
+    for i, lam in enumerate(LIGHT_LAMBDAS):
+        A = _design(x, lam)
+        coef = np.linalg.lstsq(A, r, rcond=None)[0]
+        sse = float(((r - A @ coef) ** 2).sum())
+        if best is None or sse < best[3]:
+            best = (i, lam, coef, sse)
+    return best
+
+
+def _cross_validated(x, r, blocks, light):
+    errs = []
+    for b in np.unique(blocks):
+        te, tr = blocks == b, blocks != b
+        if tr.sum() < 10:
+            continue
+        if light:
+            _i, lam, coef, _s = _scan(x[tr], r[tr])
+            pred = _design(x[te], lam) @ coef
+        else:
+            pred = np.repeat(r[tr].mean(0)[None], te.sum(), 0)
+        errs.append(r[te] - pred)
+    e = np.concatenate(errs)
+    return float(np.sqrt((e ** 2).mean()))
+
+
+def fit_vertical_light(v, r, rows, edge):
+    """A vertical light from per-row residuals r (rows, 3, ln) on `rows`: r_c(v) = c_c + k_c exp(-(v - edge) / lam).
+    Kept when lam is inside the scan (not its first or last value) and it predicts held-out LIGHT_BLOCK_M row blocks
+    with at most LIGHT_ACCEPT x the error of no light (a constant per channel); otherwise no light (k = 0)."""
     v = np.asarray(v, np.float64)
-    res = probe - np.median(probe[clean], axis=0)[None]
-    band = ~clean & (v < CLEAN_V[0])
-    if not band.any() or float(np.abs(res[band]).max()) <= RESIDUAL_GATE:
-        return None
-    vb = float(v.min())
-    use = band | clean
-
-    def model(x):
-        return np.log1p(np.outer(_shape(v, x[0], x[1], x[2], vb), x[3:6])) + x[6:9][None]
-
-    x0 = np.r_[vb - 0.12, 0.12, 2.0, np.clip(np.expm1(res[band].max(0)), 0.01, 19.0), 0.0, 0.0, 0.0]
-    lo = np.r_[vb - 0.30, 0.005, 0.5, 0.0, 0.0, 0.0, -1.0, -1.0, -1.0]
-    hi = np.r_[vb, 1.0, 4.0, 20.0, 20.0, 20.0, 1.0, 1.0, 1.0]
-    sol = least_squares(lambda x: (model(x) - res)[use].ravel(), x0, bounds=(lo, hi), method="trf")
-    after = float(np.abs((res - model(sol.x))[band]).max())
-    return {"vs": float(sol.x[0]), "d": float(sol.x[1]), "p": float(sol.x[2]), "B": [float(b) for b in sol.x[3:6]],
-            "offset": [float(o) for o in sol.x[6:9]], "vBottom": vb,
-            "residualBefore": float(np.abs(res[band]).max()), "residualAfter": after}
+    ok = np.asarray(rows, bool) & np.isfinite(r).all(1)
+    out = {"accepted": False, "edge": float(edge), "lam": None, "k": [0.0, 0.0, 0.0], "rows": int(ok.sum())}
+    if ok.sum() < LIGHT_MIN_ROWS:
+        return {**out, "reason": "too few rows"}
+    x, rr = v[ok] - edge, np.asarray(r, np.float64)[ok]
+    blocks = np.floor(x / LIGHT_BLOCK_M).astype(int)
+    cv_none, cv_light = _cross_validated(x, rr, blocks, False), _cross_validated(x, rr, blocks, True)
+    i, lam, coef, _sse = _scan(x, rr)
+    interior = 0 < i < len(LIGHT_LAMBDAS) - 1
+    accepted = bool(interior and cv_light <= LIGHT_ACCEPT * cv_none)
+    reason = "kept" if accepted else ("its decay length is at the end of the scan" if not interior else "it does not predict held-out rows")
+    return {**out, "accepted": accepted, "reason": reason, "lam": float(lam), "lamIndex": int(i),
+            "k": [float(x_) for x_ in (coef[1] if accepted else np.zeros(3))], "kFitted": [float(x_) for x_ in coef[1]],
+            "offset": [float(x_) for x_ in coef[0]], "cvNone": cv_none, "cvLight": cv_light,
+            "v2pct": float(edge + lam * math.log(1 / LIGHT_FLOOR)) if accepted else None}
 
 
-def uplight_log(fit, v):
+def light_log(fit, v):
+    """The light's log boost per row and channel (rows, 3); zero without a kept light. Defined on every row, so dividing
+    it out removes the light wherever its profile exceeds LIGHT_FLOOR of its edge strength (F2) and leaves no cut."""
     v = np.asarray(v, np.float64)
-    if fit is None:
+    if fit is None or not fit["accepted"]:
         return np.zeros((len(v), 3))
-    return np.log1p(np.outer(_shape(v, fit["vs"], fit["d"], fit["p"], fit["vBottom"]), np.asarray(fit["B"])))
+    return np.outer(np.exp(-np.maximum(v - fit["edge"], 0) / fit["lam"]), np.asarray(fit["k"]))
 
 
-def apply_uplight(rho, v, fit):
-    return rho / np.exp(uplight_log(fit, v))[:, None, :]
+def apply_light(rho, v, fit):
+    return rho / np.exp(light_log(fit, v))[:, None, :]
+
+
+def light_of(z):
+    """The light a frieze npz stores (`lightEdge`, `lightLam`, `lightK`, `lightAccepted`), in fit_vertical_light's form."""
+    return {"accepted": bool(z["lightAccepted"]), "edge": float(z["lightEdge"]), "lam": float(z["lightLam"]),
+            "k": [float(x) for x in np.asarray(z["lightK"]).ravel()]}
 
 
 def transfer_detail(lnrho, has_sharp, clean):
@@ -7378,27 +7796,29 @@ def render_stack(cfg, src, geom, keys, reg, r0, r1, c0, c1, cache):
 
 
 def fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread_px=None):
-    """One column tile: per channel, every view's unclipped values linearised by its family's curve and de-lit by its
-    gain and state light, fused by Task 9's two-band blend. lx, ly: light-grid coordinates per texel (flattened). With
+    """One column tile: per channel, every view's unclipped values linearised by its family's curve (sRGB for the E57
+    faces, whose top values are down-weighted) and de-lit by its gain and state light, fused by Task 9's two-band blend. lx, ly: light-grid coordinates per texel (flattened). With
     spread_px, also each texel's spread across the views (green) and their bright views' excess (per channel)."""
     h, w = shape
     n = len(stack)
     X = np.zeros((n, h, w, 3), np.float32); valid = np.zeros((n, h, w, 3), bool)
-    wlow = np.zeros((n, h, w), np.float32); whigh = np.zeros((n, h, w), np.float32); sharp = np.zeros((n, h, w), bool)
+    wlow = np.zeros((n, h, w, 3), np.float32); whigh = np.zeros((n, h, w, 3), np.float32); sharp = np.zeros((n, h, w), bool)
     for i, s in enumerate(stack):
         raw = s["raw"] if damage is None else damage(s)
         Ev = LS.bilinear(E[s["state"]], lx, ly).reshape(h, w, 3)
         gain = np.asarray(gains.get(s["key"], [1.0, 1.0, 1.0]), np.float64)
+        wl = np.where(s["valid"], np.clip(s["cos"], 0, 1), 0)
+        wh = np.where(s["valid"], np.maximum(np.where(np.isfinite(s["gsd"]), s["gsd"], 1.0), 1e-4) ** -4.0, 0)
         for c in range(3):
-            rad = crf_linear(raw[..., c], crfs[s["family"]]["g"][c])
+            rad = crf_linear(raw[..., c], family_curve(crfs, s["family"], c))
             X[i, ..., c] = np.log(rad / max(gain[c], 1e-9) / np.maximum(Ev[..., c], 1e-9) + B.EPS)
             valid[i, ..., c] = channel_valid(raw[..., c]) & s["valid"]
-        wlow[i] = np.where(s["valid"], np.clip(s["cos"], 0, 1), 0)
-        whigh[i] = np.where(s["valid"], np.maximum(np.where(np.isfinite(s["gsd"]), s["gsd"], 1.0), 1e-4) ** -4.0, 0)
+            vw = value_weight(s["family"], raw[..., c])
+            wlow[i, ..., c], whigh[i, ..., c] = wl * vw, wh * vw
         sharp[i] = s["gsd"] <= SHARP_M
     lnrho = np.zeros((h, w, 3), np.float32)
     for c in range(3):
-        lo, _nv = B.blend(np.repeat(X[..., c:c + 1], 3, -1), valid[..., c], wlow, whigh, sigma_low_px)
+        lo, _nv = B.blend(np.repeat(X[..., c:c + 1], 3, -1), valid[..., c], wlow[..., c], whigh[..., c], sigma_low_px)
         lnrho[..., c] = lo[..., 0]
     spread = excess = None
     if spread_px is not None:
@@ -7410,9 +7830,10 @@ def fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread
 def recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, cols=None, *, damage=None, light_v=None,
                  cache=None, spread=False):
     """rows: whole skin rows (the band and the clean frieze above); cols: a column range (default the whole skin).
-    light_v: the height at which each row's light is looked up and its uplight fitted (default its own; the holdout
-    relabels its strip as band rows). Column tiles of blend.TILE with margins; the uplight is fitted on the whole range
-    from the frieze's measured bottom edge up (Task 5; the moulding's rows below it are outside the region). spread:
+    light_v: the height at which each row's light is looked up and its residual light fitted (default its own; the
+    holdout relabels its strip as band rows). Column tiles of blend.TILE with margins; the residual light is fitted on
+    the rows from the frieze's measured bottom edge up (Task 5; the moulding's rows below it are outside the region),
+    each row's 80th-percentile ground relative to the clean frieze's, and divided out on every row. spread:
     also each texel's spread across the views and their excess (view_spread)."""
     cols = cols if cols is not None else slice(0, geom.cols)
     cache = {} if cache is None else cache
@@ -7448,14 +7869,15 @@ def recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, co
     probe = np.log(np.maximum(np.percentile(rho, PROBE_Q, axis=1), 1e-6))
     edge = geom.frieze_bottom if geom.frieze_bottom is not None else float(v.min())
     fit_rows = vl >= edge                                   # the frieze's rows; the moulding below the edge is not lit as paint
-    fit = fit_uplight_residual(vl[fit_rows], probe[fit_rows], clean_rows[fit_rows])
-    rho = apply_uplight(rho, vl, fit).astype(np.float32)
+    r = probe - np.median(probe[clean_rows & fit_rows], axis=0)[None]
+    fit = fit_vertical_light(vl, r, fit_rows, edge)
+    rho = apply_light(rho, vl, fit).astype(np.float32)
     prov = classify(vany, vsharp)
     hole = prov == HL.PROV_RECONSTRUCTED
     if hole.any():
         rho, ok = HL.copy_fill(rho, hole, ~hole, search_px=int(round(0.5 / geom.texel)), ring_px=5)
-        rho = HL.telea_fill(rho, hole & ~ok)
-    return {"albedo": np.maximum(rho, 0).astype(np.float32), "prov": prov, "uplight": fit,
+        rho = HL.inpaint_fill(rho, hole & ~ok)
+    return {"albedo": np.maximum(rho, 0).astype(np.float32), "prov": prov, "light": fit,
             "borrowedShare": float(borrowed.any(-1).mean()), "v": v, "spread": spr, "excess": exc}
 
 
@@ -7488,13 +7910,14 @@ def _states(cfg):
 
 
 def cmd_frieze_crf(cfg, rest) -> int:
-    """<work>/frieze/crf.json: each family's response curve, the median over parts (one part per frieze skin, family
-    and light state: a point's radiance is shared only within a state), each part from a 1 m stretch (the holdout's on
-    its three skins, else the skin's centre) on an 8-texel grid of views blurred by 3 texels (the research's crf.py)."""
+    """<work>/frieze/crf.json: the XGRIDS frames' response curve, the median over parts (one part per frieze skin and
+    light state: a point's radiance is shared only within a state), each part from a 1 m stretch (the holdout's on its
+    three skins, else the skin's centre) on an 8-texel grid of views blurred by 3 texels (the research's crf.py). The
+    E57 faces get none (no single curve; family_curve gives them sRGB)."""
     src = VW.load_sources(cfg, xgrids=True)
     surfaces = F.read_surfaces(cfg.paths["surfaces"])
     starts = dict(HOLDOUT_STRETCHES)
-    parts = {"face": [], "xgrids": []}
+    parts = {"xgrids": []}                    # the E57 faces have no single curve: sRGB (family_curve)
     for sid in frieze_ids(cfg.paths["work"]):
         geom, light, keys, reg, gains = _skin_inputs(cfg, sid, surfaces)
         rows, cols = _frieze_rows(geom), _stretch_cols(geom, starts.get(sid))
@@ -7526,8 +7949,8 @@ def cmd_frieze_crf(cfg, rest) -> int:
             gs.append(np.median(np.stack(solved), 0).tolist()); used = max(used, len(solved))
         if len(gs) == 3:
             out[fam] = {"g": gs, "parts": used}
-    if set(out) != {"face", "xgrids"}:
-        print(f"frieze-crf: curves for {sorted(out)} only; both families are required", flush=True)
+    if set(out) != {"xgrids"}:
+        print("frieze-crf: no XGRIDS curve (too few parts with two valid views)", flush=True)
         return 1
     os.makedirs(os.path.join(cfg.paths["work"], "frieze"), exist_ok=True)
     with open(os.path.join(cfg.paths["work"], "frieze", "crf.json"), "w", encoding="utf-8") as f:
@@ -7554,21 +7977,25 @@ def cmd_frieze(cfg, rest) -> int:
         region = geom.region[out0:] > 0
         albedo = res["albedo"][out0 - rows.start:]
         prov = np.where(region, res["prov"][out0 - rows.start:], HL.PROV_OUTSIDE).astype(np.uint8)
+        fit = res["light"]
+        at_top = light_log(fit, _row_v(geom, np.array([0.5])))[0]      # left against the cornice's splats (Task 23)
         np.savez_compressed(os.path.join(folder, f"{sid}.npz"), albedo=albedo.astype(np.float16), prov=prov,
                             rows=np.array([out0, geom.rows]), band0=np.array(band.start),
                             spread=res["spread"].astype(np.float16), excess=res["excess"].astype(np.float16),
-                            spreadRows=np.array([rows.start, rows.stop]))
+                            fused=res["albedo"].astype(np.float16), spreadRows=np.array([rows.start, rows.stop]),
+                            lightEdge=np.array(fit["edge"]), lightLam=np.array(np.nan if fit["lam"] is None else fit["lam"]),
+                            lightK=np.array(fit["k"], np.float64), lightAccepted=np.array(bool(fit["accepted"])))
         in_band = region[band.start - out0:]
         pb = prov[band.start - out0:]
         counts = {name: int((pb[in_band] == code).sum()) for name, code in
                   (("observed", HL.PROV_OBSERVED), ("recovered", HL.PROV_RECOVERED), ("reconstructed", HL.PROV_RECONSTRUCTED))}
         for k in totals:
             totals[k] += counts[k]
-        report = {"skin": sid, "rows": [out0, geom.rows], "band0": band.start, "counts": counts, "uplight": res["uplight"],
-                  "borrowedShare": res["borrowedShare"]}
+        report = {"skin": sid, "rows": [out0, geom.rows], "band0": band.start, "counts": counts, "light": fit,
+                  "lightAtTopLn": [float(x) for x in at_top], "borrowedShare": res["borrowedShare"]}
         with open(os.path.join(folder, f"{sid}.json"), "w", encoding="utf-8") as f:
             json.dump(report, f, indent=1)
-        print(f"frieze {sid}: {json.dumps(counts)}, uplight {'fitted' if res['uplight'] else 'within the gate'}, "
+        print(f"frieze {sid}: {json.dumps(counts)}, light {fit['reason']}, "
               f"{time.time() - started:.0f} s", flush=True)
     measured = (totals["observed"] + totals["recovered"]) / max(sum(totals.values()), 1)
     with open(os.path.join(folder, "band.json"), "w", encoding="utf-8") as f:
@@ -7580,6 +8007,15 @@ def cmd_frieze(cfg, rest) -> int:
 def _display(rho, scale):
     lin = np.clip(np.asarray(rho, np.float64) * scale, 0, 1)
     return np.where(lin <= 0.0031308, 12.92 * lin, 1.055 * np.power(lin, 1 / 2.4) - 0.055)
+
+
+def telea_baseline(hidden, mask, scale):
+    """The holdout's inpainting baseline as the research computed it (holdout.py:165-167, inpaint.py:11-12): OpenCV's
+    Telea, radius 5, on the 8-bit display image, returned as linear albedo. Eight bits is an input type for which
+    OpenCV 5.0's Telea is correct; on float32 it is not (it filled the holdout's linear strips with -1.4 to 2.5)."""
+    disp8 = np.rint(_display(hidden, scale) * 255).astype(np.uint8)
+    filled = cv2.inpaint(disp8, np.asarray(mask, np.uint8), 5, cv2.INPAINT_TELEA)
+    return (VW.srgb_to_linear(filled) / np.float32(scale)).astype(np.float32)
 
 
 def _measures(est, tru, mask, scale):
@@ -7614,14 +8050,14 @@ def cmd_frieze_holdout(cfg, rest) -> int:
 
         def ln_light(state, vq):
             lx, ly = LS.texel_light_coords(geom, lt, mid, _row_of_v(geom, vq))
-            return np.log(np.maximum(LS.bilinear(E[state], lx, ly), 1e-9)) + uplight_log(truth["uplight"], vq)
+            return np.log(np.maximum(LS.bilinear(E[state], lx, ly), 1e-9)) + light_log(truth["light"], vq)
 
         boost = {st: np.where(strip[:, None], ln_light(st, v_band) - ln_light(st, v), 0.0) for st in E}
 
         def damage(s):
             out = s["raw"].copy()
             for c in range(3):
-                g = crfs[s["family"]]["g"][c]
+                g = family_curve(crfs, s["family"], c)
                 lnz = np.interp(s["raw"][..., c], np.arange(256), g) + boost[s["state"]][:, None, c]
                 out[..., c] = np.rint(np.interp(lnz, g, np.arange(256)))      # beyond the curve's top: 255, clipped
             return out
@@ -7630,9 +8066,9 @@ def cmd_frieze_holdout(cfg, rest) -> int:
                            light_v=v_band, cache=cache)
         mask = np.repeat(strip[:, None], cols.stop - cols.start, 1)
         hidden = np.where(mask[..., None], 0, truth["albedo"]).astype(np.float32)
-        telea = HL.telea_fill(hidden, mask)
-        copied, _ok = HL.copy_fill(hidden, mask, ~mask, int(round(0.5 / geom.texel)), 5)
         scale = 0.8 / max(float(np.percentile(truth["albedo"][mask], 99)), 1e-6)
+        telea = telea_baseline(hidden, mask, scale)
+        copied, _ok = HL.copy_fill(hidden, mask, ~mask, int(round(0.5 / geom.texel)), 5)
         m_est, m_telea, m_copy = (_measures(x, truth["albedo"], mask, scale) for x in (est["albedo"], telea, copied))
         meets = (m_est["de00Mean"] <= HOLDOUT_GATE["de00Mean"] and m_est["de00P95"] <= HOLDOUT_GATE["de00P95"]
                  and m_est["ssim"] >= HOLDOUT_GATE["ssim"] and m_est["gradCorr"] >= HOLDOUT_GATE["gradCorr"])
@@ -7641,7 +8077,7 @@ def cmd_frieze_holdout(cfg, rest) -> int:
         beats = all(m_est["ssim"] > b["ssim"] and m_est["gradCorr"] > b["gradCorr"] for b in (m_telea, m_copy))
         passed &= meets and beats
         results.append({"skin": sid, "u": [u0, u0 + STRETCH_M], "recipe": m_est, "telea": m_telea, "copy": m_copy,
-                        "uplightTruth": truth["uplight"], "uplightDamaged": est["uplight"], "pass": meets and beats})
+                        "lightTruth": truth["light"], "lightDamaged": est["light"], "pass": meets and beats})
         print(f"frieze-holdout {sid}: {json.dumps(results[-1])}", flush=True)
     mean = {k: float(np.mean([r["recipe"][k] for r in results])) for k in HOLDOUT_MEAN_GATE}
     mean_ok = (mean["de00Mean"] <= HOLDOUT_MEAN_GATE["de00Mean"] and mean["de00P95"] <= HOLDOUT_MEAN_GATE["de00P95"]
@@ -7659,10 +8095,12 @@ def cmd_frieze_holdout(cfg, rest) -> int:
 `tools/skins/tests/test_venue.py`:
 
 ```python
-import hashlib, json, os, tempfile, unittest
+import hashlib, json, math, os, tempfile, unittest
 import numpy as np
 import cv2
 from skins import frieze as FZ, heal as HL, venue as VN
+
+TEXEL, EDGE = 0.002, 4.28
 
 
 def textured(h, w, seed=0):
@@ -7670,6 +8108,36 @@ def textured(h, w, seed=0):
     g = cv2.GaussianBlur(np.random.default_rng(seed).uniform(0, 255, (h, w)).astype(np.float32), (0, 0), 2.0)
     g = cv2.normalize(g, None, 0, 255, cv2.NORM_MINMAX)
     return np.repeat(g[..., None], 3, -1).astype(np.uint8)
+
+
+def wall(seed=1, rows=560, cols=320, elements=True):
+    """A frieze's paint (linear, our frame): smooth blobs of three paint colours plus fine texture, and whole rows of
+    different content (a horizontal 'vat rim' and 'feet'), so the paint alone moves each row's 80th percentile by far
+    more than 5%. v runs from 5.40 m down in 2 mm rows."""
+    rng = np.random.default_rng(seed)
+    v = 5.40 - (np.arange(rows) + 0.5) * TEXEL
+    blobs = cv2.GaussianBlur(rng.normal(0, 1, (rows, cols)).astype(np.float32), (0, 0), 6)
+    blobs = blobs / blobs.std()
+    fine = cv2.GaussianBlur(rng.normal(0, 1, (rows, cols)).astype(np.float32), (0, 0), 1.2)
+    fine = fine / fine.std()
+    base = np.array([0.42, 0.33, 0.20])
+    ln = np.log(base)[None, None] + 0.35 * blobs[..., None] * np.array([1.0, 1.1, 1.3]) + 0.08 * fine[..., None]
+    if elements:
+        ln[(v > 4.58) & (v < 4.64)] -= 0.5                                       # a dark horizontal element
+        ln[(v > 4.95) & (v < 5.05)] += 0.25                                      # a light one
+    return v, np.exp(ln).astype(np.float32)
+
+
+def camera(rho, v, g=(0.6, 0.55, 0.7), wb=(0.9, 1.0, 1.6), light=None):
+    """A photograph of rho: its own light (log, rows x 3) on the radiance, then a white balance and a power tone curve
+    (log photo = log(wb) + (log rho + L) / g), as the sRGB-linearised photograph sees it."""
+    L = np.zeros((len(v), 3)) if light is None else light
+    lp = np.log(np.asarray(wb))[None, None] + (np.log(rho) + L[:, None, :]) / np.asarray(g)[None, None]
+    return np.exp(lp).astype(np.float32)
+
+
+def exp_light(v, k, lam):
+    return np.outer(np.exp(-np.maximum(v - EDGE, 0) / lam), np.asarray(k))
 
 
 class Photos(unittest.TestCase):
@@ -7706,6 +8174,34 @@ class Registration(unittest.TestCase):
         self.assertLess(float(err), 1.5)
         self.assertGreater(corr, 0.8)
 
+    def test_each_metre_is_refined_on_its_own_and_the_metres_meet_without_a_step(self):
+        ref = textured(300, 900, seed=4)                                          # a wall's reference at 4 mm: 3.6 m by 1.2 m
+        H_true = np.array([[1.1, 0.02, 300.0], [0.01, 1.05, 30.0], [2e-5, 0.0, 1.0]])   # the photograph from u = 1.2 m to 2.95 m
+        photo = cv2.warpPerspective(ref, np.linalg.inv(H_true), (400, 220), flags=cv2.INTER_LINEAR)
+        grid = {"u0": 0.0, "v1": 5.40, "texel": 0.004, "width": 900, "height": 300}
+        W = {"ref8": ref, "matchMask": np.ones(ref.shape[:2], bool), "eccMask": np.ones(ref.shape[:2], bool), "grid": grid}
+        reg = VN.register(photo, {"door": W})
+        self.assertEqual(reg["wall"], "door")
+        self.assertEqual([(st["u0"], st["u1"]) for st in reg["stretches"]], [(1.0, 2.0), (2.0, 3.0)])
+        self.assertTrue(all(st["corr"] > 0.8 for st in reg["stretches"]))
+
+        class Surface:
+            name = "door"
+            def to_local(self, X):
+                X = np.asarray(X, np.float64)
+                return np.stack([X[..., 0] + 1.823, X[..., 2], 0.3423 - X[..., 1]], -1)
+
+        class G:                                                                  # a skin on the reference's own grid
+            texel = 0.004; cols = 900; rows = 300; surface = Surface()
+            origin = np.array([-1.823, 0.3, 5.40]); u_axis = np.array([1.0, 0.0, 0.0]); v_axis = np.array([0.0, 0.0, -1.0])
+        img, cover = VN.photo_on_skin(photo.astype(np.float32), reg["stretches"], G, grid)
+        cols = np.flatnonzero(cover.any(0))
+        self.assertLess(abs(cols[0] * 0.004 - 1.2), 0.03)
+        self.assertGreater(cols[-1] * 0.004, 2.85)
+        self.assertGreater(float(np.corrcoef(img[cover][:, 0], ref[cover][:, 0].astype(np.float32))[0, 1]), 0.97)
+        join = cover & (np.abs((np.arange(900) + 0.5) * 0.004 - 2.0) < VN.REG_MARGIN_M)[None, :]   # the metres' cross-fade
+        self.assertGreater(float(np.corrcoef(img[join][:, 0], ref[join][:, 0].astype(np.float32))[0, 1]), 0.97)
+
 
 class Mapping(unittest.TestCase):
     def test_skin_texels_map_to_the_wall_and_back(self):
@@ -7723,20 +8219,138 @@ class Mapping(unittest.TestCase):
         np.testing.assert_allclose(Minv @ [uv[0], uv[1], 1.0], [10.5, 3.5], atol=1e-9)
 
 
-class Colour(unittest.TestCase):
-    def test_a_photograph_is_harmonised_into_our_frame_and_cleared_of_its_own_light(self):
-        ours = np.random.default_rng(6).uniform(0.2, 0.6, (500, 3))
-        photo = ours / np.array([0.6, 1.0, 2.5])                                            # the photograph's white balance
-        np.testing.assert_allclose(VN.harmonise(ours, photo), [0.6, 1.0, 2.5], rtol=1e-9)
-        v = np.linspace(4.20, 5.30, 300)
-        boost = 1 + 0.9 * FZ.h_line(v, 4.15, 0.08, 2.0) / FZ.h_line(np.array([4.25]), 4.15, 0.08, 2.0)[0]
-        probe = np.log(np.stack([boost * 0.5, boost * 0.45, boost * 0.4], 1))
-        probe[v < 4.25] = 5.0                                                               # the moulding: not the frieze
-        fit = VN.photo_light(v, probe, 4.25)
-        flat = np.exp(probe) / np.exp(FZ.uplight_log(fit, v))
-        on = v >= 4.25
-        self.assertLess(float(np.abs(np.log(flat[on, 1] / np.median(flat[v >= 4.6, 1]))).max()), 0.03)
-        self.assertIsNone(VN.photo_light(v, np.log(np.full((300, 3), 0.5)), 4.25))         # a photograph with no uplight
+class Tone(unittest.TestCase):
+    def test_a_gain_and_power_are_recovered_and_the_photograph_lands_in_our_frame(self):
+        v, rho = wall()
+        photo = camera(rho, v)
+        t = VN.tone_fit(rho, photo, np.ones(rho.shape[:2], bool), 1.0)
+        np.testing.assert_allclose(t["g"], [0.6, 0.55, 0.7], rtol=0.02)
+        out = VN.tone_apply(t, photo)
+        self.assertLess(float(np.abs(np.log(out / rho)).max()), 0.02)
+
+    def test_a_channel_with_no_increasing_relation_gives_no_tone(self):
+        v, rho = wall()
+        photo = camera(rho, v)
+        photo[..., 0] = photo[..., 0].mean() ** 2 / photo[..., 0]                # red inverted: a decreasing relation
+        self.assertIsNone(VN.tone_fit(rho, photo, np.ones(rho.shape[:2], bool), 1.0))
+        self.assertIsNone(VN.product_frame(rho, photo, np.ones(rho.shape[:2], bool), v, EDGE, 1.0))
+
+    def test_a_diagonal_gain_cannot_map_a_photograph_with_more_contrast(self):
+        v, rho = wall()
+        photo = camera(rho, v)
+        gain = np.median(rho.reshape(-1, 3) / photo.reshape(-1, 3), 0)          # the diagonal gain this plan used before 8 October
+        resid = np.log(photo * gain / rho)
+        self.assertGreater(float(resid.std(axis=(0, 1)).min()), 0.1)            # it leaves the photograph's contrast
+
+
+class Light(unittest.TestCase):
+    def test_a_photograph_without_light_gets_none_although_its_own_probe_varies_with_the_paint(self):
+        v, rho = wall()
+        photo = camera(rho, v)
+        # the probe this plan fitted before 8 October (the photograph's own 80th percentile per row) sees the paint as light
+        rows = (v >= EDGE) & (v <= 5.30)
+        probe = np.log(np.percentile(photo[rows], 80, axis=1))
+        self.assertGreater(float(np.abs(probe - np.median(probe[v[rows] >= 4.6], 0)).max()), 0.05)
+        res = VN.product_frame(rho, photo, np.ones(rho.shape[:2], bool), v, EDGE, 1.0)
+        self.assertFalse(res["light"]["accepted"])
+        self.assertLessEqual(float(np.abs(FZ.light_log(res["light"], v)).max()), 0.02)
+        self.assertLess(float(np.abs(np.log(res["image"] / rho)).max()), 0.03)
+
+    def test_a_decaying_light_is_recovered_with_no_parameter_at_a_bound(self):
+        v, rho = wall()
+        truth = exp_light(v, (0.3, 0.5, 0.9), 0.25)
+        photo = camera(rho, v, light=truth)
+        res = VN.product_frame(rho, photo, np.ones(rho.shape[:2], bool), v, EDGE, 1.0)
+        L = res["light"]
+        self.assertTrue(L["accepted"])
+        self.assertTrue(0 < L["lamIndex"] < len(FZ.LIGHT_LAMBDAS) - 1)
+        self.assertAlmostEqual(L["lam"], 0.25, delta=0.03)
+        np.testing.assert_allclose(L["k"], [0.3, 0.5, 0.9], atol=0.04)
+        on = v >= EDGE
+        self.assertLess(float(np.abs(np.log(res["image"][on] / rho[on])).max()), 0.05)
+
+    def test_the_light_is_validated_on_rows_it_was_not_fitted_on(self):
+        v, rho = wall()
+        photo = camera(rho, v, light=exp_light(v, (0.2, 0.4, 0.8), 0.3))
+        d, res = VN.colour_check(rho, photo, np.ones(rho.shape[:2], bool), v, EDGE, 1.0)
+        self.assertTrue(res["light"]["accepted"])
+        self.assertLess(float(d.mean()), 0.5)
+        # tampering with the compared rows changes the comparison but none of the fits
+        tampered = photo.copy()
+        test = (v >= FZ.CLEAN_V[0]) & (v < VN.SPLIT_V)
+        tampered[test] *= np.array([1.3, 1.0, 0.8], np.float32)
+        d2, res2 = VN.colour_check(rho, tampered, np.ones(rho.shape[:2], bool), v, EDGE, 1.0)
+        self.assertEqual(res2["tone"], res["tone"])
+        self.assertEqual(res2["light"]["k"], res["light"]["k"])
+        self.assertGreater(float(d2.mean()), float(d.mean()) + 3.0)
+
+    def test_a_line_source_light_is_removed_on_every_trusted_row(self):
+        v, rho = wall()
+        h = FZ.h_line(v, 4.237, 0.214, 1.786) / FZ.h_line(np.array([EDGE]), 4.237, 0.214, 1.786)[0]
+        truth = np.log1p(np.outer(h, [0.6, 0.9, 1.4]))                          # the research's fireplace geometry
+        photo = camera(rho, v, light=truth)
+        res = VN.product_frame(rho, photo, np.ones(rho.shape[:2], bool), v, EDGE, 1.0)
+        self.assertTrue(res["light"]["accepted"])
+        rows = (v >= EDGE + VN.LIGHT_TRUST_M) & (v <= 5.30)
+        r, _n = VN.row_residual(res["image"], rho, np.ones(rho.shape[:2], bool))
+        self.assertLess(float(np.abs(r[rows] - np.median(r[rows], 0)).max()), 0.06)
+
+    def test_a_ramp_is_not_taken_for_a_decaying_light(self):
+        v, rho = wall()
+        ramp = np.outer(np.clip((5.40 - v) / 1.2, 0, 1), [0.1, 0.1, 0.1])        # a vertical gradient with no decay
+        res = VN.product_frame(rho, camera(rho, v, light=ramp), np.ones(rho.shape[:2], bool), v, EDGE, 1.0)
+        self.assertFalse(res["light"]["accepted"])
+        self.assertEqual(res["light"]["reason"], "its decay length is at the end of the scan")
+
+
+class Skins(unittest.TestCase):
+    def test_a_photograph_over_two_skins_gets_one_tone_and_one_light(self):
+        v, rho = wall()
+        photo = camera(rho, v, light=exp_light(v, (0.2, 0.4, 0.8), 0.3))
+        sel = np.ones(rho.shape[:2], bool)
+        whole = VN.product_frame(rho, photo, sel, v, EDGE, 1.0)
+        halves = [{"ours": rho[:, sl], "photo": photo[:, sl], "sel": sel[:, sl], "v": v, "px": 1.0} for sl in (slice(0, 160), slice(160, 320))]
+        split = VN.product_frame_skins(halves, EDGE)
+        np.testing.assert_allclose(split["tone"]["g"], whole["tone"]["g"], atol=2e-3)
+        np.testing.assert_allclose(split["light"]["k"], whole["light"]["k"], atol=2e-3)
+        self.assertEqual(split["light"]["lam"], whole["light"]["lam"])
+        joined = np.concatenate(split["images"], 1)
+        self.assertLess(float(np.abs(np.log(joined[:, 158:162] / whole["image"][:, 158:162])).max()), 0.01)   # no seam at the join
+
+
+class Masks(unittest.TestCase):
+    def test_the_view_dependent_class_is_found_without_a_gold_test_and_the_matte_is_eroded(self):
+        spread = np.full((80, 120), 0.03, np.float32)
+        spread[:, 60:] = 0.2
+        spread *= np.exp(np.random.default_rng(3).normal(0, 0.05, spread.shape)).astype(np.float32)
+        m, rep = VN.viewdep_from_spread(spread, np.ones(spread.shape, bool), TEXEL)
+        self.assertTrue(rep["split"])
+        self.assertGreater(float(m[40, 100]), 0.95)
+        self.assertLess(float(m[40, 20]), 0.05)
+        matte = VN.matte_mask(m, np.ones(m.shape, bool), 2.0)                   # 2 texels per photograph pixel
+        c05 = int(np.flatnonzero(m[40] >= VN.MATTE_MAX)[0])                     # where the map crosses 0.5
+        self.assertTrue(matte[40, 20] and matte[40, c05 - 4])
+        self.assertFalse(matte[40, c05 - 3:].any())                             # 1.5 photograph pixels (3 texels) clear
+
+
+class Seam(unittest.TestCase):
+    def test_a_step_at_the_bands_top_fails_and_none_passes(self):
+        v, rho = wall()
+        rng = np.random.default_rng(5)
+        ref = rho * np.exp(rng.normal(0, 0.05, rho.shape)).astype(np.float32)   # another capture of the same paint
+        sel = np.ones(rho.shape[:2], bool)
+        line = EDGE + VN.BAND_M
+        ok = VN.vertical_seam(rho, ref, sel, v, {"bandTop": line})
+        self.assertTrue(ok["pass"])
+        smooth = rho * np.exp(0.3 * np.exp(-np.maximum(v - EDGE, 0) / 0.3))[:, None, None]
+        self.assertTrue(VN.vertical_seam(smooth, ref, sel, v, {"bandTop": line})["pass"])   # a smooth light is no seam
+        for f in (1.03, 1.15):
+            stepped = rho.copy()
+            stepped[v < line] *= f
+            bad = VN.vertical_seam(stepped, ref, sel, v, {"bandTop": line})
+            self.assertFalse(bad["pass"])
+            self.assertGreater(bad["lines"]["bandTop"]["de00"], bad["controlP95"])
+            self.assertAlmostEqual(bad["lines"]["bandTop"]["logStep"][1], -math.log(f), delta=0.01)
 
 
 class Gilt(unittest.TestCase):
@@ -7801,6 +8415,12 @@ class Blend(unittest.TestCase):
         self.assertTrue((out[low][:, :60] == HL.PROV_PHOTO).all())
         self.assertTrue((out[low][:, 60:] == HL.PROV_RECOVERED).all())
         self.assertTrue((out[top] == HL.PROV_OBSERVED).all())
+        # a photograph that failed the colour check gives detail and outline only: our tone stays, its drawing does not
+        rho2, out2, info2 = VN.blend_skin(ours, prov, [{"img": photo, "cover": np.ones((h, w), bool), "px": 2.0, "colour": False}], gilt,
+                                          w_row, band, restored, region, v, vb, texel)
+        np.testing.assert_allclose(info2["lo"][:, :60], lo_ours[:, :60], atol=1e-5)
+        np.testing.assert_allclose((np.log(rho2) - info2["lo"])[low], (np.log(photo) - lo_photo)[low], atol=1e-4)
+        self.assertTrue((out2[low][:, :60] == HL.PROV_PHOTO).all())
 
 
 class Seams(unittest.TestCase):
@@ -7820,12 +8440,29 @@ class LayBand(unittest.TestCase):
     def test_the_recovered_band_is_feathered_into_the_healed_albedo(self):
         heal = np.full((10, 4, 3), 0.5, np.float32); hprov = np.zeros((10, 4), np.uint8)
         frieze = {"albedo": np.full((4, 4, 3), 0.25, np.float16), "prov": np.full((4, 4), HL.PROV_RECOVERED, np.uint8),
-                  "rows": np.array([6, 10]), "band0": np.array(7)}
-        img, prov = VN.lay_band(heal, hprov, frieze)
+                  "rows": np.array([6, 10]), "band0": np.array(7), "lightEdge": np.array(4.28), "lightLam": np.array(np.nan),
+                  "lightK": np.zeros(3), "lightAccepted": np.array(False)}
+        v = 4.30 - (np.arange(10) + 0.5) * 0.002                                # rows just above the frieze's edge
+        img, prov = VN.lay_band(heal, hprov, frieze, v)
         self.assertAlmostEqual(float(img[8, 1, 0]), 0.25, places=3)
         self.assertAlmostEqual(float(img[6, 1, 0]), 0.375, places=3)                       # feathered above the band
         self.assertAlmostEqual(float(img[5, 1, 0]), 0.5, places=3)
         self.assertEqual((int(prov[8, 1]), int(prov[6, 1])), (HL.PROV_RECOVERED, HL.PROV_OBSERVED))
+        # a healed albedo still carrying the residual light (x2 at the edge, decaying) meets the corrected band with no step
+        frieze.update(lightAccepted=np.array(True), lightLam=np.array(0.25), lightK=np.full(3, math.log(2.0)))
+        lit = (np.full((10, 4, 3), 0.25) * np.exp(FZ.light_log(FZ.light_of(frieze), v))[:, None, :]).astype(np.float32)
+        img, _prov = VN.lay_band(lit, hprov, frieze, v)
+        np.testing.assert_allclose(img[:, 1, 0], np.full(10, 0.25), atol=1e-3)
+
+
+class GiltDirection(unittest.TestCase):
+    def test_the_direction_is_checked_only_where_the_mask_is_under_the_photograph(self):
+        none = VN.gilt_direction(np.zeros(0), np.full(500, 0.1))
+        self.assertEqual((none["checked"], none["pass"]), (False, None))
+        right = VN.gilt_direction(np.full(300, 0.4), np.full(500, 0.1))       # the photograph's gilt the brighter
+        self.assertEqual((right["checked"], right["pass"]), (True, True))
+        wrong = VN.gilt_direction(np.full(300, -0.2), np.full(500, 0.1))
+        self.assertEqual((wrong["checked"], wrong["pass"]), (True, False))
 
 
 if __name__ == "__main__":
@@ -7843,8 +8480,9 @@ Expected: FAIL, `ImportError: cannot import name 'venue'`.
 """The venue's own photographs on the frieze (T-639 R1c Task 12; the frieze research's "Venue photographs (7 October)",
 D:/claude/real-hall/renovation/frieze/findings.md, its scripts/venue.py and venue_blend.py). The 14 craft-section
 photographs of the Trades House Virtual Museum (mostly George Mahoney's; cleared by the owner on 7 October) are
-registered to each wall's frieze, brought into the hall's one colour frame (each by its own white balance), cleared of
-their own uplight and blended with our fusion: colour and broad tone from the photograph, fine detail from the fusion,
+registered to each wall's frieze metre by metre, brought into the hall's one colour frame (each by its own gain and
+power per channel, fitted on matte texels where our views agree), cleared of their own vertical light and blended with
+our fusion: colour and broad tone from the photograph, fine detail from the fusion,
 and the drawing of the lowest 5 cm on the door and fireplace walls from the photograph alone. The gilded ground keeps
 the capture's own tone and becomes a metal in Task 13. Every texel is labelled and every photograph credited."""
 from __future__ import annotations
@@ -7861,13 +8499,15 @@ PHOTO_DIR = "venue-photos"
 CREDIT_ID = "trades-house-virtual-museum"
 WALLS = ("door", "window", "end_xmin", "end_xmax")
 REG_CORR_MIN = 0.60            # registration: band-passed correlation on the clean frieze (research 0.63-0.86 accepted, 0.005 refused)
+REG_STRETCH_M = 1.0            # each metre of a photograph is refined and accepted on its own (frieze.STRETCH_M, the research's unit)
+REG_MARGIN_M = 0.25            # each metre's ECC window and cross-fade reach this far beyond it
 MATCH_V = (4.50, 5.36)         # rows SIFT may use: the clean frieze, the glare band masked (research venue.py)
 ECC_V = (4.55, 5.35)           # rows the ECC refinement and the correlation use
 MIN_GOOD = 12                  # good SIFT matches a candidate needs
 RANSAC_PX = 6.0                # reference pixels at 4 mm: the research's 12 texels at 2 mm
 COVER_ERODE_PX = 2             # a photograph's cover loses 2 texels at its edge (resampling)
 FEATHER_M = 0.05               # photographs and fusion cross-fade over 5 cm
-SPLIT_V = 4.95                 # the colour check: harmonise on [SPLIT_V, 5.30], compare on [4.60, SPLIT_V)
+SPLIT_V = 4.95                 # the colour check: the tone fitted on [SPLIT_V, 5.30], compared on [4.60, SPLIT_V)
 DETAIL_OFF_GROUPS = (0, 3)     # the door and fireplace walls: the lowest 5 cm from the photograph (the owner's decision)
 LOWER_M, BAND_M = 0.05, 0.15   # the band's lowest 5 cm, and the whole band, above the frieze's measured edge
 RAMP_M = 0.02                  # our detail returns over 2 cm above a zone where it is off (research venue_blend.py)
@@ -7875,7 +8515,21 @@ DETAIL_FLOOR = 0.5             # our detail kept where its gradient correlation 
 GILT_TRUST_M = 0.05            # the spread across views is trusted from 5 cm above the edge
 GILT_MIN = 200                 # texels each class needs
 GOLD_BR_MAX = 0.55             # gold: R > G > B and B/R below 0.55 (materials.gilding_mask's rule)
-VENUE_GATE = {"registration": REG_CORR_MIN, "colourMean": 6.5, "colourP95": 16.5}
+# The colour gate (the frieze-photo experiment, 8 October, its section 6): the worst agreement measured with this
+# pipeline against the research's fusion (Maltmen, 2.80 / 5.63) plus the measured cost of a weaker fusion (E57 faces
+# alone against the research's, on the same stretch and registration: +0.71 / +2.08), 3.51 / 7.71, rounded up.
+VENUE_GATE = {"registration": REG_CORR_MIN, "colourMean": 3.6, "colourP95": 7.8}
+MATTE_MAX = 0.5                # view-dependence below which a texel is matte paint
+MATTE_ERODE_PX = 1.5           # photograph pixels kept clear of view-dependent texels
+TONE_SIGMA_PX = 1.0            # photograph pixels: the tone is fitted at the blend's low-band scale
+TONE_MIN = 500                 # photograph-resolution texels a tone fit needs
+ROW_MIN = 40                   # texels a row's residual needs
+LIGHT_TRUST_M = GILT_TRUST_M   # a photograph's light rows start 5 cm above the edge, where the view spread is trusted
+ITERATIONS = 3                 # the tone and the light alternate
+SEAM_W = 0.02                  # each side of a seam line up the wall: a 2 cm strip
+SEAM_STEP = 0.01               # control lines every 1 cm across the clean frieze
+SEAM_MIN = 200                 # texels per strip
+SEAM_FLOOR = 0.5               # CIEDE2000: a step this small passes whatever the paint does (half a just-noticeable difference)
 LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
 LUMA_BGR = LUMA[::-1].copy()
 PROV_COLOURS = {HL.PROV_OBSERVED: (60, 160, 50), HL.PROV_PHOTO: (220, 120, 40), HL.PROV_RECOVERED: (40, 160, 240),
@@ -7898,16 +8552,32 @@ def load_photos(folder):
     return sources, photos
 
 
-def lay_band(img, prov, frieze):
-    """Task 12's recovered rows [r0, r1) laid into Task 10's healed albedo: weight rising linearly over the overlap rows
-    above band0, 1 from band0; provenance from the recovery in the band only (the overlap rows keep the mosaic's)."""
-    img = np.asarray(img, np.float32).copy(); prov = np.asarray(prov).copy()
+def lay_band(img, prov, frieze, v):
+    """Task 12's recovered rows [r0, r1) laid into Task 10's healed albedo. The healed albedo is first divided, on every
+    row of the skin (v: the rows' heights), by the frieze's residual vertical light (frieze.light_of), which the
+    recovered rows already have divided out, so the join and the rows above it are free of the same light (F2); then
+    the weight rises linearly over the overlap rows above band0, 1 from band0; provenance from the recovery in the band
+    only (the overlap rows keep the mosaic's)."""
+    img = FZ.apply_light(np.asarray(img, np.float32), v, FZ.light_of(frieze)).astype(np.float32)
+    prov = np.asarray(prov).copy()
     r0, r1 = (int(x) for x in frieze["rows"]); b0 = int(frieze["band0"])
     wgt = np.clip((np.arange(r0, r1) - r0 + 1) / (b0 - r0 + 1), 0, 1)[:, None, None]
     img[r0:r1] = (1 - wgt) * img[r0:r1] + wgt * frieze["albedo"].astype(np.float32)
     fp = frieze["prov"][b0 - r0:]
     prov[b0:r1] = np.where(fp != HL.PROV_OUTSIDE, fp, prov[b0:r1])
     return img, prov
+
+
+def gilt_direction(gilt_dl, paint_dl):
+    """The gilded ground's direction under one door-wall photograph: log(photograph / ours) over the gilt texels and
+    over the paint texels under it. Checked only where the gilt mask is present under the photograph (at least
+    GILT_MIN texels of each); then the photograph's gilt-to-paint brightness must exceed our capture's."""
+    gilt_dl, paint_dl = np.asarray(gilt_dl, np.float64), np.asarray(paint_dl, np.float64)
+    out = {"giltTexels": int(gilt_dl.size), "paintTexels": int(paint_dl.size)}
+    if gilt_dl.size < GILT_MIN or paint_dl.size < GILT_MIN:
+        return {**out, "checked": False, "difference": None, "pass": None}
+    diff = float(np.median(gilt_dl) - np.median(paint_dl))
+    return {**out, "checked": True, "difference": diff, "pass": diff > 0}
 
 
 def skin_to_wall(geom):
@@ -8037,64 +8707,86 @@ def _pixel_m(H, x, y, texel):
     return float(np.sqrt(abs(np.linalg.det(J))) * texel)
 
 
+def refine_stretches(photo_bgr, W, H):
+    """refine() on every REG_STRETCH_M stretch of the wall the photograph covers (W: a wall's ref8, eccMask and grid),
+    each over its stretch and REG_MARGIN_M either side, from the SIFT homography H: [{u0, u1, H, corr, accepted}]."""
+    grid = W["grid"]
+    h, w = photo_bgr.shape[:2]
+    xs = cv2.perspectiveTransform(np.float32([[[0, 0]], [[w, 0]], [[w, h]], [[0, h]]]), np.asarray(H, np.float64))[:, 0, 0]
+    ua = grid["u0"] + max(float(xs.min()), 0.0) * grid["texel"]
+    ub = grid["u0"] + min(float(xs.max()), float(grid["width"])) * grid["texel"]
+    cols = grid["u0"] + (np.arange(grid["width"]) + 0.5) * grid["texel"]
+    out = []
+    u = math.floor(ua / REG_STRETCH_M) * REG_STRETCH_M
+    while u < ub:
+        window = (cols >= u - REG_MARGIN_M) & (cols < u + REG_STRETCH_M + REG_MARGIN_M)
+        Hs, corr = refine(photo_bgr, W["ref8"], H, W["eccMask"] & window[None, :])
+        out.append({"u0": round(u, 4), "u1": round(u + REG_STRETCH_M, 4), "H": Hs.tolist(), "corr": round(corr, 4),
+                    "accepted": bool(corr >= REG_CORR_MIN)})
+        u += REG_STRETCH_M
+    return out
+
+
 def register(photo_bgr, walls, hint=None):
-    """The wall a photograph shows: among the walls where its refined correlation reaches REG_CORR_MIN, the one with the
-    most inliers (or only `hint`'s)."""
+    """The wall a photograph shows and its homography per metre of that wall. On each wall (or only `hint`'s): SIFT on
+    the clean frieze and RANSAC give one homography, which ECC refines separately on every REG_STRETCH_M stretch the
+    photograph covers (refine_stretches); a stretch is accepted when its band-passed correlation reaches REG_CORR_MIN.
+    One homography does not hold across a photograph's 3-5 m (the frieze-photo experiment, 8 October: refined over the
+    whole footprint, 12 of 13 photographs reach only 0.12-0.56; per metre their best stretches reach 0.65-0.86, the
+    scale varying 1-6% along a photograph). The photograph belongs to the wall with accepted stretches and the most
+    inliers; `stretches` keeps the accepted ones."""
     tried, best = {}, None
     for wall, W in walls.items():
         if hint is not None and wall != hint:
             continue
         H, n = match_photo(photo_bgr, W["ref8"], W["matchMask"])
         if H is None:
-            tried[wall] = {"inliers": n, "corr": None}
+            tried[wall] = {"inliers": n, "stretches": []}
             continue
-        Hf, corr = refine(photo_bgr, W["ref8"], H, W["eccMask"])
-        tried[wall] = {"inliers": n, "corr": round(corr, 4)}
-        if corr >= REG_CORR_MIN and (best is None or n > best[1]):
-            best = (wall, n, Hf, corr)
+        stretches = refine_stretches(photo_bgr, W, H)
+        tried[wall] = {"inliers": n, "stretches": [{k: x for k, x in st.items() if k != "H"} for st in stretches]}
+        if any(st["accepted"] for st in stretches) and (best is None or n > best[1]):
+            best = (wall, n, H, stretches)
     if best is None:
         return {"wall": None, "tried": tried}
-    wall, n, Hf, corr = best
+    wall, n, H, stretches = best
+    kept = [st for st in stretches if st["accepted"]]
+    top = max(kept, key=lambda st: st["corr"])
     h, w = photo_bgr.shape[:2]
-    return {"wall": wall, "H": Hf.tolist(), "inliers": n, "corr": round(corr, 4),
-            "pixelM": _pixel_m(Hf, w / 2, h / 2, walls[wall]["grid"]["texel"]), "tried": tried}
+    return {"wall": wall, "H": np.asarray(H).tolist(), "stretches": kept, "inliers": n, "corr": top["corr"],
+            "pixelM": _pixel_m(np.asarray(top["H"], np.float64), w / 2, h / 2, walls[wall]["grid"]["texel"]), "tried": tried}
 
 
-def photo_on_skin(photo, H, geom, grid):
-    """A photograph (h, w) or (h, w, C) resampled onto a skin's texel grid through its photograph -> wall-reference
-    homography; returns the image and its cover (eroded by COVER_ERODE_PX texels)."""
+def photo_on_skin(photo, stretches, geom, grid):
+    """A photograph (h, w) or (h, w, C) resampled onto a skin's texel grid through its per-metre photograph -> wall-
+    reference homographies ([{u0, u1, H}]): each draws its metre with weight 1 and cross-fades into its neighbours over
+    REG_MARGIN_M either side (falling linearly to 0), so the metres meet without a step. Returns the image and its
+    cover (eroded by COVER_ERODE_PX texels)."""
     M, _ = skin_to_wall(geom)
     cc, rr = np.meshgrid(np.arange(geom.cols, dtype=np.float64) + 0.5, np.arange(geom.rows, dtype=np.float64) + 0.5)
     u, v = M[0, 0] * cc + M[0, 1] * rr + M[0, 2], M[1, 0] * cc + M[1, 1] * rr + M[1, 2]
     x, y = (u - grid["u0"]) / grid["texel"] - 0.5, (grid["v1"] - v) / grid["texel"] - 0.5
-    Hi = np.linalg.inv(np.asarray(H, np.float64))
-    den = Hi[2, 0] * x + Hi[2, 1] * y + Hi[2, 2]
-    mx = ((Hi[0, 0] * x + Hi[0, 1] * y + Hi[0, 2]) / den).astype(np.float32)
-    my = ((Hi[1, 0] * x + Hi[1, 1] * y + Hi[1, 2]) / den).astype(np.float32)
     src = np.ascontiguousarray(photo, np.float32)
-    img = np.maximum(cv2.remap(src, mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0), 0)
-    cover = cv2.remap(np.full(src.shape[:2], 255, np.uint8), mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0) > 0
+    ones = np.full(src.shape[:2], 255, np.uint8)
+    acc = np.zeros((geom.rows, geom.cols) + src.shape[2:], np.float64)
+    wsum = np.zeros((geom.rows, geom.cols), np.float64)
+    for st in stretches:
+        a = np.clip(1 - np.maximum(np.maximum(st["u0"] - u, u - st["u1"]), 0) / REG_MARGIN_M, 0, 1)
+        if not (a > 0).any():
+            continue
+        Hi = np.linalg.inv(np.asarray(st["H"], np.float64))
+        den = Hi[2, 0] * x + Hi[2, 1] * y + Hi[2, 2]
+        mx = ((Hi[0, 0] * x + Hi[0, 1] * y + Hi[0, 2]) / den).astype(np.float32)
+        my = ((Hi[1, 0] * x + Hi[1, 1] * y + Hi[1, 2]) / den).astype(np.float32)
+        img = np.maximum(cv2.remap(src, mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0), 0)
+        cov = cv2.remap(ones, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0) > 0
+        wgt = a * cov
+        acc += (wgt[..., None] if img.ndim == 3 else wgt) * img
+        wsum += wgt
+    den = np.maximum(wsum, 1e-12)
+    img = (acc / (den[..., None] if acc.ndim == 3 else den)).astype(np.float32)
     k = 2 * COVER_ERODE_PX + 1
-    return img, cv2.erode(cover.astype(np.uint8), np.ones((k, k), np.uint8)) > 0
-
-
-def harmonise(ours, photo):
-    """A photograph's diagonal gain into our colour frame (its own white balance and exposure): per channel, the median
-    of ours over the photograph's, over the texels given; None under 100."""
-    o, p = np.asarray(ours, np.float64).reshape(-1, 3), np.asarray(photo, np.float64).reshape(-1, 3)
-    ok = np.all(np.isfinite(o) & np.isfinite(p) & (o > 1e-5) & (p > 1e-5), 1)
-    return None if ok.sum() < 100 else np.median(o[ok] / p[ok], 0)
-
-
-def photo_light(v, probe, edge):
-    """A photograph's own vertical light, fitted with our band's line-source form (FZ.fit_uplight_residual) on its rows
-    from the frieze's edge to the clean frieze's top that have a finite probe; None when within the residual gate."""
-    v, probe = np.asarray(v, np.float64), np.asarray(probe, np.float64)
-    use = (v >= edge) & (v <= FZ.CLEAN_V[1]) & np.isfinite(probe).all(1)
-    clean = (v >= FZ.CLEAN_V[0]) & (v <= FZ.CLEAN_V[1])
-    if (use & clean).sum() < 10 or (use & ~clean).sum() < 3:
-        return None
-    return FZ.fit_uplight_residual(v[use], probe[use], clean[use])
+    return img, cv2.erode((wsum > 0).astype(np.uint8), np.ones((k, k), np.uint8)) > 0
 
 
 def gilt_from_spread(spread, excess, trusted, texel):
@@ -8184,9 +8876,10 @@ def masked_blur_log(img, cover, sigma):
 
 
 def blend_skin(ours, prov, photos, gilt, w_row, band, restored, region, v, vb, texel):
-    """A frieze skin's albedo from our fusion and its photographs ({img: harmonised and de-lit, cover, px}), in log space,
-    with its provenance. Low band (a Gaussian of the coarsest covering photograph's pixel): the photographs' where they
-    cover, but ours on the gilded ground (the capture's tone: the photograph's view of gold is a reflection, Task 13's
+    """A frieze skin's albedo from our fusion and its photographs ({img: in our frame and de-lit, cover, px, colour}), in
+    log space, with its provenance. Low band (a Gaussian of the coarsest covering photograph's pixel): the photographs'
+    where they cover, only those whose `colour` passed the colour check (one without it gives detail and outline: our
+    tone stays), but ours on the gilded ground (the capture's tone: the photograph's view of gold is a reflection, Task 13's
     metal) and where Task 10 restored a texel outside the band (`restored`). High band: ours, but the photographs'
     where our detail is off (w_row) and on band texels our recovery could only reconstruct. In rows where our detail is
     off, the gilt ground's tone is its own from the 5 cm above (`ground_tone`), its outline the photograph's."""
@@ -8199,28 +8892,32 @@ def blend_skin(ours, prov, photos, gilt, w_row, band, restored, region, v, vb, t
     if not photos:
         return ours.copy(), np.asarray(prov).copy(), {"lo": lo_o, "weights": [], "photoShare": 0.0, "photoDrawnShare": 0.0}
     feather = max(FEATHER_M / texel, 1.0)
-    A = np.zeros((h, wid), np.float32); lo_ph = np.zeros_like(lno); hi_ph = np.zeros_like(lno); weights = []
+    A = np.zeros((h, wid), np.float32); Ac = np.zeros((h, wid), np.float32)
+    lo_ph = np.zeros_like(lno); hi_ph = np.zeros_like(lno); weights = []
     for p in photos:
         a = np.clip(cv2.distanceTransform(np.asarray(p["cover"], np.uint8), cv2.DIST_L2, 5) / feather, 0, 1).astype(np.float32)
         lo_p, hi_p = masked_blur_log(p["img"], p["cover"], sigma)
-        A += a; lo_ph += a[..., None] * lo_p; hi_ph += a[..., None] * hi_p
-        weights.append(a)
-    has = (A > 0)[..., None]
-    lo_ph = np.where(has, lo_ph / np.maximum(A, 1e-6)[..., None], lo_o)
-    hi_ph = np.where(has, hi_ph / np.maximum(A, 1e-6)[..., None], hi_o)
-    pc = (np.minimum(A, 1.0) * ~np.asarray(restored, bool)).astype(np.float32)
+        A += a; hi_ph += a[..., None] * hi_p
+        if p.get("colour", True):
+            Ac += a; lo_ph += a[..., None] * lo_p
+            weights.append(a)
+    lo_ph = np.where((Ac > 0)[..., None], lo_ph / np.maximum(Ac, 1e-6)[..., None], lo_o)
+    hi_ph = np.where((A > 0)[..., None], hi_ph / np.maximum(A, 1e-6)[..., None], hi_o)
+    kept = ~np.asarray(restored, bool)
+    pc = (np.minimum(Ac, 1.0) * kept).astype(np.float32)               # the colour photographs' low band
+    pd = (np.minimum(A, 1.0) * kept).astype(np.float32)                # any photograph's drawing
     w_row = np.asarray(w_row, np.float32)
     w = np.where(np.asarray(band, bool)[:, None] & (prov == HL.PROV_RECONSTRUCTED), 0.0, w_row[:, None]).astype(np.float32)
     off = 1.0 - w
     m = np.clip(np.asarray(gilt, np.float32), 0, 1)[..., None]
     lo_paint = pc[..., None] * lo_ph + (1 - pc[..., None]) * lo_o
     ground = ground_tone(lo_o, gilt, region, v, vb, texel)
-    lo_gilt = lo_o if ground is None else np.where(((w_row < 0.5)[:, None] & (pc > 0.5))[..., None], ground[None], lo_o)
+    lo_gilt = lo_o if ground is None else np.where(((w_row < 0.5)[:, None] & (pd > 0.5))[..., None], ground[None], lo_o)
     lo = (m * lo_gilt + (1 - m) * lo_paint).astype(np.float32)
-    hi = (hi_o + (off * pc)[..., None] * (hi_ph - hi_o)).astype(np.float32)
+    hi = (hi_o + (off * pd)[..., None] * (hi_ph - hi_o)).astype(np.float32)
     rho = np.where(region[..., None], np.exp(lo + hi), ours).astype(np.float32)
     out = np.asarray(prov).copy()
-    drawn = region & (pc >= 0.5) & (off >= 0.5)
+    drawn = region & (pd >= 0.5) & (off >= 0.5)
     out[drawn & (np.asarray(gilt) < 0.5)] = HL.PROV_PHOTO
     out[drawn & (np.asarray(gilt) >= 0.5)] = HL.PROV_RECOVERED      # its tone from the 5 cm above, its outline the photograph's
     n = max(int(region.sum()), 1)
@@ -8294,6 +8991,230 @@ def colour_deltas(ours, photo, zone, px):
     return FZ.ciede2000(FZ.srgb_to_lab(FZ._display(a[z], scale)), FZ.srgb_to_lab(FZ._display(b[z], scale)))
 
 
+# The venue photographs in our colour frame (the frieze-photo experiment, 8 October; its results.md, section 4 and
+# Appendix A). In our capture's frame (linear, de-lit) a photograph is ours(x) ~= exp(a_c) photo_c(x) ** g_c / exp(L_c(v)):
+# photo_c the photograph's code linearised by sRGB; (a_c, g_c) a gain and power per channel, its tone relative to our
+# frame (the photographs carry 1.2-3.2 times our log contrast, which a diagonal gain cannot map), fitted by matching
+# the mean and spread of log values (the standardised major axis) on matte texels at one photograph pixel; L_c its own
+# vertical light relative to our de-lit frieze (frieze.fit_vertical_light on per-row medians of ln(photo / ours) over
+# matte texels, where the paint cancels). Matte texels: the views agree (view-dependence below MATTE_MAX), eroded by
+# 1.5 photograph pixels, since the photograph's blur spreads the gilt's glow into its neighbours.
+def viewdep_from_spread(spread, trusted, texel):
+    """How view-dependent each texel is, in [0, 1]: gilt_from_spread's map (Otsu on log spread over the trusted texels,
+    rising from the low class's median spread to the high class's, smoothed over SPREAD_M) without its gold test. The
+    gold test decides whether the variable class is gilding (Task 13's material); the colour transform only needs to
+    leave out what the views disagree on. Returns (map, report); an all-zero map when the spread cannot split."""
+    spread = np.asarray(spread, np.float64)
+    zero = np.zeros(spread.shape, np.float32)
+    ok = np.asarray(trusted, bool) & np.isfinite(spread) & (spread > 0)
+    if ok.sum() < 2 * GILT_MIN:
+        return zero, {"split": False, "reason": "too few texels with three views"}
+    ls = np.log(spread[ok])
+    lo, hi = float(ls.min()), float(ls.max())
+    q = np.round((ls - lo) / max(hi - lo, 1e-9) * 255).astype(np.uint8).reshape(-1, 1)
+    t8, _ = cv2.threshold(q, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    upper = q[:, 0] > t8
+    if upper.sum() < GILT_MIN or (~upper).sum() < GILT_MIN:
+        return zero, {"split": False, "reason": "the spread does not split in two"}
+    s_lo, s_hi = float(np.median(ls[~upper])), float(np.median(ls[upper]))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        m = (np.log(spread) - s_lo) / max(s_hi - s_lo, 1e-6)
+    m = np.where(np.isfinite(m), np.clip(m, 0, 1), 0).astype(np.float32)
+    return cv2.GaussianBlur(m, (0, 0), FZ.SPREAD_M / texel), {"split": True, "spreadLow": math.exp(s_lo),
+                                                              "spreadHigh": math.exp(s_hi), "highShare": float(upper.mean())}
+
+
+def matte_mask(viewdep, cover, px):
+    """Matte texels the photograph covers, at least MATTE_ERODE_PX photograph pixels (px texels each) from any
+    view-dependent texel or the cover's edge."""
+    m = (np.asarray(viewdep) < MATTE_MAX) & np.asarray(cover, bool)
+    k = 2 * int(round(MATTE_ERODE_PX * max(float(px), 1.0))) + 1
+    return cv2.erode(m.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))) > 0
+
+
+def _low_log(img, sel, px):
+    """log of img at the photograph's resolution, low-passed by TONE_SIGMA_PX over sel only (normalised)."""
+    a = at_photo_resolution(img, px)
+    m = (at_photo_resolution(np.asarray(sel, np.float32), px) > 0.99) & (a > 1e-5).all(-1)
+    la = np.log(np.maximum(a, 1e-5)).astype(np.float32)
+    w = m.astype(np.float32)
+    den = cv2.GaussianBlur(w, (0, 0), TONE_SIGMA_PX)
+    low = np.stack([cv2.GaussianBlur(la[..., c] * w, (0, 0), TONE_SIGMA_PX) for c in range(3)], -1) / np.maximum(den, 1e-6)[..., None]
+    return low, m & (den > 0.5)
+
+
+def tone_fit_skins(parts, px):
+    """One tone for a photograph over all its skins: per channel, ln ours = a + g ln photo by the standardised major
+    axis (g = sd(ln ours) / sd(ln photo), a through the means) over every skin's `sel` texels together, at the blend's
+    low-band scale. parts: [(ours, photo, sel)], px: texels per photograph pixel (one value, or one per part). None under
+    TONE_MIN texels, or when a channel's correlation r is not positive (a tone curve increases; such a photograph cannot
+    give colour)."""
+    pxs = px if isinstance(px, (list, tuple)) else [px] * len(parts)
+    xs, ys = [], []
+    for (ours, photo, sel), q in zip(parts, pxs):
+        lo, mo = _low_log(ours, sel, q)
+        lp, mp = _low_log(photo, sel, q)
+        m = mo & mp
+        xs.append(lp[m].astype(np.float64)); ys.append(lo[m].astype(np.float64))
+    xx, yy = np.concatenate(xs), np.concatenate(ys)
+    if len(xx) < TONE_MIN:
+        return None
+    a, g, r = np.zeros(3), np.zeros(3), np.zeros(3)
+    for c in range(3):
+        x, y = xx[:, c], yy[:, c]
+        xc, yc = x - x.mean(), y - y.mean()
+        r[c] = float((xc * yc).sum() / max(math.sqrt((xc * xc).sum() * (yc * yc).sum()), 1e-12))
+        g[c] = yc.std() / max(xc.std(), 1e-9)
+        a[c] = y.mean() - g[c] * x.mean()
+    if (r <= 0).any():
+        return None                                  # no increasing relation in some channel: the tone is not identified
+    return {"a": a.tolist(), "g": g.tolist(), "r": r.tolist(), "texels": int(len(xx))}
+
+
+def tone_fit(ours, photo, sel, px):
+    """tone_fit_skins for one skin."""
+    return tone_fit_skins([(ours, photo, sel)], px)
+
+
+def tone_apply(tone, photo):
+    return np.exp(np.asarray(tone["a"]) + np.asarray(tone["g"]) * np.log(np.maximum(np.asarray(photo, np.float64), 1e-6))).astype(np.float32)
+
+
+def row_residual(a, b, sel):
+    """Per row, the median over sel of ln(a / b) (rows, 3), NaN under ROW_MIN texels; and the counts."""
+    sel = np.asarray(sel, bool)
+    n = sel.sum(1)
+    out = np.full((sel.shape[0], 3), np.nan)
+    lr = np.log(np.maximum(a, 1e-6)) - np.log(np.maximum(b, 1e-6))
+    for i in np.flatnonzero(n >= ROW_MIN):
+        out[i] = np.median(lr[i][sel[i]], 0)
+    return out, n
+
+
+def row_residual_skins(parts):
+    """row_residual pooled over a photograph's skins by height: parts [(a, b, sel, v)]; the texels of every skin's row
+    at the same v (to 0.1 mm) are taken together. Returns (v (k,), r (k, 3)) for heights with ROW_MIN texels."""
+    pooled = {}
+    for a, b, sel, v in parts:
+        sel = np.asarray(sel, bool)
+        lr = np.log(np.maximum(a, 1e-6)) - np.log(np.maximum(b, 1e-6))
+        for i in np.flatnonzero(sel.any(1)):
+            pooled.setdefault(round(float(v[i]), 4), []).append(lr[i][sel[i]])
+    keys = sorted(k for k, xs in pooled.items() if sum(len(x) for x in xs) >= ROW_MIN)
+    return np.array(keys, np.float64), np.array([np.median(np.concatenate(pooled[k]), 0) for k in keys]).reshape(-1, 3)
+
+
+def photo_to_frame_skins(skins, edge, tone_rows, light_rows):
+    """A photograph in our frame over all the skins it covers: one tone (tone_fit_skins on every skin's `sel` texels in
+    tone_rows(v)) and one light (frieze.fit_vertical_light on the residuals pooled by height over light_rows(v, edge)),
+    alternated ITERATIONS times (the tone is fitted against ours lit by the photograph's light). skins: [{ours, photo,
+    sel, v, px}]. Returns {tone, light, images: [per skin]} or None when the tone cannot be fitted."""
+    L = [np.zeros((len(s["v"]), 3)) for s in skins]
+    tone = fit = None
+    for _ in range(ITERATIONS):
+        tone = tone_fit_skins([(np.asarray(s["ours"], np.float64) * np.exp(Li)[:, None, :], s["photo"],
+                                np.asarray(s["sel"], bool) & tone_rows(np.asarray(s["v"], np.float64))[:, None]) for s, Li in zip(skins, L)],
+                              [s["px"] for s in skins])
+        if tone is None:
+            return None
+        vv, r = row_residual_skins([(tone_apply(tone, s["photo"]), s["ours"], s["sel"], s["v"]) for s in skins])
+        fit = FZ.fit_vertical_light(vv, r, light_rows(vv, edge), edge)
+        L = [FZ.light_log(fit, s["v"]) for s in skins]
+    return {"tone": tone, "light": fit,
+            "images": [(tone_apply(tone, s["photo"]) / np.exp(Li)[:, None, :]).astype(np.float32) for s, Li in zip(skins, L)]}
+
+
+def _check_rows(v):
+    return (v >= FZ.CLEAN_V[0]) & (v < SPLIT_V)
+
+
+def colour_check_skins(skins, edge):
+    """The venue colour check for one photograph: tone fitted on the upper clean frieze [SPLIT_V, 5.30] of every skin it
+    covers, light on rows from the edge + LIGHT_TRUST_M to 5.30 that exclude the compared ones, then colour_deltas
+    (unchanged) against our fusion on each skin's lower clean frieze [4.60, SPLIT_V), its matte texels (`sel`) only,
+    concatenated over the skins. Returns (deltas, result)."""
+    res = photo_to_frame_skins(skins, edge, lambda v: (v >= SPLIT_V) & (v <= FZ.CLEAN_V[1]),
+                               lambda v, e: (v >= e + LIGHT_TRUST_M) & (v <= FZ.CLEAN_V[1]) & ~_check_rows(v))
+    if res is None:
+        return np.zeros(0), None
+    d = [colour_deltas(s["ours"], img, np.asarray(s["sel"], bool) & _check_rows(np.asarray(s["v"], np.float64))[:, None], s["px"])
+         for s, img in zip(skins, res["images"])]
+    return np.concatenate(d), res
+
+
+def product_frame_skins(skins, edge):
+    """A photograph in our frame for the blend: tone on every skin's whole clean frieze, light on every trusted row."""
+    return photo_to_frame_skins(skins, edge, lambda v: (v >= FZ.CLEAN_V[0]) & (v <= FZ.CLEAN_V[1]),
+                                lambda v, e: (v >= e + LIGHT_TRUST_M) & (v <= FZ.CLEAN_V[1]))
+
+
+def _one(ours, photo, sel, v, px):
+    return [{"ours": ours, "photo": photo, "sel": sel, "v": np.asarray(v, np.float64), "px": px}]
+
+
+def colour_check(ours, photo, matte, v, edge, px):
+    """colour_check_skins for one skin. Returns (deltas, {tone, light, image})."""
+    d, res = colour_check_skins(_one(ours, photo, matte, v, px), edge)
+    return d, (None if res is None else {"tone": res["tone"], "light": res["light"], "image": res["images"][0]})
+
+
+def product_frame(ours, photo, matte, v, edge, px):
+    """product_frame_skins for one skin. Returns {tone, light, image} or None."""
+    res = product_frame_skins(_one(ours, photo, matte, v, px), edge)
+    return None if res is None else {"tone": res["tone"], "light": res["light"], "image": res["images"][0]}
+
+
+def _profile(rho, ref, sel):
+    """Per row, the median over sel of ln(rho / ref) (rows, 3); NaN under SEAM_MIN / 10 texels. With ref a capture of
+    the same paint that has no cut at the lines tested (the recovery's own rows, or the photograph in our frame), the
+    paint cancels and what is left is the processing's own vertical profile."""
+    sel = np.asarray(sel, bool)
+    lr = np.log(np.maximum(rho, 1e-9)) - np.log(np.maximum(ref, 1e-9))
+    out = np.full((sel.shape[0], 3), np.nan)
+    for i in np.flatnonzero(sel.sum(1) >= SEAM_MIN // 10):
+        out[i] = np.median(lr[i][sel[i]], 0)
+    return out
+
+
+def vertical_seam(rho, ref, sel, v, lines, control=(FZ.CLEAN_V[0] + SEAM_W, FZ.CLEAN_V[1] - SEAM_W)):
+    """Colour steps up the wall (the seam check at the band's top). The profile is the per-row median of ln(rho / ref)
+    over sel; a line's step is the jump at the line between straight lines fitted to the profile over the 2 cm above it
+    and the 2 cm below (so a smooth gradient, such as a light divided out, is no step), per channel, expressed as the
+    CIEDE2000 between the two strips' median colour of rho and that colour times exp(step)
+    (display exposure as colour_deltas: 0.8 at the 99th-percentile luma). The profile's own steps: the same at lines
+    every 1 cm across `control` (default the clean frieze). A line passes when its step is no larger than their 95th
+    percentile, or than SEAM_FLOOR (when the reference shares the processing's smooth profile, the controls are near zero)."""
+    rho = np.asarray(rho, np.float64)
+    v = np.asarray(v, np.float64)
+    sel = np.asarray(sel, bool)
+    prof = _profile(rho, np.asarray(ref, np.float64), sel)
+    scale = 0.8 / max(float(np.percentile(rho[sel] @ LUMA, 99)), 1e-6)
+
+    def step(line):
+        b = ((v >= line - SEAM_W) & (v < line)) & np.isfinite(prof).all(1)
+        a = ((v >= line) & (v < line + SEAM_W)) & np.isfinite(prof).all(1)
+        if b.sum() < 3 or a.sum() < 3:
+            return None, None
+        fa = np.polyfit(v[a] - line, prof[a], 1)                                # each side's own line, so a smooth
+        fb = np.polyfit(v[b] - line, prof[b], 1)                                # gradient meets itself at the line
+        f = fa[1] - fb[1]
+        rows = (b | a)[:, None] & sel
+        c = np.median(rho[rows], 0)
+        lb = FZ.srgb_to_lab(FZ._display(c[None] * scale, 1.0))
+        la = FZ.srgb_to_lab(FZ._display((c * np.exp(f))[None] * scale, 1.0))
+        return float(FZ.ciede2000(lb, la)[0]), [float(x) for x in f]
+
+    ctrl = [s_ for s_ in (step(x)[0] for x in np.arange(control[0], control[1] + 1e-9, SEAM_STEP)) if s_ is not None]
+    p95 = float(np.percentile(ctrl, 95)) if len(ctrl) >= 10 else None
+    out = {"controlP95": p95, "controlMedian": float(np.median(ctrl)) if ctrl else None, "lines": {}}
+    for name, line in lines.items():
+        d, lg = step(line)
+        out["lines"][name] = {"v": float(line), "de00": d, "logStep": lg,
+                              "pass": None if d is None or p95 is None else bool(d <= max(p95, SEAM_FLOOR))}
+    out["pass"] = all(x["pass"] is not False for x in out["lines"].values())
+    return out
+
+
 def _evidence(cfg, sid, ours, rho, prov, gilt, region, v, vb):
     """<evidence>/frieze-<id>.png: our frieze, the blend, the provenance (green ours, blue photograph, amber recovered,
     red reconstructed) and the gilt mask, stacked, from 2 cm below the edge to 40 cm above it."""
@@ -8321,7 +9242,8 @@ def cmd_frieze_venue(cfg, rest) -> int:
     work, rt = cfg.paths["work"], float(cfg.room["registrationTexel"])
     out_dir = os.path.join(work, "venue")
     os.makedirs(out_dir, exist_ok=True)
-    # 1. our frieze per skin: Task 10's healed albedo with the recovered band laid in, its spread, the gilded ground
+    # 1. our frieze per skin: Task 10's healed albedo with the recovered band laid in and the residual light divided out
+    #    on every row; its spread, view-dependent ground and gilded ground; the recovery's own rows (the seams' reference)
     skins = {}
     for sid in FZ.frieze_ids(work):
         g = VW.load_geometry(work, sid, surfaces)
@@ -8329,20 +9251,24 @@ def cmd_frieze_venue(cfg, rest) -> int:
             heal_albedo, heal_prov = z["albedo"].astype(np.float32), z["prov"]
         with np.load(os.path.join(work, "frieze", f"{sid}.npz")) as z:
             fz = {k: z[k] for k in z.files}
-        ours, prov = lay_band(heal_albedo, heal_prov, fz)
+        v = FZ._row_v(g, np.arange(g.rows) + 0.5)
+        ours, prov = lay_band(heal_albedo, heal_prov, fz, v)
         spread = np.full((g.rows, g.cols), np.nan, np.float32); excess = np.full((g.rows, g.cols, 3), np.nan, np.float32)
+        fused = np.full((g.rows, g.cols, 3), np.nan, np.float32)
         s0, s1 = (int(x) for x in fz["spreadRows"])
         spread[s0:s1], excess[s0:s1] = fz["spread"].astype(np.float32), fz["excess"].astype(np.float32)
-        v = FZ._row_v(g, np.arange(g.rows) + 0.5)
+        fused[s0:s1] = fz["fused"].astype(np.float32)
         vb = g.frieze_bottom if g.frieze_bottom is not None else float(v.min())
         band = np.zeros(g.rows, bool); band[HL.band_rows(g, g.texel, g.rows)] = True
         region = g.region > 0
         trusted = region & ((v >= vb + GILT_TRUST_M) & (v <= FZ.CLEAN_V[1]))[:, None]
         gilt, gilt_report = gilt_from_spread(spread, excess, trusted, g.texel)
+        viewdep, viewdep_report = viewdep_from_spread(spread, trusted, g.texel)
         skins[sid] = {"geom": g, "ours": np.maximum(ours, 0), "prov": prov, "v": v, "vb": vb, "band": band, "region": region,
-                      "trusted": trusted, "gilt": gilt, "giltReport": gilt_report, "photos": {},
+                      "trusted": trusted, "gilt": gilt, "giltReport": gilt_report, "viewdep": viewdep,
+                      "viewdepReport": viewdep_report, "fused": fused, "photos": {},
                       "restored": (heal_prov == HL.PROV_RECONSTRUCTED) & ~band[:, None]}
-    # 2. each wall's reference, and each photograph's registration
+    # 2. each wall's reference, and each photograph's registration, metre by metre
     walls = {}
     for wall in WALLS:
         members = [sid for sid, s in skins.items() if s["geom"].surface.name == wall]
@@ -8360,62 +9286,55 @@ def cmd_frieze_venue(cfg, rest) -> int:
         bgr = cv2.imread(p["path"], cv2.IMREAD_COLOR)
         reg = register(bgr, walls, hints.get(p["craft"]))
         registrations[p["craft"]] = reg
-        print(f"frieze-venue {p['craft']}: {json.dumps({k: x for k, x in reg.items() if k != 'H'})}", flush=True)
+        print(f"frieze-venue {p['craft']}: {json.dumps({k: x for k, x in reg.items() if k not in ('H', 'stretches')})}", flush=True)
         if reg["wall"] is None:
             continue
         lin = VW.srgb_to_linear(bgr[..., ::-1]).astype(np.float32)
         unclipped = (bgr.max(-1) < 250).astype(np.float32)
-        H, grid = np.asarray(reg["H"], np.float64), walls[reg["wall"]]["grid"]
+        grid = walls[reg["wall"]]["grid"]
         for sid in walls[reg["wall"]]["members"]:
             s = skins[sid]
-            img, cover = photo_on_skin(lin, H, s["geom"], grid)
-            unc, _cov = photo_on_skin(unclipped, H, s["geom"], grid)
+            img, cover = photo_on_skin(lin, reg["stretches"], s["geom"], grid)
+            unc, _cov = photo_on_skin(unclipped, reg["stretches"], s["geom"], grid)
             cover &= s["region"]
             if cover.sum() >= 1000:
                 s["photos"][p["craft"]] = {"img": img, "cover": cover, "unclipped": unc > 0.99, "px": reg["pixelM"] / s["geom"].texel}
-    # 3. each photograph into our colour frame (on the clean frieze's paint; and on its upper half alone, for the check),
-    #    and cleared of its own vertical light
-    gains, lights = {}, {}
+    # 3. each photograph into our colour frame: one tone and one vertical light over every skin it covers, fitted on its
+    #    matte texels; the colour check (the tone on the upper clean frieze alone, the light on rows other than the
+    #    compared ones, compared on the lower clean frieze) and the photograph's verdict: colour, or detail and outline
+    colour, frames, verdicts = {}, {}, {}
     for craft, reg in registrations.items():
         if reg["wall"] is None:
             continue
-        full, upper, rows_vals, edges, texel = [], [], {}, [], None
-        for sid in walls[reg["wall"]]["members"]:
-            s = skins[sid]; ph = s["photos"].get(craft)
-            if ph is None:
-                continue
-            texel = s["geom"].texel
-            sub = np.zeros(ph["cover"].shape, bool); sub[::3, ::3] = True
-            clean = ((s["v"] >= FZ.CLEAN_V[0]) & (s["v"] <= FZ.CLEAN_V[1]))[:, None]
-            use = ph["cover"] & ph["unclipped"] & clean & (s["gilt"] < 0.5) & sub
-            full.append((s["ours"][use], ph["img"][use]))
-            hi_half = use & (s["v"] >= SPLIT_V)[:, None]
-            upper.append((s["ours"][hi_half], ph["img"][hi_half]))
-            edges.append(s["vb"])
-            for r in np.flatnonzero(ph["cover"].any(1)):
-                sel = ph["cover"][r] & ph["unclipped"][r]
-                if sel.sum() >= 20:
-                    rows_vals.setdefault(int(round(s["v"][r] / texel)), []).append(ph["img"][r][sel])
-        cat = lambda parts, i: np.concatenate([q[i] for q in parts]) if parts else np.zeros((0, 3))
-        gains[craft] = {"full": harmonise(cat(full, 0), cat(full, 1)), "upper": harmonise(cat(upper, 0), cat(upper, 1))}
-        keys = sorted(rows_vals)
-        if gains[craft]["full"] is None or not keys:
-            lights[craft] = None
+        members = [sid for sid in walls[reg["wall"]]["members"] if craft in skins[sid]["photos"]]
+        if not members:
             continue
-        vv = np.array([key * texel for key in keys])
-        probe = np.array([np.percentile(np.concatenate(rows_vals[key]), FZ.PROBE_Q, axis=0) for key in keys]) * gains[craft]["full"]
-        lights[craft] = photo_light(vv, np.log(np.maximum(probe, 1e-6)), float(np.median(edges)))
+        parts = []
+        for sid in members:
+            s, ph = skins[sid], skins[sid]["photos"][craft]
+            parts.append({"ours": s["ours"], "photo": ph["img"], "sel": matte_mask(s["viewdep"], ph["cover"] & ph["unclipped"], ph["px"]),
+                          "v": s["v"], "px": ph["px"]})
+        edge = float(np.median([skins[sid]["vb"] for sid in members]))
+        d, check = colour_check_skins(parts, edge)
+        frame = product_frame_skins(parts, edge)
+        if frame is not None:
+            for sid, img in zip(members, frame["images"]):
+                skins[sid]["photos"][craft]["d"] = img
+        mean_, p95_ = (float(d.mean()), float(np.percentile(d, 95))) if d.size else (None, None)
+        passes = bool(check is not None and frame is not None and d.size >= 200 and mean_ <= VENUE_GATE["colourMean"]
+                      and p95_ <= VENUE_GATE["colourP95"])
+        verdicts[craft] = "colour" if passes else ("detail" if frame is not None else "none")
+        colour[craft] = {"texels": int(d.size), "de00Mean": mean_, "de00P95": p95_, "toneIdentified": check is not None,
+                         "checkTone": None if check is None else check["tone"],
+                         "checkLight": None if check is None else check["light"], "verdict": verdicts[craft]}
+        frames[craft] = None if frame is None else {"tone": frame["tone"], "light": frame["light"]}
+        print(f"frieze-venue {craft}: colour {json.dumps({k: colour[craft][k] for k in ('texels', 'de00Mean', 'de00P95', 'verdict')})}", flush=True)
     # 4. per skin: the detail rule, the gilt where our views cannot say, the blend, its checks
-    report, colour_d, gilt_dir = {}, {}, {}
+    report, gilt_dir, door_gilt = {}, {}, 0
     totals = {"observed": 0, "photo": 0, "recovered": 0, "reconstructed": 0}
     for sid, s in skins.items():
         g, v, vb, region = s["geom"], s["v"], s["vb"], s["region"]
-        usable = {c: ph for c, ph in s["photos"].items() if gains[c]["full"] is not None}
-        for c, ph in usable.items():
-            shade = np.exp(FZ.uplight_log(lights.get(c), v))[:, None, :]
-            ph["d"] = (ph["img"] * gains[c]["full"] / shade).astype(np.float32)
-            if gains[c]["upper"] is not None:
-                ph["dUpper"] = (ph["img"] * gains[c]["upper"] / shade).astype(np.float32)
+        usable = {c: ph for c, ph in s["photos"].items() if "d" in ph}
         A = np.zeros(region.shape, np.float32); mix = np.zeros(s["ours"].shape, np.float32)
         for ph in usable.values():
             A += ph["cover"]; mix += ph["d"] * ph["cover"][..., None]
@@ -8435,14 +9354,25 @@ def cmd_frieze_venue(cfg, rest) -> int:
             lo_mix, _hi = masked_blur_log(mix, fully, px)
             gilt, used = gilt_from_photo(np.exp(lo_mix), gilt, s["trusted"] & fully, fully & (w_row < 0.5)[:, None])
             s["giltReport"]["photoClassifier"] = used
-        rho, out, info = blend_skin(s["ours"], s["prov"], [{"img": ph["d"], "cover": ph["cover"], "px": ph["px"]} for ph in usable.values()],
+        if g.group == 0:
+            door_gilt += int(((gilt >= 0.5) & region).sum())
+        rho, out, info = blend_skin(s["ours"], s["prov"], [{"img": ph["d"], "cover": ph["cover"], "px": ph["px"], "colour": verdicts[c] == "colour"}
+                                                           for c, ph in usable.items()],
                                     gilt, w_row, s["band"], s["restored"], region, v, vb, g.texel)
         seams = {name: seam_steps(info["lo"], info["weights"], rows, region, g.texel)
                  for name, rows in (("band", (v >= vb) & (v < vb + BAND_M)), ("clean", zones["clean"]))}
+        # the seams up the wall (F2): the blend against each colour photograph that drew it, over its cover, and against
+        # the recovery's own rows (one processing, no cut at the lines) where no colour photograph covers
+        lines = {"edge5": vb + LOWER_M, "bandTop": vb + BAND_M, "bandTop2": vb + BAND_M + RAMP_M}
+        vseams, drawn_by = {}, np.zeros(region.shape, bool)
         for c, ph in usable.items():
-            if "dUpper" in ph:
-                z = ph["cover"] & ph["unclipped"] & region & (gilt < 0.5) & ((v >= FZ.CLEAN_V[0]) & (v < SPLIT_V))[:, None]
-                colour_d.setdefault(c, []).append(colour_deltas(s["ours"], ph["dUpper"], z, ph["px"]))
+            if verdicts[c] == "colour":
+                vseams[c] = vertical_seam(rho, ph["d"], ph["cover"], v, lines)
+                drawn_by |= ph["cover"]
+        free = region & ~drawn_by & np.isfinite(s["fused"]).all(-1)
+        if free.sum() >= SEAM_MIN:
+            vseams["ours"] = vertical_seam(rho, np.nan_to_num(s["fused"], nan=1.0), free, v, lines)
+        for c, ph in usable.items():
             if g.group == 0:                                                 # the door wall, where the photograph shows the gilt
                 t = ph["cover"] & s["trusted"]
                 dl = np.log(np.maximum(ph["d"] @ LUMA, 1e-6)) - np.log(np.maximum(s["ours"] @ LUMA, 1e-6))
@@ -8456,51 +9386,50 @@ def cmd_frieze_venue(cfg, rest) -> int:
                                                                               ("recovered", HL.PROV_RECOVERED), ("reconstructed", HL.PROV_RECONSTRUCTED))}
         for k in totals:
             totals[k] += counts[k]
-        report[sid] = {"photos": sorted(usable), "pixelMm": {c: round(ph["px"] * g.texel * 1000, 2) for c, ph in usable.items()},
+        report[sid] = {"photos": sorted(usable), "colourPhotos": sorted(c for c in usable if verdicts[c] == "colour"),
+                       "pixelMm": {c: round(ph["px"] * g.texel * 1000, 2) for c, ph in usable.items()},
                        "edge": vb, "gradCorr": gc, "floor": floor, "measuredKeep": measured,
-                       "keep": {"lower": keep_lower, "upper": keep_upper}, "gilt": s["giltReport"],
+                       "keep": {"lower": keep_lower, "upper": keep_upper}, "gilt": s["giltReport"], "viewDependence": s["viewdepReport"],
                        "giltShare": float((gilt[region] >= 0.5).mean()) if region.any() else 0.0, "band": counts,
-                       "photoShare": info["photoShare"], "photoDrawnShare": info["photoDrawnShare"], "seams": seams}
+                       "photoShare": info["photoShare"], "photoDrawnShare": info["photoDrawnShare"], "seams": seams,
+                       "verticalSeams": vseams}
         _evidence(cfg, sid, s["ours"], rho, out, gilt, region, v, vb)
-        print(f"frieze-venue {sid}: {json.dumps({k: report[sid][k] for k in ('photos', 'keep', 'band', 'giltShare')})}", flush=True)
+        print(f"frieze-venue {sid}: {json.dumps({k: report[sid][k] for k in ('photos', 'colourPhotos', 'keep', 'band', 'giltShare')})}", flush=True)
     # 5. the gates
-    colour = {}
-    for c, reg in registrations.items():
-        d = np.concatenate(colour_d.get(c, [np.zeros(0)]))
-        colour[c] = {"texels": int(d.size), "de00Mean": float(d.mean()) if d.size else None,
-                     "de00P95": float(np.percentile(d, 95)) if d.size else None}
-        colour[c]["pass"] = bool(d.size >= 200 and colour[c]["de00Mean"] <= VENUE_GATE["colourMean"]
-                                 and colour[c]["de00P95"] <= VENUE_GATE["colourP95"])
-    directions = {}
-    for c, gd in gilt_dir.items():
-        gg = np.concatenate(gd["gilt"]) if gd["gilt"] else np.zeros(0)
-        pp = np.concatenate(gd["paint"]) if gd["paint"] else np.zeros(0)
-        if gg.size >= GILT_MIN and pp.size >= GILT_MIN:
-            diff = float(np.median(gg) - np.median(pp))
-            directions[c] = {"difference": diff, "pass": diff > 0}
-        else:
-            directions[c] = {"difference": None, "pass": False, "reason": "no gilding found under this photograph"}
+    directions = {c: gilt_direction(np.concatenate(gd["gilt"]) if gd["gilt"] else np.zeros(0),
+                                    np.concatenate(gd["paint"]) if gd["paint"] else np.zeros(0)) for c, gd in gilt_dir.items()}
+    checked = [d for d in directions.values() if d["checked"]]
     measured_share = (totals["observed"] + totals["photo"] + totals["recovered"]) / max(sum(totals.values()), 1)
-    gates = {"registration": all(r["wall"] is not None for r in registrations.values()),
-             "colour": all(x["pass"] for x in colour.values()),
+    unregistered = {c: max([st["corr"] for w in r["tried"].values() for st in w["stretches"]], default=None)
+                    for c, r in registrations.items() if r["wall"] is None}
+    gates = {# every photograph placed metre by metre at REG_CORR_MIN or more, or recorded unregistered with its best metre
+             "registration": all(r["wall"] is None or all(st["corr"] >= REG_CORR_MIN for st in r["stretches"]) for r in registrations.values()),
+             # every registered photograph has a verdict, colour or detail and outline only (F1: a photograph that fails
+             # the colour check gives detail and outline, not a stop)
+             "colour": all(c in verdicts for c, r in registrations.items() if r["wall"] is not None),
              "seams": all(z["pass"] for r in report.values() for z in r["seams"].values()),
+             "verticalSeams": all(x["pass"] for r in report.values() for x in r["verticalSeams"].values()),
              "coverage": measured_share >= 0.99,
-             "giltDirection": bool(directions) and all(d["pass"] for d in directions.values())}
+             # every photograph with the mask under it agrees, and a gilt mask on the door wall has at least one
+             "giltDirection": all(d["pass"] for d in checked) and (bool(checked) or door_gilt < GILT_MIN)}
     with open(os.path.join(out_dir, "photos.json"), "w", encoding="utf-8") as f:
         json.dump({"id": CREDIT_ID, "source": sources["source"], "credit": sources["credit"], "copyright": sources["copyright"],
                    "photos": [{"craft": p["craft"], "file": p["file"], "url": p["url"], "sha256": p["sha256"], "sizePx": p["sizePx"],
                                "wall": registrations[p["craft"]]["wall"], "H": registrations[p["craft"]].get("H"),
+                               "stretches": registrations[p["craft"]].get("stretches"),
                                "inliers": registrations[p["craft"]].get("inliers"), "corr": registrations[p["craft"]].get("corr"),
                                "pixelMm": None if registrations[p["craft"]]["wall"] is None else round(registrations[p["craft"]]["pixelM"] * 1000, 2),
-                               "gain": None if gains.get(p["craft"], {}).get("full") is None else [float(x) for x in gains[p["craft"]]["full"]],
-                               "uplight": lights.get(p["craft"])} for p in photos]}, f, indent=1)
+                               "tone": (frames.get(p["craft"]) or {}).get("tone"), "light": (frames.get(p["craft"]) or {}).get("light"),
+                               "verdict": verdicts.get(p["craft"])} for p in photos]}, f, indent=1)
     evidence = {"gate": VENUE_GATE, "registrations": {c: {k: x for k, x in r.items() if k != "H"} for c, r in registrations.items()},
-                "colour": colour, "giltDirection": directions, "skins": report,
+                "unregistered": unregistered, "colour": colour, "verdicts": verdicts, "giltDirection": directions,
+                "doorWallGiltTexels": door_gilt, "skins": report,
                 "band": {"totals": totals, "measuredShare": measured_share}, "gates": gates, "pass": all(gates.values()),
                 "seconds": round(time.time() - started, 1)}
     with open(os.path.join(cfg.paths["evidence"], "frieze-venue.json"), "w", encoding="utf-8") as f:
         json.dump(evidence, f, indent=1, allow_nan=False, default=float)
-    print(f"frieze-venue: {json.dumps(gates)} band measured {measured_share:.4f} {'PASS' if evidence['pass'] else 'FAIL'}", flush=True)
+    print(f"frieze-venue: {json.dumps(gates)} verdicts {json.dumps(verdicts)} unregistered {json.dumps(unregistered)} "
+          f"band measured {measured_share:.4f} {'PASS' if evidence['pass'] else 'FAIL'}", flush=True)
     return 0 if evidence["pass"] else 1
 ```
 
@@ -8522,7 +9451,7 @@ COMMANDS["frieze-venue"] = Command(run=_lazy("venue", "cmd_frieze_venue"), outpu
 - [ ] **Step 8: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_frieze tests.test_venue tests.test_sources -v`
-Expected: PASS, 24 tests (8 frieze, 10 venue, 6 sources).
+Expected: PASS, 40 tests (12 frieze, 22 venue, 6 sources).
 
 - [ ] **Step 9: Commit the code**
 
@@ -8530,7 +9459,7 @@ Expected: PASS, 24 tests (8 frieze, 10 venue, 6 sources).
 cd D:/claude/real-hall/repo
 git add tools/skins/skins/frieze.py tools/skins/skins/venue.py tools/skins/skins/__main__.py tools/skins/tests/test_frieze.py tools/skins/tests/test_venue.py
 git diff --cached --stat
-git commit -m "feat(skins): the frieze band from its measured views and the venue's photographs: fusion, uplight, one colour frame, the gilded ground (T-639 R1c)
+git commit -m "feat(skins): the frieze band from its measured views and the venue's photographs: fusion, the residual light, one colour frame, the gilded ground (T-639 R1c)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -8551,9 +9480,11 @@ Expected: all four `PASS`, which includes every gate:
 
 - `frieze-holdout.json` `"pass": true`: each stretch within `HOLDOUT_GATE` and above both baselines in SSIM and gradient correlation, and `mean` within `HOLDOUT_MEAN_GATE`;
 - `frieze/band.json` a measured share of at least 0.99;
-- `frieze-venue.json` `"pass": true`: all 14 photographs registered at a correlation of at least 0.60 (report each one's wall, inliers, correlation and pixel size); each photograph's colour check within 6.5 / 16.5; no seam stepping more than the paint's own 95th percentile; the band's observed (our fusion) + observed (venue photo) + recovered share at least 0.99; on the door wall, every photograph's gilt brighter relative to the paint than in our capture.
+- `frieze-venue.json` `"pass": true`: every photograph registered metre by metre at a correlation of at least 0.60, or reported unregistered with its best metre (Weavers, unless a hint lets a metre pass; report each one's wall, inliers, accepted metres with their correlations, and pixel size); every registered photograph with a verdict, colour (its check within 3.6 / 7.8) or detail and outline only (`verdicts`, with each photograph's `colour` numbers); no seam stepping more than the paint's own 95th percentile; the band's observed (our fusion) + observed (venue photo) + recovered share at least 0.99; every frieze skin's seams up the wall passing (`verticalSeams`); under every door-wall photograph with the gilt mask beneath it, the gilt brighter relative to the paint than in our capture, and at least one such photograph when the door wall's mask holds gilt (`doorWallGiltTexels`).
 
-The `frieze-crf` lines should show the E57 faces' shoulder above sRGB; a curve no higher than sRGB at 240 means the shoulder was not found; report it. If a photograph fails to register, look at it beside its wall's reference: if its section is identified by eye, rerun with `--hints <file>` naming its wall (`{"<craft>": "<wall>"}`, as the research did for the Wrights photograph) and record that in the session log; never lower the correlation limit.
+The `frieze-crf` line prints the XGRIDS curve's lift above sRGB at code 240 per channel; report it beside the research's diagnostics (`evidence/numbers.json` `camera_curve_diagnostics.xg`: B −0.455, G +0.047, R +0.033 ln; the E57 faces have no curve). Report how many band texels have a blue code of 200 or more in some XGRIDS view (the blue curve, recorded above). Every `frieze/<id>.json` records its residual `light` (kept or not, the reason, λ and its 2% height `v2pct`) and `lightAtTopLn`, the light divided out at the skin's top row; list each skin with a kept light in the task report. The cornice above stays splats and keeps that light, so a nonzero `lightAtTopLn` is a step at the captured light, which Task 23's skin-top seam measures; a light kept at all means the relight model misses part of the uplight, which the controller weighs for R1a.
+
+The experiment's verdicts, for comparison (the frieze-photo experiment, `D:/claude/real-hall/plan-amendments-0710/frieze-photo/results.md`, section 6): colour for Bonnetmakers and Dyers (1.99 / 4.77) and Wrights (1.65 / 3.87), measured against the research's fusion; Maltmen colour on its registered stretch (2.80 / 5.63), but its left metre (0.5–1.5 m) fails on a proxy fusion under both de-lights (tone correlations 0.27–0.55), so this task's own pooled check decides; provisionally colour Bakers, Barbers, Gardeners, Hammermen (fragile: one metre at 0.66), Skinners and Tailors; provisionally detail and outline only Coopers, Cordiners, Fleshers and Masons (Masons passes under the research's de-light, fails under the proposed one); Weavers not registered. The provisional verdicts came from an E57-only proxy fusion, so this task re-measures every photograph with its own mosaic under the same gate, records the verdict per photograph in `frieze-venue.json`, and the task report sets each beside the experiment's. If a photograph fails to register, look at it beside its wall's reference: if its section is identified by eye, rerun with `--hints <file>` naming its wall (`{"<craft>": "<wall>"}`, as the research did for the Wrights photograph) and record that in the session log; never lower the correlation limit.
 
 Look at every `D:/claude/skins/grand-hall/evidence/frieze-<id>.png` (our frieze, the blend, the provenance, the gilt mask, from 2 cm below the frieze's edge to 40 cm above it). The figures' feet and the barrels' bases should run continuously into the band, with no gradient toward the rail, no colour step at the band's top or at a section join, blue only in the lowest 5 cm of the door and fireplace walls (and on texels our recovery could only reconstruct), red only on plain ground, and the gilt mask on the ground behind the figures, not on them. Save the per-skin table of `frieze-venue.json` (photos, pixel size, detail decisions measured and applied, gilt share, band provenance, seams) as `D:/claude/skins/grand-hall/evidence/task12-venue.txt`.
 
@@ -8567,16 +9498,18 @@ Look at every `D:/claude/skins/grand-hall/evidence/frieze-<id>.png` (our frieze,
 - Test: `tools/skins/tests/test_materials.py`
 
 **Interfaces:**
-- Consumes: Task 6 (`views.load_geometry`, `geometry_ids`), Task 9 (`<work>/mosaic/<id>.npz`: `glare`, `excess`, `nviews`), Task 10 (`<work>/heal/<id>.npz`; `heal.PROV_*` with `PROV_PHOTO`), Task 11 (`<work>/clutter/<id>.npz`, `index.json`), Task 12 (`<work>/venue/<id>.npz` for every frieze skin: `albedo` and `prov` over the whole skin, `gilt`, `photos`).
-- Produces (`materials.py`): `MODEL = "skins-measured-v1"`; `ROUGHNESS_PRIOR` (per material, perceptual roughness r, GGX α = r² as glTF and R1d's sheen take it: `plaster` 0.85, `mural` 0.80, `mahogany` 0.30, `timber` 0.40, `timber-gilt` 0.40, `blank-panel` 0.15, `lettering` 0.25, `canvas` 0.35, `dial` 0.30); `GILT_MATERIALS = ("lettering", "timber-gilt", "mural")` (the fascia's gilt names are in the frieze skins); `GILT_ROUGHNESS = ROUGHNESS_PRIOR["timber-gilt"]` (0.40); `GOLD_F0 = (1.0, 0.78, 0.34)` (gold leaf's specular colour, linear sRGB: the found-light reflectometry track's prior from gold's optical constants, `D:/claude/real-hall/frontier/materials/proposal.md`, its table c1); `PROVENANCE` (the four classes and their codes); `roughness_map(material, glare (H, W) uint8, excess (H, W) float, nviews (H, W), metal=None) -> float32 (H, W)` (the prior, the gilding's where `metal` says gilt, lowered where views saw a moving highlight: `prior × (1 − 0.6 × clip(excess / 2, 0, 1))` where at least one view was rejected as glare, smoothed 1 cm); `gilding_mask(albedo (H, W, 3), glare, material) -> float32 (H, W)` (gold in hue and saturation where a view was rejected as glare); `specular_colour(metal, region, measured=None) -> list[float] | None`; `assemble(sid, heal, venue, clutter) -> dict` (`albedo`, `prov`, `gilt`, `credits`, and with clutter `clean`, `cleanProv`, `clutter`); `@dataclass(frozen=True) class MaterialLayer: model: str; albedo; roughness; metal; prov; coat: ndarray | None; coat_roughness: ndarray | None; spec_colour: ndarray | None; sigma: ndarray | None` (`roughness` perceptual: the layer's α square-rooted); `import_material_layer(folder, geom, light_model_sha) -> MaterialLayer` (the measured-material interface below; `ValueError` for another grid or light model); the command `python -m skins materials [--measured <root>]` writing `<work>/materials/<id>.npz` (`albedo` float16, `prov` uint8, `roughness` uint8, `metal` uint8, `model` str, `credits` str array; `specularColour` float32 (3,) where the skin has metal; and when the skin has flat clutter `clean` float16, `cleanProv` uint8, `clutter` uint8) and `<work>/materials/index.json`.
+- Consumes: Task 6 (`views.load_geometry`, `geometry_ids`), Task 9 (`<work>/mosaic/<id>.npz`: `glare`, `excess`, `excessRgb`), Task 10 (`<work>/heal/<id>.npz`; `heal.PROV_*` with `PROV_PHOTO`), Task 11 (`<work>/clutter/<id>.npz`, `index.json`), Task 12 (`<work>/venue/<id>.npz` for every frieze skin: `albedo` and `prov` over the whole skin, `gilt`, `photos`).
+- Produces (`materials.py`): `MODEL = "skins-measured-v1"`; `ROUGHNESS_PRIOR` (per material, perceptual roughness r, GGX α = r² as glTF and R1d's sheen take it: `plaster` 0.85, `mural` 0.80, `mahogany` 0.30, `timber` 0.40, `timber-gilt` 0.40, `blank-panel` 0.15, `lettering` 0.25, `canvas` 0.35, `dial` 0.30); `GILT_MATERIALS = ("lettering", "timber-gilt", "mural")` (the fascia's gilt names are in the frieze skins); `GILT_ROUGHNESS = ROUGHNESS_PRIOR["timber-gilt"]` (0.40); `GOLD_F0 = (1.0, 0.78, 0.34)` (gold leaf's specular colour, linear sRGB: the found-light reflectometry track's prior from gold's optical constants, `D:/claude/real-hall/frontier/materials/proposal.md`, its table c1); `PROVENANCE` (the four classes and their codes); `roughness_map(material, glare (H, W) uint8, excess (H, W) float, metal=None) -> float32 (H, W)` (the prior, the gilding's where `metal` says gilt, lowered where views saw a moving highlight: `prior × (1 − 0.6 × clip(excess / 2, 0, 1))` where at least one view was rejected as glare, smoothed by a Gaussian of 2 texels, 3–4 mm on most skins); `gilding_mask(excess_rgb (H, W, 3), glare, material) -> float32 (H, W)` (on the gilt classes, where a view was rejected as glare and the rejected highlight itself is gold: R > G > B and B/R below 0.55); `specular_colour(metal, region, measured=None) -> list[float] | None`; `assemble(sid, heal, venue, clutter) -> dict` (`albedo`, `prov`, `gilt`, `credits`, and with clutter `clean`, `cleanProv`, `clutter`); `@dataclass(frozen=True) class MaterialLayer: model: str; albedo; roughness; metal; prov; coat: ndarray | None; coat_roughness: ndarray | None; spec_colour: ndarray | None; sigma: ndarray | None` (`roughness` perceptual: the layer's α square-rooted); `CLEAN_RING = 25`, `CLEAN_FLOOR = 0.004`; `measured_clean(clean, clean_prov, clutter, ours, measured, measured_prov, region) -> (clean, cleanProv)` (the clean version under a measured layer, M11); `material_basis(layer, spec) -> {roughness, specularColour}` ("prior" for designed values: the class roughness, the gilding's 0.40 and gold leaf's F0; "measured" for a measured layer's; amended 8 October); `import_material_layer(folder, geom, light_model_sha) -> MaterialLayer` (the measured-material interface below, normative; `light_model_sha` is Task 9's `light_model_id` of v1's manifest; `ValueError` for another grid or light model); the command `python -m skins materials [--measured <root>]` writing `<work>/materials/<id>.npz` (`albedo` float16, `prov` uint8, `roughness` uint8, `metal` uint8, `model` str, `credits` str array; `specularColour` float64 (3,) where the skin has metal, so gold's F0 reaches the manifest exactly; `roughnessBasis` str and, with a specular colour, `specularBasis` str, each "prior" or "measured"; and when the skin has flat clutter `clean` float16, `cleanProv` uint8, `clutter` uint8) and `<work>/materials/index.json`.
 
-R1 polished §3.2.5: roughness and gilding masks from multi-view specular behaviour plus region labels. A view rejected as glare at a texel (Task 9) is direct evidence of a specular surface there, and how far it stood above the diffuse estimate (`excess`) says how sharp the highlight was; the material class gives the prior. Gilding is gold in hue (R > G > B, B/R below 0.55, saturation above 0.35 in linear RGB) on the gilt classes, where some view saw a highlight (amended 7 October: colour alone no longer counts, because varnished brown wood passes the hue rule with a saturation above 0.6, which the plan's own test showed; the spec asks for multi-view specular behaviour). These are R1c's measured-heuristic maps, `skins-measured-v1`.
+R1 polished §3.2.5: roughness and gilding masks from multi-view specular behaviour plus region labels. A view rejected as glare at a texel (Task 9) is direct evidence of a specular surface there, and how far it stood above the diffuse estimate (`excess`) says how sharp the highlight was; the material class gives the prior. Gilding is a gold highlight on the gilt classes: some view saw a highlight there and the highlight itself is gold (R > G > B, B/R below 0.55; Task 9's `excessRgb`, the rejected views' de-lit colour over the estimate). The albedo's colour no longer counts. On 7 October colour alone was dropped, because varnished brown wood passes the hue rule. On 8 October requiring a highlight as well proved not enough, since varnish is glossy: with a rejected highlight, dark varnished wood `(0.08, 0.04, 0.02)` gave a mask of 0.9998 on `timber-gilt`, `lettering` and `mural`, which would have made the honours boards' varnished grounds gold metal. Gold leaf reflects gold (F0 1.0, 0.78, 0.34). Varnish (F0 ≈ 0.044, white) and paint reflect the light's own colour, which de-lighting makes neutral (`frontier/materials/proposal.md:233-234, 318`). This is Task 12's rule for the frieze's ground, applied to the highlight Task 9 measured. These are R1c's measured-heuristic maps, `skins-measured-v1`.
 
-**The frieze's gilded ground (amended 7 October).** The research saw the frieze's ground bright gold behind darker legs in the venue's door photograph and the reverse in our captures: a matte texture cannot hold both looks. Task 12 measured where the ground is gilt (its appearance varies with the view, and its brightest views' excess is gold) and kept the capture's own tone there. Here the gilt mask becomes the metal map (the larger of it and the hue rule above, which still finds the fascia's gilt names), the gilt texels take the gilding's roughness (0.40, the plan's prior for gilt timber, lowered where views saw a moving highlight), and every skin with metal carries a specular colour: gold leaf's F0, the found-light reflectometry track's prior from gold's optical constants. The skin package carries all three (Task 14); R1d's sheen makes the ground's brightness follow the view through them (Fresnel from the specular colour where the metal is 1: R1c's interface item 4 as amended, `SkinSurface.specularColour`). The track's measured layer replaces the prior and the heuristic when it exists.
+**The frieze's gilded ground (amended 7 October).** The research saw the frieze's ground bright gold behind darker legs in the venue's door photograph and the reverse in our captures: a matte texture cannot hold both looks. Task 12 measured where the ground is gilt (its appearance varies with the view, and its brightest views' excess is gold) and kept the capture's own tone there. Here the gilt mask becomes the metal map (the larger of it and the gold-highlight rule above, which still finds the fascia's gilt names), the gilt texels take the gilding's roughness (0.40, the plan's prior for gilt timber, lowered where views saw a moving highlight), and every skin with metal carries a specular colour: gold leaf's F0, the found-light reflectometry track's prior from gold's optical constants. The skin package carries all three (Task 14); R1d's sheen makes the ground's brightness follow the view through them (Fresnel from the specular colour where the metal is 1: R1c's interface item 4 as amended, `SkinSurface.specularColour`). The track's measured layer replaces the prior and the heuristic when it exists.
 
 **Provenance.** Observed (our fusion: every channel has a sharp unclipped view), observed (venue photo: the texel's drawing is the venue's photograph; Task 12), recovered (measured, but some channel only through softer views, a fitted camera curve or the frieze's detail transfer; or a gilt texel's tone continued from above with its outline from a photograph), reconstructed (healed, filled or synthesised). A frieze skin lists the photographs it used (`credits`, their crafts), which Task 14 credits.
 
-**The measured-material interface.** The frontier track "found-light reflectometry" (`D:/claude/real-hall/frontier/materials/proposal.md`, section (e)) fits, per skin texel, the body albedo as the surface is now, GGX roughness, metalness, a clear coat and the metal's specular colour from the same photographs and light model. Its output replaces R1c's maps through `import_material_layer` when `materials --measured <root>` is given, with no change to the skin package (Task 14 writes `material.model` from the layer and carries the specular colour). The track writes, per skin, `<root>/<skin id>/material/v1/`: `material.json` (`{ "skin": id, "model": str, "texel": metres, "cols": n, "rows": n, "lightModel": "<relight package's manifest sha256>", "maps": [names] }`), and float32 NumPy maps on the skin's own texel grid (Task 5's `geometry/skins.json` cols and rows): `basecolor.npy` (H, W, 3) linear, in the light model's units (the albedo R1c's mosaic produces); `roughness.npy` (H, W) GGX α (imported as the perceptual roughness `sqrt(α)` the package carries, so R1d's α = r² is the track's α); `metal.npy` (H, W) 0..1; `provenance.npy` (H, W) uint8 (0 measured, 1 pooled, 2 prior, 3 virtually cleaned; mapped to R1c's observed 0, recovered 1, reconstructed 2 and reconstructed 2); optionally `coat.npy` (H, W, 2: presence, roughness), `speccolor.npy` (H, W, 3; its median over the metal texels becomes the skin's specular colour) and `sigma.npy` (H, W, 3: one-sigma of α, metalness and albedo luminance). A layer for another skin grid or another light model is refused. A frieze skin keeps its photographs' credit under a measured layer.
+**The measured-material interface.** The frontier track "found-light reflectometry" (`D:/claude/real-hall/frontier/materials/proposal.md`, section (e)) fits, per skin texel, the body albedo as the surface is now, GGX roughness, metalness, a clear coat and the metal's specular colour from the same photographs and light model. Its output replaces R1c's maps through `import_material_layer` when `materials --measured <root>` is given, with no change to the skin package (Task 14 writes `material.model` from the layer and carries the specular colour). The track writes, per skin, `<root>/<skin id>/material/v1/`: `material.json` (`{ "skin": id, "model": str, "texel": metres, "cols": n, "rows": n, "lightModel": "<Task 9's light_model_id of relight package v1's manifest>", "maps": [names] }`), and float32 NumPy maps on the skin's own texel grid (Task 5's `geometry/skins.json` cols and rows): `basecolor.npy` (H, W, 3) linear, in the light model's units (the albedo R1c's mosaic produces); `roughness.npy` (H, W) GGX α (imported as the perceptual roughness `sqrt(α)` the package carries, so R1d's α = r² is the track's α); `metal.npy` (H, W) 0..1; `provenance.npy` (H, W) uint8 (0 measured, 1 pooled, 2 prior, 3 virtually cleaned; mapped to R1c's observed 0, recovered 1, reconstructed 2 and reconstructed 2); optionally `coat.npy` (H, W, 2: presence, roughness), `speccolor.npy` (H, W, 3; its median over the metal texels becomes the skin's specular colour) and `sigma.npy` (H, W, 3: one-sigma of α, metalness and albedo luminance). A layer for another skin grid or another light model is refused. A frieze skin keeps its photographs' credit under a measured layer.
+
+This format is the interface, and it is normative (pre-flight fix M11, 8 October). The track's draft of its output (`proposal.md` section (e), lines 481–494: `basecolor.ktx2`, `orm.ktx2`, `provenance.png` and a `material.json` with other keys) is a browser delivery format, and the browser reads only the skin package, which carries an imported layer's maps in its own tiles. So the track writes this layer, or converts its own to it, and its section (e) is to point here. Under a measured layer the clean patch under hidden clutter is rebuilt from the layer (`measured_clean`): outside the clutter the clean version is the layer's albedo, and each clutter patch is R1c's clean texels times the per-channel median ratio of the layer's albedo to R1c's over a 5 cm ring of region texels round it, so a hidden poster leaves no step against the measured wall. The layer's `lightModel` is Task 9's `light_model_id`, which a second `check` of v1 or a rebuild of the same light at another commit leaves unchanged.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -8592,22 +9525,25 @@ class Maps(unittest.TestCase):
     def test_roughness_drops_where_views_saw_a_moving_highlight(self):
         glare = np.zeros((40, 40), np.uint8); glare[10:20, 10:20] = 2
         excess = np.zeros((40, 40), np.float32); excess[10:20, 10:20] = 2.0
-        r = M.roughness_map("blank-panel", glare, excess, np.full((40, 40), 5, np.uint8))
+        r = M.roughness_map("blank-panel", glare, excess)
         self.assertAlmostEqual(float(r[35, 35]), 0.15, places=5)
         self.assertLess(float(r[15, 15]), 0.08)
-        self.assertAlmostEqual(float(M.roughness_map("plaster", np.zeros((4, 4), np.uint8), np.zeros((4, 4)), np.ones((4, 4)))[1, 1]), 0.85, places=6)
+        self.assertAlmostEqual(float(M.roughness_map("plaster", np.zeros((4, 4), np.uint8), np.zeros((4, 4)))[1, 1]), 0.85, places=6)
 
-    def test_gilding_is_gold_on_gilt_classes_only(self):
-        img = np.full((20, 20, 3), [0.30, 0.20, 0.10], np.float32)
-        img[5:10, 5:10] = [0.60, 0.42, 0.12]                              # gold leaf
-        glare = np.zeros((20, 20), np.uint8); glare[5:10, 5:10] = 1
-        m = M.gilding_mask(img, glare, "lettering")
-        self.assertGreater(float(m[7, 7]), 0.9); self.assertLess(float(m[15, 15]), 0.1)
-        self.assertEqual(float(M.gilding_mask(img, glare, "plaster").max()), 0.0)
+    def test_gilding_is_a_gold_highlight_on_gilt_classes_only(self):
+        excess = np.zeros((20, 20, 3), np.float32)
+        excess[5:10, 5:10] = [0.30, 0.22, 0.08]                           # gilt: the highlight is gold
+        excess[12:18, 12:18] = [0.25, 0.25, 0.24]                         # varnished brown wood: a white highlight
+        glare = np.zeros((20, 20), np.uint8); glare[5:10, 5:10] = 1; glare[12:18, 12:18] = 2
+        for material in ("lettering", "timber-gilt"):
+            m = M.gilding_mask(excess, glare, material)
+            self.assertGreater(float(m[7, 7]), 0.9); self.assertLess(float(m[15, 15]), 0.1)
+        self.assertEqual(float(M.gilding_mask(excess, glare, "plaster").max()), 0.0)
+        self.assertEqual(float(M.gilding_mask(excess, np.zeros((20, 20), np.uint8), "lettering").max()), 0.0)   # no highlight seen
 
     def test_the_gilt_ground_is_gold_metal_with_the_gildings_roughness(self):
         metal = np.zeros((20, 20), np.float32); metal[:, 10:] = 1.0
-        r = M.roughness_map("mural", np.zeros((20, 20), np.uint8), np.zeros((20, 20)), np.ones((20, 20)), metal)
+        r = M.roughness_map("mural", np.zeros((20, 20), np.uint8), np.zeros((20, 20)), metal)
         self.assertAlmostEqual(float(r[10, 0]), M.ROUGHNESS_PRIOR["mural"], places=5)
         self.assertAlmostEqual(float(r[10, 19]), M.GILT_ROUGHNESS, places=5)
         self.assertEqual(M.specular_colour(metal, np.ones((20, 20), bool)), list(M.GOLD_F0))
@@ -8660,6 +9596,10 @@ class Measured(unittest.TestCase):
         self.assertEqual(layer.prov[0].tolist(), [H.PROV_OBSERVED, H.PROV_RECOVERED, H.PROV_RECONSTRUCTED, H.PROV_RECONSTRUCTED, 0, 0])
         self.assertAlmostEqual(float(layer.roughness[0, 0]), math.sqrt(0.3), places=6)       # GGX alpha 0.3 -> r = sqrt(alpha)
         self.assertIsNotNone(layer.coat); self.assertIsNone(layer.spec_colour)
+        # designed values are labelled priors, a layer's measured (8 October)
+        self.assertEqual(M.material_basis(None, list(M.GOLD_F0)), {"roughness": "prior", "specularColour": "prior"})
+        self.assertEqual(M.material_basis(layer, None), {"roughness": "measured", "specularColour": None})
+        self.assertEqual(M.material_basis(layer, list(M.GOLD_F0)), {"roughness": "measured", "specularColour": "prior"})   # no speccolor: gold's prior
 
     def test_a_layer_for_another_grid_or_light_model_is_refused(self):
         class G:
@@ -8670,6 +9610,24 @@ class Measured(unittest.TestCase):
             id = "door-w2"; texel = 0.002; cols = 6; rows = 4
         with self.assertRaises(ValueError):
             M.import_material_layer(self.write_layer(tempfile.mkdtemp()), G2, "other")
+
+    def test_under_a_measured_layer_the_clean_patch_follows_the_measured_wall(self):
+        rows = cols = 160
+        ours = np.full((rows, cols, 3), 0.5, np.float32)
+        measured = np.empty_like(ours); measured[...] = [0.6, 0.55, 0.4]          # the measured wall, its own level per channel
+        clutter = np.zeros((rows, cols), np.uint8); clutter[20:30, 20:30] = 1; clutter[120:130, 120:130] = 1
+        clean = np.full((rows, cols, 3), 0.45, np.float32)                       # R1c's clean patches
+        cprov = np.full((rows, cols), H.PROV_RECONSTRUCTED, np.uint8)
+        mprov = np.full((rows, cols), H.PROV_OBSERVED, np.uint8)
+        region = np.ones((rows, cols), bool)
+        out, prov = M.measured_clean(clean, cprov, clutter, ours, measured, mprov, region)
+        np.testing.assert_allclose(out[25, 25], [0.45 * 1.2, 0.45 * 1.1, 0.45 * 0.8], rtol=1e-5)   # the wall's ratio, inside
+        np.testing.assert_allclose(out[70, 70], [0.6, 0.55, 0.4], rtol=1e-6)                      # outside: the layer itself
+        self.assertEqual((int(prov[25, 25]), int(prov[70, 70])), (H.PROV_RECONSTRUCTED, H.PROV_OBSERVED))
+        measured[90:, 90:] *= 2.0                                                                # a brighter wall round the second patch
+        out, _ = M.measured_clean(clean, cprov, clutter, ours, measured, mprov, region)
+        np.testing.assert_allclose(out[125, 125], [0.45 * 2.4, 0.45 * 2.2, 0.45 * 1.6], rtol=1e-5)   # each patch its own ring
+        np.testing.assert_allclose(out[25, 25], [0.45 * 1.2, 0.45 * 1.1, 0.45 * 0.8], rtol=1e-5)
 
 
 if __name__ == "__main__":
@@ -8698,6 +9656,7 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
+from scipy import ndimage
 
 from . import frames as F, heal as HL, views as VW
 
@@ -8712,28 +9671,30 @@ GOLD_F0 = (1.0, 0.78, 0.34)
 MEASURED_PROV = {0: HL.PROV_OBSERVED, 1: HL.PROV_RECOVERED, 2: HL.PROV_RECONSTRUCTED, 3: HL.PROV_RECONSTRUCTED}
 PROVENANCE = (("observed", HL.PROV_OBSERVED), ("photo", HL.PROV_PHOTO), ("recovered", HL.PROV_RECOVERED),
               ("reconstructed", HL.PROV_RECONSTRUCTED))
+CLEAN_RING = 25              # texels (5 cm at 2 mm): the wall round a clutter patch whose measured level its clean texels take
+CLEAN_FLOOR = 0.004          # blend.EPS: R1c's albedo below this gives no ratio
 
 
-def roughness_map(material, glare, excess, nviews, metal=None):
+def roughness_map(material, glare, excess, metal=None):
     prior = np.full(np.asarray(glare).shape, ROUGHNESS_PRIOR[material], np.float32)
     if metal is not None:
         m = np.clip(np.asarray(metal, np.float32), 0, 1)
         prior = prior * (1 - m) + GILT_ROUGHNESS * m
     lift = np.where(np.asarray(glare) > 0, np.clip(np.asarray(excess, np.float32) / 2.0, 0, 1), 0.0)
     r = (prior * (1 - 0.6 * lift)).astype(np.float32)
-    return cv2.GaussianBlur(r, (0, 0), 2.0) if r.shape[0] > 4 and r.shape[1] > 4 else r
+    return cv2.GaussianBlur(r, (0, 0), 2.0) if r.shape[0] > 4 and r.shape[1] > 4 else r     # sigma 2 texels
 
 
-def gilding_mask(albedo, glare, material):
+def gilding_mask(excess_rgb, glare, material):
+    """Gilding on the gilt classes: where a view saw a highlight (multi-view specular behaviour, spec 3.2.5) and the
+    highlight itself is gold (R > G > B, B/R below 0.55: Task 12's rule for the frieze's ground). Varnished wood and
+    paint reflect the light's own colour, which de-lighting makes neutral, so their highlights are not gold."""
     if material not in GILT_MATERIALS:
-        return np.zeros(albedo.shape[:2], np.float32)
-    a = np.asarray(albedo, np.float32)
-    r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    mx, mn = a.max(-1), a.min(-1)
-    sat = (mx - mn) / np.maximum(mx, 1e-6)
-    gold = (r > g) & (g > b) & (b / np.maximum(r, 1e-6) < 0.55) & (sat > 0.35)
-    evidence = np.asarray(glare) > 0          # a view saw a highlight there (multi-view specular behaviour, spec 3.2.5)
-    m = (gold & evidence).astype(np.float32)
+        return np.zeros(np.asarray(glare).shape, np.float32)
+    e = np.asarray(excess_rgb, np.float32)
+    r, g, b = e[..., 0], e[..., 1], e[..., 2]
+    gold = (r > 0) & (r > g) & (g > b) & (b / np.maximum(r, 1e-6) < 0.55)
+    m = (gold & (np.asarray(glare) > 0)).astype(np.float32)
     return cv2.GaussianBlur(m, (0, 0), 0.7) if m.shape[0] > 4 else m
 
 
@@ -8767,6 +9728,35 @@ def assemble(sid, heal, venue, clutter):
     return out
 
 
+def measured_clean(clean, clean_prov, clutter, ours, measured, measured_prov, region):
+    """The clean version under a measured layer: the layer's albedo and provenance outside the clutter, and inside each
+    clutter patch R1c's clean texels times the per-channel median ratio of the layer's albedo to R1c's over the region
+    texels in a ring of CLEAN_RING round the patch (over the whole region outside the clutter when the ring has none),
+    so the patch meets the measured wall round it without a step."""
+    mask = np.asarray(clutter) > 0
+    ours = np.asarray(ours, np.float32)
+    measured = np.asarray(measured, np.float32)
+    ok = np.asarray(region, bool) & ~mask & (ours.min(axis=2) > CLEAN_FLOOR) & np.isfinite(measured).all(axis=2)
+
+    def ratio(sel, a, b):
+        return np.median(a[sel] / b[sel], axis=0) if sel.any() else None
+
+    overall = ratio(ok, measured, ours)
+    out = np.where(mask[..., None], np.asarray(clean, np.float32), measured).astype(np.float32)
+    labels, _ = ndimage.label(mask)
+    for k, box in enumerate(ndimage.find_objects(labels), start=1):
+        win = (slice(max(box[0].start - CLEAN_RING, 0), box[0].stop + CLEAN_RING),
+               slice(max(box[1].start - CLEAN_RING, 0), box[1].stop + CLEAN_RING))
+        patch = labels[win] == k
+        gain = ratio(ndimage.binary_dilation(patch, iterations=CLEAN_RING) & ok[win], measured[win], ours[win])
+        gain = overall if gain is None else gain
+        if gain is not None:
+            block = out[win]
+            block[patch] = block[patch] * gain
+    prov = np.where(mask, np.asarray(clean_prov), np.asarray(measured_prov)).astype(np.uint8)
+    return out, prov
+
+
 @dataclass(frozen=True)
 class MaterialLayer:
     model: str
@@ -8778,6 +9768,14 @@ class MaterialLayer:
     coat_roughness: np.ndarray | None
     spec_colour: np.ndarray | None
     sigma: np.ndarray | None
+
+
+def material_basis(layer, spec):
+    """What a skin's material values are: "prior" for designed ones (the class roughness priors, the gilding's
+    GILT_ROUGHNESS and gold leaf's GOLD_F0) and "measured" for a measured-material layer's; the specular colour's is
+    None when the skin has none (spec), and "measured" only when the layer supplied it (`speccolor.npy`)."""
+    return {"roughness": "prior" if layer is None else "measured",
+            "specularColour": None if spec is None else ("measured" if layer is not None and layer.spec_colour is not None else "prior")}
 
 
 def import_material_layer(folder, geom, light_model_sha):
@@ -8823,9 +9821,8 @@ def cmd_materials(cfg, rest) -> int:
     os.makedirs(folder, exist_ok=True)
     light_sha = None
     if measured_root is not None:
-        import hashlib
-        with open(os.path.join(cfg.paths["splats"], "relight", "v1", "manifest.json"), "rb") as f:
-            light_sha = hashlib.sha256(f.read()).hexdigest()
+        from .blend import light_model_id                # Task 9's: survives a check of v1 (M11)
+        light_sha = light_model_id(os.path.join(cfg.paths["splats"], "relight", "v1", "manifest.json"))
     index = {}
     for sid in VW.geometry_ids(cfg.paths["work"]):
         geom = VW.load_geometry(cfg.paths["work"], sid, surfaces)
@@ -8839,20 +9836,27 @@ def cmd_materials(cfg, rest) -> int:
         mosaic = np.load(os.path.join(w, "mosaic", f"{sid}.npz"))
         region = geom.region > 0
         model = MODEL
-        metal = np.maximum(parts["gilt"], gilding_mask(parts["albedo"], mosaic["glare"], geom.material)).astype(np.float32)
-        rough = roughness_map(geom.material, mosaic["glare"], mosaic["excess"].astype(np.float32), mosaic["nviews"], metal)
+        metal = np.maximum(parts["gilt"], gilding_mask(mosaic["excessRgb"].astype(np.float32), mosaic["glare"], geom.material)).astype(np.float32)
+        rough = roughness_map(geom.material, mosaic["glare"], mosaic["excess"].astype(np.float32), metal)
         spec = specular_colour(metal, region)
+        layer = None
         layer_dir = None if measured_root is None else os.path.join(measured_root, sid, "material", "v1")
         if layer_dir is not None and os.path.exists(os.path.join(layer_dir, "material.json")):
             layer = import_material_layer(layer_dir, geom, light_sha)
             model, rough, metal = layer.model, layer.roughness, layer.metal
+            if "clean" in parts:                              # the clean patch follows the measured wall round it
+                parts["clean"], parts["cleanProv"] = measured_clean(parts["clean"], parts["cleanProv"], parts["clutter"], parts["albedo"],
+                                                                    layer.albedo, layer.prov, region)
             parts["albedo"], parts["prov"] = layer.albedo, layer.prov
             spec = specular_colour(metal, region, layer.spec_colour)
         parts["prov"] = np.where(region, parts["prov"], HL.PROV_OUTSIDE).astype(np.uint8)
         out = {"albedo": parts["albedo"].astype(np.float16), "prov": parts["prov"], "roughness": _q8(rough), "metal": _q8(metal),
                "model": np.array(model), "credits": np.array(parts["credits"], dtype=str)}
+        basis = material_basis(layer, spec)                               # priors are labelled so (8 October)
+        out["roughnessBasis"] = np.array(basis["roughness"])
         if spec is not None:
-            out["specularColour"] = np.array(spec, np.float32)
+            out["specularColour"] = np.array(spec, np.float64)          # float64: gold's F0 reaches the manifest exactly
+            out["specularBasis"] = np.array(basis["specularColour"])
         for k in ("clean", "cleanProv", "clutter"):
             if k in parts:
                 out[k] = parts[k].astype(np.float16) if k == "clean" else parts[k]
@@ -8860,7 +9864,7 @@ def cmd_materials(cfg, rest) -> int:
         shares = {name: float((parts["prov"][region] == code).mean()) for name, code in PROVENANCE}
         index[sid] = {"model": model, "provenance": shares, "metalShare": float((metal[region] > 0.5).mean()),
                       "roughnessP50": float(np.median(rough[region])) if region.any() else None,
-                      "specularColour": spec, "credits": parts["credits"]}
+                      "specularColour": spec, "basis": basis, "credits": parts["credits"]}
         print(f"materials {sid}: {json.dumps(index[sid])}", flush=True)
     with open(os.path.join(folder, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, indent=1)
@@ -8878,7 +9882,7 @@ COMMANDS["materials"] = Command(run=_lazy("materials", "cmd_materials"), outputs
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_materials -v`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 6: Commit, build (twice) and check**
 
@@ -8892,7 +9896,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 cd tools/skins && C:/Python313/python.exe -m skins twice materials --config config/grand-hall.json
 ```
 
-Expected: `PASS`; `index.json` with every skin `skins-measured-v1`; the honours boards' lettering panels and every frieze skin with a metal share above zero and `specularColour` `[1.0, 0.78, 0.34]` (the frieze skins' metal mostly the gilt ground, a share near Task 12's `giltShare`), the plaster and canvases zero and `specularColour` null; the gilt ground's roughness near 0.40 and the mural's paint near 0.80; the blank panels' roughness median well below the plaster's; the frieze skins' `provenance.photo` above zero on the door and fireplace walls and their `credits` naming their photographs. Save the index as `D:/claude/skins/grand-hall/evidence/task13-materials.txt`. When the found-light reflectometry track has written its layers, rerun as `materials --measured <its root>` (its folder layout above) and Task 14 onward; nothing else changes.
+Expected: `PASS`; `index.json` with every skin `skins-measured-v1` and, with no measured layer yet, every `basis` a prior (`{roughness: "prior", specularColour: "prior"}` where the skin has metal); the honours boards' lettering panels and every frieze skin with a metal share above zero and `specularColour` `[1.0, 0.78, 0.34]` (the frieze skins' metal mostly the gilt ground, a share near Task 12's `giltShare`), the plaster and canvases zero and `specularColour` null; the gilt ground's roughness near 0.40 and the mural's paint near 0.80; the blank panels' roughness median well below the plaster's; the frieze skins' `provenance.photo` above zero on the door and fireplace walls and their `credits` naming their photographs. Save the index as `D:/claude/skins/grand-hall/evidence/task13-materials.txt`. When the found-light reflectometry track has written its layers, rerun as `materials --measured <its root>` (its folder layout above) and Task 14 onward; nothing else changes.
 
 ### Task 14: The skin package and its contract
 
@@ -8903,8 +9907,8 @@ Expected: `PASS`; `index.json` with every skin `skins-measured-v1`; the honours 
 - Test: `tools/skins/tests/test_package.py`
 
 **Interfaces:**
-- Consumes: Task 1 (`twice.verified`, `twice.file_sha256`: the packaging rule), Task 5 (`<work>/geometry/skins.json` entries: `id`, `group`, `style`, `material`, `texel`, `cols`, `rows`, `origin`, `uAxis`, `vAxis`, `normal`, `height` `{cell, cols, rows}`; `<id>/height-filled.npy`, `<id>/region.png`), Task 6 (`views.load_geometry`: `height` is the filled 5 mm field, `region`; `views.srgb_to_linear`), Task 8 (`<work>/light/<id>.npz`: `anchor`, `texel`), Task 10 (`heal.band_rows`, `heal.PROV_*` with `PROV_PHOTO`), Task 12 (`<work>/venue/photos.json`: `id`, `source`, `credit`, `copyright`, `photos[]` `craft`, `url`, `sha256`), Task 13 (`<work>/materials/<id>.npz`: `albedo`, `prov`, `roughness`, `metal`, `model`, `credits`, `specularColour` where the skin has metal, and `clean`, `cleanProv`, `clutter` where the skin has flat clutter; `<work>/materials/index.json`).
-- Produces (`package.py`): `SCHEMA = "venviewer.skins.v1"`, `TILE = 2048`, `WEBP_QUALITY = 92`, `HEIGHT_UNIT = 0.0001`, `SCALE_PERCENTILE = 99.9`, `RELIEF_STYLES = ("wainscot", "door", "upper", "ceiling")`, `MESH_SPACING_RELIEF = 0.02`, `MESH_SPACING_FLAT = 0.05`, `PSNR_MIN = 38.0`, `IDENTITY_STOPS = 0.05`; `srgb_encode(lin) -> uint8`; `tiles_of(cols, rows, tile=TILE) -> list[dict]` (`row`, `col`, `x`, `y`, `width`, `height`, row-major); `albedo_scale(samples: list[ndarray]) -> float`; `encode_albedo(albedo (h, w, 3), region (h, w) bool, scale) -> uint8 (h, w, 4)`; `encode_material(roughness, metal, prov, toggle) -> uint8 (h, w, 4)`; `webp_bytes(rgba) -> bytes`; `png_bytes(rgba) -> bytes`; `height_bytes(h) -> bytes`; `mesh_spacing(style) -> float`; `texel_to_model(entry) -> list[float]` (16, row-major); `psnr(a, b, mask) -> float`; `write_package(out, items, scale, inputs, venue, room, groups, tile=TILE, credit_source=None) -> dict` (the manifest; `ValueError` when an item names photographs and no credit is given); `verified_inputs(cfg, entries) -> dict` (`{name: sha256}` of every work artifact the package reads, each checked against its `twice` record: the packaging rule); `light_texel_mean(img, use, texel, light_texel, shape) -> (lh, lw, C)`; `identity_bias(mean, anchor) -> float | None`; the commands `python -m skins package` (writes `cfg.paths["out"]`) and `python -m skins package-check` (writes `<evidence>/package-check.json`, with `artifact` `{path, sha256, bytes}` of the manifest when it passes).
+- Consumes: Task 1 (`twice.verified` with `data`, `twice.file_sha256`: the packaging rule), Task 5 (`<work>/geometry/skins.json` entries: `id`, `group`, `style`, `material`, `texel`, `cols`, `rows`, `origin`, `uAxis`, `vAxis`, `normal`, `height` `{cell, cols, rows}`, `frieze` `{bandRow}`; `<id>/height-filled.npy` (the filled 5 mm field), `<id>/region.png`), Task 6 (`views.srgb_to_linear`), Task 8 (`<work>/light/<id>.npz`: `anchor`, `texel`), Task 10 (`heal.band_rows`, `heal.PROV_*` with `PROV_PHOTO`), Task 12 (`<work>/venue/photos.json`: `id`, `source`, `credit`, `copyright`, `photos[]` `craft`, `url`, `sha256`), Task 13 (`<work>/materials/<id>.npz`: `albedo`, `prov`, `roughness`, `metal`, `model`, `credits`, `specularColour` where the skin has metal, and `clean`, `cleanProv`, `clutter` where the skin has flat clutter; `<work>/materials/index.json`).
+- Produces (`package.py`): `SCHEMA = "venviewer.skins.v1"`, `TILE = 2048`, `WEBP_QUALITY = 92`, `HEIGHT_UNIT = 0.0001`, `SCALE_PERCENTILE = 99.9`, `RELIEF_STYLES = ("wainscot", "door", "upper", "ceiling")`, `MESH_SPACING_RELIEF = 0.02`, `MESH_SPACING_FLAT = 0.05`, `PSNR_MIN = 38.0`, `IDENTITY_STOPS = 0.05`; `srgb_encode(lin) -> uint8`; `tiles_of(cols, rows, tile=TILE) -> list[dict]` (`row`, `col`, `x`, `y`, `width`, `height`, row-major); `albedo_scale(samples: list[ndarray]) -> float`; `encode_albedo(albedo (h, w, 3), region (h, w) bool, scale) -> uint8 (h, w, 4)`; `encode_material(roughness, metal, prov, toggle) -> uint8 (h, w, 4)`; `webp_bytes(rgba) -> bytes`; `png_bytes(rgba) -> bytes`; `height_bytes(h) -> bytes`; `mesh_spacing(style) -> float`; `texel_to_model(entry) -> list[float]` (16, row-major); `psnr(a, b, mask) -> float`; `AXIS_TOLERANCE = 1e-6`, `MAX_SKIN_TEXELS = 16384`, `MAX_TEXEL = 0.05` (Task 16's schema bounds); `entry_problem(entry, height_cols, height_rows) -> str | None` (why the browser's schema would refuse a skin: its texel, its texel counts, axes not unit, orthogonal and `u × v = −normal`, or a height grid smaller than the skin); `write_package(out, items, scale, inputs, venue, room, groups, tile=TILE, credit_source=None) -> dict` (the manifest; `ValueError` when an item names photographs and no credit is given, or when `entry_problem` finds a skin the browser would refuse); `read_verified(cfg, command, path) -> (bytes, sha256)` (a work artifact read once and refused unless those bytes are the ones its `twice` record names; the package is built from those bytes, so what is packaged is what was hashed); `light_texel_mean(img, use, texel, light_texel, shape) -> (lh, lw, C)`; `identity_bias(mean, anchor) -> float | None`; the commands `python -m skins package` (writes `cfg.paths["out"]`) and `python -m skins package-check` (writes `<evidence>/package-check.json`, with `artifact` `{path, sha256, bytes}` of the manifest when it passes).
 - Produces (contract): `docs/engineering/skin-package.md`, the normative description of `venviewer.skins.v1` that Task 16's schema implements.
 
 The package carries everything a skin needs except its light, which lives in relight package v2 because it is the relight model's (Task 15). Albedo is stored in the relight model's units: albedo × captured light is the hall's displayed linear colour. It is encoded as 8-bit sRGB of `albedo / albedoScale`, with one `albedoScale` for the package: the 99.9th percentile of every skin's brightest channel, rounded up to three significant figures. The browser multiplies by it after the sRGB texture fetch. Region is the albedo tile's alpha (255 drawn, 0 not), so the browser's alpha test cuts each skin exactly where Task 5 cut it.
@@ -8930,7 +9934,7 @@ Clean tiles exist only where a clutter mask touches a tile. Heights are the fill
 
 The identity check is what makes a skin continuous with the splats around it at the captured light. Its median is the bias: the restoration's local differences (glare removed, healed marks) are expected, a brightness offset is not.
 
-(Amended 7 October.) **Exact, hash-checked inputs** (the owner's packaging rule): `package` reads only named work artifacts (each skin's `materials/<id>.npz`, `geometry/<id>/height-filled.npy` and `region.png`, `geometry/skins.json`, `materials/index.json`, `venue/photos.json`), never a glob, and only when each file's SHA-256 is the one the `twice` record of the command that made it names (`twice.verified`); the manifest's `inputs` records every one of them by name. `package-check` then records the manifest's own SHA-256 as its `artifact`, which Task 15 checks before relight package v2 names the package. **Gilding and credit**: a skin with metal carries its specular colour (`material.specularColour`, gold leaf's F0 or a measured layer's), which R1d's sheen uses for the metal's Fresnel; the provenance shares gain `photo` (observed, venue photo); the manifest's `credits` names the venue's photographs the skins use (source, credit, copyright, and each photograph's craft, URL and SHA-256), and each skin lists its own (`credits: [{ id, photos }]`). A skin that names photographs with no credit to carry is refused.
+(Amended 7 October.) **Exact, hash-checked inputs** (the owner's packaging rule): `package` reads only named work artifacts (each skin's `materials/<id>.npz`, `geometry/<id>/height-filled.npy` and `region.png`, `geometry/skins.json`, `materials/index.json`, `venue/photos.json`), never a glob, and only when each file's SHA-256 is the one the `twice` record of the command that made it names (`twice.verified`); the manifest's `inputs` records every one of them by name. Each file is read once and decoded from the very bytes that were checked (`read_verified`; pre-flight fix, 8 October), so no file can change between its check and its use. The writer also refuses any skin the browser's schema would refuse (`entry_problem`), so such a skin stops `package`, not the browser in Task 23. `package-check` then records the manifest's own SHA-256 as its `artifact`, which Task 15 checks before relight package v2 names the package. **Gilding and credit**: a skin with metal carries its specular colour (`material.specularColour`, gold leaf's F0 or a measured layer's), which R1d's sheen uses for the metal's Fresnel; the provenance shares gain `photo` (observed, venue photo); the manifest's `credits` names the venue's photographs the skins use (source, credit, copyright, and each photograph's craft, URL and SHA-256), and each skin lists its own (`credits: [{ id, photos }]`). A skin that names photographs with no credit to carry is refused.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -8949,19 +9953,22 @@ def smooth(rows, cols, seed):
     return (base * (1 + 0.2 * np.cos(yy / 5.0))[..., None]).astype(np.float32)
 
 
-def item(sid, cols, rows, group=0, toggle_at=None):
+def item(sid, cols, rows, group=0, toggle_at=None, boxes=()):
     region = np.ones((rows, cols), bool); region[:2, :3] = False
     toggle = clean = None
     if toggle_at is not None:
         toggle = np.zeros((rows, cols), np.uint8); r, c = toggle_at; toggle[r:r + 3, c:c + 3] = 1
         clean = smooth(rows, cols, 9.0)
+    hc, hr = int(np.ceil(cols * 0.002 / 0.005 - 1e-9)), int(np.ceil(rows * 0.002 / 0.005 - 1e-9))   # covers the skin
+    # a wall seen from the room at -y: u x v = (1, 0, 0) x (0, 0, -1) = (0, 1, 0) = -normal
     entry = {"id": sid, "group": group, "style": "wainscot", "material": "mahogany", "texel": 0.002, "cols": cols, "rows": rows,
-             "origin": [0.0, 0.0, 1.0], "uAxis": [1.0, 0.0, 0.0], "vAxis": [0.0, 0.0, -1.0], "normal": [0.0, 1.0, 0.0],
-             "height": {"cell": 0.005, "cols": 4, "rows": 3}}
+             "origin": [0.0, 0.0, 1.0], "uAxis": [1.0, 0.0, 0.0], "vAxis": [0.0, 0.0, -1.0], "normal": [0.0, -1.0, 0.0],
+             "height": {"cell": 0.005, "cols": hc, "rows": hr}, "toggleBoxes": list(boxes)}
     return {"entry": entry, "albedo": smooth(rows, cols, float(group)), "region": region,
             "roughness": np.full((rows, cols), 77, np.uint8), "metal": np.zeros((rows, cols), np.uint8),
             "prov": np.zeros((rows, cols), np.uint8), "toggle": toggle, "clean": clean,
-            "height": np.linspace(-0.01, 0.02, 12, dtype=np.float32).reshape(3, 4), "model": "skins-measured-v1"}
+            "height": np.linspace(-0.01, 0.02, hr * hc, dtype=np.float32).reshape(hr, hc), "model": "skins-measured-v1",
+            "roughnessBasis": "prior", "specularBasis": None}
 
 
 def write(out, items, tile=32):
@@ -8981,7 +9988,17 @@ class Pieces(unittest.TestCase):
     def test_texel_to_model_takes_an_index_to_its_centre(self):
         M = np.array(P.texel_to_model(item("door-w2", 40, 30)["entry"])).reshape(4, 4)
         np.testing.assert_allclose(M @ [0, 0, 0, 1], [0.001, 0.0, 0.999, 1.0], atol=1e-12)
-        np.testing.assert_allclose(M @ [3, 2, 0.01, 1], [0.007, 0.01, 0.995, 1.0], atol=1e-12)
+        np.testing.assert_allclose(M @ [3, 2, 0.01, 1], [0.007, -0.01, 0.995, 1.0], atol=1e-12)
+
+    def test_a_skin_the_browser_would_refuse_is_refused(self):
+        good = item("door-w2", 40, 30)
+        self.assertIsNone(P.entry_problem(good["entry"], 16, 12))
+        mirrored = {**good["entry"], "normal": [0.0, 1.0, 0.0]}                        # u x v = +normal: mirrored
+        self.assertIn("u x v", P.entry_problem(mirrored, 16, 12))
+        self.assertIn("height grid", P.entry_problem(good["entry"], 4, 3))
+        self.assertIn("texel", P.entry_problem({**good["entry"], "texel": 0.06}, 16, 12))
+        with self.assertRaises(ValueError):
+            write(tempfile.mkdtemp(), [{**good, "entry": mirrored}])
 
 
 class Write(unittest.TestCase):
@@ -8989,7 +10006,7 @@ class Write(unittest.TestCase):
 
     def setUp(self):
         self.out = tempfile.mkdtemp()
-        self.items = [item("door-w2", 40, 30, 0, toggle_at=(5, 34)), item("ceiling-1", 20, 20, 4)]
+        self.items = [item("door-w2", 40, 30, 0, toggle_at=(5, 34), boxes=(1,)), item("ceiling-1", 20, 20, 4)]
         self.manifest = write(self.out, self.items)
 
     def read(self, rel):
@@ -9019,13 +10036,15 @@ class Write(unittest.TestCase):
         rgba = np.asarray(Image.open(io.BytesIO(self.read(t["material"]))))
         self.assertEqual(rgba.shape, (t["height"], t["width"], 4))
         self.assertTrue((rgba[..., 0] == 77).all())
-        h = np.frombuffer(gzip.decompress(self.read(skin["height"]["file"])), "<i2").reshape(3, 4) * P.HEIGHT_UNIT
+        h = np.frombuffer(gzip.decompress(self.read(skin["height"]["file"])), "<i2").reshape(skin["height"]["rows"], skin["height"]["cols"]) * P.HEIGHT_UNIT
         np.testing.assert_allclose(h, self.items[0]["height"], atol=P.HEIGHT_UNIT / 2 + 1e-9)
 
     def test_clean_tiles_only_where_the_clutter_touches(self):
         self.assertEqual([t["clean"] is not None for t in self.manifest["skins"][0]["tiles"]], [False, True])
         self.assertEqual(self.manifest["skins"][0]["toggles"], [1])
         self.assertEqual(self.manifest["skins"][1]["toggles"], [])
+        # the standing objects whose clean version a skin holds (Task 5): the browser hides them only while it draws
+        self.assertEqual([s["toggleBoxes"] for s in self.manifest["skins"]], [[1], []])
 
     def test_the_package_is_deterministic(self):
         again = tempfile.mkdtemp()
@@ -9039,7 +10058,7 @@ class Credits(unittest.TestCase):
     def test_photographs_used_are_credited_and_gilding_carries_its_colour(self):
         groups = ["door", "window", "end_xmin", "end_xmax", "ceiling"]
         frieze = item("door-f3", 40, 30, 0)
-        frieze.update({"credits": ["Bonnetmakers and Dyers"], "specularColour": [1.0, 0.78, 0.34]})
+        frieze.update({"credits": ["Bonnetmakers and Dyers"], "specularColour": [1.0, 0.78, 0.34], "specularBasis": "prior"})
         frieze["prov"][20:, :] = 3                                                  # the lowest rows drawn by the photograph
         source = {"id": "trades-house-virtual-museum", "source": "museum", "credit": "George Mahoney and the Trades House",
                   "copyright": "c", "photos": [{"craft": "Bonnetmakers and Dyers", "url": "https://example.test/b.jpg", "sha256": "e" * 64},
@@ -9051,6 +10070,11 @@ class Credits(unittest.TestCase):
         self.assertEqual(m["skins"][1]["credits"], [])
         self.assertEqual(m["skins"][0]["material"]["specularColour"], [1.0, 0.78, 0.34])
         self.assertIsNone(m["skins"][1]["material"]["specularColour"])
+        self.assertEqual([s["material"]["basis"] for s in m["skins"]],                  # the gilding's values are priors
+                         [{"roughness": "prior", "specularColour": "prior"}, {"roughness": "prior", "specularColour": None}])
+        with self.assertRaises(ValueError):                                          # a specular colour with no basis
+            P.write_package(tempfile.mkdtemp(), [dict(frieze, specularBasis=None)], 0.5, {"layout": "a" * 64},
+                            "trades-hall", "grand-hall", groups, tile=32, credit_source=source)
         self.assertGreater(m["skins"][0]["provenance"]["photo"], 0.3)
         with self.assertRaises(ValueError):                                          # used, but not credited
             P.write_package(tempfile.mkdtemp(), [frieze], 0.5, {}, "trades-hall", "grand-hall", groups, tile=32)
@@ -9090,13 +10114,15 @@ manifest with a SHA-256 and size per file. Deterministic: the same inputs give t
 from __future__ import annotations
 
 import gzip, hashlib, io, json, math, os, posixpath
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
 
-from . import frames as F, heal as HL, twice as TW, views as VW
+from . import heal as HL, twice as TW, views as VW
 
 SCHEMA = "venviewer.skins.v1"
+MATERIAL_BASES = ("prior", "measured")      # material.basis: designed values, or a measured layer's (8 October)
 TILE = 2048
 WEBP_QUALITY = 92
 HEIGHT_UNIT = 0.0001
@@ -9105,6 +10131,10 @@ RELIEF_STYLES = ("wainscot", "door", "upper", "ceiling")
 MESH_SPACING_RELIEF, MESH_SPACING_FLAT = 0.02, 0.05
 PSNR_MIN = 38.0
 IDENTITY_STOPS = 0.05
+# the browser's schema (Task 16, skin-manifest.ts): what it would refuse, the writer refuses first
+AXIS_TOLERANCE = 1e-6
+MAX_SKIN_TEXELS = 16384
+MAX_TEXEL = 0.05
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 PROVENANCE = (("observed", HL.PROV_OBSERVED), ("photo", HL.PROV_PHOTO), ("recovered", HL.PROV_RECOVERED),
               ("reconstructed", HL.PROV_RECONSTRUCTED))
@@ -9174,6 +10204,26 @@ def texel_to_model(entry):
     return [float(x) for x in M.ravel()]
 
 
+def entry_problem(entry, height_cols, height_rows):
+    """Why the browser's schema would refuse a skin, or None: its texel within (0, MAX_TEXEL], 2 to MAX_SKIN_TEXELS
+    columns and rows, its axes unit, orthogonal and u x v = -normal (the texture seen from the room, never mirrored),
+    and its height grid at least as large as the skin."""
+    t, cols, rows = float(entry["texel"]), int(entry["cols"]), int(entry["rows"])
+    if not 0 < t <= MAX_TEXEL:
+        return f"its texel {t} m is outside (0, {MAX_TEXEL}]"
+    if not (2 <= cols <= MAX_SKIN_TEXELS and 2 <= rows <= MAX_SKIN_TEXELS):
+        return f"its {cols} x {rows} texels are outside 2 to {MAX_SKIN_TEXELS}"
+    u, v, n = (np.asarray(entry[k], np.float64) for k in ("uAxis", "vAxis", "normal"))
+    unit = all(abs(float(a @ a) - 1) <= AXIS_TOLERANCE for a in (u, v, n))
+    orthogonal = all(abs(float(x)) <= AXIS_TOLERANCE for x in (u @ v, u @ n, v @ n))
+    if not (unit and orthogonal and float(np.abs(np.cross(u, v) + n).max()) <= AXIS_TOLERANCE):
+        return "its axes are not unit, orthogonal and u x v = -normal"
+    cell = float(entry["height"]["cell"])
+    if height_cols * cell < cols * t - 1e-6 or height_rows * cell < rows * t - 1e-6:
+        return "its height grid is smaller than the skin"
+    return None
+
+
 def psnr(a, b, mask):
     d = (np.asarray(a, np.float64) @ LUMA - np.asarray(b, np.float64) @ LUMA)[mask]
     mse = float((d * d).mean()) if d.size else 0.0
@@ -9211,6 +10261,9 @@ def write_package(out, items, scale, inputs, venue, room, groups, tile=TILE, cre
                 clean = put(posixpath.join(sid, f"clean-{name}.webp"), webp_bytes(encode_albedo(it["clean"][ys, xs], it["region"][ys, xs], scale)))
             tiles.append({**t, "albedo": albedo, "material": material, "clean": clean})
         hrows, hcols = it["height"].shape
+        problem = entry_problem(e, hcols, hrows)
+        if problem is not None:
+            raise ValueError(f"{sid}: {problem}; the browser would refuse the package")
         height = put(posixpath.join(sid, "height.i16.gz"), height_bytes(it["height"]))
         prov = it["prov"][it["region"]]
         shares = {name: (round(float((prov == code).mean()), 6) if prov.size else 0.0) for name, code in PROVENANCE}
@@ -9219,16 +10272,20 @@ def write_package(out, items, scale, inputs, venue, room, groups, tile=TILE, cre
             raise ValueError(f"{sid} names photographs {crafts} but no credit was given")
         used.update(crafts)
         spec = it.get("specularColour")
+        basis = {"roughness": it["roughnessBasis"], "specularColour": None if spec is None else it["specularBasis"]}
+        if basis["roughness"] not in MATERIAL_BASES or (spec is not None and basis["specularColour"] not in MATERIAL_BASES):
+            raise ValueError(f"{sid}: material basis {basis}: each value is a prior or measured")
         skins.append({"id": sid, "group": int(e["group"]), "style": e["style"],
                       "material": {"model": str(it["model"]), "class": e["material"],
-                                   "specularColour": None if spec is None else [float(x) for x in spec]},
+                                   "specularColour": None if spec is None else [float(x) for x in spec], "basis": basis},
                       "credits": [{"id": credit_source["id"], "photos": crafts}] if crafts else [],
                       "texel": float(e["texel"]), "cols": int(e["cols"]), "rows": int(e["rows"]),
                       "texelToModel": texel_to_model(e), "origin": [float(x) for x in e["origin"]],
                       "uAxis": [float(x) for x in e["uAxis"]], "vAxis": [float(x) for x in e["vAxis"]],
                       "normal": [float(x) for x in e["normal"]], "meshSpacing": mesh_spacing(e["style"]),
                       "height": {"file": height, "cell": float(e["height"]["cell"]), "cols": int(hcols), "rows": int(hrows), "unit": HEIGHT_UNIT},
-                      "tiles": tiles, "toggles": sorted({int(v) for v in np.unique(toggle_all) if v}), "provenance": shares})
+                      "tiles": tiles, "toggles": sorted({int(v) for v in np.unique(toggle_all) if v}),
+                      "toggleBoxes": sorted({int(b) for b in e["toggleBoxes"]}), "provenance": shares})
     credits = []
     if used:
         by_craft = {p["craft"]: p for p in credit_source["photos"]}
@@ -9275,52 +10332,65 @@ def _sha(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def _entries(cfg):
-    with open(os.path.join(cfg.paths["work"], "geometry", "skins.json"), encoding="utf-8") as f:
-        return json.load(f)["skins"]
+def read_verified(cfg, command, path):
+    """A work artifact's bytes, read once and refused (ValueError) unless they are the bytes the twice record of the
+    command that made it names (the owner's packaging rule): what is packaged is exactly what was hashed. -> (bytes,
+    sha256)."""
+    with open(path, "rb") as f:
+        data = f.read()
+    return data, TW.verified(cfg.paths["evidence"], command, path, data)
 
 
-def _item(cfg, e, surfaces):
-    geom = VW.load_geometry(cfg.paths["work"], e["id"], surfaces)
-    with np.load(os.path.join(cfg.paths["work"], "materials", f"{e['id']}.npz")) as z:
+def _entries(cfg, inputs=None):
+    data, sha = read_verified(cfg, "geometry", os.path.join(cfg.paths["work"], "geometry", "skins.json"))
+    if inputs is not None:
+        inputs["skinsJson"] = sha
+    return json.loads(data)["skins"]
+
+
+def _item(cfg, e, inputs=None):
+    """One skin's maps: its materials and its geometry's height field and region, each file read once and only as the
+    bytes its double run recorded; `inputs` collects their SHA-256 by name for the manifest."""
+    w, sid = cfg.paths["work"], e["id"]
+    files = {f"materials/{sid}.npz": ("materials", os.path.join(w, "materials", f"{sid}.npz")),
+             f"geometry/{sid}/height-filled.npy": ("geometry", os.path.join(w, "geometry", sid, "height-filled.npy")),
+             f"geometry/{sid}/region.png": ("geometry", os.path.join(w, "geometry", sid, "region.png"))}
+    got = {}
+    for name, (command, path) in files.items():
+        got[name], sha = read_verified(cfg, command, path)
+        if inputs is not None:
+            inputs[name] = sha
+    with np.load(io.BytesIO(got[f"materials/{sid}.npz"])) as z:
         m = {k: z[k] for k in z.files}
-    return {"entry": e, "geom": geom, "albedo": m["albedo"].astype(np.float32), "region": geom.region > 0,
+    region = np.asarray(Image.open(io.BytesIO(got[f"geometry/{sid}/region.png"]))) > 0
+    height = np.load(io.BytesIO(got[f"geometry/{sid}/height-filled.npy"])).astype(np.float32)
+    fz = e.get("frieze") or {}
+    return {"entry": e, "skin": SimpleNamespace(style=e["style"], frieze_band_row=fz.get("bandRow")),
+            "albedo": m["albedo"].astype(np.float32), "region": region,
             "roughness": m["roughness"], "metal": m["metal"], "prov": m["prov"], "toggle": m.get("clutter"),
             "clean": m["clean"].astype(np.float32) if "clean" in m else None,
-            "height": geom.height.astype(np.float32), "model": str(m["model"]),
+            "height": height, "model": str(m["model"]),
             "credits": [str(c) for c in m["credits"]] if "credits" in m else [],
-            "specularColour": [float(x) for x in m["specularColour"]] if "specularColour" in m else None}
-
-
-def verified_inputs(cfg, entries):
-    """Every work artifact the package reads, by name, each refused unless its SHA-256 is the one the twice record of
-    the command that made it names (the owner's packaging rule, 7 October): {name: sha256} for the manifest's inputs."""
-    w, ev = cfg.paths["work"], cfg.paths["evidence"]
-    names = {"skinsJson": ("geometry", os.path.join(w, "geometry", "skins.json")),
-             "materialsIndex": ("materials", os.path.join(w, "materials", "index.json")),
-             "venuePhotos": ("frieze-venue", os.path.join(w, "venue", "photos.json"))}
-    for e in entries:
-        names[f"materials/{e['id']}.npz"] = ("materials", os.path.join(w, "materials", f"{e['id']}.npz"))
-        names[f"geometry/{e['id']}/height-filled.npy"] = ("geometry", os.path.join(w, "geometry", e["id"], "height-filled.npy"))
-        names[f"geometry/{e['id']}/region.png"] = ("geometry", os.path.join(w, "geometry", e["id"], "region.png"))
-    return {name: TW.verified(ev, command, path) for name, (command, path) in names.items()}
+            "specularColour": [float(x) for x in m["specularColour"]] if "specularColour" in m else None,
+            "roughnessBasis": str(m["roughnessBasis"]), "specularBasis": str(m["specularBasis"]) if "specularBasis" in m else None}
 
 
 def cmd_package(cfg, rest) -> int:
-    surfaces = F.read_surfaces(cfg.paths["surfaces"])
-    entries = _entries(cfg)
+    w = cfg.paths["work"]
+    inputs = {}
+    entries = _entries(cfg, inputs)
+    _index, inputs["materialsIndex"] = read_verified(cfg, "materials", os.path.join(w, "materials", "index.json"))
+    photos, inputs["venuePhotos"] = read_verified(cfg, "frieze-venue", os.path.join(w, "venue", "photos.json"))
+    credit_source = json.loads(photos)
     samples = []
-    for e in entries:
-        it = _item(cfg, e, surfaces)
+    for e in entries:                                              # first pass: the package's albedo scale
+        it = _item(cfg, e)
         samples.append(it["albedo"][::4, ::4][it["region"][::4, ::4]].max(-1))
     scale = albedo_scale(samples)
-    inputs = {**verified_inputs(cfg, entries),                     # the packaging rule: before any byte is packaged
-              "layout": _sha(cfg.resolve("layout")),
-              "relightV1Manifest": _sha(os.path.join(cfg.paths["splats"], "relight", "v1", "manifest.json"))}
-    with open(os.path.join(cfg.paths["work"], "venue", "photos.json"), encoding="utf-8") as f:
-        credit_source = json.load(f)
+    inputs.update({"layout": _sha(cfg.resolve("layout")),
+                   "relightV1Manifest": _sha(os.path.join(cfg.paths["splats"], "relight", "v1", "manifest.json"))})
     os.makedirs(cfg.paths["out"], exist_ok=True)
-    items = (_item(cfg, e, surfaces) for e in entries)
+    items = (_item(cfg, e, inputs) for e in entries)                 # each skin's files verified again as they are packaged
     manifest = write_package(cfg.paths["out"], items, scale, inputs, cfg.room["venue"], cfg.room["slug"], cfg.room["groups"],
                              credit_source=credit_source)
     total = sum(v["bytes"] for v in manifest["files"].values())
@@ -9332,7 +10402,6 @@ def cmd_package_check(cfg, rest) -> int:
     out = cfg.paths["out"]
     with open(os.path.join(out, "manifest.json"), encoding="utf-8") as f:
         manifest = json.load(f)
-    surfaces = F.read_surfaces(cfg.paths["surfaces"])
     entries = {e["id"]: e for e in _entries(cfg)}
     problems, report = [], {"skins": {}}
 
@@ -9348,7 +10417,7 @@ def cmd_package_check(cfg, rest) -> int:
     keys = ("row", "col", "x", "y", "width", "height")
     for skin in manifest["skins"]:
         sid = skin["id"]
-        it = _item(cfg, entries[sid], surfaces)
+        it = _item(cfg, entries[sid])
         if [{k: t[k] for k in keys} for t in skin["tiles"]] != [{k: t[k] for k in keys} for t in tiles_of(skin["cols"], skin["rows"], manifest["tile"])]:
             problems.append(f"{sid}: tiles do not cover the skin")
         decoded = np.zeros((skin["rows"], skin["cols"], 3), np.float64)
@@ -9373,7 +10442,7 @@ def cmd_package_check(cfg, rest) -> int:
         with np.load(os.path.join(cfg.paths["work"], "light", f"{sid}.npz")) as z:
             anchor, lt = z["anchor"].astype(np.float64), float(z["texel"])
         use = it["region"] & (it["prov"] == HL.PROV_OBSERVED)
-        use[HL.band_rows(it["geom"], skin["texel"], skin["rows"])] = False
+        use[HL.band_rows(it["skin"], skin["texel"], skin["rows"])] = False
         bias = identity_bias(light_texel_mean(decoded, use, skin["texel"], lt, anchor.shape[:2]), anchor)
         if bias is not None and abs(bias) > IDENTITY_STOPS:
             problems.append(f"{sid}: captured-light bias {bias:+.3f} stops")
@@ -9408,7 +10477,7 @@ COMMANDS["package-check"] = Command(run=_lazy("package", "cmd_package_check"), o
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_package -v`
-Expected: PASS, 10 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 6: Write the contract**
 
@@ -9452,10 +10521,13 @@ x = c·tile and y = r·tile, the last ones shorter. A `.gz` file is served as `a
   Glasgow), empty when none is used.
 - `skins[]`, each:
   - `id`, `group` (0–4), `style` (wainscot, picture, frieze, upper, ceiling, canvas, lettering, blank, door, clock),
-    `material` `{ model, class, specularColour }`: `model` names the method of the material maps
+    `material` `{ model, class, specularColour, basis }`: `model` names the method of the material maps
     (`skins-measured-v1` for R1c's own, or a measured layer's model, Task 13's import), `class` the surface material,
     `specularColour` the metal's F0 (linear RGB; gold leaf's `[1.0, 0.78, 0.34]` for gilding, or a measured layer's)
-    for a skin with metal, else null;
+    for a skin with metal, else null; `basis` `{ roughness, specularColour }`: `"prior"` where the value is designed
+    (R1c's class roughness, the gilding's 0.40, gold leaf's F0), `"measured"` where a measured-material layer gave it,
+    the specular colour's null exactly when the skin has none (amended 8 October: a prior is never shown as a
+    measurement);
   - `credits` `[{ id, photos: [craft] }]`: the credited photographs this skin uses (empty for most skins);
   - `texel` (metres), `cols`, `rows`;
   - `origin`, `uAxis`, `vAxis`, `normal` (model frame): the bay plane's corner at the skin's top-left, the column
@@ -9467,6 +10539,8 @@ x = c·tile and y = r·tile, the last ones shorter. A `.gz` file is served as `a
     origin along each axis), at least as large as the skin;
   - `tiles[]` `{ row, col, x, y, width, height, albedo, material, clean }` (`clean` null where none);
   - `toggles` (the clutter toggles in the skin's material tiles: 1 clutter, 2 cabinet);
+  - `toggleBoxes` (the toggles whose objects stand in front of the skin and fall on its rectangle: its region holds
+    their clean version);
   - `provenance` `{ observed, photo, recovered, reconstructed }`: shares of the region.
 
 ## Colour and light
@@ -9492,6 +10566,13 @@ A texel whose material alpha is a toggle t shows the clean tile while bit `1 << 
 `hiddenToggles` is set. A wall group whose skins are all valid replaces its covered splats (relight record class 7);
 any missing or invalid skin returns its whole group to splats, with one warning.
 
+A toggle's own splats (the loudspeakers and loose clutter, the cabinet) are hidden only while the user hides it and
+every wall group holding its clean version is drawn as skins: the groups of the skins whose `toggleBoxes` or `toggles`
+name it, refused or not. While the skins load, for a refused group and with the skins off, the objects stay, since the
+capture saw little of the wall behind them; the user's choice is kept, so they vanish when their walls are drawn (the
+controller's ruling T1, 8 October). `defaultHidden` (relight package v2's `visibility`) is the default choice, not
+what is drawn.
+
 ## Determinism and checks
 
 The same inputs give the same bytes (`gzip` with `mtime = 0`, PNG and WebP from the same encoder settings). The
@@ -9502,8 +10583,8 @@ build reads only named work artifacts, never a glob, each only when its SHA-256 
 - the tiling;
 - lossless material and heights;
 - albedo PSNR of at least 38 dB on luma, with alpha equal to the region;
-- the captured-light bias of each skin against its covered splats: median within 1/20 stop at the 5 cm light
-  texels, over observed texels outside the frieze band;
+- the captured-light bias of each skin against its covered splats: median within 1/20 stop at the light texels
+  (5 cm; 2 cm on the frieze), over observed texels outside the frieze band;
 - that the folder holds no file the manifest does not name;
 
 and records the manifest's SHA-256, which relight package v2 pins (`skins.manifestSha256`).
@@ -9539,7 +10620,7 @@ Expected: `PASS` from both. `package-check.json` has every skin's PSNR at or abo
 
 **Interfaces:**
 - Consumes: R1a as amended (A1 `codec.CLASS_SKIN`, `SKIN_GROUP_SHIFT`, `TOGGLE_SHIFT`; A3 `records --skins`; A4 `skin-light`, run in Task 8, and its `<relight work>/skin-light/`; A5 `records --skin-light --skin-package --out`, `check --package`, the manifest's `skins` and `visibility` sections); Task 5 (`<work>/geometry/covers.npz`, `toggles.json`); Task 14 (the skin package in `cfg.paths["out"]`, and `package-check.json`'s `pass` and `artifact`: the manifest SHA-256 the package rule lets v2 name); `lightstates.relight_modules(cfg)` (Task 8).
-- Produces (`relightv2.py`): `RECORD_BYTES = 12`, `CLASS_MASK = 0b111`, `CLASS_INTERIOR = 0`, `CLASS_SKIN = 7`, `SKIN_GROUP_SHIFT = 5`, `TOGGLE_SHIFT = 6`, `KEPT_FLAGS = 0b0001_1000` (`FLAG_ISO | FLAG_SUN`); `compare_records(v1: bytes, v2: bytes) -> dict` (`count`, `unchanged`, `covered` `{group: n}`, `toggled` `{toggle: n}`, `other`); `model_differences(m1: dict, m2: dict) -> list[str]` (the manifest keys other than `tiles`, `files`, `skins`, `visibility`, `evidence`, `createdAt` and `tool` whose values differ); `cmd_v2_check(cfg, rest)` writing `<evidence>/relight-v2.json` (with `artifact`, v2's manifest SHA-256, when it passes; Task 24 publishes against it); relight package v2 in `<splats>/relight/v2/`.
+- Produces (`relightv2.py`): `RECORD_BYTES = 12`, `CLASS_MASK = 0b111`, `CLASS_INTERIOR = 0`, `CLASS_SKIN = 7`, `SKIN_GROUP_SHIFT = 5`, `TOGGLE_SHIFT = 6`, `KEPT_FLAGS = 0b0001_1000` (`FLAG_ISO | FLAG_SUN`); `compare_records(v1: bytes, v2: bytes) -> dict` (`count`, `unchanged`, `covered` `{group: n}`, `toggled` `{toggle: n}`, `other`); `model_differences(m1: dict, m2: dict) -> list[str]` (the manifest keys other than `tiles`, `files`, `skins`, `visibility`, `evidence`, `createdAt` and `tool` whose values differ); `SKIN_RATE_SETTINGS`; `package_windows(W, folder, manifest) -> (volumes, horizons, fresnel)` (the package's window volumes as R1a's check builds them; `W` is `relight.windows`); `sun_grid_points(entry) -> (n, 3)` (a v2 skin entry's sun-grid texel points, model frame); `skin_wall_face_rate(W, volumes, horizons, fresnel, P, directions) -> {texels, marched, wallFace}` (R1a's public `windows.wall_face_rate` over the points, its counts summed over the directions; amended 8 October: R1c no longer repeats the measurement); `cmd_v2_check(cfg, rest)` writing `<evidence>/relight-v2.json` (with `skinWallFaceRate` `{ texels, marched, wallFace }`, the skins' own wall-face rate over every sun-grid texel at R1a's two directions, with which Task 23 caps the sun grids' rounding excuses; and `artifact`, v2's manifest SHA-256, when it passes; Task 24 publishes against it); relight package v2 in `<splats>/relight/v2/`.
 
 Relight package v2 is relight package v1 with two differences. The records' flags mark covered splats and toggled ones, and the manifest gains the skins' light and the visibility section (amendment A5). The light model, every splat, every other byte of every record, the probes, the windows and the floor stay exactly as in v1. `v2-check` proves it, so the relit hall with every wall group drawn as splats is v1's relit hall. The double-run rule applies to R1a's `records` by hand: it runs twice into two folders, which must agree byte for byte. R1a's own determinism check covers one writer; this covers the whole run. (Amended 7 October, the packaging rule.) v2 names only the skin package `package-check` passed (its recorded manifest SHA-256), and R1a's `records` reads the skins' light only as R1a's `skin-light.json` records it; `v2-check` checks both and records v2's own manifest SHA-256. The sky bodies' bounce is unchanged from v1 (`sky` is a model section `v2-check` holds equal), so the skins and the splats share it.
 
@@ -9548,9 +10629,13 @@ Relight package v2 is relight package v1 with two differences. The records' flag
 `tools/skins/tests/test_relightv2.py`:
 
 ```python
-import unittest
+import gzip, os, sys, tempfile, unittest
 import numpy as np
 from skins import relightv2 as R
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(HERE, "..", "relight"))
+from relight import windows as W  # noqa: E402  (R1a's numpy window march)
 
 
 def records(flags):
@@ -9587,6 +10672,30 @@ class Manifest(unittest.TestCase):
         m2 = dict(m1, tiles=[2], files={"b": 2}, evidence={"x": 2}, skins={}, visibility={}, createdAt="later", tool="relight 2")
         self.assertEqual(R.model_differences(m1, m2), [])
         self.assertEqual(R.model_differences(m1, dict(m2, probes={"file": "q"})), ["probes"])
+
+
+class WallFace(unittest.TestCase):
+    def test_marched_rays_whose_first_sample_sits_between_unlike_cells_are_counted(self):
+        # one window: 3 cm cells from the grid's corner at 0, the wall's inner face y0 = 0.30 (cell boundary 10),
+        # the glass 24 cm back; the cells just inside the wall (row 9) are opaque from column 10 on
+        frame = np.array([0, 0, 0, 0.03, 20, 12, 30, 0.0, 0.6, 0.24, 0.0, 0.9, 0, 0.30, 0.0, 0, 0, 0, 0, 0, 0], np.float64)
+        alpha = np.zeros((20, 12, 30), np.uint8); alpha[10:, 9, :] = 255
+        folder = tempfile.mkdtemp()
+        os.makedirs(os.path.join(folder, "windows"))
+        with open(os.path.join(folder, "windows", "W1.alpha.gz"), "wb") as f:
+            f.write(gzip.compress(alpha.tobytes(), mtime=0))
+        manifest = {"windows": [{"id": "W1", "frame": frame.tolist(), "volume": "windows/W1.alpha.gz", "horizon": [0.0] * 360}],
+                    "sun": {"fresnel": [1.0] * 101}}
+        volumes, horizons, fresnel = R.package_windows(W, folder, manifest)
+        entry = {"sun": {"size": [16, 1], "texelToModel": [0.03, 0, 0, 0.105, 0, 0, 0, 0.5, 0, 0, 0, 0.3, 0, 0, 0, 1]}}
+        P = R.sun_grid_points(entry)                       # x 0.105 .. 0.555 in 3 cm steps at y 0.5, z 0.3
+        np.testing.assert_allclose(P[[0, 15]], [[0.105, 0.5, 0.3], [0.555, 0.5, 0.3]], atol=1e-12)
+        s = np.array([0.0, -1.0, 0.4]) / np.hypot(1.0, 0.4)
+        # columns 3..17: the 15 rays inside the outline are marched (x 0.555 is not: it enters within 5 cm of the side);
+        # the 8 from column 10 on start between a clear and an opaque cell (R1a's measurement on these points)
+        self.assertEqual(W.wall_face_rate(volumes, horizons, fresnel, P, s), {"marched": 15, "wallFace": 8})
+        up = np.array([0.0, 1.0, 0.3]) / np.hypot(1.0, 0.3)                       # away from the window: nothing marched
+        self.assertEqual(R.skin_wall_face_rate(W, volumes, horizons, fresnel, P, [s, up, s]), {"texels": 16, "marched": 30, "wallFace": 16})
 
 
 if __name__ == "__main__":
@@ -9649,6 +10758,42 @@ def _read(folder, rel):
         return f.read()
 
 
+# The directions of R1a's wall-face rate (R1a Task 5 Step 7): the sunny morning's Sun and moon_test's Moon, read from
+# the settings R1a writes into R1b's vectors fixture.
+SKIN_RATE_SETTINGS = (("sunny_morning", "sunDir"), ("moon_test", "moonDir"))
+
+
+def package_windows(W, folder, manifest):
+    """The package's window volumes (in order W1..W5), horizons and glass table, as R1a's check builds its model from
+    them (R1a Task 5 Step 7): ({id: WindowVolume}, {id: float32 (360,)}, float32 (101,)). W: relight.windows."""
+    volumes, horizons = {}, {}
+    for w in manifest["windows"]:
+        frame = np.asarray(w["frame"], np.float64)
+        alpha = np.frombuffer(gzip.decompress(_read(folder, w["volume"])), np.uint8).reshape(tuple(int(v) for v in frame[4:7]))
+        volumes[w["id"]] = W.volume_from_arrays(w["id"], alpha, frame)
+        horizons[w["id"]] = np.asarray(w["horizon"], np.float32)
+    return volumes, horizons, np.asarray(manifest["sun"]["fresnel"], np.float32)
+
+
+def sun_grid_points(entry):
+    """A skin's sun-grid texel points, (n, 3) model frame: relight v2's `skins.entries[].sun.texelToModel` at every
+    (column, row, 0, 1), the points the browser's sun passes march from."""
+    (w, h), M = entry["sun"]["size"], np.asarray(entry["sun"]["texelToModel"], np.float64).reshape(4, 4)
+    cc, rr = np.meshgrid(np.arange(w, dtype=np.float64), np.arange(h, dtype=np.float64))
+    return (M @ np.stack([cc.ravel(), rr.ravel(), np.zeros(w * h), np.ones(w * h)]))[:3].T
+
+
+def skin_wall_face_rate(W, volumes, horizons, fresnel, P, directions):
+    """The skins' own wall-face rate: R1a's public `windows.wall_face_rate` (R1a Task 5 Step 7's measurement, the
+    population's rays whose first sample float32 rounding alone could put in the other cell at a window's wall face)
+    over the sun-grid points P, its counts summed over the directions as R1a pools its two. W: relight.windows."""
+    marched = wall = 0
+    for s in directions:
+        counts = W.wall_face_rate(volumes, horizons, fresnel, P, np.asarray(s, np.float64))
+        marched += int(counts["marched"]); wall += int(counts["wallFace"])
+    return {"texels": int(len(P)), "marched": marched, "wallFace": wall}
+
+
 def cmd_v2_check(cfg, rest) -> int:
     from . import lightstates as LS
     codec, _reference = LS.relight_modules(cfg)
@@ -9696,6 +10841,18 @@ def cmd_v2_check(cfg, rest) -> int:
                 problems.append(f"{e['file']}: checksum")
             elif len(gzip.decompress(data)) != e["size"][0] * e["size"][1] * RECORD_BYTES:
                 problems.append(f"{e['file']}: not one record per light texel")
+    # the skins' own wall-face rate: Task 23 caps the sun grids' rounding excuses at twice it
+    rate = None
+    if skins is not None:
+        from relight import windows as W                                    # numpy only (Global Constraints)
+        with open(cfg.paths["relightVectors"], encoding="utf-8") as f:
+            settings = json.load(f)["settings"]
+        volumes, horizons, fresnel = package_windows(W, v2, m2)
+        grids = [sun_grid_points(e) for e in skins["entries"] if e.get("sun") is not None]
+        P = np.concatenate(grids) if grids else np.zeros((0, 3))
+        rate = skin_wall_face_rate(W, volumes, horizons, fresnel, P, [settings[name][key] for name, key in SKIN_RATE_SETTINGS])
+        if rate["marched"] == 0:
+            problems.append("no skin sun-grid ray is marched at the wall-face rate's two directions")
     vis = m2.get("visibility")
     if vis != {"toggles": {"clutter": 1, "cabinet": 2}, "defaultHidden": 1}:
         problems.append(f"visibility section {vis}")
@@ -9707,7 +10864,7 @@ def cmd_v2_check(cfg, rest) -> int:
     for t in (1, 2):
         if totals["toggled"].get(t, 0) == 0:
             problems.append(f"toggle {t} holds no splat")
-    report = {"totals": totals, "problems": problems, "pass": not problems,
+    report = {"totals": totals, "skinWallFaceRate": rate, "problems": problems, "pass": not problems,
               "artifact": {"path": os.path.abspath(os.path.join(v2, "manifest.json")).replace(os.sep, "/"),
                            "sha256": hashlib.sha256(_read(v2, "manifest.json")).hexdigest()} if not problems else None}
     with open(os.path.join(cfg.paths["evidence"], "relight-v2.json"), "w", encoding="utf-8") as f:
@@ -9727,7 +10884,7 @@ COMMANDS["v2-check"] = Command(run=_lazy("relightv2", "cmd_v2_check"), outputs=l
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_relightv2 -v`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests (the wall-face test imports R1a's `relight.windows`, numpy only, as `test_lightstates` imports `relight.reference`).
 
 - [ ] **Step 6: Commit**
 
@@ -9764,24 +10921,39 @@ a = 'D:/claude/splats/trades-hall/grand-hall/relight/v2'; b = 'D:/claude/relight
 print(twice.compare(twice.tree_digest([a], a), twice.tree_digest([b], b)) or 'IDENTICAL')"
 ```
 
-Expected: `IDENTICAL`. If keys differ, run the command a third time into `D:/claude/relight/grand-hall/work/relight-v2-third`, then keep per file the version two runs agree on (`twice.decide`). If no two runs agree, stop and report. Afterwards delete the second (and third) folder.
+Expected: `IDENTICAL`. If keys differ, run the command a third time into `D:/claude/relight/grand-hall/work/relight-v2-third`, then settle each whole file with `twice.settle(h_v2, h_second, h_third)` (each digest taken relative to its own folder, as above): copy into v2 each file settled `run3` from the third folder and each settled `run2` from the second; any `none` (no run holds the whole file two runs agree on) stops the task and goes to the controller. Then digest v2 again: every key must equal `twice.majority(h_v2, h_second, h_third)`'s value. Afterwards delete the second (and third) folder.
 
 - [ ] **Step 8: R1a's checks on v2, then v2 against v1**
+
+R1a's `check` runs twice by hand (Global Constraints; R1a's check 4 is written for the second run), and v2-check, which records v2's SHA-256, runs only once the two agree:
 
 ```bash
 cd D:/claude/real-hall/repo/tools/relight
 C:/Python313/python.exe -m relight check --config config/grand-hall.json --package D:/claude/splats/trades-hall/grand-hall/relight/v2
+mkdir -p D:/claude/skins/grand-hall/evidence/task15-check-first
+cp D:/claude/relight/grand-hall/evidence/checks-v2.json D:/claude/splats/trades-hall/grand-hall/relight/v2/manifest.json D:/claude/skins/grand-hall/evidence/task15-check-first/
+C:/Python313/python.exe -m relight check --config config/grand-hall.json --package D:/claude/splats/trades-hall/grand-hall/relight/v2
+cd ../skins && C:/Python313/python.exe -c "
+from skins import twice
+first = 'D:/claude/skins/grand-hall/evidence/task15-check-first'
+checks = twice.file_digest(first + '/checks-v2.json', 'c') == twice.file_digest('D:/claude/relight/grand-hall/evidence/checks-v2.json', 'c')
+manifest = open(first + '/manifest.json', 'rb').read() == open('D:/claude/splats/trades-hall/grand-hall/relight/v2/manifest.json', 'rb').read()
+print('checks', 'EQUAL' if checks else 'DIFFER', 'manifest', 'IDENTICAL' if manifest else 'DIFFER')"
 cd D:/claude/real-hall/repo && git status --short -- packages/web/src/lib/relight/__fixtures__/relight-vectors.json
-cd tools/skins && C:/Python313/python.exe -m skins v2-check --config config/grand-hall.json
+cd tools/skins && C:/Python313/python.exe -m skins twice v2-check --config config/grand-hall.json
 ```
+
+(`v2-check` runs through `twice` because it now measures the skins' wall-face rate, a data product Task 23's cap rests on. `checks-v2.json` is compared by value without its volatile keys, `twice.file_digest`; v2's manifest byte for byte, since `check` rewrites its `evidence` from HEAD's `tool` and `createdAt`. If either differs, run `check` a third time: its files must equal one of the first two, and stay in place; otherwise stop and report. Pre-flight fix, 8 October.)
 
 (R1a's `check` with `--package` and no `--vectors` writes no test vectors and writes its results to `<relight evidence>/checks-v2.json`, never v1's `checks.json` (R1a Task 5 Step 7, amended 8 October). The committed fixture stays v1's, which R1b's and R1d's tests hold.)
 
 Expected:
 
-- `check` prints `vectors: not written (--package without --vectors)`, and the `git status` line prints nothing (the fixture is untouched). If it prints the fixture, R1a's `check` does not keep its contract: stop and report, and do not restore or commit the file.
+- `check` prints `vectors: not written (--package without --vectors)` both times, the comparison prints `checks EQUAL manifest IDENTICAL`, and the `git status` line prints nothing (the fixture is untouched). If it prints the fixture, R1a's `check` does not keep its contract: stop and report, and do not restore or commit the file.
 - `D:/claude/relight/grand-hall/evidence/checks-v2.json` has all five checks `pass: true`. Class 7 is lit exactly as class 0, so the captured identity holds with every group drawn as splats.
-- `relight-v2.json` has `"pass": true`, with `other` 0, every wall group covering splats and both toggles holding splats.
+- `relight-v2.json` has `"pass": true`, with `other` 0, every wall group covering splats and both toggles holding splats, and `skinWallFaceRate` with `marched` above 0. Report the rate (`wallFace / marched`) beside R1a's splats' and floor's (`checks-v2.json` `wallFaceRate`).
+
+**The skins' own wall-face rate** (pre-flight fix, 8 October; the controller's ruling on R1c-b I1). Task 23 excuses a sun-grid texel whose ray passes within rounding of a march decision, at most twice the share of such rays its population has. R1a measures that share for check-sun's 200,000 splats and its 88,831 floor points, but the skins' sun grids are another population: they start 5 mm in front of the walls and the ceiling, many beside the windows' reveals, where a ray reaches the wall face `y0` almost at once. So `v2-check` measures the skins' own rate with R1a's own function, `windows.wall_face_rate` (R1a Task 5 Step 7, public since R1a's pre-flight fixes of 8 October, arguments in `sun_visibility`'s order; `skin_wall_face_rate` sums its counts over the two directions): every sun-grid texel of v2's `skins.entries`, at the sunny morning's Sun and `moon_test`'s Moon (R1a's two directions, read from R1a's settings in the vectors fixture, `paths.relightVectors`), through v2's window volumes. A feasibility run on 8 October (`fix2-scratch-c/f15/skin_rate.py`, run twice, identical) used 1,352,458 skin-like points (every layout skin's rectangle, a 2 cm grid 5 mm into the room) and R1a's committed `windows.npz`, with this plan's own copy of the measurement, which R1a's function matches exactly on R1a's populations (splats 3.22%, floor 10.33%, the R1a fixer's comparison of 8 October). At the Sun of 31 May 08:00 it marched 15,869 rays, of which 1,362 (8.6%) were wall-face sensitive, in 0.5 s; the Moon tried (1 January 2026, 16:00) marched none. A rate measured on another population need not fit the skins', so only theirs caps their excuses.
 
 Save the counts per group and per toggle as `D:/claude/skins/grand-hall/evidence/task15-v2.txt`. A group covering fewer than 10,000 splats, or more than 40% of the finest tiles' splats, means the envelope or the cover rule misfires. Stop and report it with the numbers.
 
@@ -9794,7 +10966,7 @@ Save the counts per group and per toggle as `D:/claude/skins/grand-hall/evidence
 
 **Interfaces:**
 - Consumes: R1b as amended: `RelightManifestSchema`, `type RelightManifest` with the optional `skins` and `visibility` (A7: `type RelightSkinsSection`, `type RelightSkinLight`); `buildTestPackage` (R1b Task 2's test package); `RECORD_BYTES` (R1b Task 1).
-- Produces (`skin-manifest.ts`): `SKIN_SCHEMA = "venviewer.skins.v1"`; `SKIN_GROUPS` (the five names) and `type SkinGroupName`; `PROVENANCE_CODES = { observed: 0, recovered: 1, reconstructed: 2, photo: 3, outside: 255 }` (3: observed, venue photo; amended 7 October); `CreditSchema`, `type SkinCredit` (a credited photograph source: `id`, `source`, `credit`, `copyright`, `photos[]` `{ craft, url, sha256 }`); `MAX_SKIN_TILE = 2048`; `MAX_SKIN_TEXELS = 16384`; `SkinEntrySchema`, `type SkinEntry`; `type SkinTile`; `skinTileGrid(cols: number, rows: number, tile: number): { row; col; x; y; width; height }[]`; `SkinPackageManifestSchema`, `type SkinPackageManifest`; `interface MatchedSkin { readonly entry: SkinEntry; readonly light: RelightSkinLight }`; `interface RefusedGroup { readonly group: number; readonly reason: string }`; `interface SkinMatch { readonly skins: readonly MatchedSkin[]; readonly refused: readonly RefusedGroup[] }`; `matchSkins(section: RelightSkinsSection, pkg: SkinPackageManifest): SkinMatch`; `skinPackageUrl(relightBaseUrl: string, skinPath: string): string | null`; `type SkinView = "lit" | "provenance"`; `skinsOffBySearch(search: string, previewable: boolean): boolean`; `skinViewFromSearch(search: string, previewable: boolean): SkinView`.
+- Produces (`skin-manifest.ts`): `SKIN_SCHEMA = "venviewer.skins.v1"`; `SKIN_GROUPS` (the five names) and `type SkinGroupName`; `PROVENANCE_CODES = { observed: 0, recovered: 1, reconstructed: 2, photo: 3, outside: 255 }` (3: observed, venue photo; amended 7 October); `CreditSchema`, `type SkinCredit` (a credited photograph source: `id`, `source`, `credit`, `copyright`, `photos[]` `{ craft, url, sha256 }`); `MAX_SKIN_TILE = 2048`; `MAX_SKIN_TEXELS = 16384`; `MaterialBasisSchema` (`"prior" | "measured"`, amended 8 October; `material.basis` `{ roughness, specularColour }`, the latter null exactly when the specular colour is), `SkinEntrySchema`, `type SkinEntry`; `type SkinTile`; `skinTileGrid(cols: number, rows: number, tile: number): { row; col; x; y; width; height }[]`; `SkinPackageManifestSchema`, `type SkinPackageManifest` (each skin's `toggleBoxes`, T1, 8 October); `type ToggleGroups`, `toggleGroupsOf(pkg: SkinPackageManifest): ToggleGroups` (per toggle, the wall groups holding its clean version); `interface MatchedSkin { readonly entry: SkinEntry; readonly light: RelightSkinLight }`; `interface RefusedGroup { readonly group: number; readonly reason: string }`; `interface SkinMatch { readonly skins: readonly MatchedSkin[]; readonly refused: readonly RefusedGroup[] }`; `matchSkins(section: RelightSkinsSection, pkg: SkinPackageManifest): SkinMatch`; `skinPackageUrl(relightBaseUrl: string, skinPath: string): string | null`; `type SkinView = "lit" | "provenance"`; `skinsOffBySearch(search: string, previewable: boolean): boolean`; `skinViewFromSearch(search: string, previewable: boolean): SkinView`.
 - Produces (test helper): `TEST_SKINS_RELIGHT_BASE`, `TEST_SKINS_BASE`; `interface FakeImage { readonly width: number; readonly height: number; closed: boolean; close(): void }`; `fakeImageBytes(width: number, height: number): Uint8Array`; `interface TestSkins { readonly relight: RelightManifest; readonly section: RelightSkinsSection; readonly manifest: SkinPackageManifest; readonly files: Map<string, Uint8Array>; readonly fetch: (url: string) => Promise<Response>; readonly decode: (bytes: Uint8Array, type: string) => Promise<FakeImage> }`; `buildTestSkins(): TestSkins`. It holds two skins: `door-w2` in group 0, with two tiles, a clean tile and toggle 1, and `ceiling-1` in group 4.
 
 The skin package is fetched only through relight package v2: its `skins.package` names the folder beside the tiles, and `skins.manifestSha256` pins the manifest.
@@ -9879,11 +11051,13 @@ export interface TestSkins {
 interface SkinShape {
   readonly id: string; readonly group: number; readonly style: string; readonly texel: number; readonly cols: number; readonly rows: number;
   readonly origin: V3; readonly u: V3; readonly v: V3; readonly n: V3; readonly toggle: boolean; readonly sun: boolean;
+  /** The toggles whose standing objects (loudspeakers, the cabinet) stand before this skin: it holds their clean version. */
+  readonly boxes: readonly (1 | 2)[];
 }
 
 const SHAPES: readonly SkinShape[] = [
-  { id: "door-w2", group: 0, style: "wainscot", texel: 0.02, cols: 40, rows: 30, origin: [0, 1, 1], u: [1, 0, 0], v: [0, 0, -1], n: [0, -1, 0], toggle: true, sun: true },
-  { id: "ceiling-1", group: 4, style: "ceiling", texel: 0.05, cols: 20, rows: 20, origin: [0, 0, 2], u: [1, 0, 0], v: [0, -1, 0], n: [0, 0, -1], toggle: false, sun: false },
+  { id: "door-w2", group: 0, style: "wainscot", texel: 0.02, cols: 40, rows: 30, origin: [0, 1, 1], u: [1, 0, 0], v: [0, 0, -1], n: [0, -1, 0], toggle: true, sun: true, boxes: [1] },
+  { id: "ceiling-1", group: 4, style: "ceiling", texel: 0.05, cols: 20, rows: 20, origin: [0, 0, 2], u: [1, 0, 0], v: [0, 1, 0], n: [0, 0, -1], toggle: false, sun: false, boxes: [2] },
 ];
 const TILE = 32;
 const LIGHT_TEXEL = 0.1;
@@ -9932,14 +11106,16 @@ export function buildTestSkins(): TestSkins {
     const sunSize: [number, number] = [across(shape.cols * shape.texel, SUN_TEXEL), across(shape.rows * shape.texel, SUN_TEXEL)];
     return {
       skin: {
-        id: shape.id, group: shape.group, style: shape.style, material: { model: "skins-measured-v1", class: "plaster", specularColour: null },
+        id: shape.id, group: shape.group, style: shape.style,
+        material: { model: "skins-measured-v1", class: "plaster", specularColour: null, basis: { roughness: "prior", specularColour: null } },
         credits: [],
         texel: shape.texel, cols: shape.cols, rows: shape.rows,
         texelToModel: rowMajor(shape.origin, shape.u, shape.v, shape.n, shape.texel),
         origin: [...shape.origin], uAxis: [...shape.u], vAxis: [...shape.v], normal: [...shape.n],
         meshSpacing: shape.style === "ceiling" ? 0.25 : 0.1,
         height: { file: `${shape.id}/height.i16.gz`, cell: 0.005, cols: heightCols, rows: heightRows, unit: 0.0001 },
-        tiles, toggles: shape.toggle ? [1] : [], provenance: { observed: 0.9, photo: 0, recovered: 0.05, reconstructed: 0.05 },
+        tiles, toggles: shape.toggle ? [1] : [], toggleBoxes: [...shape.boxes],
+        provenance: { observed: 0.9, photo: 0, recovered: 0.05, reconstructed: 0.05 },
       },
       light: {
         id: shape.id, group: shape.group, size: lightSize, texelToModel: rowMajor(lifted, shape.u, shape.v, shape.n, LIGHT_TEXEL),
@@ -9983,7 +11159,7 @@ export function buildTestSkins(): TestSkins {
 ```ts
 import { describe, expect, it } from "vitest";
 import {
-  SkinPackageManifestSchema, matchSkins, skinPackageUrl, skinTileGrid, skinViewFromSearch, skinsOffBySearch,
+  SkinPackageManifestSchema, matchSkins, skinPackageUrl, skinTileGrid, skinViewFromSearch, skinsOffBySearch, toggleGroupsOf,
 } from "../skin-manifest.js";
 import { TEST_SKINS_BASE, TEST_SKINS_RELIGHT_BASE, buildTestSkins } from "./skin-test-package.js";
 
@@ -10011,6 +11187,7 @@ describe("skin package manifest (T-639 R1c)", () => {
     ["a duplicated skin", { ...test.manifest, skins: [first, first] }],
     ["a skin crediting a photograph the manifest does not", withFirst({ credits: [{ id: "trades-house-virtual-museum", photos: ["Bakers"] }] })],
     ["photograph texels with no credit", withFirst({ provenance: { observed: 0.6, photo: 0.3, recovered: 0.05, reconstructed: 0.05 } })],
+    ["a specular colour with no basis", withFirst({ material: { ...first.material, specularColour: [1, 0.78, 0.34] } })],
   ])("refuses %s", (_label, candidate) => {
     expect(SkinPackageManifestSchema.safeParse(candidate).success).toBe(false);
   });
@@ -10022,12 +11199,20 @@ describe("skin package manifest (T-639 R1c)", () => {
     };
     const gilded = {
       ...test.manifest, credits: [credit],
-      skins: [{ ...first, material: { ...first.material, specularColour: [1, 0.78, 0.34] }, credits: [{ id: credit.id, photos: ["Bakers"] }],
+      skins: [{ ...first, material: { ...first.material, specularColour: [1, 0.78, 0.34], basis: { roughness: "prior", specularColour: "prior" } },
+        credits: [{ id: credit.id, photos: ["Bakers"] }],
         provenance: { observed: 0.6, photo: 0.3, recovered: 0.05, reconstructed: 0.05 } }, ...test.manifest.skins.slice(1)],
     };
     const parsed = SkinPackageManifestSchema.parse(gilded);
     expect(parsed.skins[0]?.material.specularColour).toEqual([1, 0.78, 0.34]);
+    expect(parsed.skins[0]?.material.basis).toEqual({ roughness: "prior", specularColour: "prior" });   // gold leaf's F0: a prior
     expect(parsed.credits[0]?.photos.map((photo) => photo.craft)).toEqual(["Bakers"]);
+  });
+
+  it("names the wall groups holding each toggle's clean version (T1, 8 October)", () => {
+    expect(toggleGroupsOf(test.manifest)).toEqual([[0], [4]]);
+    const boxes: (1 | 2)[] = [1, 2];
+    expect(toggleGroupsOf({ ...test.manifest, skins: test.manifest.skins.map((skin) => ({ ...skin, toggleBoxes: boxes })) })).toEqual([[0, 4], [0, 4]]);
   });
 
   it("matches every skin with its light, group by group", () => {
@@ -10127,14 +11312,21 @@ export const CreditSchema = z.object({
 }).strict();
 export type SkinCredit = z.infer<typeof CreditSchema>;
 
+/** A material value's basis: "prior" (designed: R1c's class roughness, the gilding's 0.40, gold leaf's F0) or "measured" (a measured layer's). */
+export const MaterialBasisSchema = z.enum(["prior", "measured"]);
+
 export const SkinEntrySchema = z.object({
   id: z.string().regex(ID),
   group: z.number().int().min(0).max(SKIN_GROUPS.length - 1),
   style: z.string().min(1),
-  /** specularColour: a metal's F0 (linear RGB; the gilding's gold), null for a skin with no metal. */
-  material: z.object({ model: z.string().min(1), class: z.string().min(1), specularColour: Vec3Schema.nullable() }).strict(),
+  /** specularColour: a metal's F0 (linear RGB; the gilding's gold), null for a skin with no metal; basis: whether the
+   * roughness and the specular colour are priors or measured (8 October), the specular colour's null exactly when it is. */
+  material: z.object({
+    model: z.string().min(1), class: z.string().min(1), specularColour: Vec3Schema.nullable(),
+    basis: z.object({ roughness: MaterialBasisSchema, specularColour: MaterialBasisSchema.nullable() }).strict(),
+  }).strict().refine((m) => (m.specularColour === null) === (m.basis.specularColour === null), { message: "a specular colour has a basis, and only a specular colour" }),
   credits: z.array(z.object({ id: z.string().regex(ID), photos: z.array(z.string().min(1)).min(1) }).strict()),
-  texel: z.number().positive().max(0.01),
+  texel: z.number().positive().max(0.05),   // real skins are 1-5 mm; MAX_SKIN_TEXELS and MAX_SKIN_TILE guard the GPU (package.MAX_TEXEL)
   cols: Texels,
   rows: Texels,
   texelToModel: z.array(finite).length(16),
@@ -10148,6 +11340,8 @@ export const SkinEntrySchema = z.object({
   }).strict(),
   tiles: z.array(SkinTileSchema).min(1),
   toggles: z.array(z.union([z.literal(1), z.literal(2)])),
+  /** The toggles whose standing objects stand before this skin: its region is their clean version (T1, 8 October). */
+  toggleBoxes: z.array(z.union([z.literal(1), z.literal(2)])),
   provenance: z.object({ observed: Share, photo: Share, recovered: Share, reconstructed: Share }).strict(),
 }).strict();
 export type SkinEntry = z.infer<typeof SkinEntrySchema>;
@@ -10289,6 +11483,21 @@ export function matchSkins(section: RelightSkinsSection, pkg: SkinPackageManifes
   };
 }
 
+/**
+ * Per toggle (index 0: toggle 1, the loose clutter; index 1: toggle 2, the AV cabinet), the wall groups holding its
+ * clean version: the groups of every skin, refused or not, that stands behind one of its objects (`toggleBoxes`) or
+ * carries its flat clutter with a clean tile (`toggles`). A toggle's splats may be hidden only while all of these are
+ * drawn, and never when there are none (the controller's ruling T1, 8 October).
+ */
+export type ToggleGroups = readonly [readonly number[], readonly number[]];
+
+export function toggleGroupsOf(pkg: SkinPackageManifest): ToggleGroups {
+  const of = (toggle: 1 | 2): number[] =>
+    [...new Set(pkg.skins.filter((skin) => skin.toggleBoxes.includes(toggle) || skin.toggles.includes(toggle)).map((skin) => skin.group))]
+      .sort((a, b) => a - b);
+  return [of(1), of(2)];
+}
+
 /** The skin package named by relight package v2 (`skins.package`, a folder beside the tiles), or null. */
 export function skinPackageUrl(relightBaseUrl: string, skinPath: string): string | null {
   if (!RELATIVE_PATH.test(skinPath)) return null;
@@ -10310,7 +11519,7 @@ export function skinViewFromSearch(search: string, previewable: boolean): SkinVi
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/skins/__tests__/skin-manifest.test.ts`
-Expected: PASS, 18 tests (2 acceptances, 11 refusals, 5 others).
+Expected: PASS, 20 tests (2 acceptances, 12 refusals, 6 others).
 
 - [ ] **Step 6: Typecheck, lint and commit**
 
@@ -10621,7 +11830,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 16 (`SkinPackageManifestSchema`, `matchSkins`, `skinPackageUrl`, `type SkinEntry`, `type SkinTile`, `type MatchedSkin`, `type RefusedGroup`; the test helper `buildTestSkins`, `TEST_SKINS_RELIGHT_BASE`, `type FakeImage`), Task 17 (`gridPositions`, `gridTexel`); R1b Task 1 (`RECORD_BYTES`), Task 2 (`RelightManifestSchema`, `type RelightManifest`), Task 3 (`inflate`), Task 5 (`fetchVerified`, `sha256Hex`, `type FetchLike`).
 - Produces (`skin-geometry.ts`): `interface SkinHeights { readonly values: Float32Array; readonly cols: number; readonly rows: number; readonly cell: number }`; `decodeHeights(raw: Uint8Array, cols: number, rows: number, unit: number): Float32Array`; `heightAt(heights: SkinHeights, a: number, b: number): number` (Task 6's `SkinGeometry.points` formula); `interface SkinMeshArrays { readonly positions: Float32Array; readonly uvs: Float32Array; readonly index: Uint32Array }`; `skinTileMesh(skin: Pick<SkinEntry, "texel" | "origin" | "uAxis" | "vAxis" | "normal" | "meshSpacing">, heights: SkinHeights, tile: Pick<SkinTile, "x" | "y" | "width" | "height">): SkinMeshArrays`.
-- Produces (`skin-assets.ts`): `interface SkinImage { readonly width: number; readonly height: number; close(): void }`; `type SkinImageDecoder<I extends SkinImage> = (bytes: Uint8Array, type: "image/webp" | "image/png") => Promise<I>`; `interface SkinProgress { readonly loaded: number; readonly total: number }`; `interface SkinTileData<I>` (`x`, `y`, `width`, `height`, `albedo: I`, `material: I`, `clean: I | null`, `mesh: SkinMeshArrays`); `interface SkinData<I>` (`entry: SkinEntry`, `heights: SkinHeights`, `tiles`, `light: { size, texel, records: Uint8Array, positions: Float32Array }`, `sun: { size, texel, positions } | null`); `interface SkinPackageData<I>` (`albedoScale`, `encoding`, `skins`, `refused: readonly RefusedGroup[]`); `SKIN_FETCH_CONCURRENCY = 4`; `loadSkinPackage<I>(fetchFn: FetchLike, relight: RelightManifest, relightBaseUrl: string, decode: SkinImageDecoder<I>, onProgress: (progress: SkinProgress) => void, signal?: AbortSignal): Promise<SkinPackageData<I>>`; `closeSkinImages<I>(skins: readonly SkinData<I>[]): void`; `SkinWorkerRequestSchema`, `type SkinWorkerRequest`, `type SkinWorkerResponse`; `skinTransferables(data: SkinPackageData<ImageBitmap>): Transferable[]`.
+- Produces (`skin-assets.ts`): `interface SkinImage { readonly width: number; readonly height: number; close(): void }`; `type SkinImageDecoder<I extends SkinImage> = (bytes: Uint8Array, type: "image/webp" | "image/png") => Promise<I>`; `interface SkinProgress { readonly loaded: number; readonly total: number }`; `interface SkinTileData<I>` (`x`, `y`, `width`, `height`, `albedo: I`, `material: I`, `clean: I | null`, `mesh: SkinMeshArrays`); `interface SkinData<I>` (`entry: SkinEntry`, `heights: SkinHeights`, `tiles`, `light: { size, texel, records: Uint8Array, positions: Float32Array }`, `sun: { size, texel, positions } | null`); `interface SkinPackageData<I>` (`albedoScale`, `encoding`, `skins`, `refused: readonly RefusedGroup[]`, `toggleGroups: ToggleGroups` (T1, 8 October), `credits: readonly SkinCredit[]` (the manifest's, carried for a caption without a second fetch)); `SKIN_FETCH_CONCURRENCY = 4`; `loadSkinPackage<I>(fetchFn: FetchLike, relight: RelightManifest, relightBaseUrl: string, decode: SkinImageDecoder<I>, onProgress: (progress: SkinProgress) => void, signal?: AbortSignal): Promise<SkinPackageData<I>>`; `closeSkinImages<I>(skins: readonly SkinData<I>[]): void`; `SkinWorkerRequestSchema`, `type SkinWorkerRequest`, `type SkinWorkerResponse`; `skinTransferables(data: SkinPackageData<ImageBitmap>): Transferable[]`.
 - Produces (`skin-worker-client.ts`): `runSkinWorker(request: SkinWorkerRequest, onProgress: (progress: SkinProgress) => void, signal?: AbortSignal): Promise<SkinPackageData<ImageBitmap>>`.
 
 Everything heavy happens off the main thread:
@@ -10734,6 +11943,7 @@ describe("loading the skin package (T-639 R1c)", () => {
     expect(last?.loaded).toBe(last?.total);
     expect(progress.every((p, i) => i === 0 || p.loaded >= (progress[i - 1]?.loaded ?? 0))).toBe(true);
     expect(data.albedoScale).toBe(0.5);
+    expect([data.toggleGroups, data.credits]).toEqual([[[0], [4]], []]);
   });
 
   it("refuses only the group of a skin whose file is corrupt, closing its images", async () => {
@@ -10744,6 +11954,7 @@ describe("loading the skin package (T-639 R1c)", () => {
     const data = await loadSkinPackage(test.fetch, test.relight, TEST_SKINS_RELIGHT_BASE, decode, () => undefined);
     expect(data.skins.map((skin) => skin.entry.id)).toEqual(["ceiling-1"]);
     expect(data.refused).toEqual([{ group: 0, reason: expect.stringContaining("door-w2") }]);
+    expect(data.toggleGroups).toEqual([[0], [4]]);                  // from every skin, the refused group's included
     const ceilingImages = data.skins.flatMap((skin) => skin.tiles.flatMap((tile) => [tile.albedo, tile.material]));
     expect(images.filter((image) => !ceilingImages.includes(image)).every((image) => image.closed)).toBe(true);
   });
@@ -10882,7 +12093,10 @@ import { RelightManifestSchema, type RelightManifest } from "../relight/relight-
 import { inflate } from "../relight/relight-png.js";
 import { decodeHeights, skinTileMesh, type SkinHeights, type SkinMeshArrays } from "./skin-geometry.js";
 import { gridPositions, gridTexel } from "./skin-light.js";
-import { SkinPackageManifestSchema, matchSkins, skinPackageUrl, type MatchedSkin, type RefusedGroup, type SkinEntry, type SkinPackageManifest } from "./skin-manifest.js";
+import {
+  SkinPackageManifestSchema, matchSkins, skinPackageUrl, toggleGroupsOf,
+  type MatchedSkin, type RefusedGroup, type SkinCredit, type SkinEntry, type SkinPackageManifest, type ToggleGroups,
+} from "./skin-manifest.js";
 
 // Loading the skin package (T-639 R1c), in a worker: every file verified, heights and light records inflated, tiles
 // decoded, meshes and grid positions built. A skin that fails refuses its wall group only.
@@ -10930,6 +12144,10 @@ export interface SkinPackageData<I extends SkinImage> {
   readonly encoding: readonly (readonly [number, number])[];
   readonly skins: readonly SkinData<I>[];
   readonly refused: readonly RefusedGroup[];
+  /** Per toggle, the wall groups holding its clean version, from every skin of the package (T1, 8 October). */
+  readonly toggleGroups: ToggleGroups;
+  /** The photographs the skins use, as the package credits them, so a later caption needs no second fetch. */
+  readonly credits: readonly SkinCredit[];
 }
 
 export const SKIN_FETCH_CONCURRENCY = 4;
@@ -11051,6 +12269,8 @@ export async function loadSkinPackage<I extends SkinImage>(
     encoding: section.encoding,
     skins: skins.filter((skin) => !refused.has(skin.entry.group)),
     refused: [...refused].sort(([a], [b]) => a - b).map(([group, reason]) => ({ group, reason })),
+    toggleGroups: toggleGroupsOf(manifest),
+    credits: manifest.credits,
   };
 }
 
@@ -11180,8 +12400,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/skins/__tests__/skin-frame.test.ts`
 
 **Interfaces:**
-- Consumes: Task 17 (`SKY_BODIES`, `type SkyBodyName`), Task 18 (`type SkinPackageData`, `type SkinImage`, `loadSkinPackage` in the test); R1b Task 1 (`LOG_STEPS`, `SOURCE_COUNT`, `RECORD_BYTES`), Task 10 as amended (`RelightFrame` with `uniforms` (`sourceWeights`), `windowVolumes`, `prepare`, `apply`, `addPasses` (A8)); `windowVolumeRead`, `sunVisibilityNode(u, volumes, p, body)` and `skyBody(u, body)` (R1d A5); `probeReads(frame)` and `bounceNode(u, reads, p, normal, iso)` (A8); Task 10's `applicationForChoice` and Task 8's `defaultChoice` in the test.
-- Produces (`skin-frame.ts`): `SKIN_SPANS = ["skins:frame", "skins:skin"] as const`, `type SkinSpan`, `measureSkins<T>(name: SkinSpan, work: () => T): T`; `interface SkinGridRange { readonly offset: number; readonly size: readonly [number, number]; readonly texel: number }`; `interface SkinRanges { readonly light: SkinGridRange; readonly sun: SkinGridRange | null }`; `interface SkinFrameUniforms { readonly encoding: …uniform array of vec2 × 9; readonly stride: UniformNode<"uint", number>; readonly phase: UniformNode<"uint", number> }`; `class SkinFrame` with `constructor(relight: RelightFrame, data: SkinPackageData<SkinImage>)`, readonly `relight`, `data`, `ranges: ReadonlyMap<string, SkinRanges>`, `lightTexels`, `sunTexels`, `lightRecords` (u32 × 3 per light texel), `lightPositions` (vec4 per light texel), `lightOut` (vec4 per light texel, written on the GPU), `sunPositions` (vec4 per sun texel), `sunOut: Readonly<Record<SkyBodyName, StorageBufferAttribute>>` (float per sun texel, written on the GPU), `uniforms`, `passes: readonly ComputeNode[]` (named `SkinLight`, `SkinSun`, `SkinMoon`); methods `setStride(stride: number, phase: number): void`, `followPassStride(source: PassStrideSource): () => void` (amended 7 October: follows the relight frame's pass stride when it offers one, R1d's `RelightFrame.onPassStride`, R1d's interface item 3), `attach(): () => void` (adds the passes to the relight frame's `prepare`), `dispose(): void`; `interface PassStrideSource { readonly visibility: RelightVisibility; readonly onPassStride?: (listener: (stride: number, phase: number) => void) => () => void }` (R1b's frame has no `onPassStride` until R1d's Task 7 adds it; the required `visibility`, A9's, keeps the type from being weak, so R1b's frame is a source before R1d and after).
+- Consumes: Task 17 (`SKY_BODIES`, `type SkyBodyName`), Task 18 (`type SkinPackageData`, `type SkinImage`, `loadSkinPackage` in the test); R1b Task 1 (`decodeLog`, `SOURCE_COUNT`, `RECORD_BYTES`), Task 10 as amended (`RelightFrame` with `uniforms` (`sourceWeights`), `windowVolumes`, `prepare`, `apply`, `addPasses` (A8)); `windowVolumeRead`, `sunVisibilityNode(u, volumes, p, body)` and `skyBody(u, body)` (R1d A5); `probeReads(frame)` and `bounceNode(u, reads, p, normal, iso)` (A8); Task 10's `applicationForChoice` and Task 8's `defaultChoice` in the test.
+- Produces (`skin-frame.ts`): `SKIN_SPANS = ["skins:frame", "skins:skin", "skins:first-frame"] as const` (the last measured by `RelightSkins`, Task 21), `type SkinSpan`, `measureSkins<T>(name: SkinSpan, work: () => T): T`; `interface SkinGridRange { readonly offset: number; readonly size: readonly [number, number]; readonly texel: number }`; `interface SkinRanges { readonly light: SkinGridRange; readonly sun: SkinGridRange | null }`; `interface SkinFrameUniforms { readonly stride: UniformNode<"uint", number>; readonly phase: UniformNode<"uint", number> }`; `SKIN_CODES = 256`; `skinDecodeTable(encoding) -> Float32Array` (9 × 256: each source's log codes as light by R1b's own `decodeLog`, which the light pass reads; pre-flight fix M7, 8 October); `class SkinFrame` with `constructor(relight: RelightFrame, data: SkinPackageData<SkinImage>)`, readonly `relight`, `data`, `ranges: ReadonlyMap<string, SkinRanges>`, `lightTexels`, `sunTexels`, `lightRecords` (u32 × 3 per light texel), `decodeTable` (`skinDecodeTable`'s floats), `lightPositions` (vec4 per light texel), `lightOut` (vec4 per light texel, written on the GPU), `sunPositions` (vec4 per sun texel), `sunOut: Readonly<Record<SkyBodyName, StorageBufferAttribute>>` (float per sun texel, written on the GPU), `uniforms`, `passes: readonly ComputeNode[]` (named `SkinLight`, `SkinSun`, `SkinMoon`); methods `setStride(stride: number, phase: number): void`, `followPassStride(source: PassStrideSource): () => void` (amended 7 October: follows the relight frame's pass stride when it offers one, R1d's `RelightFrame.onPassStride`, R1d's interface item 3), `attach(): () => void` (adds the passes to the relight frame's `prepare`), `dispose(): void`; `interface PassStrideSource { readonly visibility: RelightVisibility; readonly onPassStride?: (listener: (stride: number, phase: number) => void) => () => void }` (R1b's frame has no `onPassStride` until R1d's Task 7 adds it; the required `visibility`, A9's, keeps the type from being weak, so R1b's frame is a source before R1d and after).
 
 The skins' light is computed on the GPU, in the relight frame's one compute call (`prepare`), last: after the sky bodies' bounce passes (each body's entering power `P_w` from the patch rays and its coefficients, R1d A9) and the probe fold that adds their bounce to the scenario volume, so the bounce the skins read is the current light's (amended 7 October; the test below checks the skins' passes are the last three). It runs on every light change and, while R1d animates the light, every frame.
 
@@ -11202,8 +12422,9 @@ import { applicationForChoice } from "../../relight/relight-apply.js";
 import { loadRelightModelData } from "../../relight/relight-assets.js";
 import { RelightFrame } from "../../relight/relight-frame.js";
 import { buildTestPackage } from "../../relight/__tests__/relight-test-package.js";
+import { decodeLog } from "../../relight/relight-codec.js";
 import { loadSkinPackage, type SkinPackageData } from "../skin-assets.js";
-import { SkinFrame } from "../skin-frame.js";
+import { SKIN_CODES, SkinFrame, skinDecodeTable } from "../skin-frame.js";
 import { TEST_SKINS_RELIGHT_BASE, buildTestSkins, type FakeImage } from "./skin-test-package.js";
 
 let relight: RelightFrame;
@@ -11238,6 +12459,23 @@ describe("the skin frame (T-639 R1c)", () => {
     expect(words[1]).toBe(150 << 8);                            // bytes 4..7: 0, 150, 0, 0
     expect(words[2]).toBe((128 << 8) | (128 << 16));            // bytes 8..11: 0, 128, 128, 0
     frame.dispose();
+  });
+
+  it("decodes every log code as R1b's decodeLog does (its decode is inline in its pass; R1c tables R1b's own)", () => {
+    const encoding: (readonly [number, number])[] = Array.from({ length: 9 }, (_, k) => [-12 + k, 4 + k / 2]);
+    const table = skinDecodeTable(encoding);
+    expect(table).toHaveLength(9 * SKIN_CODES);
+    for (let k = 0; k < 9; k += 1) {
+      for (let code = 0; code < SKIN_CODES; code += 1) {
+        const [lo, hi] = encoding[k] ?? [0, 1];
+        expect(table[k * SKIN_CODES + code]).toBe(Math.fround(decodeLog(code, lo, hi)));
+      }
+    }
+    expect(table[0]).toBe(0);                                                       // code 0: dark
+    const frame = new SkinFrame(relight, data);
+    expect(Array.from(frame.decodeTable.array)).toEqual(Array.from(skinDecodeTable(data.encoding)));
+    frame.dispose();
+    expect(() => skinDecodeTable(encoding.slice(0, 8))).toThrow();
   });
 
   it("runs its passes in the relight frame's compute call once attached, and stops when detached", () => {
@@ -11299,10 +12537,9 @@ Expected: FAIL, the module `../skin-frame.js` cannot be resolved.
 `packages/web/src/lib/skins/skin-frame.ts`:
 
 ```ts
-import { Vector2 } from "three";
 import { StorageBufferAttribute, type ComputeNode, type Node } from "three/webgpu";
-import { Fn, If, Return, abs, bool, exp2, float, instanceIndex, normalize, select, storage, uint, uniform, uniformArray, vec3, vec4 } from "three/tsl";
-import { LOG_STEPS, RECORD_BYTES, SOURCE_COUNT } from "../relight/relight-codec.js";
+import { Fn, If, Return, abs, bool, float, instanceIndex, normalize, select, storage, uint, uniform, vec3, vec4 } from "three/tsl";
+import { RECORD_BYTES, SOURCE_COUNT, decodeLog } from "../relight/relight-codec.js";
 import { bounceNode, probeReads, skyBody, sunVisibilityNode, windowVolumeRead, type RelightFrame } from "../relight/relight-frame.js";
 import type { RelightVisibility } from "../relight/relight-kernel.js";
 import type { SkinImage, SkinPackageData } from "./skin-assets.js";
@@ -11314,7 +12551,7 @@ import { SKY_BODIES, type SkyBodyName } from "./skin-light.js";
 
 const WORKGROUP = 256;
 
-export const SKIN_SPANS = ["skins:frame", "skins:skin"] as const;
+export const SKIN_SPANS = ["skins:frame", "skins:skin", "skins:first-frame"] as const;
 export type SkinSpan = (typeof SKIN_SPANS)[number];
 
 /** Runs `work` as a performance span (Task 23's loading check reads every `skins:` span). */
@@ -11344,17 +12581,39 @@ export interface PassStrideSource {
   readonly onPassStride?: (listener: (stride: number, phase: number) => void) => () => void;
 }
 
-function createSkinUniforms(encoding: readonly (readonly [number, number])[]) {
+function createSkinUniforms() {
   return {
-    /** The skins' light records' log ranges per source (relight v2 `skins.encoding`). */
-    encoding: uniformArray<"vec2">(encoding.map(([lo, hi]) => new Vector2(lo, hi)), "vec2"),
     stride: uniform(1, "uint"),
     phase: uniform(0, "uint"),
   };
 }
 export type SkinFrameUniforms = ReturnType<typeof createSkinUniforms>;
 
-/** R1a's octahedral normal from its two bytes (codec.decode_octahedral), normalised. */
+/** Log codes per source: 256 a source, code 0 dark. */
+export const SKIN_CODES = 256;
+
+/**
+ * Each source's 256 log codes as light, `table[k × 256 + code]`, computed by R1b's own `decodeLog` with the skins'
+ * ranges (relight v2 `skins.encoding`). The light pass reads this table instead of repeating the decode in TSL: R1b
+ * writes its log decode inline in its multiplier pass and exports none (the controller's direction, 8 October), so
+ * the skins' decode is R1b's function itself, and the test holds the table to it on every code.
+ */
+export function skinDecodeTable(encoding: readonly (readonly [number, number])[]): Float32Array {
+  const table = new Float32Array(SOURCE_COUNT * SKIN_CODES);
+  for (let k = 0; k < SOURCE_COUNT; k += 1) {
+    const range = encoding[k];
+    if (range === undefined) throw new Error(`The skins' encoding has no range for source ${String(k)}.`);
+    for (let code = 0; code < SKIN_CODES; code += 1) table[k * SKIN_CODES + code] = decodeLog(code, range[0], range[1]);
+  }
+  return table;
+}
+
+/**
+ * R1a's octahedral normal from its two bytes (codec.decode_octahedral), normalised. This repeats R1b's private TSL
+ * `octahedral` (its multiplier pass) and its CPU `decodeOctahedral`, which `skinTexelBase`, the CPU twin, uses: a TSL
+ * function cannot run in a unit test, so the two are held together on the GPU by Task 23's light read-back (the
+ * normal feeds R1b's bounce), within 2e-3 at every 7th light texel.
+ */
 function octahedralNode(byteU: Node<"float">, byteV: Node<"float">): Node<"vec3"> {
   const u = byteU.div(255).mul(2).sub(1), v = byteV.div(255).mul(2).sub(1);
   const z = float(1).sub(abs(u)).sub(abs(v));
@@ -11365,22 +12624,22 @@ function octahedralNode(byteU: Node<"float">, byteV: Node<"float">): Node<"vec3"
   return normalize(vec3(x, y, z));
 }
 
-function createLightPass(relight: RelightFrame, records: StorageBufferAttribute, positions: StorageBufferAttribute, out: StorageBufferAttribute, total: number, s: SkinFrameUniforms): ComputeNode {
+function createLightPass(relight: RelightFrame, records: StorageBufferAttribute, codes: StorageBufferAttribute, positions: StorageBufferAttribute, out: StorageBufferAttribute, total: number, s: SkinFrameUniforms): ComputeNode {
   const u = relight.uniforms;
   const reads = probeReads(relight);
   const recordRead = storage(records, "uint", Math.max(total, 1) * 3).toReadOnly();
+  const codeRead = storage(codes, "float", SOURCE_COUNT * SKIN_CODES).toReadOnly();
   const positionRead = storage(positions, "vec4", Math.max(total, 1)).toReadOnly();
   const write = storage(out, "vec4", Math.max(total, 1));
   return Fn(() => {
     const i = instanceIndex;
     If(i.greaterThanEqual(uint(total)).or(i.mod(s.stride).notEqual(s.phase)), () => { Return(); });
     const w0 = recordRead.element(i.mul(3)).toVar(), w1 = recordRead.element(i.mul(3).add(1)).toVar(), w2 = recordRead.element(i.mul(3).add(2)).toVar();
-    const byte = (k: number): Node<"float"> => float((k < 4 ? w0 : k < 8 ? w1 : w2).shiftRight(uint(8 * (k % 4))).bitAnd(uint(0xff)));
+    const word = (k: number): Node<"uint"> => (k < 4 ? w0 : k < 8 ? w1 : w2).shiftRight(uint(8 * (k % 4))).bitAnd(uint(0xff));
+    const byte = (k: number): Node<"float"> => float(word(k));
     const sum = vec3(0).toVar();
     for (let k = 0; k < SOURCE_COUNT; k += 1) {
-      const code = byte(k);
-      const range = s.encoding.element(k);
-      const value = select(code.greaterThan(0), exp2(range.x.add(code.sub(1).mul(range.y.sub(range.x).div(LOG_STEPS)))), float(0));
+      const value = codeRead.element(uint(k * SKIN_CODES).add(word(k)));                 // R1b's decodeLog, tabled
       sum.addAssign(u.sourceWeights.element(k).mul(value));
     }
     const normal = octahedralNode(byte(9), byte(10));
@@ -11408,6 +12667,8 @@ export class SkinFrame {
   readonly lightTexels: number;
   readonly sunTexels: number;
   readonly lightRecords: StorageBufferAttribute;
+  /** The log codes' light per source (`skinDecodeTable`): 9 × 256 floats. */
+  readonly decodeTable: StorageBufferAttribute;
   readonly lightPositions: StorageBufferAttribute;
   readonly lightOut: StorageBufferAttribute;
   readonly sunPositions: StorageBufferAttribute;
@@ -11441,6 +12702,7 @@ export class SkinFrame {
       if (skin.sun !== null && range.sun !== null) sunPositions.set(skin.sun.positions, range.sun.offset * 4);
     }
     this.lightRecords = new StorageBufferAttribute(new Uint32Array(recordBytes.buffer), 1);
+    this.decodeTable = new StorageBufferAttribute(skinDecodeTable(data.encoding), 1);
     this.lightPositions = new StorageBufferAttribute(lightPositions, 4);
     this.lightOut = new StorageBufferAttribute(new Float32Array(Math.max(light, 1) * 4), 4);
     this.sunPositions = new StorageBufferAttribute(sunPositions, 4);
@@ -11448,9 +12710,9 @@ export class SkinFrame {
       sun: new StorageBufferAttribute(new Float32Array(Math.max(sun, 1)), 1),
       moon: new StorageBufferAttribute(new Float32Array(Math.max(sun, 1)), 1),
     };
-    this.uniforms = createSkinUniforms(data.encoding);
+    this.uniforms = createSkinUniforms();
     this.passes = [
-      createLightPass(relight, this.lightRecords, this.lightPositions, this.lightOut, light, this.uniforms),
+      createLightPass(relight, this.lightRecords, this.decodeTable, this.lightPositions, this.lightOut, light, this.uniforms),
       ...SKY_BODIES.map((body) => createSunPass(relight, this.sunPositions, this.sunOut[body], sun, body, this.uniforms)),
     ];
   }
@@ -11477,6 +12739,7 @@ export class SkinFrame {
   dispose(): void {
     for (const pass of this.passes) pass.dispose();
     this.lightRecords.dispose();
+    this.decodeTable.dispose();
     this.lightPositions.dispose();
     this.lightOut.dispose();
     this.sunPositions.dispose();
@@ -11489,7 +12752,7 @@ export class SkinFrame {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/skins/__tests__/skin-frame.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Typecheck, lint and commit**
 
@@ -11515,8 +12778,8 @@ If TypeScript rejects a TSL annotation here (`uniform(1, "uint")`'s inferred typ
 
 **Interfaces:**
 - Consumes: Task 16 (`SKIN_GROUPS`, `type SkinEntry`), Task 17 (`SKY_BODIES`, `type SkyBodyName`), Task 18 (`type SkinData`, `type SkinImage`), Task 19 (`SkinFrame` with `ranges`, `lightOut`, `lightTexels`, `sunOut`, `sunTexels`, `relight`; `type SkinGridRange`); R1b Task 7 (`displayNode`, `HIGHLIGHT_KNEE`), Task 10 as amended (`RelightFrame.uniforms`: `display`, `sunRgb`, `moonRgb` (R1d A5), `hiddenToggles` (A9); `skyBody` (R1d A5)), Task 4 as amended (`type RelightVisibility` (A6)).
-- Produces (`skin-material.ts`): `SKIN_MATERIAL_NAME = "relight-skin"`; `SKIN_PROVENANCE_MATERIAL_NAME = "relight-skin-provenance"`; `interface SkinSurface { readonly position: Node<"vec3">; readonly normal: Node<"vec3">; readonly albedo: Node<"vec3">; readonly roughness: Node<"float">; readonly metal: Node<"float">; readonly specularColour?: Node<"vec3">; readonly bodyVisibility: (body: SkyBodyName) => Node<"float"> }` (`specularColour`, amended 7 October: the metal's F0 from the skin package, gold for the gilding; optional, so R1d's floor surface stays valid; R1d's sheen takes `mix(0.04, specularColour ?? albedo, metal)`); `interface SkinSheen { readonly diffuseScale: Node<"float">; readonly specular: Node<"vec3"> }`; `interface SkinLightHooks { readonly sunShadow: ((position: Node<"vec3">, body: SkyBodyName) => Node<"float">) | null; readonly sheen: ((surface: SkinSurface) => SkinSheen) | null }`; `NO_SKIN_HOOKS`; `interface SkinMaterialInputs { readonly albedo: Texture; readonly material: Texture; readonly clean: Texture | null; readonly heights: Texture; readonly tile: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }; readonly albedoScale: number }`; `PROVENANCE_COLOURS`; `skinMaskView: UniformNode<"float", number>` (DEV: 1 draws every skin magenta, unlit); `heightTexture(skin: Pick<SkinData<SkinImage>, "heights">): DataTexture`; `interface SkinAxisUniforms` (`normal`, `uAxis`, `vAxis`, `heightGrid`: vec3 uniforms, the last holding columns, rows and cell); `skinAxisUniforms(entry: Pick<SkinEntry, "normal" | "uAxis" | "vAxis">, heights: { cols; rows; cell }): SkinAxisUniforms`; `skinNormalNode(axes: SkinAxisUniforms, map: Texture, a: Node<"float">, b: Node<"float">): Node<"vec3">`; `litSkinMaterial(skin: SkinData<SkinImage>, frame: SkinFrame, inputs: SkinMaterialInputs, hooks?: SkinLightHooks): MeshBasicNodeMaterial`; `provenanceSkinMaterial(skin: SkinData<SkinImage>, inputs: SkinMaterialInputs): MeshBasicNodeMaterial`.
-- Produces (`skin-visibility.ts`): `TOGGLE_BITS = 0b11`; `skinGroupBits(groups: Iterable<number>): number`; `skinVisibility(drawnGroups: Iterable<number>, hiddenToggles: number): RelightVisibility`.
+- Produces (`skin-material.ts`): `SKIN_MATERIAL_NAME = "relight-skin"`; `SKIN_PROVENANCE_MATERIAL_NAME = "relight-skin-provenance"`; `interface SkinSurface { readonly position: Node<"vec3">; readonly normal: Node<"vec3">; readonly albedo: Node<"vec3">; readonly roughness: Node<"float">; readonly metal: Node<"float">; readonly specularColour?: Node<"vec3">; readonly bodyVisibility: (body: SkyBodyName) => Node<"float"> }` (`specularColour`, amended 7 October: the metal's F0 from the skin package, gold for the gilding; optional, so R1d's floor surface stays valid; R1d's sheen is to take `mix(0.04, specularColour ?? albedo, metal)`, a requirement on R1d: its Task 17's `f0`, its Consumes and its amendments item 4 do not read it yet (pre-flight fix I3, 8 October)); `interface SkinSheen { readonly diffuseScale: Node<"float">; readonly specular: Node<"vec3"> }`; `interface SkinLightHooks { readonly sunShadow: ((position: Node<"vec3">, body: SkyBodyName) => Node<"float">) | null; readonly sheen: ((surface: SkinSurface) => SkinSheen) | null }`; `NO_SKIN_HOOKS`; `interface SkinMaterialInputs { readonly albedo: Texture; readonly material: Texture; readonly clean: Texture | null; readonly heights: Texture; readonly tile: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }; readonly albedoScale: number }`; `PROVENANCE_COLOURS` (with `prior`, a designed metal's stripe); `metalIsPrior(entry: Pick<SkinEntry, "material">): boolean` (amended 8 October); `skinMaskView: UniformNode<"float", number>` (DEV: 1 draws every skin magenta, unlit); `heightTexture(skin: Pick<SkinData<SkinImage>, "heights">): DataTexture`; `interface SkinAxisUniforms` (`normal`, `uAxis`, `vAxis`, `heightGrid`: vec3 uniforms, the last holding columns, rows and cell); `skinAxisUniforms(entry: Pick<SkinEntry, "normal" | "uAxis" | "vAxis">, heights: { cols; rows; cell }): SkinAxisUniforms`; `skinNormalNode(axes: SkinAxisUniforms, map: Texture, a: Node<"float">, b: Node<"float">): Node<"vec3">`; `litSkinMaterial(skin: SkinData<SkinImage>, frame: SkinFrame, inputs: SkinMaterialInputs, hooks?: SkinLightHooks): MeshBasicNodeMaterial`; `provenanceSkinMaterial(skin: SkinData<SkinImage>, inputs: SkinMaterialInputs): MeshBasicNodeMaterial`.
+- Produces (`skin-visibility.ts`): `TOGGLE_BITS = 0b11`; `skinGroupBits(groups: Iterable<number>): number`; `NO_TOGGLE_GROUPS`; `skinVisibility(drawnGroups: Iterable<number>, hiddenToggles: number, toggleGroups: ToggleGroups): RelightVisibility` (a toggle's bit is set only while the user hides it and every wall group holding its clean version is drawn: the controller's ruling T1, 8 October).
 
 The material is R1d's interface item 4, exactly:
 
@@ -11533,7 +12796,7 @@ then R1b's display with the floor's knee of 0.8. Each term is as follows.
 
 With `hooks` absent or their members null, `sheen` is a diffuse scale of 1 and no specular, and `sunShadow` is 1, so the output is R1c's own. The light graph is built when the material is made, not lazily, so a hook is called exactly once per material, and the tests can see it.
 
-The provenance view is unlit: green observed (our fusion), blue observed (venue photo), amber recovered, red reconstructed, over the albedo's grey, named so R1d's probes never mistake it for a lit skin. The surface handed to R1d's sheen carries the skin's specular colour (`material.specularColour`, a uniform; the albedo where the skin has no metal), so the gilded frieze ground reflects as gold and its brightness follows the view. `skinVisibility` turns the drawn wall groups and the hidden toggles into R1b's `RelightVisibility`, which the frame's multiplier pass reads: a group's covered splats vanish exactly while its skins draw.
+The provenance view is unlit: green observed (our fusion), blue observed (venue photo), amber recovered, red reconstructed, over the albedo's grey, and a metal drawn with designed values striped violet every centimetre over its metal texels (`material.basis` "prior": the gilding's roughness 0.40 and gold leaf's F0 are priors, not measurements, until a measured layer replaces them; amended 8 October), named so R1d's probes never mistake it for a lit skin. The surface handed to R1d's sheen carries the skin's specular colour (`material.specularColour`, a uniform; the albedo where the skin has no metal), so the gilded frieze ground reflects as gold and its brightness follows the view. `skinVisibility` turns the drawn wall groups and the hidden toggles into R1b's `RelightVisibility`, which the frame's multiplier pass reads: a group's covered splats vanish exactly while its skins draw.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -11541,13 +12804,23 @@ The provenance view is unlit: green observed (our fusion), blue observed (venue 
 
 ```ts
 import { describe, expect, it } from "vitest";
+import type { ToggleGroups } from "../skin-manifest.js";
 import { skinGroupBits, skinVisibility } from "../skin-visibility.js";
 
 describe("skin visibility (T-639 R1c)", () => {
   it("sets one bit per drawn wall group and keeps the two toggle bits", () => {
     expect(skinGroupBits([0, 4])).toBe(0b10001);
     expect(skinGroupBits([])).toBe(0);
-    expect(skinVisibility([1, 2, 1], 0b111)).toEqual({ skinGroups: 0b110, hiddenToggles: 0b11 });
+    expect(skinVisibility([1, 2, 1], 0b111, [[1], [2]])).toEqual({ skinGroups: 0b110, hiddenToggles: 0b11 });
+  });
+
+  it("hides a toggle only while every group holding its clean version is drawn (T1, 8 October)", () => {
+    const groups: ToggleGroups = [[0, 2, 3], [3]];
+    expect(skinVisibility([0, 2, 3], 0b11, groups).hiddenToggles).toBe(0b11);
+    expect(skinVisibility([0, 3], 0b11, groups).hiddenToggles).toBe(0b10);              // group 2 refused or still loading
+    expect(skinVisibility([], 0b11, groups).hiddenToggles).toBe(0);                      // no skins: ?skins=off, a failed package
+    expect(skinVisibility([0, 1, 2, 3, 4], 0b11, [[], [3]]).hiddenToggles).toBe(0b10);   // no group holds toggle 1's clean version
+    expect(skinVisibility([0, 2, 3], 0b01, groups).hiddenToggles).toBe(0b01);            // the user's choice still decides
   });
 
   it("refuses a group outside the five", () => {
@@ -11568,7 +12841,7 @@ import { RelightFrame } from "../../relight/relight-frame.js";
 import { buildTestPackage } from "../../relight/__tests__/relight-test-package.js";
 import { loadSkinPackage, type SkinPackageData } from "../skin-assets.js";
 import { SkinFrame } from "../skin-frame.js";
-import { heightTexture, litSkinMaterial, provenanceSkinMaterial, type SkinMaterialInputs, type SkinSurface } from "../skin-material.js";
+import { PROVENANCE_COLOURS, heightTexture, litSkinMaterial, metalIsPrior, provenanceSkinMaterial, type SkinMaterialInputs, type SkinSurface } from "../skin-material.js";
 import { TEST_SKINS_RELIGHT_BASE, buildTestSkins, type FakeImage } from "./skin-test-package.js";
 
 let frame: SkinFrame;
@@ -11628,6 +12901,18 @@ describe("the lit skin material (T-639 R1c)", () => {
     expect(provenanceSkinMaterial(skin, inputs()).name).toBe("relight-skin-provenance");
   });
 
+  it("labels a designed metal a prior and a measured one not (8 October)", () => {
+    const skin = data.skins[0];
+    if (skin === undefined) throw new Error("no skin");
+    const gilded = { ...skin.entry.material, specularColour: [1, 0.78, 0.34] as [number, number, number], basis: { roughness: "prior", specularColour: "prior" } as const };
+    const measured = { ...gilded, specularColour: [0.9, 0.7, 0.3] as [number, number, number], basis: { roughness: "measured", specularColour: "measured" } as const };
+    expect(metalIsPrior(skin.entry)).toBe(false);                                           // no metal
+    expect(metalIsPrior({ material: gilded })).toBe(true);
+    expect(metalIsPrior({ material: measured })).toBe(false);
+    expect(PROVENANCE_COLOURS.prior).toHaveLength(3);
+    expect(provenanceSkinMaterial({ ...skin, entry: { ...skin.entry, material: gilded } }, inputs()).name).toBe("relight-skin-provenance");
+  });
+
   it("uploads the heights as a filtered half-float texture", () => {
     const skin = data.skins[0];
     if (skin === undefined) throw new Error("no skin");
@@ -11651,12 +12936,15 @@ Expected: FAIL, the module `../skin-material.js` cannot be resolved.
 
 ```ts
 import type { RelightVisibility } from "../relight/relight-kernel.js";
-import { SKIN_GROUPS } from "./skin-manifest.js";
+import { SKIN_GROUPS, type ToggleGroups } from "./skin-manifest.js";
 
 // What the relight frame hides (T-639 R1c, amendment A2): the covered splats of every wall group whose skins draw,
-// and the splats of every hidden toggle (bit t − 1 for toggle t: 1 clutter, 2 cabinet).
+// and the splats of every hidden toggle (bit t − 1 for toggle t: 1 clutter, 2 cabinet) whose clean version is drawn.
 
 export const TOGGLE_BITS = 0b11;
+
+/** No group holds any toggle's clean version: no toggle can be hidden (before the skin package arrives). */
+export const NO_TOGGLE_GROUPS: ToggleGroups = [[], []];
 
 export function skinGroupBits(groups: Iterable<number>): number {
   let bits = 0;
@@ -11667,8 +12955,21 @@ export function skinGroupBits(groups: Iterable<number>): number {
   return bits;
 }
 
-export function skinVisibility(drawnGroups: Iterable<number>, hiddenToggles: number): RelightVisibility {
-  return { skinGroups: skinGroupBits(drawnGroups), hiddenToggles: hiddenToggles & TOGGLE_BITS };
+/**
+ * The relight frame's visibility: the covered splats of every drawn wall group, and the splats of each toggle the user
+ * hides, but only while every wall group holding that toggle's clean version is drawn as skins (and some group holds
+ * it). Otherwise the object stays visible: never a hole, while the skins load, for a refused group and under
+ * `?skins=off` alike (the controller's ruling T1, 8 October). The store keeps the user's choice; only the frame's bits
+ * follow what is drawn.
+ */
+export function skinVisibility(drawnGroups: Iterable<number>, hiddenToggles: number, toggleGroups: ToggleGroups): RelightVisibility {
+  const skinGroups = skinGroupBits(drawnGroups);
+  let hidden = 0;
+  toggleGroups.forEach((groups, index) => {
+    const bit = 1 << index;
+    if ((hiddenToggles & bit) !== 0 && groups.length > 0 && (skinGroupBits(groups) & ~skinGroups) === 0) hidden |= bit;
+  });
+  return { skinGroups, hiddenToggles: hidden & TOGGLE_BITS };
 }
 ```
 
@@ -11679,7 +12980,7 @@ export function skinVisibility(drawnGroups: Iterable<number>, hiddenToggles: num
 ```ts
 import { ClampToEdgeWrapping, DataTexture, DataUtils, FrontSide, HalfFloatType, LinearFilter, RedFormat, Vector2, Vector3, type Texture } from "three";
 import { MeshBasicNodeMaterial, type Node, type StorageBufferAttribute, type UniformNode } from "three/webgpu";
-import { dot, float, floor, max, min, mix, normalize, positionLocal, select, storage, texture as textureNode, uint, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { dot, float, floor, fract, max, min, mix, normalize, positionLocal, select, storage, texture as textureNode, uint, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import { HIGHLIGHT_KNEE, displayNode } from "../relight/display.js";
 import { skyBody } from "../relight/relight-frame.js";
 import type { SkinData, SkinImage } from "./skin-assets.js";
@@ -11733,7 +13034,15 @@ export const PROVENANCE_COLOURS = {
   recovered: [0.93, 0.62, 0.15],
   reconstructed: [0.85, 0.2, 0.18],
   photo: [0.22, 0.45, 0.85],
+  /** A designed material value (a prior: the gilding's roughness 0.40, gold leaf's F0), striped over the metal texels. */
+  prior: [0.62, 0.36, 0.82],
 } as const;
+
+/** Whether a skin's metal is drawn with designed values (`material.basis` "prior") rather than a measured layer's. */
+export function metalIsPrior(entry: Pick<SkinEntry, "material">): boolean {
+  const { specularColour, basis } = entry.material;
+  return specularColour !== null && (basis.specularColour === "prior" || basis.roughness === "prior");
+}
 
 /** DEV instrument (Task 22): 1 draws every skin magenta and unlit, for the verification's skin mask. */
 export const skinMaskView: UniformNode<"float", number> = uniform(0);
@@ -11870,7 +13179,7 @@ export function litSkinMaterial(skin: SkinData<SkinImage>, frame: SkinFrame, inp
   return material;
 }
 
-/** `?skinview=provenance`: unlit, green observed (our fusion), blue observed (venue photo), amber recovered, red reconstructed over the albedo's grey. */
+/** `?skinview=provenance`: unlit, green observed (our fusion), blue observed (venue photo), amber recovered, red reconstructed over the albedo's grey; a designed metal's texels striped violet (its roughness and F0 are priors). */
 export function provenanceSkinMaterial(skin: SkinData<SkinImage>, inputs: SkinMaterialInputs): MeshBasicNodeMaterial {
   const { tileUv } = planeNodes(skin.entry, inputs.tile);
   const sample = textureNode(inputs.albedo, tileUv);
@@ -11878,10 +13187,15 @@ export function provenanceSkinMaterial(skin: SkinData<SkinImage>, inputs: SkinMa
   const colour = (key: keyof typeof PROVENANCE_COLOURS): Node<"vec3"> => vec3(...PROVENANCE_COLOURS[key]);
   const tint = select(code.equal(uint(0)), colour("observed"), select(code.equal(uint(1)), colour("recovered"),
     select(code.equal(uint(2)), colour("reconstructed"), select(code.equal(uint(3)), colour("photo"), vec3(0.5)))));
+  // a metal drawn with designed values (material.basis "prior") is striped violet every 1 cm: never shown as measured
+  const prior = uniform(metalIsPrior(skin.entry) ? 1 : 0);
+  const metal = textureNode(inputs.material, tileUv).g.greaterThanEqual(0.5);
+  const stripe = fract(positionLocal.x.add(positionLocal.y).add(positionLocal.z).mul(50)).lessThan(0.5);
+  const shown = select(metal.and(prior.greaterThan(0.5)).and(stripe), colour("prior"), tint);
   const grey = vec3(dot(sample.rgb, vec3(0.2126, 0.7152, 0.0722)));
   const material = new MeshBasicNodeMaterial({ side: FrontSide, fog: false, toneMapped: false });
   material.name = SKIN_PROVENANCE_MATERIAL_NAME;
-  material.colorNode = vec4(mix(grey, tint, 0.65), sample.a);
+  material.colorNode = vec4(mix(grey, shown, 0.65), sample.a);
   material.alphaTest = 0.5;
   return material;
 }
@@ -11892,10 +13206,10 @@ Every per-skin number is a uniform: `planeNodes`, `skinAxisUniforms`, `rangeUnif
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/skins/__tests__/skin-visibility.test.ts`
-Expected: PASS, 2 tests.
+Expected: PASS, 3 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/skins/__tests__/skin-material.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 6: Typecheck, lint and commit**
 
@@ -11920,7 +13234,7 @@ If TypeScript rejects a TSL annotation (`vec3(...entry.normal)` on a readonly tu
 - Modify: `packages/web/src/components/scene/RelightProvider.tsx` (mount `RelightSkins`)
 - Modify: `packages/web/src/stores/light-setting-store.ts` (the skins' loading, the hidden toggles)
 - Modify: `packages/web/src/components/rooms/LightControl.tsx` ("Preparing the walls…")
-- Modify: `packages/web/src/lib/relight/relight-manifest.ts` (`RELIGHT_ROOMS` names relight package v2), `packages/web/src/lib/relight/__tests__/relight-manifest.test.ts` (its URL expectations)
+- Modify: `packages/web/src/lib/relight/relight-manifest.ts` (`RELIGHT_ROOMS` names relight package v2), `packages/web/src/lib/relight/__tests__/relight-manifest.test.ts` (its URL expectations), R1b Task 15's `packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx` (its one URL expectation; pre-flight fix I5, 8 October)
 - Modify: `packages/web/src/lib/splat-staging-plugin.ts` (serve the skin package in development), `packages/web/src/lib/__tests__/splat-staging-plugin.test.ts`
 - Test: `packages/web/src/components/scene/__tests__/RelightSkins.test.tsx`, `packages/web/src/stores/__tests__/light-setting-store-skins.test.ts`, `packages/web/src/components/rooms/__tests__/LightControl-skins.test.tsx`
 
@@ -11934,7 +13248,8 @@ If TypeScript rejects a TSL annotation (`vec3(...entry.normal)` on a readonly tu
 `RelightSkins` lives inside the relight provider, so it exists only while the hall is relit, and only where splats exist (the founder hold). It owns three things.
 
 - **Loading.** It sends relight package v2's manifest to the skin worker (Task 18), and the store's `skins` shows its measured byte progress. When the package arrives it builds the skin frame (`skins:frame`) and attaches its passes. It then prepares one skin per animation frame: the textures, the displaced geometry and the material (`skins:skin`), so no main-thread task of the skins approaches 50 ms.
-- **Visibility.** It keeps `frame.setVisibility` in step with the wall groups whose skins are all drawn and with the store's hidden toggles. A group's covered splats vanish in the same frame its skins appear, so there is never a hole and never a double. The toggles apply even with the skins off: the loudspeakers are splats.
+- **Visibility.** It keeps `frame.setVisibility` in step with the wall groups whose skins are all drawn and with the store's hidden toggles, in a layout effect, so it lands before the frame that first draws the change. A group's covered splats vanish in the same frame its skins appear, so there is never a hole and never a double. A toggle's splats are hidden only while the user hides it and every wall group holding its clean version is drawn (`skinVisibility` with the package's `toggleGroups`; the controller's ruling T1, 8 October): while the skins load, for a refused group and under `?skins=off` the loudspeakers and the cabinet stay visible, since the capture saw little of the wall behind them. The store keeps the user's choice, so the objects vanish the moment their walls are drawn.
+- **The first frame.** Each skin's textures are uploaded in the frame that prepares it (`initTexture`, inside its `skins:skin` span), so the frame that first draws the walls uploads nothing. That frame is measured as `skins:first-frame`, from the commit to the end of the next animation frame, which R3F renders first; Task 23 holds it, with every other `skins:` span, to 50 ms (pre-flight fix, 8 October: the walls' first frame was unmeasured).
 - **Fallback.** Fallback is per wall group:
   - a group the package refuses, or whose skins fail to build, stays splats, with one `skins-group` warning;
   - a package that cannot be loaded at all leaves every wall as splats, with one `skins` warning;
@@ -12058,6 +13373,7 @@ describe("skins in the relit walk (T-639 R1c)", () => {
     const root = mountInStubRoot(<RelightSkins frame={frame} transform={TRANSFORM} />);
     await vi.waitFor(() => { expect(useLightSettingStore.getState().skins.status).toBe("ready"); });
     expect(useLightSettingStore.getState().hiddenToggles).toBe(1);                     // relight v2's defaultHidden
+    expect(visibility.mock.calls[0]?.[0]).toEqual({ skinGroups: 0, hiddenToggles: 0 });   // loading: the clutter stays (T1)
     expect(visibility).toHaveBeenLastCalledWith({ skinGroups: 0b10001, hiddenToggles: 1 });
     const names: string[] = [];
     root.scene.traverse((object) => { if (object.name.startsWith("relight-skin-")) names.push(object.name); });
@@ -12078,6 +13394,11 @@ describe("skins in the relit walk (T-639 R1c)", () => {
     expect(mocks.warn).toHaveBeenCalledTimes(1);
     expect(mocks.warn.mock.calls[0]?.[0]).toBe("skins-group");
     expect(visibility).toHaveBeenLastCalledWith({ skinGroups: 0b00001, hiddenToggles: 1 });
+    act(() => { useLightSettingStore.getState().setToggleHidden(2, true); });
+    // the cabinet's clean version is the refused ceiling's (the test package's toggleBoxes): it stays visible (T1)
+    await vi.waitFor(() => { expect(visibility).toHaveBeenLastCalledWith({ skinGroups: 0b00001, hiddenToggles: 1 }); });
+    expect(useLightSettingStore.getState().hiddenToggles).toBe(0b11);
+    useLightSettingStore.getState().setToggleHidden(2, false);
     root.unmount();
   });
 
@@ -12087,17 +13408,18 @@ describe("skins in the relit walk (T-639 R1c)", () => {
     const root = mountInStubRoot(<RelightSkins frame={frame} transform={TRANSFORM} />);
     await vi.waitFor(() => { expect(mocks.warn).toHaveBeenCalledWith("skins", expect.any(String), expect.any(Error)); });
     expect(useLightSettingStore.getState().skins.status).toBe("off");
-    expect(visibility).toHaveBeenLastCalledWith({ skinGroups: 0, hiddenToggles: 1 });
+    expect(visibility).toHaveBeenLastCalledWith({ skinGroups: 0, hiddenToggles: 0 });   // no skins: the clutter stays (T1)
     root.unmount();
   });
 
-  it("requests nothing with ?skins=off and still applies the toggles", async () => {
+  it("requests nothing with ?skins=off and keeps the clutter visible", async () => {
     window.history.replaceState(null, "", "/room/grand-hall?skins=off");
     const visibility = vi.spyOn(frame, "setVisibility");
     const root = mountInStubRoot(<RelightSkins frame={frame} transform={TRANSFORM} />);
     await vi.waitFor(() => { expect(visibility).toHaveBeenCalled(); });
     expect(mocks.runSkinWorker).not.toHaveBeenCalled();
-    expect(visibility).toHaveBeenLastCalledWith({ skinGroups: 0, hiddenToggles: 1 });
+    expect(useLightSettingStore.getState().hiddenToggles).toBe(1);                      // the choice is kept
+    expect(visibility).toHaveBeenLastCalledWith({ skinGroups: 0, hiddenToggles: 0 });   // but nothing holds a clean version
     root.unmount();
   });
 });
@@ -12121,6 +13443,8 @@ In `packages/web/src/lib/__tests__/splat-staging-plugin.test.ts`, directly after
 
 In `packages/web/src/lib/relight/__tests__/relight-manifest.test.ts`, in the test "resolves a room's package beside its tiles, and nothing for other rooms", replace both `relight/v1/manifest.json` with `relight/v2/manifest.json`.
 
+In `packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx` (R1b Task 15, whose note there asks for this), in the test "loads the room's relight package once the renderer is WebGPU, and hands every tile its records", replace `/splats/trades-hall/grand-hall/relight/v1/manifest.json` with `/splats/trades-hall/grand-hall/relight/v2/manifest.json`. Nothing else in that file depends on the version.
+
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run each, one file per command:
@@ -12132,6 +13456,7 @@ pnpm --filter @omnitwin/web exec vitest run src/components/rooms/__tests__/Light
 pnpm --filter @omnitwin/web exec vitest run src/components/scene/__tests__/RelightSkins.test.tsx
 pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/splat-staging-plugin.test.ts
 pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-manifest.test.ts
+pnpm --filter @omnitwin/web exec vitest run src/components/rooms/__tests__/RoomSplatScene.test.tsx
 ```
 
 Expected: each fails, for its own reason:
@@ -12140,7 +13465,7 @@ Expected: each fails, for its own reason:
 - the control shows no walls status;
 - `RelightSkins` does not exist;
 - the plugin refuses `skins/`;
-- the URL is still `relight/v1`.
+- the URL is still `relight/v1` (the manifest's test, and R1b's walk-scene test, whose one changed test fails).
 
 - [ ] **Step 3: The store**
 
@@ -12237,10 +13562,10 @@ export const SkinLightHooksContext = createContext<SkinLightHooks>(NO_SKIN_HOOKS
 `packages/web/src/components/scene/RelightSkins.tsx`:
 
 ```tsx
-import { useContext, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import { BufferAttribute, BufferGeometry, LinearFilter, LinearMipmapLinearFilter, NearestFilter, NoColorSpace, SRGBColorSpace, Texture } from "three";
-import type { MeshBasicNodeMaterial } from "three/webgpu";
+import { WebGPURenderer, type MeshBasicNodeMaterial } from "three/webgpu";
 import type { RelightFrame } from "../../lib/relight/relight-frame.js";
 import { warnRelightFallback } from "../../lib/relight/relight-warning.js";
 import type { RuntimeAssetViewTransform } from "../../lib/runtime-package-resolution.js";
@@ -12248,7 +13573,7 @@ import { closeSkinImages, type SkinData, type SkinPackageData } from "../../lib/
 import { SkinFrame, measureSkins } from "../../lib/skins/skin-frame.js";
 import { SKIN_GROUPS, skinViewFromSearch, skinsOffBySearch, type SkinView } from "../../lib/skins/skin-manifest.js";
 import { heightTexture, litSkinMaterial, provenanceSkinMaterial, type SkinLightHooks } from "../../lib/skins/skin-material.js";
-import { skinVisibility } from "../../lib/skins/skin-visibility.js";
+import { NO_TOGGLE_GROUPS, skinVisibility } from "../../lib/skins/skin-visibility.js";
 import { runSkinWorker } from "../../lib/skins/skin-worker-client.js";
 import { gaussianSplatsAvailable } from "../../lib/splat-access.js";
 import { useLightSettingStore } from "../../stores/light-setting-store.js";
@@ -12330,6 +13655,7 @@ const groupName = (group: number): string => SKIN_GROUPS[group] ?? `group ${Stri
 export function RelightSkins({ frame, transform }: { readonly frame: RelightFrame; readonly transform: RuntimeAssetViewTransform }): ReactElement | null {
   const hooks = useContext(SkinLightHooksContext);
   const invalidate = useThree((state) => state.invalidate);
+  const gl = useThree((state) => state.gl);
   const hiddenToggles = useLightSettingStore((state) => state.hiddenToggles);
   const previewable = gaussianSplatsAvailable();
   const search = typeof window === "undefined" ? "" : window.location.search;
@@ -12405,7 +13731,12 @@ export function RelightSkins({ frame, transform }: { readonly frame: RelightFram
       index += 1;
       if (!failed.has(skin.entry.group)) {
         try {
-          built.push(measureSkins("skins:skin", () => buildSkin(skin, loaded, hooks, view)));
+          built.push(measureSkins("skins:skin", () => {
+            const part = buildSkin(skin, loaded, hooks, view);
+            // upload this skin's textures now, one skin per frame, so the frame that first draws the walls uploads none
+            if (gl instanceof WebGPURenderer) for (const map of [part.heights, ...part.tiles.flatMap((tile) => tile.maps)]) gl.initTexture(map);
+            return part;
+          }));
         } catch (reason: unknown) {
           failed.add(skin.entry.group);
           warnRelightFallback("skins-group", `The ${groupName(skin.entry.group)} skins could not be prepared; that wall is drawn as splats.`, reason);
@@ -12420,14 +13751,26 @@ export function RelightSkins({ frame, transform }: { readonly frame: RelightFram
       for (const part of built) disposeSkin(part);
       setParts([]);
     };
-  }, [loaded, hooks, view]);
+  }, [loaded, hooks, view, gl]);
 
-  // What the relight frame hides: the drawn groups' covered splats and the hidden toggles' splats.
+  // What the relight frame hides: the drawn groups' covered splats, and a hidden toggle's splats only while every group
+  // holding its clean version is drawn (T1). A layout effect, so the change lands before the frame that draws it.
   const drawn = useMemo(() => [...new Set(parts.map((part) => part.group))].sort((a, b) => a - b), [parts]);
-  useEffect(() => {
-    frame.setVisibility(skinVisibility(drawn, hiddenToggles));
+  const toggleGroups = loaded?.data.toggleGroups ?? NO_TOGGLE_GROUPS;
+  useLayoutEffect(() => {
+    frame.setVisibility(skinVisibility(drawn, hiddenToggles, toggleGroups));
     invalidate();
-  }, [frame, drawn, hiddenToggles, invalidate]);
+  }, [frame, drawn, hiddenToggles, toggleGroups, invalidate]);
+
+  // The walls' first frame, a loading task like any other (Task 23 holds it to 50 ms): from the commit that first draws
+  // skins to the end of the next animation frame, which R3F renders first (its frame was requested by invalidate).
+  const drawing = drawn.length > 0;
+  useLayoutEffect(() => {
+    if (!drawing) return undefined;
+    const start = performance.now();
+    const request = requestAnimationFrame(() => { performance.measure("skins:first-frame", { start, end: performance.now() }); });
+    return () => { cancelAnimationFrame(request); };
+  }, [drawing]);
 
   if (parts.length === 0) return null;
   const [px, py, pz] = transform.position;
@@ -12477,8 +13820,8 @@ const PACKAGE_DIRECTORIES = ["floor-skin", "relight", "skins"] as const;
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run the five commands of Step 2 again.
-Expected: PASS for each file. The new files hold 2, 2 and 4 tests. The plugin's file holds one test more than before. The manifest's file holds its 23 (R1b Task 2 as amended on 7 October), with the two URLs now v2.
+Run the six commands of Step 2 again.
+Expected: PASS for each file. The new files hold 2, 2 and 4 tests. The plugin's file holds one test more than before. The manifest's file holds its 23 (R1b Task 2 as amended on 7 October), with the two URLs now v2, and R1b's walk-scene file its count from R1b Task 15, with its URL now v2.
 
 Then run the R1b files these changes touch, one per command, to confirm nothing else moved:
 
@@ -12495,8 +13838,8 @@ Expected: PASS, with their earlier counts.
 ```bash
 cd D:/claude/real-hall/repo
 pnpm --filter @omnitwin/web exec tsc --noEmit -p tsconfig.json
-pnpm --filter @omnitwin/web exec eslint src/components/scene/RelightSkins.tsx src/components/scene/skin-hooks-context.ts src/components/scene/RelightProvider.tsx src/stores/light-setting-store.ts src/components/rooms/LightControl.tsx src/lib/relight/relight-manifest.ts src/lib/splat-staging-plugin.ts src/components/scene/__tests__/RelightSkins.test.tsx src/stores/__tests__/light-setting-store-skins.test.ts src/components/rooms/__tests__/LightControl-skins.test.tsx
-git add packages/web/src/components/scene/RelightSkins.tsx packages/web/src/components/scene/skin-hooks-context.ts packages/web/src/components/scene/RelightProvider.tsx packages/web/src/stores/light-setting-store.ts packages/web/src/components/rooms/LightControl.tsx packages/web/src/lib/relight/relight-manifest.ts packages/web/src/lib/relight/__tests__/relight-manifest.test.ts packages/web/src/lib/splat-staging-plugin.ts packages/web/src/lib/__tests__/splat-staging-plugin.test.ts packages/web/src/components/scene/__tests__/RelightSkins.test.tsx packages/web/src/stores/__tests__/light-setting-store-skins.test.ts packages/web/src/components/rooms/__tests__/LightControl-skins.test.tsx
+pnpm --filter @omnitwin/web exec eslint src/components/scene/RelightSkins.tsx src/components/scene/skin-hooks-context.ts src/components/scene/RelightProvider.tsx src/stores/light-setting-store.ts src/components/rooms/LightControl.tsx src/lib/relight/relight-manifest.ts src/lib/splat-staging-plugin.ts src/components/scene/__tests__/RelightSkins.test.tsx src/stores/__tests__/light-setting-store-skins.test.ts src/components/rooms/__tests__/LightControl-skins.test.tsx src/components/rooms/__tests__/RoomSplatScene.test.tsx
+git add packages/web/src/components/scene/RelightSkins.tsx packages/web/src/components/scene/skin-hooks-context.ts packages/web/src/components/scene/RelightProvider.tsx packages/web/src/stores/light-setting-store.ts packages/web/src/components/rooms/LightControl.tsx packages/web/src/lib/relight/relight-manifest.ts packages/web/src/lib/relight/__tests__/relight-manifest.test.ts packages/web/src/components/rooms/__tests__/RoomSplatScene.test.tsx packages/web/src/lib/splat-staging-plugin.ts packages/web/src/lib/__tests__/splat-staging-plugin.test.ts packages/web/src/components/scene/__tests__/RelightSkins.test.tsx packages/web/src/stores/__tests__/light-setting-store-skins.test.ts packages/web/src/components/rooms/__tests__/LightControl-skins.test.tsx
 git diff --cached --stat
 git commit -m "feat(skins): skins in the relit walk: per-group fallback, toggles, measured progress, relight v2 (T-639 R1c)
 
@@ -12511,16 +13854,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/skins/__tests__/skin-debug.test.ts`
 
 **Interfaces:**
-- Consumes: Task 17 (`skinTexelBase`, `skinSunVisibility`, `SKY_BODIES`, `type SkyBodyName`), Task 19 (`SkinFrame`), Task 20 (`skinMaskView`), Task 21 (`RelightSkins`); R1b Task 4 (`WINDOW_ROUNDING`, `prepareKernelFrame`, `type SkyBody`, `type SkyLight`), Task 10 (`RelightFrame.readSkyLight`), Task 17 (`FLOOR_SUN_TOLERANCE`, exported by `relight-debug.ts`; `waitForNativeGpuWork`, `packages/web/src/lib/native-gpu-completion.ts:156`); three 0.186 `Renderer.getArrayBufferAsync` (`src/renderers/common/Renderer.js:2097`).
-- Produces (`skin-debug.ts`): `SKIN_LIGHT_TOLERANCE = 2e-3` (relative: R1d A2's tolerance for the floor's base light, the same float16 cubes summed in another order); `SKIN_CROPS` (`frieze-figures` on `door-f3`, `board-lettering` on `end_xmax-l2`, `wainscot` on `door-w2`, `canvas` on `door-c3`, `ceiling` on `ceiling-2`); `interface SkinLightCheck { checked; lit; worstRelative }`; `interface SkinSunCheck { checked; lit; worstDifference; excused }`; `interface SkinGpuTime { runs; medianMs; maxMs }`; `interface SkinCrop { name; skin; position: [x, y, z]; target: [x, y, z]; fov; width; height }` (scene frame, what `window.__roomViewCapture` takes); `interface SkinsDebugDeps` (below); `interface SkinsDebug { state(); light(stride); sun(stride, body); mask(on); gpuTime(runs); crops(distance?) }`; `createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug`; `installSkinsDebug(debug: SkinsDebug): () => void` (`window.__skins`, development only).
+- Consumes: Task 17 (`skinTexelBase`, `skinSunVisibility`, `SKY_BODIES`, `type SkyBodyName`), Task 19 (`SkinFrame`), Task 20 (`skinMaskView`), Task 21 (`RelightSkins`); R1b Task 4 (`WINDOW_ROUNDING`, `prepareKernelFrame`, `type SkyBody`, `type SkyLight`), Task 10 (`RelightFrame.readSkyLight`), Task 17 (`FLOOR_SUN_TOLERANCE`, `computeTimestamps` and `timedCompute`, exported by `relight-debug.ts`; `waitForNativeGpuWork`, `packages/web/src/lib/native-gpu-completion.ts:156`); three 0.186 `Renderer.getArrayBufferAsync` (`src/renderers/common/Renderer.js:2097`).
+- Produces (`skin-debug.ts`): `SKIN_CROPS` (`frieze-figures` on `door-f3`, `board-lettering` on `end_xmax-l2`, `wainscot` on `door-w2`, `canvas` on `door-c3`, `ceiling` on `ceiling-2`; and at the top edge, `frieze-top-door`, `-window`, `-end` and `-fireplace` on `door-f3`, `window-f3`, `end_xmin-f2` and `end_xmax-f1`, amended 8 October); `interface SkinLightCheck { checked; lit; worstRelative }`; `interface SkinSunCheck { checked; lit; marched; worstDifference; excused }` (`marched`: the checked texels whose CPU ray takes a sample, the population Task 23 caps the excuses by); `type SkinTiming = "timestamp-query" | "round-trip"`; `interface SkinGpuTime { runs; medianMs; maxMs; timing }` (pre-flight fixes, 8 October; the light check's 2e-3, R1d A2's tolerance for the floor's base light, is Task 23's `LIGHT_TOLERANCE`, the one copy); `interface SkinCrop { name; skin; at: "centre" | "top"; distance; position: [x, y, z]; target: [x, y, z]; fov (vertical, degrees: three's `PerspectiveCamera.fov`, which R1b's capture sets); width; height }` (scene frame, what `window.__roomViewCapture` takes); `interface SkinsDebugDeps` (below); `interface SkinsDebug { state(); light(stride); sun(stride, body); mask(on); gpuTime(runs); crops(distance?) }`; `createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug`; `installSkinsDebug(debug: SkinsDebug): () => void` (`window.__skins`, development only).
 
 These instruments are the only way Task 23 reads the skins on the GPU, and each check follows R1b Task 17's discipline.
 
 - **`light(stride)`** reads back the skin frame's light buffer with `getArrayBufferAsync` and compares every `stride`-th light texel with the CPU twin `skinTexelBase`, within 2e-3 relative. Both sides include the sky bodies' bounce (the factored basis in the scenario fold), so a sunlit or moonlit setting checks it too (amended 7 October). The CPU twin is asked with the GPU's own read-back sky light, as R1b Task 17's `gpuKernel` does (amended 8 October, seam review I1): `frame.readSkyLight`, then `prepareKernelFrame(model, setting, { kind: "light", … })`. The applied `kernelFrame` would not do: its display light holds the CPU twin's exact light for a preset's own-hour body and another direction's read-back for a provisional frame, while the GPU folded its own; one patch ray the GPU rounds the other way moves a window's `P_w` by about 1%, more than 2e-3 where the sky bounce dominates a texel. R1b Task 17's `skyLight` judges the GPU's sky light itself against the twin.
-- **`sun(stride, body)`** reads back a body's visibility buffer and compares it with `skinSunVisibility` within R1b's floor tolerance (1e-5). A texel whose ray passes within rounding of a march decision (`WINDOW_ROUNDING`) is counted as excused, never judged.
-- **`gpuTime(runs)`** alternates the sunny morning's hour between 08:00 and 10:00. At each new hour it times the skins' three passes alone, from submission to completion on an idle queue.
+- **`sun(stride, body)`** reads back a body's visibility buffer and compares it with `skinSunVisibility` within R1b's floor tolerance (1e-5). A texel whose ray passes within rounding of a march decision (`WINDOW_ROUNDING`) is counted as excused, never judged, and every checked texel whose CPU ray takes a sample counts in `marched`, the population Task 23 caps the excuses by.
+- **`gpuTime(runs)`** alternates the sunny morning's hour between 08:00 and 10:00. At each new hour it times the skins' three passes alone: their GPU time from R1b Task 17's timestamp queries (`timedCompute`) where the adapter has `timestamp-query`, else from submission to completion on an idle queue, which also counts the CPU's encoding and the queue's round trip. The result says which (`timing`; pre-flight fix, 8 October).
 - **`mask(on)`** draws every skin magenta and unlit, so the verification can tell skin pixels from splat pixels.
-- **`crops()`** gives the close-up views the sharpness check renders: 1.5 m in front of each named skin's centre, looking at it, in the scene frame through the walk's transform.
+- **`crops()`** gives the close-up views the sharpness check renders: 1.5 m in front of each named skin's centre, looking at it, in the scene frame through the walk's transform. It also gives the skin-top seam's (amended 8 October): 1.5 m in front of the middle of each wall's frieze skin's top edge, so the edge crosses the image's middle row with the cornice's splats above it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -12591,7 +13934,7 @@ function deps(light: Float32Array, sun: Float32Array): SkinsDebugDeps {
       if (kernel === null) throw new Error("not applied");
       return Promise.resolve({ sun: kernel.skyLight("sun"), moon: kernel.skyLight("moon") });
     },
-    timeSkinPasses: () => Promise.resolve(0.5),
+    timeSkinPasses: () => Promise.resolve({ ms: 0.5, timing: "round-trip" as const }),
     applyMinutes: () => Promise.resolve(),
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, note: "test" },
     drawn: () => [0, 4],
@@ -12616,6 +13959,7 @@ describe("the skins' DEV instruments (T-639 R1c)", () => {
     const check = await createSkinsDebug(deps(expectedLight(), expectedSun())).sun(1, "sun");
     expect(check.checked).toBe(frame.sunTexels);
     expect(check.worstDifference).toBe(0);
+    expect(Number.isInteger(check.marched) && check.marched >= 0 && check.marched <= check.checked).toBe(true);
     expect((await createSkinsDebug(deps(expectedLight(), expectedSun())).sun(4, "sun")).checked).toBeLessThan(frame.sunTexels / 10);
   });
 
@@ -12625,7 +13969,7 @@ describe("the skins' DEV instruments (T-639 R1c)", () => {
     expect(skinMaskView.value).toBe(1);
     debug.mask(false);
     expect(skinMaskView.value).toBe(0);
-    expect(await debug.gpuTime(4)).toEqual({ runs: 4, medianMs: 0.5, maxMs: 0.5 });
+    expect(await debug.gpuTime(4)).toEqual({ runs: 4, medianMs: 0.5, maxMs: 0.5, timing: "round-trip" });
   });
 
   it("places each named crop's camera 1.5 m in front of its skin, in the scene frame", () => {
@@ -12634,6 +13978,7 @@ describe("the skins' DEV instruments (T-639 R1c)", () => {
     const crop = crops[0];
     if (crop === undefined) throw new Error("no crop");
     expect(Math.hypot(crop.position[0] - crop.target[0], crop.position[1] - crop.target[1], crop.position[2] - crop.target[2])).toBeCloseTo(1.5, 6);
+    expect([crop.at, crop.distance]).toEqual(["centre", 1.5]);
   });
 
   it("states what is drawn", () => {
@@ -12667,23 +14012,39 @@ import { skinMaskView } from "./skin-material.js";
 // DEV instruments for the skins (T-639 R1c): the GPU's light and sun buffers read back against the CPU twin, the GPU
 // time of the skins' passes at a light change, the skin mask and the close-up views Task 23 renders.
 
-export const SKIN_LIGHT_TOLERANCE = 2e-3;
-
 export const SKIN_CROPS = [
-  { name: "frieze-figures", skin: "door-f3" },
-  { name: "board-lettering", skin: "end_xmax-l2" },
-  { name: "wainscot", skin: "door-w2" },
-  { name: "canvas", skin: "door-c3" },
-  { name: "ceiling", skin: "ceiling-2" },
+  { name: "frieze-figures", skin: "door-f3", at: "centre" },
+  { name: "board-lettering", skin: "end_xmax-l2", at: "centre" },
+  { name: "wainscot", skin: "door-w2", at: "centre" },
+  { name: "canvas", skin: "door-c3", at: "centre" },
+  { name: "ceiling", skin: "ceiling-2", at: "centre" },
+  // each wall's frieze skin at its top edge, against the cornice's splats above it (Task 23's skin-top seam)
+  { name: "frieze-top-door", skin: "door-f3", at: "top" },
+  { name: "frieze-top-window", skin: "window-f3", at: "top" },
+  { name: "frieze-top-end", skin: "end_xmin-f2", at: "top" },
+  { name: "frieze-top-fireplace", skin: "end_xmax-f1", at: "top" },
 ] as const;
 
 export interface SkinLightCheck { readonly checked: number; readonly lit: number; readonly worstRelative: number }
-export interface SkinSunCheck { readonly checked: number; readonly lit: number; readonly worstDifference: number; readonly excused: number }
-export interface SkinGpuTime { readonly runs: number; readonly medianMs: number; readonly maxMs: number }
+export interface SkinSunCheck {
+  readonly checked: number;
+  readonly lit: number;
+  /** Checked texels whose CPU ray takes a sample: the excused rounding cases are capped by these (Task 23). */
+  readonly marched: number;
+  readonly worstDifference: number;
+  readonly excused: number;
+}
+/** How the skins' passes were timed: R1b's timestamp queries where the adapter has them, else submission to completion. */
+export type SkinTiming = "timestamp-query" | "round-trip";
+export interface SkinGpuTime { readonly runs: number; readonly medianMs: number; readonly maxMs: number; readonly timing: SkinTiming }
 
 export interface SkinCrop {
   readonly name: string;
   readonly skin: string;
+  /** "centre": in front of the skin's centre; "top": of the middle of its top edge (row 0), which crosses the image's middle row. */
+  readonly at: "centre" | "top";
+  /** The eye's distance from the target, model metres. */
+  readonly distance: number;
   readonly position: readonly [number, number, number];
   readonly target: readonly [number, number, number];
   readonly fov: number;
@@ -12699,8 +14060,8 @@ export interface SkinsDebugDeps {
   readonly prepare: () => void;
   /** The sky bodies' light the GPU computed for the applied light (R1b's RelightFrame.readSkyLight): the light check's CPU side. */
   readonly readSkyLight: () => Promise<Readonly<Record<SkyBody, SkyLight | null>>>;
-  /** Submits the skins' passes alone and resolves with the milliseconds to their completion on an idle queue. */
-  readonly timeSkinPasses: () => Promise<number>;
+  /** Times the skins' passes alone: their GPU time from R1b's timestamp queries, else submission to completion on an idle queue. */
+  readonly timeSkinPasses: () => Promise<{ readonly ms: number; readonly timing: SkinTiming }>;
   /** Sets the sunny morning at `minutes` and resolves once the walk has applied it. */
   readonly applyMinutes: (minutes: number) => Promise<void>;
   readonly transform: RuntimeAssetViewTransform;
@@ -12785,7 +14146,7 @@ export function createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug {
       const values = new Float32Array(await deps.read(frame.sunOut[body]));
       const applied = kernel();
       const step = Math.max(1, Math.floor(stride));
-      let checked = 0, lit = 0, worst = 0, excused = 0;
+      let checked = 0, lit = 0, marched = 0, worst = 0, excused = 0;
       for (const skin of frame.data.skins) {
         const range = frame.ranges.get(skin.entry.id);
         if (skin.sun === null || range === undefined || range.sun === null) continue;
@@ -12793,10 +14154,12 @@ export function createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug {
         for (let row = 0; row < rows; row += step) {
           for (let column = 0; column < columns; column += step) {
             const texel = row * columns + column;
-            const expected = skinSunVisibility(frame.relight.model, applied, skin.sun, texel, body).visibility;
+            const ray = skinSunVisibility(frame.relight.model, applied, skin.sun, texel, body);
+            const expected = ray.visibility;
             const difference = Math.abs((values[range.sun.offset + texel] ?? Number.NaN) - expected);
             checked += 1;
             if (expected > 0) lit += 1;
+            if (ray.steps > 0) marched += 1;
             if (!(difference <= FLOOR_SUN_TOLERANCE) && skinSunVisibility(frame.relight.model, applied, skin.sun, texel, body, WINDOW_ROUNDING).sensitive) {
               excused += 1;
               continue;
@@ -12805,7 +14168,7 @@ export function createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug {
           }
         }
       }
-      return { checked, lit, worstDifference: worst, excused };
+      return { checked, lit, marched, worstDifference: worst, excused };
     },
     mask: (on) => {
       skinMaskView.value = on ? 1 : 0;
@@ -12813,12 +14176,15 @@ export function createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug {
     },
     gpuTime: async (runs) => {
       const times: number[] = [];
+      let timing: SkinTiming = "round-trip";
       for (let run = 0; run < runs; run += 1) {
         await deps.applyMinutes(run % 2 === 0 ? 8 * 60 : 10 * 60);
         deps.prepare();
-        times.push(await deps.timeSkinPasses());
+        const timed = await deps.timeSkinPasses();
+        times.push(timed.ms);
+        timing = timed.timing;
       }
-      return { runs, medianMs: median(times), maxMs: Math.max(...times) };
+      return { runs, medianMs: median(times), maxMs: Math.max(...times), timing };
     },
     crops: (distance = 1.5) => {
       const toScene = sceneMatrix();
@@ -12826,11 +14192,11 @@ export function createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug {
         const skin = frame.data.skins.find((candidate) => candidate.entry.id === crop.skin);
         if (skin === undefined) return [];
         const { origin, uAxis, vAxis, normal, cols, rows, texel } = skin.entry;
-        const a = (cols * texel) / 2, b = (rows * texel) / 2;
+        const a = (cols * texel) / 2, b = crop.at === "top" ? 0 : (rows * texel) / 2;
         const centre = new Vector3(...origin).addScaledVector(new Vector3(...uAxis), a).addScaledVector(new Vector3(...vAxis), b);
         const eye = centre.clone().addScaledVector(new Vector3(...normal), distance);
         const [target, position] = [centre.applyMatrix4(toScene), eye.applyMatrix4(toScene)];
-        return [{ name: crop.name, skin: crop.skin, position: [position.x, position.y, position.z], target: [target.x, target.y, target.z], fov: 40, width: 1600, height: 1200 }];
+        return [{ name: crop.name, skin: crop.skin, at: crop.at, distance, position: [position.x, position.y, position.z], target: [target.x, target.y, target.z], fov: 40, width: 1600, height: 1200 }];
       });
     },
   };
@@ -12852,7 +14218,7 @@ The crop camera's distance is metres in the model frame, which the walk's transf
 
 - [ ] **Step 4: Install them from the component**
 
-In `packages/web/src/components/scene/RelightSkins.tsx`, replace the import line `import { useContext, useEffect, useMemo, useState, type ReactElement } from "react";` with `import { useContext, useEffect, useMemo, useRef, useState, type ReactElement } from "react";`, and add `import { WebGPURenderer } from "three/webgpu";` below the `three` import. Directly after `  const invalidate = useThree((state) => state.invalidate);` add `  const gl = useThree((state) => state.gl);`, and directly after the effect that calls `frame.setVisibility(...)` add:
+In `packages/web/src/components/scene/RelightSkins.tsx`, replace the import line `import { useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactElement } from "react";` with `import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";` (`gl` and `WebGPURenderer` are there since Task 21), and directly after the layout effect that measures `skins:first-frame` add:
 
 ```tsx
   // DEV: window.__skins (Task 22) for Task 23's checks, imported only in development builds, as R1b's instruments are.
@@ -12862,7 +14228,7 @@ In `packages/web/src/components/scene/RelightSkins.tsx`, replace the import line
     if (!import.meta.env.DEV || loaded === null || !(gl instanceof WebGPURenderer)) return undefined;
     let uninstall: (() => void) | null = null;
     let cancelled = false;
-    void Promise.all([import("../../lib/skins/skin-debug.js"), import("../../lib/native-gpu-completion.js")]).then(([debug, completion]) => {
+    void Promise.all([import("../../lib/skins/skin-debug.js"), import("../../lib/native-gpu-completion.js"), import("../../lib/relight/relight-debug.js")]).then(([debug, completion, relightDebug]) => {
       if (cancelled) return;
       const idle = (): Promise<void> => completion.waitForNativeGpuWork(gl, new AbortController().signal);
       const twoFrames = (): Promise<void> => new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); });
@@ -12873,10 +14239,14 @@ In `packages/web/src/components/scene/RelightSkins.tsx`, replace the import line
         readSkyLight: () => frame.readSkyLight(gl),
         timeSkinPasses: async () => {
           await idle();
+          if (relightDebug.computeTimestamps(gl)) {
+            // R1b Task 17's timer: the call's GPU time from timestamp queries (a timestamp that never resolves: NaN, a fail)
+            return { ms: (await relightDebug.timedCompute(gl, loaded.frame.passes)) ?? Number.NaN, timing: "timestamp-query" as const };
+          }
           const started = performance.now();
           void gl.compute([...loaded.frame.passes]);
           await idle();
-          return performance.now() - started;
+          return { ms: performance.now() - started, timing: "round-trip" as const };
         },
         applyMinutes: async (minutes) => {
           const store = useLightSettingStore.getState();
@@ -12927,21 +14297,22 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `D:/claude/skins/grand-hall/evidence/r1c-browser-run.json` and `r1c-browser-checks.json`.
 
 **Interfaces:**
-- Consumes: Task 22's `window.__skins` (`state`, `light`, `sun`, `mask`, `gpuTime`, `crops`); R1b Task 17's `window.__relight.select(preset, minutes?)` and `window.__roomViewCapture(request)`; the walk's `window.__roomWalk.complete`; the `skins:*` and `relight:*` performance spans; R1d's `moonlit` preset (its A7); the proof's `views.json` (`D:/claude/real-hall/renovation/relight/work/views.json`) and `07_compare` (`photo`, `render`, `valid_mask`, `cells`, `metrics`; imported from `<relightTool>/proof` with `RELIGHT_CONFIG` set, as R1b Task 18 does), whose `render(job, view)` reads `D:/claude/relight/grand-hall/renders/<job>/<view>@2x.png`.
-- Produces (`skincheck.py`): `SHARPNESS_GATE = 2.0`, `OUTSIDE_P99_STOPS = 0.05`, `INSIDE_BIAS_STOPS = 0.10`, `SPAN_LIMIT_MS = 50.0`, `GPU_MS = 4.0`, `EXCUSED_SHARE = 0.02`, `LIGHT_TOLERANCE = 2e-3`, `SUN_TOLERANCE = 1e-5`; `luma(srgb_u8) -> float64`; `laplacian_variance(srgb_u8) -> float`; `skin_mask(mask_srgb_u8) -> bool`; `outside_change(on_lin, off_lin, mask) -> float` (99th percentile of |Δlog2 luma| outside the mask dilated by 3 px); `inside_bias(on_lin, off_lin, mask) -> float` (median log2 ratio of 8 px-blurred luma inside the mask eroded by 3 px); `gpu_verdict(gpu: dict) -> dict`; `span_verdict(spans: list) -> dict`; `cmd_browser_check(cfg, rest)` (exit 0 only if every section passes) writing `<evidence>/r1c-browser-checks.json`.
+- Consumes: Task 22's `window.__skins` (`state`, `light`, `sun` with `marched`, `mask`, `gpuTime` with `timing`, `crops` with `at` and `distance`); Task 15's `<evidence>/relight-v2.json` (`skinWallFaceRate`); Task 12's `venue.vertical_seam` (the skin-top seam); R1b Task 17's `window.__relight.select(preset, minutes?)` and `window.__roomViewCapture(request)`; the walk's `window.__roomWalk.complete`; the `skins:*` and `relight:*` performance spans; R1d's `moonlit` preset (its A7); the proof's `views.json` (`D:/claude/real-hall/renovation/relight/work/views.json`) and `07_compare` (`photo`, `render`, `valid_mask`, `cells`, `metrics`; imported from `<relightTool>/proof` with `RELIGHT_CONFIG` set, as R1b Task 18 does), whose `render(job, view)` reads `D:/claude/relight/grand-hall/renders/<job>/<view>@2x.png`.
+- Produces (`skincheck.py`): `SHARPNESS_GATE = 2.0`, `OUTSIDE_P99_STOPS = 0.05`, `INSIDE_BIAS_STOPS = 0.10`, `SPAN_LIMIT_MS = 50.0`, `GPU_MS = 4.0`, `EXCUSED_RATE_FACTOR = 2`, `GPU_KEYS` (the six checks the run must hold), `LIGHT_TOLERANCE = 2e-3`, `SUN_TOLERANCE = 1e-5`; `luma(srgb_u8) -> float64`; `laplacian_variance(srgb_u8) -> float`; `skin_mask(mask_srgb_u8) -> bool`; `outside_change(on_lin, off_lin, mask) -> float` (99th percentile of |Δlog2 luma| outside the mask dilated by 3 px); `inside_bias(on_lin, off_lin, mask) -> float` (median log2 ratio of 8 px-blurred luma inside the mask eroded by 3 px); `_wall_face_rate(record) -> (wallFace, marched) | None` and `_excused_ok(excused, marched_here, rate) -> bool` (R1b's, for the skins' population); `gpu_verdict(gpu: dict, wall_face_rate) -> dict` (`wall_face_rate`: the run's `skinWallFaceRate`); `SKIN_TOP_CROPS`, `SKIN_TOP_CONTROL = (-0.30, -0.03)`, `skin_top_seam(on_lin, off_lin, fov_deg, distance) -> dict` (`venue.vertical_seam` at a frieze skin's top edge, rendered with and without the skins; amended 8 October); `span_verdict(spans: list) -> dict`; `cmd_browser_check(cfg, rest)` (exit 0 only if every section passes) writing `<evidence>/r1c-browser-checks.json`.
 
 What each check proves:
 
-- **Sharpness.** Each named skin is rendered close up, from 1.5 m in front of its centre (`__skins.crops()`), with the skins and with `?skins=off`. The Laplacian variance of the skin crop's luma must be at least twice the splat crop's at every crop: the frieze figures, the board lettering, the wainscot, a canvas, the ceiling. The values are recorded beside the spec's texels.
+- **Sharpness.** Each named skin is rendered close up, from 1.5 m in front of its centre (`__skins.crops()`, the crops `at` its centre), with the skins and with `?skins=off`. The Laplacian variance of the skin crop's luma must be at least twice the splat crop's at every crop: the frieze figures, the board lettering, the wainscot, a canvas, the ceiling. The values are recorded beside the spec's texels.
 - **Captured light.** The proof's seven views are rendered at the captured light, with the skins and with `?skins=off`, and each skin pixel is identified from a third render with `mask(true)`. Two gates apply:
   - outside the skins, which stay splats, the 99th percentile of the luminance difference is at most 1/20 of a stop (the spec);
   - inside them, the median of the 8 px-blurred luminance ratio is within 1/10 of a stop. The skins are restored, so their glare and stains differ by design, but not their brightness.
+- **The skins' top against the cornice** (amended 8 October; no check compared the two before: the inside bias above is a median over whole skins, and Task 12's seams compare a skin's rows with each other). Each wall's frieze skin is rendered at the captured light from 1.5 m in front of the middle of its top edge (Task 22's `frieze-top-*` crops), with the skins and with `?skins=off`. Above the edge both renders draw the cornice's splats, which are the capture; below it the skin replaces the splats it covers. So the per-row median of ln(with / without) is 0 above the edge and the skin's own departure from the capture below it, and its step at the edge is the seam the skin makes against the cornice (`skin_top_seam`, through Task 12's `vertical_seam`: straight lines fitted over the 2 cm on each side, the step as CIEDE2000 at `colour_deltas`'s display exposure). The gate is Task 12's seam criterion, which the controller set for the band's top from the frieze-photo experiment's measurements (its section 7): the step is no larger than the larger of the skin's own steps (the same measure at lines every 1 cm from 30 cm to 3 cm below the edge, where the skin differs from the splats only by design: its sharpness and its restoration) and 0.5 ΔE00, half a just-noticeable difference. On the frieze's paint 0.5 ΔE00 is a step of 0.023 ln (measured 8 October with this plan's `ciede2000`, L* 48–79), so a residual light of which 4% is left at the skin's top, even one of only 1 ln at the frieze's edge (0.04 ln), reads 0.9 ΔE00 and fails: the research's line-source fits leave 4–10% of the edge's boost at 5.53 m (fireplace 3.9%, window 5.4%, door 9.9%; their 2% heights lie at 6.1–10.3 m). Every top crop must be measured; one the measure cannot place fails. A failure means Task 12 kept a residual light that the relight model lacks (`lightAtTopLn`) or the skin is biased at its edge: it stops the task and is reported with the crops, and the remedy is the light model's (R1a), not a looser gate.
 - **GPU against CPU.** Two read-backs are compared with the CPU twin:
   - every 7th light texel against `skinTexelBase`, within 2e-3, at the captured light, the sunny morning and the moonlit night (amended 7 October: the sky bodies' bounce, R1a Task 4's factored basis folded into the scenario volume, is in both sides of the comparison, the Sun's by day and the Moon's by night; the CPU twin is asked with the GPU's own read-back sky light, as R1b Task 17's `gpuKernel` asks it (Task 22's `light`, amended 8 October), so this check judges the skins' passes and R1b Task 17's `skyLight` judges that light itself against the twin);
-  - every 5th sun-grid texel against the march, within 1e-5, for the Sun at the sunny morning and the Moon at the moonlit night. At most 2% of the texels checked may be excused for rounding (at least one is allowed), and each body must light some texels.
+  - every 5th sun-grid texel against the march, within 1e-5, for the Sun at the sunny morning and the Moon at the moonlit night. Each body must light some texels. A texel whose ray passes within rounding of a march decision is excused, never judged, and the excused texels are at most twice the skins' own wall-face rate of the texels marched there (`excused × marched_rate ≤ 2 × wallFace × marched_here`, exact in integers, at least one always allowed). The rate is `skinWallFaceRate`, which Task 15's `v2-check` measures over every sun-grid texel with R1a's definition, and the driver copies it from `relight-v2.json` into the run; a run without it fails. This is R1b's cap (its `_wall_face_rate` and `_excused_ok`) on the skins' own population (pre-flight fix, 8 October; the controller's ruling on R1c-b I1). Every check must be present: a missing one fails.
 - **Photographs.** The night with the skins against Matterport's photographs, by `07_compare`'s cells and correlation: r ≥ 0.85 at station 43 and ≥ 0.80 at station 45, and at both at least the r of the hall as served (`?relight=off`).
-- **Loading.** Every `skins:` span is at most 50 ms, and both kinds were measured. The skins bring no console error the skins-off run lacks.
-- **Speed.** The skins' three passes take at most 4 ms of GPU time per light change: the median of twelve changes on the RTX 4090, from `gpuTime(12)`, which times them alone, from submission to completion. The R1d budget then still has room for its own per-frame work.
+- **Loading.** Every `skins:` span is at most 50 ms, and all three kinds were measured: the skin frame's construction, each skin's preparation with its texture upload, and the walls' first frame (`skins:first-frame`, Task 21). The skins bring no console error the skins-off run lacks. Long tasks at load completion, with the skins and without, are recorded and reported as information, as R1b does.
+- **Speed.** The skins' three passes take at most 4 ms of GPU time per light change: the median of twelve changes on the RTX 4090, from `gpuTime(12)`, which times them alone with R1b's timestamp queries where the adapter has them, else from submission to completion (the report names which, `timing`). The R1d budget then still has room for its own per-frame work.
 
   If the limit is missed, apply these remedies in order, rerunning after each:
   1. R1d's amortisation, `setStride(2, phase)` while the light moves;
@@ -12960,7 +14331,7 @@ What each check proves:
 `tools/skins/tests/test_skincheck.py`:
 
 ```python
-import unittest
+import math, unittest
 import numpy as np
 import cv2
 from skins import skincheck as K
@@ -12978,6 +14349,24 @@ class Images(unittest.TestCase):
         m = K.skin_mask(img)
         self.assertTrue(m[3, 3]); self.assertFalse(m[0, 0]); self.assertFalse(m[7, 7])
 
+    def test_the_skin_top_seam_against_the_cornice_splats(self):
+        rng = np.random.default_rng(7)
+        h, w, fov, distance = 1200, 400, 40.0, 1.5
+        paint = np.exp(np.log(0.3) + cv2.GaussianBlur(rng.normal(0, 0.3, (h, w)).astype(np.float32), (0, 0), 4)[..., None]
+                       + np.log([1.0, 0.85, 0.6])).astype(np.float64)
+        off = paint                                                          # the splats: the capture, above the edge and below
+        below = np.arange(h) >= h // 2                                       # the edge on the middle row; the skin below it
+        sharper = paint * np.exp(0.02 * rng.standard_normal((h, w, 1)))      # a skin: the same paint, its own detail
+        on = np.where(below[:, None, None], sharper, off)
+        level = K.skin_top_seam(on, off, fov, distance)
+        self.assertTrue(level["pass"])
+        for f in (1.04, 0.9):                                                # 4% left at the edge: 0.9 CIEDE2000
+            stepped = np.where(below[:, None, None], sharper * f, off)
+            bad = K.skin_top_seam(stepped, off, fov, distance)
+            self.assertFalse(bad["pass"])
+            self.assertAlmostEqual(bad["lines"]["skinTop"]["logStep"][1], -math.log(f), delta=0.01)
+        self.assertFalse(K.skin_top_seam(on[:40], off[:40], fov, distance)["pass"])   # an edge it cannot place fails
+
     def test_outside_change_ignores_the_skins_and_inside_bias_measures_stops(self):
         off = np.full((60, 60, 3), 0.2)
         mask = np.zeros((60, 60), bool); mask[20:40, 20:40] = True
@@ -12992,20 +14381,27 @@ class Images(unittest.TestCase):
 
 class Verdicts(unittest.TestCase):
     def test_gpu_checks(self):
+        rate = {"texels": 90000, "marched": 50000, "wallFace": 500}        # 1%: twice it excuses 6 of 300 marched
         gpu = {"light_captured": {"checked": 100, "lit": 90, "worstRelative": 1e-4},
                "light_sunny": {"checked": 100, "lit": 90, "worstRelative": 1e-3},
-               "sun_sunny": {"checked": 400, "lit": 30, "worstDifference": 0.0, "excused": 3},
-               "moon_moonlit": {"checked": 400, "lit": 10, "worstDifference": 2e-6, "excused": 0},
-               "gpuTime": {"runs": 12, "medianMs": 2.1, "maxMs": 3.0}}
-        self.assertTrue(K.gpu_verdict(gpu)["pass"])
-        self.assertFalse(K.gpu_verdict(dict(gpu, sun_sunny={"checked": 400, "lit": 0, "worstDifference": 0.0, "excused": 0}))["pass"])
-        self.assertFalse(K.gpu_verdict(dict(gpu, gpuTime={"runs": 12, "medianMs": 4.5, "maxMs": 6.0}))["pass"])
-        self.assertFalse(K.gpu_verdict(dict(gpu, sun_sunny={"checked": 400, "lit": 30, "worstDifference": 0.0, "excused": 9}))["pass"])
+               "light_moonlit": {"checked": 100, "lit": 90, "worstRelative": 1e-3},
+               "sun_sunny": {"checked": 400, "lit": 30, "marched": 300, "worstDifference": 0.0, "excused": 6},
+               "moon_moonlit": {"checked": 400, "lit": 10, "marched": 40, "worstDifference": 2e-6, "excused": 1},
+               "gpuTime": {"runs": 12, "medianMs": 2.1, "maxMs": 3.0, "timing": "timestamp-query"}}
+        self.assertTrue(K.gpu_verdict(gpu, rate)["pass"])
+        self.assertFalse(K.gpu_verdict(dict(gpu, sun_sunny={**gpu["sun_sunny"], "excused": 7}), rate)["pass"])
+        self.assertFalse(K.gpu_verdict(gpu, None)["pass"])                                   # a run without the rate
+        self.assertFalse(K.gpu_verdict(gpu, {"marched": 0, "wallFace": 0})["pass"])
+        self.assertFalse(K.gpu_verdict(dict(gpu, sun_sunny={**gpu["sun_sunny"], "lit": 0}), rate)["pass"])
+        self.assertFalse(K.gpu_verdict(dict(gpu, gpuTime={**gpu["gpuTime"], "medianMs": 4.5}), rate)["pass"])
+        self.assertFalse(K.gpu_verdict({k: v for k, v in gpu.items() if k != "light_moonlit"}, rate)["pass"])   # a check missing
 
     def test_spans(self):
-        self.assertTrue(K.span_verdict([{"name": "skins:frame", "ms": 12.0}, {"name": "skins:skin", "ms": 40.0}])["pass"])
-        self.assertFalse(K.span_verdict([{"name": "skins:frame", "ms": 12.0}, {"name": "skins:skin", "ms": 51.0}])["pass"])
-        self.assertFalse(K.span_verdict([{"name": "skins:skin", "ms": 1.0}])["pass"])               # the frame span is missing
+        spans = [{"name": "skins:frame", "ms": 12.0}, {"name": "skins:skin", "ms": 40.0}, {"name": "skins:first-frame", "ms": 30.0}]
+        self.assertTrue(K.span_verdict(spans)["pass"])
+        self.assertFalse(K.span_verdict(spans[:1] + [{"name": "skins:skin", "ms": 51.0}] + spans[2:])["pass"])
+        self.assertFalse(K.span_verdict(spans[:2] + [{"name": "skins:first-frame", "ms": 60.0}])["pass"])   # the walls' first frame
+        self.assertFalse(K.span_verdict(spans[1:])["pass"])                                                 # the frame span is missing
 
 
 if __name__ == "__main__":
@@ -13026,7 +14422,7 @@ Expected: FAIL, `ImportError: cannot import name 'skincheck'`.
 The photographs are compared by the proof's own 07_compare, imported the way R1b's browser check imports it."""
 from __future__ import annotations
 
-import importlib, json, os, sys
+import importlib, json, math, os, sys
 
 import cv2
 import numpy as np
@@ -13036,9 +14432,12 @@ OUTSIDE_P99_STOPS = 0.05
 INSIDE_BIAS_STOPS = 0.10
 SPAN_LIMIT_MS = 50.0
 GPU_MS = 4.0
-EXCUSED_SHARE = 0.02
+EXCUSED_RATE_FACTOR = 2            # at most twice the skins' own wall-face rate (Task 15's v2-check), as R1b caps its own
+GPU_KEYS = ("light_captured", "light_sunny", "light_moonlit", "sun_sunny", "moon_moonlit", "gpuTime")
 LIGHT_TOLERANCE = 2e-3
 SUN_TOLERANCE = 1e-5
+SKIN_TOP_CROPS = ("frieze-top-door", "frieze-top-window", "frieze-top-end", "frieze-top-fireplace")
+SKIN_TOP_CONTROL = (-0.30, -0.03)  # the skin's own steps: lines every 1 cm from 30 cm to 3 cm below its top edge
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 PHOTO_GATES = {"mp43_night_end": 0.85, "mp45_night_windows": 0.80}
 
@@ -13071,18 +14470,61 @@ def inside_bias(on_lin, off_lin, mask):
     return float(np.median(np.log2(a[ok] / b[ok]))) if ok.any() else 0.0
 
 
-def gpu_verdict(gpu):
-    problems = []
+def skin_top_seam(on_lin, off_lin, fov_deg, distance):
+    """The seam at a frieze skin's top edge against the cornice's splats above it, at the captured light. The crop is
+    square to the wall with the edge on its middle row (Task 22's top crops), so each image row is a height: v, metres
+    from the edge (positive up), from the vertical field of view and the distance. venue.vertical_seam on rho = the
+    render with the skins and ref = the render without: above the edge both draw the same splats, so the profile
+    ln(rho / ref) is the skin's own departure from the capture below it and 0 above. The edge passes when its step is
+    no larger than the larger of the skin's own steps (SKIN_TOP_CONTROL) and 0.5 CIEDE2000, Task 12's seam criterion;
+    an edge the measure cannot place fails."""
+    from . import venue as VN
+    on_lin, off_lin = np.asarray(on_lin, np.float64), np.asarray(off_lin, np.float64)
+    h = on_lin.shape[0]
+    px_per_m = h / (2.0 * float(distance) * math.tan(math.radians(float(fov_deg)) / 2.0))
+    v = (h / 2.0 - (np.arange(h) + 0.5)) / px_per_m
+    ok = (on_lin @ LUMA > 1e-4) & (off_lin @ LUMA > 1e-4)
+    res = VN.vertical_seam(on_lin, off_lin, ok, v, {"skinTop": 0.0}, control=SKIN_TOP_CONTROL)
+    return {**res, "pass": res["lines"]["skinTop"]["pass"] is True}
+
+
+def _wall_face_rate(record) -> tuple[int, int] | None:
+    """(wallFace, marched) of the skins' measured wall-face rate (Task 15's `skinWallFaceRate`), or None when it is
+    missing or malformed (R1b's helper of the same name, for this population)."""
+    if not isinstance(record, dict):
+        return None
+    wall_face, marched = record.get("wallFace"), record.get("marched")
+    if not (isinstance(wall_face, int) and isinstance(marched, int) and 0 <= wall_face <= marched and marched > 0):
+        return None
+    return wall_face, marched
+
+
+def _excused_ok(excused: int, marched_here: int, rate: tuple[int, int] | None) -> bool:
+    """At most EXCUSED_RATE_FACTOR x wallFace / marched of the rays marched here, at least one (exact, in integers)."""
+    if rate is None:
+        return False
+    wall_face, marched = rate
+    return excused <= 1 or excused * marched <= EXCUSED_RATE_FACTOR * wall_face * marched_here
+
+
+def gpu_verdict(gpu, wall_face_rate):
+    """Every check present and within its tolerance; each body lit some texels and excused rounding cases at most
+    twice the skins' own wall-face rate of the texels marched there; the skins' passes within GPU_MS."""
+    problems = [f"{key}: missing" for key in GPU_KEYS if key not in gpu]
+    rate = _wall_face_rate(wall_face_rate)
+    if rate is None:
+        problems.append(f"skinWallFaceRate: {wall_face_rate}")
     for key, v in gpu.items():
         if key.startswith("light_"):
             if not (v["checked"] > 0 and v["worstRelative"] <= LIGHT_TOLERANCE):
                 problems.append(f"{key}: {v}")
         elif key.startswith(("sun_", "moon_")):
-            allowed = max(1, int(EXCUSED_SHARE * v["checked"]))
-            if not (v["checked"] > 0 and v["lit"] > 0 and v["worstDifference"] <= SUN_TOLERANCE and v["excused"] <= allowed):
+            worst = v.get("worstDifference")   # Infinity (a NaN on the GPU) arrives as null and fails
+            if not (v["checked"] > 0 and v["lit"] > 0 and isinstance(worst, (int, float)) and worst <= SUN_TOLERANCE
+                    and _excused_ok(v["excused"], v.get("marched", 0), rate)):
                 problems.append(f"{key}: {v}")
     t = gpu.get("gpuTime")
-    if t is None or not t["medianMs"] <= GPU_MS:
+    if t is not None and not t["medianMs"] <= GPU_MS:
         problems.append(f"gpuTime: {t}")
     return {"problems": problems, "pass": not problems}
 
@@ -13090,7 +14532,7 @@ def gpu_verdict(gpu):
 def span_verdict(spans):
     kinds = {s["name"] for s in spans if s["name"].startswith("skins:")}
     over = [s for s in spans if s["name"].startswith("skins:") and s["ms"] > SPAN_LIMIT_MS]
-    missing = sorted({"skins:frame", "skins:skin"} - kinds)
+    missing = sorted({"skins:frame", "skins:skin", "skins:first-frame"} - kinds)
     return {"over": over, "missing": missing, "pass": not over and not missing}
 
 
@@ -13136,6 +14578,8 @@ def cmd_browser_check(cfg, rest) -> int:
     out = {}
     sharp = {}
     for crop in run["crops"]:
+        if crop["at"] != "centre":
+            continue
         on = _read(os.path.join(crops_root, "crops-on", f"{crop['name']}.png"))
         off = _read(os.path.join(crops_root, "crops-off", f"{crop['name']}.png"))
         h, w = on.shape[:2]
@@ -13143,6 +14587,15 @@ def cmd_browser_check(cfg, rest) -> int:
         ratio = laplacian_variance(on[centre]) / max(laplacian_variance(off[centre]), 1e-9)
         sharp[crop["name"]] = {"skin": crop["skin"], "ratio": round(ratio, 3), "pass": ratio >= SHARPNESS_GATE}
     out["sharpness"] = {"crops": sharp, "pass": bool(sharp) and all(v["pass"] for v in sharp.values())}
+    top = {}
+    for crop in run["crops"]:
+        if crop["at"] != "top":
+            continue
+        on = _lin(_read(os.path.join(crops_root, "crops-on", f"{crop['name']}.png")))
+        off = _lin(_read(os.path.join(crops_root, "crops-off", f"{crop['name']}.png")))
+        top[crop["name"]] = {"skin": crop["skin"], **skin_top_seam(on, off, crop["fov"], crop["distance"])}
+    out["skinTop"] = {"crops": top, "missing": sorted(set(SKIN_TOP_CROPS) - set(top)),
+                      "pass": set(SKIN_TOP_CROPS) <= set(top) and all(v["pass"] for v in top.values())}
     light = {}
     for view in run["views"]:
         on = _lin(_read(os.path.join(renders, "R1c_captured", f"{view}@2x.png")))
@@ -13152,7 +14605,7 @@ def cmd_browser_check(cfg, rest) -> int:
         light[view] = {"skinShare": round(float(mask.mean()), 4), "outsideP99": round(o, 4), "insideBias": round(i, 4),
                        "pass": o <= OUTSIDE_P99_STOPS and abs(i) <= INSIDE_BIAS_STOPS}
     out["capturedLight"] = {"views": light, "pass": bool(light) and all(v["pass"] for v in light.values())}
-    out["gpu"] = gpu_verdict(run["gpu"])
+    out["gpu"] = gpu_verdict(run["gpu"], run.get("skinWallFaceRate"))
     cmp = _compare(cfg)
     photos = {}
     for view, gate in PHOTO_GATES.items():
@@ -13161,7 +14614,8 @@ def cmd_browser_check(cfg, rest) -> int:
     out["photographs"] = {"views": photos, "pass": all(v["pass"] for v in photos.values())}
     spans = span_verdict(run["on"]["atLoad"]["spans"])
     new_errors = sorted(set(m for m in run["on"]["atLoad"]["messages"] if m.startswith("error")) - set(m for m in run["off"]["atLoad"]["messages"] if m.startswith("error")))
-    out["loading"] = {**spans, "newErrors": new_errors, "pass": spans["pass"] and not new_errors}
+    long_tasks = {k: [t for t in run[k]["atLoad"].get("longTasks", []) if t > SPAN_LIMIT_MS] for k in ("on", "off")}   # information
+    out["loading"] = {**spans, "newErrors": new_errors, "longTasks": long_tasks, "pass": spans["pass"] and not new_errors}
     fb = run["fallbacks"]
     fallback_ok = (fb["webgl"]["skinRequests"] == 0 and not fb["webgl"]["skinsInstalled"] and fb["off"]["skinRequests"] == 0
                    and fb["brokenSkin"]["complete"] and 0 not in fb["brokenSkin"]["drawnGroups"] and len(fb["brokenSkin"]["drawnGroups"]) == 4
@@ -13187,7 +14641,7 @@ COMMANDS["browser-check"] = Command(run=_lazy("skincheck", "cmd_browser_check"),
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_skincheck -v`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 6: The browser driver**
 
@@ -13253,6 +14707,12 @@ function isSkinRequest(url) {
 
 async function openWalk(browser, query, { route = null, waitSkins = true } = {}) {
   const context = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: SCALE });
+  await context.addInitScript(() => {
+    // long tasks from the first script on, as R1b's driver records them (information only)
+    window.__longTasks = [];
+    new PerformanceObserver((list) => { for (const entry of list.getEntries()) window.__longTasks.push(Math.round(entry.duration)); })
+      .observe({ type: "longtask", buffered: true });
+  });
   const page = await context.newPage();
   if (route !== null) await page.route(route, (r) => r.fulfill({ status: 404, body: "" }));
   const messages = [], requests = [];
@@ -13274,6 +14734,7 @@ async function atLoad(walk) {
   return {
     loadMs: walk.loadMs,
     messages: [...walk.messages],
+    longTasks: await walk.page.evaluate(() => [...(window.__longTasks ?? [])]),
     spans: await walk.page.evaluate(() => performance.getEntriesByType("measure")
       .filter((entry) => entry.name.startsWith("skins:") || entry.name.startsWith("relight:"))
       .map((entry) => ({ name: entry.name, ms: Math.round(entry.duration * 10) / 10 }))),
@@ -13308,6 +14769,8 @@ const skinWarnings = (messages) => messages.filter((m) => m.startsWith("warning"
 async function main() {
   const views = JSON.parse(await readFile(VIEWS, "utf8"));
   const record = { startedAt: new Date().toISOString(), baseUrl: BASE_URL, views: views.map((v) => v.name), gpu: {}, fallbacks: {} };
+  // the skins' own wall-face rate (Task 15's v2-check), which caps the sun grids' excused rounding cases
+  record.skinWallFaceRate = JSON.parse(await readFile(join(EVIDENCE, "relight-v2.json"), "utf8")).skinWallFaceRate ?? null;
   await takeLock();
   const browser = await chromium.launch({
     headless: false,
@@ -13401,7 +14864,7 @@ A failing section stops the task. Report its numbers with the images (`crops-on`
 
 **Files:**
 - Create: `tools/skins/README.md`
-- Modify: `docs/engineering/native-splats.md` (the skins in the relit walk), the day's session log under `docs/sessions/`, `docs/state/tasks.md` (T-639 row)
+- Modify: `docs/engineering/native-splats.md` (the skins in the relit walk), `docs/engineering/relight-package.md` (the `visibility` key's note: what is drawn follows the ruling T1), the day's session log under `docs/sessions/`, `docs/state/tasks.md` (T-639 row)
 
 **Interfaces:**
 - Consumes: Tasks 0–23 (every evidence file); R1a Task 7's publisher (`packages/api/src/scripts/publish-splat-tiles.ts --package`, recursive since R1a Task 7 Step 2); the R2 public base `https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev`.
@@ -13418,21 +14881,28 @@ for f in src/lib/skins/__tests__/skin-manifest.test.ts src/lib/skins/__tests__/s
          src/lib/skins/__tests__/skin-visibility.test.ts src/lib/skins/__tests__/skin-debug.test.ts src/components/scene/__tests__/RelightSkins.test.tsx \
          src/stores/__tests__/light-setting-store-skins.test.ts src/components/rooms/__tests__/LightControl-skins.test.tsx \
          src/lib/__tests__/splat-staging-plugin.test.ts src/lib/relight/__tests__/relight-manifest.test.ts \
-         src/components/scene/__tests__/RelightProvider.test.tsx src/components/rooms/__tests__/LightControl.test.tsx; do
+         src/components/scene/__tests__/RelightProvider.test.tsx src/components/rooms/__tests__/LightControl.test.tsx \
+         src/stores/__tests__/light-setting-store.test.ts src/components/rooms/__tests__/RoomSplatScene.test.tsx; do
   pnpm --filter @omnitwin/web exec vitest run "$f" || exit 1
 done
 pnpm --filter @omnitwin/web exec tsc --noEmit -p tsconfig.json
 pnpm --filter @omnitwin/web exec eslint src/lib/skins src/components/scene src/stores src/components/rooms src/lib/relight src/lib/splat-staging-plugin.ts
-pnpm --filter @omnitwin/web build
-grep -rl "__skins\|skins-verify" packages/web/dist || echo "no DEV instrument in the bundle"
+B=D:/claude/skins/grand-hall \
+  && NODE_ENV=production VERCEL_ENV=production pnpm --filter @omnitwin/web exec vite build --mode bundle-check --outDir $B/bundle-production --emptyOutDir \
+  && NODE_ENV=production VERCEL_ENV=preview pnpm --filter @omnitwin/web exec vite build --mode bundle-check --outDir $B/bundle-preview --emptyOutDir \
+  && (grep -rl "__skins\|skins-verify" $B/bundle-production && echo "LEAK: the DEV instruments are in the production bundle" || echo "no DEV instrument in the bundle") \
+  && (grep -rl "Preparing the walls" $B/bundle-production && echo "LEAK: the walls' status is in the production bundle" || echo "production bundle clean") \
+  && (grep -rl "Preparing the walls" $B/bundle-preview >/dev/null && echo "preview bundle has the walls' status" || echo "MISSING: the preview bundle lacks the walls' status")
 ```
 
 Expected:
 
 - every Python test passes (the count is the sum of the tasks' counts, printed by `discover`);
 - every vitest file passes, run one at a time;
-- typecheck and lint print no error, and the build succeeds;
-- the last line prints "no DEV instrument in the bundle".
+- typecheck and lint print no error;
+- both builds exit 0, then `no DEV instrument in the bundle`, `production bundle clean` and `preview bundle has the walls' status`. A build that fails stops the chain before any grep, so a failed build never reads as clean.
+
+These are R1b Task 19's bundle-check builds, with the output on D: and emptied first (pre-flight fix B3, 8 October). A local `vite build` in mode `production` stops at `assertRequiredProductionEnv`, which demands a live Clerk key (`pk_live_…`) that this PC does not have and that must not be invented; mode `bundle-check` skips that guard and the Sentry upload and resolves `DEV`, `VITE_DEPLOY_ENV` and the splat base as on Vercel (R1b Task 19 Step 4). R1b's `light-setting-store.test.ts`, which Task 21 changes the store under, and its `RoomSplatScene.test.tsx`, whose URL Task 21 moves to v2, are in the loop (pre-flight fix M13).
 
 A failure is fixed at its cause in the task that owns it, never by loosening a check.
 
@@ -13540,6 +15010,8 @@ In `docs/engineering/native-splats.md`, add a section "Surface skins (T-639 R1c)
 - the hooks R1d uses (`SkinLightHooksContext`, `setStride`, `relight-skin`);
 - `window.__skins` (development only).
 
+In `docs/engineering/relight-package.md`, at the `visibility` key, add that a toggle's splats are hidden only while the user hides it and every wall group holding its clean version is drawn as skins (the skin package's "Toggles and fallback"; the controller's ruling T1, 8 October), so `defaultHidden` is the default choice, not what is drawn (pre-flight fix M14: the File Structure names this file, and this is R1c's change to it).
+
 In the day's session log, add a section with:
 
 - what was built;
@@ -13554,7 +15026,7 @@ Update T-639's row in `docs/state/tasks.md` (R1c done; R1d next).
 
 ```bash
 cd D:/claude/real-hall/repo
-git add tools/skins/README.md docs/engineering/native-splats.md docs/sessions docs/state/tasks.md
+git add tools/skins/README.md docs/engineering/native-splats.md docs/engineering/relight-package.md docs/sessions docs/state/tasks.md
 git diff --cached --stat
 git commit -m "docs(skins): the Grand Hall's surface skins, their checks and where they are published (T-639 R1c)
 
@@ -13578,7 +15050,7 @@ Expected: pushed. No preview is opened for Blake. The one preview is R1d's Task 
 | De-light by the relight model | Task 8: the skins' light from R1a's bake and fitted day and evening states. Task 9: every view divided by its own state's light and gain |
 | Multi-view glare removal | Task 9 `glare_masks` |
 | Per-material healing, clutter masks with clean versions | Tasks 10 and 11 |
-| The frieze band | Task 12: measured recovery (response curves, per-channel fusion, uplight residual from the measured edge), the research's holdout as acceptance tests with reconciled thresholds, synthesis labelled reconstructed; the venue's photographs (amended 7 October): registration, one hall-wide colour frame, their own uplight removed, colour and tone from them and detail from the fusion, the lowest 5 cm on the door and fireplace walls drawn by them, independent checks (registration, colour, detail, seams, gilt direction) |
+| The frieze band | Task 12: measured recovery (response curves, per-channel fusion, the residual light from the measured edge, kept only when it predicts held-out rows and divided out on every row), the research's holdout as acceptance tests with reconciled thresholds, synthesis labelled reconstructed; the venue's photographs (amended 7 October, and 8 October from the frieze-photo experiment): registration per metre, one hall-wide colour frame (a tone per photograph on matte texels), their own light removed, a verdict per photograph (colour, or detail and outline), colour and tone from them and detail from the fusion, the lowest 5 cm on the door and fireplace walls drawn by them, independent checks (registration, colour, detail, seams, gilt direction) |
 | Material maps: roughness, gilding, provenance; the measured-material interface | Task 13; the frieze's gilded ground as a metal (Task 12's view-dependent mask, gold's specular colour, the gilding's roughness), carried by Task 14 (`material.specularColour`) to R1d's sheen through `SkinSurface.specularColour` (Task 20) |
 | Per-skin light maps through the R1a bake | Amendment A4 (`skin-light`), consumed in Tasks 8 and 15 |
 | Splat hiding and toggle classes in the relight records | Amendments A1 and A3; Task 15's `v2-check` proves nothing else changed |
@@ -13588,9 +15060,9 @@ Expected: pushed. No preview is opened for Blake. The one preview is R1d's Task 
 | Base colour × light, nine sources' maps, bounce from probes | Task 19's light pass (records, `bounceNode`) and Task 20's material |
 | Sun-bounce basis | R1a Task 4's factored sky-body basis (`B_w = P_w × R_w`, the Sun and the Moon) reaches the skins through R1b's scenario fold (contract 7; `docs/engineering/relight-package.md`, "The sky bodies' bounce"). No R1c code; Tasks 19 and 23 check the order and the values |
 | Per-skin sun term from window volumes, per sky body | Task 19's sun and moon passes, Task 20's direct term |
-| Provenance debug view | Task 20 `provenanceSkinMaterial`, `?skinview=provenance` (green observed by our fusion, blue observed by a venue photograph, amber recovered, red reconstructed) |
-| Verification: sharpness crops against splats, captured-light identity, photo checks | Task 14 `package-check` (identity bias). Task 23: crops, captured-light continuity, GPU against CPU, photographs, speed, fallbacks |
-| Per-group fallback, no hole on toggles | Tasks 5 (forced regions under toggle boxes), 15, 16 and 21 |
+| Provenance debug view | Task 20 `provenanceSkinMaterial`, `?skinview=provenance` (green observed by our fusion, blue observed by a venue photograph, amber recovered, red reconstructed; a designed metal striped violet, its roughness and F0 priors: `material.basis`, Tasks 13, 14 and 16) |
+| Verification: sharpness crops against splats, captured-light identity, photo checks | Task 14 `package-check` (identity bias). Task 23: crops, captured-light continuity, the skins' top against the cornice's splats, GPU against CPU, photographs, speed, fallbacks |
+| Per-group fallback, no hole on toggles | Tasks 5 (forced regions under toggle boxes, `toggleBoxes`), 14, 15, 16, 18, 20 and 21: a toggle's splats are hidden only while every group holding its clean version is drawn (the controller's ruling T1) |
 | R1d hook points | `SkinLightHooks`/`SkinSurface`/`SkinSheen`, `SkinLightHooksContext`, `relight-skin`, `skinNormalNode`, `SkinFrame.passes`/`setStride`, store `hiddenToggles`/`setToggleHidden`, `?skins=off`, Moon grid (Tasks 19–21) |
 | Moonlight a full light source | `SKY_BODIES` throughout Tasks 17, 19, 20 and 22 |
 
@@ -13616,12 +15088,21 @@ External photographs: the venue's own Trades House Virtual Museum photographs of
   - `venue` npz `albedo`, `prov`, `gilt`, `photos` and `venue/photos.json`: Task 12 → Tasks 13 and 14;
   - `materials` npz fields (with `credits` and `specularColour`): Task 13 → Task 14;
   - the package manifest's fields (with `credits`, `material.specularColour`, `provenance.photo`, each skin's `credits`): Task 14 → Task 16's schema;
-  - the relight `skins` entry fields: A5 → A7 → Task 16.
+  - the relight `skins` entry fields: A5 → A7 → Task 16;
+  - the frame store's Y/U/V planes (`FrameStore.save`, `load`): Task 6A → Tasks 9 and 12;
+  - `mosaic` npz `excessRgb`: Task 9 → Task 13's `gilding_mask`; `blend.light_model_id`: Task 9 → Task 13;
+  - `frieze` npz `lightEdge`, `lightLam`, `lightK`, `lightAccepted` (`frieze.light_of`) and `fused`: Task 12's `frieze` → its `frieze-venue` (`lay_band`, `vertical_seam`); `venue.vertical_seam`: Task 12 → Task 23's `skin_top_seam`;
+  - `materials` npz `roughnessBasis`, `specularBasis`: Task 13 → Task 14's `material.basis` → Task 16's `MaterialBasisSchema` → Task 20's `metalIsPrior`;
+  - `skins.json` `toggleBoxes`: Task 5 → Task 14's manifest → Task 16's schema and `toggleGroupsOf`;
+  - `relight-v2.json` `skinWallFaceRate`: Task 15 → Task 23 (the driver copies it into the run; `gpu_verdict`).
 - TypeScript:
   - `SkinPackageData`, `SkinData`, `SkinGridData`: Task 18 → Tasks 19–22;
+  - `SkinCrop.at`, `distance` (the `frieze-top-*` crops): Task 22 → Task 23;
   - `SkinFrame.ranges`, `lightOut`, `sunOut`, `passes`, `setStride`, `attach`: Task 19 → Tasks 20–22;
   - `SkyBodyName`: Task 17 → Tasks 19, 20 and 22;
-  - `skinVisibility` → `RelightFrame.setVisibility(RelightVisibility)` (A6, A9);
+  - `skinVisibility(drawn, hidden, toggleGroups)` → `RelightFrame.setVisibility(RelightVisibility)` (A6, A9); `SkinPackageData.toggleGroups`: Task 18 → Task 21;
+  - `SKIN_SPANS` with `skins:first-frame`: Task 19 → Tasks 21 and 23; `skinDecodeTable` from R1b's `decodeLog`: Task 19;
+  - `SkinSunCheck.marched`, `SkinGpuTime.timing` (R1b's `computeTimestamps` and `timedCompute`): Task 22 → Task 23;
   - `SkinSurface.specularColour` (optional): Task 20 → R1d's sheen;
   - the store's `hiddenToggles` (bits `1 << (t − 1)`) → the material's `u.hiddenToggles` (A9) and the records' toggle values (A1).
 - Test counts are stated per file and add up within each task.
@@ -13636,3 +15117,5 @@ External photographs: the venue's own Trades House Virtual Museum photographs of
 - The venue's photographs are 800–1,100 px: the fireplace wall's lowest 5 cm are drawn at 6.2 mm per pixel, soft close up and fine from about 5 m (the research asks the venue for the original file).
 - R1d's sheen today takes its Fresnel colour from the albedo (`mix(0.04, albedo, metal)`); the gilt ground reflects as gold once it reads `SkinSurface.specularColour` (reported to the controller).
 - R1c's own material, without R1d's hooks, is matte: the gilt ground's brightness follows the view only through R1d's sheen.
+- A residual light Task 12 keeps is divided out of the frieze's albedo, so at the captured light the frieze then departs from the capture by that light, smoothly within the skin and as a step against the cornice's splats at its top: Task 23's skin-top seam and inside bias catch it, and its remedy is the relight model's (R1a). On the research's own de-lit fusion the light fit finds none.
+- XGRIDS blue is linearised by its fitted curve, where the research used sRGB (Task 12, recorded; the controller decides).

@@ -16,7 +16,7 @@ Applied in one pass from R1c's amendments (`docs/superpowers/plans/2026-10-03-r1
 - **Global Constraints:** the 2,700 K lamp default is superseded (each group keeps its measured colour; the warm dim is a setting); the packaging rule; the double-run rule.
 - **File Structure:** `sunbounce.py`, `moon.py`, `housefit.py`, `skinlight.py`, `proof/shots.py`; the commands.
 - **Task 1:** an "As built" note (10 tests). **Task 4:** an "As built (7 October)" note: the factored basis K 30, the Moon, gate-before-write, what depends on the fit.
-- **Task 4b (new):** the house lights refitted: one per-bulb intensity for every chandelier lamp (ch_centre / ch_end = the bulb-count ratio, 2.021 on the 7 October table), a colour per lamp group with priors from the emitter splats, `bulb-intensities.json` for R1d's Task 3, the acceptance (data cost within 2%, the centre's share, the night photographs no worse, double runs), and the fit's dependents regenerated in order (03c, 03d, 05_relight, `probes`, `sun-bounce`).
+- **Task 4b (new):** the house lights refitted: one per-bulb intensity for every chandelier lamp (ch_centre / ch_end = the bulb-count ratio, 2.021 on the 7 October table; superseded by the pre-flight fixes of 8 October below: 1.8370 with the 140 lamps and the crown tubes' measured weight), a colour per lamp group with priors from the emitter splats, `bulb-intensities.json` for R1d's Task 3, the acceptance (data cost within 2%, the centre's share, the night photographs no worse, double runs), and the fit's dependents regenerated in order (03c, 03d, 05_relight, `probes`, `sun-bounce`).
 - **Task 4c (new):** R1c A1's codec (with one correction for NumPy 2's promotion rules) and A4's `skinlight.py` and `skin-light` (with one correction: `windows_volumes` returns a tuple); each artifact's SHA-256 in its evidence, written after the artifact; `record-artifacts`.
 - **Task 5 (rewritten):** `reference.py` with the sky bodies' basis, the Moon, lamp tints and the visibility (12 tests); `records.py` with R1c's covers and toggles (6 tests); the package reads exact, hash-checked files and writes the `sky/` files, `lamps` per group, R1c's v2 sections; check 5 is the sky bounce through the package; the proof regression compares with the refit's own `05_relight` multipliers; the vectors carry `skyBounce`, `moon_test` and nine ray directions (R1d A8), under 1,000 kB.
 - **Task 6:** the floor's albedo target is read from the refit's `fit.json`. **Task 7:** the README's commands, the publisher's `sky/` test, the exact-files check before publishing, the session log's checks. **Self-review notes:** updated.
@@ -30,6 +30,15 @@ Applied in one pass from R1c's amendments (`docs/superpowers/plans/2026-10-03-r1
   - A M-5 and M-6: Task 5 Step 6, each lamp group's colour divided in float64 from the values written to `capture`; the key `refit.bulbTableSha256` and its source in `refit.json`.
   - A M-7: Task 5 Step 7, `reference.SkyBounce` and `sunbounce.Table` called by keyword. A M-8: "The multiplier (normative)", the 2.2 m cap is the contract's length from Q to 7 cm beyond the glass.
   - B M5: Task 4c's `skinlight.py` docstring, light texels 5 cm (2 cm on the frieze). B M7: Task 5 Step 6, `evidence.artifacts` keys are paths relative to the work folder.
+- **Pre-flight fixes (8 October)** (the controller's rulings `D:/claude/real-hall/plan-amendments-0710/scans/rulings-0810.md`; the fix-wave re-review `…/review/fixwave-rereview.md`; the scans `…/scans/r1c-a-scan.md`, `r1c-b-scan.md`, `r1d-a-scan.md`; Tasks 1–4 untouched):
+  - L1: Task 4b, the lamps are the table's 140 `high` and `medium` entries (26, 22, 47, 23, 22); `low` and `exclude` are not lamps and `fit.notLamps` lists all 33; `bulb-intensities.json` names only the lamps (`NOT_LAMP_SHARE` is gone). Counts, ratios, the geometry check's measured numbers and `blobBalance` (−0.53, candles only) recomputed from the real `bulbs.json` (SHA-256 `1856cf8b…648d`).
+  - L2: Task 4b, the centre chandelier's 7 crown tubes are a kind `crown` (`lamp_kind`; each must stand above every candle of its chandelier) at `w_crown × φ`; `crown_weight` measures w_crown as the ruling defines it, against the candles in the same faces: 0.3871 (92 pairs, 28 faces; the ruling's 0.456 is the table's `core_ratio_median`, whose denominator includes every entry of the chandelier, so the task uses the definition); ratio 1.8370 (1.7204 at 0, 2.0215 at 1). The refit runs at w_crown 0 and 1 too (`refit-house refit --w-crown`, `compare`/`install --tag`, Step 11), and `refit-house sensitivity` (Step 12, acceptance 6) reports each run's data cost, `ch_centre` share at the floor and ceiling and both stations' photo metrics against their render-to-render noise, and stops when the photographs clearly prefer an end; `promote` requires it and refuses a staging work whose installed fit is a sensitivity run. `bulb-intensities.json` gains per-bulb `kind` and top-level `wCrown`; Task 5's `lamps.refit` gains `wCrown` (the contract and R1b's schema follow). Steps 10–14 (were 10–13); Task 4b 14 tests (135), Task 4c 141, Task 5 159; Step 1 and Step 3's code verified in a scratch copy of the committed `tools/relight` (14 tests pass; the command's light modes smoke-tested on synthetic folders).
+  - L4: Task 4b, the range-aware balance (`range_balance`, from each face's `distance_m` and `blob_area_mm2`; design bullet, acceptance 7): the ends' candles' range fit with a per-face intercept, the centre's median residual against it, each end's leave-one-out spread, a stop beyond 2× the largest spread; written to `evidence/refit/range-balance.json`, the reports and `bulb-intensities.json`; `promote` gates on it and, refused for any reason, writes `evidence/refit.json` with `pass: false` and copies nothing (Task 5 builds only from a `pass: true` record). On the 8 October table: −0.296 against a limit of 0.563 (end spreads +0.282, +0.275, −0.042, +0.244): it passes. Task 4b 15 tests (136), Task 4c 142, Task 5 160 (161 with the wall-face test below); checked from the plan's own text (15 and 136 pass; the command's smoke run covers the refusal).
+  - The wall-face measurement as one public function (the controller's request, 8 October, so R1c Task 15 imports it instead of re-implementing it): Task 5 Step 7, `windows.wall_face_rate(volumes, horizon_tables, fresnel_table, P, s) -> {"marched", "wallFace"}` with one test (`test_windows` 39); `check` calls it for the splats and the floor; `_sample_depth` stays private. Equal to R1c's re-implementation on the real volumes, splats and floor at both directions (splats 2,964 / 92,085, floor 3,630 / 35,155). Task 5 161.
+  - P1: Task 5 Steps 6–8 reordered: Steps 6 and 7 write the code, Step 8 commits it, then builds, checks twice and commits the fixture; `records` and `check` refuse while `git status --porcelain -- tools/relight` prints anything (`_committed_tool`), so the manifest's `tool` is the commit that holds the code.
+  - Re-review N3: Task 5 Step 7, `wallFaceRate.floor` (check-sun's 88,831 floor points, both directions) beside the splats'; R1b caps the floor's excuses with it.
+  - Re-review N4: Task 5 Steps 6–7, the vectors' cap is 1,000 kB + 1.6 kB × max(0, K − 30), the K-proportional parts measured per K.
+  - Scans: R1c-a I4 (the light-state gate's units) is R1c Task 8's own code, nothing in R1a. R1d-a M2: Task 4b Step 6's note now says R1d's Task 1 checks that `paths.emitters` is present and adds nothing; R1d-a B1's rule (commands go above `if __name__ == "__main__":`) is R1a's own, and Task 5's `_committed_tool` follows it.
 
 ## Revisions (30 September, pre-flight)
 
@@ -1409,27 +1418,31 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `tools/relight/relight/housefit.py`, `tools/relight/tests/test_housefit.py`
 - Create (moved byte for byte): `tools/relight/proof/shots.py` (the proof's `scripts/shots.py`, which `07_compare.py` imports; the R1b plan's File Structure lists it as "moved if R1a did not")
 - Modify: `tools/relight/relight/__main__.py` (the `--from` option and the `refit-house` command), `tools/relight/config/grand-hall.json` (`paths.emitters`, `paths.lampColours`)
-- Outputs (D:, never committed): the staging copy `D:/claude/relight/grand-hall-refit/` (`config.json`, `work/`, `evidence/refit/`, `harness/`, `renders/`, `renders-baseline/`, `verify/`); in the bake's work `D:/claude/relight/grand-hall/work/` the accepted `fit.json`, `fit_state.npz`, `npy/E_cap.npy`, `npy/emb_E_back_cap.npy`, `mult/{comp_house,mask,night,sunny_morning,overcast_noon}.{f16,json}` and `bulb-intensities.json`, the proof fit kept in `work/fit-proof/`, and the re-baked `probes-coarse.npz` and `sun-bounce.npz`; evidence `D:/claude/relight/grand-hall/evidence/refit.json`, `probes-check.json`, `sun-bounce-check.json`; run copies in `D:/claude/relight/grand-hall/verify/task4b/`.
+- Outputs (D:, never committed): the staging copy `D:/claude/relight/grand-hall-refit/` (`config.json`, `work/` with `work/refit/{proof, refit, refit-wcrown-0, refit-wcrown-1}` and each refit's `-run1`, `evidence/refit/`, `harness/`, `renders/`, `renders-baseline/`, `renders-<refit>/`, `verify/`); in the bake's work `D:/claude/relight/grand-hall/work/` the accepted `fit.json`, `fit_state.npz`, `npy/E_cap.npy`, `npy/emb_E_back_cap.npy`, `mult/{comp_house,mask,night,sunny_morning,overcast_noon}.{f16,json}` and `bulb-intensities.json`, the proof fit kept in `work/fit-proof/`, and the re-baked `probes-coarse.npz` and `sun-bounce.npz`; evidence `D:/claude/relight/grand-hall/evidence/refit.json`, `probes-check.json`, `sun-bounce-check.json`; run copies in `D:/claude/relight/grand-hall/verify/task4b/`.
 
 **Interfaces:**
-- Consumes: the proof's `04_fit.py` (`direct`, `patch_direct_capture`, `build_fit_set`, `patch_samples`, `E_capture_at`, `BASES`, `GROUPS`, `PAINT`, `PAINT_ALBEDO`, `HUBER`, `GAMMA_FREE`, `SKY_W`, `LAMP_RATIO`), `radiosity.py` (`form_factors`, `radiosity`, `probe_indirect`, `load_patches`), `store.py` (`Store`, `Probes`, `eval_cubes`, `LUMW`), `lt.load_occ`, `common.T_JE`, `03c_embrasure_roomside.py`, `03d_embrasure_back.py`, `05_relight.py` (scenarios `comp_house`, `mask`, `night`, `sunny_morning`, `overcast_noon`), `07_compare.py metrics`; the proof's render harness (`D:/claude/real-hall/renovation/relight/harness/run.mjs` and `app/dist/`, copied, never run in place: the proof folder is read-only) and its `work/views.json` and `work/order_check.json` (copied); the bulb table `D:/claude/real-hall/frontier/splats/evidence/bulbs.json` (`venviewer.frontier.bulbs.v1`: `frames.T_json_from_e57`, `bulbs[]` with `id`, `chandelier`, `position_e57`, `confidence`, `faces[]` with `face` and `blob_area_mm2`); `D:/claude/real-hall/frontier/light/evidence/lamp_colours.json` (`groups.chandelier_emitters_all` and `groups.dome_ring_emitters`, each `median_log2_RG_BG`); `<work>/geom.npz` (`chandeliers`, 5 × 3, e57: the light model's chandelier centres, index 2 the centre one, in the order `03_bases.py` sums them: `E_ch[:, 0]` = 0, 1, 3, 4 and `E_ch[:, 1]` = 2, `03_bases.py:175-177`); `<work>/lamp_daylight_ratio.json`; Task 4 as built (`probes`, `sun-bounce`, `_proof_modules`, `_finite`, `THREADS`, the launcher and `compare.py` in `D:/claude/relight/grand-hall/verify/task4/`).
-- Produces (`housefit.py`): `BULBS_SCHEMA`, `SHARES_SCHEMA = "venviewer.bulb-intensities.v1"`, `CENTRE = 2`, `ENDS = (0, 1, 3, 4)`, `LIGHTS` (04_fit's ten bases), `COLOUR_PRIOR_SIGMA`, `PRIOR_WEIGHT = 0.15`, `LOG_BOUNDS = (-25.0, 12.0)`, `RESIDUAL_TOLERANCE = 0.02`, `REPRODUCE_TOLERANCE = 0.01`, `NOT_LAMP_SHARE = 1e-6`, `PHOTO_VIEWS`, `PHOTO_JOB = "A_comp_house"`, `PHOTO_R_SLACK = 0.005`, `PHOTO_STOPS_SLACK = 0.02`, `FIT_FILES`, `SCENARIOS`; `sha256_file(path)`; `is_lamp(entry) -> bool`; `blob_balance(bulbs) -> dict`; `read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict` (`sha256`, `ids`, `counts`, `lamps`, `notLamps`, `blobBalance`); `LampCounts(end_mean, centre)` with `ratio`; `lamp_counts(counts) -> LampCounts`; `colour_priors(lamp_colours) -> dict`; `FitConstants` (`of(fit04)`); `ProofModel(lamp_ratio)` and `RefitModel(lamp_ratio, counts, priors)` (each `name`, `n_log`, `n_col`, `init_log(w0)`, `weights(x)`, `colours(x)`, `bounds(lo, hi)`, `priors(x)`, `describe(x)`); `n_params(model, k)`, `unpack(model, x, k)`, `model_light(model, x, Dv, Iv, k)`, `VoxelData`, `residuals(model, x, data, k)`, `data_cost(model, x, data, k)`, `bounds_of(model, n, k)`, `initial_x(model, Dv, k)`, `anchor_albedo(model, x, data, k)`, `solve(model, x, data, k)`; `run_capture_fit(model, k, mods, out_dir, write_ecap, log) -> dict`; `bulb_shares(bulbs, report, fit_sha256) -> dict`; `accept_fit(proof, refit, counts) -> dict`; `photo_gate(baseline, refit) -> dict`; `same_run(dir_a, dir_b) -> list[str]`; `copy_verified(src, dst) -> str`; `snapshot_fit(work) -> dict`. The command `python -m relight refit-house <proof | refit | compare | install | photo-gate | promote> [--from <staging work>]`. Data: `<work>/refit/<mode>/{fit.json, fit_state.npz, report.json}` (the refit also `E_cap.npy` and `bulb-intensities.json`), `<evidence>/refit/{photo-baseline,compare,accept,install,photo-gate}.json`, and in the bake's work `bulb-intensities.json` = `{ schema: "venviewer.bulb-intensities.v1", bulbs: { <every id of the table>: <intensity per unit of its group's weight, positive> }, fit: { model, perBulbIntensity, lampRatio, groups: { ch_end | ch_centre: { source, weight, perBulbPerUnitWeight, chandeliers: { <index>: { lamps, share } } } }, notLamps, notLampShare, blobBalance, tableSha256, fitJsonSha256 } }`: the shape R1d's Task 3 reads (`cinematic.bulb_shares` normalises the values to a mean of 1 per group; the amendments file's "Interfaces R1d expects from the bake", item 2).
+- Consumes: the proof's `04_fit.py` (`direct`, `patch_direct_capture`, `build_fit_set`, `patch_samples`, `E_capture_at`, `BASES`, `GROUPS`, `PAINT`, `PAINT_ALBEDO`, `HUBER`, `GAMMA_FREE`, `SKY_W`, `LAMP_RATIO`), `radiosity.py` (`form_factors`, `radiosity`, `probe_indirect`, `load_patches`), `store.py` (`Store`, `Probes`, `eval_cubes`, `LUMW`), `lt.load_occ`, `common.T_JE`, `03c_embrasure_roomside.py`, `03d_embrasure_back.py`, `05_relight.py` (scenarios `comp_house`, `mask`, `night`, `sunny_morning`, `overcast_noon`), `07_compare.py metrics`; the proof's render harness (`D:/claude/real-hall/renovation/relight/harness/run.mjs` and `app/dist/`, copied, never run in place: the proof folder is read-only) and its `work/views.json` and `work/order_check.json` (copied); the bulb table `D:/claude/real-hall/frontier/splats/evidence/bulbs.json` (`venviewer.frontier.bulbs.v1`: `frames.T_json_from_e57`, `bulbs[]` with `id`, `chandelier`, `position_e57`, `confidence` (its first word `high`, `medium`, `low` or `exclude`; every `medium` reading names "the centre chandelier's crown tubes"), `faces[]` with `face` and `blob_area_mm2`; 173 entries on 8 October, SHA-256 `1856cf8b047d36c7e0097942af30bccddcbf725afc19adfa7611d29fb688648d`); `D:/claude/real-hall/frontier/light/evidence/lamp_colours.json` (`groups.chandelier_emitters_all` and `groups.dome_ring_emitters`, each `median_log2_RG_BG`); `<work>/geom.npz` (`chandeliers`, 5 × 3, e57: the light model's chandelier centres, index 2 the centre one, in the order `03_bases.py` sums them: `E_ch[:, 0]` = 0, 1, 3, 4 and `E_ch[:, 1]` = 2, `03_bases.py:175-177`); `<work>/lamp_daylight_ratio.json`; Task 4 as built (`probes`, `sun-bounce`, `_proof_modules`, `_finite`, `THREADS`, the launcher and `compare.py` in `D:/claude/relight/grand-hall/verify/task4/`).
+- Produces (`housefit.py`): `BULBS_SCHEMA`, `SHARES_SCHEMA = "venviewer.bulb-intensities.v1"`, `CENTRE = 2`, `ENDS = (0, 1, 3, 4)`, `LIGHTS` (04_fit's ten bases), `COLOUR_PRIOR_SIGMA`, `PRIOR_WEIGHT = 0.15`, `LOG_BOUNDS = (-25.0, 12.0)`, `RESIDUAL_TOLERANCE = 0.02`, `REPRODUCE_TOLERANCE = 0.01`, `LAMP_WORDS = ("high", "medium")`, `NOT_LAMP_WORDS = ("low", "exclude")`, `CANDLE = "candle"`, `CROWN = "crown"`, `CROWN_TEXT = "crown tube"`, `CROWN_WEIGHT_RANGE = (0.0, 1.0)`, `CROWN_ENDS = (0.0, 1.0)`, `DEFAULT_TAG = "refit"`, `PHOTO_VIEWS`, `PHOTO_JOB = "A_comp_house"`, `PHOTO_R_SLACK = 0.005`, `PHOTO_STOPS_SLACK = 0.02`, `PHOTO_METRICS`, `METRIC_ROUNDING = 0.001`, `FIT_FILES`, `SCENARIOS`; `sha256_file(path)`; `confidence_word(entry) -> str`; `is_lamp(entry) -> bool`; `lamp_kind(entry) -> str`; `blob_balance(bulbs) -> dict`; `crown_weight(bulbs) -> dict` (`wCrown`, `pairs`, `faces`); `RANGE_FACE_MIN = 2`, `RANGE_SPREAD_FACTOR = 2.0`; `candle_detections(bulbs) -> list`; `range_fit(detections) -> (slope, {face: intercept}) | None`; `median_residual(detections, fit) -> (median, count)`; `range_balance(bulbs) -> dict` (`slope`, `faces`, `balance`, `centreUsed`, `endSpreads`, `largestEndSpread`, `limit`, `factor`, `pass`, `reason`; ruling L4); `read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict` (`sha256`, `ids`, `counts`, `candles`, `crowns`, `kinds`, `lamps`, `notLamps`, `blobBalance`, `crownWeight`, `rangeBalance`); `LampCounts(end_mean, centre_candles, crowns, w_crown)` with `centre` and `ratio`; `lamp_counts(bulbs, w_crown) -> LampCounts`; `colour_priors(lamp_colours) -> dict`; `FitConstants` (`of(fit04)`); `ProofModel(lamp_ratio)` and `RefitModel(lamp_ratio, counts, priors)` (each `name`, `n_log`, `n_col`, `init_log(w0)`, `weights(x)`, `colours(x)`, `bounds(lo, hi)`, `priors(x)`, `describe(x)`); `n_params(model, k)`, `unpack(model, x, k)`, `model_light(model, x, Dv, Iv, k)`, `VoxelData`, `residuals(model, x, data, k)`, `data_cost(model, x, data, k)`, `bounds_of(model, n, k)`, `initial_x(model, Dv, k)`, `anchor_albedo(model, x, data, k)`, `solve(model, x, data, k)`; `run_capture_fit(model, k, mods, out_dir, write_ecap, log) -> dict`; `bulb_shares(bulbs, counts, report, fit_sha256) -> dict`; `accept_fit(proof, refit, counts) -> dict`; `photo_gate(baseline, refit) -> dict`; `variant_tag(w_crown) -> str`; `photo_values(metrics) -> dict`; `photo_noise(first, repeat) -> dict`; `clearly_better(x, y, noise) -> bool`; `crown_sensitivity(runs, repeat) -> dict`; `same_run(dir_a, dir_b) -> list[str]`; `copy_verified(src, dst) -> str`; `snapshot_fit(work) -> dict`. The command `python -m relight refit-house <proof | refit | compare | install | photo-gate | sensitivity | promote> [--w-crown <w>] [--tag <refit folder>] [--from <staging work>]`. Data: `<work>/refit/<folder>/{fit.json, fit_state.npz, report.json}` (`proof`; `refit` at the measured w_crown and `refit-wcrown-0`, `refit-wcrown-1`, each also `E_cap.npy` and `bulb-intensities.json`), `<evidence>/refit/{photo-baseline,compare,compare-refit-wcrown-0,compare-refit-wcrown-1,accept,install,install-refit-wcrown-0,install-refit-wcrown-1,photo-refit,photo-refit-repeat,photo-refit-wcrown-0,photo-refit-wcrown-1,photo-gate,sensitivity,range-balance}.json`, and in the bake's work `bulb-intensities.json` (amended 8 October, the controller's rulings L1 and L2) = `{ schema: "venviewer.bulb-intensities.v1", wCrown, bulbs: { <every lamp of the table>: { kind: "candle" | "crown", intensity: <per unit of its group's weight; positive at the measured w_crown, and a crown tube's 0 only in the w_crown 0 sensitivity run, which is never promoted> } }, fit: { model, perBulbIntensity, lampRatio, groups: { ch_end | ch_centre: { source, weight, perBulbPerUnitWeight, chandeliers: { <index>: { lamps, share } } } }, crownWeightMeasured: { wCrown, pairs, faces }, rangeBalance, notLamps, blobBalance, tableSha256, fitJsonSha256 } }`: the lamps are the table's 140 `high` and `medium` entries; a crown tube's intensity is `wCrown` × its chandelier's candle's; `fit.notLamps` lists the 33 `low` and `exclude` entries, which `bulbs` does not name, so the two together name every id of the table once; `ch_centre` also carries `crownPerUnitWeight` and its chandelier's `candles` and `crowns`. This is the shape R1d's Task 3 reads (R1d draws the 140 lamps, each crown tube with its own envelope at its share; the amendments file's "Interfaces R1d expects from the bake", item 2, is superseded here).
 
 **Why.** The capture fit (`04_fit.py`, run by Task 2) gives the centre chandelier `ch_centre` a weight of 1.44e-11, its lower bound `e^-25`, while the frontier splats study saw it lit through the whole 31 May walk (244 keyframes within 4 m, every one lit: `D:/claude/real-hall/frontier/splats/evidence/walk_lit_timeseries.json`). Albedo flatness cannot tell its light from the dome ring's and the end chandeliers' (their bases are nearly collinear over the fit's voxels), so they took its light (`ch_end` 2.24 and `dome` 0.754 in `work/fit.json`) and the captured light under the dome is wrong. Every multiplier is a ratio to that captured light, so the error reaches every relit splat near the centre of the hall.
 
 **The design (chosen, with the reasons).**
-- **One per-bulb intensity φ for every chandelier lamp.** `03_bases.py` makes `E_ch[:, 0]` the four end chandeliers' unit point lights summed and `E_ch[:, 1]` the centre chandelier's. The refit gives `ch_end` the weight `φ × n̄_end` (n̄_end the mean lamp count of chandeliers 0, 1, 3 and 4) and `ch_centre` the weight `φ × n_centre`, so `ch_centre / ch_end` is the bulb-count ratio exactly and each chandelier's weight is proportional to its lamps. Reasons: the five chandeliers carry one lamp product (their emitter splats agree within 0.11 stop in R/G, `lamp_colours.json`); every lamp was lit and steady through the walk (the study's clipped-share series never fell below 0.2%); and the alternative, a free per-chandelier intensity with a strong shared prior, would put a prior on exactly the direction the data cannot identify (the proof's fit drove it to its bound), so the fit would return the prior with a pull that means nothing. The constraint states the physics and leaves the fit its identifiable freedoms. The table's clipped-blob areas (a relative, monotone proxy within one face, the table's `clipped_measure_note`) are not fitted: `blob_balance` reports them as evidence, the median over every face that frames lamps of the centre chandelier and of an end chandelier of log2 of the centre's median clipped-core area over the ends'. About 0 supports one intensity; the number goes into the evidence and the task report.
-- **Lamp counts.** An entry counts as a lamp unless the by-eye reading marks it brass or glare (`confidence` "exclude: …", 27 entries on 7 October); "low" (unresolved by eye, 6) counts, because it was triangulated from clipped blobs in at least 12 faces. On the 7 October table (173 entries, all five chandeliers) that gives 28, 23, 49, 24 and 22 lamps for chandeliers 0–4: n̄_end 24.25, n_centre 49, ratio 2.021 (2.022 counting only "high" and "medium": the choice barely matters). Each chandelier's lamps must stand around the light model's chandelier of the same index (median within 0.25 m of its axis, none beyond its volume's radius plus 0.1 m; measured 0.06–0.16 m and 0.70–1.00 m on 7 October), and the table's `T_json_from_e57` must be the canonical frame's (equal on 7 October), so a numbering or frame mismatch cannot pass. The four end chandeliers keep their equal weighting inside `E_ch[:, 0]`: their counts differ by −9% to +15%, inside the counts' own uncertainty (the study lists 31 May glow clusters with no E57 bulb, possibly lamps dark at the E57 survey), and a per-chandelier end basis would change the bases every record, probe and floor texel carries.
+- **One per-bulb intensity φ for every chandelier candle** (amended 8 October: the crown tubes are a second kind, below). `03_bases.py` makes `E_ch[:, 0]` the four end chandeliers' unit point lights summed and `E_ch[:, 1]` the centre chandelier's. The refit gives `ch_end` the weight `φ × n̄_end` (n̄_end the mean lamp count of chandeliers 0, 1, 3 and 4, every one a candle) and `ch_centre` the weight `φ × (n_candles + w_crown × n_crowns)`, the centre chandelier's candles plus its crown tubes at w_crown each, so `ch_centre / ch_end` is that count ratio exactly and each chandelier's weight is proportional to its lamps' light. Reasons: the five chandeliers carry one lamp product (their emitter splats agree within 0.11 stop in R/G, `lamp_colours.json`); every lamp was lit and steady through the walk (the study's clipped-share series never fell below 0.2%); and the alternative, a free per-chandelier intensity with a strong shared prior, would put a prior on exactly the direction the data cannot identify (the proof's fit drove it to its bound), so the fit would return the prior with a pull that means nothing. The constraint states the physics and leaves the fit its identifiable freedoms. The table's clipped-blob areas (a relative, monotone proxy within one face, the table's `clipped_measure_note`) are not fitted: `blob_balance` reports them as evidence, the median over every face that frames candles of the centre chandelier and of an end chandelier of log2 of the centre's median clipped-core area over the ends' (crown tubes left out). About 0 would support one intensity. On the 8 October table it is −0.53 over 30 faces (the centre's candles' clipped cores read 0.69 of the ends' in the same faces; −0.56 with every non-excluded entry, so the lamp rule does not explain it): the number goes into the evidence and the task report. The same-face comparison does not take out range, and the centre chandelier hangs higher under the dome, so the gate is the range-aware balance below (ruling L4), with the night photo check (acceptance 3) and the sensitivity runs.
+- **The range-aware balance** (added 8 October, the controller's ruling L4: one intensity per candle is a premise the data must not contradict). Within each face (one exposure) the candles' log2 clipped area (`blob_area_mm2`, at the bulb) is modelled against the log2 range from that face's station to the bulb (`distance_m`, the only per-face record of where the station stood; the table's faces also carry `sweep`, `mm_per_px` and `blob_area_px`), with a per-face intercept and one shared slope, least squares over the faces holding at least two fitted candles (`range_fit`). The fit uses the four end chandeliers' candles only. The centre's candles' median residual against it is the corrected balance. Each end chandelier's median residual against the fit of the other three (leave-one-out) is its spread, the measure of "the same product". The premise stands while |balance| ≤ 2 × the largest |spread|; otherwise the task stops and reports the numbers, and `promote` refuses (acceptance 7). The numbers go into `evidence/refit/range-balance.json`, every refit `report.json`, `bulb-intensities.json`'s `fit`, `evidence/refit.json` (promoted or refused) and the task report. On the 8 October table: slope −0.015 log2 per log2 m over 130 faces, corrected balance **−0.296** (972 centre detections), end spreads +0.282, +0.275, −0.042 and +0.244 (chandeliers 0, 1, 3, 4), limit 0.563: it passes. The slope moves from −1.32 to +0.06 between the leave-one-out fits (within a face the end candles' ranges vary little), which the spreads carry into the limit.
+- **Lamp counts** (amended 8 October, the controller's ruling L1: one lamp set for R1a and R1d). The lamps are the table's `high` and `medium` entries, the frontier splats study's 140 confident lamps (`proposal.md` §d6.0 and §e). `low` (unresolved by eye, 6 entries) and `exclude` (a brass highlight or glare, 27) are not lamps; `fit.notLamps` lists both, and an unknown confidence word is refused. On the 8 October table (173 entries, all five chandeliers) that gives 26, 22, 47, 23 and 22 lamps for chandeliers 0–4: 26, 22, 40, 23 and 22 candles and the centre's 7 crown tubes. n̄_end is 23.25; the centre's light is 40 + 7 w_crown candles; the ratio is 1.8370 at the measured w_crown (0.3871, below), 1.7204 at w_crown 0 and 2.0215 at 1. Each chandelier's lamps must stand around the light model's chandelier of the same index (median within 0.25 m of its axis, none beyond its volume's radius plus 0.1 m; measured on 8 October: medians 0.167, 0.114, 0.045, 0.045 and 0.127 m off the axis, farthest 0.757, 0.751, 1.002, 0.773 and 0.697 m against limits 0.85, 0.85, 1.1, 0.85 and 0.85), and the table's `T_json_from_e57` must be the canonical frame's (equal on 8 October), so a numbering or frame mismatch cannot pass. The four end chandeliers keep their equal weighting inside `E_ch[:, 0]`: their counts differ by −5% to +12%, inside the counts' own uncertainty (the study lists 31 May glow clusters with no E57 bulb, possibly lamps dark at the E57 survey), and a per-chandelier end basis would change the bases every record, probe and floor texel carries.
+- **The crown tubes** (added 8 October, the controller's ruling L2). The centre chandelier's 7 crown tubes are a separate kind of lamp, `crown`: its `medium` entries, whose reading names "the centre chandelier's crown tubes" (`c2_b41`, `c2_b45`–`c2_b49`, `c2_b53`). They stand 1.377–1.400 m above the chandelier's centre, above every one of its candles (the highest 1.122 m; `read_bulbs` refuses a crown tube at or below a candle, so a reading that names the crown tubes for a candle cannot pass). Measured on 8 October: their clipped cores' median core ratio is 0.456 against 1.011 for the centre's `high` candles, their median clipped area 1,719 mm² against 3,533 mm², their detection rate 0.39 against 0.90. A crown tube has `w_crown × φ`. `w_crown` is measured by the task, never typed (`crown_weight`): in each face that frames crown tubes and candles of the centre chandelier, each crown tube's clipped area (mm² at the bulb) over the median of those candles'; the median over every such pair. On the 8 October table that is **0.3871** (92 pairs in 28 faces). (The ruling's 0.456 is the table's own `core_ratio_median`, whose denominator is the median of every entry of the chandelier in the face, crown tubes, `low` and `exclude` entries included, in pixels; measured in pixels against the candles alone it is 0.407. The ruling defines w_crown against the candles in the same faces, so the task computes that.) It is a default, not a constant: the refit also runs at w_crown 0 and 1 and reports, for each, the data cost, both night stations' photo metrics and the `ch_centre` share at the floor and the ceiling (`fit.json`'s `budget`). If the night photo check clearly prefers one end (every metric at both stations better there than at the other end by more than its run-to-run noise, measured by rendering the refit's multipliers twice), the task stops and reports instead of choosing (acceptance 6). `bulb-intensities.json` gives each lamp its `kind` and the top-level `wCrown`; a crown tube's share is `wCrown` × a candle's, and R1d draws it with its own, smaller envelope at that share.
 - **A colour per lamp group.** The cove (LED tape), the chandeliers (candle lamps; `ch_end` and `ch_centre` share one colour) and the dome (LED pin spots) each get the measured lamp/daylight ratio (`lamp_daylight_ratio.json`, `1.623 : 1 : 0.467`) times `exp([δR, 0, δB])`, with a fitted offset held by a prior per group (residual `0.15 × (δ − m) / σ`, 04_fit's prior strength): the chandeliers at m = 0 (the ratio was measured on chandelier and dome emitter splats, 94% of them chandeliers) with σ = 0.035 (0.05 stop); the dome at its emitter splats' measured shift from the chandeliers' (`lamp_colours.json`: −0.350 stop R/G, +0.173 B/G; the light study §b9) with σ = 0.10 (0.15 stop); the cove at m = 0 with σ = 0.35 (0.5 stop), because its splats are surfaces lit by the tape and measure albedo times light, not the tape. No group colour is a constant: the 2,700–2,800 K figure is not established (the light study §b9 reads the ratio as 3,500–3,950 K against D60–D75).
 - **Everything else is `04_fit.py`'s**, run by the same loop: the windows with their weak spread prior, the daylight colour with its prior, the capture's sun (its weight stays free and goes to its bound, as in the proof), the six material groups' albedos with the paint band's green anchored at 0.60, γ fixed at 1, and four rounds of radiosity with the patch albedo `rho` re-estimated from the fitted light.
 - **The baseline is the proof's own model through the same loop** (`ProofModel`, 04_fit's parameterisation exactly). It must reproduce `work/fit.json` (every weight of at least 1e-6 within 1% relative, Task 2's own bar; `ch_centre` and `sun_cap` sit at the bound and are not compared), so the refit's data cost is judged against a baseline computed the same way.
 
 **Acceptance** (all required; a miss stops the task and goes to the controller with the numbers):
 1. The refit's data cost (the robust photometric residual alone, `0.5 Σ (ρ(r) w_g)²` at the fourth round, priors excluded) is at most 1.02 times the proof model's.
-2. The centre chandelier gets its physical share: `ch_centre / ch_end` equals the lamp ratio to 1e-9, and log φ is more than 0.01 inside its bounds.
+2. The centre chandelier gets its physical share: `ch_centre / ch_end` equals the lamp ratio (its candles plus w_crown × its crown tubes over n̄_end; 1.8370 at the measured w_crown on the 8 October table) to 1e-9, and log φ is more than 0.01 inside its bounds.
 3. The Matterport night photograph check is no worse: the proof's `07_compare.py metrics` on the house light alone (`A_comp_house`) at stations 43 and 45, rendered with the refit's multipliers, against the same check rendered from the proof fit on the same day with the same harness: Pearson r at least the baseline's minus 0.005 (the metric's rounding and render noise), the median affine residual and each chroma error at most the baseline's plus 0.02 stop. (The proof's numbers: r 0.881 at 43, 0.820 at 45.)
-4. Double runs give identical outputs: the refit twice in separate processes (`fit.json`, `report.json`, `bulb-intensities.json` and `E_cap.npy` byte for byte, `fit_state.npz` array by array); `03c` and `03d` twice (the ten tables they write, by SHA-256); `05_relight.py` twice (every multiplier file byte for byte); `probes` and `sun-bounce` twice (array by array, as Task 4 as built).
+4. Double runs give identical outputs: the refit and both sensitivity runs each twice in separate processes (`fit.json`, `report.json`, `bulb-intensities.json` and `E_cap.npy` byte for byte, `fit_state.npz` array by array); `03c` and `03d` twice for each installed fit (the ten tables they write, by SHA-256); `05_relight.py` twice for each (every multiplier file it writes, byte for byte); `probes` and `sun-bounce` twice (array by array, as Task 4 as built).
 5. Every artifact that depends on the fit is regenerated, in this order, and nothing else is: `fit.json`, `fit_state.npz` and `npy/E_cap.npy` (the refit); `03c_embrasure_roomside.py` (the embrasure rows of `E_cap.npy`, from `fit_state.npz`'s `Wc`, `rho` and `Pdir_cap`; it also rewrites the embrasure rows of `bases_n`, `bases_iso`, `bases_E_win`, `bases_E_ch`, `bases_E_dome` and `bases_E_cove`, which do not depend on the fit and must come out identical); `03d_embrasure_back.py` (`npy/emb_E_back_cap.npy`, from `weights` and `cols`); `05_relight.py` (`mult/*.f16`, from all of `fit_state.npz`: the photo check's inputs and Task 5's proof regression); `probes` (`probes-coarse.npz`: its cubes are solved with the fitted `rho`, and its linearity check reads `fit.json` and `fit_state.npz`); `sun-bounce` (`sun-bounce.npz`: its exact fields and its basis are solved with the fitted `rho`, so K is re-chosen by the same stable rule on the same selection draws, whose directions do not depend on the fit, and both further draws are scored again). `fit.json` does not feed the sun-bounce selection directly; `rho` in `fit_state.npz` does, so the whole `sun-bounce` bake is re-run. Not re-run, because they do not read the fit: `windows`, `check-sun`, `floor`, the proof steps before the fit, and R1c's `skin-light` (direct light of white unit sources). Task 5 then packages the refit's weights and per-group colours, and Task 6 calibrates the floor to the refit's `group_albedo_mean["floor"]`.
+6. The crown tubes' sensitivity (ruling L2) is reported and does not clearly prefer an end: `refit-house sensitivity` holds, for the refit and the runs at w_crown 0 and 1, the data cost, the `ch_centre` share at the floor and the ceiling and the photo metrics at both night stations, and fails when every metric at both stations (r, the median affine residual and both chroma errors) is better at one end than at the other by more than that metric's run-to-run noise (the difference between two renders of the refit's own multipliers, never below the metrics' 0.001 rounding). A failure stops the task: the three metric sets and the noise go to the controller, who chooses w_crown; the task never chooses an end itself.
+7. The range-aware balance (ruling L4) holds: the centre's candles' median residual against the ends' range fit lies within 2 × the largest leave-one-out end spread. A failure stops the task (Step 10) and `promote` refuses; the numbers go to the controller either way.
 
 - [ ] **Step 1: Write the failing tests** — create `tools/relight/tests/test_housefit.py`:
 
@@ -1443,6 +1456,9 @@ T_JE = np.array([[0.0, -1.0, 0.0, 0.5], [1.0, 0.0, 0.0, 0.25], [0.0, 0.0, 1.0, -
 LAMP_RATIO = np.array([1.623, 1.0, 0.467])
 K = HF.FitConstants(groups=6, paint=5, paint_albedo=0.60, huber=0.25, gamma_free=False)
 EXCLUDE = "exclude: by eye a brass highlight or glare that triangulated, not a lamp"
+LOW = "low: unresolved by eye"
+MEDIUM = "medium: a lamp seen by eye, partly hidden, dim or small (the centre chandelier's crown tubes)"
+CANDLE_AREAS = (3000.0, 3400.0, 2600.0, 3800.0)     # the centre's four candles in face s09_f2: median 3,200 mm2
 
 
 def bulb(cid, n, confidence="high", offset=(0.3, 0.0, 0.0)):
@@ -1451,17 +1467,29 @@ def bulb(cid, n, confidence="high", offset=(0.3, 0.0, 0.0)):
 
 
 def full_table():
-    """Two lamps on each end chandelier and four on the centre one, symmetric about each centre; a brass glint on
-    chandelier 0 and an unresolved entry on chandelier 3."""
+    """Two candles on each end chandelier and four on the centre one, symmetric about each centre, the centre's in one
+    face; two crown tubes 0.5 m above the centre's candles (1,280 and 1,600 mm2 in that face, and the second in a face
+    without candles); a "medium" lamp on chandelier 1 (a candle: only the centre chandelier has crown tubes); a brass glint
+    on chandelier 0 and an unresolved entry on chandelier 3, neither a lamp."""
     out = []
     for c in range(5):
         lamps = 4 if c == 2 else 2
         for n in range(lamps):
             a = 2 * math.pi * n / lamps
             out.append(bulb(c, n, offset=(0.3 * math.cos(a), 0.3 * math.sin(a), 0.1)))
+            if c == 2:
+                out[-1]["faces"] = [{"face": "s09_f2", "blob_area_mm2": CANDLE_AREAS[n]}]
+    out.append(dict(bulb(2, 5, MEDIUM, offset=(0.2, 0.0, 0.6)), faces=[{"face": "s09_f2", "blob_area_mm2": 1280.0}]))
+    out.append(dict(bulb(2, 6, MEDIUM, offset=(-0.2, 0.0, 0.6)),
+                    faces=[{"face": "s09_f2", "blob_area_mm2": 1600.0}, {"face": "s10_f0", "blob_area_mm2": 900.0}]))
+    out.append(bulb(1, 5, MEDIUM, offset=(0.0, 0.3, 0.0)))
     out.append(bulb(0, 7, EXCLUDE))
-    out.append(bulb(3, 8, "low: unresolved by eye", offset=(0.0, 0.0, 0.2)))
+    out.append(bulb(3, 8, LOW, offset=(0.0, 0.0, 0.2)))
     return {"schema": HF.BULBS_SCHEMA, "frames": {"T_json_from_e57": T_JE.tolist()}, "bulbs": out}
+
+
+def entry(table, bid):
+    return next(b for b in table["bulbs"] if b["id"] == bid)
 
 
 def write(folder, data):
@@ -1472,22 +1500,35 @@ def write(folder, data):
 
 
 class Bulbs(unittest.TestCase):
-    def test_lamps_are_counted_per_chandelier_without_the_brass_glints(self):
+    def test_the_lamps_are_the_high_and_medium_entries_and_the_crown_tubes_a_kind_of_their_own(self):
         with tempfile.TemporaryDirectory() as d:
             got = HF.read_bulbs(write(d, full_table()), CENTRES, T_JE)
-        self.assertEqual(got["counts"], {0: 2, 1: 2, 2: 4, 3: 3, 4: 2})
-        self.assertEqual(got["notLamps"], ["c0_b07"])
-        self.assertEqual(len(got["ids"]), 14)
+        self.assertEqual(got["counts"], {0: 2, 1: 3, 2: 6, 3: 2, 4: 2})
+        self.assertEqual(got["candles"], {0: 2, 1: 3, 2: 4, 3: 2, 4: 2})
+        self.assertEqual(got["crowns"], ["c2_b05", "c2_b06"])
+        self.assertEqual([got["kinds"][b] for b in ("c1_b05", "c2_b00", "c2_b05")], ["candle", "candle", "crown"])
+        self.assertEqual(got["notLamps"], ["c0_b07", "c3_b08"])        # the brass glint and the unresolved entry
+        self.assertEqual(sorted(list(got["kinds"]) + got["notLamps"]), got["ids"])
+        self.assertEqual(len(got["ids"]), 17)
         self.assertEqual(len(got["sha256"]), 64)
-        counts = HF.lamp_counts(got["counts"])
-        self.assertEqual((counts.end_mean, counts.centre), (2.25, 4.0))
-        self.assertAlmostEqual(counts.ratio, 4.0 / 2.25, places=15)
+        counts = HF.lamp_counts(got, 0.45)
+        self.assertEqual((counts.end_mean, counts.centre_candles, counts.crowns, counts.w_crown), (2.25, 4.0, 2.0, 0.45))
+        self.assertAlmostEqual(counts.centre, 4.9, places=14)            # 4 candles + 0.45 x 2 crown tubes
+        self.assertAlmostEqual(counts.ratio, 4.9 / 2.25, places=14)
+        for w in (-0.1, 1.1, math.nan):
+            with self.assertRaises(ValueError):
+                HF.lamp_counts(got, w)
 
     def test_a_table_that_misses_a_chandelier_misplaces_one_or_is_malformed_is_refused(self):
         good = full_table()
         far = full_table(); far["bulbs"][0]["position_e57"] = (CENTRES[0] + [2.0, 0.0, 0.0]).tolist()
         shifted = full_table(); shifted["frames"]["T_json_from_e57"][0][3] += 0.01
+        low_crown = full_table(); entry(low_crown, "c2_b05")["position_e57"] = (CENTRES[2] + [0.2, 0.0, 0.05]).tolist()
+        unmeasured = full_table()
+        for bid in ("c2_b05", "c2_b06"):
+            entry(unmeasured, bid)["faces"] = [{"face": "s10_f0", "blob_area_mm2": 900.0}]
         bad = [dict(good, bulbs=[b for b in good["bulbs"] if b["chandelier"] != 4]), far, shifted,
+               low_crown, unmeasured, dict(good, bulbs=[b for b in good["bulbs"] if b["id"] not in ("c2_b05", "c2_b06")]),
                dict(good, schema="venviewer.frontier.bulbs.v0"), dict(good, bulbs=good["bulbs"] + [good["bulbs"][0]]),
                dict(good, bulbs=[dict(good["bulbs"][0], confidence="maybe")] + good["bulbs"][1:]),
                dict(good, bulbs=[dict(good["bulbs"][0], id="c1_b00")] + good["bulbs"][1:])]
@@ -1500,9 +1541,43 @@ class Bulbs(unittest.TestCase):
         table = full_table()
         table["bulbs"][0]["faces"] = [{"face": "s01_f0", "blob_area_mm2": 1000.0}, {"face": "s02_f0", "blob_area_mm2": 900.0}]
         table["bulbs"][4]["faces"] = [{"face": "s01_f0", "blob_area_mm2": 2000.0}, {"face": "s03_f0", "blob_area_mm2": 5.0}]
+        entry(table, "c2_b05")["faces"].append({"face": "s01_f0", "blob_area_mm2": 9000.0})   # a crown tube: left out
         got = HF.blob_balance(table["bulbs"])
         self.assertEqual(got["faces"], 1)                                  # only s01_f0 frames both
         self.assertAlmostEqual(got["medianLog2CentreOverEnd"], 1.0, places=12)
+
+    def test_the_crown_tubes_weigh_their_clipped_cores_against_the_centres_candles_face_by_face(self):
+        got = HF.crown_weight(full_table()["bulbs"])
+        self.assertEqual((got["pairs"], got["faces"]), (2, 1))           # s10_f0 frames no candle
+        self.assertAlmostEqual(got["wCrown"], 0.45, places=12)           # 1,280 and 1,600 over the candles' median 3,200
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(HF.read_bulbs(write(d, full_table()), CENTRES, T_JE)["crownWeight"], got)
+
+    def test_the_centres_candles_are_judged_against_the_ends_with_the_range_taken_out(self):
+        def ranged(centre_shift):
+            """Six faces, each holding two candles of every chandelier whose clipped area falls as 1 / range (log2 area =
+            the face's intercept - log2 range + the chandelier's own shift); the centre's candles 3 m farther away."""
+            out = []
+            for f in range(6):
+                for c, shift in ((0, 0.04), (1, -0.04), (3, 0.02), (4, -0.02), (2, centre_shift)):
+                    for n in range(2):
+                        d = 4.0 + f + 1.5 * n + (3.0 if c == 2 else 0.25 * c)
+                        out.append({"id": f"c{c}_b{10 * f + n:02d}", "chandelier": c, "confidence": "high",
+                                    "faces": [{"face": f"s{f:02d}_f0", "distance_m": d,
+                                               "blob_area_mm2": 2 ** (11.0 + 0.1 * f - math.log2(d) + shift)}]})
+            return out
+        self.assertLess(HF.blob_balance(ranged(0.0))["medianLog2CentreOverEnd"], -0.4)   # range alone reads as a dimmer centre
+        same = HF.range_balance(ranged(0.0))
+        self.assertAlmostEqual(same["slope"], -1.0, delta=0.05)
+        self.assertLess(abs(same["balance"]), 0.02)
+        self.assertEqual((same["faces"], same["centreUsed"], sorted(same["endSpreads"])), (6, 12, ["0", "1", "3", "4"]))
+        self.assertAlmostEqual(same["limit"], 2 * max(abs(v) for v in same["endSpreads"].values()), places=15)
+        self.assertTrue(same["pass"])
+        dimmer = HF.range_balance(ranged(-1.0))                            # the centre's candles truly half as bright
+        self.assertAlmostEqual(dimmer["balance"], -1.0, delta=0.02)
+        self.assertEqual((dimmer["pass"], dimmer["endSpreads"]), (False, same["endSpreads"]))
+        unjudged = HF.range_balance([b for b in ranged(0.0) if b["chandelier"] != 2])
+        self.assertEqual((unjudged["pass"], unjudged["balance"]), (False, None))   # nothing to judge fails, never passes
 
 
 class Priors(unittest.TestCase):
@@ -1532,13 +1607,13 @@ class Models(unittest.TestCase):
         self.assertEqual(len(m.priors(x)), 11)
 
     def test_the_refit_shares_one_per_bulb_intensity_and_colours_each_lamp_group(self):
-        counts = HF.LampCounts(end_mean=24.25, centre=49.0)
+        counts = HF.LampCounts(end_mean=23.25, centre_candles=40.0, crowns=7.0, w_crown=0.4)
         m = HF.RefitModel(LAMP_RATIO, counts, {"chandeliers": (0.0, 0.0), "dome": (-0.24, 0.12), "cove": (0.0, 0.0)})
         n = HF.n_params(m, K)
         x = np.zeros(n); x[8] = math.log(0.05); x[13] = 0.1; x[16] = -0.2
         w, cols, _mu, _gam = HF.unpack(m, x, K)
-        self.assertAlmostEqual(w[7], 0.05 * 24.25, places=12)
-        self.assertAlmostEqual(w[8], 0.05 * 49.0, places=12)
+        self.assertAlmostEqual(w[7], 0.05 * 23.25, places=12)
+        self.assertAlmostEqual(w[8], 0.05 * 42.8, places=12)             # 40 candles + 0.4 x 7 crown tubes
         self.assertAlmostEqual(w[8] / w[7], counts.ratio, places=12)
         np.testing.assert_allclose(cols[6], LAMP_RATIO)
         np.testing.assert_allclose(cols[7], LAMP_RATIO * np.exp([0.1, 0.0, 0.0]))
@@ -1551,12 +1626,13 @@ class Models(unittest.TestCase):
         lo, hi = HF.bounds_of(m, n, K)
         self.assertEqual((lo[8], hi[8], lo[11], hi[16]), (-25.0, 12.0, -1.0, 1.0))
         self.assertEqual(m.describe(x)["name"], "refit")
+        self.assertEqual(m.describe(x)["lampCounts"]["wCrown"], 0.4)
 
 
 class Solve(unittest.TestCase):
     def test_the_refit_recovers_known_lights_from_flat_albedos(self):
         rng = np.random.default_rng(7)
-        m = HF.RefitModel(LAMP_RATIO, HF.LampCounts(end_mean=2.0, centre=4.0),
+        m = HF.RefitModel(LAMP_RATIO, HF.LampCounts(end_mean=2.0, centre_candles=3.0, crowns=2.0, w_crown=0.5),
                           {"chandeliers": (0.0, 0.0), "dome": (0.0, 0.0), "cove": (0.0, 0.0)})
         n = HF.n_params(m, K)
         truth = np.zeros(n)
@@ -1584,7 +1660,7 @@ class Acceptance(unittest.TestCase):
         return {"dataCost": cost, "weights": weights, "logPerBulb": log_phi}
 
     def test_the_refit_may_cost_two_percent_more_and_must_light_the_centre_by_its_lamps(self):
-        counts = HF.LampCounts(end_mean=2.0, centre=4.0)
+        counts = HF.LampCounts(end_mean=2.0, centre_candles=3.0, crowns=2.0, w_crown=0.5)   # centre 4: ratio 2
         proof = self.report(1.0)
         self.assertTrue(HF.accept_fit(proof, self.report(1.019), counts)["pass"])
         self.assertFalse(HF.accept_fit(proof, self.report(1.021), counts)["pass"])
@@ -1601,22 +1677,48 @@ class Acceptance(unittest.TestCase):
         self.assertFalse(HF.photo_gate(base, metrics(0.89, 0.83, mae=0.53))["pass"])
         self.assertFalse(HF.photo_gate(base, metrics(0.89, 0.83, chroma=(0.28, 0.2)))["pass"])
 
+    def test_the_crown_tubes_sensitivity_stops_when_the_photographs_clearly_prefer_an_end(self):
+        def metrics(r, mae=0.5, chroma=(0.25, 0.2)):
+            return {view: {HF.PHOTO_JOB: {"r": r, "mae_affine_stops": mae, "chroma_mae_rg_bg": list(chroma)}} for view in HF.PHOTO_VIEWS}
+
+        def run(w, photo):
+            return {"wCrown": w, "dataCost": 1.0, "budget": {g: {"ch_centre": 0.1 + 0.1 * w} for g in ("floor", "ceiling")},
+                    "photo": photo}
+
+        def verdict(low, high):
+            runs = {HF.DEFAULT_TAG: run(0.45, metrics(0.880)), HF.variant_tag(0.0): run(0.0, low), HF.variant_tag(1.0): run(1.0, high)}
+            return HF.crown_sensitivity(runs, metrics(0.882))           # a second render moves r by 0.002
+        self.assertEqual([HF.variant_tag(w) for w in HF.CROWN_ENDS], ["refit-wcrown-0", "refit-wcrown-1"])
+        self.assertTrue(verdict(metrics(0.880), metrics(0.881))["pass"])                       # within the noise
+        better = metrics(0.885, mae=0.48, chroma=(0.23, 0.18))
+        got = verdict(metrics(0.880), better)
+        self.assertEqual((got["pass"], got["preferredEnd"]), (False, 1.0))                    # w_crown 1 wins every metric
+        self.assertEqual(got["runs"]["refit-wcrown-1"]["chCentreShare"], {"floor": 0.2, "ceiling": 0.2})
+        self.assertAlmostEqual(got["noise"]["mp43_night_end"]["r"], 0.002, places=12)
+        self.assertEqual(got["noise"]["mp45_night_windows"]["mae_affine_stops"], HF.METRIC_ROUNDING)
+        self.assertEqual(verdict(better, metrics(0.880))["preferredEnd"], 0.0)
+        self.assertTrue(verdict(metrics(0.880), metrics(0.885, mae=0.48, chroma=(0.25, 0.18)))["pass"])   # one metric level
+
 
 class Outputs(unittest.TestCase):
-    def test_every_bulb_is_named_per_unit_of_its_group_weight_and_glints_are_dark(self):
+    def test_every_lamp_is_named_with_its_kind_per_unit_of_its_group_weight_and_the_rest_are_not_lamps(self):
         with tempfile.TemporaryDirectory() as d:
             bulbs = HF.read_bulbs(write(d, full_table()), CENTRES, T_JE)
-        report = {"weights": [1.0] * 7 + [2.25 * 0.5, 4.0 * 0.5, 1.0], "logPerBulb": math.log(0.5)}
-        out = HF.bulb_shares(bulbs, report, "a" * 64)
-        self.assertEqual(out["schema"], "venviewer.bulb-intensities.v1")
-        self.assertEqual(sorted(out["bulbs"]), bulbs["ids"])
-        self.assertAlmostEqual(out["bulbs"]["c0_b00"], 1 / 2.25, places=15)
-        self.assertAlmostEqual(out["bulbs"]["c2_b03"], 1 / 4.0, places=15)
-        self.assertAlmostEqual(out["bulbs"]["c0_b07"], HF.NOT_LAMP_SHARE / 2.25, places=18)
-        self.assertTrue(all(v > 0 for v in out["bulbs"].values()))
-        self.assertEqual(out["fit"]["notLamps"], ["c0_b07"])
-        self.assertAlmostEqual(out["fit"]["groups"]["ch_end"]["chandeliers"]["3"]["share"], 3 / 9, places=15)
-        self.assertAlmostEqual(out["fit"]["lampRatio"], 4.0 / 2.25, places=12)
+        counts = HF.lamp_counts(bulbs, 0.45)                               # the centre: 4 + 0.45 x 2 = 4.9 candles of light
+        report = {"weights": [1.0] * 7 + [2.25 * 0.5, 4.9 * 0.5, 1.0], "logPerBulb": math.log(0.5)}
+        out = HF.bulb_shares(bulbs, counts, report, "a" * 64)
+        self.assertEqual((out["schema"], out["wCrown"]), ("venviewer.bulb-intensities.v1", 0.45))
+        self.assertEqual(sorted(list(out["bulbs"]) + out["fit"]["notLamps"]), bulbs["ids"])
+        self.assertEqual(out["fit"]["notLamps"], ["c0_b07", "c3_b08"])
+        self.assertEqual(out["bulbs"]["c0_b00"], {"kind": "candle", "intensity": 1 / 2.25})
+        self.assertEqual(out["bulbs"]["c2_b05"]["kind"], "crown")
+        self.assertAlmostEqual(out["bulbs"]["c2_b03"]["intensity"], 1 / 4.9, places=15)
+        self.assertAlmostEqual(out["bulbs"]["c2_b05"]["intensity"], 0.45 * out["bulbs"]["c2_b03"]["intensity"], places=15)
+        centre = [v["intensity"] for bid, v in out["bulbs"].items() if bid.startswith("c2_")]
+        self.assertAlmostEqual(sum(centre), 1.0, places=12)                # the centre chandelier's lamps carry its weight
+        self.assertAlmostEqual(out["fit"]["groups"]["ch_end"]["chandeliers"]["1"]["share"], 3 / 9, places=15)
+        self.assertAlmostEqual(out["fit"]["lampRatio"], 4.9 / 2.25, places=12)
+        self.assertEqual(out["fit"]["crownWeightMeasured"]["pairs"], 2)
 
     def test_two_runs_are_compared_array_by_array_and_byte_by_byte(self):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
@@ -1667,9 +1769,13 @@ the house lights parameterised by the frontier splats study's bulb table instead
 The proof's fit gives the centre chandelier a weight of 1.4e-11 (its bound) although the 31 May walk saw it lit
 throughout; albedo flatness cannot tell its light from the dome ring's and the end chandeliers', so they took it.
 
-RefitModel: one per-bulb intensity phi for every chandelier lamp. 03_bases.py's E_ch[:, 0] is the four end
-chandeliers' unit point lights summed and E_ch[:, 1] the centre chandelier's, so ch_end weighs phi x the mean lamp count
-of the four ends and ch_centre phi x its own count: their ratio is the bulb-count ratio exactly. A colour per lamp group
+RefitModel: one per-bulb intensity phi for every chandelier candle. The lamps are the table's "high" and "medium"
+entries (the splats study's 140); "low" and "exclude" entries are not lamps. The centre chandelier's crown tubes (its
+"medium" entries whose reading names them) are a second kind of lamp, each w_crown x phi, with w_crown measured from the
+table's clipped cores (crown_weight), a default the plan's sensitivity runs bracket at 0 and 1. 03_bases.py's E_ch[:, 0]
+is the four end chandeliers' unit point lights summed and E_ch[:, 1] the centre chandelier's, so ch_end weighs phi x the
+mean lamp count of the four ends and ch_centre phi x (its candles + w_crown x its crown tubes): their ratio is that
+count ratio exactly. A colour per lamp group
 (cove, chandeliers, dome): the measured lamp/daylight ratio times exp of a fitted (R/G, B/G) offset held by a prior per
 group (colour_priors). Everything else is 04_fit.py's. ProofModel is 04_fit.py's own parameterisation through the same
 loop: it reproduces the proof's fit and is the baseline the refit's data cost is judged against. The plan's Task 4b
@@ -1701,11 +1807,21 @@ RESIDUAL_TOLERANCE = 0.02                       # the refit's data cost may exce
 RATIO_TOLERANCE = 1e-9
 BOUND_MARGIN = 0.01
 REPRODUCE_TOLERANCE = 0.01                      # the proof model against fit.json (Task 2's bar)
-NOT_LAMP_SHARE = 1e-6                           # an entry read as brass or glare: named (R1d reads every id), never lit
+LAMP_WORDS = ("high", "medium")                 # the lamps: the splats study's 140 (the controller's ruling L1, 8 October)
+NOT_LAMP_WORDS = ("low", "exclude")             # unresolved by eye, or a brass highlight or glare: not lamps
+CANDLE, CROWN = "candle", "crown"               # the two kinds of lamp (ruling L2)
+CROWN_TEXT = "crown tube"                       # a centre-chandelier "medium" reading that names the crown tubes
+CROWN_WEIGHT_RANGE = (0.0, 1.0)                 # w_crown, a crown tube's intensity over a candle's
+CROWN_ENDS = (0.0, 1.0)                         # the sensitivity runs' w_crown
+DEFAULT_TAG = "refit"                           # the refit at the measured w_crown; a sensitivity run is refit-wcrown-<w>
+RANGE_FACE_MIN = 2                              # a face's intercept in the range fit needs at least two fitted candles
+RANGE_SPREAD_FACTOR = 2.0                       # the centre's range-aware balance within 2x the largest end spread (L4)
 PHOTO_VIEWS = ("mp43_night_end", "mp45_night_windows")
 PHOTO_JOB = "A_comp_house"
 PHOTO_R_SLACK = 0.005
 PHOTO_STOPS_SLACK = 0.02
+PHOTO_METRICS = (("r", 1.0), ("mae_affine_stops", -1.0), ("chroma_rg", -1.0), ("chroma_bg", -1.0))   # +1: higher is better
+METRIC_ROUNDING = 0.001                         # 07_compare.py rounds every metric to 3 decimals
 FIT_FILES = ("fit.json", "fit_state.npz", "npy/E_cap.npy", "npy/emb_E_back_cap.npy")
 SNAPSHOT = "fit-proof"
 SCENARIOS = ("comp_house", "mask", "night", "sunny_morning", "overcast_noon")
@@ -1719,22 +1835,38 @@ def sha256_file(path) -> str:
     return h.hexdigest()
 
 
-def is_lamp(entry) -> bool:
-    """A table entry is a lamp unless read by eye as a brass highlight or glare ("exclude: ..."); "low" (unresolved by
-    eye) counts, since it was triangulated from clipped blobs in at least 12 faces."""
+def confidence_word(entry) -> str:
+    """The by-eye reading's first word ("high: ...", "medium: ..."); any word but the table's four is refused."""
     word = str(entry.get("confidence", "")).split(":")[0].strip()
-    if word not in ("high", "medium", "low", "exclude"):
+    if word not in LAMP_WORDS + NOT_LAMP_WORDS:
         raise ValueError(f"bulb {entry.get('id')!r}: unknown confidence {entry.get('confidence')!r}")
-    return word != "exclude"
+    return word
+
+
+def is_lamp(entry) -> bool:
+    """A lamp is a "high" or "medium" entry (ruling L1: the splats study's 140); "low" (unresolved by eye) and "exclude"
+    (a brass highlight or glare) are not lamps."""
+    return confidence_word(entry) in LAMP_WORDS
+
+
+def lamp_kind(entry) -> str:
+    """CROWN for the centre chandelier's crown tubes, its "medium" entries whose reading names them (ruling L2); every
+    other lamp is a CANDLE."""
+    if not is_lamp(entry):
+        raise ValueError(f"bulb {entry.get('id')!r} is not a lamp")
+    crown = (int(entry["chandelier"]) == CENTRE and confidence_word(entry) == "medium"
+             and CROWN_TEXT in str(entry["confidence"]))
+    return CROWN if crown else CANDLE
 
 
 def blob_balance(bulbs) -> dict:
-    """Evidence for one per-bulb intensity, never fitted: in each face that frames lamps of the centre chandelier and of
-    an end chandelier (one exposure), log2 of the centre's median clipped-core area (mm2 at the bulb) over the ends'; the
-    median over those faces. The area is a relative, monotone proxy of intensity within one face (the table's note)."""
+    """Evidence for one per-bulb intensity, never fitted: in each face that frames candles of the centre chandelier and
+    of an end chandelier (one exposure), log2 of the centre's median clipped-core area (mm2 at the bulb) over the ends';
+    the median over those faces. The area is a relative, monotone proxy of intensity within one face (the table's note).
+    The crown tubes are left out: crown_weight measures them."""
     faces = {}
     for b in bulbs:
-        if not is_lamp(b):
+        if not is_lamp(b) or lamp_kind(b) == CROWN:
             continue
         side = "centre" if int(b["chandelier"]) == CENTRE else "end"
         for f in b.get("faces", []):
@@ -1745,9 +1877,103 @@ def blob_balance(bulbs) -> dict:
     return {"faces": len(logs), "medianLog2CentreOverEnd": float(np.median(logs)) if logs else None}
 
 
+def crown_weight(bulbs) -> dict:
+    """w_crown's measured default (ruling L2), never fitted: in each face that frames crown tubes and candles of the
+    centre chandelier (one exposure), each crown tube's clipped-core area (mm2 at the bulb) over the median of those
+    candles'; the median over every such (tube, face) pair. The area is a relative, monotone proxy of intensity within one
+    face (the table's note), so this is a default, which the sensitivity runs bracket at 0 and 1. A table without crown
+    tubes, or whose crown tubes share no face with a candle, is refused."""
+    faces = {}
+    for b in bulbs:
+        if int(b["chandelier"]) != CENTRE or not is_lamp(b):
+            continue
+        kind = lamp_kind(b)
+        for f in b.get("faces", []):
+            area = f.get("blob_area_mm2")
+            if area is not None and area > 0:
+                faces.setdefault(f["face"], {CANDLE: [], CROWN: []})[kind].append(float(area))
+    shared = [v for v in faces.values() if v[CROWN] and v[CANDLE]]
+    ratios = [a / float(np.median(v[CANDLE])) for v in shared for a in v[CROWN]]
+    if not ratios:
+        raise ValueError("no face frames both a crown tube and a candle of the centre chandelier (or the table names no "
+                         "crown tubes): w_crown cannot be measured")
+    return {"wCrown": float(np.median(ratios)), "pairs": len(ratios), "faces": len(shared)}
+
+
+def candle_detections(bulbs) -> list:
+    """Every detection of a candle with a positive clipped area and range: (chandelier, face, log2 of its clipped area in
+    mm2 at the bulb (blob_area_mm2), log2 of the face's station-to-bulb range in m (distance_m))."""
+    out = []
+    for b in bulbs:
+        if not is_lamp(b) or lamp_kind(b) != CANDLE:
+            continue
+        for f in b.get("faces", []):
+            area, rng = f.get("blob_area_mm2"), f.get("distance_m")
+            if area is not None and rng is not None and area > 0 and rng > 0:
+                out.append((int(b["chandelier"]), str(f["face"]), math.log2(float(area)), math.log2(float(rng))))
+    return out
+
+
+def range_fit(detections):
+    """log2 area = a_face + slope x log2 range, least squares with a per-face intercept (one exposure per face) and one
+    shared slope, over the faces holding at least RANGE_FACE_MIN of these detections: (slope, {face: a_face}), or None
+    when no face does or the ranges never vary within a face."""
+    faces = {}
+    for _c, face, y, x in detections:
+        faces.setdefault(face, []).append((x, y))
+    faces = {f: np.asarray(v, np.float64) for f, v in faces.items() if len(v) >= RANGE_FACE_MIN}
+    sxx = sum(float(((v[:, 0] - v[:, 0].mean()) ** 2).sum()) for v in faces.values())
+    if sxx <= 0.0:
+        return None
+    slope = sum(float(((v[:, 0] - v[:, 0].mean()) * (v[:, 1] - v[:, 1].mean())).sum()) for v in faces.values()) / sxx
+    return slope, {f: float(v[:, 1].mean() - slope * v[:, 0].mean()) for f, v in faces.items()}
+
+
+def median_residual(detections, fit):
+    """(the median residual of these detections against a range fit, in log2, and how many faces of the fit held them)."""
+    slope, intercepts = fit
+    r = [y - intercepts[face] - slope * x for _c, face, y, x in detections if face in intercepts]
+    return (float(np.median(r)) if r else None), len(r)
+
+
+def range_balance(bulbs) -> dict:
+    """Ruling L4: whether the clipped cores contradict one intensity per candle once range is taken out. The range fit
+    is made on the four end chandeliers' candles; the centre's candles' median residual against it is the corrected
+    balance. Each end chandelier's median residual against the fit of the other three (leave-one-out) is its spread;
+    the centre passes within RANGE_SPREAD_FACTOR x the largest |spread|. Never raises: a table it cannot judge fails,
+    with the reason."""
+    detections = candle_detections(bulbs)
+    ends = [d for d in detections if d[0] in ENDS]
+    centre = [d for d in detections if d[0] == CENTRE]
+    out = {"factor": RANGE_SPREAD_FACTOR, "faceMin": RANGE_FACE_MIN, "detections": {"ends": len(ends), "centre": len(centre)},
+           "slope": None, "faces": 0, "balance": None, "centreUsed": 0, "endSpreads": {}, "largestEndSpread": None,
+           "limit": None, "pass": False, "reason": None}
+    fit = range_fit(ends)
+    if fit is None:
+        out["reason"] = "the end chandeliers' candles give no range fit (no face holds two of them at different ranges)"
+        return out
+    out["slope"], out["faces"] = fit[0], len(fit[1])
+    out["balance"], out["centreUsed"] = median_residual(centre, fit)
+    for c in ENDS:
+        others = range_fit([d for d in ends if d[0] != c])
+        out["endSpreads"][str(c)] = None if others is None else median_residual([d for d in ends if d[0] == c], others)[0]
+    if out["balance"] is None or any(v is None for v in out["endSpreads"].values()):
+        out["reason"] = "the centre's candles or an end chandelier share no fitted face"
+        return out
+    out["largestEndSpread"] = max(abs(v) for v in out["endSpreads"].values())
+    out["limit"] = RANGE_SPREAD_FACTOR * out["largestEndSpread"]
+    out["pass"] = bool(abs(out["balance"]) <= out["limit"])
+    if not out["pass"]:
+        out["reason"] = "the centre's candles differ from the ends' by more than the ends differ among themselves"
+    return out
+
+
 def read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict:
-    """The bulb table: every id, the lamps per chandelier (each chandelier's checked to stand around the light model's
-    chandelier of the same index), the entries that are not lamps, the clipped-core evidence and the table's SHA-256."""
+    """The bulb table: every id; the lamps per chandelier ("high" and "medium"; each chandelier's checked to stand around
+    the light model's chandelier of the same index) and each lamp's kind (every crown tube above all the centre
+    chandelier's candles); the entries that are not lamps ("low" and "exclude"); the clipped-core evidence (the centre's
+    candles against the ends', the crown tubes' measured weight, the range-aware balance of ruling L4) and the table's
+    SHA-256."""
     with open(path, "rb") as f:
         raw = f.read()
     data = json.loads(raw)
@@ -1760,7 +1986,7 @@ def read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict:
     centres = np.asarray(chandelier_centres, np.float64)
     if centres.shape != (CHANDELIERS, 3):
         raise ValueError("the light model has five chandelier centres")
-    ids, lamps, not_lamps = set(), {c: [] for c in range(CHANDELIERS)}, []
+    ids, lamps, not_lamps, kinds = set(), {c: [] for c in range(CHANDELIERS)}, [], {}
     for entry in data["bulbs"]:
         bid, c = str(entry["id"]), int(entry["chandelier"])
         if not 0 <= c < CHANDELIERS or not bid.startswith(f"c{c}_b"):
@@ -1770,9 +1996,10 @@ def read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict:
         ids.add(bid)
         if is_lamp(entry):
             lamps[c].append((bid, np.asarray(entry["position_e57"], np.float64)))
+            kinds[bid] = lamp_kind(entry)
         else:
             not_lamps.append(bid)
-    counts = {}
+    counts, candles = {}, {}
     for c in range(CHANDELIERS):
         if not lamps[c]:
             raise ValueError(f"chandelier {c} has no lamp in the table: the refit needs all five")
@@ -1783,23 +2010,45 @@ def read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict:
             raise ValueError(f"chandelier {c}'s lamps do not stand around the light model's chandelier {c} "
                              f"(median {off:.3f} m off its axis, farthest {reach:.3f} m)")
         counts[c] = len(lamps[c])
-    return {"sha256": hashlib.sha256(raw).hexdigest(), "ids": sorted(ids), "counts": counts,
+        candles[c] = sum(1 for bid, _p in lamps[c] if kinds[bid] == CANDLE)
+    crowns = sorted(bid for bid, kind in kinds.items() if kind == CROWN)
+    height = {bid: float(p[2]) for bid, p in lamps[CENTRE]}
+    lowest_crown = min((height[bid] for bid in crowns), default=math.inf)
+    highest_candle = max((z for bid, z in height.items() if kinds[bid] == CANDLE), default=-math.inf)
+    if lowest_crown <= highest_candle:
+        raise ValueError(f"a crown tube stands at {lowest_crown:.3f} m, not above every candle of the centre chandelier "
+                         f"(the highest at {highest_candle:.3f} m): the reading that names the crown tubes is wrong here")
+    return {"sha256": hashlib.sha256(raw).hexdigest(), "ids": sorted(ids), "counts": counts, "candles": candles,
+            "crowns": crowns, "kinds": dict(sorted(kinds.items())),
             "lamps": {c: sorted(b for b, _p in lamps[c]) for c in range(CHANDELIERS)}, "notLamps": sorted(not_lamps),
-            "blobBalance": blob_balance(data["bulbs"])}
+            "blobBalance": blob_balance(data["bulbs"]), "crownWeight": crown_weight(data["bulbs"]),
+            "rangeBalance": range_balance(data["bulbs"])}
 
 
 @dataclass(frozen=True)
 class LampCounts:
-    end_mean: float      # mean lamps per end chandelier (the four summed in E_ch[:, 0])
-    centre: float        # the centre chandelier's lamps (E_ch[:, 1])
+    end_mean: float          # mean lamps per end chandelier, every one a candle (the four summed in E_ch[:, 0])
+    centre_candles: float    # the centre chandelier's candles (E_ch[:, 1])
+    crowns: float            # the centre chandelier's crown tubes
+    w_crown: float           # a crown tube's intensity over a candle's
+
+    @property
+    def centre(self) -> float:
+        """The centre chandelier's light in candles: its candles plus w_crown x its crown tubes."""
+        return self.centre_candles + self.w_crown * self.crowns
 
     @property
     def ratio(self) -> float:
         return self.centre / self.end_mean
 
 
-def lamp_counts(counts) -> LampCounts:
-    return LampCounts(sum(counts[c] for c in ENDS) / len(ENDS), float(counts[CENTRE]))
+def lamp_counts(bulbs, w_crown) -> LampCounts:
+    """read_bulbs' lamps at a crown weight within CROWN_WEIGHT_RANGE."""
+    w = float(w_crown)
+    if not (math.isfinite(w) and CROWN_WEIGHT_RANGE[0] <= w <= CROWN_WEIGHT_RANGE[1]):
+        raise ValueError(f"w_crown {w_crown!r} is outside {CROWN_WEIGHT_RANGE}")
+    candles = bulbs["candles"]
+    return LampCounts(sum(candles[c] for c in ENDS) / len(ENDS), float(candles[CENTRE]), float(len(bulbs["crowns"])), w)
 
 
 def colour_priors(lamp_colours) -> dict:
@@ -1902,7 +2151,9 @@ class RefitModel:
 
     def describe(self, x):
         return {"name": self.name, "perBulbIntensity": math.exp(float(x[8])), "logPerBulb": float(x[8]),
-                "lampCounts": {"endMean": self.counts.end_mean, "centre": self.counts.centre, "ratio": self.counts.ratio},
+                "lampCounts": {"endMean": self.counts.end_mean, "centreCandles": self.counts.centre_candles,
+                               "crowns": self.counts.crowns, "wCrown": self.counts.w_crown, "centre": self.counts.centre,
+                               "ratio": self.counts.ratio},
                 "colourOffsets": {g: [float(x[i]), float(x[i + 1])] for g, i in self.OFFSETS},
                 "colourPriors": {g: list(self.prior_means[g]) for g in COLOUR_PRIOR_SIGMA}, "colourPriorSigma": dict(COLOUR_PRIOR_SIGMA)}
 
@@ -2092,26 +2343,28 @@ def run_capture_fit(model, k: FitConstants, mods, out_dir, write_ecap, log=print
     return report
 
 
-def bulb_shares(bulbs, report, fit_sha256) -> dict:
-    """bulb-intensities.json for R1d's Task 3: every id of the table with its intensity per unit of its group's weight
-    (phi over the group's weight: 1 / the mean end-chandelier lamp count for ch_end, 1 / the centre's lamp count for
-    ch_centre), an entry read as brass or glare at NOT_LAMP_SHARE of that (named and positive, never a lamp), and the
-    refit's group shares (each chandelier's share of its group's lamps)."""
-    counts = lamp_counts(bulbs["counts"])
+def bulb_shares(bulbs, counts: LampCounts, report, fit_sha256) -> dict:
+    """bulb-intensities.json for R1d's Task 3: every lamp of the table ("high" and "medium") with its kind and its
+    intensity per unit of its group's weight (phi over the group's weight: 1 / the mean end-chandelier lamp count for
+    ch_end, 1 / (the centre's candles + w_crown x its crown tubes) for ch_centre, and a crown tube w_crown x a candle's),
+    the w_crown used, and the refit's group shares (each chandelier's share of its group's lamps). The entries that are
+    not lamps ("low" and "exclude") are named only in fit.notLamps: with bulbs they name every id of the table once."""
     per_unit = {"ch_end": 1.0 / counts.end_mean, "ch_centre": 1.0 / counts.centre}
     group_of = lambda bid: "ch_centre" if int(bid.split("_")[0][1:]) == CENTRE else "ch_end"
-    not_lamps = set(bulbs["notLamps"])
-    values = {bid: per_unit[group_of(bid)] * (NOT_LAMP_SHARE if bid in not_lamps else 1.0) for bid in bulbs["ids"]}
+    values = {bid: {"kind": kind, "intensity": per_unit[group_of(bid)] * (counts.w_crown if kind == CROWN else 1.0)}
+              for bid, kind in bulbs["kinds"].items()}
     ends_total = sum(bulbs["counts"][c] for c in ENDS)
     groups = {"ch_end": {"source": 6, "weight": report["weights"][7], "perBulbPerUnitWeight": per_unit["ch_end"],
                          "chandeliers": {str(c): {"lamps": bulbs["counts"][c], "share": bulbs["counts"][c] / ends_total} for c in ENDS}},
               "ch_centre": {"source": 7, "weight": report["weights"][8], "perBulbPerUnitWeight": per_unit["ch_centre"],
-                            "chandeliers": {str(CENTRE): {"lamps": bulbs["counts"][CENTRE], "share": 1.0}}}}
-    return {"schema": SHARES_SCHEMA, "bulbs": values,
-            "fit": {"model": "one per-bulb intensity for every chandelier lamp (T-639 R1a Task 4b)",
+                            "crownPerUnitWeight": per_unit["ch_centre"] * counts.w_crown,
+                            "chandeliers": {str(CENTRE): {"lamps": bulbs["counts"][CENTRE], "candles": bulbs["candles"][CENTRE],
+                                                          "crowns": len(bulbs["crowns"]), "share": 1.0}}}}
+    return {"schema": SHARES_SCHEMA, "wCrown": counts.w_crown, "bulbs": dict(sorted(values.items())),
+            "fit": {"model": "one per-bulb intensity for every chandelier candle, w_crown of it for a crown tube (T-639 R1a Task 4b)",
                     "perBulbIntensity": math.exp(report["logPerBulb"]), "lampRatio": counts.ratio, "groups": groups,
-                    "notLamps": sorted(not_lamps), "notLampShare": NOT_LAMP_SHARE, "blobBalance": bulbs["blobBalance"],
-                    "tableSha256": bulbs["sha256"], "fitJsonSha256": fit_sha256}}
+                    "crownWeightMeasured": bulbs["crownWeight"], "rangeBalance": bulbs["rangeBalance"], "notLamps": bulbs["notLamps"],
+                    "blobBalance": bulbs["blobBalance"], "tableSha256": bulbs["sha256"], "fitJsonSha256": fit_sha256}}
 
 
 def accept_fit(proof, refit, counts: LampCounts) -> dict:
@@ -2139,6 +2392,49 @@ def photo_gate(baseline, refit) -> dict:
         ok &= row["pass"]
         views[view] = row
     return {"job": PHOTO_JOB, "views": views, "slack": {"r": PHOTO_R_SLACK, "stops": PHOTO_STOPS_SLACK}, "pass": bool(ok)}
+
+
+def variant_tag(w_crown) -> str:
+    """The refit folder of a sensitivity run at w_crown: refit-wcrown-0, refit-wcrown-1."""
+    return f"{DEFAULT_TAG}-wcrown-{float(w_crown):g}"
+
+
+def photo_values(metrics) -> dict:
+    """07_compare's house-light metrics at the night stations: {view: {r, mae_affine_stops, chroma_rg, chroma_bg}}."""
+    out = {}
+    for view in PHOTO_VIEWS:
+        m = metrics[view][PHOTO_JOB]
+        out[view] = {"r": m["r"], "mae_affine_stops": m["mae_affine_stops"],
+                     "chroma_rg": m["chroma_mae_rg_bg"][0], "chroma_bg": m["chroma_mae_rg_bg"][1]}
+    return out
+
+
+def photo_noise(first, repeat) -> dict:
+    """Each metric's run-to-run noise: its difference between two renders of the same multipliers, never below the
+    metrics' rounding."""
+    a, b = photo_values(first), photo_values(repeat)
+    return {view: {key: max(abs(a[view][key] - b[view][key]), METRIC_ROUNDING) for key, _sign in PHOTO_METRICS}
+            for view in PHOTO_VIEWS}
+
+
+def clearly_better(x, y, noise) -> bool:
+    """Every metric at both night stations better in x than in y by more than its noise (r higher, the stops lower)."""
+    return all(sign * (x[view][key] - y[view][key]) > noise[view][key] for view in PHOTO_VIEWS for key, sign in PHOTO_METRICS)
+
+
+def crown_sensitivity(runs, repeat) -> dict:
+    """The refit at the measured w_crown and at both ends (ruling L2). runs maps DEFAULT_TAG and both variant tags to
+    {wCrown, dataCost, budget (fit.json's), photo (07_compare's metrics.json)}; repeat is a second render of the default's
+    multipliers, which gives each metric's run-to-run noise. The night photographs clearly prefer an end when every metric
+    there beats the other end's by more than its noise: then the task stops and reports instead of choosing."""
+    noise = photo_noise(runs[DEFAULT_TAG]["photo"], repeat)
+    rows = {tag: {"wCrown": r["wCrown"], "dataCost": r["dataCost"],
+                  "chCentreShare": {g: r["budget"][g]["ch_centre"] for g in ("floor", "ceiling")},
+                  "photo": photo_values(r["photo"])} for tag, r in runs.items()}
+    low, high = (rows[variant_tag(w)]["photo"] for w in CROWN_ENDS)
+    preferred = CROWN_ENDS[0] if clearly_better(low, high, noise) else CROWN_ENDS[1] if clearly_better(high, low, noise) else None
+    return {"runs": rows, "noise": noise, "metricRounding": METRIC_ROUNDING, "preferredEnd": preferred,
+            "pass": preferred is None}
 
 
 def same_run(dir_a, dir_b) -> list:
@@ -2197,12 +2493,14 @@ def snapshot_fit(work) -> dict:
 - [ ] **Step 4: Run the tests to see them pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_housefit -v`
-Expected: PASS, 12 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 5: Register the command** — in `tools/relight/relight/__main__.py`, directly after `    ap.add_argument("--config", required=True)` add:
 
 ```python
     ap.add_argument("--from", dest="source", default=None)   # refit-house promote: the staging work folder (Task 4b)
+    ap.add_argument("--w-crown", dest="w_crown", type=float, default=None)   # refit-house refit: a sensitivity run's w_crown
+    ap.add_argument("--tag", default=None)                    # refit-house compare | install: a refit's folder (default refit)
 ```
 
 and directly after `COMMANDS["floor"] = cmd_floor` add:
@@ -2212,16 +2510,24 @@ and directly after `COMMANDS["floor"] = cmd_floor` add:
 
 def cmd_refit_house(cfg, args) -> int:
     """The house lights refitted (Task 4b, housefit.py). `proof` runs 04_fit.py's own model through the loop (the
-    baseline: it must reproduce this work's fit.json), `refit` the refit (with bulb-intensities.json); each writes
-    <work>/refit/<mode>/ and never touches the fit the work uses. `compare` checks the refit's two runs (refit/refit
-    against refit/refit-run1); `install` puts an accepted, reproduced refit into this (staging) work; `photo-gate` holds
-    07_compare's night metrics (<work>/cmp/metrics.json) to the baseline's; `promote --from <staging work>` keeps this
-    work's proof fit in <work>/fit-proof/ and copies the accepted refit, its embrasure light and its multipliers in.
-    Evidence: <evidence>/refit/*.json (staging) and <evidence>/refit.json (promote). CPU only."""
+    baseline: it must reproduce this work's fit.json); `refit` the refit at the table's measured w_crown (with
+    bulb-intensities.json), or with --w-crown <w> a sensitivity run at that w (folder refit-wcrown-<w>); each writes
+    <work>/refit/<folder>/ and never touches the fit the work uses. `compare [--tag <folder>]` checks a refit's two runs
+    (refit/<folder> against refit/<folder>-run1; default the refit); `install [--tag <folder>]` puts a refit into this
+    (staging) work, the default only when accepted and reproduced, a sensitivity run when its two runs agree;
+    `photo-gate` holds 07_compare's night metrics (<work>/cmp/metrics.json) to the baseline's; `sensitivity` compares
+    the refit with both sensitivity runs (data cost, the ch_centre share at the floor and the ceiling, the night photos
+    against their run-to-run noise) and fails when the photos clearly prefer an end; `promote --from <staging work>`
+    keeps this work's proof fit in <work>/fit-proof/ and copies the accepted refit, its embrasure light and its
+    multipliers in, and only when every gate passed, the range-aware balance of ruling L4 included; refused, it copies
+    nothing and records why. Evidence: <evidence>/refit/*.json (staging) and <evidence>/refit.json (promote, either way).
+    CPU only."""
     from . import housefit as HF
     mode, work = args.step, cfg.paths["work"]
     refit_dir, ev_dir = os.path.join(work, "refit"), os.path.join(cfg.paths["evidence"], "refit")
     os.makedirs(ev_dir, exist_ok=True)
+    tag = args.tag or HF.DEFAULT_TAG
+    suffix = "" if tag == HF.DEFAULT_TAG else f"-{tag}"            # evidence names: compare.json, compare-<tag>.json
 
     def write_json(path, data):
         part = path + ".part"
@@ -2246,14 +2552,19 @@ def cmd_refit_house(cfg, args) -> int:
             return 1
         k = HF.FitConstants.of(fit04)
         mods = {"fit04": fit04, "radiosity": radiosity, "store": store_mod, "lt": lt, "torch": torch}
-        out_dir, bulbs = os.path.join(refit_dir, mode), None
+        out_dir, bulbs, counts = os.path.join(refit_dir, mode), None, None
         if mode == "proof":
             model = HF.ProofModel(fit04.LAMP_RATIO)
         else:
             with np.load(os.path.join(work, "geom.npz")) as z:
                 centres = np.asarray(z["chandeliers"], np.float64)
             bulbs = HF.read_bulbs(cfg.paths["emitters"], centres, common.T_JE)
-            model = HF.RefitModel(fit04.LAMP_RATIO, HF.lamp_counts(bulbs["counts"]), HF.colour_priors(read_json(cfg.paths["lampColours"])))
+            if args.w_crown is None:
+                counts = HF.lamp_counts(bulbs, bulbs["crownWeight"]["wCrown"])
+            else:
+                counts = HF.lamp_counts(bulbs, args.w_crown)
+                out_dir = os.path.join(refit_dir, HF.variant_tag(args.w_crown))
+            model = HF.RefitModel(fit04.LAMP_RATIO, counts, HF.colour_priors(read_json(cfg.paths["lampColours"])))
         started = time.time()
         report = HF.run_capture_fit(model, k, mods, out_dir, write_ecap=(mode == "refit"), log=lambda line: print(line, flush=True))
         report["threads"] = THREADS
@@ -2267,43 +2578,67 @@ def cmd_refit_house(cfg, args) -> int:
                                       "tolerance": HF.REPRODUCE_TOLERANCE, "pass": ok}
         else:
             report["bulbs"] = {"path": cfg.paths["emitters"], "sha256": bulbs["sha256"], "notLamps": bulbs["notLamps"],
-                               "counts": {str(c): n for c, n in bulbs["counts"].items()}, "blobBalance": bulbs["blobBalance"]}
+                               "counts": {str(c): n for c, n in bulbs["counts"].items()}, "crowns": bulbs["crowns"],
+                               "crownWeightMeasured": bulbs["crownWeight"], "wCrown": counts.w_crown,
+                               "blobBalance": bulbs["blobBalance"]}
             write_json(os.path.join(out_dir, "bulb-intensities.json"),
-                       HF.bulb_shares(bulbs, report, HF.sha256_file(os.path.join(out_dir, "fit.json"))))
+                       HF.bulb_shares(bulbs, counts, report, HF.sha256_file(os.path.join(out_dir, "fit.json"))))
+            report["bulbs"]["rangeBalance"] = bulbs["rangeBalance"]
+            if args.w_crown is None:   # ruling L4: the bulb table's own check, a gate of promote
+                write_json(os.path.join(ev_dir, "range-balance.json"), bulbs["rangeBalance"])
+            rb = bulbs["rangeBalance"]
+            print(f"range balance (L4): centre {rb['balance']} log2 against the ends, limit {rb['limit']} "
+                  f"(end spreads {json.dumps(rb['endSpreads'])}): {'PASS' if rb['pass'] else 'STOP: ' + str(rb['reason'])}", flush=True)
         write_json(os.path.join(out_dir, "report.json"), report)
-        print(f"refit-house {mode}: data cost {report['dataCost']:.6f}, weights {json.dumps(report['weights'])}, "
+        print(f"refit-house {mode} -> {out_dir}: data cost {report['dataCost']:.6f}, weights {json.dumps(report['weights'])}, "
               f"{'PASS' if ok else 'FAIL'}, {time.time() - started:.0f} s", flush=True)
         return 0 if ok else 1
     if mode == "compare":
-        run_a, run_b = os.path.join(refit_dir, "refit-run1"), os.path.join(refit_dir, "refit")
+        run_a, run_b = os.path.join(refit_dir, f"{tag}-run1"), os.path.join(refit_dir, tag)
         differ = HF.same_run(run_a, run_b)
-        write_json(os.path.join(ev_dir, "compare.json"), {"runA": run_a, "runB": run_b, "differ": differ, "pass": not differ,
-                                                         "sha256": {n: HF.sha256_file(os.path.join(run_b, n)) for n in sorted(os.listdir(run_b))}})
-        print(f"refit-house compare: {'identical' if not differ else 'DIFFER: ' + ', '.join(differ)}", flush=True)
+        write_json(os.path.join(ev_dir, f"compare{suffix}.json"), {"runA": run_a, "runB": run_b, "differ": differ, "pass": not differ,
+                                                                  "sha256": {n: HF.sha256_file(os.path.join(run_b, n)) for n in sorted(os.listdir(run_b))}})
+        print(f"refit-house compare {tag}: {'identical' if not differ else 'DIFFER: ' + ', '.join(differ)}", flush=True)
         return 0 if not differ else 1
     if mode == "install":
-        proof = read_json(os.path.join(refit_dir, "proof", "report.json"))
-        refit = read_json(os.path.join(refit_dir, "refit", "report.json"))
-        compare = read_json(os.path.join(ev_dir, "compare.json"))
-        counts = refit["describe"]["lampCounts"]
-        verdict = HF.accept_fit(proof, refit, HF.LampCounts(counts["endMean"], counts["centre"]))
-        verdict.update(reproduction=proof["reproduction"], runsIdentical=compare["pass"])
-        verdict["pass"] = bool(verdict["pass"] and proof["reproduction"]["pass"] and compare["pass"])
-        write_json(os.path.join(ev_dir, "accept.json"), verdict)
+        compare = read_json(os.path.join(ev_dir, f"compare{suffix}.json"))
+        if tag == HF.DEFAULT_TAG:
+            proof = read_json(os.path.join(refit_dir, "proof", "report.json"))
+            refit = read_json(os.path.join(refit_dir, tag, "report.json"))
+            c = refit["describe"]["lampCounts"]
+            verdict = HF.accept_fit(proof, refit, HF.LampCounts(c["endMean"], c["centreCandles"], c["crowns"], c["wCrown"]))
+            verdict.update(reproduction=proof["reproduction"], runsIdentical=compare["pass"])
+            verdict["pass"] = bool(verdict["pass"] and proof["reproduction"]["pass"] and compare["pass"])
+            write_json(os.path.join(ev_dir, "accept.json"), verdict)
+        else:
+            verdict = {"tag": tag, "runsIdentical": compare["pass"], "pass": bool(compare["pass"])}   # evidence, not accepted
         if not verdict["pass"]:
-            print(f"FAIL: the refit is not accepted: {json.dumps(_finite(verdict))}", flush=True)
+            print(f"FAIL: {tag} is not installed: {json.dumps(_finite(verdict))}", flush=True)
             return 1
         snapshot = HF.snapshot_fit(work)
-        src = os.path.join(refit_dir, "refit")
+        src = os.path.join(refit_dir, tag)
         installed = {name: HF.copy_verified(os.path.join(src, os.path.basename(name)), os.path.join(work, name))
                      for name in ("fit.json", "fit_state.npz", "npy/E_cap.npy")}
-        write_json(os.path.join(ev_dir, "install.json"), {"snapshot": snapshot, "installed": installed})
-        print(f"refit-house install: {json.dumps(installed)}", flush=True)
+        write_json(os.path.join(ev_dir, f"install{suffix}.json"), {"tag": tag, "snapshot": snapshot, "installed": installed})
+        print(f"refit-house install {tag}: {json.dumps(installed)}", flush=True)
         return 0
     if mode == "photo-gate":
         verdict = HF.photo_gate(read_json(os.path.join(ev_dir, "photo-baseline.json")), read_json(os.path.join(work, "cmp", "metrics.json")))
         write_json(os.path.join(ev_dir, "photo-gate.json"), verdict)
         print(f"refit-house photo-gate: {json.dumps(verdict)}", flush=True)
+        return 0 if verdict["pass"] else 1
+    if mode == "sensitivity":
+        runs = {}
+        for name in (HF.DEFAULT_TAG,) + tuple(HF.variant_tag(w) for w in HF.CROWN_ENDS):
+            report = read_json(os.path.join(refit_dir, name, "report.json"))
+            runs[name] = {"wCrown": report["describe"]["lampCounts"]["wCrown"], "dataCost": report["dataCost"],
+                          "budget": read_json(os.path.join(refit_dir, name, "fit.json"))["budget"],
+                          "photo": read_json(os.path.join(ev_dir, f"photo-{name}.json"))}
+        verdict = HF.crown_sensitivity(runs, read_json(os.path.join(ev_dir, f"photo-{HF.DEFAULT_TAG}-repeat.json")))
+        write_json(os.path.join(ev_dir, "sensitivity.json"), verdict)
+        print(f"refit-house sensitivity: {json.dumps(_finite(verdict))}", flush=True)
+        if not verdict["pass"]:
+            print(f"STOP: the night photographs clearly prefer w_crown {verdict['preferredEnd']}: report to the controller", flush=True)
         return 0 if verdict["pass"] else 1
     if mode == "promote":
         if args.source is None:
@@ -2311,27 +2646,41 @@ def cmd_refit_house(cfg, args) -> int:
             return 2
         src = os.path.abspath(args.source)
         src_ev = os.path.join(os.path.dirname(src), "evidence", "refit")
-        gates = {name: read_json(os.path.join(src_ev, f"{name}.json")) for name in ("accept", "compare", "photo-gate")}
-        if not all(g["pass"] for g in gates.values()) or (read_json(os.path.join(src, "fit.json")).get("model") or {}).get("name") != "refit":
-            print("FAIL: the staging work holds no accepted refit (accept, compare and photo-gate must pass)", flush=True)
-            return 1
-        geometry = ("bases_n", "bases_iso", "bases_E_win", "bases_E_ch", "bases_E_dome", "bases_E_cove", "emb_idx", "emb_E_back_win")
-        moved = [n for n in geometry if HF.sha256_file(os.path.join(src, "npy", f"{n}.npy")) != HF.sha256_file(os.path.join(work, "npy", f"{n}.npy"))]
-        if moved:
-            print(f"FAIL: the fit-independent tables differ between the two works: {moved}", flush=True)
+
+        def gate(name):
+            path = os.path.join(src_ev, f"{name}.json")
+            return read_json(path) if os.path.exists(path) else {"pass": False, "missing": path}
+
+        gates = {name: gate(name) for name in ("accept", "compare", "photo-gate", "sensitivity", "range-balance")}
+        failed = [name for name, g in gates.items() if g.get("pass") is not True]
+        refusal = None
+        if failed:
+            refusal = f"gates failed or missing: {', '.join(failed)}"
+        elif ((read_json(os.path.join(src, "fit.json")).get("model") or {}).get("name") != "refit"
+              or HF.sha256_file(os.path.join(src, "fit.json")) != HF.sha256_file(os.path.join(src, "refit", HF.DEFAULT_TAG, "fit.json"))):
+            refusal = "the staging work's fit.json is not the refit at the measured w_crown (a sensitivity run is installed)"
+        else:
+            geometry = ("bases_n", "bases_iso", "bases_E_win", "bases_E_ch", "bases_E_dome", "bases_E_cove", "emb_idx", "emb_E_back_win")
+            moved = [n for n in geometry if HF.sha256_file(os.path.join(src, "npy", f"{n}.npy")) != HF.sha256_file(os.path.join(work, "npy", f"{n}.npy"))]
+            if moved:
+                refusal = f"the fit-independent tables differ between the two works: {moved}"
+        if refusal is not None:
+            write_json(os.path.join(cfg.paths["evidence"], "refit.json"),
+                       {"staging": src, "pass": False, "refusal": refusal, "gates": gates, "copied": {}})
+            print(f"FAIL: nothing promoted: {refusal}", flush=True)
             return 1
         snapshot = HF.snapshot_fit(work)
         names = HF.FIT_FILES + tuple(f"mult/{s}.{e}" for s in HF.SCENARIOS for e in ("f16", "json"))
         copied = {name: HF.copy_verified(os.path.join(src, name), os.path.join(work, name)) for name in names}
-        copied["bulb-intensities.json"] = HF.copy_verified(os.path.join(src, "refit", "refit", "bulb-intensities.json"),
+        copied["bulb-intensities.json"] = HF.copy_verified(os.path.join(src, "refit", HF.DEFAULT_TAG, "bulb-intensities.json"),
                                                            os.path.join(work, "bulb-intensities.json"))
-        refit = read_json(os.path.join(src, "refit", "refit", "report.json"))
+        refit = read_json(os.path.join(src, "refit", HF.DEFAULT_TAG, "report.json"))
         write_json(os.path.join(cfg.paths["evidence"], "refit.json"),
-                   {"staging": src, "gates": gates, "snapshot": snapshot, "copied": copied, "bulbs": refit["bulbs"],
+                   {"staging": src, "pass": True, "gates": gates, "snapshot": snapshot, "copied": copied, "bulbs": refit["bulbs"],
                     "weights": refit["weights"], "colours": refit["colours"], "describe": refit["describe"]})
         print(f"refit-house promote: {len(copied)} files from {src}", flush=True)
         return 0
-    print("refit-house needs a mode: proof, refit, compare, install, photo-gate or promote", flush=True)
+    print("refit-house needs a mode: proof, refit, compare, install, photo-gate, sensitivity or promote", flush=True)
     return 2
 
 
@@ -2349,7 +2698,7 @@ In `tools/relight/config/grand-hall.json`, directly after the line `"horizon": "
     "lampColours": "D:/claude/real-hall/frontier/light/evidence/lamp_colours.json",
 ```
 
-`config.load` keeps every path and requires only `PATH_KEYS` (`config.py:9,24-36`), so both keys are optional for other configs; `refit-house refit` reads them. (R1d's Task 1 adds the same `paths.emitters`; it finds it present.) Then move `shots.py` byte for byte and run the suite:
+`config.load` keeps every path and requires only `PATH_KEYS` (`config.py:9,24-36`), so both keys are optional for other configs; `refit-house refit` reads them. (R1d's Task 1 reads the same `paths.emitters`: it checks that the key is present and adds nothing.) Then move `shots.py` byte for byte and run the suite:
 
 ```bash
 cp D:/claude/real-hall/renovation/relight/scripts/shots.py D:/claude/real-hall/repo/tools/relight/proof/shots.py
@@ -2357,7 +2706,7 @@ cmp D:/claude/real-hall/renovation/relight/scripts/shots.py D:/claude/real-hall/
 cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest discover -s tests -v 2>&1 | tail -3
 ```
 
-Expected: `identical`; `OK` with 133 tests (Task 4's 121 and these 12). `shots.py` reads only `common.ROOT` and an optional system font (`C:/Windows/Fonts/segoeui.ttf`, with a fallback), so Task 2's path rule holds: it names no input.
+Expected: `identical`; `OK` with 136 tests (Task 4's 121 and these 15). `shots.py` reads only `common.ROOT` and an optional system font (`C:/Windows/Fonts/segoeui.ttf`, with a fallback), so Task 2's path rule holds: it names no input.
 
 - [ ] **Step 7: Commit the code**
 
@@ -2365,7 +2714,7 @@ Expected: `identical`; `OK` with 133 tests (Task 4's 121 and these 12). `shots.p
 cd D:/claude/real-hall/repo
 git add tools/relight/relight/housefit.py tools/relight/relight/__main__.py tools/relight/tests/test_housefit.py tools/relight/config/grand-hall.json tools/relight/proof/shots.py
 git diff --cached --stat
-git commit -m "feat(relight): refit the house lights from the bulb table, one intensity per chandelier lamp (T-639 R1a)
+git commit -m "feat(relight): refit the house lights from the bulb table, one intensity per chandelier candle and a measured weight for the crown tubes (T-639 R1a)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -2420,19 +2769,49 @@ Expected: four `identical` lines; renders for `A_capture`, `A_comp_house` and `A
 
 - [ ] **Step 10: The fits** (CPU; about 2–3 minutes each, one at a time, each in its own process)
 
+The proof model once; the refit at the measured w_crown and the two sensitivity runs at w_crown 0 and 1 (ruling L2), each twice.
+
 ```bash
 STAGE=D:/claude/relight/grand-hall-refit
 cd D:/claude/real-hall/repo/tools/relight
 C:/Python313/python.exe -m relight refit-house proof --config $STAGE/config.json 2>&1 | tee $STAGE/verify/refit-proof.log | tail -2
-C:/Python313/python.exe -m relight refit-house refit --config $STAGE/config.json 2>&1 | tee $STAGE/verify/refit-run1.log | tail -2
-mv $STAGE/work/refit/refit $STAGE/work/refit/refit-run1
-C:/Python313/python.exe -m relight refit-house refit --config $STAGE/config.json 2>&1 | tee $STAGE/verify/refit-run2.log | tail -2
-C:/Python313/python.exe -m relight refit-house compare --config $STAGE/config.json
+for W in measured 0 1; do
+  if [ $W = measured ]; then TAG=refit; OPT=""; else TAG=refit-wcrown-$W; OPT="--w-crown $W"; fi
+  C:/Python313/python.exe -m relight refit-house refit $OPT --config $STAGE/config.json 2>&1 | tee $STAGE/verify/$TAG-run1.log | tail -2
+  mv $STAGE/work/refit/$TAG $STAGE/work/refit/$TAG-run1
+  C:/Python313/python.exe -m relight refit-house refit $OPT --config $STAGE/config.json 2>&1 | tee $STAGE/verify/$TAG-run2.log | tail -2
+  C:/Python313/python.exe -m relight refit-house compare --tag $TAG --config $STAGE/config.json
+done
 ```
 
-Expected: the proof run ends `PASS` (its `reproduction.maxRelWeightChange` at most 0.01 over the 8 weights above 1e-6); both refit runs end `PASS`; `compare` prints `identical`. Read `$STAGE/work/refit/refit/report.json` and record in the task report: the data costs, the ten weights, `ch_centre / ch_end` (2.021 with the 7 October table), the three colour offsets against their priors (an offset more than two prior widths from its mean goes to the controller: the data then disagrees with the measured emitter colour), `bulbs.blobBalance`, and the budget's `ch_centre` share at the floor and the ceiling in `fit.json`.
+Expected: the proof run ends `PASS` (its `reproduction.maxRelWeightChange` at most 0.01 over the 8 weights above 1e-6); all six refit runs end `PASS`, writing `refit/refit`, `refit/refit-wcrown-0` and `refit/refit-wcrown-1`; each `compare` prints `identical` (`evidence/refit/compare.json`, `compare-refit-wcrown-0.json`, `compare-refit-wcrown-1.json`). Read the three `report.json` and record in the task report: `bulbs.counts` (26, 22, 47, 23 and 22 on the 8 October table), `bulbs.crowns` (7), `bulbs.crownWeightMeasured` (`wCrown` 0.3871 over 92 pairs in 28 faces), `bulbs.notLamps` (33), the data costs, the ten weights, `ch_centre / ch_end` (1.8370, 1.7204 and 2.0215 with the 8 October table), the three colour offsets against their priors (an offset more than two prior widths from its mean goes to the controller: the data then disagrees with the measured emitter colour), `bulbs.blobBalance` (−0.53 over 30 faces on 8 October), `bulbs.rangeBalance`, and the budget's `ch_centre` share at the floor and the ceiling in each `fit.json`. Each refit run also prints the range-aware balance (ruling L4) and the default writes `evidence/refit/range-balance.json`: on the 8 October table `centre -0.296… log2 against the ends, limit 0.563… (end spreads {"0": 0.2815…, "1": 0.2748…, "3": -0.0417…, "4": 0.2439…}): PASS`. If it ends `STOP`, stop the task here: run Step 13's `promote` line alone (it copies nothing, exits 1 and records the refusal with the numbers in `evidence/refit.json`), write the task report (Step 14) with the numbers, and report to the controller; Steps 11–13 do not run.
 
-- [ ] **Step 11: Install the refit in the staging work and check the photographs**
+- [ ] **Step 11: The crown tubes' sensitivity: the night photographs at each end** (CPU, then the harness, which holds the GPU lock itself; the refit at the measured w_crown is installed last, in Step 12)
+
+Each sensitivity run goes through the photo check exactly as the refit does (Step 12): installed in the staging work (its two runs must be identical; it is evidence, so the acceptance does not apply), its embrasure light and its `comp_house` multipliers twice (`mask.f16` does not depend on the fit: Step 9's stays), rendered and measured. `07_compare.py` reuses a render's 1× PNG when one exists (`render()`, `07_compare.py:30-34`), so every render goes into a fresh `renders/`: the previous one is moved aside first (Step 9 moved the baseline's).
+
+```bash
+STAGE=D:/claude/relight/grand-hall-refit
+cd D:/claude/real-hall/repo/tools/relight
+for TAG in refit-wcrown-0 refit-wcrown-1; do
+  C:/Python313/python.exe -m relight refit-house install --tag $TAG --config $STAGE/config.json || break
+  for run in 1 2; do
+    C:/Python313/python.exe -m relight proof embrasure-room --config $STAGE/config.json 2>&1 | tail -1
+    C:/Python313/python.exe -m relight proof embrasure-back --config $STAGE/config.json 2>&1 | tail -1
+    C:/Python313/python.exe -c "import hashlib; [print(n, hashlib.sha256(open('$STAGE/work/npy/' + n + '.npy', 'rb').read()).hexdigest()) for n in ('bases_n', 'bases_iso', 'bases_E_win', 'bases_E_ch', 'bases_E_dome', 'bases_E_cove', 'E_cap', 'emb_idx', 'emb_E_back_win', 'emb_E_back_cap')]" > $STAGE/evidence/refit/embrasure-$TAG-run$run.txt
+    (cd proof && RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 05_relight.py comp_house 2>&1 | tail -3)
+    mkdir -p $STAGE/verify/$TAG-mult-run$run && cp $STAGE/work/mult/comp_house.* $STAGE/verify/$TAG-mult-run$run/
+  done
+  diff $STAGE/evidence/refit/embrasure-$TAG-run1.txt $STAGE/evidence/refit/embrasure-$TAG-run2.txt && echo "$TAG embrasure identical"
+  for f in comp_house.f16 comp_house.json; do cmp $STAGE/verify/$TAG-mult-run1/$f $STAGE/verify/$TAG-mult-run2/$f && echo "$TAG $f identical"; done
+  (cd proof && FORCE=1 node $STAGE/harness/run.mjs $STAGE/work/jobs_photo.json && RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 07_compare.py metrics)
+  cp $STAGE/work/cmp/metrics.json $STAGE/evidence/refit/photo-$TAG.json && mv $STAGE/renders $STAGE/renders-$TAG
+done
+```
+
+Expected: for each run, `install` prints the three installed files (`evidence/refit/install-<tag>.json`; the first install also keeps the staging work's proof fit in `work/fit-proof/`); `<tag> embrasure identical`; both `comp_house` files identical; renders for `A_capture`, `A_comp_house` and `A_mask`; `evidence/refit/photo-refit-wcrown-0.json` and `photo-refit-wcrown-1.json`. An `install` that fails (its two runs differ) stops the loop: settle that run by a third run and a majority (the PC's rule) before going on. These metrics gate nothing on their own: Step 12's `sensitivity` reads them.
+
+- [ ] **Step 12: Install the refit in the staging work, check the photographs and the crown tubes' sensitivity**
 
 ```bash
 STAGE=D:/claude/relight/grand-hall-refit
@@ -2452,12 +2831,18 @@ done
 for f in $(ls $STAGE/verify/refit-mult-run1); do cmp -s $STAGE/verify/refit-mult-run1/$f $STAGE/verify/refit-mult-run2/$f && echo "$f identical" || echo "$f DIFFER"; done
 FORCE=1 node $STAGE/harness/run.mjs $STAGE/work/jobs_photo.json
 RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 07_compare.py metrics
+cp $STAGE/work/cmp/metrics.json $STAGE/evidence/refit/photo-refit.json
 cd .. && C:/Python313/python.exe -m relight refit-house photo-gate --config $STAGE/config.json
+mv $STAGE/renders $STAGE/renders-refit
+cd proof && FORCE=1 node $STAGE/harness/run.mjs $STAGE/work/jobs_photo.json
+RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 07_compare.py metrics
+cp $STAGE/work/cmp/metrics.json $STAGE/evidence/refit/photo-refit-repeat.json
+cd .. && C:/Python313/python.exe -m relight refit-house sensitivity --config $STAGE/config.json
 ```
 
-Expected: `install` prints the three installed files; the embrasure tables are identical between the two passes (`embrasure identical`); every multiplier file `identical`; `photo-gate` exits 0 with `"pass": true`. A failing gate is a stop: report both metric sets to the controller (the refit stays in the staging copy; the bake's work is untouched). `03c` takes about 5 minutes and `03d` about 3 per pass (Task 2's logs).
+Expected: `install` prints the three installed files; the embrasure tables are identical between the two passes (`embrasure identical`); every multiplier file `identical`; `photo-gate` exits 0 with `"pass": true`. A failing gate is a stop: report both metric sets to the controller (the refit stays in the staging copy; the bake's work is untouched). The refit's multipliers are then rendered a second time (`photo-refit-repeat.json`: the run-to-run noise), and `sensitivity` exits 0 with `"preferredEnd": null`, printing for the refit and both ends the data cost, the `ch_centre` share at the floor and the ceiling and the photo metrics, and each metric's noise (`evidence/refit/sensitivity.json`). An exit 1 is a stop (acceptance 6): the night photographs clearly prefer one end, so the three metric sets and the noise go to the controller, who chooses w_crown; nothing is promoted. `03c` takes about 5 minutes and `03d` about 3 per pass (Task 2's logs).
 
-- [ ] **Step 12: Promote, then re-bake the probes and the sky-body bounce** (in the bake's work; one heavy job at a time)
+- [ ] **Step 13: Promote, then re-bake the probes and the sky-body bounce** (in the bake's work; one heavy job at a time)
 
 ```bash
 cd D:/claude/real-hall/repo/tools/relight
@@ -2473,11 +2858,11 @@ C:/Python313/python.exe compare.py sun-bounce-run15.npz sun-bounce-run16.npz
 C:/Python313/python.exe compare.py sun-bounce-check-run15.json sun-bounce-check-run16.json
 ```
 
-Expected: `promote` copies the four fit files, the ten multiplier files and `bulb-intensities.json` and writes `evidence/refit.json` (every copied file's SHA-256, the snapshot's and the three gates); `promote` fails, writing nothing, if the fit-independent tables (`bases_*`, `emb_idx`, `emb_E_back_win`) differ between the two works. Both `probes` runs pass their linearity gate and compare `differ: []`; both `sun-bounce` runs exit 0 (K chosen by the stable rule on the same selection draws; the check draw and the strict draw both pass), compare `differ: []` and `parsed values equal`. Record K, its rule and the three draws' worst bright directions; if K changes from 30, say so (Task 5, the package and the browser read K from the data, never a constant). A failing `sun-bounce` gate is BLOCKED with the numbers, as Task 4's rules say: the failing arrays stay in `evidence/sun-bounce-FAILED.npz`, the previous artifact stays in place, and the controller decides before Task 4c. On a mismatch between two runs, a third run decides by majority (the PC's rule).
+Expected: `promote` copies the four fit files, the ten multiplier files and `bulb-intensities.json` (the refit's at the measured w_crown) and writes `evidence/refit.json` (every copied file's SHA-256, the snapshot's and the four gates: accept, compare, photo-gate and sensitivity); `promote` refuses, copying nothing and exiting 1, if any gate failed or is missing (accept, compare, photo-gate, sensitivity and the range balance), if the staging work's `fit.json` is not the refit at the measured w_crown (`work/refit/refit/fit.json`: a sensitivity run installed last), or if the fit-independent tables (`bases_*`, `emb_idx`, `emb_E_back_win`) differ between the two works; refused, it writes `evidence/refit.json` as `{ pass: false, refusal, gates, copied: {} }`, so the numbers are recorded either way and Task 5 builds nothing from it. Promoted, `evidence/refit.json` has `pass: true` and the five gates. Both `probes` runs pass their linearity gate and compare `differ: []`; both `sun-bounce` runs exit 0 (K chosen by the stable rule on the same selection draws; the check draw and the strict draw both pass), compare `differ: []` and `parsed values equal`. Record K, its rule and the three draws' worst bright directions; if K changes from 30, say so (Task 5, the package and the browser read K from the data, never a constant). A failing `sun-bounce` gate is BLOCKED with the numbers, as Task 4's rules say: the failing arrays stay in `evidence/sun-bounce-FAILED.npz`, the previous artifact stays in place, and the controller decides before Task 4c. On a mismatch between two runs, a third run decides by majority (the PC's rule).
 
-- [ ] **Step 13: Record**
+- [ ] **Step 14: Record**
 
-Write the task report (`.superpowers/sdd/2026-09-29-restored-hall-r1a-light-bake/task-4b-report.md`): the bulb counts and ratio, `blobBalance`, the proof model's reproduction, the two data costs and their ratio, the weights before and after (with `ch_centre`), the colour offsets against their priors, the budget shares at the floor and ceiling, both photo metric sets, every double-run comparison, K and the three draws, and the SHA-256 of every promoted artifact (`evidence/refit.json`). The data stays on D: (never committed); the code was committed in Step 7.
+Write the task report (`.superpowers/sdd/2026-09-29-restored-hall-r1a-light-bake/task-4b-report.md`): the lamp counts (candles and crown tubes) and the ratio, the measured w_crown with its pairs and faces, `blobBalance`, the range-aware balance (slope, faces, the corrected balance, the four end spreads, the limit and the verdict), the proof model's reproduction, the data costs and their ratio, the weights before and after (with `ch_centre`), the colour offsets against their priors, the budget shares at the floor and ceiling, the photo metric sets (baseline, refit, repeat, both ends) with the sensitivity verdict and each metric's noise, every double-run comparison, K and the three draws, and the SHA-256 of every promoted artifact (`evidence/refit.json`). The data stays on D: (never committed); the code was committed in Step 7.
 
 ### Task 4c: Record classes for skins and toggles, the skins' light, and each artifact's hash in its evidence
 
@@ -2933,7 +3318,7 @@ git commit -m "feat(relight): record classes for skins and toggles, the skins' l
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-Expected: `OK`, 139 tests (Task 4b's 133 and these 6); both comparisons `differ: []` (the work's artifacts are Task 4b's verified runs, so the hashes recorded are theirs); `record-artifacts` prints four lines (`windows.npz`, `probes-coarse.npz`, `sun-bounce.npz`, `floor-light.npz`, each with its SHA-256) and exits 0.
+Expected: `OK`, 142 tests (Task 4b's 136 and these 6); both comparisons `differ: []` (the work's artifacts are Task 4b's verified runs, so the hashes recorded are theirs); `record-artifacts` prints four lines (`windows.npz`, `probes-coarse.npz`, `sun-bounce.npz`, `floor-light.npz`, each with its SHA-256) and exits 0.
 
 ### Task 5: Records for every served tile, the reference multiplier and the checks
 
@@ -2942,11 +3327,11 @@ Expected: `OK`, 139 tests (Task 4b's 133 and these 6); both comparisons `differ:
 **Files:**
 - Create: `tools/relight/relight/records.py`, `tools/relight/relight/reference.py`, `tools/relight/relight/package.py`, `tools/relight/tests/test_reference.py`, `tools/relight/tests/test_records.py`
 - Create: `packages/web/src/lib/relight/__fixtures__/relight-vectors.json`
-- Modify: `tools/relight/relight/__main__.py` (register `records`, `check`)
+- Modify: `tools/relight/relight/__main__.py` (register `records`, `check`), `tools/relight/relight/windows.py` (the public `wall_face_rate` and its helper `_alpha_at`, Step 7), `tools/relight/tests/test_windows.py` (one test, Step 7)
 
 **Interfaces:**
 - Consumes: the Task 2 tables; Task 3 as built (`__main__.windows_volumes(cfg)`, `windows.sun_visibility`, `sun_reach`, `sun_az_el`, `sun_corners`, `horizon_at`, `fresnel_at`, `volume_arrays`, `volume_from_arrays`, `_sample_depth`, `ray_survives`, `MIN_DOWN`, `CHUNK`; `__main__.CHECK_SUNS`, `SPLAT_SEED`, `_random_suns`); Task 4 as built (`<work>/probes-coarse.npz`, `<work>/sun-bounce.npz` and `sunbounce.Table`, `Patches`, `window_power`, `coefficients`, `bounce`, `trilinear_matrix`, `sun_bounce`; `<work>/floor-light.npz`; `moon.py`; `__main__._random_moons`); Task 4b (`<work>/fit.json` and `fit_state.npz`, the refit, model name `refit`; `<work>/mult/{night,sunny_morning,overcast_noon}.f16`; `<evidence>/refit.json`); Task 4c (`codec.CLASS_SKIN` and the toggle bits, `skinlight`, `__main__._artifact`, `_write_evidence`, the `artifact` record of every evidence JSON); `<evidence>/sun-check.json`; the repo's SOG decoder `tools/xgrids-lcc2/scripts/sog-floor-census.py` (`decode_tile(path) -> (centers, scales, quats, opacity, meta)`); R1c's skins geometry (`covers.npz`, `toggles.json`, R1c Task 5) and skin package, only with `--skins`, `--skin-light`, `--skin-package`.
-- Produces: `records.flags_for(...) -> (N,) uint8`; `records.transfer(src_pos, src_values, dst_pos, k) -> values`; `records.cover_test`, `in_boxes`, `apply_covers`, `apply_toggles`, `load_skin_inputs` (R1c A3); `reference.SkyBounce`, `reference.Model` (with `volumes`, `horizons`, `fresnel`, `sky`), `reference.Setting` (with `captured`, `with_sky`, `with_lamps`, `with_emitter_boost`; `lamp_tints`, `moon_dir`, `moon_rgb`), `reference.Visibility`, `NO_VISIBILITY`, `reference.sky_bodies(setting)`, `window_powers(model, s) -> (5,)`, `body_coefficients(model, s) -> (K,)`, `probe_points(model)`, `to_probes(model, values)`, `sky_cubes(model, bodies) -> (M, 3, 6)`, `fresnel_at(model, s)`, `multiplier(direct, normals, flags, pos, colour_lin, model, setting, visibility=NO_VISIBILITY) -> (rgb (N,3), alpha (N,))`; `package.verified(work, evidence, name, evidence_name)` and `package.write(...)`; the package in `<out>` (relight v1; with R1c's options relight v2 in `--out`); `<evidence>/checks.json` (`checks-<folder>.json` for a package named by `--package`), with the wall-face rate `wallFaceRate`; the R1b fixture (only from the default package, or with `--vectors`).
+- Produces: `windows.wall_face_rate(volumes, horizon_tables, fresnel_table, P, s) -> {"marched": int, "wallFace": int}` (public, `from relight import windows`; the measurement R1b's rounding excuses are capped by, which R1c Task 15 imports for its skins; `windows._sample_depth` stays private); `records.flags_for(...) -> (N,) uint8`; `records.transfer(src_pos, src_values, dst_pos, k) -> values`; `records.cover_test`, `in_boxes`, `apply_covers`, `apply_toggles`, `load_skin_inputs` (R1c A3); `reference.SkyBounce`, `reference.Model` (with `volumes`, `horizons`, `fresnel`, `sky`), `reference.Setting` (with `captured`, `with_sky`, `with_lamps`, `with_emitter_boost`; `lamp_tints`, `moon_dir`, `moon_rgb`), `reference.Visibility`, `NO_VISIBILITY`, `reference.sky_bodies(setting)`, `window_powers(model, s) -> (5,)`, `body_coefficients(model, s) -> (K,)`, `probe_points(model)`, `to_probes(model, values)`, `sky_cubes(model, bodies) -> (M, 3, 6)`, `fresnel_at(model, s)`, `multiplier(direct, normals, flags, pos, colour_lin, model, setting, visibility=NO_VISIBILITY) -> (rgb (N,3), alpha (N,))`; `package.verified(work, evidence, name, evidence_name)` and `package.write(...)`; the package in `<out>` (relight v1; with R1c's options relight v2 in `--out`); `<evidence>/checks.json` (`checks-<folder>.json` for a package named by `--package`), with the wall-face rates `wallFaceRate` (the splats' and the floor's) and the commit it was checked with, `checkedWith`; the R1b fixture (only from the default package, or with `--vectors`).
 
 **The sky bodies.** The Sun and the Moon are both directional sky bodies (the owner's direction of 3 October; R1d amendments A4, A5). Each body's direct light is the window volume march of `windows.sun_visibility`, gated per window by its horizon, with the glass; its bounce is Task 4's factored basis: per window w the exact power `P_w` of the 56,448 patch rays (`sunbounce.window_power`), the coefficients `c(σ) = sunbounce.coefficients(table, P(σ), az, el)` at the body's float32 direction, the K basis volumes summed on the 1 m grid with the body's RGB, `S1 = Σ_body RGB ⊙ Σ_k c_k basis_k`, and `S1` read at each 0.5 m probe trilinearly (`sunbounce.trilinear_matrix`: the 1 m cell clamped into the grid, the position into the cell, invalid corners dropped and the rest renormalised). That 0.5 m sky volume joins the nine sources' bounce exactly as `I[k]` does: the browser folds it into the scenario probe volume (R1b Task 10), so every splat, the floor and R1c's skins receive it with no code of their own. On the 1 m nodes the resampling is exact; between them it is the same trilinear function the 1 m grid defines, except near invalid corners (check 5 measures the difference). β, the area-scaled bounce `Σw b[w] sunRGB ⊙ I[w]` and the sunlit-area table are gone (Task 4 as built).
 
@@ -3567,7 +3952,7 @@ def load_skin_inputs(geometry_dir):
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_records -v`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 6: Build the records and the package**
+- [ ] **Step 6: Write the records and the package** (amended 8 October, the controller's ruling P1: Steps 6 and 7 write the code; Step 8 commits it and only then builds, checks and writes the fixture)
 
 **Only exact, hash-checked files are packaged** (the owner's rule, 7 October). `package.py` reads each work artifact by its exact name, never a glob (never `work/sun-bounce*`), and only when its SHA-256 equals the one its evidence records (Task 4c) and that evidence passed:
 
@@ -3590,9 +3975,27 @@ def verified(work, evidence, name, evidence_name):
     return path, record["sha256"]
 ```
 
-The artifacts and their evidence: `windows.npz` (`windows.json`), `probes-coarse.npz` (`probes-check.json`), `sun-bounce.npz` (`sun-bounce-check.json`), `floor-light.npz` (`floor-light.json`); `fit.json` and `fit_state.npz` are checked against `<evidence>/refit.json`'s `copied` hashes, and `fit.json`'s `model.name` must be `refit` (Task 4b promoted it; the bake never packages the proof fit). The manifest's `evidence.artifacts` records `{ name: sha256 }` for every file read, each key the artifact's path relative to the work folder with `/` separators (`windows.npz`, `probes-coarse.npz`, `sun-bounce.npz`, `floor-light.npz`, `fit.json`, `fit_state.npz`, and in package v2 `skin-light/index.json` and each `skin-light/<id>.records`; R1c Task 8 reads `evidence.artifacts["probes-coarse.npz"]`).
+The artifacts and their evidence: `windows.npz` (`windows.json`), `probes-coarse.npz` (`probes-check.json`), `sun-bounce.npz` (`sun-bounce-check.json`), `floor-light.npz` (`floor-light.json`); `fit.json` and `fit_state.npz` are checked against `<evidence>/refit.json`'s `copied` hashes (its `pass` must be true: a refused promote leaves `copied` empty), and `fit.json`'s `model.name` must be `refit` (Task 4b promoted it; the bake never packages the proof fit). The manifest's `evidence.artifacts` records `{ name: sha256 }` for every file read, each key the artifact's path relative to the work folder with `/` separators (`windows.npz`, `probes-coarse.npz`, `sun-bounce.npz`, `floor-light.npz`, `fit.json`, `fit_state.npz`, and in package v2 `skin-light/index.json` and each `skin-light/<id>.records`; R1c Task 8 reads `evidence.artifacts["probes-coarse.npz"]`).
 
 `tools/relight/relight/package.py` writes every file of `docs/engineering/relight-package.md` into the package folder (`args.out` when given, amended for R1c; otherwise `cfg.paths["out"]`): per served tile the gzip of its records (`gzip.compress(data, compresslevel=9, mtime=0)` so the bytes are deterministic), `probes.bin.gz` (the coarse cubes as `<f2` in `[probe][source][channel][face]` order), `probe-valid.bin.gz`, each window's volume as `windows/<id>.alpha.gz` (the gzip, compressed the same way, of `np.ascontiguousarray(vol.alpha).tobytes()`: `nx·ny·nz` bytes in x-major C order, from `windows.npz` through `windows_volumes(cfg)`), the sky bodies' bounce from `sun-bounce.npz` (amended 7 October; these replace the sunlit-area table): `sky/basis.bin.gz` (`basis` as `<f2`, `[k][probe][channel][face]`, K × 1694 × 3 × 6), `sky/basis-valid.bin.gz` (`valid`, one byte per 1 m probe), `sky/coefficients.bin.gz` (`coeffs` as `<f4`, `[row][column][window][k]`, 18 × 79 × 5 × K), `sky/patch-rays.bin.gz` (`patchRays` as `<f4`, `[ray][x, y, z]`, 56,448 × 3, sub-sample-major), `sky/patch-normals.bin.gz` (`patchNormal`, `<f4`, 3528 × 3) and `sky/patch-areas.bin.gz` (`patchArea`, `<f4`, 3528), each compressed the same way; the three floor light PNGs (RGBA8 log codes per `encoding.floor`), and `manifest.json` with every contract field and a SHA-256 and size per file (`json.dumps(..., indent=1, sort_keys=True, allow_nan=False)`, so a NaN or infinity fails the build instead of writing a file browsers cannot parse). `sun-bounce.npz`'s `needed`, `real` and `nodePower` are bake diagnostics and are not packaged. Every path the manifest names (the `files` keys, `tiles[].file`, `probes.file` and `validFile`, `windows[].volume`, the `sky` files, `floor.files`, `skins.entries[].file`) is built with `/` (`posixpath.join` or `PurePosixPath`), never `os.path`, whose `\` on Windows would make R1b refuse the whole package. `package.write` takes `tool` and `created_at` as arguments: `records` passes the repository's HEAD commit, `git -C <cfg.paths["repo"]> rev-parse HEAD`, and that commit's committer time, `git -C <cfg.paths["repo"]> log -1 --format=%cI` (as R1d's `cinematic` writes them), never the wall clock, as the manifest's `tool` and `createdAt`; so a second write at the same commit is byte-identical (R1c Task 15's double run compares two `records` trees, the manifest included), and check 4 passes the package's own two values (Step 7). `capture.gamma` is written as exactly `1` after asserting that the fitted gamma (`fit.json`'s `gamma`) is within 1e-6 of 1; otherwise the build fails, because the kernel has no γ term (R1b accepts a γ within 1e-6 of 1 and refuses any other).
+
+**Built only from committed code** (amended 8 October, the controller's ruling P1). The manifest's `tool` names the commit that built the package, so that commit must hold exactly the code that ran: `records` refuses, writing nothing, while `tools/relight` has any uncommitted change (staged, unstaged or untracked), and `check` (Step 7) refuses the same way before it reads the package. Add to `tools/relight/relight/__main__.py`, directly above `if __name__ == "__main__":`:
+
+```python
+def _committed_tool(cfg):
+    """(HEAD commit, its committer time) of the repository that holds tools/relight, or None (with the reason printed)
+    while tools/relight has any uncommitted change: a package is built and checked only from committed code, so its
+    `tool` names exactly the code that made it (ruling P1, 8 October)."""
+    import subprocess
+    git = lambda *a: subprocess.run(["git", "-C", cfg.paths["repo"], *a], check=True, capture_output=True, text=True).stdout.strip()
+    dirty = git("status", "--porcelain", "--", "tools/relight")
+    if dirty:
+        print(f"FAIL: tools/relight has uncommitted changes; commit them before building or checking a package:\n{dirty}", flush=True)
+        return None
+    return git("rev-parse", "HEAD"), git("log", "-1", "--format=%cI")
+```
+
+`records` calls it first and returns 1 on None; otherwise it passes the pair to `package.write` as `tool` and `created_at` (the two `git` calls above are the ones this step names). `__pycache__` is ignored by the repository's `.gitignore`, so running the code leaves the check clean.
 
 (Amended for R1c.) With `--skin-light <dir>` and `--skin-package <dir>`, `package.write` also takes `section, files = skinlight.skins_section(skin_light_dir, skin_package_dir, groups)`, where `groups` is `["door", "window", "end_xmin", "end_xmax", "ceiling"]`. It writes each of `files` (`skins/<id>.light.gz`, compressed with `mtime = 0`) with a SHA-256 and size in `files`, and adds the manifest fields `skins: section` and `visibility: skinlight.VISIBILITY`. Without them, neither field is written. The skin-light folder is read only when `<evidence>/skin-light.json`'s `artifact` matches its `index.json` and each `records` hash matches its file. The manifest's `evidence.build` records `{ skins, skinLight, skinPackage }` (the three arguments, or null), so check 4 can rebuild exactly.
 
@@ -3602,14 +4005,13 @@ Register a `records` command that:
 2. Splits them per finest tile with `splats_tile` (the order of `cfg.room["finestTiles"]`); `ranges = [codec.source_range(direct[:, k]) for k in range(9)]` over all finest splats.
 3. For each of the other 12 served tiles (every `*.sog` in `cfg.paths["splats"]` not in `finestTiles`): decode the centres with `decode_tile`, convert them to e57 with `common.json_to_e57`, then transfer `direct` (k = `cfg.room["transferNeighbours"]`, 8) and, with k = 1, the normals, class, iso, chandelier id, cove, fixture and pane values; compute `reach` with `windows.sun_reach` at the coarse splats' own e57 positions for their transferred classes 0 and 1 (a transferred flag would not be conservative at the coarse splat's own position); recompute the flags with `flags_for`.
 4a. (Amended for R1c.) With `--skins <tools/skins geometry folder>`: `covers, toggles, keep = records.load_skin_inputs(folder)`, then on every level, after its flags are computed, `flags = records.apply_toggles(records.apply_covers(flags, P_e57, sigma_max, covers, keep), P_e57, toggles)`, each splat at its own e57 position. `sigma_max` is the splat's largest scale: on the finest level the row maximum of `npy/splats_scl.npy` (float16 metres), on the others the row maximum of `decode_tile`'s `scales` (the codebook already exponentiated, `tools/xgrids-lcc2/scripts/sog-floor-census.py`). Print each level's covered splats per wall group and toggled splats per toggle. Without `--skins` nothing changes.
-4. Writes the package with `package.write` (into `args.out` when given; amended for R1c), with `site.north = common.sun_vec_e57(0, 0)`, `site.east = common.sun_vec_e57(90, 0)` and `site.up = [0, 0, 1]` (so the browser's sun and moon match the bake's); each window, in order W1..W5, as `{ id, frame: windows.volume_arrays(vol)[1].tolist(), volume: "windows/<id>.alpha.gz", horizon: [float(v) for v in horizons[id]] }` from `windows.npz` (the frame float64 in `FRAME_FIELDS` order; assert every window's `res` is the same and that `site.north` equals `(cos x_bearing, sin x_bearing, 0)` within 1e-9); `sun = { fresnel: [101] }`; the `sky` section from `sun-bounce.npz` (`k` = `basis.shape[0]`, read from the data, never a constant; `grid: { origin: gridOrigin, spacing: gridSpacing, shape: gridShape }`, `basis`, `valid`, `table: { azimuth0, elevation0, step, size: [columns, rows], file }`, `patches: { count, subsamples: 16, rays, normals, areas }`, `floorMean` (K × 3), `bodies: ["sun", "moon"]`; assert `azimuth0`, `elevation0` and `step` are whole numbers, `1 <= k <= 192` (`__main__.SUN_KMAX`, the most the K search tries; R1b's schema accepts up to it), `coeffs.shape == (rows, columns, 5, k)`, `patchRays` holds 16 × `count` rays, and the grid's origin equals the probes' origin); the `capture` from Task 4b's `fit.json` (weights and colours selected by name in the source order, `sun_cap` dropped by name, never by position; `daylightColour` its W1 colour); the `lamps` section: for each group `{ source, colour, type }`, `colour` the group's lamp/daylight ratio at full level (`capture.colours[source] / capture.daylightColour`, per channel: the refit's measured-and-fitted colour, never a constant), divided in float64 from the very Python floats written to `capture.colours` and `capture.daylightColour` (never from a float32 copy of either: R1b refuses the package unless each group's colour equals that quotient within 1e-9 × max(1, |quotient|), and a float32 round trip on either side exceeds it), `type` the installer's record (`cove` `"led-tape"`, `dome` `"led-spot"`, `ch_end` and `ch_centre` `"candle-unconfirmed"`; information only: how a lamp's colour changes as it dims is a setting, R1b's `lampTints`, never a package value), plus `measuredRatio` (`lamp_daylight_ratio.json`) and `refit: { perBulbIntensity, lampRatio, bulbTableSha256 }` from `<evidence>/refit.json` (`perBulbIntensity` = `exp(gates.accept.logPerBulb)`, `lampRatio` = `gates.accept.lampRatio`, `bulbTableSha256` = `bulbs.sha256`, the bulb table's SHA-256; the key names are the contract's and R1b's schema's); `evidence.sunCheck` (`sun-check.json`'s `pass`, `threshold` and per-direction IoU and mean |ΔT|), `evidence.skyBounce` (`sun-bounce-check.json`'s `K`, `kRule`, the selection, check and strict draws' `worstBright` and `pooledMedian`, `pass`), `evidence.refit` (`refit.json`'s gates: residual ratio, lamp ratio, photo metrics) and `evidence.artifacts`. The manifest's `tiles` list holds each tile's name, the SHA-256 of the `.sog` file, its level (from the bundle file: 5 for the finest, `null` for `env.sog`), count, file, SHA-256 and size.
+4. Writes the package with `package.write` (into `args.out` when given; amended for R1c), with `site.north = common.sun_vec_e57(0, 0)`, `site.east = common.sun_vec_e57(90, 0)` and `site.up = [0, 0, 1]` (so the browser's sun and moon match the bake's); each window, in order W1..W5, as `{ id, frame: windows.volume_arrays(vol)[1].tolist(), volume: "windows/<id>.alpha.gz", horizon: [float(v) for v in horizons[id]] }` from `windows.npz` (the frame float64 in `FRAME_FIELDS` order; assert every window's `res` is the same and that `site.north` equals `(cos x_bearing, sin x_bearing, 0)` within 1e-9); `sun = { fresnel: [101] }`; the `sky` section from `sun-bounce.npz` (`k` = `basis.shape[0]`, read from the data, never a constant; `grid: { origin: gridOrigin, spacing: gridSpacing, shape: gridShape }`, `basis`, `valid`, `table: { azimuth0, elevation0, step, size: [columns, rows], file }`, `patches: { count, subsamples: 16, rays, normals, areas }`, `floorMean` (K × 3), `bodies: ["sun", "moon"]`; assert `azimuth0`, `elevation0` and `step` are whole numbers, `1 <= k <= 192` (`__main__.SUN_KMAX`, the most the K search tries; R1b's schema accepts up to it; the test vectors' K-proportional parts grow with it, so Step 7's size cap is a function of K), `coeffs.shape == (rows, columns, 5, k)`, `patchRays` holds 16 × `count` rays, and the grid's origin equals the probes' origin); the `capture` from Task 4b's `fit.json` (weights and colours selected by name in the source order, `sun_cap` dropped by name, never by position; `daylightColour` its W1 colour); the `lamps` section: for each group `{ source, colour, type }`, `colour` the group's lamp/daylight ratio at full level (`capture.colours[source] / capture.daylightColour`, per channel: the refit's measured-and-fitted colour, never a constant), divided in float64 from the very Python floats written to `capture.colours` and `capture.daylightColour` (never from a float32 copy of either: R1b refuses the package unless each group's colour equals that quotient within 1e-9 × max(1, |quotient|), and a float32 round trip on either side exceeds it), `type` the installer's record (`cove` `"led-tape"`, `dome` `"led-spot"`, `ch_end` and `ch_centre` `"candle-unconfirmed"`; information only: how a lamp's colour changes as it dims is a setting, R1b's `lampTints`, never a package value), plus `measuredRatio` (`lamp_daylight_ratio.json`) and `refit: { perBulbIntensity, lampRatio, wCrown, bulbTableSha256 }` from `<evidence>/refit.json` (`perBulbIntensity` = `exp(gates.accept.logPerBulb)`, `lampRatio` = `gates.accept.lampRatio`, `wCrown` = `bulbs.wCrown`, the crown tubes' weight the refit used (amended 8 October, ruling L2), `bulbTableSha256` = `bulbs.sha256`, the bulb table's SHA-256; the key names are the contract's and R1b's schema's); `evidence.sunCheck` (`sun-check.json`'s `pass`, `threshold` and per-direction IoU and mean |ΔT|), `evidence.skyBounce` (`sun-bounce-check.json`'s `K`, `kRule`, the selection, check and strict draws' `worstBright` and `pooledMedian`, `pass`), `evidence.refit` (`refit.json`'s gates: residual ratio, lamp ratio, photo metrics, the crown tubes' sensitivity) and `evidence.artifacts`. The manifest's `tiles` list holds each tile's name, the SHA-256 of the `.sog` file, its level (from the bundle file: 5 for the finest, `null` for `env.sog`), count, file, SHA-256 and size.
 
-Run: `C:/Python313/python.exe -m relight records --config config/grand-hall.json`
-Expected: `D:/claude/splats/trades-hall/grand-hall/relight/v1/` holds `manifest.json`, 24 `tiles/*.relight.gz`, `probes.bin.gz`, `probe-valid.bin.gz`, 5 window volumes (`windows/W1.alpha.gz` … `W5.alpha.gz`, 196,028 bytes in all: 54,129, 26,933, 38,117, 27,205 and 49,644, Task 3's Phase B), the six `sky/*.bin.gz` files (about 2.1 MB together at K 30) and 3 floor maps; the tile counts sum to 11,487,038; `manifest.json`'s `capture.weights` give `ch_centre / ch_end` the refit's lamp ratio.
+Step 8 runs it once the code is committed: `C:/Python313/python.exe -m relight records --config config/grand-hall.json`. Expected then: `D:/claude/splats/trades-hall/grand-hall/relight/v1/` holds `manifest.json`, 24 `tiles/*.relight.gz`, `probes.bin.gz`, `probe-valid.bin.gz`, 5 window volumes (`windows/W1.alpha.gz` … `W5.alpha.gz`, 196,028 bytes in all: 54,129, 26,933, 38,117, 27,205 and 49,644, Task 3's Phase B), the six `sky/*.bin.gz` files (about 2.1 MB together at K 30) and 3 floor maps; the tile counts sum to 11,487,038; `manifest.json`'s `capture.weights` give `ch_centre / ch_end` the refit's lamp ratio.
 
-- [ ] **Step 7: Run the checks and write the test vectors**
+- [ ] **Step 7: Write the checks and the test vectors**
 
-Register a `check` command that reads the package back from disk (never in-memory arrays; `--package <dir>` names the package, default `cfg.paths["out"]`, amended for R1c). What it writes depends on the package it checks (amended 8 October, seam review I-3), so checking package v2 never touches v1's evidence or the committed fixture:
+Register a `check` command that first calls `_committed_tool(cfg)` (Step 6; it returns 1 on None and records the commit as `checkedWith` in its checks file, never in the manifest) and reads the package back from disk (never in-memory arrays; `--package <dir>` names the package, default `cfg.paths["out"]`, amended for R1c). What it writes depends on the package it checks (amended 8 October, seam review I-3), so checking package v2 never touches v1's evidence or the committed fixture:
 - its results go to `<evidence>/checks.json` for the default package (v1), and to `<evidence>/checks-<package folder name>.json` with `--package <dir>` (`checks-v2.json` for `…/relight/v2`);
 - the test vectors (below) are written to `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` only for the default package, whose fixture R1b's and R1d's tests read as v1's, or to the path an explicit `--vectors <path>` names; a `--package` run without `--vectors` writes no vectors and prints `vectors: not written (--package without --vectors)`;
 - the checks' results also go into the checked package's manifest `evidence` (end of this step), the only change `check` makes to a package.
@@ -3623,9 +4025,88 @@ Its `reference.Model` comes from the package's files: each window through `windo
 5. **The sky bodies' bounce through the package** (amended 7 October; it replaces the sunlit-area table's check): (a) every `sky` array read back from the package equals `sun-bounce.npz`'s (`basis`, `valid`, `coeffs`, `patchRays`, `patchNormal`, `patchArea`, `floorMean`: dtype, shape and bytes); (b) for 48 random real suns (`_random_suns(common, 48, SPLAT_SEED + 31)`) and 48 random real moons (`_random_moons(cfg, 48, SPLAT_SEED + 37)`), the bounce luminance at 20,000 random finest splats (seeded with `SPLAT_SEED`, isotropic receivers) through the package's path (`reference.sky_cubes` at the 0.5 m probes, then `reference.trilinear` and `cube_eval`) against `sunbounce.sun_bounce` read on the 1 m grid at the same splats (`sunbounce.trilinear_matrix`): where both are positive, median |Δlog2| ≤ 0.02 and 99th percentile ≤ 0.1, and where either is zero both are (the 0.5 m resampling adds no light and loses none). Record per body `directions`, `medianAbsDlog2`, `p99AbsDlog2`, `zeroDisagreements` and `pass`. A miss is reported with the numbers, never loosened.
 
 **The wall-face rate** (amended 8 October, seam review I-5; R1b Task 18 caps the GPU's rounding excuses at twice it). It is a measurement, not a sixth check: the share of marched rays whose verdict float32 rounding alone could flip at the wall face. The sample is `check-sun`'s: the 200,000 finest splats `np.sort(np.random.default_rng(SPLAT_SEED).choice(N, SPLAT_SAMPLE, replace=False))` of `<work>/npy/splats_pos.npy` (as `cmd_check_sun` draws them, `__main__.py:311-312`), as float64 e57 positions, at the `sunny_morning` setting's `sun_dir` and the `moon_test` setting's `moon_dir`, through the package's window volumes.
-- For each splat and direction, `windows.sun_visibility(model.volumes, model.horizons, model.fresnel, P, s, steps=steps)` gives the samples marched. Every ray with `steps > 0` counts in `marched`.
-- A marched ray from a room point (`P.y > y0` of its owning window, the first window in order whose `windows.ray_survives` is true, as for `wallFace` below) is wall-face sensitive when the two cells on either side of `y0` in its first sample's column hold different sample depths. Those cells are grid cells `(c[0], iy0 − 1, c[2])` and `(c[0], iy0, c[2])`, with `c` and `iy0` computed in float32 exactly as for `wallFace` below; the depths are `windows._sample_depth` of their alpha bytes, and a cell outside the box reads alpha 0. Whichever cell the bake chose does not matter: every marched room ray's first sample lies on `y0`, a cell boundary, so a GPU that rounds differently may read the other cell, and R1b's twin with `WINDOW_ROUNDING` marks exactly these first samples.
-- Record `wallFaceRate: { splats: 200000, marched, wallFace }` (both directions pooled; the rate is `wallFace / marched`, and the sample size shows its noise) in the checks file, the manifest's `evidence` and the vectors' `windowRays`. If `marched` is 0, stop and report.
+- **One public function measures it** (amended 8 October, the controller's request: R1c Task 15 measures its skins' rate with the same code, so the two can never drift): `windows.wall_face_rate(volumes, horizon_tables, fresnel_table, P, s) -> {"marched": int, "wallFace": int}`, beside the march it measures. `marched` counts the rays on which `windows.sun_visibility(model.volumes, model.horizons, model.fresnel, P, s, steps=steps)` takes a sample (`steps > 0`): the function repeats `sun_visibility`'s ownership, horizon gates and survival line for line. A marched ray from a room point (`P.y > y0` of its owning window, the first window in order that claims it, which for a marched ray is also the first whose `windows.ray_survives` is true) is wall-face sensitive when the two cells on either side of `y0` in its first sample's column hold different sample depths. Those cells are grid cells `(c[0], iy0 − 1, c[2])` and `(c[0], iy0, c[2])`, with `c` and `iy0` computed in float32 exactly as for `wallFace` below (the first sample's cell as the march computes it); the depths are `windows._sample_depth` of their alpha bytes, and a cell outside the box reads alpha 0. Whichever cell the bake chose does not matter: every marched room ray's first sample lies on `y0`, a cell boundary, so a GPU that rounds differently may read the other cell, and R1b's twin with `WINDOW_ROUNDING` marks exactly these first samples. `check` calls it for each population and direction and sums the two directions. `_sample_depth` stays private: only `windows.py` uses it.
+
+Append to the end of `tools/relight/relight/windows.py`:
+
+```python
+def _alpha_at(vol: WindowVolume, gx, gy, gz):
+    """The alpha bytes of occupancy-grid cells (gx[i], gy, gz[i]); a cell outside this window's box reads 0."""
+    cell = np.stack([gx, np.full(len(gx), gy, np.int64), gz], 1) - vol.offset
+    inside = np.all((cell >= 0) & (cell < np.array(vol.alpha.shape)), axis=1)
+    out = np.zeros(len(gx), np.uint8)
+    out[inside] = vol.alpha[cell[inside, 0], cell[inside, 1], cell[inside, 2]]
+    return out
+
+
+def wall_face_rate(volumes, horizon_tables, fresnel_table, P, s) -> dict:
+    """The rays from the points P toward the sky body s that float32 rounding alone could send into another cell at a
+    window's wall face (R1a Task 5 Step 7; R1b caps the GPU's rounding excuses at twice wallFace / marched).
+
+    marched: the rays sun_visibility takes at least one sample on (its steps > 0): each belongs to the first window, in
+    order, that claims it, whose horizon gate is open and through which it survives. wallFace: the marched rays from a
+    room point (P.y > y0 of that window) whose first sample, on the wall face y0, has cells of unlike sample depth on
+    either side: occupancy-grid cells (c[0], iy0 - 1, c[2]) and (c[0], iy0, c[2]), with c = floor((Q - grid_lo) / res)
+    the first sample's cell in float32 exactly as the march computes it (Q = P + s tq, tq = (y0 - P.y) / s.y), iy0 =
+    round((y0 - grid_lo.y) / res), and a cell outside the box read as alpha 0. Whichever of the two cells the march
+    read, the y0 boundary passes through that sample, so a GPU that rounds differently may read the other.
+    P (N, 3) model-frame points of any float dtype (taken to float32, as the march takes them); s a direction.
+    Returns {"marched": int, "wallFace": int}; sum two directions' counts to pool them."""
+    D = np.asarray(s, F32)
+    out = {"marched": 0, "wallFace": 0}
+    if float(D[1]) >= -MIN_DOWN:
+        return out
+    gates = {name: above_horizon(horizon_tables[name], D, vol.x_bearing) for name, vol in volumes.items()}
+    for a in range(0, len(P), CHUNK):
+        Pc = np.asarray(P[a:a + CHUNK], F32)
+        free = np.ones(len(Pc), bool)
+        for name, vol in volumes.items():
+            claimed, survives, Q, start, length = _rays(vol, Pc, D)
+            idx = np.nonzero(free & survives)[0] if gates[name] else np.zeros(0, np.int64)
+            free &= ~claimed
+            idx = idx[start[idx] < length[idx]]            # the march takes its first sample: steps > 0
+            out["marched"] += int(idx.size)
+            room = idx[Pc[idx, 1] > vol.y0]
+            if room.size:
+                c = np.floor((Q[room] - vol.grid_lo) / F32(vol.res)).astype(np.int64)
+                iy0 = int(round((vol.y0 - float(vol.grid_lo[1])) / vol.res))
+                below, above = (_sample_depth(vol, _alpha_at(vol, c[:, 0], iy, c[:, 2])) for iy in (iy0 - 1, iy0))
+                out["wallFace"] += int(np.count_nonzero(below != above))
+    return out
+```
+
+and add to `tools/relight/tests/test_windows.py`, directly above `if __name__ == "__main__":`:
+
+```python
+class WallFace(unittest.TestCase):
+    def test_the_wall_face_rate_counts_marched_rays_whose_first_sample_straddles_unlike_cells(self):
+        lo = np.array([0.0, -0.99, 0.0])                   # the wall face y0 = 0 is the boundary of grid rows 32 and 33
+        occ = grid()
+        occ[40:60, 32, :] = 0.5                            # x 1.20..1.80: the embrasure's first row, behind the wall face
+        vols = windows.volumes_from_occupancy(occ, lo, RES, {"W": RECT}, 0.0, x_bearing=14.3)
+        P = np.array([[1.5, 3.0, 1.5],                     # a room ray into the occupied row: marched, wall-face
+                      [0.9, 3.0, 1.5],                     # a room ray where both rows are empty: marched only
+                      [1.5, -0.1, 1.5],                    # a point in the embrasure: marched, never a room ray
+                      [5.0, 3.0, 1.5]])                    # outside the outline: never marched
+        open_, closed, fresnel = {"W": np.full(360, -90.0)}, {"W": np.full(360, 90.0)}, np.ones(101)
+        steps = np.zeros(len(P), np.int32)
+        windows.sun_visibility(vols, open_, fresnel, P, HEAD_ON, steps=steps)
+        got = windows.wall_face_rate(vols, open_, fresnel, P, HEAD_ON)
+        self.assertEqual(got, {"marched": 3, "wallFace": 1})
+        self.assertEqual(got["marched"], int(np.count_nonzero(steps)))       # marched is sun_visibility's steps > 0
+        self.assertEqual(windows.wall_face_rate(vols, open_, fresnel, P.astype(np.float32), HEAD_ON), got)
+        self.assertEqual(windows.wall_face_rate(vols, closed, fresnel, P, HEAD_ON), {"marched": 0, "wallFace": 0})   # gate shut
+        self.assertEqual(windows.wall_face_rate(vols, open_, fresnel, P, unit(0.0, 1.0, 0.3)), {"marched": 0, "wallFace": 0})
+        occ[40:60, 33, :] = 0.5                            # the room-side row too: the two cells agree
+        same = windows.volumes_from_occupancy(occ, lo, RES, {"W": RECT}, 0.0, x_bearing=14.3)
+        self.assertEqual(windows.wall_face_rate(same, open_, fresnel, P, HEAD_ON), {"marched": 3, "wallFace": 0})
+```
+
+Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_windows -v`
+Expected: PASS, 39 tests (Task 4's 38 and this one). Checked on 8 October against R1c Task 15's own re-implementation, on the real window volumes (`work/windows.npz`, the bytes the package carries), check-sun's 200,000 splats and its 88,831 floor points at the sunny morning's Sun and `moon_test`'s Moon: equal counts in all four cases.
+
+- The floor's own rate (amended 8 October, re-review N3): floor rays cross the windows lower than splat rays do, so the same count is made on `check-sun`'s floor grid, the 88,831 points `cmd_check_sun` builds as `sets["floor"]` (`__main__.py:309-313`: x and y every 5 cm from 5 cm inside the hall's box, `z = FLOOR_Z + 0.02`; `sun-check.json`'s `points.floor`), at the same two directions. R1b Task 18 caps the floor texels' excuses with this rate and the splats' words with the splats'.
+- Record `wallFaceRate: { splats: 200000, marched, wallFace, floor: { points: 88831, marched, wallFace } }` (each population's two directions pooled; a rate is `wallFace / marched`, and the sample size shows its noise) in the checks file, the manifest's `evidence` and the vectors' `windowRays`. If either `marched` is 0, stop and report.
 
 Then, for the default package (or to the `--vectors` path), write `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` in exactly the shape of `RelightVectorsSchema` (schema `venviewer.relight-vectors.v1`) defined in plan R1b's Task 4, `docs/superpowers/plans/2026-09-29-restored-hall-r1b-relit-browser.md`: read that block and the helper schemas above it before writing. Every key is camelCase as there, so `reference.py`'s `sky_level`, `sky_colour`, `lamp_levels`, `emitter_boost`, `sun_dir`, `sun_rgb`, `moon_dir` and `moon_rgb` become `skyLevel`, `skyColour`, `lampLevels`, `emitterBoost`, `sunDir`, `sunRgb`, `moonDir` and `moonRgb`; the lamp group keys stay `cove`, `ch_end`, `ch_centre`, `dome`. Write it with `json.dumps(..., allow_nan=False)`. Its fields, every one required:
 - `schema`: `"venviewer.relight-vectors.v1"`; `sources`: the nine source names in record order.
@@ -3640,7 +4121,7 @@ Then, for the default package (or to the `--vectors` path), write `packages/web/
   - `nodes`: the four corner nodes of every case, as `cases[].corners` lists them, whatever their weights and the case's powers, each node once (numpy's `sunbounce.coefficients` reads a node only for windows with `P_w > 0`, so a dark case reads none, but R1b's `skyCoefficients`, its GPU coefficient pass and its debug check read all four corners of every case; at most 36 nodes, about 29 kB of base64 at K 30): `{ index: row × columns + column, values }`, `values` the base64 of the node's float32 little-endian `[window][k]` coefficients (5K values).
   - `fold`: one 0.5 m probe among the vector splats' trilinear corners whose eight 1 m corners all have positive weight (R1b asserts every corner's weight is positive and reads the basis at all eight; if no such probe exists, stop and report: there is no fallback, and in the hall's interior one exists: each splat's eight 0.5 m corners include one probe whose three indices are odd, which sits at the centre of a 1 m cell, so its eight 1 m corners each weigh 1/8 wherever all eight are valid), `{ probe, corners: [[index, weight] × 8], basis, rgb, cube }`: `probe` its global 0.5 m index; `corners` that probe's row of `sunbounce.trilinear_matrix(origin, spacing, shape, valid, reference.probe_points(model))` (its eight 1 m corners in the matrix's dx, dy, dz order, `index = (ix·ny + iy)·nz + iz` over the 1 m shape, zero weights kept); `basis`, for each corner of positive weight, `{ index, values }`, `values` the base64 of its float16 little-endian `[k][channel][face]` values (18K); `rgb` the `sunny_morning` setting's `sunRgb`; `cube` the 18 values of `reference.to_probes` at that probe of the first case's bounce (`sunbounce.bounce(basis, coefficients)` times `rgb`).
   - `probeCubes`: `{ sunny_morning, moon_test }`, each the list of every probe in `probes.entries` with that setting's sky bodies' bounce, `{ index, cube }`: `cube` the base64 of float32 little-endian `[channel][face]` (18 values) of `reference.sky_cubes(model, reference.sky_bodies(setting))` at that probe. (The kernel's vector tests take the folded sky bounce from here: the full basis and the patch rays would add 2 MB. The patch rays are held to `cases[].powers` against the staged package in R1b's Task 5.)
-- `windowRays`: `{ suns: [[x, y, z] × 9], points: [[x, y, z] × 96], visibility: [[v × 9] × 96], steps: [[n × 9] × 96], wallFace: [[p, k] × n], wallFaceRate: { splats, marched, wallFace } }` (`wallFaceRate` as measured above, amended 8 October).
+- `windowRays`: `{ suns: [[x, y, z] × 9], points: [[x, y, z] × 96], visibility: [[v × 9] × 96], steps: [[n × 9] × 96], wallFace: [[p, k] × n], wallFaceRate: { splats, marched, wallFace, floor: { points, marched, wallFace } } }` (`wallFaceRate` as measured above, amended 8 October).
   - The directions: the `sunny_morning` setting's `sunDir` first, then the five suns of `check-sun` (`CHECK_SUNS` through `common.solar_position` and `common.sun_vec_e57`), then two of `_random_suns(common, 2, SPLAT_SEED + 2)`, then the `moon_test` setting's `moonDir` (R1d amendment A8: nine directions).
   - The points: the 64 splats' positions, then 32 points of `check-sun`'s floor grid (5 cm spacing, `z = FLOOR_Z + 0.02`), drawn with `np.random.default_rng(SPLAT_SEED)`: 12 lit at the sunny-morning sun (visibility > 0.3), 12 marched but dark there (steps > 0, visibility < 0.01), and 8 whose first sample, at some of the nine directions, lies on the room side of the wall face `y0` between cells of unlike alpha (the `wallFace` cases below; if fewer than 8 exist on the grid, take all there are and record the number in the task report).
   - `visibility[p][k]` and `steps[p][k]` are `windows.sun_visibility(model.volumes, model.horizons, model.fresnel, points, suns[k], steps=...)`, as float32 values and integers.
@@ -3652,21 +4133,44 @@ Then, for the default package (or to the `--vectors` path), write `packages/web/
 - `splats`: 64 finest-level splats chosen across classes (16 interior, 16 embrasure, 8 bulbs, 8 fixtures and cove, 8 sun-reachable floor, 8 hidden), each `{ record, position, colour, expected }`: its 12-byte record as 24 hex digits, its position (e57), its captured linear colour, and `expected` with `captured`, `night`, `sunny_morning` and `moon_test`, each `{ m: [r, g, b], alpha, word }` (`word` the packed uint32), computed by `reference.multiplier` with the full model (the sky bounce included) and no visibility. The eight sun-reachable floor splats are lit at the sunny-morning sun (`windows.sun_visibility` > 0.3). Every splat with the sun flag must keep its sunny-morning and `moon_test` visibility (within 1e-6) when its position moves 1 mm along +x, −x, +y, −y, +z or −z; replace one that does not with the next candidate in the seeded order. R1b finds these splats in the live draw by record and position and holds the GPU's words to them within one code, and the served positions and the GPU's float32 differ from the bake's by far less than 1 mm.
 - `floorTexels`: eight texels of `<work>/floor-light.npz`, each `{ col, row, direct }` with `direct = D[row, col, :]` (the nine values in source order; `row` is the PNG row). Spread them over the floor (near the windows and under the lamps), so that every source is non-zero at some of them and no two sources have equal values at all eight. R1b decodes the floor PNGs at these texels (its Task 5), so a source written to the wrong channel fails there.
 
-Keep it under 1,000 kB (raised from 800 kB on 7 October: the sky slice adds about 150 kB, mostly `probeCubes`; the volumes' gzip takes 261,376 bytes in base64). Record `capturedIdentity`, `proofRegression`, `transfer`, `determinism`, `skyBounceCheck` and `wallFaceRate` in the checks file and, once every check has run, in the checked package's manifest `evidence` too: the manifest is rewritten with `package.write`'s own `json.dumps` arguments, each run replacing these six keys and nothing else, and they hold no time or other wall-clock value (check 4 removes exactly these six before it compares).
+Keep it under 1,000 kB + 1.6 kB × max(0, K − 30) (raised from 800 kB on 7 October: the sky slice adds about 150 kB, mostly `probeCubes`; the volumes' gzip takes 261,376 bytes in base64; amended 8 October, re-review N4: the parts that grow with K, `nodes` (36 × 5K float32 in base64), `fold.basis` (8 × 18K float16 in base64), `cases[].coefficients` (9 × K numbers) and `floorMean` (K × 3), take about 1.6 kB per K, about 48 kB at K 30 and 304 kB at K 192, so a refit that lands at a larger K does not stop on size alone; anything else over the cap is a stop). Record `capturedIdentity`, `proofRegression`, `transfer`, `determinism`, `skyBounceCheck` and `wallFaceRate` in the checks file and, once every check has run, in the checked package's manifest `evidence` too: the manifest is rewritten with `package.write`'s own `json.dumps` arguments, each run replacing these six keys and nothing else, and they hold no time or other wall-clock value (check 4 removes exactly these six before it compares).
 
-Run: `C:/Python313/python.exe -m relight check --config config/grand-hall.json`
-Expected: `checks.json` with all five `pass: true` and `wallFaceRate` (print `marched`, `wallFace` and their ratio), and the fixture written (print its size, the number of `wallFace` pairs and the `fold` probe's corner count). If a check fails, stop and report the numbers.
+Step 8 runs it twice once the code is committed: `C:/Python313/python.exe -m relight check --config config/grand-hall.json`. Expected then: `checks.json` with all five `pass: true` and `wallFaceRate` (print each population's `marched`, `wallFace` and their ratio; on 8 October's window volumes, both directions pooled: splats 92,085 marched and 2,964 wall-face, 3.22%; floor 35,155 and 3,630, 10.33%), and the fixture written (print its size against its K's cap, the number of `wallFace` pairs and the `fold` probe's corner count). If a check fails, stop and report the numbers.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Commit the code, then build, check twice and commit the fixture** (amended 8 October, the controller's ruling P1: the package is built only from committed code, and its `tool` is that commit)
 
 ```bash
+cd D:/claude/real-hall/repo/tools/relight
+C:/Python313/python.exe -m unittest discover -s tests 2>&1 | tail -3
 cd D:/claude/real-hall/repo
-git add tools/relight/relight/records.py tools/relight/relight/reference.py tools/relight/relight/package.py tools/relight/relight/__main__.py tools/relight/tests/test_reference.py tools/relight/tests/test_records.py packages/web/src/lib/relight/__fixtures__/relight-vectors.json
+git add tools/relight/relight/records.py tools/relight/relight/reference.py tools/relight/relight/package.py tools/relight/relight/__main__.py tools/relight/relight/windows.py tools/relight/tests/test_reference.py tools/relight/tests/test_records.py tools/relight/tests/test_windows.py
 git diff --cached --stat
-git commit -m "feat(relight): records for all 24 tiles, the reference multiplier with both sky bodies, checks and test vectors (T-639 R1a)
+git commit -m "feat(relight): records for all 24 tiles, the reference multiplier with both sky bodies, the package and its checks (T-639 R1a)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+test -z "$(git status --porcelain -- tools/relight)" && echo "tools/relight clean at $(git rev-parse HEAD)"
+cd tools/relight
+C:/Python313/python.exe -m relight records --config config/grand-hall.json
+V=D:/claude/relight/grand-hall/verify/task5 && mkdir -p $V
+FIX=D:/claude/real-hall/repo/packages/web/src/lib/relight/__fixtures__/relight-vectors.json
+PKG=D:/claude/splats/trades-hall/grand-hall/relight/v1
+for run in 1 2; do
+  C:/Python313/python.exe -m relight check --config config/grand-hall.json
+  cp D:/claude/relight/grand-hall/evidence/checks.json $V/checks-run$run.json && cp $PKG/manifest.json $V/manifest-run$run.json && cp $FIX $V/vectors-run$run.json
+done
+C:/Python313/python.exe D:/claude/relight/grand-hall/verify/task4b/compare.py $V/checks-run1.json $V/checks-run2.json
+cmp $V/manifest-run1.json $V/manifest-run2.json && echo "manifest identical"
+cmp $V/vectors-run1.json $V/vectors-run2.json && echo "vectors identical"
+C:/Python313/python.exe -c "import json; m = json.load(open('$PKG/manifest.json')); print('tool', m['tool'], m['createdAt'])"
+cd D:/claude/real-hall/repo
+git add packages/web/src/lib/relight/__fixtures__/relight-vectors.json
+git diff --cached --stat
+git commit -m "test(relight): the relight test vectors from package v1 (T-639 R1a)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+Expected: the suite `OK` with 161 tests; the code commit; `tools/relight clean at <that commit>`; `records` as Step 6 expects (if it prints `FAIL: tools/relight has uncommitted changes`, something was left out of the commit: commit it and build again, never build around it); both `check` runs as Step 7 expects, `checks-run1.json vs checks-run2.json : parsed values equal`, `manifest identical` and `vectors identical` (the second run rewrites the six evidence keys with the same values and the fixture byte for byte); the manifest's `tool` is the code commit's hash and `createdAt` its committer time; then the fixture commit, which touches no file under `tools/relight`. On a difference between the two runs, a third run decides by majority (the PC's rule); a third run that agrees with neither stops the task.
 
 ### Task 6: The restored floor (floor skin v2)
 
@@ -3723,7 +4227,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the README**
 
-`tools/relight/README.md`: what the bake makes (link the contract), the commands in order (`proof all`, `windows`, `check-sun`, `probes`, `floor`, `sun-bounce`; then Task 4b's house-light refit in its staging copy (`refit-house proof`, `refit` twice, `compare`, `install`, the proof's `embrasure-room`, `embrasure-back` and `05_relight.py`, the copied render harness and `07_compare.py metrics`, `photo-gate`, `promote`) and its re-runs of `probes` and `sun-bounce`; `record-artifacts`; `skin-light` (R1c); `records`; `check`; amended 7 October: `sun-area` is gone), the double-run rule, the GPU-lock and D: rules, the packaging rule (exact named artifacts whose SHA-256 their evidence records), each step's time on this PC (from the logs), and how to publish.
+`tools/relight/README.md`: what the bake makes (link the contract), the commands in order (`proof all`, `windows`, `check-sun`, `probes`, `floor`, `sun-bounce`; then Task 4b's house-light refit in its staging copy (`refit-house proof`; `refit` twice at the measured crown-tube weight and twice at each of `--w-crown 0` and `--w-crown 1`, each pair `compare`d; for each sensitivity run `install --tag`, the proof's `embrasure-room`, `embrasure-back` and `05_relight.py comp_house`, the copied render harness and `07_compare.py metrics`; then `install`, the same steps for the refit, `photo-gate`, a second render, `sensitivity`, `promote`) and its re-runs of `probes` and `sun-bounce`; `record-artifacts`; `skin-light` (R1c); `records`; `check`; amended 7 October: `sun-area` is gone), the double-run rule, the GPU-lock and D: rules, the packaging rule (exact named artifacts whose SHA-256 their evidence records), each step's time on this PC (from the logs), and how to publish.
 
 - [ ] **Step 2: Teach the publisher nested package folders**
 
@@ -3753,7 +4257,7 @@ Expected: 200, a JSON content type, immutable caching. (A floor skin's descripto
 
 - [ ] **Step 4: Record and commit**
 
-Add a section to the day's session log: what was baked, the checks with their numbers (the sun check against the proof with its Moon coverage; the sky-body bounce's gate on its three draws, with K; the house-light refit's acceptance: data cost ratio, lamp ratio, the night photographs at stations 43 and 45; captured identity, proof regression, transfer, determinism, the sky bounce through the package), each artifact's SHA-256 (`evidence/*.json`), sizes and times, and the R2 paths. Update T-639's row in `docs/state/tasks.md` (R1a done; R1b next).
+Add a section to the day's session log: what was baked, the checks with their numbers (the sun check against the proof with its Moon coverage; the sky-body bounce's gate on its three draws, with K; the house-light refit's acceptance: data cost ratio, lamp ratio (the 140 lamps, the crown tubes' measured weight), the night photographs at stations 43 and 45, the crown tubes' sensitivity at w_crown 0 and 1; captured identity, proof regression, transfer, determinism, the sky bounce through the package), each artifact's SHA-256 (`evidence/*.json`), sizes and times, and the R2 paths. Update T-639's row in `docs/state/tasks.md` (R1a done; R1b next).
 
 ```bash
 cd D:/claude/real-hall/repo
@@ -3772,6 +4276,7 @@ git push origin claude/real-hall
 - Spec coverage: §4.1 sources, window volumes (amended 3 October), captured light and lamp colour (a colour per lamp group from the refit, never a constant; amended 7 October) → Tasks 2, 3, 4b, 5; §4.2 records, probes, window volumes, the sky bodies' bounce basis and manifest (including the data the browser needs to refuse a mismatched package: `tileSha256` and counts) → Tasks 1, 3, 4, 5; the Moon as a light source (3 October) → Tasks 4, 5; the centre chandelier's light → Task 4b; the floor's restored albedo and its light → Tasks 4, 6; §6 unit tests (codec, window volumes and their march, the sky-body basis, probes, the refit, reference) and the photo-anchored regression against the proof → Tasks 1, 3, 4, 4b, 5 (R1b compares with the photographs directly); §8 package size and build-PC rules → Global Constraints and Task 5; R1c's record classes, skins' light and package v2 → Tasks 4c, 5. The browser (§4.3, the §4.4 web units, §5 and the rest of §6) is plan R1b.
 - The window-volume revision (3 October): the multiplier's V, `reference.py`, the package and the vectors all take the march from `windows.sun_visibility`; R1b's TypeScript twin repeats it in the same float32 order, and Task 5 Step 7's vectors give it the volumes, the per-sample depths and 96 points' rays at nine directions.
 - The sky-body revision (7 October): both bodies' bounce is Task 4's factored basis everywhere (`reference.py`, the package's `sky` files, the contract's "The sky bodies' bounce", the vectors' `skyBounce`); P_w's float32 order is the Task 4 report's contract, which R1b's twin and GPU passes repeat.
-- Packaging (7 October): every artifact the package reads is named exactly and checked against the SHA-256 its evidence records (Tasks 4c, 5); the folder published holds exactly the manifest's files (Task 7).
-- Test counts (7 October): Task 4 as built 121; Task 4b 12 (133); Task 4c 6 (139); Task 5's `test_reference` 12 and `test_records` 6 (157 after Task 5).
+- Packaging (7 October): every artifact the package reads is named exactly and checked against the SHA-256 its evidence records (Tasks 4c, 5); the folder published holds exactly the manifest's files (Task 7). Provenance (8 October): the package is built and checked only from committed code, its `tool` that commit (Task 5 Steps 6–8).
+- The house lights (8 October): one lamp set for R1a and R1d, the table's 140 `high` and `medium` entries; the centre chandelier's crown tubes a second kind at a measured weight, with its sensitivity reported and a stop if the night photographs clearly prefer an end (Task 4b).
+- Test counts (8 October): Task 4 as built 121; Task 4b 15 (136); Task 4c 6 (142); Task 5's `test_reference` 12, `test_records` 6 and `test_windows`' `wall_face_rate` test 1 (161 after Task 5).
 - The section "The multiplier" is normative for both plans and matches `reference.py` line for line.
