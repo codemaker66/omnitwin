@@ -38,10 +38,12 @@
     "assets:register-reception-room-quality-frontier": "node --env-file=.env --import tsx src/scripts/register-reception-room-quality-frontier.ts",
     "assets:register-runtime-transform-artifact": "tsx src/scripts/register-runtime-transform-artifact.ts",
     "assets:register-runtime-qa-record": "tsx src/scripts/register-runtime-qa-record.ts",
+    "eval:proposal-drafts": "tsx src/scripts/eval-proposal-drafts.ts",
     "email:dev": "email dev --dir ./emails --port 3002",
     "email:export": "email export --dir ./emails --outDir ./emails-out"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.131.0",
     "@aws-sdk/client-s3": "3.1038.0",
     "@aws-sdk/s3-request-presigner": "3.1038.0",
     "@clerk/backend": "3.4.1",
