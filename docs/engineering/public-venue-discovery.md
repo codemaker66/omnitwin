@@ -1,17 +1,24 @@
-**Read this when:** changing what AI assistants or search engines can read about a venue, the `/mcp` endpoint, the public free/busy rule, or the front door's schema.org description.
+**Read this when:** changing what AI assistants or search engines can read about a venue, the `/mcp` endpoint, the public free/held/busy rule, or the front door's schema.org description.
 
 # Public venue discovery for AI assistants (T-649)
 
-## The decision
+## The decisions
 
 Blake, 8 October 2026, asked "Should AI assistants like Claude and ChatGPT be
 able to find and query Trades Hall?", chose **"Yes, read-only"**:
 
 > Public: venue facts, room capacities from venue records, and free/busy dates only (no client names). Enquiries still go through staff.
 
-This authorises exactly that exposure despite the general public WIP hold.
-Nothing beyond it is exposed: no prices, no booking details, no counts, no
-holds, no submissions.
+The same day he asked "When an AI assistant asks whether a date is free, how
+should a date with only a provisional hold (a 1st or 2nd option, not
+confirmed) answer? No names are shown either way." and chose **"Say 'held,
+enquire'"**:
+
+> A third answer, matching how your staff reply: someone has an option, and a second option may be possible. It reveals that a hold exists, not who holds it.
+
+These authorise exactly that exposure despite the general public WIP hold.
+Nothing beyond it is exposed: no prices, no booking details, no option ranks,
+no counts, no times, no decision dates, no submissions.
 
 ## What is public
 
@@ -37,31 +44,42 @@ to the same cases). `venue` is optional and only ever `trades-hall-glasgow`.
   "Not published" note. Nothing is estimated from dimensions.
 - **`check_availability`** — `from`/`to` (YYYY-MM-DD, at most 92 days per
   call, today through 730 days ahead) and optional `room` slug. Returns, per
-  room per date, `"free"` or `"busy"` and nothing else.
+  room per date, `"free"`, `"held"` or `"busy"` and nothing else, with a
+  plain-words `meaning` for each and the enquiry path.
 - **`how_to_enquire`** — the enquiry composer (`https://venviewer.com/#enquire`),
   what to include, and the venue's published telephone, email and website.
   It cannot submit an enquiry, place a hold or book.
 
-### What "busy" means — the decision recorded
+### What free, held and busy mean — the rule recorded
 
-The Diary's hard floor (Canon §2.2) is the `bookings_ink_no_overlap`
-exclusion constraint: an active, non-deleted **confirmed** (`ink`) booking. It
-is also the conflict engine's only `blocking` severity. Public busy is
-`ROOM_BLOCKING_BOOKING_KINDS` in `packages/types/src/booking.ts`:
+The rule lives in `packages/types/src/booking.ts` (`isLiveBooking`,
+`ROOM_BLOCKING_BOOKING_KINDS`, `ROOM_OPTION_BOOKING_KINDS`,
+`bookingRoomStatus`, `publicDayStatus`). A booking counts only while **live**:
+`status = 'active'` and not soft-deleted — the Diary's own liveness test,
+which the conflict engine now calls directly (`services/calendar-conflicts.ts`),
+and the one the contested-dates and decisions-due reads apply. Nothing lapses
+on the clock: a hold past its decision date stays live (the Diary lists it as
+a decision due) until staff record an exit; `expired` is a recorded transition
+(`services/booking-mutations.ts`), not a time check. For each room and Diary
+day, busy beats held beats free:
 
-- `ink` (confirmed), active, not deleted — busy.
-- `internal_block` (the venue's own closure: maintenance, blackouts), active,
-  not deleted — busy. The schema defines it as venue-generated unavailability;
-  calling a closed room "free" would send enquirers to a date the venue has
-  shut. The conflict engine ignores blocks only because it compares bookings
-  with each other.
-- **Provisional holds do not make a date busy.** Holds stack as 1st/2nd
-  options by design, a later enquirer can still take the next option, and the
-  engine rates hold overlaps advisory. The tool says so: "free" can still carry
-  a provisional option, and the venue team confirms availability on enquiry.
-  This also keeps the sales pipeline private.
-- Prospects, and every exited (`cancelled`, `released`, `expired`, `lost`) or
-  soft-deleted row — free.
+- **busy** — a live `ink` (confirmed) booking or a live `internal_block` (the
+  venue's own closure: maintenance, blackouts). `ink` is the Diary's hard floor
+  (Canon §2.2): the `bookings_ink_no_overlap` exclusion constraint and the
+  conflict engine's only `blocking` severity. A block is venue-generated
+  unavailability; calling a closed room "free" would send enquirers to a shut
+  date.
+- **held** — a live `hold`, the Diary's provisional option (1st, 2nd, Joint
+  1st), and nothing busy that day. Blake's "held, enquire": someone has an
+  option, a second option may be possible, contact the venue team. The rank,
+  number of holds, times and decision dates are never shown.
+- **free** — neither. **Prospects** ("Interest only" on the board) are not
+  options: they carry no rank (`bookings_rank_hold_only`) and never block
+  (Canon §2.1), so they leave a date free. So do `cancelled`, `released`,
+  `expired` and `lost` rows and anything soft-deleted.
+
+Whatever the answer, the tool text says the venue team confirms availability
+when someone enquires.
 
 **Dates are the venue's operational day**, 04:00 to 04:00 Europe/London, as
 the Diary's day view counts it (`routes/room-layout-timeline.ts`). An evening
@@ -73,10 +91,12 @@ is one constant (`VENUE_DAY_START_MINUTE`) if Blake prefers midnight.
 
 ## Privacy guarantees and how they are enforced
 
-- **Query shape.** The busy read selects only `space_id, starts_at, ends_at`
-  from `bookings` filtered by venue, kind, status and `deleted_at`. No title,
-  client, event, owner, note, status or count can reach a response because none
-  is selected. Output carries dates and `free`/`busy` only.
+- **Query shape.** The availability read selects only `space_id, kind,
+  status, deleted_at, starts_at, ends_at` from `bookings`, for live rows of the
+  busy and held kinds; `bookingRoomStatus` reduces each to "busy" or "held"
+  before anything else sees it. No title, client, event, owner, note, rank,
+  decision date or count can reach a response because none is selected, and
+  each date carries one word: `free`, `held` or `busy`.
 - **Allowlist.** `PUBLIC_DISCOVERY_VENUES` (code, by DATABASE slug) holds only
   Trades Hall Glasgow. The tool schema's `venue` enum admits nothing else, so a
   second tenant's slug or id gets the same validation error as a name that
@@ -86,9 +106,11 @@ is one constant (`VENUE_DAY_START_MINUTE`) if Blake prefers midnight.
   distinctive client, event, title, notes, next-action, owner and enquiry
   strings plus a second tenant, drives every tool through the official MCP
   client in both protocol eras, and asserts no response body contains any of
-  them, any private id, or any booking instant. It also proves the blocking
-  rule (cancelled, deleted, released, provisional and prospect rows free), the
-  autumn 2026 and spring 2027 boundaries, and non-discovery by slug or id.
+  them, any private id, any booking or hold instant, any decision date or any
+  option rank. It seeds live, overdue, expired, released, lost and deleted
+  holds beside confirmed bookings and blocks on the same and neighbouring days,
+  across the autumn 2026 and spring 2027 clock changes, and proves busy beats
+  held, exits and prospects stay free, and non-discovery by slug or id.
   `public-discovery.test.ts` and `public-mcp.test.ts` cover the rule, DST
   windows, bounds, caching, Origin policy and transport. The JSON-LD test
   proves every string in it comes from the published profile.

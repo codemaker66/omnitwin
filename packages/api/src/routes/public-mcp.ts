@@ -26,7 +26,8 @@ import {
 //
 // Blake, 8 October 2026: AI assistants may find and query Trades Hall, "Yes,
 // read-only": venue facts, room capacities from venue records, and free/busy
-// dates only (no client names); enquiries still go through staff. Three tools
+// dates only (no client names); enquiries still go through staff. A date with
+// only a provisional hold answers "held" ("Say 'held, enquire'"). Three tools
 // carry exactly that (services/public-discovery.ts owns the boundary).
 //
 // Transport: the 2026-07-28 revision is stateless, and @modelcontextprotocol/
@@ -186,6 +187,7 @@ export function buildPublicMcpServer(
   onToolError: (tool: string, error: unknown) => void,
 ): McpServer {
   const names = discovery.venues.map((venue) => venue.name).join(", ");
+  const enquiryPaths = discovery.venues.map((venue) => venue.enquiryUrl).join(", ");
   const inputs = publicToolInputs(discovery.venues);
   const cacheMinutes = String(Math.round(PUBLIC_DISCOVERY_CACHE_TTL_MS / 60_000));
 
@@ -198,7 +200,7 @@ export function buildPublicMcpServer(
       description: `Read-only public information about ${names}, published through Venviewer with the venue's agreement.`,
     },
     {
-      instructions: `Read-only public information about ${names}, published through Venviewer with the venue's agreement: venue facts, rooms with their published capacities, and free or busy dates. No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
+      instructions: `Read-only public information about ${names}, published through Venviewer with the venue's agreement: venue facts, rooms with their published capacities, and whether each date is free, held (someone has a provisional option) or busy. No client, event or booking details exist here. Nothing here can send an enquiry, hold a date or make a booking — for any of those, give the person the how_to_enquire details; the venue's own team handles every enquiry.`,
       // Nothing here ever changes mid-session, so advertise no list-changed
       // notifications: a subscription is acknowledged and closed at once.
       capabilities: { tools: { listChanged: false } },
@@ -233,10 +235,10 @@ export function buildPublicMcpServer(
   server.registerTool(
     "check_availability",
     {
-      title: "Free or busy dates",
-      description: `Whether each room at ${names} is free or busy on each date in a range: at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days per call, from today up to ${String(AVAILABILITY_HORIZON_DAYS)} days ahead, optionally for one room. Returns only "free" or "busy" per room per date — never who booked, the event, its times, any amounts, or how many bookings there are. "busy" means a confirmed booking or a venue closure at some time that date; "free" means neither, though a provisional option may still exist, so the venue team confirms availability when someone enquires. Dates are venue-local (each runs 04:00 to 04:00, as the venue's diary counts a day). Answers can be up to ${cacheMinutes} minutes old. This cannot hold or book a date; use how_to_enquire.`,
+      title: "Free, held or busy dates",
+      description: `Whether each room at ${names} is free, held or busy on each date in a range: at most ${String(AVAILABILITY_MAX_SPAN_DAYS)} days per call, from today up to ${String(AVAILABILITY_HORIZON_DAYS)} days ahead, optionally for one room. Returns only "free", "held" or "busy" per room per date — never who booked or holds it, the event, its times, any option rank, amounts, decision dates, or how many bookings or holds there are. "busy" means a confirmed booking or a venue closure at some time that date. "held" means someone has a provisional option on that date: a second option may be possible, so the person should contact the venue team (${enquiryPaths}, or how_to_enquire). "free" means neither. Whatever the answer, the venue team confirms availability when someone enquires. Dates are venue-local (each runs 04:00 to 04:00, as the venue's diary counts a day). Answers can be up to ${cacheMinutes} minutes old. This cannot hold or book a date; use how_to_enquire.`,
       inputSchema: inputs.checkAvailability,
-      annotations: { title: "Free or busy dates", ...READ_ONLY },
+      annotations: { title: "Free, held or busy dates", ...READ_ONLY },
     },
     async ({ venue, from, to, room }) =>
       guarded("check_availability", async () => toolResult(await discovery.availability({ venue, from, to, room }))),

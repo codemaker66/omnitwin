@@ -3,14 +3,18 @@ import {
   CAPACITY_FORMATS,
   FloorPlanOutlineSchema,
   ROOM_BLOCKING_BOOKING_KINDS,
+  ROOM_OPTION_BOOKING_KINDS,
   TRADES_HALL_PUBLIC_PROFILE,
   addRotaDays,
+  bookingRoomStatus,
   formatPublishedAddress,
+  publicDayStatus,
   publishedRoomCapacity,
   resolveRotaTimeZone,
   rotaInstant,
   rotaLocalDate,
   type FloorPlanPoint,
+  type PublicDayStatus,
   type PublicVenueProfile,
   type PublishedPostalAddress,
 } from "@omnitwin/types";
@@ -20,16 +24,21 @@ import type { Database } from "../db/client.js";
 // ---------------------------------------------------------------------------
 // Public venue discovery (T-649) — what AI assistants may read about a venue.
 //
-// Blake's decision, 8 October 2026: "Yes, read-only" — "Public: venue facts,
+// Blake's decisions, 8 October 2026: "Yes, read-only" — "Public: venue facts,
 // room capacities from venue records, and free/busy dates only (no client
-// names). Enquiries still go through staff." This module is that boundary:
+// names). Enquiries still go through staff." — and, for a date carrying only a
+// provisional hold, "Say 'held, enquire'": "A third answer, matching how your
+// staff reply: someone has an option, and a second option may be possible.
+// It reveals that a hold exists, not who holds it." This module is that
+// boundary:
 //
 //   - Only venues in PUBLIC_DISCOVERY_VENUES exist here. Every other tenant is
 //     indistinguishable from a venue that does not exist.
-//   - Bookings are read as (room, start, end) of the kinds that block a room
-//     (ROOM_BLOCKING_BOOKING_KINDS: confirmed bookings and the venue's own
-//     blocks) and nothing else: no title, client, event, owner, note, status
-//     or count ever leaves the query, so none can reach a response.
+//   - Bookings are read as (room, kind, start, end) of the live kinds that
+//     make a room busy (confirmed bookings, the venue's own blocks) or held
+//     (provisional options), and nothing else: no title, client, event, owner,
+//     note, rank, decision date or count ever leaves the query, so none can
+//     reach a response. Each date answers only "free", "held" or "busy".
 //   - Capacities are the venue's published figures with their provenance, or
 //     null with a "not published" note. Nothing is estimated.
 //   - Both reads are cached for a few minutes, so public traffic costs at most
@@ -44,15 +53,18 @@ export const PUBLIC_DISCOVERY_VENUES: readonly PublicVenueProfile[] = [TRADES_HA
 export const AVAILABILITY_MAX_SPAN_DAYS = 92;
 /** How far ahead availability may be asked about, from the venue's today. */
 export const AVAILABILITY_HORIZON_DAYS = 730;
-/** How long a venue's rooms and blocking times are reused before re-reading. */
+/** How long a venue's rooms and busy/held times are reused before re-reading. */
 export const PUBLIC_DISCOVERY_CACHE_TTL_MS = 5 * 60_000;
 /** The Diary's operational day starts at 04:00 venue-local time
  *  (routes/room-layout-timeline.ts), so an evening that runs past midnight
  *  belongs to the date it started on. Public dates follow the same rule. */
 export const VENUE_DAY_START_MINUTE = 4 * 60;
-/** A defensive ceiling on blocking rows per read; far above any venue's two
+/** A defensive ceiling on busy/held rows per read; far above any venue's two
  *  years. Exceeding it fails the request rather than answer from part of it. */
-const BLOCKING_INTERVAL_ROW_LIMIT = 50_000;
+const ROOM_INTERVAL_ROW_LIMIT = 50_000;
+
+/** The kinds the availability read loads: those that make a date busy or held. */
+const ROOM_STATUS_KINDS = [...ROOM_BLOCKING_BOOKING_KINDS, ...ROOM_OPTION_BOOKING_KINDS];
 
 export const VENUE_NOT_AVAILABLE_MESSAGE = "That venue's public information is not available.";
 const TEMPORARILY_UNAVAILABLE_MESSAGE =
@@ -80,17 +92,20 @@ export interface PublicVenueRecord {
   readonly rooms: readonly PublicRoomRecord[];
 }
 
-/** When a room is unavailable — and nothing else about why. */
-export interface BlockingInterval {
+/** When a room is busy (confirmed or closed) or held (a provisional option),
+ *  and nothing else about who or why. */
+export interface RoomInterval {
   readonly spaceId: string;
+  readonly effect: "busy" | "held";
   readonly startsAt: Date;
   readonly endsAt: Date;
 }
 
 export interface PublicDiscoveryStore {
   loadVenue(slug: string): Promise<PublicVenueRecord | null>;
-  /** Blocking intervals overlapping [from, to), half-open as the Diary reads. */
-  loadBlockingIntervals(venueId: string, from: Date, to: Date): Promise<readonly BlockingInterval[]>;
+  /** Busy and held intervals overlapping [from, to), half-open as the Diary
+   *  reads, from live bookings only. */
+  loadRoomIntervals(venueId: string, from: Date, to: Date): Promise<readonly RoomInterval[]>;
 }
 
 export function drizzlePublicDiscoveryStore(db: Database): PublicDiscoveryStore {
@@ -117,26 +132,41 @@ export function drizzlePublicDiscoveryStore(db: Database): PublicDiscoveryStore 
         .orderBy(asc(spaces.sortOrder), asc(spaces.name), asc(spaces.id));
       return { ...venue, rooms };
     },
-    async loadBlockingIntervals(venueId, from, to) {
-      // Three columns, by construction: the public read cannot carry a title,
-      // client, owner or note because it never selects one.
+    async loadRoomIntervals(venueId, from, to) {
+      // Room, kind, liveness and times only, by construction: the public read
+      // cannot carry a title, client, owner, note, rank or decision date
+      // because it never selects one. The SQL keeps live rows of the busy and
+      // held kinds; bookingRoomStatus then applies the same shared rule again,
+      // so the database filter and the rule cannot drift apart.
       const rows = await db
-        .select({ spaceId: bookings.spaceId, startsAt: bookings.startsAt, endsAt: bookings.endsAt })
+        .select({
+          spaceId: bookings.spaceId,
+          kind: bookings.kind,
+          status: bookings.status,
+          deletedAt: bookings.deletedAt,
+          startsAt: bookings.startsAt,
+          endsAt: bookings.endsAt,
+        })
         .from(bookings)
         .where(and(
           eq(bookings.venueId, venueId),
           isNull(bookings.deletedAt),
           eq(bookings.status, "active"),
-          inArray(bookings.kind, [...ROOM_BLOCKING_BOOKING_KINDS]),
+          inArray(bookings.kind, ROOM_STATUS_KINDS),
           lt(bookings.startsAt, to),
           gt(bookings.endsAt, from),
         ))
         .orderBy(asc(bookings.startsAt), asc(bookings.id))
-        .limit(BLOCKING_INTERVAL_ROW_LIMIT + 1);
-      if (rows.length > BLOCKING_INTERVAL_ROW_LIMIT) {
-        throw new Error("Blocking interval read exceeded its ceiling");
+        .limit(ROOM_INTERVAL_ROW_LIMIT + 1);
+      if (rows.length > ROOM_INTERVAL_ROW_LIMIT) {
+        throw new Error("Room interval read exceeded its ceiling");
       }
-      return rows;
+      const intervals: RoomInterval[] = [];
+      for (const row of rows) {
+        const effect = bookingRoomStatus(row);
+        if (effect !== null) intervals.push({ spaceId: row.spaceId, effect, startsAt: row.startsAt, endsAt: row.endsAt });
+      }
+      return intervals;
     },
   };
 }
@@ -172,21 +202,24 @@ export function venueDayWindow(date: string, timeZone: string): { readonly start
   };
 }
 
-export type DayStatus = "free" | "busy";
+export type DayStatus = PublicDayStatus;
 
-/** Free or busy for each date, for one room. Busy when any blocking interval
- *  overlaps the date's window (half-open: touching edges do not overlap). */
+/** Free, held or busy for each date, for one room, from the intervals that
+ *  overlap the date's window (half-open: touching edges do not overlap).
+ *  Busy beats held beats free (publicDayStatus in @omnitwin/types). */
 export function roomDayStatuses(
-  intervals: readonly BlockingInterval[],
+  intervals: readonly RoomInterval[],
   dates: readonly string[],
   timeZone: string,
 ): Record<string, DayStatus> {
   const statuses: Record<string, DayStatus> = {};
   for (const date of dates) {
     const { startMs, endMs } = venueDayWindow(date, timeZone);
-    const busy = intervals.some((interval) =>
-      interval.startsAt.getTime() < endMs && interval.endsAt.getTime() > startMs);
-    statuses[date] = busy ? "busy" : "free";
+    statuses[date] = publicDayStatus(
+      intervals
+        .filter((interval) => interval.startsAt.getTime() < endMs && interval.endsAt.getTime() > startMs)
+        .map((interval) => interval.effect),
+    );
   }
   return statuses;
 }
@@ -309,7 +342,7 @@ export function describeVenue(profile: PublicVenueProfile, record: PublicVenueRe
         "Room dimensions are the venue's room records in Venviewer, in metres; floor area is computed from the recorded floor plan.",
       capacities:
         "Capacities are only the venue's own published figures, cited with their source. A layout without one is null and marked not published; final numbers depend on the layout agreed with the venue team.",
-      availability: "Use check_availability for free or busy dates. It never shows who has booked or why.",
+      availability: "Use check_availability for free, held or busy dates. It never shows who has booked or holds a date, or why.",
       enquiries: "Use how_to_enquire. Enquiries go to the venue team; nothing here can hold or book a date.",
     },
   };
@@ -377,7 +410,7 @@ export interface AvailabilityReport {
   /** When the venue's diary was last read for this answer. */
   readonly asOf: string;
   readonly dayRule: string;
-  readonly meaning: { readonly free: string; readonly busy: string };
+  readonly meaning: { readonly free: string; readonly held: string; readonly busy: string };
   readonly rooms: readonly {
     readonly room: string;
     readonly name: string;
@@ -394,7 +427,7 @@ interface CacheEntry<T> {
 interface IntervalWindow {
   readonly fromMs: number;
   readonly toMs: number;
-  readonly intervals: readonly BlockingInterval[];
+  readonly intervals: readonly RoomInterval[];
 }
 
 export interface PublicDiscoveryOptions {
@@ -489,7 +522,7 @@ export class PublicDiscovery {
         async () => ({
           fromMs: windowFrom,
           toMs: windowTo,
-          intervals: await this.store.loadBlockingIntervals(record.id, new Date(windowFrom), new Date(windowTo)),
+          intervals: await this.store.loadRoomIntervals(record.id, new Date(windowFrom), new Date(windowTo)),
         }),
         (cached) => cached.fromMs <= requestFrom && cached.toMs >= requestTo,
       );
@@ -507,7 +540,8 @@ export class PublicDiscovery {
           asOf: new Date(loadedAtMs).toISOString(),
           dayRule: `Each date runs from 04:00 to 04:00 the next morning, venue time (${timeZone}), as the venue's own diary counts a day, so an evening that runs past midnight belongs to the date it started on.`,
           meaning: {
-            free: "No confirmed booking and no venue closure in this room on this date. A date can still carry provisional options, so the venue team confirms availability when you enquire.",
+            free: "No confirmed booking, venue closure or provisional option in this room on this date. The venue team confirms availability when you enquire.",
+            held: `Someone has a provisional option on this room for this date. A second option may be possible: contact the venue team to ask (${profile.enquiryUrl}). The venue team confirms availability when you enquire.`,
             busy: "The room has a confirmed booking or a venue closure at some time on this date.",
           },
           rooms: rooms.map((room) => ({

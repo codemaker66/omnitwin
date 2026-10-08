@@ -17,15 +17,18 @@ import { publicMcpRoutes } from "../routes/public-mcp.js";
 
 // ---------------------------------------------------------------------------
 // The public MCP endpoint against migrated PostgreSQL (T-649): Blake's
-// boundary — venue facts, published capacities and free/busy only, no client
-// names — proven with real rows.
+// boundary — venue facts, published capacities and free/held/busy only, no
+// client names — proven with real rows.
 //
 // The fixture seeds a venue's private life with distinctive strings (client,
-// event, booking title, notes, next action, owner, enquiry guest) and a second
-// tenant that is not opted in. Every response body the official MCP client
-// receives, in both protocol eras, must carry none of them; free/busy must
-// follow the Diary's blocking rule exactly, including cancelled, released,
-// deleted, provisional and prospect rows and both 2026/27 clock changes.
+// event, booking title, notes, next action, owner, enquiry guest, decision
+// dates) and a second tenant that is not opted in. Every response body the
+// official MCP client receives, in both protocol eras, must carry none of
+// them, nor any option rank; each date must follow the Diary's rule exactly:
+// confirmed bookings and venue blocks busy, live provisional holds held (an
+// overdue decision date does not lapse one), and cancelled, released,
+// expired, deleted and prospect rows free — on the same and neighbouring days
+// and across both 2026/27 clock changes.
 //
 // Never loads .env or DATABASE_URL: only the explicit disposable platform
 // cluster (127.0.0.1:55477/venviewer_platform_test), migrated by the platform
@@ -67,6 +70,13 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     otherVenue: `Bellweather Private Rooms ${run}`,
     otherRoom: `Bellweather Ballroom ${run}`,
     otherTitle: `ARMADILLO-OTHER-TITLE-${run}`,
+  } as const;
+  // Hold hygiene dates: never to be shown. One decision date is already past
+  // at NOW, so its hold is overdue but still live in the Diary.
+  const PRIVATE_INSTANTS = {
+    decision: "2026-10-20T12:00:00.000Z",
+    overdueDecision: "2026-09-20T12:00:00.000Z",
+    nextActionDue: "2026-10-15T09:00:00.000Z",
   } as const;
   const venueId = randomUUID();
   const otherVenueId = randomUUID();
@@ -124,33 +134,77 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     });
 
     const owned = { ownerUserId: ownerId, createdBy: ownerId, eventType: PRIVATE.eventType, notes: PRIVATE.notes };
-    // Confirmed, 18:00 BST on Saturday 24 Oct to 01:30 BST: busy on the 24th only.
+    // A provisional hold carries the hygiene fields the Diary requires.
+    const hold = (rank: number, decisionAt: string) => ({
+      ...owned, kind: "hold" as const, rank, nextAction: PRIVATE.nextAction,
+      decisionAt: new Date(decisionAt), nextActionDueAt: new Date(PRIVATE_INSTANTS.nextActionDue),
+    });
+
+    // --- The autumn change night, 24/25 October 2026 ---------------------
+    // Grand Hall, Sat 24: confirmed 18:00 to 01:30 BST, and a live 1st option
+    // earlier the same day — busy wins.
     await booking({ ...owned, spaceId: grandHall, kind: "ink", title: PRIVATE.title, eventId, enquiryId,
       startsAt: new Date("2026-10-24T17:00:00.000Z"), endsAt: new Date("2026-10-25T00:30:00.000Z") });
-    // The venue's own block at 03:30 GMT, after the clocks went back: still the 24th.
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: grandHall, title: `${PRIVATE.holdTitle} same day`,
+      startsAt: new Date("2026-10-24T09:00:00.000Z"), endsAt: new Date("2026-10-24T13:00:00.000Z") });
+    // Fri 23: a live hold whose decision date has already passed. The Diary
+    // keeps it live (a decision due) until staff record an exit: held.
+    await booking({ ...hold(1, PRIVATE_INSTANTS.overdueDecision), spaceId: grandHall, title: `${PRIVATE.holdTitle} overdue`,
+      startsAt: new Date("2026-10-23T10:00:00.000Z"), endsAt: new Date("2026-10-23T16:00:00.000Z") });
+    // Sun 25 and Mon 26: an expired and a released hold leave the room free.
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: grandHall, status: "expired", title: `${PRIVATE.holdTitle} expired`,
+      startsAt: new Date("2026-10-25T10:00:00.000Z"), endsAt: new Date("2026-10-25T16:00:00.000Z") });
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: grandHall, status: "released", title: `${PRIVATE.holdTitle} released 26`,
+      startsAt: new Date("2026-10-26T10:00:00.000Z"), endsAt: new Date("2026-10-26T16:00:00.000Z") });
+    // Saloon: the venue's own block at 03:30 GMT after the clocks went back is
+    // still the 24th; a live 2nd option from 04:30 GMT is the 25th's.
     await booking({ ...owned, spaceId: saloon, kind: "internal_block", title: `${PRIVATE.title} block`,
       startsAt: new Date("2026-10-25T03:30:00.000Z"), endsAt: new Date("2026-10-25T03:59:00.000Z") });
-    // November: every row here leaves the rooms free.
+    await booking({ ...hold(2, PRIVATE_INSTANTS.decision), spaceId: saloon, title: `${PRIVATE.holdTitle} after the change`,
+      startsAt: new Date("2026-10-25T04:30:00.000Z"), endsAt: new Date("2026-10-25T10:00:00.000Z") });
+    // Saloon, Fri 23 and Mon 26: a lost hold and a deleted live hold, both free.
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: saloon, status: "lost", title: `${PRIVATE.holdTitle} lost`,
+      startsAt: new Date("2026-10-23T10:00:00.000Z"), endsAt: new Date("2026-10-23T16:00:00.000Z") });
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: saloon, title: `${PRIVATE.holdTitle} deleted`,
+      deletedAt: new Date("2026-09-30T09:00:00.000Z"),
+      startsAt: new Date("2026-10-26T10:00:00.000Z"), endsAt: new Date("2026-10-26T16:00:00.000Z") });
+
+    // --- November: one live hold; every other row leaves the rooms free ----
     await booking({ ...owned, spaceId: grandHall, kind: "ink", status: "cancelled", title: `${PRIVATE.title} cancelled`,
       startsAt: new Date("2026-11-07T10:00:00.000Z"), endsAt: new Date("2026-11-07T22:00:00.000Z") });
-    await booking({ ...owned, spaceId: grandHall, kind: "hold", rank: 1, title: PRIVATE.holdTitle, nextAction: PRIVATE.nextAction,
-      decisionAt: new Date("2026-10-20T12:00:00.000Z"), nextActionDueAt: new Date("2026-10-15T09:00:00.000Z"),
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: grandHall, title: PRIVATE.holdTitle,
       startsAt: new Date("2026-11-14T10:00:00.000Z"), endsAt: new Date("2026-11-14T22:00:00.000Z") });
     await booking({ ...owned, spaceId: grandHall, kind: "prospect", title: `${PRIVATE.title} prospect`,
       startsAt: new Date("2026-11-21T10:00:00.000Z"), endsAt: new Date("2026-11-21T22:00:00.000Z") });
     await booking({ ...owned, spaceId: saloon, kind: "ink", title: `${PRIVATE.title} deleted`, deletedAt: new Date("2026-09-30T09:00:00.000Z"),
       startsAt: new Date("2026-11-07T10:00:00.000Z"), endsAt: new Date("2026-11-07T22:00:00.000Z") });
-    await booking({ ...owned, spaceId: saloon, kind: "hold", status: "released", title: `${PRIVATE.holdTitle} released`,
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: saloon, status: "released", title: `${PRIVATE.holdTitle} released`,
       startsAt: new Date("2026-11-14T10:00:00.000Z"), endsAt: new Date("2026-11-14T22:00:00.000Z") });
     await booking({ ...owned, spaceId: grandHall, kind: "internal_block", status: "released", title: `${PRIVATE.title} lifted`,
       startsAt: new Date("2026-11-28T00:00:00.000Z"), endsAt: new Date("2026-11-29T00:00:00.000Z") });
     // A three-night closure: busy 24, 25 and 26 December, free on the 27th.
     await booking({ ...owned, spaceId: saloon, kind: "internal_block", title: `${PRIVATE.title} closure`,
       startsAt: new Date("2026-12-24T04:00:00.000Z"), endsAt: new Date("2026-12-27T04:00:00.000Z") });
-    // 03:30 to 04:30 BST on 28 March 2027: crosses the 04:00 boundary just after
-    // the clocks went forward, so both the 27th and the 28th are busy.
+
+    // --- The spring change, 28 March 2027 --------------------------------
+    // Grand Hall: confirmed 03:30 to 04:30 BST crosses the 04:00 boundary just
+    // after the clocks went forward (busy 27 and 28); a live hold later on the
+    // 28th stays under the confirmed booking; a live hold on the 29th is held;
+    // an expired hold on the 26th is free.
     await booking({ ...owned, spaceId: grandHall, kind: "ink", title: `${PRIVATE.title} spring`,
       startsAt: new Date("2027-03-28T02:30:00.000Z"), endsAt: new Date("2027-03-28T03:30:00.000Z") });
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: grandHall, title: `${PRIVATE.holdTitle} spring same day`,
+      startsAt: new Date("2027-03-28T10:00:00.000Z"), endsAt: new Date("2027-03-28T16:00:00.000Z") });
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: grandHall, title: `${PRIVATE.holdTitle} spring next day`,
+      startsAt: new Date("2027-03-29T10:00:00.000Z"), endsAt: new Date("2027-03-29T16:00:00.000Z") });
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: grandHall, status: "expired", title: `${PRIVATE.holdTitle} spring expired`,
+      startsAt: new Date("2027-03-26T10:00:00.000Z"), endsAt: new Date("2027-03-26T16:00:00.000Z") });
+    // Saloon: a live hold 04:30 to 06:00 BST is the 28th's only; a released
+    // hold on the 27th is free.
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: saloon, title: `${PRIVATE.holdTitle} spring early`,
+      startsAt: new Date("2027-03-28T03:30:00.000Z"), endsAt: new Date("2027-03-28T05:00:00.000Z") });
+    await booking({ ...hold(1, PRIVATE_INSTANTS.decision), spaceId: saloon, status: "released", title: `${PRIVATE.holdTitle} spring released`,
+      startsAt: new Date("2027-03-27T10:00:00.000Z"), endsAt: new Date("2027-03-27T16:00:00.000Z") });
     // The other tenant's confirmed booking on a date ours leave free.
     await booking({ spaceId: otherRoom, kind: "ink", title: PRIVATE.otherTitle, notes: PRIVATE.otherTitle,
       startsAt: new Date("2026-10-23T09:00:00.000Z"), endsAt: new Date("2026-10-23T17:00:00.000Z") }, otherVenueId);
@@ -185,18 +239,21 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
     return connected;
   }
 
-  type Days = Record<string, "free" | "busy">;
+  type Days = Record<string, "free" | "held" | "busy">;
   async function availability(mcp: Client, from: string, to: string): Promise<Record<string, Days>> {
     const result = await mcp.callTool({ name: "check_availability", arguments: { venue: allowedSlug, from, to } });
     expect(result.isError).not.toBe(true);
     const report = result.structuredContent as {
       rooms: { room: string; name: string; days: Days }[];
+      meaning: Record<string, string>;
       [key: string]: unknown;
     };
     expect(Object.keys(report).sort()).toEqual(["asOf", "dayRule", "enquire", "from", "meaning", "rooms", "timeZone", "to", "venue"]);
+    expect(Object.keys(report.meaning).sort()).toEqual(["busy", "free", "held"]);
     for (const entry of report.rooms) {
       expect(Object.keys(entry).sort()).toEqual(["days", "name", "room"]);
-      for (const status of Object.values(entry.days)) expect(["free", "busy"]).toContain(status);
+      // One word per date: no rank, count, time or name rides along.
+      for (const status of Object.values(entry.days)) expect(["free", "held", "busy"]).toContain(status);
     }
     return Object.fromEntries(report.rooms.map((entry) => [entry.room, entry.days]));
   }
@@ -211,33 +268,42 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
   }
 
   describe.each(["modern", "legacy"] as const)("%s era", (era) => {
-    it("follows the Diary's blocking rule across the autumn clock change", async () => {
+    it("follows the Diary's rule across the autumn clock change: busy over held, exits free", async () => {
       const rooms = await availability(await client(era), "2026-10-23", "2026-10-26");
       expect(rooms).toEqual({
-        "grand-hall": { "2026-10-23": "free", "2026-10-24": "busy", "2026-10-25": "free", "2026-10-26": "free" },
-        saloon: { "2026-10-23": "free", "2026-10-24": "busy", "2026-10-25": "free", "2026-10-26": "free" },
+        // 23: a live hold past its decision date; 24: confirmed plus a hold;
+        // 25: an expired hold; 26: a released hold.
+        "grand-hall": { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": "free", "2026-10-26": "free" },
+        // 23: a lost hold; 24: the block at 03:30 GMT; 25: a live 2nd option
+        // from 04:30 GMT; 26: a deleted hold.
+        saloon: { "2026-10-23": "free", "2026-10-24": "busy", "2026-10-25": "held", "2026-10-26": "free" },
         "store-room": allFree("2026-10-23", 4),
       });
     });
 
-    it("leaves cancelled, deleted, released, provisional and prospect rows free", async () => {
+    it("holds a date for a live option only, leaving cancelled, deleted, released and prospect rows free", async () => {
       const rooms = await availability(await client(era), "2026-11-01", "2026-11-30");
       expect(rooms).toEqual({
-        "grand-hall": allFree("2026-11-01", 30),
+        "grand-hall": { ...allFree("2026-11-01", 30), "2026-11-14": "held" },
         saloon: allFree("2026-11-01", 30),
         "store-room": allFree("2026-11-01", 30),
       });
     });
 
-    it("marks a multi-day closure and a booking across the spring boundary", async () => {
+    it("marks a multi-day closure, and busy and held dates across the spring boundary", async () => {
       const mcp = await client(era);
       const december = await availability(mcp, "2026-12-23", "2026-12-27");
       expect(december["saloon"]).toEqual({
         "2026-12-23": "free", "2026-12-24": "busy", "2026-12-25": "busy", "2026-12-26": "busy", "2026-12-27": "free",
       });
       const spring = await availability(mcp, "2027-03-26", "2027-03-29");
-      expect(spring["grand-hall"]).toEqual({
-        "2027-03-26": "free", "2027-03-27": "busy", "2027-03-28": "busy", "2027-03-29": "free",
+      expect(spring).toEqual({
+        // 26: an expired hold; 27 and 28: the confirmed booking across 04:00
+        // BST (the 28th's live hold stays under it); 29: a live hold.
+        "grand-hall": { "2027-03-26": "free", "2027-03-27": "busy", "2027-03-28": "busy", "2027-03-29": "held" },
+        // 27: a released hold; 28: a live hold from 04:30 BST, the 28th's only.
+        saloon: { "2027-03-26": "free", "2027-03-27": "free", "2027-03-28": "held", "2027-03-29": "free" },
+        "store-room": allFree("2027-03-26", 4),
       });
     });
 
@@ -278,8 +344,14 @@ describe.skipIf(target === undefined)("public MCP on migrated PostgreSQL", () =>
       eventId,
       enquiryId,
       ...bookingIds,
-      // Booking times never leave as instants: only dates and the cache stamp do.
+      // Booking and hold times never leave as instants: only dates and the
+      // cache stamp do. Decision and next-action dates never leave at all.
       "2026-10-24T17:00", "2026-10-25T03:30", "2027-03-28T02:30",
+      "2026-10-24T09:00", "2026-10-23T10:00", "2026-10-25T04:30", "2027-03-28T03:30", "2027-03-29T10:00",
+      PRIVATE_INSTANTS.decision.slice(0, 16), PRIVATE_INSTANTS.overdueDecision.slice(0, 16),
+      PRIVATE_INSTANTS.nextActionDue.slice(0, 16),
+      // No option rank, in words or as a field.
+      "1st option", "2nd option", "Joint 1st", "\"rank\"",
     ];
     for (const body of bodies) {
       for (const secret of forbidden) expect(body, `a response carried ${secret}`).not.toContain(secret);

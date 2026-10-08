@@ -19,10 +19,10 @@ import {
   publicToolInputs,
 } from "../routes/public-mcp.js";
 import type {
-  BlockingInterval,
   PublicDiscoveryStore,
   PublicRoomRecord,
   PublicVenueRecord,
+  RoomInterval,
 } from "../services/public-discovery.js";
 
 // ---------------------------------------------------------------------------
@@ -54,14 +54,17 @@ const OTHER: PublicVenueRecord = {
   timeZone: "Europe/London",
   rooms: [room("oh", "hall", "Other Hall")],
 };
-const INTERVALS: Record<string, readonly BlockingInterval[]> = {
-  [TRADES_HALL.id]: [{ spaceId: "gh", startsAt: new Date("2026-10-24T17:00:00.000Z"), endsAt: new Date("2026-10-25T00:30:00.000Z") }],
-  [OTHER.id]: [{ spaceId: "oh", startsAt: new Date("2026-10-23T09:00:00.000Z"), endsAt: new Date("2026-10-23T17:00:00.000Z") }],
+const INTERVALS: Record<string, readonly RoomInterval[]> = {
+  [TRADES_HALL.id]: [
+    { spaceId: "gh", effect: "busy", startsAt: new Date("2026-10-24T17:00:00.000Z"), endsAt: new Date("2026-10-25T00:30:00.000Z") },
+    { spaceId: "gh", effect: "held", startsAt: new Date("2026-10-23T10:00:00.000Z"), endsAt: new Date("2026-10-23T16:00:00.000Z") },
+  ],
+  [OTHER.id]: [{ spaceId: "oh", effect: "busy", startsAt: new Date("2026-10-23T09:00:00.000Z"), endsAt: new Date("2026-10-23T17:00:00.000Z") }],
 };
 
 const store: PublicDiscoveryStore = {
   loadVenue: (slug) => Promise.resolve([TRADES_HALL, OTHER].find((venue) => venue.slug === slug) ?? null),
-  loadBlockingIntervals: (venueId, from, to) => Promise.resolve(
+  loadRoomIntervals: (venueId, from, to) => Promise.resolve(
     (INTERVALS[venueId] ?? []).filter((item) => item.startsAt < to && item.endsAt > from),
   ),
 };
@@ -127,7 +130,10 @@ describe("public MCP endpoint, in-memory store", () => {
         expect(tool.inputSchema).toMatchObject({ type: "object", additionalProperties: false });
       }
       const availability = tools.find((tool) => tool.name === "check_availability");
-      expect(availability?.description).toContain("never who booked");
+      expect(availability?.description).toContain("never who booked or holds it");
+      expect(availability?.description).toContain("\"held\" means someone has a provisional option on that date: a second option may be possible");
+      expect(availability?.description).toContain("https://venviewer.com/#enquire");
+      expect(availability?.description).toContain("the venue team confirms availability");
       expect(availability?.inputSchema.required).toEqual(["from", "to"]);
       expect(mcp.getInstructions()).toContain("Nothing here can send an enquiry, hold a date or make a booking");
     });
@@ -150,15 +156,18 @@ describe("public MCP endpoint, in-memory store", () => {
       expect(JSON.parse(text(result))).toEqual(result.structuredContent);
     });
 
-    it("answers free or busy per room per date", async () => {
+    it("answers free, held or busy per room per date, and says what held means", async () => {
       const mcp = await client(era);
       const result = await mcp.callTool({
         name: "check_availability", arguments: { from: "2026-10-23", to: "2026-10-25", room: "grand-hall" },
       });
       expect(result.isError).not.toBe(true);
-      expect((result.structuredContent as { rooms: unknown[] }).rooms).toEqual([
-        { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": "free", "2026-10-24": "busy", "2026-10-25": "free" } },
+      const report = result.structuredContent as { rooms: unknown[]; meaning: { held: string } };
+      expect(report.rooms).toEqual([
+        { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": "held", "2026-10-24": "busy", "2026-10-25": "free" } },
       ]);
+      expect(report.meaning.held).toContain("A second option may be possible");
+      expect(text(result)).toContain("Someone has a provisional option");
     });
 
     it("explains how to enquire, through staff", async () => {

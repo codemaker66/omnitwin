@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ROOM_BLOCKING_BOOKING_KINDS,
+  ROOM_OPTION_BOOKING_KINDS,
   TRADES_HALL_PUBLIC_PROFILE,
-  bookingBlocksRoom,
+  bookingRoomStatus,
+  isLiveBooking,
+  publicDayStatus,
   type BookingKind,
   type BookingLiveness,
   type PublicVenueProfile,
@@ -18,15 +21,15 @@ import {
   isCalendarDate,
   roomDayStatuses,
   venueDayWindow,
-  type BlockingInterval,
   type PublicDiscoveryStore,
   type PublicRoomRecord,
   type PublicVenueRecord,
+  type RoomInterval,
 } from "../services/public-discovery.js";
 
 // ---------------------------------------------------------------------------
 // The public discovery boundary (T-649), without a database: the Diary's
-// blocking rule, the venue's operational day across Europe/London clock
+// busy and held rule, the venue's operational day across Europe/London clock
 // changes, published-only capacities, the allowlist, and the cache.
 // public-mcp-postgres.test.ts runs the same rules through the real query
 // against migrated PostgreSQL.
@@ -35,8 +38,8 @@ import {
 const LONDON = "Europe/London";
 const HOUR = 3_600_000;
 
-function interval(spaceId: string, startsAt: string, endsAt: string): BlockingInterval {
-  return { spaceId, startsAt: new Date(startsAt), endsAt: new Date(endsAt) };
+function interval(spaceId: string, startsAt: string, endsAt: string, effect: "busy" | "held" = "busy"): RoomInterval {
+  return { spaceId, effect, startsAt: new Date(startsAt), endsAt: new Date(endsAt) };
 }
 
 function room(slug: string, overrides: Partial<PublicRoomRecord> = {}): PublicRoomRecord {
@@ -52,29 +55,49 @@ function room(slug: string, overrides: Partial<PublicRoomRecord> = {}): PublicRo
   };
 }
 
-describe("the Diary's blocking rule", () => {
-  const cases: readonly [BookingKind, BookingLiveness, boolean][] = [
-    ["ink", "active", true],
-    ["internal_block", "active", true],
-    ["hold", "active", false],
-    ["prospect", "active", false],
-    ["ink", "cancelled", false],
-    ["internal_block", "released", false],
-    ["hold", "released", false],
-    ["hold", "expired", false],
-    ["prospect", "lost", false],
+describe("the Diary's busy and held rule", () => {
+  const cases: readonly [BookingKind, BookingLiveness, "busy" | "held" | null][] = [
+    ["ink", "active", "busy"],
+    ["internal_block", "active", "busy"],
+    ["hold", "active", "held"],
+    ["prospect", "active", null],
+    ["ink", "cancelled", null],
+    ["internal_block", "released", null],
+    ["hold", "released", null],
+    ["hold", "expired", null],
+    ["hold", "lost", null],
+    ["prospect", "lost", null],
   ];
 
-  it.each(cases)("%s / %s blocks the room: %s", (kind, status, blocks) => {
-    expect(bookingBlocksRoom({ kind, status, deletedAt: null })).toBe(blocks);
+  it.each(cases)("%s / %s makes the room %s", (kind, status, effect) => {
+    expect(bookingRoomStatus({ kind, status, deletedAt: null })).toBe(effect);
   });
 
   it("never counts a soft-deleted booking, whatever its kind", () => {
-    expect(bookingBlocksRoom({ kind: "ink", status: "active", deletedAt: new Date() })).toBe(false);
+    for (const kind of ["ink", "internal_block", "hold"] as const) {
+      expect(bookingRoomStatus({ kind, status: "active", deletedAt: new Date() })).toBeNull();
+    }
   });
 
-  it("is confirmed bookings and the venue's own blocks — provisional holds stay open", () => {
+  it("reads liveness exactly as the Diary does: active and not deleted, nothing on the clock", () => {
+    expect(isLiveBooking({ status: "active", deletedAt: null })).toBe(true);
+    expect(isLiveBooking({ status: "active", deletedAt: "2026-10-01T00:00:00.000Z" })).toBe(false);
+    for (const status of ["released", "expired", "cancelled", "lost"] as const) {
+      expect(isLiveBooking({ status, deletedAt: null })).toBe(false);
+    }
+  });
+
+  it("is confirmed bookings and the venue's own blocks for busy, provisional holds for held", () => {
     expect([...ROOM_BLOCKING_BOOKING_KINDS]).toEqual(["ink", "internal_block"]);
+    expect([...ROOM_OPTION_BOOKING_KINDS]).toEqual(["hold"]);
+  });
+
+  it("answers busy over held over free, never more than the one word", () => {
+    expect(publicDayStatus([])).toBe("free");
+    expect(publicDayStatus(["held"])).toBe("held");
+    expect(publicDayStatus(["held", "held", "held"])).toBe("held");
+    expect(publicDayStatus(["held", "busy", "held"])).toBe("busy");
+    expect(publicDayStatus(["busy"])).toBe("busy");
   });
 });
 
@@ -129,6 +152,28 @@ describe("the venue's operational day (04:00 to 04:00, Europe/London)", () => {
       .toEqual({
         "2026-12-23": "free", "2026-12-24": "busy", "2026-12-25": "busy", "2026-12-26": "busy", "2026-12-27": "free",
       });
+  });
+
+  it("answers held for a provisional option, and busy where a confirmed booking shares the date", () => {
+    const day = [
+      interval("r", "2026-11-14T10:00:00.000Z", "2026-11-14T22:00:00.000Z", "held"),
+      interval("r", "2026-11-21T10:00:00.000Z", "2026-11-21T22:00:00.000Z", "held"),
+      interval("r", "2026-11-21T09:00:00.000Z", "2026-11-21T12:00:00.000Z", "busy"),
+    ];
+    expect(roomDayStatuses(day, ["2026-11-13", "2026-11-14", "2026-11-21"], LONDON))
+      .toEqual({ "2026-11-13": "free", "2026-11-14": "held", "2026-11-21": "busy" });
+  });
+
+  it("places a hold by the venue's clock on both change nights", () => {
+    const holds = [
+      // 03:30 GMT after the clocks went back: still the 24th's night.
+      interval("r", "2026-10-25T03:30:00.000Z", "2026-10-25T03:59:00.000Z", "held"),
+      // 04:30 to 06:00 BST on 28 March 2027: the 28th only.
+      interval("r", "2027-03-28T03:30:00.000Z", "2027-03-28T05:00:00.000Z", "held"),
+    ];
+    expect(roomDayStatuses(holds, ["2026-10-24", "2026-10-25", "2027-03-27", "2027-03-28"], LONDON)).toEqual({
+      "2026-10-24": "held", "2026-10-25": "free", "2027-03-27": "free", "2027-03-28": "held",
+    });
   });
 });
 
@@ -198,13 +243,13 @@ describe("rooms: recorded dimensions and published-only capacities", () => {
 
 const NOW = Date.parse("2026-10-01T11:00:00.000Z");
 
-function memoryStore(records: Record<string, PublicVenueRecord>, intervals: Record<string, readonly BlockingInterval[]> = {}) {
+function memoryStore(records: Record<string, PublicVenueRecord>, intervals: Record<string, readonly RoomInterval[]> = {}) {
   const loadVenue = vi.fn((slug: string) => Promise.resolve(records[slug] ?? null));
-  const loadBlockingIntervals = vi.fn((venueId: string, from: Date, to: Date) => Promise.resolve(
+  const loadRoomIntervals = vi.fn((venueId: string, from: Date, to: Date) => Promise.resolve(
     (intervals[venueId] ?? []).filter((item) => item.startsAt < to && item.endsAt > from),
   ));
-  const store: PublicDiscoveryStore = { loadVenue, loadBlockingIntervals };
-  return { store, loadVenue, loadBlockingIntervals };
+  const store: PublicDiscoveryStore = { loadVenue, loadRoomIntervals };
+  return { store, loadVenue, loadRoomIntervals };
 }
 
 const TRADES_HALL: PublicVenueRecord = {
@@ -238,19 +283,35 @@ describe("PublicDiscovery", () => {
     expect(await discovery.describe(TRADES_HALL.slug)).toEqual({ ok: false, message: VENUE_NOT_AVAILABLE_MESSAGE });
   });
 
-  it("reports each room free or busy per date from blocking intervals only", async () => {
+  it("reports each room free, held or busy per date from busy and held intervals only", async () => {
     const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL }, {
-      [TRADES_HALL.id]: [interval("gh", "2026-10-24T17:00:00.000Z", "2026-10-25T00:30:00.000Z")],
+      [TRADES_HALL.id]: [
+        interval("gh", "2026-10-24T17:00:00.000Z", "2026-10-25T00:30:00.000Z"),
+        interval("gh", "2026-10-24T10:00:00.000Z", "2026-10-24T16:00:00.000Z", "held"),
+        interval("sa", "2026-10-25T10:00:00.000Z", "2026-10-25T16:00:00.000Z", "held"),
+      ],
     });
     const discovery = new PublicDiscovery({ store, now: () => NOW });
     const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-23", to: "2026-10-25" });
     if (!outcome.ok) throw new Error(outcome.message);
     expect(outcome.value.rooms).toEqual([
       { room: "grand-hall", name: "Grand Hall", days: { "2026-10-23": "free", "2026-10-24": "busy", "2026-10-25": "free" } },
-      { room: "saloon", name: "Saloon", days: { "2026-10-23": "free", "2026-10-24": "free", "2026-10-25": "free" } },
+      { room: "saloon", name: "Saloon", days: { "2026-10-23": "free", "2026-10-24": "free", "2026-10-25": "held" } },
     ]);
     expect(outcome.value.timeZone).toBe(LONDON);
     expect(outcome.value.enquire).toBe("https://venviewer.com/#enquire");
+  });
+
+  it("says what held means in plain words: an option exists, a second may be possible, ask the team", async () => {
+    const { store } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL });
+    const discovery = new PublicDiscovery({ store, now: () => NOW });
+    const outcome = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-02" });
+    if (!outcome.ok) throw new Error(outcome.message);
+    expect(outcome.value.meaning.held).toContain("Someone has a provisional option");
+    expect(outcome.value.meaning.held).toContain("A second option may be possible");
+    expect(outcome.value.meaning.held).toContain("https://venviewer.com/#enquire");
+    expect(outcome.value.meaning.held).toContain("The venue team confirms availability");
+    expect(outcome.value.meaning.free).toContain("The venue team confirms availability");
   });
 
   it("narrows to one room, and names the rooms when asked about one it lacks", async () => {
@@ -281,7 +342,7 @@ describe("PublicDiscovery", () => {
 
   it("reads each venue once per cache period, shares concurrent reads, and re-reads after it", async () => {
     let now = NOW;
-    const { store, loadVenue, loadBlockingIntervals } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL });
+    const { store, loadVenue, loadRoomIntervals } = memoryStore({ [TRADES_HALL.slug]: TRADES_HALL });
     const discovery = new PublicDiscovery({ store, now: () => now });
     await Promise.all([
       discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-30" }),
@@ -289,14 +350,14 @@ describe("PublicDiscovery", () => {
       discovery.describe(TRADES_HALL.slug),
     ]);
     expect(loadVenue).toHaveBeenCalledTimes(1);
-    expect(loadBlockingIntervals).toHaveBeenCalledTimes(1);
+    expect(loadRoomIntervals).toHaveBeenCalledTimes(1);
     now += PUBLIC_DISCOVERY_CACHE_TTL_MS - 1;
     await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-03" });
-    expect(loadBlockingIntervals).toHaveBeenCalledTimes(1);
+    expect(loadRoomIntervals).toHaveBeenCalledTimes(1);
     now += 2;
     const fresh = await discovery.availability({ venue: TRADES_HALL.slug, from: "2026-10-02", to: "2026-10-03" });
     expect(loadVenue).toHaveBeenCalledTimes(2);
-    expect(loadBlockingIntervals).toHaveBeenCalledTimes(2);
+    expect(loadRoomIntervals).toHaveBeenCalledTimes(2);
     expect(fresh.ok && fresh.value.asOf).toBe(new Date(now).toISOString());
   });
 
@@ -305,7 +366,7 @@ describe("PublicDiscovery", () => {
     const loadVenue = vi.fn()
       .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:5432"))
       .mockResolvedValue(TRADES_HALL);
-    const store: PublicDiscoveryStore = { loadVenue, loadBlockingIntervals: () => Promise.resolve([]) };
+    const store: PublicDiscoveryStore = { loadVenue, loadRoomIntervals: () => Promise.resolve([]) };
     const discovery = new PublicDiscovery({ store, now: () => NOW, onReadError });
     const failed = await discovery.describe(TRADES_HALL.slug);
     expect(failed.ok).toBe(false);
