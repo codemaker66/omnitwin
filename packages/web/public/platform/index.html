@@ -148,7 +148,7 @@
           </ol>
           <div class="platform-build-note">
             <span>Where we are today</span>
-            <p>The working product includes saved layouts, review and approval, and approved-layout setup sheets. Wider venue operations are still in development as we prepare for our first operational venue rollout.</p>
+            <p>The working product includes saved layouts, review and approval, and approved-layout setup sheets. Proposal messages drafted by Claude are built and tested, ready to switch on with the venue’s team. Wider venue operations are still in development as we prepare for our first operational venue rollout.</p>
           </div>
         </section>
 
@@ -170,18 +170,18 @@
 
         <section class="platform-next platform-width" id="next" aria-labelledby="next-title">
           <div class="platform-next-heading">
-            <p class="platform-eyebrow">Next: Claude integration</p>
+            <p class="platform-eyebrow">Built on Claude</p>
             <h2 id="next-title">Useful assistance.<br /><em>Grounded in the venue.</em></h2>
-            <p>Claude supports development today. We’ve built an AI-assisted proposal-drafting workflow that keeps the draft separate and includes a read-through step before saving. Next, we’ll connect and evaluate Claude in that workflow, then extend it to structured enquiry intake.</p>
-            <p class="platform-next-status">Planned API integration</p>
+            <p>We build Venviewer with Claude Code, and our proposal-drafting workflow is now connected to Claude through Anthropic’s API. The event details the venue holds and the client’s own words go in as data, with phone numbers and email addresses removed; the draft comes back separately, for staff to read through before it is used.</p>
+            <p class="platform-next-status">Connected and tested · Not yet switched on for venue use</p>
           </div>
           <div class="platform-ai-flow">
-            <ol aria-label="Planned enquiry assistance workflow">
-              <li><span aria-hidden="true">01</span><div><h3>Understand the enquiry</h3><p>Turn a customer’s message into structured event requirements and identify missing details.</p></div></li>
-              <li><span aria-hidden="true">02</span><div><h3>Prepare a grounded draft</h3><p>Draft a response or proposal using the venue’s approved information.</p></div></li>
-              <li><span aria-hidden="true">03</span><div><h3>Keep staff in control</h3><p>The workflow keeps generated wording separate until a user chooses to use it, and includes a read-through step before saving. Generating a draft does not send a message.</p></div></li>
+            <ol aria-label="Enquiry assistance workflow">
+              <li><span aria-hidden="true">01</span><div><h3>Prepare a grounded draft</h3><p>Built: Claude drafts the reply to a client from the event details and the client’s words, using only the facts it is given.</p></div></li>
+              <li><span aria-hidden="true">02</span><div><h3>Keep staff in control</h3><p>The draft stays separate until a member of staff chooses to use it, and must be read through before saving. Generating a draft never sends a message.</p></div></li>
+              <li><span aria-hidden="true">03</span><div><h3>Understand the enquiry</h3><p>Next: turn a customer’s message into structured event requirements and identify the details still missing.</p></div></li>
             </ol>
-            <p class="platform-evaluation">We plan to evaluate accuracy, staff editing effort and cost per enquiry before wider use.</p>
+            <p class="platform-evaluation">First evaluation, 8 October 2026: 12 made-up enquiries, including two prompt-injection attempts and questions about price, availability and access. In the final round, rule-based checks and a separate Claude grader found every draft within the facts it was given, with nothing confirmed that the venue had not confirmed and no injected instruction followed. Median 5.2 seconds and about one US cent per draft. Next: real enquiries with the venue’s team, measuring accuracy, staff edits and cost per enquiry.</p>
           </div>
         </section>
       </main>
