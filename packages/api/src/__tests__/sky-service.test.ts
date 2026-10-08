@@ -41,10 +41,13 @@ const SYNTHETIC_NORMALS: SkyNormalsFile = {
     resolutionKm: 1,
     licence: "Open Government Licence v3.0",
     citation: "Synthetic test citation.",
+    catalogueUrl: "https://example.invalid/catalogue",
+    doi: "10.0000/synthetic",
   },
   generatedAt: "2026-10-08T00:00:00Z",
-  inputs: [{ variable: "sun", url: "https://example.invalid/sun.nc", sha256: "0".repeat(64) }],
-  cell: { latitude: 55.8590, longitude: -4.2490 },
+  generator: { name: "synthetic", version: "0" },
+  inputs: [{ variable: "sun", url: "https://example.invalid/sun.nc", sha256: "0".repeat(64), bytes: 1, units: "hour", standardName: null, longName: null, cellMethods: null }],
+  cell: { latitude: 55.8590, longitude: -4.2490, eastingM: 0, northingM: 0, gridIndex: { x: 0, y: 0 }, site: { latitude: 55.8593, longitude: -4.2491 }, siteDistanceM: 0 },
   months: Array.from({ length: 12 }, (_, index) => ({
     month: index + 1,
     rainDaysAtLeast1mm: 15,
@@ -238,7 +241,7 @@ describe("degraded reasons and logging", () => {
   it("throws SkyUnavailableError when normals are needed and none cover the venue", async () => {
     const { service } = harness({ apiKey: undefined, normals: [] });
     await expect(service.skyFor(VENUE, ISSUED + HOUR)).rejects.toBeInstanceOf(SkyUnavailableError);
-    const far = harness({ apiKey: undefined, normals: [{ ...SYNTHETIC_NORMALS, cell: { latitude: 51.5, longitude: -0.12 } }] });
+    const far = harness({ apiKey: undefined, normals: [{ ...SYNTHETIC_NORMALS, cell: { ...SYNTHETIC_NORMALS.cell, latitude: 51.5, longitude: -0.12 } }] });
     await expect(far.service.skyFor(VENUE, ISSUED + HOUR)).rejects.toMatchObject({ forecastReason: "forecast_not_configured" });
   });
 });

@@ -17,13 +17,21 @@ import {
 
 const GLASGOW = { latitude: 55.8593, longitude: -4.2491 };
 
+function cellAt(latitude: number, longitude: number): SkyNormalsFile["cell"] {
+  return { latitude, longitude, eastingM: 0, northingM: 0, gridIndex: { x: 0, y: 0 }, site: GLASGOW, siteDistanceM: 0 };
+}
+
 function file(overrides: Partial<SkyNormalsFile> = {}): SkyNormalsFile {
   return {
     schemaVersion: 1,
-    dataset: { name: "HadUK-Grid", version: "synthetic-test", period: "1991-2020", resolutionKm: 1, licence: "Open Government Licence v3.0", citation: "Synthetic." },
+    dataset: {
+      name: "HadUK-Grid", version: "synthetic-test", period: "1991-2020", resolutionKm: 1,
+      licence: "Open Government Licence v3.0", citation: "Synthetic.", catalogueUrl: "https://example.invalid/catalogue", doi: "10.0000/synthetic",
+    },
     generatedAt: "2026-10-08T00:00:00Z",
-    inputs: [{ variable: "raindays1mm", url: "https://example.invalid/r.nc", sha256: "a".repeat(64) }],
-    cell: { latitude: 55.8590, longitude: -4.2490 },
+    generator: { name: "synthetic", version: "0" },
+    inputs: [{ variable: "raindays1mm", url: "https://example.invalid/r.nc", sha256: "a".repeat(64), bytes: 1, units: "1.0", standardName: null, longName: null, cellMethods: null }],
+    cell: cellAt(55.8590, -4.2490),
     months: Array.from({ length: 12 }, (_, index) => ({
       month: index + 1,
       rainDaysAtLeast1mm: 10 + index,
@@ -117,7 +125,7 @@ describe("normals selection", () => {
 
   it("uses only a file whose cell contains the venue", () => {
     expect(normalsFor([file()], GLASGOW)).not.toBeNull();
-    expect(normalsFor([file({ cell: { latitude: 55.875, longitude: -4.2491 } })], GLASGOW)).toBeNull();
+    expect(normalsFor([file({ cell: cellAt(55.875, -4.2491) })], GLASGOW)).toBeNull();
     expect(normalsFor([], GLASGOW)).toBeNull();
   });
 });
@@ -130,7 +138,7 @@ describe("SkyNormalsFileSchema", () => {
   it("refuses months out of order, a bad digest and a missing month", () => {
     const shuffled = file();
     expect(SkyNormalsFileSchema.safeParse({ ...shuffled, months: [...shuffled.months].reverse() }).success).toBe(false);
-    expect(SkyNormalsFileSchema.safeParse({ ...shuffled, inputs: [{ variable: "sun", url: "https://example.invalid/s.nc", sha256: "xyz" }] }).success).toBe(false);
+    expect(SkyNormalsFileSchema.safeParse({ ...shuffled, inputs: [{ variable: "sun", url: "https://example.invalid/s.nc", sha256: "xyz", bytes: 1, units: "hour", standardName: null, longName: null, cellMethods: null }] }).success).toBe(false);
     expect(SkyNormalsFileSchema.safeParse({ ...shuffled, months: shuffled.months.slice(1) }).success).toBe(false);
   });
 });

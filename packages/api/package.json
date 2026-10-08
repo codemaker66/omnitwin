@@ -25,6 +25,7 @@
     "db:verify-derivative-candidates": "tsx src/scripts/verify-foundry-derivative-candidate-postgres.ts",
     "db:seed": "tsx src/db/seed.ts",
     "venue:verify-site": "tsx src/scripts/verify-venue-site.ts",
+    "sky:normals": "tsx src/scripts/generate-sky-normals.ts",
     "platform-admin:bootstrap": "tsx src/scripts/bootstrap-platform-admin.ts",
     "assets:build-capture-control-source-from-runtime-control": "tsx src/scripts/build-capture-control-source-from-runtime-control.ts",
     "assets:build-runtime-control-coordinate-pair-collection-pack": "tsx src/scripts/build-runtime-control-coordinate-pair-collection-pack.ts",

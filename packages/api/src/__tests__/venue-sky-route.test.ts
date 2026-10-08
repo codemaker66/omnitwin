@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { VenueSkySchema } from "@omnitwin/types";
 import { venueSkyRoutes, type VenueLocationRecord, type VenueLocationStore } from "../routes/venue-sky.js";
 import { createVenueSkyService, type SkyLogger } from "../services/sky/sky-service.js";
+import { SKY_NORMALS } from "../services/sky/normals-data.js";
 import { collectionsBody, forecastTimes, instancesBody, percentilesBody, probabilitiesBody, routedFetch } from "./fixtures/met-office-bpf-v2.js";
 
 // ---------------------------------------------------------------------------
@@ -128,11 +129,53 @@ describe("GET /venues/:venueId/sky — a forecast", () => {
     expect(response.json<{ data: { at: string } }>().data.at).toBe(at.toISOString());
   });
 
-  it("answers 503 beyond the horizon while no normals are committed", async () => {
+  it("answers 503 beyond the horizon when no normals cover the venue", async () => {
     const at = new Date(now + 40 * 24 * 3_600_000).toISOString();
     const response = await server.inject({ method: "GET", url: `/venues/${LOCATED}/sky?at=${encodeURIComponent(at)}` });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toMatchObject({ details: { forecast: "beyond_forecast_horizon" } });
+  });
+});
+
+describe("GET /venues/:venueId/sky — the committed normals", () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    server = await serverWith(createVenueSkyService({ apiKey: undefined, normals: SKY_NORMALS, logger: silent }));
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it("answers a date beyond the horizon with the month's HadUK-Grid normals for the Trades Hall cell", async () => {
+    const at = "2027-01-15T18:00:00Z";
+    const response = await server.inject({ method: "GET", url: `/venues/${LOCATED}/sky?at=${encodeURIComponent(at)}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("public, max-age=3600");
+    const sky = VenueSkySchema.parse(response.json<{ data: unknown }>().data);
+    expect(sky.kind).toBe("normals");
+    expect(sky.degraded).toEqual({ reason: "beyond_forecast_horizon" });
+    const january = SKY_NORMALS[0]?.months[0];
+    expect(sky.climatology).toMatchObject({
+      period: "1991-2020",
+      month: 1,
+      rainDaysAtLeast1mm: january?.rainDaysAtLeast1mm,
+      snowLyingDays: january?.snowLyingDays,
+      sunshineHours: january?.sunshineHours,
+      meanTemperatureC: january?.meanTemperatureC,
+      meanWindSpeedMs: january?.meanWindSpeedMs,
+    });
+    expect(sky.temperatureC).toBe(january?.meanTemperatureC);
+    expect(sky.precipitation.probabilityDefinition).toBe("share_of_days_with_at_least_1_mm");
+    expect(sky.attribution[0]?.licence).toBe("Open Government Licence v3.0");
+    expect(sky.attribution[0]?.credit).toContain("Contains public sector information licensed under the Open Government Licence v3.0.");
+    expect(sky.attribution[0]?.credit).toContain("doi:10.5285/789b3065d74a4c948ab05d33556c86d0");
+  });
+
+  it("answers now with normals marked forecast_not_configured while there is no key", async () => {
+    const response = await server.inject({ method: "GET", url: `/venues/${LOCATED}/sky` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ data: { kind: string; degraded: unknown } }>().data).toMatchObject({ kind: "normals", degraded: { reason: "forecast_not_configured" } });
   });
 });
 

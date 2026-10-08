@@ -13,11 +13,11 @@ import { monthDaylightHours, sunshineFraction } from "./daylength.js";
 // bright sunshine hours (sun), mean air temperature (tas) and mean wind
 // speed (sfcWind), with the dataset version, input URLs and their sha256.
 //
-// Status, 8 October 2026: the CEDA files need a CEDA login to download, so
-// no normals file has been generated and none is committed. Until one is,
-// a request that needs normals is answered 503 SKY_UNAVAILABLE, never with
-// invented values. This module is the reading side, exercised by tests
-// with synthetic values.
+// The files are written by scripts/generate-sky-normals.ts from the
+// sha256-pinned CEDA inputs (the CEDA Archive serves them to signed-in
+// users; an account is free) and loaded by normals-data.ts. A venue whose
+// cell has no file gets 503 SKY_UNAVAILABLE when it needs normals, never
+// invented values.
 //
 // Derived values:
 // - precipitation.probability = rainDaysAtLeast1mm / days in the month
@@ -40,6 +40,10 @@ export const SkyNormalsMonthSchema = z.object({
   meanTemperatureC: z.number().min(-60).max(60).nullable(),
   meanWindSpeedMs: NullableNonNegative,
 }).strict();
+export type SkyNormalsMonth = z.infer<typeof SkyNormalsMonthSchema>;
+
+const Latitude = z.number().min(-90).max(90);
+const Longitude = z.number().min(-180).max(180);
 
 export const SkyNormalsFileSchema = z.object({
   schemaVersion: z.literal(1),
@@ -49,17 +53,35 @@ export const SkyNormalsFileSchema = z.object({
     period: z.literal("1991-2020"),
     resolutionKm: z.number().positive(),
     licence: z.literal("Open Government Licence v3.0"),
+    /** The citation the CEDA catalogue record requires. */
     citation: z.string().min(1),
+    catalogueUrl: z.string().url(),
+    doi: z.string().min(1),
   }).strict(),
   generatedAt: z.string().datetime(),
+  generator: z.object({ name: z.string().min(1), version: z.string().min(1) }).strict(),
   inputs: z.array(z.object({
     variable: z.enum(["raindays1mm", "snowLying", "sun", "tas", "sfcWind"]),
     url: z.string().url(),
     sha256: Hex64,
+    bytes: z.number().int().positive(),
+    /** As the file declares them (wind is converted to m/s on reading). */
+    units: z.string().min(1),
+    standardName: z.string().nullable(),
+    longName: z.string().nullable(),
+    cellMethods: z.string().nullable(),
   }).strict()).min(1),
+  /** The British National Grid cell the values belong to: its centre in
+   *  WGS84 and in grid metres, its index in the files, and the site it was
+   *  chosen for. */
   cell: z.object({
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
+    latitude: Latitude,
+    longitude: Longitude,
+    eastingM: z.number(),
+    northingM: z.number(),
+    gridIndex: z.object({ x: z.number().int().nonnegative(), y: z.number().int().nonnegative() }).strict(),
+    site: z.object({ latitude: Latitude, longitude: Longitude }).strict(),
+    siteDistanceM: z.number().nonnegative(),
   }).strict(),
   months: z.array(SkyNormalsMonthSchema).length(12),
 }).strict().superRefine((file, ctx) => {
@@ -150,7 +172,7 @@ export function buildNormalsSky(file: SkyNormalsFile, input: NormalsSkyInput): V
     meanWindSpeedMs: normals.meanWindSpeedMs,
     astronomicalDaylightHours: daylightHours,
     dataset: `${file.dataset.name} ${file.dataset.version} ${String(file.dataset.resolutionKm)} km mon-30y`,
-    cell: { ...file.cell, resolutionKm: file.dataset.resolutionKm },
+    cell: { latitude: file.cell.latitude, longitude: file.cell.longitude, resolutionKm: file.dataset.resolutionKm },
   };
   return {
     venueId: input.venueId,

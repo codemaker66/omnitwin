@@ -13,6 +13,7 @@ import { createRateLimitIdentity } from "./middleware/rate-limit-identity.js";
 import { venueRoutes } from "./routes/venues.js";
 import { drizzleVenueLocationStore, venueSkyRoutes } from "./routes/venue-sky.js";
 import { createVenueSkyService } from "./services/sky/sky-service.js";
+import { SKY_NORMALS } from "./services/sky/normals-data.js";
 import { venueInventoryRoutes } from "./routes/venue-inventory.js";
 import { inventoryReservationsRoutes } from "./routes/inventory-reservations.js";
 import { spaceRoutes } from "./routes/spaces.js";
@@ -387,12 +388,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- Routes ---
   await server.register(venueRoutes, { db, prefix: "/venues" });
-  // T-647: the weather over a venue. No HadUK-Grid normals are committed yet
-  // (their CEDA download needs a login), so `normals` is empty and a request
-  // that needs normals answers 503 SKY_UNAVAILABLE rather than invented values.
+  // T-647: the weather over a venue: the Met Office forecast when it can be
+  // served, otherwise the committed HadUK-Grid monthly normals for the venue's
+  // 1 km cell (a venue in a cell with no file answers 503 SKY_UNAVAILABLE).
   await server.register(venueSkyRoutes, {
     store: drizzleVenueLocationStore(db),
-    sky: createVenueSkyService({ apiKey: env.MET_OFFICE_BPF_API_KEY, normals: [], logger: server.log }),
+    sky: createVenueSkyService({ apiKey: env.MET_OFFICE_BPF_API_KEY, normals: SKY_NORMALS, logger: server.log }),
     prefix: "/venues",
   });
   await server.register(venueInventoryRoutes, { db, prefix: "/venues" });
