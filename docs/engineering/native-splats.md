@@ -298,6 +298,80 @@ receipts remain unchanged. Raw evidence, hashes, decisions and the HTML-report
 inputs live outside Git under the local task evidence directory recorded in
 [the 25 September session](../sessions/2026-09-25.md).
 
+## Sort-time culling and the whole-frame iterations (T-644)
+
+On the Grand Hall's resting camera 55% of the 6.03 million splats sit behind the
+camera and 15% outside the view; every one still ran the full vertex projection,
+and every behind-camera splat went to one sort bin, so the histogram and scatter
+atomics serialised on a single address (4.17 ms per GPU sort on the RTX 4090).
+WebGPU sorts now leave those splats out, as the [patch note](../../patches/README.three-native-splats.md)
+describes: conservative plane tests with travel/turn margins, forced re-sorts at
+90% of the margins, and a GPU-written `drawIndexedIndirect` count. Drawn splats keep
+their relative order, so frames match the full draw up to the atomic scatter's
+existing within-bin order. WebGL keeps complete CPU orders and direct draws.
+
+T-644 measures whole application frames: R3F `advance()` (every frame callback, the
+native pacer and the main draw) with up to two frames queued on the GPU, as the
+pacer allows, on four declared workloads — high-tier motion rotation and walk at
+pixel ratio 1, the settled pixel ratio 2, and the low-tier phone profile in a
+390×844 viewport with a 4× CPU slowdown. Each iteration runs control and candidate
+dev servers in A-B-B-A order, two 20-second runs per arm and workload after five
+seconds of warm-up; the score is the equal-weight mean of per-workload medians.
+Stills at five fixed phases plus five stale-order motion poses (22 cm back, 22 cm
+across, 2.2° roll, a mixed move and a 6° wider field of view) must stay within
+normalized RGB MAE 1% and SSIM 0.99; a control-vs-control pair gives the noise floor.
+
+Iteration 1 (sort-time culling, `f9545509`): 5.226 → 3.245 ms (+37.9%); motion
+rotation +43.8%, walk +42.6%, settled 2× +45.0%, phone profile +5.1%. The GPU
+sort fell to 0.46 ms. Maximum MAE 0.050% and minimum SSIM 0.9991 equal the
+control-vs-control floor (0.047%, 0.9992). A real-GPU readback of 22 exclusion and
+count cases is exact, and a property test of 20,000 adversarial boundary splats
+finds none that a sub-threshold camera motion could bring into view.
+
+Iteration 3 (footprint cull, `94f2cd4e`): +2.7%; desktop turning +6.1%, walking
++4.4%, settled 2× +3.2% (the phone proxy was noise). Iteration 4 (16 splats per
+instance, `6cb272ef`): the GPU draw pass fell 1.82 → 1.35 ms (A-B-B-A
+timestamps) because one instance per quad had bounded the draw by the GPU's
+per-instance front end (an empty vertex shader cost 1.19 ms for 1.75 M splats);
+the whole-frame metric moved −0.15% only because the shared machine paced both
+arms at ~2.7 ms that night. Iteration 2's algebraic major axis and, after
+batching, removing the sRGB conversion or the SH read changed nothing: the batched
+vertex stage is bound by the remaining per-splat work and, at pixel ratio 2, by
+fragments (3.07 ms at 2× against ~1.2 ms at 1×).
+
+Iteration 5 (lighting for the drawn splats only, `af244f96`): while walking, the
+GPU lighting pass fell 0.567 → 0.345 ms (A-B-B-A timestamps) and walking frames
++7.0%; the desktop score was +1.6% (2.816 → 2.772 ms). Its phone runs met another
+session's CPU load in one arm only and were not scored.
+
+Iteration 6 (opacity-contour quads, `19778303`): +4.1% (2.389 → 2.291 ms); turning
++0.3%, walking +1.9%, settled 2× +6.1%, phone profile +7.2% (flagged as noisy). The
+GPU draw pass fell 1.16 → 1.06 ms at pixel ratio 1 and 2.79 → 2.54 ms at 2 (A-B-B-A
+timestamps). Maximum MAE 0.095% and minimum SSIM 0.9986 against a control-vs-control
+floor of 0.049% and 0.9991. Iterations 2-6 each moved the whole-frame score by less
+than 5% (−4.9%, +2.7%, −0.2%, +1.6%, +4.1%), so the loop stopped there.
+
+The same run, on 4 October from 05:45 to 06:47 in a window the other sessions kept
+clear, measured the build before T-644, the iteration-5 control and the candidate in
+A-B-C-C-B-A order; all six arms were clean. Before and after: 4.282 → 2.291 ms
+(+46.5%); turning 4.228 → 2.104 ms (+50.2%), walking 4.845 → 2.179 ms (+55.0%),
+settled 2× 5.280 → 2.632 ms (+50.2%), phone profile 2.776 → 2.248 ms (+19.0%, runs
+varied up to 2× within an arm). Maximum MAE 0.103% and minimum SSIM 0.9986, against a
+before-vs-before floor of 0.061% and 0.9991. A review of the branch found that the
+drawn-set lighting pass needed nine storage buffers when the band-3 store is split;
+`026e352c` keeps a split store on the full lighting pass (see the patch note).
+
+The harness guards a shared PC: each arm logs every other process's GPU and CPU
+use (own processes by ancestry to the harness, re-resolved whenever Windows reuses
+a process ID), redoes runs that met foreign load, and treats the 4×-throttled phone
+proxy (±5% noisy even when quiet) with six runs per arm. Desktop runs count as
+contaminated above 15% foreign CPU: frames ran about 20% slower with other
+processes at 17-31%. Raising the browser's priority slowed GPU-bound frames by 22%
+and is not used. With several agent sessions active the background stays above that
+limit for hours, so decisive comparisons run in an agreed quiet window with the
+shared GPU lock held throughout. Scripts and receipts: `D:/claude/perf-20260929/`
+(`bench/`, `evidence/`).
+
 ## Rolling 20-second profiler
 
 The integrated profiler selects the visible main renderer and records successful
@@ -305,13 +379,19 @@ outer main draws, excluding offscreen captures and skipped pacer requests. Open
 with the backquote key in development, or load a development or production URL
 using `?profiler=1`. Only that explicit URL opt-in retains a touch-accessible
 Profiler launcher after closing the panel; ordinary routes have no floating
-launcher. It exposes twelve entries: rendered submission FPS;
-frame interval mean, p95 and p99; CPU submission; GPU render plus compute; draw
-calls; triangles; Gaussian splats; Three-tracked memory; sort duration; and sort
-order age. The display uses a rolling 20-second window and reports unavailable
-values explicitly. GPU timestamps are sampled at most once per second and are
-unavailable on WebGL; queue acknowledgement is never presented as a GPU timestamp.
-Memory is renderer-tracked allocation, not physical VRAM or JavaScript heap.
+launcher. Its twelve entries (T-644) locate the cost rather than only size it:
+rendered submission FPS; frame interval mean, p95 and p99; a bottleneck figure
+naming the side that fills the frame interval (GPU, CPU, or headroom when neither
+reaches 60%, meaning display or on-demand pacing sets the rate); CPU submission;
+GPU draw (render passes) and GPU sort + light (compute passes) separately; splats
+drawn after GPU culling against the loaded count, read back once a second; draw
+calls; main-thread long tasks; and Three-tracked memory with the Chrome JavaScript
+heap in its detail. Triangles, which indirect draws overstate, and the WebGL worker
+sort duration, order age and backlog move to a note line and the copied report
+(schema `venviewer.profiler.v2`). The display uses a rolling 20-second window and
+reports unavailable values explicitly. GPU timestamps are sampled at most once per
+second and are unavailable on WebGL; queue acknowledgement is never presented as a
+GPU timestamp. Memory is renderer-tracked allocation, not physical VRAM.
 
 Pause freezes measurement, Play starts a fresh window, Reset clears the window,
 and Copy report writes JSON with device, renderer, window, metrics and definitions.

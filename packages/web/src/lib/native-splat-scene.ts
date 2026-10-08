@@ -8,6 +8,9 @@ import { afterNativeCanvasGpuWork, isNativeCanvasRender, nativeRendererStorageLi
 import { NativeCpuSortPool, type NativeCpuSortHandle } from "./native-cpu-sort-pool.js";
 
 type NativeGaussianObject = GaussianSplat;
+/** The patched addon's WebGPU draw arguments end with the kept splat count (after the five
+ * drawIndexedIndirect words, whose instance count counts batches of splats). */
+const KEPT_SPLATS_ELEMENT = 5;
 
 export interface NativeScenePerfStats {
   readonly splats: number;
@@ -123,11 +126,22 @@ export class NativeSplatScene {
     if (active === null || !active.mesh.visible || active.sortFailed || active.completionFailed) return null;
     const stats = active.cpuSort?.stats(now) ?? null;
     return {
-      splats: active.mesh.geometry.instanceCount,
+      splats: active.mesh.splatCount,
       sortTimeMs: stats?.sortTimeMs ?? null,
       sortAgeMs: stats?.sortAgeMs ?? null,
       sortBacklog: stats?.sortBacklog ?? null,
     };
+  }
+
+  /** Splats the active draw keeps after GPU culling. WebGPU reads the sort's
+   * indirect arguments back; WebGL has no culling and draws every loaded splat. */
+  async drawnSplats(renderer: WebGPURenderer): Promise<number | null> {
+    const active = this.active;
+    if (active === null || !active.mesh.visible || active.sortFailed || active.completionFailed) return null;
+    if ("isWebGLBackend" in renderer.backend && renderer.backend.isWebGLBackend === true) return active.mesh.splatCount;
+    if (active.mesh.geometry.indirect !== active.mesh.drawIndirect) return null; // no GPU sort has run yet
+    const words = new Uint32Array(await renderer.getArrayBufferAsync(active.mesh.drawIndirect));
+    return words[KEPT_SPLATS_ELEMENT] ?? null;
   }
 
   attach(renderer: WebGPURenderer, camera: Camera, invalidate: () => void): () => void {
@@ -473,7 +487,7 @@ export class NativeSplatScene {
     };
     mesh.onAfterRender = (drawRenderer, _scene, drawCamera) => {
       if ((drawRenderer as unknown) !== this.renderer || drawCamera !== this.camera || !isNativeCanvasRender(drawRenderer, this.scene, drawCamera) || this.active !== snapshot
-        || snapshot.key !== this.key(this.selectedSources()) || mesh.geometry.instanceCount <= 0 || snapshot.completionFailed || snapshot.sortFailed || this.gpuCompletion !== null) return;
+        || snapshot.key !== this.key(this.selectedSources()) || mesh.splatCount <= 0 || snapshot.completionFailed || snapshot.sortFailed || this.gpuCompletion !== null) return;
       // Use the opacity actually uploaded for this draw as well as current intent.
       // The reveal subscriber can advance its channel after the native host's poll.
       const prepared = sources.filter((source, index) => (snapshot.opacityValues[index] ?? 0) >= 0.98 && opacityOf(source) >= 0.98);
@@ -617,6 +631,11 @@ const runtimes = new WeakMap<Scene, NativeSplatScene>();
 /** Profiling must never construct a native runtime for an unrelated scene. */
 export function nativeScenePerfStats(scene: Scene, now: number): NativeScenePerfStats | null {
   return runtimes.get(scene)?.perfStats(now) ?? null;
+}
+
+/** Profiler only: splats the active draw keeps after GPU culling. */
+export function nativeSceneDrawnSplats(scene: Scene, renderer: WebGPURenderer): Promise<number | null> {
+  return runtimes.get(scene)?.drawnSplats(renderer) ?? Promise.resolve(null);
 }
 
 export function nativeSplatScene(scene: Scene): NativeSplatScene {

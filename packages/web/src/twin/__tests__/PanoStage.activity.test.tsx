@@ -2,7 +2,8 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PerspectiveCamera, Texture } from "three";
 import { PanoStage } from "../PanoStage.js";
-import { __resetEquirectRegistryForTests } from "../useEquirectTexture.js";
+import { ensureTextureResident } from "../texture-residency.js";
+import { __resetEquirectRegistryForTests, warmEquirectBase } from "../useEquirectTexture.js";
 
 const bridge = vi.hoisted(() => ({ state: vi.fn<() => unknown>() }));
 vi.mock("@react-three/fiber", () => ({
@@ -20,6 +21,12 @@ class MockImage {
 }
 
 const uploads = vi.fn<(texture: Texture) => void>();
+const gl = {
+  initTexture: uploads,
+  copyTextureToTexture: vi.fn(),
+  getContext: (): unknown => ({}),
+  capabilities: { maxTextureSize: 4096 },
+};
 const idle = new Map<number, IdleRequestCallback>();
 let idleId = 0;
 const props = {
@@ -51,7 +58,7 @@ beforeEach(() => {
   uploads.mockReset();
   bridge.state.mockReturnValue({
     invalidate: vi.fn(), camera: new PerspectiveCamera(75),
-    gl: { initTexture: uploads, capabilities: { maxTextureSize: 4096 } },
+    gl,
   });
   vi.stubGlobal("Image", MockImage);
   vi.stubGlobal("createImageBitmap", undefined);
@@ -169,6 +176,70 @@ describe("PanoStage texture completion", () => {
     rerender(<PanoStage {...props} onFailure={onFailure} onTier={onTier} retryKey={1} />);
     runIdle();
     expect(onTier).toHaveBeenCalledWith("scan_000", "base");
+  });
+
+  it("swaps in a base the neighbour warmer already made resident without waiting for idle", async () => {
+    const onTier = vi.fn();
+    let warmedBase: Texture | null = null;
+    const warmed = warmEquirectBase("scan_000", "/twin/test", (texture) => {
+      warmedBase = texture;
+      ensureTextureResident(gl, texture);
+    });
+    await imageResult(4096, true);
+    const release = await warmed;
+    render(<PanoStage {...props} onTier={onTier} />);
+    await imageResult(512, true);
+    await act(async () => { await Promise.resolve(); });
+    expect(onTier).toHaveBeenCalledWith("scan_000", "base");
+    expect(idle.size).toBe(0);
+    // The base reached the GPU once, in the warm; the swap uploaded nothing.
+    expect(uploads.mock.calls.filter(([texture]) => texture === warmedBase)).toHaveLength(1);
+    release();
+  });
+
+  it("hops straight onto a GPU-resident warmed base", async () => {
+    const onTier = vi.fn();
+    const warmed = warmEquirectBase("scan_000", "/twin/test", (texture) => {
+      ensureTextureResident(gl, texture);
+    });
+    await imageResult(4096, true);
+    const release = await warmed;
+    render(<PanoStage {...props} onTier={onTier} hopping />);
+    await imageResult(512, true);
+    await act(async () => { await Promise.resolve(); });
+    expect(onTier).toHaveBeenCalledWith("scan_000", "base");
+    release();
+  });
+
+  it("holds a hop at the preview while a decoded base is not yet on the GPU", async () => {
+    const onTier = vi.fn();
+    const warmed = warmEquirectBase("scan_000", "/twin/test", () => undefined);
+    await imageResult(4096, true);
+    const release = await warmed;
+    render(<PanoStage {...props} onTier={onTier} hopping />);
+    await imageResult(512, true);
+    await act(async () => { await Promise.resolve(); });
+    runIdle();
+    expect(onTier).toHaveBeenCalledWith("scan_000", "preview");
+    expect(onTier).not.toHaveBeenCalledWith("scan_000", "base");
+    release();
+  });
+
+  it("at the settle, streams a decoded base in idle with the preview still up", async () => {
+    const onTier = vi.fn();
+    const warmed = warmEquirectBase("scan_000", "/twin/test", () => undefined);
+    await imageResult(4096, true);
+    const release = await warmed;
+    const { rerender } = render(<PanoStage {...props} onTier={onTier} hopping />);
+    await imageResult(512, true);
+    rerender(<PanoStage {...props} onTier={onTier} hopping={false} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(onTier).toHaveBeenCalledWith("scan_000", "preview");
+    expect(onTier).not.toHaveBeenCalledWith("scan_000", "base");
+    expect(idle.size).toBe(1); // the base waits for an idle slice
+    runIdle();
+    expect(onTier).toHaveBeenCalledWith("scan_000", "base");
+    release();
   });
 
   it("cancels a queued upload and suppresses late success after unmount", async () => {
