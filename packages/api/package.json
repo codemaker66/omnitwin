@@ -49,6 +49,7 @@
     "@fastify/cors": "11.0.0",
     "@fastify/rate-limit": "10.2.1",
     "@fastify/websocket": "11.2.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@neondatabase/serverless": "0.10.4",
     "@omnitwin/reconstruction-foundry": "workspace:*",
     "@omnitwin/reconstruction-foundry-cli": "workspace:*",
@@ -71,6 +72,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.19.0",
+    "@modelcontextprotocol/client": "2.3.1",
     "@types/node": "22.20.1",
     "@types/pdfkit": "0.17.5",
     "@types/pg": "8.11.6",

@@ -2500,3 +2500,8 @@ export * from "./requests.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
+
+// T-649: the venue's published truth (capacities, pricing, public profile),
+// read by the web pages, their schema.org description and the API's public
+// discovery endpoint. Moved here from packages/web/src/lib.
+export * from "./trades-hall-venue-truth.js";

@@ -30,6 +30,7 @@ import { publicConfigRoutes } from "./routes/public-configs.js";
 import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
 import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-runs.js";
+import { publicMcpRoutes } from "./routes/public-mcp.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
 import { authRoutes } from "./routes/auth.js";
@@ -403,6 +404,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
   await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
+  // T-649: the public, read-only MCP endpoint at /mcp (Blake, 8 Oct 2026:
+  // "Yes, read-only" — venue facts, published capacities, free/busy only).
+  await server.register(publicMcpRoutes, { db, corsOrigins: allowedOrigins });
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(clientRoutes, { db, prefix: "/clients" });

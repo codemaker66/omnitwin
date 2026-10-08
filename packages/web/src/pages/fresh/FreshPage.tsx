@@ -10,7 +10,7 @@ import {
   TRADES_HALL_ROOM_CAPACITIES,
   TRADES_HALL_WEDDING_PRICING,
   formatPriceGBP,
-} from "../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import {
   FRESH_ADDRESS,
   FRESH_BRAND_NAME,

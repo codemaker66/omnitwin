@@ -60,25 +60,11 @@
          pair painted the iOS status bar near-black under a dark system theme
          while the page underneath stayed ivory. -->
     <meta name="theme-color" content="#f2edda" />
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "EventVenue",
-        "name": "Trades Hall of Glasgow",
-        "alternateName": "Trades Hall",
-        "url": "https://venviewer.com/",
-        "image": "https://venviewer.com/images/venue/trades-hall-exterior-og.jpg",
-        "telephone": "+44 141 552 2418",
-        "email": "info@tradeshallglasgow.co.uk",
-        "address": {
-          "@type": "PostalAddress",
-          "streetAddress": "85 Glassford Street",
-          "addressLocality": "Glasgow",
-          "postalCode": "G1 1UH",
-          "addressCountry": "GB"
-        }
-      }
-    </script>
+    <!-- The venue's schema.org EventVenue, with its rooms and their published
+         capacities, is written at the marker below at build time from the
+         shared venue truth in @omnitwin/types, by
+         src/lib/venue-structured-data-plugin.ts (T-649). -->
+    <!-- venue-structured-data -->
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body, #root { width: 100%; height: 100%; }

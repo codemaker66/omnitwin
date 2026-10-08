@@ -12,7 +12,7 @@ import {
   TRADES_HALL_ROOM_CAPACITIES,
   VENUE_TRUTH_PROVENANCE,
   type PublishedRoomSlug,
-} from "../../../lib/trades-hall-venue-truth.js";
+} from "@omnitwin/types";
 import {
   dayColumns,
   formatWallTime,

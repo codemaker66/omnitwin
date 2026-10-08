@@ -64,6 +64,31 @@ export function deriveBookingState(kind: BookingKind, status: BookingLiveness): 
 }
 
 /**
+ * The kinds that make a room unavailable to anyone else while they are active
+ * and not deleted — what "busy" means on the public free/busy read (T-649).
+ *
+ * `ink` is the Diary's hard floor (Canon §2.2): the only kind the
+ * `bookings_ink_no_overlap` exclusion constraint arbitrates and the only
+ * pairing the conflict engine rates `blocking`. `internal_block` is the
+ * venue's own unavailability (maintenance, blackouts). Provisional holds are
+ * deliberately absent: they stack as 1st/2nd options by design, a later
+ * enquirer can still take the next option, and the engine rates hold overlaps
+ * advisory. Prospects never block.
+ */
+export const ROOM_BLOCKING_BOOKING_KINDS = ["ink", "internal_block"] as const satisfies readonly BookingKind[];
+
+const ROOM_BLOCKING_KIND_SET: ReadonlySet<BookingKind> = new Set(ROOM_BLOCKING_BOOKING_KINDS);
+
+/** Whether this booking makes its room unavailable (see ROOM_BLOCKING_BOOKING_KINDS). */
+export function bookingBlocksRoom(booking: {
+  readonly kind: BookingKind;
+  readonly status: BookingLiveness;
+  readonly deletedAt: Date | string | null;
+}): boolean {
+  return booking.deletedAt === null && booking.status === "active" && ROOM_BLOCKING_KIND_SET.has(booking.kind);
+}
+
+/**
  * Resolve a target state to the column pair a transition must write.
  * Promotions become an active row of the target kind; exits keep the current
  * kind (provenance) and set the terminal status.
