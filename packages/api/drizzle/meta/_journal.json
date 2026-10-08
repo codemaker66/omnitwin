@@ -589,6 +589,13 @@
       "when": 1791212400000,
       "tag": "0085_proposal_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1791298800000,
+      "tag": "0086_living_timetable_conversations",
+      "breakpoints": true
     }
   ]
 }

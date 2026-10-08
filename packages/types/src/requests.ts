@@ -3,15 +3,18 @@ import { UserRoleSchema, type UserRole } from "./user.js";
 import { VenueIdSchema } from "./venue.js";
 
 // ---------------------------------------------------------------------------
-// Requests — the one-tap ask from the floor (Ship Friday slice 10, gate 22).
+// Requests — the one-tap ask from the floor (Ship Friday slice 10, gate 22),
+// widened by goal 19 S1 (D4) so a client may ask too.
 //
 // A request is a small, honest object: somebody standing in a room asked for
 // something, and somebody else is going to do it. It carries WHO asked, WHAT
 // they asked for, HOW urgent it is, WHERE (room, and the booking the room is
 // holding), and how far the ask has travelled: sent → seen → accepted →
-// finished, each step stamped.
+// underway → finished, each step stamped. Every request has a thread (goal
+// 19): staff-private when the floor raised it, client-facing when a client
+// did, so "Elaine has this" reaches the person who asked.
 //
-// Two rules are load-bearing and live here, not in a route:
+// Three rules are load-bearing and live here, not in a route:
 //
 //   AUDIENCE IS FIXED AT CREATION. The set of roles that can see a request is
 //   decided once, when it is made, and stored on the row. It is never widened
@@ -21,14 +24,16 @@ import { VenueIdSchema } from "./venue.js";
 //   holds it to exactly the roles canManageVenue admits, so the two cannot
 //   drift apart when the role list grows.
 //
-//   THE LADDER ONLY CLIMBS. sent → acknowledged → accepted → resolved, never
-//   backwards, and a resolved request is finished. `nextRequestState` is the
-//   single arbiter; the API applies it inside the row's own UPDATE so two
-//   phones pressing at once cannot both win.
+//   THE LADDER ONLY CLIMBS. sent → acknowledged → accepted → underway →
+//   resolved, never backwards. A handover is a step sideways that needs the
+//   next person's acceptance; a finished request may be reopened, which
+//   starts it again. `nextRequestState` is the single arbiter; the API
+//   applies it inside the row's own UPDATE so two phones pressing at once
+//   cannot both win, and the loser is told who has it.
 //
-// Chairs and tables (a request that changes the room's furniture) are R2:
-// they need the decision object the planner owns, and guessing it here would
-// be a promise the rest of the product cannot keep.
+//   NOTHING HERE CHANGES THE ROOM. Chairs and tables beyond the released
+//   layout are a decision for the office (goal 09); the request records the
+//   ask and the released count, never a new promise.
 // ---------------------------------------------------------------------------
 
 const UUID = z.string().uuid();
@@ -42,20 +47,34 @@ export const REQUEST_KINDS = [
   "cleaning",
   "av",
   "access",
+  "chairs",
+  "tables",
+  "setup",
   "other",
 ] as const;
 export const RequestKindSchema = z.enum(REQUEST_KINDS);
 export type RequestKind = z.infer<typeof RequestKindSchema>;
 
+/** The kinds that carry a number: how many chairs, how many jugs. */
+export const COUNTABLE_REQUEST_KINDS: readonly RequestKind[] = ["refreshments", "av", "chairs", "tables", "other"];
+
 export const REQUEST_URGENCIES = ["routine", "soon", "now"] as const;
 export const RequestUrgencySchema = z.enum(REQUEST_URGENCIES);
 export type RequestUrgency = z.infer<typeof RequestUrgencySchema>;
 
-export const REQUEST_STATES = ["sent", "acknowledged", "accepted", "resolved"] as const;
+export const REQUEST_STATES = [
+  "sent",
+  "acknowledged",
+  "accepted",
+  "underway",
+  "handed-over",
+  "resolved",
+  "reopened",
+] as const;
 export const RequestStateSchema = z.enum(REQUEST_STATES);
 export type RequestState = z.infer<typeof RequestStateSchema>;
 
-export const REQUEST_OUTCOMES = ["done", "not_possible", "no_longer_needed"] as const;
+export const REQUEST_OUTCOMES = ["done", "not_possible", "no_longer_needed", "substituted"] as const;
 export const RequestOutcomeSchema = z.enum(REQUEST_OUTCOMES);
 export type RequestOutcome = z.infer<typeof RequestOutcomeSchema>;
 
@@ -79,8 +98,12 @@ export function isStaffAudienceRole(role: string): boolean {
 const ALLOWED_NEXT: Readonly<Record<RequestState, readonly RequestState[]>> = {
   sent: ["acknowledged", "accepted", "resolved"],
   acknowledged: ["accepted", "resolved"],
-  accepted: ["resolved"],
-  resolved: [],
+  accepted: ["underway", "handed-over", "resolved"],
+  underway: ["handed-over", "resolved"],
+  // Only the person it was handed to may accept; the API holds that by the row.
+  "handed-over": ["accepted", "resolved"],
+  resolved: ["reopened"],
+  reopened: ["acknowledged", "accepted", "resolved"],
 };
 
 export type RequestTransitionCheck =
@@ -95,6 +118,9 @@ const KIND_LABELS: Readonly<Record<RequestKind, string>> = {
   cleaning: "Cleaning",
   av: "Sound and screens",
   access: "Access",
+  chairs: "Chairs",
+  tables: "Tables",
+  setup: "Room setup",
   other: "Something else",
 };
 
@@ -108,13 +134,17 @@ const STATE_LABELS: Readonly<Record<RequestState, string>> = {
   sent: "Sent",
   acknowledged: "Seen",
   accepted: "Someone is on it",
+  underway: "Underway",
+  "handed-over": "Handing over",
   resolved: "Done",
+  reopened: "Reopened",
 };
 
 const OUTCOME_LABELS: Readonly<Record<RequestOutcome, string>> = {
   done: "Done",
   not_possible: "Could not be done",
   no_longer_needed: "No longer needed",
+  substituted: "Done another way",
 };
 
 export function describeRequestKind(kind: RequestKind): string {
@@ -176,6 +206,8 @@ export const VenueRequestSchema = z.object({
   detail: z.string().max(500).nullable(),
   requestedByUserId: UUID.nullable(),
   requestedByName: z.string().min(1).max(160),
+  /** The role of the person who asked; "client" or "planner" for a request
+   *  raised from the client's own event page. */
   requestedByRole: z.string().min(1).max(30),
   /** Fixed at creation, never widened. */
   audienceRoles: z.array(UserRoleSchema).min(1),
@@ -191,6 +223,15 @@ export const VenueRequestSchema = z.object({
   acknowledgedAt: IsoInstant.nullable(),
   acceptedAt: IsoInstant.nullable(),
   resolvedAt: IsoInstant.nullable(),
+  /** The request's conversation (goal 19): staff-private when the floor
+   *  raised it, client-facing when a client did. */
+  threadId: UUID.nullable(),
+  /** A handover in flight: the named person has not yet accepted. */
+  handoverToUserId: UUID.nullable(),
+  handoverToName: z.string().min(1).max(160).nullable(),
+  handedOverAt: IsoInstant.nullable(),
+  underwayAt: IsoInstant.nullable(),
+  reopenedAt: IsoInstant.nullable(),
   createdAt: IsoInstant,
   updatedAt: IsoInstant,
 });
@@ -210,7 +251,7 @@ export const RequestStatusHistoryEntrySchema = z.object({
 });
 export type RequestStatusHistoryEntry = z.infer<typeof RequestStatusHistoryEntrySchema>;
 
-// --- What a client may send ------------------------------------------------
+// --- What may be sent ------------------------------------------------------
 
 const Detail = z.string().trim().min(1).max(500);
 
@@ -228,16 +269,31 @@ export const CreateVenueRequestSchema = z.object({
 }).strict();
 export type CreateVenueRequest = z.infer<typeof CreateVenueRequestSchema>;
 
+/** What a client sends from their own event page: the slot, never the room
+ *  (the room is the booking's), never an audience, a time or a price. */
+export const ClientCreateRequestSchema = z.object({
+  bookingId: UUID,
+  kind: RequestKindSchema,
+  quantity: z.number().int().positive().max(999).nullish(),
+  urgency: RequestUrgencySchema,
+  detail: Detail.nullish(),
+  idempotencyKey: UUID,
+}).strict();
+export type ClientCreateRequest = z.infer<typeof ClientCreateRequestSchema>;
+
 /** Strict on purpose: a body carrying `audienceRoles` is a 400, not a silent
  *  no-op — the audience is decided once and the caller should hear that. */
 export const RequestTransitionSchema = z.discriminatedUnion("to", [
   z.object({ to: z.literal("acknowledged") }).strict(),
   z.object({ to: z.literal("accepted") }).strict(),
+  z.object({ to: z.literal("underway") }).strict(),
+  z.object({ to: z.literal("handed-over"), toUserId: UUID }).strict(),
   z.object({
     to: z.literal("resolved"),
     outcome: RequestOutcomeSchema,
     note: Detail.nullish(),
   }).strict(),
+  z.object({ to: z.literal("reopened"), note: Detail.nullish() }).strict(),
 ]);
 export type RequestTransition = z.infer<typeof RequestTransitionSchema>;
 
@@ -253,4 +309,9 @@ export type RequestListQuery = z.infer<typeof RequestListQuerySchema>;
 /** A request is open until it is finished — the slab shows exactly these. */
 export function isOpenRequest(request: { readonly state: RequestState }): boolean {
   return request.state !== "resolved";
+}
+
+/** Nobody owns it yet: the UNOWNED rail and the attention ring key off this. */
+export function isUnownedRequest(request: { readonly state: RequestState; readonly ownerUserId: string | null }): boolean {
+  return isOpenRequest(request) && (request.ownerUserId === null || request.state === "handed-over" || request.state === "reopened");
 }
