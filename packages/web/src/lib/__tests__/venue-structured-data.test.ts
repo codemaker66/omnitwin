@@ -23,8 +23,10 @@ const VocabularySchema = z.object({
   types: z.record(z.object({ ancestors: z.array(z.string()), properties: z.array(z.string()) })),
   ranges: z.record(z.array(z.string())),
 });
+// Read from the package root, as index.html is below: under happy-dom,
+// import.meta.url is not a file: URL.
 const vocabulary = VocabularySchema.parse(JSON.parse(
-  readFileSync(new URL("./fixtures/schema-org-venue-vocabulary.json", import.meta.url), "utf8"),
+  readFileSync("src/lib/__tests__/fixtures/schema-org-venue-vocabulary.json", "utf8"),
 ));
 
 type JsonLdObject = { readonly [key: string]: JsonLdValue };
