@@ -381,8 +381,12 @@ export function DashboardPage(): React.ReactElement {
         );
       case "pipeline":
         return (
+          // "Open in Clients" only for those Clients admits: sales works the
+          // pipeline but not the Clients desk (Blake's C2), and was led to a
+          // refusal.
           <PipelineDesk opportunityId={requestedOpportunityId} onOpportunityShown={handleOpportunityShown}
-            onOpenProposal={handleOpenProposal} onOpenClient={handleOpenContact} />
+            onOpenProposal={handleOpenProposal}
+            onOpenClient={canOpenDashboardView("search", userRole, userPlatformRole) ? handleOpenContact : undefined} />
         );
       case "reviews":
         return <ReviewsView reviewId={requestedReviewId} onReviewShown={handleReviewShown} />;

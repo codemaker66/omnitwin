@@ -1,7 +1,7 @@
 import { type ReactNode, Suspense, useCallback, useMemo, useState, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useClerk } from "@clerk/react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Bell, ChevronDown } from "lucide-react";
+import { Link, NavigationType, Outlet, useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { Bell, ChevronDown, Search } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
@@ -12,6 +12,8 @@ import { ActivityStatus } from "../shared/Activity.js";
 import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { useSignOutWords } from "./proposals/sign-out-words.js";
 import { SignOutAskContext, StaffShellContext, useInStaffShell, useShellFrame, type AskBeforeSignOut, type ShellFrame, type StaffShell } from "./staff-shell.js";
+import { FindPalette } from "./find/FindPalette.js";
+import type { FindPlace, FindSource, FindTarget } from "./find/find-model.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
 import {
@@ -43,6 +45,9 @@ interface DashboardLayoutProps {
    *  desk (Enquiries, Pending reviews, Clients) on the sage ground, or the
    *  Rota; everything else keeps the padded forest ground. */
   readonly surface?: "desk" | "rota";
+  /** What the page adds to Find while it shows (the Diary's board). It must
+   *  keep its identity across the page's renders. */
+  readonly findSource?: FindSource;
   readonly children: ReactNode;
 }
 
@@ -157,7 +162,20 @@ function LocalSignOutButton(props: SignOutButtonProps): React.ReactElement {
   );
 }
 
-function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, children }: DashboardLayoutProps): React.ReactElement {
+/** "⌘K" on a Mac, iPhone or iPad (whose browser also says "Macintosh");
+ *  "Ctrl K" elsewhere. Both keys work everywhere; this only names one. */
+function findShortcut(): string {
+  const agent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return /Macintosh|Mac OS X|iPhone|iPad/u.test(agent) ? "⌘K" : "Ctrl K";
+}
+
+/** Whether a modal dialog or a confirmation that asks first (the Diary's
+ *  ink-move alert) is open: Find never opens over one. */
+function anotherDialogOpen(): boolean {
+  return document.querySelector('[aria-modal="true"], [role="alertdialog"]') !== null;
+}
+
+function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, findSource, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -170,6 +188,64 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   const accountButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => { setOpenMenu(null); }, [location.key, activeView, user?.id, user?.venueId]);
+
+  // Find (T-635): Ctrl/⌘K from anywhere under the shell, a field included, as
+  // in the mail and calendar tools a booker already uses. Pressed again it
+  // closes; it never opens over another dialog. Moving elsewhere (Back, a
+  // link, another person signing in) puts it away; a page keeping its own
+  // address up to date (a replace, such as the record it shows) does not.
+  const [findOpen, setFindOpen] = useState(false);
+  const [shortcut] = useState(findShortcut);
+  const navigationType = useNavigationType();
+  useEffect(() => { if (navigationType !== NavigationType.Replace) setFindOpen(false); }, [location.key, navigationType]);
+  useEffect(() => { setFindOpen(false); }, [user?.id, user?.venueId]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.repeat || event.isComposing) return;
+      // The K key by its letter; by its position only where the layout has no
+      // Latin letters (Cyrillic, Greek), so Dvorak's Ctrl+T stays Ctrl+T.
+      const isK = event.key.toLowerCase() === "k" || (!/^[a-z]$/iu.test(event.key) && event.code === "KeyK");
+      if (!isK) return;
+      if (findOpen) {
+        event.preventDefault();
+        setFindOpen(false);
+        return;
+      }
+      if (event.defaultPrevented || anotherDialogOpen()) return;
+      event.preventDefault();
+      setOpenMenu(null);
+      setFindOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); };
+  }, [findOpen]);
+  // A finding opens where it lives: the page's own (the board's booking is
+  // brought into view and focused), a layout in the planner in a new tab, and
+  // anything else by its address, through the same guard as the header's links.
+  const openFound = useCallback((target: FindTarget): void => {
+    setFindOpen(false);
+    if (target.kind === "local") {
+      findSource?.pick(target.id);
+      return;
+    }
+    if (target.newTab) {
+      window.open(target.href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    // A date found on the Diary keeps the Diary's zoom (day, week, fortnight),
+    // as its own Go to date does.
+    const diaryView = location.pathname === "/diary" ? new URLSearchParams(location.search).get("view") : null;
+    if (diaryView !== null && target.href.startsWith("/diary?")) {
+      const next = new URLSearchParams(target.href.slice("/diary?".length));
+      next.set("view", diaryView);
+      void navigate(`/diary?${next.toString()}`);
+      return;
+    }
+    // The page already showing is not a new place: Back should not need two
+    // presses to leave it, as with the header's own links.
+    void navigate(target.href, { replace: target.href === `${location.pathname}${location.search}` });
+  }, [findSource, location.pathname, location.search, navigate]);
+  const closeFind = useCallback(() => { setFindOpen(false); }, []);
   useEffect(() => {
     if (openMenu === null) return;
     const currentRef = openMenu === "more" ? moreRef : accountRef;
@@ -385,7 +461,27 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
   const rotaItem = NAV_ITEMS.find((item) => item.view === "rota");
   const canOpenRota = rotaItem !== undefined && canShowNavItem(rotaItem, user?.role, platformRole);
   // Inventory and the Rota sit on the visible row; the rest wait behind More.
-  const moreItems = NAV_ITEMS.filter((item) => item.view !== "inventory" && item.view !== "rota" && canShowNavItem(item, user?.role, platformRole));
+  const role = user?.role;
+  const moreItems = useMemo(
+    () => NAV_ITEMS.filter((item) => item.view !== "inventory" && item.view !== "rota" && canShowNavItem(item, role, platformRole)),
+    [platformRole, role],
+  );
+  // Find offers exactly the places this header offers, in its order, so it
+  // never opens a page the person would be refused.
+  const findPlaces = useMemo<readonly FindPlace[]>(() => {
+    const places: FindPlace[] = [];
+    if (canPlan) places.push({ id: "plan", label: "Plan", href: "/plan" });
+    if (canOpenDiary) places.push({ id: "diary", label: "Diary", href: "/diary" });
+    if (canOpenHallkeeperDay) places.push({ id: "hallkeeper", label: "Hallkeeper", href: "/hallkeeper" });
+    if (canOpenRota) places.push({ id: "rota", label: "Rota", href: "/dashboard?view=rota" });
+    if (canManageStock) places.push({ id: "inventory", label: "Inventory", href: "/dashboard?view=inventory" });
+    for (const item of moreItems) places.push({ id: item.view, label: item.label, href: `/dashboard?view=${item.view}` });
+    if (platformRole === "admin") places.push({ id: "capture", label: "Capture Factory", href: "/dev/capture-intake" });
+    return places;
+  }, [canManageStock, canOpenDiary, canOpenHallkeeperDay, canOpenRota, canPlan, moreItems, platformRole]);
+  // The client search answers the floor of the venue an account belongs to;
+  // one not connected to its venue yet would only ever be refused.
+  const canSearchClients = findPlaces.some((place) => place.id === "search") && !awaitsVenue(user);
   // /event-architect still marks the menu active for anyone who reaches it by
   // URL, even though R1 offers no link to it.
   const moreActive = moreItems.some((item) => item.view === activeView) ||
@@ -466,22 +562,33 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, ch
             </div>
           </div>
         </nav>
-        <div className="dashboard-layout-disclosure dashboard-layout-account" ref={accountRef}>
-          <button className="dashboard-layout-account-button" type="button" ref={accountButtonRef}
-            aria-label={`Account: ${user?.name ?? "Signed in"}`} aria-expanded={openMenu === "account"} aria-controls={`${menuId}-account`}
-            onClick={() => { setOpenMenu((current) => current === "account" ? null : "account"); }}>
-            <span className="dashboard-layout-avatar" aria-hidden="true">{initials}</span>
-            <span className="dashboard-layout-account-name"><strong>{user?.name ?? "Signed in"}</strong><span>{roleLabel}</span></span>
-            <ChevronDown aria-hidden="true" size={18} />
+        <div className="dashboard-layout-tools">
+          <button type="button" className="dashboard-layout-find"
+            aria-label="Find" aria-keyshortcuts="Control+K Meta+K" aria-haspopup="dialog" aria-expanded={findOpen}
+            onClick={() => { setOpenMenu(null); setFindOpen(true); }}>
+            <Search aria-hidden="true" size={18} />
+            <span className="dashboard-layout-find-label" aria-hidden="true">Find</span>
+            <kbd className="dashboard-layout-find-key" aria-hidden="true">{shortcut}</kbd>
           </button>
-          <div className="dashboard-layout-popover dashboard-layout-account-panel" id={`${menuId}-account`} hidden={openMenu !== "account"}>
-            <p className="dashboard-layout-account-email">{user?.email ?? ""}</p>
-            {isE2EAuthBypassEnabled()
-              ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={askBeforeSignOut} />
-              : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={askBeforeSignOut} />}
+          <div className="dashboard-layout-disclosure dashboard-layout-account" ref={accountRef}>
+            <button className="dashboard-layout-account-button" type="button" ref={accountButtonRef}
+              aria-label={`Account: ${user?.name ?? "Signed in"}`} aria-expanded={openMenu === "account"} aria-controls={`${menuId}-account`}
+              onClick={() => { setOpenMenu((current) => current === "account" ? null : "account"); }}>
+              <span className="dashboard-layout-avatar" aria-hidden="true">{initials}</span>
+              <span className="dashboard-layout-account-name"><strong>{user?.name ?? "Signed in"}</strong><span>{roleLabel}</span></span>
+              <ChevronDown aria-hidden="true" size={18} />
+            </button>
+            <div className="dashboard-layout-popover dashboard-layout-account-panel" id={`${menuId}-account`} hidden={openMenu !== "account"}>
+              <p className="dashboard-layout-account-email">{user?.email ?? ""}</p>
+              {isE2EAuthBypassEnabled()
+                ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={askBeforeSignOut} />
+                : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} askFirst={askBeforeSignOut} />}
+            </div>
           </div>
         </div>
       </header>
+      {findOpen && <FindPalette places={findPlaces} canSearchClients={canSearchClients} source={findSource ?? null}
+        onOpen={openFound} onClose={closeFind} />}
       <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "desk" ? " dashboard-layout-main--desk" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
         <main ref={mainRef} className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
           <SignOutAskContext.Provider value={askBeforeSignOut}>{children}</SignOutAskContext.Provider>

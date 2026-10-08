@@ -446,7 +446,7 @@ export function PipelineDesk({ opportunityId = null, onOpportunityShown, onOpenP
           onCompleteTask={onCompleteTask}
           onAddNote={onAddNote}
           onOpenProposal={(id) => { onOpenProposal?.(id); }}
-          onOpenClient={(id) => { onOpenClient?.(id); }}
+          onOpenClient={onOpenClient}
         />
       ) : detail.status !== "idle" ? (
         <section className="enq-panel pl-panel" data-register="forest" aria-label="Deal" aria-busy={detail.status === "loading"}>
