@@ -4,7 +4,7 @@
 
 **Goal:** On development and preview builds, the relit Grand Hall draws its large flat surfaces (the four walls' wainscot, plaster fields, frieze and fascia and upper band, the portrait canvases, the honours boards' panels, the closed doors, the clock face and the coffered ceiling outside the dome) as sharp, restored, lighting-neutral skins lit by the same light as the splats and the restored floor, with the splats beneath them hidden, the clutter toggleable and every texel's provenance recorded; anything missing falls back to that wall's splats.
 
-**Architecture:** An offline tool, `tools/skins` (Python, CPU only, every data product run twice and compared), solves the E57 sweeps' poses jointly against the walls, the ceiling and their LiDAR, fits a plane per wall bay and a 5 mm height field from the LiDAR, cuts each skin's region from the 3D elements that stay splats, decodes every XGRIDS frame the skins need straight from the raw H.264 with each macroblock's quantiser (all 12,858 instants, not only the 3,761 keyframes), and registers them to the E57 views. R1a's bake, amended for skins, lights each skin's 5 cm texels with the height field's normals (`relight skin-light`). Every observation (E57 face, 8K panorama, XGRIDS frame) is rendered onto the skin's texel grid and divided by the light modelled for its capture state (the relight model's own nine sources and bounce, with per-state weights fitted against the splats), glare is rejected across views, and the de-lit views are blended: the low band from every view, the high band from the sharpest, with an XGRIDS frame's texture censored wherever its encoder's dead zone erased it, so edges come from the frames and faint texture from the E57 faces. A better reconstruction (the frontier's certified surface reconstruction) can replace the mosaic per skin through a fixed region-product contract; healing per material, the frieze band's recovery and the frieze's blend with the venue's own photographs (colour and broad tone from the photograph, fine detail from the fusion, one hall-wide colour frame), clutter masks with clean versions and material maps (with the frieze's gilded ground as a metal) follow, and `skins package` writes the immutable skin package `venviewer.skins.v1`. The relight records are re-baked with the skins' covers (class 7, one wall group per bit field) and toggle bits into relight package v2, which names the skin package. In the browser, a worker decodes the skin package and the skins' light records; a `SkinFrame` adds two compute passes to R1b's `RelightFrame` (each skin light texel's base light from the nine sources and R1b's shared bounce, and a 2 cm grid per sky body, the sun and the moon, marched through R1b's window volumes); `litSkinMaterial` draws albedo × (base light + Σ over the sky bodies of visibility × cosine × the body's colour) through R1b's display with the floor's knee; `RelightSkins` shows a wall group's skins and hides its covered splats together through `RelightFrame.setVisibility`, and falls back per group. Spec: `docs/superpowers/specs/2026-10-03-r1-polished-design.md` §3 (its parent `docs/superpowers/specs/2026-09-29-the-restored-hall-design.md` and its amendments hold). Amendments R1c needs in R1a and R1b: `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`.
+**Architecture:** An offline tool, `tools/skins` (Python, CPU only, every data product run twice and compared), solves the E57 sweeps' poses jointly against the walls, the ceiling and their LiDAR, fits a plane per wall bay and a 5 mm height field from the LiDAR, cuts each skin's region from the 3D elements that stay splats, decodes every XGRIDS frame the skins need straight from the raw H.264 with each macroblock's quantiser (all 12,858 instants, not only the 3,761 keyframes), and registers them to the E57 views. R1a's bake, amended for skins, lights each skin's light texels (5 cm; 2 cm on the frieze) with the height field's normals (`relight skin-light`). Every observation (E57 face, 8K panorama, XGRIDS frame) is rendered onto the skin's texel grid and divided by the light modelled for its capture state (the relight model's own nine sources and bounce, with per-state weights fitted against the splats), glare is rejected across views, and the de-lit views are blended: the low band from every view, the high band from the sharpest, with an XGRIDS frame's texture censored wherever its encoder's dead zone erased it, so edges come from the frames and faint texture from the E57 faces. A better reconstruction (the frontier's certified surface reconstruction) can replace the mosaic per skin through a fixed region-product contract; healing per material, the frieze band's recovery and the frieze's blend with the venue's own photographs (colour and broad tone from the photograph, fine detail from the fusion, one hall-wide colour frame), clutter masks with clean versions and material maps (with the frieze's gilded ground as a metal) follow, and `skins package` writes the immutable skin package `venviewer.skins.v1`. The relight records are re-baked with the skins' covers (class 7, one wall group per bit field) and toggle bits into relight package v2, which names the skin package. In the browser, a worker decodes the skin package and the skins' light records; a `SkinFrame` adds two compute passes to R1b's `RelightFrame` (each skin light texel's base light from the nine sources and R1b's shared bounce, and a 2 cm grid per sky body, the sun and the moon, marched through R1b's window volumes); `litSkinMaterial` draws albedo × (base light + Σ over the sky bodies of visibility × cosine × the body's colour) through R1b's display with the floor's knee; `RelightSkins` shows a wall group's skins and hides its covered splats together through `RelightFrame.setVisibility`, and falls back per group. Spec: `docs/superpowers/specs/2026-10-03-r1-polished-design.md` §3 (its parent `docs/superpowers/specs/2026-09-29-the-restored-hall-design.md` and its amendments hold). Amendments R1c needs in R1a and R1b: `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`.
 
 **Tech Stack:** Python 3.13 (`C:/Python313/python.exe`) with numpy 2.4, scipy 1.17, OpenCV 5 (`cv2`, DIS optical flow, ECC, `inpaint`), Pillow 12 (WebP), PyAV 16.1 (H.264 decoding with exported macroblock quantisers), `unittest`; no torch and no CUDA in `tools/skins` (R1a's `tools/relight` keeps its CPU torch for its own commands). React 18.3 + @react-three/fiber 8.18, three 0.186 (WebGPURenderer, TSL compute, pnpm patch), Zod 3.24, zustand 5.0, Vitest 4.1 + happy-dom 20, TypeScript 5.7, pnpm 9.15.4, Node 22, Playwright 1.59 (headed Chromium on the RTX 4090).
 
@@ -26,7 +26,7 @@ Applied in one pass, before any task was started, from the plan-amendment brief 
 - **Header:** the frieze band paragraph (final findings, the venue's photographs, the gilded ground); the Architecture; Global Constraints: the double run's record names every settled file's SHA-256, the packaging rule, lamp colour (R1c encodes none: the capture's per-group colours are package values from R1a Task 4b, the warm-down a setting of R1b), the venue's photographs cleared and credited, R1d's hooks gain `SkinSurface.specularColour`. Contracts 1 and 3 cite R1a Task 4c's two corrections (`skin_group_of` widened to int64 under NumPy 2; `windows_volumes` returns a tuple); contract 6 the pass order; contract 7 the factored sky-body basis (`B_w = P_w × R_w`, both bodies, folded at the 0.5 m probes) as normative, β, the area-scaled bounce and the sunlit-area table gone. No R1c code used the old model; Tasks 8, 17, 19 and 23 now say so explicitly and check the new one.
 - **File Structure:** `tools/skins/skins/venue.py`; the work tree's `venue/`.
 - **Task 0:** 20 greps (R1a Task 4c's `_artifact` and `record-artifacts`, R1d's `skyBody` added); the 14 venue photographs against `sources.json`'s SHA-256; SIFT in the stack check.
-- **Task 1:** `twice` records `base` and, once settled, every kept file's SHA-256 (`artifacts`), also as the command's latest record; `verified(evidence, name, path)` (20 tests).
+- **Task 1:** `twice` records `base` and, once settled, every kept file's SHA-256 (`artifacts`), also as the command's latest record; `verified(evidence, name, path)` (22 tests: 4 config, 9 twice, 9 frames).
 - **Task 2:** the frieze style starts at 4.20 m, not 4.30 m: the research measured the frieze's bottom edge at 4.281, 4.239 and 4.369 m, so the lowest 5 cm on the fireplace wall lay outside the skin.
 - **Task 5:** `frieze_edge` (the research's rule: the moulding 12 mm proud below 4.40 m) cuts the moulding from each frieze skin; `skins.json` `frieze: { bottom, bottomRow, bandRow }` (10 tests). **Task 6:** `SkinGeometry` carries them.
 - **Task 8:** the capture's per-group lamp colours from the package; `check_relight_artifacts` (the probes against `probes-check.json` and the package's `evidence.artifacts`, the skin-light folder against `skin-light.json`); the skin-light third-run rule keeps R1a's evidence true (7 tests).
@@ -34,9 +34,17 @@ Applied in one pass, before any task was started, from the plan-amendment brief 
 - **Task 12 (rewritten):** the research's final findings; the holdout thresholds reconciled (`HOLDOUT_GATE` and `HOLDOUT_MEAN_GATE`; structure must beat the baselines, colour comes from the photographs); each texel's spread across views (`view_spread`); the uplight fitted from the measured edge; `venue.py` and `frieze-venue`: registration per wall, one hall-wide colour frame (each photograph by its own white balance), each photograph's own uplight removed, colour and tone from the photograph and detail from the fusion, the lowest 5 cm on the door and fireplace walls drawn by the photograph, the measured detail rule elsewhere, the gilded ground's mask, provenance and credit, and the independent checks (registration, colour, seams, gilt direction, coverage) (24 tests).
 - **Task 13 (rewritten):** the frieze is the venue product; the gilt ground is metal with the gilding's roughness (0.40) and gold leaf's specular colour (`GOLD_F0`, the materials track's prior); `specularColour`, `credits` and the photo share per skin; a measured layer's GGX α becomes `sqrt(α)`; colour alone no longer counts as gilding evidence (the plan's own test failed with it) (6 tests).
 - **Task 14:** only exact, hash-checked inputs (`verified_inputs`), `credits`, `material.specularColour`, `provenance.photo`, no file outside the manifest, the manifest's SHA-256 recorded; the contract `skin-package.md` (10 tests).
-- **Task 15:** v2 names only the skin package `package-check` passed; `v2-check` checks it and records v2's SHA-256; R1a's `check` on v2 leaves the committed vectors fixture as it was.
+- **Task 15:** v2 names only the skin package `package-check` passed; `v2-check` checks it and records v2's SHA-256; R1a's `check` on v2 writes `checks-v2.json` and no vectors (R1a Task 5 Step 7, amended 8 October), so the committed vectors fixture stays v1's.
 - **Task 16:** `CreditSchema`, `credits`, `specularColour`, `provenance.photo`, `PROVENANCE_CODES.photo` (18 tests).
 - **Task 19:** the skins' passes run last, after the sky bodies' bounce passes and the fold; `followPassStride` (R1d's interface item 3) (5 tests). **Task 20:** `SkinSurface.specularColour`; the provenance view's blue. **Task 21:** follows R1d's pass stride when the frame offers it. **Tasks 22–23:** the light check also at the moonlit night. **Task 24:** the README, the exact-files publish check, the session log. **Self-review:** updated.
+- **Seam review fixes (8 October)** (`D:/claude/real-hall/plan-amendments-0710/review/seam-B-findings.md`, with seam A's I-3 and I-4):
+  - C1: Task 0 Step 2 splits each entry at its last colon (two patterns contain colons).
+  - C2: Task 22 imports `FLOOR_SUN_TOLERANCE` from `relight-debug.ts` (R1b Task 17), not `floor-light.ts`; its Consumes line says so.
+  - I1: Task 22's `light` check asks the CPU twin with the GPU's own read-back sky light (`SkinsDebugDeps.readSkyLight`, wired to `RelightFrame.readSkyLight`; R1b Task 17's `gpuKernel`), not the applied kernel's display light; Task 23's wording follows.
+  - I2: contracts 1 and 3: R1a Task 4c is normative for A1's Python part and A4; the amendments file carries a dated header note (with M8: the `skinGroup` rename and Task 0's 20 greps).
+  - M1: `test_frames.py` holds 9 tests: Task 1 22, Task 6 19, Task 6A 22. M2: Task 21, R1b's manifest test file holds 23.
+  - M3 and M4 (R1a, seam A I-3 and I-4): Task 15 Step 7's double run relies on R1a's `tool` and `createdAt` from HEAD; Step 8 drops the `git checkout`, requires the fixture untouched and reads `checks-v2.json`.
+  - M5: light texels are 5 cm, 2 cm on the frieze (Architecture, contract 3, Tasks 14 and 19). M6: Task 17's `skin-light.ts` re-exports R1b's `SKY_BODIES`, with `SkyBodyName` = R1b's `SkyBody`.
 
 ## Global Constraints
 
@@ -62,16 +70,16 @@ Applied in one pass, before any task was started, from the plan-amendment brief 
 
 ## Contracts R1c relies on from R1a and R1b (as amended)
 
-The amendments file is normative for these; Task 0 checks every item before any other task starts.
+The amendments file is normative for these, except contracts 1 and 3: R1a Task 4c is normative for amendment A1's Python part and for A4, which it applies with the two corrections those contracts name and with the evidence fields (`artifact`, `records`) Task 8 reads; the amendments file's own A1 and A4 code is their first, uncorrected form (its header note of 8 October says so). Task 0 checks every item before any other task starts.
 
 1. **Record classes** (amendment A1): `codec.CLASS_SKIN = 7` (a splat a skin covers: lit as class 0, hidden while its wall group's skins draw), its group in bits 5–7 (`SKIN_GROUP_SHIFT = 5`, groups 0–6; 7 is reserved, so no record's flags byte is R1b's pass-through `0xff`), and for every other class a toggle in bits 6–7 (`TOGGLE_SHIFT = 6`: 0 none, `TOGGLE_CLUTTER = 1`, `TOGGLE_CABINET = 2`); `codec.cover_flags`, `codec.toggle_flags`, `codec.skin_group_of` (−1 for every other class: R1a Task 4c widens the shift to int64 before `np.where`, its correction to A1, whose form returned 255 under NumPy 2's promotion rules), `codec.toggle_of`, all as R1a Task 4c Step 1 writes them; the TypeScript twins in `relight-codec.ts` (`CLASS_SKIN`, `SKIN_GROUP_SHIFT`, `TOGGLE_SHIFT`, `TOGGLE_CLUTTER`, `TOGGLE_CABINET`, `skinGroupOf`, `toggleOf`).
 2. **Visibility** (A2, A6, A9, A10): the multiplier's alpha is 0 for class 2, for class 7 while its group's bit is set in `skinGroups`, and for a toggled splat while its toggle's bit is set in `hiddenToggles`; class 7 is lit exactly as class 0. `reference.Visibility(skin_groups: int, hidden_toggles: int)`; R1b's `interface RelightVisibility { readonly skinGroups: number; readonly hiddenToggles: number }`, `NO_VISIBILITY`, `relightSplat(model, frame, record, position, colour, visibility?)`, `RelightFrame.setVisibility(visibility: RelightVisibility): void` and `RelightFrame.visibility` (setting it tells the frame's apply listeners, so every draw's pass reruns).
-3. **The skins' light** (A4): `python -m relight skin-light --config config/grand-hall.json --skins <skins work>/geometry/light-grids.json` writes `<relight work>/skin-light/<id>.records` (each 5 cm light texel's 12-byte record in R1a's layout, row 0 first, with the skins' own ranges), `<relight work>/skin-light/index.json` (`{ ranges: [[lo, hi] × 9], skins: [{ id, group, lightTexel, size: [w, h], texelToModel: [16], reachShare, sun: { size: [w, h], texelToModel: [16] } | null }] }`) and `<relight evidence>/skin-light.json` (`skins`, `texels`, `ranges`, `seconds`, `artifact` (the index's path, SHA-256 and size) and `records` (`{ id: sha256 }`)), exactly as R1a Task 4c Steps 2–4 write them (its correction to A4: `windows_volumes(cfg)` returns `(volumes, horizons, fresnel)` and only the volumes go to `windows.sun_reach`).
+3. **The skins' light** (A4): `python -m relight skin-light --config config/grand-hall.json --skins <skins work>/geometry/light-grids.json` writes `<relight work>/skin-light/<id>.records` (each light texel's 12-byte record (5 cm; 2 cm on the frieze) in R1a's layout, row 0 first, with the skins' own ranges), `<relight work>/skin-light/index.json` (`{ ranges: [[lo, hi] × 9], skins: [{ id, group, lightTexel, size: [w, h], texelToModel: [16], reachShare, sun: { size: [w, h], texelToModel: [16] } | null }] }`) and `<relight evidence>/skin-light.json` (`skins`, `texels`, `ranges`, `seconds`, `artifact` (the index's path, SHA-256 and size) and `records` (`{ id: sha256 }`)), exactly as R1a Task 4c Steps 2–4 write them (its correction to A4: `windows_volumes(cfg)` returns `(volumes, horizons, fresnel)` and only the volumes go to `windows.sun_reach`).
 4. **Covers and toggles in the records** (A3): `python -m relight records --config config/grand-hall.json --skins <skins work>/geometry --out <dir>` marks every splat inside a skin's relief envelope with `cover_flags(flags, group)` and every splat inside a toggle box with `toggle_flags(flags, toggle)`, on every level at the splat's own position.
 5. **Relight package v2** (A5, A7): the manifest gains `skins: { package, manifestSha256, encoding: [[lo, hi] × 9], groups: [5 names], entries: [{ id, group, size, texelToModel, normal, file, sha256, bytes, sun: { size, texelToModel } | null }] }` (files `skins/<id>.light.gz`) and `visibility: { toggles: { clutter: 1, cabinet: 2 }, defaultHidden: number }`; R1b's `RelightManifestSchema` accepts both as optional and refuses malformed ones; the package's output folder is a command option, so v2 is written beside v1.
 6. **Shared bounce and extra passes** (A8, A9): `bounceAt(model, frame, position, normal, iso): { capture: Rgb; scenario: Rgb }` (CPU twin, used by `relightSplat`), `probeReads(frame): ProbeReads` and `bounceNode(u, reads, p, normal, iso): { capture: Node<"vec3">; scenario: Node<"vec3"> }` (TSL, used by the multiplier pass), and `RelightFrame.addPasses(passes: readonly ComputeNode[]): () => void` (run inside `prepare`, last in the same `renderer.compute` call: after the sky bodies' bounce passes, which R1d A9 runs first, the probe fold that adds their bounce to the scenario volume, and the floor's sun). The sky bodies' bounce (contract 7) is in the scenario volume these two functions read, so it reaches the skins with no R1c change.
 
-7. **Sky bodies** (R1d's amendments A4, A5 and A9, `docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`): two directional sky bodies, the Sun and the Moon, each with its own direction and RGB: `RelightSetting.sunDir`/`sunRgb` and `moonDir`/`moonRgb`; `KernelFrame.windowSun`/`moonSun`, `sunOn`/`moonOn`; TSL `skyBody(u, body: "sun" | "moon"): SkyBodyUniforms` and `sunVisibilityNode(u, volumes, p, body)`; the CPU twin `sunVisibility(model.windows, frame.windowSun | frame.moonSun, point)`. R1c names the list `SKY_BODIES = ["sun", "moon"] as const` (`type SkyBodyName`) and every skin term from the sky (the sun grids, the material's direct term, the sheen hook) is computed per body in that list. A body's direct light on a skin is the window volume march exactly as `docs/engineering/relight-package.md` ("Window volumes and the sun") defines it, at the skin's 2 cm sun-grid points. Their bounce is the factored sky-body basis of R1a Task 4 as built (commits `a2a25c56`, `deed4d4a`, `4efa4fa4`; the contract's section "The sky bodies' bounce", normative over R1d's A9 by the controller's ruling of 7 October): per window and body `B_w = P_w × R_w`, the exact entering power `P_w` from the 56,448 patch rays computed on every light change, times the response `R_w` of K float16 basis volumes on the 1 m grid (K read from the package, 30 on 7 October) mixed by the 4° coefficient table, read at each 0.5 m probe and folded into R1b's scenario probe volume (R1b Task 10). The skins receive it as `I_sky` through that fold and contract 6, with no R1c code of its own. β, the area-scaled bounce and the sunlit-area table are gone and nothing in R1c reads them.
+7. **Sky bodies** (R1d's amendments A4, A5 and A9, `docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`): two directional sky bodies, the Sun and the Moon, each with its own direction and RGB: `RelightSetting.sunDir`/`sunRgb` and `moonDir`/`moonRgb`; `KernelFrame.windowSun`/`moonSun`, `sunOn`/`moonOn`; TSL `skyBody(u, body: "sun" | "moon"): SkyBodyUniforms` and `sunVisibilityNode(u, volumes, p, body)`; the CPU twin `sunVisibility(model.windows, frame.windowSun | frame.moonSun, point)`. R1c uses R1b's list `SKY_BODIES = ["sun", "moon"]` (`relight-kernel.ts`, re-exported by Task 17's `skin-light.ts` with `type SkyBodyName` = R1b's `SkyBody`) and every skin term from the sky (the sun grids, the material's direct term, the sheen hook) is computed per body in that list. A body's direct light on a skin is the window volume march exactly as `docs/engineering/relight-package.md` ("Window volumes and the sun") defines it, at the skin's 2 cm sun-grid points. Their bounce is the factored sky-body basis of R1a Task 4 as built (commits `a2a25c56`, `deed4d4a`, `4efa4fa4`; the contract's section "The sky bodies' bounce", normative over R1d's A9 by the controller's ruling of 7 October): per window and body `B_w = P_w × R_w`, the exact entering power `P_w` from the 56,448 patch rays computed on every light change, times the response `R_w` of K float16 basis volumes on the 1 m grid (K read from the package, 30 on 7 October) mixed by the 4° coefficient table, read at each 0.5 m probe and folded into R1b's scenario probe volume (R1b Task 10). The skins receive it as `I_sky` through that fold and contract 6, with no R1c code of its own. β, the area-scaled bounce and the sunlit-area table are gone and nothing in R1c reads them.
 
 ## File Structure
 
@@ -227,10 +235,12 @@ cd D:/claude/real-hall/repo && for p in \
   "def _artifact:tools/relight/relight/__main__.py" \
   "COMMANDS\[\"record-artifacts\"\]:tools/relight/relight/__main__.py" \
   "export function skyBody:packages/web/src/lib/relight/relight-frame.ts" ; do \
-  pattern="${p%%:*}"; file="${p#*:}"; if grep -q "$pattern" "$file"; then echo "ok   $pattern"; else echo "MISSING $pattern in $file"; fi; done
+  pattern="${p%:*}"; file="${p##*:}"; if grep -q "$pattern" "$file"; then echo "ok   $pattern"; else echo "MISSING $pattern in $file"; fi; done
 ```
 
-Expected: 20 lines starting `ok`. Any `MISSING` line: stop and report it to the controller (the amendments file, `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, says where each of the first 17 belongs; the next two are R1a Task 4c's artifact records, which Tasks 8 and 15 check R1a's work against (the packaging rule); the last is R1d A5's sky body in R1b's frame, which Tasks 19 and 20 use).
+(Each entry is split at its last colon: two patterns contain colons, and no path does.)
+
+Expected: 20 lines starting `ok`. Any `MISSING` line: stop and report it to the controller (the amendments file, `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, says where each of the first 17 belongs, except that R1a Task 4c, not that file's code, is normative for A1's Python part and A4; the next two are R1a Task 4c's artifact records, which Tasks 8 and 15 check R1a's work against (the packaging rule); the last is R1d A5's sky body in R1b's frame, which Tasks 19 and 20 use).
 
 - [ ] **Step 3: Check the inputs**
 
@@ -1163,7 +1173,7 @@ if __name__ == "__main__":
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_config tests.test_twice tests.test_frames -v`
-Expected: PASS, 20 tests (4 config, 9 twice, 7 frames).
+Expected: PASS, 22 tests (4 config, 9 twice, 9 frames).
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m skins nothing --config config/grand-hall.json; echo exit $?`
 Expected: `unknown command nothing; known: []` and `exit 2`.
@@ -4254,7 +4264,7 @@ COMMANDS["render-one"] = Command(run=_cmd_render_one, outputs=lambda cfg, rest: 
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_sources tests.test_frames tests.test_views -v`
-Expected: PASS, 17 tests (6 sources, 7 frames, 4 views).
+Expected: PASS, 19 tests (6 sources, 9 frames, 4 views).
 
 - [ ] **Step 7: Build the occupancy (twice) and look at three renders**
 
@@ -4832,7 +4842,7 @@ COMMANDS["frames-decode"] = Command(run=_lazy("xbin", "cmd_frames_decode"),
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_xbin tests.test_sources tests.test_frames -v`
-Expected: PASS, 20 tests (7 xbin, 6 sources, 7 frames).
+Expected: PASS, 22 tests (7 xbin, 6 sources, 9 frames).
 
 - [ ] **Step 8: Commit the code**
 
@@ -8916,7 +8926,7 @@ Clean tiles exist only where a clutter mask touches a tile. Heights are the fill
 - the tiles exactly cover each skin;
 - the material tiles and the heights decode exactly;
 - the albedo tiles' alpha decodes exactly, and their colour reaches at least 38 dB of luma PSNR against the encoder's input;
-- the captured-light identity: at the 5 cm light texels, the median log2 luma ratio of the decoded albedo (observed texels outside the frieze band) to Task 8's splat anchor is within 1/20 of a stop (`IDENTITY_STOPS`).
+- the captured-light identity: at the light texels (5 cm; 2 cm on the frieze), the median log2 luma ratio of the decoded albedo (observed texels outside the frieze band) to Task 8's splat anchor is within 1/20 of a stop (`IDENTITY_STOPS`).
 
 The identity check is what makes a skin continuous with the splats around it at the captured light. Its median is the bias: the restoration's local differences (glare removed, healed marks) are expected, a brightness offset is not.
 
@@ -9464,7 +9474,7 @@ x = c·tile and y = r·tile, the last ones shorter. A `.gz` file is served as `a
 Albedo is linear, in the relight model's units: albedo × the captured light (relight `Ecap`) is the hall's displayed
 linear colour as captured. The browser draws `albedo × (base light + Σ sky bodies' direct light)` through R1b's
 display with a knee of 0.8, plus R1d's sheen, which reads the material tile's roughness and metal and the skin's
-`specularColour` (a metal's Fresnel colour; the frieze's gilded ground, whose brightness follows the view). The base light is each 5 cm light texel's nine sources and bounce (relight v2's skin
+`specularColour` (a metal's Fresnel colour; the frieze's gilded ground, whose brightness follows the view). The base light is each light texel's (5 cm; 2 cm on the frieze) nine sources and bounce (relight v2's skin
 light records). The direct light is each 2 cm sun-grid texel's window march for the Sun and the Moon, times the
 per-pixel cosine.
 
@@ -9761,15 +9771,16 @@ Expected: `IDENTICAL`. If keys differ, run the command a third time into `D:/cla
 ```bash
 cd D:/claude/real-hall/repo/tools/relight
 C:/Python313/python.exe -m relight check --config config/grand-hall.json --package D:/claude/splats/trades-hall/grand-hall/relight/v2
-cd D:/claude/real-hall/repo && git diff --quiet -- packages/web/src/lib/relight/__fixtures__/relight-vectors.json || git checkout -- packages/web/src/lib/relight/__fixtures__/relight-vectors.json
+cd D:/claude/real-hall/repo && git status --short -- packages/web/src/lib/relight/__fixtures__/relight-vectors.json
 cd tools/skins && C:/Python313/python.exe -m skins v2-check --config config/grand-hall.json
 ```
 
-(R1a's `check` also writes the browser's test vectors from the package it checks (R1a Task 5 Step 7). The committed fixture is v1's, which R1b's tests hold; the `git checkout` restores it if `check --package` rewrote it from v2.)
+(R1a's `check` with `--package` and no `--vectors` writes no test vectors and writes its results to `<relight evidence>/checks-v2.json`, never v1's `checks.json` (R1a Task 5 Step 7, amended 8 October). The committed fixture stays v1's, which R1b's and R1d's tests hold.)
 
 Expected:
 
-- R1a's `checks.json` for v2 has all five checks `pass: true`. Class 7 is lit exactly as class 0, so the captured identity holds with every group drawn as splats.
+- `check` prints `vectors: not written (--package without --vectors)`, and the `git status` line prints nothing (the fixture is untouched). If it prints the fixture, R1a's `check` does not keep its contract: stop and report, and do not restore or commit the file.
+- `D:/claude/relight/grand-hall/evidence/checks-v2.json` has all five checks `pass: true`. Class 7 is lit exactly as class 0, so the captured identity holds with every group drawn as splats.
 - `relight-v2.json` has `"pass": true`, with `other` 0, every wall group covering splats and both toggles holding splats.
 
 Save the counts per group and per toggle as `D:/claude/skins/grand-hall/evidence/task15-v2.txt`. A group covering fewer than 10,000 splats, or more than 40% of the finest tiles' splats, means the envelope or the cover rule misfires. Stop and report it with the numbers.
@@ -10324,7 +10335,7 @@ Expected: no type or lint errors.
 
 **Interfaces:**
 - Consumes: R1b Task 1 (`RECORD_BYTES`, `SOURCE_COUNT`, `decodeLog`, `decodeOctahedral`, `type Vec3`), Task 4 as amended (`sunVisibility`, `type SunRay`, `type WindowRounding`, `type WindowSun`, `type KernelFrame` with `windowSun`, `moonSun`, `sunOn`, `moonOn`, `setting.weights`, `setting.sunRgb`, `setting.moonRgb`; `bounceAt` (A8); `type RelightKernelModel`, `type Rgb`), Task 7 (`floorSunBilinear`); the test uses Tasks 2, 5, 8 and 10 (`buildTestPackage`, `loadRelightModelData`, `lightInputsFromManifest`, `settingForChoice`, `defaultChoice`, `kernelModelFromData`, `prepareKernelFrame`).
-- Produces (`skin-light.ts`): `SKY_BODIES = ["sun", "moon"] as const`, `type SkyBodyName`; `interface SkinLightGrid { readonly size: readonly [number, number]; readonly texel: number; readonly records: Uint8Array; readonly positions: Float32Array }` (positions: `vec4` per texel, row-major, float32); `interface SkinSunGrid { readonly size: readonly [number, number]; readonly texel: number; readonly positions: Float32Array }`; `gridPositions(texelToModel: readonly number[], size: readonly [number, number]): Float32Array`; `gridTexel(texelToModel: readonly number[]): number`; `gridPoint(positions: Float32Array, texel: number): Vec3`; `interface SkinRecord { readonly direct: readonly number[]; readonly normal: Vec3; readonly flags: number }`; `decodeSkinRecord(records: Uint8Array, texel: number, encoding: readonly (readonly [number, number])[]): SkinRecord`; `skinTexelBase(model: RelightKernelModel, frame: KernelFrame, grid: SkinLightGrid, encoding, texel: number): Rgb`; `bodyWindowSun(frame: KernelFrame, body: SkyBodyName): WindowSun | null`; `interface BodyLight { readonly dir: Vec3 | null; readonly rgb: Rgb; readonly on: boolean }`; `bodyLight(frame: KernelFrame, body: SkyBodyName): BodyLight`; `skinSunVisibility(model, frame, grid: SkinSunGrid, texel: number, body: SkyBodyName, rounding?: WindowRounding | null): SunRay`; `skinGridCoords(skinTexel: number, gridTexel: number, column: number, row: number): readonly [number, number]`; `gridBilinear(values: ArrayLike<number>, stride: number, channel: number, size: readonly [number, number], x: number, y: number): number`; `skinPixelLight(frame: KernelFrame, base: Rgb, visibility: Readonly<Record<SkyBodyName, number>>, normal: Vec3): Rgb`.
+- Produces (`skin-light.ts`): `SKY_BODIES` and `type SkyBodyName` (R1b's `SKY_BODIES = ["sun", "moon"]` and `type SkyBody` from `relight-kernel.ts`, re-exported: one list); `interface SkinLightGrid { readonly size: readonly [number, number]; readonly texel: number; readonly records: Uint8Array; readonly positions: Float32Array }` (positions: `vec4` per texel, row-major, float32); `interface SkinSunGrid { readonly size: readonly [number, number]; readonly texel: number; readonly positions: Float32Array }`; `gridPositions(texelToModel: readonly number[], size: readonly [number, number]): Float32Array`; `gridTexel(texelToModel: readonly number[]): number`; `gridPoint(positions: Float32Array, texel: number): Vec3`; `interface SkinRecord { readonly direct: readonly number[]; readonly normal: Vec3; readonly flags: number }`; `decodeSkinRecord(records: Uint8Array, texel: number, encoding: readonly (readonly [number, number])[]): SkinRecord`; `skinTexelBase(model: RelightKernelModel, frame: KernelFrame, grid: SkinLightGrid, encoding, texel: number): Rgb`; `bodyWindowSun(frame: KernelFrame, body: SkyBodyName): WindowSun | null`; `interface BodyLight { readonly dir: Vec3 | null; readonly rgb: Rgb; readonly on: boolean }`; `bodyLight(frame: KernelFrame, body: SkyBodyName): BodyLight`; `skinSunVisibility(model, frame, grid: SkinSunGrid, texel: number, body: SkyBodyName, rounding?: WindowRounding | null): SunRay`; `skinGridCoords(skinTexel: number, gridTexel: number, column: number, row: number): readonly [number, number]`; `gridBilinear(values: ArrayLike<number>, stride: number, channel: number, size: readonly [number, number], x: number, y: number): number`; `skinPixelLight(frame: KernelFrame, base: Rgb, visibility: Readonly<Record<SkyBodyName, number>>, normal: Vec3): Rgb`.
 
 These are the CPU twins of Task 19's two compute passes and of Task 20's light per pixel. Task 22's read-back checks compare the GPU with them, and nothing else uses them.
 
@@ -10442,7 +10453,8 @@ Expected: FAIL, the module `../skin-light.js` cannot be resolved.
 ```ts
 import { RECORD_BYTES, SOURCE_COUNT, decodeLog, decodeOctahedral, type Vec3 } from "../relight/relight-codec.js";
 import {
-  bounceAt, sunVisibility, type KernelFrame, type RelightKernelModel, type Rgb, type SunRay, type WindowRounding, type WindowSun,
+  SKY_BODIES, bounceAt, sunVisibility, type KernelFrame, type RelightKernelModel, type Rgb, type SkyBody, type SunRay, type WindowRounding,
+  type WindowSun,
 } from "../relight/relight-kernel.js";
 
 // The skins' light on the CPU (T-639 R1c): the twin of the skin frame's light and sun passes (Task 19) and of the skin
@@ -10450,8 +10462,9 @@ import {
 // encoding, weighted by the setting, plus R1b's scenario bounce at its position and normal; a sun-grid texel's
 // visibility is R1b's window march toward one sky body.
 
-export const SKY_BODIES = ["sun", "moon"] as const;
-export type SkyBodyName = (typeof SKY_BODIES)[number];
+/** The sky bodies: R1b's one list (relight-kernel.ts), re-exported under R1c's names so there is a single source. */
+export { SKY_BODIES };
+export type SkyBodyName = SkyBody;
 
 export interface SkinLightGrid {
   readonly size: readonly [number, number];
@@ -11172,7 +11185,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 The skins' light is computed on the GPU, in the relight frame's one compute call (`prepare`), last: after the sky bodies' bounce passes (each body's entering power `P_w` from the patch rays and its coefficients, R1d A9) and the probe fold that adds their bounce to the scenario volume, so the bounce the skins read is the current light's (amended 7 October; the test below checks the skins' passes are the last three). It runs on every light change and, while R1d animates the light, every frame.
 
-- **Light pass.** One invocation per 5 cm light texel of every skin. It decodes the texel's record with the skins' ranges, weights the nine sources by the setting and adds R1b's scenario bounce at the texel's position and baked normal through the shared `bounceNode`. So the sky bodies' factored bounce of R1a Task 4, folded into the scenario volume, lights the skins with no code here.
+- **Light pass.** One invocation per light texel of every skin (5 cm; 2 cm on the frieze). It decodes the texel's record with the skins' ranges, weights the nine sources by the setting and adds R1b's scenario bounce at the texel's position and baked normal through the shared `bounceNode`. So the sky bodies' factored bounce of R1a Task 4, folded into the scenario volume, lights the skins with no code here.
 - **Sun passes.** One per sky body (the Sun, the Moon), one invocation per 2 cm sun-grid texel. Each marches R1b's window volumes toward that body with `sunVisibilityNode` and `skyBody(u, body)`: the same march, gates and glass as the multiplier and the floor.
 - **Concatenation.** Every skin's texels are concatenated in one buffer per grid, so a light change is three dispatches whatever the number of skins. `ranges` says where each skin's texels start.
 - **Amortisation.** `setStride(stride, phase)` is R1d's: each pass then updates only the texels whose index is `phase` modulo `stride`, and stride 1 (the default) updates all of them. `followPassStride(frame)` subscribes the skins to the relight frame's own stride (R1d's interface item 3: R1d's `setPassStride` tells every `onPassStride` listener), so the skins' passes handle the same interleaved share as the multiplier pass; on R1b's frame alone, which offers no stride, it subscribes to nothing (amended 7 October).
@@ -11295,9 +11308,9 @@ import type { RelightVisibility } from "../relight/relight-kernel.js";
 import type { SkinImage, SkinPackageData } from "./skin-assets.js";
 import { SKY_BODIES, type SkyBodyName } from "./skin-light.js";
 
-// The skins on the GPU (T-639 R1c): every skin's 5 cm light texels and 2 cm sun-grid texels, concatenated, and the
-// passes that light them inside the relight frame's prepare: the base light (nine sources and R1b's scenario bounce)
-// and, per sky body, the window march. The skin material reads the three result buffers.
+// The skins on the GPU (T-639 R1c): every skin's light texels (5 cm; 2 cm on the frieze) and 2 cm sun-grid texels,
+// concatenated, and the passes that light them inside the relight frame's prepare: the base light (nine sources and
+// R1b's scenario bounce) and, per sky body, the window march. The skin material reads the three result buffers.
 
 const WORKGROUP = 256;
 
@@ -12465,7 +12478,7 @@ const PACKAGE_DIRECTORIES = ["floor-skin", "relight", "skins"] as const;
 - [ ] **Step 7: Run the tests to verify they pass**
 
 Run the five commands of Step 2 again.
-Expected: PASS for each file. The new files hold 2, 2 and 4 tests. The plugin's file holds one test more than before. The manifest's file holds its 17 (R1b Task 2), with the two URLs now v2.
+Expected: PASS for each file. The new files hold 2, 2 and 4 tests. The plugin's file holds one test more than before. The manifest's file holds its 23 (R1b Task 2 as amended on 7 October), with the two URLs now v2.
 
 Then run the R1b files these changes touch, one per command, to confirm nothing else moved:
 
@@ -12498,12 +12511,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/skins/__tests__/skin-debug.test.ts`
 
 **Interfaces:**
-- Consumes: Task 17 (`skinTexelBase`, `skinSunVisibility`, `SKY_BODIES`, `type SkyBodyName`), Task 19 (`SkinFrame`), Task 20 (`skinMaskView`), Task 21 (`RelightSkins`); R1b Task 4 (`WINDOW_ROUNDING`), Task 7 (`FLOOR_SUN_TOLERANCE`), Task 17 (`waitForNativeGpuWork`, `packages/web/src/lib/native-gpu-completion.ts:156`); three 0.186 `Renderer.getArrayBufferAsync` (`src/renderers/common/Renderer.js:2097`).
+- Consumes: Task 17 (`skinTexelBase`, `skinSunVisibility`, `SKY_BODIES`, `type SkyBodyName`), Task 19 (`SkinFrame`), Task 20 (`skinMaskView`), Task 21 (`RelightSkins`); R1b Task 4 (`WINDOW_ROUNDING`, `prepareKernelFrame`, `type SkyBody`, `type SkyLight`), Task 10 (`RelightFrame.readSkyLight`), Task 17 (`FLOOR_SUN_TOLERANCE`, exported by `relight-debug.ts`; `waitForNativeGpuWork`, `packages/web/src/lib/native-gpu-completion.ts:156`); three 0.186 `Renderer.getArrayBufferAsync` (`src/renderers/common/Renderer.js:2097`).
 - Produces (`skin-debug.ts`): `SKIN_LIGHT_TOLERANCE = 2e-3` (relative: R1d A2's tolerance for the floor's base light, the same float16 cubes summed in another order); `SKIN_CROPS` (`frieze-figures` on `door-f3`, `board-lettering` on `end_xmax-l2`, `wainscot` on `door-w2`, `canvas` on `door-c3`, `ceiling` on `ceiling-2`); `interface SkinLightCheck { checked; lit; worstRelative }`; `interface SkinSunCheck { checked; lit; worstDifference; excused }`; `interface SkinGpuTime { runs; medianMs; maxMs }`; `interface SkinCrop { name; skin; position: [x, y, z]; target: [x, y, z]; fov; width; height }` (scene frame, what `window.__roomViewCapture` takes); `interface SkinsDebugDeps` (below); `interface SkinsDebug { state(); light(stride); sun(stride, body); mask(on); gpuTime(runs); crops(distance?) }`; `createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug`; `installSkinsDebug(debug: SkinsDebug): () => void` (`window.__skins`, development only).
 
 These instruments are the only way Task 23 reads the skins on the GPU, and each check follows R1b Task 17's discipline.
 
-- **`light(stride)`** reads back the skin frame's light buffer with `getArrayBufferAsync` and compares every `stride`-th light texel with the CPU twin `skinTexelBase`, within 2e-3 relative. Both sides include the sky bodies' bounce (the factored basis in the scenario fold), so a sunlit or moonlit setting checks it too (amended 7 October).
+- **`light(stride)`** reads back the skin frame's light buffer with `getArrayBufferAsync` and compares every `stride`-th light texel with the CPU twin `skinTexelBase`, within 2e-3 relative. Both sides include the sky bodies' bounce (the factored basis in the scenario fold), so a sunlit or moonlit setting checks it too (amended 7 October). The CPU twin is asked with the GPU's own read-back sky light, as R1b Task 17's `gpuKernel` does (amended 8 October, seam review I1): `frame.readSkyLight`, then `prepareKernelFrame(model, setting, { kind: "light", … })`. The applied `kernelFrame` would not do: its display light holds the CPU twin's exact light for a preset's own-hour body and another direction's read-back for a provisional frame, while the GPU folded its own; one patch ray the GPU rounds the other way moves a window's `P_w` by about 1%, more than 2e-3 where the sky bounce dominates a texel. R1b Task 17's `skyLight` judges the GPU's sky light itself against the twin.
 - **`sun(stride, body)`** reads back a body's visibility buffer and compares it with `skinSunVisibility` within R1b's floor tolerance (1e-5). A texel whose ray passes within rounding of a march decision (`WINDOW_ROUNDING`) is counted as excused, never judged.
 - **`gpuTime(runs)`** alternates the sunny morning's hour between 08:00 and 10:00. At each new hour it times the skins' three passes alone, from submission to completion on an idle queue.
 - **`mask(on)`** draws every skin magenta and unlit, so the verification can tell skin pixels from splat pixels.
@@ -12572,6 +12585,12 @@ function deps(light: Float32Array, sun: Float32Array): SkinsDebugDeps {
     frame,
     read: (attribute) => Promise.resolve((attribute === frame.lightOut ? light : sun).slice().buffer),
     prepare: () => undefined,
+    // No GPU here: the applied kernel's own light stands for the read-back, so the expectation above holds exactly.
+    readSkyLight: () => {
+      const kernel = frame.relight.kernelFrame;
+      if (kernel === null) throw new Error("not applied");
+      return Promise.resolve({ sun: kernel.skyLight("sun"), moon: kernel.skyLight("moon") });
+    },
     timeSkinPasses: () => Promise.resolve(0.5),
     applyMinutes: () => Promise.resolve(),
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, note: "test" },
@@ -12637,8 +12656,8 @@ Expected: FAIL, the module `../skin-debug.js` cannot be resolved.
 ```ts
 import { Euler, Matrix4, Quaternion, Vector3 } from "three";
 import type { StorageBufferAttribute } from "three/webgpu";
-import { FLOOR_SUN_TOLERANCE } from "../relight/floor-light.js";
-import { WINDOW_ROUNDING } from "../relight/relight-kernel.js";
+import { FLOOR_SUN_TOLERANCE } from "../relight/relight-debug.js";
+import { WINDOW_ROUNDING, prepareKernelFrame, type SkyBody, type SkyLight } from "../relight/relight-kernel.js";
 import type { RuntimeAssetViewTransform } from "../runtime-package-resolution.js";
 import type { SkinFrame } from "./skin-frame.js";
 import { skinSunVisibility, skinTexelBase, type SkyBodyName } from "./skin-light.js";
@@ -12678,6 +12697,8 @@ export interface SkinsDebugDeps {
   readonly read: (attribute: StorageBufferAttribute) => Promise<ArrayBuffer>;
   /** Runs the relight frame's pending work (its prepare), so the buffers hold the current light. */
   readonly prepare: () => void;
+  /** The sky bodies' light the GPU computed for the applied light (R1b's RelightFrame.readSkyLight): the light check's CPU side. */
+  readonly readSkyLight: () => Promise<Readonly<Record<SkyBody, SkyLight | null>>>;
   /** Submits the skins' passes alone and resolves with the milliseconds to their completion on an idle queue. */
   readonly timeSkinPasses: () => Promise<number>;
   /** Sets the sunny morning at `minutes` and resolves once the walk has applied it. */
@@ -12729,7 +12750,17 @@ export function createSkinsDebug(deps: SkinsDebugDeps): SkinsDebug {
     light: async (stride) => {
       deps.prepare();
       const values = new Float32Array(await deps.read(frame.lightOut));
-      const applied = kernel();
+      // The CPU twin asked with the GPU's own sky light (R1b Task 17's gpuKernel), so a patch ray the GPU rounds the
+      // other way moves both sides alike and no preset or provisional light stands in for this light's own.
+      const read = await deps.readSkyLight();
+      const applied = prepareKernelFrame(frame.relight.model, kernel().setting, {
+        kind: "light",
+        light: (body) => {
+          const light = read[body];
+          if (light === null) throw new Error(`The GPU reported no light for the ${body}.`);
+          return light;
+        },
+      });
       const step = Math.max(1, Math.floor(stride));
       let checked = 0, lit = 0, worst = 0;
       for (const skin of frame.data.skins) {
@@ -12839,6 +12870,7 @@ In `packages/web/src/components/scene/RelightSkins.tsx`, replace the import line
         frame: loaded.frame,
         read: (attribute) => gl.getArrayBufferAsync(attribute),
         prepare: () => { frame.prepare(gl); },
+        readSkyLight: () => frame.readSkyLight(gl),
         timeSkinPasses: async () => {
           await idle();
           const started = performance.now();
@@ -12905,7 +12937,7 @@ What each check proves:
   - outside the skins, which stay splats, the 99th percentile of the luminance difference is at most 1/20 of a stop (the spec);
   - inside them, the median of the 8 px-blurred luminance ratio is within 1/10 of a stop. The skins are restored, so their glare and stains differ by design, but not their brightness.
 - **GPU against CPU.** Two read-backs are compared with the CPU twin:
-  - every 7th light texel against `skinTexelBase`, within 2e-3, at the captured light, the sunny morning and the moonlit night (amended 7 October: the sky bodies' bounce, R1a Task 4's factored basis folded into the scenario volume, is in both sides of the comparison, the Sun's by day and the Moon's by night; the CPU twin's `bounceAt` takes it from R1b's kernel frame, whose bodies' entering power is computed for a CPU caller as R1d A9 point 2 says);
+  - every 7th light texel against `skinTexelBase`, within 2e-3, at the captured light, the sunny morning and the moonlit night (amended 7 October: the sky bodies' bounce, R1a Task 4's factored basis folded into the scenario volume, is in both sides of the comparison, the Sun's by day and the Moon's by night; the CPU twin is asked with the GPU's own read-back sky light, as R1b Task 17's `gpuKernel` asks it (Task 22's `light`, amended 8 October), so this check judges the skins' passes and R1b Task 17's `skyLight` judges that light itself against the twin);
   - every 5th sun-grid texel against the march, within 1e-5, for the Sun at the sunny morning and the Moon at the moonlit night. At most 2% of the texels checked may be excused for rounding (at least one is allowed), and each body must light some texels.
 - **Photographs.** The night with the skins against Matterport's photographs, by `07_compare`'s cells and correlation: r ≥ 0.85 at station 43 and ≥ 0.80 at station 45, and at both at least the r of the hall as served (`?relight=off`).
 - **Loading.** Every `skins:` span is at most 50 ms, and both kinds were measured. The skins bring no console error the skins-off run lacks.

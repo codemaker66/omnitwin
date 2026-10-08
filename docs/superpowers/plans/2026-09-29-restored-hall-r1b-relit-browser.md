@@ -16,10 +16,15 @@ Applied in one pass from R1c's amendments (`docs/superpowers/plans/2026-10-03-r1
 - **The lamps** (R1d A1, the owner's decision): the emitter boost is 1 in every preset; each lamp group's full-level colour is the package's (`lamps.groups[g].colour`, checked equal to `capture.colours[source] / capture.daylightColour`), never a constant (the 2,700–2,800 K figure is not established); how a group's colour changes as it dims is a setting (`RelightSetting.lampTints`, ones in R1b; R1d's warm-down).
 - **Packaging**: the loader reads exactly the files the manifest names, each by its exact path, and refuses a package where a named file has no `files` entry or `files` lists a file no field names (Task 2's schema, Task 5's loader); the six `sky/` files are bounded and checked as they decode.
 - **Task 1:** R1c A1's record classes (class 7, toggles; `relight-codec-skins.test.ts`). **Task 2:** the `sky` and per-group `lamps` sections, R1c A7's `skins` and `visibility`, the lamp-colour and exact-files refusals (23 tests). **Task 3:** 23. **Task 4 (rewritten):** the kernel's sky model (`windowRayLight`, `windowPower` with its rounding excuse, `skyCorners`, `skyCoefficients`, `skyLightOf`, `skyBasisCube`, `skyFoldCorners`, `KernelSky`), the Moon, lamp tints, R1c A6/A8 (`RelightVisibility`, `bounceAt`), the vectors' `skyBounce` and `moon_test`; a pre-existing float32 bug in the night test fixed (42 tests). **Task 5:** `RelightSkyData` from the six `sky/` files, the fold table, the staged test of the twin's `P_w` and `c_k` against the vectors (9 tests). **Task 6:** the Moon (R1d A3). **Task 7:** the floor's base light split into its sources and the sky bodies' bounce (`texelBaseLight`, the GPU pass's twin), the Moon's floor grid, `roomLight` from the sky light (8 tests). **Task 8:** R1d A1, A4, A7 (the moonlit night; 17 tests).
-- **Task 10 (rewritten):** the sky bodies' nine passes, the fold with the sky bounce, the floor's base light (R1d A2), sun and moon (A5) in one compute call; `skyRayNode`, `skyBody`; R1c's `probeReads`, `bounceNode`, `addPasses`, `setVisibility`; R1d A9's read access (`skyPower`, `bounceCoefficients`, `floorMeanBasis`); the display's sky light read back from the GPU for a display that adapts, refined by `adaptDisplay`/`onDisplay` (frame 12 tests, apply 4). **Task 11:** tints, the Moon, R1c's shared bounce and alpha. **Task 12:** wording. **Task 14:** `floorBaseNode`, the Moon's floor term. **Task 15:** the `sky/` files in the staging test; the provider draws a refined display. **Task 16:** the moonlit radio. **Task 17:** `floorBase`, `floorMoon`, `skyLight`, the `moon_test` fixture, R1c's visibility, the sky passes' GPU time (5 tests). **Task 18:** the GPU section judges them; the sky passes' time is reported against R1d A9's 1 ms (8 Python tests, run against the plan's own code on 8 October: 8 pass). **Task 19:** R1d A10 and R1c A10 (push and record; the one preview is R1d's Task 24), the notes rewritten, the test list completed.
+- **Task 10 (rewritten):** the sky bodies' nine passes, the fold with the sky bounce, the floor's base light (R1d A2), sun and moon (A5) in one compute call; `skyRayNode`, `skyBody`; R1c's `probeReads`, `bounceNode`, `addPasses`, `setVisibility`; R1d A9's read access (`skyPower`, `bounceCoefficients`, `floorMeanBasis`); the display's sky light read back from the GPU for a display that adapts, refined by `adaptDisplay`/`onDisplay` (frame 12 tests, apply 4). **Task 11:** tints, the Moon, R1c's shared bounce and alpha. **Task 12:** wording. **Task 14:** `floorBaseNode`, the Moon's floor term. **Task 15:** the `sky/` files in the staging test; the provider draws a refined display. **Task 16:** the moonlit radio. **Task 17:** `floorBase`, `floorMoon`, `skyLight`, the `moon_test` fixture, R1c's visibility, the sky passes' GPU time (5 tests; 6 after the seam review fixes below). **Task 18:** the GPU section judges them; the sky passes' time is reported against R1d A9's 1 ms (judged since the seam review fixes below) (8 Python tests, run against the plan's own code on 8 October: 8 pass). **Task 19:** R1d A10 and R1c A10 (push and record; the one preview is R1d's Task 24), the notes rewritten, the test list completed.
 - **Wording** (R1d A11): the pass reruns only when the light changes (R1d reruns it every frame while the light moves, and never while it is still).
 - **Merged overlaps:** R1d A2's and R1c A8's edits of `prepare`'s call are one call (the sky passes, the fold, the floor's base light, sun and moon, then R1c's passes); R1d A1's `group` and R1c A9's `group` in the multiplier pass are two names (`group` the lamp group, `skinGroup` the wall group), as in the kernel; R1d A10 and R1c A10's Task 19 change is one step; R1d A9's passes are R1a Task 4's contract, computed exactly as it states.
 - **Kept as written for R1d's anchors:** the light control's 06:00–22:00 range (R1d's Task 6 widens it to the whole day; until then the moonlit night's own hour, 23:00, reads 22:00 on the clock) and the provider block R1d's Task 9 replaces (its comment included).
+- **Seam review fixes (8 October)** (`D:/claude/real-hall/plan-amendments-0710/review/seam-A-findings.md`; the controller's decisions bind I-5 and I-6):
+  - I-1: Task 2's `sky.k` and Task 4's vectors `skyBounce.k` accept up to 192, R1a's `SUN_KMAX`; `MAX_SKY_BASIS_VALUES` bounds the data.
+  - I-5: Task 4's `RelightVectorsSchema.windowRays.wallFaceRate` (R1a's measured rate; the window-ray test checks its sample) and the contract's description; Task 17's `FloorSunCheck.marched`; Task 18 caps the excused splats and texels at twice `wallFace / marched` of those marched (at least one), exactly in integers, and fails a run without the rate (the driver copies it from the vectors), replacing the flat 2%; the tests hold 180 excused of 9,000 marched at a 1% rate and fail 181. Self-review updated.
+  - I-6: the sky passes' GPU time is judged in Task 18 (median of the twelve light changes at most 1 ms on the RTX 4090; a miss stops and reports), timed by timestamp queries (Task 17's `timedCompute`: three 0.186's `trackTimestamp`, `resolveTimestampsAsync("compute")` and the compute pool's per-call timestamps, checked in `packages/web/node_modules/three` on 8 October), after one unrecorded run; only without `timestamp-query` the round trip less an empty one's, labelled `skyTiming`. Task 0 Step 7 records `timestampQuery`; the driver turns Chromium's timestamp quantisation off (`--enable-webgpu-developer-features`); Task 17 gains a test (6); Task 18's test now fails 1.4 ms and passes 1.0 ms. R1d's Task 23 note that R1b only reports is R1d's to update.
+  - M-9: Tasks 4 and 10 give the CPU twin's 8 October measurement, 4–9 ms per body (12–28 ms without the facing skip).
 
 ## Revisions (30 September, pre-flight)
 
@@ -83,7 +88,7 @@ The controller's decision of 30 September, confirmed on 3 October (the spec's "A
 
 Items 1 and 2 are R1b's reading of R1a's outputs; items 3–6 are produced by R1a as amended on 29 September. Every one is still checked: 1 by Task 4's tests (its floor texels, window volumes, sky table nodes, basis grid and floor means against the staged package by Task 5 Step 6), 2–5 by Task 0 Step 2, 4 and 5 again in the browser by Task 18 (the fixture splats found at their model positions), and 6 by Task 19 Step 5. A mismatch is reported, not designed around.
 
-1. **Test vectors.** `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` has exactly the shape of `RelightVectorsSchema` in Task 4 (schema `venviewer.relight-vectors.v1`): the manifest slice, the four settings `captured`, `night`, `sunny_morning` and `moon_test` in full (weights, sky level and colour, lamp levels, `emitterBoost` (1 in every setting), sun direction and RGB, moon direction and RGB; `moon_test` is not a preset: the Moon at the moonlit preset's place with `sunny_morning`'s sun RGB, nothing else lit; R1d A8), a sparse probe table (float16, base64), the five windows (amended 3 October: each window's 21-number frame, its volume as base64 gzip, the package's bytes, and its 360 horizon elevations), the 256 sample depths, the sky bodies' bounce slice (`skyBounce`: K, the table's frame and size, the basis grid, `floorMean`, per window-ray direction the powers, azimuth, elevation, corners and coefficients, the table nodes the cases read, one probe's fold with its basis corners, and the folded cubes at every probe of the table for `sunny_morning` and `moon_test`), the window rays (96 points by 9 directions: 8 suns and `moon_test`'s Moon with `windows.sun_visibility`'s visibility and samples, and the `wallFace` pairs whose first sample the bake put on the room side of the wall face between unlike cells), per splat its record (24 hex digits), model-frame position, captured linear colour and expected `m`, `alpha` and packed `word` per setting (the four), and eight floor texels (`floorTexels`: column, row and the nine direct values of R1a's `floor-light.npz`). The probe table is on the package's global grid: `probes.origin`, `spacing` and `shape` are the manifest's `probes`, each entry's `index` is the global linear index `(ix·ny + iy)·nz + iz`, and `entries` holds every corner that each splat's trilinear lookup touches after clamping, with its validity. The splats may include horizon-blocked cases.
+1. **Test vectors.** `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` has exactly the shape of `RelightVectorsSchema` in Task 4 (schema `venviewer.relight-vectors.v1`): the manifest slice, the four settings `captured`, `night`, `sunny_morning` and `moon_test` in full (weights, sky level and colour, lamp levels, `emitterBoost` (1 in every setting), sun direction and RGB, moon direction and RGB; `moon_test` is not a preset: the Moon at the moonlit preset's place with `sunny_morning`'s sun RGB, nothing else lit; R1d A8), a sparse probe table (float16, base64), the five windows (amended 3 October: each window's 21-number frame, its volume as base64 gzip, the package's bytes, and its 360 horizon elevations), the 256 sample depths, the sky bodies' bounce slice (`skyBounce`: K, the table's frame and size, the basis grid, `floorMean`, per window-ray direction the powers, azimuth, elevation, corners and coefficients, the table nodes the cases read, one probe's fold with its basis corners, and the folded cubes at every probe of the table for `sunny_morning` and `moon_test`), the window rays (96 points by 9 directions: 8 suns and `moon_test`'s Moon with `windows.sun_visibility`'s visibility and samples, and the `wallFace` pairs whose first sample the bake put on the room side of the wall face between unlike cells; amended 8 October: and `wallFaceRate`, R1a's measured share of marched rays over 200,000 seeded splats whose first sample on the wall face has cells of unlike depth on either side, which caps Task 18's rounding excuses), per splat its record (24 hex digits), model-frame position, captured linear colour and expected `m`, `alpha` and packed `word` per setting (the four), and eight floor texels (`floorTexels`: column, row and the nine direct values of R1a's `floor-light.npz`). The probe table is on the package's global grid: `probes.origin`, `spacing` and `shape` are the manifest's `probes`, each entry's `index` is the global linear index `(ix·ny + iy)·nz + iz`, and `entries` holds every corner that each splat's trilinear lookup touches after clamping, with its validity. The splats may include horizon-blocked cases.
 2. **Tiles** are matched by `tiles[].tileSha256`, which equals the bundle's `sha256` of the served `.sog` (`packages/web/src/data/generated/trades-hall-splat-bundles.ts`); `count` equals the decoded splat count.
 3. **Floor skin v2** (produced by R1a) is `floor-skin/v2/floor-skin.json`, schema string `venviewer.floor-skin.v1`, `provenance.kind` `"restored-albedo"`, texture already scaled to the fitted albedo (`colour.albedoScale` records the factor; R1b does not apply it again).
 4. **`floor.texelToModel`** (produced by R1a) maps the texel-centre coordinates `(col, row, 0, 1)` of the 5 cm floor light maps to the model frame; row 0 is the first PNG row.
@@ -229,13 +234,13 @@ const { chromium } = require('@playwright/test');
     const page = await browser.newPage();
     const adapter = await page.evaluate(async () => {
       const found = await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
-      return found ? { maxStorageBuffersPerShaderStage: found.limits.maxStorageBuffersPerShaderStage, maxStorageBufferBindingSize: found.limits.maxStorageBufferBindingSize, vendor: found.info?.vendor ?? null, architecture: found.info?.architecture ?? null } : null;
+      return found ? { maxStorageBuffersPerShaderStage: found.limits.maxStorageBuffersPerShaderStage, maxStorageBufferBindingSize: found.limits.maxStorageBufferBindingSize, timestampQuery: found.features.has('timestamp-query'), vendor: found.info?.vendor ?? null, architecture: found.info?.architecture ?? null } : null;
     });
     console.log(JSON.stringify({ browser: browser.version(), adapter }));
   } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });" | tee D:/claude/relight/grand-hall/evidence/r1b/adapter-limits.json; node -e "require('fs').rmSync(process.argv[1])" "$LOCK"; }
 ```
-Expected: one line of JSON with the Chromium version and `maxStorageBuffersPerShaderStage` (the controller measured 16 in Chrome 152 on this RTX 4090). Record the value in the task report. If `adapter` is null or the value is below 9, stop before Task 9 and report it: the build PC would draw the hall as captured once T-640 lands. Tasks 1–8 use no GPU and may go ahead.
+Expected: one line of JSON with the Chromium version, `maxStorageBuffersPerShaderStage` (the controller measured 16 in Chrome 152 on this RTX 4090) and `timestampQuery` (amended 8 October: whether the adapter offers `timestamp-query`, which Task 17's `timedCompute` needs to time the sky passes on the GPU for Task 18's 1 ms gate; without it they are timed by a labelled round trip, an upper bound). Record both values in the task report. If `adapter` is null or the value is below 9, stop before Task 9 and report it: the build PC would draw the hall as captured once T-640 lands. Tasks 1–8 use no GPU and may go ahead.
 
 ---
 
@@ -1017,8 +1022,11 @@ export const RelightManifestSchema = z.object({
   sun: z.object({ fresnel: z.array(finite.min(0).max(1)).length(101) }),
   /** The sky bodies' bounce (R1a Task 4 as built; the contract's "The sky bodies' bounce"). */
   sky: z.object({
-    /** The number of basis volumes, read from the data (30 on 7 October), never assumed. */
-    k: z.number().int().min(1).max(64),
+    /**
+     * The number of basis volumes, read from the data (30 on 7 October), never assumed. At most R1a's SUN_KMAX (192,
+     * tools/relight/relight/__main__.py:368), the most its K search tries; MAX_SKY_BASIS_VALUES bounds the data itself.
+     */
+    k: z.number().int().min(1).max(192),
     bodies: z.tuple([z.literal("sun"), z.literal("moon")]),
     /** The basis grid (1 m), whose origin is the probes' origin. */
     grid: z.object({
@@ -1512,7 +1520,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 The folded formulation: bounce light is linear in the sources, so `Σk w[k]·I[k]` equals the ambient-cube evaluation of `Σk w[k]·probes[k]` trilinearly interpolated. The kernel folds each probe's nine source cubes by the capture weighting and by the scenario weighting, adds to the scenario's the sky bodies' bounce folded at that probe (`skyCube`), and evaluates two 18-value cubes per splat; the GPU pass (Task 11) reads the same two folded volumes. The test vectors, written by `reference.py`'s per-source formulation, prove the two agree.
 
-**The sky bodies' bounce** (R1a Task 4 as built, `sunbounce.py`; the contract's section "The sky bodies' bounce", precise to float32 order). For each sky body that is up (the Sun, the Moon), each window's exact entering power `P_w(σ)` is `windowPower`: the room's `16 × count` patch rays (56,448 in the hall), each owned by the first window, in order W1..W5, that claims it (a claimed ray is never offered to a later window), marched as `sunVisibility` marches a splat's ray, its light `f32(T × F)` and 0 while its owner's horizon gate is closed; `lit[w][p]` sums its window's rays in float32 in sub-sample order; `P_w = Σ_p area_p × (lit[w][p] / 16) × max(N_p · σ, 0)` in float64. A patch facing away from the body adds `area × lit × 0`, so its rays are skipped, which changes no `P_w`. The coefficients `c_k` read the 4° table's four corners (`skyCorners`, `windows.sun_corners`) and add, in float64, corner by corner and then window by window where `P_w > 0`, `(weight × P_w) × node[w][k]` (`skyCoefficients`, `sunbounce.coefficients`). The bounce at a 0.5 m probe is the 1 m basis read trilinearly (`skyFoldCorners`, `sunbounce.trilinear_matrix`: the cell clamped into the grid and the point into the cell, invalid corners dropped, the weights renormalised when their sum exceeds 1e-6, else none) of `Σ_body bodyRGB ⊙ Σ_k c_k basis_k` (`skyBasisCube`); it joins the scenario volume exactly as the nine sources' bounce does, so every splat, the floor (Task 10's base pass, R1d A2) and R1c's skins receive both bodies' bounce with no code of their own. The GPU computes `P_w` and `c_k` itself at every light change (Task 10: the light moves every frame under R1d's clock, and the CPU's 56,448-ray march takes about 5–20 ms per body on the build PC even with the facing skip, measured on 7 October with a Node twin of this code against the bake's `window_power`, worst relative difference 1.9e-8). This file is the reference the GPU is checked against (Task 17), and `prepareKernelFrame` takes the sky light from `KernelSky`: the model's own twin when first read (`model`: tests and DEV checks), each body's light as given (`light`: Task 10 gives the GPU's, read back), or the bounce already folded (`cubes`: R1a's vectors carry `probeCubes`, since the full basis and the patch rays would add 2 MB to them; Task 5's staged test holds this twin's `P_w` to the vectors' `cases[].powers` on the real patches).
+**The sky bodies' bounce** (R1a Task 4 as built, `sunbounce.py`; the contract's section "The sky bodies' bounce", precise to float32 order). For each sky body that is up (the Sun, the Moon), each window's exact entering power `P_w(σ)` is `windowPower`: the room's `16 × count` patch rays (56,448 in the hall), each owned by the first window, in order W1..W5, that claims it (a claimed ray is never offered to a later window), marched as `sunVisibility` marches a splat's ray, its light `f32(T × F)` and 0 while its owner's horizon gate is closed; `lit[w][p]` sums its window's rays in float32 in sub-sample order; `P_w = Σ_p area_p × (lit[w][p] / 16) × max(N_p · σ, 0)` in float64. A patch facing away from the body adds `area × lit × 0`, so its rays are skipped, which changes no `P_w`. The coefficients `c_k` read the 4° table's four corners (`skyCorners`, `windows.sun_corners`) and add, in float64, corner by corner and then window by window where `P_w > 0`, `(weight × P_w) × node[w][k]` (`skyCoefficients`, `sunbounce.coefficients`). The bounce at a 0.5 m probe is the 1 m basis read trilinearly (`skyFoldCorners`, `sunbounce.trilinear_matrix`: the cell clamped into the grid and the point into the cell, invalid corners dropped, the weights renormalised when their sum exceeds 1e-6, else none) of `Σ_body bodyRGB ⊙ Σ_k c_k basis_k` (`skyBasisCube`); it joins the scenario volume exactly as the nine sources' bounce does, so every splat, the floor (Task 10's base pass, R1d A2) and R1c's skins receive both bodies' bounce with no code of their own. The GPU computes `P_w` and `c_k` itself at every light change (Task 10: the light moves every frame under R1d's clock, and the CPU's 56,448-ray march takes 4–9 ms per body on the build PC with the facing skip, 12–28 ms without it (measured on 8 October, `plan-amendments-0710/prior-agent-scratch/pw-bench`, over the hall's real patches and window volumes at five directions; on 7 October a Node twin of this code matched the bake's `window_power` to a worst relative difference of 1.9e-8). This file is the reference the GPU is checked against (Task 17), and `prepareKernelFrame` takes the sky light from `KernelSky`: the model's own twin when first read (`model`: tests and DEV checks), each body's light as given (`light`: Task 10 gives the GPU's, read back), or the bounce already folded (`cubes`: R1a's vectors carry `probeCubes`, since the full basis and the patch rays would add 2 MB to them; Task 5's staged test holds this twin's `P_w` to the vectors' `cases[].powers` on the real patches).
 
 R1a's amendments are here too. Lit bulbs brighten by the setting's emitter boost β, `Mlit = t × (1 + (β − 1) smoothstep(0.45, 0.9, L))`, with β = 1 in every preset (R1d A1: crisp bulbs replace the boost), so the captured light is exactly neutral, bulbs included; t is the group's lamp tint (`RelightSetting.lampTints`, ones unless R1d dims a lamp: how a lamp's colour changes as it dims is a setting, never a package value), and at full level a group keeps its own colour, which the capture weights already carry (`capture.colours`, R1a Task 4b's refit). The sun (amended 3 October: window volumes) is R1a's `windows.sun_visibility`: the ray from a splat toward the sun belongs to the first window, in order W1..W5, that claims it; it counts while that window's horizon gate is open (the horizon interpolated linearly between whole degrees at the sun's compass azimuth, as the proof's `horizon_deg`); it is marched through the window's occupancy volume in 1.5 cm steps at the nearest cell; and it is scaled by the glass transmission, interpolated linearly at |σy|. The Moon (R1d A5) goes through exactly the same march with its own direction, gates and glass. `prepareKernelFrame` computes both bodies' gates and glass once per setting, and the GPU passes (Tasks 10 and 11) read those same values.
 
@@ -1965,6 +1973,8 @@ describe("the reference multiplier against R1a's test vectors (T-639 R1b)", () =
     expect(suns).toHaveLength(9);                              // the sunny morning, five check suns, two random suns, the moon_test Moon
     // First samples the bake put on the room side of y0, between unlike cells: the twin's float32 order lands them there too.
     expect(wallFace.length).toBeGreaterThan(0);
+    // R1a's measured wall-face rate, which bounds Task 18's rounding excuses, is over check-sun's 200,000 splats.
+    expect(vectors.windowRays.wallFaceRate.splats).toBe(200_000);
     suns.forEach((sun, k) => {
       const windowSun = prepareWindowSun(model.windows, model.fresnel, sun);
       points.forEach((point, p) => {
@@ -3037,7 +3047,8 @@ export const RelightVectorsSchema = z.object({
   sampleDepths: z.array(finite.nonnegative()).length(256),
   /** The sky bodies' bounce slice (R1a Task 5 Step 7, `skyBounce`): the table, its cases, one fold, and the folded bounce at the vectors' probes. */
   skyBounce: z.object({
-    k: z.number().int().min(1).max(64),
+    /** As the manifest's sky.k: at most R1a's SUN_KMAX (192). */
+    k: z.number().int().min(1).max(192),
     azimuth0: finite,
     elevation0: finite,
     step: finite.positive(),
@@ -3079,11 +3090,19 @@ export const RelightVectorsSchema = z.object({
     steps: z.array(z.array(z.number().int().min(0).max(WINDOW_MAX_SAMPLES))),
     /** [point, sun] pairs whose first sample the bake put on the room side of the wall face y0, between unlike cells. */
     wallFace: z.array(z.tuple([index, index])),
+    /**
+     * R1a's measured wall-face rate (amended 8 October): over 200,000 seeded finest splats at the sunny morning's Sun and
+     * moon_test's Moon, the rays marched and those whose first sample, on the wall face y0, has cells of unlike depth on
+     * either side (float32 rounding alone decides which one it reads). Task 18 caps the GPU's excused rays at twice
+     * wallFace / marched.
+     */
+    wallFaceRate: z.object({ splats: z.number().int().positive(), marched: z.number().int().positive(), wallFace: index }),
   }).refine(
     (rays) => rays.visibility.length === rays.points.length && rays.steps.length === rays.points.length
       && [...rays.visibility, ...rays.steps].every((row) => row.length === rays.suns.length)
-      && rays.wallFace.every(([point, sun]) => point < rays.points.length && sun < rays.suns.length),
-    "The window rays hold one visibility and one sample count per point and direction.",
+      && rays.wallFace.every(([point, sun]) => point < rays.points.length && sun < rays.suns.length)
+      && rays.wallFaceRate.wallFace <= rays.wallFaceRate.marched,
+    "The window rays hold one visibility and one sample count per point and direction, and a wall-face rate within its rays.",
   ),
   /** The package's global probe grid (the manifest's `probes`), not a local block around the splats. */
   probes: z.object({
@@ -5883,7 +5902,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (`relight-frame.ts`): `matrixFromRowMajor(values: readonly number[]): Matrix4`; `interface RelightApplication { readonly setting: RelightSetting; readonly display: DisplayParams; readonly sun: SolarPosition | null; readonly adaptDisplay?: (meanLight: (light: ChoiceLight) => Rgb) => DisplayParams }`; `kernelModelFromData(data: RelightModelData): RelightKernelModel` (its windows built over views into the packed volumes, its sky model over the decoded `sky/` arrays); `SKY_PARTIALS = 64`; `type RelightUniforms` (fields `values.sourceWeights: Vector3[]`, `values.windowOpen: number[]`, `values.moonOpen: number[]`, `values.lampTints: Vector3[]`, `values.skyCorners: Vector2[]` (the Sun's four table corners, then the Moon's: node index row·columns + column and weight), `sourceWeights`, `captureWeights` (uniform arrays of vec3), `ranges` (vec2 × 9), `windowOpen` and `moonOpen` (float × 5: each body's horizon gates), `skyCorners` (vec2 × 8), `lampTints` (vec3 × 4, R1d A1), `sunDir` and `moonDir` (the kernel's float32 σ), `sunRgb`, `moonRgb`, `rBack` (vec3), `sunOn`, `moonOn`, `fresnelAtSun`, `fresnelAtMoon` (the kernel's float32 glass), `emitterBoost` (float), `skinGroups`, `hiddenToggles` (uint, R1c A9), `lampLevels` (vec4: cove, ch_end, ch_centre, dome), `display: DisplayUniforms` (exposure, white balance), `sky: SkyUniforms`, `probeOrigin` (vec3), `probeSpacing` (float), `probeShape` (vec3), `tileToModel` (mat4), `modelToLightUv` (mat4), `texelToModel` (mat4), `floorSunRatio` (float), `floorSunSize` and `floorSunScale` (vec2)); `interface SkyBodyUniforms`, `skyBody(u, body: "sun" | "moon"): SkyBodyUniforms` (R1d A5); `windowVolumeRead(volumes: StorageBufferAttribute)` and `type WindowVolumeRead`; `skyRayNode(volumes: WindowVolumeRead, body: SkyBodyUniforms, p: Node<"vec3">): { owner: Node<"uint">; light: Node<"float"> }` (Task 4's `windowRayLight` in TSL); `sunVisibilityNode(u, volumes, p, body = skyBody(u, "sun")): Node<"float">` (Task 4's `sunVisibility` in TSL, shared by the floor's sun and moon passes and the multiplier pass, Task 11); R1c's `probeReads(frame): ProbeReads` and `bounceNode(u, reads, p, normal, iso): { capture; scenario }` (A8); `class RelightFrame` with `constructor(data: RelightModelData)`, readonly `data`, `model`, `inputs: LightInputs`, `floor: FloorLightData`, `probeCount`, `probeRaw: StorageBufferAttribute` (the binary16 probe volume as `u32` pairs), `probeCapture: StorageBufferAttribute` (stride 19), `probeScenario: StorageBufferAttribute` (stride 18, written on the GPU), `windowVolumes: StorageBufferAttribute` (Task 5's packed volumes as `u32`), `skyPower: StorageBufferAttribute` (10 floats: the Sun's `P_W1..P_W5`, then the Moon's), `bounceCoefficients: StorageBufferAttribute` (2K floats: the Sun's `c_k`, then the Moon's), `floorMeanBasis: Float32Array` (`sky.floorMean`, K × 3) (the three are R1d A9's read access), `skyBouncePasses: readonly ComputeNode[]` (the sky bodies' nine passes), `floorBase: StorageBufferAttribute` (RGBA float32 per 5 cm texel, written on the GPU, R1d A2), `floorSun` and `floorMoon: StorageBufferAttribute` (float32 per 2 cm texel, row-major, written on the GPU), `floorSunSize: readonly [number, number]`, `uniforms: RelightUniforms`, `tileToModel: Matrix4`; mutable `current: RelightApplication | null`, `kernelFrame: KernelFrame | null`, `lastApplyMs: number | null`, `visibility: RelightVisibility`; methods `apply(application: RelightApplication): void`, `prepare(renderer: WebGPURenderer): void` (runs every frame pass, in one compute call, once after each `apply`; then, for a display that adapts to the floor's light, reads the sky light back), `meanLight(light: ChoiceLight): Rgb`, `acceptSkyReadback(kernel: KernelFrame, powers: Float32Array, coefficients: Float32Array): Readonly<Record<SkyBody, SkyLight | null>>`, `readSkyLight(renderer: WebGPURenderer): Promise<Readonly<Record<SkyBody, SkyLight | null>>>`, `onApply(listener: () => void): () => void`, `onDisplay(listener: () => void): () => void`, `addPasses(passes: readonly ComputeNode[]): () => void` (R1c A8), `setVisibility(visibility: RelightVisibility): void` (R1c A9), `dispose(): void`.
 - Produces (`relight-apply.ts`): `applicationForChoice(inputs: LightInputs, choice: LightChoice, meanLight: (light: ChoiceLight) => Rgb): RelightApplication` (R1d A4, A7; it sets `adaptDisplay` whenever the display depends on the floor's light).
 
-`apply` prepares the kernel frame (both bodies' horizon gates, glass transmissions and table corners, from their float32 directions), sets the uniforms from it and marks the frame's GPU work; it never touches a splat and never marches a patch ray (R1d A9: the CPU's 56,448-ray march takes 5–20 ms per body, too slow at R1d's light change per frame). `prepare` runs that work in one `renderer.compute([...skyBouncePasses, fold, floorBase, floorSun, floorMoon, ...extraPasses])` call (an array of compute nodes: three 0.186 `src/renderers/common/Renderer.js:2877`, typed in `@types/three` `src/renderers/common/Renderer.d.ts:975`; dispatches in one call are ordered and see each other's storage writes):
+`apply` prepares the kernel frame (both bodies' horizon gates, glass transmissions and table corners, from their float32 directions), sets the uniforms from it and marks the frame's GPU work; it never touches a splat and never marches a patch ray (R1d A9: the CPU's 56,448-ray march takes 4–9 ms per body on the build PC, measured 8 October, too slow at R1d's light change per frame). `prepare` runs that work in one `renderer.compute([...skyBouncePasses, fold, floorBase, floorSun, floorMoon, ...extraPasses])` call (an array of compute nodes: three 0.186 `src/renderers/common/Renderer.js:2877`, typed in `@types/three` `src/renderers/common/Renderer.d.ts:975`; dispatches in one call are ordered and see each other's storage writes):
 
 - **The sky bodies' bounce** (R1a Task 4's contract, both bodies, every light change, on the GPU), for the Sun and then the Moon, four passes each over shared scratch buffers: (1) `RelightSkyRays`, one invocation per patch ray (56,448), skips a ray whose patch faces away from the body (it adds nothing, as `windowPower` skips it) and otherwise marches it as `skyRayNode` (the same march as a splat's, the body's own gates and glass), writing the ray's owning window (5 for none) and its light; (2) `RelightSkyPatches`, one per patch (3,528), sums each window's rays in float32 in sub-sample order, `lit = Σ_k light[k·count + p]` over the rays it owns, and writes `area × (lit / 16 × max(N · σ, 0))` per window; (3) `RelightSkyPartials`, 5 × 64 invocations, each summing a contiguous run of 56 patches of one window in order; (4) `RelightSkyCoefficients`, one invocation per basis volume (K), sums the 64 partials of each window in order into `P_w` (the first writes `skyPower`), then forms `c_k = Σ corners Σ_{w: P_w > 0} (weight × P_w) × table[node][w][k]` from the four corners `apply` computed (`windows.sun_corners`: cheap, on the CPU, from the body's float32 direction) into `bounceCoefficients`. Then (5) `RelightSkyBasis`, one invocation per basis value (`K` sums over 1,694 × 18 values), writes `S1 = sunRgb ⊗ Σ_k c_sun,k basis_k + moonRgb ⊗ Σ_k c_moon,k basis_k` (R1d A9 point 1) from the binary16 basis. A body that is off writes zeros all the way through.
 - **The scenario probe volume** (`RelightProbeFold`), one invocation per probe value over nine sources, plus the sky bodies' bounce at the probe: the eight 1 m corners and float32 weights Task 5's worker computed (`skyFoldTable`, the CPU twin's own weights), `Σ corner weight × S1[corner]`. So every splat (Task 11), the floor (below) and R1c's skins (`bounceNode`) receive both bodies' bounce with no code of their own.
@@ -9873,7 +9892,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ### Task 17: DEV instruments: GPU read-back, fixture splats and PNG view capture
 
-(Revised 7 October, consolidated: R1d's amendments A2 (`floorBase`), A5 (`floorMoon`; a splat counts as marched for either body, and its ray is sensitive for either) and A8 (the `moon_test` fixture, applied from the vectors' own setting); R1c's A10 (the sample check asks the kernel with the frame's visibility); and two checks of the sky bodies' bounce computed on the GPU: `skyLight` (the GPU's `P_w` and `c_k` against the CPU twin) and the sky passes' GPU time in `gpuTime` (R1d A9 point 4). Every check that needs the sky light on the CPU asks the kernel with the GPU's own read-back light (`frame.readSkyLight`), so it compares like with like.)
+(Revised 7 October, consolidated: R1d's amendments A2 (`floorBase`), A5 (`floorMoon`; a splat counts as marched for either body, and its ray is sensitive for either) and A8 (the `moon_test` fixture, applied from the vectors' own setting); R1c's A10 (the sample check asks the kernel with the frame's visibility); and two checks of the sky bodies' bounce computed on the GPU: `skyLight` (the GPU's `P_w` and `c_k` against the CPU twin) and the sky passes' GPU time in `gpuTime` (R1d A9 point 4; from timestamp queries since 8 October, `timedCompute`). Every check that needs the sky light on the CPU asks the kernel with the GPU's own read-back light (`frame.readSkyLight`), so it compares like with like.)
 
 **Files:**
 - Create: `packages/web/src/lib/relight/relight-debug.ts`
@@ -9884,11 +9903,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Tasks 1 (`FLAG_SUN`), 4 (`relightSplat`, `sunVisibility`, `WINDOW_ROUNDING`, `prepareKernelFrame`, `windowPower`, `skyCorners`, `skyCoefficients`, `sunAzimuthElevation`, `SKY_BODIES`, `SkyTable`, `WindowPower`; `settingFromVectors`), 7 (`displayNode`, `displayColour`, `NEUTRAL_DISPLAY`, `DisplayParams`, `DisplayUniforms`, `floorSunVisibility`, `texelBaseLight`), 8 (`PRESET_DISPLAY`, `PRESET_DEFAULTS`), 10 (`RelightFrame` with its `floorBase`, `floorSun`, `floorMoon`, `floorSunSize`, `skyBouncePasses`, `visibility` and `readSkyLight`; `applicationForChoice`), 11, 12; `waitForNativeGpuWork` (`packages/web/src/lib/native-gpu-completion.ts:156`, the queue's `onSubmittedWorkDone`).
-- Produces (`relight-debug.ts`): `FLOOR_SUN_TOLERANCE = 1e-5`; `SKY_POWER_RELATIVE = 2e-5`, `SKY_POWER_ABSOLUTE = 1e-7`; `skyPowerExcess(gpu: readonly number[], twin: WindowPower): number` (the largest `|P_gpu − P_twin| − (excuse + 2e-5·P_twin + 1e-7)` over the windows: at most 0 passes; a NaN gives Infinity); `skyCoefficientError(table: SkyTable, k: number, powers: readonly number[], azimuth: number, elevation: number, gpu: ArrayLike<number>): number` (the largest `|c_gpu − c_twin|` over `Σ|terms|`, the twin's coefficients formed from the GPU's own powers); `interface SkyLightCheck { readonly bodies: number; readonly marched: number; readonly sensitive: number; readonly excusedShare: number; readonly worstPowerExcess: number; readonly worstCoefficientError: number }`; `interface WordCheck { readonly checked: number; readonly worstCodeDistance: number; readonly alphaMismatches: number; readonly missing: number; readonly excused: number; readonly sunMarched: number }`; `interface FloorSunCheck { readonly checked: number; readonly lit: number; readonly worstDifference: number; readonly excused: number }`; `interface GpuTimeCheck { readonly runs: number; readonly splats: number; readonly applyMedianMs: number; readonly passMedianMs: number; readonly passMaxMs: number; readonly changeMedianMs: number; readonly changeMaxMs: number; readonly skyMedianMs: number; readonly skyMaxMs: number }`; `interface DisplayProbe { readonly rgb: Rgb; readonly params: DisplayParams; readonly knee: number }`; `DISPLAY_PROBES: readonly DisplayProbe[]` (16: eight in the display's identity region, eight rolled off above the knee, at the floor's and sky's knee 0.8 and at splat knees); `interface DisplayCheck { readonly checked: number; readonly worstRelative: number }`; `interface RelightDebug { state(): { status: RelightStatus; relit: boolean; supported: boolean; applyMs: number | null; choice: LightChoice }; select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>; sample(stride: number): Promise<WordCheck>; fixture(vectors: unknown, setting: string): Promise<WordCheck>; floorSun(stride: number): Promise<FloorSunCheck>; floorMoon(stride: number): Promise<FloorSunCheck>; floorBase(stride: number): Promise<FloorSunCheck>; skyLight(): Promise<SkyLightCheck>; display(): Promise<DisplayCheck>; gpuTime(runs: number): Promise<GpuTimeCheck> }` on `window.__relight` (DEV only); `findSplatsByRecord(records: Uint32Array, positions: Float32Array, sceneToModel: Matrix4, wanted: readonly { readonly record: Uint8Array; readonly position: readonly [number, number, number] }[], tolerance?: number): number[]`; `wordTally(): { add(actual: number, expected: number, sunMarched: boolean, sensitive: () => boolean): void; result(missing: number): WordCheck }`; `installRelightDebug(frame: RelightFrame, host: NativeSplatScene, renderer: WebGPURenderer): () => void`.
+- Produces (`relight-debug.ts`): `FLOOR_SUN_TOLERANCE = 1e-5`; `SKY_POWER_RELATIVE = 2e-5`, `SKY_POWER_ABSOLUTE = 1e-7`; `skyPowerExcess(gpu: readonly number[], twin: WindowPower): number` (the largest `|P_gpu − P_twin| − (excuse + 2e-5·P_twin + 1e-7)` over the windows: at most 0 passes; a NaN gives Infinity); `skyCoefficientError(table: SkyTable, k: number, powers: readonly number[], azimuth: number, elevation: number, gpu: ArrayLike<number>): number` (the largest `|c_gpu − c_twin|` over `Σ|terms|`, the twin's coefficients formed from the GPU's own powers); `interface SkyLightCheck { readonly bodies: number; readonly marched: number; readonly sensitive: number; readonly excusedShare: number; readonly worstPowerExcess: number; readonly worstCoefficientError: number }`; `interface WordCheck { readonly checked: number; readonly worstCodeDistance: number; readonly alphaMismatches: number; readonly missing: number; readonly excused: number; readonly sunMarched: number }`; `interface FloorSunCheck { readonly checked: number; readonly lit: number; readonly marched: number; readonly worstDifference: number; readonly excused: number }`; `interface GpuTimeCheck { readonly runs: number; readonly splats: number; readonly applyMedianMs: number; readonly passMedianMs: number; readonly passMaxMs: number; readonly changeMedianMs: number; readonly changeMaxMs: number; readonly skyTiming: "timestamp-query" | "round-trip-minus-empty"; readonly skyMedianMs: number; readonly skyMaxMs: number; readonly emptyMedianMs: number | null }`; `interface TimedComputeRenderer { readonly backend: unknown; compute(nodes: ComputeNode[]): unknown; resolveTimestampsAsync(type: "compute"): Promise<unknown> }`, `computeTimestamps(renderer: TimedComputeRenderer): boolean` and `timedCompute(renderer: TimedComputeRenderer, passes: readonly ComputeNode[]): Promise<number | null>` (one compute call's GPU time from timestamp queries, amended 8 October); `interface DisplayProbe { readonly rgb: Rgb; readonly params: DisplayParams; readonly knee: number }`; `DISPLAY_PROBES: readonly DisplayProbe[]` (16: eight in the display's identity region, eight rolled off above the knee, at the floor's and sky's knee 0.8 and at splat knees); `interface DisplayCheck { readonly checked: number; readonly worstRelative: number }`; `interface RelightDebug { state(): { status: RelightStatus; relit: boolean; supported: boolean; applyMs: number | null; choice: LightChoice }; select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>; sample(stride: number): Promise<WordCheck>; fixture(vectors: unknown, setting: string): Promise<WordCheck>; floorSun(stride: number): Promise<FloorSunCheck>; floorMoon(stride: number): Promise<FloorSunCheck>; floorBase(stride: number): Promise<FloorSunCheck>; skyLight(): Promise<SkyLightCheck>; display(): Promise<DisplayCheck>; gpuTime(runs: number): Promise<GpuTimeCheck> }` on `window.__relight` (DEV only); `findSplatsByRecord(records: Uint32Array, positions: Float32Array, sceneToModel: Matrix4, wanted: readonly { readonly record: Uint8Array; readonly position: readonly [number, number, number] }[], tolerance?: number): number[]`; `wordTally(): { add(actual: number, expected: number, sunMarched: boolean, sensitive: () => boolean): void; result(missing: number): WordCheck }`; `installRelightDebug(frame: RelightFrame, host: NativeSplatScene, renderer: WebGPURenderer): () => void`.
 - Produces (capture): `interface NativeCaptureOptions { readonly width?: number; readonly height?: number; readonly mimeType?: "image/jpeg" | "image/png" }`; `captureNativeCurrentView(scene, camera, options?)`.
 - Produces (`RoomSplatScene`): `interface RoomViewCaptureRequest { readonly position: readonly [number, number, number]; readonly target: readonly [number, number, number]; readonly fov: number; readonly width: number; readonly height: number }`; `window.__roomViewCapture(request)` (DEV, `captureReadback` only) — a PNG of that view at that size, the live camera restored.
 
-These are the only ways Task 18 reads the GPU: the multiplier words against the CPU kernel (`sample`, the kernel asked with the frame's visibility, R1c A10), the R1a fixture splats found in the live draw by record and model position (`fixture`; `moon_test` is not a preset, so its setting is the vectors' own, applied as it is, R1d A8), the floor's sun and moon visibility against `floorSunVisibility` at every `stride`-th texel each way of the 2 cm grids (`floorSun`, `floorMoon`, read back with `getArrayBufferAsync`, three 0.186 `src/renderers/common/Renderer.js:2097`), the floor's base light against `texelBaseLight` (`floorBase`, R1d A2: relative, within 2e-3, Task 18), the sky bodies' light (`skyLight`: each body's `P_w` against the twin's `windowPower` with `WINDOW_ROUNDING`, within the rays the twin marks (`excuse`) plus float32 summation (2e-5 relative, 1e-7 m²), and its `c_k` against `skyCoefficients` over the GPU's own `P_w`, within 1e-5 of the sum of the terms' magnitudes; the excused share of the power is reported), the display function itself (`display`: a one-invocation compute pass writes `displayNode` for the sixteen `DISPLAY_PROBES`, compared with `displayColour`; worst relative error, which Task 18 holds to 1e-5), the GPU time of a sun change (`gpuTime`), and lossless renders at the proof's stations. The checks that need the sky bodies' light on the CPU (`sample`, `floorBase`) ask the kernel with the GPU's own read-back light (`gpuKernel`: `frame.readSkyLight`, then `prepareKernelFrame` with that light), so a sky ray the GPU rounds the other way moves both sides alike; `skyLight` is where the GPU's light is itself judged against the twin. The word and floor checks follow one rule (amended 3 October, `wordTally`): within one log code (the floor: within `FLOOR_SUN_TOLERANCE`), except a splat or texel whose sun ray passes within rounding of a decision of the window march (Task 4's `WINDOW_ROUNDING`, asked only of one that differs). WGSL may fuse a product and a sum and divides within 2.5 ULP, so the GPU may move such a ray's sample into the next cell; those are counted as `excused`, never judged, and Task 18 bounds how many. `gpuTime` alternates the sunny morning's sun between 08:00 and 10:00 (both in front of the windows) and times, each from submission to completion on an otherwise idle queue (`waitForNativeGpuWork`), the multiplier pass alone at the new sun, the whole light change (the CPU apply, the sky bodies' passes, the probe fold, the floor's light and every draw's pass), and the sky bodies' nine passes alone with both bodies on (the Moon put at the Sun's direction, so both march the same windows: R1d A9 point 4's budget is both bodies); these bound the GPU's own time from above. Task 18 holds the pass's median over the twelve changes to one frame (16.7 ms) and reports the sky passes' median against R1d A9's 1 ms. They are imported only inside `import.meta.env.DEV` branches, so no production bundle carries them.
+These are the only ways Task 18 reads the GPU: the multiplier words against the CPU kernel (`sample`, the kernel asked with the frame's visibility, R1c A10), the R1a fixture splats found in the live draw by record and model position (`fixture`; `moon_test` is not a preset, so its setting is the vectors' own, applied as it is, R1d A8), the floor's sun and moon visibility against `floorSunVisibility` at every `stride`-th texel each way of the 2 cm grids (`floorSun`, `floorMoon`, read back with `getArrayBufferAsync`, three 0.186 `src/renderers/common/Renderer.js:2097`), the floor's base light against `texelBaseLight` (`floorBase`, R1d A2: relative, within 2e-3, Task 18), the sky bodies' light (`skyLight`: each body's `P_w` against the twin's `windowPower` with `WINDOW_ROUNDING`, within the rays the twin marks (`excuse`) plus float32 summation (2e-5 relative, 1e-7 m²), and its `c_k` against `skyCoefficients` over the GPU's own `P_w`, within 1e-5 of the sum of the terms' magnitudes; the excused share of the power is reported), the display function itself (`display`: a one-invocation compute pass writes `displayNode` for the sixteen `DISPLAY_PROBES`, compared with `displayColour`; worst relative error, which Task 18 holds to 1e-5), the GPU time of a sun change (`gpuTime`), and lossless renders at the proof's stations. The checks that need the sky bodies' light on the CPU (`sample`, `floorBase`) ask the kernel with the GPU's own read-back light (`gpuKernel`: `frame.readSkyLight`, then `prepareKernelFrame` with that light), so a sky ray the GPU rounds the other way moves both sides alike; `skyLight` is where the GPU's light is itself judged against the twin. The word and floor checks follow one rule (amended 3 October, `wordTally`): within one log code (the floor: within `FLOOR_SUN_TOLERANCE`), except a splat or texel whose sun ray passes within rounding of a decision of the window march (Task 4's `WINDOW_ROUNDING`, asked only of one that differs). WGSL may fuse a product and a sum and divides within 2.5 ULP, so the GPU may move such a ray's sample into the next cell; those are counted as `excused`, never judged, and Task 18 bounds how many. `gpuTime` alternates the sunny morning's sun between 08:00 and 10:00 (both in front of the windows) and times, each from submission to completion on an otherwise idle queue (`waitForNativeGpuWork`), the multiplier pass alone at the new sun, the whole light change (the CPU apply, the sky bodies' passes, the probe fold, the floor's light and every draw's pass), and the sky bodies' nine passes alone with both bodies on (the Moon put at the Sun's direction, so both march the same windows: R1d A9 point 4's budget is both bodies). The first two bound the GPU's own time from above. The sky passes are timed on the GPU itself (amended 8 October, seam review I-6): `timedCompute` turns three 0.186's timestamp tracking on for their one compute call and reads that pass's begin-to-end time back (`resolveTimestampsAsync("compute")`), where the device has `timestamp-query` (Task 0 Step 7 records the adapter's); only without it are they timed by their round trip less an empty one's, labelled `skyTiming: "round-trip-minus-empty"`. Each series starts with one unrecorded run, which builds the pipelines. Task 18 holds the pass's median over the twelve changes to one frame (16.7 ms) and the sky passes' median to R1d A9's 1 ms. They are imported only inside `import.meta.env.DEV` branches, so no production bundle carries them.
 
 The view capture (Steps 5 and 6: the optional size and PNG in `native-current-view-capture.ts`, and `window.__roomViewCapture`) is instrumentation only: it changes no rendering. It is committed on its own (Step 8), so Task 18 can apply exactly that commit to the I1a baseline, which otherwise has no way to render the proof's views.
 
@@ -9900,7 +9919,9 @@ The view capture (Steps 5 and 6: the optional size and PNG in `native-current-vi
 import { Matrix4 } from "three";
 import { describe, expect, it } from "vitest";
 import { multiplierCodeDistance, packMultiplierWord } from "../relight-codec.js";
-import { DISPLAY_PROBES, findSplatsByRecord, skyCoefficientError, skyPowerExcess, wordTally } from "../relight-debug.js";
+import {
+  DISPLAY_PROBES, computeTimestamps, findSplatsByRecord, skyCoefficientError, skyPowerExcess, timedCompute, wordTally, type TimedComputeRenderer,
+} from "../relight-debug.js";
 import { skyCoefficients, type SkyTable, type WindowPower } from "../relight-kernel.js";
 
 describe("the relight instruments (T-639 R1b)", () => {
@@ -9955,6 +9976,28 @@ describe("the relight instruments (T-639 R1b)", () => {
     // Every term of k = 0 is positive, so its magnitude is |c_0|: a 1e-3 relative error reads as 1e-3.
     expect(skyCoefficientError(table, 2, powers, 91, 31, Float64Array.from(exact, (value, k) => (k === 0 ? value * (1 + 1e-3) : value)))).toBeCloseTo(1e-3, 6);
     expect(skyCoefficientError(table, 2, powers, 91, 31, [Number.NaN, 0])).toBe(Infinity);
+  });
+
+  it("times one compute call by its own timestamp queries, tracking only while it is encoded, and none without the feature", async () => {
+    // three 0.186's backend fields as WebGPUBackend has them: trackTimestamp, the compute pool's timestamps by uid.
+    const pool = { timestamps: new Map<string, number>() };
+    const backend = {
+      trackTimestamp: false, timestampQueryPool: { compute: pool },
+      device: { features: new Set(["timestamp-query"]) },
+      getTimestampUID: (): string => "c:0:7:f3",
+    };
+    const tracked: boolean[] = [];
+    const renderer: TimedComputeRenderer = {
+      backend,
+      compute: () => { tracked.push(backend.trackTimestamp); return undefined; },
+      resolveTimestampsAsync: () => { pool.timestamps.set("c:0:7:f3", 0.42); return Promise.resolve(0.42); },
+    };
+    expect(computeTimestamps(renderer)).toBe(true);
+    await expect(timedCompute(renderer, [])).resolves.toBe(0.42);
+    expect([tracked, backend.trackTimestamp]).toEqual([[true], false]);
+    backend.device.features = new Set<string>();
+    expect(computeTimestamps(renderer)).toBe(false);
+    await expect(timedCompute(renderer, [])).resolves.toBeNull();
   });
 });
 ```
@@ -10021,7 +10064,7 @@ Expected: FAIL — the new test (`window.__roomViewCapture` is undefined).
 
 ```ts
 import { Vector3, type Matrix4 } from "three";
-import { StorageBufferAttribute, type WebGPURenderer } from "three/webgpu";
+import { StorageBufferAttribute, type ComputeNode, type WebGPURenderer } from "three/webgpu";
 import { Fn, float, storage, uniform, vec3 } from "three/tsl";
 import { PRESET_DEFAULTS, PRESET_DISPLAY, type LightChoice, type LightPresetId } from "../light-setting.js";
 import { waitForNativeGpuWork } from "../native-gpu-completion.js";
@@ -10064,6 +10107,8 @@ export interface FloorSunCheck {
   readonly checked: number;
   /** Texels the CPU finds lit (V > 0). */
   readonly lit: number;
+  /** Texels whose ray toward the body the CPU marched (steps > 0): Task 18 bounds `excused` by them. 0 for floorBase. */
+  readonly marched: number;
   /** The largest |GPU − CPU| over the texels that were not excused. */
   readonly worstDifference: number;
   /** Texels beyond FLOOR_SUN_TOLERANCE whose ray passes within rounding of a window decision. */
@@ -10071,10 +10116,12 @@ export interface FloorSunCheck {
 }
 
 /**
- * The GPU time of a sun change, from submission to completion on an otherwise idle queue (onSubmittedWorkDone):
- * an upper bound of the GPU's own time. `pass` is the multiplier pass alone at the new sun; `change` the whole light
- * change (the CPU apply, the sky bodies' passes, the probe fold, the floor's light and every draw's pass); `sky` the sky
- * bodies' passes alone with both bodies on. Milliseconds.
+ * The GPU time of a sun change, in milliseconds, each run after one unrecorded run. `pass` is the multiplier pass alone
+ * at the new sun and `change` the whole light change (the CPU apply, the sky bodies' passes, the probe fold, the floor's
+ * light and every draw's pass), both from submission to completion on an otherwise idle queue (onSubmittedWorkDone): an
+ * upper bound of the GPU's own time. `sky` is the sky bodies' nine passes alone with both bodies on, timed on the GPU by
+ * timestamp queries (`timedCompute`); only on a device without `timestamp-query`, their round trip less an empty round
+ * trip on the idle queue (`skyTiming` says which). A sky time that never resolved is NaN (null in JSON).
  */
 export interface GpuTimeCheck {
   readonly runs: number;
@@ -10084,9 +10131,20 @@ export interface GpuTimeCheck {
   readonly passMaxMs: number;
   readonly changeMedianMs: number;
   readonly changeMaxMs: number;
-  /** The sky bodies' nine passes alone, both bodies on (R1d A9 point 4: at most 1 ms on the RTX 4090). */
+  /** How the sky passes were timed: their own timestamps, or (no timestamp-query) the round trip less an empty one. */
+  readonly skyTiming: "timestamp-query" | "round-trip-minus-empty";
+  /** The sky bodies' nine passes alone, both bodies on (R1d A9 point 4: at most 1 ms on the RTX 4090, Task 18 judges it). */
   readonly skyMedianMs: number;
   readonly skyMaxMs: number;
+  /** The empty round trip subtracted (round-trip-minus-empty only), else null. */
+  readonly emptyMedianMs: number | null;
+}
+
+/** What timedCompute needs of a renderer: a WebGPURenderer has it, and so can a test's fake. */
+export interface TimedComputeRenderer {
+  readonly backend: unknown;
+  compute(nodes: ComputeNode[]): unknown;
+  resolveTimestampsAsync(type: "compute"): Promise<unknown>;
 }
 
 /** The sky bodies' light on the GPU against the CPU twin, for the bodies that are on (R1a Task 4's contract). */
@@ -10311,6 +10369,69 @@ const median = (values: readonly number[]): number => {
   return sorted[Math.floor(sorted.length / 2)] ?? Number.NaN;
 };
 
+interface TimestampBackend {
+  trackTimestamp: boolean;
+  readonly timestampQueryPool: object;
+  getTimestampUID(context: object): unknown;
+}
+interface FeatureSet { has(feature: string): unknown }
+const isFeatureSet = (value: unknown): value is FeatureSet =>
+  typeof value === "object" && value !== null && "has" in value && typeof value.has === "function";
+
+/**
+ * three 0.186's WebGPU backend when its device has `timestamp-query` (the app's device asks for every adapter feature,
+ * `components/scene/NativeCanvas.tsx`), else null. Guarded as `lib/perf-runtime.ts` guards it: @types/three does not
+ * declare these fields (`src/renderers/common/Backend.js:76` `trackTimestamp`, `:511` `getTimestampUID`).
+ */
+function timestampBackend(backend: unknown): TimestampBackend | null {
+  if (typeof backend !== "object" || backend === null
+    || !("trackTimestamp" in backend) || typeof backend.trackTimestamp !== "boolean"
+    || !("getTimestampUID" in backend) || typeof backend.getTimestampUID !== "function"
+    || !("timestampQueryPool" in backend) || typeof backend.timestampQueryPool !== "object" || backend.timestampQueryPool === null
+    || !("device" in backend) || typeof backend.device !== "object" || backend.device === null
+    || !("features" in backend.device) || !isFeatureSet(backend.device.features)
+    || backend.device.features.has("timestamp-query") !== true) return null;
+  return backend as TimestampBackend;
+}
+
+/** Whether `timedCompute` can time a compute call on this renderer (its device has `timestamp-query`). */
+export function computeTimestamps(renderer: TimedComputeRenderer): boolean {
+  return timestampBackend(renderer.backend) !== null;
+}
+
+/**
+ * The GPU time of one compute call, in milliseconds, from timestamp queries: with `trackTimestamp` on, three 0.186
+ * writes a timestamp at the beginning and the end of the call's one compute pass (`WebGPUBackend.beginCompute`,
+ * `src/renderers/webgpu/WebGPUBackend.js:1866`), `resolveTimestampsAsync("compute")` resolves them
+ * (`src/renderers/common/Renderer.js:3018`), and the compute pool keeps the call's duration under its uid
+ * (`src/renderers/webgpu/utils/WebGPUTimestampQueryPool.js:224`). Tracking is on only while this call is encoded, so no
+ * other pass is timed. Null without `timestamp-query`, or when the call's timestamp never resolves.
+ */
+export async function timedCompute(renderer: TimedComputeRenderer, passes: readonly ComputeNode[]): Promise<number | null> {
+  const backend = timestampBackend(renderer.backend);
+  if (backend === null) return null;
+  const nodes = [...passes];
+  const tracking = backend.trackTimestamp;
+  let uid: unknown = null;
+  backend.trackTimestamp = true;
+  try {
+    void renderer.compute(nodes);
+    uid = backend.getTimestampUID(nodes);
+  } finally {
+    backend.trackTimestamp = tracking;
+  }
+  if (typeof uid !== "string") return null;
+  // A resolve already in flight answers with its own queries; the next one takes this call's.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await renderer.resolveTimestampsAsync("compute");
+    const pool: unknown = Reflect.get(backend.timestampQueryPool, "compute");
+    if (typeof pool !== "object" || pool === null || !("timestamps" in pool) || !(pool.timestamps instanceof Map)) return null;
+    const value: unknown = pool.timestamps.get(uid);
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  }
+  return null;
+}
+
 export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene, renderer: WebGPURenderer): () => void {
   const activeDraw = (): RelightDraw => {
     const draw = host.activeRelightDraw();
@@ -10342,19 +10463,21 @@ export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene,
     const values = new Float32Array(await renderer.getArrayBufferAsync(grid === "sun" ? frame.floorSun : frame.floorMoon));
     const [columns, rows] = frame.floorSunSize;
     const step = Math.max(1, Math.floor(stride));
-    let checked = 0, lit = 0, worst = 0, excused = 0;
+    let checked = 0, lit = 0, marched = 0, worst = 0, excused = 0;
     for (let row = 0; row < rows; row += step) {
       for (let column = 0; column < columns; column += step) {
-        const expected = floorSunVisibility(frame.model, kernel, frame.floor, column, row, null, grid).visibility;
+        const ray = floorSunVisibility(frame.model, kernel, frame.floor, column, row, null, grid);
+        const expected = ray.visibility;
         const difference = Math.abs((values[row * columns + column] ?? Number.NaN) - expected);
         if (expected > 0) lit += 1;
+        if (ray.steps > 0) marched += 1;
         checked += 1;
         if (difference > FLOOR_SUN_TOLERANCE && floorSunVisibility(frame.model, kernel, frame.floor, column, row, WINDOW_ROUNDING, grid).sensitive) excused += 1;
         else worst = Math.max(worst, Number.isFinite(difference) ? difference : Infinity);
       }
     }
     // Infinity (a NaN on the GPU) arrives in JSON as null, which Task 18 reads as a failure.
-    return { checked, lit, worstDifference: worst, excused };
+    return { checked, lit, marched, worstDifference: worst, excused };
   };
   const select = (preset: LightPresetId, minutes?: number, date?: string): Promise<void> => new Promise((resolve) => {
     const stop = frame.onApply(() => { stop(); void afterFrames(2).then(resolve); });
@@ -10438,7 +10561,7 @@ export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene,
           checked += 1;
         }
       }
-      return { checked, lit, worstDifference: worst, excused: 0 };
+      return { checked, lit, marched: 0, worstDifference: worst, excused: 0 };
     },
     skyLight: async () => {
       // The GPU's P_w and c_k for the applied light, each body that is on, against the CPU twin (R1a Task 4's contract).
@@ -10468,37 +10591,62 @@ export function installRelightDebug(frame: RelightFrame, host: NativeSplatScene,
       const controller = new AbortController();
       const idle = (): Promise<void> => waitForNativeGpuWork(renderer, controller.signal);
       const before = useLightSettingStore.getState().choice;
-      const applyMs: number[] = [], passMs: number[] = [], changeMs: number[] = [], skyMs: number[] = [];
+      // The sky passes are timed by their own timestamps where the device has timestamp-query (Task 0 Step 7 records
+      // the adapter's); only without it by their round trip less an empty one's, labelled in skyTiming.
+      const stamped = computeTimestamps(renderer);
+      const applyMs: number[] = [], passMs: number[] = [], changeMs: number[] = [], skyMs: number[] = [], emptyMs: number[] = [];
       try {
-        for (let run = 0; run < Math.max(1, Math.floor(runs)); run += 1) {
+        // Run −1 is not recorded: pipeline building and the timestamp pool's first allocation stay out of the medians.
+        for (let run = -1; run < Math.max(1, Math.floor(runs)); run += 1) {
+          const kept = run >= 0;
           // A sun change each run: the sunny morning's sun at 08:00, then 10:00 (both in front of the windows).
           const choice: LightChoice = { preset: "sunny", date: PRESET_DEFAULTS.sunny.date, minutes: run % 2 === 0 ? 480 : 600 };
           await idle();
           let started = performance.now();
           applyChoice(choice); // its listener runs the host's passes: the fold, the floor's sun, every draw's pass
-          applyMs.push(frame.lastApplyMs ?? Number.NaN);
+          const applied = frame.lastApplyMs ?? Number.NaN;
           await idle();
-          changeMs.push(performance.now() - started);
+          const change = performance.now() - started;
           started = performance.now();
           draw.run(renderer); // the multiplier pass alone at this sun (the frame's own passes already ran)
           await idle();
-          passMs.push(performance.now() - started);
+          const pass = performance.now() - started;
           // The sky bodies' passes alone with both bodies on: the Moon put at the Sun's direction (R1d A9 point 4).
           const { setting, display, sun } = applicationForChoice(frame.inputs, choice, (light) => frame.meanLight(light));
           frame.apply({ setting: { ...setting, moonDir: setting.sunDir, moonRgb: setting.sunRgb }, display, sun });
           await idle();
-          started = performance.now();
-          void renderer.compute([...frame.skyBouncePasses]);
-          await idle();
-          skyMs.push(performance.now() - started);
+          let sky: number, empty = Number.NaN;
+          if (stamped) {
+            sky = (await timedCompute(renderer, frame.skyBouncePasses)) ?? Number.NaN; // a timestamp that never resolved
+          } else {
+            started = performance.now();
+            await idle(); // an empty round trip: nothing submitted, the idle queue's onSubmittedWorkDone
+            empty = performance.now() - started;
+            started = performance.now();
+            void renderer.compute([...frame.skyBouncePasses]);
+            await idle();
+            sky = performance.now() - started;
+          }
+          if (kept) {
+            applyMs.push(applied);
+            changeMs.push(change);
+            passMs.push(pass);
+            skyMs.push(sky);
+            emptyMs.push(empty);
+          }
         }
       } finally {
         applyChoice(before); // back to the store's light
       }
+      const emptyMedianMs = stamped ? null : median(emptyMs);
+      const skyMeasured = skyMs.every((value) => Number.isFinite(value));
       return {
         runs: passMs.length, splats: draw.count, applyMedianMs: median(applyMs),
         passMedianMs: median(passMs), passMaxMs: Math.max(...passMs), changeMedianMs: median(changeMs), changeMaxMs: Math.max(...changeMs),
-        skyMedianMs: median(skyMs), skyMaxMs: Math.max(...skyMs),
+        skyTiming: stamped ? "timestamp-query" : "round-trip-minus-empty",
+        skyMedianMs: skyMeasured ? median(skyMs) - (emptyMedianMs ?? 0) : Number.NaN,
+        skyMaxMs: skyMeasured ? Math.max(...skyMs) - (emptyMedianMs ?? 0) : Number.NaN,
+        emptyMedianMs,
       };
     },
   };
@@ -10674,7 +10822,7 @@ with:
 - [ ] **Step 7: Run the tests**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/relight-debug.test.ts`
-Expected: PASS, 5 tests (3 before 7 October; the sky light's two checks added).
+Expected: PASS, 6 tests (3 before 7 October; the sky light's two checks added; the sky passes' timestamp timing added 8 October).
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/native-current-view-capture.test.ts`
 Expected: PASS (the Task 0 count plus 1).
@@ -10711,7 +10859,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ### Task 18: Verify in the browser: identity, the captured light, the GPU against the CPU, the photographs, speed
 
-(Revised 7 October, consolidated: the GPU checks gain the sky bodies' light computed on the GPU (`skyLight_*`: each body's `P_w` within the twin's excuse plus float32 summation, its `c_k` within 1e-5 of its terms), the floor's base light (R1d A2: `floorBase_*`, 2e-3 relative), the Moon (R1d A5: `floorMoon_moonlit`, `sample_moonlit`), the `moon_test` fixture (R1d A8), and the sky passes' GPU time reported against R1d A9's 1 ms; with the emitter boost 1 in every preset the night photo check stands as it is (R1d A1).)
+(Revised 7 October, consolidated: the GPU checks gain the sky bodies' light computed on the GPU (`skyLight_*`: each body's `P_w` within the twin's excuse plus float32 summation, its `c_k` within 1e-5 of its terms), the floor's base light (R1d A2: `floorBase_*`, 2e-3 relative), the Moon (R1d A5: `floorMoon_moonlit`, `sample_moonlit`), the `moon_test` fixture (R1d A8), and the sky passes' GPU time reported against R1d A9's 1 ms (judged since 8 October, from timestamp queries; and the rounding excuses capped at twice R1a's measured wall-face rate, seam review I-5 and I-6); with the emitter boost 1 in every preset the night photo check stands as it is (R1d A1).)
 
 **Files:**
 - Create: `packages/web/scripts/relight-verify.mjs`
@@ -10721,17 +10869,17 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Outputs (D:, never committed): `D:/claude/relight/grand-hall/renders/{I1a_a,I1a_b,R1b_off,R1b_captured,R1b_night,R1b_sunny,R1b_overcast}/<view>@2x.png` (each job's folder emptied before it is written, so no check reads an earlier run's images), `D:/claude/relight/grand-hall/evidence/r1b/{baseline.txt,r1b-baseline-run.json,r1b-browser-run.json,r1b-browser-checks.json,r1b-off.json,r1b-night.json}`
 
 **Interfaces:**
-- Consumes: Task 17's `window.__relight` (`fixture`, `sample`, `floorSun`, `floorMoon`, `floorBase`, `skyLight`, `display`, `gpuTime`, `select`, `state`) and `window.__roomViewCapture`, and its capture-instrumentation commit (`evidence/r1b/capture-commit.txt`); the `relight:*` performance spans of Tasks 11, 12 and 15; the walk's `window.__roomWalk`; the proof's `work/views.json`, `renders/A_mask/*` and `work/cmp/photo_*.png`; the moved `07_compare.py` (`photo`, `render`, `valid_mask`, `cells`, `metrics`; its `render` reads a job's `@2x` render through `shots.one_x` and `common.srgb_to_linear`); `config.load(...).paths` (`work`, `proofWork`, `evidence`).
+- Consumes: Task 17's `window.__relight` (`fixture`, `sample`, `floorSun`, `floorMoon`, `floorBase`, `skyLight`, `display`, `gpuTime`, `select`, `state`) and `window.__roomViewCapture`, and its capture-instrumentation commit (`evidence/r1b/capture-commit.txt`); R1a's vectors (the fixtures, and `windowRays.wallFaceRate`, which the driver copies into the run for the excuses' cap); the `relight:*` performance spans of Tasks 11, 12 and 15; the walk's `window.__roomWalk`; the proof's `work/views.json`, `renders/A_mask/*` and `work/cmp/photo_*.png`; the moved `07_compare.py` (`photo`, `render`, `valid_mask`, `cells`, `metrics`; its `render` reads a job's `@2x` render through `shots.one_x` and `common.srgb_to_linear`); `config.load(...).paths` (`work`, `proofWork`, `evidence`).
 - Produces: `python -m relight browser-check --config config/grand-hall.json` (exit 0 only if every section passes); pure functions on decoded images and run records, importing nothing from the proof (so the unit tests need no D: inputs): `pixel_difference(a, b) -> {max, fraction}`, `identity_verdict(noise, change) -> bool`, `stop_difference(lin_a, lin_b, valid) -> ndarray`, `comparison_mask(mask_lin, *srgbs) -> ndarray[bool]` (07_compare.valid_mask with the fixtures kept: the one mask the proof lacks), `captured_verdict(stops) -> dict`, `photo_verdict(relit_r, served_r, threshold) -> bool`, `gpu_report(run) -> dict`, `loading_report(run) -> dict`. The renders are decoded only by the proof's own `07_compare`, imported in `run` after `python -m relight` has made the proof importable.
 
 What each check proves (spec §6):
 - **No change when off:** `R1b_off` (`?relight=off`) against two I1a renders (`I1a_a`, `I1a_b`) from the base commit with Task 17's capture instrumentation applied ("I1a + capture instrumentation": the base has no `__roomViewCapture`, and that commit changes no rendering): the change may not exceed I1a's own run-to-run difference (zero if I1a is deterministic, which then means pixel for pixel).
 - **Captured light:** `R1b_captured` (`?light=captured&floorskin=v1`, so the floor is the same photographed floor) against `R1b_off`: the 99th percentile of the luminance difference is at most 1/20 of a stop everywhere but the view out of the windows (the glass splats are hidden by design and the sky panels show; the red channel of the proof's `A_mask`). The fixtures are included: with emitter boost 1 the captured light is exactly neutral for bulbs too, and the display's knee is each splat's own brightest channel.
-- **Compute against CPU:** the words read back from the GPU for every 97th splat against `relightSplat` + `packMultiplierWord` for the setting applied, and for R1a's 64 fixture splats (found in the live draw by record and model position, which also tests contracts 4 and 5) against their expected words, at the captured light, the night, the sunny morning and `moon_test` (R1d A8: not a preset, the vectors' own setting with the Moon at the moonlit preset's place and the Sun's strength), and every 97th splat at the moonlit night too (R1d A5): at most one log code, alpha bytes equal, none missing. (Amended 3 October.) A splat whose sun ray passes within rounding of a decision of the window march may differ more and is counted as excused (Task 17's rule: the GPU may fuse and divides within 2.5 ULP, the CPU twin repeats the bake's float32 order exactly); at most 2% of the splats whose sun was marched (at least one allowed) may be excused, and every sunny, moonlit and `moon_test` check must have marched some Sun or Moon. The floor's sun and moon likewise: every 4th texel each way of the 2 cm grids read back against `floorSunVisibility` within 1e-5, excused texels at most 2% of those checked, and some texels lit in the sunny and moonlit checks. The floor's base light (R1d A2): every 4th 5 cm texel each way against `texelBaseLight` within 2e-3 relative (the GPU folds the float16 cubes in float32 where the twin sums the decoded bounce in double: the same quantities in another order; 2e-3 is 0.003 stop), the twin asked with the GPU's own sky light. The sky bodies' light (R1a Task 4's contract, computed on the GPU at every light change): for each body that is on at the sunny morning (09:00, 07:00, 18:00), the moonlit night and `moon_test`, every window's `P_w` within the twin's `excuse` (the patch rays within rounding of a march decision, at most `area × cos × F / 16` each) plus 2e-5 relative and 1e-7 m², and every `c_k` within 1e-5 of the sum of its terms' magnitudes, formed from the GPU's own `P_w`; the excused share of the power is reported, the bound itself judged. The display function too: `displayNode` read back for the sixteen `DISPLAY_PROBES` (identity region and roll-off) is within 1e-5 relative of `displayColour`. (The floor material's bilinear read is covered by its TypeScript twin's tests and the rendered checks.)
+- **Compute against CPU:** the words read back from the GPU for every 97th splat against `relightSplat` + `packMultiplierWord` for the setting applied, and for R1a's 64 fixture splats (found in the live draw by record and model position, which also tests contracts 4 and 5) against their expected words, at the captured light, the night, the sunny morning and `moon_test` (R1d A8: not a preset, the vectors' own setting with the Moon at the moonlit preset's place and the Sun's strength), and every 97th splat at the moonlit night too (R1d A5): at most one log code, alpha bytes equal, none missing. (Amended 3 October.) A splat whose sun ray passes within rounding of a decision of the window march may differ more and is counted as excused (Task 17's rule: the GPU may fuse and divides within 2.5 ULP, the CPU twin repeats the bake's float32 order exactly); at most twice R1a's measured wall-face rate of the splats whose sun was marched (at least one allowed) may be excused (amended 8 October: `windowRays.wallFaceRate` in the vectors, `wallFace` of `marched` rays over 200,000 seeded splats at the sunny morning's Sun and `moon_test`'s Moon whose first sample, on a window's wall face, has cells of unlike depth on either side; the driver copies it into the run), and every sunny, moonlit and `moon_test` check must have marched some Sun or Moon. The floor's sun and moon likewise: every 4th texel each way of the 2 cm grids read back against `floorSunVisibility` within 1e-5, excused texels at most twice that rate of the texels whose ray was marched (at least one allowed), and some texels lit in the sunny and moonlit checks. The floor's base light (R1d A2): every 4th 5 cm texel each way against `texelBaseLight` within 2e-3 relative (the GPU folds the float16 cubes in float32 where the twin sums the decoded bounce in double: the same quantities in another order; 2e-3 is 0.003 stop), the twin asked with the GPU's own sky light. The sky bodies' light (R1a Task 4's contract, computed on the GPU at every light change): for each body that is on at the sunny morning (09:00, 07:00, 18:00), the moonlit night and `moon_test`, every window's `P_w` within the twin's `excuse` (the patch rays within rounding of a march decision, at most `area × cos × F / 16` each) plus 2e-5 relative and 1e-7 m², and every `c_k` within 1e-5 of the sum of its terms' magnitudes, formed from the GPU's own `P_w`; the excused share of the power is reported, the bound itself judged. The display function too: `displayNode` read back for the sixteen `DISPLAY_PROBES` (identity region and roll-off) is within 1e-5 relative of `displayColour`. (The floor material's bilinear read is covered by its TypeScript twin's tests and the rendered checks.)
 - **Photographs:** `R1b_night` against Matterport's night photographs with `07_compare`'s cells and correlation: r ≥ 0.85 at station 43 and ≥ 0.80 at station 45, and at both at least the r of the hall as served. The thresholds stand with the emitter boost 1 (R1d A1): the night's bulb splats are drawn as captured, and the correlation over coarse cells barely moves with them. If the night check misses, report the numbers: R1d's crisp bulbs and night calibration (R1d Tasks 11 and 21) finish the night, and the boost is not restored.
 - **Fallbacks:** `?nativeWebGL=1` (the WebGL2 fallback) and `?splat=tier:medium` (below desktop) request nothing of the relight package and install no instruments. A package request is one whose URL path starts with `/splats/` and contains `/relight/v` (the dev server or the R2 host); Vite's own `/src/lib/relight/*` modules, which every run loads, are not.
 - **Loading:** the spec's "loading adds no main-thread task over 50 ms", for the work relighting adds: every `relight:*` performance span (the records merge, the words' allocation and fill, the `RelightFrame` construction, its first `apply` and each pass encode; Tasks 11, 12 and 15) is at most 50 ms, every kind was measured, and relighting brings no console warning or error the served run did not have. The spans, long tasks and console messages are read at load completion: right after `__roomWalk.complete` (and, relit, `window.__relight.state().relit === true`), before any capture or instrument runs. Both runs' long tasks and load times (`loadMs`) at that moment are reported as information. If the merge span misses 50 ms, the remedy is to merge per tile off the build task (Task 12's note), never to relax the threshold.
-- **Speed:** the drag budget with `light=night` has a median p95 frame of at most 16.7 ms and at most 1 ms above `relight=off`. (Amended 3 October; the owner's decision.) The multiplier pass's GPU time at a sun change is a hard limit, because dragging the hour slider must stay smooth: `gpuTime(12)` (Task 17) makes twelve sun changes on the sunny morning and times the pass alone at each new sun, from submission to completion on an idle queue (an upper bound), and the median of the twelve must be at most 16.7 ms, one frame at 60 Hz, on the build PC's RTX 4090 (`withinFrame`). A run without the measurement fails, and so does a median above the limit. The whole light change's median (the CPU apply, the sky bodies' passes, the fold, the floor's light and every draw's pass) is reported beside it, as is the design's unmeasured estimate of about 1 ms. The sky bodies' nine passes alone, both bodies on, are timed as well (`skyMedianMs`); R1d A9 point 4 sets them at most 1 ms on the RTX 4090 and has a miss reported to the controller with the numbers, so the report carries `skyWithinBudget` and the session log the numbers, and a miss does not fail this check (R1d Task 23 measures it within a light step). If the limit is missed, apply the remedies in this order, rerunning the check after each: (1) skip non-reach and non-entering splats early, before any march work, so the threads that march hold only rays that enter a window; (2) run the floor sun pass only when the sun moves by more than 0.1°; (3) throttle slider-driven light changes to one per frame. Never loosen the limit; if all three are in and the median still exceeds it, stop and report the numbers to the controller.
+- **Speed:** the drag budget with `light=night` has a median p95 frame of at most 16.7 ms and at most 1 ms above `relight=off`. (Amended 3 October; the owner's decision.) The multiplier pass's GPU time at a sun change is a hard limit, because dragging the hour slider must stay smooth: `gpuTime(12)` (Task 17) makes twelve sun changes on the sunny morning and times the pass alone at each new sun, from submission to completion on an idle queue (an upper bound), and the median of the twelve must be at most 16.7 ms, one frame at 60 Hz, on the build PC's RTX 4090 (`withinFrame`). A run without the measurement fails, and so does a median above the limit. The whole light change's median (the CPU apply, the sky bodies' passes, the fold, the floor's light and every draw's pass) is reported beside it, as is the design's unmeasured estimate of about 1 ms. The sky bodies' nine passes alone, both bodies on, are timed as well (`skyMedianMs`), on the GPU itself (amended 8 October, seam review I-6): three 0.186's timestamp queries time their one compute pass from its beginning to its end (`timedCompute`: `trackTimestamp` on while it is encoded, then `resolveTimestampsAsync("compute")`), where the device has `timestamp-query` (Task 0 Step 7 records the adapter's), after one unrecorded run. R1d A9 point 4 sets them at most 1 ms on the RTX 4090, and this check judges it: the median over the twelve light changes must be at most 1 ms (`skyWithinBudget`), and a run without the measurement fails. A miss stops the task: report `skyMedianMs`, `skyMaxMs` and `skyTiming` to the controller and loosen nothing. Only on an adapter without `timestamp-query` are the passes timed by their round trip on the idle queue less an empty round trip (`skyTiming: "round-trip-minus-empty"`, `emptyMedianMs`), an upper bound that is still judged, and the report says which. If the limit is missed, apply the remedies in this order, rerunning the check after each: (1) skip non-reach and non-entering splats early, before any march work, so the threads that march hold only rays that enter a window; (2) run the floor sun pass only when the sun moves by more than 0.1°; (3) throttle slider-driven light changes to one per frame. Never loosen the limit; if all three are in and the median still exceeds it, stop and report the numbers to the controller.
 
 - [ ] **Step 1: Make the proof's comparison importable**
 
@@ -10784,11 +10932,14 @@ class BrowserChecks(unittest.TestCase):
         self.assertFalse(bc.photo_verdict(0.86, 0.88, 0.85))
 
     WORD = {"checked": 64, "worstCodeDistance": 1, "alphaMismatches": 0, "missing": 0, "excused": 0, "sunMarched": 12}
-    FLOOR = {"checked": 5000, "lit": 400, "worstDifference": 3e-7, "excused": 2}
-    BASE = {"checked": 900, "lit": 900, "worstDifference": 4e-4, "excused": 0}
+    FLOOR = {"checked": 5000, "lit": 400, "marched": 600, "worstDifference": 3e-7, "excused": 2}
+    BASE = {"checked": 900, "lit": 900, "marched": 0, "worstDifference": 4e-4, "excused": 0}
     SKY = {"bodies": 1, "marched": 20000, "sensitive": 150, "excusedShare": 0.004, "worstPowerExcess": -1e-3, "worstCoefficientError": 3e-7}
     TIME = {"runs": 12, "splats": 11487038, "applyMedianMs": 9.0, "passMedianMs": 1.4, "passMaxMs": 2.0,
-            "changeMedianMs": 3.1, "changeMaxMs": 4.0, "skyMedianMs": 0.6, "skyMaxMs": 0.9}
+            "changeMedianMs": 3.1, "changeMaxMs": 4.0, "skyTiming": "timestamp-query", "skyMedianMs": 0.6, "skyMaxMs": 0.9,
+            "emptyMedianMs": None}
+    # R1a's measured wall-face rate, as the driver copies it from the vectors: 1% here.
+    RATE = {"splats": 200000, "marched": 50000, "wallFace": 500}
     DISPLAY = {"checked": 16, "worstRelative": 2e-7}
 
     def gpu_run(self, **extra):
@@ -10799,7 +10950,7 @@ class BrowserChecks(unittest.TestCase):
                "floorSun_sunny": self.FLOOR, "floorMoon_moonlit": self.FLOOR, "floorBase_sunny": self.BASE,
                "skyLight_sunny": self.SKY, "skyLight_moonlit": self.SKY, "gpuTime_sunny": self.TIME, "display": self.DISPLAY}
         gpu.update(extra)
-        return {"runs": {"relit": {"gpu": gpu}}}
+        return {"wallFaceRate": self.RATE, "runs": {"relit": {"gpu": gpu}}}
 
     def test_gpu_check_needs_the_words_the_floor_sun_the_display_and_the_pass_time(self):
         word, floor, time = self.WORD, self.FLOOR, self.TIME
@@ -10810,6 +10961,13 @@ class BrowserChecks(unittest.TestCase):
         # rounding excuses only a few sun rays, and a sunny check that marched no sun proves nothing
         self.assertFalse(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, excused=400, sunMarched=9000)))["pass"])
         self.assertFalse(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, sunMarched=0)))["pass"])
+        # at most twice R1a's wall-face rate is excused: 2 × 500 / 50,000 of 9,000 marched splats is 180, of 600 texels 12
+        self.assertTrue(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, excused=180, sunMarched=9000)))["pass"])
+        self.assertFalse(bc.gpu_report(self.gpu_run(sample_sunny=dict(word, checked=60000, excused=181, sunMarched=9000)))["pass"])
+        self.assertFalse(bc.gpu_report(self.gpu_run(floorSun_sunny=dict(floor, excused=13)))["pass"])
+        unbounded = self.gpu_run()
+        del unbounded["wallFaceRate"]
+        self.assertFalse(bc.gpu_report(unbounded)["pass"])            # without R1a's rate nothing bounds the excuses
         self.assertFalse(bc.gpu_report(self.gpu_run(floorSun_sunny=dict(floor, worstDifference=2e-5)))["pass"])
         self.assertFalse(bc.gpu_report(self.gpu_run(floorSun_sunny=dict(floor, lit=0)))["pass"])
         self.assertFalse(bc.gpu_report(self.gpu_run(gpuTime_sunny=dict(time, passMedianMs=None)))["pass"])   # never measured
@@ -10835,10 +10993,13 @@ class BrowserChecks(unittest.TestCase):
             for name in [name for name in gpu if name.startswith(prefix)]:
                 del gpu[name]
             self.assertFalse(bc.gpu_report(missing)["pass"], prefix)
-        # the sky passes' time is reported against R1d A9's 1 ms, not judged here (a miss goes to the controller)
+        # the sky passes' GPU time is judged against R1d A9's 1 ms (amended 8 October): 1.4 ms fails, 1.0 passes
         report = bc.gpu_report(self.gpu_run(gpuTime_sunny=dict(time, skyMedianMs=1.4)))
-        self.assertTrue(report["pass"])
+        self.assertFalse(report["pass"])
         self.assertEqual(report["skyWithinBudget"], {"gpuTime_sunny": False})
+        self.assertTrue(bc.gpu_report(self.gpu_run(gpuTime_sunny=dict(time, skyMedianMs=1.0)))["pass"])
+        self.assertFalse(bc.gpu_report(self.gpu_run(gpuTime_sunny=dict(time, skyMedianMs=None)))["pass"])   # never resolved
+        self.assertFalse(bc.gpu_report(self.gpu_run(gpuTime_sunny=dict(time, skyTiming=None)))["pass"])     # timed how?
 
     def test_loading_passes_on_relight_spans_within_50_ms_and_reports_long_tasks_as_information(self):
         spans = [{"name": name, "ms": 12.0} for name in bc.RELIGHT_SPANS]
@@ -10878,8 +11039,9 @@ Reads the renders relight-verify.mjs wrote under <root>/renders (root = the pare
 records under <evidence>/r1b, and writes <evidence>/r1b/r1b-browser-checks.json. Sections: identity (relight off
 against I1a with the capture instrumentation), captured (the captured light within 1/20 stop), gpu (the multiplier
 words against the CPU kernel and R1a's vectors, the sky bodies' light computed on the GPU against its CPU twin, the
-floor's sun, moon and base light against theirs, the display function, and the multiplier pass's GPU time at a sun
-change, its median within one frame; the sky passes' time reported against R1d A9's 1 ms), photo (night against Matterport,
+floor's sun, moon and base light against theirs, the display function, the multiplier pass's GPU time at a sun
+change, its median within one frame, and the sky passes' GPU time from timestamp queries, its median within R1d A9's
+1 ms; the rounding excuses at most twice R1a's measured wall-face rate), photo (night against Matterport,
 07_compare's r), fallback (WebGL2 and below desktop stay captured), loading (each span of relight main-thread work
 within 50 ms at load completion, no new console messages).
 
@@ -10906,14 +11068,18 @@ FLOOR_SUN_TOLERANCE = 1e-5
 FLOOR_BASE_TOLERANCE = 2e-3
 # A body's c_k on the GPU against skyCoefficients over the GPU's own P_w, relative to the sum of its terms' magnitudes.
 SKY_COEFFICIENT_TOLERANCE = 1e-5
-# R1d A9 point 4: both bodies' sky passes at most 1 ms on the RTX 4090; a miss is reported, not judged here.
+# R1d A9 point 4: both bodies' sky passes at most 1 ms of GPU time on the RTX 4090, the median of the light changes,
+# judged (amended 8 October); timed by timestamp queries, or, only without timestamp-query, by a labelled round trip.
 SKY_BUDGET_MS = 1.0
+SKY_TIMINGS = ("timestamp-query", "round-trip-minus-empty")
 # Checks whose light must reach the splats or the floor through the windows.
 MARCHED_NAMES = ("sunny", "moonlit", "moon_test")
 LIT_NAMES = ("sunny", "moonlit")
 # Sun rays within rounding of a window-march decision may differ on the GPU (WGSL fuses, divides within 2.5 ULP):
-# at most this share of the marched rays (words) or checked texels (floor) may be excused.
-EXCUSED_SHARE = 0.02
+# at most this many times R1a's measured wall-face rate (the vectors' windowRays.wallFaceRate, wallFace / marched,
+# which the driver copies into the run) of the rays marched here may be excused, words and floor texels alike, and
+# at least one (amended 8 October; it replaces a flat 2%).
+EXCUSED_RATE_FACTOR = 2
 # The multiplier pass's GPU time at a sun change, median of 12, on the RTX 4090: one frame at 60 Hz (a hard limit,
 # the owner's decision of 3 October; never loosened).
 FRAME_MS = 16.7
@@ -11010,11 +11176,13 @@ def photo_report(cmp) -> dict:
 
 def gpu_report(run: dict) -> dict:
     gpu = run["runs"]["relit"]["gpu"]
+    # R1a's measured wall-face rate bounds the rounding excuses; without it nothing does, and the section fails.
+    rate = _wall_face_rate(run.get("wallFaceRate"))
     checks = {k: v for k, v in gpu.items() if k.startswith(("fixture_", "sample_"))}
-    ok = {k: _word_ok(k, v) for k, v in checks.items()}
+    ok = {k: _word_ok(k, v, rate) for k, v in checks.items()}
     # The floor's Sun and Moon grids (R1d A5: the Moon's as the Sun's), both required.
     floor = {k: v for k, v in gpu.items() if k.startswith(("floorSun_", "floorMoon_"))}
-    floor_ok = {k: _floor_ok(k, v) for k, v in floor.items()}
+    floor_ok = {k: _floor_ok(k, v, rate) for k, v in floor.items()}
     floors = all(any(k.startswith(prefix) for k in floor) for prefix in ("floorSun_", "floorMoon_"))
     # The floor's base light (R1d A2) and the sky bodies' light, each against its CPU twin.
     base = {k: v for k, v in gpu.items() if k.startswith("floorBase_")}
@@ -11031,28 +11199,50 @@ def gpu_report(run: dict) -> dict:
                                    for v in times.values())
     within_frame = {k: v["passMedianMs"] <= FRAME_MS for k, v in times.items()} if measured else {}
     fast = measured and all(within_frame.values())
-    # Reported, not judged (R1d A9 point 4).
-    sky_budget = {k: isinstance(v.get("skyMedianMs"), (int, float)) and v["skyMedianMs"] <= SKY_BUDGET_MS for k, v in times.items()}
+    # Both bodies' sky passes, judged (R1d A9 point 4; amended 8 October): measured, labelled, median at most 1 ms.
+    sky_budget = {k: v.get("skyTiming") in SKY_TIMINGS and isinstance(v.get("skyMedianMs"), (int, float))
+                  and v["skyMedianMs"] <= SKY_BUDGET_MS for k, v in times.items()}
+    sky_fast = bool(times) and all(sky_budget.values())
     return {"checks": checks, "floor": floor, "floorBase": base, "skyLight": sky, "display": display, "gpuTime": times,
-            "withinFrame": within_frame, "skyWithinBudget": sky_budget,
-            "pass": (bool(checks) and all(ok.values()) and floors and all(floor_ok.values()) and bool(base) and all(base_ok.values())
-                     and bool(sky) and all(sky_ok.values()) and display_ok and fast)}
+            "wallFaceRate": run.get("wallFaceRate"), "withinFrame": within_frame, "skyWithinBudget": sky_budget,
+            "pass": (rate is not None and bool(checks) and all(ok.values()) and floors and all(floor_ok.values())
+                     and bool(base) and all(base_ok.values()) and bool(sky) and all(sky_ok.values()) and display_ok
+                     and fast and sky_fast)}
 
 
-def _word_ok(name: str, v: dict) -> bool:
-    """Within one code, alpha equal, none missing; few excused rounding cases; a sunny, moonlit or moon_test check
-    marched some Sun or Moon."""
+def _wall_face_rate(record) -> tuple[int, int] | None:
+    """(wallFace, marched) of R1a's measured wall-face rate, or None when it is missing or malformed."""
+    if not isinstance(record, dict):
+        return None
+    wall_face, marched = record.get("wallFace"), record.get("marched")
+    if not (isinstance(wall_face, int) and isinstance(marched, int) and 0 <= wall_face <= marched and marched > 0):
+        return None
+    return wall_face, marched
+
+
+def _excused_ok(excused: int, marched_here: int, rate: tuple[int, int] | None) -> bool:
+    """At most EXCUSED_RATE_FACTOR × wallFace / marched of the rays marched here, at least one (exact, in integers)."""
+    if rate is None:
+        return False
+    wall_face, marched = rate
+    return excused <= 1 or excused * marched <= EXCUSED_RATE_FACTOR * wall_face * marched_here
+
+
+def _word_ok(name: str, v: dict, rate: tuple[int, int] | None) -> bool:
+    """Within one code, alpha equal, none missing; excused rounding cases within twice R1a's wall-face rate; a sunny,
+    moonlit or moon_test check marched some Sun or Moon."""
     if not (v["checked"] > 0 and v["worstCodeDistance"] <= 1 and v["alphaMismatches"] == 0 and v["missing"] == 0):
         return False
-    if v["excused"] > max(1, EXCUSED_SHARE * v["sunMarched"]):
+    if not _excused_ok(v["excused"], v["sunMarched"], rate):
         return False
     return not any(part in name for part in MARCHED_NAMES) or v["sunMarched"] > 0
 
 
-def _floor_ok(name: str, v: dict) -> bool:
+def _floor_ok(name: str, v: dict, rate: tuple[int, int] | None) -> bool:
     worst = v.get("worstDifference")   # Infinity (a NaN on the GPU) arrives as null and fails
     return (v["checked"] > 0 and isinstance(worst, (int, float)) and worst <= FLOOR_SUN_TOLERANCE
-            and v["excused"] <= EXCUSED_SHARE * v["checked"] and (not any(part in name for part in LIT_NAMES) or v["lit"] > 0))
+            and _excused_ok(v["excused"], v.get("marched", 0), rate)
+            and (not any(part in name for part in LIT_NAMES) or v["lit"] > 0))
 
 
 def _base_ok(v: dict) -> bool:
@@ -11266,10 +11456,15 @@ async function main() {
   const views = JSON.parse(await readFile(VIEWS, "utf8"));
   const vectors = BASELINE ? null : JSON.parse(await readFile(VECTORS, "utf8"));
   const record = { startedAt: new Date().toISOString(), baseUrl: BASE_URL, baseline: BASELINE, runs: {} };
+  // R1a's measured wall-face rate: browsercheck caps the GPU checks' rounding excuses at twice it.
+  if (vectors !== null) record.wallFaceRate = vectors.windowRays.wallFaceRate;
   await takeLock();
+  // The same switches for the baseline and R1b runs. --enable-webgpu-developer-features turns off Chromium's
+  // quantisation of WebGPU timestamps (the switch and Dawn's timestamp_quantization toggle are both in Playwright's
+  // Chromium 1217, checked 8 October), so the sky passes' timestamps are read at full resolution against 1 ms.
   const browser = await chromium.launch({
     headless: false,
-    args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion"],
+    args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion", "--enable-webgpu-developer-features"],
   });
   try {
     if (BASELINE) {
@@ -11395,7 +11590,7 @@ Expected: `wrote D:/claude/relight/grand-hall/evidence/r1b/r1b-browser-run.json`
 ```bash
 cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m relight browser-check --config config/grand-hall.json
 ```
-Expected: `identity: pass`, `captured: pass`, `gpu: pass` (word checks, the sky bodies' light, the floor's sun, moon and base light, the display read-back, and the pass's median time within one frame), `photo: pass` (with the two stations' r printed, relit ≥ 0.85 at mp43 and ≥ 0.80 at mp45, each ≥ served), `fallback: pass`, `loading: pass`, exit 0. The report's `loading.longTasks` and `loading.loadMs` (off and relit, at load completion) and `gpu.gpuTime` (the pass and whole-change medians, against the design's unmeasured estimate of about 1 ms; the sky passes' median and `gpu.skyWithinBudget` against R1d A9's 1 ms, a miss reported to the controller with the numbers) and each `gpu.skyLight` record's `excusedShare` are to be copied into the session log; `gpu.withinFrame` is judged. On any `FAIL`, keep the evidence file, find the cause and fix it; never loosen a threshold. For example: `fixture_*` `missing` > 0 means contract 4 or 5 differs (the live positions do not map onto the vectors' model frame); `identity` failing means the hook changed the unrelit graph; `gpu.display` failing means `displayNode` and `displayColour` disagree; a `skyLight_*` check failing on `worstPowerExcess` means the sky passes' march or sums differ from `windowPower` beyond the rays the twin excuses (compare `RelightSkyRays` with `windowRayLight`: the facing skip, the first-claiming owner, the gate, `float32(T × F)`; then the sub-sample order of `lit` and the patch power's operations), on `worstCoefficientError` that the coefficient pass reads the wrong table entries (the corners' node index row·columns + column, the [row][column][window][k] layout) or skips the `P_w > 0` rule; `floorBase_*` failing alone means the fold or the floor's base pass differs from `texelBaseLight` (the sky's fold weights, the +z face, the trilinear validity); a word or `floorSun_*` check failing on `worstCodeDistance` or `worstDifference`, or with more than its share `excused`, means the TSL march and the CPU twin differ beyond rounding (compare `sunVisibilityNode` with `sunVisibility` operation by operation: the entry point, the first cell, the step, the cap, the exit test, the start offsets); `loading.missingSpans` means a span was never recorded (an instrumentation gap, not a pass); `loading.overBudget` names the span over 50 ms; `gpu.withinFrame` false means the multiplier pass's median GPU time at a sun change exceeds one frame (16.7 ms): apply the remedies in order, (1) skip non-reach and non-entering splats early, before any march work, so the threads that march hold only rays that enter a window; (2) run the floor sun pass only when the sun moves by more than 0.1°; (3) throttle slider-driven light changes to one per frame, rerunning the check after each, and never loosen the limit. For `relight:merge-records`, the remedy is to merge per tile off the build task (a passthrough-filled records buffer, then each tile's records written with `RelightDraw.setSourceRecords` in its own task before the first pass; Task 12), never to relax the threshold; for another span, split that step the same way.
+Expected: `identity: pass`, `captured: pass`, `gpu: pass` (word checks, the sky bodies' light, the floor's sun, moon and base light, the display read-back, the rounding excuses within twice R1a's wall-face rate, the pass's median time within one frame, and the sky passes' median GPU time within 1 ms), `photo: pass` (with the two stations' r printed, relit ≥ 0.85 at mp43 and ≥ 0.80 at mp45, each ≥ served), `fallback: pass`, `loading: pass`, exit 0. The report's `loading.longTasks` and `loading.loadMs` (off and relit, at load completion) and `gpu.gpuTime` (the pass and whole-change medians, against the design's unmeasured estimate of about 1 ms; the sky passes' `skyMedianMs`, `skyMaxMs` and `skyTiming`), `gpu.wallFaceRate` and each `gpu.skyLight` record's `excusedShare` are to be copied into the session log; `gpu.withinFrame` and `gpu.skyWithinBudget` are judged. On any `FAIL`, keep the evidence file, find the cause and fix it; never loosen a threshold. For example: `fixture_*` `missing` > 0 means contract 4 or 5 differs (the live positions do not map onto the vectors' model frame); `identity` failing means the hook changed the unrelit graph; `gpu.display` failing means `displayNode` and `displayColour` disagree; a `skyLight_*` check failing on `worstPowerExcess` means the sky passes' march or sums differ from `windowPower` beyond the rays the twin excuses (compare `RelightSkyRays` with `windowRayLight`: the facing skip, the first-claiming owner, the gate, `float32(T × F)`; then the sub-sample order of `lit` and the patch power's operations), on `worstCoefficientError` that the coefficient pass reads the wrong table entries (the corners' node index row·columns + column, the [row][column][window][k] layout) or skips the `P_w > 0` rule; `floorBase_*` failing alone means the fold or the floor's base pass differs from `texelBaseLight` (the sky's fold weights, the +z face, the trilinear validity); a word or `floorSun_*` check failing on `worstCodeDistance` or `worstDifference`, or with more than its share `excused`, means the TSL march and the CPU twin differ beyond rounding (compare `sunVisibilityNode` with `sunVisibility` operation by operation: the entry point, the first cell, the step, the cap, the exit test, the start offsets); `loading.missingSpans` means a span was never recorded (an instrumentation gap, not a pass); `loading.overBudget` names the span over 50 ms; `gpu.skyWithinBudget` false means the sky bodies' nine passes take more than R1d A9's 1 ms of GPU time (median of the twelve changes): stop and report `skyMedianMs`, `skyMaxMs` and `skyTiming` to the controller, loosening nothing; a null `gpu.wallFaceRate` means the run lacks R1a's rate (the driver copies the vectors' `windowRays.wallFaceRate`), so nothing bounds the excuses; `gpu.withinFrame` false means the multiplier pass's median GPU time at a sun change exceeds one frame (16.7 ms): apply the remedies in order, (1) skip non-reach and non-entering splats early, before any march work, so the threads that march hold only rays that enter a window; (2) run the floor sun pass only when the sun moves by more than 0.1°; (3) throttle slider-driven light changes to one per frame, rerunning the check after each, and never loosen the limit. For `relight:merge-records`, the remedy is to merge per tile off the build task (a passthrough-filled records buffer, then each tile's records written with `RelightDraw.setSourceRecords` in its own task before the first pass; Task 12), never to relax the threshold; for another span, split that step the same way.
 
 - [ ] **Step 11: The drag budget, relit and off** (the lock is taken exclusively; if the first command fails with `EEXIST`, wait for the holder and rerun)
 
@@ -11609,7 +11804,7 @@ Expected: the push succeeds and the log lists R1b's commits (with R1a's, unless 
 | The Moon as the second sky body everywhere (R1d A3–A5): its position, phase and light (Meeus, `moon.py` ported), the same window march with its own gates and glass on the splats, its own 2 cm floor grid, its bounce through the same basis, the `moon_test` vectors | 4, 6, 7, 8, 10, 11, 14, 17, 18 |
 | Packaging (7 October): exactly the files the manifest names, each by its exact path with its SHA-256 and size; `files` lists nothing else | 2, 5 |
 | R1c's interface to R1b (R1c A1, A6–A10): record classes and toggles, `RelightVisibility`, `bounceAt`/`bounceNode`, `probeReads`, `addPasses`, `setVisibility`, the multiplier's alpha for covered and toggled splats, the debug sample with the frame's visibility, the `skins` and `visibility` sections | 1, 2, 4, 10, 11, 17 |
-| R1d's interface to R1b (R1d A1–A11): no boost and lamp tints, the floor's base light on the GPU, the Moon, the moonlit preset, the vectors, `skyPower`/`bounceCoefficients`/`floorMeanBasis` for R1d's eye (A9's read access), the sky passes' 1 ms budget reported, one preview at the end, the wording | 4, 6, 7, 8, 10, 11, 14, 16, 17, 18, 19 |
+| R1d's interface to R1b (R1d A1–A11): no boost and lamp tints, the floor's base light on the GPU, the Moon, the moonlit preset, the vectors, `skyPower`/`bounceCoefficients`/`floorMeanBasis` for R1d's eye (A9's read access), the sky passes' 1 ms budget judged on the GPU's own timestamps (amended 8 October), one preview at the end, the wording | 4, 6, 7, 8, 10, 11, 14, 16, 17, 18, 19 |
 | §4.3: linear relighting, exposure, 60% white balance, neutral roll-off above a per-call knee (the splat's own captured peak, 0.8 for floor and sky), no film curve; captured light as I1a | 7, 8, 10, 11, 14, 15 |
 | R1a's emitter rule as amended: β 1 in every preset (R1d A1), the lit bulbs and the cove tinted by their group's lamp tint; each lamp group's full-level colour the package's (`lamps.groups[g].colour`, checked against `capture.colours`), never a constant; the warm dim a setting | 2, 4, 8, 10, 11 |
 | WebGPU's 8 storage buffers per stage (9 in the relit vertex stage once T-640 lands): the build PC's limit read up front, the canvas takes the adapter's headroom, and one predicate lets the host, the tiles and the provider relight only where the limit covers a relit draw | 0, 12, 13, 15, 19 |
@@ -11632,10 +11827,10 @@ Expected: the push succeeds and the log lists R1b's commits (with R1a's, unless 
 - T-640 adds a ninth vertex-stage storage buffer, so after it lands an adapter that offers only 8 per stage draws the hall as captured (Task 12's predicate, the count raised in Task 19 Step 1). The build PC's adapter offers 16.
 - Relighting waits at most `RELIGHT_GRACE_MS` (10 s): a tile's geometry for its records once it has loaded, and the provider for the package. After a provider timeout the session (the walk's mount) stays as captured and ignores a later package; a reload tries again.
 - The display function, the multiplier words, the sky bodies' light and the floor's sun, moon and base-light buffers are read back from the GPU; the floor material's bilinear reads of them are not, and rest on their TypeScript twins' tests and the rendered checks.
-- (Amended 3 October.) The GPU cannot repeat the twin's float32 rounding exactly (WGSL may fuse and reassociate, and divides within 2.5 ULP), so a splat or floor texel whose sun ray passes within rounding of a decision of the window march may differ: Task 17 marks those with the twin's `WINDOW_ROUNDING` (15 µm; 5e-4 of a cell between unlike cells) and Task 18 excuses at most 2% of the marched rays. The CPU twin itself matches R1a's vectors exactly (the same samples, the visibility within 1e-6).
+- (Amended 3 October.) The GPU cannot repeat the twin's float32 rounding exactly (WGSL may fuse and reassociate, and divides within 2.5 ULP), so a splat or floor texel whose sun ray passes within rounding of a decision of the window march may differ: Task 17 marks those with the twin's `WINDOW_ROUNDING` (15 µm; 5e-4 of a cell between unlike cells) and Task 18 excuses at most twice R1a's measured wall-face rate of the marched rays (amended 8 October: `windowRays.wallFaceRate`, over 200,000 seeded splats; it replaces a flat 2%). The CPU twin itself matches R1a's vectors exactly (the same samples, the visibility within 1e-6).
 - The display's mean floor light (`roomLight`) takes each body's direct light as the contract's display term, `Σ_w P_w × rgb / floor area`: the power through the windows onto every room patch, walls included, spread over the floor, so sun that falls on a wall counts as floor light; its floor bounce `Σ_k c_k floorMean[k] ⊙ rgb` carries the basis's floor-mean error (median 9.3–10% at K 30, larger on faint directions; the contract's). Only the display's adaptation away from a preset's own hour and the moonlit night's key use it.
 - The display's sky light is the GPU's, read back asynchronously and only for a display that adapts to the floor's light: for the one or two frames before this light's own read-back lands it is provisional (the body's latest read-back), then the display is refined once (`onDisplay`). The CPU twin's sky light runs at most once per preset's own-hour body (three) and once per body before its first read-back, never per light change: 4–9 ms per body on the build PC's CPU (measured), a phone several times that, so a phone's first moonlit or off-hour choice may take one long task.
-- The sky passes' GPU time (both bodies) is measured and reported against R1d A9's 1 ms, not judged in R1b: R1d's Task 23 judges it within a light step, and a miss goes to the controller with the numbers. The share of patch rays within rounding of a march decision is reported, not bounded: the bound is the excuse itself (each such ray at most `area × cos × F / 16`), which the twin computes independently of the GPU.
+- The sky passes' GPU time (both bodies) is judged in R1b (amended 8 October, seam review I-6): timestamp queries time their one compute pass on the GPU itself (`timedCompute`), and Task 18 holds the median of twelve light changes on the RTX 4090 to R1d A9's 1 ms; a miss stops the task and goes to the controller with the numbers. Only an adapter without `timestamp-query` falls back to the round trip less an empty one's, labelled in `skyTiming`; Task 0 Step 7 records whether the build PC's adapter has the feature. R1d's Task 23 still measures it within a light step. The share of patch rays within rounding of a march decision is reported, not bounded: the bound is the excuse itself (each such ray at most `area × cos × F / 16`), which the twin computes independently of the GPU.
 - Until R1d widens the hour range to the whole day, the moonlit night's own hour (23:00) lies beyond the slider, whose clock then reads 22:00; the range is kept because R1d's tasks anchor on it.
 - Each window's sky panel is its outline's bounding rectangle at the glass; an arch's corners lie behind its masonry.
 - The multiplier pass's GPU time at a sun change is held to one frame (the median of 12 sun changes at most 16.7 ms on the RTX 4090; the owner's decision of 3 October, beyond the spec), against the design's estimate of about 1 ms, which stays unmeasured until Task 18. The timing runs from submission to completion on an idle queue, an upper bound of the GPU's own time; a miss is fixed by the remedies in their order, never by loosening the limit.

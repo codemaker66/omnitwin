@@ -6,7 +6,9 @@ immutable once published: `splats/<venue>/<room>/relight/v<N>/`. Spec: `docs/sup
 Revised 7 October (consolidated): the sky bodies' bounce is the factored basis R1a Task 4 committed (the Sun and the
 Moon; it replaces the sunlit-area table, β and `skyFlux`); the capture light is R1a Task 4b's house-light refit, with a
 colour per lamp group; records carry R1c's class 7 and toggles; package v2 adds R1c's `skins` and `visibility`; every
-file is built from an exact, hash-checked artifact.
+file is built from an exact, hash-checked artifact. Revised 8 October (seam review): the flags byte's toggles for
+classes 3 and 6, the display's floor area, `createdAt` from the build commit, `evidence.wallFaceRate`, the evidence
+keys R1a's `check` adds, and the `artifacts` keys.
 
 ## Files
 
@@ -36,11 +38,11 @@ it is published (R1a Task 7).
 |---|---|
 | 0–8 | Direct light of W1, W2, W3, W4, W5, cove, ch_end, ch_centre, dome: log code, 0 = zero, 1..255 = `2^(lo + (code − 1)(hi − lo)/254)` with the source's `lo`, `hi` from `encoding.sources` |
 | 9–10 | Surface normal in the model frame, octahedral: `u = byte9/255·2 − 1`, `v = byte10/255·2 − 1` |
-| 11 | Flags: bits 0–2 class (0 interior, 1 embrasure, 2 hidden, 3 chandelier bulb, 4 dome lamp, 5 cove strip, 6 chandelier fixture, 7 covered by a skin); bit 3 isotropic receiver; bit 4 reachable by a sky body (R1a `windows.sun_reach`: some real sun or moon can light the splat through some window; analytic and conservative, occupancy ignored; the band covers the Moon's declination to 28.75° and parallax to 1.03°); for classes 3 and 6, bit 5 chandelier group centre (else end); for class 7, bits 5–7 its wall group (0 door wall, 1 window wall, 2 end_xmin, 3 end_xmax, 4 ceiling; 7 reserved); for every other class, bits 6–7 its toggle (0 none, 1 loose clutter, 2 AV cabinet). A class-7 flags byte is never 0xff. |
+| 11 | Flags: bits 0–2 class (0 interior, 1 embrasure, 2 hidden, 3 chandelier bulb, 4 dome lamp, 5 cove strip, 6 chandelier fixture, 7 covered by a skin); bit 3 isotropic receiver; bit 4 reachable by a sky body (R1a `windows.sun_reach`: some real sun or moon can light the splat through some window; analytic and conservative, occupancy ignored; the band covers the Moon's declination to 28.75° and parallax to 1.03°); for classes 3 and 6, bit 5 chandelier group centre (else end); for class 7, bits 5–7 its wall group (0 door wall, 1 window wall, 2 end_xmin, 3 end_xmax, 4 ceiling; 7 reserved); for every class but 7, bits 6–7 its toggle (0 none, 1 loose clutter, 2 AV cabinet; bit 5 stays the chandelier group for classes 3 and 6). A class-7 flags byte is never 0xff. |
 
 ## Manifest (fields)
 
-- `schema`: `"venviewer.relight.v1"`; `room`; `createdAt`; `tool` (the repo commit that built it).
+- `schema`: `"venviewer.relight.v1"`; `room`; `createdAt`; `tool` (the repo commit that built it, `git rev-parse HEAD`). `createdAt` is that commit's committer time (`git log -1 --format=%cI`), never the wall clock, so a rebuild at the same commit is byte-identical.
 - `model`: `{ frame: "e57", tileToModel: 4×4 row-major }`.
 - `site`: `{ latitude, longitude, north: [x,y,z], east: [x,y,z], up: [0,0,1] }` in the model frame.
 - `sources`: the nine names in record order.
@@ -54,7 +56,7 @@ it is published (R1a Task 7).
 - `floor`: `{ skin: "floor-skin/v2", texelToModel: 4×4 row-major, texel: 0.05, size: [w, h], files: [3] }`.
 - `tiles`: `[{ tile, tileSha256, level, count, file, sha256, bytes }]` for every served tile.
 - `presetsFromProof`: the three proof scenarios' settings (night, sunny morning 31 May 09:00 BST, overcast noon), as `05_relight.SCENARIOS` defines them.
-- `evidence`: `{ capturedIdentity, proofRegression, transfer, determinism, sunCheck, skyBounce, skyBounceCheck, refit, artifacts, build }`. `skyBounce` is the bake's gate (K, its rule, the selection, check and strict draws' worst bright directions); `skyBounceCheck` the package's check 5; `refit` the house-light refit's acceptance; `artifacts` `{ name: sha256 }` of every work artifact the build read; `build` the options it was built with.
+- `evidence`: `{ capturedIdentity, proofRegression, transfer, determinism, sunCheck, skyBounce, skyBounceCheck, wallFaceRate, refit, artifacts, build }`. The build writes `sunCheck`, `skyBounce`, `refit`, `artifacts` and `build`; R1a's `check` adds the other six to the package it checks, the only keys it writes there. `skyBounce` is the bake's gate (K, its rule, the selection, check and strict draws' worst bright directions); `skyBounceCheck` the package's check 5; `wallFaceRate` `{ splats, marched, wallFace }`, how many of the marched sky-body rays of 200,000 seeded splats have a first sample that float32 rounding alone could put in the other cell at a window's wall face (R1b caps the GPU's rounding excuses at twice `wallFace / marched`); `refit` the house-light refit's acceptance; `artifacts` `{ name: sha256 }` of every work artifact the build read, each key the artifact's path relative to the bake's work folder with `/` separators (`probes-coarse.npz`, `skin-light/index.json`, …); `build` the options it was built with.
 - `files`: `{ <path>: { sha256, bytes } }` for every file except the manifest.
 - `skins` (package v2, optional; R1c): `{ package, manifestSha256, encoding, groups, entries }`.
   - `package`: the skin package's folder beside the tiles (`"skins/v1"`); `manifestSha256` pins its manifest.
@@ -169,7 +171,8 @@ nine sources' bounce does (the browser folds it in; R1b Task 10), so a splat, th
 same trilinear lookup over the 0.5 m probes and the same ambient-cube evaluation as the nine sources' bounce.
 
 **The display.** The direct power reaching the room's surfaces is `Σ_w P_w(σ)`; the display's direct term is
-`Σ_w P_w × bodyRGB / floor area`. The floor's mean bounce is `Σ_k c_k floorMean[k] ⊙ bodyRGB`. At K 30 the floor-mean
+`Σ_w P_w × bodyRGB / floor area`, where the floor area is the floor light maps' extent, `floor.size[0] × floor.size[1] ×
+floor.texel²` (424 × 212 × 0.05² = 224.72 m² for the Grand Hall; R1b's `floorArea`). The floor's mean bounce is `Σ_k c_k floorMean[k] ⊙ bodyRGB`. At K 30 the floor-mean
 bounce has median 9.3% (selection) and 10.0% (check) relative error, larger on faint directions.
 
 **Known limit** (accepted 4 October): the proof's patch sampling (16 sub-sample rays per 0.5 m patch, a 12.5 cm pitch)
