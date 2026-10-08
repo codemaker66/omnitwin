@@ -105,7 +105,9 @@ export function FindPalette({ places, canSearchClients, diaryVenueId, source, on
             .map((room) => ({ id: room.id, name: room.name, lines: room.lines.map((line) => line.text), free: room.free }));
           const answer: FindDayAnswer = { iso: sought, rooms };
           daysRead.current.set(sought, answer);
-          setDay({ iso: sought, status: "ready", answer });
+          // A read that a newer date replaced may still answer: it fills the
+          // cache for its own day, and never takes the newer day's place.
+          if (!reading.signal.aborted) setDay({ iso: sought, status: "ready", answer });
         })
         .catch(() => { if (!reading.signal.aborted) setDay({ iso: sought, status: "error" }); });
     }, DAY_DELAY_MS);
