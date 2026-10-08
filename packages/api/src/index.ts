@@ -460,7 +460,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionEventRoutes, { db, prefix: "/events" });
   await server.register(eventMissionRoutes, { db, prefix: "/event-missions" });
-  await server.register(eventArchitectRoutes, { db, prefix: "/event-architect" });
+  await server.register(eventArchitectRoutes, { db, env, prefix: "/event-architect" });
   await server.register(eventRevenueRoutes, { db, prefix: "/events" });
   await server.register(eventPhaseRoutes, { db, prefix: "/event-phases" });
   await server.register(eventDayOpsTaskRoutes, { db, prefix: "/ops-tasks" });

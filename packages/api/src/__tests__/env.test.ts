@@ -408,3 +408,40 @@ describe("non-production environments are permissive", () => {
     expect(env.NODE_ENV).toBe("development");
   });
 });
+
+describe("AI assistant provider configuration", () => {
+  const base = { DATABASE_URL: "postgresql://user:pass@host/db", AI_ASSISTANT_ENABLED: "true" };
+
+  it("accepts the Anthropic provider with a model and key, and no base URL", () => {
+    const env = validateEnv({
+      ...base, AI_ASSISTANT_PROVIDER: "anthropic", AI_ASSISTANT_MODEL: "claude-opus-5-5", AI_ASSISTANT_API_KEY: "test-key-not-real",
+    });
+    expect(env.AI_ASSISTANT_PROVIDER).toBe("anthropic");
+    expect(env.AI_ASSISTANT_BASE_URL).toBeUndefined();
+  });
+
+  it("REJECTS the Anthropic provider without its model or key, naming only what is missing", () => {
+    expect(() => validateEnv({ ...base, AI_ASSISTANT_PROVIDER: "anthropic", AI_ASSISTANT_MODEL: "claude-opus-5-5" }))
+      .toThrow("missing required provider configuration: AI_ASSISTANT_API_KEY");
+    expect(() => validateEnv({ ...base, AI_ASSISTANT_PROVIDER: "anthropic", AI_ASSISTANT_API_KEY: "test-key-not-real" }))
+      .toThrow("missing required provider configuration: AI_ASSISTANT_MODEL");
+  });
+
+  it("still requires the gateway's base URL for any other provider", () => {
+    expect(() => validateEnv({ ...base, AI_ASSISTANT_PROVIDER: "gateway", AI_ASSISTANT_MODEL: "m", AI_ASSISTANT_API_KEY: "k" }))
+      .toThrow("missing required provider configuration: AI_ASSISTANT_BASE_URL");
+    expect(() => validateEnv({
+      ...base, AI_ASSISTANT_PROVIDER: "gateway", AI_ASSISTANT_MODEL: "m", AI_ASSISTANT_API_KEY: "k", AI_ASSISTANT_BASE_URL: "https://ai.example.test/draft",
+    })).not.toThrow();
+  });
+
+  it("requires every field, base URL included, when no provider is named", () => {
+    expect(() => validateEnv(base)).toThrow(
+      "missing required provider configuration: AI_ASSISTANT_PROVIDER, AI_ASSISTANT_MODEL, AI_ASSISTANT_BASE_URL, AI_ASSISTANT_API_KEY",
+    );
+  });
+
+  it("asks for nothing while AI is off", () => {
+    expect(() => validateEnv({ DATABASE_URL: base.DATABASE_URL, AI_ASSISTANT_PROVIDER: "anthropic" })).not.toThrow();
+  });
+});

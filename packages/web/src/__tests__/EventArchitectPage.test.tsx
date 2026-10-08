@@ -1,14 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import {
   CreateEventArchitectRunInputSchema,
   SelectEventArchitectCandidateInputSchema,
+  interpretEventBriefExtraction,
   runEventArchitect,
+  type AIAssistantStatus,
   type EventArchitectCandidateSelection,
   type EventArchitectRequest,
+  type EventBriefDraft,
+  type EventBriefExtraction,
   type PersistedEventArchitectRun,
 } from "@omnitwin/types";
+import { ApiError } from "../api/client.js";
+import { resetEventBriefReaderAvailability } from "../hooks/use-event-brief-reader-available.js";
 import { EventArchitectPage } from "../pages/EventArchitectPage.js";
 import { useAuthStore } from "../stores/auth-store.js";
 
@@ -41,6 +47,8 @@ const {
   mockSelectEventArchitectCandidate,
   mockGetEventArchitectOpsReview,
   mockCreateEventArchitectOpsReview,
+  mockGetEventBriefReaderStatus,
+  mockReadEventBrief,
   mockGetVenue,
   mockListVenues,
 } = vi.hoisted(() => ({
@@ -49,6 +57,8 @@ const {
   mockSelectEventArchitectCandidate: vi.fn(),
   mockGetEventArchitectOpsReview: vi.fn(),
   mockCreateEventArchitectOpsReview: vi.fn(),
+  mockGetEventBriefReaderStatus: vi.fn(),
+  mockReadEventBrief: vi.fn(),
   mockGetVenue: vi.fn(),
   mockListVenues: vi.fn(),
 }));
@@ -59,7 +69,14 @@ vi.mock("../api/event-architect.js", () => ({
   selectEventArchitectCandidate: mockSelectEventArchitectCandidate,
   getEventArchitectOpsReview: mockGetEventArchitectOpsReview,
   createEventArchitectOpsReview: mockCreateEventArchitectOpsReview,
+  getEventBriefReaderStatus: mockGetEventBriefReaderStatus,
+  readEventBrief: mockReadEventBrief,
 }));
+
+const BRIEFS_OFF: AIAssistantStatus = {
+  configured: false, provider: null, model: null, disabledReason: "AI drafts are disabled until provider environment is configured.",
+};
+const BRIEFS_ON: AIAssistantStatus = { configured: true, provider: "anthropic", model: "claude-opus-5-5", disabledReason: null };
 
 vi.mock("../api/spaces.js", () => ({
   getVenue: mockGetVenue,
@@ -211,6 +228,11 @@ beforeEach(() => {
   mockListVenues.mockReset();
   mockGetVenue.mockResolvedValue(VENUE);
   mockListVenues.mockResolvedValue([VENUE]);
+  // The server reads no briefs unless a test says so: the page as before.
+  resetEventBriefReaderAvailability();
+  mockGetEventBriefReaderStatus.mockReset();
+  mockGetEventBriefReaderStatus.mockResolvedValue(BRIEFS_OFF);
+  mockReadEventBrief.mockReset();
   useAuthStore.getState().setUser({
     id: USER_ID,
     email: "planner@trades-hall.test",
@@ -404,5 +426,196 @@ describe("EventArchitectPage", () => {
     expect(text).not.toContain(planningPrompt);
     expect(text).not.toMatch(/fire approved|certified safe|legally compliant|approved for occupancy|guaranteed accessible/iu);
     expect(text).toMatch(/not safety, occupancy, accessibility-route, or statutory determinations/iu);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Describe the event" (T-650): the planner's words read by the server's AI
+// into a draft of the brief, checked and edited, then put into the request
+// form by an explicit action. Nothing runs until Generate.
+// ---------------------------------------------------------------------------
+
+const ABSENT = { value: null, source: "absent", words: null, basis: null } as const;
+
+function briefDraft(
+  description: string,
+  fields: Partial<EventBriefExtraction["fields"]>,
+  unsupported: EventBriefExtraction["unsupported"] = [],
+): EventBriefDraft {
+  return interpretEventBriefExtraction({
+    extraction: {
+      fields: {
+        eventName: ABSENT, eventType: ABSENT, guestCount: ABSENT, layoutStyle: ABSENT, budgetGbp: ABSENT,
+        preferredDate: ABSENT, startTime: ABSENT, endTime: ABSENT, serviceModel: ABSENT, planningEmphasis: ABSENT,
+        ...fields,
+      },
+      accessibility: [],
+      unsupported,
+    },
+    description,
+    contactDetailsRemoved: false,
+    generatedAt: CREATED_AT,
+  });
+}
+
+const WEDDING_WORDS = "Wedding breakfast for about 140 on Saturday 12 June 2027, round tables, plated, a top table and a dance floor.";
+const WEDDING = briefDraft(WEDDING_WORDS, {
+  eventName: { value: "Crawford wedding", source: "inferred", words: null, basis: "Named from the occasion." },
+  eventType: { value: "wedding", source: "stated", words: "Wedding", basis: null },
+  guestCount: { value: 140, source: "inferred", words: "about 140", basis: "Taken as 140 from an approximate figure." },
+  layoutStyle: { value: "dinner-rounds", source: "stated", words: "round tables", basis: null },
+  preferredDate: { value: "2027-06-12", source: "stated", words: "Saturday 12 June 2027", basis: null },
+  serviceModel: { value: "plated", source: "stated", words: "plated", basis: null },
+}, [
+  { words: "a top table", kind: "not_modelled", explanation: "The Event Architect does not place a top table.", field: null },
+  { words: "a dance floor", kind: "not_modelled", explanation: "The Event Architect does not place a dance floor.", field: null },
+]);
+
+async function describeEvent(words: string): Promise<void> {
+  mockGetEventBriefReaderStatus.mockResolvedValue(BRIEFS_ON);
+  renderPage();
+  fireEvent.change(await screen.findByRole("textbox", { name: "Describe the event" }), { target: { value: words } });
+}
+
+describe("Describe the event", () => {
+  it("is not offered where the server reads no briefs", async () => {
+    renderPage();
+    await screen.findByLabelText("Venue");
+    await waitFor(() => { expect(mockGetEventBriefReaderStatus).toHaveBeenCalled(); });
+    expect(screen.queryByRole("textbox", { name: "Describe the event" })).toBeNull();
+    expect(screen.queryByTestId("brief-reader")).toBeNull();
+  });
+
+  it("reads the planner's words into an editable draft, then fills the form without running anything", async () => {
+    mockReadEventBrief.mockResolvedValue(WEDDING);
+    mockCreateEventArchitectRun.mockResolvedValue(persistedRun());
+    await describeEvent(WEDDING_WORDS);
+    fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));
+
+    const preview = await screen.findByTestId("brief-preview");
+    expect(mockReadEventBrief).toHaveBeenCalledWith(
+      { venueId: VENUE_ID, spaceId: SPACE_ID, description: WEDDING_WORDS },
+      expect.any(AbortSignal),
+    );
+    const read = within(preview);
+    expect(read.getByRole("heading", { name: "The brief as read" })).toBeTruthy();
+    expect(read.getByText(/Read for the Grand Hall/u)).toBeTruthy();
+    expect(read.getByText("Not checked")).toBeTruthy();
+    expect(read.getByLabelText(/^Guests/u)).toHaveProperty("value", "140");
+    // The values it inferred are marked, and say what was assumed and why.
+    expect(read.getAllByText("Assumed")).toHaveLength(2);
+    const assumed = within(read.getByTestId("brief-assumptions"));
+    expect(assumed.getByText("Guests: 140")).toBeTruthy();
+    expect(assumed.getByText("Taken as 140 from an approximate figure.")).toBeTruthy();
+    // What it cannot plan is kept, in the planner's own words.
+    const held = within(read.getByTestId("brief-unsupported"));
+    expect(held.getByText("a top table")).toBeTruthy();
+    expect(held.getByText("a dance floor")).toBeTruthy();
+
+    // Every value is the planner's to change; a changed value is theirs.
+    fireEvent.change(read.getByLabelText(/^Guests/u), { target: { value: "150" } });
+    expect(read.getAllByText("Assumed")).toHaveLength(1);
+    expect(mockCreateEventArchitectRun).not.toHaveBeenCalled();
+
+    fireEvent.click(read.getByRole("button", { name: "Fill the request form" }));
+    expect(screen.queryByTestId("brief-preview")).toBeNull();
+    expect(screen.getByLabelText("Event name")).toHaveProperty("value", "Crawford wedding");
+    expect(screen.getByLabelText("Guests")).toHaveProperty("value", "150");
+    expect(screen.getByLabelText(/Preferred date/u)).toHaveProperty("value", "2027-06-12");
+    expect(screen.getByLabelText("Layout style")).toHaveProperty("value", "dinner-rounds");
+    expect(screen.getByLabelText("Service model")).toHaveProperty("value", "plated");
+    await waitFor(() => { expect(document.activeElement).toBe(screen.getByLabelText("Event name")); });
+    expect(screen.getByText("The request form below holds this brief.")).toBeTruthy();
+    expect(within(screen.getByTestId("brief-filled")).getByText("a dance floor")).toBeTruthy();
+    expect(mockCreateEventArchitectRun).not.toHaveBeenCalled();
+
+    // The existing run flow takes it from here.
+    fireEvent.click(screen.getByRole("button", { name: "Generate three options" }));
+    await waitFor(() => { expect(mockCreateEventArchitectRun).toHaveBeenCalledTimes(1); });
+    expect(CreateEventArchitectRunInputSchema.parse(mockCreateEventArchitectRun.mock.calls[0]?.[0]).brief).toMatchObject({
+      eventName: "Crawford wedding",
+      eventType: "wedding",
+      guestCount: 150,
+      layoutStyle: "dinner-rounds",
+      serviceModel: "plated",
+      preferredDate: "2027-06-12",
+    });
+  });
+
+  it("asks for a layout before filling when the one described is not offered", async () => {
+    const words = "Awards night for 200, cabaret style, plated.";
+    mockReadEventBrief.mockResolvedValue(briefDraft(words, {
+      guestCount: { value: 200, source: "stated", words: "200", basis: null },
+      layoutStyle: { value: "other", source: "stated", words: "cabaret style", basis: null },
+      serviceModel: { value: "plated", source: "stated", words: "plated", basis: null },
+    }));
+    await describeEvent(words);
+    fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));
+    const read = within(await screen.findByTestId("brief-preview"));
+    expect(read.getByLabelText(/^Layout style/u)).toHaveProperty("value", "");
+    expect(within(read.getByTestId("brief-unsupported")).getByText("cabaret style")).toBeTruthy();
+
+    fireEvent.click(read.getByRole("button", { name: "Fill the request form" }));
+    expect(read.getByRole("alert").textContent).toBe("Choose a layout style before filling the form.");
+    expect(document.activeElement).toBe(read.getByLabelText(/^Layout style/u));
+    expect(screen.getByTestId("brief-preview")).toBeTruthy();
+
+    fireEvent.change(read.getByLabelText(/^Layout style/u), { target: { value: "theatre" } });
+    fireEvent.click(read.getByRole("button", { name: "Fill the request form" }));
+    expect(screen.getByLabelText("Layout style")).toHaveProperty("value", "theatre");
+  });
+
+  it("stops a read on its way, keeping the description, and drops its late answer", async () => {
+    let answer: (draft: EventBriefDraft) => void = () => undefined;
+    let signal: AbortSignal | undefined;
+    mockReadEventBrief.mockImplementation((_input: unknown, abort: AbortSignal) => {
+      signal = abort;
+      return new Promise<EventBriefDraft>((resolve) => { answer = resolve; });
+    });
+    await describeEvent(WEDDING_WORDS);
+    fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));
+    const working = await screen.findByRole("button", { name: "Reading the brief…" });
+    expect(working.getAttribute("aria-busy")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(signal?.aborted).toBe(true);
+    expect(screen.getByRole("button", { name: "Read the brief" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Describe the event" })).toHaveProperty("value", WEDDING_WORDS);
+    expect(screen.getByTestId("brief-reader-said").textContent).toBe("Stopped. Your description is unchanged.");
+
+    answer(WEDDING);
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(screen.queryByTestId("brief-preview")).toBeNull();
+  });
+
+  it("says when the brief could not be read, and reads it again on request", async () => {
+    mockReadEventBrief
+      .mockRejectedValueOnce(new ApiError(502, "AI draft generation failed", "AI_DRAFT_GENERATION_FAILED"))
+      .mockResolvedValueOnce(WEDDING);
+    await describeEvent(WEDDING_WORDS);
+    fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));
+    const failed = await screen.findByTestId("brief-failed");
+    expect(failed.textContent).toContain("The brief could not be read. Your description is still here.");
+
+    fireEvent.click(within(failed).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByTestId("brief-preview")).toBeTruthy();
+    expect(mockReadEventBrief).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes reading away for the visit when the server says AI is off, leaving the form as it was", async () => {
+    mockReadEventBrief.mockRejectedValue(new ApiError(503, "AI drafts are disabled", "AI_ASSISTANT_DISABLED"));
+    await describeEvent(WEDDING_WORDS);
+    fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));
+    expect((await screen.findByTestId("brief-reader-gone")).textContent)
+      .toBe("Reading briefs is not available now. The request form below works as before.");
+    expect(screen.queryByRole("textbox", { name: "Describe the event" })).toBeNull();
+    expect(screen.getByLabelText("Guests")).toHaveProperty("value", "80");
+  });
+
+  it("asks for some words before reading", async () => {
+    await describeEvent("   ");
+    fireEvent.click(screen.getByRole("button", { name: "Read the brief" }));
+    expect(screen.getByRole("alert").textContent).toBe("Write a few words about the event first.");
+    expect(mockReadEventBrief).not.toHaveBeenCalled();
   });
 });
