@@ -1,0 +1,212 @@
+/* Find (T-635, roadmap Tier A #8): an ivory sheet under the header, in the
+   register's own tokens (styles/house-tokens.css). The active row is the
+   forest band with cream words (9.4:1); details on ivory are ink-2 (6.7:1);
+   nothing is under 12 px and the field is 18 px, so a phone never zooms. */
+
+.find-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: min(12vh, 112px) 16px 16px;
+  background: #14302a47;
+  animation: find-fade 120ms ease-out;
+}
+
+.find {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: calc(100dvh - min(12vh, 112px) - 16px);
+  border: 1px solid var(--vv-rule);
+  border-radius: 6px;
+  background: var(--house-overlay);
+  box-shadow: 0 22px 60px #14302a33;
+  color: var(--house-ink-1);
+  font-family: Inter, sans-serif;
+  overflow: hidden;
+}
+.find:focus { outline: none; }
+
+.find__field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 18px;
+  border-bottom: 1px solid var(--vv-rule);
+}
+.find__icon { flex: 0 0 auto; color: var(--house-ink-2); }
+.find__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.125rem;
+  line-height: 1.4;
+}
+.find__input::placeholder { color: var(--house-ink-3); opacity: 1; }
+/* The field's own edge is its indicator: a forest rule under it while the
+   cursor is here, which is all the time Find is open. */
+.find__input:focus { outline: none; box-shadow: 0 2px 0 var(--house-forest); }
+
+.find__close {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--house-ink-2);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.find__close:hover { background: var(--house-sheet-hover); }
+.find__close:focus-visible { outline: var(--vv-focus-ring); outline-offset: -2px; }
+
+.find__scope {
+  margin: 0;
+  padding: 10px 18px 2px;
+  color: var(--house-ink-2);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.find__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 8px 8px;
+}
+.find__section + .find__section { margin-top: 6px; }
+.find__group {
+  padding: 10px 10px 4px;
+  color: var(--house-ink-3);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.find__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.find__title {
+  grid-column: 1;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 550;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.find__detail {
+  grid-column: 1;
+  overflow: hidden;
+  color: var(--house-ink-2);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.find__out { grid-column: 2; grid-row: 1 / span 2; color: var(--house-ink-2); }
+.find__row--search .find__title { font-weight: 500; }
+
+.find__row--active { background: var(--house-forest); color: var(--house-cream); }
+.find__row--active .find__detail,
+.find__row--active .find__out { color: #cfd9cc; }
+
+.find__empty {
+  margin: 0;
+  padding: 18px 18px 14px;
+  color: var(--house-ink-2);
+  font-size: 0.9375rem;
+}
+
+.find__status:empty { display: none; }
+.find__status {
+  padding: 8px 18px 10px;
+  border-top: 1px solid var(--vv-rule);
+  color: var(--house-ink-2);
+  font-size: 0.875rem;
+}
+.find__status .vv-activity-status { color: var(--house-ink-2); }
+.find__alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0;
+  color: var(--vv-oxblood);
+}
+.find__retry {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--house-ink-2);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--house-ink-1);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.find__retry:hover { background: var(--house-sheet-hover); }
+.find__retry:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
+.find__quiet { margin: 0; }
+
+.find__keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 9px 18px 11px;
+  border-top: 1px solid var(--vv-rule);
+  color: var(--house-ink-3);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.find__keys kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  padding: 1px 6px;
+  border: 1px solid var(--vv-rule);
+  border-radius: 3px;
+  background: var(--house-paper);
+  color: var(--house-ink-2);
+  font: inherit;
+}
+
+/* A phone's keyboard has no arrows or Escape: no legend for keys it lacks. */
+@media (pointer: coarse) {
+  .find__keys { display: none; }
+}
+
+@media (max-width: 600px) {
+  .find-backdrop { padding: 8px; }
+  .find { max-height: calc(100dvh - 16px); }
+}
+
+@keyframes find-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .find-backdrop { animation: none; }
+  .find__row, .find__close { transition: none; }
+}

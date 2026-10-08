@@ -46,7 +46,20 @@
   border-radius: 999px; background: #8c5a22; color: #fdf7ea;
   font-size: 0.78rem; font-weight: 650; line-height: 1.3;
 }
-.dashboard-layout-account { justify-self: end; min-width: 0; }
+.dashboard-layout-tools { display: flex; align-items: center; justify-self: end; gap: clamp(10px, 1.2vw, 18px); min-width: 0; }
+.dashboard-layout-account { min-width: 0; }
+/* Find (T-635): reads as the header's search field on a wide screen. */
+.dashboard-layout-find {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 8px 0 12px;
+  border: 1px solid var(--workspace-rule); border-radius: 4px; background: #faf8f1; color: inherit;
+  font: inherit; font-size: 0.95rem; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease;
+}
+.dashboard-layout-find:hover { background: #eeeadb; border-color: #a9b19c; }
+.dashboard-layout-find-label { min-width: 7ch; text-align: left; color: #415b50; }
+.dashboard-layout-find-key {
+  padding: 1px 6px; border: 1px solid var(--workspace-rule); border-radius: 3px; background: var(--workspace-paper);
+  color: #415b50; font: inherit; font-size: 0.75rem; line-height: 1.5; white-space: nowrap;
+}
 .dashboard-layout-account-button {
   display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 4px 0 4px 4px;
   border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
@@ -126,7 +139,10 @@
   .dashboard-layout-brand-name { font-size: 1.35rem; }
   .dashboard-layout-venue { border-left: 0; padding: 0; }
   .dashboard-layout-title { max-width: 24ch; font-size: 0.8rem; }
-  .dashboard-layout-account { grid-area: account; align-self: start; }
+  .dashboard-layout-tools { grid-area: account; align-self: start; gap: 8px; }
+  /* On a phone Find is its magnifier alone, a 44 px target beside the account. */
+  .dashboard-layout-find { justify-content: center; width: 44px; padding: 0; }
+  .dashboard-layout-find-label, .dashboard-layout-find-key { display: none; }
   .dashboard-layout-account-button { gap: 7px; min-height: 44px; }
   .dashboard-layout-avatar { width: 36px; height: 36px; flex-basis: 36px; font-size: 0.85rem; }
   /* The phone row carries up to five destinations, the unread chip and More.
@@ -147,7 +163,7 @@
   }
   .dashboard-layout-content { padding: 16px; }
 }
-@media (prefers-reduced-motion: reduce) { .dashboard-layout-nav-item { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .dashboard-layout-nav-item, .dashboard-layout-find { transition: none; } }
 /* Paper carries the page's own work, never the app around it. */
 @media print {
   .dashboard-layout-skip,

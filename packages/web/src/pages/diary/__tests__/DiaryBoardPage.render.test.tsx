@@ -42,6 +42,11 @@ vi.mock("../../../api/diary.js", () => ({
   convertEnquiry: vi.fn(),
 }));
 vi.mock("../../../api/enquiries.js", () => ({ listEnquiries: listEnquiriesMock }));
+// The header's Find searches clients for staff a moment after typing settles;
+// this suite measures renders, so the search finds nothing.
+vi.mock("../../../api/clients.js", () => ({
+  searchClients: () => Promise.resolve({ users: [], guestLeads: [], configurations: [], contacts: [], accounts: [], deals: [], proposals: [] }),
+}));
 vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: vi.fn() }) }));
 vi.mock("../../../api/spaces.js", () => ({
   getVenue: vi.fn().mockResolvedValue({ id: "venue-1", name: "Trades Hall" }),
@@ -159,7 +164,7 @@ describe("Diary Board render budget", () => {
   it.each([
     { link: "a dated link", url: DATED_URL },
     { link: "the nav's plain /diary link", url: "/diary" },
-  ])("opening, typing in and closing the palette never re-renders the overview ($link)", async ({ url }) => {
+  ])("opening, typing in and closing Find never re-renders the page or its overview ($link)", async ({ url }) => {
     renderPage(url);
     await screen.findByRole("region", { name: "Room and day booking summaries" });
     await settled();
@@ -167,32 +172,55 @@ describe("Diary Board render budget", () => {
     expect(before).toBeGreaterThan(0);
     // Without ?date= the anchor is the clock itself; let it move on.
     vi.setSystemTime(new Date("2026-09-16T10:00:05.000Z"));
-    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    const palette = screen.getByRole("dialog", { name: "Find on the board" });
-    const input = within(palette).getByPlaceholderText("Rooms, events, clients…");
     const pageBefore = renders.page;
+    // Ctrl/Cmd-K is the header's Find now; opening it renders the header alone.
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const find = screen.getByRole("dialog", { name: "Find" });
+    const input = within(find).getByRole("combobox", { name: "Find" });
     for (const value of ["M", "Ma", "Mac", "MacL", "MacLe"]) fireEvent.change(input, { target: { value } });
-    // The query lives in the palette: keystrokes do not render the page at all.
+    // The query lives in Find: keystrokes do not render the page at all.
     expect(renders.page).toBe(pageBefore);
-    expect(within(palette).getByRole("button", { name: /MacLeod wedding/ })).toBeDefined();
-    expect(within(palette).getByRole("button", { name: /Fiona MacLeod/ })).toBeDefined();
+    // The board's own findings come with it, under its heading.
+    expect(within(find).getByText("On the board")).toBeDefined();
+    expect(within(find).getByRole("option", { name: /^MacLeod wedding, booking/ })).toBeDefined();
+    expect(within(find).getByRole("option", { name: /^Fiona MacLeod, enquiry/ })).toBeDefined();
     expect(renders.overview).toBe(before);
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Find on the board" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Find" })).toBeNull();
     // Reopening starts from an empty query, as before.
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    expect(screen.getByPlaceholderText("Rooms, events, clients…")).toHaveProperty("value", "");
+    expect(screen.getByRole("combobox", { name: "Find" })).toHaveProperty("value", "");
+    expect(renders.page).toBe(pageBefore);
     expect(renders.overview).toBe(before);
   });
 
-  it("a palette pick still closes the palette and focuses the booking", async () => {
+  it("a booking found closes Find and is focused on the board", async () => {
     renderPage(DATED_URL);
     await settled();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    fireEvent.change(screen.getByPlaceholderText("Rooms, events, clients…"), { target: { value: "chamber" } });
-    fireEvent.keyDown(screen.getByPlaceholderText("Rooms, events, clients…"), { key: "Enter" });
-    expect(screen.queryByRole("dialog", { name: "Find on the board" })).toBeNull();
+    const input = screen.getByRole("combobox", { name: "Find" });
+    fireEvent.change(input, { target: { value: "chamber" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.queryByRole("dialog", { name: "Find" })).toBeNull();
     expect(document.activeElement?.id).toBe("diary-block-00000000-0000-4000-8000-0000000000c1");
+  });
+
+  it("letters typed with Find open never reach the board behind it", async () => {
+    renderPage(DATED_URL);
+    await settled();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const close = within(screen.getByRole("dialog", { name: "Find" })).getByRole("button", { name: "Close Find" });
+    close.focus();
+    const reads = getCalendarMock.mock.calls.length;
+    // "d" re-ranges the board to a day, and so reads it, when nothing holds the keys.
+    fireEvent.keyDown(close, { key: "d" });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    expect(getCalendarMock).toHaveBeenCalledTimes(reads);
+    // The control: with Find put away, the same key does reach the board.
+    fireEvent.click(close);
+    expect(screen.queryByRole("dialog", { name: "Find" })).toBeNull();
+    fireEvent.keyDown(document.body, { key: "d" });
+    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(reads); });
   });
 
   it("a remote change renders the overview once, not once per follow-up state (refresh, overrides, enquiries)", async () => {
