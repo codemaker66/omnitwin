@@ -102,6 +102,7 @@ on future experiments.
 | --- | --- |
 | Loading, saving or other visible work | [Activity convention](../../.claude/conventions/loading-and-working-motion.md) |
 | Visible composition or interaction | [Product experience](../../.claude/conventions/product-experience.md) |
+| Claude provider, typed event briefs or their eval | [AI event briefs](ai-event-briefs.md) |
 | Splat renderer choice/lifecycle | [Native Three.js splats](native-splats.md) |
 | Updating the native splat addon patch | [Maintained dependency patch](../../patches/README.md) |
 | Loader callbacks and rerenders | [Callback ownership](../../.claude/gotchas/spark-splat-layer-callback-identity.md) |
