@@ -26,14 +26,18 @@ import { VENUE_TIME_ZONE } from "../../diary/lib/board-time.js";
 export interface VenueClock {
   readonly timeZone: string;
   readonly settled: boolean;
+  /** The venue's slug, for the room photographs; null until read. */
+  readonly slug: string | null;
 }
 
 export function useVenueClock(venueId: string | null): VenueClock {
-  const [clock, setClock] = useState<{ readonly timeZone: string; readonly forVenue: string | null }>({ timeZone: VENUE_TIME_ZONE, forVenue: null });
+  const [clock, setClock] = useState<{ readonly timeZone: string; readonly slug: string | null; readonly forVenue: string | null }>({
+    timeZone: VENUE_TIME_ZONE, slug: null, forVenue: null,
+  });
 
   useEffect(() => {
     if (venueId === null) {
-      setClock({ timeZone: VENUE_TIME_ZONE, forVenue: null });
+      setClock({ timeZone: VENUE_TIME_ZONE, slug: null, forVenue: null });
       return;
     }
     let current = true;
@@ -41,17 +45,21 @@ export function useVenueClock(venueId: string | null): VenueClock {
       .then((venue) => {
         if (!current) return;
         const zone = venue.timezone;
-        setClock({ timeZone: typeof zone === "string" && zone.length > 0 ? zone : VENUE_TIME_ZONE, forVenue: venueId });
+        setClock({
+          timeZone: typeof zone === "string" && zone.length > 0 ? zone : VENUE_TIME_ZONE,
+          slug: typeof venue.slug === "string" && venue.slug.length > 0 ? venue.slug : null,
+          forVenue: venueId,
+        });
       })
       .catch(() => {
         // A venue read failure is not a reason to blank the board; the
         // surface keeps the default and still labels the zone it shows.
-        if (current) setClock({ timeZone: VENUE_TIME_ZONE, forVenue: venueId });
+        if (current) setClock({ timeZone: VENUE_TIME_ZONE, slug: null, forVenue: venueId });
       });
     return () => { current = false; };
   }, [venueId]);
 
-  return { timeZone: clock.timeZone, settled: venueId !== null && clock.forVenue === venueId };
+  return { timeZone: clock.timeZone, slug: clock.slug, settled: venueId !== null && clock.forVenue === venueId };
 }
 
 export function useVenueTimezone(venueId: string | null): string {
