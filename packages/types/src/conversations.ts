@@ -3,6 +3,7 @@ import {
   CreateVenueRequestSchema,
   RequestOutcomeSchema,
   STAFF_AUDIENCE_ROLES,
+  VenueRequestSchema,
 } from "./requests.js";
 import type { PlatformRole } from "./user.js";
 
@@ -240,3 +241,55 @@ export const ConversationCommandSchema = z.discriminatedUnion("kind", [
 ]);
 export type ConversationCommand = z.infer<typeof ConversationCommandSchema>;
 export type ConversationCommandKind = ConversationCommand["kind"];
+
+// --- The wire frames (S2): what the hub sends back ------------------------
+
+const ServerNowMs = z.number().int().positive();
+
+/** A message landed in a thread the connection's audience admits. Says what
+ *  landed and where, with the cursor, so a screen can replay from the last
+ *  one it saw; the body travels by fetch, never in the frame. */
+export const ConversationEventSchema = z.object({
+  type: z.literal("conversation.event"),
+  venueId: UUID,
+  kind: z.literal("message.sent"),
+  threadId: UUID,
+  audience: ThreadAudienceSchema,
+  subject: ThreadSubjectSchema,
+  bookingId: UUID.nullable(),
+  eventId: UUID.nullable(),
+  requestId: UUID.nullable(),
+  messageId: UUID,
+  cursor: z.number().int().positive(),
+  actorUserId: UUID.nullable(),
+  at: IsoInstant,
+  serverNowMs: ServerNowMs,
+});
+export type ConversationEvent = z.infer<typeof ConversationEventSchema>;
+
+/** Sent after hello once every event after the connection's `afterCursor`
+ *  has been replayed: the screen may now refetch its snapshot. */
+export const ConversationCaughtUpSchema = z.object({
+  type: z.literal("conversation.caughtUp"),
+  cursor: z.number().int().nonnegative(),
+  serverNowMs: ServerNowMs,
+});
+export type ConversationCaughtUp = z.infer<typeof ConversationCaughtUpSchema>;
+
+/** The outcome of a conversation command, in the REST vocabulary. `replay`
+ *  is true when the ledger already held this commandId. */
+export const ConversationCommandAckSchema = z.object({
+  type: z.literal("conversation.ack"),
+  commandId: UUID,
+  outcome: z.enum(["applied", "rejected"]),
+  replay: z.boolean(),
+  status: z.number().int(),
+  message: MessageSchema.optional(),
+  request: VenueRequestSchema.optional(),
+  code: z.string().optional(),
+  error: z.string().optional(),
+  /** On REQUEST_TAKEN and NOT_OWNER: who has it. */
+  ownerName: z.string().optional(),
+  serverNowMs: ServerNowMs,
+});
+export type ConversationCommandAck = z.infer<typeof ConversationCommandAckSchema>;

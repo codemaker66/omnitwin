@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { STAFF_AUDIENCE_ROLES, USER_ROLES } from "@omnitwin/types";
 import { __resetRegistryForTests, emit } from "../../observability/event-bus.js";
 import {
-  DIARY_READ_ROLES, DiaryAuthMessage, DiaryLiveHub, subscribeRequestFrames, type DiaryLiveSocket,
+  DIARY_READ_ROLES, DiaryAuthMessage, DiaryLiveHub, subscribeConversationFrames, subscribeRequestFrames,
+  type DiaryLiveSocket,
 } from "../../ws/diary-live.js";
 import { DIARY_WRITE_ROLES } from "../../services/booking-mutations.js";
 
@@ -221,8 +222,9 @@ describe("request frames reach only the request's own audience", () => {
     for (const role of ["hallkeeper", "staff", "manager", "admin"]) {
       const frames = framesOf(people[role] as FakeSocket, "request.event");
       expect(frames, role).toHaveLength(1);
+      // Goal 19 D5/D9: every frame also carries the server's clock.
       expect(Object.keys(frames[0] ?? {}).sort()).toEqual(
-        ["at", "bookingId", "kind", "requestId", "roomId", "state", "type", "venueId"],
+        ["at", "bookingId", "kind", "requestId", "roomId", "serverNowMs", "state", "type", "venueId"],
       );
     }
     expect(framesOf(people["sales"] as FakeSocket, "request.event")).toHaveLength(0);
@@ -256,7 +258,128 @@ describe("request frames reach only the request's own audience", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Conversation frames (goal 19 S2). A message landed: the frame reaches only
+// the connections the thread's stored audience admits, decided per connection
+// by the one arbiter; it says where and carries the cursor, never the words;
+// and every frame the hub sends carries the server's clock.
+// ---------------------------------------------------------------------------
+
+describe("conversation frames reach only the connections the thread's audience admits", () => {
+  afterEach(() => { __resetRegistryForTests(); });
+
+  const log = Fastify({ logger: false }).log;
+
+  function venueFloor(hub: DiaryLiveHub): Record<string, FakeSocket> {
+    const people: Record<string, FakeSocket> = {};
+    for (const role of ["hallkeeper", "staff", "manager", "admin", "sales"] as const) {
+      people[role] = fakeSocket();
+      hub.join(VENUE_A, people[role], { userId: `${role}-a`, name: role, role }, 0);
+    }
+    people["elsewhere"] = fakeSocket();
+    hub.join(VENUE_B, people["elsewhere"], { userId: "admin-b", name: "B", role: "admin" }, 0);
+    return people;
+  }
+
+  function frames(socket: FakeSocket, type: string): Record<string, unknown>[] {
+    return socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, unknown>)
+      .filter((message) => message["type"] === type);
+  }
+
+  function landed(audience: "staff-private" | "client-facing", subject: "booking" | "request") {
+    return {
+      venueId: VENUE_A, kind: "message.sent" as const, threadId: "t-1", audience, subject,
+      bookingId: "b-1", eventId: null, requestId: subject === "request" ? "r-1" : null,
+      messageId: "m-1", cursor: 7, actorUserId: "staff-a", at: "2026-10-08T15:00:00.000Z",
+    };
+  }
+
+  it("stamps every frame it sends with the server's clock", () => {
+    const hub = new DiaryLiveHub(() => 1_234);
+    const socket = fakeSocket();
+    hub.join(VENUE_A, socket, { userId: "u1", name: "A", role: "staff" }, 0);
+    hub.broadcast(VENUE_A, { type: "diary.event", kind: "booking.created" });
+    hub.pingAll();
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as { serverNowMs?: number });
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+    expect(sent.every((frame) => frame.serverNowMs === 1_234)).toBe(true);
+  });
+
+  it("sends a client-facing booking thread to the office and never to a hallkeeper or sales", () => {
+    const hub = new DiaryLiveHub(() => 1);
+    const people = venueFloor(hub);
+    subscribeConversationFrames(hub, log);
+    emit(log, "conversation.changed", landed("client-facing", "booking"));
+    for (const role of ["staff", "manager", "admin"]) {
+      expect(frames(people[role] as FakeSocket, "conversation.event"), role).toHaveLength(1);
+    }
+    for (const outside of ["hallkeeper", "sales", "elsewhere"]) {
+      expect(frames(people[outside] as FakeSocket, "conversation.event"), outside).toHaveLength(0);
+    }
+  });
+
+  it("sends a client-facing request thread to the hallkeeper too", () => {
+    const hub = new DiaryLiveHub(() => 1);
+    const people = venueFloor(hub);
+    subscribeConversationFrames(hub, log);
+    emit(log, "conversation.changed", landed("client-facing", "request"));
+    for (const role of ["hallkeeper", "staff", "manager", "admin"]) {
+      expect(frames(people[role] as FakeSocket, "conversation.event"), role).toHaveLength(1);
+    }
+    expect(frames(people["sales"] as FakeSocket, "conversation.event")).toHaveLength(0);
+    expect(frames(people["elsewhere"] as FakeSocket, "conversation.event")).toHaveLength(0);
+  });
+
+  it("sends a staff-private thread to the whole floor and says where, never the words", () => {
+    const hub = new DiaryLiveHub(() => 1);
+    const people = venueFloor(hub);
+    subscribeConversationFrames(hub, log);
+    emit(log, "conversation.changed", landed("staff-private", "booking"));
+    for (const role of ["hallkeeper", "staff", "manager", "admin"]) {
+      const [frame] = frames(people[role] as FakeSocket, "conversation.event");
+      expect(frame, role).toBeDefined();
+      expect(Object.keys(frame ?? {}).sort()).toEqual([
+        "actorUserId", "at", "audience", "bookingId", "cursor", "eventId", "kind", "messageId",
+        "requestId", "serverNowMs", "subject", "threadId", "type", "venueId",
+      ]);
+      expect(frame?.["cursor"]).toBe(7);
+    }
+    expect(frames(people["sales"] as FakeSocket, "conversation.event")).toHaveLength(0);
+    expect(frames(people["elsewhere"] as FakeSocket, "conversation.event")).toHaveLength(0);
+  });
+
+  it("stops routing once the server has closed", () => {
+    const hub = new DiaryLiveHub(() => 1);
+    const people = venueFloor(hub);
+    const unsubscribe = subscribeConversationFrames(hub, log);
+    unsubscribe();
+    emit(log, "conversation.changed", landed("staff-private", "booking"));
+    expect(frames(people["staff"] as FakeSocket, "conversation.event")).toHaveLength(0);
+  });
+});
+
 describe("registerDiaryLive — source contract", () => {
+  it("carries the conversation half: commands, cursor replay, caughtUp and the clock on every frame", async () => {
+    const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
+    expect(source).toContain('"conversation.command"');
+    expect(source).toContain("executeConversationCommand");
+    expect(source).toContain("afterCursor");
+    expect(source).toContain('"conversation.caughtUp"');
+    expect(source).toContain('subscribe("conversation.changed"');
+    expect(source).toContain("serverNowMs: Date.now()");
+    // Replay first, snapshot second: the replay runs after hello, and the
+    // audience is re-checked per message by the one arbiter.
+    const hello = source.indexOf('type: "hello"');
+    const replay = source.indexOf("await replayConversation");
+    expect(hello).toBeGreaterThan(-1);
+    expect(replay).toBeGreaterThan(hello);
+    expect(source).toContain("threadAudienceAdmits");
+    // The landed-within-a-second measure is logged, never felt.
+    expect(source).toContain('"conversation.fanout"');
+    expect(source).toContain("latencyMs");
+  });
+
   it("authenticates first, scopes to the user's venue, and admits read roles", async () => {
     const source = await readFile(resolve("src/ws/diary-live.ts"), "utf-8");
     expect(source).toContain("resolveWsUser");

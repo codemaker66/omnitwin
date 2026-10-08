@@ -23,8 +23,8 @@ stay in goal 05.
 | Slice | Local | Committed | Merged | Deployed | Accepted |
 |---|---|---|---|---|---|
 | S0 Ground (ownership, people matrix, attention system, migration numbers) | 8 Oct | 8 Oct `a573129a` | PR #56 green, merge refused by the auto-mode classifier | — | — |
-| S1 Contracts (types, 0086, capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct | awaiting the same permission | — | — |
-| S2 Transport | — | — | — | — | — |
+| S1 Contracts (types, 0086, capabilities, services, routes, 115 tests) | 8 Oct | 8 Oct `3607b395` | awaiting the same permission | — | — |
+| S2 Transport (commands and events on the socket, cursor replay, the one clock, client poll) | 8 Oct | 8 Oct | awaiting the same permission | — | — |
 | S3 The board, rebuilt | — | — | — | — | — |
 | S4 Requests and conversations on the slot | — | — | — | — | — |
 | S5 Observations | — | — | — | — | — |

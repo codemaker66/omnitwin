@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { requestsLiveListenerCount, subscribeRequestsLive } from "../requests-live.js";
+import {
+  __handleFrameForTests,
+  __resetConversationCursorForTests,
+  conversationCursor,
+  requestsLiveListenerCount,
+  subscribeRequestsLive,
+  type RequestsLiveEvent,
+} from "../requests-live.js";
+import { __resetClockForTests, clockSampleCount } from "../clock-offset.js";
 
 vi.mock("../../api/client.js", () => ({ getAuthToken: () => Promise.resolve("token-1") }));
 
@@ -97,6 +105,53 @@ describe("the requests live channel", () => {
     expect(InertSocket.instances).toBe(0);
     unsubscribe();
     expect(requestsLiveListenerCount()).toBe(0);
+  });
+
+  it("announces a conversation frame, feeds the clock, and resumes from the last cursor on the next auth", async () => {
+    vi.stubGlobal("WebSocket", RecordingSocket);
+    __resetConversationCursorForTests();
+    __resetClockForTests();
+    const UUID = "00000000-0000-4000-8000-00000000f001";
+    const heard: RequestsLiveEvent[] = [];
+    const unsubscribe = subscribeRequestsLive((event) => { heard.push(event); });
+    try {
+      const socket = RecordingSocket.latest;
+      if (socket === null) throw new Error("The channel should have opened a socket");
+      socket.open();
+      await vi.waitFor(() => { expect(socket.sent.length).toBeGreaterThan(0); });
+      // A fresh app asks for no replay: it has no cursor yet.
+      expect(JSON.parse(socket.sent[0] ?? "{}")).toEqual({ type: "auth", token: "token-1", presence: false });
+
+      __handleFrameForTests(JSON.stringify({
+        type: "conversation.event", venueId: UUID, kind: "message.sent", threadId: UUID, audience: "staff-private",
+        subject: "booking", bookingId: UUID, eventId: null, requestId: null, messageId: UUID, cursor: 42,
+        actorUserId: null, at: "2026-10-08T15:00:00.000Z", serverNowMs: Date.now() + 5_000,
+      }));
+      expect(heard.some((event) => event.kind === "conversation" && event.event.cursor === 42)).toBe(true);
+      expect(conversationCursor()).toBe(42);
+      expect(clockSampleCount()).toBe(1);
+
+      __handleFrameForTests(JSON.stringify({ type: "conversation.caughtUp", cursor: 50, serverNowMs: Date.now() }));
+      expect(heard.some((event) => event.kind === "caughtUp" && event.cursor === 50)).toBe(true);
+      expect(conversationCursor()).toBe(50);
+      expect(clockSampleCount()).toBe(2);
+    } finally {
+      unsubscribe();
+    }
+
+    // The next socket asks the server to replay everything after 50.
+    const again = subscribeRequestsLive(vi.fn());
+    try {
+      const socket = RecordingSocket.latest;
+      if (socket === null) throw new Error("The channel should have opened a second socket");
+      socket.open();
+      await vi.waitFor(() => { expect(socket.sent.length).toBeGreaterThan(0); });
+      expect(JSON.parse(socket.sent[0] ?? "{}")).toEqual({ type: "auth", token: "token-1", presence: false, afterCursor: 50 });
+    } finally {
+      again();
+      __resetConversationCursorForTests();
+      __resetClockForTests();
+    }
   });
 
   it("opens exactly one socket for any number of surfaces, outside the harness", () => {

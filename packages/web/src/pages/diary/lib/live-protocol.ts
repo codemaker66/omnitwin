@@ -1,10 +1,21 @@
 import { z } from "zod";
-import { DiaryCommandAckSchema } from "@omnitwin/types";
+import {
+  ConversationCaughtUpSchema,
+  ConversationCommandAckSchema,
+  ConversationEventSchema,
+  DiaryCommandAckSchema,
+} from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
-// Diary live protocol (T-497) — the client half of /ws/diary. Pure parsing
-// and reconnect arithmetic; the socket lifecycle lives in useDiaryLive.
+// Diary live protocol (T-497; goal 19 S2) — the client half of /ws/diary.
+// Pure parsing and reconnect arithmetic; the socket lifecycle lives in
+// useDiaryLive. Every server frame may carry `serverNowMs`, the one clock
+// (D9); the hook feeds it to lib/clock-offset.ts.
 // ---------------------------------------------------------------------------
+
+/** Optional on the frames this client has always known, so an older server
+ *  still parses; required on the conversation frames, which are new. */
+const ServerClock = z.number().int().positive().optional();
 
 export const LivePresenceUserSchema = z.object({
   userId: z.string(),
@@ -17,11 +28,13 @@ const HelloMessage = z.object({
   type: z.literal("hello"),
   venueId: z.string(),
   presence: z.array(LivePresenceUserSchema),
+  serverNowMs: ServerClock,
 });
 
 const PresenceMessage = z.object({
   type: z.literal("presence"),
   users: z.array(LivePresenceUserSchema),
+  serverNowMs: ServerClock,
 });
 
 const DiaryEventMessage = z.object({
@@ -30,10 +43,11 @@ const DiaryEventMessage = z.object({
   bookingId: z.string(),
   actorUserId: z.string().nullable(),
   at: z.string(),
+  serverNowMs: ServerClock,
 });
 
-const PingMessage = z.object({ type: z.literal("ping") });
-const PongMessage = z.object({ type: z.literal("pong") });
+const PingMessage = z.object({ type: z.literal("ping"), serverNowMs: ServerClock });
+const PongMessage = z.object({ type: z.literal("pong"), serverNowMs: ServerClock });
 const ErrorMessage = z.object({
   type: z.literal("error"),
   code: z.string(),
@@ -47,6 +61,10 @@ export const LiveServerMessageSchema = z.discriminatedUnion("type", [
   // T-537: command outcomes ride the same stream — the SHARED ack schema
   // (booking embedded and validated here, once).
   DiaryCommandAckSchema,
+  // Goal 19 S2: the conversation half of the same socket.
+  ConversationEventSchema,
+  ConversationCaughtUpSchema,
+  ConversationCommandAckSchema,
   PingMessage,
   PongMessage,
   ErrorMessage,
