@@ -42,7 +42,7 @@ normals always carry `degraded.reason`, one of:
 
 | Reason | Meaning |
 | --- | --- |
-| `forecast_not_configured` | No `MET_OFFICE_DATAHUB_API_KEY` |
+| `forecast_not_configured` | No `MET_OFFICE_BPF_API_KEY` |
 | `forecast_key_rejected` | The Met Office answered 401/403, e.g. a key for another DataHub product |
 | `forecast_quota_exhausted` | 429 from the Met Office, or this server's daily cap |
 | `upstream_unavailable` | Network, timeout, 5xx, 204, or a body that failed validation |
@@ -74,17 +74,24 @@ Read 8 October 2026 from datahub.metoffice.gov.uk.
 
 - Why this product. DataHub's "Changes & Updates" announces v2 of the
   Site-Specific **Blended Probabilistic Forecast** (BPF), with v1 retiring on
-  11 November 2026 and v1 keys not working on v2. The other site-specific
-  product, Global Spot (`/sitespecific/v0`), has no v2, and its hourly and
-  three-hourly parameter lists have no cloud cover, the main input for light.
-  So the feed uses BPF v2 only.
+  11 November 2026 and v1 keys not working on v2. It supplies every forecast
+  field in the contract except mid and high cloud.
+- Global Spot (`/sitespecific/v0`, its own key and a 360-call free tier) was
+  evaluated as a second source and is not used. Its hourly and three-hourly
+  parameter lists have no cloud cover and no sunshine, and everything else it
+  offers BPF v2 also supplies, over a longer horizon (T+186 h against T+168 h).
+  Its public OpenAPI and glossary do not name the response's parameter keys
+  (only the sample behind the DataHub sample-data terms does), so a client
+  now would rest on guessed names. It can become a per-field fallback, with
+  its own `MET_OFFICE_SITE_SPECIFIC_API_KEY`, once a live or accepted sample
+  response has been read.
 - Base URL `https://data.hub.api.metoffice.gov.uk/mo-blended-prob-forecast-feature-svc/2.0.0`,
   an OGC EDR service. OpenAPI:
   `/downloads/api-definitions/mo-site-specific-blended-probabilistic-forecast-v2_subscriber.json`
   (sha256 `8ccb6ee1…25ff0` when read).
-- Auth: header `apikey`. A key belongs to one product subscription (FAQ: "The API
-  key is unique to the subscription you have created it for"), so a key for
-  atmospheric models is refused; the free BPF v2 subscription issues its own key.
+- Auth: header `apikey`, from `MET_OFFICE_BPF_API_KEY`. A key belongs to one
+  product subscription (FAQ: "The API key is unique to the subscription you have
+  created it for"), so a Global Spot, map-images or atmospheric key is refused.
 - Calls per refresh: `GET /collections/{c}/instances` and
   `GET /collections/{c}/instances/{newest}/position?coords=POINT(lon lat)` for
   `improver-percentiles-spot-uk` (with `percentiles=50`) and

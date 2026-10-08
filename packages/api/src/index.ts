@@ -392,7 +392,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // that needs normals answers 503 SKY_UNAVAILABLE rather than invented values.
   await server.register(venueSkyRoutes, {
     store: drizzleVenueLocationStore(db),
-    sky: createVenueSkyService({ apiKey: env.MET_OFFICE_DATAHUB_API_KEY, normals: [], logger: server.log }),
+    sky: createVenueSkyService({ apiKey: env.MET_OFFICE_BPF_API_KEY, normals: [], logger: server.log }),
     prefix: "/venues",
   });
   await server.register(venueInventoryRoutes, { db, prefix: "/venues" });
