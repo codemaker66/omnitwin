@@ -1437,6 +1437,28 @@ export {
 } from "./hallkeeper-instructions.js";
 
 export {
+  PROTECTION_PROCEDURES,
+  ProtectionProcedureSchema,
+  PROTECTION_PROCEDURE_COPY,
+  PROCEDURE_NOTE_MAX,
+  PROTECTED_PREMISES_NOTES_MAX,
+  ProcedureBriefingSchema,
+  ProtectedPremisesSchema,
+  PROTECTED_PREMISES_HEADING,
+  MARTYNS_LAW_THRESHOLDS,
+  hasProtectedPremisesContent,
+  normalizeProtectedPremises,
+  formatBriefingTime,
+  buildProtectedPremisesSummary,
+  type ProtectionProcedure,
+  type ProcedureBriefing,
+  type ProtectedPremises,
+  type ProtectedPremisesLine,
+  type ProtectedPremisesSummary,
+  type ProtectedPremisesSummaryOptions,
+} from "./protected-premises.js";
+
+export {
   PhotoIdSchema,
   ALLOWED_PHOTO_CONTENT_TYPES,
   PhotoContentTypeSchema,

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { HallkeeperSheetV2Schema, type HallkeeperSheetV2 } from "@omnitwin/types";
@@ -510,5 +510,79 @@ describe("HallkeeperPage carries the corridor's event", () => {
       .map(([input]) => requestUrl(input))
       .find((url) => url.includes("/v2"));
     expect(sheetUrl).toContain(`?eventId=${eventId}`);
+  });
+});
+
+// T-648: the Martyn's Law readiness section renders on every sheet, outside
+// the instructions gate. With nothing entered every line is a prompt ("Not
+// set" / "Not checked"); with entries it shows exactly what was entered.
+describe("HallkeeperPage Martyn's Law readiness", () => {
+  function serve(data: HallkeeperSheetV2): void {
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.includes("/v2")) return Promise.resolve(jsonResponse(data));
+      return Promise.resolve(jsonResponse({ checked: {} }));
+    }));
+  }
+
+  async function openBrief(): Promise<HTMLElement> {
+    await screen.findByText("Martyn's dinner", { exact: true, selector: "p" });
+    fireEvent.click(screen.getAllByRole("button", { name: "Brief & contacts" })[0] as HTMLElement);
+    const dialog = await screen.findByRole("dialog", { name: "Brief & contacts" });
+    return within(dialog).getByRole("region", { name: "Martyn's Law readiness" });
+  }
+
+  function lineValue(region: HTMLElement, label: string): string {
+    const term = within(region).getByText(label, { selector: "dt" });
+    return term.nextElementSibling?.textContent ?? "";
+  }
+
+  it("shows every line as a prompt when the sheet has no instructions", async () => {
+    serve(sheet(CONFIG_A, "Martyn's dinner"));
+    mount();
+    const region = await openBrief();
+    expect(within(region).getByText("Prompts only, from what has been entered for this event.")).toBeTruthy();
+    expect(lineValue(region, "Responsible person")).toBe("Not set");
+    expect(lineValue(region, "Lead on duty")).toBe("Not set");
+    for (const procedure of ["Evacuation", "Invacuation", "Lockdown", "Communication"]) {
+      expect(lineValue(region, procedure)).toBe("Not checked");
+    }
+    expect(lineValue(region, "Team briefing")).toBe("Not set");
+    expect(lineValue(region, "Door supervision")).toBe("Not set");
+    expect(lineValue(region, "Notes")).toBe("Not set");
+    expect(within(region).getByText("Guest count entered for this event: 8.")).toBeTruthy();
+    expect(region.textContent).toContain("The venue's responsible person decides what applies.");
+    expect(region.textContent).not.toMatch(/\b(?:complian(?:t|ce)|approved|certified|safe)\b/iu);
+    // The printed copy carries the same section.
+    expect(screen.getAllByTestId("protected-premises").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows exactly what the operator entered, on the venue's clock", async () => {
+    const base = sheet(CONFIG_A, "Martyn's dinner");
+    serve(HallkeeperSheetV2Schema.parse({
+      ...base,
+      instructions: {
+        protectedPremises: {
+          responsiblePerson: "The Trades House of Glasgow",
+          dutyLead: { name: "Sarah Kerr", role: "Duty manager" },
+          procedures: { evacuation: { briefed: true, note: "Evacuation plan v3" }, lockdown: { briefed: false } },
+          briefingAt: "2026-06-15T16:30:00.000Z",
+          doorSupervision: { arranged: false },
+        },
+      },
+    }));
+    mount();
+    const region = await openBrief();
+    expect(lineValue(region, "Responsible person")).toBe("The Trades House of Glasgow");
+    expect(lineValue(region, "Lead on duty")).toBe("Sarah Kerr · Duty manager");
+    expect(lineValue(region, "Evacuation")).toBe("BriefedEvacuation plan v3");
+    expect(lineValue(region, "Invacuation")).toBe("Not checked");
+    expect(lineValue(region, "Lockdown")).toBe("Not briefed");
+    expect(lineValue(region, "Team briefing")).toBe("Mon 15 Jun, 17:30");
+    expect(lineValue(region, "Door supervision")).toBe("Not arranged");
+    expect(lineValue(region, "Notes")).toBe("Not set");
+    // Martyn's Law entries alone are not a planner brief: the sheet still
+    // says that no planner instructions or contact were supplied.
+    expect(within(screen.getByRole("dialog", { name: "Brief & contacts" })).getByText("No planner instructions or day-of contact supplied on this sheet.")).toBeTruthy();
   });
 });
