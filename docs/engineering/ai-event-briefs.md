@@ -58,7 +58,11 @@ The flow (`services/event-brief-draft.ts`):
 1. The room is loaded at its own venue (name and seed dimensions).
 2. The description is scrubbed with X1's scrubber (`scrubContactDetails`):
    email addresses and phone numbers become `(email address)` and
-   `(phone number)` before anything is sent.
+   `(phone number)` before anything is sent. It goes to Claude as data inside
+   `<description>` … `</description>`; a closing tag typed into it (any case
+   or spacing) gets a zero-width space after its `<`
+   (`neutraliseDescriptionTag`) so it cannot end that block early. Nothing
+   else is escaped: "bride & groom" is sent as written.
 3. Claude answers in `EVENT_BRIEF_ANSWER_SCHEMA` through structured outputs
    (`output_config.format`, JSON Schema). Every object is closed and every key
    required; a test keeps the schema and `EventBriefExtractionSchema` in step.
@@ -75,6 +79,11 @@ The contract (`packages/types/src/event-brief-draft.ts`):
   planner's own words (`verbatim` says whether they were found as written), a
   kind (`not_modelled`, `layout_style`, `service_style`, `beyond_limits`,
   `needs_exact_value`, `other_room`, `other`) and a plain explanation.
+- Quotes are checked against the scrubbed description as written, ignoring
+  case, spacing, quote and dash styles and zero-width characters. A quote that
+  takes in any part of a closing `</description>` tag is never the planner's
+  own words, whether or not Claude copied the neutraliser: its item is not
+  verbatim, and a value "stated" in it becomes an assumption.
 - **Never clamped.** A guest count outside 1–300, a negative budget, a month
   for a date, a loose time, or a layout or service the engine does not offer
   leaves the field unset and becomes an unsupported item, added

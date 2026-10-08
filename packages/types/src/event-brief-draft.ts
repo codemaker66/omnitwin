@@ -242,14 +242,39 @@ export class EventBriefExtractionError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// The description is sent to the model inside <description> … </description>
+// as data. A closing tag typed into it (any case, any spacing:
+// "</ DESCRIPTION >") could end that data block early and let the rest read
+// as instructions, so that sequence alone is neutralised before sending: a
+// zero-width space after its "<" stops it being the tag and is invisible
+// where the words are shown. Nothing else is escaped ("bride & groom" stays
+// as written), and quotes are still checked against the original words.
+// ---------------------------------------------------------------------------
+
+const DESCRIPTION_CLOSING_TAG = "<\\s*\\/\\s*description\\s*>";
+
+/** What is inserted into a typed closing tag: a zero-width space. */
+export const DESCRIPTION_TAG_NEUTRALISER = String.fromCodePoint(0x200b);
+
+/** Characters with no width, ignored when words are compared. */
+const ZERO_WIDTH = new RegExp(`[${[0x200b, 0x200c, 0x200d, 0x2060, 0xfeff].map((code) => String.fromCodePoint(code)).join("")}]`, "gu");
+
+/** The description as it may sit inside <description> … </description>:
+ *  every closing tag typed into it neutralised, nothing else changed. */
+export function neutraliseDescriptionTag(text: string): string {
+  return text.replace(new RegExp(DESCRIPTION_CLOSING_TAG, "giu"), (tag) => `<${DESCRIPTION_TAG_NEUTRALISER}${tag.slice(1)}`);
+}
+
+// ---------------------------------------------------------------------------
 // From the model's answer to a draft brief.
 // ---------------------------------------------------------------------------
 
 /** Text compared for "the planner's own words": case, width, curly quotes,
- *  dash variants and runs of space do not matter. */
+ *  dash variants, zero-width characters and runs of space do not matter. */
 export function normaliseWords(text: string): string {
   return text
     .normalize("NFKC")
+    .replace(ZERO_WIDTH, "")
     .toLowerCase()
     .replace(/[‘’‚‛′]/gu, "'")
     .replace(/[“”„‟″]/gu, "\"")
@@ -260,10 +285,31 @@ export function normaliseWords(text: string): string {
     .trim();
 }
 
+/** Where closing description tags sit in normalised text, as [start, end). */
+function closingTagSpans(normalised: string): (readonly [number, number])[] {
+  const spans: (readonly [number, number])[] = [];
+  const tag = new RegExp(DESCRIPTION_CLOSING_TAG, "giu");
+  for (let match = tag.exec(normalised); match !== null; match = tag.exec(normalised)) {
+    spans.push([match.index, match.index + match[0].length]);
+  }
+  return spans;
+}
+
+/** Whether the words are the planner's own, as written in the description.
+ *  Words that take in any part of a closing description tag never are, with
+ *  or without the neutraliser, so such a quote is treated the same whether
+ *  or not the model copied the invisible character. */
 function foundIn(description: string, words: string | null): boolean {
   if (words === null) return false;
   const needle = normaliseWords(words);
-  return needle.length > 0 && normaliseWords(description).includes(needle);
+  if (needle.length === 0) return false;
+  const haystack = normaliseWords(description);
+  const tags = closingTagSpans(haystack);
+  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + 1)) {
+    const end = at + needle.length;
+    if (!tags.some(([start, stop]) => at < stop && end > start)) return true;
+  }
+  return false;
 }
 
 function clip(text: string, max: number): string {

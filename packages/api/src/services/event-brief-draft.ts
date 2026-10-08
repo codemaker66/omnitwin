@@ -8,6 +8,7 @@ import {
   EXTRACTED_SERVICE_MODELS,
   EventArchitectAccessibilityRequirementSchema,
   interpretEventBriefExtraction,
+  neutraliseDescriptionTag,
   type EventBriefDraft,
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
@@ -182,8 +183,10 @@ export function buildEventBriefPrompt(input: {
     `The brief is for one room: ${room.spaceName} at ${room.venueName}, ${metres(room.widthM)} by ${metres(room.lengthM)}, ${metres(room.heightM)} high. The engine checks whether furniture fits; you do not.`,
     ...(input.contactDetailsRemoved ? ["Contact details were taken out of the description before you read it."] : []),
     "",
+    // A closing tag typed into the description cannot end the data block
+    // early; nothing else in it is escaped.
     "<description>",
-    input.description,
+    neutraliseDescriptionTag(input.description),
     "</description>",
   ].join("\n");
 }
@@ -192,7 +195,7 @@ export function buildEventBriefPrompt(input: {
  * Reads a planner's description into a draft brief: scrubs it, asks the
  * provider for the answer in EVENT_BRIEF_ANSWER_SCHEMA, and checks the answer
  * against the contract and the engine's bounds. Throws the provider's errors
- * (AIAssistantDisabledError, AIGenerationFailedError) and
+ * (AIAssistantDisabledError, AIDraftNotProducedError, the SDK's own) and
  * EventBriefExtractionError for an answer that does not match.
  */
 export async function readEventBrief(
@@ -220,6 +223,8 @@ export async function readEventBrief(
   });
   return interpretEventBriefExtraction({
     extraction: answer,
+    // The words as written, not the neutralised copy sent: a quote is the
+    // planner's own only where it matches these.
     description: scrubbed.text,
     contactDetailsRemoved: scrubbed.removed,
     generatedAt: now.toISOString(),
