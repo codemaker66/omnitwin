@@ -16,6 +16,11 @@ import {
   type TwinEquirectLod,
   type TwinImagery,
 } from "@omnitwin/types";
+import {
+  ensureTextureResident,
+  isTextureResident,
+  whenTextureResident,
+} from "./texture-residency.js";
 import { EQUIRECT_U_FLIP, EQUIRECT_U_OFFSET } from "./twin-basis.js";
 import { retainCubeTexture, useCubeTiles } from "./useCubeTiles.js";
 import {
@@ -423,10 +428,13 @@ function EquirectPanoStage({
     canAfford8192,
   );
   // The 512 hold exists only to avoid a mid-hop GPU upload — when the
-  // neighbour warmer already has this node's base RESIDENT, a hop starts
-  // sharp with zero upload cost: no blur phase, no arrival pop.
+  // neighbour warmer already has this node's base RESIDENT on this renderer, a
+  // hop starts sharp with zero upload cost: no blur phase, no arrival pop. A
+  // base the warmer has decoded but not finished uploading waits for the
+  // settle, when it streams in idle behind the preview (the warmer holds it
+  // through the move; see NEIGHBOUR_WARM_RELEASE_GRACE_MS).
   const maxLod: TwinEquirectLod =
-    hopping && !isEquirectBaseWarm(nodeId, assetBase)
+    hopping && !isEquirectBaseWarm(nodeId, assetBase, gl)
       ? TWIN_EQUIRECT_LODS[0]
       : streamCeiling;
   const { texture, lod, settled } = useEquirectTexture(nodeId, assetBase, maxLod, retryKey);
@@ -470,10 +478,17 @@ function EquirectPanoStage({
     }
     let release = retainEquirectTexture(nodeId, assetBase, lod);
     let cancelled = false;
+    const fail = (): void => {
+      release?.();
+      release = null;
+      if (lod >= TWIN_EQUIRECT_LODS[1] && (appliedRef.current?.lod ?? 0) < TWIN_EQUIRECT_LODS[1]) {
+        onFailureRef.current?.(nodeId, appliedRef.current !== null);
+      }
+    };
     const apply = (): void => {
       if (cancelled) return;
       try {
-        gl.initTexture(texture);
+        ensureTextureResident(gl, texture);
         uniforms.uMap.value = texture;
         appliedRef.current?.release();
         appliedRef.current = { lod, release: release ?? (() => undefined) };
@@ -481,41 +496,24 @@ function EquirectPanoStage({
         invalidate();
         onTierRef.current?.(nodeId, lod >= TWIN_EQUIRECT_LODS[1] ? "base" : "preview");
       } catch {
-        release?.();
-        release = null;
-        if (lod >= TWIN_EQUIRECT_LODS[1] && (appliedRef.current?.lod ?? 0) < TWIN_EQUIRECT_LODS[1]) {
-          onFailureRef.current?.(nodeId, appliedRef.current !== null);
-        }
+        fail();
       }
     };
     // The 4096 base (~34 MB) and 8192 zoom (~134 MB) tiers are large RGBA
     // uploads that three does lazily on the first paint after `needsUpdate`.
     // Inline, that upload hitches the look/travel springs on the swap frame —
     // exactly the stutter/jump you feel walking node-to-node (the base lands
-    // mid-hop and freezes a frame). Force the upload during browser idle
-    // (gl.initTexture) and only THEN swap the uniform, so the swap frame draws
-    // an already-resident texture (finding [32]). Only the tiny 512 preview
-    // applies immediately — it paints the arriving node at once while the base
-    // warms behind it, so a hop is smooth even before it sharpens.
+    // mid-hop and freezes a frame). Upload during browser idle, in bounded
+    // texture-residency steps (one whole base was a 136-165 ms task on the PR
+    // GPU gate), and only THEN swap the uniform, so the swap frame draws an
+    // already-resident texture (finding [32]). The preview stays on screen
+    // until then. The tiny 512 preview, and a tier the neighbour warmer
+    // already made resident, apply immediately — the preview paints the
+    // arriving node at once while the base warms behind it, so a hop is
+    // smooth even before it sharpens.
     let cancel: (() => void) | null = null;
-    if (lod >= TWIN_EQUIRECT_LODS[1]) {
-      if (typeof requestIdleCallback === "function") {
-        // No timeout: the base is only ever REQUESTED once the walk has settled
-        // (TwinViewer defers it via `hopping`/inMotion), so a genuine idle is
-        // already at hand — never force the ~50 ms upload into an animating
-        // frame-sliver, which is what re-introduced the stutter.
-        const handle = requestIdleCallback(apply);
-        cancel = () => {
-          if (typeof cancelIdleCallback === "function") {
-            cancelIdleCallback(handle);
-          }
-        };
-      } else {
-        const handle = window.setTimeout(apply, 0);
-        cancel = () => {
-          window.clearTimeout(handle);
-        };
-      }
+    if (lod >= TWIN_EQUIRECT_LODS[1] && !isTextureResident(gl, texture)) {
+      cancel = whenTextureResident(gl, texture, apply, fail);
     } else {
       apply();
     }
