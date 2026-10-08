@@ -59,11 +59,14 @@ const HENDERSON: SearchResults = {
 };
 
 function build(query: string, overrides: Partial<Parameters<typeof buildFindGroups>[0]> = {}) {
+  const places = overrides.places ?? STAFF_PLACES;
   return buildFindGroups({
     query: normaliseQuery(query),
     today: TODAY,
-    places: STAFF_PLACES,
+    places,
     board: null,
+    // As the shell decides it for an account with its venue.
+    canSearchClients: places.some((place) => place.id === "search"),
     clients: null,
     ...overrides,
   });
@@ -197,15 +200,15 @@ describe("client findings", () => {
   it("are not offered to those the client search refuses", () => {
     const groups = build("henderson", { places: SALES_PLACES, clients: null });
     expect(groups).toEqual([]);
-    expect(wantsClientSearch("henderson", SALES_PLACES, TODAY)).toBe(false);
+    expect(wantsClientSearch("henderson", false, TODAY)).toBe(false);
   });
 
   it("are not searched for a date, which the Diary answers and no client is called", () => {
-    expect(wantsClientSearch("14 nov", STAFF_PLACES, TODAY)).toBe(false);
-    expect(wantsClientSearch("today", STAFF_PLACES, TODAY)).toBe(false);
+    expect(wantsClientSearch("14 nov", true, TODAY)).toBe(false);
+    expect(wantsClientSearch("today", true, TODAY)).toBe(false);
     expect(build("14 nov").map((group) => group.key)).toEqual(["date"]);
     // A month alone names no date, so a name like "May" is still searched.
-    expect(wantsClientSearch("May", STAFF_PLACES, TODAY)).toBe(true);
+    expect(wantsClientSearch("May", true, TODAY)).toBe(true);
   });
 
   it("show a deal's date first, as the Clients desk's tile does", () => {
@@ -214,8 +217,8 @@ describe("client findings", () => {
   });
 
   it("are searched from two characters, as the API asks", () => {
-    expect(wantsClientSearch("h", STAFF_PLACES, TODAY)).toBe(false);
-    expect(wantsClientSearch("he", STAFF_PLACES, TODAY)).toBe(true);
+    expect(wantsClientSearch("h", true, TODAY)).toBe(false);
+    expect(wantsClientSearch("he", true, TODAY)).toBe(true);
     expect(build("h").some((group) => group.key === "search")).toBe(false);
   });
 });
@@ -253,9 +256,9 @@ describe("activeKeyAfter", () => {
 
 describe("findScope", () => {
   it("says what this person's Find covers, and nothing it does not", () => {
-    expect(findScope(STAFF_PLACES, false)).toBe("Dates, pages, people, organisations, deals, proposals and layouts, by a near spelling too.");
-    expect(findScope(HALLKEEPER_PLACES, false)).toBe("Dates, pages, people and layouts, by a near spelling too.");
-    expect(findScope(SALES_PLACES, false)).toBe("Dates and pages.");
-    expect(findScope(SALES_PLACES, true)).toBe("Dates, pages and what the board has read.");
+    expect(findScope(STAFF_PLACES, false, true)).toBe("Dates, pages, people, organisations, deals, proposals and layouts, by a near spelling too.");
+    expect(findScope(HALLKEEPER_PLACES, false, true)).toBe("Dates, pages, people and layouts, by a near spelling too.");
+    expect(findScope(SALES_PLACES, false, false)).toBe("Dates and pages.");
+    expect(findScope(SALES_PLACES, true, false)).toBe("Dates, pages and what the board has read.");
   });
 });

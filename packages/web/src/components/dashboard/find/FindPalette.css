@@ -133,12 +133,16 @@
 .find__row--active .find__detail,
 .find__row--active .find__out { color: #cfd9cc; }
 
-.find__empty {
+/* The polite region stays in the page while it has nothing to say (an element
+   shown only with its words is often not announced); empty, it takes no room. */
+.find__said {
   margin: 0;
-  padding: 18px 18px 14px;
+  padding: 8px 18px 10px;
   color: var(--house-ink-2);
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
+.find__said--empty { padding: 18px 18px 14px; font-size: 0.9375rem; }
+.find__said:empty { padding: 0; }
 
 .find__status:empty { display: none; }
 .find__status {
@@ -157,8 +161,8 @@
   color: var(--vv-oxblood);
 }
 .find__retry {
-  min-height: 36px;
-  padding: 6px 14px;
+  min-height: 44px;
+  padding: 8px 16px;
   border: 1px solid var(--house-ink-2);
   border-radius: 4px;
   background: transparent;
@@ -169,7 +173,6 @@
 }
 .find__retry:hover { background: var(--house-sheet-hover); }
 .find__retry:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
-.find__quiet { margin: 0; }
 
 .find__keys {
   display: flex;
@@ -203,6 +206,13 @@
 @media (max-width: 600px) {
   .find-backdrop { padding: 8px; }
   .find { max-height: calc(100dvh - 16px); }
+}
+
+/* High contrast drops backgrounds and shadows: the active row and the field's
+   rule become outlines in the system's own colours. */
+@media (forced-colors: active) {
+  .find__row--active { outline: 2px solid Highlight; outline-offset: -2px; }
+  .find__input:focus { outline: 2px solid Highlight; outline-offset: 2px; }
 }
 
 @keyframes find-fade { from { opacity: 0; } to { opacity: 1; } }

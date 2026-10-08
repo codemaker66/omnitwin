@@ -54,11 +54,14 @@ export interface FindLocalRow {
 }
 
 /** What a page adds to Find while it is showing. The object must keep its
- *  identity across the page's renders; `find` reads the page's latest state. */
+ *  identity across the page's renders; `find` reads the page's latest state,
+ *  and `subscribe` says when that state has changed, so an open Find shows
+ *  what the page holds now (a board that was still loading, a live change). */
 export interface FindSource {
   readonly label: string;
   readonly find: (query: string) => readonly FindLocalRow[];
   readonly pick: (id: string) => void;
+  readonly subscribe: (listener: () => void) => () => void;
 }
 
 /** The client search as Find holds it: only an answer to the query now shown counts. */
@@ -162,12 +165,13 @@ export function namesADate(query: string, today: string): boolean {
   return parseGoToDate(query, today) !== null;
 }
 
-/** Whether the words go to the client search: only where the header offers
- *  Clients, within the API's bounds, and not for a date, which the Diary
+/** Whether the words go to the client search: only for someone it answers
+ *  (the shell decides: the header offers Clients and the account has its
+ *  venue), within the API's bounds, and not for a date, which the Diary
  *  answers and no client is called. */
-export function wantsClientSearch(query: string, places: readonly FindPlace[], today: string): boolean {
+export function wantsClientSearch(query: string, canSearchClients: boolean, today: string): boolean {
   const length = normaliseQuery(query).length;
-  return offers(places, "search") && length >= FIND_SEARCH_MIN && length <= FIND_SEARCH_MAX && !namesADate(query, today);
+  return canSearchClients && length >= FIND_SEARCH_MIN && length <= FIND_SEARCH_MAX && !namesADate(query, today);
 }
 
 function dashboardHref(params: Readonly<Record<string, string>>): string {
@@ -249,13 +253,15 @@ export interface FindInput {
   readonly places: readonly FindPlace[];
   /** What the page showing found, under its heading, or null. */
   readonly board: { readonly label: string; readonly rows: readonly FindLocalRow[] } | null;
+  /** Whether the client search answers this person (wantsClientSearch). */
+  readonly canSearchClients: boolean;
   readonly clients: FindClients | null;
 }
 
 /** Everything Find shows for the words, in order: a date, the page's own
  *  findings, pages, then clients and the row that searches for them. */
 export function buildFindGroups(input: FindInput): FindGroup[] {
-  const { query, today, places, board, clients } = input;
+  const { query, today, places, board, canSearchClients, clients } = input;
   const groups: FindGroup[] = [];
   const date = query === "" ? null : dateGroup(query, today, places);
   if (date !== null) groups.push(date);
@@ -283,7 +289,7 @@ export function buildFindGroups(input: FindInput): FindGroup[] {
       }),
     });
   }
-  if (wantsClientSearch(query, places, today)) {
+  if (wantsClientSearch(query, canSearchClients, today)) {
     groups.push(...clientGroups(clients, query));
     const title = `Search clients for “${query}”`;
     const detail = "See everything found on the Clients desk";
@@ -299,9 +305,10 @@ export function rowsOf(groups: readonly FindGroup[]): readonly FindRow[] {
   return groups.flatMap((group) => group.rows);
 }
 
-/** The row Enter opens: the first, until the person moves to another; then
- *  that one for as long as it is listed, so rows arriving later never move
- *  it out from under a key press. */
+/** The row Enter opens: the first, so the best finding is ready as it
+ *  arrives, until the person moves to another with the arrows or the
+ *  pointer; then that one for as long as it is listed, so findings arriving
+ *  later never move a row the person chose. */
 export function activeKeyAfter(rows: readonly FindRow[], previous: string | null, moved: boolean): string | null {
   if (moved && previous !== null && rows.some((row) => row.key === previous)) return previous;
   return rows[0]?.key ?? null;
@@ -313,12 +320,12 @@ function sentence(parts: readonly string[]): string {
 }
 
 /** What this person's Find covers, and nothing it does not. */
-export function findScope(places: readonly FindPlace[], hasBoard: boolean): string {
+export function findScope(places: readonly FindPlace[], hasBoard: boolean, canSearchClients: boolean): string {
   const parts: string[] = [];
   if (offers(places, "diary")) parts.push("dates");
   parts.push("pages");
   if (hasBoard) parts.push("what the board has read");
-  const clients = offers(places, "search");
+  const clients = canSearchClients;
   if (clients) {
     parts.push("people");
     if (offers(places, "pipeline")) parts.push("organisations", "deals", "proposals");

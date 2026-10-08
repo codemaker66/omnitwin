@@ -41,19 +41,33 @@ before it. A booking or room on the board is brought into view and focused there
 ## Behaviour that matters
 
 - **Keyboard.** The input is a combobox over one listbox (`aria-activedescendant`); ↑/↓ move, Enter
-  opens, Escape closes and hands focus back. Focus never leaves the input, so typing never stops.
-- **Enter never does nothing.** The first row is active. While clients are still being searched, the
-  search row is there, so Enter takes the reader to the Clients desk rather than nowhere. Rows that
-  arrive later do not move the active row out from under a key press: it stays on the same result.
-- **Stale answers are dropped.** Only the answer to what is typed now is shown.
+  opens, Escape closes and hands focus back. A press anywhere in Find but its field and buttons keeps
+  the cursor in the field, so no keystroke reaches the page behind, and the Diary takes no key while any
+  modal is open. Escape belongs to an input method while it is composing.
+- **Enter never does nothing.** The first row is active, so the best finding is ready as it arrives;
+  while clients are still being searched the search row is there, so Enter takes the reader to the
+  Clients desk rather than nowhere. Once the person moves to a row (arrows or pointer), findings arriving
+  later never move it. The board offers only what Enter can open: bookings the board shows, and
+  enquiries only to those who may hold a date.
+- **Stale answers are dropped.** Only the answer to what is typed now is shown, and a typed date asks
+  no client search. The board's findings are read again when the board changes while Find is open.
 - **Honest states.** The line under the input says what this person's Find covers. "Searching clients…"
   is the shared `ActivityStatus`; dates, pages and the board answer at once beside it. A failed search
-  says "Clients could not be searched." with Try again, and the rest still works. Nothing found says so.
+  says "Clients could not be searched." with Try again, and the rest still works. Nothing found says so
+  in a polite region that is always present, so it is announced.
 - **Scope follows the API.** No row is offered that the API then refuses: pages come from the header's
-  gates; clients are searched only for the roles `/clients/search` admits; deals and proposals only
-  reach those who work the commercial record, as the search itself decides.
+  gates; clients are searched only for the roles `/clients/search` admits and only for an account
+  connected to its venue; deals and proposals only reach those who work the commercial record, as the
+  search itself decides.
 - **Not over another dialog.** Ctrl/⌘K does nothing while another modal dialog is open (no
-  modal-on-modal). Pressed again while Find is open, it closes.
+  modal-on-modal). Pressed again while Find is open, it closes. A tap on the dim backdrop closes on its
+  click, so it never falls through to the page. A page keeping its own address current (a replace)
+  leaves Find open; moving elsewhere closes it. On a layout without Latin letters the K key works by
+  position; Dvorak's Ctrl+T stays Ctrl+T. A date found on the Diary keeps its zoom.
+- **The header.** Find reads as a search field from 1536 px and is its 44 px magnifier below, as on a
+  phone. Measured on an admin's full row with the unread bell, the nav never overflows from 1920 to
+  961 px: the compact row now starts at 1365 px, and below 1100 px the items draw in a little. This
+  also clears an overflow production had for admins with unread notices at 1151–1200 and 961–980 px.
 - **Calm.** An ivory overlay sheet under the header in the register's own tokens; the active row is the
   forest band with cream words; 16 px input (no phone zoom), nothing under 12 px, AA throughout; no
   entrance motion beyond a short fade, none under reduced motion.
@@ -85,7 +99,17 @@ Keeping the Diary's own Ctrl/⌘K beside a global one was rejected: the same key
 ## Fixed alongside
 
 The deal panel's "Open in Clients" was shown to everyone who works the pipeline, but sales cannot open
-Clients, so for sales it led to "Role restricted". It now shows only to those who can open Clients.
+Clients, so for sales it led to "Role restricted". It now shows only to those who can open Clients
+(`DashboardPage.clients-link.test.tsx`, seen to fail with the gate removed).
+
+## Review
+
+A max-effort review of the first two commits found one high point (the browser cases not yet admitted
+to the gate, which was the next step), five medium and eight lesser. All were fixed, each with a test:
+focus leaving the field, board rows Enter could not open, a backdrop tap falling through, board
+findings going stale, a test that could not fail, the Diary's zoom, venue-less accounts, a replace
+closing Find, the Dvorak and IME keys, the live region, forced colours and a 36 px button. Its
+unmeasured header-width doubt was measured and was right; the header section above is the fix.
 
 ## Not in this slice
 

@@ -146,6 +146,8 @@ interface GoToState {
 }
 
 const GO_TO_CLOSED: GoToState = { open: false, text: "", sought: null, unread: false, otherWeekday: null };
+/** No enquiries for Find to offer, one value so it never reads as a change. */
+const NO_ENQUIRIES: readonly Enquiry[] = [];
 
 export function DiaryBoardPage(): ReactElement {
   const user = useAuthStore((state) => state.user);
@@ -909,9 +911,9 @@ export function DiaryBoardPage(): ReactElement {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return;
       const target = event.target;
-      // A modal over the board (the header's Find among them) keeps its keys:
-      // none reach the board behind it, whichever of its controls has focus.
-      if (target instanceof Element && target.closest('[aria-modal="true"]') !== null) return;
+      // While a modal is over the board (the header's Find among them) no key
+      // reaches the board behind it, wherever focus is, even on the page itself.
+      if (document.querySelector('[aria-modal="true"]') !== null) return;
       // Text-entry surfaces own their keystrokes; a focused checkbox still
       // gets t/d/w/f.
       if (target instanceof HTMLTextAreaElement) return;
@@ -1000,11 +1002,20 @@ export function DiaryBoardPage(): ReactElement {
     },
     [focusEntry, openConvertDrawer, writable],
   );
-  const boardForFind = useRef({ data, enquiries: openEnquiries, pick: pickFound });
-  useLayoutEffect(() => { boardForFind.current = { data, enquiries: openEnquiries, pick: pickFound }; });
+  // Find offers only what picking can open: the rooms and the bookings the
+  // board shows (a released or cancelled one only while those are shown), and
+  // the open enquiries only to those who may hold a date for one.
+  const calendarForFind = useMemo(() => (data === null ? null : { rooms: data.rooms, entries }), [data, entries]);
+  const enquiriesForFind = writable ? openEnquiries : NO_ENQUIRIES;
+  const boardForFind = useRef({ calendar: calendarForFind, enquiries: enquiriesForFind, pick: pickFound });
+  const findListeners = useRef(new Set<() => void>());
+  useLayoutEffect(() => { boardForFind.current = { calendar: calendarForFind, enquiries: enquiriesForFind, pick: pickFound }; });
+  // An open Find reads the board again when what it offers changes (a week
+  // still loading when Find opened, a live change).
+  useEffect(() => { for (const listener of findListeners.current) listener(); }, [calendarForFind, enquiriesForFind]);
   const [findSource] = useState<FindSource>(() => ({
     label: BOARD_COPY.palette.label,
-    find: (query) => findPaletteResults(query, boardForFind.current.data, boardForFind.current.enquiries)
+    find: (query) => findPaletteResults(query, boardForFind.current.calendar, boardForFind.current.enquiries)
       .map((result) => ({
         id: `${result.kind}:${result.id}`, title: result.label, detail: result.detail, kind: BOARD_COPY.palette.kinds[result.kind],
       })),
@@ -1013,6 +1024,10 @@ export function DiaryBoardPage(): ReactElement {
       const kind = found.slice(0, split);
       if (split < 0 || (kind !== "room" && kind !== "booking" && kind !== "enquiry")) return;
       boardForFind.current.pick(kind, found.slice(split + 1));
+    },
+    subscribe: (listener) => {
+      findListeners.current.add(listener);
+      return () => { findListeners.current.delete(listener); };
     },
   }));
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
@@ -214,6 +214,8 @@ describe("Diary Board render budget", () => {
     const reads = getCalendarMock.mock.calls.length;
     // "d" re-ranges the board to a day, and so reads it, when nothing holds the keys.
     fireEvent.keyDown(close, { key: "d" });
+    // Nor with focus dropped on the page itself while Find is open.
+    fireEvent.keyDown(document.body, { key: "d" });
     await new Promise((resolve) => { setTimeout(resolve, 0); });
     expect(getCalendarMock).toHaveBeenCalledTimes(reads);
     // The control: with Find put away, the same key does reach the board.
@@ -221,6 +223,47 @@ describe("Diary Board render budget", () => {
     expect(screen.queryByRole("dialog", { name: "Find" })).toBeNull();
     fireEvent.keyDown(document.body, { key: "d" });
     await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(reads); });
+  });
+
+  it("offers a read-only role no enquiry it could not hold a date for", async () => {
+    useAuthStore.setState({
+      user: { id: STAFF_USER_ID, email: "hk@test.com", role: "hallkeeper", platformRole: "none", venueId: VENUE, name: "Test Hallkeeper" },
+    });
+    renderPage(DATED_URL);
+    await settled();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "macleod" } });
+    expect(screen.getByRole("option", { name: /^MacLeod wedding, booking/u })).toBeDefined();
+    expect(screen.queryByRole("option", { name: /^Fiona MacLeod, enquiry/u })).toBeNull();
+  });
+
+  it("offers only the bookings the board shows: a released one waits for Show released & cancelled", async () => {
+    const withReleased = fixture();
+    getCalendarMock.mockImplementation(() => Promise.resolve({
+      ...withReleased,
+      entries: [...withReleased.entries, {
+        ...withReleased.entries[0], id: "00000000-0000-4000-8000-0000000000c9", status: "released", title: "Released lunch",
+      }],
+    } as CalendarResponse));
+    renderPage(DATED_URL);
+    await settled();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "lunch" } });
+    expect(screen.queryByRole("option", { name: /^Released lunch/u })).toBeNull();
+    expect(screen.queryByRole("option", { name: /^Chamber dinner/u })).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "chamber" } });
+    expect(screen.getByRole("option", { name: /^Chamber dinner, booking/u })).toBeDefined();
+  });
+
+  it("brings the board's findings into an open Find once its week arrives", async () => {
+    let answer: (response: CalendarResponse) => void = () => undefined;
+    getCalendarMock.mockImplementation(() => new Promise<CalendarResponse>((resolve) => { answer = resolve; }));
+    renderPage(DATED_URL);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByRole("combobox", { name: "Find" }), { target: { value: "chamber" } });
+    expect(screen.queryByRole("option", { name: /^Chamber dinner/u })).toBeNull();
+    await act(async () => { answer(fixture()); await Promise.resolve(); });
+    expect(await screen.findByRole("option", { name: /^Chamber dinner, booking/u })).toBeDefined();
   });
 
   it("a remote change renders the overview once, not once per follow-up state (refresh, overrides, enquiries)", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { ArrowUpRight, Search, X } from "lucide-react";
 import * as clientsApi from "../../../api/clients.js";
 import { useEscapeToClose, useFocusTrap } from "../../../lib/use-focus-trap.js";
@@ -27,13 +27,15 @@ const SEARCH_DELAY_MS = 200;
 export interface FindPaletteProps {
   /** The pages the header offers this person, in its order. */
   readonly places: readonly FindPlace[];
+  /** Whether the client search answers this person (the shell decides). */
+  readonly canSearchClients: boolean;
   /** What the page showing adds (the Diary's board), or null. */
   readonly source: FindSource | null;
   readonly onOpen: (target: FindTarget) => void;
   readonly onClose: () => void;
 }
 
-export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProps): ReactElement {
+export function FindPalette({ places, canSearchClients, source, onOpen, onClose }: FindPaletteProps): ReactElement {
   const baseId = useId();
   const listId = `${baseId}-list`;
   const scopeId = `${baseId}-scope`;
@@ -45,12 +47,21 @@ export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProp
   const [cursor, setCursor] = useState<{ readonly key: string | null; readonly moved: boolean }>({ key: null, moved: false });
   // The venue's own day, for "14 Nov" and "today".
   const [today] = useState(() => msToWallInput(Date.now()).slice(0, 10));
+  // Whether a press began on the backdrop: only a press that begins and ends
+  // there puts Find away, and on the click, so a tap never falls through to
+  // the page beneath once Find has gone.
+  const pressedBackdrop = useRef(false);
   const dialogRef = useFocusTrap<HTMLDivElement>();
   useEscapeToClose(onClose);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  const searching = wantsClientSearch(query, places, today);
+  // What the page holds can change while Find is open (a board still loading,
+  // a live change): Find renders again when it says so, and reads it afresh.
+  const [, setPageChanged] = useState(0);
+  useEffect(() => (source === null ? undefined : source.subscribe(() => { setPageChanged((count) => count + 1); })), [source]);
+
+  const searching = wantsClientSearch(query, canSearchClients, today);
   useEffect(() => {
     if (!searching) {
       setClients(null);
@@ -69,14 +80,10 @@ export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProp
     };
   }, [query, searching, attempt]);
 
-  const board = useMemo(
-    () => (source === null ? null : { label: source.label, rows: source.find(query) }),
-    [source, query],
-  );
-  const groups = useMemo(
-    () => buildFindGroups({ query, today, places, board, clients }),
-    [board, clients, places, query, today],
-  );
+  // Read on every render of Find: the page's findings are an in-memory match
+  // over what it already holds, and a render here never renders the page.
+  const board = source === null ? null : { label: source.label, rows: source.find(query) };
+  const groups = buildFindGroups({ query, today, places, board, canSearchClients, clients });
   const rows = rowsOf(groups);
   const activeKey = activeKeyAfter(rows, cursor.key, cursor.moved);
   const optionIds = new Map(rows.map((row, index) => [row.key, `${baseId}-option-${String(index)}`]));
@@ -116,16 +123,37 @@ export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProp
   const clientsFound = shownClients?.status === "ready"
     ? groups.some((group) => group.key !== "search" && group.key !== "date" && group.key !== "board" && group.key !== "pages")
     : false;
-  const placeholder = places.some((place) => place.id === "search") ? "A name, a date or a page" : "A date or a page";
+  const placeholder = canSearchClients ? "A name, a date or a page" : "A date or a page";
+  // One polite region, always present, says when nothing was found, so the
+  // words are announced as they change rather than inserted with their region.
+  const said = rows.length === 0
+    ? (query === "" ? "Nothing to open yet." : `Nothing found for “${query}”.`)
+    : shownClients?.status === "ready" && !clientsFound ? `No clients found for “${query}”.` : "";
 
   return (
     <div
       className="find-backdrop"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+      onPointerDown={(event) => { pressedBackdrop.current = event.target === event.currentTarget; }}
+      onClick={(event) => {
+        const fromBackdrop = pressedBackdrop.current;
+        pressedBackdrop.current = false;
+        if (fromBackdrop && event.target === event.currentTarget) onClose();
       }}
     >
-      <div ref={dialogRef} className="find" role="dialog" aria-modal="true" aria-label="Find" data-register="ivory">
+      <div
+        ref={dialogRef}
+        className="find"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Find"
+        data-register="ivory"
+        // A press anywhere in Find but its field and buttons keeps the cursor
+        // in the field, so no keystroke falls to the page behind it.
+        onMouseDown={(event) => {
+          const target = event.target;
+          if (target instanceof Element && target.closest("input, button") === null) event.preventDefault();
+        }}
+      >
         <div className="find__field">
           <Search size={20} aria-hidden="true" className="find__icon" />
           <input
@@ -154,9 +182,9 @@ export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProp
             <X size={18} aria-hidden="true" />
           </button>
         </div>
-        <p className="find__scope" id={scopeId}>{findScope(places, source !== null)}</p>
+        <p className="find__scope" id={scopeId}>{findScope(places, source !== null, canSearchClients)}</p>
 
-        {rows.length > 0 ? (
+        {rows.length > 0 && (
           <div className="find__list" id={listId} role="listbox" aria-label="Found">
             {groups.map((group) => {
               const headingId = `${baseId}-group-${group.key}`;
@@ -177,8 +205,6 @@ export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProp
                           aria-selected={selected}
                           aria-label={row.label}
                           className={`find__row${selected ? " find__row--active" : ""}${group.key === "search" ? " find__row--search" : ""}`}
-                          // Keep focus in the input: a press opens, it never blurs.
-                          onMouseDown={(event) => { event.preventDefault(); }}
                           onPointerMove={() => {
                             if (!selected) setCursor({ key: row.key, moved: true });
                           }}
@@ -197,9 +223,8 @@ export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProp
               );
             })}
           </div>
-        ) : (
-          <p className="find__empty">{query === "" ? "Nothing to open yet." : `Nothing found for “${query}”.`}</p>
         )}
+        <p className={`find__said${rows.length === 0 ? " find__said--empty" : ""}`} role="status">{said}</p>
 
         <div className="find__status">
           {shownClients?.status === "loading" && <ActivityStatus>Searching clients…</ActivityStatus>}
@@ -211,9 +236,6 @@ export function FindPalette({ places, source, onOpen, onClose }: FindPaletteProp
                 inputRef.current?.focus();
               }}>Try again</button>
             </p>
-          )}
-          {shownClients?.status === "ready" && !clientsFound && (
-            <p className="find__quiet" role="status">No clients found for “{query}”.</p>
           )}
         </div>
         <p className="find__keys" aria-hidden="true">

@@ -1,6 +1,6 @@
 import { type ReactNode, Suspense, useCallback, useMemo, useState, useEffect, useId, useLayoutEffect, useRef } from "react";
 import { useClerk } from "@clerk/react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavigationType, Outlet, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { Bell, ChevronDown, Search } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
@@ -191,14 +191,20 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
   // Find (T-635): Ctrl/⌘K from anywhere under the shell, a field included, as
   // in the mail and calendar tools a booker already uses. Pressed again it
   // closes; it never opens over another dialog. Moving elsewhere (Back, a
-  // link, another person signing in) puts it away.
+  // link, another person signing in) puts it away; a page keeping its own
+  // address up to date (a replace, such as the record it shows) does not.
   const [findOpen, setFindOpen] = useState(false);
   const [shortcut] = useState(findShortcut);
-  useEffect(() => { setFindOpen(false); }, [location.key, user?.id, user?.venueId]);
+  const navigationType = useNavigationType();
+  useEffect(() => { if (navigationType !== NavigationType.Replace) setFindOpen(false); }, [location.key, navigationType]);
+  useEffect(() => { setFindOpen(false); }, [user?.id, user?.venueId]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.repeat || event.isComposing) return;
-      if (event.key.toLowerCase() !== "k" && event.code !== "KeyK") return;
+      // The K key by its letter; by its position only where the layout has no
+      // Latin letters (Cyrillic, Greek), so Dvorak's Ctrl+T stays Ctrl+T.
+      const isK = event.key.toLowerCase() === "k" || (!/^[a-z]$/iu.test(event.key) && event.code === "KeyK");
+      if (!isK) return;
       if (findOpen) {
         event.preventDefault();
         setFindOpen(false);
@@ -225,8 +231,17 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
       window.open(target.href, "_blank", "noopener,noreferrer");
       return;
     }
+    // A date found on the Diary keeps the Diary's zoom (day, week, fortnight),
+    // as its own Go to date does.
+    const diaryView = location.pathname === "/diary" ? new URLSearchParams(location.search).get("view") : null;
+    if (diaryView !== null && target.href.startsWith("/diary?")) {
+      const next = new URLSearchParams(target.href.slice("/diary?".length));
+      next.set("view", diaryView);
+      void navigate(`/diary?${next.toString()}`);
+      return;
+    }
     void navigate(target.href);
-  }, [findSource, navigate]);
+  }, [findSource, location.pathname, location.search, navigate]);
   const closeFind = useCallback(() => { setFindOpen(false); }, []);
   useEffect(() => {
     if (openMenu === null) return;
@@ -461,6 +476,9 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
     if (platformRole === "admin") places.push({ id: "capture", label: "Capture Factory", href: "/dev/capture-intake" });
     return places;
   }, [canManageStock, canOpenDiary, canOpenHallkeeperDay, canOpenRota, canPlan, moreItems, platformRole]);
+  // The client search answers the floor of the venue an account belongs to;
+  // one not connected to its venue yet would only ever be refused.
+  const canSearchClients = findPlaces.some((place) => place.id === "search") && !awaitsVenue(user);
   // /event-architect still marks the menu active for anyone who reaches it by
   // URL, even though R1 offers no link to it.
   const moreActive = moreItems.some((item) => item.view === activeView) ||
@@ -566,7 +584,8 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, surface, fi
           </div>
         </div>
       </header>
-      {findOpen && <FindPalette places={findPlaces} source={findSource ?? null} onOpen={openFound} onClose={closeFind} />}
+      {findOpen && <FindPalette places={findPlaces} canSearchClients={canSearchClients} source={findSource ?? null}
+        onOpen={openFound} onClose={closeFind} />}
       <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}${surface === "desk" ? " dashboard-layout-main--desk" : ""}${surface === "rota" ? " dashboard-layout-main--rota" : ""}`}>
         <main ref={mainRef} className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={workspaceName}>
           <SignOutAskContext.Provider value={askBeforeSignOut}>{children}</SignOutAskContext.Provider>
