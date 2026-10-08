@@ -1,18 +1,44 @@
 import {
+  AIAssistantStatusSchema,
   CreateEventArchitectRunInputSchema,
   CreateEventArchitectOpsReviewInputSchema,
+  CreateEventBriefDraftInputSchema,
   EventArchitectCandidateSelectionSchema,
   EventArchitectOpsReviewGateSchema,
+  EventBriefDraftSchema,
   PersistedEventArchitectRunSchema,
   SelectEventArchitectCandidateInputSchema,
+  type AIAssistantStatus,
   type CreateEventArchitectRunInput,
   type CreateEventArchitectOpsReviewInput,
+  type CreateEventBriefDraftInput,
   type EventArchitectCandidateSelection,
   type EventArchitectOpsReviewGate,
+  type EventBriefDraft,
   type PersistedEventArchitectRun,
   type SelectEventArchitectCandidateInput,
 } from "@omnitwin/types";
 import { api } from "./client.js";
+
+/** Whether the server reads event briefs (T-650): its own "AI is off" says no. */
+export async function getEventBriefReaderStatus(): Promise<AIAssistantStatus> {
+  return api.get("/event-architect/brief-drafts/status", AIAssistantStatusSchema);
+}
+
+/** A planner's description read into an unchecked draft of the brief. The
+ *  server scrubs contact details before the AI reads it; nothing runs. */
+export async function readEventBrief(
+  input: CreateEventBriefDraftInput,
+  signal?: AbortSignal,
+): Promise<EventBriefDraft> {
+  return api.post(
+    "/event-architect/brief-drafts",
+    CreateEventBriefDraftInputSchema.parse(input),
+    false,
+    EventBriefDraftSchema,
+    { signal },
+  );
+}
 
 export async function createEventArchitectRun(
   input: CreateEventArchitectRunInput,
