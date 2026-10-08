@@ -5,6 +5,7 @@ import {
   twinEquirectPath,
   type TwinEquirectLod,
 } from "@omnitwin/types";
+import { isTextureResident, type ResidencyRenderer } from "./texture-residency.js";
 
 // -----------------------------------------------------------------------------
 // useEquirectTexture — streams one scan node's world-frame equirect pano into
@@ -312,10 +313,18 @@ export function __resetEquirectRegistryForTests(): void {
   pending.clear();
 }
 
-/** True when a node's base tier is already decoded and registry-resident —
- *  the hop can use it immediately instead of holding at the 512 preview. */
-export function isEquirectBaseWarm(nodeId: string, base: string): boolean {
-  return registry.has(registryKey(base, nodeId, TWIN_EQUIRECT_LODS[1]));
+/** True when a node's base tier is decoded, registry-resident AND fully on
+ *  `renderer`'s GPU — a hop can draw it at once instead of holding at the 512
+ *  preview. A base still streaming (texture-residency.ts) is not warm: a hop
+ *  that took it could have nothing on screen until its upload steps finish,
+ *  because the stream may hand over the base before the preview ever drew. */
+export function isEquirectBaseWarm(
+  nodeId: string,
+  base: string,
+  renderer: ResidencyRenderer,
+): boolean {
+  const entry = registry.get(registryKey(base, nodeId, TWIN_EQUIRECT_LODS[1]));
+  return entry !== undefined && isTextureResident(renderer, entry.texture);
 }
 
 /**
