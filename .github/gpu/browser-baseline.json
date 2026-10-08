@@ -602,11 +602,11 @@
     {
       "date": "2026-10-08",
       "reason": "Find in the staff header (T-635, roadmap Tier A #8; Blake's C3 default). Ctrl/\u2318K or the header's button opens one Find on every staff page: a date as it is said opens the Diary on that day with Go to date answering room by room, the Diary adds what its board shows, every page the header offers is found by its name or a venue team's word, and for the roles /clients/search admits, people, organisations, deals, proposals and layouts by a near spelling, each opening in its own desk. Its rules are held in find-model.test.ts, its behaviour in FindPalette.test.tsx and the Diary's in DiaryBoardPage.render.test.tsx and DiaryBoardPage.test.tsx. The first case, on a desk from the keyboard alone, finds Ailsa Henderson from the Clients desk with the accessibility audit open, opens her on the Clients desk with what was found beside her, answers \"14 nov\" in place with the Grand Hall's confirmed wedding, then opens the Diary on Saturday 14 November answering the same, and on the Diary finds that booking on the board and focuses it. The second shows Find as a 44 px magnifier on a 390 px phone opening a sheet with no sideways scroll and a 16 px field, opening a page by touch, fitting a 320 px phone, and gives sales dates and pages without ever asking the client search; then holds an admin's full header row, unread bell included, without overflow at the 13 widths it changes at, with Find a field from 1536 px.",
-      "sourceCommit": "f27bc9fd5facd3ed70d0ed4e1a71c7a32a268b3f",
+      "sourceCommit": "7bc4dc39f4c957ad6b2a3c33c501b95939b9567b",
       "sourceFile": "packages/web/e2e/find-anything.spec.ts",
-      "sourceFileGitBlobSha256": "46298052f7d711798cc30754b1abb99ef627a954e88bb42b1b2dc8775ba1ed75",
+      "sourceFileGitBlobSha256": "8e927fef0a8b7aade8c2cb85407639302834ce8cb49ce6aa2f92713779487155",
       "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
-      "inventorySha256": "2eb7c84ba0a14bae57210aa29c973065fe1f6efa7c6f076553c4c06f3602be85",
+      "inventorySha256": "db50560c836e7e146f18e9a5858d873fb340b96829698c1d79f3ab56f5b9de55",
       "caseIds": [
         "f1b385506003d739eb58-2cc4dc15153ef88f4760",
         "f1b385506003d739eb58-660214026e3d877c8d5d"
