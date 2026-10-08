@@ -78,6 +78,8 @@ const EnvSchema = z.object({
   AI_ASSISTANT_MODEL: z.string().min(1).max(120).optional(),
   AI_ASSISTANT_BASE_URL: z.string().url().optional(),
   AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
+  // Anthropic only: the Console workspace for a key not scoped to one.
+  AI_ASSISTANT_WORKSPACE_ID: z.string().regex(/^wrkspc_[A-Za-z0-9]+$/u).optional(),
   // Local/operator-only capture ledgers produced by tools/capture-factory.
   // When absent the protected status route returns an explicit unavailable
   // state; production does not assume a developer workstation path.
@@ -311,7 +313,10 @@ const EnvSchema = z.object({
     const missingAiFields: string[] = [];
     if (env.AI_ASSISTANT_PROVIDER === undefined) missingAiFields.push("AI_ASSISTANT_PROVIDER");
     if (env.AI_ASSISTANT_MODEL === undefined) missingAiFields.push("AI_ASSISTANT_MODEL");
-    if (env.AI_ASSISTANT_BASE_URL === undefined) missingAiFields.push("AI_ASSISTANT_BASE_URL");
+    // Anthropic's SDK knows its own endpoint; a generic provider must be given one.
+    if (env.AI_ASSISTANT_BASE_URL === undefined && env.AI_ASSISTANT_PROVIDER !== "anthropic") {
+      missingAiFields.push("AI_ASSISTANT_BASE_URL");
+    }
     if (env.AI_ASSISTANT_API_KEY === undefined) missingAiFields.push("AI_ASSISTANT_API_KEY");
     if (missingAiFields.length > 0) {
       ctx.addIssue({

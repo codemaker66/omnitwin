@@ -2,7 +2,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { INITIAL_PERF_METRICS, usePerfStore } from "../../stores/perf-store.js";
 import {
   beginGpuProfile, endGpuProfile, profilerClipboardReport, recordRenderedFrame,
-  refreshProfiler, registerProfilerRenderer, setProfilerForeground, shouldProfileFrames,
+  refreshProfiler, registerProfilerRenderer, sampleDrawnSplats, setLongTaskObservation,
+  setProfilerForeground, shouldProfileFrames,
 } from "../perf-runtime.js";
 
 const sample = (timestampMs: number) => ({ timestampMs, cpuSubmitMs: 2, drawCalls: 3, triangles: 30 });
@@ -87,6 +88,8 @@ describe("profiler runtime", () => {
     await flush();
     refreshProfiler(30);
     expect(usePerfStore.getState().metrics.gpuTimeMs).toBe(10);
+    expect(usePerfStore.getState().metrics.gpuRenderMs).toBe(4);
+    expect(usePerfStore.getState().metrics.gpuComputeMs).toBe(6);
     expect(beginGpuProfile(native, 500)).toBeNull();
     endGpuProfile(beginGpuProfile(native, 1010));
     await flush();
@@ -179,10 +182,65 @@ describe("profiler runtime", () => {
   });
 
   it("copies a versioned report with explicit units and limitations", () => {
-    const report = JSON.parse(profilerClipboardReport()) as { schema: string; definitions: { rendererMb: string; gpuTimeMs: string }; window: { requestedSeconds: number } };
-    expect(report.schema).toBe("venviewer.profiler.v1");
+    const report = JSON.parse(profilerClipboardReport()) as { schema: string; definitions: Record<string, string>; window: { requestedSeconds: number } };
+    expect(report.schema).toBe("venviewer.profiler.v2");
     expect(report.window.requestedSeconds).toBe(20);
-    expect(report.definitions.rendererMb).toContain("not total physical VRAM");
-    expect(report.definitions.gpuTimeMs).toContain("timestamp");
+    expect(report.definitions["rendererMb"]).toContain("not total physical VRAM");
+    expect(report.definitions["gpuTimeMs"]).toContain("timestamp");
+    for (const field of ["gpuRenderMs", "gpuComputeMs", "bottleneck", "drawnSplats", "longTaskCount", "jsHeapMb"]) {
+      expect(report.definitions[field]).toEqual(expect.any(String));
+    }
+  });
+
+  it("reads drawn splats at most once per second and drops a read that outlives Reset", async () => {
+    const native = renderer();
+    const read = vi.fn(() => Promise.resolve(1_900_000));
+    sampleDrawnSplats(native, 10, read);
+    sampleDrawnSplats(native, 500, read);
+    await flush();
+    refreshProfiler(600);
+    expect(read).toHaveBeenCalledOnce();
+    expect(usePerfStore.getState().metrics.drawnSplats).toBe(1_900_000);
+    let finish: ((count: number) => void) | undefined;
+    sampleDrawnSplats(native, 1100, () => new Promise<number>((resolve) => { finish = resolve; }));
+    usePerfStore.getState().reset();
+    finish?.(5);
+    await flush();
+    refreshProfiler(1200);
+    expect(usePerfStore.getState().metrics.drawnSplats).toBeNull();
+    sampleDrawnSplats(native, 2200, () => { throw new Error("readback unavailable"); });
+    sampleDrawnSplats(native, 3300, () => Promise.resolve(null));
+    await flush();
+    refreshProfiler(3400);
+    expect(usePerfStore.getState().metrics.drawnSplats).toBeNull();
+  });
+
+  it("observes long tasks only while asked to, recording them into the window", () => {
+    type EntryCallback = (list: { getEntries(): { startTime: number; duration: number }[] }) => void;
+    const isEntryCallback = (value: unknown): value is EntryCallback => typeof value === "function";
+    const observers: { callback: EntryCallback; disconnect: ReturnType<typeof vi.fn> }[] = [];
+    class FakeObserver {
+      static readonly supportedEntryTypes = ["longtask"];
+      readonly disconnect = vi.fn();
+      readonly callback: EntryCallback;
+      constructor(callback: unknown) {
+        if (!isEntryCallback(callback)) throw new Error("Observer callback required");
+        this.callback = callback;
+        observers.push(this);
+      }
+      observe(): void { /* entries arrive through the stored callback */ }
+    }
+    vi.stubGlobal("PerformanceObserver", FakeObserver);
+    try {
+      setLongTaskObservation(true);
+      setLongTaskObservation(true);
+      expect(observers).toHaveLength(1);
+      const entries = [{ startTime: 100, duration: 80 }, { startTime: 400, duration: 55 }];
+      observers[0]?.callback({ getEntries: () => entries });
+      refreshProfiler(600);
+      expect(usePerfStore.getState().metrics).toMatchObject({ longTaskCount: 2, longTaskWorstMs: 80, longTaskTotalMs: 135 });
+      setLongTaskObservation(false);
+      expect(observers[0]?.disconnect).toHaveBeenCalledOnce();
+    } finally { setLongTaskObservation(false); vi.unstubAllGlobals(); }
   });
 });

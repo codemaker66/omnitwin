@@ -71,7 +71,7 @@ export function recordRenderedFrame(sample: RenderedFrameSample, renderer?: obje
 export function refreshProfiler(now = performance.now()): void {
   if (!shouldProfileFrames()) return;
   selectProfilerRenderer();
-  usePerfStore.getState().update(currentProfiler(now).snapshot(now, useDeviceStore.getState().tier));
+  usePerfStore.getState().update(currentProfiler(now).snapshot(now, useDeviceStore.getState().tier, jsHeapMb()));
 }
 
 /** Hidden-tab time never becomes a spurious slow frame on return. Resuming
@@ -177,7 +177,7 @@ export function beginGpuProfile(renderer: unknown, timestampMs: number): GpuProf
 export function endGpuProfile(token: GpuProfileToken | null, successful = true): void {
   if (token === null) return;
   const { backend, owner } = token;
-  const pending: Promise<number | null>[] = [];
+  const pending: Promise<{ type: "render" | "compute"; duration: number | null }>[] = [];
   try {
     for (const type of ["render", "compute"] as const) {
       const pool = timestampPool(backend, type);
@@ -189,11 +189,11 @@ export function endGpuProfile(token: GpuProfileToken | null, successful = true):
         let duration = 0;
         for (const id of ids) {
           const value = pool.timestamps.get(id);
-          if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+          if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return { type, duration: null };
           duration += value;
         }
-        return duration;
-      }, () => null));
+        return { type, duration };
+      }, () => ({ type, duration: null })));
     }
   } catch {
     successful = false;
@@ -202,12 +202,69 @@ export function endGpuProfile(token: GpuProfileToken | null, successful = true):
   }
   const publish = successful;
   void Promise.all(pending).then((durations) => {
-    if (!publish || durations.length === 0 || durations.some((value) => value === null)
+    if (!publish || durations.length === 0 || durations.some((entry) => entry.duration === null)
       || token.generation !== usePerfStore.getState().generation || !shouldProfileFrames()) return;
-    let total = 0;
-    for (const duration of durations) total += duration ?? 0;
-    currentProfiler(token.timestampMs).recordGpu(token.timestampMs, total);
+    // A sampled draw without compute passes (no sort or lighting update) costs 0 compute.
+    let render = 0, compute = 0;
+    for (const entry of durations) {
+      if (entry.type === "render") render += entry.duration ?? 0;
+      else compute += entry.duration ?? 0;
+    }
+    currentProfiler(token.timestampMs).recordGpu(token.timestampMs, render, compute);
   }).finally(() => { owner.pending = false; });
+}
+
+const drawnSamplers = new WeakMap<object, { pending: boolean; sampledAt: number }>();
+
+/** At most one read per second of how many splats the GPU sort left in the
+ * draw. The read is asynchronous; a Reset or Pause meanwhile discards it. */
+export function sampleDrawnSplats(renderer: object, timestampMs: number, read: () => Promise<number | null>): void {
+  if (!shouldProfileFrames(renderer)) return;
+  let owner = drawnSamplers.get(renderer);
+  if (owner === undefined) { owner = { pending: false, sampledAt: -Infinity }; drawnSamplers.set(renderer, owner); }
+  if (owner.pending || timestampMs - owner.sampledAt < 1000) return;
+  owner.pending = true;
+  owner.sampledAt = timestampMs;
+  const sampler = owner;
+  const generationAtRead = usePerfStore.getState().generation;
+  let reading: Promise<number | null>;
+  try { reading = read(); } catch { sampler.pending = false; return; }
+  void reading.then((count) => {
+    if (count === null || generationAtRead !== usePerfStore.getState().generation || !shouldProfileFrames(renderer)) return;
+    currentProfiler(timestampMs).recordDrawnSplats(timestampMs, count);
+  }, () => undefined).finally(() => { sampler.pending = false; });
+}
+
+let longTaskObserver: PerformanceObserver | null = null;
+
+/** Whether this browser reports main-thread long tasks (Chromium does; Safari and Firefox do not). */
+export function longTasksSupported(): boolean {
+  return typeof PerformanceObserver !== "undefined" && PerformanceObserver.supportedEntryTypes.includes("longtask");
+}
+
+/** Long tasks are observed only while the panel is open and running. */
+export function setLongTaskObservation(active: boolean): void {
+  if (!active) {
+    longTaskObserver?.disconnect();
+    longTaskObserver = null;
+    return;
+  }
+  if (longTaskObserver !== null || !longTasksSupported()) return;
+  longTaskObserver = new PerformanceObserver((list) => {
+    if (!shouldProfileFrames()) return;
+    for (const entry of list.getEntries()) {
+      const ended = entry.startTime + entry.duration;
+      currentProfiler(ended).recordLongTask(ended, entry.duration);
+    }
+  });
+  longTaskObserver.observe({ type: "longtask" });
+}
+
+/** Chrome's non-standard heap figure; unavailable elsewhere. */
+function jsHeapMb(): number | null {
+  const memory: unknown = typeof performance !== "undefined" && "memory" in performance ? Reflect.get(performance, "memory") : null;
+  const used: unknown = typeof memory === "object" && memory !== null ? Reflect.get(memory, "usedJSHeapSize") : null;
+  return typeof used === "number" && Number.isFinite(used) ? used / 1_048_576 : null;
 }
 
 /** Portable, versioned clipboard payload with units and collection limits. */
@@ -217,13 +274,14 @@ export function profilerClipboardReport(): string {
   const bounds = active?.canvas instanceof HTMLCanvasElement ? active.canvas.getBoundingClientRect() : null;
   const deviceMemory: unknown = typeof navigator !== "undefined" && "deviceMemory" in navigator ? navigator.deviceMemory : null;
   return JSON.stringify({
-    schema: "venviewer.profiler.v1", capturedAt: new Date().toISOString(),
+    schema: "venviewer.profiler.v2", capturedAt: new Date().toISOString(),
     window: { requestedSeconds: 20, capturedSeconds: state.metrics.windowSeconds, paused: state.paused },
     device: {
       tier: useDeviceStore.getState().tier, gpuRenderer: useDeviceStore.getState().gpuRenderer,
       devicePixelRatio: globalThis.devicePixelRatio,
       logicalCpuCount: typeof navigator !== "undefined" ? navigator.hardwareConcurrency : null,
       deviceMemoryGbEstimate: typeof deviceMemory === "number" ? deviceMemory : null,
+      longTasksSupported: longTasksSupported(),
     },
     renderer: {
       backend: active?.backend ?? null, registeredCanvasCount: renderers.size,
@@ -238,6 +296,14 @@ export function profilerClipboardReport(): string {
       frameP99Ms: "Nearest-rank 99th percentile of main render intervals",
       cpuSubmitMs: "Synchronous main render scope including native scene updates; excludes other browser CPU work",
       gpuTimeMs: "Mean sampled WebGPU render plus compute timestamp durations; at most one sampled draw per second; excludes queue and presentation delay; unavailable on WebGL because its query API does not expose disjoint validity",
+      gpuRenderMs: "Render-pass share of gpuTimeMs: drawing splats, meshes and the output pass",
+      gpuComputeMs: "Compute-pass share of gpuTimeMs: the splat depth sort and view-dependent lighting; 0 for sampled draws that dispatched none",
+      bottleneck: "Busiest of CPU submission and GPU time as a share of the median frame interval (on-demand pauses excluded); below 60% the frame rate is set by pacing (display refresh or on-demand rendering), not by work; unknown when the busier side could be the unmeasured one (no GPU timestamps on WebGL)",
+      drawnSplats: "Splats the latest GPU sort kept in the draw after conservative culling, read back at most once per second; WebGL draws every loaded splat",
+      splats: "Loaded splats in the active draw (before culling)",
+      jsHeapMb: "Chrome's used JavaScript heap at the latest refresh; unavailable in other browsers",
+      longTaskCount: "Main-thread tasks over 50 ms that ended in the window; longTaskWorstMs and longTaskTotalMs describe them; not reported (always 0) where device.longTasksSupported is false",
+      triangles: "Three's CPU-side count; indirect splat draws are counted at their loaded, not drawn, size",
       rendererMb: "Mean MiB of Three-tracked renderer resources; not total physical VRAM",
       sortTimeMs: "Mean reported completed sort duration at submitted frames; null if unavailable",
       sortAgeMs: "Mean age of active order at submitted frames; null if unavailable",

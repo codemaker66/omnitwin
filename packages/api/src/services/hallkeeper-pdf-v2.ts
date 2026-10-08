@@ -5,6 +5,7 @@ import {
   SEVERITY_PALETTE,
   buildAccessibilityCallouts,
   buildDoorScheduleSummary,
+  buildProtectedPremisesSummary,
   dietaryTotal,
   hasDietaryContent,
   type AccessibilityCallout,
@@ -13,6 +14,8 @@ import {
   type EventInstructions,
   type HallkeeperSheetV2,
   type ManifestRowV2,
+  type ProtectedPremisesLine,
+  type ProtectedPremisesSummary,
   type SheetApproval,
 } from "@omnitwin/types";
 import { incrementCounter, observeHistogram } from "../observability/metrics.js";
@@ -277,6 +280,18 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     if (data.instructions !== null) {
       renderInstructions(doc, data.instructions, data.venue.timezone);
     }
+
+    // =================================================================
+    // MARTYN'S LAW READINESS (T-648) — prompts, never a compliance claim
+    //
+    // Outside the instructions gate on purpose: with nothing entered the
+    // section still prints, every line reading "Not set" / "Not checked",
+    // so a blank is visible on paper rather than silently absent.
+    // =================================================================
+    renderProtectedPremisesPdf(doc, buildProtectedPremisesSummary(
+      data.instructions?.protectedPremises,
+      { guestCount: data.config.guestCount, timeZone: data.venue.timezone },
+    ));
 
     // =================================================================
     // DIAGRAM
@@ -683,6 +698,104 @@ function renderInstructions(doc: Doc, ins: EventInstructions, timeZone: string):
     // filters empty blocks — but guard anyway), reset y to start.
     doc.y = blockStartY;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Martyn's Law readiness (T-648)
+//
+// Draws the shared buildProtectedPremisesSummary lines, so the paper says
+// exactly what the screen says. Two columns keep the block short on page 1:
+// people and arrangements on the left, the four procedures on the right,
+// notes across the foot, then the Act's context in small print. Unentered
+// values print faint so a blank reads as a prompt, never as a finding.
+// Measure-then-allocate, like every other block here.
+// ---------------------------------------------------------------------------
+
+const PP_LABEL_W = 88;
+const PP_GUTTER = 16;
+const PP_ROW_GAP = 3;
+
+/** 9pt, the manifest rows' size. 8.5pt is the approval band's, and stays its alone. */
+function protectedPremisesValueFont(doc: Doc, entered: boolean): void {
+  doc.font(entered ? "Helvetica-Bold" : "Helvetica").fontSize(9);
+}
+
+function measureProtectedPremisesLine(doc: Doc, item: ProtectedPremisesLine, width: number): number {
+  const valueW = width - PP_LABEL_W;
+  doc.font("Helvetica").fontSize(7.5);
+  const labelH = doc.heightOfString(item.label, { width: PP_LABEL_W - 6 });
+  protectedPremisesValueFont(doc, item.entered);
+  let valueH = doc.heightOfString(item.value, { width: valueW });
+  if (item.note !== null) {
+    doc.font("Helvetica-Oblique").fontSize(7.5);
+    valueH += 1 + doc.heightOfString(item.note, { width: valueW });
+  }
+  return Math.max(labelH, valueH) + PP_ROW_GAP;
+}
+
+function drawProtectedPremisesLine(doc: Doc, item: ProtectedPremisesLine, x: number, y: number, width: number): number {
+  const valueW = width - PP_LABEL_W;
+  const height = measureProtectedPremisesLine(doc, item, width);
+  doc.font("Helvetica").fontSize(7.5).fillColor(INK_DIM);
+  doc.text(item.label, x, y + 1, { width: PP_LABEL_W - 6 });
+  protectedPremisesValueFont(doc, item.entered);
+  doc.fillColor(item.entered ? INK : INK_FAINT);
+  doc.text(item.value, x + PP_LABEL_W, y, { width: valueW });
+  if (item.note !== null) {
+    const noteY = doc.y + 1;
+    doc.font("Helvetica-Oblique").fontSize(7.5).fillColor(INK_DIM);
+    doc.text(item.note, x + PP_LABEL_W, noteY, { width: valueW });
+  }
+  return y + height;
+}
+
+function renderProtectedPremisesPdf(doc: Doc, summary: ProtectedPremisesSummary): void {
+  const innerX = MARGIN + 12;
+  const innerW = CONTENT_W - 24;
+  const colW = (innerW - PP_GUTTER) / 2;
+  const notes = summary.arrangements.filter((item) => item.key === "notes");
+  const left = [...summary.people, ...summary.arrangements.filter((item) => item.key !== "notes")];
+  const footnote = [summary.guestLine, ...summary.context].join(" ");
+
+  doc.font("Helvetica").fontSize(7.5);
+  const introH = doc.heightOfString(summary.intro, { width: innerW });
+  const headH = 17 + introH + 6;
+  const leftH = left.reduce((sum, item) => sum + measureProtectedPremisesLine(doc, item, colW), 0);
+  const rightH = 11 + summary.procedures.reduce((sum, item) => sum + measureProtectedPremisesLine(doc, item, colW), 0);
+  const notesH = notes.reduce((sum, item) => sum + measureProtectedPremisesLine(doc, item, innerW), 0);
+  doc.font("Helvetica").fontSize(6.5);
+  const footH = doc.heightOfString(footnote, { width: innerW });
+  const blockH = headH + Math.max(leftH, rightH) + 2 + notesH + 4 + footH + 8;
+
+  ensureSpace(doc, blockH + 8);
+  const y0 = doc.y;
+  doc.save();
+  doc.roundedRect(MARGIN, y0, CONTENT_W, blockH, 4).fillAndStroke("#fbfaf6", RULE);
+  doc.rect(MARGIN, y0, 3, blockH).fill(INK_DIM);
+  doc.restore();
+
+  doc.font("Helvetica-Bold").fontSize(7).fillColor(GOLD);
+  doc.text(summary.heading.toUpperCase(), innerX, y0 + 7, { width: innerW });
+  doc.font("Helvetica").fontSize(7.5).fillColor(INK_DIM);
+  doc.text(summary.intro, innerX, y0 + 17, { width: innerW });
+
+  const bodyY = y0 + headH;
+  let leftY = bodyY;
+  for (const item of left) leftY = drawProtectedPremisesLine(doc, item, innerX, leftY, colW);
+
+  const rightX = innerX + colW + PP_GUTTER;
+  doc.font("Helvetica-Bold").fontSize(6.5).fillColor(INK_DIM);
+  doc.text("STAFF BRIEFED ON", rightX, bodyY + 1, { width: colW });
+  let rightY = bodyY + 11;
+  for (const item of summary.procedures) rightY = drawProtectedPremisesLine(doc, item, rightX, rightY, colW);
+
+  let notesY = Math.max(leftY, rightY) + 2;
+  for (const item of notes) notesY = drawProtectedPremisesLine(doc, item, innerX, notesY, innerW);
+
+  doc.font("Helvetica").fontSize(6.5).fillColor(INK_FAINT);
+  doc.text(footnote, innerX, notesY + 4, { width: innerW });
+
+  doc.y = y0 + blockH + 10;
 }
 
 // ---------------------------------------------------------------------------
