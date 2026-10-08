@@ -82,9 +82,16 @@ The controller's decision of 30 September, confirmed on 3 October: the runtime m
     - `proof fit`, run twice on the pod, is byte-identical between the two runs;
     - against the PC, the largest relative weight change is 1.86e-4, within the 0.01 tolerance, and the data-cost ratio is 1.000002.
   - **Syncing inputs and the tool.** Inputs and the tool go up with SHA-256 manifests.
-    - The tool on the pod is a checkout of the committed HEAD (a shallow clone), so P1's `git status` and `rev-parse` checks run unchanged there. The runner's `git archive` push must become a clone before Task 5.
+    - The tool on the pod must be a git checkout of the committed HEAD, so P1's `git status` and `rev-parse` checks run unchanged there. No GitHub credential goes to the pod:
+      - `git bundle create <file> HEAD` on the PC;
+      - the bundle goes up with its SHA-256;
+      - `git clone <bundle> /workspace/relight/repo` then `git checkout <commit>` on the pod;
+      - `git rev-parse HEAD` on the pod must equal the PC's.
+    - Today the runner's `push-tool` sends a `git archive`. Task 4b's implementer changes it to this bundle path (in `D:/claude/real-hall/runpod/remote-relight.sh` and its README) before any step whose output is kept.
   - **Returning outputs.** Outputs come back only by exact path, through `pull`, which writes nothing unless the SHA-256 matches.
-  - **Comparisons.** The double-run rule holds on the pod. Artifacts compared across machines use this plan's tolerances, never byte equality: the pod is AVX-512, the PC AVX2.
+  - **Comparisons.** The double-run rule holds on the pod.
+    - Artifacts compared across machines use this plan's tolerances, never byte equality: the pod is AVX-512, the PC AVX2.
+    - Every run whose output is compared byte for byte with another's runs on the same host: the pod. That covers `records`, `check` and the package for v1 here, and R1c Task 15's v2 `records` and `check`. A comparison of bytes already pulled back, such as R1c's `v2-check`, may run anywhere.
   - **What stays on the PC.** Steps that need the GPU or the browser harness stay on the PC under `gpu.lock`: the photo checks' renders, and R1b's and R1d's checks.
   - **Paths.** The steps name local `D:/` paths. On the pod the same tree lives under `/workspace/relight/D/`, and `pod/podrelight.py` maps it for the config's `D:/` check only.
   - **Cost.** The pod is stopped whenever it is idle.
