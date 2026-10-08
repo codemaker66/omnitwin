@@ -1371,6 +1371,44 @@ describe("DiaryBoardPage — Go to date (roadmap N3)", () => {
     });
   });
 
+  it("opens on a date found in the header's Find, answering per room, and keeps only the day in the address", async () => {
+    function Address(): ReactElement {
+      return <output data-testid="diary-address">{useLocation().search}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/diary?date=2026-09-18&goto=2026-09-18"]}>
+        <DiaryBoardPage />
+        <Address />
+      </MemoryRouter>,
+    );
+    const field = await screen.findByRole<HTMLInputElement>("textbox", { name: "Go to date" });
+    expect(field.value).toBe("Friday 18 September 2026");
+    await waitFor(() => { expect(document.activeElement).toBe(field); });
+    await waitFor(() => {
+      expect(goToAnswer()).toEqual({
+        day: "Fri, 18 Sept 2026",
+        rooms: [["Grand Hall", ["Confirmed, Chamber dinner, 18:00–23:00"]], ["Saloon", ["Free"]]],
+      });
+    });
+    // A reload or Back shows the day, not the question again.
+    expect(screen.getByTestId("diary-address").textContent).toBe("?view=week&date=2026-09-18");
+  });
+
+  it("asks nothing for a goto that is not a real date, and drops it", async () => {
+    function Address(): ReactElement {
+      return <output data-testid="diary-address">{useLocation().search}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/diary?view=week&date=2026-09-16&goto=2026-02-30"]}>
+        <DiaryBoardPage />
+        <Address />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("button", { name: /^Chamber dinner — / });
+    await waitFor(() => { expect(screen.getByTestId("diary-address").textContent).toBe("?view=week&date=2026-09-16"); });
+    expect(screen.queryByRole("textbox", { name: "Go to date" })).toBeNull();
+  });
+
   it("names what each room holds on a day the board has read", async () => {
     renderPage();
     await screen.findByRole("button", { name: /^Chamber dinner — / });

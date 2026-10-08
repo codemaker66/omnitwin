@@ -1,5 +1,6 @@
 import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import type { DashboardView } from "./DashboardLayout.js";
+import type { FindSource } from "./find/find-model.js";
 
 // ---------------------------------------------------------------------------
 // The persistent staff shell (roadmap N2). One parent route draws the header
@@ -16,6 +17,8 @@ export interface ShellFrame {
   readonly onViewChange?: (view: DashboardView) => void;
   readonly mainLabel?: string;
   readonly surface?: "desk" | "rota";
+  /** What the page adds to Find while it shows (the Diary's board). */
+  readonly findSource?: FindSource;
 }
 
 export interface StaffShell {
@@ -53,15 +56,18 @@ export function useShellFrame(frame: ShellFrame): void {
   const viewChange = useRef(frame.onViewChange);
   useLayoutEffect(() => { viewChange.current = frame.onViewChange; });
   const switchesViews = frame.onViewChange !== undefined;
-  const { activeView, mainLabel, surface } = frame;
+  // A page's Find source keeps its identity across its renders (FindSource),
+  // so handing it up does not re-render the header on every page render.
+  const { activeView, mainLabel, surface, findSource } = frame;
   useLayoutEffect(() => {
     if (shell === null) return;
     shell.hold(owner, {
       ...(activeView === undefined ? {} : { activeView }),
       ...(mainLabel === undefined ? {} : { mainLabel }),
       ...(surface === undefined ? {} : { surface }),
+      ...(findSource === undefined ? {} : { findSource }),
       ...(switchesViews ? { onViewChange: (view: DashboardView) => { viewChange.current?.(view); } } : {}),
     });
-  }, [activeView, mainLabel, owner, shell, surface, switchesViews]);
+  }, [activeView, findSource, mainLabel, owner, shell, surface, switchesViews]);
   useLayoutEffect(() => (shell === null ? undefined : () => { shell.release(owner); }), [owner, shell]);
 }

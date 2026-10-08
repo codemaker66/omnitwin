@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -56,9 +56,11 @@ import { WelcomePanel } from "./components/WelcomePanel.js";
 import { ViewMenu } from "./components/ViewMenu.js";
 import {
   type TrayEnquiry, ConflictRail, ContestedDatesPanel, DecisionsDuePanel, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
-import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
+import { findPaletteResults, type PaletteResult } from "./lib/board-palette.js";
 import { EnquiryDragGhost } from "./components/EnquiryDragGhost.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
+import type { FindSource } from "../../components/dashboard/find/find-model.js";
+import { eventDateLong } from "../../components/dashboard/enquiries/enquiry-desk-format.js";
 import { VenueNotConnected } from "../../components/dashboard/VenueNotConnected.js";
 import "./diary-board.css";
 
@@ -144,6 +146,13 @@ interface GoToState {
 }
 
 const GO_TO_CLOSED: GoToState = { open: false, text: "", sought: null, unread: false, otherWeekday: null };
+/** No enquiries for Find to offer, one value so it never reads as a change. */
+const NO_ENQUIRIES: readonly Enquiry[] = [];
+
+/** A room's row in the overview or its lane in the timeline, where drawn. */
+function roomOnBoard(roomId: string): Element | null {
+  return document.querySelector(`[data-diary-room="${CSS.escape(roomId)}"], [data-diary-lane="${CSS.escape(roomId)}"]`);
+}
 
 export function DiaryBoardPage(): ReactElement {
   const user = useAuthStore((state) => state.user);
@@ -494,6 +503,28 @@ export function DiaryBoardPage(): ReactElement {
     setRange(view, Date.parse(`${sought}T12:00:00.000Z`));
     requestAnimationFrame(() => { goToInputRef.current?.focus(); goToInputRef.current?.select(); });
   }, [setRange, view]);
+  // A date found in the staff header's Find arrives as ?goto=YYYY-MM-DD: the
+  // board goes there and Go to date answers for it, as for an enquiry slip.
+  // The address then keeps the day without goto, so a reload or Back shows
+  // the day rather than asking again; anything but a real date is dropped.
+  const gotoParam = searchParams.get("goto");
+  useEffect(() => {
+    if (gotoParam === null) return;
+    const today = msToWallInput(Date.now()).slice(0, 10);
+    const sought = /^\d{4}-\d{2}-\d{2}$/u.test(gotoParam) ? parseGoToDate(gotoParam, today) : null;
+    if (sought === null) {
+      setSearchParams((previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete("goto");
+        return next;
+      }, { replace: true });
+      return;
+    }
+    goToReturnRef.current = null;
+    setGoTo({ open: true, text: eventDateLong(sought) ?? sought, sought, unread: false, otherWeekday: null });
+    setRange(view, Date.parse(`${sought}T12:00:00.000Z`));
+    requestAnimationFrame(() => { goToInputRef.current?.focus(); goToInputRef.current?.select(); });
+  }, [gotoParam, setRange, setSearchParams, view]);
   const goToNote = goTo.unread
     ? BOARD_COPY.goTo.notADate
     : goTo.otherWeekday === null ? null : BOARD_COPY.goTo.otherWeekday(goTo.otherWeekday.actual, goTo.otherWeekday.said);
@@ -691,13 +722,6 @@ export function DiaryBoardPage(): ReactElement {
     openConvertFor(enquiryLink.enquiry);
   }, [enquiryLink, openConvertFor, roomsKnown]);
 
-  // --- the finding palette (C1, Ctrl/Cmd-K) -------------------------------
-  // The palette owns its query and matching: typing never re-renders the page.
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const closePalette = useCallback(() => {
-    setPaletteOpen(false);
-  }, []);
-
   // --- the unplaced clipboard's drag-on (C1) ------------------------------
   // A slip dragged from the tray follows the pointer as a paper chip; over a
   // room lane it announces the snapped pencil time, and release opens the
@@ -892,6 +916,9 @@ export function DiaryBoardPage(): ReactElement {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented) return;
       const target = event.target;
+      // While a modal is over the board (the header's Find among them) no key
+      // reaches the board behind it, wherever focus is, even on the page itself.
+      if (document.querySelector('[aria-modal="true"]') !== null) return;
       // Text-entry surfaces own their keystrokes; a focused checkbox still
       // gets t/d/w/f.
       if (target instanceof HTMLTextAreaElement) return;
@@ -916,14 +943,12 @@ export function DiaryBoardPage(): ReactElement {
         undo();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K")) {
-        event.preventDefault();
-        setPaletteOpen(true);
-        return;
-      }
+      // Ctrl/Cmd-K is the staff header's Find, which brings the board's own
+      // findings with it (findSource below).
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       // A dialog over the board takes the letters; none reach behind it.
-      if (welcomeOpen || paletteOpen) return;
+      // Find's own field holds the keys while it is open (inputs return above).
+      if (welcomeOpen) return;
       if (drag.state.phase !== "idle") return;
       if (event.key === "t") setRange(view, Date.now());
       else if (event.key === "d") setRange("day", anchorMs);
@@ -948,7 +973,7 @@ export function DiaryBoardPage(): ReactElement {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [anchorMs, drag.state.phase, drawerOpen, openCreateDrawer, openGoTo, paletteOpen, range, setRange, showTimeline, timeline, undo, view, welcomeOpen, writable]);
+  }, [anchorMs, drag.state.phase, drawerOpen, openCreateDrawer, openGoTo, range, setRange, showTimeline, timeline, undo, view, welcomeOpen, writable]);
 
   /** Scrolls a booking's block into view and focuses it; false when the
    *  board is not showing it. */
@@ -960,23 +985,57 @@ export function DiaryBoardPage(): ReactElement {
     return true;
   }, []);
 
-  const pickPaletteResult = useCallback(
-    (result: PaletteResult) => {
-      setPaletteOpen(false);
-      if (result.kind === "booking") {
-        focusEntry(result.id);
+  // --- Find (Ctrl/Cmd-K, the staff header's) --------------------------------
+  // The board adds what it holds in memory: its rooms, the bookings it has
+  // read and the open enquiries (lib/board-palette.ts). The source keeps one
+  // identity for the page's life and reads the latest board through a ref, so
+  // handing it to the header re-renders neither, and typing in Find renders
+  // Find alone, never this page or its overview.
+  const pickFound = useCallback(
+    (kind: PaletteResult["kind"], id: string) => {
+      if (kind === "booking") {
+        focusEntry(id);
         return;
       }
-      if (result.kind === "room") {
-        document
-          .querySelector(`[data-diary-room="${result.id}"], [data-diary-lane="${result.id}"]`)
-          ?.scrollIntoView({ block: "center", inline: "nearest" });
+      if (kind === "room") {
+        roomOnBoard(id)?.scrollIntoView({ block: "center", inline: "nearest" });
         return;
       }
-      if (writable) openConvertDrawer(result.id);
+      if (writable) openConvertDrawer(id);
     },
     [focusEntry, openConvertDrawer, writable],
   );
+  // Find offers only what picking can open: the rooms and the bookings the
+  // board shows (a released or cancelled one only while those are shown), and
+  // the open enquiries only to those who may hold a date for one.
+  const calendarForFind = useMemo(() => (data === null ? null : { rooms: data.rooms, entries }), [data, entries]);
+  const enquiriesForFind = writable ? openEnquiries : NO_ENQUIRIES;
+  const boardForFind = useRef({ calendar: calendarForFind, enquiries: enquiriesForFind, pick: pickFound });
+  const findListeners = useRef(new Set<() => void>());
+  useLayoutEffect(() => { boardForFind.current = { calendar: calendarForFind, enquiries: enquiriesForFind, pick: pickFound }; });
+  // An open Find reads the board again when what it offers changes (a week
+  // still loading when Find opened, a live change).
+  useEffect(() => { for (const listener of findListeners.current) listener(); }, [calendarForFind, enquiriesForFind]);
+  const [findSource] = useState<FindSource>(() => ({
+    label: BOARD_COPY.palette.label,
+    find: (query) => findPaletteResults(query, boardForFind.current.calendar, boardForFind.current.enquiries)
+      // A room is offered only where the board draws it (the phone's agenda
+      // has no room rows to bring into view).
+      .filter((result) => result.kind !== "room" || roomOnBoard(result.id) !== null)
+      .map((result) => ({
+        id: `${result.kind}:${result.id}`, title: result.label, detail: result.detail, kind: BOARD_COPY.palette.kinds[result.kind],
+      })),
+    pick: (found) => {
+      const split = found.indexOf(":");
+      const kind = found.slice(0, split);
+      if (split < 0 || (kind !== "room" && kind !== "booking" && kind !== "enquiry")) return;
+      boardForFind.current.pick(kind, found.slice(split + 1));
+    },
+    subscribe: (listener) => {
+      findListeners.current.add(listener);
+      return () => { findListeners.current.delete(listener); };
+    },
+  }));
 
   // Stable identities, so the memoised overview skips page renders that do
   // not change what it shows (toasts, presence, refresh status, enquiries).
@@ -1014,7 +1073,7 @@ export function DiaryBoardPage(): ReactElement {
   }
 
   return (
-    <DashboardLayout mainLabel={BOARD_COPY.title}>
+    <DashboardLayout mainLabel={BOARD_COPY.title} findSource={findSource}>
       {/* The board wears the app shell now, so the nav rail, the account block
           and sign-out follow you here. This is a <div>, not a <main> — the
           shell owns the single <main> a page is allowed. */}
@@ -1377,14 +1436,6 @@ export function DiaryBoardPage(): ReactElement {
       ) : null}
 
       {drag.confirming ? <InkConfirm onConfirm={drag.confirmDrop} onCancel={drag.cancel} /> : null}
-      {paletteOpen ? (
-        <BoardPalette
-          data={data}
-          enquiries={openEnquiries}
-          onPick={pickPaletteResult}
-          onClose={closePalette}
-        />
-      ) : null}
 
       {enquiryDrag !== null ? (
         <EnquiryDragGhost

@@ -122,12 +122,10 @@ export const BOARD_COPY = {
     readOnly: "The venue's administrators set changeover times.",
   },
 
-  /** Ctrl/Cmd-K finding palette (C1). */
+  /** What the board adds to the staff header's Find (Ctrl/Cmd-K): what it
+   *  has read, under its own heading. */
   palette: {
-    title: "Find on the board",
-    placeholder: "Rooms, events, clients…",
-    empty:
-      "No matches in this range or open enquiries.",
+    label: "On the board",
     kinds: { room: "Room", booking: "Booking", enquiry: "Enquiry" } as const,
     roomDetail: "Jump to lane",
     enquiryDetail: "Hold a date for it",
@@ -510,7 +508,7 @@ export const BOARD_COPY = {
       { keys: ["O"], does: "Overview or timeline" },
       { keys: ["↑", "↓", "←", "→"], does: "Move round the overview" },
       { keys: ["N"], does: "New booking" },
-      { keys: ["Ctrl", "K"], does: "Find on the board" },
+      { keys: ["Ctrl", "K"], does: "Find anything" },
       { keys: ["Ctrl", "Z"], does: "Undo" },
       { keys: ["?"], does: "This guide" },
     ],

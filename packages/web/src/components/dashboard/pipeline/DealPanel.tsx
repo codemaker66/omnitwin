@@ -61,7 +61,9 @@ export interface DealPanelProps {
   readonly onCompleteTask: (task: FollowUpTask) => void;
   readonly onAddNote: (body: string) => Promise<boolean>;
   readonly onOpenProposal: (proposalId: string) => void;
-  readonly onOpenClient: (contactId: string) => void;
+  /** Opens the contact on the Clients desk; absent for those who cannot open
+   *  Clients (sales), who are offered no way there rather than a refusal. */
+  readonly onOpenClient?: ((contactId: string) => void) | undefined;
 }
 
 function isEditable(target: EventTarget): boolean {
@@ -488,7 +490,10 @@ function FollowUps({ detail, nowMs, saving, failure, onAddTask, onCompleteTask }
   );
 }
 
-function WithWhom({ contact, onOpenClient }: { readonly contact: DealContact; readonly onOpenClient: (contactId: string) => void }): ReactElement {
+function WithWhom({ contact, onOpenClient }: {
+  readonly contact: DealContact;
+  readonly onOpenClient: ((contactId: string) => void) | undefined;
+}): ReactElement {
   const headingId = useId();
   return (
     <section className="enq-section" aria-labelledby={headingId}>
@@ -499,9 +504,11 @@ function WithWhom({ contact, onOpenClient }: { readonly contact: DealContact; re
         <a href={`mailto:${contact.email}`}>{contact.email}</a>
         {contact.phone !== null && contact.phone.trim() !== "" && <a href={`tel:${contact.phone.replace(/[^\d+]/gu, "")}`}>{contact.phone}</a>}
       </div>
-      <div className="enq-actions">
-        <button type="button" className="enq-quiet" onClick={() => { onOpenClient(contact.id); }}>Open in Clients</button>
-      </div>
+      {onOpenClient !== undefined && (
+        <div className="enq-actions">
+          <button type="button" className="enq-quiet" onClick={() => { onOpenClient(contact.id); }}>Open in Clients</button>
+        </div>
+      )}
     </section>
   );
 }

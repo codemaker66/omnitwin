@@ -157,7 +157,9 @@ export function useEscapeToClose(onClose: () => void, active = true): void {
   useEffect(() => {
     if (!active) return;
     function handleKeyDown(e: KeyboardEvent): void {
-      if (e.key !== "Escape") return;
+      // While an input method is composing, Escape belongs to it (it cancels
+      // the composition), never to the dialog around the field.
+      if (e.key !== "Escape" || e.isComposing) return;
       e.stopPropagation();
       handlerRef.current();
     }

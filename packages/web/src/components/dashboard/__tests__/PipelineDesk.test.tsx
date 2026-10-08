@@ -280,6 +280,14 @@ describe("the open deal", () => {
     expect(panel.getByText("Date and numbers confirmed")).toBeDefined();
   });
 
+  it("offers no way to the Clients desk to those it would refuse (sales), only the contact's own details", async () => {
+    mocks.getOpportunity.mockResolvedValue(detail({}, { stage: "qualified" }));
+    render(<PipelineDesk onOpenProposal={vi.fn()} />);
+    const panel = within(await openDeal());
+    expect(panel.getByRole("link", { name: "0141 555 0100" }).getAttribute("href")).toBe("tel:01415550100");
+    expect(panel.queryByRole("button", { name: "Open in Clients" })).toBeNull();
+  });
+
   it("offers only the moves the deal can make from where it stands", async () => {
     mocks.updateOpportunity.mockResolvedValue(deal({ stage: "qualified" }));
     render(<PipelineDesk />);

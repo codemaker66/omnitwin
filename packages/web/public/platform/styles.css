@@ -37,7 +37,7 @@
   -webkit-font-smoothing: antialiased;
 }
 body { margin: 0; min-width: 320px; }
-a:focus-visible { outline: 3px solid #a9622f; outline-offset: 4px; }
+a:focus-visible, summary:focus-visible, video:focus-visible { outline: 3px solid #a9622f; outline-offset: 4px; }
 .vv-skip-link { position: absolute; z-index: 10; top: 8px; left: 8px; padding: 10px 16px; border: 1px solid var(--vv-forest); background: #fbf8ee; color: var(--vv-forest); font-size: 14px; transform: translateY(-160%); }
 .vv-skip-link:focus-visible { transform: translateY(0); }
 
@@ -87,6 +87,10 @@ a:focus-visible { outline: 3px solid #a9622f; outline-offset: 4px; }
 .platform-intro { margin-top: 29px !important; max-width: 420px; color: var(--platform-muted); font-size: 16px; line-height: 1.8; }
 .platform-primary-link { display: inline-flex; align-items: center; justify-content: space-between; gap: 36px; margin-top: 30px; min-height: 52px; padding: 10px 22px; border: 1px solid var(--platform-ink); background: var(--platform-ink); color: var(--platform-paper) !important; font-size: 13px; text-decoration: none; transition: background-color 160ms ease; }
 .platform-primary-link:hover { background: var(--vv-forest-2); }
+.platform-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 26px; margin-top: 30px; }
+.platform-hero-actions .platform-primary-link { margin-top: 0; gap: 18px; }
+.platform-film-duration { font-variant-numeric: tabular-nums; font-size: 11px; color: #d9dece; }
+.platform-hero-secondary { display: inline-flex; align-items: center; min-height: 44px; font-size: 12px; }
 .platform-stage { display: flex; align-items: center; gap: 8px; margin-top: 25px !important; font-size: 11px; color: var(--platform-muted); }
 .platform-stage > span { width: 6px; height: 6px; border: 1px solid var(--vv-sage-ink); border-radius: 50%; }
 .platform-hero-image { position: relative; align-self: stretch; min-height: 575px; background: var(--vv-forest); }
@@ -95,7 +99,25 @@ a:focus-visible { outline: 3px solid #a9622f; outline-offset: 4px; }
 .platform-hero-image figcaption { position: absolute; bottom: 0; left: 0; right: 0; display: flex; flex-direction: column; gap: 2px; padding: 76px 32px 29px; background: linear-gradient(transparent, rgba(14, 29, 22, 0.92)); color: #fffaf0; font-size: 12px; line-height: 1.6; }
 .platform-hero-image figcaption span:last-child { font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; }
 
-.platform-workflow { padding-block: 65px 86px; border-top: 1px solid var(--vv-rule); }
+.platform-film { padding-block: 62px 46px; background: #10251d; color: #f7f4ea; }
+.platform-film-heading { display: flex; justify-content: space-between; align-items: end; gap: 30px 60px; margin-bottom: 32px; }
+.platform-film .platform-eyebrow { color: #dcb99a; }
+.platform-film-heading h2 { margin-top: 14px; max-width: 690px; }
+.platform-film-heading > p { max-width: 315px; font-size: 14px; line-height: 1.8; color: #d9dece; }
+.platform-film-player { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #080d0b; border: 1px solid #4c6055; }
+.platform-film-figure figcaption { display: flex; justify-content: space-between; gap: 14px 40px; padding-top: 20px; font-size: 12px; line-height: 1.8; color: #d9dece; }
+.platform-film-figure strong { font-size: 13px; font-weight: 500; color: #f7f4ea; }
+.platform-film-figure figcaption > span:last-child { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.platform-film-notes { display: flex; justify-content: space-between; align-items: start; gap: 20px 40px; margin-top: 22px; padding-top: 12px; border-top: 1px solid #4c6055; color: #d9dece; font-size: 12px; }
+.platform-film-notes details { max-width: 750px; }
+.platform-film-notes summary { width: fit-content; padding-block: 12px; cursor: pointer; text-underline-offset: 5px; }
+.platform-film-notes summary:hover { text-decoration: underline; }
+.platform-film-notes details p { padding-top: 5px; line-height: 1.8; }
+.platform-film-notes > a { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; flex-shrink: 0; }
+.platform-film a:hover { color: #efd0b5; }
+.platform-film :focus-visible { outline-color: #e6b58f; }
+
+.platform-workflow { padding-block: 65px 86px; }
 .platform-section-heading { display: grid; grid-template-columns: 1fr 2fr; gap: 18px 40px; align-items: start; }
 .platform-section-heading .platform-eyebrow { grid-row: span 2; padding-top: 9px; }
 .platform-page h2 { font-size: clamp(34px, 3.5vw, 49px); line-height: 1.15; letter-spacing: -1.6px; }
@@ -170,10 +192,16 @@ a:focus-visible { outline: 3px solid #a9622f; outline-offset: 4px; }
   .platform-page h1 { font-size: clamp(49px, 10vw, 67px); line-height: 1.04; letter-spacing: -2.5px; }
   .platform-intro { max-width: 460px; margin-top: 24px !important; font-size: 15px; }
   .platform-primary-link { margin-top: 24px; }
+  .platform-hero-actions { margin-top: 24px; }
   .platform-stage { margin-top: 20px !important; }
   .platform-hero-image { min-height: 420px; }
   .platform-hero-image img { object-position: 50% center; }
   .platform-hero-image figcaption { padding-inline: 27px; }
+  .platform-film { padding-block: 40px 30px; }
+  .platform-film-heading { flex-direction: column; align-items: start; gap: 18px; margin-bottom: 24px; }
+  .platform-film-heading > p { max-width: 460px; font-size: 13px; }
+  .platform-film-figure figcaption { flex-direction: column; gap: 10px; padding-top: 16px; }
+  .platform-film-notes { flex-direction: column; gap: 2px; margin-top: 17px; }
   .platform-workflow { padding-block: 43px 48px; }
   .platform-section-heading { grid-template-columns: 1fr; gap: 16px; }
   .platform-section-heading .platform-eyebrow { grid-row: auto; padding: 0; }
