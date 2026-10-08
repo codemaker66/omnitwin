@@ -98,6 +98,23 @@ describe("normalizeForSave", () => {
     const input: EventInstructions = { ...emptyEventInstructions(), dayOfContact: null };
     expect(normalizeForSave(input).dayOfContact).toBeNull();
   });
+
+  // T-648: Martyn's Law readiness.
+  it("writes no protectedPremises key when the block is absent, null or empty", () => {
+    const empty = JSON.stringify(emptyEventInstructions());
+    for (const protectedPremises of [undefined, null, {}, { notes: "  ", procedures: { lockdown: {} } }]) {
+      const out = normalizeForSave({ ...emptyEventInstructions(), protectedPremises });
+      expect(JSON.stringify(out)).toBe(empty);
+    }
+  });
+
+  it("keeps entered Martyn's Law values, trimmed, without adding any", () => {
+    const out = normalizeForSave({
+      ...emptyEventInstructions(),
+      protectedPremises: { dutyLead: { name: " Sarah Kerr ", role: "" }, procedures: { evacuation: { briefed: false, note: "" } } },
+    });
+    expect(out.protectedPremises).toEqual({ dutyLead: { name: "Sarah Kerr" }, procedures: { evacuation: { briefed: false } } });
+  });
 });
 
 describe("fromDateTimeLocal (bug_005)", () => {

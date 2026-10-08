@@ -638,3 +638,97 @@ describe("PDF times are pinned to the venue's timezone", () => {
     expect(text).toMatch(/No booking in the Diary holds this room yet/u);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-648: Martyn's Law readiness. The section prints on every sheet, outside
+// the instructions gate, with "Not set" / "Not checked" where nothing was
+// entered, and prints the operator's own entries when there are some. It
+// never words the record as a compliance, approval or certification claim.
+// ---------------------------------------------------------------------------
+
+describe("generateSheetPdfV2 — Martyn's Law readiness (T-648)", () => {
+  // Lines joined as they read, so a sentence the block wraps reads whole.
+  const sheetText = async (sheet: HallkeeperSheetV2): Promise<string> =>
+    pdfPages(await generateSheetPdfV2(sheet)).flat().map((line) => line.text.trim()).join(" ").replace(/\s+/gu, " ");
+
+  it("prints the section with Not set / Not checked when the sheet has no instructions", async () => {
+    const text = await sheetText({ ...BASE_SHEET, instructions: null });
+    expect(text).toContain("MARTYN'S LAW READINESS");
+    expect(text).toContain("Prompts only, from what has been entered for this event.");
+    for (const label of ["Responsible person", "Lead on duty", "Team briefing", "Door supervision", "Notes", "Evacuation", "Invacuation", "Lockdown", "Communication"]) {
+      expect(text).toContain(label);
+    }
+    expect(text.match(/Not checked/gu)).toHaveLength(4);
+    expect((text.match(/Not set/gu) ?? []).length).toBeGreaterThanOrEqual(5);
+    expect(text).toContain("Guest count entered for this event: 120.");
+    expect(text).toContain("The venue's responsible person decides what applies.");
+  });
+
+  it("prints the section when instructions exist without a protectedPremises key", async () => {
+    const text = await sheetText({
+      ...BASE_SHEET,
+      instructions: {
+        specialInstructions: "Fire exits must remain clear.",
+        dayOfContact: null, phaseDeadlines: [], accessNotes: "",
+        accessibility: null, dietary: null, doorSchedule: null,
+      },
+    });
+    expect(text).toContain("SPECIAL INSTRUCTIONS");
+    expect(text).toContain("MARTYN'S LAW READINESS");
+    expect(text.match(/Not checked/gu)).toHaveLength(4);
+  });
+
+  it("prints the operator's entries on the venue's clock", async () => {
+    const text = await sheetText({
+      ...BASE_SHEET,
+      instructions: {
+        specialInstructions: "", dayOfContact: null, phaseDeadlines: [], accessNotes: "",
+        accessibility: null, dietary: null, doorSchedule: null,
+        protectedPremises: {
+          responsiblePerson: "The Trades House of Glasgow",
+          dutyLead: { name: "Sarah Kerr", role: "Duty manager" },
+          procedures: {
+            evacuation: { briefed: true, note: "Evacuation plan v3" },
+            invacuation: { briefed: false },
+            lockdown: { briefed: true },
+          },
+          briefingAt: "2026-06-15T16:30:00.000Z",
+          doorSupervision: { arranged: true, note: "Two door supervisors from 18:00" },
+          notes: "Glassford Street door only after 19:00.",
+        },
+      },
+    });
+    expect(text).toContain("The Trades House of Glasgow");
+    expect(text).toContain("Sarah Kerr · Duty manager");
+    expect(text).toContain("Evacuation plan v3");
+    expect(text.match(/Not briefed/gu)).toHaveLength(1);
+    expect(text.match(/Not checked/gu)).toHaveLength(1);
+    expect(text).toContain("Mon 15 Jun, 17:30");
+    expect(text).toContain("Arranged");
+    expect(text).toContain("Two door supervisors from 18:00");
+    expect(text).toContain("Glassford Street door only after 19:00.");
+  });
+
+  it("reads a zero guest count as not set", async () => {
+    const text = await sheetText({ ...BASE_SHEET, config: { ...BASE_SHEET.config, guestCount: 0 } });
+    expect(text).toContain("Guest count for this event: not set.");
+  });
+
+  it("never prints a compliance, approval or certification claim on a draft sheet", async () => {
+    const text = await sheetText({ ...BASE_SHEET, config: { ...BASE_SHEET.config, guestCount: 950 } });
+    expect(text).toContain("MARTYN'S LAW READINESS");
+    expect(text).not.toMatch(/\b(?:complian(?:t|ce)|certif(?:ied|y)|approv(?:ed|al)|triggers?)\b/iu);
+  });
+
+  it("keeps a sheet with a full record on one page", async () => {
+    const pages = pdfPages(await generateSheetPdfV2({
+      ...BASE_SHEET,
+      instructions: {
+        specialInstructions: "", dayOfContact: null, phaseDeadlines: [], accessNotes: "",
+        accessibility: null, dietary: null, doorSchedule: null,
+        protectedPremises: { dutyLead: { name: "Sarah Kerr" }, procedures: { evacuation: { briefed: true } } },
+      },
+    }));
+    expect(pages).toHaveLength(1);
+  });
+});
