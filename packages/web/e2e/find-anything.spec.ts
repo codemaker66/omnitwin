@@ -194,7 +194,8 @@ test.describe("Find", () => {
     await page.keyboard.type("14 nov");
     // Answered in place from the Diary, room by room, before anything is opened.
     await expect.poll(() => activeRow(page))
-      .toBe("Saturday 14 November 2026: Grand Hall, Confirmed, Fraser wedding, 13:00–23:00. Open this day in the Diary");
+      .toBe("Saturday 14 November 2026. Grand Hall: Confirmed, Fraser wedding, 13:00–23:00. Open this day in the Diary");
+    await expect(find.getByText("Saturday 14 November 2026: Grand Hall is taken.")).toBeVisible();
     await expect(find.locator(".find__answer")).toContainText("Confirmed, Fraser wedding, 13:00–23:00");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "The Diary" })).toBeVisible();
@@ -227,6 +228,10 @@ test.describe("Find", () => {
     // 16 px or more, so the phone never zooms into the field.
     expect(await field.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(16);
     expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
+    // A date answered in place fits the phone, the room beside what it holds.
+    await field.fill("14 nov");
+    await expect(find.locator(".find__answer")).toContainText("Confirmed, Fraser wedding, 13:00–23:00");
+    expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
     await field.fill("pipe");
     await find.getByRole("option", { name: /^Pipeline, page/u }).click();
     await expect(page).toHaveURL(/\/dashboard\?view=pipeline$/u);
@@ -235,6 +240,9 @@ test.describe("Find", () => {
     await page.setViewportSize({ width: 320, height: 640 });
     await button.click();
     await expect(find).toBeVisible();
+    expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
+    await field.fill("14 nov");
+    await expect(find.locator(".find__answer")).toContainText("Confirmed, Fraser wedding, 13:00–23:00");
     expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
     const sheet = await find.boundingBox();
     expect((sheet?.x ?? -1) >= 0 && (sheet?.x ?? 0) + (sheet?.width ?? 999) <= 320).toBe(true);

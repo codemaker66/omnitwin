@@ -7,7 +7,7 @@ import { boardRange, msToWallInput } from "../../../pages/diary/lib/board-time.j
 import { dayAnswer } from "../../../pages/diary/lib/day-answer.js";
 import { ActivityStatus } from "../../shared/Activity.js";
 import {
-  activeKeyAfter, buildFindGroups, findScope, FIND_SEARCH_MAX, normaliseQuery, rowsOf, soughtDate, wantsClientSearch,
+  activeKeyAfter, buildFindGroups, dayAnswerSaid, findScope, FIND_SEARCH_MAX, normaliseQuery, rowsOf, soughtDate, wantsClientSearch,
   type FindClients, type FindDayAnswer, type FindPlace, type FindRow, type FindSource, type FindTarget,
 } from "./find-model.js";
 import "./FindPalette.css";
@@ -47,7 +47,8 @@ type DayState =
   | { readonly iso: string; readonly status: "error" };
 
 /** Typing settles for this long before the Diary is read for a date. */
-const DAY_DELAY_MS = 150;
+// Long enough that "14 nov 20", on its way to "14 nov 2026", is not read as 2020.
+const DAY_DELAY_MS = 300;
 
 export function FindPalette({ places, canSearchClients, diaryVenueId, source, onOpen, onClose }: FindPaletteProps): ReactElement {
   const baseId = useId();
@@ -101,7 +102,7 @@ export function FindPalette({ places, canSearchClients, diaryVenueId, source, on
       getCalendar(diaryVenueId, new Date(range.fromMs).toISOString(), new Date(range.toMs).toISOString(), reading.signal)
         .then((calendar) => {
           const rooms = dayAnswer(calendar.entries, calendar.rooms, { startMs: range.fromMs, endMs: range.toMs }, Date.now())
-            .map((room) => ({ name: room.name, lines: room.lines.map((line) => line.text) }));
+            .map((room) => ({ id: room.id, name: room.name, lines: room.lines.map((line) => line.text), free: room.free }));
           const answer: FindDayAnswer = { iso: sought, rooms };
           daysRead.current.set(sought, answer);
           setDay({ iso: sought, status: "ready", answer });
@@ -183,9 +184,12 @@ export function FindPalette({ places, canSearchClients, diaryVenueId, source, on
   const placeholder = canSearchClients ? "A name, a date or a page" : "A date or a page";
   // One polite region, always present, says when nothing was found, so the
   // words are announced as they change rather than inserted with their region.
+  // A date's answer is said in short when it arrives ("…: 5 of 8 rooms free."),
+  // as the row's own name changing is not announced.
   const said = rows.length === 0
     ? (query === "" ? "Nothing to open yet." : `Nothing found for “${query}”.`)
-    : shownClients?.status === "ready" && !clientsFound ? `No clients found for “${query}”.` : "";
+    : shownDay?.status === "ready" ? dayAnswerSaid(shownDay.answer)
+      : shownClients?.status === "ready" && !clientsFound ? `No clients found for “${query}”.` : "";
 
   return (
     <div
@@ -275,9 +279,13 @@ export function FindPalette({ places, canSearchClients, diaryVenueId, source, on
                           {row.answer !== undefined && (
                             <span className="find__answer" aria-hidden="true">
                               {row.answer.map((room) => (
-                                <span key={room.room} className={`find__answer-room${room.text === "Free" ? " find__answer-room--free" : ""}`}>
+                                <span key={room.id} className={`find__answer-room${room.free ? " find__answer-room--free" : ""}`}>
                                   <span className="find__answer-name">{room.room}</span>
-                                  <span className="find__answer-text">{room.text}</span>
+                                  <span className="find__answer-lines">
+                                    {room.lines.map((line, index) => (
+                                      <span key={`${room.id}-${String(index)}`} className="find__answer-text">{line}</span>
+                                    ))}
+                                  </span>
                                 </span>
                               ))}
                             </span>

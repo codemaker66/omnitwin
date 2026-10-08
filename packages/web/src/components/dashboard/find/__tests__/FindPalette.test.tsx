@@ -187,21 +187,55 @@ describe("Find in the staff header", () => {
     openFind();
     fireEvent.change(field(), { target: { value: "14 nov" } });
     await waitFor(() => {
-      expect(activeOption()).toBe("Saturday 14 November 2026: Grand Hall, Confirmed, Fraser wedding, 13:00–23:00; Saloon, Free. Open this day in the Diary");
+      expect(activeOption()).toBe("Saturday 14 November 2026. Grand Hall: Confirmed, Fraser wedding, 13:00–23:00. Saloon: Free. Open this day in the Diary");
     });
     // The venue's own day, midnight to midnight in Glasgow (GMT in November).
     expect(mocks.calendar).toHaveBeenCalledTimes(1);
     expect(mocks.calendar.mock.calls[0]?.slice(0, 3)).toEqual(["venue-a", "2026-11-14T00:00:00.000Z", "2026-11-15T00:00:00.000Z"]);
-    const option = screen.getByRole("option", { name: /^Saturday 14 November 2026: Grand Hall/u });
+    const option = screen.getByRole("option", { name: /^Saturday 14 November 2026\. Grand Hall/u });
     expect(within(option).getByText("Free")).toBeDefined();
+    // The row's own name changing is not announced: the polite region says it in short.
+    expect(screen.getByText("Saturday 14 November 2026: 1 of 2 rooms free.")).toBeDefined();
     // Away and back: the day is not read again.
     fireEvent.change(field(), { target: { value: "14 no" } });
     fireEvent.change(field(), { target: { value: "14 nov" } });
-    expect(activeOption()).toMatch(/^Saturday 14 November 2026: Grand Hall/u);
-    await new Promise((resolve) => { setTimeout(resolve, 250); });
+    expect(activeOption()).toMatch(/^Saturday 14 November 2026\. Grand Hall/u);
+    await new Promise((resolve) => { setTimeout(resolve, 450); });
     expect(mocks.calendar).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(field(), { key: "Enter" });
     expect(route()).toBe("/diary?date=2026-11-14&goto=2026-11-14");
+  });
+
+  it("never shows an earlier date's answer when it arrives after a newer one", async () => {
+    let answerFirst: (value: typeof FOURTEENTH) => void = () => undefined;
+    mocks.calendar
+      .mockImplementationOnce(() => new Promise<typeof FOURTEENTH>((resolve) => { answerFirst = resolve; }))
+      .mockResolvedValueOnce({ rooms: FOURTEENTH.rooms, entries: [] });
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    await waitFor(() => { expect(mocks.calendar).toHaveBeenCalledTimes(1); });
+    fireEvent.change(field(), { target: { value: "15 nov" } });
+    await waitFor(() => { expect(activeOption()).toBe("Sunday 15 November 2026. Grand Hall: Free. Saloon: Free. Open this day in the Diary"); });
+    await act(async () => { answerFirst(FOURTEENTH); await Promise.resolve(); });
+    expect(activeOption()).toBe("Sunday 15 November 2026. Grand Hall: Free. Saloon: Free. Open this day in the Diary");
+  });
+
+  it("reads the venue's own day when the clocks change", async () => {
+    renderShell();
+    openFind();
+    // British Summer Time ends at 02:00 on Sunday 25 October 2026: a 25-hour day.
+    fireEvent.change(field(), { target: { value: "25 oct" } });
+    await waitFor(() => { expect(mocks.calendar).toHaveBeenCalledTimes(1); });
+    expect(mocks.calendar.mock.calls[0]?.slice(1, 3)).toEqual(["2026-10-24T23:00:00.000Z", "2026-10-26T00:00:00.000Z"]);
+  });
+
+  it.each(["hallkeeper", "sales"])("answers a date in place for %s, who reads the Diary", async (role) => {
+    useAuthStore.setState({ user: person(role) });
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    await waitFor(() => { expect(activeOption()).toMatch(/^Saturday 14 November 2026\. Grand Hall: Confirmed/u); });
   });
 
   it("says plainly when the Diary cannot be read for a date, and still opens it there", async () => {
@@ -218,7 +252,8 @@ describe("Find in the staff header", () => {
     renderShell();
     openFind();
     fireEvent.change(field(), { target: { value: "14 nov" } });
-    await new Promise((resolve) => { setTimeout(resolve, 250); });
+    // Longer than the pause before a read.
+    await new Promise((resolve) => { setTimeout(resolve, 450); });
     expect(mocks.calendar).not.toHaveBeenCalled();
   });
 

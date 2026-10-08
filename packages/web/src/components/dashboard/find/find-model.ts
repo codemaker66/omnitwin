@@ -36,13 +36,40 @@ export interface FindRow {
   readonly label: string;
   readonly target: FindTarget;
   /** A date's answer, room by room, shown in the row itself. */
-  readonly answer?: readonly { readonly room: string; readonly text: string }[];
+  readonly answer?: readonly FindAnswerRoom[];
+}
+
+/** One room's day, each booking its own line, as the Diary shows it. */
+export interface FindAnswerRoom {
+  readonly id: string;
+  readonly room: string;
+  readonly lines: readonly string[];
+  readonly free: boolean;
 }
 
 /** A day in the Diary, room by room, in its own words (pages/diary/lib/day-answer.ts). */
 export interface FindDayAnswer {
   readonly iso: string;
-  readonly rooms: readonly { readonly name: string; readonly lines: readonly string[] }[];
+  readonly rooms: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly lines: readonly string[];
+    readonly free: boolean;
+  }[];
+}
+
+/** What the polite region says once a day is answered: "Saturday 14 November
+ *  2026: 5 of 8 rooms free." */
+export function dayAnswerSaid(answer: FindDayAnswer): string {
+  const title = eventDateLong(answer.iso) ?? answer.iso;
+  const rooms = answer.rooms.length;
+  const free = answer.rooms.filter((room) => room.free).length;
+  const only = answer.rooms.length === 1 ? answer.rooms[0] : undefined;
+  const said = only !== undefined ? `${only.name} is ${only.free ? "free" : "taken"}`
+    : free === rooms ? `all ${String(rooms)} rooms free`
+      : free === 0 ? "no room free"
+        : `${String(free)} of ${String(rooms)} rooms free`;
+  return `${title}: ${said}.`;
 }
 
 export interface FindGroup {
@@ -203,18 +230,20 @@ function dateGroup(query: string, today: string, places: readonly FindPlace[], a
   const target: FindTarget = { kind: "href", href: `/diary?${new URLSearchParams({ date: iso, goto: iso }).toString()}`, newTab: false };
   // Answered in place once the Diary has been read for that day: the question
   // asked most on the phone, with no page to leave.
-  const answer = answered?.iso === iso
-    ? answered.rooms.map((room) => ({ room: room.name, text: room.lines.join("; ") }))
+  const answer: readonly FindAnswerRoom[] | null = answered?.iso === iso
+    ? answered.rooms.map((room) => ({ id: room.id, room: room.name, lines: room.lines, free: room.free }))
     : null;
   if (answer === null || answer.length === 0) {
     const detail = "See each room in the Diary";
     return { key: "date", label: "Date", rows: [{ key: `date:${iso}`, title, detail, label: `${title}, ${detail}`, target }] };
   }
   const detail = "Open this day in the Diary";
-  const said = answer.map((room) => `${room.room}, ${room.text}`).join("; ");
+  // Read out a sentence to a room, each booking within it after a semicolon,
+  // so two bookings in the Grand Hall never sound like another room.
+  const said = answer.map((room) => `${room.room}: ${room.lines.join("; ")}.`).join(" ");
   return {
     key: "date", label: "Date",
-    rows: [{ key: `date:${iso}`, title, detail, label: `${title}: ${said}. ${detail}`, target, answer }],
+    rows: [{ key: `date:${iso}`, title, detail, label: `${title}. ${said} ${detail}`, target, answer }],
   };
 }
 

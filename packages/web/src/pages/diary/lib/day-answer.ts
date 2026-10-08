@@ -15,6 +15,8 @@ export interface DayAnswerRoom {
   readonly id: string;
   readonly name: string;
   readonly lines: readonly { readonly key: string; readonly text: string }[];
+  /** Nothing holds the room that day ("Free", "Free from 01:00", interest only). */
+  readonly free: boolean;
 }
 
 export function dayAnswer(
@@ -33,6 +35,7 @@ export function dayAnswer(
   return roomsOnDay(entries, rooms, day).map((answer) => ({
     id: answer.roomId,
     name: answer.room,
+    free: answer.bookings.length === 0,
     lines: answer.bookings.length > 0
       ? answer.bookings.map((entry) => ({ key: entry.id, text: line(entry) }))
       : [{ key: "free", text: BOARD_COPY.goTo.free(answer.interest, answer.freeFromMs === null ? null : formatWallTime(answer.freeFromMs)) }],
