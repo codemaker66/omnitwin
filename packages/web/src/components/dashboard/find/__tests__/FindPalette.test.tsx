@@ -12,8 +12,24 @@ import type { FindLocalRow, FindSource } from "../find-model.js";
 // and Enter, and the place it opens.
 // ---------------------------------------------------------------------------
 
-const mocks = vi.hoisted(() => ({ search: vi.fn(), venue: vi.fn() }));
+const mocks = vi.hoisted(() => ({ search: vi.fn(), venue: vi.fn(), calendar: vi.fn() }));
 vi.mock("../../../../api/clients.js", () => ({ searchClients: mocks.search }));
+vi.mock("../../../../api/diary.js", () => ({ getCalendar: mocks.calendar }));
+
+const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";
+const SALOON = "00000000-0000-4000-8000-0000000000b2";
+/** The Diary on Saturday 14 November: the Fraser wedding in the Grand Hall, the Saloon free. */
+const FOURTEENTH = {
+  rooms: [
+    { id: GRAND_HALL, name: "Grand Hall", slug: "grand-hall", sortOrder: 0 },
+    { id: SALOON, name: "Saloon", slug: "saloon", sortOrder: 1 },
+  ],
+  entries: [{
+    entryType: "booking", id: "00000000-0000-4000-8000-0000000000c1", spaceId: GRAND_HALL, kind: "ink", status: "active", state: "ink",
+    title: "Fraser wedding", eventType: "wedding", startsAt: "2026-11-14T13:00:00.000Z", endsAt: "2026-11-14T23:00:00.000Z",
+    rank: null, jointFlag: false, decisionAt: null, ownerUserId: null, nextAction: null, nextActionDueAt: null, eventId: null, seriesId: null,
+  }],
+};
 vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: vi.fn() }) }));
 vi.mock("../../../../api/spaces.js", () => ({ getVenue: mocks.venue }));
 vi.mock("../../../../api/notifications.js", () => ({ getUnreadNotificationCount: () => Promise.resolve(0) }));
@@ -101,6 +117,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-10-07T09:00:00.000Z"));
   mocks.venue.mockResolvedValue({ id: "venue-a", name: "Trades Hall Glasgow" });
   mocks.search.mockResolvedValue(NOTHING);
+  mocks.calendar.mockResolvedValue(FOURTEENTH);
   useAuthStore.setState({ user: person("staff"), isAuthenticated: true, isLoading: false, error: null });
 });
 
@@ -163,6 +180,81 @@ describe("Find in the staff header", () => {
     expect(activeOption()).toBe("Saturday 14 November 2026, See each room in the Diary");
     fireEvent.keyDown(field(), { key: "Enter" });
     expect(route()).toBe("/diary?date=2026-11-14&goto=2026-11-14");
+  });
+
+  it("answers a date in place from the Diary, room by room, reading that day once", async () => {
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    await waitFor(() => {
+      expect(activeOption()).toBe("Saturday 14 November 2026. Grand Hall: Confirmed, Fraser wedding, 13:00–23:00. Saloon: Free. Open this day in the Diary");
+    });
+    // The venue's own day, midnight to midnight in Glasgow (GMT in November).
+    expect(mocks.calendar).toHaveBeenCalledTimes(1);
+    expect(mocks.calendar.mock.calls[0]?.slice(0, 3)).toEqual(["venue-a", "2026-11-14T00:00:00.000Z", "2026-11-15T00:00:00.000Z"]);
+    const option = screen.getByRole("option", { name: /^Saturday 14 November 2026\. Grand Hall/u });
+    expect(within(option).getByText("Free")).toBeDefined();
+    // The row's own name changing is not announced: the polite region says it in short.
+    expect(screen.getByText("Saturday 14 November 2026: 1 of 2 rooms free.")).toBeDefined();
+    // Away and back: the day is not read again.
+    fireEvent.change(field(), { target: { value: "14 no" } });
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    expect(activeOption()).toMatch(/^Saturday 14 November 2026\. Grand Hall/u);
+    await new Promise((resolve) => { setTimeout(resolve, 450); });
+    expect(mocks.calendar).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(route()).toBe("/diary?date=2026-11-14&goto=2026-11-14");
+  });
+
+  it("never shows an earlier date's answer when it arrives after a newer one", async () => {
+    let answerFirst: (value: typeof FOURTEENTH) => void = () => undefined;
+    mocks.calendar
+      .mockImplementationOnce(() => new Promise<typeof FOURTEENTH>((resolve) => { answerFirst = resolve; }))
+      .mockResolvedValueOnce({ rooms: FOURTEENTH.rooms, entries: [] });
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    await waitFor(() => { expect(mocks.calendar).toHaveBeenCalledTimes(1); });
+    fireEvent.change(field(), { target: { value: "15 nov" } });
+    await waitFor(() => { expect(activeOption()).toBe("Sunday 15 November 2026. Grand Hall: Free. Saloon: Free. Open this day in the Diary"); });
+    await act(async () => { answerFirst(FOURTEENTH); await Promise.resolve(); });
+    expect(activeOption()).toBe("Sunday 15 November 2026. Grand Hall: Free. Saloon: Free. Open this day in the Diary");
+  });
+
+  it("reads the venue's own day when the clocks change", async () => {
+    renderShell();
+    openFind();
+    // British Summer Time ends at 02:00 on Sunday 25 October 2026: a 25-hour day.
+    fireEvent.change(field(), { target: { value: "25 oct" } });
+    await waitFor(() => { expect(mocks.calendar).toHaveBeenCalledTimes(1); });
+    expect(mocks.calendar.mock.calls[0]?.slice(1, 3)).toEqual(["2026-10-24T23:00:00.000Z", "2026-10-26T00:00:00.000Z"]);
+  });
+
+  it.each(["hallkeeper", "sales"])("answers a date in place for %s, who reads the Diary", async (role) => {
+    useAuthStore.setState({ user: person(role) });
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    await waitFor(() => { expect(activeOption()).toMatch(/^Saturday 14 November 2026\. Grand Hall: Confirmed/u); });
+  });
+
+  it("says plainly when the Diary cannot be read for a date, and still opens it there", async () => {
+    mocks.calendar.mockRejectedValueOnce(new Error("offline"));
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    expect(await screen.findByText("The Diary could not be read for that day. Enter opens it there.")).toBeDefined();
+    expect(activeOption()).toBe("Saturday 14 November 2026, See each room in the Diary");
+  });
+
+  it("reads no Diary for an account not connected to its venue", async () => {
+    useAuthStore.setState({ user: { ...person("staff"), venueId: null } });
+    renderShell();
+    openFind();
+    fireEvent.change(field(), { target: { value: "14 nov" } });
+    // Longer than the pause before a read.
+    await new Promise((resolve) => { setTimeout(resolve, 450); });
+    expect(mocks.calendar).not.toHaveBeenCalled();
   });
 
   it("searches clients once typing settles, says so while it does, and opens the client on the Clients desk", async () => {

@@ -3,6 +3,7 @@ import type { SearchResults } from "../../../../api/clients.js";
 import {
   activeKeyAfter,
   buildFindGroups,
+  dayAnswerSaid,
   findScope,
   FIND_GROUP_LIMIT,
   matchPlaces,
@@ -144,6 +145,48 @@ describe("the date row", () => {
   it("is offered only to those who open the Diary", () => {
     const places = STAFF_PLACES.filter((place) => place.id !== "diary");
     expect(build("14 nov", { places }).some((group) => group.key === "date")).toBe(false);
+  });
+
+  const FOURTEENTH = {
+    iso: "2026-11-14",
+    rooms: [
+      { id: "gh", name: "Grand Hall", lines: ["Confirmed, Chamber lunch, 10:00–12:00", "Confirmed, Fraser wedding, 13:00–23:00"], free: false },
+      { id: "sa", name: "Saloon", lines: ["Free from 01:00"], free: true },
+    ],
+  };
+
+  it("answers in place, room by room and booking by booking, once the Diary has been read for that day, and still opens it", () => {
+    const [date] = build("14 nov", { dayAnswer: FOURTEENTH });
+    expect(date?.rows[0]).toEqual(expect.objectContaining({
+      title: "Saturday 14 November 2026",
+      detail: "Open this day in the Diary",
+      answer: [
+        { id: "gh", room: "Grand Hall", lines: ["Confirmed, Chamber lunch, 10:00–12:00", "Confirmed, Fraser wedding, 13:00–23:00"], free: false },
+        { id: "sa", room: "Saloon", lines: ["Free from 01:00"], free: true },
+      ],
+      // A sentence to a room: a second booking never sounds like another room.
+      label: "Saturday 14 November 2026. Grand Hall: Confirmed, Chamber lunch, 10:00–12:00; Confirmed, Fraser wedding, 13:00–23:00. Saloon: Free from 01:00. Open this day in the Diary",
+      target: { kind: "href", href: "/diary?date=2026-11-14&goto=2026-11-14", newTab: false },
+    }));
+  });
+
+  it("never shows another day's answer", () => {
+    const [date] = build("15 nov", { dayAnswer: FOURTEENTH });
+    expect(date?.rows[0]?.answer).toBeUndefined();
+    expect(date?.rows[0]?.detail).toBe("See each room in the Diary");
+  });
+
+  it("says a day in short for the polite region, by what is free", () => {
+    expect(dayAnswerSaid(FOURTEENTH)).toBe("Saturday 14 November 2026: 1 of 2 rooms free.");
+    const all = { ...FOURTEENTH, rooms: FOURTEENTH.rooms.map((room) => ({ ...room, free: true })) };
+    expect(dayAnswerSaid(all)).toBe("Saturday 14 November 2026: all 2 rooms free.");
+    const none = { ...FOURTEENTH, rooms: FOURTEENTH.rooms.map((room) => ({ ...room, free: false })) };
+    expect(dayAnswerSaid(none)).toBe("Saturday 14 November 2026: no room free.");
+    // A venue of one room names it.
+    expect(dayAnswerSaid({ iso: "2026-11-14", rooms: [FOURTEENTH.rooms[1] as (typeof FOURTEENTH.rooms)[number]] }))
+      .toBe("Saturday 14 November 2026: Saloon is free.");
+    expect(dayAnswerSaid({ iso: "2026-11-14", rooms: [FOURTEENTH.rooms[0] as (typeof FOURTEENTH.rooms)[number]] }))
+      .toBe("Saturday 14 November 2026: Grand Hall is taken.");
   });
 });
 
