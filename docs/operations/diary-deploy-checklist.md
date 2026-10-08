@@ -97,7 +97,7 @@ Complete, from `packages/api/src/env.ts`. **A miss crashes boot behind Railway's
 
 **Must NOT be set:** `VITEST` (boot fails if present).
 
-**All-or-nothing groups — a *partially* set group crashes boot even though each member is individually optional:** legacy uploads (all 5: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`); runtime profiles (all 4, above); Foundry (all 6: `FOUNDRY_R2_ACCOUNT_ID`, `FOUNDRY_R2_ACCESS_KEY_ID`, `FOUNDRY_R2_SECRET_ACCESS_KEY`, `FOUNDRY_R2_CANDIDATE_BUCKET`, `FOUNDRY_R2_RELEASE_BUCKET`, `FOUNDRY_R2_PUBLIC_URL`); AI assistant (if `AI_ASSISTANT_ENABLED="true"` then provider, model, base URL and API key are all required).
+**All-or-nothing groups — a *partially* set group crashes boot even though each member is individually optional:** legacy uploads (all 5: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`); runtime profiles (all 4, above); Foundry (all 6: `FOUNDRY_R2_ACCOUNT_ID`, `FOUNDRY_R2_ACCESS_KEY_ID`, `FOUNDRY_R2_SECRET_ACCESS_KEY`, `FOUNDRY_R2_CANDIDATE_BUCKET`, `FOUNDRY_R2_RELEASE_BUCKET`, `FOUNDRY_R2_PUBLIC_URL`); AI assistant (if `AI_ASSISTANT_ENABLED="true"` then provider, model and API key are required, and a base URL too unless the provider is `anthropic`, which calls Claude through Anthropic's SDK; `AI_ASSISTANT_WORKSPACE_ID` is needed only for a Console key not scoped to a workspace).
 
 **Boots fine but is broken — not schema-enforced:** `CORS_ORIGINS` (defaults to localhost only; without production origins the browser cannot call the API), `CLERK_PUBLISHABLE_KEY`, `RESEND_API_KEY` (email silently logs to console), `EMAIL_FROM`.
 
