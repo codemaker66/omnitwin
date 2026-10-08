@@ -97,7 +97,9 @@ again, words kept to copy and AI taken away when it is not available
 header, a client, a date answered room by room in the Diary and a booking on
 the board found from the keyboard on a desk with the accessibility audit open,
 and on phones a magnifier opening a sheet that fits 390 and 320 px, with sales
-offered dates and pages and never the client search (`find-anything.spec.ts`).
+offered dates and pages and never the client search, and an admin's full
+header row held without overflow at every width it changes at
+(`find-anything.spec.ts`).
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result
