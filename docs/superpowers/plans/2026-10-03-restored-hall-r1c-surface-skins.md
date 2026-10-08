@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13 (`C:/Python313/python.exe`) with numpy 2.4, scipy 1.17, OpenCV 5 (`cv2`, DIS optical flow, ECC, `inpaint`), Pillow 12 (WebP), PyAV 16.1 (H.264 decoding with exported macroblock quantisers), `unittest`; no torch and no CUDA in `tools/skins` (R1a's `tools/relight` keeps its CPU torch for its own commands). React 18.3 + @react-three/fiber 8.18, three 0.186 (WebGPURenderer, TSL compute, pnpm patch), Zod 3.24, zustand 5.0, Vitest 4.1 + happy-dom 20, TypeScript 5.7, pnpm 9.15.4, Node 22, Playwright 1.59 (headed Chromium on the RTX 4090).
 
-**The frieze band:** Task 12 follows the frieze research's final findings (`D:/claude/real-hall/renovation/frieze/findings.md`, 7 October, with its sections "Holdout" and "Venue photographs (7 October)"). The band is measured, not lost: 99% of it has a view with every channel unclipped, and clipping is per channel. It is recovered by per-channel multi-view fusion through fitted camera response curves, divided by the light model and by a fitted residual light (one decaying exponential, kept only when it predicts held-out rows), and synthesised (and labelled) only where no view measures it. The venue's own photographs of the 14 craft sections (the Trades House Virtual Museum, mostly by George Mahoney; cleared by the owner on 7 October) then give the frieze its colour and broad tone, and the drawing of the lowest 5 cm on the door and fireplace walls, where the research's independent check showed our fusion does not reproduce the paint. The frieze's ground is gilded, so its brightness depends on the view: the material maps carry a gilding mask, gold's specular colour and a roughness for it (Tasks 12–13). Task 12's thresholds are reconciled with the research's measured numbers (its section "The thresholds, reconciled").
+**The frieze band:** Task 12 follows the frieze research's final findings (`D:/claude/real-hall/renovation/frieze/findings.md`, 7 October, with its sections "Holdout" and "Venue photographs (7 October)"). The band is measured, not lost: 99% of it has a view with every channel unclipped, and clipping is per channel. It is recovered by per-channel multi-view fusion through camera response curves (sRGB in every channel, as the research chose; the XGRIDS frames' fitted curves are measured notes), divided by the light model and by a fitted residual light (one decaying exponential, kept only when it predicts held-out rows), and synthesised (and labelled) only where no view measures it. The venue's own photographs of the 14 craft sections (the Trades House Virtual Museum, mostly by George Mahoney; cleared by the owner on 7 October) then give the frieze its colour and broad tone, and the drawing of the lowest 5 cm on the door and fireplace walls, where the research's independent check showed our fusion does not reproduce the paint. The frieze's ground is gilded, so its brightness depends on the view: the material maps carry a gilding mask, gold's specular colour and a roughness for it (Tasks 12–13). Whether a ground is gilt is a test of two hypotheses on its highlights' colour, gold leaf against a dielectric such as varnish, each highlight divided by the colour of what its views mirror (round 5); where the views cannot decide, the ground is gilt by prior, labelled and listed. Task 12's thresholds are reconciled with the research's measured numbers (its section "The thresholds, reconciled").
 
 **The XGRIDS frames (the resolution research, 7 October):** `D:/claude/real-hall/frontier/resolution/proposal.md` §2 measured three things.
 
@@ -82,13 +82,19 @@ Applied in one pass, before any task was started, from the plan-amendment brief 
     - B-M12: `__skins.state()` carries the package's `credits` (Task 22); Task 23's run record carries them and its check holds them to the manifest's (`credits`); Task 24's session log lists, for Blake, visible attribution of the venue photographs (George Mahoney and the Trades House of Glasgow) before any public showing. No interface is invented.
     - I-1: `vertical_seam` takes `gaps`, and a fourth line at the centre of `lay_band`'s 2 cm feather (`bandFeather`, `feather_gap`) is fitted outside it, so a step between the healed mosaic and the recovery is measured whole; a feathered-step test fails as it must.
     - I-2: Task 22's `frieze-bottom-*` crops and Task 23's `skin_edge_seam` measure each frieze skin's bottom edge against the picture-rail moulding's splats at the captured light, as its top against the cornice's, under the same criterion; a kept residual light of more than about 0.023 ln at an edge fails. Known limits rewritten.
-    - M-1: Task 10's prose names NS inpainting. M-2: the A-M8 citation is `D:/claude/real-hall/plan-amendments-0710/original-brief.md:34`. M-3: the edge fits leave out the 1 cm on the skin's side where skin and uncovered splats mix, and the edge is placed from a mask render of the crop (`crops-mask`, `edge_row`); a 4% step blended over that band now fails. M-4: R1d reads `specularColour` (R1d 7545 and 7740), and Task 20 and the Known limits say so. M-5: `gpu_verdict` reads its numbers through `_finite`, so a NaN time fails instead of raising. M-6: Task 7's `XgView.check` tests a stored frame's crop (Task 6A's `FrameStore.crop_box`). M-7: a metre is refined only where the photograph covers half its clean-frieze reference (`REG_COVER_MIN`), and the registration gate checks the experiment's walls (`EXPECTED_WALLS`) and the metres' agreement where they cross-fade (`join_disagreement`, 5 mm), not the acceptance itself. M-8: `lightLam`'s documentation.
+    - M-1: Task 10's prose names NS inpainting. M-2: the A-M8 citation is `D:/claude/real-hall/plan-amendments-0710/original-brief.md:34`. M-3: the edge fits leave out the 1 cm on the skin's side where skin and uncovered splats mix, and the edge is placed from a mask render of the crop (`crops-mask`, `edge_row`); a 4% step blended over that band now fails. M-4: R1d reads `specularColour` (R1d Task 17's Consumes and its `f0 = mix(…, surface.specularColour ?? surface.albedo, …)`: R1d:8011 and 8206 at `5c7650c3`, named rather than numbered since round 5, m-5), and Task 20 and the Known limits say so. M-5: `gpu_verdict` reads its numbers through `_finite`, so a NaN time fails instead of raising. M-6: Task 7's `XgView.check` tests a stored frame's crop (Task 6A's `FrameStore.crop_box`). M-7: a metre is refined only where the photograph covers half its clean-frieze reference (`REG_COVER_MIN`), and the registration gate checks the experiment's walls (`EXPECTED_WALLS`) and the metres' agreement where they cross-fade (`join_disagreement`, 5 mm), not the acceptance itself. M-8: `lightLam`'s documentation.
     - The XGRIDS blue curve: Task 12 runs the holdout, the recovery and the venue checks with sRGB and with the fitted curve (`--blue`), and `frieze-blue` chooses by a stated rule (`choose_blue`: sRGB unless the fitted curve lowers the photographs' pooled ΔE00 mean without losing a gate or a colour verdict; a tie goes to sRGB); Step 10 reports the choice and its numbers.
   - Round 4, the gilded ground on every wall (the re-review's out-of-scope O-1 and O-2, `review/fix2-rereview-c.md:222-227`; measured in `D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/gilt/`, every product twice, identical):
     - O-1: Task 12 judges the gilt per light state. Task 9 keeps each state's highlight colour (`highlight_by_state`, `excessRgbByState`) and Task 12 each state's excess (`view_spread`'s `states`, `excessByState`). `gilt_evidence` calls the variable class measured gilt when its excess is at least 1.4 × the paint's in two light states and each highlight's own colour is gold (`blend.gold`), refused when one is not, and a prior, kept and listed (`giltPrior`, the venue npz `giltBasis`), when the views cannot decide. Door 5.48 / 3.81 / 2.97 × (day / evening / capture) and fireplace 2.59 / 3.24 / 1.96: measured. Window 1.02 / 1.01 / 0.92: a prior.
     - O-2: Task 13's `gilding_mask` needs gold highlights in two light states and none that is not gold: a warm lamp in varnish reads gold by day (B/R 0.29) and white under the lamps. The former rule's mask of 1.0 on it is reproduced and is now 0.
     - F4: the gilt-direction check covers every wall with measured gilt (door +0.33, fireplace +0.08); a prior is listed, not checked; a refused skin stops the run (`giltGround`). The Known limits gain the gilt's basis and varnish's inferred rejection.
-  - Test counts now: Task 1 23 (4 config, 10 twice, 9 frames); Task 6A 23 (8 xbin, 6 sources, 9 frames); Task 7 14 (8 xgrids, 6 sources, round 3); Task 9 13 (round 4); Task 12 43 (13 frieze, 24 venue, 6 sources, round 4); Task 13 9 (round 4); Task 14 11; Task 15 5; Task 16 20; Task 19 6; Task 20 `skin-visibility` 3 and `skin-material` 6; Task 23 7 (round 3). The Python tests were run from the plan's text. The TypeScript tests need R1b's modules, which are not built yet, so they were not run; the changed logic that stands alone (`skinVisibility`, `skinDecodeTable`, the test package's handedness) was run in node.
+  - Round 5 (8 October), from the final re-review (`D:/claude/real-hall/plan-amendments-0710/review/final-rereview-abc.md`: G-1, B-2, m-1 to m-5; measured in `D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/r5/val/`, every product twice, identical):
+    - G-1: the gilt basis is a test of two hypotheses in R1c's de-lit unit. Task 9's new `specular.py` predicts the highlight an untinted surface returns toward each view from R1a's nine sources, their emitters (found by R1a's rules) and the bounce, and `tint_test` weighs gold leaf against a neutral dielectric on blue against red, linearly, under the blocks' measured scatter and the light model's colour uncertainty: decisive at a likelihood ratio of 100 with a fit check, a prior when undecided, a stop when neither fits. `GILT_HIGHLIGHT_MIN`, `blend.gold`, `GOLD_BR_MAX`, `GOLD_MIN_STATES` and `gilt_evidence` are gone. Task 8 keeps the light model's direct light, bounce cubes, points and normals and reports `chromaSigma`; Task 9's mosaic keeps the reference of its rejected views. On the experiment's stretches (the capture state): the door measured (ln B/R −1.05 ± 0.14, gold −1.08), the fireplace measured (−1.06 ± 0.15), the window a prior (−0.50 ± 0.30). At stand-in E57 weights the door's E57 states fit neither hypothesis, which would stop Task 12 until Task 8's weights explain them. Varnish injected into the stretches' own light and noise is refused 165–200 times in 200 and called gilt in none of 2,400 draws.
+    - Task 13's `gilding_mask` tests each highlight the same way, against the reference of its own rejected views, its bar raised by the log of the skin's number of highlights.
+    - B-2, with the controller's ruling: every channel of every family is linearised by sRGB (the research's `crf.py:125-130`), since a fitted curve that differs between stretches is not the camera's (green −0.23 to +0.16 ln at code 240 on matte points; blue's departure on one stretch); `frieze-crf` records the fitted curves' departures per part and their median as measured notes (`crf.json`), every product records its `curves`, and `frieze-venue` refuses any but sRGB (`require_srgb`). `choose_blue`'s photograph comparison, `frieze-blue`, `--blue`, `blue.json` and the comparison runs are gone. The research's blue departure lies on matte points, not the gilding, but 2,425 of its 2,427 matte codes from 200 up are on the fireplace stretch, where red clips: within that stretch a held-out half is predicted 0.35 ln better than by sRGB, and across stretches nothing can be tested. `crf_solve` is now the research's staged fit, since the joint Debevec–Malik fit flattened the research's door samples (red 1.40 ln below sRGB at code 240, the research's fit 0.11), and `frieze-crf` takes each channel's own points (blue's top codes lie where red clips).
+    - m-1: `measuredKeep` records the detail rule; the gilt basis is `gilt_measured`. m-2: every frieze product records the curves it was made with (`curves`), and `frieze-venue` refuses any but sRGB in every channel. m-3: no comparison run remains, so every product is a double run. m-4: `photo_on_skin` blends the metres' coordinates, and `REG_JOIN_MAX_M` is 5.5 mm, measured (0.97–4.88 mm on the experiment's registrations). m-5: the store's keys include `size`, the R1d citation names its lines, and the self-review names `excessByState`; R1a:1086 (Task 3's interface naming `_sample_depth`) is R1a's text, outside this plan.
+    - The spread and the excess use only the views valid in all three channels (a highlight clips red first). The chandeliers' distance from R1a's centres is stated as measured (0.121 m).
+  - Test counts now: Task 1 23 (4 config, 10 twice, 9 frames); Task 6A 23 (8 xbin, 6 sources, 9 frames); Task 7 14 (8 xgrids, 6 sources, round 3); Task 8 7; Task 9 25 (14 blend, 11 specular, round 5); Task 12 45 (15 frieze, 24 venue, 6 sources, round 5); Task 13 9 (round 5); Task 14 11; Task 15 5; Task 16 20; Task 19 6; Task 20 `skin-visibility` 3 and `skin-material` 6; Task 23 7 (round 3). The Python tests were run from the plan's text. The TypeScript tests need R1b's modules, which are not built yet, so they were not run; the changed logic that stands alone (`skinVisibility`, `skinDecodeTable`, the test package's handedness) was run in node.
 
 ## Global Constraints
 
@@ -4434,7 +4440,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `D:/claude/real-hall/renovation/surfaces/work/xg_allposes.npz`, the inventory's `allposes.py`: every instant's fused pose for each of the 4 cameras, E57 frame; 51,432 rows of `seq`, `cam`, `C`, `Rcw`, `ts`, `omega`, `keyframe`;
   - PyAV 16.1, whose decoder exports each macroblock's quantiser (`export_side_data=venc_params`).
 - Produces (`frames.py`): `@dataclass(frozen=True) class DecodedFrame: bgr; qp; x0: int; y0: int` (`bgr` converted from the stored planes, or a keyframe JPEG); `yuv_to_bgr(y (h, w), u (h/2, w/2), v (h/2, w/2)) -> (h, w, 3) uint8` (full-range BT.601, chroma at H.264's default location; pre-flight fix F6, 8 October); `class FrameStore(folder)` with `path(name)`, `has(name)`, `load(name) -> DecodedFrame` (converts with `yuv_to_bgr`), `save(name, y, u, v, qp, x0, y0, stats)` (the planes as decoded, compressed, with the crop's `size`), `crop_box(name) -> (x0, y0, width, height)` (without decoding; Task 7's `XgView.check` tests it, round 3, M-6); `frame_name(cam: int, seq: int) -> str` (`"c<cam>_s<seq:05d>"`); `read_all_poses(path) -> dict` (`C` (n, 3) E57, `Rcw` (n, 3, 3) with x_cam = Rcw (X − C), `cam` (1–4), `seq`, `name`, `t_s`, `omega` (deg/s), `keyframe` bool).
-- Produces (`xbin.py`): `MB = 16`; `FRAME_W = 4000`, `FRAME_H = 3000`; `DEADZONE_FRACTION = 2/3`; `COEFF_PER_GREY = 2.4`; `CENSUS_STRIDE = 4`; `CENSUS_RANGE = 9.0`; `CENSUS_COVERAGE = 0.2`; `CROP_MARGIN_PX = 64`; `STORE_BYTES_PER_PX = 0.75`, `STORE_BUDGET_BYTES = 200e9`; `qstep(qp)` (H.264's step, `0.625 × 2^(qp/6)`: 25.198 at QP 32, where H.264's integer table has 26); `deadzone_amplitude(qp)` (the faintest sinusoid, in grey levels, a 4×4 block keeps: `2/3 × step / 2.4`, about 7.9 at QP 33); `record_index(path) -> dict[(seq, slot), (payload_offset, payload_length)]`; `record_stats(b: bytes) -> list[int]`; `decode_record(buf: bytes) -> (y (H, W), u (H/2, W/2), v (H/2, W/2) uint8, qp (H/16, W/16) uint8)` (the planes as decoded, no colour conversion); `crop_box(boxes, width=FRAME_W, height=FRAME_H, margin=CROP_MARGIN_PX) -> (x0, y0, x1, y1)` (macroblock-aligned); `projected_store_bytes(crops) -> int`; `DecodedFrame` and `FrameStore` re-exported from `frames.py`; `census_skin(src, geom, edge_factor: dict, texel_limit: float, per_block: int) -> dict[int, (x0, y0, x1, y1)]` (each chosen frame's box over the census blocks it was chosen for); the commands `frames-census` (`<work>/frames/census.json`, with `projectedStoreBytes`; exit 1 when the projection exceeds `STORE_BUDGET_BYTES` or a third of the work drive's free space) and `frames-decode` (`<work>/frames/store/<name>.npz`: `y`, `u`, `v`, `qp`, `x0`, `y0`, `stats`; `<work>/frames/index.json`, with each frame's `bytes`).
+- Produces (`xbin.py`): `MB = 16`; `FRAME_W = 4000`, `FRAME_H = 3000`; `DEADZONE_FRACTION = 2/3`; `COEFF_PER_GREY = 2.4`; `CENSUS_STRIDE = 4`; `CENSUS_RANGE = 9.0`; `CENSUS_COVERAGE = 0.2`; `CROP_MARGIN_PX = 64`; `STORE_BYTES_PER_PX = 0.75`, `STORE_BUDGET_BYTES = 200e9`; `qstep(qp)` (H.264's step, `0.625 × 2^(qp/6)`: 25.198 at QP 32, where H.264's integer table has 26); `deadzone_amplitude(qp)` (the faintest sinusoid, in grey levels, a 4×4 block keeps: `2/3 × step / 2.4`, about 7.9 at QP 33); `record_index(path) -> dict[(seq, slot), (payload_offset, payload_length)]`; `record_stats(b: bytes) -> list[int]`; `decode_record(buf: bytes) -> (y (H, W), u (H/2, W/2), v (H/2, W/2) uint8, qp (H/16, W/16) uint8)` (the planes as decoded, no colour conversion); `crop_box(boxes, width=FRAME_W, height=FRAME_H, margin=CROP_MARGIN_PX) -> (x0, y0, x1, y1)` (macroblock-aligned); `projected_store_bytes(crops) -> int`; `DecodedFrame` and `FrameStore` re-exported from `frames.py`; `census_skin(src, geom, edge_factor: dict, texel_limit: float, per_block: int) -> dict[int, (x0, y0, x1, y1)]` (each chosen frame's box over the census blocks it was chosen for); the commands `frames-census` (`<work>/frames/census.json`, with `projectedStoreBytes`; exit 1 when the projection exceeds `STORE_BUDGET_BYTES` or a third of the work drive's free space) and `frames-decode` (`<work>/frames/store/<name>.npz`: `y`, `u`, `v`, `qp`, `x0`, `y0`, `size`, `stats`; `<work>/frames/index.json`, with each frame's `bytes`).
 - Produces (`views.py`): `XgView(name, camera, C, Rcw, images: str | FrameStore, occupancy=None)` (a keyframe folder, as before, or the decoded-frame store); `XgView.qp_at(P) -> (n,) float` (the quantiser of the macroblock each point projects into; NaN without a QP map or outside the crop); `render(..., raw=False, qp=False)`: `raw=True` adds `"raw"` (h, w, 3) float32, the sampled RGB bytes before any linearisation, and `qp=True` adds `"qp"` (h, w) float32; `Sources.store: FrameStore`; `Sources.edge_factor(key) -> float` (for an XGRIDS frame the config's `xgridsEdgeFactor` of its camera kind, otherwise `factor(key)`); `load_sources` now holds every frame of `xg_allposes.npz`, keyed `xg:c<cam>_s<seq>`.
 
 The resolution research measured the XGRIDS frames directly (`D:/claude/real-hall/frontier/resolution/proposal.md` §2.1, §2.4, checkpoint of 7 October). Three findings change this plan.
@@ -5601,7 +5607,7 @@ Expected: on most frieze bays a registered XGRIDS frame beats the best face at e
 
 **Interfaces:**
 - Consumes: Task 5 (`<work>/geometry/light-grids.json`, `covers.npz`), Task 6 (`views.load_sources`, `load_geometry`, `geometry_ids`, `render`, `view_state`, `SkinGeometry`), Task 7 (`<work>/views/<id>.npz`); R1a as amended: `python -m relight skin-light` (A4) and its `<relight work>/skin-light/<id>.records` and `index.json`; `relight.codec.unpack_records(buf, ranges) -> (direct (N, 9), normals (N, 3), flags (N,))` (R1a Task 1); `relight.reference.trilinear(model, pos) -> (idx (N, 8), wts (N, 8))` (reads only `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid`) and `relight.reference.cube_eval(cubes (N, K, 3, 6), n (N, 3), iso (N,)) -> (N, K, 3)` (R1a Task 5); `<relight work>/probes-coarse.npz` (`cubes` float16 (M, 9, 3, 6), `valid`, `origin`, `shape`, `spacing`), checked against R1a's `<relight evidence>/probes-check.json` (`pass`, `artifact.sha256`; R1a Task 4c) and the package's `evidence.artifacts["probes-coarse.npz"]`; the skin-light folder checked against `<relight evidence>/skin-light.json` (`artifact` the index, `records` `{ id: sha256 }`; R1a Task 4c); relight package v1's `manifest.json` (`capture.weights` (9,), `capture.colours` (9, 3): R1a Task 4b's refit, a colour per lamp group, never a constant); the splat tables `<relight work>/npy/splats_pos.npy` (float32 e57), `splats_rgb.npy` (uint8 sRGB), `splats_opa.npy` (float16).
-- Produces (`lightstates.py`): `relight_modules(cfg) -> (codec, reference)` (R1a's numpy modules, imported from `paths.relightTool`); `sha256_of(path) -> str`; `check_relight_artifacts(relight_work, relight_evidence, manifest) -> None` (`ValueError` unless the probes and every skin-light file are the bytes R1a's evidence records, the probes the ones the package was built from, and the skins `index.json` lists exactly the ones `skin-light.json` records; amended 7 October, the packaging rule; the last check 8 October); `@dataclass(frozen=True) class ProbeField: cubes (M, 9, 3, 6) float64; valid; origin; spacing; shape` with `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid` (the names `reference.trilinear` reads); `load_probes(path) -> ProbeField`; `source_light(reference, probes, P, n) -> (N, 9, 3)` (each source's white unit light at P with normal n: its direct light comes separately; this is its bounce, `cube_eval` of the trilinear cubes); `light_of(direct (N, 9), bounce (N, 9, 3)) -> (N, 9, 3)` (`D[k] + I[k]` per channel); `mix(L (…, 9, 3), W (9, 3)) -> (…, 3)`; `bilinear(grid (lh, lw, C), x, y) -> (n, C)` (light-grid coordinates, centres at whole numbers, clamped: the browser twin's formula, Task 17); `texel_light_coords(geom, light_texel, cc, rr) -> (x, y)` (texel coordinates → light-grid coordinates); `anchor(splats, geom, covers_row, Ecap, light_texel) -> (lh, lw, 3)` (the covered splats' opacity-weighted mean linear colour over Ecap; NaN where fewer than 5 splats); `fit_states(rows: dict, W0 (9, 3), iters=8) -> (W (9, 3), gains dict, report)`; files `<work>/light/<id>.npz` (`L` (lh, lw, 9, 3) float32, `Ecap` (lh, lw, 3) float32, `anchor` (lh, lw, 3) float32, `size` [lw, lh], `texel`) and `<work>/light/states.json` (`{ "capture": { "W": [[r, g, b] × 9] }, "day": { "W": … }, "evening": { "W": … }, "fit": { "day": { "rows", "medianAbsLog2", "lampShare" (the lamps' share of the fitted light) }, "evening": { … } } }`); the commands `light-model` and `light-states`.
+- Produces (`lightstates.py`): `relight_modules(cfg) -> (codec, reference)` (R1a's numpy modules, imported from `paths.relightTool`); `sha256_of(path) -> str`; `check_relight_artifacts(relight_work, relight_evidence, manifest) -> None` (`ValueError` unless the probes and every skin-light file are the bytes R1a's evidence records, the probes the ones the package was built from, and the skins `index.json` lists exactly the ones `skin-light.json` records; amended 7 October, the packaging rule; the last check 8 October); `@dataclass(frozen=True) class ProbeField: cubes (M, 9, 3, 6) float64; valid; origin; spacing; shape` with `probe_shape`, `probe_origin`, `probe_spacing`, `probe_valid` (the names `reference.trilinear` reads); `load_probes(path) -> ProbeField`; `light_cubes(reference, probes, P) -> (N, 9, 3, 6)` (each source's bounce ambient cube at P, the trilinear read of the probes; round 5); `source_light(reference, probes, P, n) -> (N, 9, 3)` (each source's white unit light at P with normal n: its direct light comes separately; this is its bounce, `cube_eval` of `light_cubes`); `light_of(direct (N, 9), bounce (N, 9, 3)) -> (N, 9, 3)` (`D[k] + I[k]` per channel); `mix(L (…, 9, 3), W (9, 3)) -> (…, 3)`; `bilinear(grid (lh, lw, C), x, y) -> (n, C)` (light-grid coordinates, centres at whole numbers, clamped: the browser twin's formula, Task 17); `texel_light_coords(geom, light_texel, cc, rr) -> (x, y)` (texel coordinates → light-grid coordinates); `anchor(splats, geom, covers_row, Ecap, light_texel) -> (lh, lw, 3)` (the covered splats' opacity-weighted mean linear colour over Ecap; NaN where fewer than 5 splats); `fit_states(rows: dict, W0 (9, 3), iters=8) -> (W (9, 3), gains dict, report)`; files `<work>/light/<id>.npz` (`L` (lh, lw, 9, 3) float32, `Ecap` (lh, lw, 3) float32, `anchor` (lh, lw, 3) float32, `size` [lw, lh], `texel`; round 5, for the specular reference of Tasks 9 and 12: `D` (lh, lw, 9) float32, the records' direct light, `cubes` (lh, lw, 9, 3, 6) float16, the bounce's cubes, `P` (lh, lw, 3) and `normal` (lh, lw, 3), each light texel's point and normal) and `<work>/light/states.json` (`{ "capture": { "W": [[r, g, b] × 9] }, "day": { "W": … }, "evening": { "W": … }, "fit": { "day": { "rows", "medianAbsLog2", "lampShare" (the lamps' share of the fitted light), "chromaSigma" (the robust spread of each row's log-chroma residual, ln G/R and ln B/R of model over observation: the state's window colour uncertainty in the gilt test, round 5) }, "evening": { … } } }`); the commands `light-model` and `light-states`.
 
 The browser lights a skin texel with R1b's bounce and the nine sources' direct light from the records R1a bakes for the skin (contract 3), so the captured light the skin is de-lit by must be that same light: `Ecap = Σk w[k] c[k] ⊙ (D[k] + I[k])` per light texel from the decoded log codes and the float16 probe cubes the package carries, read bilinearly at each texel exactly as the browser reads its light buffer. The capture's own light (the XGRIDS frames, the splats) is that `Ecap`. The E57 sweeps were taken in two other light states (the floor research's daylight sweeps 0–17 and 19–25, evening 26–47), so each state's light is the same nine sources with their own RGB weights, `E_s = Σk W_s[k] ⊙ (D[k] + I[k])`, fitted on the plaster skins against the splats: `observation_i(t) ≈ g_i ⊙ A(t) ⊙ E_s(t)` with A the covered splats' colour over `Ecap` (what the relight model calls the albedo) and `g_i` the view's exposure and white balance. Weights by non-negative least squares per channel, gains by medians, alternating 8 times; each state's median gain is 1 (its weights carry the scale). The gate: each state's median |log2(model / observation)| over the plaster light texels at most 0.15, and the lamps' share of the state's fitted light on those texels (`lampShare`: `Σ mix(L[lamps], W[lamps]) / Σ mix(L, W)`) above one half in the evening and below one half by day. The share is of the light, not of the weights: a unit of window weight and a unit of lamp weight give very different light (the capture fit has window weights of 29–51 and lamp weights of 0–2.2, a weight share of 0.02), and the evening sweeps were taken at dusk, so a small window weight could outweigh the lamps' sum (pre-flight fix, 8 October). A miss stops the build: the relight model cannot explain that state, and the controller decides.
 
@@ -5675,6 +5681,7 @@ class Fit(unittest.TestCase):
         self.assertAlmostEqual(float(np.median(gains[:, 0])), 1.0, places=9)
         light_share = LS.mix(L[:, 5:], W_true[5:]).sum() / LS.mix(L, W_true).sum()   # the lamps' share of the light
         self.assertAlmostEqual(report["lampShare"], float(light_share), places=3)
+        self.assertLess(report["chromaSigma"], 1e-3)                              # the model's colour error: none here
 
 
 class Anchor(unittest.TestCase):
@@ -5834,11 +5841,15 @@ def load_probes(path: str) -> ProbeField:
                           spacing=float(z["spacing"]), shape=tuple(int(v) for v in z["shape"]))
 
 
+def light_cubes(reference, probes: ProbeField, P):
+    """(N, 9, 3, 6): each source's bounce ambient cube (white unit source) at P, R1a's trilinear read of the probes."""
+    idx, wts = reference.trilinear(probes, np.asarray(P, np.float64))
+    return (probes.cubes[idx] * wts[:, :, None, None, None]).sum(1)
+
+
 def source_light(reference, probes: ProbeField, P, n):
     """(N, 9, 3): each source's bounce (white unit source) at P with normal n, as R1a's reference evaluates it."""
-    idx, wts = reference.trilinear(probes, np.asarray(P, np.float64))
-    cubes = (probes.cubes[idx] * wts[:, :, None, None, None]).sum(1)
-    return reference.cube_eval(cubes, np.asarray(n, np.float64), np.zeros(len(P), bool))
+    return reference.cube_eval(light_cubes(reference, probes, P), np.asarray(n, np.float64), np.zeros(len(P), bool))
 
 
 def light_of(direct, bounce):
@@ -5922,8 +5933,13 @@ def fit_states(rows: dict, W0, iters: int = 8):
     # the lamps' share of the fitted light on these rows, not of the weights: a unit of window weight and a unit of lamp
     # weight give very different light (the capture fit's window weights are 29-51, its lamp weights 0-2.2)
     lamp = float(mix(L[:, LAMPS], W[LAMPS]).sum()); total = float(mix(L, W).sum())
+    # the model's colour error: the robust spread of each row's log-chroma residual (ln G/R and ln B/R of model over
+    # observation, pooled), which Task 12's gilt test takes as the uncertainty of this state's window colour (round 5)
+    lr = np.log(np.maximum(model, 1e-12)) - np.log(np.maximum(obs, 1e-12))
+    chroma = np.concatenate([lr[:, 1] - lr[:, 0], lr[:, 2] - lr[:, 0]])
     return W, gains, {"rows": int(len(obs)), "medianAbsLog2": float(np.median(err)), "p90AbsLog2": float(np.percentile(err, 90)),
-                      "lampShare": lamp / max(total, 1e-12)}
+                      "lampShare": lamp / max(total, 1e-12),
+                      "chromaSigma": float(1.4826 * np.median(np.abs(chroma - np.median(chroma))))}
 
 
 def cmd_light_model(cfg, rest) -> int:
@@ -5956,7 +5972,8 @@ def cmd_light_model(cfg, rest) -> int:
         M = np.array(entry["texelToModel"]).reshape(4, 4)
         rr, cc = np.mgrid[0:lh, 0:lw]
         P = (M @ np.stack([cc.ravel(), rr.ravel(), np.zeros(lh * lw), np.ones(lh * lw)]))[:3].T
-        L = light_of(direct, source_light(reference, probes, P, normals))
+        cubes = light_cubes(reference, probes, P)
+        L = light_of(direct, reference.cube_eval(cubes, np.asarray(normals, np.float64), np.zeros(len(P), bool)))
         Ecap = mix(L, Wcap).reshape(lh, lw, 3)
         geom = VW.load_geometry(cfg.paths["work"], sid, surfaces)
         k = int(np.flatnonzero(cv["ids"] == sid)[0])
@@ -5965,8 +5982,11 @@ def cmd_light_model(cfg, rest) -> int:
         near = np.all(np.abs(np.asarray(splats["pos"]) - P.mean(0)) < np.ptp(P, axis=0) / 2 + 0.5, axis=1)
         sub = {key: np.asarray(v)[near] for key, v in splats.items()}
         A = anchor(sub, geom, covers, Ecap, float(entry["lightTexel"]))
+        # D, the bounce's cubes, the points and their normals: what Task 9 and Task 12's specular reference reads (round 5)
         np.savez(os.path.join(out, f"{sid}.npz"), L=L.reshape(lh, lw, 9, 3).astype(np.float32), Ecap=Ecap.astype(np.float32),
-                 anchor=A.astype(np.float32), size=np.array([lw, lh]), texel=np.float64(entry["lightTexel"]))
+                 anchor=A.astype(np.float32), size=np.array([lw, lh]), texel=np.float64(entry["lightTexel"]),
+                 D=np.asarray(direct, np.float32).reshape(lh, lw, 9), cubes=cubes.reshape(lh, lw, 9, 3, 6).astype(np.float16),
+                 P=P.reshape(lh, lw, 3), normal=np.asarray(normals, np.float32).reshape(lh, lw, 3))
         print(f"light-model {sid}: {lw} x {lh}, Ecap p50 {np.median(Ecap):.4f}, anchored {np.isfinite(A[..., 0]).mean():.2f}", flush=True)
     with open(os.path.join(out, "capture.json"), "w", encoding="utf-8") as f:
         json.dump({"W": Wcap.tolist(), "sources": list(SOURCES)}, f, indent=1)
@@ -6099,13 +6119,14 @@ Expected: both `PASS` (the second also needs its gate: `states.json` `"pass": tr
 ### Task 9: The de-lit, glare-free, codec-aware mosaic and the region-product contract
 
 **Files:**
-- Create: `tools/skins/skins/blend.py`
+- Create: `tools/skins/skins/blend.py`, `tools/skins/skins/specular.py` (round 5)
 - Modify: `tools/skins/skins/__main__.py` (register `mosaic`)
-- Test: `tools/skins/tests/test_blend.py`
+- Test: `tools/skins/tests/test_blend.py`, `tools/skins/tests/test_specular.py` (round 5)
 
 **Interfaces:**
-- Consumes: Task 6 (`views.load_sources`, `load_geometry`, `geometry_ids`, `render`, `view_state`, `srgb_to_linear`, `COS_MAX_OBLIQUE`, `Sources.factor`, `Sources.sweep_of`), Task 6A (`render(..., raw=True, qp=True)`, `Sources.edge_factor`, `xbin.deadzone_amplitude`), Task 7 (`<work>/views/<id>.npz`, `<work>/xgrids/<id>.json`, `xgrids._block_points`, `xgrids.BLOCK`), Task 8 (`<work>/light/<id>.npz` (`L`, `Ecap`, `anchor`, `size`, `texel`), `<work>/light/states.json` (`capture.W`, `day.W`, `evening.W`), `lightstates.mix`, `lightstates.bilinear`, `lightstates.texel_light_coords`, `lightstates.SUB`).
-- Produces (`blend.py`): `EPS = 0.004`, `TILE = 512`, `SIG_LOW_M = 0.06`, `TAU_LOW = 0.15`, `GLARE_Q = 0.35`, `GLARE_RATIO = 1.25`, `GLARE_MIN_VIEWS = 3`, `CLIP = 0.955` (linear: sRGB 250, a clipped observation); `wmedian(vals (n, P), wts (n, P)) -> (P,)`; `quantile_weighted(vals, wts, q) -> (P,)`; `smoothstep(x)`; `glare_masks(lum_low (n, H, W), valid (n, H, W), weights (n, H, W)) -> (mask (n, H, W) bool, excess (H, W) float32, count (H, W) uint8)`; `highlight_colour(rgb_low (n, H, W, 3), mask (n, H, W), est_low (H, W, 3)) -> (H, W, 3)` (the median, over the views rejected as glare, of their low-passed de-lit RGB minus the estimate's; 0 where none; pre-flight fix, 8 October); `LIGHT_STATES = ("day", "evening", "capture")`, `GOLD_BR_MAX = 0.55`, `GOLD_MIN_STATES = 2`; `highlight_by_state(rgb_low, mask, est_low, view_states (n,)) -> (S, H, W, 3)` (`highlight_colour` over each light state's views alone, 0 where none of that state was rejected); `gold(rgb (…, 3)) -> bool (…)` (red positive, blue below 0.55 of red and below green; round 4, 8 October); `blend(X (n, H, W, 3) log albedo, valid, wlow (n, H, W), whigh (n, H, W), sigma_low_px) -> (log albedo (H, W, 3), nviews (H, W) uint8)`; `view_gain(rgb_light (lh, lw, 3), anchor, E) -> (3,)`; `light_fields(light_npz, states) -> {"capture", "day", "evening"}: (lh, lw, 3)`; `HIGH_K = 8`; `CENSOR_SIGMAS_PX = (0.6, 2.4)`; `CENSOR_WINDOW_PX = 2.0`; `coded_mask(raw (h, w, 3) bytes, qp (h, w) float (NaN: no map), texels_per_px: float) -> bool (h, w)`; `REGION_SCHEMA = "venviewer.skin-region.v1"`; `REGION_PROVENANCE` (0 none, 1 observed in one view, 2 observed and certified across views, 3 recovered, 4 reconstructed); `LIGHT_MODEL_VOLATILE = ("evidence", "createdAt", "tool")`; `light_model_id(manifest_path) -> str` (the light model's identity: the SHA-256 of relight package v1's manifest without those keys, as canonical JSON; pre-flight fix M11, 8 October); `import_region_product(folder, geom, light, gains, light_model_sha) -> dict` (`albedo` (rows, cols, 3), `take` bool, `recovered` bool, `method`, `certifiedShare`); the command `python -m skins mosaic [--skin <id>] [--region-products <root>]` writing `<work>/mosaic/<id>.npz` (`albedo` (rows, cols, 3) float16 linear, `observed` bool, `recovered` bool (texels a region product recovered), `nviews` uint8, `gsd` float16 metres (the best view's effective GSD), `glare` uint8 (views rejected as glare), `excess` float16 (the largest rejected excess ratio), `excessRgbByState` float16 (S, rows, cols, 3) (the rejected highlights' colour per light state, `highlight_by_state`: gold over gilding in every state; over varnish and paint the mirrored source's own colour, white where a lamp is mirrored under a lamp-dominated state's light, which Task 13 tells apart; round 4), `clipped` uint8 (views dropped as clipped), `censored` uint8 (XGRIDS views whose texture the codec erased there)) and `<work>/mosaic/<id>.json` (gains per view, shares, median GSD, the region product used).
+- Consumes: Task 6 (`views.load_sources`, `load_geometry`, `geometry_ids`, `render`, `view_state`, `srgb_to_linear`, `COS_MAX_OBLIQUE`, `Sources.factor`, `Sources.sweep_of`), Task 6A (`render(..., raw=True, qp=True)`, `Sources.edge_factor`, `xbin.deadzone_amplitude`), Task 7 (`<work>/views/<id>.npz`, `<work>/xgrids/<id>.json`, `xgrids._block_points`, `xgrids.BLOCK`), Task 8 (`<work>/light/<id>.npz` (`L`, `Ecap`, `anchor`, `size`, `texel`, and `D`, `cubes` for the specular reference), `<work>/light/states.json` (`capture.W`, `day.W`, `evening.W`, `fit.<state>.chromaSigma`), `lightstates.mix`, `lightstates.bilinear`, `lightstates.texel_light_coords`, `lightstates.relight_modules`, `lightstates.SOURCES`, `lightstates.SUB`); R1a, read-only (round 5, the specular reference's emitters): its config (`paths.relightConfig`: `room.windows`, `room.hallE57`), its finest level's tables `<relight work>/npy/splats_pos.npy`, `geom_cls.npy`, `geom_chand_id.npy` (R1a Task 1, which R1d reads too) and `relight.codec.CLASS_CH_EMITTER`, `CLASS_DOME_EMITTER`.
+- Produces (`specular.py`, round 5, 8 October): `GOLD_F0 = (1.0, 0.78, 0.34)`, `GILT_ROUGHNESS = 0.40` (Task 13 checks its own against them); R1a's bake geometry `COVE_Z = 4.30`, `COVE_INSET = 0.12`, `COVE_STEP = 0.05`, `DOME_RADIUS = 3.55`, `POINT_RMIN = 0.30`, `COVE_RMIN = 0.03`, `WINDOW_GRID = (12, 18)`, `WINDOW_ENTRY = 0.05` (R1a's `proof/lt.py:23-24, 235-273`, `proof/03_bases.py`, `windows.ENTRY_GROW`); `ENV_ALBEDO = (0.97, 0.12)`; `GROUPS` (`windows`, `cove`, `chandeliers`, `dome`: source indices); `LAMP_COLOUR_SIGMA = {"cove": 0.35, "chandeliers": 0.035, "dome": 0.10}` (R1a Task 4b's priors); `VARIANTS` (`neutral`, `gold` and each group's red and blue: 10); `CELL_M = 0.10`, `SPECULAR_MATERIALS = ("lettering", "timber-gilt", "mural")`, `MIN_BLOCKS = 5`, `DECISIVE = ln 100`, `FIT_CHI2 = 6.63`, `SIGNAL_CHI2 = 11.34`; `LAMP`, `WINDOW`, `COVE`; `@dataclass(frozen=True) class Emitters: P (m, 3); source (m,); kind (m,); size (m,); windows {source: outline}; dome (cx, cy, ceiling z, radius)`; `inside_outline(x, z, x0, x1, sill, top, arch, grow=0.0)`; `window_samples(x0, x1, depth, sill, top, arch, y0, grid) -> (P, area)`; `cove_samples(x0, x1, y0, y1, step, z, inset) -> (P, length)`; `circle_centre(xy) -> (2,)`; `dome_lamps(P4) -> (lamps (k, 3), centre (2,))`; `chandelier_lamps(P3, chand_id, dome_xy) -> (P, source)`; `build_emitters(windows, hall, P3, chand_id, P4) -> Emitters`; `load_emitters(cfg) -> Emitters`; `cell_texels(texel) -> int`; `spec_inputs(cfg, states) -> {emitters, W: {state: (9, 3)}, sigma: {state: {group: sigma}}}`; `shares(em, P (N, 3), n (N, 3)) -> (N, m)` (each emitter point's share of its source's direct light, R1a's weights, summing to 1 per source); `ggx(nl, nv, nh, alpha)` (untinted, Smith height-correlated); `schlick(F0, c) -> (…, 3)`; `cube_dir(cubes (N, …, 6), d (N, 3))`; `source_terms(em, share, P, n, D (N, 9), cubes (N, 9, 3, 6), cam (3,), alpha=0.16) -> (T_neutral, T_gold)` (each (N, 9, 3): per unit source, the glossy radiance toward the camera in the light model's units); `state_weights(W, variant, sigma) -> (9, 3)`; `excess_stat(r (K, N, 3), ok (K, N)) -> (N, 3)` (the 90th percentile over the valid views less their median); `highlight_stat(r, ok, rejected) -> (N, 3)`; `cells_at(geom, light, E, rr, cc) -> {P, n, D, cubes, E}`; `view_terms(em, cells, cams) -> (Tn, Tg)` (K, N, 9, 3); `view_references(Tn, Tg, E (N, 3), W, sigma) -> (V, K, N, 3)`; `references_from_terms(Tn, Tg, E {state: (N, 3)}, view_states, valid, W_states, sigma_states, stat="excess", rejected=None) -> (V, S, N, 3)`; `references(em, cells, cams, …)`; `log_chroma(v) -> (…, 2)`; `state_evidence(h (V, B, 3), r (V, B, 3)) -> dict` (`blocks`, `tau`, `tauRel`, `goldRel`, `chi2Zero`, `goldBlueRed`, `signal`, and with a signal `d2Neutral`, `d2Gold` (the generalised least-squares distances of (τ_R, τ_B) from each hypothesis's line), `llr`, and, reported only, `blueRed` and `sigma`, ln(τ_B/τ_R) and its delta-method error, None without blue); `tint_test({state: (h, r)}, tests=1) -> {basis: "measured" | "refused" | "inconsistent" | "prior", llr, bar, states}` (calling gold needs `bar` = `DECISIVE` + ln `tests`).
+- Produces (`blend.py`): `EPS = 0.004`, `TILE = 512`, `SIG_LOW_M = 0.06`, `TAU_LOW = 0.15`, `GLARE_Q = 0.35`, `GLARE_RATIO = 1.25`, `GLARE_MIN_VIEWS = 3`, `CLIP = 0.955` (linear: sRGB 250, a clipped observation); `wmedian(vals (n, P), wts (n, P)) -> (P,)`; `quantile_weighted(vals, wts, q) -> (P,)`; `smoothstep(x)`; `glare_masks(lum_low (n, H, W), valid (n, H, W), weights (n, H, W)) -> (mask (n, H, W) bool, excess (H, W) float32, count (H, W) uint8)`; `highlight_colour(rgb_low (n, H, W, 3), mask (n, H, W), est_low (H, W, 3)) -> (H, W, 3)` (the median, over the views rejected as glare, of their low-passed de-lit RGB minus the estimate's; 0 where none; pre-flight fix, 8 October); `LIGHT_STATES = ("day", "evening", "capture")`; `highlight_by_state(rgb_low, mask, est_low, view_states (n,)) -> (S, H, W, 3)` (`highlight_colour` over each light state's views alone, 0 where none of that state was rejected); `spec_cells(geom, light, E, cr, cc) -> dict` (the specular reference's cells over rows `cr` and columns `cc` of the skin's grid of `specular.cell_texels` squares, through `specular.cells_at`); `reference_at_glare(spec, cells, cams (K, 3), vstates, valid (K, H, W), glare (K, H, W), shape, cell, off) -> (ref (2, S, H, W, 3), sums (V, S, cells, 3), weights (S, cells))` (round 5: each view's reference, neutral and gold, read at every texel with a rejected view through `highlight_colour`'s statistic per light state, and per cell the colour variants' references summed over the rejected views); `blend(X (n, H, W, 3) log albedo, valid, wlow (n, H, W), whigh (n, H, W), sigma_low_px) -> (log albedo (H, W, 3), nviews (H, W) uint8)`; `view_gain(rgb_light (lh, lw, 3), anchor, E) -> (3,)`; `light_fields(light_npz, states) -> {"capture", "day", "evening"}: (lh, lw, 3)`; `mosaic_skin(cfg, src, geom, light, states, spec=None)` (`spec`: `specular.spec_inputs`, used on the gilt classes only); `HIGH_K = 8`; `CENSOR_SIGMAS_PX = (0.6, 2.4)`; `CENSOR_WINDOW_PX = 2.0`; `coded_mask(raw (h, w, 3) bytes, qp (h, w) float (NaN: no map), texels_per_px: float) -> bool (h, w)`; `REGION_SCHEMA = "venviewer.skin-region.v1"`; `REGION_PROVENANCE` (0 none, 1 observed in one view, 2 observed and certified across views, 3 recovered, 4 reconstructed); `LIGHT_MODEL_VOLATILE = ("evidence", "createdAt", "tool")`; `light_model_id(manifest_path) -> str` (the light model's identity: the SHA-256 of relight package v1's manifest without those keys, as canonical JSON; pre-flight fix M11, 8 October); `import_region_product(folder, geom, light, gains, light_model_sha) -> dict` (`albedo` (rows, cols, 3), `take` bool, `recovered` bool, `method`, `certifiedShare`); the command `python -m skins mosaic [--skin <id>] [--region-products <root>]` writing `<work>/mosaic/<id>.npz` (`albedo` (rows, cols, 3) float16 linear, `observed` bool, `recovered` bool (texels a region product recovered), `nviews` uint8, `gsd` float16 metres (the best view's effective GSD), `glare` uint8 (views rejected as glare), `excess` float16 (the largest rejected excess ratio), `excessRgbByState` float16 (S, rows, cols, 3) (the rejected highlights' colour per light state, `highlight_by_state`: the mirrored light's colour times the surface's tint, gold over gilding, the light's own over varnish and paint; round 4), `referenceRgbByState` float16 (2, S, rows, cols, 3) (the specular reference of the same rejected views, neutral and gold, `reference_at_glare`; zero where no view was rejected; on the gilt classes, `specular.SPECULAR_MATERIALS`, only; round 5), `referenceShift` float32 (V − 2, S, cell rows, cell cols, 3) and `referenceCell` (texels per cell) (each colour variant's log shift of the reference per 10 cm cell, from the rejected views), `clipped` uint8 (views dropped as clipped), `censored` uint8 (XGRIDS views whose texture the codec erased there)) and `<work>/mosaic/<id>.json` (gains per view, shares, median GSD, the region product used).
 
 Each candidate view (the union of the 6 best faces and panoramas and the 16 best XGRIDS frames per 2 cm block of a 512-texel tile and its margin) is rendered on the skin's grid at the skin's texel: faces and panoramas at their sweep's pose and warp, XGRIDS frames at their registered affine. Every observation is divided by the light modelled for it (spec §3.2.4): `ρ = rgb / (g ⊙ E_state)`, with `E_state` the state's nine-source light read bilinearly at the texel exactly as the browser reads its light, and `g` the view's gain on this skin (the median over its light texels of its observation over `A ⊙ E_state`, the splat anchor of Task 8). Clipped observations (sRGB 250 or above in any channel: the uplights) are dropped. Glare and window reflections are removed across views (a highlight moves between views, the surface does not): on 8 mm-smoothed de-lit luminance, a view more than 25% above the weighted 35th percentile of the views at that texel is rejected there (where at least 3 views see it), dilated by 3 texels. The rest are blended as the floor's Arm C was (log domain, two bands): the low band (6 cm) is a soft robust mean about the weighted median (τ 0.15) with broad weights (feather × cos obliquity), the high band the robust mean of the 8 sharpest views by GSD⁻⁴, an XGRIDS frame at its edge-equivalent GSD and only where its texture was coded (below). Texels no view observes stay unobserved for Task 10.
 
@@ -6127,6 +6148,8 @@ Its low band still counts. Faint texture (the frieze's painted shading, the wood
 
 A product made under another light model or on another grid is refused with its reason, and the skin keeps the baseline. The light model's identity is `light_model_id`: the SHA-256 of v1's manifest without `evidence`, `createdAt` and `tool`, as canonical JSON. A second `check` of v1, which extends its `evidence`, or a rebuild of the same light at another commit leaves it unchanged, and any change to the light's files changes it (pre-flight fix M11, 8 October: the manifest's own SHA-256 changed with every check).
 
+**The specular reference (round 5, 8 October; `specular.py`).** A highlight's colour is the mirrored light's colour times the surface's specular tint. Gold leaf tints whatever it mirrors gold (F0 1.0 : 0.78 : 0.34); varnish (F0 about 0.044), paint and every other dielectric return the light's own colour. So a highlight is read against what an untinted glossy surface would return toward the same view under the same light, in the same de-lit unit (a view's observation over its gain and its state's light at the texel). `specular.py` computes that from R1a's own model. Each of the nine sources' direct light at a point (the records' `D`, Task 8) is shared among the source's emitter points as R1a's bake weighs them: the chandeliers and the dome's 14 lamps as point lamps at their emitter splats' clusters (the dome's seen only through its opening), the cove's upward line strip, and each window's glass by solid angle. The emitters are found by R1a's own rules: on R1a's tables the dome's lamps fall within 1 cm of its bake's ring and the chandeliers within 0.13 m of its bake's centres (0.121 m at most). Each point is then seen through the untinted GGX lobe of the gilding's roughness (0.40, α 0.16). The bounce is the package's probe cubes per source, read in the mirror direction. Every term is per unit source, so a state's reference is its weights times the terms, over its light. Units: R1a's light reads a Lambertian surface of reflectance ρ as ρ × E, so an untinted mirror under a uniform bounce reads its lobe's albedo (0.97 seen along the normal), as a white diffuser reads 1. The mosaic keeps, on the gilt classes, the reference of exactly the views it rejected as glare (`reference_at_glare`: neutral and gold per texel, and each colour variant's shift per 10 cm cell). Task 13 divides the highlight by it, and Task 12 builds the same reference for the frieze's gilt test. `specular.tint_test` weighs gold leaf against a neutral dielectric on blue against red, with noise measured over blocks and the light model's colour uncertainty, linearly in the measured highlight (the log of the ratio's heavy tail at low signal stopped about 2% of faint varnish tests as inconsistent, against the fit check's 1%: `test_a_faint_varnish_is_never_gold_and_many_tests_raise_the_bar`); Task 12 states the rule.
+
 - [ ] **Step 1: Write the failing tests**
 
 `tools/skins/tests/test_blend.py`:
@@ -6135,7 +6158,7 @@ A product made under another light model or on another grid is refused with its 
 import unittest
 import numpy as np
 import cv2
-from skins import blend as B
+from skins import blend as B, specular as SP
 
 
 class Statistics(unittest.TestCase):
@@ -6168,7 +6191,7 @@ class Glare(unittest.TestCase):
         mask[:] = False
         self.assertEqual(float(np.abs(B.highlight_colour(rgb, mask, rgb[0])).max()), 0.0)
 
-    def test_each_light_states_highlight_is_kept_and_gold_is_blue_below_red_and_green(self):
+    def test_each_light_states_highlight_is_kept(self):
         rgb = np.full((4, 6, 6, 3), 0.2, np.float32)
         rgb[0] += [0.30, 0.22, 0.08]; rgb[1] += [0.26, 0.20, 0.06]; rgb[2] += [0.25, 0.25, 0.25]
         mask = np.zeros((4, 6, 6), bool); mask[:3] = True
@@ -6177,8 +6200,6 @@ class Glare(unittest.TestCase):
         np.testing.assert_allclose(c[0, 0, 0], [0.28, 0.21, 0.07], atol=1e-6)             # day: views 0 and 1
         np.testing.assert_allclose(c[1, 0, 0], [0.25, 0.25, 0.25], atol=1e-6)             # evening: view 2
         self.assertEqual(float(np.abs(c[2]).max()), 0.0)                                  # capture: no view rejected
-        self.assertEqual(B.gold(np.array([[1.0, 0.78, 0.34], [1.0, 0.99, 0.23], [1.0, 1.0, 1.0], [1.0, 0.3, 0.4],
-                                          [0.0, 0.0, 0.0]])).tolist(), [True, True, False, False, False])
 
     def test_two_views_are_too_few_to_judge(self):
         lum = np.full((2, 10, 10), 0.3, np.float32); lum[1] = 0.9
@@ -6278,6 +6299,28 @@ class RegionProduct(unittest.TestCase):
         self.assertNotEqual(identity(files={"tiles/0.records.gz": {"sha256": "2" * 64, "bytes": 10}}), first)   # another light
 
 
+class Reference(unittest.TestCase):
+    def test_the_reference_is_read_over_the_same_rejected_views(self):
+        """One lamp, one cell, three capture views: where only view 1 was rejected, the reference is view 1's less the
+        median of the others; each cell sums the variants' references over its rejected texels' views."""
+        em = SP.Emitters(P=np.array([[0.3, -3.0, 4.6]]), source=np.array([6]), kind=np.array([SP.LAMP]), size=np.ones(1),
+                         windows={}, dome=(0.0, 0.0, 10.0, 0.0))
+        cells = {"P": np.array([[0.3, 0.0, 4.8]]), "n": np.array([[0.0, -1.0, 0.0]]), "D": np.array([[0, 0, 0, 0, 0, 0, 1.0, 0, 0]]),
+                 "cubes": np.zeros((1, 9, 3, 6)), "E": {s: np.full((1, 3), 2.0) for s in B.LIGHT_STATES}}
+        cams = np.array([[0.3, -4.0, 4.4], [0.3, -4.0, 5.0], [2.0, -3.0, 1.5]])
+        W = np.zeros((9, 3)); W[6] = [1.623, 1.0, 0.467]
+        spec = {"emitters": em, "W": {s: W for s in B.LIGHT_STATES}, "sigma": {s: SP.LAMP_COLOUR_SIGMA for s in B.LIGHT_STATES}}
+        glare = np.zeros((3, 4, 4), bool); glare[1, 2, 2] = True
+        ref, sums, wsum = B.reference_at_glare(spec, cells, cams, ["capture"] * 3, np.ones((3, 4, 4), bool), glare, (1, 1), 4, (0, 0))
+        r = SP.view_references(*SP.view_terms(em, cells, cams), cells["E"]["capture"], W, spec["sigma"]["capture"])[:, :, 0]
+        np.testing.assert_allclose(ref[0, 2, 2, 2], r[0, 1] - np.median(r[0, [0, 2]], 0), rtol=1e-6)     # float32
+        np.testing.assert_allclose(ref[1, 2, 2, 2], r[1, 1] - np.median(r[1, [0, 2]], 0), rtol=1e-6)
+        self.assertEqual(float(np.abs(ref[:, :, 0, 0]).max()), 0.0)                     # no view rejected there
+        np.testing.assert_allclose(sums[:, 2, 0], r[:, 1], rtol=1e-9)
+        self.assertEqual(float(wsum[2, 0]), 1.0)
+        self.assertGreater(float(r[0, 1, 1]), 10 * float(r[0, 2, 1]))                  # view 1 mirrors the lamp
+
+
 class Delight(unittest.TestCase):
     def test_gain_is_the_median_ratio_to_the_anchor_lit_by_the_state(self):
         A = np.full((3, 3, 3), 0.5); E = np.full((3, 3, 3), 2.0)
@@ -6289,12 +6332,606 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
+`tools/skins/tests/test_specular.py` (the specular reference and the tint test; round 5, 8 October):
+
+```python
+import math, unittest
+import numpy as np
+from skins import lightstates as LS, specular as SP
+
+GOLD = np.array(SP.GOLD_F0)
+WARM = np.array([1.623, 1.0, 0.467])                     # R1a's measured lamp/daylight ratio
+
+
+def scene():
+    """R1a's layout in small: the window wall at y0 = -10 (the room at larger y), the door wall at y1 = 0.2 facing -y,
+    five windows, two chandeliers at y = -3 and a dome of six lamps round (15, -5) just above the ceiling."""
+    windows = {"W1": (2.0, 4.0, 0.5, 1.0, 4.0, "rect"), "W2": (20.0, 21.0, 0.5, 1.0, 2.0, "rect"),
+               "W3": (22.0, 23.0, 0.5, 1.0, 2.0, "rect"), "W4": (24.0, 25.0, 0.5, 1.0, 2.0, "rect"),
+               "W5": (26.0, 27.0, 0.5, 1.0, 2.0, "rect")}
+    hall = {"x0": -1.0, "x1": 30.0, "y0": -10.0, "y1": 0.2, "ceilingZ": 7.0}
+    rng = np.random.default_rng(1)
+    P3 = np.r_[rng.normal([5.0, -3.0, 4.3], 0.05, (40, 3)), rng.normal([15.0, -3.0, 4.3], 0.05, (40, 3))]
+    chand = np.r_[np.zeros(40, np.int8), np.ones(40, np.int8)]
+    ang = np.radians(np.arange(12.5, 360, 60))                                 # mid-bin, as the crests fall
+    P4 = np.concatenate([np.c_[15 + 3 * np.cos(a) + rng.normal(0, 0.02, 30), -5 + 3 * np.sin(a) + rng.normal(0, 0.02, 30),
+                               np.full(30, 7.2)] for a in ang])
+    return SP.build_emitters(windows, hall, P3, chand, P4)
+
+
+class Emitters(unittest.TestCase):
+    def test_lamps_dome_and_windows_come_from_r1as_geometry(self):
+        em = scene()
+        dome = em.source == LS.SOURCES.index("dome")
+        self.assertEqual(int(dome.sum()), 6)                                       # six crests, six lamps
+        np.testing.assert_allclose(em.dome[:2], [15.0, -5.0], atol=0.05)           # the circle through them
+        centre = em.P[em.source == LS.SOURCES.index("ch_centre")]
+        np.testing.assert_allclose(centre, [[15.0, -3.0, 4.3]], atol=0.05)         # nearest the dome: the centre one
+        self.assertEqual(int((em.source == LS.SOURCES.index("ch_end")).sum()), 1)
+        w1 = (em.source == 0) & (em.kind == SP.WINDOW)
+        self.assertEqual(int(w1.sum()), 12 * 18)
+        self.assertAlmostEqual(float(em.size[w1].sum()), 2.0 * 3.0, places=9)      # the glass's area
+        self.assertTrue(np.allclose(em.P[w1, 1], -10.5))                           # the glass plane, y0 - depth
+
+    def test_shares_sum_to_one_per_source_and_follow_the_bakes_weights(self):
+        em = scene()
+        P = np.array([[5.0, 0.1, 4.8], [0.0, -5.0, 6.9]]); n = np.array([[0, -1.0, 0], [1.0, 0, 0]])
+        sh = SP.shares(em, P, n)
+        for k in range(9):
+            s = sh[:, em.source == k].sum(1)
+            self.assertTrue(np.all((np.abs(s - 1) < 1e-9) | (s == 0)), (k, s))
+        dome = np.flatnonzero(em.source == LS.SOURCES.index("dome"))
+        self.assertGreater(float(sh[0, dome].sum()), 0.99)                         # through the opening: seen
+        self.assertTrue((sh[1, dome] == 0).all())                                  # just under the flat ceiling, far off
+        self.assertAlmostEqual(float(sh[0, em.kind == SP.COVE].sum()), 1.0, places=9)   # above the rail: lit from below
+        near = np.argmax(sh[0] * (em.source == LS.SOURCES.index("ch_end")))
+        np.testing.assert_allclose(em.P[near], [5.0, -3.0, 4.3], atol=0.05)        # the end chandelier lights it
+
+    def test_ggx_and_schlick(self):
+        a = 0.16
+        self.assertAlmostEqual(float(SP.ggx(np.array(1.0), np.array(1.0), np.array(1.0), a)), 1 / (4 * math.pi * a * a), places=9)
+        self.assertEqual(float(SP.ggx(np.array(-0.1), np.array(1.0), np.array(1.0), a)), 0.0)
+        np.testing.assert_allclose(SP.schlick(GOLD, 1.0), GOLD, atol=1e-12)
+        np.testing.assert_allclose(SP.schlick(GOLD, 0.0), [1, 1, 1], atol=1e-12)    # grazing: white
+
+
+class Reference(unittest.TestCase):
+    def test_a_mirror_under_a_uniform_bounce_reads_its_lobe_albedo_in_r1cs_unit(self):
+        em = scene()
+        P = np.array([[10.0, 0.1, 4.8]]); n = np.array([[0, -1.0, 0]])
+        cubes = np.ones((1, 9, 3, 6)); D = np.zeros((1, 9))
+        Tn, Tg = SP.source_terms(em, SP.shares(em, P, n), P, n, D, cubes, np.array([10.0, -5.0, 4.8]))
+        W = np.zeros((9, 3)); W[0] = 1.0                                           # one source, a uniform bounce of 1
+        np.testing.assert_allclose(LS.mix(Tn, W), [[0.97, 0.97, 0.97]], rtol=1e-9) # over the light there, 1: the lobe
+        np.testing.assert_allclose(LS.mix(Tg, W), [0.97 * GOLD], rtol=1e-6)        # seen along the normal: gold's F0
+
+    def test_the_window_is_mirrored_where_the_geometry_says(self):
+        em = scene()
+        P = np.array([[3.0, 0.1, 2.5]]); n = np.array([[0, -1.0, 0]])
+        D = np.zeros((1, 9)); D[0, 0] = 1.0                                       # W1's direct light only
+        sh = SP.shares(em, P, n)
+        mirror = SP.source_terms(em, sh, P, n, D, np.zeros((1, 9, 3, 6)), np.array([3.0, -9.0, 2.5]))[0][0, 0, 0]
+        aside = SP.source_terms(em, sh, P, n, D, np.zeros((1, 9, 3, 6)), np.array([12.0, -3.0, 2.5]))[0][0, 0, 0]
+        self.assertGreater(mirror, 50 * aside)
+
+
+def blocks(kind, source, B=40, seed=0, noise=0.002):
+    """One light state's blocks (h, r), each (V, B, 3), lit by daylight: each block's reference is its lobe weight
+    times the mirrored source's colour ("window", neutral; "lamp", R1a's warm lamp/daylight ratio) over the light, and
+    its measured highlight the surface's tint times the reference plus noise. kind: "gold" (gold leaf, 0.6 x its F0),
+    "varnish" (F0 0.04, neutral) or "none". The colour variants move the reference by 1%."""
+    rng = np.random.default_rng(seed)
+    ref = rng.uniform(0.2, 2.0, (B, 1)) * {"window": np.ones(3), "lamp": WARM}[source]
+    tint = {"gold": 0.6 * GOLD, "varnish": np.full(3, 0.04), "none": np.zeros(3)}[kind]
+    h = tint * ref + rng.normal(0, noise, (B, 3))
+    r = np.stack([ref, ref * GOLD] + [ref * np.exp(0.01 * (i % 3 == 0)) for i in range(len(SP.VARIANTS) - 2)])
+    return np.broadcast_to(h[None], r.shape), r
+
+
+class TintTest(unittest.TestCase):
+    def test_gilt_under_a_neutral_source_is_measured(self):
+        out = SP.tint_test({"day": blocks("gold", "window")})
+        self.assertEqual(out["basis"], "measured")
+        np.testing.assert_allclose(out["states"]["day"]["tauRel"], GOLD / GOLD[0], atol=0.02)
+        self.assertAlmostEqual(out["states"]["day"]["blueRed"], math.log(0.34), places=1)
+
+    def test_gilt_under_a_warm_source_is_measured(self):
+        self.assertEqual(SP.tint_test({"day": blocks("gold", "lamp")})["basis"], "measured")
+
+    def test_varnish_under_a_warm_source_is_refused(self):
+        h, r = blocks("varnish", "lamp", noise=0.0005)
+        seen = h[0].mean(0)
+        self.assertLess(seen[2] / seen[0], 0.55)                                   # its highlight is warm (B/R 0.29)...
+        self.assertLess(seen[2], seen[1])                                          # ...and gold by round 4's rule
+        out = SP.tint_test({"day": (h, r)})
+        self.assertEqual(out["basis"], "refused")
+        np.testing.assert_allclose(out["states"]["day"]["tauRel"], [1, 1, 1], atol=0.05)
+
+    def test_no_highlight_is_a_prior_and_a_misattributed_source_stops(self):
+        self.assertEqual(SP.tint_test({"day": blocks("none", "window")})["basis"], "prior")
+        h, _r = blocks("varnish", "lamp", noise=0.0005)
+        _h, r_window = blocks("varnish", "window", noise=0.0005)                   # the same blocks, the window's reference
+        self.assertEqual(SP.tint_test({"day": (h, r_window)})["basis"], "inconsistent")   # gold-like, but gold does not fit
+
+    def test_a_faint_varnish_is_never_gold_and_many_tests_raise_the_bar(self):
+        found = {}
+        for seed in range(2000):                                                  # faint: the noise near the signal
+            b = SP.tint_test({"day": blocks("varnish", "lamp", seed=seed, noise=0.05)})["basis"]
+            found[b] = found.get(b, 0) + 1
+        self.assertNotIn("measured", found)
+        self.assertLessEqual(found.get("inconsistent", 0), 20)                     # the fit check's 1%: no heavy tail
+        one = SP.tint_test({"day": blocks("gold", "window", noise=0.4)})              # gold, less decisively
+        self.assertEqual((one["basis"], one["bar"]), ("measured", SP.DECISIVE))
+        n = math.ceil(math.exp(one["llr"] - SP.DECISIVE)) + 1                      # enough tests to lift the bar past it
+        many = SP.tint_test({"day": blocks("gold", "window", noise=0.4)}, tests=n)
+        self.assertEqual(many["basis"], "prior")
+        self.assertAlmostEqual(many["bar"], SP.DECISIVE + math.log(n), places=9)
+
+    def test_the_excess_statistic_is_linear_in_the_tint(self):
+        rng = np.random.default_rng(3)
+        ref = rng.uniform(0, 1, (40, 5, 3))
+        ok = np.ones((40, 5), bool)
+        np.testing.assert_allclose(SP.excess_stat(0.3 + 0.5 * ref, ok), 0.5 * SP.excess_stat(ref, ok), rtol=1e-9)
+        ok[:38] = False
+        self.assertTrue(np.isnan(SP.excess_stat(ref, ok)).all())                  # under 3 views
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_blend -v`
-Expected: FAIL, `ImportError: cannot import name 'blend'`.
+Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_blend tests.test_specular -v`
+Expected: FAIL, `ImportError: cannot import name 'blend'` (and `'specular'`).
 
-- [ ] **Step 3: Write the blend module**
+- [ ] **Step 3: Write the specular reference and the blend module**
+
+`tools/skins/skins/specular.py` (round 5, 8 October; `blend.py` imports it):
+
+```python
+"""The specular reference (round 5, 8 October): the highlight an untinted glossy surface at a skin point would return
+toward each view under R1a's own light model, in R1c's de-lit unit (a view's observation over its gain and its light
+state's light at the texel, Task 9). A highlight's colour is the mirrored light's colour times the surface's specular
+tint: gilding tints any light it mirrors gold (gold leaf's F0, 1.0 : 0.78 : 0.34), while varnish, paint and every other
+dielectric return the light's own colour. So the tint is the measured highlight over this reference, and gold metal
+against a neutral dielectric is a test of two hypotheses (tint_test), with no colour threshold.
+
+The light is R1a's nine sources (windows W1-W5 with the capture's sky, the cove strip, the end and centre chandeliers,
+the dome's lamps): each source's direct light at the point (the skin records' D, Task 8) is shared among its emitter
+points as R1a's bake computes it (point lamps at the chandeliers' and the dome's emitter clusters, the cove's upward
+line, each window's glass), and each point is seen through the untinted GGX lobe of the gilding's roughness; the bounce
+(the package's probe cubes per source) is read in the mirror direction. Every term is per unit source, so a light
+state's reference is its weights W (9, 3) times the terms, over that state's light at the point."""
+from __future__ import annotations
+
+import json, math, os, warnings
+from dataclasses import dataclass
+
+import numpy as np
+
+from . import lightstates as LS
+
+GOLD_F0 = (1.0, 0.78, 0.34)    # gold leaf, linear sRGB (the found-light reflectometry track's prior, its table c1)
+GILT_ROUGHNESS = 0.40          # perceptual; GGX alpha = 0.16 (Task 13's prior for gilt timber and the gilded ground)
+# R1a's bake geometry (tools/relight/proof/lt.py:23-24, 235-273; 03_bases.py: point_cubes rmin 0.30, window_cubes 12 x 18)
+COVE_Z, COVE_INSET, COVE_STEP = 4.30, 0.12, 0.05
+DOME_RADIUS = 3.55             # the dome's lamps are seen only through the dome's opening (lt.dome_visible)
+POINT_RMIN = 0.30
+COVE_RMIN = 0.03
+WINDOW_GRID = (12, 18)
+WINDOW_ENTRY = 0.05            # a ray enters a window inside its outline shrunk by 5 cm (R1a windows.ENTRY_GROW)
+# The bounce term's lobe albedo: GGX alpha 0.16, Smith height-correlated G, F = 1, by quadrature: 0.968 seen along the
+# normal, 0.878 at 75 degrees; this line is within 0.02 of it over the views' obliquities (cos >= 0.26).
+ENV_ALBEDO = (0.97, 0.12)
+# The light model's colour uncertainty, per source group: R1a Task 4b's priors on each lamp group's colour (natural log:
+# the cove 0.35, the chandeliers 0.035, the dome 0.10; R1a plan "A colour per lamp group"); the windows set the capture's
+# colour frame (0), and in the E57 states their colour carries the state fit's measured chroma residual (Task 8).
+GROUPS = {"windows": (0, 1, 2, 3, 4), "cove": (5,), "chandeliers": (6, 7), "dome": (8,)}
+LAMP_COLOUR_SIGMA = {"cove": 0.35, "chandeliers": 0.035, "dome": 0.10}
+VARIANTS = ("neutral", "gold") + tuple(f"{g}{c}" for g in GROUPS for c in "RB")
+CELL_M = 0.10                  # the reference's cells, which are the test's blocks
+SPECULAR_MATERIALS = ("lettering", "timber-gilt", "mural")   # the gilt classes: Task 13's GILT_MATERIALS
+MIN_BLOCKS = 5                 # blocks a light state needs before its tint counts
+DECISIVE = math.log(100.0)     # a Bayes factor of 100 (Jeffreys' "decisive"), a convention fixed before any data
+FIT_CHI2 = 6.63                # chi-square, 1 degree of freedom, 99%: the winning hypothesis must fit every state
+SIGNAL_CHI2 = 11.34            # chi-square, 3 degrees of freedom, 99%: a state's tint differs from zero
+LUMA = np.array([0.2126, 0.7152, 0.0722])
+LAMP, WINDOW, COVE = 0, 1, 2   # emitter kinds
+
+
+@dataclass(frozen=True)
+class Emitters:
+    P: np.ndarray        # (m, 3) E57 metres
+    source: np.ndarray   # (m,) index into lightstates.SOURCES
+    kind: np.ndarray     # (m,) LAMP, WINDOW or COVE
+    size: np.ndarray     # (m,) a window sample's glass area (m2), a cove sample's length (m); 1 for a lamp
+    windows: dict        # source index -> (x0, x1, sill, top, arch, y0): the outline at the wall's inner face
+    dome: tuple          # (cx, cy, ceiling z, radius)
+
+
+def inside_outline(x, z, x0, x1, sill, top, arch, grow=0.0):
+    """R1a's window outline (lt.inside_outline): the rectangle and, for an arch, the semicircular head."""
+    x, z = np.asarray(x, np.float64), np.asarray(z, np.float64)
+    a0, a1, z0, z1 = x0 - grow, x1 + grow, sill - grow, top + grow
+    ins = (x > a0) & (x < a1) & (z > z0) & (z < z1)
+    if arch:
+        r, xc = (a1 - a0) / 2, (a0 + a1) / 2
+        zs = z1 - r
+        ins &= (z <= zs) | ((x - xc) ** 2 + (z - zs) ** 2 < r * r)
+    return ins
+
+
+def window_samples(x0, x1, depth, sill, top, arch, y0, grid=WINDOW_GRID):
+    """Cell centres of a grid over the window's glass plane (y0 - depth) inside its outline, and each cell's area."""
+    nx, nz = grid
+    dx, dz = (x1 - x0) / nx, (top - sill) / nz
+    xx, zz = np.meshgrid(x0 + (np.arange(nx) + 0.5) * dx, sill + (np.arange(nz) + 0.5) * dz)
+    ok = inside_outline(xx, zz, x0, x1, sill, top, arch)
+    P = np.c_[xx[ok], np.full(int(ok.sum()), y0 - depth), zz[ok]]
+    return P, np.full(len(P), dx * dz)
+
+
+def cove_samples(x0, x1, y0, y1, step=COVE_STEP, z=COVE_Z, inset=COVE_INSET):
+    """R1a's cove (lt.cove_sources): line sources just above the picture rail along the four walls."""
+    xs, ys = np.arange(x0 + 0.05, x1 - 0.05, step), np.arange(y0 + 0.05, y1 - 0.05, step)
+    pts = [np.c_[xs, np.full(len(xs), y0 + inset)], np.c_[xs, np.full(len(xs), y1 - inset)],
+           np.c_[np.full(len(ys), x0 + inset), ys], np.c_[np.full(len(ys), x1 - inset), ys]]
+    xy = np.concatenate(pts)
+    return np.c_[xy, np.full(len(xy), z)], np.full(len(xy), step)
+
+
+def circle_centre(xy):
+    """The least-squares circle through points (Kasa): its centre (2,)."""
+    x, y = xy[:, 0], xy[:, 1]
+    A = np.c_[2 * x, 2 * y, np.ones(len(x))]
+    c = np.linalg.lstsq(A, x * x + y * y, rcond=None)[0]
+    return c[:2]
+
+
+def dome_lamps(P4):
+    """The dome's lamps from its emitter splats (class 4), R1a's rule (lt.dome_ring_lights): angular clusters about
+    the dome's centre (here the circle through the splats), each lamp the mean of its cluster's splats."""
+    c = circle_centre(P4[:, :2])
+    ang = np.degrees(np.arctan2(P4[:, 1] - c[1], P4[:, 0] - c[0])) % 360
+    h, e = np.histogram(ang, bins=72, range=(0, 360))
+    lamps = []
+    for i in range(72):
+        if h[i] > 0.25 * h.max() and h[i] >= h[(i - 1) % 72] and h[i] >= h[(i + 1) % 72]:
+            m = ((ang - (e[i] - 5)) % 360) < 15
+            if m.sum() > 20:
+                lamps.append(P4[m].mean(0))
+    return np.array(lamps).reshape(-1, 3), c
+
+
+def chandelier_lamps(P3, chand_id, dome_xy):
+    """One point lamp per chandelier (the mean of its emitter splats, class 3, by R1a's chandelier id); the one nearest
+    the dome's centre is the centre chandelier (source ch_centre), the others ch_end."""
+    ids = sorted(int(i) for i in np.unique(chand_id) if i >= 0)
+    P = np.array([P3[chand_id == i].mean(0) for i in ids])
+    centre = int(np.argmin(np.hypot(P[:, 0] - dome_xy[0], P[:, 1] - dome_xy[1])))
+    src = np.where(np.arange(len(P)) == centre, LS.SOURCES.index("ch_centre"), LS.SOURCES.index("ch_end"))
+    return P, src
+
+
+def build_emitters(windows, hall, P3, chand_id, P4):
+    """windows: {name: (x0, x1, depth, sill, top, kind)} (R1a's config, the package's frames); hall: R1a's hallE57
+    (x0, x1, y0, y1, ceilingZ); P3, chand_id: the chandeliers' emitter splats; P4: the dome's."""
+    parts = []
+    outlines = {}
+    for name, (x0, x1, depth, sill, top, kind) in windows.items():
+        k = LS.SOURCES.index(name)
+        P, a = window_samples(x0, x1, depth, sill, top, kind == "arch", hall["y0"])
+        parts.append((P, np.full(len(P), k), np.full(len(P), WINDOW), a))
+        outlines[k] = (x0, x1, sill, top, kind == "arch", hall["y0"])
+    Pc, lc = cove_samples(hall["x0"], hall["x1"], hall["y0"], hall["y1"])
+    parts.append((Pc, np.full(len(Pc), LS.SOURCES.index("cove")), np.full(len(Pc), COVE), lc))
+    Pd, centre = dome_lamps(np.asarray(P4, np.float64))
+    parts.append((Pd, np.full(len(Pd), LS.SOURCES.index("dome")), np.full(len(Pd), LAMP), np.ones(len(Pd))))
+    Pch, sch = chandelier_lamps(np.asarray(P3, np.float64), np.asarray(chand_id), centre)
+    parts.append((Pch, sch, np.full(len(Pch), LAMP), np.ones(len(Pch))))
+    return Emitters(P=np.concatenate([p[0] for p in parts]), source=np.concatenate([p[1] for p in parts]).astype(np.int64),
+                    kind=np.concatenate([p[2] for p in parts]).astype(np.int64), size=np.concatenate([p[3] for p in parts]),
+                    windows=outlines, dome=(float(centre[0]), float(centre[1]), float(hall["ceilingZ"]), DOME_RADIUS))
+
+
+def load_emitters(cfg):
+    """The emitters from R1a's config (windows, hall) and work tables (the finest level's positions, classes and
+    chandelier ids: R1a Task 1's npy tables, which R1d reads too)."""
+    codec, _reference = LS.relight_modules(cfg)
+    with open(cfg.paths["relightConfig"], encoding="utf-8") as f:
+        room = json.load(f)["room"]
+    npy = os.path.join(cfg.paths["relightWork"], "npy")
+    pos = np.load(os.path.join(npy, "splats_pos.npy"), mmap_mode="r")
+    cls = np.load(os.path.join(npy, "geom_cls.npy"))
+    chand = np.load(os.path.join(npy, "geom_chand_id.npy"))
+    m3, m4 = cls == codec.CLASS_CH_EMITTER, cls == codec.CLASS_DOME_EMITTER
+    return build_emitters({k: tuple(v) for k, v in room["windows"].items()}, room["hallE57"],
+                          np.asarray(pos[m3], np.float64), chand[m3], np.asarray(pos[m4], np.float64))
+
+
+def cell_texels(texel):
+    """A skin's reference cell (and gilt test block) in texels: CELL_M at its texel."""
+    return max(1, int(round(CELL_M / float(texel))))
+
+
+def spec_inputs(cfg, states):
+    """The reference's inputs for a run: the emitters (load_emitters), each light state's weights W (9, 3) from Task 8's
+    states.json (the capture's R1a refit, the day and evening fits), and each state's colour uncertainty: R1a Task 4b's
+    priors on the lamp groups' colours in every state; the windows set the capture's colour frame (0) and in the E57
+    states carry their fit's measured chroma residual (states.json fit.<state>.chromaSigma)."""
+    names = ("day", "evening", "capture")
+    sigma = {s: {**LAMP_COLOUR_SIGMA, "windows": 0.0 if s == "capture" else float(states["fit"][s]["chromaSigma"])} for s in names}
+    return {"emitters": load_emitters(cfg), "W": {s: np.asarray(states[s]["W"], np.float64) for s in names}, "sigma": sigma}
+
+
+def shares(em, P, n):
+    """(N, m): each emitter point's share of its source's direct light at points P (N, 3) with normals n, as R1a's bake
+    weighs them (lamps 1/r^2 from 0.30 m, the dome's only through its opening; the cove upward-Lambertian per metre;
+    a window's glass by solid angle where the ray enters inside the outline shrunk by 5 cm), summing to 1 per source
+    (0 where the source gives no light)."""
+    P, n = np.asarray(P, np.float64), np.asarray(n, np.float64)
+    V = em.P[None] - P[:, None]                                         # point -> emitter
+    r2 = (V * V).sum(-1)
+    L = V / np.sqrt(np.maximum(r2, 1e-12))[..., None]
+    cos_i = np.maximum((L * n[:, None]).sum(-1), 0)
+    w = np.zeros(r2.shape)
+    lamp = em.kind == LAMP
+    w[:, lamp] = cos_i[:, lamp] / np.maximum(r2[:, lamp], POINT_RMIN ** 2)
+    dome = em.source == LS.SOURCES.index("dome")
+    if dome.any():
+        cx, cy, cz, rad = em.dome
+        dz = em.P[dome, 2][None] - P[:, 2:3]
+        t = np.clip((cz - P[:, 2:3]) / np.maximum(dz, 1e-3), 0, 1)
+        X = P[:, None, :2] + (em.P[None, dome, :2] - P[:, None, :2]) * t[..., None]
+        seen = (np.hypot(X[..., 0] - cx, X[..., 1] - cy) < rad) | (P[:, 2:3] >= cz)
+        w[:, dome] *= seen
+    cove = em.kind == COVE
+    up = (P[:, 2] > COVE_Z - 0.02)[:, None]
+    w[:, cove] = up * np.maximum(-L[:, cove, 2], 0) * cos_i[:, cove] * em.size[cove] / np.maximum(r2[:, cove], COVE_RMIN ** 2)
+    for k, (x0, x1, sill, top, arch, y0) in em.windows.items():
+        sel = (em.kind == WINDOW) & (em.source == k)
+        Lw = L[:, sel]
+        cos_g = np.maximum(-Lw[..., 1], 0)                               # the glass faces into the room (+y)
+        t = (y0 - P[:, 1:2]) / np.where(np.abs(Lw[..., 1]) > 1e-9, Lw[..., 1], -1e-9)
+        xe, ze = P[:, 0:1] + t * Lw[..., 0], P[:, 2:3] + t * Lw[..., 2]
+        enters = (P[:, 1:2] > y0) & inside_outline(xe, ze, x0, x1, sill, top, arch, -WINDOW_ENTRY)
+        w[:, sel] = cos_i[:, sel] * cos_g * em.size[sel] / np.maximum(r2[:, sel], 1e-6) * enters
+    out = np.zeros_like(w)
+    for k in np.unique(em.source):
+        sel = em.source == k
+        tot = w[:, sel].sum(1, keepdims=True)
+        out[:, sel] = np.where(tot > 0, w[:, sel] / np.maximum(tot, 1e-300), 0)
+    return out
+
+
+def ggx(nl, nv, nh, alpha):
+    """The untinted GGX specular BRDF (F = 1): D G / (4 n.l n.v), Smith's height-correlated G."""
+    a2 = alpha * alpha
+    D = a2 / (math.pi * (nh * nh * (a2 - 1) + 1) ** 2)
+    lam = lambda c: (-1 + np.sqrt(1 + a2 * (1 - c * c) / np.maximum(c * c, 1e-12))) / 2
+    G = 1 / (1 + lam(nl) + lam(nv))
+    return np.where((nl > 0) & (nv > 0), D * G / np.maximum(4 * nl * nv, 1e-12), 0.0)
+
+
+def schlick(F0, c):
+    """Schlick's Fresnel for a specular colour F0 (3,) at cosines c (...) -> (..., 3)."""
+    c = np.clip(np.asarray(c, np.float64), 0, 1)[..., None]
+    F0 = np.asarray(F0, np.float64)
+    return F0 + (1 - F0) * (1 - c) ** 5
+
+
+def cube_dir(cubes, d):
+    """Ambient cubes (N, ..., 6) read in directions d (N, 3): R1a's cube_eval with the direction as the normal."""
+    d = np.asarray(d, np.float64)
+    sh = (-1,) + (1,) * (cubes.ndim - 2)
+    x, y, z = (d[:, i].reshape(sh) for i in range(3))
+    return (np.maximum(x, 0) ** 2 * cubes[..., 0] + np.maximum(-x, 0) ** 2 * cubes[..., 1] + np.maximum(y, 0) ** 2 * cubes[..., 2]
+            + np.maximum(-y, 0) ** 2 * cubes[..., 3] + np.maximum(z, 0) ** 2 * cubes[..., 4] + np.maximum(-z, 0) ** 2 * cubes[..., 5])
+
+
+def source_terms(em, share, P, n, D, cubes, cam, alpha=GILT_ROUGHNESS ** 2):
+    """Per unit source j (white, weight 1), the glossy radiance an untinted surface (neutral) and gold leaf (gold,
+    Schlick from GOLD_F0) at P (N, 3), normal n, return toward the camera centre cam (3,), in the light model's units
+    (R1a's light is normalised so that a Lambertian surface of reflectance rho reads rho x E: so a BRDF f under an
+    emitter point's light E_p reads pi f E_p, and a mirror under the bounce's ambient cube reads the cube itself): the
+    direct light D (N, 9) shared among the emitter points (share (N, m)) through the GGX lobe, and the bounce, the
+    probe cubes (N, 9, 3, 6) read in the mirror direction, times the lobe's albedo. Divided by a state's light, a
+    perfect white diffuser reads 1 and an untinted mirror under a uniform bounce reads 1. (T_neutral, T_gold), each
+    (N, 9, 3); zero where the camera is behind the surface."""
+    P, n = np.asarray(P, np.float64), np.asarray(n, np.float64)
+    v = np.asarray(cam, np.float64)[None] - P
+    v /= np.maximum(np.linalg.norm(v, axis=1, keepdims=True), 1e-12)
+    nv = (v * n).sum(1)
+    Lp = em.P[None] - P[:, None]
+    Lp /= np.maximum(np.linalg.norm(Lp, axis=-1, keepdims=True), 1e-12)
+    H = Lp + v[:, None]
+    H /= np.maximum(np.linalg.norm(H, axis=-1, keepdims=True), 1e-12)
+    nl, nh, vh = (Lp * n[:, None]).sum(-1), (H * n[:, None]).sum(-1), (H * v[:, None]).sum(-1)
+    f = ggx(nl, nv[:, None], nh, alpha) * share                            # (N, m), per unit of the source's direct light
+    Fg = schlick(GOLD_F0, vh)                                              # (N, m, 3)
+    N = len(P)
+    Tn, Tg = np.zeros((N, 9, 3)), np.zeros((N, 9, 3))
+    for k in range(9):
+        sel = em.source == k
+        if not sel.any():
+            continue
+        Tn[:, k] = (math.pi * f[:, sel].sum(1) * D[:, k])[:, None]
+        Tg[:, k] = math.pi * (f[:, sel, None] * Fg[:, sel]).sum(1) * D[:, k][:, None]
+    m = 2 * nv[:, None] * n - v                                            # the mirror direction
+    lobe = np.clip(ENV_ALBEDO[0] - ENV_ALBEDO[1] * (1 - nv), 0, 1)[:, None, None]
+    env = cube_dir(np.asarray(cubes, np.float64), m) * lobe                # (N, 9, 3)
+    Tn += env
+    Tg += env * schlick(GOLD_F0, nv)[:, None, :]
+    front = (nv > 0)[:, None, None]
+    return Tn * front, Tg * front
+
+
+def state_weights(W, variant, sigma):
+    """A light state's weights W (9, 3) for one variant: unchanged for neutral and gold; for "<group><R|B>", that
+    group's channel scaled by exp(sigma[group]), the light model's colour uncertainty (numerator only: what the view
+    mirrors)."""
+    W = np.asarray(W, np.float64).copy()
+    if variant in ("neutral", "gold"):
+        return W
+    group, c = variant[:-1], "RGB".index(variant[-1])
+    W[list(GROUPS[group]), c] *= math.exp(sigma.get(group, 0.0))
+    return W
+
+
+def excess_stat(r, ok):
+    """(N, 3): the 90th percentile over the valid views of r (K, N, 3) less their median (frieze.view_excess's statistic
+    on a linear value); NaN under 3 views."""
+    x = np.where(np.asarray(ok, bool)[..., None], r, np.nan)
+    enough = np.asarray(ok, bool).sum(0) >= 3
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        hi, med = np.nanpercentile(x, 90, axis=0), np.nanmedian(x, axis=0)
+    return np.where(enough[:, None], hi - med, np.nan)
+
+
+def highlight_stat(r, ok, rejected):
+    """(N, 3): the median of r (K, N, 3) over the valid views rejected as glare less the median over the other valid
+    views (blend.highlight_colour's statistic); NaN where no view was rejected or none kept."""
+    ok, rejected = np.asarray(ok, bool), np.asarray(rejected, bool)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return (np.nanmedian(np.where((ok & rejected)[..., None], r, np.nan), axis=0)
+                - np.nanmedian(np.where((ok & ~rejected)[..., None], r, np.nan), axis=0))
+
+
+def cells_at(geom, light, E, rr, cc):
+    """The reference's cells at texel coordinates (rr, cc) (centres, flattened alike): each one's point on the height
+    field, the skin's normal, and the direct light D, the bounce cubes and each light state's light (E: {state: (lh,
+    lw, 3)}) read bilinearly from the light grid (Task 8's npz), as the browser reads its light."""
+    rr, cc = np.asarray(rr, np.float64).ravel(), np.asarray(cc, np.float64).ravel()
+    lx, ly = LS.texel_light_coords(geom, float(light["texel"]), cc, rr)
+    lh, lw = light["D"].shape[:2]
+    return {"P": geom.points(cc, rr), "n": np.repeat(np.asarray(geom.normal, np.float64)[None], len(rr), 0),
+            "D": LS.bilinear(np.asarray(light["D"], np.float64), lx, ly),
+            "cubes": LS.bilinear(np.asarray(light["cubes"], np.float64).reshape(lh, lw, -1), lx, ly).reshape(-1, 9, 3, 6),
+            "E": {s: LS.bilinear(np.asarray(e, np.float64), lx, ly) for s, e in E.items()}}
+
+
+def view_terms(em, cells, cams):
+    """source_terms for every camera (K, 3) at the cells ({P, n, D, cubes}): (T_neutral, T_gold), each (K, N, 9, 3).
+    Emitter points with no share at any cell (behind the wall, the cove below a point) contribute exactly nothing and
+    are left out."""
+    sh = shares(em, cells["P"], cells["n"])
+    keep = sh.max(0) > 0
+    em = Emitters(P=em.P[keep], source=em.source[keep], kind=em.kind[keep], size=em.size[keep], windows=em.windows, dome=em.dome)
+    sh = sh[:, keep]
+    K, N = len(cams), len(cells["P"])
+    Tn, Tg = np.zeros((K, N, 9, 3)), np.zeros((K, N, 9, 3))
+    for i in range(K):
+        Tn[i], Tg[i] = source_terms(em, sh, cells["P"], cells["n"], cells["D"], cells["cubes"], cams[i])
+    return Tn, Tg
+
+
+def view_references(Tn, Tg, E, W, sigma):
+    """Every view's reference per variant for one light state: (len(VARIANTS), K, N, 3) = the state's weights W
+    (state_weights per variant) times the terms (Tn, or Tg for gold), over the state's light E (N, 3) at the cells."""
+    Es = np.maximum(np.asarray(E, np.float64), 1e-12)
+    return np.stack([np.einsum("knjc,jc->knc", Tg if v == "gold" else Tn, state_weights(W, v, sigma)) / Es[None]
+                     for v in VARIANTS])
+
+
+def references_from_terms(Tn, Tg, E, view_states, valid, W_states, sigma_states, stat="excess", rejected=None):
+    """The reference per variant, light state and cell: (len(VARIANTS), S, N, 3), S the states of W_states in order;
+    NaN where too few views. E: {state: (N, 3)} the state's light at the cells; view_states (K,); valid (K, N), each
+    view valid over at least half of a cell; sigma_states: {state: {group: sigma}}. stat "excess" (Task 12) or
+    "highlight" (Task 9, with rejected (K, N): the views rejected as glare over at least half of a cell)."""
+    vs = np.asarray(view_states)
+    states = list(W_states)
+    out = np.full((len(VARIANTS), len(states), Tn.shape[1], 3), np.nan)
+    for si, s in enumerate(states):
+        sel = vs == s
+        if not sel.any():
+            continue
+        r = view_references(Tn[sel], Tg[sel], E[s], W_states[s], sigma_states.get(s, {}))
+        ok = np.asarray(valid, bool)[sel]
+        for vi in range(len(VARIANTS)):
+            out[vi, si] = excess_stat(r[vi], ok) if stat == "excess" else highlight_stat(r[vi], ok, np.asarray(rejected, bool)[sel])
+    return out
+
+
+def log_chroma(v):
+    """(..., 3) positive -> (..., 2): ln G/R and ln B/R."""
+    v = np.asarray(v, np.float64)
+    return np.stack([np.log(v[..., 1] / v[..., 0]), np.log(v[..., 2] / v[..., 0])], -1)
+
+
+def state_evidence(h, r):
+    """One light state's evidence from its blocks: h, r (V, B, 3), each block's measured highlight and reference per
+    variant (VARIANTS' order; h is the same for every variant). The tint is the ratio of sums tau = sum h / sum r per
+    channel (the neutral variant), its covariance C the ratio estimator's over the blocks (the delta method) plus the
+    light model's, the shift each colour variant gives. The state carries a signal when tau differs from zero
+    (chi-square(3), SIGNAL_CHI2) with red positive. The hypotheses are read on blue against red: x = (tau_R, tau_B) is
+    fitted by generalised least squares under C as a scale t >= 0 times u = (1, 1) for a dielectric (its Fresnel
+    reflectance is flat) and u = (1, rho) for gold leaf, rho the gold reference's own blue-to-red ratio over the
+    neutral's (about 0.34; Schlick toward white at grazing views); each squared distance, x'C^-1 x - max(0, u'C^-1 x)^2
+    / u'C^-1 u, is chi-square(1) under its hypothesis. The test is linear in the measured highlight: a faint blue
+    channel's noise cannot mimic gold's low blue, as the log of the ratio's heavy tail did (round 5). Blue against red
+    separates gold leaf (ln rho about -1.07) and the other gilding metals (brass -0.77, copper -0.57; linear sRGB F0,
+    Hoffman 2015) from every dielectric (0); green against red varies 0.25 ln among those metals and carries the light
+    model's least certain colour, the lamps' red-green balance (R1a's chandelier and dome emitters differ by 0.24 ln), so
+    it is reported (tauRel), not tested. blueRed, ln(tau_B / tau_R), and sigma, its delta-method error, are reported."""
+    h, r = np.asarray(h, np.float64), np.asarray(r, np.float64)
+    ok = np.isfinite(h).all((0, 2)) & np.isfinite(r).all((0, 2))
+    B = int(ok.sum())
+    out = {"blocks": B}
+    if B < MIN_BLOCKS:
+        return {**out, "signal": False, "reason": "too few blocks"}
+    h, r = h[:, ok], r[:, ok]
+    H, R, Rg = h[0].sum(0), r[0].sum(0), r[1].sum(0)
+    if (R <= 0).any() or (Rg <= 0).any():
+        return {**out, "signal": False, "reason": "the model predicts no highlight here"}
+    tau = H / R
+    e = h[0] - tau[None] * r[0]
+    C = B / (B - 1) * (e.T @ e) / np.outer(R, R)
+    C = C + sum(np.outer(t - tau, t - tau) for t in (h[v].sum(0) / r[v].sum(0) for v in range(2, len(VARIANTS))))
+    chi0 = float(tau @ np.linalg.inv(C) @ tau)
+    rho = float(Rg[2] / Rg[0] * R[0] / R[2])
+    out.update({"tau": tau.tolist(), "tauRel": (tau / tau[0]).tolist() if tau[0] > 0 else None, "goldRel": (Rg / R / (Rg[0] / R[0])).tolist(),
+                "chi2Zero": chi0, "goldBlueRed": math.log(rho)})
+    if chi0 < SIGNAL_CHI2 or tau[0] <= 0:
+        return {**out, "signal": False, "reason": "no highlight the reference explains in red"}
+    x, C2 = tau[[0, 2]], C[np.ix_((0, 2), (0, 2))]
+    Ci = np.linalg.inv(C2)
+
+    def d2(u):
+        u = np.asarray(u, np.float64)
+        return float(x @ Ci @ x - max(0.0, float(u @ Ci @ x)) ** 2 / float(u @ Ci @ u))
+    d2n, d2g = d2((1.0, 1.0)), d2((1.0, rho))
+    y = sd = None
+    if tau[2] > 0:
+        g = np.array([-1 / tau[0], 1 / tau[2]])
+        y, sd = math.log(tau[2] / tau[0]), math.sqrt(float(g @ C2 @ g))
+    return {**out, "signal": True, "blueRed": y, "sigma": sd, "d2Neutral": d2n, "d2Gold": d2g, "llr": 0.5 * (d2n - d2g)}
+
+
+def tint_test(by_state, tests=1):
+    """Gold metal against a neutral dielectric from every light state's blocks ({state: (h, r)}, each (V, B, 3)). The
+    log-likelihood ratio (gold over neutral) is summed over the states with a signal. "measured": at least the bar,
+    DECISIVE + ln(tests), and gold fits every such state (its squared distance at most FIT_CHI2); "refused": at most
+    -DECISIVE, and neutral fits every such state; "inconsistent": decisive, but the winner does not fit some state (the
+    model, the attribution or the metal is not what the test assumes: stop and report); "prior": not decisive, or no
+    state shows a highlight the reference explains (the views cannot separate the hypotheses). tests: how many tests the
+    caller makes on one skin (Task 13 tests each of a skin's highlights): calling gold needs ln(tests) more, so the chance
+    that any of them calls a dielectric gold stays near one in a hundred (Markov's bound on a likelihood ratio, whose
+    mean under the dielectric is 1, and the union bound); refusing needs no more, since a refused highlight is matte."""
+    states = {s: state_evidence(h, r) for s, (h, r) in by_state.items()}
+    used = [d for d in states.values() if d.get("signal")]
+    llr = float(sum(d["llr"] for d in used))
+    bar = DECISIVE + math.log(max(int(tests), 1))
+    if used and llr >= bar:
+        basis = "measured" if all(d["d2Gold"] <= FIT_CHI2 for d in used) else "inconsistent"
+    elif used and llr <= -DECISIVE:
+        basis = "refused" if all(d["d2Neutral"] <= FIT_CHI2 for d in used) else "inconsistent"
+    else:
+        basis = "prior"
+    return {"basis": basis, "llr": llr, "bar": bar, "states": states}
+```
 
 `tools/skins/skins/blend.py`:
 
@@ -6309,7 +6946,7 @@ import hashlib, json, math, os, time
 import cv2
 import numpy as np
 
-from . import frames as F, lightstates as LS, views as VW, xgrids as XG
+from . import frames as F, lightstates as LS, specular as SP, views as VW, xgrids as XG
 from .xbin import deadzone_amplitude
 
 EPS = 0.004
@@ -6326,8 +6963,6 @@ LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)
 LUMA601 = np.array([0.299, 0.587, 0.114], np.float32)   # the frames' coded Y, exactly: Task 6A converts at full range
 HIGH_K = 8                   # views fused in the high band
 LIGHT_STATES = ("day", "evening", "capture")   # views.view_state's: the E57 day and evening sweeps, the XGRIDS capture
-GOLD_BR_MAX = 0.55           # gold: blue below 0.55 of red (gold leaf's F0: 0.34) and below green
-GOLD_MIN_STATES = 2          # gold judged from at least two light states' highlights (round 4, O-2)
 CENSOR_SIGMAS_PX = (0.6, 2.4)  # the encoder's erasing band, in the frame's own pixels (proposal.md 3.9)
 CENSOR_WINDOW_PX = 2.0       # the local energy's Gaussian window (about 4 pixels across)
 REGION_SCHEMA = "venviewer.skin-region.v1"
@@ -6420,8 +7055,8 @@ def glare_masks(lum_low, valid, weights):
 def highlight_colour(rgb_low, mask, est_low):
     """The colour of the rejected highlights per texel: the median, over the views rejected as glare there, of the
     view's low-passed de-lit RGB minus the estimate's (linear albedo units; 0 where no view was rejected). Gilding
-    tints any source it mirrors gold; varnish and paint return the source's own colour, neutral after de-lighting only
-    where the source has the light's colour (highlight_by_state, Task 13)."""
+    tints whatever it mirrors gold; varnish and paint return the mirrored light's own colour, so Task 13 reads the
+    highlight against the specular reference of the same views (reference_at_glare; round 5)."""
     m = np.asarray(mask, bool)
     any_ = m.any(0)
     d = np.where(m[..., None], np.asarray(rgb_low, np.float32) - np.asarray(est_low, np.float32)[None], np.nan)
@@ -6431,19 +7066,54 @@ def highlight_colour(rgb_low, mask, est_low):
 
 def highlight_by_state(rgb_low, mask, est_low, view_states):
     """highlight_colour over each of LIGHT_STATES' views alone: (S, H, W, 3), 0 where no view of that state was
-    rejected. A dielectric's highlight is white after de-lighting only where the mirrored source has the state's light
-    colour: a warm lamp mirrored in varnish under the window-dominated day state reads gold-like (round 4, O-2)."""
+    rejected. Its colour is the mirrored light's times the surface's tint: a warm lamp mirrored in varnish reads
+    gold-like where the state's light is daylight (round 4, O-2), which only the reference tells apart (round 5)."""
     st, m = np.asarray(view_states), np.asarray(mask, bool)
     return np.stack([highlight_colour(rgb_low, m & (st == s)[:, None, None], est_low) for s in LIGHT_STATES])
 
 
-def gold(rgb):
-    """Whether highlight colours (..., 3) are gold: red positive, blue below GOLD_BR_MAX of red and below green. Gold
-    leaf's F0 (1.0, 0.78, 0.34) passes and a white highlight does not. Green is not ranked against red: a measured gilt
-    highlight put it within 1% of red (the fireplace wall's evening state, round 4)."""
-    e = np.asarray(rgb, np.float64)
-    r, g, b = e[..., 0], e[..., 1], e[..., 2]
-    return (r > 0) & (b < GOLD_BR_MAX * r) & (b < g)
+def spec_cells(geom, light, E, cr, cc):
+    """The specular reference's cells over rows cr and columns cc of the skin's cell grid (specular.cell_texels squares
+    from texel (0, 0)): specular.cells_at at their centres, clamped into the skin."""
+    cell = SP.cell_texels(geom.texel)
+    rr, cc_ = np.meshgrid(np.minimum((np.asarray(cr) + 0.5) * cell, geom.rows - 0.5),
+                          np.minimum((np.asarray(cc) + 0.5) * cell, geom.cols - 0.5), indexing="ij")
+    return SP.cells_at(geom, light, E, rr, cc_)
+
+
+def reference_at_glare(spec, cells, cams, vstates, valid, glare, shape, cell, off):
+    """The specular reference where views were rejected as glare (round 5). Each view's references (specular.VARIANTS:
+    neutral, gold and the light model's colour variants) at the tile's cells (shape (rows, cols) of cells, the first at
+    texel offset `off` from the tile's corner), read bilinearly at every texel with a rejected view, through
+    highlight_colour's statistic per light state: the median over that state's rejected views less the median over its
+    other valid views. Returns the neutral and gold references (2, S, H, W, 3), and per cell the variants' references
+    summed over the rejected views, weighted by how many of the cell's texels rejected each (V, S, cells, 3), and the
+    weights (S, cells): Task 13 takes each colour variant's shift of the reference from them."""
+    Tn, Tg = SP.view_terms(spec["emitters"], cells, cams)
+    ncr, ncc = shape
+    H, W = glare.shape[1:]
+    rr, cc = np.nonzero(glare.any(0))
+    out = np.zeros((2, len(LIGHT_STATES), H, W, 3), np.float32)
+    sums = np.zeros((len(SP.VARIANTS), len(LIGHT_STATES), ncr * ncc, 3)); wsum = np.zeros((len(LIGHT_STATES), ncr * ncc))
+    if not len(rr):
+        return out, sums, wsum
+    x, y = (cc + 0.5 - off[1]) / cell - 0.5, (rr + 0.5 - off[0]) / cell - 0.5
+    ci = (np.clip(np.floor((rr - off[0]) / cell).astype(np.int64), 0, ncr - 1) * ncc
+          + np.clip(np.floor((cc - off[1]) / cell).astype(np.int64), 0, ncc - 1))
+    st = np.asarray(vstates)
+    for si, s in enumerate(LIGHT_STATES):
+        sel = np.flatnonzero(st == s)
+        if not len(sel):
+            continue
+        ref = SP.view_references(Tn[sel], Tg[sel], cells["E"][s], spec["W"][s], spec["sigma"].get(s, {}))   # (V, K, cells, 3)
+        rej, ok = glare[sel][:, rr, cc], valid[sel][:, rr, cc]
+        for v in (0, 1):
+            at = np.stack([LS.bilinear(ref[v, k].reshape(ncr, ncc, 3), x, y) for k in range(len(sel))])
+            out[v, si, rr, cc] = np.nan_to_num(SP.highlight_stat(at, ok, rej))
+        w = np.stack([np.bincount(ci, (rej[k] & ok[k]).astype(np.float64), minlength=ncr * ncc) for k in range(len(sel))])
+        sums[:, si] += np.einsum("kn,vknc->vnc", w, ref)
+        wsum[si] += w.sum(0)
+    return out, sums, wsum
 
 
 def blend(X, valid, wlow, whigh, sigma_low_px):
@@ -6533,8 +7203,13 @@ def _gains(src, geom, keys, light, E, cfg, reg):
     return gains
 
 
-def mosaic_skin(cfg, src, geom, light, states):
+def mosaic_skin(cfg, src, geom, light, states, spec=None):
+    """spec: specular.spec_inputs (the emitters, each light state's weights and colour uncertainty), used on the gilt
+    classes (specular.SPECULAR_MATERIALS) only (round 5)."""
     E = light_fields(light, states)
+    spec = spec if geom.material in SP.SPECULAR_MATERIALS else None
+    cell = SP.cell_texels(geom.texel)
+    ncr, ncc = -(-geom.rows // cell), -(-geom.cols // cell)
     lt = float(light["texel"])
     with np.load(os.path.join(cfg.paths["work"], "views", f"{geom.id}.npz")) as z:
         keys, top = [str(k) for k in z["keys"]], z["top"]
@@ -6549,10 +7224,12 @@ def mosaic_skin(cfg, src, geom, light, states):
            "nviews": np.zeros((geom.rows, geom.cols), np.uint8), "gsd": np.full((geom.rows, geom.cols), np.inf, np.float16),
            "glare": np.zeros((geom.rows, geom.cols), np.uint8), "excess": np.zeros((geom.rows, geom.cols), np.float16),
            "excessRgbByState": np.zeros((len(LIGHT_STATES), geom.rows, geom.cols, 3), np.float16),
+           "referenceRgbByState": np.zeros((2, len(LIGHT_STATES), geom.rows, geom.cols, 3), np.float16),
            "clipped": np.zeros((geom.rows, geom.cols), np.uint8), "censored": np.zeros((geom.rows, geom.cols), np.uint8),
            "recovered": np.zeros((geom.rows, geom.cols), bool)}
     sig = SIG_LOW_M / geom.texel
     margin = int(math.ceil(max(64, 2.2 * sig)))
+    rsums = np.zeros((len(SP.VARIANTS), len(LIGHT_STATES), ncr * ncc, 3)); rw = np.zeros((len(LIGHT_STATES), ncr * ncc))
     gsd_cache = {}
     for t0 in range(0, geom.rows, TILE):
         for u0 in range(0, geom.cols, TILE):
@@ -6615,8 +7292,21 @@ def mosaic_skin(cfg, src, geom, light, states):
             out["glare"][t0:t1, u0:u1] = gcount[sl]; out["excess"][t0:t1, u0:u1] = excess[sl].astype(np.float16)
             est_low = cv2.GaussianBlur(np.maximum(np.exp(lo) - EPS, 0).astype(np.float32), (0, 0), GLARE_SMOOTH_M / geom.texel)
             out["excessRgbByState"][:, t0:t1, u0:u1] = highlight_by_state(rgb_low, glare_raw, est_low, vstates)[(slice(None),) + sl].astype(np.float16)
+            if spec is not None:                                             # the reference of the same views (round 5)
+                core = np.zeros(glare_raw.shape, bool); core[(slice(None),) + sl] = glare_raw[(slice(None),) + sl]
+                cr = np.arange(t0 // cell, (t1 - 1) // cell + 1); ccs = np.arange(u0 // cell, (u1 - 1) // cell + 1)
+                cams = np.array([src.view(k).centre for k in tile_keys], np.float64)
+                ref, sums, wsum = reference_at_glare(spec, spec_cells(geom, light, E, cr, ccs), cams, vstates, valid, core,
+                                                     (len(cr), len(ccs)), cell, (cr[0] * cell - R0, ccs[0] * cell - C0))
+                out["referenceRgbByState"][:, :, t0:t1, u0:u1] = ref[(slice(None), slice(None)) + sl].astype(np.float16)
+                idx = (cr[:, None] * ncc + ccs[None, :]).ravel()
+                rsums[:, :, idx] += sums; rw[:, idx] += wsum
             out["clipped"][t0:t1, u0:u1] = clipped_count[sl]
             out["censored"][t0:t1, u0:u1] = censored_count[sl]
+    with np.errstate(invalid="ignore", divide="ignore"):                   # each colour variant's log shift (round 5)
+        shift = np.log(rsums[2:] / rsums[:1])
+    out["referenceShift"] = np.where(np.isfinite(shift), shift, 0.0).reshape(len(SP.VARIANTS) - 2, len(LIGHT_STATES), ncr, ncc, 3).astype(np.float32)
+    out["referenceCell"] = np.array(cell)
     region = geom.region > 0
     report = {"skin": geom.id, "observedShare": round(float(out["observed"][region].mean()), 4),
               "gsdMmP50": round(float(np.median(out["gsd"][out["observed"]].astype(np.float32))) * 1000, 3) if out["observed"].any() else None,
@@ -6636,6 +7326,7 @@ def cmd_mosaic(cfg, rest) -> int:
     surfaces = F.read_surfaces(cfg.paths["surfaces"])
     with open(os.path.join(cfg.paths["work"], "light", "states.json"), encoding="utf-8") as f:
         states = json.load(f)
+    spec = SP.spec_inputs(cfg, states)                                       # the emitters and the states' weights (round 5)
     folder = os.path.join(cfg.paths["work"], "mosaic")
     os.makedirs(folder, exist_ok=True)
     for sid in VW.geometry_ids(cfg.paths["work"]):
@@ -6644,7 +7335,7 @@ def cmd_mosaic(cfg, rest) -> int:
         geom = VW.load_geometry(cfg.paths["work"], sid, surfaces)
         with np.load(os.path.join(cfg.paths["work"], "light", f"{sid}.npz")) as z:
             light = {k: z[k] for k in z.files}
-        out, report = mosaic_skin(cfg, src, geom, light, states)
+        out, report = mosaic_skin(cfg, src, geom, light, states, spec)
         folder_product = None if products is None else os.path.join(products, sid, "region", "v1")
         if folder_product is not None and os.path.exists(os.path.join(folder_product, "region.json")):
             try:
@@ -6677,14 +7368,14 @@ COMMANDS["mosaic"] = Command(run=_lazy("blend", "cmd_mosaic"),
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_blend -v`
-Expected: PASS, 13 tests.
+Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_blend tests.test_specular -v`
+Expected: PASS, 25 tests (14 blend, 11 specular).
 
 - [ ] **Step 6: Commit the code**
 
 ```bash
 cd D:/claude/real-hall/repo
-git add tools/skins/skins/blend.py tools/skins/skins/__main__.py tools/skins/tests/test_blend.py
+git add tools/skins/skins/blend.py tools/skins/skins/specular.py tools/skins/skins/__main__.py tools/skins/tests/test_blend.py tools/skins/tests/test_specular.py
 git diff --cached --stat
 git commit -m "feat(skins): the de-lit mosaic: every view divided by its modelled light, glare rejected across views, two-band blend (T-639 R1c)
 
@@ -7273,15 +7964,21 @@ Expected: `PASS`; `index.json` lists the SSW wainscot bays the cable crosses (`e
 - Test: `tools/skins/tests/test_frieze.py`, `tools/skins/tests/test_venue.py`
 
 **Interfaces:**
-- Consumes: Task 5 as amended (a frieze skin's measured bottom edge and band row: `views.SkinGeometry.frieze_bottom`, `frieze_band_row`), Task 6A (`views.render(..., raw=True)`: the sampled bytes of every view, the XGRIDS frames decoded from the raw H.264), Task 6 (`views.render`, `load_sources`, `load_geometry`, `view_state`, `srgb_to_linear`, `Sources.kind_of`, `Sources.view`, `Sources.sweep_of`, `Sources.warps`; `frames.read_surfaces`, `Surface.name`, `Surface.to_local`), Task 7 (`xgrids._block_points`; `<work>/views/<id>.npz` `keys`; `<work>/xgrids/<id>.json` frames with `affine`, `effectiveGsdMm`, `nominalGsdMm`), Task 8 (`lightstates.bilinear`, `texel_light_coords`; `<work>/light/<id>.npz`, `states.json`), Task 9 (`blend.blend`, `blend.light_fields`, `blend._view_gsd_blocks`, `blend.EPS`, `blend.SIG_LOW_M`, `blend.TILE`, `blend.LIGHT_STATES`, `blend.gold`, `blend.GOLD_MIN_STATES`; `<work>/mosaic/<id>.json` `gains`), Task 10 (`heal.band_rows`, `heal.copy_fill`, `heal.inpaint_fill`, `heal.PROV_*` with `PROV_PHOTO`; `<work>/heal/<id>.npz` `albedo`, `prov`); the venue's photographs, read-only, `<paths.frieze>/venue-photos/` (`sources.json`: `source`, `credit`, `copyright`, `photos[]` with `craft`, `file`, `url`, `size_px`, `sha256`; the 14 JPEGs); `room.registrationTexel` (0.004 m).
-- Produces (`frieze.py`): `Z_LO = 6`, `Z_HI = 249`, `CLIP = 250`, `SHARP_M = 0.004` (the research's `EFF_OK`), `CLEAN_V = (4.60, 5.30)`, `PROBE_Q = 80`, `OVERLAP_M = 0.02`, `STRETCH_M = 1.0`, `SPREAD_M = 0.01`, `HOLDOUT_V0 = 4.62`, `HOLDOUT_H = 0.14`, `HOLDOUT_STRETCHES = (("door-f3", 9.55), ("end_xmax-f1", 1.60), ("window-f3", 14.10))`, `HOLDOUT_GATE = {"de00Mean": 7.5, "de00P95": 12.5, "ssim": 0.93, "gradCorr": 0.90}` (every stretch), `HOLDOUT_MEAN_GATE = {"de00Mean": 5.0, "de00P95": 9.0, "ssim": 0.95, "gradCorr": 0.94}` (the mean of the three); `FACE_TOP_Z = 235`, `FACE_TOP_WEIGHT = 0.25`, `SRGB_G` (sRGB as a log curve: `crf_linear(z, SRGB_G)` is sRGB's linear value), `LIGHT_BLOCK_M = 0.05`, `LIGHT_LAMBDAS` (60 decay lengths, log-spaced from 0.01 to 2.0 m), `LIGHT_ACCEPT = 0.75`, `LIGHT_MIN_ROWS = 40`, `LIGHT_FLOOR = 0.02`, `BLUE_CURVES = ("srgb", "fitted")` (pre-flight fixes, 8 October); `crf_solve(Z (P, K) int16 (−1 missing), lam=40.0) -> (g (256,) float64, lnE (K,), lnL (P,))` (Debevec and Malik 1997; `g(128) = 0` and `g(64) = ln(lin(64) / lin(128))`, so the curve agrees with sRGB in the mid-tones); `channel_valid(raw_c (h, w)) -> bool (h, w)` (`Z_LO ≤ Z ≤ Z_HI` and no value ≥ `CLIP` within one texel, this channel only); `crf_linear(raw_c, g) -> (h, w)` (`lin(128) × exp(g(Z))`, interpolated between whole codes: linear in the same units as `views.srgb_to_linear`); `family_curve(crfs, family, c) -> (256,)` (the fitted XGRIDS curve, or `SRGB_G` for the E57 faces, which have no single curve, and for XGRIDS blue where the evidence chose sRGB, `crfs["blue"]`); `value_weight(family, raw_c) -> (h, w)` (`FACE_TOP_WEIGHT` for a face's codes from `FACE_TOP_Z` up, else 1); `h_line(v, vs, d, p) -> (n,)` (the frieze research's trough-uplight profile, `light.py` `h_of`); `fit_vertical_light(v (k,), r (k, 3), rows (k,) bool, edge) -> dict` (`{accepted, reason, edge, lam, lamIndex, k, kFitted, offset, cvNone, cvLight, v2pct, rows}`: one decaying exponential `c_c + k_c exp(−(v − edge)/λ)` fitted to the residuals by linear least squares at each decay length of the scan, kept only when λ is inside the scan and it predicts held-out `LIGHT_BLOCK_M` row blocks with at most `LIGHT_ACCEPT` × the error of no light; no parameter is bounded; `v2pct` its 2% height); `light_log(fit, v) -> (rows, 3)` (zero without a kept light, defined on every row); `apply_light(rho (rows, w, 3), v, fit) -> rho`; `light_of(npz) -> dict` (the light a frieze npz stores) (pre-flight fix F1, 8 October); `transfer_detail(lnrho (h, w, 3), has_sharp (h, w, 3) bool, clean (h, w) bool) -> (lnrho, borrowed (h, w, 3) bool)`; `classify(valid_any (h, w, 3), valid_sharp (h, w, 3)) -> uint8 (h, w)`; `lowpass_views(X (n, h, w), valid, sigma_px) -> (n, h, w)` (each view low-passed, a normalised convolution; NaN where invalid); `view_excess(lp (n, h, w), q_hi=90) -> (h, w)` (the excess, in linear terms, of the `q_hi`-th percentile view over the median; NaN under 3 views); `view_spread(X (n, h, w), valid (n, h, w) bool, sigma_px, q_hi=90, states=None) -> (spread (h, w), excess (h, w), excess by state (S, h, w) | None)` (amended 7 October: per texel, 1.4826 × the median absolute deviation across the valid views of each view's low-passed de-lit log value, and `view_excess`; NaN under 3 views; round 4, 8 October: given each view's light state, also the excess over each of `blend.LIGHT_STATES`' views alone); `frieze_ids(work) -> list[str]` (skins of style `frieze`); `render_stack(cfg, src, geom, keys, reg, r0, r1, c0, c1, cache) -> list[dict]` (per E57 face or XGRIDS view: `key`, `family` `"face" | "xgrids"`, `state`, `raw`, `valid`, `cos`, `gsd` per texel); `fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread_px=None) -> (lnrho, valid_any, valid_sharp, spread | None, excess by state | None)` (the spread of green; the excess per light state and channel, (S, h, w, 3), round 4); `recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, cols=None, *, damage=None, light_v=None, cache=None, spread=False) -> dict` (`albedo` (h, w, 3) float32, `prov` (h, w) uint8, `light`, `borrowedShare`, `v` (h,), and with `spread` `spread` (h, w), `excessByState` (S, h, w, 3); the residual light is fitted on the rows from the skin's measured edge up, each row's 80th-percentile ground relative to the clean frieze's, and divided out on every row); `srgb_to_lab(rgb) -> (…, 3)`; `ciede2000(lab1, lab2) -> (n,)`; `ssim_luma(a, b) -> float`; `gradient_correlation(a, b, mask) -> float`; `telea_baseline(hidden, mask, scale) -> (h, w, 3)` (the holdout's Telea baseline on the 8-bit display, as the research computed it); files `<work>/frieze/crf.json` (`{ "xgrids": {"g": [[256] × 3], "parts": n} }`: the E57 faces get no curve), `<work>/frieze/<id>.npz` (`albedo` float16 over rows `[rows[0], rows[1])`, which start `OVERLAP_M` above the band; `prov` uint8 over the same rows; `rows` int [2]; `band0` int, the band's first row; `spread` float16 (h, w) and `excessByState` float16 (S, h, w, 3) (each light state's views alone, round 4) over rows `spreadRows` int [2], from v = 5.30 m to the skin's bottom; `lightStates` (`blend.LIGHT_STATES`, checked by `frieze-venue`); `fused` float16 (h, w, 3), the recovery's own rows over `spreadRows` (the reference of `frieze-venue`'s seams up the wall); `lightEdge`, `lightLam` (the scan's best λ, NaN only with too few rows; read only when `lightAccepted`), `lightK` float64 (3,) and `lightAccepted`: the residual light), `<work>/frieze/<id>.json` (with `light`, and `lightAtTopLn`: the light divided out at the skin's top row, which the cornice's splats above keep; Task 23 measures that seam), `<work>/frieze/band.json`, `<evidence>/frieze-holdout.json` (`frieze-holdout-blue-<variant>.json` for a comparison run, `--blue`); `blue_suffix(rest) -> str`; `choose_blue(holdout, venue) -> {choice, photographs, de00Mean, holdoutMean, gates, lostGates, lostColour}` and the command `python -m skins frieze-blue` writing `<work>/frieze/blue.json` (the XGRIDS blue curve, chosen by the evidence, round 3); `frieze-holdout` and `frieze` take `--blue srgb|fitted` and otherwise read `blue.json`.
-- Produces (`venue.py`): `PHOTO_DIR = "venue-photos"`, `CREDIT_ID = "trades-house-virtual-museum"`, `WALLS`, `REG_CORR_MIN = 0.60`, `MATCH_V = (4.50, 5.36)`, `ECC_V = (4.55, 5.35)`, `MIN_GOOD = 12`, `RANSAC_PX = 6.0`, `COVER_ERODE_PX = 2`, `FEATHER_M = 0.05`, `SPLIT_V = 4.95`, `DETAIL_OFF_GROUPS = (0, 3)`, `LOWER_M = 0.05`, `BAND_M = 0.15`, `RAMP_M = 0.02`, `DETAIL_FLOOR = 0.5`, `GILT_TRUST_M = 0.05`, `GILT_MIN = 200`, `GILT_HIGHLIGHT_MIN = 1.4` (round 4), `REG_STRETCH_M = 1.0`, `REG_MARGIN_M = 0.25`, `REG_COVER_MIN = 0.5`, `REG_JOIN_MAX_M = 0.005`, `EXPECTED_WALLS` (the experiment's registrations), `VENUE_GATE = {"registration": 0.60, "colourMean": 3.6, "colourP95": 7.8}`, `MATTE_MAX = 0.5`, `MATTE_ERODE_PX = 1.5`, `TONE_SIGMA_PX = 1.0`, `TONE_MIN = 500`, `ROW_MIN = 40`, `LIGHT_TRUST_M = GILT_TRUST_M`, `ITERATIONS = 3`, `SEAM_W = 0.02`, `SEAM_STEP = 0.01`, `SEAM_MIN = 200`, `SEAM_FLOOR = 0.5` (pre-flight fix F1, 8 October); `load_photos(folder) -> (sources: dict, photos: list[dict])` (`ValueError` unless every file has the SHA-256 `sources.json` lists); `lay_band(img, prov, frieze, v) -> (img, prov)` (Task 12's recovered band feathered into Task 10's healed albedo, which is first divided by the frieze's residual light, `frieze.light_of`, on every row; moved here from Task 13's `_lay_band`); `gilt_direction(gilt_dl, paint_dl) -> {giltTexels, paintTexels, checked, difference, pass}` (checked only where measured gilt is under the photograph, on any wall; round 4); `skin_to_wall(geom) -> (M (2, 3), Minv (2, 3))` (texel coordinates ↔ the wall's (u, v) metres); `wall_grid(geoms, texel) -> dict` (`u0`, `v1`, `texel`, `width`, `height`); `wall_reference(geoms, images, grid) -> (ref (H, W, 3) float32 linear, valid (H, W) bool)`; `rows_mask(grid, v_range) -> (H, W) bool`; `band_pass(g, lo_px) -> float32`; `match_photo(photo_bgr, ref_bgr8, mask) -> (H (3, 3) | None, inliers)`; `refine(photo_bgr, ref_bgr8, H, mask) -> (H, corr)`; `refine_stretches(photo_bgr, W, H) -> list[{u0, u1, cover, H, corr, accepted}]` (ECC per metre of the wall the photograph covers, a metre only where the photograph covers `REG_COVER_MIN` of its clean-frieze reference); `join_disagreement(stretches, photo_shape, grid) -> float` (metres between neighbouring metres' homographies where they cross-fade); `register(photo_bgr, walls, hint=None) -> dict` (`wall` or None, `H` (SIFT's), `stretches` (the accepted metres, each with its refined `H` and `corr`), `inliers`, `corr` (the best metre's), `pixelM`, `tried`); `photo_on_skin(photo, stretches, geom, grid) -> (img (rows, cols[, C]) float32, cover (rows, cols) bool)` (each metre drawn by its own homography, cross-faded over `REG_MARGIN_M`); `gilt_evidence(variable {state: (3,) | None}, paint {state: (3,) | None}) -> {basis, states}` (`measured`: a highlight, the variable class's excess at least `GILT_HIGHLIGHT_MIN` × the paint's in luma, in at least `blend.GOLD_MIN_STATES` light states, and every highlight's own colour gold by `blend.gold`; `refused`: a highlight not gold; `prior`: fewer; round 4, 8 October); `gilt_from_spread(spread, excess_by_state (S, h, w, 3), trusted, texel) -> (m (h, w) float32, report)` (the report's `basis` `measured`, `prior`, `refused` or `none`; the mask kept for the first two, zero otherwise); `gilt_from_photo(photo_lo, m, train, apply) -> (m, used)`; `detail_weights(v, vb, keep_lower, keep_upper) -> (rows,)`; `ground_tone(lo_ours, gilt, region, v, vb, texel) -> (cols, 3) | None`; `masked_blur_log(img, cover, sigma) -> (lo, hi)`; `blend_skin(ours, prov, photos, gilt, w_row, band, restored, region, v, vb, texel) -> (albedo, prov, info)` (each photograph `{img, cover, px, colour}`: one without `colour` gives detail and outline only; `info`: `lo`, `weights` (the colour photographs'), `photoShare`, `photoDrawnShare`); `seam_steps(lo, weights, rows, region, texel) -> dict`; `at_photo_resolution(img, px) -> img`; `zone_gradient_correlation(ours, photo, zone, px) -> float | None`; `colour_deltas(ours, photo, zone, px) -> (n,)` (unchanged); `viewdep_from_spread(spread, trusted, texel) -> (map (h, w) float32, report)`; `matte_mask(viewdep, cover, px) -> bool (h, w)`; `tone_fit_skins(parts, px) -> {a, g, r, texels} | None`; `tone_fit(ours, photo, sel, px)`; `tone_apply(tone, photo) -> img`; `row_residual(a, b, sel) -> (r (rows, 3), n)`; `row_residual_skins(parts) -> (v, r)`; `photo_to_frame_skins(skins, edge, tone_rows, light_rows) -> {tone, light, images} | None`; `colour_check_skins(skins, edge) -> (deltas, result | None)`; `product_frame_skins(skins, edge)`; `colour_check(ours, photo, matte, v, edge, px)`; `product_frame(ours, photo, matte, v, edge, px)`; `vertical_seam(rho, ref, sel, v, lines, control=(4.62, 5.28), gaps=None) -> {controlP95, controlMedian, lines: {name: {v, gap, controlP95, de00, logStep, pass}}, pass}` (`gaps`: a line's fits leave out a zone where two processings mix, round 3); `feather_gap(v, r0, b0) -> (centre, (below, above))` (lay_band's feather as a seam line) (the experiment's Appendix A, with its references to `venue` made local; pre-flight fix F1, 8 October); the command `python -m skins frieze-venue [--hints <json: craft → wall>]` writing `<work>/venue/<id>.npz` for every frieze skin (`albedo` float16 (rows, cols, 3) over the whole skin, `prov` uint8 with `PROV_PHOTO`, `gilt` float16 (rows, cols) in [0, 1], `giltBasis` (`measured`, `prior`, `refused` or `none`; round 4), `photos` the crafts used, `bandRow`), `<work>/venue/photos.json` (the credit and every photograph's registration with its metres, its tone, its light and its verdict) and `<evidence>/frieze-venue.json` (every check and gate, with `giltBasis` per skin, `giltPrior` and `giltRefused` listed and `measuredGiltTexels` per wall; `frieze-venue-blue-<variant>.json` for a comparison run, `--blue`).
+- Consumes: Task 5 as amended (a frieze skin's measured bottom edge and band row: `views.SkinGeometry.frieze_bottom`, `frieze_band_row`), Task 6A (`views.render(..., raw=True)`: the sampled bytes of every view, the XGRIDS frames decoded from the raw H.264), Task 6 (`views.render`, `load_sources`, `load_geometry`, `view_state`, `srgb_to_linear`, `Sources.kind_of`, `Sources.view`, `Sources.sweep_of`, `Sources.warps`; `frames.read_surfaces`, `Surface.name`, `Surface.to_local`), Task 7 (`xgrids._block_points`; `<work>/views/<id>.npz` `keys`; `<work>/xgrids/<id>.json` frames with `affine`, `effectiveGsdMm`, `nominalGsdMm`), Task 8 (`lightstates.bilinear`, `texel_light_coords`; `<work>/light/<id>.npz`, `states.json`), Task 9 (`blend.blend`, `blend.light_fields`, `blend._view_gsd_blocks`, `blend.EPS`, `blend.SIG_LOW_M`, `blend.TILE`, `blend.LIGHT_STATES`; `<work>/mosaic/<id>.json` `gains`; `specular.spec_inputs`, `cells_at`, `cell_texels`, `view_terms`, `references_from_terms`, `tint_test`, `VARIANTS`: the gilt test's specular reference and the test itself, round 5), Task 10 (`heal.band_rows`, `heal.copy_fill`, `heal.inpaint_fill`, `heal.PROV_*` with `PROV_PHOTO`; `<work>/heal/<id>.npz` `albedo`, `prov`); the venue's photographs, read-only, `<paths.frieze>/venue-photos/` (`sources.json`: `source`, `credit`, `copyright`, `photos[]` with `craft`, `file`, `url`, `size_px`, `sha256`; the 14 JPEGs); `room.registrationTexel` (0.004 m).
+- Produces (`frieze.py`): `Z_LO = 6`, `Z_HI = 249`, `CLIP = 250`, `SHARP_M = 0.004` (the research's `EFF_OK`), `CLEAN_V = (4.60, 5.30)`, `PROBE_Q = 80`, `OVERLAP_M = 0.02`, `STRETCH_M = 1.0`, `SPREAD_M = 0.01`, `HOLDOUT_V0 = 4.62`, `HOLDOUT_H = 0.14`, `HOLDOUT_STRETCHES = (("door-f3", 9.55), ("end_xmax-f1", 1.60), ("window-f3", 14.10))`, `HOLDOUT_GATE = {"de00Mean": 7.5, "de00P95": 12.5, "ssim": 0.93, "gradCorr": 0.90}` (every stretch), `HOLDOUT_MEAN_GATE = {"de00Mean": 5.0, "de00P95": 9.0, "ssim": 0.95, "gradCorr": 0.94}` (the mean of the three); `FACE_TOP_Z = 235`, `FACE_TOP_WEIGHT = 0.25`, `SRGB_G` (sRGB as a log curve: `crf_linear(z, SRGB_G)` is sRGB's linear value), `LIGHT_BLOCK_M = 0.05`, `LIGHT_LAMBDAS` (60 decay lengths, log-spaced from 0.01 to 2.0 m), `LIGHT_ACCEPT = 0.75`, `LIGHT_MIN_ROWS = 40`, `LIGHT_FLOOR = 0.02` (pre-flight fixes, 8 October); `CURVES = ("srgb", "srgb", "srgb")` (every channel of every family linearised by sRGB), `NOTE_Z = (200, 220, 240, 249)` (the measured notes' codes), `MID_Z = (30, 180)` (the curve fit's mid-tones), `TRUST_M = 0.05`, `CLASS_MIN = 200`, `BLOCK_CLASS_MIN = 20` (the spread's two classes and the gilt test's blocks) (round 5); `crf_solve(Z (P, K) int16 (−1 missing), iters=3) -> (g (256,) float64, lnE (K,), lnL (P,))` (the research's staged fit, its `crf.py:57-120`: exposures and radiances from the mid-tones under sRGB, then the departure per 4-code bin of at least 30 codes, zero in the mid-tones; `g(128) = 0` and `g(64) = ln(lin(64) / lin(128))`; round 5, replacing a joint Debevec–Malik fit that flattened on real frames; its curves are measured notes only); `channel_valid(raw_c (h, w)) -> bool (h, w)` (`Z_LO ≤ Z ≤ Z_HI` and no value ≥ `CLIP` within one texel, this channel only); `crf_linear(raw_c, g) -> (h, w)` (`lin(128) × exp(g(Z))`, interpolated between whole codes: linear in the same units as `views.srgb_to_linear`); `family_curve(crfs, family, c) -> (256,)` (`SRGB_G` for every family and channel: `crfs["curves"]` names it, and any other record is refused; round 5); `require_srgb(curves, what)` (`ValueError` unless the record is `CURVES`: frieze-venue's refusal); `curve_notes({label: [g_R, g_G, g_B], each (256,) or None}) -> {label: {code: [R, G, B]}}` (each fitted curve's departure from sRGB at `NOTE_Z`, ln); `value_weight(family, raw_c) -> (h, w)` (`FACE_TOP_WEIGHT` for a face's codes from `FACE_TOP_Z` up, else 1); `h_line(v, vs, d, p) -> (n,)` (the frieze research's trough-uplight profile, `light.py` `h_of`); `fit_vertical_light(v (k,), r (k, 3), rows (k,) bool, edge) -> dict` (`{accepted, reason, edge, lam, lamIndex, k, kFitted, offset, cvNone, cvLight, v2pct, rows}`: one decaying exponential `c_c + k_c exp(−(v − edge)/λ)` fitted to the residuals by linear least squares at each decay length of the scan, kept only when λ is inside the scan and it predicts held-out `LIGHT_BLOCK_M` row blocks with at most `LIGHT_ACCEPT` × the error of no light; no parameter is bounded; `v2pct` its 2% height); `light_log(fit, v) -> (rows, 3)` (zero without a kept light, defined on every row); `apply_light(rho (rows, w, 3), v, fit) -> rho`; `light_of(npz) -> dict` (the light a frieze npz stores) (pre-flight fix F1, 8 October); `transfer_detail(lnrho (h, w, 3), has_sharp (h, w, 3) bool, clean (h, w) bool) -> (lnrho, borrowed (h, w, 3) bool)`; `classify(valid_any (h, w, 3), valid_sharp (h, w, 3)) -> uint8 (h, w)`; `lowpass_views(X (n, h, w), valid, sigma_px) -> (n, h, w)` (each view low-passed, a normalised convolution; NaN where invalid); `view_excess(lp (n, h, w), q_hi=90) -> (h, w)` (the excess, in linear terms, of the `q_hi`-th percentile view over the median; NaN under 3 views); `view_spread(X (n, h, w), valid (n, h, w) bool, sigma_px, q_hi=90, states=None) -> (spread (h, w), excess (h, w), excess by state (S, h, w) | None)` (amended 7 October: per texel, 1.4826 × the median absolute deviation across the valid views of each view's low-passed de-lit log value, and `view_excess`; NaN under 3 views; round 4, 8 October: given each view's light state, also the excess over each of `blend.LIGHT_STATES`' views alone); `two_classes(spread, ok) -> (variable (h, w) bool, the low class's median log spread, the high class's) | None` (Otsu on the log spread over `ok`; None when either class has under `CLASS_MIN` texels: the gilded ground, the view-dependence map and `matte_points` split this way; round 5); `frieze_ids(work) -> list[str]` (skins of style `frieze`); `render_stack(cfg, src, geom, keys, reg, r0, r1, c0, c1, cache) -> list[dict]` (per E57 face or XGRIDS view: `key`, `family` `"face" | "xgrids"`, `state`, `raw`, `valid`, `cos`, `gsd` per texel, and `centre`, the camera's, for the specular reference, round 5); `fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread_px=None) -> (lnrho, valid_any, valid_sharp, spread | None, excess by state | None, every | None)` (the spread of green; the excess per light state and channel, (S, h, w, 3), round 4; both over the views valid in all three channels, `every` (n, h, w) bool: a highlight clips red first, so a view clipped in one channel counts in none, round 5); `frieze_reference(spec, geom, light, E, views, counts, total, r0, cell, nbc) -> (len(specular.VARIANTS), S, blocks, 3)` (the gilt test's specular reference per 10 cm block, a view counting in a block where it is valid in all channels over at least half its texels; round 5); `recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, cols=None, *, damage=None, light_v=None, cache=None, spread=False, spec=None) -> dict` (`albedo` (h, w, 3) float32, `prov` (h, w) uint8, `light`, `borrowedShare`, `v` (h,), and with `spread` `spread` (h, w), `excessByState` (S, h, w, 3), and with `spec` too (`specular.spec_inputs`) `reference` (V, S, block rows, block columns, 3) and `referenceCell` (round 5); the residual light is fitted on the rows from the skin's measured edge up, each row's 80th-percentile ground relative to the clean frieze's, and divided out on every row); `srgb_to_lab(rgb) -> (…, 3)`; `ciede2000(lab1, lab2) -> (n,)`; `ssim_luma(a, b) -> float`; `gradient_correlation(a, b, mask) -> float`; `telea_baseline(hidden, mask, scale) -> (h, w, 3)` (the holdout's Telea baseline on the 8-bit display, as the research computed it); files `<work>/frieze/crf.json` (`{curves: ["srgb", "srgb", "srgb"], basis, fittedMinusSrgb: {all, matte: {code: [R, G, B]}}, parts: [matte fits per channel], perPart: [{skin, state, all, matte}]}`: the curves every product uses and the measured notes, the XGRIDS parts' fitted curves' departures from sRGB per part, a frieze skin and light state, and their median; round 5), `<work>/frieze/<id>.npz` (`albedo` float16 over rows `[rows[0], rows[1])`, which start `OVERLAP_M` above the band; `prov` uint8 over the same rows; `rows` int [2]; `band0` int, the band's first row; `spread` float16 (h, w) and `excessByState` float16 (S, h, w, 3) (each light state's views alone, round 4) over rows `spreadRows` int [2], from v = 5.30 m to the skin's bottom; `lightStates` (`blend.LIGHT_STATES`, checked by `frieze-venue`); `fused` float16 (h, w, 3), the recovery's own rows over `spreadRows` (the reference of `frieze-venue`'s seams up the wall); `lightEdge`, `lightLam` (the scan's best λ, NaN only with too few rows; read only when `lightAccepted`), `lightK` float64 (3,) and `lightAccepted`: the residual light; round 5: `reference` float32 (V, S, block rows, block columns, 3), `referenceCell` int, `referenceVariants` (`specular.VARIANTS`, checked by `frieze-venue`) and `curves`, the response curves it was made with), `<work>/frieze/<id>.json` (with `light`, `curves`, and `lightAtTopLn`: the light divided out at the skin's top row, which the cornice's splats above keep; Task 23 measures that seam), `<work>/frieze/band.json`, `<evidence>/frieze-holdout.json` (with `curves`); `matte_points(Zc (P, K)) -> bool (P,)` (one part's points whose views agree in one channel: the lower class, by `two_classes`, of each point's lift, its largest residual under sRGB over its median, about each view's exposure and the point's radiance from the mid-tones; round 5); the command `frieze-crf` writes `crf.json`, and `frieze-holdout`, `frieze` and `frieze-venue` read its `curves` (`_crfs`, refused unless sRGB).
+- Produces (`venue.py`): `PHOTO_DIR = "venue-photos"`, `CREDIT_ID = "trades-house-virtual-museum"`, `WALLS`, `REG_CORR_MIN = 0.60`, `MATCH_V = (4.50, 5.36)`, `ECC_V = (4.55, 5.35)`, `MIN_GOOD = 12`, `RANSAC_PX = 6.0`, `COVER_ERODE_PX = 2`, `FEATHER_M = 0.05`, `SPLIT_V = 4.95`, `DETAIL_OFF_GROUPS = (0, 3)`, `LOWER_M = 0.05`, `BAND_M = 0.15`, `RAMP_M = 0.02`, `DETAIL_FLOOR = 0.5`, `GILT_TRUST_M = frieze.TRUST_M` (0.05), `GILT_MIN = frieze.CLASS_MIN` (200), `REG_STRETCH_M = 1.0`, `REG_MARGIN_M = 0.25`, `REG_COVER_MIN = 0.5`, `REG_JOIN_MAX_M = 0.0055` (measured, round 5, m-4), `EXPECTED_WALLS` (the experiment's registrations), `VENUE_GATE = {"registration": 0.60, "colourMean": 3.6, "colourP95": 7.8}`, `MATTE_MAX = 0.5`, `MATTE_ERODE_PX = 1.5`, `TONE_SIGMA_PX = 1.0`, `TONE_MIN = 500`, `ROW_MIN = 40`, `LIGHT_TRUST_M = GILT_TRUST_M`, `ITERATIONS = 3`, `SEAM_W = 0.02`, `SEAM_STEP = 0.01`, `SEAM_MIN = 200`, `SEAM_FLOOR = 0.5` (pre-flight fix F1, 8 October); `load_photos(folder) -> (sources: dict, photos: list[dict])` (`ValueError` unless every file has the SHA-256 `sources.json` lists); `lay_band(img, prov, frieze, v) -> (img, prov)` (Task 12's recovered band feathered into Task 10's healed albedo, which is first divided by the frieze's residual light, `frieze.light_of`, on every row; moved here from Task 13's `_lay_band`); `gilt_direction(gilt_dl, paint_dl) -> {giltTexels, paintTexels, checked, difference, pass}` (checked only where measured gilt is under the photograph, on any wall; round 4); `skin_to_wall(geom) -> (M (2, 3), Minv (2, 3))` (texel coordinates ↔ the wall's (u, v) metres); `wall_grid(geoms, texel) -> dict` (`u0`, `v1`, `texel`, `width`, `height`); `wall_reference(geoms, images, grid) -> (ref (H, W, 3) float32 linear, valid (H, W) bool)`; `rows_mask(grid, v_range) -> (H, W) bool`; `band_pass(g, lo_px) -> float32`; `match_photo(photo_bgr, ref_bgr8, mask) -> (H (3, 3) | None, inliers)`; `refine(photo_bgr, ref_bgr8, H, mask) -> (H, corr)`; `refine_stretches(photo_bgr, W, H) -> list[{u0, u1, cover, H, corr, accepted}]` (ECC per metre of the wall the photograph covers, a metre only where the photograph covers `REG_COVER_MIN` of its clean-frieze reference); `join_disagreement(stretches, photo_shape, grid) -> float` (where neighbouring metres cross-fade, how far the blended mapping departs from the nearer metre's own homography: the distance between the two homographies' points times the smaller weight over their sum, its 95th percentile in metres; round 5, m-4); `register(photo_bgr, walls, hint=None) -> dict` (`wall` or None, `H` (SIFT's), `stretches` (the accepted metres, each with its refined `H` and `corr`), `inliers`, `corr` (the best metre's), `pixelM`, `tried`); `photo_on_skin(photo, stretches, geom, grid) -> (img (rows, cols[, C]) float32, cover (rows, cols) bool)` (each metre's photograph coordinates weighted 1 over its own metre and cross-faded into its neighbours' over `REG_MARGIN_M`: the coordinates are blended, not the images, so two disagreeing homographies move the drawing smoothly instead of doubling it; round 5, m-4); `gilt_blocks(excess_by_state (S, h, w, 3), variable, paint, reference (V, S, block rows, block columns, 3), row0, cell) -> {state: (h (V, B, 3), ref (V, B, 3))}` (each 10 cm block's measured highlight, the variable class's median excess less the paint class's, each class with at least `frieze.BLOCK_CLASS_MIN` texels, beside its reference per variant; round 5); `gilt_from_spread(spread, excess_by_state, reference, row0, cell, trusted, texel) -> (m (h, w) float32, report)` (the split by `frieze.two_classes`; the report `specular.tint_test`'s, with `basis` `measured`, `prior`, `refused`, `inconsistent` or `none`, `llr`, and per light state `blocks`, `blueRed`, `goldBlueRed`, `sigma`, `d2Gold`, `d2Neutral`, `tauRel`; the mask kept for measured and prior, zero otherwise; round 5); `gilt_from_photo(photo_lo, m, train, apply) -> (m, used)`; `detail_weights(v, vb, keep_lower, keep_upper) -> (rows,)`; `ground_tone(lo_ours, gilt, region, v, vb, texel) -> (cols, 3) | None`; `masked_blur_log(img, cover, sigma) -> (lo, hi)`; `blend_skin(ours, prov, photos, gilt, w_row, band, restored, region, v, vb, texel) -> (albedo, prov, info)` (each photograph `{img, cover, px, colour}`: one without `colour` gives detail and outline only; `info`: `lo`, `weights` (the colour photographs'), `photoShare`, `photoDrawnShare`); `seam_steps(lo, weights, rows, region, texel) -> dict`; `at_photo_resolution(img, px) -> img`; `zone_gradient_correlation(ours, photo, zone, px) -> float | None`; `colour_deltas(ours, photo, zone, px) -> (n,)` (unchanged); `viewdep_from_spread(spread, trusted, texel) -> (map (h, w) float32, report)`; `matte_mask(viewdep, cover, px) -> bool (h, w)`; `tone_fit_skins(parts, px) -> {a, g, r, texels} | None`; `tone_fit(ours, photo, sel, px)`; `tone_apply(tone, photo) -> img`; `row_residual(a, b, sel) -> (r (rows, 3), n)`; `row_residual_skins(parts) -> (v, r)`; `photo_to_frame_skins(skins, edge, tone_rows, light_rows) -> {tone, light, images} | None`; `colour_check_skins(skins, edge) -> (deltas, result | None)`; `product_frame_skins(skins, edge)`; `colour_check(ours, photo, matte, v, edge, px)`; `product_frame(ours, photo, matte, v, edge, px)`; `vertical_seam(rho, ref, sel, v, lines, control=(4.62, 5.28), gaps=None) -> {controlP95, controlMedian, lines: {name: {v, gap, controlP95, de00, logStep, pass}}, pass}` (`gaps`: a line's fits leave out a zone where two processings mix, round 3); `feather_gap(v, r0, b0) -> (centre, (below, above))` (lay_band's feather as a seam line) (the experiment's Appendix A, with its references to `venue` made local; pre-flight fix F1, 8 October); the command `python -m skins frieze-venue [--hints <json: craft → wall>]` writing `<work>/venue/<id>.npz` for every frieze skin (`albedo` float16 (rows, cols, 3) over the whole skin, `prov` uint8 with `PROV_PHOTO`, `gilt` float16 (rows, cols) in [0, 1], `giltBasis` (`measured`, `prior`, `refused`, `inconsistent` or `none`; round 5), `photos` the crafts used, `bandRow`), `<work>/venue/photos.json` (the credit and every photograph's registration with its metres, its tone, its light and its verdict) and `<evidence>/frieze-venue.json` (every check and gate, with `curves`, the response curves (sRGB in every channel), which every frieze product must have been made with (`frieze.require_srgb`); `giltBasis` per skin, `giltPrior`, `giltRefused` and `giltInconsistent` listed, each skin's tint evidence (`skins.<id>.gilt`) and `measuredGiltTexels` per wall).
 
 What the research established (`D:/claude/real-hall/renovation/frieze/findings.md`, 7 October; numbers in `evidence/numbers.json`, `work/holdout/<stretch>_hold_metrics.json` and `work/venue/<stretch>.json`): the band is measured, not lost. Across every view, 99% of band points on all four walls have at least one view with all three channels below 250 (6.4 m² of band, 15,044 XGRIDS frames and 47 E57 stations). Clipping is per channel: in the E57 band views R is clipped in 22%, G in 8% and B in 0.7%; XGRIDS frames clip R in 73–90% and B in 1–4%. (Those XGRIDS shares were measured through the keyframes' limited-range conversion. Decoded at full range, as Task 6A now stores them, red at 250 or more in the door wall's band falls from 46–97% to 24–68% and green from 8–36% to 0.1–2.3%: 16 frames, 8 October, Task 6A "The range". `frieze-crf` fits the XGRIDS curve on the full-range bytes.) The uplight acts as a near-continuous line source: at the frieze's bottom edge (4.24–4.37 m) the painted ground is 3.6–4.8× brighter in green than at 5.0–5.3 m, smooth with height, and dividing the fitted line source out leaves the ground level within ±8%. XGRIDS G and R follow sRGB within 0.07 ln; the E57 faces have no single curve, so their top values are down-weighted rather than expanded. The mural reaches down to the picture rail (feet, the bases of vats and barrels, animals' legs) with no repeating border, so synthesis can honestly supply only plain ground. The recipe has four steps: fit each camera family's response curve, fuse each channel from unclipped values only, divide by the light model, and synthesise and label only what no view measures.
 
 Here, inside the light model this plan already uses, each step works as follows.
 
-- **Linearise by the fitted curve.** Each XGRIDS frame's band texels are linearised by the frames' fitted curve instead of sRGB, because the shoulder is the camera's, not the standard's. The curve is anchored to sRGB in the mid-tones, so the result is in the mosaic's units. The E57 faces get no single curve (pre-flight fix F3, 8 October). The research found Matterport's tone mapping station- and light-state-dependent: its fitted E57 corrections at code 249 are +1.23 ln in blue and −0.41 and −0.56 in green and red, with 10–16 DN of scatter (`evidence/numbers.json` `camera_curve_diagnostics.e57`). It kept its fitted curves as diagnostics and used sRGB downstream (`scripts/crf.py:125-130`). So faces are linearised by sRGB and their top values are down-weighted rather than expanded: from code 235 a face value's weight is 0.25, the research's own rule (`scripts/fuse2.py:44`). XGRIDS blue is the case the research left open and the frieze-photo experiment does not address: its fitted correction falls 0.28–0.46 ln below sRGB from code 200 up with 10.95 DN of scatter (G and R within 0.07 ln, 7.5–7.6 DN; `camera_curve_diagnostics.xg`), and the research used sRGB downstream for every family (`scripts/crf.py:125-130`), while this plan applies the fitted blue curve. So Task 12 measures both (round 3): Step 10 runs the holdout, the recovery and the venue checks once with sRGB for XGRIDS blue and once with the fitted curve (`--blue`), and `frieze-blue` chooses by a stated rule (`choose_blue`). The venue's photographs are the one independent measure of colour (the holdout compares a recovery with the same curve's truth, so it guards the recovery, not the curve). sRGB, the research's choice with no fitted parameter, stands unless the fitted curve agrees better with the photographs: a lower ΔE00 mean, pooled by texels over the photographs with a colour verdict under both, while failing no gate that sRGB passes and costing no photograph its colour verdict. The runs are deterministic, so any difference is real; a tie goes to sRGB.
+- **Linearise by sRGB; the fitted curves are measured notes.** Every view's band texels are linearised by sRGB in every channel, the research's choice (`scripts/crf.py:125-130`; the controller's ruling of 8 October, round 5): a response curve is the camera's only if it is the same across stretches, and on the research's samples the fitted XGRIDS curves are not (below). `frieze-crf` still fits them, by the research's staged fit (`crf_solve`, its `scripts/crf.py:57-120`: each view's exposure and each point's radiance from the mid-tone codes under sRGB, then the curve's departure measured per 4-code bin), per part on each channel's own points and on its matte points (`matte_points`), and records their departures from sRGB at codes 200, 220, 240 and 249 per part (a frieze skin and light state) and their median (`crf.json` `fittedMinusSrgb`, `perPart`); no product applies them. Every product records the curves it was made with (`curves`), and `frieze-venue` refuses any other (`require_srgb`). This plan's former joint Debevec–Malik fit was degenerate on real frames, whose exposures barely differ: on the research's door samples it flattened red to 1.40 ln below sRGB at code 240, where the staged fit gives 0.11 (`test_views_of_nearly_one_exposure_do_not_flatten_the_curve`). The E57 faces get no single curve (pre-flight fix F3, 8 October). The research found Matterport's tone mapping station- and light-state-dependent: its fitted E57 corrections at code 249 are +1.23 ln in blue and −0.41 and −0.56 in green and red, with 10–16 DN of scatter (`evidence/numbers.json` `camera_curve_diagnostics.e57`). It kept its fitted curves as diagnostics and used sRGB downstream (`scripts/crf.py:125-130`). So faces are linearised by sRGB and their top values are down-weighted rather than expanded: from code 235 a face value's weight is 0.25, the research's own rule (`scripts/fuse2.py:44`). XGRIDS blue is the case the research left open: its fitted correction falls 0.28–0.46 ln below sRGB from code 200 up with 10.95 DN of scatter (G and R within 0.07 ln, 7.5–7.6 DN; `camera_curve_diagnostics.xg`). The venue's photographs cannot judge it, since their colour check compares rows below the band that no curve touches (the re-review's B-2). Round 5 judged it on the frames' own codes, with the research's samples and solver (`D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/r5/val/b2_curve.py` and `b2_plan.py`, every product twice, identical), and chose sRGB by precedent, recording the fitted curve as a measured note:
+
+  - The departure is not the gilding's. Split by the frieze's view spread, its matte class carries it (−0.37 ln at code 200, −0.47 at 240, 2,427 codes from 200 up), while the variable class holds 1 blue code from 200 up.
+  - It lies on one wall. 2,425 of those 2,427 codes are on the fireplace stretch, where red clips. A curve fitted on half of each stretch's columns predicts the other half's high codes, nearly all the fireplace's, better than sRGB (the median absolute residual 0.350 ln lower, 95% interval 0.345–0.361; 0.361, 0.350–0.382 with the halves swapped). Held out by stretch nothing can be tested: the door and window stretches hold 2 such codes.
+  - It reads as a highlight does. Those codes sit 0.49 ln above what their own mid-tones predict under sRGB, so `matte_points` (the lift of a point's top residual) classes most of them (77%) with the glints, and `frieze-crf`'s matte fit departs only −0.12 ln at code 240 (−0.52 on the fireplace stretch, −0.12 on the door's, none on the window's).
+
+  Red and green fail the same test: on matte points at code 240 green departs −0.23 ln on the door stretch, +0.16 on the fireplace's and +0.08 on the window's, red −0.03 to +0.20. On the research's samples (one part per stretch, as `frieze-crf` takes one per frieze skin) the median departures at codes 200 / 220 / 240 / 249 are, on every point, blue −0.20 / −0.36 / −0.47 / −0.54 ln, and at code 240 red −0.05 and green +0.15; on matte points blue −0.11 / −0.12 / −0.12 / −0.12, red −0.02, green +0.08. The staged fit reproduces the research's own to 0.001 ln. So every channel is linearised by sRGB, and these are notes, which Step 10 reports per part.
 - **Keep unclipped channels and de-light.** Each channel is kept only where it is unclipped. Each view is de-lit exactly as Task 9 de-lit it, using its gain on the skin and its light state's nine-source light at the texel.
 - **Fuse per channel.** The channels are fused separately through Task 9's two-band blend.
 - **Borrow detail from blue.** A channel with no sharp valid view borrows its high band from blue, with a slope fitted on the clean frieze above. The paint is sepia, so the channels' detail is nearly proportional in log.
@@ -7289,16 +7986,24 @@ Here, inside the light model this plan already uses, each step works as follows.
 - **Synthesise and label.** Texels no view measures in any channel are filled from the same rows (plain ground) and labelled reconstructed.
 - **Leave panoramas out.** The panoramas are left out of the band. They are stitched and tone-mapped, so no camera curve describes them.
 - **Feather the seam.** The band is written with a 2 cm overlap above it, which `frieze-venue` feathers into the healed mosaic (`lay_band`, after the same light correction), so no seam shows at the band's top; `vertical_seam` measures it (the seams up the wall, below).
-- **Measure how each texel's appearance varies with the view.** With the fusion, every texel keeps the spread of its views' de-lit, 1 cm low-passed green (a robust deviation across views; the views are already normalised by their gains and de-lit by their states) and the excess of its brightest views over its median, per channel and per light state (the day sweeps, the evening sweeps, the capture), each over that state's views alone. Matte paint de-lit by the right light looks the same from every view; gilding does not.
+- **Measure how each texel's appearance varies with the view.** With the fusion, every texel keeps the spread of its views' de-lit, 1 cm low-passed green (a robust deviation across views; the views are already normalised by their gains and de-lit by their states) and the excess of its brightest views over its median, per channel and per light state (the day sweeps, the evening sweeps, the capture), each over that state's views alone, and both over the views valid in all three channels at the texel (a highlight clips red first, so a view clipped in one channel counts in none and the excess's colour compares the same views; round 5). Matte paint de-lit by the right light looks the same from every view; gilding does not.
 
 **The venue's photographs** (`frieze-venue`; the research's "Venue photographs (7 October)", its `scripts/venue.py` and `venue_blend.py`). The owner cleared the Trades House Virtual Museum's 14 craft-section photographs (800–1,100 px; credit: George Mahoney and the Trades House of Glasgow, copyright 2015 Trades House of Glasgow, used with the owner's permission of 7 October). The research registered three of them (door wall Bonnetmakers and Dyers, 147 inliers, clean-zone correlation 0.83, 3.4 mm per pixel; fireplace wall Maltmen, 61, 0.63, 6.2 mm; window wall Wrights, 75, 0.86, 5.4 mm) and found that on the door and fireplace walls our fusion does not reproduce the photograph's drawing in the lowest 5 cm (gradient correlation 0.11 and 0.09, against 0.80 and 0.64 on the clean frieze above), while on the window wall it does (0.63). It also found that the photographs' colour balance differs widely: the gains mapping our fusion onto each differ by up to 4.5× in blue (door 0.52, fireplace 0.324, window 1.455), so grading each section to its own photograph would put colour seams at the section joins.
 
-- **Register every photograph to its wall, metre by metre.** Each wall's frieze skins are drawn into one reference at 4 mm in the wall's (u, v) (our healed albedo with the recovered band, display-scaled). Each photograph is matched to each wall by SIFT on the clean frieze (the band masked, so its glare cannot drive the match) and RANSAC, as the research did. An ECC homography is then refined on band-passed luma separately for every metre of the wall the photograph covers, over the metre and 25 cm either side, and a metre is accepted when its refined correlation on the clean frieze is at least 0.60 (`refine_stretches`). The photograph belongs to the wall with accepted metres and the most inliers, and each accepted metre draws its part of the photograph by its own homography, cross-fading into its neighbours over those 25 cm (`photo_on_skin`). One homography does not hold across a photograph's 3–5 m: refined over its whole footprint, 12 of the 13 registered photographs reach only 0.12–0.56 (Bonnetmakers 0.68), while per metre their best stretches reach 0.65–0.86 and the scale varies by 1–6% along a photograph (pre-flight fix F1, 8 October; the experiment's `out/register/footprint_run1.json` and `logs/register_all_run1.log`; its reference was each wall's E57 colour elevation, not this mosaic, which is inferred to transfer). (The research accepted 0.63–0.86 and refused a match at 0.005: the Coopers photograph SIFT preferred for the window wall; the correlation check refuses that match by itself, so no pairing by eye is needed unless the check fails, when `--hints` may name a photograph's wall. The Weavers photograph's best metre reaches 0.487, so it is expected to stay unregistered unless a hint lets a metre pass.)
+- **Register every photograph to its wall, metre by metre.** Each wall's frieze skins are drawn into one reference at 4 mm in the wall's (u, v) (our healed albedo with the recovered band, display-scaled). Each photograph is matched to each wall by SIFT on the clean frieze (the band masked, so its glare cannot drive the match) and RANSAC, as the research did. An ECC homography is then refined on band-passed luma separately for every metre of the wall the photograph covers, over the metre and 25 cm either side, and a metre is accepted when its refined correlation on the clean frieze is at least 0.60 (`refine_stretches`). The photograph belongs to the wall with accepted metres and the most inliers, and each accepted metre draws its part of the photograph by its own homography, cross-fading into its neighbours over those 25 cm (`photo_on_skin`). The metres' photograph coordinates are blended, not their images, so where two homographies disagree the drawing moves smoothly instead of doubling (round 5, m-4). One homography does not hold across a photograph's 3–5 m: refined over its whole footprint, 12 of the 13 registered photographs reach only 0.12–0.56 (Bonnetmakers 0.68), while per metre their best stretches reach 0.65–0.86 and the scale varies by 1–6% along a photograph (pre-flight fix F1, 8 October; the experiment's `out/register/footprint_run1.json` and `logs/register_all_run1.log`; its reference was each wall's E57 colour elevation, not this mosaic, which is inferred to transfer). (The research accepted 0.63–0.86 and refused a match at 0.005: the Coopers photograph SIFT preferred for the window wall; the correlation check refuses that match by itself, so no pairing by eye is needed unless the check fails, when `--hints` may name a photograph's wall. The Weavers photograph's best metre reaches 0.487, so it is expected to stay unregistered unless a hint lets a metre pass.)
 - **One hall-wide colour frame.** The hall's colour is the relight model's: our fusion, which is continuous along every wall, and which the captured-light identity holds to the splats (Task 14). Each photograph is brought into it by its own tone, a gain and a power per channel, `ln ours = a_c + g_c ln photo_c` (the photograph's code linearised by sRGB: 13 of the 14 files embed the sRGB profile, Bonnetmakers carries none). The tone is fitted once over every skin the photograph covers, by matching the mean and spread of log values (the standardised major axis) at one photograph pixel, on matte texels only: those where the views agree (`viewdep_from_spread`, the gilt mask's map without its gold test, below 0.5), kept 1.5 photograph pixels clear of the rest because the photograph's blur spreads the gilt's glow (`matte_mask`, `tone_fit_skins`). A diagonal gain, which this plan used before 8 October, cannot hold: the photographs carry 1.2–3.2 times our log contrast (their cameras' processing; 8 of the 13 with EXIF fired a flash), and a gain alone leaves 3.27–6.86 / 6.60–16.13 on held-out rows. A channel with no increasing relation gives no tone, and such a photograph gives no colour. This is still the research's alternative, "harmonise the 14 photos first": our frieze is never graded to a photograph, so no section join can show a seam (the seam check below measures it).
 - **Clear each photograph of its own light.** A photograph's vertical light relative to our de-lit frieze is fitted on per-row medians of ln(photograph / ours) over its matte texels, where the paint cancels, with the same model and acceptance as our band's (`fit_vertical_light`), on rows from 5 cm above the edge (where the views' spread is trusted) to 5.30 m; tone and light alternate three times (`photo_to_frame_skins`), and the light is divided out on every row. The probe this plan fitted before (each photograph's own 80th-percentile ground per row, B7) measured the paint, the view-dependent gilt ground and the steeper tone, not the light: every fit sat at a bound, and the window photograph, which has no uplight, was darkened 2.63 times over the very rows its gain was fitted on. Measured: the door photograph keeps a light (λ 0.254 m, its 2% height at 5.27 m); the fireplace's does not predict held-out rows, and the window's decay length runs to the end of the scan, so neither keeps one. The fireplace's "uplight" the research read as 1.1–1.3 times was a bright gilt ground between the legs at 4.40–4.66 m.
 - **Blend: colour and broad tone from the photograph, fine detail from our fusion.** In log space, the low band (a Gaussian of one photograph pixel) is the photograph's and the high band ours. Where photographs overlap or end, they cross-fade over 5 cm. A photograph that fails the colour check (below) gives detail and outline only: it adds no low band, so our tone stays, while its high band still draws where our detail is off and on texels our recovery could only reconstruct (F1: a failure is a verdict, not a stop).
 - **The lowest 5 cm.** On the door and fireplace walls the photograph alone gives the drawing of the lowest 5 cm above the frieze's edge (3.4 mm per pixel on the door wall and 6.2 mm on the fireplace wall; the owner's decision: the brief of 7 October names these two walls, while the research's hall-wide note says "door and end walls", so the SSW end wall `end_xmin` follows the measured rule below, which keeps our detail there only where it passes), our detail returning over the 2 cm above (the research's ramp). Elsewhere our detail is kept in the lowest 5 cm and in the 10 cm above where its gradient correlation with the photograph reaches at least half that of the same photograph's clean frieze, and is off where it does not; this measured rule reproduces all three research decisions (off at 0.11 against 0.40 and 0.09 against 0.32; kept at 0.63 against 0.39 and in every upper 10 cm, 0.48–0.71). Band texels our recovery could only reconstruct take the photograph's drawing too.
-- **The gilded ground.** In the door photograph the ground is bright gold and the legs darker; in our captures the reverse (the research, inferred: the museum calls the frieze "painted and gilded"). A matte texture cannot hold both looks. The ground's mask is measured from the spread across views: on each frieze skin, from 5 cm above the edge to 5.30 m, the spread splits in two (Otsu on its logarithm), and the more variable class is the gilding. Its basis is measured per light state (round 4, O-1 and O-2, 8 October). A state shows a highlight where the variable class's excess is at least `GILT_HIGHLIGHT_MIN` = 1.4 times the paint class's in luma; the highlight's own colour, the difference, is judged by `blend.gold` (blue below 0.55 of red and below green). Gold leaf tints any source it mirrors gold. A dielectric returns the source's colour: white after de-lighting where a lamp is mirrored under the lamp-dominated evening or capture light, gold-like where a warm lamp is mirrored under the window-dominated day light (B/R 0.29 at R1a's lamp/daylight ratio). So the ground is measured gilt when at least two states show a highlight (any two include the evening or the capture) and every highlight is gold; refused, its mask zero and the run stopped (`giltGround`), when a highlight is not gold; and kept as gilt by prior, labelled `prior` and listed (`giltPrior`), when fewer states show one. Measured on the experiment's three registered stretches (every product twice, identical; `D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/gilt/`, day / evening / capture): the door wall's highlight is 5.48 / 3.81 / 2.97 × the paint's, its colour's B/R 0.16 / 0.11 / 0.08, measured; the fireplace wall's 2.59 / 3.24 / 1.96, B/R 0.21 / 0.23 / 0.18, measured (its evening G/R is 0.99, which is why green is not ranked against red); the window wall's 1.02 / 1.01 / 0.92, a prior: its ground, visibly the variable class (the experiment's `out/viz_gilt.jpg`), is no brighter in its bright views than the figures. 1.4 lies near the geometric mean of 1.02 and 1.96. The former rule judged the variable class's excess over all views at once. In the experiment's units (relative to each texel's own value) it refused the fireplace and window grounds (fireplace (0.031, 0.032, 0.027)); in R1c's units (albedo) it passes the paint class too (fireplace paint (0.0070, 0.0045, 0.0020), B/R 0.29), since that excess takes the albedo's hue. The venue photographs cannot classify the ground either: under Wrights the window's variable class reads relatively darker in the photograph than in ours (−0.09), under Bonnetmakers and Maltmen brighter (+0.33, +0.08), so they check measured gilt (below). The other end wall (`end_xmin`) has no stretch with the research's fusion; the run decides its basis and reports it. In the rows where our views cannot say (the photograph-only rows), the photograph's own colour classifies each texel by the nearer of the two classes' centres learnt from the same photograph above. The gilt ground keeps the capture's own tone (our fusion's low band: the photograph's view of gold is a reflection, not an albedo), continued downward from the 5 cm above where the photograph alone draws; Task 13 makes it a metal with gold's specular colour, so its brightness follows the view (R1d's sheen). Its outline in the lowest 5 cm is the photograph's, labelled recovered.
+- **The gilded ground.** In the door photograph the ground is bright gold and the legs darker; in our captures the reverse (the research, inferred: the museum calls the frieze "painted and gilded"). A matte texture cannot hold both looks. The ground's mask is measured from the spread across views: on each frieze skin, from 5 cm above the edge to 5.30 m, the spread splits in two (`frieze.two_classes`: Otsu on its logarithm), and the more variable class is the candidate gilding. Whether it is gilt is a test of two hypotheses on its highlights' colour (round 5, 8 October; `specular.tint_test`, Task 9). A highlight is the mirrored source's colour times the surface's specular tint: gold leaf tints it gold, a dielectric such as varnish leaves it the source's colour. So per light state and 10 cm block, the variable class's median excess less the paint class's (in R1c's de-lit unit, after the residual light is divided out, over the views valid in all three channels) is divided by the colour of what those views mirror: the specular reference, the same statistic of the highlight an untinted surface would show toward each of the block's views under R1a's nine sources, their emitters and the bounce, for a neutral F0 and for gold's (Task 9). The tint τ = Σh / Σr per channel. Its red and blue, under their measured covariance (the blocks' scatter, by the delta method, plus the light model's: the shift each lamp group's colour uncertainty gives, R1a's priors cove 0.35, chandeliers 0.035 and dome 0.10 ln, and in the E57 states the windows' measured `chromaSigma`, Task 8), are fitted as a scale times (1, 1) for a dielectric and times (1, ρ) for gold leaf, ρ the gold reference's own blue-to-red ratio (about 0.34). The log-likelihood ratio is summed over the states whose tint differs from zero (χ²(3) at least 11.34, red positive). The ground is measured gilt at ln 100 or more when gold fits every such state (d² at most 6.63, χ²₁ at 99%); refused, a dielectric, at −ln 100 or less when the dielectric fits every state; inconsistent when the winner does not fit some state (the model, the attribution or the metal is not what the test assumes); otherwise a prior, kept as gilt, labelled and listed (`giltPrior`). A refused or inconsistent ground stops the run (`giltGround`). Green against red is reported (`tauRel`), not tested: it differs 0.25 ln among the gilding metals (gold leaf 0.78, brass 0.86, copper 0.67 in linear F0; Hoffman 2015) and carries the lamps' least certain colour (R1a's chandelier and dome emitters differ by 0.24 ln). Measured on the experiment's three registered stretches in R1c's unit (each view normalised to the research's fusion and divided, per 5 cm band, by its light measured from R1a's own splats, so matte paint reads the splat anchor; every product twice, identical; `D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/r5/val/`, `gilt_tint.py`, `rescore.py` and `inject.py`), on the capture state, whose weights are R1a's own fit:
+
+  | Wall (stretch) | Blocks | ln(τ_B/τ_R) | Gold's | d², gold / dielectric | Log-likelihood ratio | Basis |
+  |---|---|---|---|---|---|---|
+  | door (`door_c`) | 69 | −1.05 ± 0.14 | −1.08 | 0.04 / 18.8 | 9.4 | measured |
+  | fireplace (`xmax_l`) | 79 | −1.06 ± 0.15 | −1.08 | 0.02 / 27.2 | 13.6 | measured |
+  | window (`win_m`) | 74 | −0.50 ± 0.30 | −1.08 | 2.75 / 2.75 | 0.0 | prior |
+
+  The E57 day and evening states need Task 8's fitted weights, which these stretches lack. At stand-in weights (the capture's daylight and lamps at a lamp share of 0.10–0.40 by day and 0.60–0.90 by evening) the fireplace stays measured (38.3–38.9) and the window a prior (−3.2 to +1.9), while the door's E57 states fit neither hypothesis in at least one state (its day state −0.55 ± 0.16, d² 7.8 for gold and 9.8 for the dielectric, at a lamp share of 0.10): inconsistent, which stops the run with its evidence unless Task 8's weights explain it. The windows' colour does not (scaling their blue by up to e¹ moves the day state only to −0.58), so the lamps' share and colour in those sweeps decide. The test separates the hypotheses at the stretches' own noise. Synthetic highlights on each stretch's real capture views, cells and light, scaled to its real highlight and given its real blocks' residuals (200 resamples), were tested under a neutral source (the windows alone) and a warm one (the lamps alone). Gold leaf is measured 197–199 times in 200 on the door and fireplace and 126–165 on the noisier window (the rest a prior). Varnish is refused 165–200 times in 200 and called gilt in none of 2,400 draws, at full and at a quarter strength. At most 3 in 200 are inconsistent. Round 4's rule (`GILT_HIGHLIGHT_MIN` and the highlight's own colour against `blend.gold`) was in the wrong unit (the re-review's G-1) and is gone. The venue photographs cannot classify the ground either: under Wrights the window's variable class reads relatively darker in the photograph than in ours (−0.09), under Bonnetmakers and Maltmen brighter (+0.33, +0.08), so they check measured gilt (below). The other end wall (`end_xmin`) has no stretch with the research's fusion; the run decides its basis and reports it. In the rows where our views cannot say (the photograph-only rows), the photograph's own colour classifies each texel by the nearer of the two classes' centres learnt from the same photograph above. The gilt ground keeps the capture's own tone (our fusion's low band: the photograph's view of gold is a reflection, not an albedo), continued downward from the 5 cm above where the photograph alone draws; Task 13 makes it a metal with gold's specular colour, so its brightness follows the view (R1d's sheen). Its outline in the lowest 5 cm is the photograph's, labelled recovered.
 - **Provenance and credit.** Every texel is labelled: observed (our fusion) where its drawing is ours from a sharp unclipped view, observed (venue photo) where its drawing is the photograph's (`PROV_PHOTO`), recovered, or reconstructed. Texels Task 10 healed or filled outside the band keep their restoration (no photograph overrides a removed stain). Each skin lists the photographs it used, and `photos.json` carries the credit to the package (Task 14).
 
 **The thresholds, reconciled (7 October).** This plan's earlier proposal was `HOLDOUT_GATE = {de00Mean 2.5, de00P95 6.0, ssim 0.90, gradCorr 0.85}`, every stretch, and beating both baselines on all four measures. The research's holdout (`holdout.py`, 14 cm strips of clean frieze damaged in every view exactly as the band is, three stretches) measured, per stretch (door / fireplace / window) and as the mean of the three:
@@ -7328,12 +8033,12 @@ R1c's recovery is the estimated-light recipe (the true light is the oracle used 
 - **`HOLDOUT_GATE`, every stretch:** ΔE00 mean ≤ 7.5, p95 ≤ 12.5, SSIM ≥ 0.93, gradient correlation ≥ 0.90; SSIM and gradient correlation strictly above both baselines (Telea, and the best block copied from rows above or below). The structure limits sit 0.011–0.027 and 0.016–0.046 below the research's worst estimated-light stretches (0.941–0.957, 0.916–0.946), and the colour limits 0.59 and 0.55 above its worst (6.91 and 11.95, the window wall). That tolerance covers what differs here, the relight model's light in place of the research's own fit and the door and window stretches moved 5 and 50 cm to lie inside one skin, and nothing more: a broken de-light (14.6 / 18.9) or invented drawing (Telea's 0.08–0.16) fails by a wide margin.
 - **`HOLDOUT_MEAN_GATE`, the mean of the three:** ΔE00 mean ≤ 5.0, p95 ≤ 9.0, SSIM ≥ 0.95, gradient correlation ≥ 0.94: the research's own estimated-light result (4.74–4.77, 8.49–8.76, 0.963–0.967, 0.954–0.962) with margins of 0.23 and 0.24 in ΔE00 and 0.013 and 0.014 in SSIM and gradient correlation, so R1c's recovery must be as good as the research's on average.
 - **The venue photographs as independent validation** (`frieze-venue`, every photograph). The blend's own scores against a photograph are not independent (its colour is the photograph's), so they are never quoted or gated. Each check below compares two captures where neither was fitted to the other:
-  - **Registration:** refined band-passed correlation on the clean frieze ≥ 0.60 for every metre a photograph draws (the research accepted 0.63, 0.83 and 0.86 and refused a wrong section at 0.005), a metre being refined only where the photograph covers at least half its clean-frieze reference (`REG_COVER_MIN`, designed: a sliver's ECC fit, and the correlation measured on the same pixels, rest on too few); a photograph with no metre at 0.60 is recorded unregistered with its best metre (expected: Weavers, 0.487) and gives nothing. The gate is not the acceptance itself (round 3, M-7): every registered photograph must lie on the wall the experiment's independent registration against the E57 colour elevations gave it (`EXPECTED_WALLS`, or the wall a hint names), and its neighbouring metres' homographies must agree within 5 mm where they cross-fade (`join_disagreement`, `REG_JOIN_MAX_M`: half the 1 cm shift the experiment found already material, the door's colour p95 rising from 4.77 to 10.22).
+  - **Registration:** refined band-passed correlation on the clean frieze ≥ 0.60 for every metre a photograph draws (the research accepted 0.63, 0.83 and 0.86 and refused a wrong section at 0.005), a metre being refined only where the photograph covers at least half its clean-frieze reference (`REG_COVER_MIN`, designed: a sliver's ECC fit, and the correlation measured on the same pixels, rest on too few); a photograph with no metre at 0.60 is recorded unregistered with its best metre (expected: Weavers, 0.487) and gives nothing. The gate is not the acceptance itself (round 3, M-7): every registered photograph must lie on the wall the experiment's independent registration against the E57 colour elevations gave it (`EXPECTED_WALLS`, or the wall a hint names), and where its neighbouring metres cross-fade, the blended mapping may depart from the nearer metre's own homography by at most 5.5 mm at the 95th percentile (`join_disagreement`, `REG_JOIN_MAX_M`; measured in round 5, m-4). That is the shift at which the door photograph's colour p95 reaches the gate's 7.8 (the experiment: 4.77 registered, 10.22 shifted 1 cm, so 0.56 cm on the line between), rounded down. On the experiment's own per-metre registrations (`out/register/registrations_run1.json`, the 11 of 13 registered photographs with metres one apart) the blended departure is 0.97–4.88 mm, every photograph within the limit; the two homographies themselves lie 3.1–12.9 mm apart there (p95), which blending the images, as round 4 did, would have drawn twice (`D:/claude/real-hall/plan-amendments-0710/fix2-scratch-c/r5/val/join_blend.py` and `join_check.py`, each run twice, identical).
   - **Colour:** each photograph's tone fitted on the upper clean frieze only (5.30 down to 4.95 m) and its light on rows other than the compared ones, then compared with our fusion on the lower clean frieze (4.95 down to 4.60 m), its matte texels only, at the photograph's resolution, by `colour_deltas` (unchanged): ΔE00 mean ≤ 3.6 and p95 ≤ 7.8, pooled over the skins the photograph covers (pre-flight fixes A-B8 and F1, 8 October). The derivation: the worst agreement this pipeline measured against the research's fusion is the fireplace's (Maltmen, 2.80 / 5.63; door 1.99 / 4.77; window 1.65 / 3.87), and the margin is the measured cost of a weaker fusion than the research's, the largest increase of an E57-only fusion over the research's on the same stretch and registration (+0.71 mean and +2.08 p95, the window), because R1c's mosaic is not built yet; 3.51 / 7.71, rounded up. Run to run the measures vary by nothing (every product was run twice, identical). The research's 6.34 / 16.51, which this plan cited before, came from another protocol (a per-row normalisation and no exposure scaling); under `colour_deltas` the plan's former pipeline read 7.6–19.3 / 12.6–24.3 and failed every photograph. The gate separates: without matte texels 2.57–4.05 / 6.12–10.64 and a diagonal gain 3.27–6.86 / 6.60–16.13 fail on two of three photographs, a 1 cm mis-registration (2.01–3.41 / 5.23–10.22) on one; on the low-contrast window wall a 3 cm shift still reads 2.35 / 5.95, which the registration gate catches instead. A photograph that fails is detail and outline only (the blend above), and its verdict is recorded; the gate is that every registered photograph has a verdict.
   - **Detail:** where our detail is kept, its gradient correlation with the photograph is at least half that of the clean frieze (the rule above, which the research's six measurements obey); the lowest 5 cm on the door and fireplace walls use the photograph whatever the measurement (the owner's decision), and their measurements are recorded.
   - **Seams:** at every edge of a photograph's cover (against another photograph or our fusion), the colour step across 7 cm (the cross-fade and 2 cm) in the band rows and in the clean rows is no larger than the 95th percentile of the same step inside that photograph's cover: no seam steps more than the paint itself does.
   - **The seams up the wall:** on every frieze skin, at 5 cm above the edge, at the band's top (15 cm) and 2 cm above it, the step of the profile ln(blend / reference) is no larger than the larger of the same step's 95th percentile at lines every 1 cm across the clean frieze and 0.5 ΔE00, half a just-noticeable difference (`vertical_seam`, the `verticalSeams` gate; pre-flight fixes F1 and F2, 8 October). A fourth line sits at the centre of `lay_band`'s 2 cm feather between the healed mosaic and the recovery (`bandFeather`, `feather_gap`): its fits leave the feather out, the recovery fitted from the band's first row down and the mosaic from the overlap's top up, and its controls use the same gaps (round 3, I-1). The 2 cm fits at `bandTop` and `bandTop2` absorb a feathered step: the re-review measured a constant 0.20 ln mismatch between the two processings at 0.29 / 0.13 ΔE00 there, against 4.50 unfeathered; fitted outside the feather the step is measured whole. The profile is each row's median over the texels compared; the step at a line is the jump between straight lines fitted over the 2 cm on each side, so a smooth gradient, such as a light divided out, is no step; it is expressed as ΔE00 at `colour_deltas`'s display exposure. The reference is each colour photograph that drew the texels, over its cover, and elsewhere the recovery's own rows over the whole frieze (`frieze/<id>.npz` `fused`: one processing with no cut at the lines, the experiment's reference in its band-top simulation, `scripts/sim_i5.py:69-71`; not Task 10's healed mosaic, which in the band holds the clipped and healed values the recovery replaces). In that simulation (the research's fusion re-lit, the mosaic keeping the whole or half of the uplight) the former correction left 0.79–14.38 ΔE00 at the band's top and the light divided out on every row 0.00–0.01; with the photographs every line passes (the experiment's section 7).
-  - **The gilded ground:** under every photograph with measured gilt beneath it, on any wall (at least `GILT_MIN` gilt and `GILT_MIN` paint texels; pre-flight fix F4, 8 October, extended from the door wall to every wall in round 4), the photograph's gilt-to-paint brightness exceeds our capture's (the median of log(photograph / ours) over the gilt texels above that over the paint): the independent view agrees with the mask's direction. A photograph with no measured gilt under it is recorded as not checked and fails nothing. Every wall whose measured gilt holds at least `GILT_MIN` texels needs at least one checked photograph, so the metal Task 13 makes of it is never unvalidated. On the experiment's stretches Bonnetmakers and Dyers reads +0.33 (door) and Maltmen +0.08 (fireplace), both passing. Gilt kept by prior is listed (`giltPrior`) and not checked: Wrights reads −0.09 on the window wall, where the views cannot decide. A refused skin stops the run (`giltGround`): the gilded ground is gilt on every wall, so a highlight that is not gold there needs a look, not a silently matte ground.
+  - **The gilded ground:** under every photograph with measured gilt beneath it, on any wall (at least `GILT_MIN` gilt and `GILT_MIN` paint texels; pre-flight fix F4, 8 October, extended from the door wall to every wall in round 4), the photograph's gilt-to-paint brightness exceeds our capture's (the median of log(photograph / ours) over the gilt texels above that over the paint): the independent view agrees with the mask's direction. A photograph with no measured gilt under it is recorded as not checked and fails nothing. Every wall whose measured gilt holds at least `GILT_MIN` texels needs at least one checked photograph, so the metal Task 13 makes of it is never unvalidated. On the experiment's stretches Bonnetmakers and Dyers reads +0.33 (door) and Maltmen +0.08 (fireplace), both passing. Gilt kept by prior is listed (`giltPrior`) and not checked: Wrights reads −0.09 on the window wall, where the views cannot decide. A refused or inconsistent skin stops the run (`giltGround`): the gilded ground is gilt on every wall, so a highlight the test calls a dielectric, or one that fits neither hypothesis, needs a look, not a silently matte ground.
 - **Coverage of the real band:** hall-wide, observed (our fusion) plus observed (venue photo) plus recovered texels are at least 99% of the band (the research's survey: 99.2% observed).
 - A miss stops the task with its numbers; no threshold is loosened to pass.
 
@@ -7359,7 +8064,7 @@ def srgb_lin(z):
 class Curve(unittest.TestCase):
     def test_a_known_shoulder_is_recovered_up_to_the_anchors(self):
         rng = np.random.default_rng(1)
-        L = np.exp(rng.uniform(-4.0, 0.5, 400))                    # radiances
+        L = np.exp(rng.uniform(-4.0, 0.5, 4000))                   # radiances (a 4-code bin of the staged fit needs 30)
         lnE = np.log([0.6, 1.0, 1.6, 2.5])                          # four exposures
         def camera(x):                                            # sRGB with a soft shoulder above 0.5
             y = np.where(x < 0.5, x, 0.5 + 0.5 * np.tanh((x - 0.5) / 0.5))
@@ -7373,6 +8078,18 @@ class Curve(unittest.TestCase):
         self.assertGreater(float(g[240] - math.log(srgb_lin(240) / srgb_lin(128))), 0.05)   # the shoulder is lifted
         lin = FZ.crf_linear(np.array([[64.0, 128.0]]), g)
         np.testing.assert_allclose(lin[0], [srgb_lin(64), srgb_lin(128)], rtol=2e-3)       # the mosaic's units
+
+    def test_views_of_nearly_one_exposure_do_not_flatten_the_curve(self):
+        """An sRGB camera, 40 views within 0.1 ln of one exposure, 3,000 mostly bright points (codes 100-245), as the
+        frieze's red: the joint Debevec-Malik fit flattened such a curve (1.2 ln below sRGB at code 240; 1.40 on the
+        research's door samples); the staged fit keeps sRGB (round 5)."""
+        rng = np.random.default_rng(5)
+        lnE, lnL = rng.normal(0, 0.1, 40), rng.uniform(FZ.SRGB_G[100], FZ.SRGB_G[245], 3000)
+        ln = lnL[:, None] + lnE[None]
+        Z = np.rint(np.interp(ln, FZ._monotone(FZ.SRGB_G), np.arange(256))).astype(np.int16)
+        Z[(ln > FZ.SRGB_G[255]) | (Z > FZ.Z_HI)] = -1
+        g = FZ.crf_solve(Z)[0]
+        self.assertLess(float(np.abs(g[100:250] - FZ.SRGB_G[100:250]).max()), 0.02)
 
     def test_channel_validity_drops_clipped_values_and_their_neighbours(self):
         raw = np.full((5, 5), 120.0); raw[2, 2] = 255.0; raw[0, 0] = 3.0
@@ -7425,35 +8142,45 @@ class Light(unittest.TestCase):
 class Faces(unittest.TestCase):
     def test_face_values_follow_srgb_and_their_top_is_down_weighted(self):
         z = np.array([64.0, 128.0, 240.0])
-        np.testing.assert_allclose(FZ.crf_linear(z, FZ.family_curve({}, "face", 0)), srgb_lin(z), rtol=1e-9)
-        crfs = {"xgrids": {"g": [np.zeros(256)] * 3}}
-        self.assertIs(FZ.family_curve(crfs, "xgrids", 1), crfs["xgrids"]["g"][1])
-        self.assertIs(FZ.family_curve(dict(crfs, blue="srgb"), "xgrids", 2), FZ.SRGB_G)              # blue as the evidence chose
-        self.assertIs(FZ.family_curve(dict(crfs, blue="srgb"), "xgrids", 1), crfs["xgrids"]["g"][1])
-        self.assertIs(FZ.family_curve(dict(crfs, blue="fitted"), "xgrids", 2), crfs["xgrids"]["g"][2])
+        np.testing.assert_allclose(FZ.crf_linear(z, FZ.family_curve({"curves": FZ.CURVES}, "face", 0)), srgb_lin(z), rtol=1e-9)
         np.testing.assert_array_equal(FZ.value_weight("face", np.array([200, 234, 235, 249])), [1.0, 1.0, 0.25, 0.25])
         np.testing.assert_array_equal(FZ.value_weight("xgrids", np.array([200, 249])), [1.0, 1.0])
 
 
-class Blue(unittest.TestCase):
-    def test_the_blue_curve_is_chosen_by_the_photographs_and_a_tie_goes_to_srgb(self):
-        def venue(bakers, wrights, wrights_verdict="colour", seams=True):
-            return {"verdicts": {"Bakers": "colour", "Wrights": wrights_verdict},
-                    "colour": {"Bakers": {"de00Mean": bakers, "texels": 300}, "Wrights": {"de00Mean": wrights, "texels": 100}},
-                    "gates": {"colour": True, "seams": seams, "verticalSeams": True}}
-        hold = {"srgb": {"pass": True, "mean": {"de00Mean": 4.7}}, "fitted": {"pass": True, "mean": {"de00Mean": 4.6}}}
-        better = FZ.choose_blue(hold, {"srgb": venue(2.4, 2.0), "fitted": venue(2.2, 2.0)})
-        self.assertEqual(better["choice"], "fitted")
-        self.assertAlmostEqual(better["de00Mean"]["fitted"], (2.2 * 300 + 2.0 * 100) / 400)
-        self.assertEqual(FZ.choose_blue(hold, {"srgb": venue(2.4, 2.0), "fitted": venue(2.4, 2.0)})["choice"], "srgb")   # a tie
-        lost = FZ.choose_blue(hold, {"srgb": venue(2.4, 2.0), "fitted": venue(2.2, 2.0, seams=False)})
-        self.assertEqual((lost["choice"], lost["lostGates"]), ("srgb", ["seams"]))
-        demoted = FZ.choose_blue(hold, {"srgb": venue(2.4, 2.0), "fitted": venue(2.2, 2.0, wrights_verdict="detail")})
-        self.assertEqual((demoted["choice"], demoted["lostColour"]), ("srgb", ["Wrights"]))
-        failing = {"srgb": hold["srgb"], "fitted": {"pass": False, "mean": {"de00Mean": 4.6}}}
-        self.assertEqual(FZ.choose_blue(failing, {"srgb": venue(2.4, 2.0), "fitted": venue(2.2, 2.0)})["lostGates"], ["holdout"])
-        self.assertEqual(FZ.blue_suffix(["--blue", "srgb"]), "-blue-srgb")
-        self.assertEqual(FZ.blue_suffix([]), "")
+class Curves(unittest.TestCase):
+    def test_glints_bend_a_curve_fitted_on_every_point_every_channel_is_srgb_and_the_fit_a_note(self):
+        """Six parts of an sRGB camera seen in 12 views of 2,000 points reaching code 200, half of them glinting (a
+        view-dependent highlight 0.8 ln brighter in 40% of their views), so glints hold most top codes: they bend the
+        staged fit on every point down at the top, as the research's blue was bent; the matte points' fit stays sRGB.
+        Every channel of every family is linearised by sRGB (round 5); the fitted curves are notes, and a record of
+        any other curve is refused."""
+        rng = np.random.default_rng(11)
+        parts = []
+        for _ in range(6):
+            lnE, lnL = rng.normal(0, 0.4, 12), rng.uniform(FZ.SRGB_G[30], FZ.SRGB_G[200], 2000)
+            glint = (rng.random(2000) < 0.5)[:, None] & (rng.random((2000, 12)) < 0.4)
+            ln = lnL[:, None] + lnE[None] + 0.8 * glint
+            Z = np.rint(np.interp(ln, FZ._monotone(FZ.SRGB_G), np.arange(256))).astype(np.int16)
+            Z[(ln > FZ.SRGB_G[255]) | (Z > FZ.Z_HI)] = -1
+            parts.append(Z)
+
+        def fit(ps):                                                                         # frieze-crf's: the median over parts
+            return np.median(np.stack([FZ.crf_solve(Z)[0] for Z in ps]), 0)
+        bent = fit(parts)
+        self.assertLess(float(bent[240] - FZ.SRGB_G[240]), -0.1)                             # glints bend it down
+        self.assertLess(abs(float(fit([Z[FZ.matte_points(Z)] for Z in parts])[240] - FZ.SRGB_G[240])), 0.01)
+        note = FZ.curve_notes({"all": [FZ.SRGB_G, None, bent]})["all"]
+        self.assertEqual((note["240"][0], note["240"][1]), (0.0, None))
+        self.assertAlmostEqual(note["240"][2], float(bent[240] - FZ.SRGB_G[240]), places=3)  # the bend, recorded only
+        for family in ("face", "xgrids"):
+            for c in range(3):
+                self.assertIs(FZ.family_curve({"curves": FZ.CURVES}, family, c), FZ.SRGB_G)
+        for other in (["srgb", "srgb", "fitted"], ["srgb", "srgb"]):
+            with self.assertRaises(ValueError):
+                FZ.family_curve({"curves": other}, "xgrids", 0)
+            with self.assertRaises(ValueError):
+                FZ.require_srgb(np.array(other), "a frieze product")                        # frieze-venue's refusal
+        FZ.require_srgb(np.array(FZ.CURVES), "a frieze product")
 
 
 class Detail(unittest.TestCase):
@@ -7521,6 +8248,37 @@ class Spread(unittest.TestCase):
         self.assertTrue(np.isnan(by_state[2]).all())                                    # two capture views cannot say
 
 
+class GiltReference(unittest.TestCase):
+    def test_a_view_counts_in_a_block_it_covers_at_least_half_of(self):
+        """frieze_reference: three capture views over two 10 cm blocks; the third covers 30% of the second block, so
+        there it does not count and the block, with two views, has no reference; the first block's is the excess
+        statistic of all three."""
+        from skins import specular as SP
+
+        class G:
+            texel = 0.002; rows = 50; cols = 100; normal = np.array([0.0, -1.0, 0.0])
+            def points(self, cc, rr):
+                return np.c_[np.asarray(cc) * 0.002, np.full(len(cc), 0.0), 5.4 - np.asarray(rr) * 0.002]
+        em = SP.Emitters(P=np.array([[0.1, -3.0, 4.6]]), source=np.array([6]), kind=np.array([SP.LAMP]), size=np.ones(1),
+                         windows={}, dome=(0.0, 0.0, 10.0, 0.0))
+        light = {"texel": np.float64(0.02), "D": np.zeros((3, 6, 9)), "cubes": np.zeros((3, 6, 9, 3, 6))}
+        light["D"][..., 6] = 1.0
+        E = {s: np.full((3, 6, 3), 2.0) for s in ("day", "evening", "capture")}
+        W = np.zeros((9, 3)); W[6] = [1.623, 1.0, 0.467]
+        spec = {"emitters": em, "W": {s: W for s in E}, "sigma": {s: SP.LAMP_COLOUR_SIGMA for s in E}}
+        views = {"xg:a": (np.array([0.1, -4.0, 4.4]), "capture"), "xg:b": (np.array([0.15, -4.0, 5.0]), "capture"),
+                 "xg:c": (np.array([0.2, -3.0, 1.5]), "capture")}
+        total = np.array([2500.0, 2500.0])
+        counts = {"xg:a": np.array([2500.0, 2500.0]), "xg:b": np.array([2500.0, 2500.0]), "xg:c": np.array([2500.0, 750.0])}
+        ref = FZ.frieze_reference(spec, G(), light, E, views, counts, total, 0, 50, 2)
+        self.assertEqual(ref.shape, (len(SP.VARIANTS), 3, 2, 3))
+        self.assertTrue(np.isnan(ref[:, 2, 1]).all() and np.isnan(ref[:, :2]).all())   # two views; no day or evening view
+        cells = SP.cells_at(G(), light, E, np.array([25.0]), np.array([25.0]))
+        Tn, Tg = SP.view_terms(em, cells, np.array([v[0] for v in views.values()]))
+        r = SP.view_references(Tn, Tg, cells["E"]["capture"], W, spec["sigma"]["capture"])
+        np.testing.assert_allclose(ref[0, 2, 0], SP.excess_stat(r[0], np.ones((3, 1), bool))[0], rtol=1e-9)
+
+
 if __name__ == "__main__":
     unittest.main()
 ```
@@ -7543,7 +8301,8 @@ Expected: one line. If it is missing, Task 6A did not land; stop and report.
 
 ```python
 """The frieze band, measured (R1 polished 3.3; the frieze research's recipe, findings.md of 7 October): every view's
-band texels linearised by its camera family's fitted response curve, kept per channel only where unclipped, de-lit as
+band texels linearised by sRGB (every family and channel; the fitted response curves are measured notes, round 5),
+kept per channel only where unclipped, de-lit as
 the mosaic de-lit them, fused per channel, detail borrowed from blue where a channel has no sharp view, the relight
 model's residual vertical light (one decaying exponential, kept only when it predicts held-out rows) fitted from the
 frieze's measured edge up and divided out on every row, and synthesis (plain ground from the same rows) only where no
@@ -7555,10 +8314,8 @@ import json, math, os, time, warnings
 
 import cv2
 import numpy as np
-import scipy.sparse as sp
-from scipy.sparse.linalg import lsqr
 
-from . import blend as B, frames as F, heal as HL, lightstates as LS, views as VW, xgrids as XG
+from . import blend as B, frames as F, heal as HL, lightstates as LS, specular as SP, views as VW, xgrids as XG
 
 Z_LO, Z_HI, CLIP = 6, 249, 250
 SHARP_M = 0.004
@@ -7584,7 +8341,17 @@ LIGHT_LAMBDAS = tuple(float(x) for x in np.round(np.exp(np.linspace(math.log(0.0
 LIGHT_ACCEPT = 0.75
 LIGHT_MIN_ROWS = 40
 LIGHT_FLOOR = 0.02        # F2: the light's profile matters down to 2% of its strength at the edge
-BLUE_CURVES = ("srgb", "fitted")   # XGRIDS blue: the research's sRGB, or the curve frieze-crf fits; frieze-blue chooses
+CURVES = ("srgb", "srgb", "srgb")  # R, G, B: every channel of every family is linearised by sRGB (round 5)
+# sRGB is the research's choice for every channel (its crf.py:125-130). A response curve is the camera's only if it is
+# the same across stretches, and on the research's samples the fitted XGRIDS curves are not: green's departure at code
+# 240 is -0.23 ln on the door stretch and +0.16 on the fireplace's, and blue's (-0.52 there) lies on the fireplace
+# stretch alone, where red clips, reading as a view-dependent highlight does. So frieze-crf fits each channel (crf_solve
+# on its matte points) and records the departures as measured notes, per part and their median; no product applies them.
+NOTE_Z = (200, 220, 240, 249)  # the codes at which crf.json records each fitted curve's departure from sRGB
+MID_Z = (30, 180)         # the mid-tones (the research's crf.py, its first stage)
+TRUST_M = 0.05            # the spread across views is trusted from 5 cm above the frieze's edge
+CLASS_MIN = 200           # texels each of the spread's two classes needs
+BLOCK_CLASS_MIN = 20      # texels of each class a gilt test block needs (round 5)
 
 
 def _lin(z):
@@ -7596,26 +8363,38 @@ LIN128 = float(_lin(128))
 SRGB_G = np.log(np.maximum(_lin(np.arange(256)), 1e-6) / LIN128)    # sRGB as a log curve: crf_linear(z, SRGB_G) = lin(z)
 
 
-def crf_solve(Z, lam=40.0):
-    """Debevec and Malik: g(Z_pk) = lnL_p + lnE_k, smooth g, weight 1 on [Z_LO, Z_HI] else 0. The two anchors fix the
-    gauge (offset and scale): g(128) = 0 and g(64) = ln(lin(64) / lin(128)). Z (P, K) int16, -1 missing."""
+def crf_solve(Z, iters=3):
+    """A response curve from codes Z (P, K) int16 (-1 missing), the research's staged fit (its crf.py solve_channel,
+    lines 57-120; round 5): (1) each view's exposure and each point's radiance from the mid-tone codes (MID_Z) under
+    sRGB (_midtone_fit); (2) the curve's departure from sRGB measured directly, per 4-code bin of at least 30
+    observations, as the median of lnE + lnL - ln sRGB(Z), forced to zero in the mid-tones and held flat beyond the last
+    bin measured; (3) the radiances re-estimated from every code with that curve, the exposures from the mid-tones, and
+    again. So g(128) = 0 and g(64) = ln(lin(64) / lin(128)): the curve agrees with sRGB in the mid-tones and is monotone.
+    The joint Debevec-Malik fit this plan used before is degenerate when the views' exposures barely differ: on the
+    research's door samples it flattened red to 1.40 ln below sRGB at code 240, where this fit gives 0.11 (round 5)."""
     Z = np.asarray(Z, np.int64)
-    P, K = Z.shape
-    pi, ki = np.nonzero((Z >= Z_LO) & (Z <= Z_HI))
-    n_eq = len(pi)
-    r = np.arange(n_eq)
-    rows, cols, vals = [r, r, r], [Z[pi, ki], 256 + pi, 256 + P + ki], [np.ones(n_eq), -np.ones(n_eq), -np.ones(n_eq)]
-    rhs = [np.zeros(n_eq)]
-    z = np.arange(1, 255)
-    r2 = n_eq + np.arange(len(z))
-    rows += [r2, r2, r2]; cols += [z - 1, z, z + 1]; vals += [np.full(len(z), lam), np.full(len(z), -2 * lam), np.full(len(z), lam)]
-    rhs.append(np.zeros(len(z)))
-    r3 = n_eq + len(z) + np.arange(2)
-    rows.append(r3); cols.append(np.array([128, 64])); vals.append(np.full(2, 1e3))
-    rhs.append(1e3 * np.array([0.0, math.log(_lin(64) / LIN128)]))
-    A = sp.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(n_eq + len(z) + 2, 256 + P + K))
-    x = lsqr(A, np.concatenate(rhs), atol=1e-12, btol=1e-12, iter_lim=50000)[0]
-    return x[:256], x[256 + P:], x[256:256 + P]
+    lnE, lnL, valid = _midtone_fit(Z)
+    mid = valid & (Z >= MID_Z[0]) & (Z <= MID_Z[1])
+    sz = SRGB_G[np.clip(Z, 0, 255)]
+    g = SRGB_G.copy()
+    for _ in range(iters):
+        r = lnE[None] + lnL[:, None] - sz
+        ok = valid & np.isfinite(r)
+        zz, rr = Z[ok], r[ok]
+        cen, med = [], []
+        for z0 in range(0, 256, 4):
+            m = (zz >= z0) & (zz < z0 + 4)
+            if m.sum() >= 30:
+                cen.append(z0 + 1.5)
+                med.append(0.0 if MID_Z[0] <= z0 + 1.5 <= MID_Z[1] else float(np.median(rr[m])))
+        g = _monotone(SRGB_G + (np.interp(np.arange(256), cen, med) if cen else 0.0))
+        lnZ = np.where(valid, g[np.clip(Z, 0, 255)], np.nan)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            lnL = np.nanmedian(np.where(valid, lnZ - lnE[None], np.nan), axis=1)
+            lnE = np.nanmedian(np.where(mid, lnZ - lnL[:, None], np.nan), axis=0)
+        lnE = np.where(np.isfinite(lnE), lnE, 0.0)
+    return g, lnE, np.nan_to_num(lnL, nan=0.0)
 
 
 def _monotone(g):
@@ -7633,12 +8412,25 @@ def crf_linear(raw_c, g):
     return LIN128 * np.exp(np.interp(np.asarray(raw_c, np.float64), np.arange(256), np.asarray(g, np.float64)))
 
 
+def require_srgb(curves, what):
+    """Refuses a record of response curves other than CURVES (round 5): every product is made with sRGB."""
+    got = tuple(str(c) for c in np.asarray(curves).ravel())
+    if got != CURVES:
+        raise ValueError(f"{what} names response curves {got}, not {CURVES}")
+
+
 def family_curve(crfs, family, c):
-    """Channel c's log response curve for a view family: the fitted XGRIDS curve, or sRGB for the E57 faces and for
-    XGRIDS blue (c = 2, RGB order) when the evidence chose sRGB for it (`crfs["blue"]`, frieze-blue)."""
-    if family == "face" or (c == 2 and crfs.get("blue") == "srgb"):
-        return SRGB_G
-    return crfs[family]["g"][c]
+    """Channel c's log response curve for a view family (`face` or `xgrids`): sRGB, for the E57 faces (no single curve)
+    and, by precedent, for every XGRIDS channel (round 5); crfs["curves"] names it, and any other record is refused."""
+    require_srgb(crfs["curves"], "the curve record")
+    return SRGB_G
+
+
+def curve_notes(curves):
+    """{label: [g_R, g_G, g_B], each (256,) or None} -> each curve's departure from sRGB at NOTE_Z, ln, as {label:
+    {code: [R, G, B]}} (None for a channel without a curve): crf.json's measured notes (round 5)."""
+    return {k: {str(z): [None if g is None else round(float(g[z] - SRGB_G[z]), 3) for g in gs] for z in NOTE_Z}
+            for k, gs in curves.items()}
 
 
 def value_weight(family, raw_c):
@@ -7796,6 +8588,25 @@ def view_spread(X, valid, sigma_px, q_hi=90, states=None):
     return spread, view_excess(lp, q_hi), by_state
 
 
+def two_classes(spread, ok):
+    """The spread's two classes (Otsu on its logarithm over the texels `ok`): (variable (h, w) bool, the low class's
+    median log spread, the high class's), or None under 2 x CLASS_MIN texels or when either class has under CLASS_MIN.
+    The gilded ground's mask, the view-dependence map and the gilt test all split the spread this way."""
+    spread = np.asarray(spread, np.float64)
+    ok = np.asarray(ok, bool) & np.isfinite(spread) & (spread > 0)
+    if ok.sum() < 2 * CLASS_MIN:
+        return None
+    ls = np.log(spread[ok])
+    lo, hi = float(ls.min()), float(ls.max())
+    q = np.round((ls - lo) / max(hi - lo, 1e-9) * 255).astype(np.uint8).reshape(-1, 1)
+    t8, _ = cv2.threshold(q, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    upper = q[:, 0] > t8
+    if upper.sum() < CLASS_MIN or (~upper).sum() < CLASS_MIN:
+        return None
+    variable = np.zeros(spread.shape, bool); variable[ok] = upper
+    return variable, float(np.median(ls[~upper])), float(np.median(ls[upper]))
+
+
 def srgb_to_lab(rgb):
     lin = _lin(np.clip(np.asarray(rgb, np.float64), 0, 1) * 255.0)
     M = np.array([[0.4124564, 0.3575761, 0.1804375], [0.2126729, 0.7151522, 0.0721750], [0.0193339, 0.1191920, 0.9503041]])
@@ -7913,7 +8724,7 @@ def render_stack(cfg, src, geom, keys, reg, r0, r1, c0, c1, cache):
         if not valid.any():
             continue
         stack.append({"key": key, "family": fam, "state": VW.view_state(key, cfg.room), "raw": o["raw"], "valid": valid,
-                      "cos": o["cos"], "gsd": gsd})
+                      "cos": o["cos"], "gsd": gsd, "centre": np.asarray(src.view(key).centre, np.float64)})
     return stack
 
 
@@ -7921,7 +8732,9 @@ def fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread
     """One column tile: per channel, every view's unclipped values linearised by its family's curve (sRGB for the E57
     faces, whose top values are down-weighted) and de-lit by its gain and state light, fused by Task 9's two-band blend. lx, ly: light-grid coordinates per texel (flattened). With
     spread_px, also each texel's spread across the views (green) and their bright views' excess per light state, each
-    over that state's views alone ((S, h, w, 3), blend.LIGHT_STATES' order; round 4)."""
+    over that state's views alone ((S, h, w, 3), blend.LIGHT_STATES' order; round 4), both over the views valid in all
+    three channels there (a highlight clips red first, so a view clipped in one channel counts in none and the excess's
+    colour compares the same views; round 5), and those views (n, h, w) bool."""
     h, w = shape
     n = len(stack)
     X = np.zeros((n, h, w, 3), np.float32); valid = np.zeros((n, h, w, 3), bool)
@@ -7943,22 +8756,40 @@ def fuse(stack, E, gains, crfs, lx, ly, shape, sigma_low_px, damage=None, spread
     for c in range(3):
         lo, _nv = B.blend(np.repeat(X[..., c:c + 1], 3, -1), valid[..., c], wlow[..., c], whigh[..., c], sigma_low_px)
         lnrho[..., c] = lo[..., 0]
-    spread = excess_states = None
+    spread = excess_states = every = None
     if spread_px is not None:
         states = [s["state"] for s in stack]
-        parts = [view_spread(X[..., c], valid[..., c], spread_px, states=states) for c in range(3)]
+        every = valid.all(-1)
+        parts = [view_spread(X[..., c], every, spread_px, states=states) for c in range(3)]
         spread, excess_states = parts[1][0], np.stack([part[2] for part in parts], -1)
-    return lnrho, valid.any(0), (valid & sharp[..., None]).any(0), spread, excess_states
+    return lnrho, valid.any(0), (valid & sharp[..., None]).any(0), spread, excess_states, every
+
+
+def frieze_reference(spec, geom, light, E, views, counts, total, r0, cell, nbc):
+    """The specular reference of a frieze skin's gilt test (round 5): (len(specular.VARIANTS), S, blocks, 3) over the
+    blocks of `cell` texels from row r0 (row-major, nbc to a row), a view counting in a block where it is valid in all
+    channels over at least half the block's texels (counts {key: (blocks,)} of total (blocks,)); views {key: (centre,
+    state)}; the states blend.LIGHT_STATES."""
+    nb = len(total)
+    br, bc = np.divmod(np.arange(nb), nbc)
+    cells = SP.cells_at(geom, light, E, np.minimum(r0 + (br + 0.5) * cell, geom.rows - 0.5),
+                        np.minimum((bc + 0.5) * cell, geom.cols - 0.5))
+    keys = sorted(counts)
+    valid = np.stack([counts[k] >= 0.5 * np.maximum(total, 1) for k in keys]) & (total > 0)[None]
+    Tn, Tg = SP.view_terms(spec["emitters"], cells, np.array([views[k][0] for k in keys]))
+    return SP.references_from_terms(Tn, Tg, cells["E"], [views[k][1] for k in keys], valid,
+                                    {s: spec["W"][s] for s in B.LIGHT_STATES}, spec["sigma"])
 
 
 def recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, cols=None, *, damage=None, light_v=None,
-                 cache=None, spread=False):
+                 cache=None, spread=False, spec=None):
     """rows: whole skin rows (the band and the clean frieze above); cols: a column range (default the whole skin).
     light_v: the height at which each row's light is looked up and its residual light fitted (default its own; the
     holdout relabels its strip as band rows). Column tiles of blend.TILE with margins; the residual light is fitted on
     the rows from the frieze's measured bottom edge up (Task 5; the moulding's rows below it are outside the region),
     each row's 80th-percentile ground relative to the clean frieze's, and divided out on every row. spread:
-    also each texel's spread across the views and their excess per light state (view_spread)."""
+    also each texel's spread across the views and their excess per light state (view_spread); with spec
+    (specular.spec_inputs) also the gilt test's specular reference per block (frieze_reference, round 5)."""
     cols = cols if cols is not None else slice(0, geom.cols)
     cache = {} if cache is None else cache
     r0, r1 = rows.start, rows.stop
@@ -7972,6 +8803,9 @@ def recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, co
     spr = np.full((h, w), np.nan, np.float32) if spread else None
     exc = np.full((len(B.LIGHT_STATES), h, w, 3), np.nan, np.float32) if spread else None
     margin = int(math.ceil(2.2 * B.SIG_LOW_M / geom.texel))
+    cell = SP.cell_texels(geom.texel)
+    nbr, nbc = -(-h // cell), -(-geom.cols // cell)
+    counts, total, views = {}, np.zeros(nbr * nbc), {}
     for t0 in range(cols.start, cols.stop, B.TILE):
         t1 = min(cols.stop, t0 + B.TILE)
         C0, C1 = max(0, t0 - margin), min(geom.cols, t1 + margin)
@@ -7981,12 +8815,18 @@ def recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, co
         cc = np.broadcast_to(np.arange(C0, C1, dtype=np.float64)[None] + 0.5, (h, C1 - C0))
         rr = np.broadcast_to(lrow[:, None], (h, C1 - C0))
         lx, ly = LS.texel_light_coords(geom, lt, cc.ravel(), rr.ravel())
-        part, pa, ps, psp, pex = fuse(stack, E, gains, crfs, lx, ly, (h, C1 - C0), B.SIG_LOW_M / geom.texel, damage,
-                                      spread_px=SPREAD_M / geom.texel if spread else None)
+        part, pa, ps, psp, pex, every = fuse(stack, E, gains, crfs, lx, ly, (h, C1 - C0), B.SIG_LOW_M / geom.texel, damage,
+                                             spread_px=SPREAD_M / geom.texel if spread else None)
         sl, dst = slice(t0 - C0, t1 - C0), slice(t0 - cols.start, t1 - cols.start)
         lnrho[:, dst], vany[:, dst], vsharp[:, dst] = part[:, sl], pa[:, sl], ps[:, sl]
         if spread:
             spr[:, dst], exc[:, :, dst] = psp[:, sl], pex[:, :, sl]
+            if spec is not None:                                             # each view's valid texels per block (round 5)
+                bi = (np.arange(h)[:, None] // cell * nbc + np.arange(t0, t1)[None, :] // cell).ravel()
+                total += np.bincount(bi, minlength=nbr * nbc)
+                for s_, ok in zip(stack, every[:, :, sl]):
+                    counts[s_["key"]] = counts.get(s_["key"], 0) + np.bincount(bi, ok.ravel().astype(np.float64), minlength=nbr * nbc)
+                    views[s_["key"]] = (s_["centre"], s_["state"])
     clean_rows = (vl >= CLEAN_V[0]) & (vl <= CLEAN_V[1])
     lnrho, borrowed = transfer_detail(lnrho, vsharp, np.repeat(clean_rows[:, None], w, 1))
     rho = np.maximum(np.exp(lnrho) - B.EPS, 0)
@@ -8001,28 +8841,20 @@ def recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, co
     if hole.any():
         rho, ok = HL.copy_fill(rho, hole, ~hole, search_px=int(round(0.5 / geom.texel)), ring_px=5)
         rho = HL.inpaint_fill(rho, hole & ~ok)
+    ref = None
+    if spread and spec is not None and counts:
+        ref = frieze_reference(spec, geom, light, E, views, counts, total, r0, cell, nbc).reshape(len(SP.VARIANTS), len(B.LIGHT_STATES), nbr, nbc, 3)
     return {"albedo": np.maximum(rho, 0).astype(np.float32), "prov": prov, "light": fit,
-            "borrowedShare": float(borrowed.any(-1).mean()), "v": v, "spread": spr, "excessByState": exc}
+            "borrowedShare": float(borrowed.any(-1).mean()), "v": v, "spread": spr, "excessByState": exc,
+            "reference": ref, "referenceCell": cell}
 
 
 def _crfs(cfg, rest=()):
-    """The fitted curves (crf.json) and the XGRIDS blue curve to use: `--blue <variant>` for a comparison run, else
-    the evidence's choice (`frieze/blue.json`, frieze-blue); with neither, refuse (Step 10 compares both first)."""
-    folder = os.path.join(cfg.paths["work"], "frieze")
-    with open(os.path.join(folder, "crf.json"), encoding="utf-8") as f:
-        crfs = json.load(f)
-    out = {fam: {"g": [_monotone(gc) for gc in e["g"]]} for fam, e in crfs.items()}
-    if "--blue" in rest:
-        out["blue"] = rest[rest.index("--blue") + 1]
-    else:
-        path = os.path.join(folder, "blue.json")
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"{path}: run frieze-blue first (Task 12 Step 10), or name --blue srgb|fitted")
-        with open(path, encoding="utf-8") as f:
-            out["blue"] = json.load(f)["choice"]
-    if out["blue"] not in BLUE_CURVES:
-        raise ValueError(f"the XGRIDS blue curve {out['blue']!r} is not one of {BLUE_CURVES}")
-    return out
+    """The response curves frieze-crf recorded (crf.json's `curves`: sRGB for every channel), refused if any other."""
+    with open(os.path.join(cfg.paths["work"], "frieze", "crf.json"), encoding="utf-8") as f:
+        curves = tuple(json.load(f)["curves"])
+    require_srgb(curves, "crf.json")
+    return {"curves": curves}
 
 
 def _skin_inputs(cfg, sid, surfaces):
@@ -8047,55 +8879,92 @@ def _states(cfg):
         return json.load(f)
 
 
+def _midtone_fit(Z):
+    """Z (P, K) codes (-1 missing): each view's exposure lnE (K,) and each point's radiance lnL (P,) from the mid-tone
+    codes (MID_Z) under sRGB, where the curves agree (alternating medians, the research's crf.py's first stage), and
+    the valid codes (Z_LO to Z_HI)."""
+    Z = np.asarray(Z, np.int64)
+    valid = (Z >= Z_LO) & (Z <= Z_HI)
+    mid = valid & (Z >= MID_Z[0]) & (Z <= MID_Z[1])
+    lnZ = np.where(valid, SRGB_G[np.clip(Z, 0, 255)], np.nan)
+    lnE = np.zeros(Z.shape[1]); lnL = np.full(Z.shape[0], np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for _ in range(8):
+            lnL = np.nanmedian(np.where(mid, lnZ - lnE[None], np.nan), axis=1)
+            lnE = np.nanmedian(np.where(mid, lnZ - lnL[:, None], np.nan), axis=0)
+            lnE = np.where(np.isfinite(lnE), lnE, 0.0)
+            lnE -= np.median(lnE)
+    return lnE, lnL, valid
+
+
+def matte_points(Zg):
+    """Zg (P, K): one part's codes in one channel (-1 missing). The points whose views agree: the lower class (two_classes) of
+    each point's lift, its largest residual over its median (residuals of its valid codes under sRGB about the view's
+    exposure and the point's radiance from the mid-tones, _midtone_fit), so the gilded ground's view-dependent highlights
+    (a few views lifted) cannot bend a curve; a compressive shoulder (every point's top codes lowered) lifts no point, an
+    expanding one lifts every point it touches, as a highlight does; every point with mid-tones and 3 valid views when
+    the lift does not split (round 5, B-2)."""
+    Zg = np.asarray(Zg, np.int64)
+    lnE, lnL, valid = _midtone_fit(Zg)
+    enough = (valid.sum(1) >= 3) & np.isfinite(lnL)
+    r = np.where(valid & enough[:, None], SRGB_G[np.clip(Zg, 0, 255)] - lnE[None] - np.nan_to_num(lnL)[:, None], np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        lift = np.where(enough, np.nanmax(r, axis=1) - np.nanmedian(r, axis=1), np.nan)
+    split = two_classes(np.maximum(lift, 1e-6)[None], enough[None])
+    return enough if split is None else enough & ~split[0][0]
+
+
 def cmd_frieze_crf(cfg, rest) -> int:
-    """<work>/frieze/crf.json: the XGRIDS frames' response curve, the median over parts (one part per frieze skin and
-    light state: a point's radiance is shared only within a state), each part from a 1 m stretch (the holdout's on its
-    three skins, else the skin's centre) on an 8-texel grid of views blurred by 3 texels (the research's crf.py). The
-    E57 faces get none (no single curve; family_curve gives them sRGB)."""
+    """<work>/frieze/crf.json: the curves every product linearises by (CURVES, sRGB for every channel; round 5) and the
+    measured notes: each XGRIDS part's fitted curves (one part per frieze skin and light state, a point's radiance being
+    shared only within a state; a 1 m stretch, the holdout's on its three skins, else the skin's centre, on an 8-texel
+    grid of views blurred by 3 texels, the research's crf.py; crf_solve on each channel's own points, a point counting
+    in a channel with two valid views there, and on its matte points, matte_points) as their departures from sRGB at
+    NOTE_Z (curve_notes), per part and the median over parts. The E57 faces have no single curve."""
     src = VW.load_sources(cfg, xgrids=True)
     surfaces = F.read_surfaces(cfg.paths["surfaces"])
     starts = dict(HOLDOUT_STRETCHES)
-    parts = {"xgrids": []}                    # the E57 faces have no single curve: sRGB (family_curve)
+    parts = []
     for sid in frieze_ids(cfg.paths["work"]):
         geom, light, keys, reg, gains = _skin_inputs(cfg, sid, surfaces)
         rows, cols = _frieze_rows(geom), _stretch_cols(geom, starts.get(sid))
         stack = render_stack(cfg, src, geom, keys, reg, rows.start, rows.stop, cols.start, cols.stop, {})
-        for fam in parts:
-            views = [s for s in stack if s["family"] == fam]
-            if len(views) < 2:
+        views = [s for s in stack if s["family"] == "xgrids"]
+        if len(views) < 2:
+            continue
+        Zs = np.stack([cv2.GaussianBlur(s["raw"], (0, 0), 3.0)[4::8, 4::8] for s in views], -1)    # (h, w, 3, K)
+        ok = np.stack([s["valid"][4::8, 4::8] for s in views], -1)                                  # (h, w, K)
+        Z = np.where(ok[:, :, None, :], np.rint(Zs), -1).astype(np.int16).reshape(-1, 3, len(views))
+        st = np.array([s["state"] for s in views])
+        for state in sorted(set(st.tolist())):
+            parts.append((sid, state, np.where((st == state)[None, None, :], Z, -1).astype(np.int16)))
+    per, notes = {"all": [[], [], []], "matte": [[], [], []]}, []
+    for sid, state, Zp in parts:
+        fitted = {"all": [None] * 3, "matte": [None] * 3}
+        for c in range(3):                                # each channel's own points: blue's top codes lie where red clips
+            idx = np.flatnonzero(((Zp[:, c] >= Z_LO) & (Zp[:, c] <= Z_HI)).sum(1) >= 2)
+            if len(idx) < 50:
                 continue
-            Zs = np.stack([cv2.GaussianBlur(s["raw"], (0, 0), 3.0)[4::8, 4::8] for s in views], -1)    # (h, w, 3, K)
-            ok = np.stack([s["valid"][4::8, 4::8] for s in views], -1)                                  # (h, w, K)
-            Z = np.where(ok[:, :, None, :], np.rint(Zs), -1).astype(np.int16).reshape(-1, 3, len(views))
-            st = np.array([s["state"] for s in views])
-            for state in sorted(set(st.tolist())):
-                parts[fam].append(np.where((st == state)[None, None, :], Z, -1).astype(np.int16))
-    out = {}
-    for fam, plist in parts.items():
-        gs, used = [], 0
-        for c in range(3):
-            solved = []
-            for Zp in plist:
-                sel = Zp[:, c, :]
-                idx = np.flatnonzero(((sel >= Z_LO) & (sel <= Z_HI)).sum(1) >= 2)
-                if len(idx) < 50:
-                    continue
-                idx = idx[np.linspace(0, len(idx) - 1, min(2000, len(idx))).astype(np.int64)]
-                solved.append(crf_solve(sel[idx])[0])
-            if not solved:
-                break
-            gs.append(np.median(np.stack(solved), 0).tolist()); used = max(used, len(solved))
-        if len(gs) == 3:
-            out[fam] = {"g": gs, "parts": used}
-    if set(out) != {"xgrids"}:
-        print("frieze-crf: no XGRIDS curve (too few parts with two valid views)", flush=True)
-        return 1
+            Zc = Zp[idx[np.linspace(0, len(idx) - 1, min(2000, len(idx))).astype(np.int64)], c, :]
+            matte = matte_points(Zc)
+            fitted["all"][c] = crf_solve(Zc)[0]
+            if matte.sum() >= 50:
+                fitted["matte"][c] = crf_solve(Zc[matte])[0]
+            for k in per:
+                if fitted[k][c] is not None:
+                    per[k][c].append(fitted[k][c])
+        notes.append({"skin": sid, "state": state, **curve_notes(fitted)})
+    median = {k: [np.median(np.stack(gs), 0) if gs else None for gs in per[k]] for k in per}
+    record = {"curves": list(CURVES),
+              "basis": "precedent: the research's sRGB for every channel (crf.py:125-130); the fitted curves are measured notes",
+              "fittedMinusSrgb": curve_notes(median), "parts": [len(gs) for gs in per["matte"]], "perPart": notes}
     os.makedirs(os.path.join(cfg.paths["work"], "frieze"), exist_ok=True)
     with open(os.path.join(cfg.paths["work"], "frieze", "crf.json"), "w", encoding="utf-8") as f:
-        json.dump(out, f, indent=1)
-    for fam, e in out.items():
-        lift = [round(float(e["g"][c][240] - math.log(_lin(240) / LIN128)), 3) for c in range(3)]
-        print(f"frieze-crf {fam}: {e['parts']} parts; shoulder at 240 above sRGB by {lift}", flush=True)
+        json.dump(record, f, indent=1)
+    print(f"frieze-crf: curves {CURVES}; {len(parts)} XGRIDS parts, matte fits per channel {record['parts']}; fitted minus "
+          f"sRGB at {NOTE_Z}, ln (R, G, B; median over parts): {json.dumps(record['fittedMinusSrgb'])}", flush=True)
     return 0
 
 
@@ -8104,12 +8973,13 @@ def cmd_frieze(cfg, rest) -> int:
     src = VW.load_sources(cfg, xgrids=True)
     surfaces = F.read_surfaces(cfg.paths["surfaces"])
     states, crfs = _states(cfg), _crfs(cfg, rest)
+    spec = SP.spec_inputs(cfg, states)                                       # the gilt test's reference (round 5)
     folder = os.path.join(cfg.paths["work"], "frieze")
     totals = {"observed": 0, "recovered": 0, "reconstructed": 0}
     for sid in frieze_ids(cfg.paths["work"]):
         geom, light, keys, reg, gains = _skin_inputs(cfg, sid, surfaces)
         rows = _frieze_rows(geom)
-        res = recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, spread=True)
+        res = recover_band(cfg, src, geom, light, states, gains, crfs, keys, reg, rows, spread=True, spec=spec)
         band = HL.band_rows(geom, geom.texel, geom.rows)
         out0 = max(rows.start, band.start - int(round(OVERLAP_M / geom.texel)))
         region = geom.region[out0:] > 0
@@ -8120,17 +8990,19 @@ def cmd_frieze(cfg, rest) -> int:
         np.savez_compressed(os.path.join(folder, f"{sid}.npz"), albedo=albedo.astype(np.float16), prov=prov,
                             rows=np.array([out0, geom.rows]), band0=np.array(band.start),
                             spread=res["spread"].astype(np.float16), excessByState=res["excessByState"].astype(np.float16),
-                            lightStates=np.array(B.LIGHT_STATES),
+                            lightStates=np.array(B.LIGHT_STATES), reference=res["reference"].astype(np.float32),
+                            referenceCell=np.array(res["referenceCell"]), referenceVariants=np.array(SP.VARIANTS),
                             fused=res["albedo"].astype(np.float16), spreadRows=np.array([rows.start, rows.stop]),
                             lightEdge=np.array(fit["edge"]), lightLam=np.array(np.nan if fit["lam"] is None else fit["lam"]),
-                            lightK=np.array(fit["k"], np.float64), lightAccepted=np.array(bool(fit["accepted"])))
+                            lightK=np.array(fit["k"], np.float64), lightAccepted=np.array(bool(fit["accepted"])),
+                            curves=np.array(crfs["curves"]))
         in_band = region[band.start - out0:]
         pb = prov[band.start - out0:]
         counts = {name: int((pb[in_band] == code).sum()) for name, code in
                   (("observed", HL.PROV_OBSERVED), ("recovered", HL.PROV_RECOVERED), ("reconstructed", HL.PROV_RECONSTRUCTED))}
         for k in totals:
             totals[k] += counts[k]
-        report = {"skin": sid, "rows": [out0, geom.rows], "band0": band.start, "counts": counts, "light": fit,
+        report = {"skin": sid, "rows": [out0, geom.rows], "band0": band.start, "counts": counts, "light": fit, "curves": list(crfs["curves"]),
                   "lightAtTopLn": [float(x) for x in at_top], "borrowedShare": res["borrowedShare"]}
         with open(os.path.join(folder, f"{sid}.json"), "w", encoding="utf-8") as f:
             json.dump(report, f, indent=1)
@@ -8223,59 +9095,10 @@ def cmd_frieze_holdout(cfg, rest) -> int:
                and mean["ssim"] >= HOLDOUT_MEAN_GATE["ssim"] and mean["gradCorr"] >= HOLDOUT_MEAN_GATE["gradCorr"])
     passed = passed and mean_ok
     print(f"frieze-holdout mean of the three: {json.dumps(mean)} {'PASS' if mean_ok else 'FAIL'}", flush=True)
-    with open(os.path.join(cfg.paths["evidence"], f"frieze-holdout{blue_suffix(rest)}.json"), "w", encoding="utf-8") as f:
-        json.dump({"gate": HOLDOUT_GATE, "meanGate": HOLDOUT_MEAN_GATE, "blue": crfs["blue"], "stretches": results, "mean": mean,
+    with open(os.path.join(cfg.paths["evidence"], "frieze-holdout.json"), "w", encoding="utf-8") as f:
+        json.dump({"gate": HOLDOUT_GATE, "meanGate": HOLDOUT_MEAN_GATE, "curves": list(crfs["curves"]), "stretches": results, "mean": mean,
                    "meanPass": mean_ok, "pass": passed}, f, indent=1)
     return 0 if passed else 1
-
-
-def blue_suffix(rest) -> str:
-    """The evidence names' suffix for a comparison run of the XGRIDS blue curve (`--blue <variant>`)."""
-    return f"-blue-{rest[rest.index('--blue') + 1]}" if "--blue" in rest else ""
-
-
-def choose_blue(holdout, venue):
-    """The XGRIDS blue curve, by the evidence (Step 10). holdout and venue: {variant: frieze-holdout and frieze-venue
-    evidence of that variant's comparison run}. The venue's photographs are the one independent measure of colour
-    (the holdout compares a recovery with the same curve's truth, so it guards the recovery, not the curve). sRGB, the
-    research's choice (its crf.py:125-130) with no fitted parameter, stands unless the fitted curve agrees better with
-    the photographs: a lower ΔE00 mean, pooled by texels over the photographs with a colour verdict under both, while
-    failing no gate that sRGB passes and costing no photograph its colour verdict. Every run is deterministic (run
-    twice, identical), so any difference is real; a tie goes to sRGB."""
-    def gates(v):
-        return {"holdout": bool(holdout[v]["pass"]), **{k: bool(x) for k, x in venue[v]["gates"].items()}}
-
-    def verdicts(v):
-        return venue[v].get("verdicts", {})
-
-    def pooled(v, crafts):
-        xs = [(venue[v]["colour"][c]["de00Mean"], venue[v]["colour"][c]["texels"]) for c in crafts]
-        n = sum(t for _, t in xs)
-        return sum(m * t for m, t in xs) / n if n else None
-
-    both = sorted(c for c, x in verdicts("srgb").items() if x == "colour" and verdicts("fitted").get(c) == "colour")
-    g_s, g_f = gates("srgb"), gates("fitted")
-    lost_gates = sorted(k for k, x in g_s.items() if x and not g_f.get(k, False))
-    lost_colour = sorted(c for c, x in verdicts("srgb").items() if x == "colour" and verdicts("fitted").get(c) != "colour")
-    m_s, m_f = pooled("srgb", both), pooled("fitted", both)
-    fitted = not lost_gates and not lost_colour and m_s is not None and m_f is not None and m_f < m_s
-    return {"choice": "fitted" if fitted else "srgb", "photographs": both, "de00Mean": {"srgb": m_s, "fitted": m_f},
-            "holdoutMean": {v: holdout[v]["mean"] for v in BLUE_CURVES}, "gates": {"srgb": g_s, "fitted": g_f},
-            "lostGates": lost_gates, "lostColour": lost_colour}
-
-
-def cmd_frieze_blue(cfg, rest) -> int:
-    """<work>/frieze/blue.json: the XGRIDS blue curve choose_blue picks from the comparison runs' evidence
-    (`frieze-holdout-blue-<variant>.json` and `frieze-venue-blue-<variant>.json`, Step 10), with its numbers."""
-    def read(name):
-        with open(os.path.join(cfg.paths["evidence"], name), encoding="utf-8") as f:
-            return json.load(f)
-    choice = choose_blue({v: read(f"frieze-holdout-blue-{v}.json") for v in BLUE_CURVES},
-                         {v: read(f"frieze-venue-blue-{v}.json") for v in BLUE_CURVES})
-    with open(os.path.join(cfg.paths["work"], "frieze", "blue.json"), "w", encoding="utf-8") as f:
-        json.dump(choice, f, indent=1)
-    print(f"frieze-blue: {json.dumps(choice)}", flush=True)
-    return 0
 ```
 
 - [ ] **Step 5: Write the failing tests for the venue's photographs**
@@ -8286,7 +9109,7 @@ def cmd_frieze_blue(cfg, rest) -> int:
 import hashlib, json, math, os, tempfile, unittest
 import numpy as np
 import cv2
-from skins import blend as B, frieze as FZ, heal as HL, venue as VN
+from skins import blend as B, frieze as FZ, heal as HL, specular as SP, venue as VN
 
 TEXEL, EDGE = 0.002, 4.28
 
@@ -8375,9 +9198,9 @@ class Registration(unittest.TestCase):
         sliver = [st for st in reg["tried"]["door"]["stretches"] if st["u0"] == 3.0]
         self.assertTrue(sliver and sliver[0]["cover"] < VN.REG_COVER_MIN and sliver[0]["corr"] is None)   # 6 cm of a metre: not refined
         self.assertLess(VN.join_disagreement(reg["stretches"], photo.shape, grid), 0.002)
-        off = np.array([[1.0, 0.0, 3.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]) @ np.asarray(reg["stretches"][1]["H"])
+        off = np.array([[1.0, 0.0, 4.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]) @ np.asarray(reg["stretches"][1]["H"])
         self.assertGreater(VN.join_disagreement([reg["stretches"][0], {**reg["stretches"][1], "H": off.tolist()}], photo.shape, grid),
-                           VN.REG_JOIN_MAX_M)                                   # 3 px (12 mm) apart where they cross-fade
+                           VN.REG_JOIN_MAX_M)                                   # 4 px (16 mm) apart: the blend departs 8 mm
 
         class Surface:
             name = "door"
@@ -8568,43 +9391,51 @@ class Seam(unittest.TestCase):
 
 
 class Gilt(unittest.TestCase):
-    @staticmethod
-    def _skin(variable_by_state):
-        """A paint class (left) and a variable class (right), with each light state's excess (day, evening, capture)."""
-        spread = np.full((60, 80), 0.03, np.float32); spread[:, 40:] = 0.30
-        excess = np.zeros((3, 60, 80, 3), np.float32); excess[:, :, :40] = [0.010, 0.007, 0.003]
-        for i, v in enumerate(variable_by_state):
-            excess[i, :, 40:] = v
-        return spread, excess
+    GOLD, WARM = np.array([1.0, 0.78, 0.34]), np.array([1.623, 1.0, 0.467])
 
-    def test_the_gilt_is_the_view_dependent_class_with_a_gold_highlight_in_two_light_states(self):
-        gold, white, flat = [0.030, 0.023, 0.007], [0.030, 0.030, 0.030], [0.011, 0.008, 0.003]
-        trusted = np.ones((60, 80), bool)
-        m, report = VN.gilt_from_spread(*self._skin([gold, gold, gold]), trusted, 0.002)
+    def _skin(self, tint, seed=0):
+        """A frieze skin at 2 mm, 150 x 250 texels (3 x 5 test blocks of 10 cm): stripes of paint and of a variable
+        class 5 cm wide; each light state's excess, the paint's noise and the variable class's tint x its block's reference (a
+        warm lamp mirrored under daylight, of a magnitude varying by block) plus noise; the reference per variant."""
+        rng = np.random.default_rng(seed)
+        spread = np.full((150, 250), 0.03, np.float32)
+        var = (np.arange(250) // 25) % 2 == 1
+        spread[:, var] = 0.30
+        V = len(SP.VARIANTS)
+        ref = np.zeros((V, 3, 3, 5, 3))
+        excess = rng.normal(0.002, 0.0003, (3, 150, 250, 3)).astype(np.float32)
+        for s in range(3):
+            mag = rng.uniform(0.5, 2.0, (3, 5, 1))
+            ref[0, s] = mag * self.WARM; ref[1, s] = mag * self.WARM * self.GOLD
+            ref[2:, s] = ref[0, s] * np.exp(0.01)
+            up = np.repeat(np.repeat(ref[0, s], 50, 0), 50, 1)
+            excess[s][:, var] += (tint * up[:, var] + rng.normal(0, 0.001, (150, int(var.sum()), 3))).astype(np.float32)
+        return spread, excess, ref
+
+    def test_the_gilt_is_the_view_dependent_class_and_its_basis_the_tint_test(self):
+        trusted = np.ones((150, 250), bool)
+        spread, excess, ref = self._skin(0.5 * self.GOLD)                           # gilt mirroring a warm lamp
+        m, report = VN.gilt_from_spread(spread, excess, ref, 0, 50, trusted, 0.002)
         self.assertEqual(report["basis"], "measured")
-        self.assertGreater(float(m[30, 70]), 0.95); self.assertLess(float(m[30, 10]), 0.05)
-        m2, report2 = VN.gilt_from_spread(*self._skin([gold, white, gold]), trusted, 0.002)   # a dielectric's highlight
+        self.assertGreater(float(m[75, 37]), 0.9); self.assertLess(float(m[75, 12]), 0.1)
+        spread, excess, ref = self._skin(np.full(3, 0.04))                         # varnish mirroring it: warm, not gold
+        hl = (excess[0][:, (np.arange(250) // 25) % 2 == 1] - 0.002).reshape(-1, 3).mean(0)
+        self.assertTrue(hl[2] < 0.55 * hl[0] and hl[2] < hl[1])                      # round 4's rule called it gold
+        m2, report2 = VN.gilt_from_spread(spread, excess, ref, 0, 50, trusted, 0.002)
         self.assertEqual(report2["basis"], "refused"); self.assertEqual(float(m2.max()), 0.0)
-        m3, report3 = VN.gilt_from_spread(*self._skin([gold, flat, flat]), trusted, 0.002)    # one state cannot decide
-        self.assertEqual(report3["basis"], "prior"); self.assertGreater(float(m3[30, 70]), 0.95)
+        spread, excess, ref = self._skin(np.zeros(3))                              # no highlight: the views cannot decide
+        m3, report3 = VN.gilt_from_spread(spread, excess, ref, 0, 50, trusted, 0.002)
+        self.assertEqual(report3["basis"], "prior"); self.assertGreater(float(m3[75, 37]), 0.9)
 
-    def test_the_door_and_fireplace_walls_gilt_is_measured_and_the_window_walls_a_prior(self):
-        # Each light state's median excess (day, evening, capture) over the variable and the paint classes of the
-        # frieze-photo experiment's registered stretches, in albedo units (round 4's gilt_states.py, run twice, equal)
-        walls = {"door": ([[0.02343, 0.01952, 0.00407], [0.01648, 0.01087, 0.00185], [0.02712, 0.01741, 0.00275]],
-                          [[0.00531, 0.0032, 0.00124], [0.00533, 0.00254, 0.00061], [0.00927, 0.00578, 0.00135]]),
-                 "end_xmax": ([[0.00884, 0.00606, 0.0027], [0.01107, 0.00911, 0.0025], [0.01116, 0.00772, 0.00279]],
-                              [[0.00384, 0.00215, 0.00165], [0.00441, 0.0025, 0.00098], [0.00593, 0.00383, 0.00186]]),
-                 "window": ([[0.00327, 0.0014, 0.00047], [0.00292, 0.00133, 0.00018], [0.00635, 0.00223, 0.00035]],
-                            [[0.00296, 0.00144, 0.0006], [0.00287, 0.00132, 0.0002], [0.00576, 0.00278, 0.00045]])}
-        ev = {w: VN.gilt_evidence(dict(zip(B.LIGHT_STATES, v)), dict(zip(B.LIGHT_STATES, p))) for w, (v, p) in walls.items()}
-        self.assertEqual({w: e["basis"] for w, e in ev.items()}, {"door": "measured", "end_xmax": "measured", "window": "prior"})
-        self.assertGreater(min(d["ratio"] for d in ev["end_xmax"]["states"].values()), 1.9)
-        self.assertLess(max(d["ratio"] for d in ev["window"]["states"].values()), 1.05)
+    def test_no_split_is_no_gilt_and_the_photographs_direction_is_its_own_check(self):
+        flat = np.full((150, 250), 0.03, np.float32)
+        m, report = VN.gilt_from_spread(flat, np.zeros((3, 150, 250, 3)), np.zeros((len(SP.VARIANTS), 3, 3, 5, 3)), 0, 50,
+                                        np.ones((150, 250), bool), 0.002)
+        self.assertEqual((report["basis"], float(m.max())), ("none", 0.0))
         # ln(photograph / ours) over each class under Bonnetmakers, Maltmen and Wrights (round 4's gilt_photo.py)
         self.assertTrue(VN.gilt_direction(np.full(300, 0.3636), np.full(300, 0.0382))["pass"])      # door, +0.33
         self.assertTrue(VN.gilt_direction(np.full(300, -0.055), np.full(300, -0.1386))["pass"])     # fireplace, +0.08
-        self.assertFalse(VN.gilt_direction(np.full(300, 0.0764), np.full(300, 0.1648))["pass"])    # window, -0.09: not checked
+        self.assertFalse(VN.gilt_direction(np.full(300, 0.0764), np.full(300, 0.1648))["pass"])    # window, -0.09
 
     def test_the_photograph_classifies_the_rows_our_views_cannot(self):
         photo = np.zeros((40, 60, 3), np.float32); photo[:] = [0.30, 0.25, 0.20]; photo[:, 30:] = [0.70, 0.55, 0.20]
@@ -8734,7 +9565,7 @@ import cv2
 import numpy as np
 from scipy import ndimage
 
-from . import blend as B, frames as F, frieze as FZ, heal as HL, views as VW
+from . import blend as B, frames as F, frieze as FZ, heal as HL, specular as SP, views as VW
 
 PHOTO_DIR = "venue-photos"
 CREDIT_ID = "trades-house-virtual-museum"
@@ -8744,8 +9575,13 @@ REG_STRETCH_M = 1.0            # each metre of a photograph is refined and accep
 REG_MARGIN_M = 0.25            # each metre's ECC window and cross-fade reach this far beyond it
 REG_COVER_MIN = 0.5            # a metre is refined only where the photograph covers half its clean-frieze reference (designed:
                                # a sliver's ECC fit, and the correlation measured on it, rest on too few pixels)
-REG_JOIN_MAX_M = 0.005         # neighbouring metres' homographies agree within 5 mm where they cross-fade: half the 1 cm shift
-                               # the frieze-photo experiment found already material (the door's colour p95 4.77 -> 10.22)
+# Where neighbouring metres cross-fade, their mapping (blended in coordinates, photo_on_skin) departs from the nearer
+# metre's own homography by at most this, the 95th percentile (join_disagreement; round 5, m-4): the shift at which the
+# door photograph's colour check reaches the gate's p95, 7.8 (the frieze-photo experiment: 4.77 registered, 10.22
+# shifted 1 cm, so 0.56 cm on the line between), rounded down. Measured on the experiment's own per-metre
+# registrations (out/register/registrations_run1.json, metres one apart): 0.97-4.88 mm, every photograph within it;
+# the raw distance between the two homographies there is 3.1-13.0 mm (p95), which blending images would have doubled.
+REG_JOIN_MAX_M = 0.0055
 # The frieze-photo experiment's registrations against each wall's E57 colour elevation (its
 # out/register/registrations_run1.json): an independent placement, so a photograph registered on another wall fails the
 # registration gate (a hint names the wall instead).
@@ -8764,14 +9600,8 @@ DETAIL_OFF_GROUPS = (0, 3)     # the door and fireplace walls: the lowest 5 cm f
 LOWER_M, BAND_M = 0.05, 0.15   # the band's lowest 5 cm, and the whole band, above the frieze's measured edge
 RAMP_M = 0.02                  # our detail returns over 2 cm above a zone where it is off (research venue_blend.py)
 DETAIL_FLOOR = 0.5             # our detail kept where its gradient correlation with the photograph is half the clean frieze's
-GILT_TRUST_M = 0.05            # the spread across views is trusted from 5 cm above the edge
-GILT_MIN = 200                 # texels each class needs
-# A light state shows a gilt highlight where the variable class's excess is at least this multiple of the paint
-# class's, in luma (round 4, O-1 / O-2, 8 October). Measured on the frieze-photo experiment's registered stretches, every
-# product twice (day, evening, capture): the door wall 5.48, 3.81, 2.97; the fireplace wall 2.59, 3.24, 1.96; the window
-# wall 1.02, 1.01, 0.92, whose ground is no brighter in its bright views than the figures. 1.4: near the geometric mean
-# of 1.02 and 1.96.
-GILT_HIGHLIGHT_MIN = 1.4
+GILT_TRUST_M = FZ.TRUST_M      # the spread across views is trusted from 5 cm above the edge
+GILT_MIN = FZ.CLASS_MIN        # texels each class needs
 # The colour gate (the frieze-photo experiment, 8 October, its section 6): the worst agreement measured with this
 # pipeline against the research's fusion (Maltmen, 2.80 / 5.63) plus the measured cost of a weaker fusion (E57 faces
 # alone against the research's, on the same stretch and registration: +0.71 / +2.08), 3.51 / 7.71, rounded up.
@@ -9023,42 +9853,46 @@ def register(photo_bgr, walls, hint=None):
             "pixelM": _pixel_m(np.asarray(top["H"], np.float64), w / 2, h / 2, walls[wall]["grid"]["texel"]), "tried": tried}
 
 
+def _metre_weight(st, u):
+    """A metre's weight along the wall: 1 over its own metre, falling linearly to 0 at REG_MARGIN_M beyond it."""
+    return np.clip(1 - np.maximum(np.maximum(st["u0"] - u, u - st["u1"]), 0) / REG_MARGIN_M, 0, 1)
+
+
 def photo_on_skin(photo, stretches, geom, grid):
     """A photograph (h, w) or (h, w, C) resampled onto a skin's texel grid through its per-metre photograph -> wall-
-    reference homographies ([{u0, u1, H}]): each draws its metre with weight 1 and cross-fades into its neighbours over
-    REG_MARGIN_M either side (falling linearly to 0), so the metres meet without a step. Returns the image and its
-    cover (eroded by COVER_ERODE_PX texels)."""
+    reference homographies ([{u0, u1, H}]). Each metre maps the texels with weight 1 over its own metre and cross-fades
+    into its neighbours over REG_MARGIN_M either side (falling linearly to 0); the metres' photograph coordinates are
+    blended, not their images, so where two homographies disagree the drawing moves smoothly instead of doubling (round
+    5, m-4). Returns the image and its cover (eroded by COVER_ERODE_PX texels)."""
     M, _ = skin_to_wall(geom)
     cc, rr = np.meshgrid(np.arange(geom.cols, dtype=np.float64) + 0.5, np.arange(geom.rows, dtype=np.float64) + 0.5)
     u, v = M[0, 0] * cc + M[0, 1] * rr + M[0, 2], M[1, 0] * cc + M[1, 1] * rr + M[1, 2]
     x, y = (u - grid["u0"]) / grid["texel"] - 0.5, (grid["v1"] - v) / grid["texel"] - 0.5
     src = np.ascontiguousarray(photo, np.float32)
-    ones = np.full(src.shape[:2], 255, np.uint8)
-    acc = np.zeros((geom.rows, geom.cols) + src.shape[2:], np.float64)
-    wsum = np.zeros((geom.rows, geom.cols), np.float64)
+    h, w = src.shape[:2]
+    ax, ay, wsum = np.zeros(u.shape), np.zeros(u.shape), np.zeros(u.shape)
     for st in stretches:
-        a = np.clip(1 - np.maximum(np.maximum(st["u0"] - u, u - st["u1"]), 0) / REG_MARGIN_M, 0, 1)
+        a = _metre_weight(st, u)
         if not (a > 0).any():
             continue
         Hi = np.linalg.inv(np.asarray(st["H"], np.float64))
         den = Hi[2, 0] * x + Hi[2, 1] * y + Hi[2, 2]
-        mx = ((Hi[0, 0] * x + Hi[0, 1] * y + Hi[0, 2]) / den).astype(np.float32)
-        my = ((Hi[1, 0] * x + Hi[1, 1] * y + Hi[1, 2]) / den).astype(np.float32)
-        img = np.maximum(cv2.remap(src, mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0), 0)
-        cov = cv2.remap(ones, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0) > 0
-        wgt = a * cov
-        acc += (wgt[..., None] if img.ndim == 3 else wgt) * img
-        wsum += wgt
-    den = np.maximum(wsum, 1e-12)
-    img = (acc / (den[..., None] if acc.ndim == 3 else den)).astype(np.float32)
+        ax += a * (Hi[0, 0] * x + Hi[0, 1] * y + Hi[0, 2]) / den
+        ay += a * (Hi[1, 0] * x + Hi[1, 1] * y + Hi[1, 2]) / den
+        wsum += a
+    mx = np.where(wsum > 0, ax / np.maximum(wsum, 1e-12), -1e6).astype(np.float32)
+    my = np.where(wsum > 0, ay / np.maximum(wsum, 1e-12), -1e6).astype(np.float32)
+    img = np.maximum(cv2.remap(src, mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_CONSTANT, borderValue=0), 0).astype(np.float32)
+    cover = (wsum > 0) & (mx >= 0) & (mx <= w - 1) & (my >= 0) & (my <= h - 1)
     k = 2 * COVER_ERODE_PX + 1
-    return img, cv2.erode((wsum > 0).astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+    return img, cv2.erode(cover.astype(np.uint8), np.ones((k, k), np.uint8)) > 0
 
 
 def join_disagreement(stretches, photo_shape, grid):
-    """Where neighbouring accepted metres cross-fade, how far apart their homographies put the same photograph pixels
-    on the wall: the 95th percentile, in metres, over the photograph's pixels (every 4th) that land within REG_MARGIN_M
-    of a join in the clean frieze's rows; 0 without a join."""
+    """Where neighbouring accepted metres cross-fade, how far the blended mapping (photo_on_skin) departs from the
+    nearer metre's own homography: per photograph pixel (every 4th) that the first metre puts within REG_MARGIN_M of the
+    join in the clean frieze's rows, the distance between the two homographies' points times the smaller weight over
+    their sum; the 95th percentile, in metres; 0 without a join (round 5, m-4)."""
     h, w = photo_shape[:2]
     ys, xs = np.mgrid[0:h:4, 0:w:4]
     pts = np.stack([xs.ravel(), ys.ravel()], 1).astype(np.float32)[:, None, :]
@@ -9072,69 +9906,56 @@ def join_disagreement(stretches, photo_shape, grid):
         v = grid["v1"] - (pa[:, 1] + 0.5) * grid["texel"]
         near = (np.abs(u - a["u1"]) < REG_MARGIN_M) & (v >= ECC_V[0]) & (v <= ECC_V[1])
         if near.sum() >= 10:
-            worst = max(worst, float(np.percentile(np.hypot(*(pa[near] - pb[near]).T), 95)) * grid["texel"])
+            wa, wb = _metre_weight(a, u[near]), _metre_weight(b, u[near])
+            depart = np.minimum(wa, wb) / np.maximum(wa + wb, 1e-12) * np.hypot(*(pa[near] - pb[near]).T)
+            worst = max(worst, float(np.percentile(depart, 95)) * grid["texel"])
     return worst
 
 
-def gilt_evidence(variable, paint):
-    """The gilt's evidence from each light state's highlight (round 4, O-1 / O-2, 8 October). variable, paint: per state
-    of blend.LIGHT_STATES, the class's median excess RGB (3,), or None under GILT_MIN texels. A state shows a highlight
-    where the variable class's excess is at least GILT_HIGHLIGHT_MIN x the paint's in luma; the highlight's own colour,
-    the difference, is judged by blend.gold. Gilding tints any source it mirrors gold. A dielectric returns the source's
-    colour: white after de-lighting where a lamp is mirrored under the lamp-dominated evening or capture light, but
-    gold-like where a warm lamp is mirrored under the window-dominated day light. Hence "measured" when at least
-    blend.GOLD_MIN_STATES states show a highlight (two include a lamp-dominated one) and every highlight is gold;
-    "refused" when a highlight is not gold; "prior" when fewer states show one: the evidence cannot decide."""
-    states = {}
-    for s in B.LIGHT_STATES:
-        v, p = variable.get(s), paint.get(s)
-        if v is None or p is None:
-            states[s] = {"highlight": False, "ratio": None}
-            continue
-        v, p = np.asarray(v, np.float64), np.asarray(p, np.float64)
-        ratio = float(v @ LUMA) / max(float(p @ LUMA), 1e-12)
-        own = v - p
-        states[s] = {"highlight": ratio >= GILT_HIGHLIGHT_MIN, "ratio": ratio, "colour": [float(x) for x in own],
-                     "gold": bool(B.gold(own))}
-    lit = [d for d in states.values() if d["highlight"]]
-    if any(not d["gold"] for d in lit):
-        basis = "refused"
-    elif len(lit) >= B.GOLD_MIN_STATES:
-        basis = "measured"
-    else:
-        basis = "prior"
-    return {"basis": basis, "states": states}
+def gilt_blocks(excess_by_state, variable, paint, reference, row0, cell):
+    """The gilt test's blocks (round 5): per light state, each block's measured highlight, the variable class's median
+    excess less the paint class's (each needing frieze.BLOCK_CLASS_MIN texels; excess_by_state (S, h, w, 3) over the
+    skin's rows), with the block's reference per variant (reference (V, S, nbr, nbc, 3), blocks of `cell` texels from
+    skin row row0). Returns {state: (h (V, B, 3), ref (V, B, 3))} for specular.tint_test."""
+    excess = np.asarray(excess_by_state, np.float64)
+    reference = np.asarray(reference, np.float64)
+    V, S, nbr, nbc = reference.shape[:4]
+    out = {}
+    for si, s in enumerate(B.LIGHT_STATES):
+        hs, rs = [], []
+        for br in range(nbr):
+            for bc in range(nbc):
+                sl = (slice(row0 + br * cell, row0 + (br + 1) * cell), slice(bc * cell, (bc + 1) * cell))
+                e = excess[si][sl]
+                fin = np.isfinite(e).all(-1)
+                fv, fp = variable[sl] & fin, paint[sl] & fin
+                if fv.sum() < FZ.BLOCK_CLASS_MIN or fp.sum() < FZ.BLOCK_CLASS_MIN:
+                    continue
+                hs.append(np.median(e[fv], 0) - np.median(e[fp], 0))
+                rs.append(reference[:, si, br, bc])
+        h = np.broadcast_to(np.array(hs).reshape(1, -1, 3), (V, len(hs), 3))
+        out[s] = (h, np.stack(rs, 1) if rs else np.zeros((V, 0, 3)))
+    return out
 
 
-def gilt_from_spread(spread, excess_by_state, trusted, texel):
-    """The gilded ground: where the de-lit appearance varies with the view. A two-class split (Otsu) of log spread over
-    the trusted texels; the more variable class is the gilt, its basis gilt_evidence's from each light state's class
-    medians of excess_by_state ((S, h, w, 3), blend.LIGHT_STATES' order). Measured or prior, the mask rises from the
-    paint's median spread to the gilt's, smoothed over 1 cm; refused, or with no split (basis "none"), it is zero."""
-    spread = np.asarray(spread, np.float64)
-    zero = np.zeros(spread.shape, np.float32)
-    ok = np.asarray(trusted, bool) & np.isfinite(spread) & (spread > 0)
-    if ok.sum() < 2 * GILT_MIN:
-        return zero, {"basis": "none", "reason": "too few texels with three views"}
-    ls = np.log(spread[ok])
-    lo, hi = float(ls.min()), float(ls.max())
-    q = np.round((ls - lo) / max(hi - lo, 1e-9) * 255).astype(np.uint8).reshape(-1, 1)
-    t8, _ = cv2.threshold(q, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    upper = q[:, 0] > t8
-    if upper.sum() < GILT_MIN or (~upper).sum() < GILT_MIN:
+def gilt_from_spread(spread, excess_by_state, reference, row0, cell, trusted, texel):
+    """The gilded ground: where the de-lit appearance varies with the view. The spread's two classes (frieze.two_classes
+    over the trusted texels); the more variable class is the gilt, its basis the tint test's (specular.tint_test, round
+    5) on its highlight per light state against the specular reference of the same views: "measured" (gold, decisively,
+    and it fits), "prior" (the views cannot decide: kept, listed), "refused" (a neutral dielectric) or "inconsistent"
+    (neither fits: the run stops). Measured or prior, the mask rises from the paint's median spread to the gilt's,
+    smoothed over 1 cm; refused, inconsistent, or with no split (basis "none"), it is zero."""
+    zero = np.zeros(np.asarray(spread).shape, np.float32)
+    split = FZ.two_classes(spread, trusted)
+    if split is None:
         return zero, {"basis": "none", "reason": "the spread does not split in two"}
-    s_lo, s_hi = float(np.median(ls[~upper])), float(np.median(ls[upper]))
-    var = np.zeros(spread.shape, bool); var[ok] = upper
-    medians = {"variable": {}, "paint": {}}
-    for i, s in enumerate(B.LIGHT_STATES):
-        e = np.asarray(excess_by_state[i], np.float64)
-        fin = np.isfinite(e).all(-1)
-        for cls, m in (("variable", var & fin), ("paint", ok & ~var & fin)):
-            medians[cls][s] = np.median(e[m], axis=0) if m.sum() >= GILT_MIN else None
-    evidence = gilt_evidence(medians["variable"], medians["paint"])
-    report = {**evidence, "spreadPaint": math.exp(s_lo), "spreadGilt": math.exp(s_hi), "giltClassShare": float(upper.mean())}
-    if evidence["basis"] == "refused":
-        return zero, {**report, "reason": "a light state's highlight is not gold"}
+    variable, s_lo, s_hi = split
+    paint = np.asarray(trusted, bool) & np.isfinite(spread) & (np.asarray(spread) > 0) & ~variable
+    test = SP.tint_test(gilt_blocks(excess_by_state, variable, paint, reference, row0, cell))
+    report = {**test, "spreadPaint": math.exp(s_lo), "spreadGilt": math.exp(s_hi),
+              "giltClassShare": float(variable.sum() / max(int((variable | paint).sum()), 1))}
+    if test["basis"] in ("refused", "inconsistent"):
+        return zero, report
     with np.errstate(invalid="ignore", divide="ignore"):
         m = (np.log(spread) - s_lo) / max(s_hi - s_lo, 1e-6)
     m = np.where(np.isfinite(m), np.clip(m, 0, 1), 0).astype(np.float32)
@@ -9323,23 +10144,17 @@ def colour_deltas(ours, photo, zone, px):
 # matte texels, where the paint cancels). Matte texels: the views agree (view-dependence below MATTE_MAX), eroded by
 # 1.5 photograph pixels, since the photograph's blur spreads the gilt's glow into its neighbours.
 def viewdep_from_spread(spread, trusted, texel):
-    """How view-dependent each texel is, in [0, 1]: gilt_from_spread's map (Otsu on log spread over the trusted texels,
-    rising from the low class's median spread to the high class's, smoothed over SPREAD_M) without its gold test. The
-    gold test decides whether the variable class is gilding (Task 13's material); the colour transform only needs to
-    leave out what the views disagree on. Returns (map, report); an all-zero map when the spread cannot split."""
+    """How view-dependent each texel is, in [0, 1]: gilt_from_spread's map (frieze.two_classes over the trusted texels,
+    rising from the low class's median spread to the high class's, smoothed over SPREAD_M) without its tint test. The
+    test decides whether the variable class is gilding (the material); the colour transform only needs to leave out what
+    the views disagree on. Returns (map, report); an all-zero map when the spread cannot split."""
     spread = np.asarray(spread, np.float64)
     zero = np.zeros(spread.shape, np.float32)
-    ok = np.asarray(trusted, bool) & np.isfinite(spread) & (spread > 0)
-    if ok.sum() < 2 * GILT_MIN:
-        return zero, {"split": False, "reason": "too few texels with three views"}
-    ls = np.log(spread[ok])
-    lo, hi = float(ls.min()), float(ls.max())
-    q = np.round((ls - lo) / max(hi - lo, 1e-9) * 255).astype(np.uint8).reshape(-1, 1)
-    t8, _ = cv2.threshold(q, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    upper = q[:, 0] > t8
-    if upper.sum() < GILT_MIN or (~upper).sum() < GILT_MIN:
+    split = FZ.two_classes(spread, trusted)
+    if split is None:
         return zero, {"split": False, "reason": "the spread does not split in two"}
-    s_lo, s_hi = float(np.median(ls[~upper])), float(np.median(ls[upper]))
+    variable, s_lo, s_hi = split
+    upper = variable[np.asarray(trusted, bool) & np.isfinite(spread) & (spread > 0)]
     with np.errstate(invalid="ignore", divide="ignore"):
         m = (np.log(spread) - s_lo) / max(s_hi - s_lo, 1e-6)
     m = np.where(np.isfinite(m), np.clip(m, 0, 1), 0).astype(np.float32)
@@ -9580,7 +10395,7 @@ def cmd_frieze_venue(cfg, rest) -> int:
         with open(rest[rest.index("--hints") + 1], encoding="utf-8") as f:
             hints = json.load(f)                                              # {craft: wall}, only when the check needs it
     sources, photos = load_photos(os.path.join(cfg.paths["frieze"], PHOTO_DIR))
-    blue = rest[rest.index("--blue") + 1] if "--blue" in rest else None   # a comparison run names its evidence (Step 10)
+    curves = list(FZ._crfs(cfg)["curves"])                                # sRGB for every channel (round 5, m-2)
     surfaces = F.read_surfaces(cfg.paths["surfaces"])
     work, rt = cfg.paths["work"], float(cfg.room["registrationTexel"])
     out_dir = os.path.join(work, "venue")
@@ -9600,15 +10415,21 @@ def cmd_frieze_venue(cfg, rest) -> int:
         excess = np.full((len(B.LIGHT_STATES), g.rows, g.cols, 3), np.nan, np.float32)      # per light state (round 4)
         fused = np.full((g.rows, g.cols, 3), np.nan, np.float32)
         s0, s1 = (int(x) for x in fz["spreadRows"])
+        FZ.require_srgb(fz["curves"], f"{sid}'s frieze product")              # made with sRGB, or refused
         if tuple(str(x) for x in fz["lightStates"]) != B.LIGHT_STATES:
             raise ValueError(f"{sid}: the frieze product's light states are not blend.LIGHT_STATES")
         spread[s0:s1], excess[:, s0:s1] = fz["spread"].astype(np.float32), fz["excessByState"].astype(np.float32)
+        # the excess de-lit as the albedo is: the frieze's residual vertical light divided out (round 5)
+        excess[:, s0:s1] /= np.exp(FZ.light_log(FZ.light_of(fz), FZ._row_v(g, np.arange(s0, s1) + 0.5)))[None, :, None, :]
+        if tuple(str(x) for x in fz["referenceVariants"]) != SP.VARIANTS:
+            raise ValueError(f"{sid}: the frieze product's reference variants are not specular.VARIANTS")
         fused[s0:s1] = fz["fused"].astype(np.float32)
         vb = g.frieze_bottom if g.frieze_bottom is not None else float(v.min())
         band = np.zeros(g.rows, bool); band[HL.band_rows(g, g.texel, g.rows)] = True
         region = g.region > 0
         trusted = region & ((v >= vb + GILT_TRUST_M) & (v <= FZ.CLEAN_V[1]))[:, None]
-        gilt, gilt_report = gilt_from_spread(spread, excess, trusted, g.texel)
+        gilt, gilt_report = gilt_from_spread(spread, excess, fz["reference"].astype(np.float64), s0, int(fz["referenceCell"]),
+                                             trusted, g.texel)
         viewdep, viewdep_report = viewdep_from_spread(spread, trusted, g.texel)
         skins[sid] = {"geom": g, "ours": np.maximum(ours, 0), "prov": prov, "v": v, "vb": vb, "band": band, "region": region,
                       "trusted": trusted, "gilt": gilt, "giltReport": gilt_report, "viewdep": viewdep,
@@ -9702,8 +10523,8 @@ def cmd_frieze_venue(cfg, rest) -> int:
             lo_mix, _hi = masked_blur_log(mix, fully, px)
             gilt, used = gilt_from_photo(np.exp(lo_mix), gilt, s["trusted"] & fully, fully & (w_row < 0.5)[:, None])
             s["giltReport"]["photoClassifier"] = used
-        measured = s["giltReport"]["basis"] == "measured"
-        if measured:                                                     # F4 checks every wall whose gilt the views measured
+        gilt_measured = s["giltReport"]["basis"] == "measured"
+        if gilt_measured:                                                # F4 checks every wall whose gilt the views measured
             measured_gilt[g.surface.name] = measured_gilt.get(g.surface.name, 0) + int(((gilt >= 0.5) & region).sum())
         rho, out, info = blend_skin(s["ours"], s["prov"], [{"img": ph["d"], "cover": ph["cover"], "px": ph["px"], "colour": verdicts[c] == "colour"}
                                                            for c, ph in usable.items()],
@@ -9724,7 +10545,7 @@ def cmd_frieze_venue(cfg, rest) -> int:
         if free.sum() >= SEAM_MIN:
             vseams["ours"] = vertical_seam(rho, np.nan_to_num(s["fused"], nan=1.0), free, v, lines, gaps=gaps)
         for c, ph in usable.items():
-            if measured:                                                     # measured gilt, on any wall (round 4)
+            if gilt_measured:                                                # measured gilt, on any wall (round 4)
                 t = ph["cover"] & s["trusted"]
                 dl = np.log(np.maximum(ph["d"] @ LUMA, 1e-6)) - np.log(np.maximum(s["ours"] @ LUMA, 1e-6))
                 gd = gilt_dir.setdefault(c, {"gilt": [], "paint": []})
@@ -9755,6 +10576,7 @@ def cmd_frieze_venue(cfg, rest) -> int:
     gilt_basis = {sid: s["giltReport"]["basis"] for sid, s in skins.items()}
     gilt_prior = sorted(sid for sid, b in gilt_basis.items() if b == "prior")
     gilt_refused = sorted(sid for sid, b in gilt_basis.items() if b == "refused")
+    gilt_inconsistent = sorted(sid for sid, b in gilt_basis.items() if b == "inconsistent")
     measured_share = (totals["observed"] + totals["photo"] + totals["recovered"]) / max(sum(totals.values()), 1)
     unregistered = {c: max([st["corr"] for w in r["tried"].values() for st in w["stretches"] if st["corr"] is not None], default=None)
                     for c, r in registrations.items() if r["wall"] is None}
@@ -9775,8 +10597,9 @@ def cmd_frieze_venue(cfg, rest) -> int:
              # (round 4: every wall, not the door's alone); a prior's skins are listed (giltPrior), not checked
              "giltDirection": all(d["pass"] for d in checked)
                               and all(w in checked_walls for w, n in measured_gilt.items() if n >= GILT_MIN),
-             # the gilded ground is gilt on every wall: a skin whose highlight is not gold stops the run (round 4)
-             "giltGround": not gilt_refused}
+             # the gilded ground is gilt on every wall: a skin the tint test refuses (a neutral dielectric) or cannot fit
+             # (the light model or the attribution failed) stops the run (rounds 4 and 5)
+             "giltGround": not gilt_refused and not gilt_inconsistent}
     with open(os.path.join(out_dir, "photos.json"), "w", encoding="utf-8") as f:
         json.dump({"id": CREDIT_ID, "source": sources["source"], "credit": sources["credit"], "copyright": sources["copyright"],
                    "photos": [{"craft": p["craft"], "file": p["file"], "url": p["url"], "sha256": p["sha256"], "sizePx": p["sizePx"],
@@ -9788,12 +10611,12 @@ def cmd_frieze_venue(cfg, rest) -> int:
                                "verdict": verdicts.get(p["craft"])} for p in photos]}, f, indent=1)
     evidence = {"gate": VENUE_GATE, "registrations": {c: {k: x for k, x in r.items() if k != "H"} for c, r in registrations.items()},
                 "unregistered": unregistered, "expectedWalls": expected, "joins": joins, "colour": colour, "verdicts": verdicts,
-                "blue": blue, "giltDirection": directions,
+                "curves": curves, "giltDirection": directions,
                 "measuredGiltTexels": measured_gilt, "giltBasis": gilt_basis, "giltPrior": gilt_prior,
-                "giltRefused": gilt_refused, "skins": report,
+                "giltRefused": gilt_refused, "giltInconsistent": gilt_inconsistent, "skins": report,
                 "band": {"totals": totals, "measuredShare": measured_share}, "gates": gates, "pass": all(gates.values()),
                 "seconds": round(time.time() - started, 1)}
-    with open(os.path.join(cfg.paths["evidence"], f"frieze-venue{FZ.blue_suffix(rest)}.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(cfg.paths["evidence"], "frieze-venue.json"), "w", encoding="utf-8") as f:
         json.dump(evidence, f, indent=1, allow_nan=False, default=float)
     print(f"frieze-venue: {json.dumps(gates)} verdicts {json.dumps(verdicts)} unregistered {json.dumps(unregistered)} "
           f"gilt prior {json.dumps(gilt_prior)} "
@@ -9808,20 +10631,20 @@ def cmd_frieze_venue(cfg, rest) -> int:
 Add to `tools/skins/skins/__main__.py`, below the `clutter` registration:
 
 ```python
-COMMANDS["frieze-crf"] = Command(run=_lazy("frieze", "cmd_frieze_crf"), outputs=lambda cfg, rest: [os.path.join(cfg.paths["work"], "frieze", "crf.json")])
+COMMANDS["frieze-crf"] = Command(run=_lazy("frieze", "cmd_frieze_crf"),
+                                 outputs=lambda cfg, rest: [os.path.join(cfg.paths["work"], "frieze", "crf.json")])
 COMMANDS["frieze-holdout"] = Command(run=_lazy("frieze", "cmd_frieze_holdout"),
-                                     outputs=lambda cfg, rest: [os.path.join(cfg.paths["evidence"], "frieze-holdout%s.json" % (f"-blue-{rest[rest.index('--blue') + 1]}" if "--blue" in rest else ""))])
-COMMANDS["frieze-blue"] = Command(run=_lazy("frieze", "cmd_frieze_blue"), outputs=lambda cfg, rest: [os.path.join(cfg.paths["work"], "frieze", "blue.json")])
+                                     outputs=lambda cfg, rest: [os.path.join(cfg.paths["evidence"], "frieze-holdout.json")])
 COMMANDS["frieze"] = Command(run=_lazy("frieze", "cmd_frieze"), outputs=lambda cfg, rest: [os.path.join(cfg.paths["work"], "frieze")])
 COMMANDS["frieze-venue"] = Command(run=_lazy("venue", "cmd_frieze_venue"), outputs=lambda cfg, rest: [os.path.join(cfg.paths["work"], "venue")])
 ```
 
-(The `frieze` folder also holds `crf.json` and `blue.json`, which `frieze` reads and never writes, so their digests are equal in both runs; `twice` digests outputs in place and deletes nothing.)
+(The `frieze` folder also holds `crf.json`, which `frieze` reads and never writes, so its digest is equal in both runs; `twice` digests outputs in place and deletes nothing.)
 
 - [ ] **Step 8: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/skins && C:/Python313/python.exe -m unittest tests.test_frieze tests.test_venue tests.test_sources -v`
-Expected: PASS, 43 tests (13 frieze, 24 venue, 6 sources).
+Expected: PASS, 45 tests (15 frieze, 24 venue, 6 sources).
 
 - [ ] **Step 9: Commit the code**
 
@@ -9841,26 +10664,20 @@ The thresholds are reconciled above (7 October), so no controller step precedes 
 ```bash
 cd D:/claude/real-hall/repo/tools/skins
 C:/Python313/python.exe -m skins twice frieze-crf --config config/grand-hall.json
-for blue in srgb fitted; do                     # the XGRIDS blue curve, both ways (its evidence is written even when a gate fails)
-  C:/Python313/python.exe -m skins twice frieze-holdout --config config/grand-hall.json --blue $blue
-  C:/Python313/python.exe -m skins twice frieze --config config/grand-hall.json --blue $blue
-  C:/Python313/python.exe -m skins twice frieze-venue --config config/grand-hall.json --blue $blue
-done
-C:/Python313/python.exe -m skins twice frieze-blue --config config/grand-hall.json
 C:/Python313/python.exe -m skins twice frieze-holdout --config config/grand-hall.json
 C:/Python313/python.exe -m skins twice frieze --config config/grand-hall.json
 C:/Python313/python.exe -m skins twice frieze-venue --config config/grand-hall.json
 ```
 
-The comparison runs triple the heavy work of this step; a comparison run that fails a gate still writes its evidence, which `frieze-blue` reads. The last three runs use the chosen curve (`frieze/blue.json`).
+`frieze-crf` writes `crf.json` (sRGB in every channel, the measured notes beside it), and the other three read its curves, so no comparison run is needed and every product the task reports comes from a double run (round 5, m-3). Every product records the curves it was made with (`curves` in each `frieze/<id>.npz` and `.json`, `frieze-holdout.json` and `frieze-venue.json`), and `frieze-venue` refuses a frieze product made with any but sRGB in every channel (`require_srgb`; round 5, m-2).
 
-Expected: `frieze-blue` prints its choice, and the last three runs and `frieze-crf` `PASS`, which includes every gate:
+Expected: `frieze-crf` prints its parts and the fitted curves' departures from sRGB (every channel sRGB), and the other three runs `PASS`, which includes every gate:
 
 - `frieze-holdout.json` `"pass": true`: each stretch within `HOLDOUT_GATE` and above both baselines in SSIM and gradient correlation, and `mean` within `HOLDOUT_MEAN_GATE`;
 - `frieze/band.json` a measured share of at least 0.99;
-- `frieze-venue.json` `"pass": true`: every photograph registered metre by metre at a correlation of at least 0.60, or reported unregistered with its best metre (Weavers, unless a hint lets a metre pass; report each one's wall, inliers, accepted metres with their correlations, and pixel size); every registered photograph with a verdict, colour (its check within 3.6 / 7.8) or detail and outline only (`verdicts`, with each photograph's `colour` numbers); no seam stepping more than the paint's own 95th percentile; the band's observed (our fusion) + observed (venue photo) + recovered share at least 0.99; every frieze skin's seams up the wall passing (`verticalSeams`); under every photograph with measured gilt beneath it, on any wall, the gilt brighter relative to the paint than in our capture, and at least one such photograph on every wall whose measured gilt holds `GILT_MIN` texels (`measuredGiltTexels`); no skin's gilt refused (`giltGround`). Report every skin's gilt basis (`giltBasis`, with each light state's ratio and colour) beside this plan's measured numbers (door and fireplace measured, window a prior), and list the skins kept as gilt by prior (`giltPrior`) in the task report.
+- `frieze-venue.json` `"pass": true`: every photograph registered metre by metre at a correlation of at least 0.60, or reported unregistered with its best metre (Weavers, unless a hint lets a metre pass; report each one's wall, inliers, accepted metres with their correlations, and pixel size); every registered photograph with a verdict, colour (its check within 3.6 / 7.8) or detail and outline only (`verdicts`, with each photograph's `colour` numbers); no seam stepping more than the paint's own 95th percentile; the band's observed (our fusion) + observed (venue photo) + recovered share at least 0.99; every frieze skin's seams up the wall passing (`verticalSeams`); under every photograph with measured gilt beneath it, on any wall, the gilt brighter relative to the paint than in our capture, and at least one such photograph on every wall whose measured gilt holds `GILT_MIN` texels (`measuredGiltTexels`); no skin's gilt refused or inconsistent (`giltGround`). Report every skin's gilt basis (`giltBasis`) with its tint evidence (`skins.<id>.gilt`: the summed log-likelihood ratio and, per light state, its blocks, `blueRed` with its `sigma` beside gold's `goldBlueRed`, `d2Gold`, `d2Neutral` and `tauRel`) beside this plan's numbers on the research's stretches (the gilded ground above), and list the skins kept as gilt by prior (`giltPrior`) in the task report. A refused or inconsistent skin stops the task with its evidence: a varnish is never gilt, and a test that fits neither hypothesis needs a look, not a threshold.
 
-The `frieze-crf` line prints the XGRIDS curve's lift above sRGB at code 240 per channel; report it beside the research's diagnostics (`evidence/numbers.json` `camera_curve_diagnostics.xg`: B −0.455, G +0.047, R +0.033 ln; the E57 faces have no curve). Report the blue curve's choice with its numbers in the task report (`frieze/blue.json`: the photographs compared, the pooled ΔE00 mean under each, the holdout's means, each variant's gates, any gate or colour verdict the fitted curve lost). Every `frieze/<id>.json` records its residual `light` (kept or not, the reason, λ and its 2% height `v2pct`) and `lightAtTopLn`, the light divided out at the skin's top row; list each skin with a kept light in the task report. The cornice above stays splats and keeps that light, so a nonzero `lightAtTopLn` is a step at the captured light at the skin's top, and the light kept at the edge a larger one at its bottom, which Task 23's skin-edge seams measure; a light kept at all means the relight model misses part of the uplight, which the controller weighs for R1a.
+The `frieze-crf` line prints the XGRIDS curve's lift above sRGB at code 240 per channel; report it beside the research's diagnostics (`evidence/numbers.json` `camera_curve_diagnostics.xg`: B −0.455, G +0.047, R +0.033 ln; the E57 faces have no curve). Report the measured notes in the task report (`frieze/crf.json` `fittedMinusSrgb` and `perPart`, every point and matte points, per channel) beside this plan's numbers on the research's samples (the first bullet above). Every `frieze/<id>.json` records its residual `light` (kept or not, the reason, λ and its 2% height `v2pct`) and `lightAtTopLn`, the light divided out at the skin's top row; list each skin with a kept light in the task report. The cornice above stays splats and keeps that light, so a nonzero `lightAtTopLn` is a step at the captured light at the skin's top, and the light kept at the edge a larger one at its bottom, which Task 23's skin-edge seams measure; a light kept at all means the relight model misses part of the uplight, which the controller weighs for R1a.
 
 The experiment's verdicts, for comparison (the frieze-photo experiment, `D:/claude/real-hall/plan-amendments-0710/frieze-photo/results.md`, section 6): colour for Bonnetmakers and Dyers (1.99 / 4.77) and Wrights (1.65 / 3.87), measured against the research's fusion; Maltmen colour on its registered stretch (2.80 / 5.63), but its left metre (0.5–1.5 m) fails on a proxy fusion under both de-lights (tone correlations 0.27–0.55), so this task's own pooled check decides; provisionally colour Bakers, Barbers, Gardeners, Hammermen (fragile: one metre at 0.66), Skinners and Tailors; provisionally detail and outline only Coopers, Cordiners, Fleshers and Masons (Masons passes under the research's de-light, fails under the proposed one); Weavers not registered. The provisional verdicts came from an E57-only proxy fusion, so this task re-measures every photograph with its own mosaic under the same gate, records the verdict per photograph in `frieze-venue.json`, and the task report sets each beside the experiment's. If a photograph fails to register, look at it beside its wall's reference: if its section is identified by eye, rerun with `--hints <file>` naming its wall (`{"<craft>": "<wall>"}`, as the research did for the Wrights photograph) and record that in the session log; never lower the correlation limit.
 
@@ -9876,12 +10693,12 @@ Look at every `D:/claude/skins/grand-hall/evidence/frieze-<id>.png` (our frieze,
 - Test: `tools/skins/tests/test_materials.py`
 
 **Interfaces:**
-- Consumes: Task 6 (`views.load_geometry`, `geometry_ids`), Task 9 (`<work>/mosaic/<id>.npz`: `glare`, `excess`, `excessRgbByState`; `blend.gold`, `blend.GOLD_MIN_STATES`), Task 10 (`<work>/heal/<id>.npz`; `heal.PROV_*` with `PROV_PHOTO`), Task 11 (`<work>/clutter/<id>.npz`, `index.json`), Task 12 (`<work>/venue/<id>.npz` for every frieze skin: `albedo` and `prov` over the whole skin, `gilt`, `photos`).
-- Produces (`materials.py`): `MODEL = "skins-measured-v1"`; `ROUGHNESS_PRIOR` (per material, perceptual roughness r, GGX α = r² as glTF and R1d's sheen take it: `plaster` 0.85, `mural` 0.80, `mahogany` 0.30, `timber` 0.40, `timber-gilt` 0.40, `blank-panel` 0.15, `lettering` 0.25, `canvas` 0.35, `dial` 0.30); `GILT_MATERIALS = ("lettering", "timber-gilt", "mural")` (the fascia's gilt names are in the frieze skins); `GILT_ROUGHNESS = ROUGHNESS_PRIOR["timber-gilt"]` (0.40); `GOLD_F0 = (1.0, 0.78, 0.34)` (gold leaf's specular colour, linear sRGB: the found-light reflectometry track's prior from gold's optical constants, `D:/claude/real-hall/frontier/materials/proposal.md`, its table c1); `PROVENANCE` (the four classes and their codes); `roughness_map(material, glare (H, W) uint8, excess (H, W) float, metal=None) -> float32 (H, W)` (the prior, the gilding's where `metal` says gilt, lowered where views saw a moving highlight: `prior × (1 − 0.6 × clip(excess / 2, 0, 1))` where at least one view was rejected as glare, smoothed by a Gaussian of 2 texels, 3–4 mm on most skins); `gilding_mask(excess_by_state (S, H, W, 3), glare, material) -> float32 (H, W)` (on the gilt classes, where a view was rejected as glare and the rejected highlights of at least `blend.GOLD_MIN_STATES` light states are each gold by `blend.gold`; round 4, 8 October); `specular_colour(metal, region, measured=None) -> list[float] | None`; `assemble(sid, heal, venue, clutter) -> dict` (`albedo`, `prov`, `gilt`, `credits`, and with clutter `clean`, `cleanProv`, `clutter`); `@dataclass(frozen=True) class MaterialLayer: model: str; albedo; roughness; metal; prov; coat: ndarray | None; coat_roughness: ndarray | None; spec_colour: ndarray | None; sigma: ndarray | None` (`roughness` perceptual: the layer's α square-rooted); `CLEAN_RING = 25`, `CLEAN_FLOOR = 0.004`; `measured_clean(clean, clean_prov, clutter, ours, measured, measured_prov, region) -> (clean, cleanProv)` (the clean version under a measured layer, M11); `material_basis(layer, spec) -> {roughness, specularColour}` ("prior" for designed values: the class roughness, the gilding's 0.40 and gold leaf's F0; "measured" for a measured layer's; amended 8 October); `import_material_layer(folder, geom, light_model_sha) -> MaterialLayer` (the measured-material interface below, normative; `light_model_sha` is Task 9's `light_model_id` of v1's manifest; `ValueError` for another grid or light model); the command `python -m skins materials [--measured <root>]` writing `<work>/materials/<id>.npz` (`albedo` float16, `prov` uint8, `roughness` uint8, `metal` uint8, `model` str, `credits` str array; `specularColour` float64 (3,) where the skin has metal, so gold's F0 reaches the manifest exactly; `roughnessBasis` str and, with a specular colour, `specularBasis` str, each "prior" or "measured"; and when the skin has flat clutter `clean` float16, `cleanProv` uint8, `clutter` uint8) and `<work>/materials/index.json`.
+- Consumes: Task 6 (`views.load_geometry`, `geometry_ids`), Task 9 (`<work>/mosaic/<id>.npz`: `glare`, `excess`, `excessRgbByState`, and round 5's `referenceRgbByState`, `referenceShift`, `referenceCell`; `blend.LIGHT_STATES`, `blend.GLARE_SMOOTH_M`; `specular.SPECULAR_MATERIALS`, `specular.tint_test`), Task 10 (`<work>/heal/<id>.npz`; `heal.PROV_*` with `PROV_PHOTO`), Task 11 (`<work>/clutter/<id>.npz`, `index.json`), Task 12 (`<work>/venue/<id>.npz` for every frieze skin: `albedo` and `prov` over the whole skin, `gilt`, `photos`).
+- Produces (`materials.py`): `MODEL = "skins-measured-v1"`; `ROUGHNESS_PRIOR` (per material, perceptual roughness r, GGX α = r² as glTF and R1d's sheen take it: `plaster` 0.85, `mural` 0.80, `mahogany` 0.30, `timber` 0.40, `timber-gilt` 0.40, `blank-panel` 0.15, `lettering` 0.25, `canvas` 0.35, `dial` 0.30); `GILT_MATERIALS = specular.SPECULAR_MATERIALS` (`lettering`, `timber-gilt`, `mural`: the fascia's gilt names are in the frieze skins); `GILT_ROUGHNESS = ROUGHNESS_PRIOR["timber-gilt"]` (0.40); `GOLD_F0 = (1.0, 0.78, 0.34)` (gold leaf's specular colour, linear sRGB: the found-light reflectometry track's prior from gold's optical constants, `D:/claude/real-hall/frontier/materials/proposal.md`, its table c1); `PROVENANCE` (the four classes and their codes); `roughness_map(material, glare (H, W) uint8, excess (H, W) float, metal=None) -> float32 (H, W)` (the prior, the gilding's where `metal` says gilt, lowered where views saw a moving highlight: `prior × (1 − 0.6 × clip(excess / 2, 0, 1))` where at least one view was rejected as glare, smoothed by a Gaussian of 2 texels, 3–4 mm on most skins); `gilding_mask(excess_by_state (S, H, W, 3), reference_by_state (2, S, H, W, 3), shift (V − 2, S, cell rows, cell columns, 3), shift_cell, glare, material, texel) -> (float32 (H, W), report)` (on the gilt classes: each connected highlight, the texels where a view was rejected as glare joined within `blend.GLARE_SMOOTH_M`, tested whole by `specular.tint_test` against the specular reference of the same rejected views, summed in cells of the smoothing's size; 1 only where the test says `measured`; the report counts highlights and texels per basis; round 5); `specular_colour(metal, region, measured=None) -> list[float] | None`; `assemble(sid, heal, venue, clutter) -> dict` (`albedo`, `prov`, `gilt`, `credits`, and with clutter `clean`, `cleanProv`, `clutter`); `@dataclass(frozen=True) class MaterialLayer: model: str; albedo; roughness; metal; prov; coat: ndarray | None; coat_roughness: ndarray | None; spec_colour: ndarray | None; sigma: ndarray | None` (`roughness` perceptual: the layer's α square-rooted); `CLEAN_RING = 25`, `CLEAN_FLOOR = 0.004`; `measured_clean(clean, clean_prov, clutter, ours, measured, measured_prov, region) -> (clean, cleanProv)` (the clean version under a measured layer, M11); `material_basis(layer, spec) -> {roughness, specularColour}` ("prior" for designed values: the class roughness, the gilding's 0.40 and gold leaf's F0; "measured" for a measured layer's; amended 8 October); `import_material_layer(folder, geom, light_model_sha) -> MaterialLayer` (the measured-material interface below, normative; `light_model_sha` is Task 9's `light_model_id` of v1's manifest; `ValueError` for another grid or light model); the command `python -m skins materials [--measured <root>]` writing `<work>/materials/<id>.npz` (`albedo` float16, `prov` uint8, `roughness` uint8, `metal` uint8, `model` str, `credits` str array; `specularColour` float64 (3,) where the skin has metal, so gold's F0 reaches the manifest exactly; `roughnessBasis` str and, with a specular colour, `specularBasis` str, each "prior" or "measured"; and when the skin has flat clutter `clean` float16, `cleanProv` uint8, `clutter` uint8) and `<work>/materials/index.json` (with each skin's `gilding` report, round 5).
 
-R1 polished §3.2.5: roughness and gilding masks from multi-view specular behaviour plus region labels. A view rejected as glare at a texel (Task 9) is direct evidence of a specular surface there, and how far it stood above the diffuse estimate (`excess`) says how sharp the highlight was; the material class gives the prior. Gilding is a gold highlight on the gilt classes: views in at least two light states saw a highlight there and each state's highlight is gold (`blend.gold`: blue below 0.55 of red and below green; Task 9's `excessRgbByState`, the rejected views' de-lit colour over the estimate, per state). The albedo's colour no longer counts. On 7 October colour alone was dropped, because varnished brown wood passes the hue rule. On 8 October requiring a highlight as well proved not enough, since varnish is glossy: with a rejected highlight, dark varnished wood `(0.08, 0.04, 0.02)` gave a mask of 0.9998 on `timber-gilt`, `lettering` and `mural`, which would have made the honours boards' varnished grounds gold metal. Gold leaf reflects gold (F0 1.0, 0.78, 0.34). Varnish (F0 ≈ 0.044, white) and paint reflect the source's own colour, which de-lighting makes neutral only where the source has the light's colour (`frontier/materials/proposal.md:233-234, 318`). Round 4 (O-2, 8 October): a warm lamp mirrored in varnish under the window-dominated day light reads gold-like (R1a's lamp/daylight ratio 1.623 : 1 : 0.467, B/R 0.29), and the former rule, one highlight colour over all states, made it gold metal (a mask of 1.0, reproduced). Any two light states include the evening (lamp-dominated: Task 8's `lampShare` above 0.5) or the capture (R1a's house-light refit), where that lamp has the light's colour and varnish reads white. So a texel needs gold highlights in two states and none that is not gold; one state cannot decide, and such a texel stays non-metal. This is Task 12's rule for the frieze's ground, applied to the highlight Task 9 measured. These are R1c's measured-heuristic maps, `skins-measured-v1`.
+R1 polished §3.2.5: roughness and gilding masks from multi-view specular behaviour plus region labels. A view rejected as glare at a texel (Task 9) is direct evidence of a specular surface there, and how far it stood above the diffuse estimate (`excess`) says how sharp the highlight was; the material class gives the prior. Gilding is a highlight on the gilt classes whose tint is gold (round 5, 8 October). A highlight's colour is the mirrored source's colour times the surface's specular tint: gold leaf tints whatever it mirrors gold (F0 1.0, 0.78, 0.34), while varnish (F0 ≈ 0.044, white) and paint return the source's own colour (`frontier/materials/proposal.md:233-234, 318`). So each connected highlight's colour (Task 9's `excessRgbByState`: the rejected views' de-lit colour over the estimate, per light state) is divided by the colour of what those same views mirror (Task 9's `referenceRgbByState` and `referenceShift`: R1a's sources, emitters and bounce seen from the views' own positions) and tested by `specular.tint_test`, gold metal against a neutral dielectric, with the highlight's measured scatter and the light model's colour uncertainty. Only a decisive gold that fits makes metal; refused, inconsistent and undecided highlights stay non-metal, so the honours boards' varnish is never gold. Colour alone was dropped on 7 October (varnished brown wood passes a hue rule), and a highlight's own colour in round 5: a warm lamp mirrored in varnish under daylight reads gold-like (B/R 0.29 at R1a's lamp/daylight ratio), and dark varnished wood with a rejected highlight made masks of 0.9998 and 1.0 under the earlier rules. Divided by its reference, that highlight reads neutral and is refused (`test_materials`). This is Task 12's test for the frieze's ground, applied to the highlight Task 9 measured. These are R1c's measured-heuristic maps, `skins-measured-v1`.
 
-**The frieze's gilded ground (amended 7 October).** The research saw the frieze's ground bright gold behind darker legs in the venue's door photograph and the reverse in our captures: a matte texture cannot hold both looks. Task 12 measured where the ground is gilt (its appearance varies with the view, and its highlight is gold in two light states; where the views cannot decide, the variable class is kept as gilt by prior and listed, round 4) and kept the capture's own tone there. Here the gilt mask becomes the metal map (the larger of it and the gold-highlight rule above, which still finds the fascia's gilt names), the gilt texels take the gilding's roughness (0.40, the plan's prior for gilt timber, lowered where views saw a moving highlight), and every skin with metal carries a specular colour: gold leaf's F0, the found-light reflectometry track's prior from gold's optical constants. The skin package carries all three (Task 14); R1d's sheen makes the ground's brightness follow the view through them (Fresnel from the specular colour where the metal is 1: R1c's interface item 4 as amended, `SkinSurface.specularColour`). The track's measured layer replaces the prior and the heuristic when it exists.
+**The frieze's gilded ground (amended 7 October).** The research saw the frieze's ground bright gold behind darker legs in the venue's door photograph and the reverse in our captures: a matte texture cannot hold both looks. Task 12 measured where the ground is gilt (its appearance varies with the view, and the tint test calls its highlights gold leaf; where the views cannot decide, the variable class is kept as gilt by prior and listed; a refused or inconsistent ground stops Task 12; round 5) and kept the capture's own tone there. Here the gilt mask becomes the metal map (the larger of it and the tint-tested highlights above, which still find the fascia's gilt names), the gilt texels take the gilding's roughness (0.40, the plan's prior for gilt timber, lowered where views saw a moving highlight), and every skin with metal carries a specular colour: gold leaf's F0, the found-light reflectometry track's prior from gold's optical constants. The skin package carries all three (Task 14); R1d's sheen makes the ground's brightness follow the view through them (Fresnel from the specular colour where the metal is 1: R1c's interface item 4 as amended, `SkinSurface.specularColour`). The track's measured layer replaces the prior and the heuristic when it exists.
 
 **Provenance.** Observed (our fusion: every channel has a sharp unclipped view), observed (venue photo: the texel's drawing is the venue's photograph; Task 12), recovered (measured, but some channel only through softer views, a fitted camera curve or the frieze's detail transfer; or a gilt texel's tone continued from above with its outline from a photograph), reconstructed (healed, filled or synthesised). A frieze skin lists the photographs it used (`credits`, their crafts), which Task 14 credits.
 
@@ -9896,7 +10713,7 @@ This format is the interface, and it is normative (pre-flight fix M11, 8 October
 ```python
 import json, math, os, tempfile, unittest
 import numpy as np
-from skins import blend as B, heal as H, materials as M
+from skins import heal as H, materials as M, specular as SP
 
 
 class Maps(unittest.TestCase):
@@ -9908,39 +10725,51 @@ class Maps(unittest.TestCase):
         self.assertLess(float(r[15, 15]), 0.08)
         self.assertAlmostEqual(float(M.roughness_map("plaster", np.zeros((4, 4), np.uint8), np.zeros((4, 4)))[1, 1]), 0.85, places=6)
 
-    # A highlight per light state is F0 x the mirrored source's colour / the state's light (Task 9 de-lit the views).
-    GOLD, VARNISH = np.array([1.0, 0.78, 0.34]), np.full(3, 0.04)      # gold leaf's F0; varnish's, white
+    # A highlight per light state is F0 x the mirrored light / the state's light (Task 9 de-lit the views), and its
+    # reference (Task 9's referenceRgbByState) is what an untinted surface would show from the same views.
+    GOLD, VARNISH = np.array(M.GOLD_F0), np.full(3, 0.04)              # gold leaf's F0; varnish's, white
     WARM = np.array([1.623, 1.0, 0.467])                               # R1a's measured lamp/daylight ratio: a lamp by day
 
     @staticmethod
-    def _states(day, evening, capture=None):
-        """Each light state's highlight colour (day, evening, capture) on a 10 x 10 patch; None: no view rejected."""
-        e = np.zeros((3, 20, 20, 3), np.float32)
-        for i, c in enumerate((day, evening, capture)):
-            if c is not None:
-                e[i, 5:15, 5:15] = c
-        return e
+    def _highlight(tint, source, states=(0, 1), seed=0):
+        """A 30 x 30 highlight on a 60 x 60 skin at 1 mm, seen in the given light states: its reference varies over the
+        texels (the lobe), the mirrored light is the source's colour over daylight, the highlight is tint x reference
+        plus noise. Returns (excess_by_state, reference_by_state, shift, glare)."""
+        rng = np.random.default_rng(seed)
+        e = np.zeros((3, 60, 60, 3), np.float32); r = np.zeros((2, 3, 60, 60, 3), np.float32)
+        for s in states:
+            lobe = rng.uniform(0.5, 2.0, (30, 30, 1))
+            r[0, s, 15:45, 15:45] = lobe * source
+            r[1, s, 15:45, 15:45] = lobe * source * M.GOLD_F0
+            e[s, 15:45, 15:45] = tint * lobe * source + rng.normal(0, 0.002, (30, 30, 3))
+        glare = np.zeros((60, 60), np.uint8); glare[15:45, 15:45] = 2
+        return e, r, np.zeros((len(SP.VARIANTS) - 2, 3, 1, 1, 3), np.float32), glare
 
-    def test_gilding_under_a_neutral_source_is_gold_metal_on_gilt_classes_only(self):
-        e = self._states(0.3 * self.GOLD, 0.2 * self.GOLD)            # each source the colour of its state's light
-        glare = np.zeros((20, 20), np.uint8); glare[5:15, 5:15] = 2
-        for material in ("lettering", "timber-gilt", "mural"):
-            self.assertGreater(float(M.gilding_mask(e, glare, material)[10, 10]), 0.9)
-        self.assertEqual(float(M.gilding_mask(e, glare, "plaster").max()), 0.0)
-        self.assertEqual(float(M.gilding_mask(e, np.zeros((20, 20), np.uint8), "lettering").max()), 0.0)   # no highlight seen
-        self.assertEqual(float(M.gilding_mask(self._states(0.3 * self.GOLD, None), glare, "lettering").max()), 0.0)  # one state
-
-    def test_gilding_under_a_warm_source_is_gold_metal(self):
-        e = self._states(0.3 * self.GOLD * self.WARM, 0.2 * self.GOLD, 0.25 * self.GOLD)   # a lamp by day, then under lamps
-        glare = np.zeros((20, 20), np.uint8); glare[5:15, 5:15] = 3
-        self.assertGreater(float(M.gilding_mask(e, glare, "timber-gilt")[10, 10]), 0.9)
+    def test_gilding_under_a_neutral_or_a_warm_source_is_gold_metal_on_gilt_classes_only(self):
+        for source in (np.ones(3), self.WARM):
+            e, r, sh, glare = self._highlight(0.5 * self.GOLD, source)
+            for material in ("lettering", "timber-gilt", "mural"):
+                m, report = M.gilding_mask(e, r, sh, 100, glare, material, 0.001)
+                self.assertGreater(float(m[30, 30]), 0.9)
+                self.assertEqual(report["measured"]["highlights"], 1)
+            self.assertEqual(float(M.gilding_mask(e, r, sh, 100, glare, "plaster", 0.001)[0].max()), 0.0)
+        e, r, sh, glare = self._highlight(0.5 * self.GOLD, np.ones(3))
+        self.assertEqual(float(M.gilding_mask(e, r, sh, 100, np.zeros((60, 60), np.uint8), "lettering", 0.001)[0].max()), 0.0)
+        self.assertEqual(M.GILT_ROUGHNESS, SP.GILT_ROUGHNESS)               # the reference's lobe is the gilding's
 
     def test_varnish_under_a_warm_source_is_not_gilding(self):
-        self.assertTrue(bool(B.gold(self.VARNISH * self.WARM)))         # by day the lamp in varnish reads gold (B/R 0.29)
-        e = self._states(self.VARNISH * self.WARM, self.VARNISH)        # under the lamps' own light, white
-        glare = np.zeros((20, 20), np.uint8); glare[5:15, 5:15] = 2
+        e, r, sh, glare = self._highlight(self.VARNISH, self.WARM)
+        hl = e[0, 15:45, 15:45].reshape(-1, 3).mean(0)
+        self.assertTrue(hl[2] < 0.55 * hl[0] and hl[2] < hl[1])            # round 4's rule called it gold
         for material in ("lettering", "timber-gilt", "mural"):
-            self.assertLess(float(M.gilding_mask(e, glare, material).max()), 0.1)
+            m, report = M.gilding_mask(e, r, sh, 100, glare, material, 0.001)
+            self.assertLess(float(m.max()), 0.1)
+            self.assertEqual(report["refused"]["highlights"], 1)
+
+    def test_a_highlight_the_reference_does_not_predict_stays_non_metal(self):
+        e, r, sh, glare = self._highlight(np.zeros(3), np.ones(3))             # noise only: no tint can be read
+        m, report = M.gilding_mask(e, r, sh, 100, glare, "lettering", 0.001)
+        self.assertEqual((float(m.max()), report["prior"]["highlights"]), (0.0, 1))
 
     def test_the_gilt_ground_is_gold_metal_with_the_gildings_roughness(self):
         metal = np.zeros((20, 20), np.float32); metal[:, 10:] = 1.0
@@ -10059,12 +10888,12 @@ import cv2
 import numpy as np
 from scipy import ndimage
 
-from . import blend as B, frames as F, heal as HL, views as VW
+from . import blend as B, frames as F, heal as HL, specular as SP, views as VW
 
 MODEL = "skins-measured-v1"
 ROUGHNESS_PRIOR = {"plaster": 0.85, "mural": 0.80, "mahogany": 0.30, "timber": 0.40, "timber-gilt": 0.40,
                    "blank-panel": 0.15, "lettering": 0.25, "canvas": 0.35, "dial": 0.30}
-GILT_MATERIALS = ("lettering", "timber-gilt", "mural")
+GILT_MATERIALS = SP.SPECULAR_MATERIALS
 GILT_ROUGHNESS = ROUGHNESS_PRIOR["timber-gilt"]
 # Gold leaf's F0 in linear sRGB: the found-light reflectometry track's prior from gold's optical constants
 # (frontier/materials/proposal.md, table c1). A prior, replaced by the track's measured speccolor when it exists.
@@ -10086,20 +10915,62 @@ def roughness_map(material, glare, excess, metal=None):
     return cv2.GaussianBlur(r, (0, 0), 2.0) if r.shape[0] > 4 and r.shape[1] > 4 else r     # sigma 2 texels
 
 
-def gilding_mask(excess_by_state, glare, material):
-    """Gilding on the gilt classes: where views saw a highlight (multi-view specular behaviour, spec 3.2.5) in at least
-    blend.GOLD_MIN_STATES light states and every one is gold (blend.gold, Task 12's rule; excess_by_state is Task 9's
-    highlight_by_state, (S, H, W, 3), 0 where no view of the state was rejected). Gold leaf tints any source it mirrors
-    gold. Varnish and paint return the source's own colour: white after de-lighting where a lamp is mirrored under the
-    lamp-dominated evening or capture light, but gold-like where a warm lamp is mirrored under the window-dominated day
-    light. One state cannot decide; two include a lamp-dominated one (round 4, O-2, 8 October)."""
+def gilding_mask(excess_by_state, reference_by_state, shift, shift_cell, glare, material, texel):
+    """Gilding on the gilt classes (round 5): where views saw a moving highlight (spec 3.2.5) and its tint is gold. Each
+    connected highlight (texels where a view was rejected as glare, joined within blend.GLARE_SMOOTH_M, the highlight
+    colour's own smoothing) is tested as a whole by specular.tint_test, its bar raised for the skin's number of
+    highlights (tests): per light state, its highlight (Task 9's
+    excessRgbByState) and the specular reference of the same rejected views (referenceRgbByState: neutral and gold;
+    each colour variant through referenceShift, per cell of shift_cell texels), summed over cells of the smoothing's
+    size. Gold leaf tints whatever it mirrors gold; varnish and paint return the mirrored light's own colour, so a
+    lamp mirrored in varnish by daylight reads warm against a warm reference and is refused. A highlight is gilt
+    only when the test says "measured"; refused, inconsistent or undecided (prior) highlights stay non-metal. Returns
+    (mask (H, W) float32, report: the highlights and their texels per basis, and the number tested)."""
+    H, W = np.asarray(glare).shape
+    report = {b: {"highlights": 0, "texels": 0} for b in ("measured", "prior", "refused", "inconsistent")}
+    report["tests"] = 0
     if material not in GILT_MATERIALS:
-        return np.zeros(np.asarray(glare).shape, np.float32)
-    e = np.asarray(excess_by_state, np.float32)
-    seen = np.abs(e).max(-1) > 0                                          # (S, H, W): a view of the state was rejected
-    ok = (seen.sum(0) >= B.GOLD_MIN_STATES) & np.all(~seen | B.gold(e), axis=0)
-    m = (ok & (np.asarray(glare) > 0)).astype(np.float32)
-    return cv2.GaussianBlur(m, (0, 0), 0.7) if m.shape[0] > 4 else m
+        return np.zeros((H, W), np.float32), report
+    e = np.asarray(excess_by_state, np.float64)
+    ref = np.asarray(reference_by_state, np.float64)
+    shift = np.asarray(shift, np.float64)
+    seen_s = np.abs(e).max(-1) > 0                                         # (S, H, W): a view of the state was rejected
+    seen = seen_s.any(0) & (np.asarray(glare) > 0)
+    cell = max(1, int(round(B.GLARE_SMOOTH_M / float(texel))))
+    k = 2 * cell + 1
+    joined = cv2.dilate(seen.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))) > 0
+    n_lab, lab = cv2.connectedComponents(joined.astype(np.uint8), connectivity=8)
+    m = np.zeros((H, W), np.float32)
+    found = []
+    for c in range(1, n_lab):
+        rr, cc = np.nonzero((lab == c) & seen)
+        if not len(rr):
+            continue
+        ci = (rr // cell) * ((W + cell - 1) // cell) + cc // cell
+        _u, cidx = np.unique(ci, return_inverse=True)
+        nb = int(cidx.max()) + 1
+        by_state = {}
+        for si, s in enumerate(B.LIGHT_STATES):
+            on = seen_s[si, rr, cc]
+            if not on.any():
+                continue
+
+            def sums(x):
+                return np.stack([np.bincount(cidx[on], x[on, ch], minlength=nb) for ch in range(3)], 1)
+            fac = np.exp(shift[:, si, np.minimum(rr // shift_cell, shift.shape[2] - 1), np.minimum(cc // shift_cell, shift.shape[3] - 1)])
+            rn = ref[0, si, rr, cc]
+            r = np.stack([sums(rn), sums(ref[1, si, rr, cc])] + [sums(rn * fac[v]) for v in range(len(fac))])
+            keep = np.bincount(cidx[on], minlength=nb) > 0
+            h = sums(e[si, rr, cc])[keep]
+            by_state[s] = (np.broadcast_to(h[None], (r.shape[0],) + h.shape), r[:, keep])
+        found.append((rr, cc, by_state))
+    report["tests"] = len(found)
+    for rr, cc, by_state in found:                                       # every highlight against the skin's bar
+        basis = SP.tint_test(by_state, tests=len(found))["basis"]
+        report[basis]["highlights"] += 1; report[basis]["texels"] += int(len(rr))
+        if basis == "measured":
+            m[rr, cc] = 1.0
+    return (cv2.GaussianBlur(m, (0, 0), 0.7) if H > 4 else m), report
 
 
 def specular_colour(metal, region, measured=None):
@@ -10240,7 +11111,9 @@ def cmd_materials(cfg, rest) -> int:
         mosaic = np.load(os.path.join(w, "mosaic", f"{sid}.npz"))
         region = geom.region > 0
         model = MODEL
-        metal = np.maximum(parts["gilt"], gilding_mask(mosaic["excessRgbByState"].astype(np.float32), mosaic["glare"], geom.material)).astype(np.float32)
+        gilding, gilding_report = gilding_mask(mosaic["excessRgbByState"].astype(np.float32), mosaic["referenceRgbByState"].astype(np.float32),
+                                               mosaic["referenceShift"], int(mosaic["referenceCell"]), mosaic["glare"], geom.material, geom.texel)
+        metal = np.maximum(parts["gilt"], gilding).astype(np.float32)
         rough = roughness_map(geom.material, mosaic["glare"], mosaic["excess"].astype(np.float32), metal)
         spec = specular_colour(metal, region)
         layer = None
@@ -10268,7 +11141,7 @@ def cmd_materials(cfg, rest) -> int:
         shares = {name: float((parts["prov"][region] == code).mean()) for name, code in PROVENANCE}
         index[sid] = {"model": model, "provenance": shares, "metalShare": float((metal[region] > 0.5).mean()),
                       "roughnessP50": float(np.median(rough[region])) if region.any() else None,
-                      "specularColour": spec, "basis": basis, "credits": parts["credits"]}
+                      "specularColour": spec, "basis": basis, "credits": parts["credits"], "gilding": gilding_report}
         print(f"materials {sid}: {json.dumps(index[sid])}", flush=True)
     with open(os.path.join(folder, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f, indent=1)
@@ -10300,7 +11173,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 cd tools/skins && C:/Python313/python.exe -m skins twice materials --config config/grand-hall.json
 ```
 
-Expected: `PASS`; `index.json` with every skin `skins-measured-v1` and, with no measured layer yet, every `basis` a prior (`{roughness: "prior", specularColour: "prior"}` where the skin has metal); every frieze skin, and every honours-board lettering panel whose gilding the views saw gold in two light states, with a metal share above zero and `specularColour` `[1.0, 0.78, 0.34]` (report each lettering panel's share) (the frieze skins' metal mostly the gilt ground, a share near Task 12's `giltShare`), the plaster and canvases zero and `specularColour` null; the gilt ground's roughness near 0.40 and the mural's paint near 0.80; the blank panels' roughness median well below the plaster's; the frieze skins' `provenance.photo` above zero on the door and fireplace walls and their `credits` naming their photographs. Save the index as `D:/claude/skins/grand-hall/evidence/task13-materials.txt`. When the found-light reflectometry track has written its layers, rerun as `materials --measured <its root>` (its folder layout above) and Task 14 onward; nothing else changes.
+Expected: `PASS`; `index.json` with every skin `skins-measured-v1` and, with no measured layer yet, every `basis` a prior (`{roughness: "prior", specularColour: "prior"}` where the skin has metal); every frieze skin, and every honours-board lettering panel with a highlight the tint test measured gold (`gilding.measured`), with a metal share above zero and `specularColour` `[1.0, 0.78, 0.34]` (report each lettering panel's share) (the frieze skins' metal mostly the gilt ground, a share near Task 12's `giltShare`), the plaster and canvases zero and `specularColour` null; the gilt ground's roughness near 0.40 and the mural's paint near 0.80; the blank panels' roughness median well below the plaster's; the frieze skins' `provenance.photo` above zero on the door and fireplace walls and their `credits` naming their photographs. Report each skin's `gilding` counts (highlights and texels per basis, and `tests`): a varnished ground's highlights are refused or a prior, never metal. Save the index as `D:/claude/skins/grand-hall/evidence/task13-materials.txt`. When the found-light reflectometry track has written its layers, rerun as `materials --measured <its root>` (its folder layout above) and Task 14 onward; nothing else changes.
 
 ### Task 14: The skin package and its contract
 
@@ -15537,8 +16410,8 @@ Expected: pushed. No preview is opened for Blake. The one preview is R1d's Task 
 | De-light by the relight model | Task 8: the skins' light from R1a's bake and fitted day and evening states. Task 9: every view divided by its own state's light and gain |
 | Multi-view glare removal | Task 9 `glare_masks` |
 | Per-material healing, clutter masks with clean versions | Tasks 10 and 11 |
-| The frieze band | Task 12: measured recovery (response curves, per-channel fusion, the residual light from the measured edge, kept only when it predicts held-out rows and divided out on every row), the research's holdout as acceptance tests with reconciled thresholds, synthesis labelled reconstructed; the venue's photographs (amended 7 October, and 8 October from the frieze-photo experiment): registration per metre, one hall-wide colour frame (a tone per photograph on matte texels), their own light removed, a verdict per photograph (colour, or detail and outline), colour and tone from them and detail from the fusion, the lowest 5 cm on the door and fireplace walls drawn by them, independent checks (registration, colour, detail, seams, gilt direction) |
-| Material maps: roughness, gilding, provenance; the measured-material interface | Task 13; the frieze's gilded ground as a metal (Task 12's view-dependent mask, measured where its highlight is gold in two light states and kept by prior, listed, where the views cannot decide; gold's specular colour, the gilding's roughness), carried by Task 14 (`material.specularColour`) to R1d's sheen through `SkinSurface.specularColour` (Task 20) |
+| The frieze band | Task 12: measured recovery (response curves, sRGB in every channel, the XGRIDS frames' fitted curves (the research's staged fit) measured notes, per-channel fusion, the residual light from the measured edge, kept only when it predicts held-out rows and divided out on every row), the research's holdout as acceptance tests with reconciled thresholds, synthesis labelled reconstructed; the venue's photographs (amended 7 October, and 8 October from the frieze-photo experiment): registration per metre, one hall-wide colour frame (a tone per photograph on matte texels), their own light removed, a verdict per photograph (colour, or detail and outline), colour and tone from them and detail from the fusion, the lowest 5 cm on the door and fireplace walls drawn by them, independent checks (registration, colour, detail, seams, gilt direction) |
+| Material maps: roughness, gilding, provenance; the measured-material interface | Task 13; the frieze's gilded ground as a metal (Task 12's view-dependent mask, measured where the tint test calls its highlights gold leaf, gold metal against a neutral dielectric in R1c's de-lit unit, kept by prior, listed, where the views cannot decide, and a varnish refused; gold's specular colour, the gilding's roughness), carried by Task 14 (`material.specularColour`) to R1d's sheen through `SkinSurface.specularColour` (Task 20) |
 | Per-skin light maps through the R1a bake | Amendment A4 (`skin-light`), consumed in Tasks 8 and 15 |
 | Splat hiding and toggle classes in the relight records | Amendments A1 and A3; Task 15's `v2-check` proves nothing else changed |
 | Skin package format and contract | Task 14 and `docs/engineering/skin-package.md` |
@@ -15571,15 +16444,15 @@ External photographs: the venue's own Trades House Virtual Museum photographs of
   - `SkinGeometry.frieze_bottom`, `frieze_bottom_row`, `frieze_band_row`: Task 5's `skins.json` `frieze` → Task 6 → Tasks 10, 12 and 14;
   - `twice.verified`, `artifacts`: Task 1 → Task 14 (and Task 8's `check_relight_artifacts` for R1a's);
   - `blend._view_gsd_blocks`: Task 9 → Task 12;
-  - `frieze` npz `rows`, `band0`, `spread`, `excess`, `spreadRows`: Task 12's `frieze` → its `frieze-venue` (`lay_band`);
+  - `frieze` npz `rows`, `band0`, `spread`, `excessByState`, `lightStates`, `reference`, `referenceCell`, `referenceVariants`, `curves`, `spreadRows`: Task 12's `frieze` → its `frieze-venue` (`lay_band`, `gilt_from_spread`; round 5, m-5);
   - `venue` npz `albedo`, `prov`, `gilt`, `giltBasis`, `photos` and `venue/photos.json`: Task 12 → Tasks 13 and 14;
   - `materials` npz fields (with `credits` and `specularColour`): Task 13 → Task 14;
   - the package manifest's fields (with `credits`, `material.specularColour`, `provenance.photo`, each skin's `credits`): Task 14 → Task 16's schema;
   - the relight `skins` entry fields: A5 → A7 → Task 16;
   - the frame store's Y/U/V planes (`FrameStore.save`, `load`): Task 6A → Tasks 9 and 12;
-  - `mosaic` npz `excessRgbByState`, with `blend.LIGHT_STATES`, `gold` and `GOLD_MIN_STATES`: Task 9 → Task 13's `gilding_mask` and Task 12's `gilt_evidence`; `frieze` npz `excessByState` and `lightStates`: Task 12's `frieze` → its `frieze-venue` (round 4); `blend.light_model_id`: Task 9 → Task 13;
+  - `mosaic` npz `excessRgbByState`, `referenceRgbByState`, `referenceShift` and `referenceCell`, with `blend.LIGHT_STATES`: Task 9 → Task 13's `gilding_mask`; `specular.spec_inputs`, `cells_at`, `cell_texels`, `view_terms`, `references_from_terms`, `tint_test`: Task 9 → Task 12's `frieze` and `gilt_from_spread` and Task 13's `gilding_mask`; `light` npz `D`, `cubes`, `P`, `normal` and `states.json` `fit.<state>.chromaSigma`: Task 8 → `specular` (round 5); `frieze` npz `excessByState` and `lightStates`: Task 12's `frieze` → its `frieze-venue` (round 4); `blend.light_model_id`: Task 9 → Task 13;
   - `frieze` npz `lightEdge`, `lightLam`, `lightK`, `lightAccepted` (`frieze.light_of`) and `fused`: Task 12's `frieze` → its `frieze-venue` (`lay_band`, `vertical_seam`); `venue.vertical_seam`: Task 12 → Task 23's `skin_edge_seam`;
-  - `frieze/blue.json` (`choose_blue`, `frieze-blue`): Task 12 → its `frieze-holdout`, `frieze` and `frieze-venue` (`_crfs`, `family_curve`); `FrameStore.crop_box`: Task 6A → Task 7's `XgView.check`; `venue.feather_gap` and `vertical_seam(..., gaps)`: Task 12 → Task 23's `skin_edge_seam`;
+  - `frieze/crf.json` `curves` and the measured notes (written by `frieze-crf`, round 5): Task 12 → its `frieze-holdout`, `frieze` and `frieze-venue` (`_crfs`, `family_curve`, `require_srgb`); `FrameStore.crop_box`: Task 6A → Task 7's `XgView.check`; `venue.feather_gap` and `vertical_seam(..., gaps)`: Task 12 → Task 23's `skin_edge_seam`;
   - `__skins.state().credits`: Task 22 → Task 23's run record and `credits` check; the `crops-mask` renders (Task 23's driver) → `edge_row`;
   - `materials` npz `roughnessBasis`, `specularBasis`: Task 13 → Task 14's `material.basis` → Task 16's `MaterialBasisSchema` → Task 20's `metalIsPrior`;
   - `skins.json` `toggleBoxes`: Task 5 → Task 14's manifest → Task 16's schema and `toggleGroupsOf`;
@@ -15607,6 +16480,6 @@ External photographs: the venue's own Trades House Virtual Museum photographs of
 - The gilt ground reflects as gold through R1d's sheen, which takes its Fresnel colour from `SkinSurface.specularColour` (R1d Task 17); without R1d's hooks the skins are matte (below).
 - R1c's own material, without R1d's hooks, is matte: the gilt ground's brightness follows the view only through R1d's sheen.
 - A residual light Task 12 keeps is divided out of every row of the frieze's albedo (it is the relight model's error, not the paint), so at the captured light the frieze departs from the capture by that light: most at its bottom edge, where it reads e^k darker than the picture-rail moulding's splats below (k, the kept light at the frieze's measured edge), less at its top against the cornice's, smoothly in between. Task 23's skin-edge seams measure both edges against the splats, and any kept light over about 0.023 ln at an edge fails them: the task stops there, and the remedy is the relight model's (R1a carrying the uplight), not a looser gate. On the research's own de-lit fusion the light fit finds none.
-- The gilded ground's basis (round 4): measured on the door and fireplace walls' registered stretches; on the window wall's the views show no highlight above the paint's (0.92–1.02 ×), so its ground is gilt by prior, labelled and listed (`giltPrior`), and its photograph (Wrights, −0.09) does not confirm it. The other end wall (`end_xmin`) has no stretch with the research's fusion; the run decides it. These numbers come from the experiment's fusion and de-light; R1c's mosaic and light re-measure them (Task 12 Step 10).
-- Varnish's rejection is inferred from dielectric reflection and tested on synthetic highlights (Task 13); no varnished surface's highlights were measured per light state. It holds where a lamp-dominated state's light is mostly the lamps': at the 0.5 lamp share Task 8 allows the evening, a lamp mirrored in varnish would read B/R 0.52, still gold; at 0.7, 0.66, not (R1a's lamp/daylight ratio; the lamp groups' own colours differ further). Gilt that mirrors a window under a lamp-dominated light reads blue and is refused, which stops Task 12 instead of passing silently.
-- XGRIDS blue's curve is chosen by the evidence, not assumed (Task 12 Step 10, `frieze-blue`): sRGB, the research's, unless the fitted curve agrees better with the venue's photographs.
+- The gilded ground's basis (round 5): on the capture state, R1a's own fit, the door and fireplace walls' stretches are measured gilt and the window wall's is a prior (labelled and listed, `giltPrior`; its photograph, Wrights, −0.09, does not confirm it either). The E57 states' weights are Task 8's. At stand-in weights the door's E57 states fit neither hypothesis, which would stop Task 12 at `giltGround` with its evidence; the lamps' share and colour in those sweeps decide, not the windows'. The other end wall (`end_xmin`) has no stretch with the research's fusion; the run decides it. These numbers come from the experiment's fusion in R1c's unit; R1c's mosaic and light re-measure them (Task 12 Step 10).
+- Varnish's rejection is tested on synthetic highlights in the stretches' own geometry, light and noise (called gilt in none of 2,400 draws; refused 165–200 times in 200 at full strength) and on synthetic blocks (`test_specular`, `test_materials`); no varnished surface's highlights were measured per light state. A likelihood ratio of 100 bounds the chance that one test calls a dielectric gold at about 1 in 100 (Markov's bound; measured far lower), and Task 13 raises the bar by the log of the number of highlights it tests on a skin. The fit check at 99% stops about 1 in 100 honest tests per state as inconsistent: a stop with its evidence, not a silent pass.
+- Every channel is linearised by sRGB (round 5, the controller's ruling on B-2): a response curve is the camera's only if it is the same across stretches, and on the research's samples none is (green's departure on matte points at code 240 is −0.23 ln on the door stretch and +0.16 on the fireplace's; blue's, −0.52 there, lies on the fireplace stretch alone, where red clips, and reads as a highlight does). The fitted curves are measured notes (`crf.json` `fittedMinusSrgb`, `perPart`), which Step 10 reports per part. Where a channel's true response departs from sRGB at its top codes, the band's brightest texels carry that error, of up to the notes' size.
