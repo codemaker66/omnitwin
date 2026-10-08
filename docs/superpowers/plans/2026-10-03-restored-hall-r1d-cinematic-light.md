@@ -4,10 +4,10 @@
 
 > **Revisions (8 October, pre-flight).** This plan was revised on 8 October after two pre-flight scans (`D:/claude/real-hall/plan-amendments-0710/scans/r1d-a-scan.md` for the header and Tasks 0–9, `r1d-b-scan.md` for Tasks 10–24), the seam review's list for R1d (`review/seam-B-findings.md`), the fix-wave re-review's N2 and the controller's rulings of 8 October (`scans/rulings-0810.md`). Each id below is fixed where named, or carries a written ruling. The plan's code was re-run in scratch copies (the Self-review's "Verified while planning").
 >
-> - **Rulings.** L1 (the 140 high- and medium-confidence lamps; low and exclude are `notLamps`): decision 1, Task 0 Step 1, Task 1 (code, tests, Step 6), Task 3, Task 24's package note, the Self-review. L2 (the centre chandelier's 7 crown tubes, kind `crown`, at `wCrown` of a candle's share, with their own smaller envelope): Tasks 1, 3 (`ENVELOPES`), 8 (`kind`, `envelopes`), 11 (one mesh per group and kind) and 17 (sphere radius by kind). L3 (each group's warm-down starts from its own colour): decision 11, Tasks 3 (`lamps.warmDown.groups`), 6 (`LampGroupLight.warmFullCct`), 8, 9, 16 and 21. N2 (penumbra excuses get their own measured cap; R1b's window and floor excuses keep the wall-face rate): Tasks 22 (`excusedPenumbra`, `penumbraMarched`) and 23 (`words_verdict(checks, rate)`, `PENUMBRA_CAP_FACTOR`), Task 24's PR text. E1 (the fallback eye never runs the CPU twin per frame): Task 9 (`readSkyLight`, at most every 250 ms while the light moves, once at rest) and Task 11 (the glass's ambient on the GPU).
+> - **Rulings.** L1 (the 140 high- and medium-confidence lamps; low and exclude are `notLamps`): decision 1, Task 0 Step 1, Task 1 (code, tests, Step 6), Task 3, Task 24's package note, the Self-review. L2 (the centre chandelier's 7 crown tubes, kind `crown`, at `wCrown` of a candle's share, with their own smaller envelope): Tasks 1, 3 (`ENVELOPES`), 8 (`kind`, `envelopes`), 11 (one mesh per group and kind) and 17 (sphere radius by kind). L3 (each group's warm-down starts from its own colour): decision 11, Tasks 3 (`lamps.warmDown.groups`), 6 (`LampGroupLight.warmFullCct`), 8, 9, 16 and 21. N2 (penumbra excuses counted apart; R1b's window and floor excuses keep the wall-face rate): Tasks 22 (`excusedPenumbra`, each confirmed by its splat's own GPU taps since round 3) and 23 (`words_verdict(checks, rate)`), Task 24's PR text. E1 (the fallback eye never runs the CPU twin per frame): Task 9 (`readSkyLight`, at most every 250 ms while the light moves, once at rest) and Task 11 (the glass's ambient on the GPU).
 > - **Scan A, blocking.** B1 (commands registered after the main guard): Tasks 1–3, now registered directly above it. B2 (all 173 entries crisp): Tasks 1 and 3, with L1 and the refit required. B3 (`visibility` against R1b's `v`): Task 7's anchors and replacement. B4 (the removed sunlit-area table): Task 7's test.
 > - **Scan A, important.** I1: Task 1 (the crown kind), with L2. I2: Tasks 3, 6 and 8, with L3. I3: Task 9, with E1. I4 (stale table, share and anchor text): decisions 1 and 11, Task 0, the Self-review (open decisions 6, 7 and 17 settled) and the amendments file's status note. I5 (Task 0 Step 2's patterns): Task 0 Step 2.
-> - **Scan A, minor.** M1: decision 4. M2: Task 1 Step 5 (R1a's `paths.emitters` used, the config not edited). M3: the R1b line references in Tasks 0–9 re-read. M4 (the shares in the light's own units), ruling: kept on purpose, with the reason in Task 6's prose (the shares only mix the eye's anchors, and `MOON_NEGLIGIBLE` sits three orders below a visible change). M5: Task 7 (`setDisplay` writes through R1b's `writeDisplay`). M6: Task 9's prose and `mixLights`' doc comment (a counted second body is between 1/100,000 and about 1/1,000 of the light and is dropped while a blend runs). M7: Tasks 1–3 write only on success and record each artifact's SHA-256, and the manifest records the bulb table's (`bulbs.tableSha256`); the package's `files` are exactly its occluders. M8: decision 4 and Task 21's gate. M9, ruling, not applied: R1b owns `prepare` and did not take the optional skip; Task 23 measures the sky passes' GPU time while the light moves, so their cost during a lamp fade is judged, not assumed. M10: Task 3's contract text. M11: Task 6 Step 6 (the control's doc comment).
+> - **Scan A, minor.** M1: decision 4. M2: Task 1 Step 5 (R1a's `paths.emitters` used, the config not edited). M3: the R1b line references in Tasks 0–9 re-read. M4 (the shares in the light's own units), ruling: kept on purpose, with the reason in Task 6's prose (the shares only mix the eye's anchors, and `MOON_NEGLIGIBLE` sits about two orders below a visible change; wording corrected in round 3). M5: Task 7 (`setDisplay` writes through R1b's `writeDisplay`). M6: Task 9's prose and `mixLights`' doc comment (a counted second body is between 1/100,000 and about 1/1,000 of the light and is dropped while a blend runs). M7: Tasks 1–3 write only on success and record each artifact's SHA-256, and the manifest records the bulb table's (`bulbs.tableSha256`); the package's `files` are exactly its occluders. M8: decision 4 and Task 21's gate. M9, ruling, not applied: R1b owns `prepare` and did not take the optional skip; Task 23 measures the sky passes' GPU time while the light moves, so their cost during a lamp fade is judged, not assumed. M10: Task 3's contract text. M11: Task 6 Step 6 (the control's doc comment).
 > - **Scan B, blocking.** B1: Task 10 (`CinematicHooksProvider` around the scene and R1c's skins; `RelightProvider-cinematic.test.tsx`). B2: Task 11's test. B3: Task 15's test. B4: Task 16's test 3. B5: Task 7's `setDisplay` (the held eye reaches `frame.current.display`). B6: Task 15. B7: Tasks 21 and 24 (`node --check` for the drivers). B8: Task 20. B9: Tasks 10 and 18. B10: Tasks 11 and 15. B11 and B12: Task 20. B13: Task 22. B14: Tasks 22 and 23, with N2. B15: Tasks 9 and 10 (the cinematic light loads lazily behind its gate) and Task 24 Step 2 (its grep unchanged). B16: Task 24 Steps 5 and 6 (the PR opened there; the GPU gate's procedure written out).
 > - **Scan B, important.** I1: Task 17 (F0 from R1c's `specularColour`). I2: Task 11. I3 and I4: Task 18. I5: Task 13 (the fragment's own window depth, `FragmentDepthNode`); ruling on the suggested `perspectiveDepthToViewZ(depth, …)`: not used, because three's `depth` node is built from `positionView`, the quad corner's. I6: Tasks 13, 14, 15 and 17. I7: Task 15. I8: Tasks 22 (`passTimes`) and 23 (`gpu_time_verdict`). I9: Tasks 8, 10, 11, 13–15, 17 and 18 (`CINEMATIC_SPANS`) and 23. I10: Tasks 13 and 21 (`measureNext`). I11: Tasks 3, 8 and 21, with L3. I12: Task 16 (with Task 9's identity test and R1b's provider test line). I13: with L1 above. I14: with L2 above. I15: decision 5 and Task 17. I16: Task 24 Step 1. I17: Task 14.
 > - **Scan B, minor.** M1: Task 10. M2: Task 14's Interfaces and text. M3: Task 15 (the solid angle named, the clamp branch zeroing the sky, the facade lit by its slot's own body; the gradient a design choice, ruled in the text). M4: Task 16. M5: Task 20. M6: Task 22. M7: Task 13 (the composite keeps the output's alpha; the measure divides out the white balance; the roll-off cancels in the anchored eye, ruled in the text). M8: File Structure and Task order. M9: decision 9. M10: Contracts. M11: Task 23. M12: Task 21. M13, ruling: cosmetic, accepted in Task 13's text.
@@ -15,6 +15,12 @@
 > - **Re-review N2 (R1d's side).** Task 23 (the vectors' `wallFaceRate` passed through; the stale "2%" gone), with ruling N2.
 > - **The controller's interface note of 8 October.** R1a's `bulb-intensities.json` (`wCrown`, `bulbs: {id: {kind, intensity}}`, `fit.notLamps`, `fit.tableSha256`): Task 3. R1b's `skyLightFor` keeping a body's first CPU light: Task 9 (`readSkyLight`). R1a's `wallFaceRate`: Task 23. R1b's corrected `timedCompute`: Task 22.
 > - **Found while re-running the code** (not in the scans): an excess-property type error in Task 8's test, never-read state in Tasks 9 and 13, Task 11's attribute and bounding-box types and a lint error in its test, `ivec2`/`uvec3` argument types in Tasks 13 and 14, an unused import in Task 15, and a `renderTarget` assignment in Task 18 that does not typecheck. Each is fixed and re-checked.
+>
+> **Round 3 (8 October), after the scoped re-review (`review/fix2-rereview-d.md`) and the light frontier results (`D:/claude/real-hall/frontier/light/proposal.md` §e).**
+>
+> - **NB1** (Task 23's driver hung after `gpuTime`, holding the GPU lock; Task 21's after `?light=night`): the director's DEV `reapply` and the controls' director-aware `select` and `reapply` (Task 21); the drivers select through them, hand the light back after `gpuTime` with `reapply`, bound every wait in the page (`within`) and close the browser after a run limit, so a hung run fails and frees the lock (Tasks 21 and 23); +1 director test. **NB2**: Task 3 (`write_package` refuses a stray file before writing; `cmd_cinematic` records the refusal). **NB3**: Task 21 (`measureNext` gives up after `MEASURE_FRAME_LIMIT` frames or when the director stops). **NB4** (the M4 wording): Task 6's prose (about two orders; only the beams would need the GPU). **NB5**: Task 24 Step 6 (`gh run download` into a fresh request folder; Node 22.23.2). **N2 per splat**: Tasks 22 and 23 (a penumbra excuse needs its splat's own GPU taps to be fractional; no cap factor; open decision 19 settled). **M3 residual**: Task 4's R1b references (2072–2075, 5457–5468). **L3 residual**: the Self-review's warm-down limit, per group. **M10 nit**: the relight-package text Task 24 writes ("horizontally"; each group's own `fullCct`). **Out of scope 3**: Task 13 builds its glow once, so a rebuilt composite no longer leaks bloom targets.
+> - **Task 24's delivery gaps**: Step 5 checks release ownership before the push; Step 6 confirms the preview's deployed commit is the pushed head; Step 7 names the exact tested commit; Step 5's PR section carries one list for Blake.
+> - **Light frontier results**: k_abs 121.8 measured (decisions 3, 4, 10; Tasks 5, 15, 16, 21; the levels 21 and 16 cd/m², the margin 0.8–1.6 stops, Task 21's gate at 8.7–11.4, the city's weight 2.26 times lower); `SCOTOPIC_LUMINANCE` 0.1, following Cao's rod gains (decision 4, Task 5); the Sun's and the Moon's beams by elevation and the blue hour in xy (decision 2; Task 6's new `sky-colour.ts`, asked for by the director with its package, Task 9; the Moon's disc, Task 15); the window views (`CITY_CCT` 3,830 K, `FACADE_SKY_VIEW` 0.24, the facade's daytime 0.018: decision 9, Task 15); the glare (the fitted pyramid as `?glare=cie`, the design glow the default: decision 6, Tasks 11, 13, 15, 22); `CHROMA_ADAPTATION` 0.6 kept with 0.74 recorded, the warm-down's colour cost recorded, R1d's night chain kept (Tasks 4, 5, 16); the moonlit preset on 23 December 2026, 23:50 GMT (Task 6); Task 21's RGB measure, its expected 3.5 ΔE00 residual and station 45's margin (Task 21; Task 24's PR line); the 3,700 K start confirmed and per group (the Self-review's limit). Every item for Blake is in Task 24's list.
 
 **Goal:** On development and preview builds, a desktop WebGPU visitor sees the relit Grand Hall live at the real hour by default, lit by the true Sun and the true Moon, sweeping through the hours as a smooth critically damped time-lapse when the clock moves (a crafted clock that shows both bodies' arcs and lets you drag either, or the hour), with lamps that fade and dim warm (Blake's artistic choice: the lamps are LED), eye adaptation with night vision, crisp frosted lamps (candles, and the centre chandelier's crown tubes) at their triangulated positions in place of the chandeliers' captured glow with a restrained energy-conserving bloom, soft interior shadows from both bodies, the street opposite, the sky and the Moon's disc in the windows with the city's light at night, GGX sheen and soft reflections, faint dusty shafts and a clutter toggle, at 60 fps (p99 frame ≤ 16.7 ms) on the RTX 4090 while scrubbing, dragging and walking; anything missing falls back as the spec says, and venviewer.com keeps the founder hold.
 
@@ -27,7 +33,7 @@
 - Work only in the worktree `D:/claude/real-hall/repo`, branch `claude/real-hall`. Never edit `C:/Users/blake/omnitwin2` or another worktree.
 - R1d starts only when R1a, R1b and R1c are merged into `claude/real-hall` with every amendment in `docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md` applied. Task 0 checks the anchors this plan edits and the R1c interface; a mismatch is reported to the controller, never designed around.
 - Commit with explicit pathspecs only; inspect `git diff --cached --stat` before each commit; every message ends with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Founder hold (19 September 2026, amended 28 September 2026): splats, the relit hall, the cinematic effects and the light control exist only where `gaussianSplatsAvailable()` is true (development and Vercel preview builds, never a venviewer.com host). No query, saved state or role may override it; `?light=`, `?relight=off`, `?cinematic=off`, `?skins=off` and `?floorskin=v1` are honoured only where it is true.
+- Founder hold (19 September 2026, amended 28 September 2026): splats, the relit hall, the cinematic effects and the light control exist only where `gaussianSplatsAvailable()` is true (development and Vercel preview builds, never a venviewer.com host). No query, saved state or role may override it; `?light=`, `?relight=off`, `?cinematic=off`, `?skins=off`, `?floorskin=v1` and `?glare=cie` are honoured only where it is true.
 - TypeScript strict: no `any`, no `as unknown as`, `import type` for types, `noUncheckedIndexedAccess` respected, the repo's `strictTypeChecked` lint (`strict-boolean-expressions`, `no-unnecessary-condition`, `prefer-readonly`, `no-floating-promises`). No new `console` call in app code: fallbacks warn once through R1b's `warnRelightFallback(kind, message, cause?)` (`lib/relight/relight-warning.ts`). If TypeScript rejects a TSL type annotation in a plan code block, change the annotation only, never the node graph.
 - Tests: `pnpm --filter @omnitwin/web exec vitest run <path relative to packages/web>`, one file per command, in the foreground. Python: from `tools/relight`, `C:/Python313/python.exe -m unittest tests.<module> -v`.
 - All visible loading and working states use `packages/web/src/components/shared/Activity.tsx` (`.claude/conventions/loading-and-working-motion.md`); never attach an Activity indicator to the Three.js frame loop. The light control follows `.claude/conventions/product-experience.md`: quiet colour-change hovers, a small press-down, a visible focus ring, plain factual words, WCAG AA.
@@ -46,15 +52,15 @@
 ## Decisions this plan takes (with the evidence)
 
 1. **The chandeliers' captured glow is hidden where crisp lamps are drawn; nothing is boosted.** Measured by the frontier splats study (`D:/claude/real-hall/frontier/splats/proposal.md` §0, §b1, §d6.0, 7 October): its bulb table holds 173 entries over all five chandeliers, triangulated from clipped blobs in the E57 photographs to 3.0–4.3 mm (each chandelier's p50 ray residual), each read by eye with a confidence; the lamps are the 140 `high` and `medium` entries, 26, 22, 47, 23 and 22 for chandeliers 0–4 (the controller's ruling L1 of 8 October, one lamp set for R1a and R1d; the 6 `low` and 27 `exclude` entries are not lamps), and the centre chandelier's 7 `medium` crown tubes are a smaller lamp kind of their own (ruling L2); the vendor splats register to them within 7–15 mm (p50), and the chandeliers did not move between stations; the emitter class (class 3: inside a chandelier's volume and brighter than 0.30) is 48–59% of each chandelier's splats and is glow, the capture's bloom of the bulbs; the chandeliers are polished, cast and gilt brass scrollwork with frosted or opal candle lamps and no crystal prisms (inspected at 1.5 mm/px; the light study §b9 found the envelopes frosted, glowing evenly with no filament visible). The 3 October reading of class 3 as mostly crystals is withdrawn. So Task 1 places the crisp lamps at the triangulated positions, Task 11 draws each as a small frosted envelope of even luminance (a candle, or a smaller tube for a crown lamp), and while they draw the kernel gives alpha 0 to every class-3 splat of a chandelier that has crisp lamps (Task 7: the record's class, and the nearest chandelier centre, since a record carries no chandelier id). A chandelier the table does not yet cover keeps its glow splats as captured, unboosted (spec §7: missing bulb positions fall back to the bulb splats). Nothing is boosted (β = 1, A1). The dome's class-4 "emitters" are its 14 gilt crests lit by LED pin spots (the contractor's record, light study §b9): lit surfaces, not lamps, so they get no crisp primitive, are neither hidden nor boosted and follow the dome group's level. Without the cinematic package nothing is hidden. A finer, photo-tuned halo flag (the splats study's §c5) is open: it would be a bake output read by the same hiding rule.
-2. **The Moon is a second sky body through the Sun's machinery, with the bake's own ephemeris** (the owner's requirement of 3 October; one lunar ephemeris, the coordinator's direction of 7 October). Its position is R1a's `moon.py` (Meeus ch. 47 in full) ported line for line to TypeScript (amendment A3: the two agree to 7×10⁻¹⁴°, and both stand within 3.4″ of JPL Horizons over Glasgow in the cases tested; R1a's review found median 2″, worst 15″ over 2020–2038), its phase from the same NOAA Sun the hall uses, its illuminance by Krisciunas & Schaefer with a restrained opposition surge (about 0.3 lux at full Moon high), its colour about 4,100 K. The light setting and the kernel carry it beside the Sun (A4, A5): the same window march, gates and glass, its own floor grid, and the sky-body bounce basis (A6, A9). R1d adds its shadow map, its shafts and its disc in the windows. A Moon whose light is below 1/100,000 of the day's and the lamps' is not marched (it cannot move a displayed pixel by a tenth of a code), so a day Moon's light costs nothing while its disc still shows; Task 23 measures the frame budget with both bodies forced on, so a day Moon's light would fit if Blake wants it kept.
-3. **Moonlight is visible only when the lamps are dimmer than it, and the city is always there at night.** Under lit chandeliers (the lamp-lit night is about 7 cd/m², tens of lux on the floor) a full Moon's 0.3 lux is lost, so the control has a lamps switch (automatic, on, off) beside the presets, and the "Moonlit night" preset (A7) has every lamp off. Live time's automatic lamps fade up while the Sun is below 7° (about an hour before sunset in Glasgow) and fade out above it. At night the street-lit facade across Glassford Street (about 1 cd/m², filling 55–83% of each window's view; the frontier light study, `D:/claude/real-hall/frontier/light/proposal.md` §b3) lights the hall through the windows at some 0.03–0.1 lux mid-hall, so a full Moon's patch on the floor is only 1–3× its surroundings: R1d adds that city light (Task 15's weights, Task 6's `cityLevel`). Weather joins in R2.
-4. **The eye adapts to the rendered frame, measured on the GPU, around calibrated anchors, and sees as a dark-adapted eye does only where the light is truly dim.** Every third frame a compute pass reduces the composed frame to its log-average luminance (64 × 36 samples) and reads it back asynchronously (Task 13); the exposure is divided out, so it is the scene's luminance. The target display mixes three anchors by each one's share of the light (the sunny day, the lamp-lit night, the moonlit night: Task 21 measures each anchor's display and its reference view's luminance), each corrected by half the difference between its luminance and the frame's (an eye never adapts fully; R1b's `adaptDisplay` uses the same half) and 60% of the difference in the light's colour (read from the light, never the frame, so the night tint cannot feed back), within eightfold of the anchors; only the approach is a spring (toward brighter in about one second, toward darker in about two: adaptation, time-compressed, never physiological timing). The captured light is held at exactly the identity display. The baked floor mean (R1b's `adaptDisplay`) is only the fallback: before the anchors are calibrated, and in a relit session without the cinematic package (R1a Task 4's floor-mean basis as built: median error 9.3%, at most 34% on the selection set; 10.0% and 73% on the check set, the largest at faint directions). The fallback never runs the CPU twin's sky march for a light change (the controller's ruling E1): it reads the GPU's sky light back asynchronously, at most four times a second (Task 9). Absolute luminance comes from the capture's calibration, about 54 cd/m² per fit unit (the frontier study's k_abs from the capture day's weather, ±1 stop, §b4), which puts the captured hall at about 9 cd/m² and the lamp-lit night at about 7: just above the mesopic range. The scotopic shift (Task 16: Thompson, Shirley & Ferwerda 2002, scotopic luminance V = Y[1.33(1 + (Y + Z)/X) − 1.68] with a blue shift) is therefore driven only by absolute luminance: nothing at or above 5 cd/m², rising to 60% by 0.005 cd/m² (CIE 191:2010's mesopic range) for dimmed lamps, the blue hour without lamps and moonlight. The approved night stays neither greyed nor blue-shifted only by a 0.49-stop margin (7 against 5 cd/m²) inside k_abs's ±1 stop (one stop low would give it a 3% mix), so Task 21's gate measures it at the calibrated night anchor and requires no shift there; a miss is reported, never tuned away.
+2. **The Moon is a second sky body through the Sun's machinery, with the bake's own ephemeris** (the owner's requirement of 3 October; one lunar ephemeris, the coordinator's direction of 7 October). Its position is R1a's `moon.py` (Meeus ch. 47 in full) ported line for line to TypeScript (amendment A3: the two agree to 7×10⁻¹⁴°, and both stand within 3.4″ of JPL Horizons over Glasgow in the cases tested; R1a's review found median 2″, worst 15″ over 2020–2038), its phase from the same NOAA Sun the hall uses, its illuminance by Krisciunas & Schaefer with a restrained opposition surge (about 0.3 lux at full Moon high), its colour about 4,100 K high in the sky, reddening toward the horizon (2,920 K at 7.5°: the frontier light study's §e d2, 8 October; Task 6). The light setting and the kernel carry it beside the Sun (A4, A5): the same window march, gates and glass, its own floor grid, and the sky-body bounce basis (A6, A9). R1d adds its shadow map, its shafts and its disc in the windows. A Moon whose light is below 1/100,000 of the day's and the lamps' is not marched (it cannot move a displayed pixel by a tenth of a code), so a day Moon's light costs nothing while its disc still shows; Task 23 measures the frame budget with both bodies forced on, so a day Moon's light would fit if Blake wants it kept.
+3. **Moonlight is visible only when the lamps are dimmer than it, and the city is always there at night.** Under lit chandeliers (the lamp-lit night is about 16 cd/m², tens of lux on the floor) a full Moon's 0.3 lux is lost, so the control has a lamps switch (automatic, on, off) beside the presets, and the "Moonlit night" preset (A7) has every lamp off. Live time's automatic lamps fade up while the Sun is below 7° (about an hour before sunset in Glasgow) and fade out above it. At night the street-lit facade across Glassford Street (about 1 cd/m², filling 55–83% of each window's view; the frontier light study, `D:/claude/real-hall/frontier/light/proposal.md` §b3) lights the hall through the windows at some 0.03–0.1 lux mid-hall, so a full Moon's patch on the floor is only 1–3× its surroundings: R1d adds that city light (Task 15's weights, Task 6's `cityLevel`). Weather joins in R2.
+4. **The eye adapts to the rendered frame, measured on the GPU, around calibrated anchors, and sees as a dark-adapted eye does only where the light is truly dim.** Every third frame a compute pass reduces the composed frame to its log-average luminance (64 × 36 samples) and reads it back asynchronously (Task 13); the exposure is divided out, so it is the scene's luminance. The target display mixes three anchors by each one's share of the light (the sunny day, the lamp-lit night, the moonlit night: Task 21 measures each anchor's display and its reference view's luminance), each corrected by half the difference between its luminance and the frame's (an eye never adapts fully; R1b's `adaptDisplay` uses the same half) and 60% of the difference in the light's colour (read from the light, never the frame, so the night tint cannot feed back), within eightfold of the anchors; only the approach is a spring (toward brighter in about one second, toward darker in about two: adaptation, time-compressed, never physiological timing). The captured light is held at exactly the identity display. The baked floor mean (R1b's `adaptDisplay`) is only the fallback: before the anchors are calibrated, and in a relit session without the cinematic package (R1a Task 4's floor-mean basis as built: median error 9.3%, at most 34% on the selection set; 10.0% and 73% on the check set, the largest at faint directions). The fallback never runs the CPU twin's sky march for a light change (the controller's ruling E1): it reads the GPU's sky light back asynchronously, at most four times a second (Task 9). Absolute luminance comes from the capture's calibration, 121.8 cd/m² per fit unit (the frontier study's k_abs, measured from the capture day's modelled sky by its pre-registered method: §e d2, 8 October, double-run and identical; ±1 stop, and it depends on the sky's shape), which puts the captured hall at about 21 cd/m² and the lamp-lit night at about 16 (the study's §b4 estimate of 54, which gave 9 and 7, is withdrawn: it fell 1.17 stops low). The scotopic shift (Task 16: Thompson, Shirley & Ferwerda 2002, scotopic luminance V = Y[1.33(1 + (Y + Z)/X) − 1.68] with a blue shift) is therefore driven only by absolute luminance: nothing at or above 5 cd/m², rising to 60% by 0.1 cd/m², where the rods' gains saturate (Cao's rod gains in the study's d3: negligible at the lamp-lit night, about 8% of their maximum near 1 cd/m², full by 0.1), for dimmed lamps, the blue hour without lamps and moonlight. The approved night stays neither greyed nor blue-shifted with a margin of 0.8–1.6 stops (d3's log-average interior luminance of the proof's night, 8.7–11.4 cd/m², and the median 16, against 5) inside k_abs's ±1 stop (one stop low would give the darkest view a 2% mix); Task 21's gate measures it at the calibrated night anchor and requires no shift there; a miss is reported, never tuned away. R1d's night chain stays: the study's own mesopic chain (Cao's rod gains with CIECAM16 adaptation) is not recommended by its d3 (it turns 1% lamps strongly blue and renders the lamp-free blue hour cream).
 5. **Reflection probes render the relit meshes, not the splats.** A splat draw is instancing-bound (T-640/T-644 measured it), so a cube face of the hall's splats costs about a whole frame, and the probes must refresh while the light moves. The probes draw the restored floor and the skins (R1c), which carry almost all of the hall's large reflected surfaces, in linear light; the bright emitters (the Sun, the Moon, the lamps, the windows) reflect analytically through the GGX sheen instead, so nothing is counted twice. The 3D ornament that stays splats is absent from the soft reflections by design; Blake judges the result. No splat gets a specular term: the splats study found a measured per-splat specular unsupported (§d6, §0 "Recommendation" 3, §e), so nothing in R1d claims one. An optional designed brass and gilt sheen on the splats would use one shared broad roughness per material (α ≥ 0.2), be labelled "designed" in the provenance view and be judged by Blake (an open decision). The skins' gilt sheen is itself a designed prior until the materials track's measured layer is imported: R1c's `GILT_ROUGHNESS` (perceptual 0.40, α 0.16) and `GOLD_F0` (gold leaf's F0 from its optical constants) are priors, and R1d reports them as such wherever it shows the gilt's provenance.
-6. **Bloom and shafts need the main draw in a render target.** Splats write no depth and are blended, so a glow or a shaft drawn over the canvas cannot be occluded correctly. A registered frame composer (Task 12) draws the main canvas render into three's MRT target (colour, emission and expected depth, the last two blended by every splat's alpha exactly as its colour is) inside R1b's existing canvas render scope, so every readiness and profiling hook still sees the main draw. Without a relit session the composer is never registered and the canvas draw is I1a's own. The bloom is a restrained, energy-conserving design glow (a small share of each bulb's light moved from its core into the halo, never added); it is not presented as the CIE disability glare function. The frontier study proposes fitting the pyramid's weights to that function (§b6, §c7); R1d takes the glow as one replaceable function of the emission (the composer's `glare` option, a `GlareNode`, Task 13) so the upgrade can land, with the formula and its parameters taken from the CIE text itself (CIE 135/1-6:1999), never from memory.
+6. **Bloom and shafts need the main draw in a render target.** Splats write no depth and are blended, so a glow or a shaft drawn over the canvas cannot be occluded correctly. A registered frame composer (Task 12) draws the main canvas render into three's MRT target (colour, emission and expected depth, the last two blended by every splat's alpha exactly as its colour is) inside R1b's existing canvas render scope, so every readiness and profiling hook still sees the main draw. Without a relit session the composer is never registered and the canvas draw is I1a's own. The bloom is a restrained, energy-conserving design glow (a small share of each bulb's light moved from its core into the halo, never added); it is not presented as the CIE disability glare function. The frontier study fitted that function's pyramid (§e d3, 8 October: CIE 135/1-6:1999 at age 40 as eleven Gaussians, σ = 0.5·2ⁱ px at 11.25 px per degree, within 0.8% of its encircled energy; 9% of a lamp's light beyond 1°, 63% spread in all). R1d takes the glow as one replaceable function of the emission (the composer's `glare`, a `Glare`, Task 13): the restrained design glow by default, as Blake asked, and the fitted CIE glare as an option at the preview (`?glare=cie`) for Blake to judge; either takes its share of each emitter's light, so the light is moved, never added.
 7. **Per-frame passes are kept affordable** by four measures, in this order: the floor's base light moves to the GPU (A2); while the light moves only the active draw's multiplier pass runs and the others rerun when they become active (Task 7); R1b's early-out remedy (non-reach and non-entering splats skip the march); and, only if Task 23's measurement needs it, the pass is amortised over two frames by interleaved halves (`passStride`, Task 7) whose last phases complete after the light settles, so every splat ends exactly at the final light.
 8. **The clock is a time–altitude chart**, the astronomer's classic: the hours run left to right, the Sun's and the Moon's arcs for the chosen date rise and set across a horizon line with the twilight bands beneath it, and the displayed instant is a vertical line where both bodies stand. Dragging a body along its arc, or the line itself, moves the time through the spring core, with gentle detents at sunrise, the golden hours, sunset, moonrise and moonset; slider semantics keep it fully keyboard and screen-reader accessible.
-9. **The windows show the street, not an open sky** (the frontier study, §b3). Only 17–45% of each window's view is sky (the capture-lighting audit's `D:/claude/splat-quality-20260923/capture-lighting-audit/out/view_sky_fraction.json`: W1 0.39, W2 0.27, W3 0.17, W4 0.39, W5 0.45); the rest is the facade across Glassford Street. Each window panel shows the facade below that window's measured horizon (R1a's per-window horizon tables, the same the Sun's gates use) and the sky above it, with the Moon's disc at its true phase only where the Moon stands above the facade's roofline. The facade is a Lambertian sandstone wall facing 284.3° (albedo 0.3, the study's assumption), lit by the sky, by the Sun once the Sun clears the hall's own roof as seen from the facade (the audit's `D:/claude/splat-quality-20260923/weather-daylight/opposite_facade.json` sunlit hours give that roofline: about 8° at azimuth 200° rising to about 14° at 292°; the hours are London local time, as its script builds them with `tz='Europe/London'`, `opposite_facade.py:16`, so the June end is the Sun at 291.7°, 13.7°, not the 303.4°, 6.4° a UTC reading would give), and at night by street lighting at about 1 cd/m² (assumed, §b3; the evening Matterport stations can measure it). The panel's mean is the light the room receives through that window (the package's window radiance times its weight), so what the windows show and what they admit agree. The view is an interface (`WindowViewModel`), so R2's real sky and the frontier's spectral sky-view replace R1d's clear-sky one without touching the panels.
-10. **The frontier light study plugs in through interfaces, never as a dependency** (`D:/claude/real-hall/frontier/light/proposal.md` §c9, §e). R1d stays RGB. Its upgrade points: the luminance calibration (`LuminanceCalibration`, Task 5: the spectral package's k_abs replaces 54 cd/m²); the lamps' dimming colour (`dimmedTint`'s signature, Task 4: a spectral LED or tungsten model replaces the Planckian RGB tint); the window view (`WindowViewModel`, Task 15: the spectral sky-view and facade bands); the night-vision display stage (`nightVisionNode`, Task 16: a mesopic model with chromatic adaptation replaces the Thompson shift); and the glare function (`GlareNode`, Task 13). Its colour-accuracy method (spectral against RGB, CIEDE2000) reports beside R1d's in Task 21 when it exists.
+9. **The windows show the street, not an open sky** (the frontier study, §b3). Only 17–45% of each window's view is sky (the capture-lighting audit's `D:/claude/splat-quality-20260923/capture-lighting-audit/out/view_sky_fraction.json`: W1 0.39, W2 0.27, W3 0.17, W4 0.39, W5 0.45); the rest is the facade across Glassford Street. Each window panel shows the facade below that window's measured horizon (R1a's per-window horizon tables, the same the Sun's gates use) and the sky above it, with the Moon's disc at its true phase only where the Moon stands above the facade's roofline. The facade is a Lambertian sandstone wall facing 284.3° (albedo 0.3, the study's assumption), lit by the sky (its view of it 0.24, and with the Sun high in front of the windows only the dim anti-solar part: the frontier study measured the facade at 0.018 of the windows' sky band then, §e d2, 8 October), by the Sun once the Sun clears the hall's own roof as seen from the facade (the audit's `D:/claude/splat-quality-20260923/weather-daylight/opposite_facade.json` sunlit hours give that roofline: about 8° at azimuth 200° rising to about 14° at 292°; the hours are London local time, as its script builds them with `tz='Europe/London'`, `opposite_facade.py:16`, so the June end is the Sun at 291.7°, 13.7°, not the 303.4°, 6.4° a UTC reading would give), and at night by street lighting at about 1 cd/m² (assumed, §b3; the evening Matterport stations can measure it), its colour about 3,830 K (warm sandstone under 4,000 K LEDs; d2). The panel's mean is the light the room receives through that window (the package's window radiance times its weight), so what the windows show and what they admit agree. The view is an interface (`WindowViewModel`), so R2's real sky and the frontier's spectral sky-view replace R1d's clear-sky one without touching the panels.
+10. **The frontier light study plugs in through interfaces, never as a dependency** (`D:/claude/real-hall/frontier/light/proposal.md` §c9, §e). R1d stays RGB. Its upgrade points: the luminance calibration (`LuminanceCalibration`, Task 5: the spectral package's k_abs replaces the measured 121.8 cd/m²); the lamps' dimming colour (`dimmedTint`'s signature, Task 4: a spectral LED or tungsten model replaces the Planckian RGB tint); the window view (`WindowViewModel`, Task 15: the spectral sky-view and facade bands); the night-vision display stage (`nightVisionNode`, Task 16: a mesopic model with chromatic adaptation could replace the Thompson shift; the study's d3 of 8 October found its chain not ready, so the Thompson stage stays); and the glare function (`Glare`, Task 13: the study's fitted CIE pyramid is now an option, `?glare=cie`). Its colour-accuracy method (spectral against RGB, CIEDE2000) reports beside R1d's in Task 21 when it exists.
 11. **The lamps keep the bake's colour at full level and dim warm by the owner's choice, and R1d assumes no lamp weights.** The hall's lamps are LED (the contractor's record for the frieze tape and the dome's pin spots; the chandeliers' frosted candles almost certainly: light study §b9), and LEDs keep their colour as they dim. Blake chose a warm-down anyway (spec §4.1, commit 475acd2e, 7 October): an artistic choice, labelled so in the code and the docs. Each group's dimming is a package value (`lamps.groups[g].dimming`, Task 3): `warm`, the default, the tungsten laws used as a look (light d^3.4, colour temperature d^0.42 of full); `led`, the lamps' own (constant colour, the DALI logarithmic curve). At full level every group's light is exactly the bake's (the relight package's own weight and colour for that source) times its night gain (Task 21: one number per group, so a group's colour stays the bake's), and the warm-down's starting temperature only shapes the dimming. It is a package value per group (`lamps.warmDown.groups[g].fullCct`; the controller's ruling L3 of 8 October: there is no single start): the colour temperature that the group's own colour in the relight package (R1a Task 4b fits a colour per lamp group: the cove, the chandeliers (`ch_end` and `ch_centre` share one) and the dome, each the measured lamp/daylight ratio 1.623 : 1 : 0.467 times a fitted offset held by a prior) implies against CIE daylight by McCamy's formula: about 3,700 K for the chandeliers at the ratio itself (3,540–3,990 K for D60–D75; the light study's spectral reading: 3,509–3,956 K), about 4,370 K for the dome at its prior offset. The earlier 2,750 K is withdrawn: it is not established. No lamp weight is assumed either: the centre chandelier was lit for the whole capture walk though R1a's proof fit gave it a weight of 1.4e-11 (splats study §b1), so the bake refits the house lights (R1a Task 4b: one intensity φ per candle, the centre's crown tubes at w_crown × φ) and writes each lamp's intensity per unit of its group's weight, which R1d's Task 3 reads; every lamp quantity R1d draws (the crisp lamps' radiance, the lamps' sheen, the night gains) is per unit of the package's own weights, and Task 21 refuses to calibrate a lamp group the bake leaves dark.
 
 ## Contracts R1d relies on (checked by Task 0)
@@ -79,6 +85,7 @@
 | `packages/web/src/lib/relight/lamp-dimming.ts` | Create | Planckian colour, the artistic warm-down and the LED-true dimming curve |
 | `packages/web/src/lib/relight/light-motion.ts` | Create | The displayed day and minutes, lamp drives, blend and eye, stepped with `stepSpring` |
 | `packages/web/src/lib/relight/sky-instant.ts` | Create | The Sun and the Moon at a displayed instant (fractional minutes) |
+| `packages/web/src/lib/relight/sky-colour.ts` | Create | The sky's measured colours: the beams by their elevation, the clear blue hour in xy (the frontier study, 8 October) |
 | `packages/web/src/lib/relight/eye.ts` | Create | Anchored adaptation targets, the luminance calibration and the scotopic amount |
 | `packages/web/src/lib/relight/light-director.ts` | Create | Each animation frame while the light moves: targets, springs, the application, the passes |
 | `packages/web/src/lib/light-setting.ts`, `packages/web/src/stores/light-setting-store.ts` | Modify | Live time, the whole day, the lamps switch, `follow` |
@@ -170,7 +177,7 @@ grep -n "export class RelightFrame\|addPasses(\|setVisibility(\|prepare(renderer
 grep -n "export function relightSplat\|export function prepareKernelFrame\|export function capturedSetting\|readonly lampTints\|const litBulb" lib/relight/relight-kernel.ts
 grep -n "export function createRelightDraw\|const lit = select(bulb\|lampTints\|run: (renderer)" lib/relight/relight-draw.ts
 grep -n "runRelight(\|activeRelightDraw()\|private activate(snapshot: Snapshot)" lib/native-splat-scene.ts
-grep -n "export function settingForChoice\|export function settingForSky\|export type WeatherPreset\|export function adaptDisplay\|PRESET_EMITTER_BOOST\|export const PRESET_DISPLAY\|export const PRESET_DEFAULTS\|MOONLIT_DISPLAY_KEY\|unitsPerLux" lib/light-setting.ts
+grep -n "export function settingForChoice\|export function settingForSky\|export type WeatherPreset\|export function adaptDisplay\|PRESET_EMITTER_BOOST\|export const PRESET_DISPLAY\|export const PRESET_DEFAULTS\|MOONLIT_DISPLAY_KEY\|unitsPerLux\|moonlit: { date: \"2026-09-26\", minutes: 1380 }" lib/light-setting.ts
 grep -n "export function moonPosition\|export const MOON_ANGULAR_RADIUS\|export const MOON_CCT\|export function sunIlluminance\|export function atmosphericTransmission" lib/moon.ts
 grep -n "export function sunEcliptic\|export function solarPosition\|export function sunDirection" lib/sun.ts
 grep -n "export function skyBody\|readonly floorMoon\|readonly floorBase\|moonDir: uniform\|readonly skyPower\|readonly bounceCoefficients" lib/relight/relight-frame.ts
@@ -191,6 +198,8 @@ grep -n "export function measureRelight\|export const RELIGHT_SPANS" lib/relight
 grep -n "export function computeTimestamps\|export async function timedCompute\|export function wordTally\|function sunRaySensitive\|gpuTime: async" lib/relight/relight-debug.ts
 grep -n "const skins = useLightSettingStore((state) => state.skins);\|Preparing the walls" components/rooms/LightControl.tsx
 grep -n "export function stepSpring\|export function isSpringSettled" lib/springs.ts
+grep -n "export const CAPTURE_DAYLIGHT_CCT\|export function daylightRgb\|export function cctShift" lib/relight/daylight.ts
+grep -n "expect(PRESET_DEFAULTS.moonlit).toEqual({ date: \"2026-09-26\", minutes: 1380 });\|by the full Moon of 26 September" lib/__tests__/light-setting.test.ts
 ```
 Expected: every pattern prints at least one line (check each alternative of each command, not only that the command prints). The current R1b and R1c texts are the anchors (R1b's consolidated plan carries the amendments file's A1–A9; R1c's interface list is the amendments file's section "The R1c interface R1d consumes", with R1c Task 20's `specularColour`). Any missing name: stop and report to the controller with the command's output. The plan's edits are anchored on these lines; nothing in R1d works around a missing one.
 
@@ -1216,7 +1225,10 @@ class Writer(unittest.TestCase):
             with open(os.path.join(folder, "stale.bin"), "wb") as f:
                 f.write(b"0")
             with self.assertRaises(ValueError):
-                C.write_package(folder, files)
+                C.write_package(folder, dict(files, **{"manifest.json": b"{}"}))
+            # Refused before writing: the package already there is untouched (finding NB2).
+            with open(os.path.join(folder, "manifest.json"), "rb") as f:
+                self.assertEqual(f.read(), files["manifest.json"])
 
 
 if __name__ == "__main__":
@@ -1524,17 +1536,18 @@ def package_files(fields: dict, triangles: np.ndarray) -> tuple[dict, dict]:
 
 
 def write_package(out_dir: str, files: dict) -> None:
-    """Write the package's files (each through a temporary name), then refuse a folder that holds any other file:
-    a published package is exactly its manifest and the files it names (the owner's packaging rule, 7 October)."""
+    """Refuse a folder that holds any file the package does not name, then write the package's files (each through a
+    temporary name): a published package is exactly its manifest and the files it names (the owner's packaging rule,
+    7 October), and a refused build leaves the package already there as it was (finding NB2)."""
     os.makedirs(out_dir, exist_ok=True)
+    strays = sorted(set(os.listdir(out_dir)) - set(files))
+    if strays:
+        raise ValueError(f"{out_dir} holds files the manifest does not name: {strays}")
     for name, data in files.items():
         path = os.path.join(out_dir, name)
         with open(path + ".tmp", "wb") as f:
             f.write(data)
         os.replace(path + ".tmp", path)
-    strays = sorted(set(os.listdir(out_dir)) - set(files))
-    if strays:
-        raise ValueError(f"{out_dir} holds files the manifest does not name: {strays}")
 ```
 
 - [ ] **Step 4: Run the tests**
@@ -1589,13 +1602,19 @@ def cmd_cinematic(cfg, args) -> int:
     starts = [g["fullCct"] for g in warm["groups"].values()]
     ok = (bool(entries) and len(entries) == len(bulbs) and all(e["intensity"] > 0 for e in entries) and len(entries) <= C.MAX_BULBS
           and all(C.PLANCK_RANGE[0] <= t <= C.PLANCK_RANGE[1] for t in starts))
-    # Gate before write: the served folder is only ever a package that passed, exactly its two files.
+    # Gate before write: the served folder is only ever a package that passed, exactly its two files; a folder holding a
+    # stray file refuses the build before anything is written (finding NB2), and the refusal is recorded below.
+    refused = None
     if ok:
-        C.write_package(out_dir, files)
+        try:
+            C.write_package(out_dir, files)
+        except ValueError as error:
+            ok, refused = False, str(error)
     evidence = os.path.join(cfg.paths["evidence"], "r1d")
     os.makedirs(evidence, exist_ok=True)
     record = {"ok": ok, "outDir": out_dir, "files": {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
-              "bulbs": len(entries), "warmDown": warm, "night": manifest["lamps"]["night"]["calibrated"], "eye": manifest["eye"] is not None}
+              "bulbs": len(entries), "warmDown": warm, "night": manifest["lamps"]["night"]["calibrated"], "eye": manifest["eye"] is not None,
+              "refused": refused}
     with open(os.path.join(evidence, "cinematic.json" if ok else "cinematic-FAILED.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(record, f, indent=1, sort_keys=True, allow_nan=False)
     groups = {g: sum(1 for b in bulbs if b["group"] == g) for g in C.SOURCE_INDEX}
@@ -1710,11 +1729,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `LUMINANCE`, `Rgb` from `./relight-kernel.js` (R1b Task 4).
 - Produces: `type LampDimming = "warm" | "led"`, `LAMP_DIMMINGS`; `WARM_LIGHT_EXPONENT = 3.4`, `WARM_CCT_EXPONENT = 0.42`, `LED_DECADES = 3`, `PLANCK_MIN_CCT = 1667`, `PLANCK_MAX_CCT = 25000`; `planckRgb(cct: number): Rgb` (linear sRGB, G = 1, negatives clamped to 0); `dimmedOutput(drive: number, dimming: LampDimming): number`; `warmCct(drive: number, fullCct: number): number`; `dimmedTint(drive: number, dimming: LampDimming, fullCct: number | null): Rgb` (exactly `[1, 1, 1]` at full drive, for `led`, and without a warm-down temperature; otherwise keeps the colour's luminance). No lamp temperature is a constant here: each group's warm-down starts at its own temperature from the cinematic package (`lamps.warmDown.groups[g].fullCct`, Task 3; the controller's ruling L3), which Task 6 passes in.
 
-Decision 11 and spec §4.1 (amended 7 October, commit 475acd2e): lamps fade, never switch, and dim warm. A group's drive d (0 off, 1 full) comes from Task 5's spring. The hall's lamps are LED and keep their colour as they dim, so the warm-down is Blake's artistic choice and is labelled so in the code: it borrows a gas-filled tungsten lamp's look, d^3.4 of the light at d^0.42 of the colour temperature (the usual voltage laws for tungsten filament lamps; the light study's T = T₀ (Φ/Φ₀)^0.1235), so a fading group passes through amber like a candle. The LED-true curve keeps the colour and follows the DALI logarithmic dimming curve (IEC 62386-102: arc power levels 1–254 span 0.1% to 100% of the light evenly in log, X(n) = 10^((n − 1)/(253/3) − 1) %; with n = 1 + 253d this is 10^(3(d − 1)) of full light), the curve the hall's programmable dimming system would use if it is DALI (not known; a design value). Both give exactly the full light at d = 1 and none at d = 0, so every preset's lamps (all on or all off) are unchanged. The colour is the Planckian locus in CIE 1931 xy by Kang et al.'s cubic fit (*J. Korean Phys. Soc.* 41(6):865–871, 2002; valid 1,667–25,000 K), taken to linear sRGB exactly as R1b's `daylightRgb` takes the daylight locus (the same matrix, green 1). The tint is relative: the faded colour over the full colour, scaled so the colour's luminance is unchanged (brightness is `dimmedOutput` alone), so at full level every group keeps the bake's colour exactly whatever the starting temperature; the temperature only shapes how the colour warms. Below about 1,700 K the locus leaves the sRGB gamut and blue clamps to 0.
+Decision 11 and spec §4.1 (amended 7 October, commit 475acd2e): lamps fade, never switch, and dim warm. A group's drive d (0 off, 1 full) comes from Task 5's spring. The hall's lamps are LED and keep their colour as they dim, so the warm-down is Blake's artistic choice and is labelled so in the code: it borrows a gas-filled tungsten lamp's look, d^3.4 of the light at d^0.42 of the colour temperature (the usual voltage laws for tungsten filament lamps; the light study's T = T₀ (Φ/Φ₀)^0.1235), so a fading group passes through amber like a candle. The LED-true curve keeps the colour and follows the DALI logarithmic dimming curve (IEC 62386-102: arc power levels 1–254 span 0.1% to 100% of the light evenly in log, X(n) = 10^((n − 1)/(253/3) − 1) %; with n = 1 + 253d this is 10^(3(d − 1)) of full light), the curve the hall's programmable dimming system would use if it is DALI (not known; a design value). Both give exactly the full light at d = 1 and none at d = 0, so every preset's lamps (all on or all off) are unchanged. The colour is the Planckian locus in CIE 1931 xy by Kang et al.'s cubic fit (*J. Korean Phys. Soc.* 41(6):865–871, 2002; valid 1,667–25,000 K), taken to linear sRGB exactly as R1b's `daylightRgb` takes the daylight locus (the same matrix, green 1). The tint is relative: the faded colour over the full colour, scaled so the colour's luminance is unchanged (brightness is `dimmedOutput` alone), so at full level every group keeps the bake's colour exactly whatever the starting temperature; the temperature only shapes how the colour warms. Below about 1,700 K the locus leaves the sRGB gamut and blue clamps to 0. The warm-down's colour cost against LED-true dimming, measured by the frontier light study (§e d3, 8 October, from a 2,750 K start): 1.5–1.65 times the median chroma at 10% light and 3.2–3.8 times at 1%; from the chandeliers' 3,700 K this law reaches 2,780 K at 10% light and 2,095 K at 1%. The warm-down stays (Blake's choice); the cost is in Task 24's list for him.
 
 Reference values, computed with this task's code on 7 October (`node`, scratch script; 2,750 K is a test temperature, not the hall's): `planckRgb(2700) = [2.396114495, 1, 0.2396443072]`, `planckRgb(4000) = [1.531348647, 1, 0.5772511803]`, `planckRgb(2222) = [3.228367736, 1, 0.1001678783]` against `planckRgb(2221.999) = [3.228370194, 1, 0.1001675718]` (the fit's segments meet within 3e-6), `dimmedOutput(0.5, "warm") = 0.0947322854069`, `warmCct(0.5, 2750) = 2055.41771687`, `dimmedTint(0.5, "warm", 2750) = [1.295036608, 0.8166422786, 0.1561357948]` (the tinted colour's luminance 1.230377778, equal to the full colour's), `dimmedOutput(2/3, "led") = 0.1` and `dimmedOutput(1/3, "led") = 0.01` (to 12 places).
 
-Verified (7 October): spec `docs/superpowers/specs/2026-10-03-r1-polished-design.md` §4.1 as amended by commit 475acd2e ("Lamps fade, never switch, with a warm-down as they dim… the warm dim is Blake's deliberate artistic choice… At full level each lamp group keeps its measured colour"); `D:/claude/real-hall/frontier/light/proposal.md` §b9 (the lamps are LED: the contractor's record, the frosted envelopes, the market) and §c4 (T = T₀ (Φ/Φ₀)^0.1235 for the incandescent law); R1b plan Task 4 lines 2062–2065 (`Rgb`, `LUMINANCE`, `LAMP_GROUPS`, `LampGroup` in `relight-kernel.ts`; lines as of 8 October); R1b plan Task 8 lines 5441–5452 (`daylightRgb`: the XYZ → linear sRGB rows and the G = 1 normalisation this task repeats).
+Verified (7 October): spec `docs/superpowers/specs/2026-10-03-r1-polished-design.md` §4.1 as amended by commit 475acd2e ("Lamps fade, never switch, with a warm-down as they dim… the warm dim is Blake's deliberate artistic choice… At full level each lamp group keeps its measured colour"); `D:/claude/real-hall/frontier/light/proposal.md` §b9 (the lamps are LED: the contractor's record, the frosted envelopes, the market) and §c4 (T = T₀ (Φ/Φ₀)^0.1235 for the incandescent law); R1b plan Task 4 lines 2072–2075 (`Rgb`, `LUMINANCE`, `LAMP_GROUPS`, `LampGroup` in `relight-kernel.ts`; lines as of 8 October, re-read after the pre-flight round); R1b plan Task 8 lines 5457–5468 (`daylightRgb`: the XYZ → linear sRGB rows and the G = 1 normalisation this task repeats).
 
 - [ ] **Step 1: Write the failing test** — create `packages/web/src/lib/relight/__tests__/lamp-dimming.test.ts`:
 
@@ -1895,15 +1914,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `stepSpring`, `isSpringSettled`, `SpringConfig`, `SpringState` from `../springs.js`; `LAMP_GROUPS`, `LampGroup`, `Rgb` from `./relight-kernel.js`.
 - Produces (`light-motion.ts`): `MINUTES_PER_DAY = 1440`; `MAX_CROSS_DAY_SWEEP = 180`; `criticallyDamped(omega: number): SpringConfig`; `TIME_SPRING`, `LAMP_SPRING`, `BLEND_SPRING`, `EYE_BRIGHTER`, `EYE_DARKER`; `SETTLED` (`{ minutes: 0.01, lamp: 1e-3, blend: 1e-3, eye: 1e-3 }`); `type LampDrives = Readonly<Record<LampGroup, number>>`; `interface EyeTarget { readonly exposure: number; readonly whiteBalance: Rgb; readonly scotopic: number }`; `interface MotionInstant { readonly day: number; readonly minutes: number }`; `interface MotionTargets { readonly instant: MotionInstant; readonly lamps: LampDrives; readonly eye: EyeTarget }`; `interface MotionFrame { readonly instant: MotionInstant; readonly blend: { readonly from: MotionInstant; readonly amount: number } | null; readonly lamps: LampDrives; readonly eye: EyeTarget; readonly moving: boolean; readonly lightMoving: boolean }`; `class LightMotion` with `constructor(targets: MotionTargets)`, `step(dtSeconds: number, targets: MotionTargets, sweep: boolean): MotionFrame`, `snap(targets: MotionTargets): MotionFrame`, `crossFade(): void` (a cross-fade at the same instant: a change of weather or of the captured light), `retime(instant: MotionInstant): void` (the displayed instant set without motion: live time's own progress), `current(): MotionFrame`.
-- Produces (`eye.ts`): `EYE_ANCHOR_NAMES = ["day", "lamps", "moon"]`, `type EyeAnchorName`; `interface EyeAnchor { readonly exposure: number; readonly whiteBalance: Rgb; readonly logLuminance: number; readonly logChroma: readonly [number, number] }`; `type EyeAnchors`; `type LightShares = Readonly<Record<EyeAnchorName, number>>`; `interface FrameMeasurement { readonly logLuminance: number; readonly at: number }`; `LUMINANCE_ADAPTATION = 0.5`, `CHROMA_ADAPTATION = 0.6`, `EYE_RANGE_STOPS = 3`, `PHOTOPIC_LUMINANCE = 5`, `SCOTOPIC_LUMINANCE = 0.005`, `SCOTOPIC_MAX = 0.6`, `IDENTITY_EYE`; `interface LuminanceCalibration { readonly cdPerUnit: number; readonly uncertaintyStops: number; readonly provenance: string }`, `CAPTURE_CALIBRATION` (54 cd/m² per unit, ±1 stop); `normaliseShares(shares: LightShares): LightShares`; `lightChroma(colour: Rgb): readonly [number, number]`; `adaptationLuminance(logLuminance: number, calibration: LuminanceCalibration): number`; `scotopicAmount(luminance: number): number`; `anchoredEye(anchors: EyeAnchors, shares: LightShares, chroma: readonly [number, number], measured: FrameMeasurement | null, calibration: LuminanceCalibration): EyeTarget`.
+- Produces (`eye.ts`): `EYE_ANCHOR_NAMES = ["day", "lamps", "moon"]`, `type EyeAnchorName`; `interface EyeAnchor { readonly exposure: number; readonly whiteBalance: Rgb; readonly logLuminance: number; readonly logChroma: readonly [number, number] }`; `type EyeAnchors`; `type LightShares = Readonly<Record<EyeAnchorName, number>>`; `interface FrameMeasurement { readonly logLuminance: number; readonly at: number }`; `LUMINANCE_ADAPTATION = 0.5`, `CHROMA_ADAPTATION = 0.6`, `EYE_RANGE_STOPS = 3`, `PHOTOPIC_LUMINANCE = 5`, `SCOTOPIC_LUMINANCE = 0.1`, `SCOTOPIC_MAX = 0.6`, `IDENTITY_EYE`; `interface LuminanceCalibration { readonly cdPerUnit: number; readonly uncertaintyStops: number; readonly provenance: string }`, `CAPTURE_CALIBRATION` (121.8 cd/m² per unit, ±1 stop: the frontier study's measurement); `normaliseShares(shares: LightShares): LightShares`; `lightChroma(colour: Rgb): readonly [number, number]`; `adaptationLuminance(logLuminance: number, calibration: LuminanceCalibration): number`; `scotopicAmount(luminance: number): number`; `anchoredEye(anchors: EyeAnchors, shares: LightShares, chroma: readonly [number, number], measured: FrameMeasurement | null, calibration: LuminanceCalibration): EyeTarget`.
 
 Everything that moves in R1d's light moves through the one spring core, critically damped (stiffness ω², damping 2ω: the fastest approach without overshoot, so the sun never swings back and a lamp never flashes past its level). Measured with `stepSpring` at 60 fps (7 October, scratch script): ω = 3 reaches 95% in 1.60 s (the time-lapse: a 540-minute sweep moves at most 10 minutes per frame and settles in 5.0 s to 0.01 minute); ω = 4 in 1.20 s and ω = 2.5 in 1.92 s (the eye toward a brighter and a darker scene: "over one to two seconds", spec §4.3); ω = 5 in 0.97 s (the blend); the lamps (ω = 3) are a quarter of the way up after 0.3 s. A spring that settles snaps to its target, so at rest the displayed light is exactly the chosen one (the captured light's display is exactly 1).
 
 The displayed instant is a London day number and fractional minutes. A change of hour within the day sweeps the minutes spring (the time-lapse). Crossing midnight (live time, or "Now" a little after midnight) is the same sweep: the target is expressed against the displayed day (one day is 1,440 minutes) and the displayed day and minutes are re-based whenever the minutes leave 0..1440, so the sun moves on without a jump. Any other change of date, and any change of time under reduced motion, is a cross-fade instead: the instant jumps and a blend spring fades the old light out and the new one in (the director mixes the two lights, Task 9); a target that changes during a blend waits for it to finish, so the light never pops. A change of the light's kind at the same instant (another weather, or the captured light) is the same cross-fade (`crossFade`). Live time's own progress (a minute per minute) is not motion: the director sets it with `retime` and reapplies the light only when the Sun or the Moon has moved 0.02°, so a still, live hall runs no pass for seconds at a time. The eye's springs work in log2 (exposure, white balance's red and blue over green) and take the brighter or darker rate by the exposure's direction. `lightMoving` is true while anything but the eye moves: the director reapplies the light only then, and only moves the display while the eye alone adapts.
 
-The eye's target (decision 4): each anchor (the sunny day, the lamp-lit night, the moonlit night; Task 21 measures them) carries its calibrated display, the log-average luminance of the reference view measured at it on the GPU (as Task 13 measures every frame) and its light's colour. The target mixes the anchors in log space by each one's share of the light; each anchor is corrected by half the difference between its luminance and the frame's (an eye never adapts fully; R1b's `adaptDisplay` uses the same half) and by 60% of the difference between its light's colour and the current light's (again R1b's rule), within eightfold of the anchors. Colour adaptation reads the light's colour, not the frame's, so the display's own scotopic tint (Task 16) can never feed back into the white balance. Before the first measurement the anchors' own luminance stands in; afterwards the latest measurement holds until the next (Task 9). The scotopic amount comes from the adaptation luminance in cd/m², through the capture's absolute calibration: the frontier light study derives k_abs ≈ 54 cd/m² per unit of the fit's light × albedo (a frame value) from the capture day's weather (Open-Meteo reanalysis for 31 May 2026, 09:00–10:00 UTC: DHI 161 W/m² with the fit's own band weights; about ±1 stop; `D:/claude/real-hall/frontier/light/proposal.md` §b4), so L = 54 × 2^λ cd/m². On that scale the captured hall's median is about 9 cd/m² and the lamp-lit night's about 7 cd/m², just above the mesopic range (CIE 191:2010: below about 5 cd/m²). The shift is therefore driven by absolute luminance and never by the preset: none at 5 cd/m² or above (so the approved night is neither greyed nor blue-shifted), rising log-linearly to 0.6 at 0.005 cd/m²; it reaches dimmed lamps, the blue hour without lamps and moonlight (the full Moon's floor is about 0.01 cd/m², §b3). When the spectral package's calibration exists (an upgrade, §c9 `calibration.kAbsCdPerUnit`) it replaces `CAPTURE_CALIBRATION` through the same interface. The 1–2 s adaptation is a deliberate compression for a clock that sweeps hours in seconds (dark adaptation takes minutes, §b5): the product calls it adaptation, time-compressed, never physiological timing.
+The eye's target (decision 4): each anchor (the sunny day, the lamp-lit night, the moonlit night; Task 21 measures them) carries its calibrated display, the log-average luminance of the reference view measured at it on the GPU (as Task 13 measures every frame) and its light's colour. The target mixes the anchors in log space by each one's share of the light; each anchor is corrected by half the difference between its luminance and the frame's (an eye never adapts fully; R1b's `adaptDisplay` uses the same half) and by 60% of the difference between its light's colour and the current light's (again R1b's rule), within eightfold of the anchors. Colour adaptation reads the light's colour, not the frame's, so the display's own scotopic tint (Task 16) can never feed back into the white balance. Before the first measurement the anchors' own luminance stands in; afterwards the latest measurement holds until the next (Task 9). The scotopic amount comes from the adaptation luminance in cd/m², through the capture's absolute calibration: the frontier light study measured k_abs = 121.8 cd/m² per unit of the fit's light × albedo (a frame value) from the capture day's sky by its pre-registered method (the 35–55° band the fit's window weights stand for, modelled at the capture's hour from the reanalysis: 82–147 across the five windows, 85 under a clear sky; ±1 stop, and it depends on the sky's shape; `D:/claude/real-hall/frontier/light/proposal.md` §e d2, 8 October, double-run and identical), so L = 121.8 × 2^λ cd/m². It replaces the study's §b4 estimate of 54, which fell 1.17 stops low. On that scale the captured hall's median is about 21 cd/m² and the lamp-lit night's about 16 (d3's log-average over its three views: 8.7–11.4), photopic with 0.8–1.6 stops to spare (CIE 191:2010's mesopic range lies below about 5 cd/m²). The shift is therefore driven by absolute luminance and never by the preset: none at 5 cd/m² or above (so the approved night is neither greyed nor blue-shifted), rising log-linearly to 0.6 at 0.1 cd/m², where Cao's rod gains saturate in the study's d3 (they are negligible at the lamp-lit night and about 8% of their maximum near 1 cd/m²); it reaches dimmed lamps, the blue hour without lamps and moonlight (d3's moonlit city adapts at about 0.001 cd/m²). When the spectral package's calibration exists (an upgrade, §c9 `calibration.kAbsCdPerUnit`) it replaces `CAPTURE_CALIBRATION` through the same interface. The 1–2 s adaptation is a deliberate compression for a clock that sweeps hours in seconds (dark adaptation takes minutes, §b5): the product calls it adaptation, time-compressed, never physiological timing.
 
-Verified (7 October): `D:/claude/real-hall/frontier/light/proposal.md` §b4 (k_abs ≈ 54 cd/m² per fit unit; the captured hall 0.1704 × 54 ≈ 9 and the night 0.1281 × 54 ≈ 7 cd/m²), §b5, §c9; `packages/web/src/lib/springs.ts:12-22` (`SpringConfig { stiffness, damping }`, `SpringState { value, velocity }`), `:48-64` (`stepSpring(state, target, dtSeconds, config)`: semi-implicit Euler in 1/240 s substeps, `dtSeconds` clamped to 0.25 s at `:55`), `:67-75` (`isSpringSettled(state, target, epsilon = 0.001)`); R1b plan lines 2073–2074 (`LAMP_GROUPS`, `LampGroup`); R1b plan lines 5709–5719 (`adaptDisplay`: exposure × √(reference/current) within eightfold, white balance × (ratio)^0.6, green 1) (R1b's lines as of 8 October). 
+Verified (7 October; the calibration and the ramp again on 8 October): `D:/claude/real-hall/frontier/light/proposal.md` §e d2 (k_abs 121.8 cd/m² per fit unit by the pre-registered 35–55° band anchor; `evidence/d2_sky_scenes.json` `absolute_calibration`: per window 82.3–146.7, median 121.83, clear sky 84.6; the captured hall 0.1704 × 121.8 = 20.8 and the night 0.1281 × 121.8 = 15.6 cd/m²) and §e d3 (`evidence/d3_night_vision.json`: Cao's rod gains at most 0.0008 at the lamp-lit night's 8.7–11.4 cd/m², at their maximum by 0.1 cd/m²; CIECAM16's D 0.742–0.745), §b5, §c9; `packages/web/src/lib/springs.ts:12-22` (`SpringConfig { stiffness, damping }`, `SpringState { value, velocity }`), `:48-64` (`stepSpring(state, target, dtSeconds, config)`: semi-implicit Euler in 1/240 s substeps, `dtSeconds` clamped to 0.25 s at `:55`), `:67-75` (`isSpringSettled(state, target, epsilon = 0.001)`); R1b plan lines 2073–2074 (`LAMP_GROUPS`, `LampGroup`); R1b plan lines 5709–5719 (`adaptDisplay`: exposure × √(reference/current) within eightfold, white balance × (ratio)^0.6, green 1) (R1b's lines as of 8 October). 
 
 - [ ] **Step 1: Write the failing tests** — create `packages/web/src/lib/relight/__tests__/light-motion.test.ts`:
 
@@ -2079,21 +2098,22 @@ describe("the eye (T-639 R1d)", () => {
   });
 
   it("converts the frame's log luminance to cd/m² by the capture's calibration", () => {
-    expect(CAPTURE_CALIBRATION.cdPerUnit).toBe(54);
-    expect(adaptationLuminance(Math.log2(10 / 54), CALIBRATION)).toBeCloseTo(10, 9);
+    expect(CAPTURE_CALIBRATION.cdPerUnit).toBe(121.8);
+    expect(adaptationLuminance(Math.log2(10 / 121.8), CALIBRATION)).toBeCloseTo(10, 9);
     expect(adaptationLuminance(0, { ...CALIBRATION, cdPerUnit: 0 })).toBe(Number.POSITIVE_INFINITY);
   });
 
-  it("keeps the captured hall and the lamp-lit night photopic: no shift (frontier light study §b4)", () => {
+  it("keeps the captured hall and the lamp-lit night photopic, and the moonlit city fully dark-adapted (frontier light study §e)", () => {
     expect(scotopicAmount(adaptationLuminance(Math.log2(0.1704), CALIBRATION))).toBe(0);
     expect(scotopicAmount(adaptationLuminance(Math.log2(0.1281), CALIBRATION))).toBe(0);
-    expect(scotopicAmount(adaptationLuminance(Math.log2(0.01 / 54), CALIBRATION))).toBeGreaterThan(0.4);
+    expect(scotopicAmount(8.7)).toBe(0);   // d3's darkest view of the lamp-lit night
+    expect(scotopicAmount(adaptationLuminance(Math.log2(0.001 / CALIBRATION.cdPerUnit), CALIBRATION))).toBe(SCOTOPIC_MAX);
   });
 
-  it("shifts toward the rods only below 5 cd/m², at most 0.6, log-linearly", () => {
-    expect([scotopicAmount(5), scotopicAmount(500), scotopicAmount(0.005), scotopicAmount(1e-6), scotopicAmount(0)])
+  it("shifts toward the rods only below 5 cd/m², fully by 0.1 (Cao's rod gains), at most 0.6, log-linearly", () => {
+    expect([scotopicAmount(5), scotopicAmount(500), scotopicAmount(0.1), scotopicAmount(1e-6), scotopicAmount(0)])
       .toEqual([0, 0, SCOTOPIC_MAX, SCOTOPIC_MAX, SCOTOPIC_MAX]);
-    expect(scotopicAmount(Math.sqrt(5 * 0.005))).toBeCloseTo(0.3, 12);
+    expect(scotopicAmount(Math.sqrt(5 * 0.1))).toBeCloseTo(0.3, 12);
   });
 
   it("gives an anchor's own display at its own luminance and colour", () => {
@@ -2338,7 +2358,7 @@ import type { Rgb } from "./relight-kernel.js";
  * corrected by half the difference between its measured luminance and the rendered frame's (measured on the GPU,
  * Task 13) and by 60% of the difference between its light's colour and the current light's, within eightfold of
  * the anchors. Below 5 cd/m² it mixes toward the rods' response (Thompson, Shirley & Ferwerda 2002; the display
- * applies it, Task 16), at most 0.6 by 0.005 cd/m² (CIE 191:2010's mesopic range).
+ * applies it, Task 16), at most 0.6 by 0.1 cd/m², where Cao's rod gains saturate (the frontier light study, §e d3).
  */
 export const EYE_ANCHOR_NAMES = ["day", "lamps", "moon"] as const;
 export type EyeAnchorName = (typeof EYE_ANCHOR_NAMES)[number];
@@ -2361,10 +2381,16 @@ export interface FrameMeasurement {
 }
 
 export const LUMINANCE_ADAPTATION = 0.5;
+/**
+ * R1b's rule: 60% of a change in the light's colour. CIECAM16's degree of adaptation in these scenes is 0.74 (the
+ * frontier light study, §e d3, 8 October); raising this toward it would take 17–34% of the approved night's chroma, so
+ * 0.6 stays at the anchors unless Blake prefers the stronger adaptation.
+ */
 export const CHROMA_ADAPTATION = 0.6;
 export const EYE_RANGE_STOPS = 3;
 export const PHOTOPIC_LUMINANCE = 5;
-export const SCOTOPIC_LUMINANCE = 0.005;
+/** Full night vision by 0.1 cd/m², where Cao's rod gains saturate (the frontier light study, §e d3, 8 October). */
+export const SCOTOPIC_LUMINANCE = 0.1;
 export const SCOTOPIC_MAX = 0.6;
 export const IDENTITY_EYE: EyeTarget = { exposure: 1, whiteBalance: [1, 1, 1], scotopic: 0 };
 
@@ -2374,11 +2400,15 @@ export interface LuminanceCalibration {
   readonly uncertaintyStops: number;
   readonly provenance: string;
 }
-/** k_abs from the capture day's weather (frontier light study, D:/claude/real-hall/frontier/light/proposal.md §b4). */
+/**
+ * k_abs, measured from the capture day's modelled sky by the frontier light study's pre-registered method
+ * (D:/claude/real-hall/frontier/light/proposal.md §e d2, 8 October; double-run, identical): the 35–55° band the fit's
+ * window weights stand for, 82–147 across the windows, 85 under a clear sky. It replaces the §b4 estimate of 54.
+ */
 export const CAPTURE_CALIBRATION: LuminanceCalibration = {
-  cdPerUnit: 54,
+  cdPerUnit: 121.8,
   uncertaintyStops: 1,
-  provenance: "Open-Meteo reanalysis, 31 May 2026 09:00-10:00 UTC, DHI 161 W/m2, the fit's band weights (frontier light study b4)",
+  provenance: "frontier light study e/d2, 8 Oct 2026: the 35-55 degree sky band at capture, median of the windows (82-147; 85 clear sky); depends on the sky's shape",
 };
 
 export function normaliseShares(shares: LightShares): LightShares {
@@ -2448,12 +2478,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `packages/web/src/lib/light-setting.ts`, `packages/web/src/stores/light-setting-store.ts`, `packages/web/src/components/rooms/LightControl.tsx` (its `LABELS` only)
-- Create: `packages/web/src/lib/relight/sky-instant.ts`
-- Test: `packages/web/src/lib/__tests__/light-setting.test.ts`, `packages/web/src/stores/__tests__/light-setting-store.test.ts`, `packages/web/src/components/rooms/__tests__/LightControl.test.tsx` (modify); `packages/web/src/lib/relight/__tests__/sky-instant.test.ts` (create)
+- Create: `packages/web/src/lib/relight/sky-instant.ts`, `packages/web/src/lib/relight/sky-colour.ts`
+- Test: `packages/web/src/lib/__tests__/light-setting.test.ts`, `packages/web/src/stores/__tests__/light-setting-store.test.ts`, `packages/web/src/components/rooms/__tests__/LightControl.test.tsx` (modify); `packages/web/src/lib/relight/__tests__/sky-instant.test.ts`, `packages/web/src/lib/relight/__tests__/sky-colour.test.ts` (create)
 
 **Interfaces:**
-- Consumes: R1b's `light-setting.ts` as amended by A1, A4 and A7 (`LIGHT_PRESETS`, `PRESET_DEFAULTS`, `PRESET_DISPLAY`, `PRESET_EMITTER_BOOST`, `WeatherPreset`, `LightInputs` with `unitsPerLux`, `ChoiceLight` with `moon`, `settingForChoice`, `settingForSky`, `londonOffsetHours`, `londonLocalToUtc`, `isIsoDate`, `clampMinutes`, `luminanceOf`); `moonPosition`, `MoonPosition`, `MOON_CCT` (A3); `solarPosition`, `sunDirection`, `SolarPosition` (R1b Task 6); Task 4 (`LampDimming`, `dimmedOutput`, `dimmedTint`); Task 5 (`LampDrives`, `MotionInstant`, `normaliseShares`, `LightShares`).
-- Produces (`light-setting.ts`): `LIGHT_PRESETS = ["live", "captured", "night", "moonlit", "sunny", "overcast"]`; `WeatherPreset = Exclude<LightPresetId, "captured" | "live">`; `MIN_MINUTES = 0`, `MAX_MINUTES = 1439`; `type LampMode = "auto" | "on" | "off"`, `LAMP_MODES`; `PRESET_LAMPS`; `LAMPS_ON_ELEVATION = 7`; `MOON_NEGLIGIBLE = 1e-5`; `interface LampGroupLight { readonly dimming: LampDimming; readonly warmFullCct: number | null; readonly gain: Rgb }` (each group's own warm-down start: the controller's ruling L3), `interface LampLight { readonly groups: Readonly<Record<LampGroup, LampGroupLight>> }`, `STEADY_LAMPS` (every group LED-true with gain 1 and no warm-down temperature: the light without the cinematic package); `interface SkyLight extends ChoiceLight { sun; moon; shares: LightShares; colour: Rgb; moonSky: { level: number; colour: Rgb }; sheen: number }` (`sheen`: 1 for every computed sky; Task 9's captured light has 0); `weatherOf(preset: Exclude<LightPresetId, "captured">): WeatherPreset`; `lampsLitFor(sunElevation: number): boolean`; `lampTargets(mode: LampMode, sunElevation: number): LampDrives`; `interface SkyExtras { readonly city: readonly Rgb[] | null; readonly keepMoon: boolean }`, `NO_EXTRAS`; `cityLevel(sunElevation: number): number`; `lightForSky(inputs: LightInputs, weather: WeatherPreset, sun: SolarPosition, moon: MoonPosition, drives: LampDrives, lamps: LampLight, extras?: SkyExtras): SkyLight` (`extras.city`: each window's light from the street-lit facade and the skyglow at full night, Task 15; `extras.keepMoon` keeps a negligible Moon for Task 23's both-bodies budget); `settingForChoice` and `settingForSky` rebuilt on it (same results for every preset); `dayNumber(date: string): number`; `dateOfDay(day: number): string`; `londonClock(now: Date): MotionInstant`; `liveChoice(now: Date): LightChoice`.
+- Consumes: R1b's `light-setting.ts` as amended by A1, A4 and A7 (`LIGHT_PRESETS`, `PRESET_DEFAULTS`, `PRESET_DISPLAY`, `PRESET_EMITTER_BOOST`, `WeatherPreset`, `LightInputs` with `unitsPerLux`, `ChoiceLight` with `moon`, `settingForChoice`, `settingForSky`, `londonOffsetHours`, `londonLocalToUtc`, `isIsoDate`, `clampMinutes`, `luminanceOf`); `moonPosition`, `MoonPosition`, `MOON_CCT` (A3); `solarPosition`, `sunDirection`, `SolarPosition` (R1b Task 6); Task 4 (`LampDimming`, `dimmedOutput`, `dimmedTint`, `planckRgb`); Task 5 (`LampDrives`, `MotionInstant`, `normaliseShares`, `LightShares`); R1b's `daylight.ts` (`CAPTURE_DAYLIGHT_CCT`, `daylightRgb`, `cctShift`; R1b plan lines 5455–5475) for `sky-colour.ts`; the frontier light study's `evidence/d2_sky_scenes.json` (`twilight_curve`, the scenes' `direct_sun`) and §e e3 for its tables.
+- Produces (`light-setting.ts`): `LIGHT_PRESETS = ["live", "captured", "night", "moonlit", "sunny", "overcast"]`; `WeatherPreset = Exclude<LightPresetId, "captured" | "live">`; `MIN_MINUTES = 0`, `MAX_MINUTES = 1439`; `type LampMode = "auto" | "on" | "off"`, `LAMP_MODES`; `PRESET_LAMPS`; `LAMPS_ON_ELEVATION = 7`; `MOON_NEGLIGIBLE = 1e-5`; `interface LampGroupLight { readonly dimming: LampDimming; readonly warmFullCct: number | null; readonly gain: Rgb }` (each group's own warm-down start: the controller's ruling L3), `interface LampLight { readonly groups: Readonly<Record<LampGroup, LampGroupLight>> }`, `STEADY_LAMPS` (every group LED-true with gain 1 and no warm-down temperature: the light without the cinematic package); `interface SkyLight extends ChoiceLight { sun; moon; shares: LightShares; colour: Rgb; moonSky: { level: number; colour: Rgb }; sheen: number }` (`sheen`: 1 for every computed sky; Task 9's captured light has 0); `weatherOf(preset: Exclude<LightPresetId, "captured">): WeatherPreset`; `lampsLitFor(sunElevation: number): boolean`; `lampTargets(mode: LampMode, sunElevation: number): LampDrives`; `interface SkyExtras { readonly city: readonly Rgb[] | null; readonly keepMoon: boolean; readonly colourByElevation?: boolean }` (`colourByElevation`: the frontier study's measured colours, asked for by the cinematic light only), `NO_EXTRAS`; `cityLevel(sunElevation: number): number`; `lightForSky(inputs: LightInputs, weather: WeatherPreset, sun: SolarPosition, moon: MoonPosition, drives: LampDrives, lamps: LampLight, extras?: SkyExtras): SkyLight` (`extras.city`: each window's light from the street-lit facade and the skyglow at full night, Task 15; `extras.keepMoon` keeps a negligible Moon for Task 23's both-bodies budget); `settingForChoice` and `settingForSky` rebuilt on it (same results for every preset); `dayNumber(date: string): number`; `dateOfDay(day: number): string`; `londonClock(now: Date): MotionInstant`; `liveChoice(now: Date): LightChoice`.
+- Produces (`sky-colour.ts`): `SUN_CCT_BY_ELEVATION`, `MOON_CCT_BY_ELEVATION` ([degrees, K]), `TWILIGHT_SKY_XY` ([degrees, x, y]), `TWILIGHT_FROM_ELEVATION = 2`; `xyRgb(x, y): Rgb`; `relativeToCapture(rgb: Rgb): Rgb`; `planckShift(cct: number): Rgb`; `cctAtElevation(table, elevation): number`; `sunBeamShift(weatherShift: Rgb, elevation: number, referenceElevation: number): Rgb`; `moonBeamShift(elevation: number): Rgb`; `skyShiftAt(elevation: number, weatherShift: Rgb): Rgb`.
 - Produces (`sky-instant.ts`): `interface SkyAt { readonly utc: Date; readonly sun: SolarPosition; readonly moon: MoonPosition }`; `instantOf(at: MotionInstant): Date`; `skyAt(at: MotionInstant, latitude: number, longitude: number): SkyAt`.
 - Produces (store): `follow: boolean`, `lamps: LampMode`, `setLamps(lamps: LampMode): void`, `followClock(): void`; the store starts live (`liveChoice(new Date())`, following, lamps automatic); `selectPreset` sets each preset's lamps and stops following (live follows); `setMinutes` and `setDate` stop following.
 
@@ -2461,15 +2492,76 @@ Live time is the default (spec §4.1): the hall at London's real hour, in clear 
 
 The lamps (decision 3) have three modes: automatic (lit while the Sun is below 7°, about an hour before sunset in Glasgow, where the low Sun descends some 6–8° an hour), on and off. Every preset keeps its own: the night lit; the moonlit night, sunny morning and overcast noon off; live automatic (every proof scenario's `house` is exactly 1 or 0, `05_relight.py:36–42`, so the switch's on and off reproduce them exactly). A lamp group's drive (0..1, Task 5's spring) sets its light as `w[k]c[k] ⊙ dimmedTint(d) × dimmedOutput(d) × gain` and its emitters' level as `dimmedOutput(d)` with `lampTints` (amendment A1), where the group's dimming is the cinematic package's (decision 11: `warm`, the artistic warm-down from that group's own start, `lamps.warmDown.groups[g].fullCct`, by default (the controller's ruling L3: there is no single start); `led` on the per-group flag) and the gain is Task 21's night calibration (one number per group, so the group's colour stays the bake's; ones until then). Without the package every group fades LED-true at the bake's colour (no warm-down temperature is known). At drive 0 and 1 with gain 1 every curve gives exactly R1b's light, so every preset's setting, and so every test vector, is unchanged; the group's colour at full level is always the relight package's own.
 
-Both bodies count whenever their light can show (decision 2): the Moon is dropped only when its light is below 1/100,000 of the day's and the lamps' together (in daylight, or under lit chandeliers), where it cannot move a displayed pixel by a tenth of a code; a day Moon's disc still shows in the windows (Task 15), and Task 23 measures the frame budget with both bodies forced on. In clear weather the Moon also lights its own sky: the clear sky's relation to its Sun (the Sun's strength is `sunRatio × sky × mean window weight`) taken backwards gives the moonlit sky's level, in the clear sky's colour relative to the Sun's applied to moonlight. It enters through the windows' weights; R1b's `skyLevel` stays the Sun's sky (so the proof's night is exactly reproduced), and the night sky panels read the moonlit sky from `moonSky` (Task 15). The eye's shares (Task 5) are each part's light: the day (the Sun and its sky), the lamps and the Moon (with its sky), with their summed colour for the eye's white balance. They are summed in the light's own units (the weights, the bodies' RGB), not in floor light, an approximation kept on purpose: the shares only mix the eye's anchors in log space, each anchor then corrected by half the measured frame's difference (Task 5), and only where two parts are comparable (dusk with the lamps lit, a lamp fade under the Moon) does the weighting matter; and `MOON_NEGLIGIBLE` sits three orders of magnitude below a tenth of a code, so a factor of a few in the comparison cannot make a visible Moon negligible. Making them floor light would need each body's window power from the GPU every frame, which the controller's ruling E1 keeps off the CPU path.
+Both bodies count whenever their light can show (decision 2): the Moon is dropped only when its light is below 1/100,000 of the day's and the lamps' together (in daylight, or under lit chandeliers), where it cannot move a displayed pixel by a tenth of a code; a day Moon's disc still shows in the windows (Task 15), and Task 23 measures the frame budget with both bodies forced on. In clear weather the Moon also lights its own sky: the clear sky's relation to its Sun (the Sun's strength is `sunRatio × sky × mean window weight`) taken backwards gives the moonlit sky's level, in the clear sky's colour relative to the Sun's applied to moonlight. It enters through the windows' weights; R1b's `skyLevel` stays the Sun's sky (so the proof's night is exactly reproduced), and the night sky panels read the moonlit sky from `moonSky` (Task 15). The eye's shares (Task 5) are each part's light: the day (the Sun and its sky), the lamps and the Moon (with its sky), with their summed colour for the eye's white balance. They are summed in the light's own units (the weights, the bodies' RGB), not in floor light, an approximation kept on purpose: the shares only mix the eye's anchors in log space, each anchor then corrected by half the measured frame's difference (Task 5), and only where two parts are comparable (dusk with the lamps lit, a lamp fade under the Moon) does the weighting matter; and `MOON_NEGLIGIBLE` (1e-5) sits about two orders of magnitude below a tenth of a code (about 1e-3 of the light: finding M6), so the factor of four or five the scan found between these shares and floor light cannot make a visible Moon negligible. Floor shares would need GPU read-backs every frame only for the bodies' direct beams: the lamps' and the windows' sky light have static floor means per unit weight (R1a Task 4's basis), but the Sun's and the Moon's direct light on the floor depends on their march, which ruling E1 keeps off the per-frame path.
 
 The city lights the hall at night (the frontier light study, `D:/claude/real-hall/frontier/light/proposal.md` §b3): the facade across Glassford Street fills 55–83% of each window's view, lit by street lighting to about 1 cd/m², far brighter than the skyglow, so mid-hall receives some 0.03–0.1 lux from it and a full Moon's patch is only 1–3× its surroundings. `lightForSky` adds each window's city light (`extras.city`, built by Task 15 from the package's window radiance, each window's view of the facade and the calibration) scaled by `cityLevel`: street lighting comes up through dusk, none with the Sun above the horizon and all of it below −6°. It counts in the night's share for the eye. R1b's own settings (`settingForChoice`, `settingForSky`) pass no extras, so R1a's vectors and every R1b test are unchanged; only the cinematic light's director adds the city.
+
+The sky's colours follow the frontier light study's measurements (`D:/claude/real-hall/frontier/light/proposal.md` §e, 8 October, every product double-run and identical) when the cinematic light asks for them (`extras.colourByElevation`, which the director sets while the cinematic package is in use; R1b's own settings never ask, so every R1b test and R1a vector stands). The Sun's beam reddens toward the horizon (at AOD 0.1: 1,480 K at 1°, 3,760 K at 10°, 5,310 K at 60°; a fixed colour misses exactly the low morning Sun that enters these windows), applied as the measured change from the weather's reference hour, so each preset at its own hour keeps R1b's colour exactly. The Moon's beam reddens likewise (3,640 K at 17°, 2,920 K at 7.5°) from R1b's `MOON_CCT` overhead, which the study's 4,248 K at 60.8° confirms. The clear sky's blue hour lies at or beyond 25,000 K and below the Planckian locus, so a colour temperature cannot express it: it is taken in CIE xy from the study's twilight curve, blending from the weather's own sky colour at 2° to the measured twilight at 0° and below (clear weather only; overcast keeps its weather's colour until R2). The moonlit sky keeps the model's sky colour (only the Sun's twilight is blue). Below about 1.6° the Planckian fit holds the Sun at 1,667 K (the study gives 1,480 K at 1°).
 
 `skyAt` computes both bodies at the displayed instant itself: NOAA's Sun and the Meeus Moon (A3) take microseconds each, so the light is exact at every frame of a time-lapse.
 
 Verified (7 October; R1b's line numbers re-read on 8 October): R1b plan Task 8 (`light-setting.ts`, lines 5483–5720: `LIGHT_PRESETS`, `type WeatherPreset`, `MIN_MINUTES`/`MAX_MINUTES`, `PRESET_DEFAULTS`, `PRESET_DISPLAY`, `PRESET_EMITTER_BOOST`, `defaultChoice`, `londonOffsetHours`, `isIsoDate`, `londonLocalToUtc`, `clampMinutes`, `formatMinutes`, `LightInputs` at 5590, `lightInputsFromParts`: `presets.night` is `{ weather: clear, house, lampLevel }`, `const luminanceOf`, `adaptDisplay` at 5713), the store (5725–5760), the control (`LABELS`, 9760–9767; its doc comment's "an hour between 06:00 and 22:00", 9771), the control's tests (9636–9660), `light-setting.test.ts` (5236–5380: `expectSetting` compares weights, sky, `lampLevels`, `emitterBoost`, `sunDir`, `sunRgb` to 1e-6; the clamp test at 5296); R1b plan line 2075 (`type LampLevels`); amendment A1 (`PRESET_EMITTER_BOOST` with `moonlit`; `RelightSetting.lampTints`), A4 (amendments lines 577–731: `unitsPerLux` at 602–613, `ChoiceLight` at 616, `settingForChoice` at 627, `settingForSky` at 641), A7 (lines 927–951: `LIGHT_PRESETS` with `moonlit`, `PRESET_DEFAULTS.moonlit`, `MOONLIT_DISPLAY_KEY`); `tools/relight/relight/codec.py:11` (`SOURCES`: W1–W5, then `cove`, `ch_end`, `ch_centre`, `dome`, the order of `LAMP_GROUPS`); `tools/relight/proof/05_relight.py:36-42` (`house` 1.0 at night, 0.0 otherwise).
 
-- [ ] **Step 1: Write the failing tests** — create `packages/web/src/lib/relight/__tests__/sky-instant.test.ts`:
+- [ ] **Step 1: Write the failing tests** — create `packages/web/src/lib/relight/__tests__/sky-colour.test.ts`:
+
+```ts
+import { describe, expect, it } from "vitest";
+import { MOON_CCT } from "../../moon.js";
+import { cctShift } from "../daylight.js";
+import {
+  MOON_CCT_BY_ELEVATION, SUN_CCT_BY_ELEVATION, TWILIGHT_SKY_XY, cctAtElevation, moonBeamShift, planckShift, relativeToCapture,
+  skyShiftAt, sunBeamShift, xyRgb,
+} from "../sky-colour.js";
+
+const ratio = (rgb: readonly number[]): number => (rgb[0] ?? 0) / (rgb[2] ?? 1);
+
+describe("the sky's measured colours (T-639 R1d)", () => {
+  it("reads the frontier study's tables in mired, held at their ends", () => {
+    expect([cctAtElevation(SUN_CCT_BY_ELEVATION, 10), cctAtElevation(SUN_CCT_BY_ELEVATION, -5), cctAtElevation(SUN_CCT_BY_ELEVATION, 90)]).toEqual([3760, 1480, 5310]);
+    expect(cctAtElevation(SUN_CCT_BY_ELEVATION, 5)).toBeCloseTo(1 / ((1 / 3) / 2280 + (2 / 3) / 3100), 9);
+    expect(cctAtElevation(MOON_CCT_BY_ELEVATION, 7.5)).toBe(2920);
+    expect(() => cctAtElevation([], 10)).toThrow(RangeError);
+  });
+
+  it("applies the measured reddening as a change, so R1b's colours stand where it measured them", () => {
+    const weather = cctShift(5000);
+    expect(sunBeamShift(weather, 44.5, 44.5)).toEqual(weather);
+    const low = sunBeamShift(weather, 3, 44.5);
+    expect(low[1]).toBe(1);
+    expect(ratio(low)).toBeGreaterThan(2 * ratio(weather));
+    expect(ratio(sunBeamShift(weather, 60, 44.5))).toBeLessThan(ratio(weather));
+    expect(moonBeamShift(70)).toEqual(cctShift(MOON_CCT));
+    expect(moonBeamShift(60.8)).toEqual(cctShift(MOON_CCT));
+    expect(ratio(moonBeamShift(7.5))).toBeGreaterThan(ratio(moonBeamShift(17)));
+    expect(ratio(moonBeamShift(17))).toBeGreaterThan(ratio(cctShift(MOON_CCT)));
+  });
+
+  it("gives the clear blue hour in xy, bluer than any daylight, and the weather's own sky by day", () => {
+    const weather = cctShift(7500);
+    expect(skyShiftAt(2, weather)).toEqual(weather);
+    expect(skyShiftAt(30, weather)).toEqual(weather);
+    const deep = TWILIGHT_SKY_XY[3];
+    if (deep === undefined) throw new Error("The table reaches −6°.");
+    expect(skyShiftAt(-6, weather)).toEqual(relativeToCapture(xyRgb(deep[1], deep[2])));
+    expect(ratio(skyShiftAt(-6, weather))).toBeLessThan(ratio(cctShift(25000)));
+    const halfway = skyShiftAt(1, weather), zero = skyShiftAt(0, weather);
+    expect(halfway[2]).toBeCloseTo((weather[2] + zero[2]) / 2, 12);
+    expect(skyShiftAt(-30, weather)).toEqual(skyShiftAt(-8, weather));
+  });
+
+  it("takes xy and black bodies to the capture's terms: D65 is white, a warm street lamp red", () => {
+    const d65 = xyRgb(0.3127, 0.329);
+    expect(d65[0]).toBeCloseTo(1, 2);
+    expect(d65[2]).toBeCloseTo(1, 2);
+    const street = planckShift(3830);
+    expect(street[1]).toBe(1);
+    expect(street[0]).toBeGreaterThan(1.3);
+    expect(street[2]).toBeLessThan(0.75);
+  });
+});
+```
+
+create `packages/web/src/lib/relight/__tests__/sky-instant.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -2534,6 +2626,8 @@ with:
     expect([formatMinutes(360), formatMinutes(1305), formatMinutes(1439)]).toEqual(["06:00", "21:45", "23:59"]);
   });
 ```
+
+The moonlit preset opens on the frontier study's brightest evening full Moon that the windows admit (Step 3), so replace `    expect(PRESET_DEFAULTS.moonlit).toEqual({ date: "2026-09-26", minutes: 1380 });` with `    expect(PRESET_DEFAULTS.moonlit).toEqual({ date: "2026-12-23", minutes: 1430 });`, and in the next test's title replace `by the full Moon of 26 September` with `by its full Moon` (the test's checks hold at the new date: the Moon 60.8° up and full, its light about 3e-6 of the morning Sun's, warmer than the Sun's colour).
 
 and append inside the file's `describe`, before its closing `});`:
 
@@ -2643,6 +2737,30 @@ and append inside the file's `describe`, before its closing `});`:
     expect(lightForSky(inputs(), "sunny", day, dayMoon, off, STEADY_LAMPS, { city, keepMoon: false }).setting)
       .toEqual(lightForSky(inputs(), "sunny", day, dayMoon, off, STEADY_LAMPS).setting);
   });
+
+  it("reddens the beams and blues the clear twilight only when the cinematic light asks, keeping each preset's own hour (R1d)", () => {
+    const off = { cove: 0, ch_end: 0, ch_centre: 0, dome: 0 };
+    const measured = { city: null, keepMoon: false, colourByElevation: true };
+    const sky = (date: string, minutes: number) => {
+      const instant = londonLocalToUtc(date, minutes);
+      return { sun: solarPosition(instant, TRADES_HALL_LATITUDE, TRADES_HALL_LONGITUDE), moon: moonPosition(instant, TRADES_HALL_LATITUDE, TRADES_HALL_LONGITUDE) };
+    };
+    const own = sky(PRESET_DEFAULTS.sunny.date, PRESET_DEFAULTS.sunny.minutes);
+    expect(lightForSky(inputs(), "sunny", own.sun, own.moon, off, STEADY_LAMPS, measured).setting)
+      .toEqual(lightForSky(inputs(), "sunny", own.sun, own.moon, off, STEADY_LAMPS).setting);
+    // 05:30 BST on the sunny morning's date: the Sun a few degrees up, its beam redder than R1b's fixed colour.
+    const low = sky(PRESET_DEFAULTS.sunny.date, 330);
+    expect(low.sun.elevation).toBeGreaterThan(0);
+    const red = lightForSky(inputs(), "sunny", low.sun, low.moon, off, STEADY_LAMPS, measured).setting;
+    const plain = lightForSky(inputs(), "sunny", low.sun, low.moon, off, STEADY_LAMPS).setting;
+    expect(red.sunRgb[0] / red.sunRgb[2]).toBeGreaterThan(plain.sunRgb[0] / plain.sunRgb[2]);
+    // 16:30 GMT on 21 December: the Sun a few degrees below the horizon, the clear sky the measured blue hour.
+    const dusk = sky("2026-12-21", 990);
+    expect(dusk.sun.elevation).toBeLessThan(0);
+    const blue = lightForSky(inputs(), "sunny", dusk.sun, dusk.moon, off, STEADY_LAMPS, measured).setting;
+    const grey = lightForSky(inputs(), "sunny", dusk.sun, dusk.moon, off, STEADY_LAMPS).setting;
+    expect(blue.skyColour[2] / blue.skyColour[0]).toBeGreaterThan(grey.skyColour[2] / grey.skyColour[0]);
+  });
 ```
 
 In `packages/web/src/stores/__tests__/light-setting-store.test.ts`, replace its first two import lines with:
@@ -2738,6 +2856,9 @@ with:
 
 - [ ] **Step 2: Run them to see them fail**
 
+Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/sky-colour.test.ts`
+Expected: FAIL — cannot find module `../sky-colour.js`.
+
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/sky-instant.test.ts`
 Expected: FAIL — cannot find module `../sky-instant.js`.
 
@@ -2754,6 +2875,7 @@ Replace the kernel import `import { LUMINANCE, capturedSetting, weightedColours,
 ```ts
 import { LAMP_GROUPS, LUMINANCE, capturedSetting, smoothstep, weightedColours, type LampGroup, type LampLevels, type RelightSetting, type Rgb } from "./relight/relight-kernel.js";
 import { dimmedOutput, dimmedTint, type LampDimming } from "./relight/lamp-dimming.js";
+import { moonBeamShift, skyShiftAt, sunBeamShift } from "./relight/sky-colour.js";
 import { normaliseShares, type LightShares } from "./relight/eye.js";
 import type { LampDrives } from "./relight/light-motion.js";
 ```
@@ -2763,6 +2885,13 @@ Replace (A7's) `export const LIGHT_PRESETS = ["captured", "night", "moonlit", "s
 ```ts
   /** Live time's choice is liveChoice(now); this entry is its display anchor, the clear morning's (R1d). */
   live: { date: "2026-05-31", minutes: 540 },
+```
+
+and replace (A7's) `  moonlit: { date: "2026-09-26", minutes: 1380 },` with:
+
+```ts
+  /** The frontier study's brightest evening full Moon the windows admit: 23:50 GMT, 60.8° up, 0.275 lux, 4,248 K (§e, 8 October). */
+  moonlit: { date: "2026-12-23", minutes: 1430 },
 ```
 
 in `PRESET_DISPLAY`, directly before `  captured: NEUTRAL_DISPLAY,` add `  live: { exposure: 0.629, whiteBalance: [1.1078, 1, 0.8304] },`; and replace (A1's) `PRESET_EMITTER_BOOST` line with:
@@ -2825,6 +2954,11 @@ export interface SkyExtras {
   readonly city: readonly Rgb[] | null;
   /** Keep a Moon too faint to show (Task 23's both-bodies budget only). */
   readonly keepMoon: boolean;
+  /**
+   * The frontier light study's measured colours (sky-colour.ts): the Sun's and the Moon's beams by their elevation and
+   * the clear blue hour in CIE xy. Only the cinematic light asks (the director, with its package); R1b's settings never do.
+   */
+  readonly colourByElevation?: boolean;
 }
 export const NO_EXTRAS: SkyExtras = { city: null, keepMoon: false };
 
@@ -2879,11 +3013,19 @@ export function lightForSky(
   // The ratio first: exactly 1 at the weather's own hour, so the proof's sky level is reproduced exactly.
   const skyLevel = reference > 0 ? model.referenceSky * (skyFactor(sun.elevation) / reference) : 0;
   const skyShift = cctShift(model.skyCct), sunShift = cctShift(model.sunCct), moonShift = cctShift(MOON_CCT);
+  // The measured colours (extras.colourByElevation): each beam's change with its elevation, applied from R1b's colour at
+  // the weather's own hour (and the Moon's overhead), so a preset at its own hour is exactly R1b's; the clear twilight's
+  // blue in CIE xy. The moonlit sky keeps the model's sky colour: only the Sun's twilight is blue.
+  const measured = extras.colourByElevation === true;
+  const sunBeam = measured ? sunBeamShift(sunShift, sun.elevation, model.referenceElevation) : sunShift;
+  const moonBeam = measured ? moonBeamShift(moon.elevation) : moonShift;
+  const skyTint = measured && model.sunRatio > 0 ? skyShiftAt(sun.elevation, skyShift) : skyShift;
   const daylight = inputs.daylightColour;
-  const skyColour: Rgb = [daylight[0] * skyShift[0], daylight[1] * skyShift[1], daylight[2] * skyShift[2]];
+  const modelSky: Rgb = [daylight[0] * skyShift[0], daylight[1] * skyShift[1], daylight[2] * skyShift[2]];
+  const skyColour: Rgb = [daylight[0] * skyTint[0], daylight[1] * skyTint[1], daylight[2] * skyTint[2]];
   const sunUp = model.sunRatio > 0 && sun.elevation > 0;
   const sunStrength = sunUp ? model.sunRatio * skyLevel * inputs.meanWindowWeight : 0;
-  const sunRgb: Rgb = [sunStrength * (daylight[0] * sunShift[0]), sunStrength * (daylight[1] * sunShift[1]), sunStrength * (daylight[2] * sunShift[2])];
+  const sunRgb: Rgb = [sunStrength * (daylight[0] * sunBeam[0]), sunStrength * (daylight[1] * sunBeam[1]), sunStrength * (daylight[2] * sunBeam[2])];
 
   const level = (group: LampGroup): number => dimmedOutput(drives[group], lamps.groups[group].dimming);
   const tintOf = (group: LampGroup): Rgb => dimmedTint(drives[group], lamps.groups[group].dimming, lamps.groups[group].warmFullCct);
@@ -2902,7 +3044,7 @@ export function lightForSky(
   const dayLight = luminanceOf(sunRgb) + skyLevel * inputs.meanWindowWeight * luminanceOf(skyColour);
 
   // The Moon: direct only in clear weather, like the Sun; dropped where it cannot show.
-  const moonColour: Rgb = [daylight[0] * moonShift[0], daylight[1] * moonShift[1], daylight[2] * moonShift[2]];
+  const moonColour: Rgb = [daylight[0] * moonBeam[0], daylight[1] * moonBeam[1], daylight[2] * moonBeam[2]];
   const moonUp = model.sunRatio > 0 && moon.elevation > 0 && moon.illuminance > 0;
   const moonStrength = moonUp ? moon.illuminance * inputs.unitsPerLux : 0;
   const moonLight = moonStrength * luminanceOf(moonColour);
@@ -2910,7 +3052,7 @@ export function lightForSky(
   const moonRgb: Rgb = moonCounts ? times(moonColour, moonStrength) : [0, 0, 0];
   // Its sky: the clear sky's relation to its Sun taken backwards, in the sky's colour relative to the Sun's.
   const moonSkyLevel = moonCounts ? moonStrength / (model.sunRatio * inputs.meanWindowWeight) : 0;
-  const moonSkyColour: Rgb = [skyColour[0] * moonShift[0] / sunShift[0], skyColour[1] * moonShift[1] / sunShift[1], skyColour[2] * moonShift[2] / sunShift[2]];
+  const moonSkyColour: Rgb = [modelSky[0] * moonShift[0] / sunShift[0], modelSky[1] * moonShift[1] / sunShift[1], modelSky[2] * moonShift[2] / sunShift[2]];
 
   // The city through each window at night (Task 15's weights; none without the cinematic package).
   const city = cityLevel(sun.elevation);
@@ -2982,7 +3124,130 @@ export function liveChoice(now: Date): LightChoice {
 
 `luminanceOf` is R1b's module-level arrow (defined further down the file, before `adaptDisplay`); it is only called at run time, after the module has loaded. `MOON_CCT`, `moonPosition`, `MoonPosition`, `cctShift`, `skyFactor`, `solarPosition`, `sunDirection` and `WINDOW_COUNT` are already imported (R1b and A4).
 
-- [ ] **Step 4: The sky at an instant** — create `packages/web/src/lib/relight/sky-instant.ts`:
+- [ ] **Step 4: The sky at an instant, and its measured colours** — create `packages/web/src/lib/relight/sky-colour.ts`:
+
+```ts
+import { MOON_CCT } from "../moon.js";
+import { CAPTURE_DAYLIGHT_CCT, cctShift, daylightRgb } from "./daylight.js";
+import { planckRgb } from "./lamp-dimming.js";
+import type { Rgb } from "./relight-kernel.js";
+
+/**
+ * The sky's colours as the frontier light study measured them (T-639 R1d; D:/claude/real-hall/frontier/light/proposal.md
+ * §e, 8 October 2026, every product double-run and identical): the Sun's and the Moon's beams redden toward the horizon,
+ * and the clear sky's blue hour lies off the Planckian locus, so it is given in CIE xy, never as a colour temperature.
+ * Each is relative to the capture's daylight (green 1), as R1b's `cctShift` is. The beams carry the measured change
+ * from a reference, never a second absolute colour: a weather at its own hour, and the Moon high, keep R1b's colours
+ * exactly, so every preset at its own hour is unchanged.
+ */
+
+/** The direct Sun at AOD 0.1 by elevation, [degrees, K] (§e d2 and e3; at AOD 0.4 the same elevations run 1,000–4,900 K). */
+export const SUN_CCT_BY_ELEVATION: readonly (readonly [number, number])[] = [[1, 1480], [3, 2280], [6, 3100], [10, 3760], [20, 4550], [40, 5110], [60, 5310]];
+/** The direct Moon by elevation, [degrees, K] (§e d2; 4,248 K at 60.8° agrees with R1b's MOON_CCT, 4,100 K, overhead). */
+export const MOON_CCT_BY_ELEVATION: readonly (readonly [number, number])[] = [[7.5, 2920], [17, 3640], [60.8, 4248]];
+/**
+ * The clear sky's colour through twilight by the Sun's elevation, [degrees, x, y] (§e d2's twilight curve,
+ * `evidence/d2_sky_scenes.json`): from −4° down it is at or beyond 25,000 K and below the locus (Duv −0.002 to −0.018).
+ */
+export const TWILIGHT_SKY_XY: readonly (readonly [number, number, number])[] = [
+  [0, 0.279, 0.2867], [-2, 0.2684, 0.2708], [-4, 0.2529, 0.2493], [-6, 0.2418, 0.2379], [-8, 0.2308, 0.2243],
+];
+/** At and above this Sun elevation the clear sky keeps its weather's colour; from 0° down it is the twilight table's. */
+export const TWILIGHT_FROM_ELEVATION = 2;
+
+/** Linear sRGB (green 1) of a CIE 1931 xy chromaticity, as daylight.ts takes the daylight locus; negatives clamp to 0. */
+export function xyRgb(x: number, y: number): Rgb {
+  const X = x / y, Z = (1 - x - y) / y;
+  const r = 3.2406 * X - 1.5372 - 0.4986 * Z;
+  const g = -0.9689 * X + 1.8758 + 0.0415 * Z;
+  const b = 0.0557 * X - 0.2040 + 1.0570 * Z;
+  return [Math.max(r / g, 0), 1, Math.max(b / g, 0)];
+}
+
+/** A colour relative to the capture's daylight, green 1 (R1b's `cctShift` for any colour). */
+export function relativeToCapture(rgb: Rgb): Rgb {
+  const capture = daylightRgb(CAPTURE_DAYLIGHT_CCT);
+  const r = rgb[0] / capture[0], g = rgb[1] / capture[1], b = rgb[2] / capture[2];
+  return [r / g, 1, b / g];
+}
+
+/** A black body's colour relative to the capture's daylight: for lights below the daylight locus's 4,000 K. */
+export function planckShift(cct: number): Rgb {
+  return relativeToCapture(planckRgb(cct));
+}
+
+/** A table's colour temperature at an elevation: linear in elevation in mired (1/T), held at the table's ends. */
+export function cctAtElevation(table: readonly (readonly [number, number])[], elevation: number): number {
+  const first = table[0], last = table[table.length - 1];
+  if (first === undefined || last === undefined) throw new RangeError("A colour table needs at least one row.");
+  if (!(elevation > first[0])) return first[1];
+  if (elevation >= last[0]) return last[1];
+  for (let i = 1; i < table.length; i += 1) {
+    const [e1, t1] = table[i] ?? last, [e0, t0] = table[i - 1] ?? first;
+    if (elevation <= e1) {
+      const f = (elevation - e0) / (e1 - e0);
+      return 1 / ((1 - f) / t0 + f / t1);
+    }
+  }
+  return last[1];
+}
+
+/** The measured change of a black body's colour from a reference temperature to another (green 1). */
+function planckChange(cct: number, reference: number): Rgb {
+  const to = planckRgb(cct), from = planckRgb(reference);
+  const r = to[0] / from[0], g = to[1] / from[1], b = to[2] / from[2];
+  return [r / g, 1, b / g];
+}
+
+const times = (a: Rgb, b: Rgb): Rgb => [a[0] * b[0], a[1] * b[1], a[2] * b[2]];
+
+/**
+ * The Sun's beam at an elevation: the weather's own colour at its reference hour, reddened (or whitened) by the measured
+ * change from the reference elevation's colour to this one's. Below about 1.6° the Planckian fit holds 1,667 K (the study
+ * gives 1,480 K at 1°).
+ */
+export function sunBeamShift(weatherShift: Rgb, elevation: number, referenceElevation: number): Rgb {
+  return times(weatherShift, planckChange(cctAtElevation(SUN_CCT_BY_ELEVATION, elevation), cctAtElevation(SUN_CCT_BY_ELEVATION, referenceElevation)));
+}
+
+/** The Moon's beam at an elevation: R1b's MOON_CCT high in the sky, reddened toward the horizon as the study measured. */
+export function moonBeamShift(elevation: number): Rgb {
+  const top = MOON_CCT_BY_ELEVATION[MOON_CCT_BY_ELEVATION.length - 1]?.[1] ?? MOON_CCT;
+  return times(cctShift(MOON_CCT), planckChange(cctAtElevation(MOON_CCT_BY_ELEVATION, elevation), top));
+}
+
+/** The twilight table's chromaticity at a Sun elevation: linear in elevation, held at its ends. */
+function twilightXy(elevation: number): readonly [number, number] {
+  const first = TWILIGHT_SKY_XY[0], last = TWILIGHT_SKY_XY[TWILIGHT_SKY_XY.length - 1];
+  if (first === undefined || last === undefined) return [0.3127, 0.329];
+  if (elevation >= first[0]) return [first[1], first[2]];
+  if (!(elevation > last[0])) return [last[1], last[2]];
+  for (let i = 1; i < TWILIGHT_SKY_XY.length; i += 1) {
+    const [e1, x1, y1] = TWILIGHT_SKY_XY[i] ?? last, [e0, x0, y0] = TWILIGHT_SKY_XY[i - 1] ?? first;
+    if (elevation >= e1) {
+      const f = (e0 - elevation) / (e0 - e1);
+      return [x0 + (x1 - x0) * f, y0 + (y1 - y0) * f];
+    }
+  }
+  return [last[1], last[2]];
+}
+
+/**
+ * The clear sky's colour at a Sun elevation, relative to the capture's daylight: its weather's own colour from
+ * TWILIGHT_FROM_ELEVATION up (exactly), the measured twilight's from 0° down, and a blend between them.
+ */
+export function skyShiftAt(elevation: number, weatherShift: Rgb): Rgb {
+  const toward = Math.min(Math.max((TWILIGHT_FROM_ELEVATION - elevation) / TWILIGHT_FROM_ELEVATION, 0), 1);
+  if (toward === 0) return weatherShift;
+  const [x, y] = twilightXy(elevation);
+  const twilight = relativeToCapture(xyRgb(x, y));
+  return [weatherShift[0] + (twilight[0] - weatherShift[0]) * toward, 1, weatherShift[2] + (twilight[2] - weatherShift[2]) * toward];
+}
+```
+
+(It reads R1b's `daylight.ts`, `moon.ts`'s `MOON_CCT` and Task 4's `planckRgb`. Verified on 8 October in a scratch copy with R1b's `daylight.ts` and Task 4's `lamp-dimming.ts` taken from the plans: its 4 tests pass, strict `tsc` and the repo's ESLint settings are clean.)
+
+Create `packages/web/src/lib/relight/sky-instant.ts`:
 
 ```ts
 import { dateOfDay, londonLocalToUtc } from "../light-setting.js";
@@ -3075,11 +3340,14 @@ with:
 
 - [ ] **Step 7: Run the tests, and the R1b tests that read the store's default**
 
+Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/sky-colour.test.ts`
+Expected: PASS, 4 tests.
+
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/sky-instant.test.ts`
 Expected: PASS, 4 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/__tests__/light-setting.test.ts`
-Expected: PASS, the Task 0 count plus 9. The two vector tests (night and sunny morning) must pass unchanged: they prove that `lightForSky` reproduces R1b's settings; if one fails, report the field and the difference and stop (the vectors are R1a's construction, never adjusted).
+Expected: PASS, the Task 0 count plus 10. The two vector tests (night and sunny morning) must pass unchanged: they prove that `lightForSky` reproduces R1b's settings; if one fails, report the field and the difference and stop (the vectors are R1a's construction, never adjusted).
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/stores/__tests__/light-setting-store.test.ts`
 Expected: PASS, the Task 0 count plus 2.
@@ -3094,13 +3362,13 @@ Then, one per command: `src/lib/relight/__tests__/relight-apply.test.ts`, `src/c
 Run: `pnpm --filter @omnitwin/web exec tsc --noEmit -p tsconfig.json`
 Expected: no errors. A `Record<LightPresetId, …>` elsewhere in the package without `live` is reported here: give it a `live` entry equal to its `sunny` entry.
 
-Run: `pnpm --filter @omnitwin/web exec eslint src/lib/light-setting.ts src/lib/relight/sky-instant.ts src/stores/light-setting-store.ts src/components/rooms/LightControl.tsx`
+Run: `pnpm --filter @omnitwin/web exec eslint src/lib/light-setting.ts src/lib/relight/sky-instant.ts src/lib/relight/sky-colour.ts src/stores/light-setting-store.ts src/components/rooms/LightControl.tsx`
 Expected: no problems.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-cd D:/claude/real-hall/repo && git add packages/web/src/lib/light-setting.ts packages/web/src/lib/relight/sky-instant.ts packages/web/src/stores/light-setting-store.ts packages/web/src/components/rooms/LightControl.tsx packages/web/src/lib/relight/__tests__/sky-instant.test.ts packages/web/src/lib/__tests__/light-setting.test.ts packages/web/src/stores/__tests__/light-setting-store.test.ts packages/web/src/components/rooms/__tests__/LightControl.test.tsx && git status --short packages/web/src && git diff --cached --stat
+cd D:/claude/real-hall/repo && git add packages/web/src/lib/light-setting.ts packages/web/src/lib/relight/sky-instant.ts packages/web/src/lib/relight/sky-colour.ts packages/web/src/stores/light-setting-store.ts packages/web/src/components/rooms/LightControl.tsx packages/web/src/lib/relight/__tests__/sky-instant.test.ts packages/web/src/lib/relight/__tests__/sky-colour.test.ts packages/web/src/lib/__tests__/light-setting.test.ts packages/web/src/stores/__tests__/light-setting-store.test.ts packages/web/src/components/rooms/__tests__/LightControl.test.tsx && git status --short packages/web/src && git diff --cached --stat
 ```
 
 If Step 7 or 8 changed other files (a test's `beforeEach`, another `Record`'s `live` entry), add each one by its path, inspect the staged diff, then:
@@ -4087,7 +4355,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (`cinematic-light.ts`): the cinematic light's one entry, re-exporting `LightDirector`, `cinematicManifestUrl`, `cinematicOffBySearch`, `loadCinematicPackage` and `CAPTURE_CALIBRATION` (later tasks add their parts to it). The provider imports it only with a dynamic `import()` inside the build-time branch `import.meta.env.DEV || import.meta.env.VITE_DEPLOY_ENV === "preview"`, and its types with `import type`, so no production bundle carries the cinematic light (finding B15; Task 24 Step 2 checks).
 - Produces (provider): the cinematic light's code loads beside the relight package (`Promise.all`); with it loaded and on (not `?cinematic=off`), one `LightDirector` per relight frame replaces R1b's per-choice apply, its fallback eye reading the GPU's sky light back through `frame.readSkyLight` with the host's renderer (`nativeRendererForScene`); the frame's apply listener runs `host.runRelight({ activeOnly: director.lightMoving })`; the cinematic package is loaded beside the relight package once the frame is on the host and handed to the director; the provider keeps `cinematic: { frame, director, light, data }` state (`light`: the loaded entry) for Task 10's `RelightCinematic`. Without the code (a production bundle, or a load that fails, warned once) the hall stays relit as R1b draws it.
 
-The director is the only writer of the light while a relit, cinematic session runs (decisions 2–4, 7). Each tick it reads the store, forms the targets (the displayed instant: London's real time while following, else the choice's day and minutes; each lamp group's drive by the switch, automatic lamps following the Sun the visitor sees; the eye), steps Task 5's springs, computes both bodies at the displayed instant (Task 6's `skyAt`) and the light (`lightForSky` with the cinematic package's night gains and the city's light, or the captured light), and mixes two lights while a cross-fade runs. A cross-fade passes through the kernel's two body slots: the old light's dominant body (the Sun when it is up, else the Moon) fades in the first slot while the new light's rises in the second, so the mix is the linear superposition of the two lights, which is a cross-fade of the light except for a counted second body (finding M6). That body is only ever the Moon with the Sun up: counted, it is at least 1/100,000 of the light (`MOON_NEGLIGIBLE`, decision 2) and at most about 1/1,000 (a full Moon gives about 0.3 lux, a clear sky with the Sun on the horizon several hundred). It is dropped while a blend runs and returns at its end, a step of at most about a thousandth of the light, about a tenth of a display code at the brightest pixel. It applies the light to R1b's frame only when it has changed enough to show: a body moved 0.02° or any weight, colour or lamp level changed by 0.1% while the light moves, and the exact final light once it rests (and once more at full stride if the last moving applies were amortised). Applying reruns the passes through R1b's `onApply` listener, the active draw only while the light moves (Task 7). The display is written every tick with `setDisplay`, so an adapting eye never reruns a pass. A tick schedules the next animation frame only while something moves; a still, live hall ticks once a second (`LIVE_TICK_MS`) to advance the clock with `retime`, and reapplies only when the bodies have moved 0.02°, about every five seconds. Nothing runs while the light is still and the clock is not following.
+The director is the only writer of the light while a relit, cinematic session runs (decisions 2–4, 7). Each tick it reads the store, forms the targets (the displayed instant: London's real time while following, else the choice's day and minutes; each lamp group's drive by the switch, automatic lamps following the Sun the visitor sees; the eye), steps Task 5's springs, computes both bodies at the displayed instant (Task 6's `skyAt`) and the light (`lightForSky` with the cinematic package's night gains, the city's light and the frontier study's measured colours of the beams and the blue hour, Task 6; or the captured light), and mixes two lights while a cross-fade runs. A cross-fade passes through the kernel's two body slots: the old light's dominant body (the Sun when it is up, else the Moon) fades in the first slot while the new light's rises in the second, so the mix is the linear superposition of the two lights, which is a cross-fade of the light except for a counted second body (finding M6). That body is only ever the Moon with the Sun up: counted, it is at least 1/100,000 of the light (`MOON_NEGLIGIBLE`, decision 2) and at most about 1/1,000 (a full Moon gives about 0.3 lux, a clear sky with the Sun on the horizon several hundred). It is dropped while a blend runs and returns at its end, a step of at most about a thousandth of the light, about a tenth of a display code at the brightest pixel. It applies the light to R1b's frame only when it has changed enough to show: a body moved 0.02° or any weight, colour or lamp level changed by 0.1% while the light moves, and the exact final light once it rests (and once more at full stride if the last moving applies were amortised). Applying reruns the passes through R1b's `onApply` listener, the active draw only while the light moves (Task 7). The display is written every tick with `setDisplay`, so an adapting eye never reruns a pass. A tick schedules the next animation frame only while something moves; a still, live hall ticks once a second (`LIVE_TICK_MS`) to advance the clock with `retime`, and reapplies only when the bodies have moved 0.02°, about every five seconds. Nothing runs while the light is still and the clock is not following.
 
 The eye's target is Task 5's `anchoredEye` once the package's anchors exist, with the latest GPU measurement (Task 13), which holds until the next one: a still hall renders no frame and measures nothing, so the eye holds where it is rather than drifting. Without anchors (before Task 21) it falls back to R1b's display for the choice, `applicationForChoice` on the floor's mean light, recomputed when the choice's minute changes, with its scotopic amount from that mean light times the floor's albedo (0.34, the oak, the frontier study's §b3). The floor mean needs each sky body's light on the CPU, and the CPU twin never runs per frame (the controller's ruling E1): after each apply the director reads the GPU's sky light back with R1b's `readSkyLight`, at most every `SKY_READ_INTERVAL_MS` (four times a second) while the light moves and once more when it rests, and forms the fallback target again when a read-back lands. For a direction not yet read back R1b's frame serves the body's latest read-back, and it runs the twin at most once per body before the first (R1b Task 10), so a drag of the clock never marches the sky on the main thread, and at rest the fallback is exactly R1b's display for the choice. The captured light is the identity display, exactly.
 
@@ -4691,7 +4959,8 @@ export class LightDirector {
     this.kind = kind;
 
     const sky = skyAt(frame.instant, site.latitude, site.longitude);
-    const extras: SkyExtras = { city: this.cinematic?.city ?? null, keepMoon: this.keepMoon };
+    // The frontier study's measured colours with the cinematic package in use (Task 6); without it, R1b's colours.
+    const extras: SkyExtras = { city: this.cinematic?.city ?? null, keepMoon: this.keepMoon, colourByElevation: this.cinematic !== null };
     const to = weather === null
       ? capturedLight(this.frame.inputs, sky.sun, sky.moon)
       : lightForSky(this.frame.inputs, weather, sky.sun, sky.moon, frame.lamps, this.cinematic?.lamps ?? STEADY_LAMPS, extras);
@@ -5688,7 +5957,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 8 (`CinematicData`: `bulbs` with per-bulb `kind` and `intensity`, `envelopes`, `glow`; `BULB_KINDS`, `BulbGroup`, `BulbKind`, `BulbEnvelope`, `CinematicBulb`), Task 7 (`RelightFrame.setGlow`), Task 10 (the mount's `relight-cinematic` group), Task 8's span `relight:cinematic-parts`; R1b's `RelightFrame` (`uniforms.sourceWeights`, `uniforms.display`, `tileToModel`), `probeReads(frame)` and `bounceNode(u, reads, p, normal, iso)` (the folded scenario probes on the GPU), and for the CPU twin `KernelFrame.scenarioCube`, `trilinearCorners`, `cubeEval`, `ProbeField`; `displayNode`, `HIGHLIGHT_KNEE`; three's `LatheGeometry`, `mrt`, `instancedBufferAttribute`, `Fn`, `bool`.
-- Produces (`bulbs.ts`): `BLOOM_SHARE = 0.04`, `BULB_GLASS_ALBEDO = 0.6`, `BULB_SOURCE = { ch_end: 6, ch_centre: 7 }`, `CANDLE_OUTLINE` and `TUBE_OUTLINE` (radius and height fractions), `LAMP_OUTLINES: Record<BulbKind, …>`, `LATHE_SEGMENTS = 24`; `envelopeArea(envelope: BulbEnvelope, kind: BulbKind): number`; `envelopeCentroid(envelope: BulbEnvelope, kind: BulbKind): number`; `lampGeometry(envelope: BulbEnvelope, kind: BulbKind): BufferGeometry`; `bulbRadiancePerWeight(intensity: number, area: number): number`; `ambientAt(frame: Pick<KernelFrame, "scenarioCube">, field: ProbeField, position: Vec3): Rgb` (the glass's light on the CPU: tests and checks only); `class CrispBulbs` with `constructor(frame: RelightFrame, data: CinematicData)` (one instanced mesh per group and kind: `relight-bulbs-<group>` for candles, `relight-bulbs-ch_centre-crown` for the crown tubes), readonly `object: Group` (model frame), `dispose(): void`.
+- Produces (`bulbs.ts`): `BLOOM_SHARE = 0.04`, `glowShare` (the share in force, a uniform the composer sets from its glare), `BULB_GLASS_ALBEDO = 0.6`, `BULB_SOURCE = { ch_end: 6, ch_centre: 7 }`, `CANDLE_OUTLINE` and `TUBE_OUTLINE` (radius and height fractions), `LAMP_OUTLINES: Record<BulbKind, …>`, `LATHE_SEGMENTS = 24`; `envelopeArea(envelope: BulbEnvelope, kind: BulbKind): number`; `envelopeCentroid(envelope: BulbEnvelope, kind: BulbKind): number`; `lampGeometry(envelope: BulbEnvelope, kind: BulbKind): BufferGeometry`; `bulbRadiancePerWeight(intensity: number, area: number): number`; `ambientAt(frame: Pick<KernelFrame, "scenarioCube">, field: ProbeField, position: Vec3): Rgb` (the glass's light on the CPU: tests and checks only); `class CrispBulbs` with `constructor(frame: RelightFrame, data: CinematicData)` (one instanced mesh per group and kind: `relight-bulbs-<group>` for candles, `relight-bulbs-ch_centre-crown` for the crown tubes), readonly `object: Group` (model frame), `dispose(): void`.
 - Produces (mount): `RelightCinematic` draws the lamps at the room's placement and hands the chandeliers to the kernel's glow hiding while they are drawn (`setGlow(data.glow)`, and `[]` when they go); nothing of theirs runs on the CPU after an apply.
 
 The lamps' light already reaches every surface through the bake (the multiplier, the floor, the skins); the crisp lamps give the eye what the capture could not (decision 1): sharp, small, bright frosted glass where the capture's blown-out glow was. Each candle is a frosted candle envelope (a lathe of a candle-flame outline, 35 mm across and 70 mm tall from the package's `envelopes.candle`, a design value for Blake until the venue names its lamp), and each of the centre chandelier's seven crown tubes a smaller frosted tube (a cylinder with a rounded top, 25 mm across and 50 mm tall from `envelopes.crown`, the controller's ruling L2, a design value too); each stands upright at its triangulated position, the centroid of its glowing surface on the point the photographs fix (the table's position is the centroid of the clipped core). Frosted or opal glass glows evenly, so the envelope has one radiance over its whole surface: a convex emitter of even radiance L sends π L S through its surface S, a point of intensity I sends 4π I, so `L = 4 I / S` (for a sphere this is R1b's `I / (π r²)`) with S its kind's surface and I the lamp's own intensity per unit of its group's weight (Task 3, solved from the floor's bake with the refit's shares: a crown tube at `wCrown` of a candle's, ruling L2). One instanced mesh is drawn per group and kind. So the glass, the sheen of a lamp (Task 17), its glow and the floor all agree, and no lamp weight is assumed (decision 11): the group's source weight is the package's, times the fade, the dimming tint and the night gain (Task 6), so a lamp fading in on the warm-down passes through amber (the owner's artistic choice; an `led` group fades at constant colour). A small share of the light (`BLOOM_SHARE`, 4%, a design value) leaves the glass and is written to the composer's emission target (Task 13), which spreads it into the glow: energy is moved, never added. Unlit, the glass shows the light around it: its frosted albedo (0.6, a design value) times the isotropic light of the folded scenario probes at the lamp, read on the GPU from R1b's fold (`bounceNode` over `probeReads(frame)`, the scenario volume the frame's prepare writes after each apply). Nothing of the lamps runs on the CPU after an apply: reading the fold on the CPU (`KernelFrame.scenarioCube`) would take each sky body's light from the frame's CPU store, which R1b fills from the CPU twin at most once per body and refreshes only from the GPU's read-backs, so it would be stale and, before R1b's 8 October change, cost the twin's 4–9 ms per body every frame of a sweep (finding I2, the controller's ruling E1). `ambientAt` stays as that light's CPU twin for the tests. The dome has no crisp lamps (its bright class-4 splats are crests lit by LED pin spots).
@@ -5830,7 +6099,7 @@ import {
   DoubleSide, Group, InstancedBufferAttribute, InstancedMesh, LatheGeometry, Matrix4, Vector2, type BufferGeometry,
 } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import { Fn, bool, float, instancedBufferAttribute, mrt, vec3, vec4 } from "three/tsl";
+import { Fn, bool, float, instancedBufferAttribute, mrt, uniform, vec3, vec4 } from "three/tsl";
 import { BULB_KINDS, type BulbEnvelope, type BulbGroup, type BulbKind, type CinematicData } from "./cinematic-package.js";
 import { HIGHLIGHT_KNEE, displayNode } from "./display.js";
 import type { Vec3 } from "./relight-codec.js";
@@ -5846,6 +6115,12 @@ import { cubeEval, trilinearCorners, type KernelFrame, type ProbeField, type Rgb
 export const BLOOM_SHARE = 0.04;
 export const BULB_GLASS_ALBEDO = 0.6;
 export const BULB_SOURCE: Readonly<Record<BulbGroup, number>> = { ch_end: 6, ch_centre: 7 };
+/**
+ * The glow's share in force for every emitter (these lamps and the Moon's disc, Task 15): the composer sets it from its
+ * glare (Task 13: the design glow's BLOOM_SHARE, or the fitted CIE glare's 0.632) and restores BLOOM_SHARE when it goes.
+ * One value for the session's one relit canvas.
+ */
+export const glowShare = uniform(BLOOM_SHARE);
 const BULB_GROUPS: readonly BulbGroup[] = ["ch_end", "ch_centre"];
 type Outline = readonly (readonly [number, number])[];
 /** A frosted candle lamp's outline as (radius, height) fractions of the envelope's, base to tip; the holder hides the base. */
@@ -5935,10 +6210,10 @@ export class CrispBulbs {
           // Unlit, the frosted glass shows the isotropic light of R1b's folded scenario probes at the lamp, read on the
           // GPU where the frame's prepare wrote it: no CPU work per apply (ruling E1).
           const around = bounceNode(u, reads, position, vec3(0, 0, 1), bool(true)).scenario;
-          return vec4(displayNode(emitted.mul(1 - BLOOM_SHARE).add(around.mul(BULB_GLASS_ALBEDO)), u.display, float(HIGHLIGHT_KNEE)), 1);
+          return vec4(displayNode(emitted.mul(float(1).sub(glowShare)).add(around.mul(BULB_GLASS_ALBEDO)), u.display, float(HIGHLIGHT_KNEE)), 1);
         })();
         // The glow's share goes to the composer's emission target (Task 13); without the composer it is not drawn.
-        material.mrtNode = mrt({ emission: vec4(emitted.mul(BLOOM_SHARE), 1) });
+        material.mrtNode = mrt({ emission: vec4(emitted.mul(glowShare), 1) });
         const mesh = new InstancedMesh(geometry, material, members.length);
         mesh.name = kind === "candle" ? `relight-bulbs-${group}` : `relight-bulbs-${group}-${kind}`;
         const matrix = new Matrix4();
@@ -6188,15 +6463,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/relight/__tests__/cinematic-composer.test.ts` (create), `packages/web/src/components/scene/__tests__/RelightCinematic.test.tsx` (modify)
 
 **Interfaces:**
-- Consumes: Task 12 (`NativeFrameComposer`, `registerNativeFrameComposer`), Task 11 (the bulbs' `emission` output), Task 9 (`LightDirector.setMeasurement`), Task 5 (`FrameMeasurement`); R1b's `RelightFrame.uniforms.display` (`exposure`, `whiteBalance`), `displayNode`, `HIGHLIGHT_KNEE`, `LUMINANCE`; three's `mrt`, `output`, `Node` (a fragment-depth node over the node builder's fragment coordinate), `perspectiveDepthToViewZ`, `cameraNear`, `cameraFar`, `BlendMode`, `QuadMesh`, `RenderTarget` (`count`), `Renderer.setMRT`/`getMRT`/`compute`/`getArrayBufferAsync`, `bloom` (`three/addons/tsl/display/BloomNode.js`).
-- Produces: `MEASURE_COLUMNS = 64`, `MEASURE_ROWS = 36`, `MEASURE_EVERY = 3`, `EXPECTED_DEPTH_FAR = 1000`, `GLARE_STRENGTH = 1 / 3`, `GLARE_RADIUS = 0.35`; `type GlareNode = (emission: Node<"vec4">) => Node<"vec4">`; `type ViewListener = (camera: Camera, width: number, height: number) => void`; `designGlare: GlareNode`; `fragmentDepthSnippet(builder: object): string`, `class FragmentDepthNode extends Node<"float">`, `fragmentViewDepth: Node<"float">` (the fragment's linear view depth from its own window depth); `bloomWeightSum(radius: number): number`; `logAverage(samples: Float32Array): number`; `class CinematicComposer implements NativeFrameComposer` with `constructor(frame: RelightFrame, options?: { readonly glare?: GlareNode; readonly onMeasure?: (measurement: FrameMeasurement) => void; readonly now?: () => number })`, readonly `target: RenderTarget` (textures `output`, `emission`, `depth`), readonly `mrt: MRTNode`, `compose(renderer, scene, camera, draw, output?)`, `setAddition(node: Node<"vec3"> | null): void` (Task 14's shafts), `setViewListener(listener: ViewListener | null): void` (told the drawn view's camera and size before each composite, a capture's included), `dispose(): void`.
+- Consumes: Task 12 (`NativeFrameComposer`, `registerNativeFrameComposer`), Task 11 (the bulbs' `emission` output, `BLOOM_SHARE`, `glowShare`), Task 9 (`LightDirector.setMeasurement`), Task 5 (`FrameMeasurement`); R1b's `RelightFrame.uniforms.display` (`exposure`, `whiteBalance`), `displayNode`, `HIGHLIGHT_KNEE`, `LUMINANCE`; three's `mrt`, `output`, `Node` (a fragment-depth node over the node builder's fragment coordinate), `perspectiveDepthToViewZ`, `cameraNear`, `cameraFar`, `BlendMode`, `QuadMesh`, `RenderTarget` (`count`), `Renderer.setMRT`/`getMRT`/`compute`/`getArrayBufferAsync`, `bloom` (`three/addons/tsl/display/BloomNode.js`), `gaussianBlur` (`three/addons/tsl/display/GaussianBlurNode.js`: `getTextureNode()`, `resolutionScale`, a vec2 direction scaling the horizontal and the vertical pass, normalised coefficients from `_getCoefficients`); the frontier light study's `evidence/d3_night_vision.json` `glare.pyramid` (σ, weights).
+- Produces: `MEASURE_COLUMNS = 64`, `MEASURE_ROWS = 36`, `MEASURE_EVERY = 3`, `EXPECTED_DEPTH_FAR = 1000`, `GLARE_STRENGTH = 1 / 3`, `GLARE_RADIUS = 0.35`; `interface GlareSpread { node; setView(pixelsPerDegree); dispose() }`, `interface Glare { name: "design" | "cie"; share: number; spread(emission): GlareSpread }`; `type ViewListener = (camera: Camera, width: number, height: number) => void`; `designGlare: Glare` (the default, `BLOOM_SHARE`); `CIE_GLARE_PIXELS_PER_DEGREE = 11.25`, `CIE_GLARE_SIGMAS`, `CIE_GLARE_WEIGHTS`, `CIE_GLARE_SHARE`, `CIE_TAP_SIGMA = 2`, `blurCoefficients(sigma): number[]`, `passVariance(coefficients, step, offset): number`, `cieGlareSteps(pixelsPerDegree): [horizontal, vertical][]`, `cieGlare: Glare` (the frontier study's fit, `?glare=cie`), `glareFromSearch(search): Glare`, `pixelsPerDegree(camera, height): number`; `fragmentDepthSnippet(builder: object): string`, `class FragmentDepthNode extends Node<"float">`, `fragmentViewDepth: Node<"float">` (the fragment's linear view depth from its own window depth); `bloomWeightSum(radius: number): number`; `logAverage(samples: Float32Array): number`; `class CinematicComposer implements NativeFrameComposer` with `constructor(frame: RelightFrame, options?: { readonly glare?: Glare; readonly onMeasure?: (measurement: FrameMeasurement) => void; readonly now?: () => number })`, readonly `target: RenderTarget` (textures `output`, `emission`, `depth`), readonly `mrt: MRTNode`, `compose(renderer, scene, camera, draw, output?)`, `setAddition(node: Node<"vec3"> | null): void` (Task 14's shafts), `setViewListener(listener: ViewListener | null): void` (told the drawn view's camera and size before each composite, a capture's included), `dispose(): void`.
 - Produces (mount): `RelightCinematic` registers the composer on the canvas's renderer and feeds its measurements to the director.
 
-The main draw goes into a three-attachment half-float target (decision 6): `output` (each material's displayed colour, blended as the material blends), `emission` (the bulbs' and the Moon's glow share; every other fragment writes zero with its own alpha, so a splat in front of a bulb dims its glow exactly as it dims its colour) and `depth` (linear view depth, blended by straight alpha, so behind splats it is their expected depth; cleared to 1,000 m). The depth is the fragment's own window depth (the fragment-position builtin's z, WGSL `fragCoord.z`) turned into view depth: for a splat that is its centre's, because the splat material moves the quad's corners only in clip x and y (three 0.186 `GaussianSplat.js:1171`), whereas `positionView`, and three's `depth` node built from it (`ViewportDepthNode.js:97`), is the quad corner's (finding I5; a fix through `perspectiveDepthToViewZ(depth, …)` with three's `depth` node would carry the same corner depth). @types/three omits the builder's `getFragCoord`, so a type guard checks it at run time (no cast). The last two attachments blend by straight alpha whatever the material's own premultiplication (`BlendMode(NormalBlending)` per attachment; three's default for an MRT name without a blend mode is none). The glow is three's bloom pyramid at strength 1/3: its five levels are normalised blurs weighted 1, 0.8, 0.6, 0.4, 0.2 at radius 0 and `mix(f, 1.2 − f, radius)` otherwise, which sums to 3 at every radius, so strength 1/3 spreads exactly the emitted share and adds no light (energy conserving; the high-pass threshold is 0 with a 10⁻⁶ edge, so even a dimmed bulb glows). It is a design glow, not a model of the eye's scatter: the glare is one function of the emission (`glare`), so the frontier study's fit to the CIE disability glare function can replace it (decision 6). The composite is `output + displayNode(glow + addition)` with the output's alpha (the canvas is created with alpha: finding M7): the added light is shown with the same exposure, white balance and roll-off (knee 0.8) as every relit surface, and with nothing added it is the output exactly (the captured light's identity holds; the half-float target keeps 11 bits, far inside 1/20 of a stop). Before the composite the composer tells `setViewListener`'s listener the drawn view's camera and size, so the shafts (Task 14) march the view being drawn, a capture's included, never the walk's last frame (finding I6). A capture's glow is computed at the drawing buffer's resolution, because three's bloom sizes its pyramid there (`BloomNode.js:348-357`); the glow conserves energy in texture space, so a larger capture shows the same glow, only less finely sampled, and this is accepted (finding M13, cosmetic).
+The main draw goes into a three-attachment half-float target (decision 6): `output` (each material's displayed colour, blended as the material blends), `emission` (the bulbs' and the Moon's glow share; every other fragment writes zero with its own alpha, so a splat in front of a bulb dims its glow exactly as it dims its colour) and `depth` (linear view depth, blended by straight alpha, so behind splats it is their expected depth; cleared to 1,000 m). The depth is the fragment's own window depth (the fragment-position builtin's z, WGSL `fragCoord.z`) turned into view depth: for a splat that is its centre's, because the splat material moves the quad's corners only in clip x and y (three 0.186 `GaussianSplat.js:1171`), whereas `positionView`, and three's `depth` node built from it (`ViewportDepthNode.js:97`), is the quad corner's (finding I5; a fix through `perspectiveDepthToViewZ(depth, …)` with three's `depth` node would carry the same corner depth). @types/three omits the builder's `getFragCoord`, so a type guard checks it at run time (no cast). The last two attachments blend by straight alpha whatever the material's own premultiplication (`BlendMode(NormalBlending)` per attachment; three's default for an MRT name without a blend mode is none). The glow is three's bloom pyramid at strength 1/3: its five levels are normalised blurs weighted 1, 0.8, 0.6, 0.4, 0.2 at radius 0 and `mix(f, 1.2 − f, radius)` otherwise, which sums to 3 at every radius, so strength 1/3 spreads exactly the emitted share and adds no light (energy conserving; the high-pass threshold is 0 with a 10⁻⁶ edge, so even a dimmed bulb glows). It is a design glow, not a model of the eye's scatter: the glare is one function of the emission (`glare`), and the frontier study's fit to the CIE disability glare function is the other (decision 6; `?glare=cie` at the preview, for Blake to judge): its eleven Gaussians (σ = 0.5·2ⁱ px at 11.25 px per degree, scaled to the drawn view's own pixels per degree) are built as a cascade of three's separable blurs, each level at half the size of the one before, its tap steps solved per axis, bilinear filtering's own spread counted, so each level's variance is the fit's on both axes (`cieGlareSteps`; a single step for both axes missed by up to 18% vertically at 16 px per degree, checked 8 October), summed by the fit's weights over their total and fed the fit's share of each emitter's light (0.632; `glowShare`), so it too moves light rather than adding it. The glow is built once, so the shafts' rebuilt composite reuses it. The composite is `output + displayNode(glow + addition)` with the output's alpha (the canvas is created with alpha: finding M7): the added light is shown with the same exposure, white balance and roll-off (knee 0.8) as every relit surface, and with nothing added it is the output exactly (the captured light's identity holds; the half-float target keeps 11 bits, far inside 1/20 of a stop). Before the composite the composer tells `setViewListener`'s listener the drawn view's camera and size, so the shafts (Task 14) march the view being drawn, a capture's included, never the walk's last frame (finding I6). A capture's glow is computed at the drawing buffer's resolution, because three's bloom sizes its pyramid there (`BloomNode.js:348-357`); the glow conserves energy in texture space, so a larger capture shows the same glow, only less finely sampled, and this is accepted (finding M13, cosmetic).
 
 The eye's measurement (decision 4): every third composed canvas frame a compute pass samples the `output` attachment on a 64 × 36 grid, divides each pixel by the white balance and each luminance by the exposure in force (so the measurement is the scene's light, before the eye) and writes log2 of it; the display's roll-off stays in the measure, and since Task 21 measures the eye's anchors with this same pass, it is in both sides of the eye's correction and cancels (finding M7, ruling); one asynchronous read-back at a time returns the 2,304 values, and their mean (the log-average luminance, robust to the bulbs' highlights) goes to the director with the time its frame was drawn (not when the read-back lands, so a waiting driver can tell a fresh measurement from a stale one: finding I10). Captures measure nothing.
 
-Verified (7 October): three 0.186 `src/renderers/common/Renderer.js:1298` (`setMRT`), `:1311` (`getMRT`), `:2097` (`getArrayBufferAsync`), `:2877` (`compute`); `src/nodes/core/MRTNode.js:60-81` (outputs; `blendModes` default `{ output: MaterialBlending }`), `:107` (`setBlendMode`), `:121-125` (`getBlendMode`: an unnamed output is `NoBlending`), `:135` (`setClearColor(name, color, alpha)`), `:202-226` (`setup` matches the target's textures by name), `:243` (`mrt`); `src/renderers/common/BlendMode.js:8` (`new BlendMode(blending = NormalBlending)`); `src/renderers/webgpu/utils/WebGPUPipelineUtils.js:140-170` (each attachment's own blend from the MRT); `src/core/RenderTarget.js:148` (`count`); `src/nodes/core/PropertyNode.js:332` (`output`); `src/renderers/common/QuadMesh.js:112-118` (`render(renderer)` renders through `renderer.render`); `src/renderers/webgpu/nodes/WGSLNodeBuilder.js:1637-1641` (`getFragCoord()`: the `position` builtin `fragCoord`, returned as `fragCoord.xy`), `src/nodes/display/ViewportDepthNode.js:97` (the `depth` node from `positionView.z`), `:227-239` (`perspectiveDepthToViewZ`, reversed depth handled), `examples/jsm/objects/GaussianSplat.js:1086,1169-1171` (`clip = centerClip + vec4(offsetNdc × w, 0, 0)`), `src/nodes/tsl/TSLCore.js:39` (TSL methods live on `Node.prototype`, so a subclass's instance chains), @types/three `src/nodes/core/Node.d.ts:402` (`generate(builder, output?)`) and `src/nodes/core/IndexNode.d.ts:11` (a typed subclass `extends Node<"uint">`); `packages/web/src/components/scene/NativeCanvas.tsx:118` (`alpha: true`); R1b plan lines 4942–4945 (`DisplayUniforms { exposure; whiteBalance }`); `examples/jsm/tsl/display/BloomNode.js:86,93,100,107` (`strength`, `radius`, `threshold`, `smoothWidth` uniforms), `:125` (half resolution), `:156` (5 mips), `:348-357` (`updateBefore` sizes to the drawing buffer), `:435-444` (factors 1, 0.8, 0.6, 0.4, 0.2 through `lerpBloomFactor`), `:579-597` (`lerpBloomFactor = mix(factor, 1.2 − factor, radius)`, `bloom` export); `package.json` `"./addons/*": "./examples/jsm/*"`; `@types/three/examples/jsm/tsl/display/BloomNode.d.ts`.
+Verified (7 October): three 0.186 `src/renderers/common/Renderer.js:1298` (`setMRT`), `:1311` (`getMRT`), `:2097` (`getArrayBufferAsync`), `:2877` (`compute`); `src/nodes/core/MRTNode.js:60-81` (outputs; `blendModes` default `{ output: MaterialBlending }`), `:107` (`setBlendMode`), `:121-125` (`getBlendMode`: an unnamed output is `NoBlending`), `:135` (`setClearColor(name, color, alpha)`), `:202-226` (`setup` matches the target's textures by name), `:243` (`mrt`); `src/renderers/common/BlendMode.js:8` (`new BlendMode(blending = NormalBlending)`); `src/renderers/webgpu/utils/WebGPUPipelineUtils.js:140-170` (each attachment's own blend from the MRT); `src/core/RenderTarget.js:148` (`count`); `src/nodes/core/PropertyNode.js:332` (`output`); `src/renderers/common/QuadMesh.js:112-118` (`render(renderer)` renders through `renderer.render`); `src/renderers/webgpu/nodes/WGSLNodeBuilder.js:1637-1641` (`getFragCoord()`: the `position` builtin `fragCoord`, returned as `fragCoord.xy`), `src/nodes/display/ViewportDepthNode.js:97` (the `depth` node from `positionView.z`), `:227-239` (`perspectiveDepthToViewZ`, reversed depth handled), `examples/jsm/objects/GaussianSplat.js:1086,1169-1171` (`clip = centerClip + vec4(offsetNdc × w, 0, 0)`), `src/nodes/tsl/TSLCore.js:39` (TSL methods live on `Node.prototype`, so a subclass's instance chains), @types/three `src/nodes/core/Node.d.ts:402` (`generate(builder, output?)`) and `src/nodes/core/IndexNode.d.ts:11` (a typed subclass `extends Node<"uint">`); `packages/web/src/components/scene/NativeCanvas.tsx:118` (`alpha: true`); R1b plan lines 4942–4945 (`DisplayUniforms { exposure; whiteBalance }`); `examples/jsm/tsl/display/GaussianBlurNode.js:32` (constructor: texture, direction node, `sigma`, `resolutionScale`), `:151-158` (its targets sized by `resolutionScale` from its input), `:167` (`updateBefore` sizes from its input texture each frame), `:213` (`getTextureNode`), `:248-252` (`3 + 2σ` taps per side, offsets `direction × passDirection × invSize × i`), `:333-349` (coefficients normalised over both sides), `:393` (`gaussianBlur` takes a texture node as it is, 8 October); `examples/jsm/tsl/display/BloomNode.js:86,93,100,107` (`strength`, `radius`, `threshold`, `smoothWidth` uniforms), `:125` (half resolution), `:156` (5 mips), `:348-357` (`updateBefore` sizes to the drawing buffer), `:435-444` (factors 1, 0.8, 0.6, 0.4, 0.2 through `lerpBloomFactor`), `:579-597` (`lerpBloomFactor = mix(factor, 1.2 − factor, radius)`, `bloom` export); `package.json` `"./addons/*": "./examples/jsm/*"`; `@types/three/examples/jsm/tsl/display/BloomNode.d.ts`.
 
 - [ ] **Step 1: Write the failing tests** — create `packages/web/src/lib/relight/__tests__/cinematic-composer.test.ts`:
 
@@ -6204,8 +6479,10 @@ Verified (7 October): three 0.186 `src/renderers/common/Renderer.js:1298` (`setM
 import { MaterialBlending, NormalBlending, PerspectiveCamera, RenderTarget, Scene, Vector2, type Camera } from "three";
 import { WebGPURenderer, type MRTNode } from "three/webgpu";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { BLOOM_SHARE } from "../bulbs.js";
 import {
-  CinematicComposer, GLARE_STRENGTH, MEASURE_COLUMNS, MEASURE_ROWS, bloomWeightSum, fragmentDepthSnippet, logAverage,
+  CIE_GLARE_PIXELS_PER_DEGREE, CIE_GLARE_SHARE, CIE_GLARE_SIGMAS, CIE_TAP_SIGMA, CinematicComposer, GLARE_STRENGTH, MEASURE_COLUMNS, MEASURE_ROWS,
+  blurCoefficients, bloomWeightSum, cieGlare, cieGlareSteps, designGlare, fragmentDepthSnippet, glareFromSearch, logAverage, passVariance, pixelsPerDegree,
 } from "../cinematic-composer.js";
 import { loadRelightModelData, type RelightModelData } from "../relight-assets.js";
 import { RelightFrame } from "../relight-frame.js";
@@ -6238,6 +6515,26 @@ describe("the cinematic composer (T-639 R1d)", () => {
     for (const radius of [0, 0.35, 1]) expect(bloomWeightSum(radius)).toBeCloseTo(3, 12);
     expect(GLARE_STRENGTH * bloomWeightSum(0.35)).toBeCloseTo(1, 12);
     expect(logAverage(Float32Array.from([-1, -3]))).toBe(-2);
+  });
+
+  it("offers the frontier study's fitted CIE glare as an option: its share, and each level's σ at the view's pixels per degree", () => {
+    expect([designGlare.share, cieGlare.share]).toEqual([BLOOM_SHARE, CIE_GLARE_SHARE]);
+    expect(CIE_GLARE_SHARE).toBeCloseTo(0.632, 3);
+    const coefficients = blurCoefficients(CIE_TAP_SIGMA);
+    expect(coefficients.reduce((sum, weight, k) => sum + (k === 0 ? weight : 2 * weight), 0)).toBeCloseTo(1, 12);
+    expect([passVariance([1], 1, 0.3), passVariance([0.5, 0.25], 1, 0)].map((value) => Math.round(value * 1e12) / 1e12)).toEqual([0.21, 0.5]);
+    for (const ppd of [CIE_GLARE_PIXELS_PER_DEGREE, 30]) {
+      let horizontal = 0, vertical = 0;
+      cieGlareSteps(ppd).forEach(([across, down], level) => {
+        const source = level === 0 ? 1 : 2 ** (level - 1), size = 2 ** level;
+        horizontal += level === 0 ? passVariance(coefficients, across, 0) : passVariance(coefficients, 2 * across, 0.5) * source * source;
+        vertical += level === 0 ? passVariance(coefficients, down, 0) : 0.25 * source * source + passVariance(coefficients, down, 0) * size * size;
+        const sigma = (CIE_GLARE_SIGMAS[level] ?? 0) * ppd / CIE_GLARE_PIXELS_PER_DEGREE;
+        expect([Math.sqrt(horizontal) / sigma, Math.sqrt(vertical) / sigma].map((ratio) => Math.round(ratio * 1e6) / 1e6)).toEqual([1, 1]);
+      });
+    }
+    expect(pixelsPerDegree(new PerspectiveCamera(60), 1080)).toBeCloseTo((540 / Math.tan(Math.PI / 6)) * (Math.PI / 180), 9);
+    expect([glareFromSearch("?glare=cie"), glareFromSearch(""), glareFromSearch("?glare=other")]).toEqual([cieGlare, designGlare, designGlare]);
   });
 
   it("names its attachments and blends emission and depth by straight alpha, the output as the material does", () => {
@@ -6332,14 +6629,16 @@ Expected: FAIL — cannot find module `../cinematic-composer.js`.
 - [ ] **Step 3: The composer** — create `packages/web/src/lib/relight/cinematic-composer.ts`:
 
 ```ts
-import { Color, HalfFloatType, NormalBlending, RenderTarget, Vector2, Vector3, type Camera, type Object3D } from "three";
+import { Color, HalfFloatType, NormalBlending, PerspectiveCamera, RenderTarget, Vector2, Vector3, type Camera, type Object3D } from "three";
 import { BlendMode, MeshBasicNodeMaterial, Node, QuadMesh, StorageBufferAttribute, type ComputeNode, type MRTNode, type NodeBuilder, type WebGPURenderer } from "three/webgpu";
 import {
   Fn, If, Return, cameraFar, cameraNear, dot, float, instanceIndex, int, ivec2, log2, max, mrt, output, perspectiveDepthToViewZ,
   storage, texture, textureLoad, uint, uniform, vec3, vec4,
 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { gaussianBlur } from "three/addons/tsl/display/GaussianBlurNode.js";
 import type { NativeFrameComposer } from "../native-renderer.js";
+import { BLOOM_SHARE, glowShare } from "./bulbs.js";
 import { HIGHLIGHT_KNEE, displayNode } from "./display.js";
 import type { FrameMeasurement } from "./eye.js";
 import type { RelightFrame } from "./relight-frame.js";
@@ -6360,20 +6659,151 @@ export const GLARE_RADIUS = 0.35;
 const BLOOM_FACTORS = [1, 0.8, 0.6, 0.4, 0.2] as const;
 const MEASURE_COUNT = MEASURE_COLUMNS * MEASURE_ROWS;
 
-export type GlareNode = (emission: Node<"vec4">) => Node<"vec4">;
+/** A glare's glow of an emission, the drawn view it is sized for, and the render targets it holds. */
+export interface GlareSpread {
+  readonly node: Node<"vec4">;
+  /** The drawn view's pixels per degree (the canvas's, or a capture's), set before each composite. */
+  setView(pixelsPerDegree: number): void;
+  dispose(): void;
+}
+/** How the emission is spread (decision 6): the share of each emitter's light it takes, and the spreading itself. */
+export interface Glare {
+  readonly name: "design" | "cie";
+  readonly share: number;
+  spread(emission: Node<"vec4">): GlareSpread;
+}
 export type ViewListener = (camera: Camera, width: number, height: number) => void;
+
+/**
+ * The frontier light study's fit of CIE 135/1-6:1999's glare spread at age 40 (§e d3, 8 October): eleven Gaussians of
+ * σ = 0.5·2ⁱ px at 11.25 px per degree, reproducing its encircled energy within 0.8% of the total.
+ */
+export const CIE_GLARE_PIXELS_PER_DEGREE = 11.25;
+export const CIE_GLARE_SIGMAS: readonly number[] = [0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512];
+export const CIE_GLARE_WEIGHTS: readonly number[] = [
+  0.21806844141280843, 0.15208708662897202, 0.0962986696155163, 0.048733774370684546, 0.030108892766608327, 0.01669265042196182,
+  0.01255822222092342, 0.00898338695015865, 0.009135937813787059, 0, 0.039347685022988146,
+];
+/** The share of a point's light the fit spreads (its weights' sum; 0.514 of it leaves the point's own pixel). */
+export const CIE_GLARE_SHARE = CIE_GLARE_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
+/** three's GaussianBlurNode `sigma` for every level of the CIE glare: a 7-tap half kernel. */
+export const CIE_TAP_SIGMA = 2;
 
 /** The sum of three's bloom weights at a radius (BloomNode's lerpBloomFactor). */
 export function bloomWeightSum(radius: number): number {
   return BLOOM_FACTORS.reduce((sum, factor) => sum + factor + (1.2 - 2 * factor) * radius, 0);
 }
 
-/** R1d's design glow: three's pyramid at a third, no threshold. Replaceable by a fitted glare function (decision 6). */
-export const designGlare: GlareNode = (emission) => {
-  const node = bloom(emission, GLARE_STRENGTH, GLARE_RADIUS, 0);
-  node.smoothWidth.value = 1e-6;
-  return node;
+/** R1d's design glow, the default: three's pyramid at a third, no threshold, on the restrained 4% share (decision 6). */
+export const designGlare: Glare = {
+  name: "design",
+  share: BLOOM_SHARE,
+  spread: (emission) => {
+    const node = bloom(emission, GLARE_STRENGTH, GLARE_RADIUS, 0);
+    node.smoothWidth.value = 1e-6;
+    return { node, setView: () => undefined, dispose: () => { node.dispose(); } };
+  },
 };
+
+/** three's GaussianBlurNode coefficients at its `sigma` (its `_getCoefficients`): the centre first, normalised over both sides. */
+export function blurCoefficients(sigma: number): number[] {
+  const radius = 3 + 2 * sigma, spread = radius / 3;
+  const weights = [1];
+  let sum = 1;
+  for (let i = 1; i < radius; i += 1) {
+    const weight = Math.exp(-0.5 * i * i / (spread * spread));
+    weights.push(weight);
+    sum += 2 * weight;
+  }
+  return weights.map((weight) => weight / sum);
+}
+
+/**
+ * The variance, in the sampled texture's texels squared, of one blur pass whose taps sit at `offset + k × step` texels
+ * from a texel centre, each read with bilinear filtering (a tap a fraction f past a texel spreads f(1 − f) more).
+ */
+export function passVariance(coefficients: readonly number[], step: number, offset: number): number {
+  let variance = 0;
+  for (let k = 1 - coefficients.length; k < coefficients.length; k += 1) {
+    const at = offset + k * step, fraction = at - Math.floor(at);
+    variance += (coefficients[Math.abs(k)] ?? 0) * ((k * step) ** 2 + fraction * (1 - fraction));
+  }
+  return variance;
+}
+
+/** The step at which a growing pass variance reaches `wanted` (0 if it already does at 0), by bisection. */
+function stepFor(variance: (step: number) => number, wanted: number): number {
+  if (!(wanted > variance(0))) return 0;
+  let low = 0, high = 1;
+  while (variance(high) < wanted) high *= 2;
+  for (let n = 0; n < 60; n += 1) {
+    const middle = (low + high) / 2;
+    if (variance(middle) < wanted) low = middle;
+    else high = middle;
+  }
+  return (low + high) / 2;
+}
+
+/**
+ * Each CIE level's tap steps, [horizontal, vertical] in its own texels, so the cascade gives every level the fit's σ on
+ * both axes at a view's pixels per degree. Level 0 blurs the emission at full size. Each later level's horizontal pass
+ * reads the level before at twice its own resolution (its centre between two texels: the 2 × 2 average) and its
+ * vertical pass reads its own. Every tap is read with bilinear filtering, whose own spread `passVariance` counts, so the
+ * variances add up to the fit's exactly in this model; the energy is exact, every pass's coefficients being normalised.
+ */
+export function cieGlareSteps(pixelsPerDegree: number): (readonly [number, number])[] {
+  const coefficients = blurCoefficients(CIE_TAP_SIGMA), scale = pixelsPerDegree / CIE_GLARE_PIXELS_PER_DEGREE;
+  let horizontal = 0, vertical = 0;
+  return CIE_GLARE_SIGMAS.map((sigma, level) => {
+    const target = (sigma * scale) ** 2, source = level === 0 ? 1 : 2 ** (level - 1), size = 2 ** level;
+    const across = (step: number): number => (level === 0 ? passVariance(coefficients, step, 0) : passVariance(coefficients, 2 * step, 0.5) * source * source);
+    const down = (step: number): number => (level === 0 ? passVariance(coefficients, step, 0) : 0.25 * source * source + passVariance(coefficients, step, 0) * size * size);
+    const dx = stepFor(across, target - horizontal), dy = stepFor(down, target - vertical);
+    horizontal += across(dx);
+    vertical += down(dy);
+    return [dx, dy] as const;
+  });
+}
+
+/**
+ * The frontier study's fitted CIE glare, an option for Blake to judge at the preview (`?glare=cie`): the eleven
+ * Gaussians as a cascade of three's separable blurs, each level at half the previous one's size, summed by the fit's
+ * weights over their total, on the fit's share of each emitter's light.
+ */
+export const cieGlare: Glare = {
+  name: "cie",
+  share: CIE_GLARE_SHARE,
+  spread: (emission) => {
+    // Each level's [horizontal, vertical] steps: GaussianBlurNode scales its horizontal pass by x and its vertical by y.
+    const steps = CIE_GLARE_SIGMAS.map(() => uniform(new Vector2(1, 1)));
+    const levels: ReturnType<typeof gaussianBlur>[] = [];
+    steps.forEach((step, level) => {
+      const previous = levels[level - 1];
+      levels.push(gaussianBlur(previous === undefined ? emission : previous.getTextureNode(), step, CIE_TAP_SIGMA, { resolutionScale: level === 0 ? 1 : 0.5 }));
+    });
+    const node = levels.reduce<Node<"vec4">>((sum, level, index) => sum.add(level.mul((CIE_GLARE_WEIGHTS[index] ?? 0) / CIE_GLARE_SHARE)), vec4(0, 0, 0, 0));
+    return {
+      node,
+      setView: (pixelsPerDegree) => {
+        cieGlareSteps(pixelsPerDegree).forEach(([across, down], index) => {
+          steps[index]?.value.set(across, down);
+        });
+      },
+      dispose: () => { for (const level of levels) level.dispose(); },
+    };
+  },
+};
+
+/** `?glare=cie` shows the fitted CIE glare for Blake to judge at the preview; the design glow otherwise (decision 6). */
+export function glareFromSearch(search: string): Glare {
+  return new URLSearchParams(search).get("glare") === "cie" ? cieGlare : designGlare;
+}
+
+/** A drawn view's pixels per degree at its centre; a camera without a field of view keeps the fit's own scale. */
+export function pixelsPerDegree(camera: Camera, height: number): number {
+  if (!(camera instanceof PerspectiveCamera)) return CIE_GLARE_PIXELS_PER_DEGREE;
+  return (height / 2 / Math.tan((camera.getEffectiveFOV() * Math.PI) / 360)) * (Math.PI / 180);
+}
 
 /** The mean of log2 samples: log2 of the geometric mean luminance. */
 export function logAverage(samples: Float32Array): number {
@@ -6426,7 +6856,9 @@ export class CinematicComposer implements NativeFrameComposer {
   private readonly material: MeshBasicNodeMaterial;
   private additionNode: Node<"vec3"> | null = null;
   private viewListener: ViewListener | null = null;
-  private readonly glare: GlareNode;
+  private readonly glare: Glare;
+  /** The glow, built once for the session, so a rebuilt composite never leaks a bloom node's targets. */
+  private readonly glow: GlareSpread;
   private readonly samples = new StorageBufferAttribute(new Float32Array(MEASURE_COUNT), 1);
   private readonly measureSize = uniform(new Vector2(1, 1));
   private readonly measureExposure = uniform(1);
@@ -6437,11 +6869,13 @@ export class CinematicComposer implements NativeFrameComposer {
   private frames = 0;
   private reading = false;
 
-  constructor(frame: RelightFrame, options: { readonly glare?: GlareNode; readonly onMeasure?: (measurement: FrameMeasurement) => void; readonly now?: () => number } = {}) {
+  constructor(frame: RelightFrame, options: { readonly glare?: Glare; readonly onMeasure?: (measurement: FrameMeasurement) => void; readonly now?: () => number } = {}) {
     this.frame = frame;
     this.onMeasure = options.onMeasure ?? null;
     this.now = options.now ?? (() => performance.now());
     this.glare = options.glare ?? designGlare;
+    // Every emitter moves this glare's share of its light into the emission target (bulbs.ts; one relit canvas).
+    glowShare.value = this.glare.share;
     this.target = new RenderTarget(1, 1, { type: HalfFloatType, count: 3, depthBuffer: true });
     ["output", "emission", "depth"].forEach((name, index) => { const attachment = this.target.textures[index]; if (attachment !== undefined) attachment.name = name; });
     // Every fragment writes no glow with its own alpha, and its linear view depth; both blend by straight alpha.
@@ -6449,6 +6883,7 @@ export class CinematicComposer implements NativeFrameComposer {
     this.mrt.setBlendMode("emission", new BlendMode(NormalBlending));
     this.mrt.setBlendMode("depth", new BlendMode(NormalBlending));
     this.mrt.setClearColor("depth", new Color(EXPECTED_DEPTH_FAR, 0, 0), 0);
+    this.glow = this.glare.spread(texture(this.target.textures[1]));
     this.material = new MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, fog: false, toneMapped: false });
     this.material.name = "relight-cinematic-composite";
     this.material.colorNode = this.compositeNode();
@@ -6492,6 +6927,7 @@ export class CinematicComposer implements NativeFrameComposer {
       renderer.setMRT(previousMrt);
     }
     this.viewListener?.(camera, size.x, size.y);
+    this.glow.setView(pixelsPerDegree(camera, size.y));
     renderer.setRenderTarget(outputTarget ?? previousTarget);
     this.quad.render(renderer);
     renderer.setRenderTarget(previousTarget);
@@ -6505,11 +6941,14 @@ export class CinematicComposer implements NativeFrameComposer {
     this.material.dispose();
     this.measure.dispose();
     this.samples.dispose();
+    this.glow.dispose();
+    glowShare.value = BLOOM_SHARE;
   }
 
   private compositeNode(): Node<"vec4"> {
     const colour = texture(this.target.textures[0]);
-    const glow = this.glare(texture(this.target.textures[1])).rgb;
+    // Built once in the constructor: a composite rebuilt for the shafts reuses it (no bloom targets leak).
+    const glow = this.glow.node.rgb;
     const added = this.additionNode === null ? glow : glow.add(this.additionNode);
     // Added light goes through the same display (exposure, white balance, roll-off from 0.8); nothing added is the
     // output exactly, its alpha included (the canvas is created with alpha, finding M7).
@@ -6532,14 +6971,15 @@ export class CinematicComposer implements NativeFrameComposer {
 }
 ```
 
-- [ ] **Step 4: Mount it** — in `packages/web/src/components/scene/RelightCinematic.tsx`, add `import { CinematicComposer } from "../../lib/relight/cinematic-composer.js";` and `import { registerNativeFrameComposer } from "../../lib/native-renderer.js";`, and directly after the bulbs' effect add:
+- [ ] **Step 4: Mount it** — in `packages/web/src/components/scene/RelightCinematic.tsx`, add `import { CinematicComposer, glareFromSearch } from "../../lib/relight/cinematic-composer.js";` and `import { registerNativeFrameComposer } from "../../lib/native-renderer.js";`, and directly after the bulbs' effect add:
 
 ```tsx
   // Task 14's shafts read the composer; until then it is written only (`noUnusedLocals` refuses an unread binding).
   const [, setComposer] = useState<CinematicComposer | null>(null);
   useEffect(() => {
     if (frame === null || director === null || data === null || !isShadowRenderer(gl)) return;
-    const created = measureRelight("relight:cinematic-parts", () => new CinematicComposer(frame, { onMeasure: (measurement) => { director.setMeasurement(measurement); } }));
+    // `?glare=cie` shows the fitted CIE glare for Blake to judge; the design glow otherwise (this mount is preview-only).
+    const created = measureRelight("relight:cinematic-parts", () => new CinematicComposer(frame, { glare: glareFromSearch(window.location.search), onMeasure: (measurement) => { director.setMeasurement(measurement); } }));
     const release = registerNativeFrameComposer(gl, created);
     setComposer(created);
     return () => {
@@ -6555,7 +6995,7 @@ export class CinematicComposer implements NativeFrameComposer {
 - [ ] **Step 5: Run the tests**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/cinematic-composer.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/components/scene/__tests__/RelightCinematic.test.tsx`
 Expected: PASS, 4 tests.
@@ -6871,15 +7311,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/relight/__tests__/window-view.test.ts` (create), `packages/web/src/lib/relight/__tests__/sky-panels.test.ts` (modify)
 
 **Interfaces:**
-- Consumes: Task 5 (`LuminanceCalibration`, `CAPTURE_CALIBRATION`), Task 6 (`SkyLight`, `cityLevel`), Task 8 (`CinematicData.windowRadiance`), Task 9 (`DisplayedLight`, `LightDirector.onDisplayed`, `DirectorCinematic.city`), Task 11 (`BLOOM_SHARE`), Task 13 (the emission target); R1b Task 6's `lib/moon.ts` (amendment A3 as applied: `MOON_ANGULAR_RADIUS`, `MOON_CCT`, `MoonPosition`); R1b's `WindowModel` (`frame.x0`, `x1`, `sill`, `top`, `y0`, `xBearing`, `horizon`), `sunAzimuthElevation`, `horizonAt`, `sunDirection`, `cctShift`, `skyPanelWindows`, `skyPanelGeometry`, `displayNode`, `HIGHLIGHT_KNEE`, `LUMINANCE`, `measureRelight`; Task 9's `cinematic-light.ts`; three's `attribute`, `positionLocal`, `cameraPosition` (updated on every render), `textureLoad`, `DataTexture`.
-- Produces (`window-view.ts`): `FACADE_AZIMUTH = 284.3`, `FACADE_ALBEDO = 0.3`, `FACADE_SKY_VIEW = 0.35`, `FACADE_ROOFLINE` (`[[200, 8.2], [255, 10.35], [292, 13.7]]`), `CITY_FACADE_LUMINANCE = 1`, `SKYGLOW_LUMINANCE = 0.006`, `CITY_CCT = 4000`, `VIEW_POINT_DISTANCE = 2`, `VIEW_POINT_HEIGHT = 1.6`, `EARTHSHINE = 3e-4`; `facadeRoofline(azimuth: number): number`; `facadeSunCosine(position: SolarPosition): number` (0 unless the body lights the facade); `windowSkyFraction(window: WindowModel, cells?: number): number`; `cityColour(daylight: Rgb): Rgb` (luminance 1); `cityWindowWeights(windows: readonly WindowModel[], windowRadiance: readonly number[], skyFractions: readonly number[], calibration: LuminanceCalibration, daylight: Rgb): Rgb[]`; `moonDiscRadiance(moon: MoonPosition, calibration: LuminanceCalibration): number` (the lit part's radiance, frame units); `interface WindowView { readonly sky: readonly Rgb[]; readonly facade: readonly Rgb[]; readonly moonDisc: Rgb; readonly moonDir: Vec3; readonly sunDir: Vec3; readonly moonUp: boolean }`; `interface WindowViewModel { view(light: SkyLight, captured: boolean): WindowView }` (the R2 and frontier hook); `class ClearSkyWindowView implements WindowViewModel` with `constructor(inputs: LightInputs, windows: readonly WindowModel[], windowRadiance: readonly number[], calibration: LuminanceCalibration)`, readonly `skyFractions: readonly number[]`; `class WindowViewPanels` with `constructor(frame: RelightFrame)`, readonly `material`, readonly `geometry`, `show(view: WindowView): void`, `setPlacement(sceneToModel: Matrix4): void` (the eye is three's `cameraPosition` of the view being drawn, taken to the model frame in the shader), `dispose(): void`.
+- Consumes: Task 5 (`LuminanceCalibration`, `CAPTURE_CALIBRATION`), Task 6 (`SkyLight`, `cityLevel`), Task 8 (`CinematicData.windowRadiance`), Task 9 (`DisplayedLight`, `LightDirector.onDisplayed`, `DirectorCinematic.city`), Task 11 (`glowShare`), Task 13 (the emission target); R1b Task 6's `lib/moon.ts` (amendment A3 as applied: `MOON_ANGULAR_RADIUS`, `MOON_CCT`, `MoonPosition`); R1b's `WindowModel` (`frame.x0`, `x1`, `sill`, `top`, `y0`, `xBearing`, `horizon`), `sunAzimuthElevation`, `horizonAt`, `sunDirection`, `cctShift`, `skyPanelWindows`, `skyPanelGeometry`, `displayNode`, `HIGHLIGHT_KNEE`, `LUMINANCE`, `measureRelight`; Task 9's `cinematic-light.ts`; three's `attribute`, `positionLocal`, `cameraPosition` (updated on every render), `textureLoad`, `DataTexture`.
+- Produces (`window-view.ts`): `FACADE_AZIMUTH = 284.3`, `FACADE_ALBEDO = 0.3`, `FACADE_SKY_VIEW = 0.24`, `FRONT_SUN_FACADE_SKY = 0.25`, `FACADE_ROOFLINE` (`[[200, 8.2], [255, 10.35], [292, 13.7]]`), `CITY_FACADE_LUMINANCE = 1`, `SKYGLOW_LUMINANCE = 0.006`, `CITY_CCT = 3830`, `VIEW_POINT_DISTANCE = 2`, `VIEW_POINT_HEIGHT = 1.6`, `EARTHSHINE = 3e-4`; `facadeRoofline(azimuth: number): number`; `facadeSunCosine(position: SolarPosition): number` (0 unless the body lights the facade); `facadeSkyFactor(sun: { azimuth; elevation } | null): number` (the facade's share of a uniform sky's light: 1, down to `FRONT_SUN_FACADE_SKY` with the Sun high in front of the windows); `windowSkyFraction(window: WindowModel, cells?: number): number`; `cityColour(daylight: Rgb): Rgb` (luminance 1); `cityWindowWeights(windows: readonly WindowModel[], windowRadiance: readonly number[], skyFractions: readonly number[], calibration: LuminanceCalibration, daylight: Rgb): Rgb[]`; `moonDiscRadiance(moon: MoonPosition, calibration: LuminanceCalibration): number` (the lit part's radiance, frame units); `interface WindowView { readonly sky: readonly Rgb[]; readonly facade: readonly Rgb[]; readonly moonDisc: Rgb; readonly moonDir: Vec3; readonly sunDir: Vec3; readonly moonUp: boolean }`; `interface WindowViewModel { view(light: SkyLight, captured: boolean): WindowView }` (the R2 and frontier hook); `class ClearSkyWindowView implements WindowViewModel` with `constructor(inputs: LightInputs, windows: readonly WindowModel[], windowRadiance: readonly number[], calibration: LuminanceCalibration)`, readonly `skyFractions: readonly number[]`; `class WindowViewPanels` with `constructor(frame: RelightFrame)`, readonly `material`, readonly `geometry`, `show(view: WindowView): void`, `setPlacement(sceneToModel: Matrix4): void` (the eye is three's `cameraPosition` of the view being drawn, taken to the model frame in the shader), `dispose(): void`.
 - Produces (mount): `RelightWindowView({ frame, director, data, transform })` replaces R1b's sky panels while the cinematic package is in use (the provider draws R1b's panels otherwise); the provider gives the director the city's light (`cityWindowWeights` and `windowSkyFraction`, which `cinematic-light.ts` exports, so the provider still imports none of the cinematic light: finding B15).
 
-Decision 9. Each window shows what stands beyond it: below that window's measured horizon (R1a's per-window table, the same that gates the Sun) the facade across Glassford Street, above it the sky, and the Moon's disc only where the Moon stands above the facade's roofline. The panel's values come from the light the room actually receives through that window, so the view and the light agree: the window's mean radiance is its weight times the package's window radiance (Task 3; a matte surface's displayed value is π times its radiance), split between the sky and the facade by the window's sky fraction (the share of its view above the horizon, from 2 m inside at eye height, by solid angle; the capture-lighting audit measured 0.17–0.45) and a facade model: a Lambertian sandstone wall facing 284.3° (albedo 0.3), lit by its share of the sky (0.35 of it: half the dome, less the hall; a design value), by the Sun or the Moon once either clears the hall's roof as seen from the facade (the audit's sunlit hours give the roofline, about 8° at azimuth 200° to 14° at 292°), and by street lighting at night (about 1 cd/m², the frontier study's §b3 assumption; the evening Matterport stations can measure it). If a model term would exceed the window's measured light, the sky takes none and the facade keeps the window's mean. The facade is lit by each body slot's own direction and colour, so during a cross-fade (Task 9's two slots) the light on it is the light the room receives (finding M3). The sky's gentle brightening toward its horizon (×1.1 there to ×0.9 forty degrees up, centred on ×1) is a design choice: it moves the drawn sky's mean by a few per cent from the admitted light, within the 10% the gradient spans (finding M3, accepted). The city's light also enters the room (Task 6's `extras.city`): each window's mean at full night is the facade's street light over the facade's share of the view plus the skyglow (6 mcd/m²) over the sky's, in the frame's units through the calibration, coloured as a 4,000 K LED; it fades in through dusk with `cityLevel`.
+Decision 9. Each window shows what stands beyond it: below that window's measured horizon (R1a's per-window table, the same that gates the Sun) the facade across Glassford Street, above it the sky, and the Moon's disc only where the Moon stands above the facade's roofline. The panel's values come from the light the room actually receives through that window, so the view and the light agree: the window's mean radiance is its weight times the package's window radiance (Task 3; a matte surface's displayed value is π times its radiance), split between the sky and the facade by the window's sky fraction (the share of its view above the horizon, from 2 m inside at eye height, by solid angle; the capture-lighting audit measured 0.17–0.45) and a facade model: a Lambertian sandstone wall facing 284.3° (albedo 0.3), lit by its share of the sky (0.24 of it: the sky above 25° in its front half, the frontier study's d2 geometry; and with the Sun high in front of the windows only a quarter of that, because the facade then faces the dim anti-solar sky: d2 measured the facade at 0.018 of the windows' 35–55° band at the capture's Sun, where a uniform sky gives 0.3 × 0.24 = 0.072; a shape fitted to that one scene, its twilight scenes reading 0.09–0.10), by the Sun or the Moon once either clears the hall's roof as seen from the facade (the audit's sunlit hours give the roofline, about 8° at azimuth 200° to 14° at 292°), and by street lighting at night (about 1 cd/m², the frontier study's §b3 assumption; the evening Matterport stations can measure it). If a model term would exceed the window's measured light, the sky takes none and the facade keeps the window's mean. The facade is lit by each body slot's own direction and colour, so during a cross-fade (Task 9's two slots) the light on it is the light the room receives (finding M3). The sky's gentle brightening toward its horizon (×1.1 there to ×0.9 forty degrees up, centred on ×1) is a design choice: it moves the drawn sky's mean by a few per cent from the admitted light, within the 10% the gradient spans (finding M3, accepted). The city's light also enters the room (Task 6's `extras.city`): each window's mean at full night is the facade's street light over the facade's share of the view plus the skyglow (6 mcd/m²) over the sky's, in the frame's units through the calibration (with the measured k_abs, 121.8, its weight against the lamps is 2.26 times lower than the withdrawn 54 gave), coloured as the study measured the street-lit facade, about 3,830 K (Planckian: below the daylight locus's 4,000 K); it fades in through dusk with `cityLevel`. The Moon's disc takes the Moon's colour at its elevation (Task 6's `moonBeamShift`).
 
 The Moon's disc is drawn at its true angular radius and phase: on the visible hemisphere, a point is lit where its normal faces the Sun (the Sun's direction from the Moon is the Sun's from the Earth to 0.15°), softened over ±0.03 and lifted by a faint earthshine (3 × 10⁻⁴ of full). Its lit part's radiance is the Moon's illuminance over the lit part's solid angle (about 4,000 cd/m² at full; Krisciunas & Schaefer's illuminance already falls with the phase, so dividing by the whole disc would count the phase twice, finding I7), through the calibration; the bloom's share of it goes to the emission target, so the Moon glows in the night exactly as the bulbs do. The sky's own values are flat in colour with a gentle brightening toward its horizon. All of it is behind one interface (`WindowViewModel`): R2's sky from the weather and the frontier study's spectral sky-view and facade bands replace `ClearSkyWindowView` without touching the panels. The panels find the eye with three's `cameraPosition`, which three sets for every render, so a capture shows its own view through the windows, not the walk's last frame (finding I6).
 
-Verified (7 October; R1b's lines re-read on 8 October): R1b plan lines 2133 (`WindowFrame`: `x0`, `x1`, `depth`, `sill`, `top`, `y0`, `xBearing`; the room is y > y0), 2214 (`WindowModel.horizon`, 360 entries), 2257–2262 (`sunAzimuthElevation(dir, xBearing)`: compass azimuth `xBearing − atan2(dy, dx)`, elevation `asin(dz)`), 2265 (`horizonAt`), 4229–4234 (`SolarPosition { azimuth; elevation }`), 4497–4504 (`MoonPosition`: `illuminatedFraction`, `illuminance`), 9267–9300 (`skyPanelWindows`, `skyPanelGeometry`: four vertices per window, `uv.y` 0 at the sill), 9313–9326 (`RelightSkyPanels` placement: `const [px, py, pz] = transform.position; const [rx, ry, rz] = transform.rotation;`), 9468 (the provider's `RelightSkyPanels` line), 5470 (`cctShift`); three 0.186 `src/nodes/accessors/Camera.js` (`cameraPosition`, a uniform three updates for every render's camera); the repo's `eslint.config.js` (`eqeqeq: ["error", "always"]`, so `== null` is refused: finding B6); `D:/claude/splat-quality-20260923/capture-lighting-audit/out/view_sky_fraction.json` (W1 0.39, W2 0.27, W3 0.174, W4 0.393, W5 0.447); `D:/claude/splat-quality-20260923/weather-daylight/opposite_facade.json` (the facade's sunlit hours: 21 March 13:30–17:10, 21 June 14:10–20:00, 21 September 14:20–18:00, 21 December 13:40–13:50) and the Sun's positions at those ends by the proof's NOAA algorithm (azimuth 199.7°/32.9° and 254.7°/10.6° in March; 291.7°/13.7° at the June end; 199.6°/8.7° to 201.9°/8.2° in December); `D:/claude/real-hall/frontier/light/proposal.md` §b3 (the facade fills 55–83% of each view; street-lit facade about 1 cd/m²; skyglow 6 mcd/m²), §f (LED about 4,000 K); three 0.186 `src/nodes/core/AttributeNode.js` (`attribute(name, type)`), `src/nodes/accessors/Position.js` (`positionLocal`), `src/nodes/accessors/TextureNode.js:1034` (`textureLoad`).
+Verified (7 October; R1b's lines re-read on 8 October): R1b plan lines 2133 (`WindowFrame`: `x0`, `x1`, `depth`, `sill`, `top`, `y0`, `xBearing`; the room is y > y0), 2214 (`WindowModel.horizon`, 360 entries), 2257–2262 (`sunAzimuthElevation(dir, xBearing)`: compass azimuth `xBearing − atan2(dy, dx)`, elevation `asin(dz)`), 2265 (`horizonAt`), 4229–4234 (`SolarPosition { azimuth; elevation }`), 4497–4504 (`MoonPosition`: `illuminatedFraction`, `illuminance`), 9267–9300 (`skyPanelWindows`, `skyPanelGeometry`: four vertices per window, `uv.y` 0 at the sill), 9313–9326 (`RelightSkyPanels` placement: `const [px, py, pz] = transform.position; const [rx, ry, rz] = transform.rotation;`), 9468 (the provider's `RelightSkyPanels` line), 5470 (`cctShift`); three 0.186 `src/nodes/accessors/Camera.js` (`cameraPosition`, a uniform three updates for every render's camera); the repo's `eslint.config.js` (`eqeqeq: ["error", "always"]`, so `== null` is refused: finding B6); `D:/claude/splat-quality-20260923/capture-lighting-audit/out/view_sky_fraction.json` (W1 0.39, W2 0.27, W3 0.174, W4 0.393, W5 0.447); `D:/claude/splat-quality-20260923/weather-daylight/opposite_facade.json` (the facade's sunlit hours: 21 March 13:30–17:10, 21 June 14:10–20:00, 21 September 14:20–18:00, 21 December 13:40–13:50) and the Sun's positions at those ends by the proof's NOAA algorithm (azimuth 199.7°/32.9° and 254.7°/10.6° in March; 291.7°/13.7° at the June end; 199.6°/8.7° to 201.9°/8.2° in December); `D:/claude/real-hall/frontier/light/proposal.md` §b3 (the facade fills 55–83% of each view; street-lit facade about 1 cd/m²; skyglow 6 mcd/m²), §f (LED about 4,000 K; its §e d2 of 8 October measured the street-lit facade at about 3,830 K, `CITY_CCT`); three 0.186 `src/nodes/core/AttributeNode.js` (`attribute(name, type)`), `src/nodes/accessors/Position.js` (`positionLocal`), `src/nodes/accessors/TextureNode.js:1034` (`textureLoad`).
 
 - [ ] **Step 1: Write the failing tests** — create `packages/web/src/lib/relight/__tests__/window-view.test.ts`:
 
@@ -6893,8 +7333,8 @@ import { loadRelightModelData, type RelightModelData } from "../relight-assets.j
 import { RelightFrame } from "../relight-frame.js";
 import { capturedLight } from "../light-director.js";
 import {
-  CITY_FACADE_LUMINANCE, ClearSkyWindowView, FACADE_ALBEDO, SKYGLOW_LUMINANCE, cityColour, cityWindowWeights, facadeRoofline,
-  facadeSunCosine, moonDiscRadiance, windowSkyFraction,
+  CITY_FACADE_LUMINANCE, ClearSkyWindowView, FACADE_ALBEDO, FACADE_SKY_VIEW, FRONT_SUN_FACADE_SKY, SKYGLOW_LUMINANCE, cityColour,
+  cityWindowWeights, facadeRoofline, facadeSkyFactor, facadeSunCosine, moonDiscRadiance, windowSkyFraction,
 } from "../window-view.js";
 import { buildTestPackage } from "./relight-test-package.js";
 
@@ -6915,6 +7355,13 @@ describe("the view through the windows (T-639 R1d)", () => {
     expect(facadeSunCosine({ azimuth: 100, elevation: 40 })).toBe(0);
   });
 
+  it("dims the facade's sky with the Sun high in front of the windows, as the frontier study measured (d2)", () => {
+    expect(FACADE_ALBEDO * FACADE_SKY_VIEW * facadeSkyFactor({ azimuth: 121.08, elevation: 44.53 })).toBeCloseTo(0.018, 12);
+    expect(facadeSkyFactor({ azimuth: 121.08, elevation: 44.53 })).toBe(FRONT_SUN_FACADE_SKY);
+    expect([facadeSkyFactor(null), facadeSkyFactor({ azimuth: 250, elevation: 30 }), facadeSkyFactor({ azimuth: 121, elevation: -2 })]).toEqual([1, 1, 1]);
+    expect(facadeSkyFactor({ azimuth: 121, elevation: 5 })).toBeCloseTo(1 - (1 - FRONT_SUN_FACADE_SKY) / 2, 12);
+  });
+
   it("measures each window's sky by its horizon: all of it under an open sky, none behind a wall", () => {
     const frame = new RelightFrame(data);
     const first = frame.model.windows[0];
@@ -6926,7 +7373,7 @@ describe("the view through the windows (T-639 R1d)", () => {
     expect(low).toBeGreaterThan(high);
   });
 
-  it("brings the street-lit facade and the skyglow into the room at night, as a 4,000 K light", () => {
+  it("brings the street-lit facade and the skyglow into the room at night, as the measured 3,830 K light", () => {
     const frame = new RelightFrame(data);
     const radiance = [1, 2, 3, 4, 5], fractions = [0.4, 0.3, 0.2, 0.4, 0.45];
     const weights = cityWindowWeights(frame.model.windows, radiance, fractions, CAPTURE_CALIBRATION, frame.inputs.daylightColour);
@@ -6939,9 +7386,9 @@ describe("the view through the windows (T-639 R1d)", () => {
   it("shines the Moon's lit part with its illuminance over the lit part's solid angle, counting the phase once", () => {
     const omega = Math.PI * (MOON_ANGULAR_RADIUS * Math.PI / 180) ** 2;
     const full = { azimuth: 139, elevation: 32, distanceKm: 384400, phaseAngle: 0, illuminatedFraction: 1, illuminance: 0.25 };
-    expect(moonDiscRadiance(full, CAPTURE_CALIBRATION)).toBeCloseTo(0.25 / omega / 54, 9);
+    expect(moonDiscRadiance(full, CAPTURE_CALIBRATION)).toBeCloseTo(0.25 / omega / CAPTURE_CALIBRATION.cdPerUnit, 9);
     const half = { ...full, phaseAngle: 90, illuminatedFraction: 0.5, illuminance: 0.02 };
-    expect(moonDiscRadiance(half, CAPTURE_CALIBRATION)).toBeCloseTo(0.02 / (omega * 0.5) / 54, 9);
+    expect(moonDiscRadiance(half, CAPTURE_CALIBRATION)).toBeCloseTo(0.02 / (omega * 0.5) / CAPTURE_CALIBRATION.cdPerUnit, 9);
   });
 
   it("splits each window's light between the sky and the facade so the view's mean is the light it admits", () => {
@@ -6999,15 +7446,15 @@ import {
   select, smoothstep, sqrt, textureLoad, uniform, uniformArray, vec3, vec4,
 } from "three/tsl";
 import { cityLevel, type LightInputs, type SkyLight } from "../light-setting.js";
-import { MOON_ANGULAR_RADIUS, MOON_CCT, type MoonPosition } from "../moon.js";
+import { MOON_ANGULAR_RADIUS, type MoonPosition } from "../moon.js";
 import { sunDirection, type SolarPosition } from "../sun.js";
-import { BLOOM_SHARE } from "./bulbs.js";
-import { cctShift } from "./daylight.js";
+import { glowShare } from "./bulbs.js";
 import { HIGHLIGHT_KNEE, displayNode } from "./display.js";
 import type { LuminanceCalibration } from "./eye.js";
 import type { Vec3 } from "./relight-codec.js";
 import type { RelightFrame } from "./relight-frame.js";
 import { LUMINANCE, horizonAt, sunAzimuthElevation, type Rgb, type WindowModel } from "./relight-kernel.js";
+import { moonBeamShift, planckShift } from "./sky-colour.js";
 import { skyPanelGeometry, skyPanelWindows } from "./sky-panels.js";
 
 /**
@@ -7017,14 +7464,21 @@ import { skyPanelGeometry, skyPanelWindows } from "./sky-panels.js";
  */
 export const FACADE_AZIMUTH = 284.3;
 export const FACADE_ALBEDO = 0.3;
-/** The facade's share of the sky's light: half the dome, less the hall (a design value). */
-export const FACADE_SKY_VIEW = 0.35;
+/** The facade's view of the sky: the sky above 25° in its front half (the frontier light study's d2 geometry, 8 October). */
+export const FACADE_SKY_VIEW = 0.24;
+/**
+ * With the Sun high in front of the windows the facade, facing them across the street, sees only the dim anti-solar sky:
+ * d2 measured it at 0.018 of the windows' 35–55° band at the capture's Sun (121°, 44.5°), a quarter of a uniform sky's
+ * 0.072 (albedo 0.3 × view 0.24). A shape fitted to that one scene; d2's sunset and blue hour read 0.09–0.10.
+ */
+export const FRONT_SUN_FACADE_SKY = 0.25;
 /** [compass azimuth, elevation]: the Sun must stand above this to light the facade over the hall's roof. */
 export const FACADE_ROOFLINE: readonly (readonly [number, number])[] = [[200, 8.2], [255, 10.35], [292, 13.7]];
 /** The street-lit facade at night, cd/m² (assumed; the evening stations can measure it). */
 export const CITY_FACADE_LUMINANCE = 1;
 export const SKYGLOW_LUMINANCE = 0.006;
-export const CITY_CCT = 4000;
+/** The street-lit facade's colour: warm sandstone under 4,000 K LEDs (the frontier light study's d2, 8 October). */
+export const CITY_CCT = 3830;
 export const VIEW_POINT_DISTANCE = 2;
 export const VIEW_POINT_HEIGHT = 1.6;
 export const EARTHSHINE = 3e-4;
@@ -7055,6 +7509,17 @@ export function facadeSunCosine(position: SolarPosition): number {
   return facing > 0 && position.elevation > facadeRoofline(position.azimuth) ? facing : 0;
 }
 
+/**
+ * The facade's share of a uniform sky's light with the Sun where it is: 1 with the Sun behind the hall, below the horizon
+ * or absent; FRONT_SUN_FACADE_SKY with it 10° or more up and within 60° of the windows' facing, by linear ramps between.
+ */
+export function facadeSkyFactor(sun: { readonly azimuth: number; readonly elevation: number } | null): number {
+  if (sun === null) return 1;
+  const off = Math.abs((((sun.azimuth - (FACADE_AZIMUTH - 180)) % 360) + 540) % 360 - 180);
+  const front = Math.min(Math.max((90 - off) / 30, 0), 1) * Math.min(Math.max(sun.elevation / 10, 0), 1);
+  return 1 - (1 - FRONT_SUN_FACADE_SKY) * front;
+}
+
 /** The share of a window's view above its horizon from 2 m inside at eye height, by solid angle (each cell's cos θ / r²). */
 export function windowSkyFraction(window: WindowModel, cells = 32): number {
   const { x0, x1, sill, top, y0, xBearing } = window.frame;
@@ -7074,9 +7539,9 @@ export function windowSkyFraction(window: WindowModel, cells = 32): number {
   return total > 0 ? sky / total : 0;
 }
 
-/** A 4,000 K LED's colour in the frame's terms, luminance 1. */
+/** The street-lit facade's colour in the frame's terms (CITY_CCT, Planckian: below the daylight locus), luminance 1. */
 export function cityColour(daylight: Rgb): Rgb {
-  const shift = cctShift(CITY_CCT);
+  const shift = planckShift(CITY_CCT);
   const colour: Rgb = [daylight[0] * shift[0], daylight[1] * shift[1], daylight[2] * shift[2]];
   return times(colour, 1 / Math.max(luminanceOf(colour), 1e-12));
 }
@@ -7128,7 +7593,6 @@ export class ClearSkyWindowView implements WindowViewModel {
   private readonly inputs: LightInputs;
   private readonly windowRadiance: readonly number[];
   private readonly calibration: LuminanceCalibration;
-  private readonly moonColour: Rgb;
   private readonly cityLight: readonly Rgb[];
   private readonly xBearing: number;
 
@@ -7138,10 +7602,7 @@ export class ClearSkyWindowView implements WindowViewModel {
     this.windowRadiance = windowRadiance;
     this.calibration = calibration;
     this.skyFractions = windows.map((window) => windowSkyFraction(window));
-    const shift = cctShift(MOON_CCT), daylight = inputs.daylightColour;
-    const colour: Rgb = [daylight[0] * shift[0], daylight[1] * shift[1], daylight[2] * shift[2]];
-    this.moonColour = times(colour, 1 / Math.max(luminanceOf(colour), 1e-12));
-    const street = cityColour(daylight);
+    const street = cityColour(inputs.daylightColour);
     this.cityLight = windows.map(() => times(street, CITY_FACADE_LUMINANCE / Math.max(calibration.cdPerUnit, 1e-12)));
   }
 
@@ -7153,14 +7614,16 @@ export class ClearSkyWindowView implements WindowViewModel {
     const sunOnFacade = onFacade(setting.sunDir, setting.sunRgb);
     const moonOnFacade = onFacade(setting.moonDir, setting.moonRgb);
     const city = captured ? 0 : cityLevel(sun.elevation);
+    // The facade's share of the sky's light, less with the Sun high in front of the windows (the first slot's body).
+    const facadeSky = FACADE_ALBEDO * FACADE_SKY_VIEW * facadeSkyFactor(captured || setting.sunDir === null ? null : sunAzimuthElevation(setting.sunDir, this.xBearing));
     const sky: Rgb[] = [], facade: Rgb[] = [];
     for (let k = 0; k < WINDOWS; k += 1) {
       const f = this.skyFractions[k] ?? 0;
       const mean = times(setting.weights[k] ?? [0, 0, 0], Math.PI * (this.windowRadiance[k] ?? 0));
       const direct = plus(times(plus(sunOnFacade, moonOnFacade), FACADE_ALBEDO), times(this.cityLight[k] ?? [0, 0, 0], city));
-      const skyOf = (c: 0 | 1 | 2): number => Math.max(mean[c] - (1 - f) * direct[c], 0) / Math.max(f + (1 - f) * FACADE_ALBEDO * FACADE_SKY_VIEW, 1e-12);
+      const skyOf = (c: 0 | 1 | 2): number => Math.max(mean[c] - (1 - f) * direct[c], 0) / Math.max(f + (1 - f) * facadeSky, 1e-12);
       const skyValue: Rgb = [skyOf(0), skyOf(1), skyOf(2)];
-      const model = plus(times(skyValue, FACADE_ALBEDO * FACADE_SKY_VIEW), direct);
+      const model = plus(times(skyValue, facadeSky), direct);
       // When the model's own light exceeds what the window admits, the sky takes none and the facade the window's mean
       // (finding M3: the sky is zeroed too, so the view's mean stays the admitted light).
       const over = f < 1 && f * luminanceOf(skyValue) + (1 - f) * luminanceOf(model) > luminanceOf(mean) * (1 + 1e-9);
@@ -7169,9 +7632,12 @@ export class ClearSkyWindowView implements WindowViewModel {
     }
     const site = this.inputs.site;
     const moonUp = !captured && moon.elevation > 0;
+    // The disc in the Moon's colour at its elevation, luminance 1 (Task 6: reddening toward the horizon).
+    const beam = moonBeamShift(moon.elevation), daylight = this.inputs.daylightColour;
+    const tint: Rgb = [daylight[0] * beam[0], daylight[1] * beam[1], daylight[2] * beam[2]];
     return {
       sky, facade,
-      moonDisc: times(this.moonColour, moonUp ? moonDiscRadiance(moon, this.calibration) : 0),
+      moonDisc: times(tint, moonUp ? moonDiscRadiance(moon, this.calibration) / Math.max(luminanceOf(tint), 1e-12) : 0),
       moonDir: sunDirection(moon, site), sunDir: sunDirection(sun, site), moonUp,
     };
   }
@@ -7231,8 +7697,8 @@ export class WindowViewPanels {
     const base = select(above, skyValue, facadeValues.element(k));
     this.material = new MeshBasicNodeMaterial({ side: DoubleSide, fog: false, toneMapped: false });
     this.material.name = "relight-window-view";
-    this.material.colorNode = vec4(displayNode(select(onDisc, disc.mul(1 - BLOOM_SHARE), base), frame.uniforms.display, float(HIGHLIGHT_KNEE)), 1);
-    this.material.mrtNode = mrt({ emission: vec4(select(onDisc, disc.mul(BLOOM_SHARE), vec3(0)), 1) });
+    this.material.colorNode = vec4(displayNode(select(onDisc, disc.mul(float(1).sub(glowShare)), base), frame.uniforms.display, float(HIGHLIGHT_KNEE)), 1);
+    this.material.mrtNode = mrt({ emission: vec4(select(onDisc, disc.mul(glowShare), vec3(0)), 1) });
   }
 
   show(view: WindowView): void {
@@ -7336,7 +7802,7 @@ with (through the loaded entry, so the provider imports none of the cinematic li
 - [ ] **Step 6: Run the tests**
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/window-view.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 Run: `pnpm --filter @omnitwin/web exec vitest run src/lib/relight/__tests__/sky-panels.test.ts`
 Expected: PASS, the Task 0 count plus 1.
@@ -7367,7 +7833,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (`display.ts`): `DisplayParams.scotopic?: number`; `DisplayUniforms.scotopic?: UniformNode<"float", number>` and `DisplayUniforms.linear?: UniformNode<"float", number>` (Task 18's probes); `NIGHT_TINT: Rgb` (luminance 1); `scotopicLuminance(rgb: Rgb): number`; `SCOTOPIC_WHITE`; `nightVision(rgb: Rgb, amount: number): Rgb` (CPU) and `nightVisionNode(rgb: Node<"vec3">, amount: Node<"float">): Node<"vec3">` (TSL; the frontier study's upgrade point); `displayColour` and `displayNode` apply it first when the amount is present.
 - Produces (frame): the display uniforms gain `scotopic` (0) and `linear` (0); R1b's `writeDisplay`, which `apply`, R1b's `refineDisplay` and Task 7's `setDisplay` all call, writes `scotopic` (0 when absent).
 
-Decision 4: the shift follows the absolute luminance the eye adapts to (Task 5's `scotopicAmount`, through the capture's calibration), never the preset, so the captured light and the lamp-lit night (about 9 and 7 cd/m²) are untouched and only dimmed lamps, the blue hour without lamps and moonlight go toward the rods. The stage is Thompson, Shirley & Ferwerda's (2002, *A spatial post-processing algorithm for images of night scenes*, *Journal of Graphics Tools* 7(1):1–12): the scotopic luminance V = Y[1.33(1 + (Y + Z)/X) − 1.68] from the linear colour's CIE XYZ (sRGB primaries, D65), shown in their bluish night colour (CIE xy 0.25, 0.25, at luminance 1), mixed in by the amount. V is normalised by its value for the display's white (about 2.57), so a neutral grey keeps its luminance and a warm surface darkens toward the rods as it should (the Purkinje shift: incandescent light's scotopic-to-photopic ratio is about 1.4 against daylight's 2.5). It is applied to the linear light before exposure, in the one display every relit surface and the composer's added light pass through, so it is consistent everywhere; at amount 0 it is the identity exactly (`mix(c, ·, 0)` is `c`). The frontier study's mesopic model (Wanat & Mantiuk's rod gains with CAT16 chromatic adaptation, its §c7) replaces `nightVisionNode` with the same inputs.
+Decision 4: the shift follows the absolute luminance the eye adapts to (Task 5's `scotopicAmount`, through the capture's calibration), never the preset, so the captured light and the lamp-lit night (about 21 and 16 cd/m²) are untouched and only dimmed lamps, the blue hour without lamps and moonlight go toward the rods. The stage is Thompson, Shirley & Ferwerda's (2002, *A spatial post-processing algorithm for images of night scenes*, *Journal of Graphics Tools* 7(1):1–12): the scotopic luminance V = Y[1.33(1 + (Y + Z)/X) − 1.68] from the linear colour's CIE XYZ (sRGB primaries, D65), shown in their bluish night colour (CIE xy 0.25, 0.25, at luminance 1), mixed in by the amount. V is normalised by its value for the display's white (about 2.57), so a neutral grey keeps its luminance and a warm surface darkens toward the rods as it should (the Purkinje shift: incandescent light's scotopic-to-photopic ratio is about 1.4 against daylight's 2.5). It is applied to the linear light before exposure, in the one display every relit surface and the composer's added light pass through, so it is consistent everywhere; at amount 0 it is the identity exactly (`mix(c, ·, 0)` is `c`). The frontier study's mesopic model (Wanat & Mantiuk's rod gains with CAT16 chromatic adaptation, its §c7) could replace `nightVisionNode` through the same inputs, but its d3 (8 October) does not recommend it: the chain turns both 1% scenes strongly blue and renders the lamp-free blue hour cream, so the Thompson stage stays, and `NIGHT_TINT` and `SCOTOPIC_MAX` 0.6 remain design values.
 
 Verified (7 October; R1b's lines re-read on 8 October): R1b plan lines 4897–4960 (`display.ts`: `import { float, max, min, mix, select, vec3 } from "three/tsl";` at 4897, `DisplayParams` at 4908, `displayColour(rgb, params, knee = HIGHLIGHT_KNEE)` at 4931 with its first line `const c: Rgb = …` at 4932, `DisplayUniforms { exposure, whiteBalance }` at 4942, `displayNode(rgb, display, knee)` with `const c = rgb.mul(display.exposure).mul(display.whiteBalance);` at 4954 and `return select(peak.greaterThan(knee), rolled, c);` at 4960), 6309 (`display: { exposure: uniform(1), whiteBalance: uniform(new Vector3(1, 1, 1)) } satisfies DisplayUniforms,`), 6323 (`type RelightUniforms = ReturnType<typeof createRelightUniforms>`, so the new uniforms are typed as written), 7022–7030 (`refineDisplay` writes through `writeDisplay`), 7032–7035 (`private writeDisplay(display: DisplayParams)`: the display uniforms' one writer; `apply` calls it), 4695 (the display tests), 9064 (the provider test `expect(frame?.current?.display).toEqual(PRESET_DISPLAY.captured);`); this plan's Task 7 (`setDisplay` writes through `writeDisplay`), Task 9 (`frame.apply({ … display: { exposure: frame.eye.exposure, whiteBalance: frame.eye.whiteBalance } })`, `this.frame.setDisplay({ exposure: frame.eye.exposure, whiteBalance: frame.eye.whiteBalance })`, and its test's identity line `expect(frame.current?.display).toEqual({ exposure: 1, whiteBalance: [1, 1, 1] });`); the night tint (0.706, 0.990, 1.966) and a grey of 0.5 half-shifted, (0.427, 0.497, 0.741), computed 8 October (node): at exposure 2 its peak, 1.48, is above the 0.8 knee, so the test sets the knee aside (finding B4).
 
@@ -8895,18 +9361,18 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Outputs (D:): `D:/claude/relight/grand-hall/renders/R1d_night_{all,rest,cove,ch_end,ch_centre,dome}/<station>@2x.png` and `renders/R1d_captured/<station>@2x.png`, `D:/claude/relight/grand-hall/evidence/r1d/night-basis-held.json`, `D:/claude/relight/grand-hall/work/eye-anchors.json` (only when its gate passes) and `evidence/r1d/eye-anchors.json`, `D:/claude/relight/grand-hall/work/night-calibration.json` (only when accepted) and `evidence/r1d/night-calibration.json`, `D:/claude/relight/grand-hall/verify/r1d/night-calibration-run{1,2}.json`; then the cinematic package rebuilt (Task 3's command, twice).
 
 **Interfaces:**
-- Consumes: Task 3 (`cinematic.night_gains`, `cinematic.eye_anchors`, the `cinematic` command), Task 9 (`LightDirector`, its `tick`, `publisher`, `wake`), Task 13 (the measurement), Tasks 5–6 (`EyeTarget`, `FrameMeasurement`, `LuminanceCalibration`, `CAPTURE_CALIBRATION`, `adaptationLuminance`, `scotopicAmount`, `lightChroma`, `LampDrives`, `lampTargets`); R1b's `window.__roomViewCapture`, `window.__roomWalk`, `window.__relight` (`select`, `state`), `applicationForChoice`, `defaultChoice`, `relight-verify.mjs`'s lock and capture helpers, `browsercheck.py` (`NIGHT_STATIONS`, `prepare`) and the proof's `07_compare` (`photo`, `render`, `valid_mask`, `cells`, `metrics`).
+- Consumes: Task 3 (`cinematic.night_gains`, `cinematic.eye_anchors`, the `cinematic` command), Task 9 (`LightDirector`, its `tick`, `publisher`, `wake`), Task 13 (the measurement), Tasks 5–6 (`EyeTarget`, `FrameMeasurement`, `LuminanceCalibration`, `CAPTURE_CALIBRATION`, `adaptationLuminance`, `scotopicAmount`, `lightChroma`, `LampDrives`, `lampTargets`); R1b's `window.__roomViewCapture`, `window.__roomWalk`, `window.__relight` (`state`; the drivers select through this task's controls, finding NB1), `useLightSettingStore` (`selectPreset`, `setMinutes`, `setDate`), `applicationForChoice`, `defaultChoice`, `relight-verify.mjs`'s lock and capture helpers, `browsercheck.py` (`NIGHT_STATIONS`, `prepare`) and the proof's `07_compare` (`photo`, `render`, `valid_mask`, `cells`, `metrics`).
 - Produces (`nightcal.py`): `GAIN_RANGE = (0.25, 4.0)`, `RIDGE = 0.1`, `CELL_FRACTION = 0.7`, `KNEE_SRGB = 0.9`, `ADDITIVITY = 0.02`, `GROUP_MIN_SHARE = 0.01`, `LAMP_GROUPS`, `BASIS = ("rest", …LAMP_GROUPS)`, `JOB_PREFIX = "R1d_night_"`, `CAPTURED_JOB = "R1d_captured"`, `HELD_FILE`; `linear_to_lab(rgb)` (D65), `ciede2000(lab1, lab2)` (Sharma, Wu & Dalal 2005); `to_render_light(photo, render) -> (cells, a, b)`; `white_balanced(photo, render)` (the per-channel von Kries gain to the render's median cell); `fit_gains(photo, rest, basis, ridge=RIDGE)` (one gain per group, on the cells' luminance, as three equal channels); `normalise_gains(gains, basis)` (one scale for all); `colour_accuracy(photo, render) -> {median, p90}`; `dark_groups(basis) -> list[str]`; `additivity(cells) -> float`; `accepted(stations) -> bool`; `station_cells(cmp, view, exposure) -> dict`; `measure(cmp, photo, model) -> dict`; `run(cfg, args) -> int` (the command `night-calibration`).
-- Produces (director): `LightDirector.holdEye(display: EyeTarget | null): void`, `soloLamps(group: LampGroup | "all" | "none" | null): void` (the basis renders' lamps, at gains of 1), `latestMeasurement(): FrameMeasurement | null`, `measureNext(): Promise<FrameMeasurement>` (draws frames until one drawn after the call is measured), getter `calibration: LuminanceCalibration`; `currentDirector(): LightDirector | null` (the director that last displayed a light; null once it stops).
-- Produces (DEV, `relight-debug.ts`): `interface CinematicControls { holdEye(display: EyeTarget | null): void; soloLamps(group: LampGroup | "all" | "none" | null): void; still(): boolean; measurement(): FrameMeasurement | null; measureNext(): Promise<FrameMeasurement>; adaptation(): { readonly luminance: number; readonly scotopic: number } | null; lightChroma(): readonly [number, number] | null; presetDisplay(preset: LightPresetId): DisplayParams }`; `cinematicControls(director: LightDirector | null, frame: RelightFrame): CinematicControls | null`; `RelightDebug.cinematic: CinematicControls | null` on `window.__relight` (null under `?cinematic=off`; Task 22 extends `CinematicControls`).
+- Produces (director): `LightDirector.holdEye(display: EyeTarget | null): void`, `soloLamps(group: LampGroup | "all" | "none" | null): void` (the basis renders' lamps, at gains of 1), `latestMeasurement(): FrameMeasurement | null`, `measureNext(): Promise<FrameMeasurement>` (draws frames until one drawn after the call is measured; gives up after `MEASURE_FRAME_LIMIT = 120` frames or when the director stops: finding NB3), `reapply(): Promise<void>` (applies the light again and resolves once it is applied; rejects after `REAPPLY_TIMEOUT_MS = 10_000` or when the director stops: finding NB1), getter `calibration: LuminanceCalibration`; `currentDirector(): LightDirector | null` (the director that last displayed a light; null once it stops).
+- Produces (DEV, `relight-debug.ts`): `interface CinematicControls { holdEye(display: EyeTarget | null): void; soloLamps(group: LampGroup | "all" | "none" | null): void; still(): boolean; measurement(): FrameMeasurement | null; measureNext(): Promise<FrameMeasurement>; select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>; reapply(): Promise<void>; adaptation(): { readonly luminance: number; readonly scotopic: number } | null; lightChroma(): readonly [number, number] | null; presetDisplay(preset: LightPresetId): DisplayParams }` (`select` sets the store as R1b's `select` does and resolves once the director has applied the choice, also when the store already held it: finding NB1); `cinematicControls(director: LightDirector | null, frame: RelightFrame): CinematicControls | null`; `RelightDebug.cinematic: CinematicControls | null` on `window.__relight` (null under `?cinematic=off`; Task 22 extends `CinematicControls`).
 
 Spec §4.3 asks for "night colour calibration" and a photo check that gains "a colour-accuracy measure", both "never worse than the hall as captured". The night photographs of Matterport stations 43 and 45 (the proof's `cmp/photo_*`, the same R1b's photo check uses) were taken with every lamp lit. The browser renders each station with the eye held at the night's own exposure, neutral white balance and no night vision: every lamp lit, none (the rest: the street, the skyglow and any Moon through the windows), each lamp group alone at full drive (so the dimming curve, warm or LED, plays no part), and the captured light, all at R1b's 2× size into the renders folder R1b's checks read. Two things about the photographs are unknown, and the calibration is built so that neither can leak into the lamps:
 - **The tone curve.** The proof's own comparison (07_compare: its masks, its 48 × 27 cells, its log-luminance r) fits the photograph's cell log luminance against the render's as a line; its slope is the tone curve's contrast. The photograph is brought into the render's light by inverting that power law per channel.
 - **The camera's exposure and white balance.** The photograph's cells are first balanced per channel to the all-lamps render (a von Kries gain: the camera's white balance). Then one gain per lamp group is fitted on the cells' luminance by relative least squares (log-like, so the cells beside the bulbs do not outweigh the room), with a ridge toward 1 scaled by the normal matrix's own size, and all the gains are scaled by one number so the lamps' total luminance is unchanged. The camera's exposure and white balance therefore cancel (a test proves it), and the gains move only light between the groups (the frieze tape against the chandeliers against the dome's crests), never colour: each group keeps R1a Task 4b's fitted colour, and the package carries each gain as three equal channels (the controller's ruling L3; finding I11: per-channel gains would have replaced R1a's fitted group colours with colours fitted to two photographs).
 - **No compounding.** The basis renders light the bake's own light, at gains of 1 (the director's `soloLamps`, "all" included), so a calibration rerun after an accepted one fits from the bake again rather than on top of the gains in the package.
-Each solo render holds the rest too, so a group's own light is its render less the rest; the four groups and the rest must add up to the all-lamps render within 2% (median cell luminance), proving the renders are linear light (cells past the display's knee are left out). The measure is CIEDE2000 between cells (Sharma, Wu & Dalal 2005, tested on seven of their published pairs in both orders), after the camera's white balance is removed by a per-channel von Kries gain and both images are scaled so the render's 95th-percentile cell is white, reported as median and 90th percentile beside r, for the hall as captured, the uncalibrated night and the calibrated night. The fit brings each night photograph into the all-lamps render's light (the tone curve fitted against that render); for the measure, each compared render (captured, before, after) brings the photograph into its own light, as 07_compare does (finding M12). The gains are kept only if at both stations the calibrated night is no worse than the captured hall, than the uncalibrated night and than R1b's threshold (0.85 at station 43, 0.80 at 45) by r, and no worse than either by median ΔE00. Decision 11's rule is enforced here: a lamp group below 1% of the lamps' light in the renders is dark in the bake (R1a's fit gave the lit centre chandelier 1.4e-11), and the calibration is refused, naming it, until the bake refits; gains never paper over a lost lamp. A refusal leaves the gains at 1 and writes only the evidence.
+Each solo render holds the rest too, so a group's own light is its render less the rest; the four groups and the rest must add up to the all-lamps render within 2% (median cell luminance), proving the renders are linear light (cells past the display's knee are left out). The measure is CIEDE2000 between cells (Sharma, Wu & Dalal 2005, tested on seven of their published pairs in both orders), after the camera's white balance is removed by a per-channel von Kries gain and both images are scaled so the render's 95th-percentile cell is white, reported as median and 90th percentile beside r, for the hall as captured, the uncalibrated night and the calibrated night. The fit brings each night photograph into the all-lamps render's light (the tone curve fitted against that render); for the measure, each compared render (captured, before, after) brings the photograph into its own light, as 07_compare does (finding M12). The gains are kept only if at both stations the calibrated night is no worse than the captured hall, than the uncalibrated night and than R1b's threshold (0.85 at station 43, 0.80 at 45) by r, and no worse than either by median ΔE00. Two expectations from the frontier study (§e, 8 October) frame the result. The measure stays RGB: its spectral variant worsened B/G at both stations (v1), so it is not reported as an improvement. And a residual colour error is expected, because the gains carry no colour: d1b puts the lamps' RGB-bounce error at a median ΔE00 of 3.5 (under 2,750 K tungsten; smaller near the lamps' 3,600 K, not measured), which no colourless gain can absorb, so it stays in the measure and is not a failure of the calibration. Station 45 is the tight one: in v1's cells it clears its 0.80 threshold by only 0.007 (r 0.807; station 43 0.880 against 0.85). Decision 11's rule is enforced here: a lamp group below 1% of the lamps' light in the renders is dark in the bake (R1a's fit gave the lit centre chandelier 1.4e-11), and the calibration is refused, naming it, until the bake refits; gains never paper over a lost lamp. A refusal leaves the gains at 1 and writes only the evidence.
 
-The eye's anchors are measured at the walk's own starting view: for the sunny morning, the lamp-lit night and the moonlit night, the eye is held at that preset's calibrated display (R1b's `applicationForChoice` at the preset's own hour; the moonlit key, A7) and the composer's measurement (Task 13, the frame's light before the eye) and the light's chroma are recorded. The frontier study's gate is checked here: the lamp-lit night's adaptation luminance (2^λ × 54 cd/m², the calibration in use) must give no night vision at all (at or above 5 cd/m²), and the moonlit night's must be dimmer and give some. A miss is reported with the numbers (the calibration's ±1 stop is the likely cause), never tuned away, and the anchors are not written for the package; the eye then keeps its fallback. (This gate is what turns decision 4's "no night vision for the lamp-lit night" from a 0.49-stop margin into a measured fact: finding A-M8.) A still hall draws no frame and so measures nothing, so the driver asks the director for frames until one drawn after the light settled is measured (`measureNext`; finding I10).
+The eye's anchors are measured at the walk's own starting view: for the sunny morning, the lamp-lit night and the moonlit night, the eye is held at that preset's calibrated display (R1b's `applicationForChoice` at the preset's own hour; the moonlit key, A7) and the composer's measurement (Task 13, the frame's light before the eye) and the light's chroma are recorded. The frontier study's gate is checked here: the lamp-lit night's adaptation luminance (2^λ × 121.8 cd/m², the calibration in use; the study's d3 puts the proof's night at 8.7–11.4 cd/m² by it, where the withdrawn 54 would have read 3.9–5.0 and failed in two of three views) must give no night vision at all (at or above 5 cd/m²), and the moonlit night's must be dimmer and give some. A miss is reported with the numbers (the calibration's ±1 stop is the likely cause), never tuned away, and the anchors are not written for the package; the eye then keeps its fallback. (This gate is what turns decision 4's "no night vision for the lamp-lit night" from a 0.8–1.6-stop margin into a measured fact: finding A-M8.) A still hall draws no frame and so measures nothing, so the driver asks the director for frames until one drawn after the light settled is measured (`measureNext`; finding I10), which gives up after `MEASURE_FRAME_LIMIT` frames rather than polling for ever (finding NB3). The drivers select through the controls' own `select`, which has the director apply the choice even when the store already held it (R1b's `select` waits for an apply that such a selection never brings: a page opened at `?light=night` and asked for the night would wait for ever), bound every wait in the page, and close the browser after a run limit, so a hung run fails and frees the GPU lock (finding NB1).
 
 Verified (7 October; R1b's lines re-read on 8 October): R1b plan lines 10835 (`RoomViewCaptureRequest { position, target, fov, width, height }`), 10891 and 11513 (`window.__roomViewCapture(request)` resolves a `NativeCurrentViewCapture` whose `dataUrl` the driver writes), 10257–10260 (`RelightDebug`: `state`, `select(preset, minutes?, date?)`), 10127–10145 (`relight-debug.ts`'s imports: `applicationForChoice`, `PRESET_DEFAULTS`, `PRESET_DISPLAY`, `type LightPresetId`, `type DisplayParams`, `type RelightFrame`; no `defaultChoice` yet), 10511–10575 (`installRelightDebug(frame, host, renderer)`, its `select,` member at 10573, resolving after the next apply and two frames), 10729 (`window.__relight = debug`), 6164–6165 (`applicationForChoice(…, defaultChoice("night"), …).display` equals `PRESET_DISPLAY.night`), 11143 (`NIGHT_STATIONS = {"mp43_night_end": 0.85, "mp45_night_windows": 0.80}`), 11242 (`photo_report`: `cmp.photo`, `cmp.render`, `cmp.valid_mask`, `cmp.cells`, `cmp.metrics`, cells with fraction > 0.7), 11369–11393 (`prepare(cfg)`; `importlib.import_module("07_compare")` once `python -m relight` has made the proof importable), 11412 (`from . import browsercheck  # noqa: E402`), 11446–11520 (`relight-verify.mjs`: `BASE_URL` 5192, `ROOT`, `VIEWS`, `WIDTH`/`HEIGHT`/`SCALE` 1920 × 1080 × 2, `takeLock` at 11457 with its hour limit, `releaseLock`, the captures writing `<ROOT>/renders/<job>/<view>@2x.png`), 11554 (headed Chromium, its background flags and `--enable-webgpu-developer-features`, which this driver passes too: finding I8); `tools/relight/proof/07_compare.py:30-35` (`render`: the `@2x` render box-averaged to 1× by `one_x`), `:37-42` (`photo`), `:45-50` (`valid_mask`: the A_mask render's red and green below 0.05, each sRGB's max in (0.03, 0.98)), `:53-57` (`cells`, 48 × 27, with each cell's valid fraction), `:60-69` (`metrics`: r of the cells' log2 luminance; `np.polyfit(lm, lp, 1)`, the tone curve's slope); `D:/claude/real-hall/renovation/relight/renders/A_mask/mp43_night_end.png` and `work/cmp/photo_mp43_night_end.png` (1920 × 1080; R1b's `prepare` copies both); this plan's Task 3 (`night_gains`: calibrated whenever the file exists; `eye_anchors` reads `{ anchors: { day, lamps, moon: { exposure, whiteBalance, logLuminance, logChroma } } }`), Task 5 (`LightMotion.current`: the eye in log2, so exposures 2 and 4 are exact), Task 9 (`publisher`, `publish`, `private measurement`, `private wake()`, the `tick` lines replaced below), Task 13 (the measurement: the output's luminance over the exposure in force, every third frame). The calibration code and its tests below were run on 7 October and, revised to one gain per group, again on 8 October (`C:/Python313/python.exe`, a scratch copy with a stand-in `browsercheck`, `plan-amendments-0710/fix2-scratch-d/py21`): the 10 tests pass, CIEDE2000 reproduces Sharma's pairs to four decimals both ways, and a synthetic night (four coloured groups with true gains 1.3, 0.85, 1.1 and 0.9, a power-law tone curve of slope 0.8, a camera tint [1.1, 1, 0.85] at exposure 1.6, 8-bit renders and photograph) recovered the slope as 0.805, added up within 0.7%, recovered each group's normalised gain within 0.04 (the ridge's pull toward 1) and lowered the median ΔE00 from 1.97 to 0.90.
 
@@ -9025,7 +9491,7 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-In `packages/web/src/lib/relight/__tests__/light-director.test.ts`, add `currentDirector` to its import from `../light-director.js` and append inside its `describe`:
+In `packages/web/src/lib/relight/__tests__/light-director.test.ts`, add `MEASURE_FRAME_LIMIT` and `currentDirector` to its import from `../light-director.js` and append inside its `describe`:
 
 ```ts
   it("holds the eye where the calibration asks, lights one group alone, measures on demand and names the session's director (Task 21)", async () => {
@@ -9055,6 +9521,29 @@ In `packages/web/src/lib/relight/__tests__/light-director.test.ts`, add `current
     director.stop();
     expect(currentDirector()).toBeNull();
   });
+
+  it("hands the light back on demand, and bounds its DEV waits (findings NB1 and NB3)", async () => {
+    useLightSettingStore.getState().selectPreset("night");
+    const { director, frames, applies } = rig();
+    director.start();
+    frames(8);
+    const before = applies.length;
+    // Choosing what the store already holds applies nothing, so a driver waiting for an apply would wait for ever.
+    useLightSettingStore.getState().selectPreset("night");
+    frames(1);
+    expect(applies).toHaveLength(before);
+    const back = director.reapply();
+    frames(1 / 60);
+    await expect(back).resolves.toBeUndefined();
+    expect(applies).toHaveLength(before + 1);
+    // No composer, so no measurement: measureNext gives up after its frame limit instead of polling for ever.
+    const never = director.measureNext();
+    frames((MEASURE_FRAME_LIMIT + 2) / 60);
+    await expect(never).rejects.toThrow(/No frame was measured/u);
+    director.stop();
+    await expect(director.reapply()).rejects.toThrow(/stopped/u);
+    await expect(director.measureNext()).rejects.toThrow(/stopped/u);
+  });
 ```
 
 In `packages/web/src/lib/relight/__tests__/relight-debug.test.ts`, add `cinematicControls` to its import from `../relight-debug.js`, add the imports
@@ -9062,6 +9551,7 @@ In `packages/web/src/lib/relight/__tests__/relight-debug.test.ts`, add `cinemati
 ```ts
 import { PRESET_DISPLAY } from "../../light-setting.js";
 import { useLightSettingStore } from "../../../stores/light-setting-store.js";
+import { CAPTURE_CALIBRATION } from "../eye.js";
 import { LightDirector } from "../light-director.js";
 import { loadRelightModelData } from "../relight-assets.js";
 import { RelightFrame } from "../relight-frame.js";
@@ -9094,8 +9584,13 @@ and append inside its `describe`:
     expect(frame.current?.display).toEqual({ exposure: 4, whiteBalance: [1, 1, 1], scotopic: 0 });
     expect(frame.current?.setting.lampLevels.dome).toBe(0);
     expect(controls?.presetDisplay("night")).toEqual(PRESET_DISPLAY.night);
+    // A selection the store already holds still resolves: the director applies its light again (finding NB1).
+    const chosen = controls?.select("night");
+    time += 1000 / 60;
+    for (const callback of queue.splice(0)) callback();
+    await expect(chosen).resolves.toBeUndefined();
     expect([controls?.measurement(), controls?.adaptation()]).toEqual([null, null]);
-    director.setMeasurement({ logLuminance: Math.log2(10 / 54), at: 1 });
+    director.setMeasurement({ logLuminance: Math.log2(10 / CAPTURE_CALIBRATION.cdPerUnit), at: 1 });
     expect(controls?.adaptation()?.luminance).toBeCloseTo(10, 9);
     expect(controls?.adaptation()?.scotopic).toBe(0);
     director.stop();
@@ -9345,7 +9840,16 @@ def run(cfg, _args) -> int:
 
 In `tools/relight/relight/__main__.py`, directly after R1b's `from . import browsercheck  # noqa: E402 …` line add `from . import nightcal  # noqa: E402  (R1d: the night calibration and the colour-accuracy measure)`, and directly after R1b's `COMMANDS["browser-check"] = browsercheck.run` add `COMMANDS["night-calibration"] = nightcal.run`.
 
-- [ ] **Step 4: The director's calibration controls** — in `packages/web/src/lib/relight/light-director.ts`, directly after `  private keepMoon = false;` add:
+- [ ] **Step 4: The director's calibration controls** — in `packages/web/src/lib/relight/light-director.ts`, directly after `export const SKY_READ_INTERVAL_MS = 250;` add:
+
+```ts
+/** DEV: how long `reapply` waits for the director to apply its light (finding NB1). */
+export const REAPPLY_TIMEOUT_MS = 10_000;
+/** DEV: frames `measureNext` draws before it gives up; the composer measures every third frame (finding NB3). */
+export const MEASURE_FRAME_LIMIT = 120;
+```
+
+directly after `  private keepMoon = false;` add:
 
 ```ts
   /** DEV (Task 21): a display the eye is held at, and the lamps the calibration's basis renders light (at gains of 1). */
@@ -9379,21 +9883,58 @@ directly after the `forceBothBodies` method add:
 
   /**
    * DEV (Task 21): draw frames until the composer measures one drawn after this call, and resolve with it. A still hall
-   * draws no frame by itself, so a driver that only waited would wait for ever (finding I10).
+   * draws no frame by itself, so a driver that only waited would wait for ever (finding I10). Without a composer (no
+   * cinematic package) no frame is ever measured, so it gives up after MEASURE_FRAME_LIMIT frames, and at once when the
+   * director has stopped (finding NB3).
    */
   measureNext(): Promise<FrameMeasurement> {
     const since = this.now();
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      let frames = 0;
       const poll = (): void => {
         const measured = this.measurement;
         if (measured !== null && measured.at > since) {
           resolve(measured);
           return;
         }
+        if (this.unsubscribe === null) {
+          reject(new Error("The light director has stopped."));
+          return;
+        }
+        if (frames >= MEASURE_FRAME_LIMIT) {
+          reject(new Error(`No frame was measured in ${String(MEASURE_FRAME_LIMIT)} frames.`));
+          return;
+        }
+        frames += 1;
         this.invalidate();
         this.requestFrame(poll);
       };
       poll();
+    });
+  }
+
+  /**
+   * DEV (Tasks 21 and 23): apply the light again and resolve once it is applied. A selection the store already holds
+   * changes nothing, and R1b's gpuTime applies lights of its own, so a driver hands the light back through this rather
+   * than by selecting again, which would wait for an apply that never comes (finding NB1). It rejects when the director
+   * has stopped or applies nothing within REAPPLY_TIMEOUT_MS.
+   */
+  reapply(): Promise<void> {
+    if (this.unsubscribe === null) return Promise.reject(new Error("The light director has stopped."));
+    this.applied = null;
+    this.shownEye = null;
+    return new Promise((resolve, reject) => {
+      let timer: number | null = null;
+      const off = this.onLight(() => {
+        off();
+        if (timer !== null) this.clearTimer(timer);
+        resolve();
+      });
+      timer = this.setTimer(() => {
+        off();
+        reject(new Error(`The light director applied nothing within ${String(REAPPLY_TIMEOUT_MS)} ms.`));
+      }, REAPPLY_TIMEOUT_MS);
+      this.wake();
     });
   }
 
@@ -9460,6 +10001,13 @@ export interface CinematicControls {
   measurement(): FrameMeasurement | null;
   /** Draws frames until one drawn after the call is measured; resolves with it (a still hall draws none by itself). */
   measureNext(): Promise<FrameMeasurement>;
+  /**
+   * A choice, set as R1b's `select` sets it, resolved once the director has applied it: also when the store already
+   * held it (a page opened with `?light=night` asked for the night), where R1b's `select` would wait for ever (finding NB1).
+   */
+  select(preset: LightPresetId, minutes?: number, date?: string): Promise<void>;
+  /** Hands the light back to the director after something else applied one (R1b's gpuTime); resolves once it has. */
+  reapply(): Promise<void>;
   /** That measurement's adaptation luminance (cd/m², through the calibration in use) and its night-vision amount. */
   adaptation(): { readonly luminance: number; readonly scotopic: number } | null;
   /** The displayed light's chroma (log2 r/g, b/g), as the eye reads it. */
@@ -9476,6 +10024,14 @@ export function cinematicControls(director: LightDirector | null, frame: Relight
     still: () => !director.moving,
     measurement: () => director.latestMeasurement(),
     measureNext: () => director.measureNext(),
+    select: async (preset, minutes, date) => {
+      const store = useLightSettingStore.getState();
+      store.selectPreset(preset);
+      if (minutes !== undefined) store.setMinutes(minutes);
+      if (date !== undefined) store.setDate(date);
+      await director.reapply();
+    },
+    reapply: () => director.reapply(),
     adaptation: () => {
       const measured = director.latestMeasurement();
       if (measured === null) return null;
@@ -9537,6 +10093,17 @@ const WIDTH = 1920, HEIGHT = 1080, SCALE = 2;
 const LOAD_TIMEOUT_MS = 240_000;
 const SETTLE_TIMEOUT_MS = 30_000;
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+/** One step in the page (a selection, a capture, a check) must finish within this. */
+const STEP_TIMEOUT_MS = 180_000;
+/** The whole run: past it the watchdog closes the browser, which ends every wait, so the GPU lock is never held for ever. */
+const RUN_LIMIT_MS = 40 * 60_000;
+
+/** A promise bounded in time: a hang becomes an error naming the step, and main's finally frees the GPU lock (finding NB1). */
+function within(promise, what, ms = STEP_TIMEOUT_MS) {
+  let timer;
+  const limit = new Promise((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`${what} did not finish within ${ms / 1000} s.`)); }, ms); });
+  return Promise.race([promise, limit]).finally(() => { clearTimeout(timer); });
+}
 
 async function takeLock() {
   for (let waited = 0; ; waited += 30_000) {
@@ -9574,17 +10141,17 @@ async function openWalk(browser) {
 /** The director still, then one measurement of a frame drawn after it settled (a still hall draws none by itself). */
 async function settle(page) {
   await page.waitForFunction(() => window.__relight?.cinematic?.still() === true, undefined, { timeout: SETTLE_TIMEOUT_MS });
-  await page.evaluate((ms) => Promise.race([
+  await within(page.evaluate((ms) => Promise.race([
     window.__relight.cinematic.measureNext(),
     new Promise((_resolve, reject) => { setTimeout(() => { reject(new Error("No frame was measured.")); }, ms); }),
-  ]), SETTLE_TIMEOUT_MS);
+  ]), SETTLE_TIMEOUT_MS), "A measurement of the settled frame", SETTLE_TIMEOUT_MS + 10_000);
 }
 
 async function capture(page, view, job) {
   const folder = join(ROOT, "renders", job);
   await mkdir(folder, { recursive: true });
-  const dataUrl = await page.evaluate(async (request) => (await window.__roomViewCapture(request)).dataUrl,
-    { position: view.pos, target: view.tgt, fov: view.fov, width: WIDTH * SCALE, height: HEIGHT * SCALE });
+  const dataUrl = await within(page.evaluate(async (request) => (await window.__roomViewCapture(request)).dataUrl,
+    { position: view.pos, target: view.tgt, fov: view.fov, width: WIDTH * SCALE, height: HEIGHT * SCALE }), `The capture of ${view.name}`);
   await writeFile(join(folder, `${view.name}@2x.png`), Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"));
 }
 
@@ -9600,13 +10167,18 @@ async function main() {
     await rm(join(ROOT, "renders", job), { recursive: true, force: true });
   }
   await takeLock();
-  const browser = await chromium.launch({
-    headless: false,
-    args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion", "--enable-webgpu-developer-features"],
-  });
+  let browser = null;
+  // The watchdog: a run that hangs anyway is ended by closing the browser, and the finally below frees the GPU lock.
+  const watchdog = setTimeout(() => { console.error(`${OWNER}: stopped after ${RUN_LIMIT_MS / 60_000} minutes.`); void browser?.close(); }, RUN_LIMIT_MS);
   try {
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion", "--enable-webgpu-developer-features"],
+    });
     const page = await openWalk(browser);
-    await page.evaluate(async () => { await window.__relight.select("night"); });
+    // The night at its own hour, applied by the director although the query already chose it: R1b's `select` waits
+    // for an apply that a selection changing nothing never brings (finding NB1).
+    await within(page.evaluate(() => window.__relight.cinematic.select("night")), "Selecting the night");
     const night = await page.evaluate(() => window.__relight.cinematic.presetDisplay("night"));
     const held = { exposure: night.exposure, whiteBalance: [1, 1, 1], scotopic: 0 };
     await page.evaluate((display) => { window.__relight.cinematic.holdEye(display); }, held);
@@ -9616,7 +10188,7 @@ async function main() {
       for (const view of stations) await capture(page, view, `R1d_night_${name}`);
     }
     await page.evaluate(() => { window.__relight.cinematic.soloLamps(null); window.__relight.cinematic.holdEye(null); });
-    await page.evaluate(async () => { await window.__relight.select("captured"); });
+    await within(page.evaluate(() => window.__relight.cinematic.select("captured")), "Selecting the captured light");
     await settle(page);
     for (const view of stations) await capture(page, view, "R1d_captured");
     await mkdir(join(ROOT, "evidence", "r1d"), { recursive: true });
@@ -9625,7 +10197,7 @@ async function main() {
     // The eye's anchors: each preset at its own hour, the eye held at its calibrated display without night vision.
     const anchors = {}, adaptation = {};
     for (const [anchor, preset] of ANCHORS) {
-      await page.evaluate(async (name) => { await window.__relight.select(name); }, preset);
+      await within(page.evaluate((name) => window.__relight.cinematic.select(name), preset), `Selecting ${preset}`);
       const display = await page.evaluate((name) => window.__relight.cinematic.presetDisplay(name), preset);
       await page.evaluate((shown) => { window.__relight.cinematic.holdEye({ exposure: shown.exposure, whiteBalance: shown.whiteBalance, scotopic: 0 }); }, display);
       await settle(page);
@@ -9652,8 +10224,12 @@ async function main() {
     }
     console.log("anchors", JSON.stringify(anchors), "adaptation", JSON.stringify(adaptation), "gate", JSON.stringify(gate));
   } finally {
-    await browser.close();
-    await releaseLock();
+    clearTimeout(watchdog);
+    try {
+      if (browser !== null) await within(browser.close(), "Closing the browser", 60_000);
+    } finally {
+      await releaseLock();
+    }
   }
 }
 
@@ -9665,7 +10241,7 @@ main().catch((error) => { console.error(error); process.exitCode = 1; });
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_nightcal -v`
 Expected: PASS, 10 tests.
 
-Run, one per command: `src/lib/relight/__tests__/light-director.test.ts` (Expected: PASS, 11 tests), `src/lib/relight/__tests__/relight-debug.test.ts` (Expected: PASS, the Task 0 count plus 1).
+Run, one per command: `src/lib/relight/__tests__/light-director.test.ts` (Expected: PASS, 12 tests), `src/lib/relight/__tests__/relight-debug.test.ts` (Expected: PASS, the Task 0 count plus 1).
 
 Run: `pnpm --filter @omnitwin/web exec eslint src/lib/relight/light-director.ts src/lib/relight/relight-debug.ts` and `node --check scripts/cinematic-calibrate.mjs` (from `packages/web`; the repo's ESLint parses only `src` through the TypeScript project service, so a driver is checked by Node: finding B7)
 Expected: no problems; `node --check` prints nothing.
@@ -9711,23 +10287,22 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `packages/web/src/lib/relight/__tests__/sun-shadow.test.ts`, `packages/web/src/lib/relight/__tests__/relight-debug.test.ts` (modify)
 
 **Interfaces:**
-- Consumes: Task 21's `CinematicControls`, `cinematicControls`, `currentDirector`; Task 10 (`SkyShadows`: `hook`, `cpu`, `lightViewFor`, `occludedFrom`, `SHADOW_PCF_SPACING`, `SHADOW_BIAS`, the private `drawn` and `box`), Task 13 (`CinematicComposer`, `GlareNode`), Task 11 (`CrispBulbs`), Task 8 (`CinematicData`), Task 7 (`RelightFrame.kernelCinematic`, `passStride`), Task 9 (`LightDirector.forceBothBodies`, `setStride`, `moving`, `lightMoving`, `current`); R1b's `relight-debug.ts` (`sample` with its `gpuKernel()`: the kernel asked with the GPU's own read-back sky light, `wordTally`, `WordCheck`, `sunRaySensitive`, `multiplierCodeDistance`, `readDisplay`'s readback pattern), `useLightSettingStore` (`selectPreset`, `setMinutes`); R1c's `RelightFrame.visibility` and `relightSplat`'s visibility argument (A2).
+- Consumes: Task 21's `CinematicControls`, `cinematicControls`, `currentDirector`; Task 10 (`SkyShadows`: `hook`, `cpu`, `lightViewFor`, `occludedFrom`, `SHADOW_PCF_SPACING`, `SHADOW_BIAS`, the private `drawn` and `box`), Task 13 (`CinematicComposer`, `Glare`, `CIE_GLARE_PIXELS_PER_DEGREE`), Task 11 (`CrispBulbs`), Task 8 (`CinematicData`), Task 7 (`RelightFrame.kernelCinematic`, `passStride`), Task 9 (`LightDirector.forceBothBodies`, `setStride`, `moving`, `lightMoving`, `current`); R1b's `relight-debug.ts` (`sample` with its `gpuKernel()`: the kernel asked with the GPU's own read-back sky light, `wordTally`, `WordCheck`, `sunRaySensitive`, `multiplierCodeDistance`, `readDisplay`'s readback pattern), `useLightSettingStore` (`selectPreset`, `setMinutes`); R1c's `RelightFrame.visibility` and `relightSplat`'s visibility argument (A2).
 - Produces (`cinematic-parts.ts`): `interface CinematicParts { readonly data: CinematicData | null; readonly shadows: SkyShadows | null; readonly composer: CinematicComposer | null; readonly bulbs: CrispBulbs | null; readonly shafts: SunShafts | null }`; `updateCinematicParts(change: Partial<CinematicParts>): void`; `currentCinematicParts(): CinematicParts`.
 - Produces (`sun-shadow.ts`): `SkyShadows.cpuTaps(position: Vec3, body: SkyBodyName): number` (the 16 taps' lit share on the CPU).
 - Produces (`cinematic-composer.ts`): `CinematicComposer.glare` (readonly, the glow function in use).
-- Produces (`relight-debug.ts`): `interface CinematicState { packaged; crispLamps; crispChandeliers; dimming; moving; lightMoving; stride; bodies: { sun; moon }; sheen }`; `interface ShadowCheck { body; points; decided; disagreements }`; `interface BloomEnergyCheck { emitted; glowed; ratio }`; `GLARE_TEST_SIZE = 256`, `GLARE_TEST_BLOCK = 8`; `shadowCheckPoints(box, count): Vec3[]`; `tallyShadow(body, gpu, cpu): ShadowCheck`; `WordCheck.excusedPenumbra?: number` (R1d's own excuse, counted apart from R1b's window-rounding `excused`: the controller's ruling N2) and `WordCheck.penumbraMarched?: number` (the checked marched splats the GPU's own taps put in a penumbra: the measurement that caps those excuses, Task 23); `interface PassTimes { timing: "timestamp-query" | null; airFillMedianMs: number | null; eyeMeasureMedianMs: number | null }`; `CinematicControls` gains `state(): CinematicState`, `shadowCheck(points: number): Promise<readonly ShadowCheck[]>`, `bloomEnergy(): Promise<BloomEnergyCheck | null>`, `forceBothBodies(on: boolean): void`, `setStride(stride: number): void`, `scrubTo(minutes: number): void`, `passTimes(runs: number): Promise<PassTimes>` (the air fill's and the eye measure's GPU time, by R1b's `timedCompute`: finding I8); `cinematicControls(director, frame, renderer?)`.
+- Produces (`relight-debug.ts`): `interface CinematicState { packaged; crispLamps; crispChandeliers; dimming; moving; lightMoving; stride; bodies: { sun; moon }; sheen }`; `interface ShadowCheck { body; points; decided; disagreements }`; `interface BloomEnergyCheck { emitted; glowed; ratio }`; `GLARE_TEST_SIZE = 256`, `GLARE_TEST_BLOCK = 8`; `shadowCheckPoints(box, count): Vec3[]`; `tallyShadow(body, gpu, cpu): ShadowCheck`; `WordCheck.excusedPenumbra?: number` (R1d's own excuse, each confirmed by its splat's own GPU taps, counted apart from R1b's window-rounding `excused`: the controller's ruling N2, made exact per splat); `interface PassTimes { timing: "timestamp-query" | null; airFillMedianMs: number | null; eyeMeasureMedianMs: number | null }`; `CinematicControls` gains `state(): CinematicState`, `shadowCheck(points: number): Promise<readonly ShadowCheck[]>`, `bloomEnergy(): Promise<BloomEnergyCheck | null>`, `forceBothBodies(on: boolean): void`, `setStride(stride: number): void`, `scrubTo(minutes: number): void`, `passTimes(runs: number): Promise<PassTimes>` (the air fill's and the eye measure's GPU time, by R1b's `timedCompute`: finding I8); `cinematicControls(director, frame, renderer?)`.
 
 Task 23 judges the cinematic light by these instruments, so each one compares the GPU with an independent twin rather than with itself:
-- **The words.** R1b's `sample` check now computes the CPU twin with the frame's cinematic terms (`frame.kernelCinematic`: the glow hiding and the interior shadow), so the GPU's words are judged against the light actually shown. The interior shadow's twin casts a ray over every occluder triangle (some 10⁵), so it is cast only for a splat that differs without it; a splat that still differs and lies in an interior shadow's penumbra (its 16 CPU taps disagree, the edge the GPU's taps soften) is excused, but counted apart (`excusedPenumbra`) from R1b's window-rounding cases: the two are different populations, so Task 23 caps the penumbra's share by R1d's own measured rate and R1b's `excused` by R1a's wall-face rate (the controller's ruling N2; finding B14). A splat counts as marched when either body is in, as R1b's own check counts it, so the moonlit night's words are judged too (finding B13). The CPU twin is R1b's `gpuKernel()`, the kernel asked with the GPU's own read-back sky light, so a sky ray the GPU rounds the other way moves both sides alike (seam review, item 7). R1b's `fixture` check compares with R1a's vectors, which have no cinematic terms, so Task 23 runs it with `?cinematic=off`.
+- **The words.** R1b's `sample` check now computes the CPU twin with the frame's cinematic terms (`frame.kernelCinematic`: the glow hiding and the interior shadow), so the GPU's words are judged against the light actually shown. The interior shadow's twin casts a ray over every occluder triangle (some 10⁵), so it is cast only for a splat that differs without it; a splat that still differs and lies in an interior shadow's penumbra by the CPU's 16 taps is excused only if its own GPU taps, read back through the hook every surface uses, are neither all lit nor all shadowed for a body that counts (the edge the GPU's taps soften); otherwise it counts as the difference it is. The excuses are counted apart (`excusedPenumbra`) from R1b's window-rounding cases, which Task 23 caps by R1a's wall-face rate; each penumbra excuse is proven splat by splat, so it needs no cap of its own (the controller's ruling N2, made exact on the re-review's advice; finding B14). A splat counts as marched when either body is in, as R1b's own check counts it, so the moonlit night's words are judged too (finding B13). The CPU twin is R1b's `gpuKernel()`, the kernel asked with the GPU's own read-back sky light, so a sky ray the GPU rounds the other way moves both sides alike (seam review, item 7). R1b's `fixture` check compares with R1a's vectors, which have no cinematic terms, so Task 23 runs it with `?cinematic=off`.
 - **The shadows.** At a grid of points over the hall (the floor, 5 cm up, and eye height), the GPU's 16-tap shadow is read back through a compute pass running the very hook every surface uses, and compared with the CPU twin's single ray where the GPU's taps all agree (0 or 1; Task 10).
-- **The glow.** The energy-conserving design glow is tested on the GPU with a known emission: an 8 × 8 block of 1 at the centre of a 256 × 256 half-float texture, run through the composer's own glare function into a float target and summed: the sum must equal the block's (the pyramid's weights sum to 3 at strength 1/3). Each test builds its own bloom node, so it disposes it (and its render targets) when done (finding M6).
+- **The glow.** The glare in use (the design glow, or `?glare=cie`'s fitted glare) is tested on the GPU with a known emission: an 8 × 8 block of 1 at the centre of a 256 × 256 half-float texture, run through the composer's own glare into a float target and summed: the sum must equal the block's (the design pyramid's weights sum to 3 at strength 1/3; the CIE levels' normalised blurs are summed by weights over their total). Each test builds its own bloom node, so it disposes it (and its render targets) when done (finding M6).
 - **The light.** The state (the package, the crisp lamps and chandeliers, each group's dimming, motion, the stride, which bodies count, the sheen weight), the both-bodies switch, the stride and a scrub that sets the store's hour without waiting, for Task 23's frame budget.
 - **The new passes' GPU time.** The air fill (Task 14) and the eye measure (Task 13) run on every frame of motion; each is timed on the GPU by R1b's `timedCompute` (timestamp queries, tracking on only while it encodes and while each resolve starts: the re-review's N1), median of a series after one unrecorded run, and reported with R1b's own `gpuTime` (finding I8). Without `timestamp-query` they are reported as unmeasured, never estimated.
-- **The penumbra's own population.** `sample` also reads, through the hook every surface uses, the GPU's taps at every checked marched splat, and counts those neither all lit nor all shadowed (`penumbraMarched`): the measurement, produced here, that caps the penumbra excuses in Task 23 (ruling N2).
 
 The session's parts (the package, the shadow maps, the composer, the lamps, the shafts) reach the instruments through a registry of types only (`cinematic-parts.ts`), kept current by `RelightCinematic`; nothing in it runs in production beyond holding five references (and the cinematic light is not in a production bundle at all: Task 9).
 
-Verified (7 October; R1b's lines re-read on 8 October): R1b plan lines 10462–10506 (`computeTimestamps(renderer)`, `timedCompute(renderer, passes)`: tracking on while encoding and while each resolve starts, re-review N1), 10665–10727 (`gpuTime`: one unrecorded run, then `median`), 10127–10145 (`relight-debug.ts`'s imports: `Vector3`, `type Matrix4`; `StorageBufferAttribute`, `type WebGPURenderer`; `Fn`, `float`, `storage`, `uniform`, `vec3`; `useLightSettingStore`; `relightSplat`, `type KernelFrame`, `type Rgb`; `FLAG_SUN`, `multiplierCodeDistance`, `packMultiplierWord`), 10155–10165 (`interface WordCheck`), 10315–10333 (`wordTally`: excused only when marched, sensitive and more than one code apart), 10385 (`sunRaySensitive`), 10391 (`readDisplay`: a `StorageBufferAttribute` written by a compute pass and read with `renderer.getArrayBufferAsync`), 10523 (`gpuKernel`), 10568–10592 (`const debug: RelightDebug = { state, select, sample, … }`; `sample`'s loop, `const tally = wordTally();`, the three lines this task replaces, `return tally.result(0);`); this plan's Task 10 (`SkyShadows`: `private readonly drawn`, `private readonly box`, `cpu`, `hook`; `lightViewFor` builds the camera with `lookAt`, so its world matrix's first two columns are the map's right and up; the taps at `(i − 1.5, j − 1.5) × SHADOW_PCF_SPACING`, j down the map), Task 13 (`private readonly glare: GlareNode`; `designGlare`; the emission target is `HalfFloatType`), Task 21 (`cinematicControls(director, frame)`, the `get cinematic()` member); three 0.186 `src/renderers/common/Renderer.js:3225` (`readRenderTargetPixelsAsync(renderTarget, x, y, width, height, textureIndex = 0, faceIndex = 0)`) and `:2097` (`getArrayBufferAsync`), `src/Three.Core.js:160` (`DataUtils`), `src/extras/DataUtils.js:150` (`toHalfFloat`), `src/textures/DataTexture.js`, `src/core/RenderTarget.js:54`, `QuadMesh` (as Task 13 uses it), `src/math/Matrix4.js:239` (`extractBasis(xAxis, yAxis, zAxis)`).
+Verified (7 October; R1b's lines re-read on 8 October): R1b plan lines 10462–10506 (`computeTimestamps(renderer)`, `timedCompute(renderer, passes)`: tracking on while encoding and while each resolve starts, re-review N1), 10665–10727 (`gpuTime`: one unrecorded run, then `median`), 10127–10145 (`relight-debug.ts`'s imports: `Vector3`, `type Matrix4`; `StorageBufferAttribute`, `type WebGPURenderer`; `Fn`, `float`, `storage`, `uniform`, `vec3`; `useLightSettingStore`; `relightSplat`, `type KernelFrame`, `type Rgb`; `FLAG_SUN`, `multiplierCodeDistance`, `packMultiplierWord`), 10155–10165 (`interface WordCheck`), 10315–10333 (`wordTally`: excused only when marched, sensitive and more than one code apart), 10385 (`sunRaySensitive`), 10391 (`readDisplay`: a `StorageBufferAttribute` written by a compute pass and read with `renderer.getArrayBufferAsync`), 10523 (`gpuKernel`), 10568–10592 (`const debug: RelightDebug = { state, select, sample, … }`; `sample`'s loop, `const tally = wordTally();`, the three lines this task replaces, `return tally.result(0);`); this plan's Task 10 (`SkyShadows`: `private readonly drawn`, `private readonly box`, `cpu`, `hook`; `lightViewFor` builds the camera with `lookAt`, so its world matrix's first two columns are the map's right and up; the taps at `(i − 1.5, j − 1.5) × SHADOW_PCF_SPACING`, j down the map), Task 13 (`private readonly glare: Glare`; `designGlare`, `cieGlare`, each `spread` with its own `dispose`; the emission target is `HalfFloatType`), Task 21 (`cinematicControls(director, frame)`, the `get cinematic()` member); three 0.186 `src/renderers/common/Renderer.js:3225` (`readRenderTargetPixelsAsync(renderTarget, x, y, width, height, textureIndex = 0, faceIndex = 0)`) and `:2097` (`getArrayBufferAsync`), `src/Three.Core.js:160` (`DataUtils`), `src/extras/DataUtils.js:150` (`toHalfFloat`), `src/textures/DataTexture.js`, `src/core/RenderTarget.js:54`, `QuadMesh` (as Task 13 uses it), `src/math/Matrix4.js:239` (`extractBasis(xAxis, yAxis, zAxis)`).
 
 - [ ] **Step 1: Write the failing tests** — append to `packages/web/src/lib/relight/__tests__/sun-shadow.test.ts`, inside its `describe`:
 
@@ -9856,18 +10431,18 @@ In `packages/web/src/components/scene/RelightCinematic.tsx`, add `import { updat
   }
 ```
 
-In `packages/web/src/lib/relight/cinematic-composer.ts`, replace `  private readonly glare: GlareNode;` with:
+In `packages/web/src/lib/relight/cinematic-composer.ts`, replace `  private readonly glare: Glare;` with:
 
 ```ts
-  /** The glow function in use (the design glow, or a fitted glare function; decision 6). */
-  readonly glare: GlareNode;
+  /** The glare in use (the design glow, or the fitted CIE glare; decision 6). */
+  readonly glare: Glare;
 ```
 
 - [ ] **Step 5: The instruments** — in `packages/web/src/lib/relight/relight-debug.ts`, merge into its imports: `DataTexture`, `DataUtils`, `FloatType`, `HalfFloatType`, `LinearFilter`, `RGBAFormat`, `RenderTarget` from `three`; `MeshBasicNodeMaterial` and `QuadMesh` from `three/webgpu`; `If`, `instanceIndex`, `texture`, `uint` and `vec4` from `three/tsl`; and add:
 
 ```ts
 import { currentCinematicParts } from "./cinematic-parts.js";
-import type { GlareNode } from "./cinematic-composer.js";
+import { CIE_GLARE_PIXELS_PER_DEGREE, type Glare } from "./cinematic-composer.js";
 import type { LampDimming } from "./lamp-dimming.js";
 import type { SkyBodyName, SkyShadows } from "./sun-shadow.js";
 ```
@@ -9954,8 +10529,8 @@ async function readShadows(renderer: WebGPURenderer, shadows: SkyShadows, points
   }
 }
 
-/** The glow function on a known emission: an 8 × 8 block of 1 in a half-float texture, glowed into a float target. */
-async function measureGlare(renderer: WebGPURenderer, glare: GlareNode): Promise<BloomEnergyCheck> {
+/** The glare on a known emission: an 8 × 8 block of 1 in a half-float texture, glowed into a float target. */
+async function measureGlare(renderer: WebGPURenderer, glare: Glare): Promise<BloomEnergyCheck> {
   const one = DataUtils.toHalfFloat(1);
   const halves = new Uint16Array(GLARE_TEST_SIZE * GLARE_TEST_SIZE * 4);
   const start = (GLARE_TEST_SIZE - GLARE_TEST_BLOCK) / 2;
@@ -9968,9 +10543,10 @@ async function measureGlare(renderer: WebGPURenderer, glare: GlareNode): Promise
   emission.needsUpdate = true;
   const target = new RenderTarget(GLARE_TEST_SIZE, GLARE_TEST_SIZE, { type: FloatType, depthBuffer: false });
   const material = new MeshBasicNodeMaterial({ depthTest: false, depthWrite: false, fog: false, toneMapped: false });
-  // A glare function builds a new bloom node (with its render targets) on each call: disposed below (finding M6).
-  const glow = glare(texture(emission));
-  material.colorNode = vec4(glow.rgb, 1);
+  // A glare's spread holds its own render targets: disposed below (finding M6). The CIE glare at its own scale.
+  const glow = glare.spread(texture(emission));
+  glow.setView(CIE_GLARE_PIXELS_PER_DEGREE);
+  material.colorNode = vec4(glow.node.rgb, 1);
   const quad = new QuadMesh(material);
   const previous = renderer.getRenderTarget();
   try {
@@ -10095,17 +10671,18 @@ replace Task 21's `export function cinematicControls(director: LightDirector | n
 In `installRelightDebug`, replace Task 21's `      return cinematicControls(currentDirector(), frame);` with `      return cinematicControls(currentDirector(), frame, renderer);`. In R1b's `interface WordCheck`, directly after `  readonly sunMarched: number;` add:
 
 ```ts
-  /** R1d: splats more than one code apart only in an interior shadow's penumbra, counted apart from `excused` (ruling N2). */
+  /**
+   * R1d: splats more than one code apart only in an interior shadow's penumbra, by the CPU's taps and by the splat's own
+   * GPU taps alike, counted apart from `excused` (ruling N2).
+   */
   readonly excusedPenumbra?: number;
-  /** R1d: the checked marched splats the GPU's own taps put in a penumbra: the cap's measurement (Task 23). */
-  readonly penumbraMarched?: number;
 ```
 
 In its `sample` member, directly after `      const tally = wordTally();` add
 
 ```ts
-      let penumbra = 0;
-      const marchedAt: Vec3[] = [];
+      // R1d (ruling N2): splats the CPU's taps put in an interior shadow's penumbra, decided by their own GPU taps below.
+      const penumbral: { readonly actual: number; readonly expected: number; readonly position: Vec3; readonly sensitive: () => boolean }[] = [];
 ```
 
 replace the three lines (R1b's, as of 8 October)
@@ -10120,14 +10697,13 @@ with:
 
 ```ts
         const marched = (kernel.windowSun !== null || kernel.moonSun !== null) && ((record[11] ?? 0) & FLAG_SUN) !== 0;
-        if (marched) marchedAt.push(position);
         const actual = words[splat] ?? 0;
         // R1d: the twin with the cinematic terms (the glow hiding, the interior shadow).
         const expected = expectedWord(frame, kernel, record, position, colour, actual);
         const sensitive = (): boolean => sunRaySensitive(frame.model, kernel, position);
-        // An interior shadow's penumbra is R1d's own excuse, counted apart from R1b's window-rounding ones (ruling N2).
+        // In an interior shadow's penumbra by the CPU's taps: R1d's own excuse, decided below splat by splat (ruling N2).
         if (marched && actual >>> 24 === expected >>> 24 && multiplierCodeDistance(actual, expected) > 1 && !sensitive() && inPenumbra(kernel, position)) {
-          penumbra += 1;
+          penumbral.push({ actual, expected, position, sensitive });
           continue;
         }
         tally.add(actual, expected, marched, sensitive);
@@ -10136,18 +10712,24 @@ with:
 and replace `sample`'s `      return tally.result(0);` (the one in `sample`, not in `fixture`) with:
 
 ```ts
-      // The penumbra's own population (ruling N2): the checked marched splats whose GPU taps are neither all lit nor all
-      // shadowed for a body that counts, read through the hook every surface uses. Task 23 caps the penumbra excuses by it.
+      // R1d's own excuse, splat by splat (ruling N2): a splat the CPU's taps put in a penumbra is excused only where its own
+      // GPU taps, read through the hook every surface uses, are neither all lit nor all shadowed for a body that counts;
+      // otherwise it counts as the difference it is. Counted apart from R1b's window-rounding `excused`.
       const { shadows } = currentCinematicParts();
-      let penumbraMarched = 0;
-      if (shadows !== null && marchedAt.length > 0) {
-        const taps: Float32Array[] = [];
+      const taps: Float32Array[] = [];
+      if (shadows !== null && penumbral.length > 0) {
+        const points = penumbral.map((entry) => entry.position);
         for (const body of ["sun", "moon"] as const) {
-          if ((body === "sun" ? kernel.setting.sunDir : kernel.setting.moonDir) !== null) taps.push(await readShadows(renderer, shadows, marchedAt, body));
+          if ((body === "sun" ? kernel.setting.sunDir : kernel.setting.moonDir) !== null) taps.push(await readShadows(renderer, shadows, points, body));
         }
-        penumbraMarched = marchedAt.filter((_point, index) => taps.some((lit) => { const value = lit[index] ?? 1; return value > 0 && value < 1; })).length;
       }
-      return { ...tally.result(0), excusedPenumbra: penumbra, penumbraMarched };
+      let excusedPenumbra = 0;
+      penumbral.forEach((entry, index) => {
+        const fractional = taps.some((lit) => { const value = lit[index] ?? 1; return value > 0 && value < 1; });
+        if (fractional) excusedPenumbra += 1;
+        else tally.add(entry.actual, entry.expected, true, entry.sensitive);
+      });
+      return { ...tally.result(0), excusedPenumbra };
 ```
 
 - [ ] **Step 6: Run the tests**
@@ -10180,12 +10762,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Outputs (D:): `D:/claude/relight/grand-hall/renders/R1d_{off_captured,cin_captured,cin_night}/<view>@2x.png`, `D:/claude/relight/grand-hall/evidence/r1d/r1d-browser-run.json`, `evidence/r1d/light-scrub-budget.json`, `evidence/r1d/r1d-browser-checks.json`
 
 **Interfaces:**
-- Consumes: Tasks 21–22's `window.__relight.cinematic` (`still`, `state` with `packaged`, `shadowCheck`, `bloomEnergy`, `forceBothBodies`, `setStride`, `scrubTo`, `passTimes`); R1b's `window.__relight` (`select`, `state`, `fixture`, `sample` with R1d's `excusedPenumbra` and `penumbraMarched`, `gpuTime`), `window.__roomViewCapture`, `window.__roomWalk`, the `relight:*` performance spans (R1b's and Task 8's `CINEMATIC_SPANS`), the vectors fixture (`src/lib/relight/__fixtures__/relight-vectors.json`, with `windowRays.wallFaceRate`), `browsercheck.py` (`CAPTURED_STOPS`, `LONG_TASK_MS`, `FRAME_MS`, `SKY_BUDGET_MS`, `SKY_TIMINGS`, `NIGHT_STATIONS`, `captured_verdict`, `stop_difference`, `_views`, `_word_ok(name, v, rate)`, `_wall_face_rate`, `prepare`) and the proof's `07_compare`; Task 1's `bulbs.py` (`photo_check`, `NIGHT_VIEWS`, `GATE_CONTROL_RATIO`) and `<work>/bulbs.json`; Task 21's `nightcal.py` (`to_render_light`, `colour_accuracy`, `CELL_FRACTION`); `SkyClock` (Task 20: `role="slider"`, name "Time") and the lamps' radios ("On", "Off"); the walk's keys (`interiorMovementKey`: w, s and the arrows).
-- Produces (`cinematiccheck.py`): `GLOW_REACH_PX = 48`, `SHADOW_DECIDED = 0.5`, `SHADOW_DISAGREE = 0.005`, `GLOW_TOLERANCE = 0.03`, `LAMP_HIT_SHARE = 0.9`, `DROPPED_MS = 33.4`, `MOVING_SHARE = 0.8`, `PENUMBRA_CAP_FACTOR = 2`, `CINEMATIC_SPANS`; `identity_mask(mask_lin, *srgbs, reach=GLOW_REACH_PX)`; `shadow_verdict(checks)`; `glow_verdict(energy)`; `photo_station_verdict(station)`; `budget_verdict(scenarios)`; `loading_verdict(off, cinematic)`; `fallback_verdict(runs)`; `words_verdict(checks, rate)`; `gpu_time_verdict(time, passes)`; `identity_report`, `photo_report`, `lamps_report`; `run(cfg, args)` (the command `cinematic-check`).
+- Consumes: Tasks 21–22's `window.__relight.cinematic` (`select`, `reapply`, `still`, `state` with `packaged`, `shadowCheck`, `bloomEnergy`, `forceBothBodies`, `setStride`, `scrubTo`, `passTimes`); R1b's `window.__relight` (`select`, `state`, `fixture`, `sample` with R1d's `excusedPenumbra` and `penumbraMarched`, `gpuTime`), `window.__roomViewCapture`, `window.__roomWalk`, the `relight:*` performance spans (R1b's and Task 8's `CINEMATIC_SPANS`), the vectors fixture (`src/lib/relight/__fixtures__/relight-vectors.json`, with `windowRays.wallFaceRate`), `browsercheck.py` (`CAPTURED_STOPS`, `LONG_TASK_MS`, `FRAME_MS`, `SKY_BUDGET_MS`, `SKY_TIMINGS`, `NIGHT_STATIONS`, `captured_verdict`, `stop_difference`, `_views`, `_word_ok(name, v, rate)`, `_wall_face_rate`, `prepare`) and the proof's `07_compare`; Task 1's `bulbs.py` (`photo_check`, `NIGHT_VIEWS`, `GATE_CONTROL_RATIO`) and `<work>/bulbs.json`; Task 21's `nightcal.py` (`to_render_light`, `colour_accuracy`, `CELL_FRACTION`); `SkyClock` (Task 20: `role="slider"`, name "Time") and the lamps' radios ("On", "Off"); the walk's keys (`interiorMovementKey`: w, s and the arrows).
+- Produces (`cinematiccheck.py`): `GLOW_REACH_PX = 48`, `SHADOW_DECIDED = 0.5`, `SHADOW_DISAGREE = 0.005`, `GLOW_TOLERANCE = 0.03`, `LAMP_HIT_SHARE = 0.9`, `DROPPED_MS = 33.4`, `MOVING_SHARE = 0.8`, `CINEMATIC_SPANS`; `identity_mask(mask_lin, *srgbs, reach=GLOW_REACH_PX)`; `shadow_verdict(checks)`; `glow_verdict(energy)`; `photo_station_verdict(station)`; `budget_verdict(scenarios)`; `loading_verdict(off, cinematic)`; `fallback_verdict(runs)`; `words_verdict(checks, rate)`; `gpu_time_verdict(time, passes)`; `identity_report`, `photo_report`, `lamps_report`; `run(cfg, args)` (the command `cinematic-check`).
 
 What is judged, against the spec's numbers (§4.3, §4.6, §6, §7), each against an independent reference:
 - **At the captured light, the hall is as captured where splats remain.** The seven proof views are rendered at the captured light with the cinematic light and with `?cinematic=off`, both with `?skins=off&floorskin=v1` (so only R1d differs), and compared in stops at every valid pixel (07_compare's mask: no view out, no fixture, nothing clipped or black) farther than 48 px (at 1×) from a fixture: the crisp lamps and their energy-conserving glow replace the captured glow there, which is what decision 1 changes. The 99th percentile must be within 1/20 stop (R1b's `CAPTURED_STOPS`), and is reported with and without the 48 px margin. The sheen is weighted to nothing at the captured light (Task 17), there are no interior shadows (no sun direction) and the eye holds the identity display (Task 9), so nothing else may differ.
-- **The kernel's words.** Without the cinematic light, R1a's vectors (the captured light, the night, the sunny morning) through R1b's `fixture` check; with it, the CPU twin with the cinematic terms (Task 22) through `sample`, at the night, the sunny morning at 10:00, both bodies forced on (17 June 2026 at 11:00 BST: the Sun high in the south-east and an 8% Moon 29° up in the east, in front of the east-facing windows; R1b Task 6's `moonPosition`, R1a's `moon.py` ported, computed 7 October; the pre-flight scan's recomputation with `moon.py` on 8 October gives azimuth 92.60°, elevation 29.25°) and the moonlit night. Each is judged by R1b's own rule (`_word_ok(name, v, rate)`: within one code, alphas equal, the window-rounding excuses within twice R1a's measured wall-face rate of the marched splats, which the driver copies from the vectors as R1b's does), and R1d's own penumbra excuses, a different population, within `PENUMBRA_CAP_FACTOR` (2) times the checked marched splats the GPU's own taps put in a penumbra, measured in the same check (`penumbraMarched`, Task 22): the controller's ruling N2 (finding B14).
+- **The kernel's words.** Without the cinematic light, R1a's vectors (the captured light, the night, the sunny morning) through R1b's `fixture` check; with it, the CPU twin with the cinematic terms (Task 22) through `sample`, at the night, the sunny morning at 10:00, both bodies forced on (17 June 2026 at 11:00 BST: the Sun high in the south-east and an 8% Moon 29° up in the east, in front of the east-facing windows; R1b Task 6's `moonPosition`, R1a's `moon.py` ported, computed 7 October; the pre-flight scan's recomputation with `moon.py` on 8 October gives azimuth 92.60°, elevation 29.25°) and the moonlit night. Each is judged by R1b's own rule (`_word_ok(name, v, rate)`: within one code, alphas equal, the window-rounding excuses within twice R1a's measured wall-face rate of the marched splats, which the driver copies from the vectors as R1b's does), and R1d's own penumbra excuses, a different population, counted apart and each confirmed by its splat's own GPU taps in Task 22, so reported rather than capped: the controller's ruling N2, made exact per splat on the re-review's advice (finding B14).
 - **The interior shadows.** For each body that counts at those settings, the GPU's maps against the CPU twin at about 512 points: at least half decided (all 16 taps agree) and at most 0.5% of the decided points disagreeing.
 - **The glow conserves energy.** The design glow on its known block returns its energy within 3%.
 - **The night photographs, colour included.** The calibrated night (the product as shipped: skins on, the default floor) at stations 43 and 45 against the night photographs: 07_compare's r at least R1b's threshold (0.85, 0.80) and at least the captured hall's, and the median CIEDE2000 (Task 21's measure) no worse than the captured hall's.
@@ -10267,14 +10849,16 @@ class Verdicts(unittest.TestCase):
         self.assertFalse(C.fallback_verdict(dict(runs, missing=dict(runs["missing"], cinematicWarnings=2)))["pass"])
         self.assertFalse(C.fallback_verdict(dict(runs, off={"relit": True, "controls": True}))["pass"])
 
-    def test_words_follow_r1bs_rule_and_cap_the_penumbra_by_its_own_measure(self):
+    def test_words_follow_r1bs_rule_and_count_the_penumbra_apart(self):
         rate = (10, 1000)   # R1a's wall-face rate: at most 2 x 1% of the 400 marched, 8, may be excused for rounding
         good = {"checked": 1000, "worstCodeDistance": 1, "alphaMismatches": 0, "missing": 0, "excused": 3, "sunMarched": 400,
-                "excusedPenumbra": 20, "penumbraMarched": 30}
+                "excusedPenumbra": 20}
         self.assertTrue(C.words_verdict({"sample_night": good, "sample_sunny": good}, rate)["pass"])
         self.assertFalse(C.words_verdict({"sample_night": dict(good, alphaMismatches=1)}, rate)["pass"])
         self.assertFalse(C.words_verdict({"sample_sunny": dict(good, excused=9)}, rate)["pass"])
-        self.assertFalse(C.words_verdict({"sample_sunny": dict(good, excusedPenumbra=61)}, rate)["pass"])
+        # Each penumbra excuse is confirmed by its splat's own GPU taps (Task 22): reported, never capped; malformed fails.
+        self.assertTrue(C.words_verdict({"sample_sunny": dict(good, excusedPenumbra=300)}, rate)["pass"])
+        self.assertFalse(C.words_verdict({"sample_sunny": dict(good, excusedPenumbra=-1)}, rate)["pass"])
         self.assertFalse(C.words_verdict({"sample_sunny": good}, None)["pass"])   # no measured rate: never passes
         self.assertFalse(C.words_verdict({}, rate)["pass"])
 
@@ -10331,10 +10915,6 @@ GLOW_TOLERANCE = 0.03
 LAMP_HIT_SHARE = 0.9
 DROPPED_MS = 33.4
 MOVING_SHARE = 0.8
-#: The penumbra's excuses (Task 22) at most this many times the checked marched splats the GPU's own taps put in a
-#: penumbra, measured in the same check: R1d's own cap for its own population (the controller's ruling N2), the same
-#: factor R1b gives R1a's wall-face rate.
-PENUMBRA_CAP_FACTOR = 2
 #: R1d's spans of main-thread work while the cinematic light loads (relight-spans.ts, CINEMATIC_SPANS).
 CINEMATIC_SPANS = ("relight:cinematic-package", "relight:cinematic-parts")
 
@@ -10396,13 +10976,14 @@ def fallback_verdict(runs: dict) -> dict:
 
 
 def _penumbra_ok(v: dict) -> bool:
-    """R1d's penumbra excuses within PENUMBRA_CAP_FACTOR x the penumbra's own measured population (ruling N2)."""
-    excused, population = v.get("excusedPenumbra", 0), v.get("penumbraMarched", 0)
-    return isinstance(excused, int) and isinstance(population, int) and excused <= PENUMBRA_CAP_FACTOR * population
+    """R1d's penumbra excuses (Task 22): each is confirmed by its splat's own GPU taps, so their number is reported, not
+    capped (the controller's ruling N2, made exact per splat); the record must carry a well-formed count."""
+    excused = v.get("excusedPenumbra", 0)
+    return isinstance(excused, int) and not isinstance(excused, bool) and excused >= 0
 
 
 def words_verdict(checks: dict, rate) -> dict:
-    """R1b's `_word_ok` with R1a's wall-face rate (the window-rounding excuses), and R1d's penumbra cap (finding B14)."""
+    """R1b's `_word_ok` with R1a's wall-face rate (the window-rounding excuses), and R1d's penumbra count well formed (B14)."""
     ok = {name: bc._word_ok(name, value, rate) and _penumbra_ok(value) for name, value in checks.items()}
     return {"checks": checks, "wallFaceRate": rate, "ok": ok, "pass": bool(checks) and all(ok.values())}
 
@@ -10539,6 +11120,17 @@ const LOAD_TIMEOUT_MS = 240_000;
 const SETTLE_TIMEOUT_MS = 30_000;
 const SHADOW_POINTS = 512;
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+/** One step in the page (a selection, a capture, a check) must finish within this. */
+const STEP_TIMEOUT_MS = 180_000;
+/** The whole run: past it the watchdog closes the browser, which ends every wait, so the GPU lock is never held for ever. */
+const RUN_LIMIT_MS = 60 * 60_000;
+
+/** A promise bounded in time: a hang becomes an error naming the step, and main's finally frees the GPU lock (finding NB1). */
+function within(promise, what, ms = STEP_TIMEOUT_MS) {
+  let timer;
+  const limit = new Promise((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`${what} did not finish within ${ms / 1000} s.`)); }, ms); });
+  return Promise.race([promise, limit]).finally(() => { clearTimeout(timer); });
+}
 
 async function takeLock() {
   for (let waited = 0; ; waited += 30_000) {
@@ -10604,8 +11196,8 @@ async function captureViews(page, views, job) {
   await rm(folder, { recursive: true, force: true });
   await mkdir(folder, { recursive: true });
   for (const view of views) {
-    const dataUrl = await page.evaluate(async (request) => (await window.__roomViewCapture(request)).dataUrl,
-      { position: view.pos, target: view.tgt, fov: view.fov, width: WIDTH * SCALE, height: HEIGHT * SCALE });
+    const dataUrl = await within(page.evaluate(async (request) => (await window.__roomViewCapture(request)).dataUrl,
+      { position: view.pos, target: view.tgt, fov: view.fov, width: WIDTH * SCALE, height: HEIGHT * SCALE }), `The capture of ${view.name}`);
     await writeFile(join(folder, `${view.name}@2x.png`), Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"));
   }
 }
@@ -10617,11 +11209,14 @@ async function main() {
   // R1a's measured wall-face rate caps the rounding excuses, as in R1b's run (finding B14).
   const record = { startedAt: new Date().toISOString(), baseUrl: BASE_URL, wallFaceRate: vectors.windowRays.wallFaceRate, runs: {} };
   await takeLock();
-  const browser = await chromium.launch({
-    headless: false,
-    args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion", "--enable-webgpu-developer-features"],
-  });
+  let browser = null;
+  // The watchdog: a run that hangs anyway is ended by closing the browser, and the finally below frees the GPU lock.
+  const watchdog = setTimeout(() => { console.error(`${OWNER}: stopped after ${RUN_LIMIT_MS / 60_000} minutes.`); void browser?.close(); }, RUN_LIMIT_MS);
   try {
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion", "--enable-webgpu-developer-features"],
+    });
     // The captured light without and with the cinematic light: only R1d may differ.
     const offIdentity = await openWalk(browser, "light=captured&cinematic=off&skins=off&floorskin=v1");
     await captureViews(offIdentity.page, views, "R1d_off_captured");
@@ -10635,7 +11230,7 @@ async function main() {
     const off = await openWalk(browser, "light=night&cinematic=off");
     const gpu = {};
     for (const setting of ["captured", "night", "sunny_morning"]) {
-      gpu[`fixture_${setting}`] = await off.page.evaluate(([value, name]) => window.__relight.fixture(value, name), [vectors, setting]);
+      gpu[`fixture_${setting}`] = await within(off.page.evaluate(([value, name]) => window.__relight.fixture(value, name), [vectors, setting]), `The ${setting} fixture check`);
     }
     record.runs.off = {
       atLoad: off.atLoad, gpu, relit: await off.page.evaluate(() => window.__relight.state().relit),
@@ -10649,29 +11244,30 @@ async function main() {
     await settle(page);
     const words = {}, shadows = {};
     await captureViews(page, stations, "R1d_cin_night");
-    words.sample_night = await page.evaluate(() => window.__relight.sample(97));
-    await page.evaluate(async () => { await window.__relight.select("sunny", 600); });
+    words.sample_night = await within(page.evaluate(() => window.__relight.sample(97)), "The word check");
+    await within(page.evaluate(() => window.__relight.cinematic.select("sunny", 600)), "Selecting the sunny morning");
     await settle(page);
-    words.sample_sunny = await page.evaluate(() => window.__relight.sample(97));
-    shadows.sunny = await page.evaluate((points) => window.__relight.cinematic.shadowCheck(points), SHADOW_POINTS);
+    words.sample_sunny = await within(page.evaluate(() => window.__relight.sample(97)), "The word check");
+    shadows.sunny = await within(page.evaluate((points) => window.__relight.cinematic.shadowCheck(points), SHADOW_POINTS), "The shadow check");
     // R1b's GPU timing in the cinematic session, and the new passes' (finding I8). gpuTime applies its lights itself,
-    // so the light is handed back to the director afterwards.
-    const gpuTime = await page.evaluate(() => window.__relight.gpuTime(12));
-    const passTimes = await page.evaluate(() => window.__relight.cinematic.passTimes(12));
-    await page.evaluate(async () => { await window.__relight.select("sunny", 600); });
+    // so the light is handed back to the director afterwards: re-selecting what the store holds would change nothing
+    // and wait for ever for an apply (finding NB1).
+    const gpuTime = await within(page.evaluate(() => window.__relight.gpuTime(12)), "R1b's gpuTime");
+    const passTimes = await within(page.evaluate(() => window.__relight.cinematic.passTimes(12)), "The new passes' GPU time");
+    await within(page.evaluate(() => window.__relight.cinematic.reapply()), "Handing the light back to the director");
     await settle(page);
     // Both bodies: 17 June 2026, 11:00 BST, the Sun high in the south-east and an 8% Moon 29° up in the east.
-    await page.evaluate(async () => { await window.__relight.select("sunny", 660, "2026-06-17"); window.__relight.cinematic.forceBothBodies(true); });
+    await within(page.evaluate(async () => { await window.__relight.cinematic.select("sunny", 660, "2026-06-17"); window.__relight.cinematic.forceBothBodies(true); }), "Selecting both bodies");
     await settle(page);
-    words.sample_both = await page.evaluate(() => window.__relight.sample(97));
-    shadows.both = await page.evaluate((points) => window.__relight.cinematic.shadowCheck(points), SHADOW_POINTS);
+    words.sample_both = await within(page.evaluate(() => window.__relight.sample(97)), "The word check");
+    shadows.both = await within(page.evaluate((points) => window.__relight.cinematic.shadowCheck(points), SHADOW_POINTS), "The shadow check");
     const bothState = await page.evaluate(() => window.__relight.cinematic.state());
     await page.evaluate(() => { window.__relight.cinematic.forceBothBodies(false); });
-    await page.evaluate(async () => { await window.__relight.select("moonlit"); });
+    await within(page.evaluate(() => window.__relight.cinematic.select("moonlit")), "Selecting the moonlit night");
     await settle(page);
-    words.sample_moonlit = await page.evaluate(() => window.__relight.sample(97));
-    shadows.moonlit = await page.evaluate((points) => window.__relight.cinematic.shadowCheck(points), SHADOW_POINTS);
-    const glow = await page.evaluate(() => window.__relight.cinematic.bloomEnergy());
+    words.sample_moonlit = await within(page.evaluate(() => window.__relight.sample(97)), "The word check");
+    shadows.moonlit = await within(page.evaluate((points) => window.__relight.cinematic.shadowCheck(points), SHADOW_POINTS), "The shadow check");
+    const glow = await within(page.evaluate(() => window.__relight.cinematic.bloomEnergy()), "The glow's energy");
     record.runs.cinematic = {
       atLoad: cin.atLoad, words, shadows, glow, bothState, gpuTime, passTimes,
       state: await page.evaluate(() => window.__relight.cinematic.state()), messages: [...cin.messages],
@@ -10691,8 +11287,12 @@ async function main() {
     };
     await missing.context.close();
   } finally {
-    await browser.close();
-    await releaseLock();
+    clearTimeout(watchdog);
+    try {
+      if (browser !== null) await within(browser.close(), "Closing the browser", 60_000);
+    } finally {
+      await releaseLock();
+    }
   }
   record.finishedAt = new Date().toISOString();
   const evidence = join(ROOT, "evidence", "r1d");
@@ -10732,6 +11332,17 @@ const SAMPLE_MS = 6000;
 const LOAD_TIMEOUT_MS = 240_000;
 const DROPPED_FRAME_MS = 33.4;
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+/** One step in the page (a selection, a capture, a check) must finish within this. */
+const STEP_TIMEOUT_MS = 180_000;
+/** The whole run: past it the watchdog closes the browser, which ends every wait, so the GPU lock is never held for ever. */
+const RUN_LIMIT_MS = 30 * 60_000;
+
+/** A promise bounded in time: a hang becomes an error naming the step, and main's finally frees the GPU lock (finding NB1). */
+function within(promise, what, ms = STEP_TIMEOUT_MS) {
+  let timer;
+  const limit = new Promise((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`${what} did not finish within ${ms / 1000} s.`)); }, ms); });
+  return Promise.race([promise, limit]).finally(() => { clearTimeout(timer); });
+}
 
 async function takeLock() {
   for (let waited = 0; ; waited += 30_000) {
@@ -10780,7 +11391,7 @@ function summarize(sample, motion) {
  * the store's hour moved every frame from sweep[0] to sweep[1] minutes.
  */
 async function sampleFrames(page, durationMs, sweep = null) {
-  return page.evaluate(([duration, range]) => new Promise((resolve) => {
+  return within(page.evaluate(([duration, range]) => new Promise((resolve) => {
     const frames = [];
     let moving = 0;
     const startedAt = performance.now();
@@ -10795,7 +11406,7 @@ async function sampleFrames(page, durationMs, sweep = null) {
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  }), [durationMs, sweep]);
+  }), [durationMs, sweep]), "Sampling the frame loop", durationMs + STEP_TIMEOUT_MS);
 }
 
 /** Drag the clock's time slider across its width for `durationMs`. */
@@ -10815,12 +11426,15 @@ async function dragClock(page, durationMs) {
 
 async function main() {
   await takeLock();
-  const browser = await chromium.launch({
-    headless: false,
-    args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion", "--enable-webgpu-developer-features"],
-  });
+  let browser = null;
+  // The watchdog: a run that hangs anyway is ended by closing the browser, and the finally below frees the GPU lock.
+  const watchdog = setTimeout(() => { console.error(`${OWNER}: stopped after ${RUN_LIMIT_MS / 60_000} minutes.`); void browser?.close(); }, RUN_LIMIT_MS);
   const scenarios = {};
   try {
+    browser = await chromium.launch({
+      headless: false,
+      args: ["--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-features=CalculateNativeWinOcclusion", "--enable-webgpu-developer-features"],
+    });
     const context = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 1 });
     const page = await context.newPage();
     await page.goto(`${BASE_URL}/room/grand-hall?light=sunny`, { waitUntil: "domcontentloaded", timeout: 60_000 });
@@ -10829,17 +11443,17 @@ async function main() {
     await page.evaluate((stride) => { window.__relight.cinematic.setStride(stride); }, STRIDE);
 
     // Scrubbing the clock through the day (the store's hour moved every frame).
-    await page.evaluate(async () => { await window.__relight.select("sunny", 360, "2026-06-17"); });
+    await within(page.evaluate(async () => { await window.__relight.cinematic.select("sunny", 360, "2026-06-17"); }), "Selecting the light");
     scenarios.scrub = summarize(await sampleFrames(page, SAMPLE_MS, [360, 1260]), true);
 
     // Dragging the clock itself.
-    await page.evaluate(async () => { await window.__relight.select("sunny", 600, "2026-06-17"); });
+    await within(page.evaluate(async () => { await window.__relight.cinematic.select("sunny", 600, "2026-06-17"); }), "Selecting the light");
     const dragged = sampleFrames(page, SAMPLE_MS);
     await dragClock(page, SAMPLE_MS - 200);
     scenarios.drag = summarize(await dragged, true);
 
     // Walking with the light still: w held, then s.
-    await page.evaluate(async () => { await window.__relight.select("sunny", 600, "2026-06-17"); });
+    await within(page.evaluate(async () => { await window.__relight.cinematic.select("sunny", 600, "2026-06-17"); }), "Selecting the light");
     await sleep(2000);
     const walked = sampleFrames(page, SAMPLE_MS);
     await page.keyboard.down("w");
@@ -10851,7 +11465,7 @@ async function main() {
     scenarios.walk = summarize(await walked, false);
 
     // The lamps fading in and out at dusk (21:30 BST in June), on the owner's warm-down.
-    await page.evaluate(async () => { await window.__relight.select("sunny", 1290, "2026-06-17"); });
+    await within(page.evaluate(async () => { await window.__relight.cinematic.select("sunny", 1290, "2026-06-17"); }), "Selecting the light");
     const faded = sampleFrames(page, SAMPLE_MS);
     for (let switchNumber = 0; switchNumber < 4; switchNumber += 1) {
       await page.getByRole("radio", { name: switchNumber % 2 === 0 ? "On" : "Off", exact: true }).check();
@@ -10860,13 +11474,17 @@ async function main() {
     scenarios.lamps = summarize(await faded, true);
 
     // Both bodies forced on while scrubbing through the late morning (a crescent Moon in the east).
-    await page.evaluate(async () => { await window.__relight.select("sunny", 600, "2026-06-17"); window.__relight.cinematic.forceBothBodies(true); });
+    await within(page.evaluate(async () => { await window.__relight.cinematic.select("sunny", 600, "2026-06-17"); window.__relight.cinematic.forceBothBodies(true); }), "Selecting the light");
     scenarios.both = summarize(await sampleFrames(page, SAMPLE_MS, [600, 720]), true);
     await page.evaluate(() => { window.__relight.cinematic.forceBothBodies(false); });
     await context.close();
   } finally {
-    await browser.close();
-    await releaseLock();
+    clearTimeout(watchdog);
+    try {
+      if (browser !== null) await within(browser.close(), "Closing the browser", 60_000);
+    } finally {
+      await releaseLock();
+    }
   }
   const evidence = join(ROOT, "evidence", "r1d");
   await mkdir(evidence, { recursive: true });
@@ -10885,7 +11503,7 @@ cd D:/claude/real-hall/repo/packages/web && node scripts/cinematic-verify.mjs &&
 cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m relight cinematic-check --config config/grand-hall.json
 ```
 
-Expected: `identity: pass`, `words: pass`, `shadows: pass`, `glow: pass`, `photo: pass` (both stations' r and median ΔE00 printed beside the captured hall's), `lamps: pass`, `fallback: pass`, `loading: pass`, `gpuTime: pass` (its numbers printed), `budget: pass`, exit 0. Copy into the session log: the identity's p99 with and without the margin, both stations' numbers, the glow ratio, the shadow tallies, each word check's `excused` and `excusedPenumbra` beside their caps, every span over 10 ms, the GPU times (the pass's and the sky passes' medians, `skyTiming`, the air fill's and the eye measure's) and every budget scenario's p50, p99 and max. On a `FAIL`, keep the evidence, find the cause and fix it; never loosen a threshold. For example: `identity` failing without the margin and passing with it is the crisp lamps' glow (decision 1, reported); failing with it means a cinematic term leaks into the captured light (the sheen's weight, an interior shadow, the eye); a `words` failure with many `excusedPenumbra` points at the interior shadow's penumbra rule (compare `cpuTaps` with the shader's taps, Task 10), and one with many `excused` at R1b's window march; `gpuTime` failing on the pass means the interior shadow's 32 taps or the glow hiding cost too much (decision 7's remedies), on the sky passes R1b's own budget; `shadows` disagreeing means the map's view or depth differs from the twin (`lightViewFor`, `SHADOW_BIAS`); `glow` off by more than 3% means the pyramid's weights or the high-pass are not as Task 13 assumes; `photo` worse than captured means the night's colour or the lamps' light is wrong (Task 21's evidence first); `lamps` missing means the lamps' frame or the envelope's centring is wrong (Task 11); `budget` failing a scenario takes decision 7's remedies in order (rerun the budget with `CINEMATIC_BUDGET_STRIDE=2` and report both runs; then R1b's early-out remedy), and the limit is never loosened.
+Expected: `identity: pass`, `words: pass`, `shadows: pass`, `glow: pass`, `photo: pass` (both stations' r and median ΔE00 printed beside the captured hall's), `lamps: pass`, `fallback: pass`, `loading: pass`, `gpuTime: pass` (its numbers printed), `budget: pass`, exit 0. Copy into the session log: the identity's p99 with and without the margin, both stations' numbers, the glow ratio, the shadow tallies, each word check's `excused` beside its cap and its `excusedPenumbra` (each confirmed by its splat's GPU taps), every span over 10 ms, the GPU times (the pass's and the sky passes' medians, `skyTiming`, the air fill's and the eye measure's) and every budget scenario's p50, p99 and max. On a `FAIL`, keep the evidence, find the cause and fix it; never loosen a threshold. For example: `identity` failing without the margin and passing with it is the crisp lamps' glow (decision 1, reported); failing with it means a cinematic term leaks into the captured light (the sheen's weight, an interior shadow, the eye); a `words` failure at penumbra splats that the GPU's own taps do not confirm points at the interior shadow's penumbra rule (compare `cpuTaps` with the shader's taps, Task 10), and one with many `excused` at R1b's window march; `gpuTime` failing on the pass means the interior shadow's 32 taps or the glow hiding cost too much (decision 7's remedies), on the sky passes R1b's own budget; `shadows` disagreeing means the map's view or depth differs from the twin (`lightViewFor`, `SHADOW_BIAS`); `glow` off by more than 3% means the pyramid's weights or the high-pass are not as Task 13 assumes; `photo` worse than captured means the night's colour or the lamps' light is wrong (Task 21's evidence first); `lamps` missing means the lamps' frame or the envelope's centring is wrong (Task 11); `budget` failing a scenario takes decision 7's remedies in order (rerun the budget with `CINEMATIC_BUDGET_STRIDE=2` and report both runs; then R1b's early-out remedy), and the limit is never loosened.
 
 - [ ] **Step 8: Commit**
 
@@ -10915,7 +11533,7 @@ Verified (7 October; re-read 8 October): R1a plan Task 7 Steps 2–3 (the publis
 
 ```bash
 cd D:/claude/real-hall/repo
-for f in src/lib/__tests__/springs.test.ts src/lib/__tests__/sun.test.ts src/lib/__tests__/moon.test.ts src/lib/__tests__/light-setting.test.ts src/stores/__tests__/light-setting-store.test.ts src/lib/relight/__tests__/lamp-dimming.test.ts src/lib/relight/__tests__/light-motion.test.ts src/lib/relight/__tests__/eye.test.ts src/lib/relight/__tests__/sky-instant.test.ts src/lib/relight/__tests__/relight-kernel.test.ts src/lib/relight/__tests__/relight-frame.test.ts src/lib/relight/__tests__/relight-draw.test.ts src/lib/relight/__tests__/relight-apply.test.ts src/lib/__tests__/native-splat-scene.test.ts src/lib/relight/__tests__/cinematic-package.test.ts src/lib/__tests__/splat-staging-plugin.test.ts src/lib/relight/__tests__/light-director.test.ts src/lib/relight/__tests__/sun-shadow.test.ts src/components/stage/__tests__/StageFloor.test.tsx src/lib/relight/__tests__/bulbs.test.ts src/lib/__tests__/native-renderer-scope.test.ts src/components/scene/__tests__/NativeCanvas.test.tsx src/lib/__tests__/native-current-view-capture.test.ts src/lib/relight/__tests__/cinematic-composer.test.ts src/lib/relight/__tests__/sun-shafts.test.ts src/lib/relight/__tests__/window-view.test.ts src/lib/relight/__tests__/sky-panels.test.ts src/lib/relight/__tests__/display.test.ts src/lib/relight/__tests__/sheen.test.ts src/lib/relight/__tests__/reflection-probes.test.ts src/lib/relight/__tests__/sky-arcs.test.ts src/components/rooms/__tests__/SkyClock.test.tsx src/components/rooms/__tests__/LightControl.test.tsx src/components/rooms/__tests__/RoomSplatScene.test.tsx src/components/scene/__tests__/RelightCinematic.test.tsx src/components/scene/__tests__/RelightProvider.test.tsx src/components/scene/__tests__/RelightProvider-cinematic.test.tsx src/lib/relight/__tests__/relight-spans.test.ts src/lib/relight/__tests__/relight-debug.test.ts src/lib/skins/__tests__/skin-material.test.ts src/components/scene/__tests__/RelightSkins.test.tsx src/components/rooms/__tests__/LightControl-skins.test.tsx; do pnpm --filter @omnitwin/web exec vitest run "$f" || { echo "FAILED: $f"; break; }; done
+for f in src/lib/__tests__/springs.test.ts src/lib/__tests__/sun.test.ts src/lib/__tests__/moon.test.ts src/lib/__tests__/light-setting.test.ts src/stores/__tests__/light-setting-store.test.ts src/lib/relight/__tests__/lamp-dimming.test.ts src/lib/relight/__tests__/light-motion.test.ts src/lib/relight/__tests__/eye.test.ts src/lib/relight/__tests__/sky-instant.test.ts src/lib/relight/__tests__/sky-colour.test.ts src/lib/relight/__tests__/relight-kernel.test.ts src/lib/relight/__tests__/relight-frame.test.ts src/lib/relight/__tests__/relight-draw.test.ts src/lib/relight/__tests__/relight-apply.test.ts src/lib/__tests__/native-splat-scene.test.ts src/lib/relight/__tests__/cinematic-package.test.ts src/lib/__tests__/splat-staging-plugin.test.ts src/lib/relight/__tests__/light-director.test.ts src/lib/relight/__tests__/sun-shadow.test.ts src/components/stage/__tests__/StageFloor.test.tsx src/lib/relight/__tests__/bulbs.test.ts src/lib/__tests__/native-renderer-scope.test.ts src/components/scene/__tests__/NativeCanvas.test.tsx src/lib/__tests__/native-current-view-capture.test.ts src/lib/relight/__tests__/cinematic-composer.test.ts src/lib/relight/__tests__/sun-shafts.test.ts src/lib/relight/__tests__/window-view.test.ts src/lib/relight/__tests__/sky-panels.test.ts src/lib/relight/__tests__/display.test.ts src/lib/relight/__tests__/sheen.test.ts src/lib/relight/__tests__/reflection-probes.test.ts src/lib/relight/__tests__/sky-arcs.test.ts src/components/rooms/__tests__/SkyClock.test.tsx src/components/rooms/__tests__/LightControl.test.tsx src/components/rooms/__tests__/RoomSplatScene.test.tsx src/components/scene/__tests__/RelightCinematic.test.tsx src/components/scene/__tests__/RelightProvider.test.tsx src/components/scene/__tests__/RelightProvider-cinematic.test.tsx src/lib/relight/__tests__/relight-spans.test.ts src/lib/relight/__tests__/relight-debug.test.ts src/lib/skins/__tests__/skin-material.test.ts src/components/scene/__tests__/RelightSkins.test.tsx src/components/rooms/__tests__/LightControl-skins.test.tsx; do pnpm --filter @omnitwin/web exec vitest run "$f" || { echo "FAILED: $f"; break; }; done
 pnpm --filter @omnitwin/web typecheck && pnpm exec eslint packages/web/src
 for f in cinematic-calibrate cinematic-verify light-scrub-budget; do node --check packages/web/scripts/$f.mjs || { echo "FAILED: $f"; break; }; done
 cd tools/relight && C:/Python313/python.exe -m unittest tests.test_bulbs tests.test_occluders tests.test_cinematic tests.test_nightcal tests.test_cinematiccheck tests.test_browsercheck tests.test_moon -v
@@ -10965,14 +11583,15 @@ adds a small sibling, the cinematic package (`docs/engineering/cinematic-package
 
 - **The kernel's glow hiding.** While the crisp lamps draw, every splat of record class 3 (the chandelier
   emitter class, which the frontier splats study measured as the capture's glow of the bulbs) whose nearest chandelier
-  centre has crisp lamps is drawn with alpha 0. A record carries no chandelier id; the nearest of the five centres
+  centre, measured horizontally, has crisp lamps is drawn with alpha 0. A record carries no chandelier id; the nearest of the five centres
   (from the cinematic package) decides, the chandeliers standing at least 5 m apart. Class 4 (the dome's crests, lit by
   LED pin spots) is never hidden. Nothing is boosted: β is 1 in every setting (R1d amendment A1).
 - **The lamps' dimming** (an artistic choice). The hall's lamps are LED and keep their colour when dimmed; Blake chose a
   warm-down anyway (spec §4.1, 7 October). Each group's light at drive d is `w[k]c[k] ⊙ tint(d) × output(d) × gain`:
   for `warm` (the default) `output = d^3.4` and `tint` the Planckian colour at `fullCct × d^0.42` over that at
   `fullCct`; for `led`, `output = 10^(3(d − 1))` (the DALI curve) and `tint = 1`. At full level both are exactly this
-  package's light; `fullCct` and the per-group `dimming` are cinematic-package values, never constants.
+  package's light; each group's own `fullCct` (from that group's colour, `lamps.warmDown.groups[g]`) and its `dimming`
+  are cinematic-package values, never constants.
 - **The interior shadow.** Each sky body's direct term is multiplied by the interior occluders' shadow map (1 lit,
   0 shadowed, 16 taps), in the multiplier pass, the floor and the skins alike; at 1 every word is unchanged bit for bit.
 - **Passes while the light moves.** The multiplier pass and the frame's own passes run every animation frame while the
@@ -11013,6 +11632,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 5: Push and open R1's PR**
 
+First check release ownership, as the delivery contract asks before shared state changes (`.claude/conventions/shipping-changes.md`, "Coordinate the release and finish it"): after `git fetch origin`, read T-639's row and latest notes in `docs/state/tasks.md` and today's session log for a named release owner or an active release, and list what is in flight with `gh pr list --base master --state open` and `gh run list --branch master --limit 5`. A deployment running on master is waited out, never raced; a named release owner other than this task is sent the exact tested commit (`git rev-parse HEAD`) and Step 1's evidence before the push. An ownership label or an unanswered message alone is not a missing permission: with no competing release, push. Record what the check found in the session log.
+
 ```bash
 cd D:/claude/real-hall/repo && git status --short && git push -u origin claude/real-hall && gh pr list --head claude/real-hall --state open
 ```
@@ -11033,14 +11654,26 @@ dusty shafts; a clutter toggle. Previews only; venviewer.com keeps its hold.
 
 Verification (evidence D:/claude/relight/grand-hall/evidence/r1d on the build PC):
 - captured light, with the cinematic light against without, where splats remain: p99 <value> stops with the 48 px margin, <value> without (limit 0.05)
-- words: R1a's vectors without the cinematic light, worst <n> code; the CPU twin with it at night, sunny, both bodies and moonlit, worst <n> code (limit 1), <n> rounding excuses (cap: twice R1a's wall-face rate, <n>) and <n> penumbra excuses (cap: twice the <n> splats the GPU's taps put in a penumbra)
+- words: R1a's vectors without the cinematic light, worst <n> code; the CPU twin with it at night, sunny, both bodies and moonlit, worst <n> code (limit 1), <n> rounding excuses (cap: twice R1a's wall-face rate, <n>) and <n> penumbra excuses (each confirmed by its splat's own GPU taps)
 - interior shadows: <decided>/<points> decided, <n> disagreeing (limit 0.5%); glow energy ratio <value> (limit 1 ± 0.03)
-- night photographs: station 43 r <value> (captured <value>, needs 0.85), median ΔE00 <value> (captured <value>); station 45 r <value> (captured <value>, needs 0.80), median ΔE00 <value> (captured <value>); night gains <accepted or refused, and why>
+- night photographs: station 43 r <value> (captured <value>, needs 0.85), median ΔE00 <value> (captured <value>); station 45 r <value> (captured <value>, needs 0.80), median ΔE00 <value> (captured <value>); night gains <accepted or refused, and why> (the frontier study expects a median ΔE00 residual near 3.5 from the lamps' RGB bounce, which colourless gains cannot absorb, and gave station 45 only 0.007 over its 0.80)
 - crisp lamps: <n> (<n> candles and <n> crown tubes) at all five chandeliers; in the night renders <share> of lamps in view on a bright pixel (controls <share>)
 - the eye's anchors: lamp-lit night <value> cd/m² (no night vision), moonlit <value> cd/m²
 - frame budget on the RTX 4090 at 1920 × 1080: scrub p99 <value> ms, drag <value>, walk <value>, lamps <value>, both bodies <value> (limit 16.7 ms, no frame over 33.4 ms; stride <n>)
 - GPU time on the RTX 4090: the multiplier pass's median <value> ms (limit 16.7), both bodies' sky passes <value> ms (limit 1, <skyTiming>), the air fill <value> ms and the eye measure <value> ms (reported)
 - fallbacks: a missing package stays relit with one warning; ?cinematic=off removes the controls; loading: every main-thread span within 50 ms (the largest <value> ms)
+
+For Blake to judge at the preview (each with its evidence in the plan's self-review and the frontier light study's §e, 8 October):
+1. The glow: the restrained design glow (4% of each lamp's light, the default, as asked) or the physiological CIE glare, 9% of a lamp's light beyond 1°, from the study's fit (open the preview with `?glare=cie` to compare).
+2. The eye's colour adaptation: R1b's 60% (kept) or CIECAM16's 0.74, which takes 17–34% of the approved night's chroma.
+3. The warm-down (your artistic choice, kept) against LED-true dimming: it costs 1.5–1.65 times the chroma at 10% light and 3.2–3.8 times at 1%; LED-true is a per-group switch in the package.
+4. The night look: the Thompson night tint and its 60% maximum stay design values, full by 0.1 cd/m² as the rods' gains are; the study's own mesopic chain is not recommended (blue at 1% lamps, a cream blue hour).
+5. The moonlit preset's date: 23 December 2026, 23:50 GMT, the year's brightest evening full Moon the windows admit (60.8° up, 0.275 lux, 4,248 K); it was 26 September.
+6. The absolute calibration: k_abs 121.8 cd/m² per unit, measured, in place of the estimated 54; every absolute level 1.17 stops higher, the lamp-lit night photopic with 0.8–1.6 stops to spare, and the city light's weight against the lamps 2.26 times lower.
+7. The crisp lamps: a frosted C35 candle (35 × 70 mm) and the centre chandelier's crown tubes (25 × 50 mm), design values until the venue names its lamps; and whether any of the bulb table's six unresolved entries is a real bulb (it would show neither crisp nor as glow).
+8. A designed brass and gilt sheen on the splats (not built), and the gilding's roughness and colour, shown as priors.
+9. If the GPU gate refuses the worker's runtime (Step 6): re-pinning `.github/gpu/worker-profile.json` changes the trust root, and is yours to decide.
+10. The merge, on your go-ahead.
 
 Blake judges the light on the Vercel preview; merge waits for his go-ahead.
 
@@ -11054,8 +11687,9 @@ Expected: every check green except "GPU performance (required)" waiting for its 
 
 Then the GPU gate, as its operator on this PC (the procedure is `.github/gpu/README.md` and `.github/gpu/PUBLISHING.md`; R1b's plan no longer carries it). The job "GPU performance (required)" issues a request (artifact `gpu-request-<run>-<attempt>`) that expires 25 minutes after it is issued, so prepare first:
 - Check the PC can run it: virtualization on and WSL Ubuntu running (`Get-CimInstance Win32_Processor | Select VirtualizationFirmwareEnabled` is `True`; both were confirmed on 8 October), and a quiet minute (`D:/claude/perf-20260929/bench/quiet.ps1 -CpuMax 30`: the Twin hop's 150 ms main-thread budget fails under load on master too).
+- Download the request into a fresh request directory with `gh run download <run> --name gpu-request-<run>-<attempt> --dir D:/claude/real-hall/gpu-gate/<run>-<attempt>/request`, keeping `request.json`, `trusted.json` and `READY.json` exactly as downloaded (README step 2); copy that folder unchanged to `<ws>-request` in WSL for the worker, and give `publish-result.mjs` the Windows copy. `D:/claude/real-hall/gpu-gate/36567607843-1` holds a past run's layout.
 - The request's `sourceCommit` is the PR's merge ref (`refs/pull/<n>/merge`): fetch it, `git -c core.autocrlf=false archive --format=tar -o <D: folder>/source.tar <sha>`, and `python .github/gpu/source_manifest.py --repo D:/claude/real-hall/repo --commit <sha>`; its `sourceHashes`, tree and commit must match `trusted.json` (this can be done before the request exists).
-- In WSL Ubuntu (as root): a fresh `/root/venviewer-t639-gpu-<run>-<attempt>` workspace and its install home, the tar extracted, then `env -i HOME=<install-home> PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 CI=true pnpm install --frozen-lockfile --prefer-offline --store-dir /root/.local/share/pnpm/store`, then delete `<workspace>/node-compile-cache` (the worker rejects it as an unexpected file). From Git Bash call WSL through a script file with `MSYS_NO_PATHCONV=1`, or `/root` paths are rewritten.
+- In WSL Ubuntu (as root), with Node 22.23.2 and pnpm 9.15.4, the versions the README pins (step 4; `node --version` prints `v22.23.2`, or stop and report): a fresh `/root/venviewer-t639-gpu-<run>-<attempt>` workspace and its install home, the tar extracted, then `env -i HOME=<install-home> PATH=/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 CI=true pnpm install --frozen-lockfile --prefer-offline --store-dir /root/.local/share/pnpm/store`, then delete `<workspace>/node-compile-cache` (the worker rejects it as an unexpected file). From Git Bash call WSL through a script file with `MSYS_NO_PATHCONV=1`, or `/root` paths are rewritten.
 - Take the GPU lock (`D:/claude/visual-firstprinciples-20260928/gpu.lock`, created exclusively, as every driver does; wait for another owner), run `python3 <ws>/.github/gpu/run-worker.py --workspace <ws> --request-dir <ws>-request --output <new folder> --bwrap /root/venviewer-t613-gpu-isolation-probe/tools/unpacked/usr/bin/bwrap --browser-cache /root/.cache/ms-playwright --pnpm /root/.local/share/pnpm/.tools/pnpm/9.15.4 --lease /root/venviewer-t613-gpu-isolation-probe/benchmark.lock` (`--pnpm` must be that `.tools` folder), copy the output to D:, inspect it, release the lock, and publish from Windows with the controller extracted from the same commit: `node <controller>/.github/gpu/publish-result.mjs --request-dir … --worker-output … --repo D:/claude/real-hall/repo --run-id <run> --attempt <attempt> --source <sha>`. (`D:/claude/perf-20260929/gpu-gate/gate-run.sh` automates the rerun, the download, the worker and the publish.)
 - A new attempt needs a new request, and the gate's last job reads the CPU shards of the same attempt: after a red gate, push a fix or rerun the whole workflow, never only the failed job; push nothing to the branch after publishing.
 - If `publish-result.mjs` refuses with "Actual initial runtime differs" (the worker's runtime against `.github/gpu/worker-profile.json`: on 8 October WSL's kernel had moved to 6.18.40.1 after the 7 October reboot), stop: re-pinning the worker profile is a change to the trust root, and Blake decides it. Report the refusal and the measured runtime; never edit the profile to pass.
@@ -11066,7 +11700,15 @@ Then take the GPU lock (if this fails with `EEXIST`, wait for its owner, as ever
 node -e "require('fs').writeFileSync(process.argv[1], JSON.stringify({owner:'cinematic preview check (T-639 R1d)',since:new Date().toISOString()}),{flag:'wx'})" D:/claude/visual-firstprinciples-20260928/gpu.lock
 ```
 
-Open the Vercel preview for the PR (its deployment URL from the Vercel check or `gh pr view --json comments`; previews read R2's `/splats` directly, because the deployment redirects `/splats`) and check the changed live flow with the Browser tools at `/room/grand-hall`: the hall loads relit at the real hour (live) with the clock; dragging the clock sweeps the Sun's patches across the floor and the chandeliers' shadows with them, and the detents catch at sunset; "Night, lamps lit" fades the lamps in through amber and shows the crisp lamps (candles, and the centre chandelier's crown tubes) with their glow and no captured blob around them; "Moonlit night" shows the Moon's disc in a window when it is above the facade opposite, and the hall reads as moonlit; the lamps switch fades rather than switches; the console has no errors. Then close the preview's tab and release the lock:
+Confirm the preview is built from the pushed head before looking at it (the delivery contract: check the deployed identity). The Vercel integration records each preview as a GitHub deployment of its commit:
+
+```bash
+cd D:/claude/real-hall/repo && sha=$(git rev-parse HEAD) && test "$(gh pr view --json headRefOid -q .headRefOid)" = "$sha" && id=$(gh api "repos/{owner}/{repo}/deployments?sha=$sha&environment=Preview" --jq '.[0].id') && gh api "repos/{owner}/{repo}/deployments/$id/statuses" --jq '.[0] | .state + " " + .environment_url'
+```
+
+Expected: `success https://…`, the preview of exactly the pushed head. An empty id or another state means the head's preview has not deployed yet: wait for it (or fix its build), and never check an older preview.
+
+Open that preview (previews read R2's `/splats` directly, because the deployment redirects `/splats`) and check the changed live flow with the Browser tools at `/room/grand-hall`: the hall loads relit at the real hour (live) with the clock; dragging the clock sweeps the Sun's patches across the floor and the chandeliers' shadows with them, and the detents catch at sunset; "Night, lamps lit" fades the lamps in through amber and shows the crisp lamps (candles, and the centre chandelier's crown tubes) with their glow and no captured blob around them; "Moonlit night" shows the Moon's disc in a window when it is above the facade opposite, and the hall reads as moonlit; the lamps switch fades rather than switches; the console has no errors. Then close the preview's tab and release the lock:
 
 ```bash
 node -e "require('fs').rmSync(process.argv[1])" D:/claude/visual-firstprinciples-20260928/gpu.lock
@@ -11076,7 +11718,7 @@ Record the preview URL in the session log and the PR. Deployment Protection may 
 
 - [ ] **Step 7: Hand the preview to Blake, and merge only on his go-ahead**
 
-Send the controller: the preview link, the PR link, Step 5's verification section, any failed check, and the open decisions in this plan's self-review. Merge only after Blake's explicit go-ahead in chat (`gh pr merge --merge`), then confirm production kept its hold, with the Browser tools: `https://venviewer.com/room/grand-hall` shows no splats, makes no request for a relight or cinematic package (a path under `/splats/` containing `/relight/v` or `/cinematic/v`) and has no light control. Update the session log and `docs/state/tasks.md` with the merge commit and the production check (explicit pathspecs, pushed to master through the normal path).
+Send the controller: the exact tested commit (the PR head that Step 6's preview was built from), the preview link, the PR link, Step 5's verification section with its list for Blake, any failed check, and the open decisions in this plan's self-review. Merge only after Blake's explicit go-ahead in chat (`gh pr merge --merge`), then confirm production kept its hold, with the Browser tools: `https://venviewer.com/room/grand-hall` shows no splats, makes no request for a relight or cinematic package (a path under `/splats/` containing `/relight/v` or `/cinematic/v`) and has no light control. Update the session log and `docs/state/tasks.md` with the merge commit and the production check (explicit pathspecs, pushed to master through the normal path).
 
 ---
 
@@ -11093,16 +11735,16 @@ Send the controller: the preview link, the PR link, Step 5's verification sectio
 | §4.3 crisp emissive lamps at their measured positions with a restrained energy-conserving bloom; the bulb splats no longer boosted (8 October: at the 140 high- and medium-confidence lamps of the 7 October bulb table, on all five chandeliers (ruling L1), the centre chandelier's 7 crown tubes drawn as their own smaller kind (ruling L2); the glow splats hidden, not boosted) | 1, 3, 7, 8, 11, 13; decision 1; A1 |
 | §4.3 the night calibrated to the hall's night photographs; a colour-accuracy measure; no heavy grade, the hall as captured at the captured light | 21, 23; Tasks 9 and 17 (the identity display, no sheen at the captured light) |
 | §4.4 GGX sheen from the lamps, the windows and the sun (and the Moon) on the skins and the floor; reflection probes refreshed as the light changes; soft dusty sun shafts | 14, 17, 18 |
-| §4.5 the Moon as a light source: its true position and phase by the bake's own cited ephemeris tested against published positions (one ephemeris: R1a's Meeus `moon.py` ported, Horizons-checked), true level with the opposition surge, through the sun's machinery, both bodies counting | A3–A6, A9; 6, 7, 10, 14, 15, 23 (both bodies forced on) |
-| §4.5 night vision: a restrained, physically motivated scotopic shift driven by absolute luminance (coordinator: the approved night neither greyed nor blue-shifted) | 5, 16, 21 (the gate); decision 4 |
+| §4.5 the Moon as a light source: its true position and phase by the bake's own cited ephemeris tested against published positions (one ephemeris: R1a's Meeus `moon.py` ported, Horizons-checked), true level with the opposition surge, through the sun's machinery, both bodies counting; both beams' colour by elevation and the blue hour in xy (the frontier study's d2, 8 October) | A3–A6, A9; 6, 7, 10, 14, 15, 23 (both bodies forced on) |
+| §4.5 night vision: a restrained, physically motivated scotopic shift driven by absolute luminance (coordinator: the approved night neither greyed nor blue-shifted) | 5 (k_abs 121.8 measured; the shift full by 0.1 cd/m², following Cao's rod gains: the frontier study's §e), 16, 21 (the gate); decision 4 |
 | §4.5 the night sky in the windows: the Moon's disc at its phase, the sky following the Moon; (coordinator, 7 October) the facade opposite in 55–83% of each view, lit by the same sun and sky and by street lighting at night, the disc only above its roofline; R2's hook | 15 (`WindowViewModel`); decision 9 |
 | §4.5 the clock as a crafted object: both bodies' arcs, drag a body or the time, spring physics, detents at sunrise, golden hour, sunset and moonrise, accessible, reduced motion | 19, 20; decision 8 |
 | §4.6 60 fps while scrubbing and walking (p99 ≤ 16.7 ms), no dropped frames during light motion, no loading task over 50 ms; passes every frame only while the light moves, amortised if needed | 7 (the active draw first, the stride), 9, 23 (budget, loading); decision 7 |
 | §5 one preview at the end | 24; A10 |
-| §6 the photo check with colour accuracy, never worse than captured; the captured light within 1/20 stop where splats remain; Blake judges the preview | 21, 23 (R1b's word check at R1a's wall-face rate, R1d's penumbra excuses capped by their own measured share: ruling N2), 24 |
+| §6 the photo check with colour accuracy, never worse than captured; the captured light within 1/20 stop where splats remain; Blake judges the preview | 21, 23 (R1b's word check at R1a's wall-face rate; R1d's penumbra excuses each confirmed by the splat's own GPU taps: ruling N2), 24 |
 | §7 a missing package falls back; missing bulb positions fall back to the bulb splats, unboosted; phones and WebGL keep the captured hall | 8 (one warning), 1 and 7 (an uncovered chandelier keeps its glow), R1b's predicate; 23 (fallbacks) |
 | The clutter toggle (R1d's share of §3's masks) | 20 (R1c's `setToggleHidden`) |
-| Coordinator, 7 October: the glare function as an interface, any CIE fit from the text of CIE 135/1-6:1999; spectral rendering an upgrade interface, never a dependency; the frontier study's upgrade points | 13 (`GlareNode`); decision 10; the amendments file's last section |
+| Coordinator, 7 October: the glare function as an interface, any CIE fit from the text of CIE 135/1-6:1999; spectral rendering an upgrade interface, never a dependency; the frontier study's upgrade points | 13 (`Glare`: the design glow by default, the study's fitted CIE glare at `?glare=cie`); decision 10; the amendments file's last section |
 | Coordinator, 7 October: the centre chandelier was lit for the whole walk though R1a's fit gave it ~0; R1d assumes no lamp weights; lamp colour a package value, never a constant | 3 (per-bulb intensities per unit weight, the refit's shares), 11, 17, 21 (a dark group refused); decision 11; the amendments file's "Interfaces from the bake" |
 
 **Placeholder scan.** No "TBD", "TODO", "similar to Task N" or deferred code remains (`grep -n "TBD\|TODO\|similar to Task\|write it as\|FIXME"` over the plan prints only this paragraph; re-run 8 October). Three kinds of angle-bracket slot are deliberate and carry their instructions: the session log's `<YYYY-MM-DD>` (the executor's date), Task 24's PR section (each `<…>` filled from named evidence files before the edit, which must not run with any left), and the "Published package (<date>)" note. Where the plan edits R1b or R1c code it quotes the exact line it replaces; Task 0 checks each anchor exists and stops otherwise.
@@ -11111,7 +11753,8 @@ Send the controller: the preview link, the PR link, Step 5's verification sectio
 - Lamps: `LampDimming`, `dimmedOutput`, `dimmedTint`, `planckRgb`, `warmCct` (Task 4) are what Tasks 6, 16 and 21 import; `LampGroupLight { dimming, warmFullCct, gain }` and `LampLight { groups }` (Task 6; each group's own warm-down start, ruling L3) are what Tasks 8, 9 and 21 build; `STEADY_LAMPS` is LED-true with no warm-down temperature. No `LAMP_FULL_CCT`, `lampTint` or `lampOutput` remains.
 - Bulbs: the package's `bulbs: { envelopes: { candle, crown }, tableSha256, entries: [{ id, group, kind, chandelier, position, intensity }] }`, `chandeliers: [{ id, centre, crisp }]` and `lamps: { windowRadiance, warmDown: { groups: { <group>: { fullCct, range } } }, groups, night }` (Task 3) are what Task 8's schema parses into `CinematicData { bulbs, envelopes, glow, lamps, … }`; `BulbKind` (`candle`, `crown`) is what Tasks 11 and 17 draw and size; `GlowChandelier`, `CHANDELIER_COUNT`, `glowHidden` and `setGlow` (Task 7) are what Tasks 8, 11 and 22 use. No bulb core, `coreLuminance`, package field `lampIntensity` (Task 17's sheen keeps a local function of that name for its sphere lights), `BULB_CORE_LUMINANCE` or `MAX_BULB_CORES` remains.
 - `SkyLight.sheen` (Task 6) is produced by `lightForSky` (1), `capturedLight` (0) and `mixLights` (Task 9), and read by Task 17's mount and Task 22's state.
-- `CinematicControls` (Task 21: `holdEye`, `soloLamps`, `still`, `measurement`, `measureNext`, `adaptation`, `lightChroma`, `presetDisplay`; Task 22: `state`, `shadowCheck`, `bloomEnergy`, `forceBothBodies`, `setStride`, `scrubTo`, `passTimes`) is exactly what the three drivers call.
+- `CinematicControls` (Task 21: `holdEye`, `soloLamps`, `still`, `measurement`, `measureNext`, `select`, `reapply`, `adaptation`, `lightChroma`, `presetDisplay`; Task 22: `state`, `shadowCheck`, `bloomEnergy`, `forceBothBodies`, `setStride`, `scrubTo`, `passTimes`) is exactly what the three drivers call.
+- The glare: `Glare` and `GlareSpread` (Task 13: `designGlare`, `cieGlare`, `glareFromSearch`) are what Task 13's mount and Task 22's energy check use; `glowShare` (Task 11) is what the lamps' and the Moon's disc's materials read and the composer sets. The sky's measured colours (`sky-colour.ts`, Task 6) are what `lightForSky` (with `extras.colourByElevation`, set by Task 9's director) and Task 15's window view use.
 - Loading spans: `CINEMATIC_SPANS` (Task 8, in R1b's `relight-spans.ts`) are the names Task 8 (`relight:cinematic-package`) and Tasks 10, 11, 13, 14, 15, 17 and 18 (`relight:cinematic-parts`) measure through `measureRelight`, and the ones Task 23's loading check reads.
 - The director's sky read-back: `DirectorOptions.readSkyLight` (Task 9) is the provider's call into R1b's `frame.readSkyLight(renderer)`; the fallback eye relies on it and the glass's ambient (Task 11) is computed on the GPU, so neither runs a per-frame CPU twin (ruling E1).
 - The bulb table's ids (`c<chandelier>_b<nn>`) are the ids in `bulbs.json`, the package, the browser's schema (its pattern `^c[0-4]_b\d{2,3}$`) and the bake's refit file.
@@ -11125,6 +11768,7 @@ Send the controller: the preview link, the PR link, Step 5's verification sectio
 - TypeScript, strict `tsc` and the repo's own ESLint settings over each changed task's files in isolated scratch projects (R1b and R1c imports stubbed by their planned signatures; three 0.186's real types): Tasks 8, 9, 10, 11, 13, 14, 15, 17, 18, 20 and 21 clean. Run under vitest with happy-dom: Task 8's package and span tests (6 and 2), and Task 18's five probe tests on real three 0.186 with a stand-in frame (its orientation test fails without the fix). From 7 October: `lamp-dimming` (8), `light-motion` (12), `eye` (11) and the Meeus port (8) pass; the candle envelope's area (0.005885 m²) and centroid (0.411 of its height), on 8 October the crown tube's (0.0041024 m², 0.521), and three's `LatheGeometry` bounds as Task 11's tests expect.
 - The bundle gate (Task 24 Step 2, finding B15): a scratch Vite 6.4.3 build with the repo's `define` drops the gated dynamic import from the production output and keeps it in the preview's.
 - `node --check` passes for `cinematic-calibrate.mjs`, `cinematic-verify.mjs` and `light-scrub-budget.mjs` as this file now writes them.
+- 8 October, after the re-review and the light frontier results (round 3): `test_cinematic` (17; its stray-file test now checks that a refused build leaves the package untouched) and `test_cinematiccheck` (9; the penumbra decided per splat) re-run from this file; under vitest on this file's code, `eye` (11, at k_abs 121.8 and the 0.1 cd/m² ramp) and the new `sky-colour` (4) with R1b's `daylight.ts` and Task 4's `lamp-dimming.ts` taken from the plans, and the CIE glare's cascade arithmetic (its test's assertions); strict `tsc` and the repo's ESLint clean again for Tasks 9, 10, 11, 13, 14, 15, 17, 18, 20 and 21, the director's `reapply` and bounded `measureNext`, the controls' `select`, the per-splat penumbra code and Task 22's glare check; the three drivers pass `node --check`, and their bounded wait was exercised in node (a hang rejects with the step's name, a quick step resolves, no timer lingers). A first CIE cascade with one step for both axes was modelled with bilinear filtering and missed by up to 18% vertically at 16 px per degree; the per-axis solve replaced it.
 - Not run, and stated: the other vitest files (the R1b and R1c code they import is not merged), every browser step, every GPU measure. Their numbers are Tasks 21, 23 and 24's to produce.
 
 **Limits, stated rather than designed around:**
@@ -11132,31 +11776,37 @@ Send the controller: the preview link, the PR link, Step 5's verification sectio
 - The crown tubes' envelope (25 mm across, 50 mm tall) is a design value smaller than a candle (ruling L2); their light share is R1a's measured `wCrown` (0.3871 of a candle).
 - The captured-light identity is judged outside a 48 px margin around the fixtures, because the crisp lamps' glow replaces the captured glow there; the 99th percentile is also reported without the margin.
 - The night gains are one number per lamp group (rulings L3 and I11): they move only light between groups, never their colour (the camera's exposure and white balance cancel by construction); each group's colour stays R1a Task 4b's fit, a package value.
-- The warm-down's starting temperature comes from the capture's lamp/daylight colour against CIE daylight D65; the daylight the ratio was measured against is uncertain (D60–D75 gives 3,540–3,990 K), and it shapes only how the colour warms.
+- Each group's warm-down starts at the colour temperature its own fitted colour implies (R1a Task 4b's `lamps.groups[g].colour` against CIE daylight D65; ruling L3): about 3,700 K for the chandeliers and about 4,370 K for the dome at its prior. The frontier study confirms the chandeliers' range (8 October, §e V2: the best single Planckian lamp is 3,590 K against the modelled exterior and 3,520 K against D65, both inside 3,537–3,985 K; 2,750 K is rejected). The daylight the ratio was measured against is uncertain (D60–D75 moves the chandeliers' start over 3,540–3,990 K), and the start shapes only how the colour warms.
 - The LED-true curve is the DALI logarithmic curve, assumed: the hall's dimming system is "multi-channel programmable" (the contractor's record), not known to be DALI.
-- The interior shadow's CPU twin is a hard edge; the DEV checks compare only where the GPU's taps agree. Penumbra splats are excused in the word check but counted apart and capped at `PENUMBRA_CAP_FACTOR` (2) times the measured share of checked marched splats whose GPU taps are fractional (ruling N2); the factor is a design value.
+- The interior shadow's CPU twin is a hard edge; the DEV checks compare only where the GPU's taps agree. A penumbra splat is excused in the word check only where both the CPU's taps and its own GPU taps put it in the penumbra, and the excuses are counted apart from R1b's rounding excuses (ruling N2).
 - A blend between two lights drops a counted second body while it runs (the Moon with the Sun up: at most about a thousandth of the light) and restores it at the end (finding M6).
-- Eye adaptation's absolute luminance rests on k_abs ≈ 54 cd/m² per fit unit (±1 stop, the light study's estimate); Task 21's gate reports a miss and never tunes it away.
+- The Sun's beam colour by elevation is the frontier study's clear sky at AOD 0.1 (at AOD 0.4 the same elevations run 1,000–4,900 K); R2's weather brings the real aerosol. The blue hour's colour is the study's clear model, which runs 0.7–0.9 stop too bright in twilight; only its colour is used, and R1b's sky level stays.
+- The facade's dimming with the Sun in front of the windows is a shape fitted to the study's one sunlit scene (0.018 of the windows' sky band at the capture's Sun), itself a lower bound: the study does not model the sunlit hall front's light reflected onto the facade.
+- The fitted CIE glare (an option, `?glare=cie`) gives each level the fit's σ in a model of three's blurs with bilinear filtering, and its energy is exact; on the GPU only Task 22's energy check measures it.
+- Task 21's colour measure keeps an expected residual: the lamps' RGB-bounce error (the study's d1b: median ΔE00 3.5 under 2,750 K tungsten) that colourless gains cannot absorb; and station 45 had only 0.007 to spare over its 0.80 threshold in the study's v1 cells.
+- Eye adaptation's absolute luminance rests on k_abs = 121.8 cd/m² per fit unit, the frontier study's measurement from the capture day's modelled sky (±1 stop; it depends on the sky's shape and assumed efficacies, and the facade model omits the sunlit hall front's reflected light: §e5); Task 21's gate reports a miss and never tunes it away.
 
 **Open decisions** (for Blake or the controller; R1d proceeds on the stated default):
 1. Lamps automatic below a 7° Sun (about an hour before sunset).
 2. The clutter hidden and the AV cabinet shown by default (R1c's `defaultHidden`).
 3. The crisp lamp: a frosted candle envelope 35 mm across and 70 mm tall (a C35 candle) until the venue names its lamp, and the centre chandelier's crown tube 25 mm across and 50 mm tall (ruling L2, a design value); the glass's albedo 0.6; the glow share `BLOOM_SHARE` 4%.
 4. The glow splats are hidden by record class (class 3, 48–59% of each chandelier's splats); a finer, photo-tuned halo flag from the bake would replace the class rule.
-5. Every group dims warm (Blake's artistic choice); `led` per group on request, a package value.
+5. Every group dims warm (Blake's artistic choice); `led` per group on request, a package value. Its colour cost against LED-true dimming (the frontier study's d3): 1.5–1.65 times the chroma at 10% light, 3.2–3.8 times at 1%.
 6. Settled 8 October: the house-light refit is R1a Task 4b's `bulb-intensities.json`, which Task 3 requires (one intensity per lamp of a group and kind, the crown tubes at `wCrown` of a candle); the calibration still refuses a dark group.
 7. Settled 8 October: the 7 October table covers all five chandeliers (ruling L1); none shows a mix.
 8. The probes reflect the floor and the skins only, not the splats (decision 5).
-9. The shafts' density (σ_s 0.012, g 0.6) and the dust; the night tint (CIE xy 0.25, 0.25) and `SCOTOPIC_MAX` 0.6, design values pending the frontier study's mesopic model.
-10. The moonlit preset's date and display key (A7).
+9. The shafts' density (σ_s 0.012, g 0.6) and the dust; the night tint (CIE xy 0.25, 0.25) and `SCOTOPIC_MAX` 0.6, design values (the frontier study's mesopic chain is not recommended: d3, 8 October); the shift is full by 0.1 cd/m², following Cao's rod gains (d3).
+10. The moonlit preset's date, now 23 December 2026 at 23:50 GMT (the frontier study's brightest evening full Moon the windows admit: 60.8° up, 0.275 lux, 4,248 K; it was 26 September at 23:00), and its display key (A7).
 11. A day Moon's light below 1/100,000 of the day's is not marched (`MOON_NEGLIGIBLE`), though its disc shows; Task 23 measures the cost with both bodies forced on, so keeping it is a switch.
-12. The facade opposite: albedo 0.3, street lighting about 1 cd/m², `FACADE_SKY_VIEW` 0.35, all assumed (the evening Matterport stations can measure the street light).
-13. The design glow is not the CIE disability glare function; a fit takes its formula from the text of CIE 135/1-6:1999.
+12. The facade opposite: albedo 0.3 and street lighting about 1 cd/m² (assumed; the evening Matterport stations can measure the street light); its sky view 0.24, its daytime brightness with the Sun in front (0.018 of the windows' sky band) and the street light's colour (3,830 K) from the frontier study's d2 (8 October).
+13. The glow: the restrained design glow (4% of each lamp's light) by default, as Blake asked; the frontier study's fit of CIE 135/1-6:1999's glare (§e d3: 9% of a lamp's light beyond 1°, 63% spread in all) is an option at the preview, `?glare=cie`, for Blake to judge.
 14. The floor's roughness 0.3 and gilding's kept diffuse share (`METAL_DIFFUSE_SCALE` 0.5).
-15. k_abs 54 cd/m² per unit, ±1 stop.
+15. k_abs 121.8 cd/m² per unit (measured 8 October; the estimate was 54), ±1 stop: it raises every absolute level 1.17 stops, widens the night's photopic margin to 0.8–1.6 stops, decides Task 21's gate in favour and lowers the city light's weight against the lamps 2.26×.
 16. The stride stays 1 unless Task 23's budget needs 2.
 17. Settled 7 October: A9's bounce basis is R1a Task 4's contract, computed by R1b; R1d only reads it (the controller's ruling).
 18. The night calibration's ridge (0.1 of the normal matrix's mean diagonal), a regularisation choice.
-19. The penumbra excuse cap's factor (`PENUMBRA_CAP_FACTOR` 2 × the measured penumbra share; ruling N2).
+19. Settled 8 October (the re-review): each penumbra excuse is decided by its splat's own GPU taps, so no cap factor is needed (ruling N2).
 20. A designed brass and gilt sheen on the splats (decision 5): not built; R1d reports R1c's gilt roughness and F0 as priors.
 21. The GPU gate (Task 24 Step 6): if the worker's runtime no longer matches `.github/gpu/worker-profile.json`, re-pinning it changes the trust root, and Blake decides.
+22. The eye's colour adaptation: `CHROMA_ADAPTATION` 0.6 (R1b's rule, kept) or CIECAM16's 0.74 (the frontier study's d3: it takes 17–34% of the approved night's chroma).
+23. The glow: see 13; `?glare=cie` shows the alternative at the preview. Task 24 gathers every item for Blake into one list in its PR section.
