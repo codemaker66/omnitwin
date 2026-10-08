@@ -29,10 +29,11 @@ import {
 } from "@omnitwin/types";
 import { API_URL } from "../config/env.js";
 import { getAuthToken } from "../api/client.js";
-import { InstructionsBanner } from "../components/hallkeeper/InstructionsBanner.js";
+import { InstructionsBanner, hasPlannerBrief } from "../components/hallkeeper/InstructionsBanner.js";
 import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
 import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspace.js";
+import { ProtectedPremisesBlock } from "../components/hallkeeper/ProtectedPremisesBlock.js";
 import { formatSheetTimes } from "../components/hallkeeper/sheet-facts.js";
 import { ActivityStatus } from "../components/shared/Activity.js";
 import "../styles/hallkeeper-register.css";
@@ -505,10 +506,12 @@ export function HallkeeperPage(): React.ReactElement {
         {downloadNotice !== null && <div className={`hk-notice hk-notice-${downloadNotice.kind}`} role={downloadNotice.kind === "error" ? "alert" : "status"}>{downloadNotice.message}</div>}
       </>}
       details={<>
-        {instructions !== null ? <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} /> : <p>No planner instructions or day-of contact supplied on this sheet.</p>}
+        {instructions !== null && hasPlannerBrief(instructions) ? <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} /> : <p>No planner instructions or day-of contact supplied on this sheet.</p>}
         {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
         {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
         {doorSummary !== null && <DoorScheduleBlock summary={doorSummary} timezone={data.venue.timezone} />}
+        {/* T-648: always shown, with "Not set" lines when nothing was entered. */}
+        <ProtectedPremisesBlock record={instructions?.protectedPremises} guestCount={data.config.guestCount} timeZone={data.venue.timezone} />
       </>} />
     <div className="hk-print-only" aria-hidden="true">
       <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
@@ -523,6 +526,7 @@ export function HallkeeperPage(): React.ReactElement {
       {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
       {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
       {doorSummary !== null && <DoorScheduleBlock summary={doorSummary} timezone={data.venue.timezone} />}
+      <ProtectedPremisesBlock record={instructions?.protectedPremises} guestCount={data.config.guestCount} timeZone={data.venue.timezone} />
       <p>Generated {new Date(data.generatedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })} · {data.venue.timezone}</p>
     </div>
   </main>;

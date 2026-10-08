@@ -35,6 +35,41 @@ export interface FindRow {
   /** What the row is read out as. */
   readonly label: string;
   readonly target: FindTarget;
+  /** A date's answer, room by room, shown in the row itself. */
+  readonly answer?: readonly FindAnswerRoom[];
+}
+
+/** One room's day, each booking its own line, as the Diary shows it. */
+export interface FindAnswerRoom {
+  readonly id: string;
+  readonly room: string;
+  readonly lines: readonly string[];
+  readonly free: boolean;
+}
+
+/** A day in the Diary, room by room, in its own words (pages/diary/lib/day-answer.ts). */
+export interface FindDayAnswer {
+  readonly iso: string;
+  readonly rooms: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly lines: readonly string[];
+    readonly free: boolean;
+  }[];
+}
+
+/** What the polite region says once a day is answered: "Saturday 14 November
+ *  2026: 5 of 8 rooms free." */
+export function dayAnswerSaid(answer: FindDayAnswer): string {
+  const title = eventDateLong(answer.iso) ?? answer.iso;
+  const rooms = answer.rooms.length;
+  const free = answer.rooms.filter((room) => room.free).length;
+  const only = answer.rooms.length === 1 ? answer.rooms[0] : undefined;
+  const said = only !== undefined ? `${only.name} is ${only.free ? "free" : "taken"}`
+    : free === rooms ? `all ${String(rooms)} rooms free`
+      : free === 0 ? "no room free"
+        : `${String(free)} of ${String(rooms)} rooms free`;
+  return `${title}: ${said}.`;
 }
 
 export interface FindGroup {
@@ -182,19 +217,33 @@ function searchHref(query: string): string {
   return dashboardHref({ view: "search", q: query });
 }
 
-function dateGroup(query: string, today: string, places: readonly FindPlace[]): FindGroup | null {
-  if (!offers(places, "diary")) return null;
-  const iso = parseGoToDate(query, today);
+/** The day the words name, for someone who opens the Diary, or null. */
+export function soughtDate(query: string, today: string, places: readonly FindPlace[]): string | null {
+  return offers(places, "diary") && query !== "" ? parseGoToDate(query, today) : null;
+}
+
+function dateGroup(query: string, today: string, places: readonly FindPlace[], answered: FindDayAnswer | null): FindGroup | null {
+  const iso = soughtDate(query, today, places);
   if (iso === null) return null;
   // "Saturday 14 November 2026", as the desks write a date.
   const title = eventDateLong(iso) ?? iso;
-  const detail = "See each room in the Diary";
+  const target: FindTarget = { kind: "href", href: `/diary?${new URLSearchParams({ date: iso, goto: iso }).toString()}`, newTab: false };
+  // Answered in place once the Diary has been read for that day: the question
+  // asked most on the phone, with no page to leave.
+  const answer: readonly FindAnswerRoom[] | null = answered?.iso === iso
+    ? answered.rooms.map((room) => ({ id: room.id, room: room.name, lines: room.lines, free: room.free }))
+    : null;
+  if (answer === null || answer.length === 0) {
+    const detail = "See each room in the Diary";
+    return { key: "date", label: "Date", rows: [{ key: `date:${iso}`, title, detail, label: `${title}, ${detail}`, target }] };
+  }
+  const detail = "Open this day in the Diary";
+  // Read out a sentence to a room, each booking within it after a semicolon,
+  // so two bookings in the Grand Hall never sound like another room.
+  const said = answer.map((room) => `${room.room}: ${room.lines.join("; ")}.`).join(" ");
   return {
     key: "date", label: "Date",
-    rows: [{
-      key: `date:${iso}`, title, detail, label: `${title}, ${detail}`,
-      target: { kind: "href", href: `/diary?${new URLSearchParams({ date: iso, goto: iso }).toString()}`, newTab: false },
-    }],
+    rows: [{ key: `date:${iso}`, title, detail, label: `${title}. ${said} ${detail}`, target, answer }],
   };
 }
 
@@ -256,6 +305,8 @@ export interface FindInput {
   /** Whether the client search answers this person (wantsClientSearch). */
   readonly canSearchClients: boolean;
   readonly clients: FindClients | null;
+  /** The sought day as the Diary has it, once read; absent or null until then. */
+  readonly dayAnswer?: FindDayAnswer | null;
 }
 
 /** Everything Find shows for the words, in order: a date, the page's own
@@ -263,7 +314,7 @@ export interface FindInput {
 export function buildFindGroups(input: FindInput): FindGroup[] {
   const { query, today, places, board, canSearchClients, clients } = input;
   const groups: FindGroup[] = [];
-  const date = query === "" ? null : dateGroup(query, today, places);
+  const date = dateGroup(query, today, places, input.dayAnswer ?? null);
   if (date !== null) groups.push(date);
   if (board !== null && board.rows.length > 0) {
     groups.push({

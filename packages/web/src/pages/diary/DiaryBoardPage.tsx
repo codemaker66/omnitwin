@@ -17,7 +17,6 @@ import {
   dayColumns,
   snapMs,
   boardRange,
-  formatInlineDay,
   formatWallTime,
   rangeTitle,
   shiftRange,
@@ -25,10 +24,10 @@ import {
   type BoardView,
 } from "./lib/board-time.js";
 import { filterBoardEntries, needsAction, type LaneGap } from "./lib/board-layout.js";
-import { bookingTimeLabel } from "./lib/board-overview.js";
 import { contestedHolds } from "./lib/lifecycle-ending.js";
 import { ladderPlace } from "./lib/ladder-place.js";
-import { parseGoToDate, roomsOnDay, saidWeekday } from "./lib/go-to-date.js";
+import { parseGoToDate, saidWeekday } from "./lib/go-to-date.js";
+import { dayAnswer } from "./lib/day-answer.js";
 import type { CommitPayload, InkSpan } from "./lib/board-drag.js";
 import {
   popMove,
@@ -476,22 +475,10 @@ export function DiaryBoardPage(): ReactElement {
   );
   const soughtAnswer = useMemo(() => {
     if (soughtDay === null || data === null || soughtDay.fromMs < range.fromMs || soughtDay.toMs > range.toMs) return null;
-    const line = (entry: CalendarBookingEntry): string => {
-      const time = bookingTimeLabel(entry);
-      if (entry.kind === "ink") return BOARD_COPY.goTo.confirmed(entry.title, time);
-      if (entry.kind === "internal_block") return BOARD_COPY.goTo.block(entry.title, time);
-      const decides = entry.decisionAt === null ? null : formatInlineDay(Date.parse(entry.decisionAt), nowMs);
-      return BOARD_COPY.goTo.hold(entry.rank, entry.jointFlag, entry.title, time, decides);
-    };
     return {
       day: rangeTitle(soughtDay),
-      rooms: roomsOnDay(data.entries, data.rooms, { startMs: soughtDay.fromMs, endMs: soughtDay.toMs }).map((answer) => ({
-        id: answer.roomId,
-        name: answer.room,
-        lines: answer.bookings.length > 0
-          ? answer.bookings.map((entry) => ({ key: entry.id, text: line(entry) }))
-          : [{ key: "free", text: BOARD_COPY.goTo.free(answer.interest, answer.freeFromMs === null ? null : formatWallTime(answer.freeFromMs)) }],
-      })),
+      // The same words the staff header's Find answers a date with.
+      rooms: dayAnswer(data.entries, data.rooms, { startMs: soughtDay.fromMs, endMs: soughtDay.toMs }, nowMs),
     };
   }, [data, nowMs, range.fromMs, range.toMs, soughtDay]);
   // An enquiry slip's date (roadmap N3): the board goes there and Go to date

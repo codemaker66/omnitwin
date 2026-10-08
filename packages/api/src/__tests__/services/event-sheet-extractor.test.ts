@@ -12,6 +12,7 @@ import type {
   DoorSchedule,
   EventInstructions,
 } from "@omnitwin/types";
+import { ConfigurationMetadataSchema } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures — Trades Hall Grand Hall dimensions + synthetic UUIDs
@@ -259,6 +260,44 @@ describe("extractEventSheet — sourceHash sensitivity", () => {
     const small = baseInput({ room: { widthM: 10, lengthM: 10 } });
     const big = baseInput({ room: { widthM: 21, lengthM: 10.5 } });
     expect(extractEventSheet(small).sourceHash).not.toBe(extractEventSheet(big).sourceHash);
+  });
+
+  it("changes when Martyn's Law entries are added (T-648)", () => {
+    const parse = (raw: unknown): ConfigurationMetadata => ConfigurationMetadataSchema.parse(raw);
+    const without = baseInput({ metadata: parse({ instructions: { specialInstructions: "Fire exits must remain clear." } }) });
+    const withEntry = baseInput({ metadata: parse({ instructions: {
+      specialInstructions: "Fire exits must remain clear.",
+      protectedPremises: { procedures: { evacuation: { briefed: true } } },
+    } }) });
+    expect(extractEventSheet(without).sourceHash).not.toBe(extractEventSheet(withEntry).sourceHash);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-648 — adding the optional protectedPremises key must not move the hash
+// of any configuration whose operator never entered it. sheet-snapshot.ts
+// parses stored metadata through ConfigurationMetadataSchema before hashing,
+// so the parse must not add the key. The hashes below are sha256 of the
+// canonical JSON the extractor produced BEFORE the field existed, computed
+// independently from that documented form:
+//   {"placements":[],"metadata":{"instructions":{"specialInstructions":"Fire exits must remain clear.",
+//    "dayOfContact":null,"phaseDeadlines":[],"accessNotes":"","accessibility":null,"dietary":null,
+//    "doorSchedule":null}},"room":{"widthM":21,"lengthM":10.5}}
+// A drift here means every approved layout would re-version on re-submit.
+// ---------------------------------------------------------------------------
+
+describe("extractEventSheet — sourceHash is unchanged for configurations without Martyn's Law entries (T-648)", () => {
+  const PRE_T648_INSTRUCTIONS_HASH = "53b407cb9beec1d8dce2e96215041bbe7ffd6b7a0271a50c7d8a82b43271da21";
+  const PRE_T648_NULL_METADATA_HASH = "565bec11ab11160c056fb9951cbbf9684eaeb176ae8ef074a42dc8e83212183e";
+
+  it("hashes stored instructions without the key exactly as before", () => {
+    const stored = { instructions: { specialInstructions: "Fire exits must remain clear." } };
+    const metadata = ConfigurationMetadataSchema.parse(stored);
+    expect(extractEventSheet(baseInput({ metadata })).sourceHash).toBe(PRE_T648_INSTRUCTIONS_HASH);
+  });
+
+  it("hashes null metadata exactly as before", () => {
+    expect(extractEventSheet(baseInput({ metadata: null })).sourceHash).toBe(PRE_T648_NULL_METADATA_HASH);
   });
 });
 
