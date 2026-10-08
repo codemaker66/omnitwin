@@ -487,11 +487,16 @@ function decodeNumber(buf: Buffer, pos: number, type: Datatype): number {
   fail(`datatype ${type.kind} is not numeric`);
 }
 
+/** Text up to its first NUL: where HDF5 names and null-terminated strings end. */
+function untilNul(text: string): string {
+  const nul = text.indexOf("\u0000");
+  return nul >= 0 ? text.slice(0, nul) : text;
+}
+
 function decodeFixedString(bytes: Buffer, type: Datatype): string {
   let text = bytes.toString("utf8");
   if (type.padding === 0 || type.padding === 1) {
-    const nul = text.indexOf("\u0000");
-    if (nul >= 0) text = text.slice(0, nul);
+    text = untilNul(text);
   } else if (type.padding === 2) {
     text = text.replace(/ +$/u, "");
   }
@@ -561,7 +566,7 @@ abstract class Hdf5Object {
     const pad = (n: number): number => (version === 1 ? Math.ceil(n / 8) * 8 : n);
     if (version === 3) pos += 1;
     else if (version !== 1 && version !== 2) fail(`attribute message version ${String(version)}`);
-    const name = body.toString("utf8", pos, pos + nameSize).replace(/\u0000+$/u, "");
+    const name = untilNul(body.toString("utf8", pos, pos + nameSize));
     pos += pad(nameSize);
     const type = decodeDatatype(body.subarray(pos, pos + typeSize));
     pos += pad(typeSize);

@@ -565,11 +565,11 @@ async function main(argv: readonly string[]): Promise<void> {
     "month  rain>=1mm  snowLying  sunshine_h  tas_C   wind_m/s",
     ...generated.file.months.map((m) => [
       (MONTH_NAMES[m.month - 1] ?? "?").padEnd(6),
-      String(m.rainDaysAtLeast1mm?.toFixed(2) ?? "null").padStart(9),
-      String(m.snowLyingDays?.toFixed(2) ?? "null").padStart(10),
-      String(m.sunshineHours?.toFixed(1) ?? "null").padStart(11),
-      String(m.meanTemperatureC?.toFixed(2) ?? "null").padStart(6),
-      String(m.meanWindSpeedMs?.toFixed(2) ?? "null").padStart(9),
+      (m.rainDaysAtLeast1mm?.toFixed(2) ?? "null").padStart(9),
+      (m.snowLyingDays?.toFixed(2) ?? "null").padStart(10),
+      (m.sunshineHours?.toFixed(1) ?? "null").padStart(11),
+      (m.meanTemperatureC?.toFixed(2) ?? "null").padStart(6),
+      (m.meanWindSpeedMs?.toFixed(2) ?? "null").padStart(9),
     ].join("  ")),
     ...generated.findings.map((f) => `${f.plausible ? "plausible  " : "IMPLAUSIBLE"} ${f.check}: ${f.detail}`),
   ];
