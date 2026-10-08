@@ -11,6 +11,8 @@ import { createDbConnection } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
 import { createRateLimitIdentity } from "./middleware/rate-limit-identity.js";
 import { venueRoutes } from "./routes/venues.js";
+import { drizzleVenueLocationStore, venueSkyRoutes } from "./routes/venue-sky.js";
+import { createVenueSkyService } from "./services/sky/sky-service.js";
 import { venueInventoryRoutes } from "./routes/venue-inventory.js";
 import { inventoryReservationsRoutes } from "./routes/inventory-reservations.js";
 import { spaceRoutes } from "./routes/spaces.js";
@@ -385,6 +387,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- Routes ---
   await server.register(venueRoutes, { db, prefix: "/venues" });
+  // T-647: the weather over a venue. No HadUK-Grid normals are committed yet
+  // (their CEDA download needs a login), so `normals` is empty and a request
+  // that needs normals answers 503 SKY_UNAVAILABLE rather than invented values.
+  await server.register(venueSkyRoutes, {
+    store: drizzleVenueLocationStore(db),
+    sky: createVenueSkyService({ apiKey: env.MET_OFFICE_DATAHUB_API_KEY, normals: [], logger: server.log }),
+    prefix: "/venues",
+  });
   await server.register(venueInventoryRoutes, { db, prefix: "/venues" });
   await server.register(inventoryReservationsRoutes, { db, prefix: "/venues" });
   await server.register(spaceRoutes, { db, prefix: "/venues/:venueId/spaces" });

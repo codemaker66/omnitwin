@@ -8,6 +8,7 @@ import {
   timestamp,
   numeric,
   real,
+  doublePrecision,
   jsonb,
   integer,
   bigint,
@@ -118,10 +119,17 @@ export const venues = pgTable("venues", {
   // 'past_due', 'canceled', 'unpaid'.
   subscriptionStatus: varchar("subscription_status", { length: 30 }).notNull().default("none"),
   planTier: varchar("plan_tier", { length: 30 }),
+  // Where the venue stands (WGS84 decimal degrees, both or neither;
+  // migration 0086, T-647). The venue sky asks the Met Office for the
+  // weather here; a venue without a location has no sky.
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
+}, (table) => [
+  check("venues_location_check", sql`(${table.latitude} IS NULL AND ${table.longitude} IS NULL) OR (${table.latitude} IS NOT NULL AND ${table.longitude} IS NOT NULL AND ${table.latitude} BETWEEN -90 AND 90 AND ${table.longitude} BETWEEN -180 AND 180)`),
+]);
 
 // ---------------------------------------------------------------------------
 // 2. spaces

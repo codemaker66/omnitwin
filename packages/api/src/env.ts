@@ -78,6 +78,13 @@ const EnvSchema = z.object({
   AI_ASSISTANT_MODEL: z.string().min(1).max(120).optional(),
   AI_ASSISTANT_BASE_URL: z.string().url().optional(),
   AI_ASSISTANT_API_KEY: z.string().min(1).optional(),
+  // Venue sky (T-647) — Met Office Weather DataHub key for the Site-Specific
+  // Blended Probabilistic Forecast v2 API, sent as the `apikey` header. A
+  // DataHub key belongs to one product subscription, so a key for another
+  // product (e.g. atmospheric models) is refused. Optional: without it the
+  // sky route serves monthly normals marked forecast_not_configured. Never
+  // returned to clients or logged.
+  MET_OFFICE_DATAHUB_API_KEY: z.string().trim().min(1).optional(),
   // Local/operator-only capture ledgers produced by tools/capture-factory.
   // When absent the protected status route returns an explicit unavailable
   // state; production does not assume a developer workstation path.

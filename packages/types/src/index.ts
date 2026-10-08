@@ -2500,3 +2500,6 @@ export * from "./requests.js";
 
 // T-635 X1: proposal templates by room and occasion (migration 0085).
 export * from "./proposal-template.js";
+
+// T-647: the venue sky (weather) feed read by the relit hall (T-639).
+export * from "./venue-sky.js";
