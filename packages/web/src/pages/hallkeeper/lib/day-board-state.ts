@@ -70,7 +70,9 @@ export type DayBoardTone =
 export type DayBoardMotion = "none" | "breath-4s" | "breath-3s" | "breath-2s" | "live-breath";
 
 /** The icon paired with every state, so colour never carries meaning alone. */
-export type DayBoardIcon = "clock" | "wrench" | "users" | "door-open" | "radio" | "rotate-ccw" | "check" | "alert-triangle";
+export type DayBoardIcon =
+  | "clock" | "wrench" | "users" | "door-open" | "radio" | "rotate-ccw" | "check" | "alert-triangle"
+  | "bell" | "user-check" | "wifi-off";
 
 export type DayBoardException = "turnaround-at-risk" | "overrun" | "urgent-message";
 
@@ -293,6 +295,15 @@ export const DAY_BOARD_LEGEND: readonly { readonly tone: DayBoardTone; readonly 
   { tone: "sage", label: "Clear-down", icon: "rotate-ccw" },
   { tone: "faded", label: "Ended", icon: "check" },
   { tone: "red", label: "Changeover at risk", icon: "alert-triangle" },
+];
+
+/** The legend's second channel: the ring a slot wears for its requests, and
+ *  the band that outranks everything (D3). Worded as the ring and band are. */
+export const DAY_BOARD_RING_LEGEND: readonly { readonly key: "attention" | "urgent" | "owned" | "stale"; readonly label: string; readonly icon: DayBoardIcon }[] = [
+  { key: "attention", label: "Request · nobody has this", icon: "bell" },
+  { key: "urgent", label: "Urgent · nobody has this", icon: "alert-triangle" },
+  { key: "owned", label: "In hand", icon: "user-check" },
+  { key: "stale", label: "Offline or stale", icon: "wifi-off" },
 ];
 
 export interface DayBoardLane {
@@ -622,7 +633,10 @@ export function deriveDayBoard(
             tone: "red",
             motion: "none",
             icon: "alert-triangle",
-            countdown: timed.countdown,
+            // The verb says why, then where the room is in its day: a slab
+            // that only read "Scheduled 14:20" under a red edge made the
+            // reader open it to learn what was wrong.
+            countdown: `Changeover at risk · ${timed.countdown}`,
             exception: "turnaround-at-risk",
             exceptionDetail: blocking,
             turnaroundWarning: null,

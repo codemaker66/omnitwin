@@ -79,16 +79,18 @@ function backgroundRule(source: string, selector: string): string {
   return background.trim();
 }
 
-/** The last background each slot selector declares: the ivory block is
- *  unconditional and comes last, so that is what renders. */
+/** The grounds a request region can stand on (goal 19 S3): the open slot's
+ *  raised panel, where the slab lives, and the board's ground and sunk
+ *  fills. Read from the board's own `--lt-*` tokens on `.dayboard`, resolved
+ *  through the register the way the page resolves them. */
 function slotGrounds(): readonly (readonly [string, Rgb])[] {
   const board = css("src/pages/hallkeeper/day-board.css");
-  return [".dayboard-slot", ".dayboard-tone-red", ".dayboard-tone-live"].map((selector) => {
-    const escaped = selector.replaceAll(".", "\\.");
-    const backgrounds = [...board.matchAll(new RegExp(`${escaped}\\s*\\{[^}]*?background\\s*:\\s*(#[0-9a-f]{6})`, "giu"))];
-    const last = backgrounds.at(-1)?.[1];
-    if (last === undefined) throw new Error(`${selector} declares no background`);
-    return [selector, hex(last)] as const;
+  const block = /\.dayboard\s*\{([^}]*)\}/u.exec(board)?.[1] ?? "";
+  const tokens = registerTokens();
+  return ["--lt-raised", "--lt-ground", "--lt-sunk"].map((name) => {
+    const value = new RegExp(`${name}\\s*:\\s*([^;]+);`, "u").exec(block)?.[1];
+    if (value === undefined) throw new Error(`${name} is not declared on .dayboard`);
+    return [name, colourOf(value.trim(), tokens)] as const;
   });
 }
 

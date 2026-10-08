@@ -31,7 +31,8 @@ them. A component never names a hex; it names a token.
 | `--lt-sage` | `var(--hk-sage)` #a9c3a4 | decorative | decorative | clear-down hatching; its label uses `--lt-sage-ink` |
 | `--lt-sage-ink` | `var(--vv-sage-ink)` #4A6650 | 5.40 | 5.97 | clear-down label text |
 | `--lt-faded` | `var(--house-slate-dot)` #8e9992 | edge only | edge only | done: the slate edge; the words stay full ink |
-| `--lt-ring` | `var(--hk-copper)` #986246 | 4.46 | 4.95 | attention, urgent and owned: the copper ring and its count |
+| `--lt-red` | `var(--hk-alert)` #c2503e | 4.12 | 4.57 | changeover at risk: the slab's edge, the legend's dot and a short gap's rule; the words say why |
+| `--lt-ring` | `var(--hk-copper)` #986246 | 4.46 | 4.95 | attention, urgent and owned: the copper ring and its count (the count sits on a raised fill, 4.95) |
 | `--lt-urgent-label` | `var(--vv-oxblood)` #8E3A2C | 6.66 | 7.40 | the URGENT word inside the ring |
 | `--lt-stale-band` | `var(--house-slate-wash)` #e3e3db | surface | surface | the offline or stale band across the top |
 | `--lt-stale-text` | `var(--house-slate-text)` #545e59 | 5.96 | 6.62 | the band's words |
@@ -48,8 +49,9 @@ them. A component never names a hex; it names a token.
 | `--lt-live` | #d4786a | 4.90 | 4.36 | oxblood lifted for the dark ground; text-safe |
 | `--lt-sage` | `var(--hk-sage)` #a9c3a4 | 8.07 | 7.18 | hatching and label |
 | `--lt-faded` | #8e9992 | 5.21 | 4.64 | |
+| `--lt-red` | `var(--hk-alert-light)` #e0917a | 6.2 | 5.5 | the alert lifted for the dark ground; #c2503e was 2.94 on a raised slab |
 | `--lt-ring` | `var(--house-accent-copper)` #C98A5B | 5.32 | 4.73 | the brass of Blake's reference, as the register's copper |
-| `--lt-urgent-label` | #d4786a | 4.90 | 4.36 | |
+| `--lt-urgent-label` | #e08a7c | 5.92 | 5.27 | lifted once more than `--lt-live`: the URGENT word is a label and needs 4.5:1 on the raised ring, which #d4786a (4.36) missed |
 | `--lt-stale-band` | #8e9992 | surface | surface | words in `--hk-forest-ink` (5.21 on the band) |
 | `--lt-ink` | `var(--hk-paper)` #f3efe4 | 13.37 | 11.90 | |
 
@@ -87,7 +89,7 @@ motion; reduced motion keeps the words and loses only the motion.
 | Attention | a request landed and nobody owns it | `Bell` · "1 request · nobody has this" | `--lt-ring` with a count | one `--lt-arrival` stamp, then ring breath `--lt-breath-attention` until acknowledged | steady ring and count | one chime, opt-in |
 | Urgent | an urgent request unacknowledged; an overrun; a changeover at risk | `AlertTriangle` · "URGENT · waiting 3 min" | `--lt-ring`, label `--lt-urgent-label` | ring pulse `--lt-pulse-urgent` until acknowledged | steady ring and "URGENT" | one chime, opt-in |
 | Owned | accepted | `UserCheck` · "Elaine has this" | `--lt-ring` steady | none | — | — |
-| Offline or stale | socket down more than 60 s, or data older than 2 min | `WifiOff` · "Offline since 14:02 · reconnecting" | `--lt-stale-band`, `--lt-stale-text` | none; every breath on the board stops | — | — |
+| Offline or stale | socket down more than 60 s; or data older than 2 min while the socket is down or the last refresh failed (a quiet afternoon with the socket up is live however old its read) | `WifiOff` · "Offline since 14:02 · reconnecting" | `--lt-stale-band`, `--lt-stale-text` | none; every breath on the board stops | — | — |
 
 Priority when several apply to one slot: offline or stale over everything (the band, and
 no breath anywhere); then urgent, attention and owned rings sit on top of the timed state,
@@ -97,10 +99,16 @@ the second channel and the timed state the first.
 ## Laws
 
 1. **Phase lock.** Every cadence (4, 3, 2 and 1.5 s) divides 60 s, so one 60-second
-   epoch aligns them all. The board sets `--lt-epoch-phase-ms` once per mount to
-   `(correctedNow − epochStart) mod 60000` and every animated element declares
-   `animation-delay: calc(-1ms * var(--lt-epoch-phase-ms))`; two screens mounted at
-   different moments breathe together. The value is never updated after mount.
+   epoch aligns them all. A CSS animation starts when it is applied, so a phase
+   sampled once at mount would align only the breaths that began then; instead each
+   breathing element samples its own `--lt-epoch-phase-ms` as
+   `(correctedNow − epochStart) mod 60000` the moment its breath begins (a slab's
+   motion changing at a boundary, a ring mounting for a new request, a freeze
+   lifting) and declares `animation-delay: calc(-1ms * var(--lt-epoch-phase-ms))`
+   (`useBreathPhase` in `lib/use-board-clock.ts`). Two screens, and two breaths that
+   began an hour apart, land on the venue's minute grid. When the clock correction
+   itself moves by half a second the phase is sampled again and the breath shifts
+   once onto the corrected grid.
 2. **CSS only.** Animation is on `transform` and `opacity` only, declared in
    `day-board.css`. No React render per frame, no JavaScript timer drives a pulse.
 3. **Boundary-exact ticks.** The next state transition is scheduled to the millisecond
@@ -112,14 +120,22 @@ the second channel and the timed state the first.
    three-flashes-per-second threshold. Amplitudes are small: the live overlay never
    exceeds `--lt-live-amplitude` (12 %) and a dot never drops under 65 % opacity.
 6. **The live breath is the one ambient motion in the product,** because it doubles as
-   the liveness signal: it stops the instant the connection does (the stale band replaces
-   it), so a still LIVE slab is itself the warning that the display is not live.
+   the liveness signal: every breath stops the instant the socket drops after it has
+   been up (`data-frozen` on the board root), and the stale band follows a minute
+   later, so a still LIVE slab is itself the warning that the display is not live. A
+   board that has never connected since mount breathes for that first minute and then
+   shows the band.
 7. **Colour never carries meaning alone.** Every state is an icon, a verb and a colour;
    the legend is worded exactly as the slots are.
 8. **Text is never tinted by state.** `--lt-ink` everywhere; tone lives in the dot, the
    edge, the ring and the hatch.
 9. **The single token** that would change Blake's red-for-live is `--lt-live`; the
    earlier plan's "red only for exceptions" is withdrawn.
+10. **The ring's words never breathe.** The copper ring is a static line round full-ink
+    words; a second line outside it, the halo, is what breathes or pulses, so the count
+    and the words hold their contrast at every point of the cycle (law 8 applied to the
+    ring). The wall shows no slot detail at all (D11): a slab there is a group, not a
+    button.
 
 ## Sound
 

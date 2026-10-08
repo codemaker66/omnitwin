@@ -133,11 +133,16 @@ describe("the clock", () => {
     expect(nextTickMs(onTheMinute, null)).toBe(onTheMinute + 60_000);
   });
 
-  it("knows live from offline from stale, and lets offline explain stale", () => {
+  it("knows live from offline from stale, lets offline explain stale, and never calls a quiet afternoon stale", () => {
     expect(boardFreshness(NOW, NOW - 10_000, null)).toEqual({ kind: "live" });
     expect(boardFreshness(NOW, NOW - 10_000, NOW - OFFLINE_AFTER_MS + 1)).toEqual({ kind: "live" });
     expect(boardFreshness(NOW, NOW - 10_000, NOW - OFFLINE_AFTER_MS)).toEqual({ kind: "offline", sinceMs: NOW - OFFLINE_AFTER_MS });
-    expect(boardFreshness(NOW, NOW - STALE_AFTER_MS, null)).toEqual({ kind: "stale", readAtMs: NOW - STALE_AFTER_MS });
+    // The socket is up and nothing has changed for an hour: still live.
+    expect(boardFreshness(NOW, NOW - 60 * MIN, null)).toEqual({ kind: "live" });
+    // Down for ten seconds with a read two minutes old: stale, not yet offline.
+    expect(boardFreshness(NOW, NOW - STALE_AFTER_MS, NOW - 10_000)).toEqual({ kind: "stale", readAtMs: NOW - STALE_AFTER_MS });
+    // The last refresh failed: the day on screen is as old as it is.
+    expect(boardFreshness(NOW, NOW - STALE_AFTER_MS, null, true)).toEqual({ kind: "stale", readAtMs: NOW - STALE_AFTER_MS });
     expect(boardFreshness(NOW, NOW - STALE_AFTER_MS, NOW - OFFLINE_AFTER_MS)).toEqual({ kind: "offline", sinceMs: NOW - OFFLINE_AFTER_MS });
     expect(boardFreshness(NOW, null, null)).toEqual({ kind: "live" });
   });
