@@ -1,7 +1,7 @@
 # Browser release verification
 
-The reviewed browser inventory has 381 cases. Four hosted CPU shards execute
-376 cases; the five Twin performance cases execute on the existing RTX 4090
+The reviewed browser inventory has 383 cases. Four hosted CPU shards execute
+378 cases; the five Twin performance cases execute on the existing RTX 4090
 through WSL D3D12. The final hosted job reconciles every case against the
 reviewed inventory, including the original skips and expected failures.
 
@@ -93,7 +93,11 @@ adding only what is new or keeping them to copy, with Undo after Remove
 message used and read through before Save, from the keyboard on a desk and
 on phones, and nothing about AI without a provider, a failed draft drafted
 again, words kept to copy and AI taken away when it is not available
-(`proposals-desk.spec.ts`).
+(`proposals-desk.spec.ts`). One on 8 October adds two: Find in the staff
+header, a client, a date answered room by room in the Diary and a booking on
+the board found from the keyboard on a desk with the accessibility audit open,
+and on phones a magnifier opening a sheet that fits 390 and 320 px, with sales
+offered dates and pages and never the client search (`find-anything.spec.ts`).
 
 The 30 September admission follows Blake's replacement of the Craft quiz with
 The Amissing Book (T-641). The old quiz's 26 threshold, questionnaire and result

@@ -598,6 +598,21 @@
       ],
       "expectedStatus": "passed",
       "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
+    },
+    {
+      "date": "2026-10-08",
+      "reason": "Find in the staff header (T-635, roadmap Tier A #8; Blake's C3 default). Ctrl/\u2318K or the header's button opens one Find on every staff page: a date as it is said opens the Diary on that day with Go to date answering room by room, the Diary adds what its board shows, every page the header offers is found by its name or a venue team's word, and for the roles /clients/search admits, people, organisations, deals, proposals and layouts by a near spelling, each opening in its own desk. Its rules are held in find-model.test.ts, its behaviour in FindPalette.test.tsx and the Diary's in DiaryBoardPage.render.test.tsx and DiaryBoardPage.test.tsx. The first case, on a desk from the keyboard alone, finds Ailsa Henderson from the Clients desk with the accessibility audit open, opens her on the Clients desk with what was found beside her, answers \"14 nov\" with the Diary on Saturday 14 November and the Grand Hall's confirmed wedding, and on the Diary finds that booking on the board and focuses it. The second shows Find as a 44 px magnifier on a 390 px phone opening a sheet with no sideways scroll and a 16 px field, opening a page by touch, fitting a 320 px phone, and gives sales dates and pages without ever asking the client search.",
+      "sourceCommit": "e5ac3bf5c544ed6e37405f3174a828e7fba7c4bc",
+      "sourceFile": "packages/web/e2e/find-anything.spec.ts",
+      "sourceFileGitBlobSha256": "aa4d23a851899f63351680221f9aff17ffb9db5bd20b6ba6e9dc1c8b44a445b9",
+      "inventoryCommand": "pnpm --filter @omnitwin/web exec playwright test --list --project=chromium --update-snapshots=none --reporter=json",
+      "inventorySha256": "0d2994acbe4f58523fa08b6051735dc7cf3cb4506e1e1750071b1a1096768a04",
+      "caseIds": [
+        "f1b385506003d739eb58-2cc4dc15153ef88f4760",
+        "f1b385506003d739eb58-660214026e3d877c8d5d"
+      ],
+      "expectedStatus": "passed",
+      "limits": "This is reviewed inventory admission, not execution evidence. These cases were absent from sourceRunId, sourceReports and the earlier admissions; every current case still requires execution in the hosted browser gate. The listing bytes carry the checkout's absolute paths and the listing's start time, so a re-listing reproduces this identity, not this hash."
     }
   ],
   "cases": [
@@ -1243,6 +1258,28 @@
       "suitePath": [
         "staff-shell.spec.ts",
         "Staff shell"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f1b385506003d739eb58-2cc4dc15153ef88f4760",
+      "file": "find-anything.spec.ts",
+      "title": "a booker finds a client, a date and a booking on the board from the keyboard, from any staff page",
+      "suitePath": [
+        "find-anything.spec.ts",
+        "Find"
+      ],
+      "project": "chromium",
+      "expectedStatus": "passed"
+    },
+    {
+      "id": "f1b385506003d739eb58-660214026e3d877c8d5d",
+      "file": "find-anything.spec.ts",
+      "title": "on a phone Find is a magnifier that opens a whole-width sheet, and sales is offered only what it may open",
+      "suitePath": [
+        "find-anything.spec.ts",
+        "Find"
       ],
       "project": "chromium",
       "expectedStatus": "passed"
