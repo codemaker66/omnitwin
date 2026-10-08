@@ -2,18 +2,31 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A reproducible offline tool, `tools/relight`, turns the Grand Hall's served splats and the 29 September light model into an immutable relight package (light records for all 24 served tiles, per-source bounce probes, window volumes and a sunlit-area table (amended 3 October; were window stencils), floor light maps, the fitted capture light and evidence) and publishes the restored floor as floor skin v2, each checked against the proof that was compared with the hall's photographs.
+**Goal:** A reproducible offline tool, `tools/relight`, turns the Grand Hall's served splats and the 29 September light model into an immutable relight package (light records for all 24 served tiles, per-source bounce probes, window volumes and the sky bodies' bounce basis for the Sun and the Moon (amended 7 October; the 3 October sunlit-area table is gone), floor light maps, the capture light refitted with the centre chandelier's share and a colour per lamp group, and evidence that names every artifact by its SHA-256) and publishes the restored floor as floor skin v2, each checked against the proof that was compared with the hall's photographs.
 
-**Architecture:** The proof's verified research scripts move into the repo unchanged except for where they read and write (Task 2). Small new modules build on their per-splat tables: a byte codec and the package contract (Task 1), the window volumes, their sun march and the sun-reach flag (Task 3, as built on 3 October), bounce probes, the sunlit-area table and floor light maps (Task 4), per-tile records with a transfer to the coarser levels plus a numpy reference of the browser's multiplier (Task 5), and the restored floor (Task 6). `docs/engineering/relight-package.md` is the contract that plan R1b (the browser) consumes. Spec: `docs/superpowers/specs/2026-09-29-the-restored-hall-design.md` (§4.1, §4.2, §6, §8).
+**Architecture:** The proof's verified research scripts move into the repo unchanged except for where they read and write (Task 2). Small new modules build on their per-splat tables: a byte codec and the package contract (Task 1), the window volumes, their sun march and the sun-reach flag (Task 3, as built on 3 October), bounce probes, the sky bodies' factored bounce basis (each window's exact entering power times K basis volumes, `sunbounce.py`), the Moon's ephemeris and floor light maps (Task 4, as built on 7 October), the house lights refitted from the triangulated bulb table (Task 4b), R1c's record classes, the skins' light and each artifact's hash in its evidence (Task 4c), per-tile records with a transfer to the coarser levels plus a numpy reference of the browser's multiplier (Task 5), and the restored floor (Task 6). `docs/engineering/relight-package.md` is the contract that plan R1b (the browser) consumes. Spec: `docs/superpowers/specs/2026-09-29-the-restored-hall-design.md` (§4.1, §4.2, §6, §8) and `docs/superpowers/specs/2026-10-03-r1-polished-design.md` (§4.1 as amended 7 October).
 
 **Tech Stack:** Python 3.13 (`C:/Python313/python.exe`) with numpy 2.4, torch 2.9 + CUDA (RTX 4090), scipy 1.17 (`cKDTree`), Pillow 12 and OpenCV 5; `unittest` (no new dependencies); the repo's publisher `packages/api/src/scripts/publish-splat-tiles.ts --package` (pnpm 9.15.4, Node 22).
+
+## Revisions (7 October, consolidated)
+
+Applied in one pass from R1c's amendments (`docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, A1–A5), R1d's (`docs/superpowers/plans/2026-10-03-r1d-amendments-to-r1a-r1b.md`, A1, A5, A6, A8, A9 and its last section), Task 4's final outcome (commits `a2a25c56`, `deed4d4a`, `4efa4fa4`; the Task 4 report), the house-light refit, the packaging rule and the owner's lamp decision (spec §4.1, commit `475acd2e`). Tasks 1–4 keep their steps; each gains an "As built" note.
+- **Goal and Architecture:** the sky bodies' basis, the refit, Task 4c.
+- **"The multiplier" (normative):** the scenario light has two sky bodies, each with its direct light (the window volume march) and its bounce through Task 4's factored basis, folded at the 0.5 m probes (R1d A5, A9; A9 is superseded by Task 4's committed contract, the controller's ruling of 7 October); β, `b[w]` and the sunlit-area table are gone; the lamp rule takes R1d A1's tint and boost 1, and each lamp group's full colour is its package colour; covered and toggled splats (R1c A2).
+- **Global Constraints:** the 2,700 K lamp default is superseded (each group keeps its measured colour; the warm dim is a setting); the packaging rule; the double-run rule.
+- **File Structure:** `sunbounce.py`, `moon.py`, `housefit.py`, `skinlight.py`, `proof/shots.py`; the commands.
+- **Task 1:** an "As built" note (10 tests). **Task 4:** an "As built (7 October)" note: the factored basis K 30, the Moon, gate-before-write, what depends on the fit.
+- **Task 4b (new):** the house lights refitted: one per-bulb intensity for every chandelier lamp (ch_centre / ch_end = the bulb-count ratio, 2.021 on the 7 October table), a colour per lamp group with priors from the emitter splats, `bulb-intensities.json` for R1d's Task 3, the acceptance (data cost within 2%, the centre's share, the night photographs no worse, double runs), and the fit's dependents regenerated in order (03c, 03d, 05_relight, `probes`, `sun-bounce`).
+- **Task 4c (new):** R1c A1's codec (with one correction for NumPy 2's promotion rules) and A4's `skinlight.py` and `skin-light` (with one correction: `windows_volumes` returns a tuple); each artifact's SHA-256 in its evidence, written after the artifact; `record-artifacts`.
+- **Task 5 (rewritten):** `reference.py` with the sky bodies' basis, the Moon, lamp tints and the visibility (12 tests); `records.py` with R1c's covers and toggles (6 tests); the package reads exact, hash-checked files and writes the `sky/` files, `lamps` per group, R1c's v2 sections; check 5 is the sky bounce through the package; the proof regression compares with the refit's own `05_relight` multipliers; the vectors carry `skyBounce`, `moon_test` and nine ray directions (R1d A8), under 1,000 kB.
+- **Task 6:** the floor's albedo target is read from the refit's `fit.json`. **Task 7:** the README's commands, the publisher's `sky/` test, the exact-files check before publishing, the session log's checks. **Self-review notes:** updated.
 
 ## Revisions (30 September, pre-flight)
 
 From the pre-flight scan of plan R1b (`.superpowers/sdd/2026-09-29-restored-hall-r1b-relit-browser/preflight-scan.md`; finding numbers as there). Only Task 5 changed; Tasks 1–3 and their "As built" note are untouched.
 - 8: Task 5 Step 6 writes `capture.gamma` as exactly 1 after asserting that the fitted γ is within 1e-6 of 1; otherwise the build fails.
 - 9: Task 5 Step 7: the vectors' probe table is the package's global grid. `index` is the global linear index, and `entries` holds every corner each splat's trilinear lookup touches after clamping.
-- 19: Task 5 Step 7 lists every field of R1b's `RelightVectorsSchema`, in camelCase, with `emitterBoost` 1 for `captured` and `sunny_morning` and 4 for `night`.
+- 19: Task 5 Step 7 lists every field of R1b's `RelightVectorsSchema`, in camelCase, with `emitterBoost` 1 for every setting (R1d amendment A1).
 - 20: Task 5 Steps 6 and 7 build every manifest path with `/` and write JSON with `allow_nan=False`.
 - 22: Task 5 Step 7 adds eight `floor-light.npz` texels (`floorTexels`), which R1b's Task 5 decodes from the floor PNGs.
 - The vectors' `windows` (two planes with stencils) follow R1b's schema as it stands; the window-volume revision will replace them.
@@ -38,23 +51,27 @@ The controller's decision of 30 September, confirmed on 3 October: the runtime m
 - Outputs: work tables in `D:/claude/relight/grand-hall/work/`, the package in `D:/claude/splats/trades-hall/grand-hall/relight/v1/` (development serves this root through `SPLAT_STAGING_ROOT`), evidence in `D:/claude/relight/grand-hall/evidence/`. Nothing bulky goes on C:; C: filled up twice on 29 September.
 - GPU rule: every step that runs torch on CUDA holds `D:/claude/visual-firstprinciples-20260928/gpu.lock`, a JSON file `{"owner":"relight-bake <step>","since":"<ISO time>"}` created exclusively and deleted afterwards. If another owner holds it (the T-640 performance session uses it), wait. One GPU job at a time; the PC lost power twice under concurrent GPU load. The proof's code (`lt.py`, `radiosity.py` and the moved scripts) runs torch on the CPU, with no CUDA anywhere, so it never takes the lock (corrected 29 September after the first run held the lock through CPU work).
 - Memory rule: per-splat work runs in chunks of at most 500,000 splats, as the proof does. The PC's 32 GB are shared with other sessions.
-- Spec numbers, verbatim: the light multiplier is clamped to between 1/16 and 8; the codec's round trip is within 1/20 of a stop; at the captured light the result is neutral; lamps default to 2,700 K. The night photo check (0.80 at station 45, 0.85 at station 43) is measured in R1b.
+- Spec numbers, verbatim: the light multiplier is clamped to between 1/16 and 8; the codec's round trip is within 1/20 of a stop; at the captured light the result is neutral. The night photo check (0.80 at station 45, 0.85 at station 43) is measured in R1b. (Amended 7 October: the spec's "lamps default to 2,700 K" is superseded by its §4.1 as amended on 7 October, commit `475acd2e`: at full level each lamp group keeps its measured colour, a package value per group from Task 4b's refit; the 2,700–2,800 K figure is not established, the frontier light study §b9 reading the measured ratio as 3,500–3,950 K against D60–D75; the lamps dim with a warm-down by the owner's artistic choice, a setting of the browser, never a package constant.)
+- Packaging (the owner's rule, 7 October): the package is built only from exact, named work artifacts, never a glob such as `work/sun-bounce*`, and each is packaged only when its SHA-256 equals the one its evidence JSON records (Task 4c writes it, Task 5 checks it).
+- Double runs: every data-producing command runs twice in separate processes and its outputs are compared array by array or byte by byte; a mismatch is settled by a third run and a majority (Task 2 as built).
 - Frames: `json` is the served tiles' frame (metres, z up). `e57` is the light model's frame: +x at bearing 14.3°, window wall at y = −10.329, outward normal −y. `T_JE` (json ← e57) comes from `canonical_frame.json`. The package describes the model in the e57 frame and gives `tileToModel` = `T_EJ` = inverse of `T_JE`.
 - Unit tests: from `tools/relight`, `C:/Python313/python.exe -m unittest discover -s tests -v`. Unit tests never need the GPU or the D: inputs.
-- Proof facts this plan must reproduce (from `D:/claude/real-hall/renovation/relight/work/`): 6,030,980 finest-level splats (the environment tile plus the 11 finest tiles, product order); `fit.json` weights and colours; lamp colour about (1.62, 1, 0.47), about 2,700–2,800 K; capture contrast γ = 1.
+- Proof facts this plan must reproduce (from `D:/claude/real-hall/renovation/relight/work/`): 6,030,980 finest-level splats (the environment tile plus the 11 finest tiles, product order); `fit.json` weights and colours; the measured lamp/daylight ratio (1.623, 1, 0.467) (`lamp_daylight_ratio.json`; amended 7 October: its colour temperature is not established); capture contrast γ = 1. Task 4b then refits the house lights and replaces the proof's weights and lamp colours; the proof fit is kept in `work/fit-proof/`.
 
 ## The multiplier (normative)
 
 R1b's GPU kernel implements exactly this; Task 5's `relight/reference.py` is its executable definition. (Amended 3 October: R1b's TypeScript twin repeats the window march's float32 operations exactly; WGSL may fuse, reassociate and divide within 2.5 ULP, so the GPU may round a sample on a cell boundary or an outline the other way, which R1b's GPU checks allow for and count.) Per splat, in the e57 frame:
 
-- Inputs from the record: direct light `D[k]` for the nine sources k = W1..W5, cove, ch_end, ch_centre, dome; normal `n`; flags (class, isotropic, sun-reachable, chandelier group). From the splat itself: position `p` and captured linear colour `C` (the stored DC colour, sRGB-decoded); `L = C · (0.2126, 0.7152, 0.0722)`. The sun-reachable flag is `windows.sun_reach(volumes, p, latitude)` (amended 3 October): analytic and conservative, true wherever some real sun position can light p through some window's glass, occupancy ignored.
+- Inputs from the record: direct light `D[k]` for the nine sources k = W1..W5, cove, ch_end, ch_centre, dome; normal `n`; flags (class, isotropic, sun-reachable, chandelier group; R1c's wall group and toggle). From the splat itself: position `p` and captured linear colour `C` (the stored DC colour, sRGB-decoded); `L = C · (0.2126, 0.7152, 0.0722)`. The sun-reachable flag is `windows.sun_reach(volumes, p, latitude)` (amended 3 October; its band covers the Moon since Task 4: declination within 28.75°, parallax up to 1.03°): analytic and conservative, true wherever some real sun or moon position can light p through some window's glass, occupancy ignored.
 - Bounce light `I[k]` (RGB) = the per-source probe volume evaluated at `p` with normal `n`: trilinear over the eight grid corners with invalid corners dropped and the weights renormalised (the proof's `03_bases.trilinear_weights`), then the ambient-cube evaluation `E(n) = Σ axis n+² cube[+axis] + n−² cube[−axis]`, or the mean of the six faces for isotropic receivers (the proof's `lt.cube_eval`).
 - Captured light: `Ecap = Σk w[k] c[k] ⊙ (D[k] + I[k])` with the fitted capture weights `w` and colours `c` from the manifest.
-- Scenario light: `E = Σk s[k] ⊙ (D[k] + I[k])`, where `s[k]` is the setting's RGB weight for source k (R1b derives it from the presets), plus, when the sun is up, `sunRGB × V(p) × cosθ + Σw b[w] × sunRGB ⊙ I[w]`. (Amended 3 October: window volumes.) `V(p)`, only for sun-reachable splats, is `windows.sun_visibility` (Task 3 as built): the sun's ray from p belongs to the first window, in order W1..W5, that claims it (a room point whose ray crosses the wall's inner face inside that window's outline shrunk by 5 cm, or a point in the embrasure within 0.25 m of the window's sides); it is 0 while that window's horizon gate is closed, if more than 2.2 m of it lie in the embrasure, or unless it leaves through the glass inside the outline shrunk by 3 cm; otherwise `V = exp(−τ) × F`, with τ marched through the window's occupancy volume in float32 steps of 1.5 cm from the wall face (0.045 m in for a point in the embrasure) to 7 cm beyond the glass, at the nearest cell, stopping once τ ≥ 6 (`docs/engineering/relight-package.md`, "Window volumes and the sun", gives every step and its order). A window's horizon gate is open while the sun's elevation `asin(σz)` in degrees is strictly greater than its horizon interpolated linearly between whole degrees at the sun's compass azimuth `az = (x_bearing − atan2(σy, σx) in degrees) mod 360`, as the proof's `lt.horizon_deg` interpolates its profile: `horizon[i](1 − f) + horizon[min(i + 1, 359)] f`, `i = min(floor(az), 359)`, `f = az − i`. `F` is the glass transmission, the 101-entry table interpolated linearly at `100 min(|σy|, 1)`. V, the gates, F and the sun's azimuth and elevation all take σ rounded to float32. The sun-bounce weights are `b[w] = β A[w] F / skyFlux[w]` (Task 4's β and `skyFlux`), where `A[w]` is window w's sunlit glass area: Task 4's baked table interpolated bilinearly at the sun's azimuth and elevation, and 0 while `σy ≥ −0.001` or the window's gate is closed. `cosθ = max(0, n·σ)`, or 0.25 for isotropic receivers.
+- Scenario light: `E = Σk s[k] ⊙ (D[k] + I[k])`, where `s[k]` is the setting's RGB weight for source k (R1b derives it from the presets), plus, for each sky body that is up (the Sun, and the Moon; amended 3 October for R1d), `bodyRGB × V_body(p) × cosθ_body` and the bodies' bounce `I_sky(p)`. Every rule below written for the Sun's direct light (the march, the gates, the glass, `cosθ`) applies to the Moon with the Moon's direction. **The sky bodies' bounce** (amended 7 October; R1a Task 4 as built, `sunbounce.py`; the contract's section "The sky bodies' bounce"): for a body toward σ (rounded to float32), each window's exact entering power `P_w(σ)` (`sunbounce.window_power`: the 56,448 patch rays of the room's 3,528 patches marched by the window volume twin, each ray owned by the first window that claims it, times the glass transmission, gated by that window's horizon), the coefficients `c(σ) = sunbounce.coefficients(table, P(σ), az, el)` (the four 4° nodes `windows.sun_corners` picks, each window's coefficients scaled by its weight times `P_w`, in float64), the basis sum on the 1 m grid `S1 = Σ_body bodyRGB ⊙ Σ_k c_k(σ_body) basis_k` (float16 basis widened), and `S1` read at each 0.5 m probe trilinearly (`sunbounce.trilinear_matrix`: the 1 m cell clamped into the grid and the position into the cell, invalid corners dropped and the rest renormalised, none when their weights sum to at most 1e-6). `I_sky(p)` is that 0.5 m sky volume evaluated at p exactly as `I[k]` is (trilinear over valid probes, the ambient cube at n); the browser folds it into the scenario probe volume (R1b Task 10), so the floor and R1c's skins receive it unchanged. β, the sunlit-area table and the area-scaled bounce `Σw b[w] sunRGB ⊙ I[w]` are gone (Task 4 as built; R1d's amendment A9 is superseded by this contract, the controller's ruling of 7 October). `V(p)`, only for sun-reachable splats, is `windows.sun_visibility` (Task 3 as built): the body's ray from p belongs to the first window, in order W1..W5, that claims it (a room point whose ray crosses the wall's inner face inside that window's outline shrunk by 5 cm, or a point in the embrasure within 0.25 m of the window's sides); it is 0 while that window's horizon gate is closed, if more than 2.2 m of it lie in the embrasure, or unless it leaves through the glass inside the outline shrunk by 3 cm; otherwise `V = exp(−τ) × F`, with τ marched through the window's occupancy volume in float32 steps of 1.5 cm from the wall face (0.045 m in for a point in the embrasure) to 7 cm beyond the glass, at the nearest cell, stopping once τ ≥ 6 (`docs/engineering/relight-package.md`, "Window volumes and the sun", gives every step and its order). A window's horizon gate is open while the sun's elevation `asin(σz)` in degrees is strictly greater than its horizon interpolated linearly between whole degrees at the sun's compass azimuth `az = (x_bearing − atan2(σy, σx) in degrees) mod 360`, as the proof's `lt.horizon_deg` interpolates its profile: `horizon[i](1 − f) + horizon[min(i + 1, 359)] f`, `i = min(floor(az), 359)`, `f = az − i`. `F` is the glass transmission, the 101-entry table interpolated linearly at `100 min(|σy|, 1)`. V, the gates, F, `P_w` and the body's azimuth and elevation all take σ rounded to float32; a body with `σy ≥ −0.001` lights nothing and bounces nothing. `cosθ = max(0, n·σ)`, or 0.25 for isotropic receivers.
 - Interior (class 0) and chandelier fixtures (class 6, lamps on): `M = clamp(E / max(Ecap, 1e-4), 1/16, 8)` per channel.
 - Embrasure (class 1: curtains, glazing bars, reveals, columns): `ρ = min(C / Ecap, 0.8)`, `excess = max(C − ρ Ecap, 0)`, `rBack = skyLevel × skyRGB / c[W1]`, `M = clamp((ρ E + excess rBack) / max(C, 1e-4), 1/16, 8)`.
-- Lamp emitters (class 3 chandelier bulbs, class 4 dome lamps, class 5 cove strip) and fixtures (class 6) at lamp level ℓ ∈ [0, 1] of their group: `Mlit = 1 + (β − 1) × smoothstep(0.45, 0.9, L)` for classes 3 and 4, where β is the setting's emitter boost: 1 at the captured setting, so the captured setting stays exactly neutral, and 4 for the proof's night with the lamps lit; `1` for class 5, and the interior rule for class 6. `Munlit = (A E) / max(C, 1e-4)` with `A = 0.5` for class 4, `0.3` for class 5, `0.35` otherwise, times `clip(C / max(L, 1e-4), 0.5, 2)^0.4` except for class 5. `M = clamp(ℓ Mlit + (1 − ℓ) Munlit, 0, 8)`.
+- Lamp emitters (class 3 chandelier bulbs, class 4 dome lamps, class 5 cove strip) and fixtures (class 6) at lamp level ℓ ∈ [0, 1] of their group: `Mlit = t × (1 + (β − 1) × smoothstep(0.45, 0.9, L))` for classes 3 and 4 and `Mlit = t` for class 5, where t is the group's lamp tint (RGB, the colour of the dimmed lamp relative to its full-power colour; 1 at full power and in every preset) and β the setting's emitter boost, 1 in every setting (amended 3 October for R1d: crisp bulbs replace the boost), so the captured setting stays exactly neutral; the interior rule for class 6. `Munlit = (A E) / max(C, 1e-4)` with `A = 0.5` for class 4, `0.3` for class 5, `0.35` otherwise, times `clip(C / max(L, 1e-4), 0.5, 2)^0.4` except for class 5. `M = clamp(ℓ Mlit + (1 − ℓ) Munlit, 0, 8)`. (Amended 7 October, the owner's lamp decision, spec §4.1: at full level each group keeps its measured colour, which is the package's per-group colour, `capture.colours` and `lamps.groups[g].colour` from Task 4b's refit, never a constant; how a group's colour changes as it dims, the warm-down Blake chose, is a setting, t, never a package value.)
 - Hidden (class 2: outside the hall, the environment shell, pane haze): alpha 0.
+- Covered by a skin (class 7; amended for R1c): lit exactly as class 0 (`M = clamp(E / max(Ecap, 1e-4), 1/16, 8)`); alpha 0 while its wall group (bits 5–7) is drawn as skins (bit `group` of the visibility's `skin_groups`), else 1.
+- Toggled (any class but 7 with bits 6–7 = t > 0; amended for R1c): alpha 0 while the toggle is hidden (bit `t − 1` of the visibility's `hidden_toggles`); otherwise its class's rule. The visibility defaults to nothing drawn and nothing hidden, so a package without skins or toggles is relit exactly as before.
 
 ## File Structure
 
@@ -64,17 +81,21 @@ R1b's GPU kernel implements exactly this; Task 5's `relight/reference.py` is its
 | `tools/relight/README.md` | Create | How to run the bake and publish |
 | `tools/relight/config/grand-hall.json` | Create | Every input path and room constant |
 | `tools/relight/relight/__init__.py` | Create | Package marker |
-| `tools/relight/relight/__main__.py` | Create | CLI: `proof`, `windows`, `check-sun`, `probes`, `sun-area`, `floor`, `records`, `check` |
+| `tools/relight/relight/__main__.py` | Create | CLI: `proof`, `windows`, `check-sun`, `probes`, `floor`, `sun-bounce` (Task 4 as built), `refit-house` (Task 4b), `skin-light`, `record-artifacts` (Task 4c), `records`, `check` (`sun-area` was removed by Task 4) |
 | `tools/relight/relight/config.py` | Create | Load and validate the config |
 | `tools/relight/relight/gpulock.py` | Create | The shared GPU lock |
-| `tools/relight/relight/codec.py` | Create | Log codes, octahedral normals, flags, records, multiplier packing |
-| `tools/relight/relight/windows.py` | Create | Window volumes and their sun march, horizons, Fresnel table, sun reach, the sunlit-area table |
-| `tools/relight/relight/probes.py` | Create | Per-source bounce probes, sun-bounce weights |
+| `tools/relight/relight/codec.py` | Create | Log codes, octahedral normals, flags (R1c's class 7 and toggles, Task 4c), records, multiplier packing |
+| `tools/relight/relight/windows.py` | Create | Window volumes and their march, horizons, Fresnel table, the sky band's reach (Sun and Moon), the direction grid and its corners |
+| `tools/relight/relight/probes.py` | Create | Per-source bounce probes, cube luminance |
+| `tools/relight/relight/sunbounce.py` | Create (Task 4 as built) | The sky bodies' factored bounce: exact window powers, the basis and coefficient table, K by the stable margin rule |
+| `tools/relight/relight/moon.py` | Create (Task 4 as built) | The Moon's position (Meeus) |
 | `tools/relight/relight/floorlight.py` | Create | Floor light maps on the floor-skin grid |
-| `tools/relight/relight/records.py` | Create | Finest-level records, transfer to coarser levels |
-| `tools/relight/relight/reference.py` | Create | The normative multiplier in numpy |
-| `tools/relight/relight/package.py` | Create | Write tiles, probes, window volumes, the sunlit-area table, maps, manifest, checksums |
-| `tools/relight/proof/*.py` | Create (moved) | The proof's scripts, paths from the config only |
+| `tools/relight/relight/housefit.py` | Create (Task 4b) | The house lights refitted from the bulb table; `bulb-intensities.json` |
+| `tools/relight/relight/skinlight.py` | Create (Task 4c) | R1c's skins' light and relight package v2's skins section |
+| `tools/relight/relight/records.py` | Create | Finest-level records, transfer to coarser levels, R1c's covers and toggles |
+| `tools/relight/relight/reference.py` | Create | The normative multiplier in numpy, both sky bodies |
+| `tools/relight/relight/package.py` | Create | Write tiles, probes, window volumes, the sky bodies' basis, maps, manifest, checksums, from exact hash-checked artifacts |
+| `tools/relight/proof/*.py` | Create (moved) | The proof's scripts, paths from the config only (`shots.py` moved by Task 4b) |
 | `tools/relight/tests/test_*.py` | Create | Unit tests |
 | `tools/floor-skin/build_floor_skin.py`, `tools/floor-skin/README.md` | Modify | Arm R (restored albedo) with luminance calibration |
 | `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` | Create | Test vectors for R1b |
@@ -395,6 +416,8 @@ git commit -m "feat(relight): the relight package contract and its byte codec (T
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+**As built (29 September; noted 7 October).** Committed as `ec4dd7bf` exactly as written, except that `test_codec.py` holds 10 tests (Step 4's "11" miscounted the file above, which has 10). The contract Step 5 wrote is revised in place by later tasks (3 October: window volumes; 7 October: the sky-body bounce, the lamp groups, records for skins and toggles, package v2); Step 5 keeps the text it first wrote. Task 4c adds R1c's record classes to `codec.py` (class 7 and the toggle bits).
 
 ### Task 2: The proof's light model, moved into the repo
 
@@ -1348,7 +1371,1562 @@ git commit -m "feat(relight): per-source bounce probes, the calibrated sun bounc
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
+**As built (7 October).** Steps 5 and 6 above (β, the area-scaled sun bounce and the 1° sunlit-area table) were tried, missed their gates and were replaced; Steps 1–4 and 7 stand with the changes below. The record is the task report (`.superpowers/sdd/2026-09-29-restored-hall-r1a-light-bake/task-4-report.md`: its "Outcome", "Final runs and commit (4 October)", "Data layout and the browser's contract, factored model" and the 7 October entries) and the commits `a2a25c56` (the factored sky-body basis, the Moon, the floor), `deed4d4a` (the stable 20% K rule) and `4efa4fa4` (review fixes: gate-before-write, a third independent draw, the contract's float32 precision). Later tasks use exactly what is listed here.
+
+- **Why it changed.** β fitted on one sunny morning did not transfer: on 48 real suns it scored a pooled median |Δlog2| of 0.61, 46 of 48 suns over 0.25. The 1° area table missed Step 7's 2% check by up to 13%. A per-direction table on a 4° grid then failed at window-visibility edges (azimuth ≥ 155°), whatever K. The owner made moonlight a full light source on 3 October, so the sky band and the bounce cover the Moon too.
+- **The sky band covers the Moon** (`windows.py:344-402`): `SKY_DECLINATION_MAX = 28.75` (23.44 + 5.30, the Moon's geocentric bound), `SKY_PARALLAX_MAX = 1.03` (the closest perigee's horizontal parallax), `REFRACTION_MAX = 0.6`, `REACH_PAD = 0.5`; `sun_band_meets` raises the box's top by the parallax; `sun_reach`, `sun_nodes` and `sun_band_meets` keep their names and cover both bodies. `check-sun` adds 48 random real moons (`missedMoon 0`); the reach flag now marks 0.83674 of the 6,030,980 finest splats (it was 0.82859).
+- **The Moon's ephemeris** (`moon.py`, `tests/test_moon.py`, 6 tests): Meeus ch. 47 in full (Tables 47.A and 47.B), ch. 22 (mean obliquity, low-accuracy nutation), ch. 12 (apparent sidereal time), ch. 40 (topocentric parallax, geodetic latitude and height), ch. 13 (horizontal), the proof's refraction; `position(jd_ut, lat, lon) -> (az, el, distance_km)`, `julian_day(y, m, d, h=0)`, `NODAL_CYCLE_DAYS`. Against JPL Horizons over 2020–2038: median 2″, worst 15″ (the Task 4 review).
+- **`probes`** (Steps 5.1–5.4 only; `__main__.py:382-436`): the per-source cubes `<work>/probes-coarse.npz` (`cubes` float16 (M, 9, 3, 6), `valid`, `origin`, `shape`, `spacing`; 0.5 m, (43, 22, 14)) and `<evidence>/probes-check.json` (`linearityMedianRel`, `linearityP99Rel`, `linearityMaxRel`, `probes`, `threshold` 0.02, `pass`). `probes.sun_bounce_weights_from_area` is gone; `probes.cube_luminance(cubes, lumw)` was added.
+- **`sun-bounce`** (new; `sunbounce.py`, `__main__.py:527-698`, `tests/test_sunbounce.py`) replaces Steps 5.5–5.6 and Step 6. The sky bodies' bounce is factored per window w: `B_w(s) = P_w(s) × R_w(s)`.
+  - `P_w(s)` is the power the room's 3,528 patches receive through window w, computed exactly at every light change from the proof's 16 sub-sample rays per patch (56,448 rays, `sunbounce.window_power`, `sunbounce.py:63-88`: marched by the window-volume twin `windows.sun_visibility_by_window`, `windows.py:270-290`, the glass transmission and the horizon gate included). It is never interpolated.
+  - `R_w = B_w / P_w`, the bounce of a white unit light per unit power, is smooth. It is compressed into K basis volumes on the 1 m probe grid (`probes.coarse_grid(hall, 1.0)`: (22, 11, 7), the even probes of the 0.5 m grid, 1,260 valid) and a coefficient table on a 4° grid of directions over the sky band (`windows.sun_nodes(55.8593, 4)`: origin azimuth 24°, elevation −2°, (18, 79) nodes, 935 needed, 527 facing the wall). A node-window whose ungated power is below `REAL_FRACTION = 1e-4` of that window's median node power copies the nearest real node of its window (`fill_from_nearest`: squared grid-index distance, ties to the first real node in row-major order).
+  - K is chosen by `sunbounce.choose_k` (`sunbounce.py:223-241`) on 48 held-out real suns and 48 real moons under `GATE = {median: 0.25, brightShare: 0.05}` with the stable margin rule (`MARGIN = 0.20`: the smallest K from which the gate passes and the worst bright direction stays within 0.20 at every larger K up to 192). It is then scored once, unchanged, on a check draw and a strict third draw. **K = 30** (selection worst bright 0.1663, check 0.1755, strict 0.1777; 0 bright directions over in all three).
+  - The artifact is `<work>/sun-bounce.npz` (2,082,843 bytes; runs 12, 13 and 14 byte-identical): `basis` float16 (K, 1694, 3, 6), `coeffs` float32 (18, 79, 5, K), `floorMean` float32 (K, 3), `needed` bool (18, 79), `azimuth0` 24.0, `elevation0` −2.0, `step` 4.0, `gridOrigin` (−1.823, −10.329, 0.02), `gridShape` (22, 11, 7), `gridSpacing` 1.0, `valid` bool (1694), `patchRays` float32 (56448, 3), `patchNormal` float32 (3528, 3), `patchArea` float32 (3528,), and the bake diagnostics `real` and `nodePower` (never packaged). Evidence: `<evidence>/sun-bounce-check.json`.
+  - The browser's contract (P_w's float32 order, the corners, the coefficients, the fold) is `docs/engineering/relight-package.md`, section "The sky bodies' bounce", copied from the report's "Data layout and the browser's contract, factored model".
+  - Known limit (accepted 4 October): the proof's patch sampling (a 12.5 cm pitch) aliases at oblique suns (azimuth about 155° and beyond); `windows.sunlit_area` stays as the finer reference.
+  - The display's floor-mean bounce at K 30 has median 9.3% and maximum 34% relative error on the selection set, 10.0% / 73% on the check set (the maximum on faint directions).
+- **`floor`** (Step 7, as briefed; `__main__.py:701-767`): `<work>/floor-light.npz` (`D` (212, 424, 9) float32, `texelToModel` (4, 4)); its helpers live in `floorlight.py` (`floor_grid` with floor-skin v1's `widthPx`, `heightPx`, `texelM`; `capture_centres`, `model_plane`, `lift_to_plane`, `texel_to_model`, `patch_direct`), tested in `tests/test_floorlight.py` (5 tests). The command first recomputes the proof's patch light (the house lights exactly, the windows within float16) and requires W3 to light more than 90% of the texels (0.9119).
+- **Gate before write** (`__main__._save_npz_if`, `_finite`, `__main__.py:27-67`): `probes`, `floor` and `sun-bounce` write their artifact into `work/` only when their checks pass (a failing run keeps its arrays as `<evidence>/<stem>-FAILED.npz`); their evidence JSON is written with non-finite numbers as null.
+- **Runs** (6 threads, one process each, each data product at least twice): probes runs 5, 6, 7, floor runs 3, 4, 5, check-sun runs 2, 3, 4 and sun-bounce runs 12, 13, 14 byte-identical. Suite: 121 tests (`verify/task4/green22-suite.txt`).
+- **Deferred to Tasks 4c and 5** (the Task 4 review's minor items): `sun-check.json` is written without `_finite`; an evidence JSON can be written before its artifact; no artifact hash links evidence to `work/`. Task 4c records each artifact's SHA-256 in its evidence after the artifact is written, and Task 5 packages only exact, hash-checked files.
+- **What depends on the capture fit.** `probes` (its cubes use the fitted patch albedo `rho` of `fit_state.npz`) and `sun-bounce` (its exact fields and its basis use the same `rho`) are re-run by Task 4b after the house-light refit. `floor`, `windows` and `check-sun` do not read the fit and are not re-run.
+
+### Task 4b: The house lights refitted: the centre chandelier's light from the bulb table
+
+(Added 7 October. It is numbered 4b so that every reference to R1a's Tasks 5, 6 and 7 in R1b, R1c and R1d stays valid. It runs after Task 4 and before Task 4c and Task 5.)
+
+**Files:**
+- Create: `tools/relight/relight/housefit.py`, `tools/relight/tests/test_housefit.py`
+- Create (moved byte for byte): `tools/relight/proof/shots.py` (the proof's `scripts/shots.py`, which `07_compare.py` imports; the R1b plan's File Structure lists it as "moved if R1a did not")
+- Modify: `tools/relight/relight/__main__.py` (the `--from` option and the `refit-house` command), `tools/relight/config/grand-hall.json` (`paths.emitters`, `paths.lampColours`)
+- Outputs (D:, never committed): the staging copy `D:/claude/relight/grand-hall-refit/` (`config.json`, `work/`, `evidence/refit/`, `harness/`, `renders/`, `renders-baseline/`, `verify/`); in the bake's work `D:/claude/relight/grand-hall/work/` the accepted `fit.json`, `fit_state.npz`, `npy/E_cap.npy`, `npy/emb_E_back_cap.npy`, `mult/{comp_house,mask,night,sunny_morning,overcast_noon}.{f16,json}` and `bulb-intensities.json`, the proof fit kept in `work/fit-proof/`, and the re-baked `probes-coarse.npz` and `sun-bounce.npz`; evidence `D:/claude/relight/grand-hall/evidence/refit.json`, `probes-check.json`, `sun-bounce-check.json`; run copies in `D:/claude/relight/grand-hall/verify/task4b/`.
+
+**Interfaces:**
+- Consumes: the proof's `04_fit.py` (`direct`, `patch_direct_capture`, `build_fit_set`, `patch_samples`, `E_capture_at`, `BASES`, `GROUPS`, `PAINT`, `PAINT_ALBEDO`, `HUBER`, `GAMMA_FREE`, `SKY_W`, `LAMP_RATIO`), `radiosity.py` (`form_factors`, `radiosity`, `probe_indirect`, `load_patches`), `store.py` (`Store`, `Probes`, `eval_cubes`, `LUMW`), `lt.load_occ`, `common.T_JE`, `03c_embrasure_roomside.py`, `03d_embrasure_back.py`, `05_relight.py` (scenarios `comp_house`, `mask`, `night`, `sunny_morning`, `overcast_noon`), `07_compare.py metrics`; the proof's render harness (`D:/claude/real-hall/renovation/relight/harness/run.mjs` and `app/dist/`, copied, never run in place: the proof folder is read-only) and its `work/views.json` and `work/order_check.json` (copied); the bulb table `D:/claude/real-hall/frontier/splats/evidence/bulbs.json` (`venviewer.frontier.bulbs.v1`: `frames.T_json_from_e57`, `bulbs[]` with `id`, `chandelier`, `position_e57`, `confidence`, `faces[]` with `face` and `blob_area_mm2`); `D:/claude/real-hall/frontier/light/evidence/lamp_colours.json` (`groups.chandelier_emitters_all` and `groups.dome_ring_emitters`, each `median_log2_RG_BG`); `<work>/geom.npz` (`chandeliers`, 5 × 3, e57: the light model's chandelier centres, index 2 the centre one, in the order `03_bases.py` sums them: `E_ch[:, 0]` = 0, 1, 3, 4 and `E_ch[:, 1]` = 2, `03_bases.py:175-177`); `<work>/lamp_daylight_ratio.json`; Task 4 as built (`probes`, `sun-bounce`, `_proof_modules`, `_finite`, `THREADS`, the launcher and `compare.py` in `D:/claude/relight/grand-hall/verify/task4/`).
+- Produces (`housefit.py`): `BULBS_SCHEMA`, `SHARES_SCHEMA = "venviewer.bulb-intensities.v1"`, `CENTRE = 2`, `ENDS = (0, 1, 3, 4)`, `LIGHTS` (04_fit's ten bases), `COLOUR_PRIOR_SIGMA`, `PRIOR_WEIGHT = 0.15`, `LOG_BOUNDS = (-25.0, 12.0)`, `RESIDUAL_TOLERANCE = 0.02`, `REPRODUCE_TOLERANCE = 0.01`, `NOT_LAMP_SHARE = 1e-6`, `PHOTO_VIEWS`, `PHOTO_JOB = "A_comp_house"`, `PHOTO_R_SLACK = 0.005`, `PHOTO_STOPS_SLACK = 0.02`, `FIT_FILES`, `SCENARIOS`; `sha256_file(path)`; `is_lamp(entry) -> bool`; `blob_balance(bulbs) -> dict`; `read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict` (`sha256`, `ids`, `counts`, `lamps`, `notLamps`, `blobBalance`); `LampCounts(end_mean, centre)` with `ratio`; `lamp_counts(counts) -> LampCounts`; `colour_priors(lamp_colours) -> dict`; `FitConstants` (`of(fit04)`); `ProofModel(lamp_ratio)` and `RefitModel(lamp_ratio, counts, priors)` (each `name`, `n_log`, `n_col`, `init_log(w0)`, `weights(x)`, `colours(x)`, `bounds(lo, hi)`, `priors(x)`, `describe(x)`); `n_params(model, k)`, `unpack(model, x, k)`, `model_light(model, x, Dv, Iv, k)`, `VoxelData`, `residuals(model, x, data, k)`, `data_cost(model, x, data, k)`, `bounds_of(model, n, k)`, `initial_x(model, Dv, k)`, `anchor_albedo(model, x, data, k)`, `solve(model, x, data, k)`; `run_capture_fit(model, k, mods, out_dir, write_ecap, log) -> dict`; `bulb_shares(bulbs, report, fit_sha256) -> dict`; `accept_fit(proof, refit, counts) -> dict`; `photo_gate(baseline, refit) -> dict`; `same_run(dir_a, dir_b) -> list[str]`; `copy_verified(src, dst) -> str`; `snapshot_fit(work) -> dict`. The command `python -m relight refit-house <proof | refit | compare | install | photo-gate | promote> [--from <staging work>]`. Data: `<work>/refit/<mode>/{fit.json, fit_state.npz, report.json}` (the refit also `E_cap.npy` and `bulb-intensities.json`), `<evidence>/refit/{photo-baseline,compare,accept,install,photo-gate}.json`, and in the bake's work `bulb-intensities.json` = `{ schema: "venviewer.bulb-intensities.v1", bulbs: { <every id of the table>: <intensity per unit of its group's weight, positive> }, fit: { model, perBulbIntensity, lampRatio, groups: { ch_end | ch_centre: { source, weight, perBulbPerUnitWeight, chandeliers: { <index>: { lamps, share } } } }, notLamps, notLampShare, blobBalance, tableSha256, fitJsonSha256 } }`: the shape R1d's Task 3 reads (`cinematic.bulb_shares` normalises the values to a mean of 1 per group; the amendments file's "Interfaces R1d expects from the bake", item 2).
+
+**Why.** The capture fit (`04_fit.py`, run by Task 2) gives the centre chandelier `ch_centre` a weight of 1.44e-11, its lower bound `e^-25`, while the frontier splats study saw it lit through the whole 31 May walk (244 keyframes within 4 m, every one lit: `D:/claude/real-hall/frontier/splats/evidence/walk_lit_timeseries.json`). Albedo flatness cannot tell its light from the dome ring's and the end chandeliers' (their bases are nearly collinear over the fit's voxels), so they took its light (`ch_end` 2.24 and `dome` 0.754 in `work/fit.json`) and the captured light under the dome is wrong. Every multiplier is a ratio to that captured light, so the error reaches every relit splat near the centre of the hall.
+
+**The design (chosen, with the reasons).**
+- **One per-bulb intensity φ for every chandelier lamp.** `03_bases.py` makes `E_ch[:, 0]` the four end chandeliers' unit point lights summed and `E_ch[:, 1]` the centre chandelier's. The refit gives `ch_end` the weight `φ × n̄_end` (n̄_end the mean lamp count of chandeliers 0, 1, 3 and 4) and `ch_centre` the weight `φ × n_centre`, so `ch_centre / ch_end` is the bulb-count ratio exactly and each chandelier's weight is proportional to its lamps. Reasons: the five chandeliers carry one lamp product (their emitter splats agree within 0.11 stop in R/G, `lamp_colours.json`); every lamp was lit and steady through the walk (the study's clipped-share series never fell below 0.2%); and the alternative, a free per-chandelier intensity with a strong shared prior, would put a prior on exactly the direction the data cannot identify (the proof's fit drove it to its bound), so the fit would return the prior with a pull that means nothing. The constraint states the physics and leaves the fit its identifiable freedoms. The table's clipped-blob areas (a relative, monotone proxy within one face, the table's `clipped_measure_note`) are not fitted: `blob_balance` reports them as evidence, the median over every face that frames lamps of the centre chandelier and of an end chandelier of log2 of the centre's median clipped-core area over the ends'. About 0 supports one intensity; the number goes into the evidence and the task report.
+- **Lamp counts.** An entry counts as a lamp unless the by-eye reading marks it brass or glare (`confidence` "exclude: …", 27 entries on 7 October); "low" (unresolved by eye, 6) counts, because it was triangulated from clipped blobs in at least 12 faces. On the 7 October table (173 entries, all five chandeliers) that gives 28, 23, 49, 24 and 22 lamps for chandeliers 0–4: n̄_end 24.25, n_centre 49, ratio 2.021 (2.022 counting only "high" and "medium": the choice barely matters). Each chandelier's lamps must stand around the light model's chandelier of the same index (median within 0.25 m of its axis, none beyond its volume's radius plus 0.1 m; measured 0.06–0.16 m and 0.70–1.00 m on 7 October), and the table's `T_json_from_e57` must be the canonical frame's (equal on 7 October), so a numbering or frame mismatch cannot pass. The four end chandeliers keep their equal weighting inside `E_ch[:, 0]`: their counts differ by −9% to +15%, inside the counts' own uncertainty (the study lists 31 May glow clusters with no E57 bulb, possibly lamps dark at the E57 survey), and a per-chandelier end basis would change the bases every record, probe and floor texel carries.
+- **A colour per lamp group.** The cove (LED tape), the chandeliers (candle lamps; `ch_end` and `ch_centre` share one colour) and the dome (LED pin spots) each get the measured lamp/daylight ratio (`lamp_daylight_ratio.json`, `1.623 : 1 : 0.467`) times `exp([δR, 0, δB])`, with a fitted offset held by a prior per group (residual `0.15 × (δ − m) / σ`, 04_fit's prior strength): the chandeliers at m = 0 (the ratio was measured on chandelier and dome emitter splats, 94% of them chandeliers) with σ = 0.035 (0.05 stop); the dome at its emitter splats' measured shift from the chandeliers' (`lamp_colours.json`: −0.350 stop R/G, +0.173 B/G; the light study §b9) with σ = 0.10 (0.15 stop); the cove at m = 0 with σ = 0.35 (0.5 stop), because its splats are surfaces lit by the tape and measure albedo times light, not the tape. No group colour is a constant: the 2,700–2,800 K figure is not established (the light study §b9 reads the ratio as 3,500–3,950 K against D60–D75).
+- **Everything else is `04_fit.py`'s**, run by the same loop: the windows with their weak spread prior, the daylight colour with its prior, the capture's sun (its weight stays free and goes to its bound, as in the proof), the six material groups' albedos with the paint band's green anchored at 0.60, γ fixed at 1, and four rounds of radiosity with the patch albedo `rho` re-estimated from the fitted light.
+- **The baseline is the proof's own model through the same loop** (`ProofModel`, 04_fit's parameterisation exactly). It must reproduce `work/fit.json` (every weight of at least 1e-6 within 1% relative, Task 2's own bar; `ch_centre` and `sun_cap` sit at the bound and are not compared), so the refit's data cost is judged against a baseline computed the same way.
+
+**Acceptance** (all required; a miss stops the task and goes to the controller with the numbers):
+1. The refit's data cost (the robust photometric residual alone, `0.5 Σ (ρ(r) w_g)²` at the fourth round, priors excluded) is at most 1.02 times the proof model's.
+2. The centre chandelier gets its physical share: `ch_centre / ch_end` equals the lamp ratio to 1e-9, and log φ is more than 0.01 inside its bounds.
+3. The Matterport night photograph check is no worse: the proof's `07_compare.py metrics` on the house light alone (`A_comp_house`) at stations 43 and 45, rendered with the refit's multipliers, against the same check rendered from the proof fit on the same day with the same harness: Pearson r at least the baseline's minus 0.005 (the metric's rounding and render noise), the median affine residual and each chroma error at most the baseline's plus 0.02 stop. (The proof's numbers: r 0.881 at 43, 0.820 at 45.)
+4. Double runs give identical outputs: the refit twice in separate processes (`fit.json`, `report.json`, `bulb-intensities.json` and `E_cap.npy` byte for byte, `fit_state.npz` array by array); `03c` and `03d` twice (the ten tables they write, by SHA-256); `05_relight.py` twice (every multiplier file byte for byte); `probes` and `sun-bounce` twice (array by array, as Task 4 as built).
+5. Every artifact that depends on the fit is regenerated, in this order, and nothing else is: `fit.json`, `fit_state.npz` and `npy/E_cap.npy` (the refit); `03c_embrasure_roomside.py` (the embrasure rows of `E_cap.npy`, from `fit_state.npz`'s `Wc`, `rho` and `Pdir_cap`; it also rewrites the embrasure rows of `bases_n`, `bases_iso`, `bases_E_win`, `bases_E_ch`, `bases_E_dome` and `bases_E_cove`, which do not depend on the fit and must come out identical); `03d_embrasure_back.py` (`npy/emb_E_back_cap.npy`, from `weights` and `cols`); `05_relight.py` (`mult/*.f16`, from all of `fit_state.npz`: the photo check's inputs and Task 5's proof regression); `probes` (`probes-coarse.npz`: its cubes are solved with the fitted `rho`, and its linearity check reads `fit.json` and `fit_state.npz`); `sun-bounce` (`sun-bounce.npz`: its exact fields and its basis are solved with the fitted `rho`, so K is re-chosen by the same stable rule on the same selection draws, whose directions do not depend on the fit, and both further draws are scored again). `fit.json` does not feed the sun-bounce selection directly; `rho` in `fit_state.npz` does, so the whole `sun-bounce` bake is re-run. Not re-run, because they do not read the fit: `windows`, `check-sun`, `floor`, the proof steps before the fit, and R1c's `skin-light` (direct light of white unit sources). Task 5 then packages the refit's weights and per-group colours, and Task 6 calibrates the floor to the refit's `group_albedo_mean["floor"]`.
+
+- [ ] **Step 1: Write the failing tests** — create `tools/relight/tests/test_housefit.py`:
+
+```python
+import json, math, os, tempfile, unittest
+import numpy as np
+from relight import housefit as HF
+
+CENTRES = np.array([[2.24, -7.66, 4.28], [2.24, -2.42, 4.24], [8.9, -5.0, 4.82], [15.5, -7.68, 4.28], [15.47, -2.33, 4.3]])
+T_JE = np.array([[0.0, -1.0, 0.0, 0.5], [1.0, 0.0, 0.0, 0.25], [0.0, 0.0, 1.0, -2.0], [0.0, 0.0, 0.0, 1.0]])
+LAMP_RATIO = np.array([1.623, 1.0, 0.467])
+K = HF.FitConstants(groups=6, paint=5, paint_albedo=0.60, huber=0.25, gamma_free=False)
+EXCLUDE = "exclude: by eye a brass highlight or glare that triangulated, not a lamp"
+
+
+def bulb(cid, n, confidence="high", offset=(0.3, 0.0, 0.0)):
+    p = CENTRES[cid] + np.asarray(offset, np.float64)
+    return {"id": f"c{cid}_b{n:02d}", "chandelier": cid, "position_e57": p.tolist(), "confidence": confidence, "faces": []}
+
+
+def full_table():
+    """Two lamps on each end chandelier and four on the centre one, symmetric about each centre; a brass glint on
+    chandelier 0 and an unresolved entry on chandelier 3."""
+    out = []
+    for c in range(5):
+        lamps = 4 if c == 2 else 2
+        for n in range(lamps):
+            a = 2 * math.pi * n / lamps
+            out.append(bulb(c, n, offset=(0.3 * math.cos(a), 0.3 * math.sin(a), 0.1)))
+    out.append(bulb(0, 7, EXCLUDE))
+    out.append(bulb(3, 8, "low: unresolved by eye", offset=(0.0, 0.0, 0.2)))
+    return {"schema": HF.BULBS_SCHEMA, "frames": {"T_json_from_e57": T_JE.tolist()}, "bulbs": out}
+
+
+def write(folder, data):
+    path = os.path.join(folder, "bulbs.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    return path
+
+
+class Bulbs(unittest.TestCase):
+    def test_lamps_are_counted_per_chandelier_without_the_brass_glints(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = HF.read_bulbs(write(d, full_table()), CENTRES, T_JE)
+        self.assertEqual(got["counts"], {0: 2, 1: 2, 2: 4, 3: 3, 4: 2})
+        self.assertEqual(got["notLamps"], ["c0_b07"])
+        self.assertEqual(len(got["ids"]), 14)
+        self.assertEqual(len(got["sha256"]), 64)
+        counts = HF.lamp_counts(got["counts"])
+        self.assertEqual((counts.end_mean, counts.centre), (2.25, 4.0))
+        self.assertAlmostEqual(counts.ratio, 4.0 / 2.25, places=15)
+
+    def test_a_table_that_misses_a_chandelier_misplaces_one_or_is_malformed_is_refused(self):
+        good = full_table()
+        far = full_table(); far["bulbs"][0]["position_e57"] = (CENTRES[0] + [2.0, 0.0, 0.0]).tolist()
+        shifted = full_table(); shifted["frames"]["T_json_from_e57"][0][3] += 0.01
+        bad = [dict(good, bulbs=[b for b in good["bulbs"] if b["chandelier"] != 4]), far, shifted,
+               dict(good, schema="venviewer.frontier.bulbs.v0"), dict(good, bulbs=good["bulbs"] + [good["bulbs"][0]]),
+               dict(good, bulbs=[dict(good["bulbs"][0], confidence="maybe")] + good["bulbs"][1:]),
+               dict(good, bulbs=[dict(good["bulbs"][0], id="c1_b00")] + good["bulbs"][1:])]
+        with tempfile.TemporaryDirectory() as d:
+            for case in bad:
+                with self.assertRaises(ValueError):
+                    HF.read_bulbs(write(d, case), CENTRES, T_JE)
+
+    def test_the_clipped_cores_compare_the_centre_with_the_ends_face_by_face(self):
+        table = full_table()
+        table["bulbs"][0]["faces"] = [{"face": "s01_f0", "blob_area_mm2": 1000.0}, {"face": "s02_f0", "blob_area_mm2": 900.0}]
+        table["bulbs"][4]["faces"] = [{"face": "s01_f0", "blob_area_mm2": 2000.0}, {"face": "s03_f0", "blob_area_mm2": 5.0}]
+        got = HF.blob_balance(table["bulbs"])
+        self.assertEqual(got["faces"], 1)                                  # only s01_f0 frames both
+        self.assertAlmostEqual(got["medianLog2CentreOverEnd"], 1.0, places=12)
+
+
+class Priors(unittest.TestCase):
+    def test_the_dome_prior_is_its_emitters_measured_shift_from_the_chandeliers(self):
+        colours = {"groups": {"chandelier_emitters_all": {"median_log2_RG_BG": [0.754, -1.169]},
+                              "dome_ring_emitters": {"median_log2_RG_BG": [0.404, -0.996]}}}
+        p = HF.colour_priors(colours)
+        self.assertEqual((p["chandeliers"], p["cove"]), ((0.0, 0.0), (0.0, 0.0)))
+        np.testing.assert_allclose(p["dome"], [math.log(2) * -0.350, math.log(2) * 0.173], atol=1e-12)
+
+
+class Models(unittest.TestCase):
+    def test_the_proof_model_is_04_fits_own_parameters(self):
+        m = HF.ProofModel(LAMP_RATIO)
+        n = HF.n_params(m, K)
+        x = np.linspace(-1.0, 1.0, n)
+        w, cols, mu, gam = HF.unpack(m, x, K)
+        np.testing.assert_allclose(w, np.exp(x[:10]))
+        cday = np.exp([x[10], 0.0, x[11]])
+        np.testing.assert_allclose(cols[:6], np.tile(cday, (6, 1)))
+        np.testing.assert_allclose(cols[6:], np.tile(cday * LAMP_RATIO, (4, 1)))
+        self.assertAlmostEqual(float(mu[5, 1]), math.log(0.60), places=15)
+        self.assertAlmostEqual(gam, math.exp(x[-1]), places=15)
+        self.assertEqual(n, 34)
+        lo, hi = HF.bounds_of(m, n, K)
+        self.assertEqual((lo[0], hi[9], lo[12], hi[15], lo[-1], hi[-1]), (-25.0, 12.0, -1e-9, 1e-9, -1e-9, 1e-9))
+        self.assertEqual(len(m.priors(x)), 11)
+
+    def test_the_refit_shares_one_per_bulb_intensity_and_colours_each_lamp_group(self):
+        counts = HF.LampCounts(end_mean=24.25, centre=49.0)
+        m = HF.RefitModel(LAMP_RATIO, counts, {"chandeliers": (0.0, 0.0), "dome": (-0.24, 0.12), "cove": (0.0, 0.0)})
+        n = HF.n_params(m, K)
+        x = np.zeros(n); x[8] = math.log(0.05); x[13] = 0.1; x[16] = -0.2
+        w, cols, _mu, _gam = HF.unpack(m, x, K)
+        self.assertAlmostEqual(w[7], 0.05 * 24.25, places=12)
+        self.assertAlmostEqual(w[8], 0.05 * 49.0, places=12)
+        self.assertAlmostEqual(w[8] / w[7], counts.ratio, places=12)
+        np.testing.assert_allclose(cols[6], LAMP_RATIO)
+        np.testing.assert_allclose(cols[7], LAMP_RATIO * np.exp([0.1, 0.0, 0.0]))
+        np.testing.assert_allclose(cols[8], cols[7])
+        np.testing.assert_allclose(cols[9], LAMP_RATIO * np.exp([0.0, 0.0, -0.2]))
+        self.assertEqual(n, 35)
+        p = m.priors(x)
+        self.assertEqual(len(p), 13)
+        self.assertAlmostEqual(float(p[11]), 0.15 * (0.0 + 0.24) / HF.COLOUR_PRIOR_SIGMA["dome"], places=12)
+        lo, hi = HF.bounds_of(m, n, K)
+        self.assertEqual((lo[8], hi[8], lo[11], hi[16]), (-25.0, 12.0, -1.0, 1.0))
+        self.assertEqual(m.describe(x)["name"], "refit")
+
+
+class Solve(unittest.TestCase):
+    def test_the_refit_recovers_known_lights_from_flat_albedos(self):
+        rng = np.random.default_rng(7)
+        m = HF.RefitModel(LAMP_RATIO, HF.LampCounts(end_mean=2.0, centre=4.0),
+                          {"chandeliers": (0.0, 0.0), "dome": (0.0, 0.0), "cove": (0.0, 0.0)})
+        n = HF.n_params(m, K)
+        truth = np.zeros(n)
+        truth[:5] = math.log(0.5); truth[5] = -20.0; truth[6] = math.log(0.3); truth[7] = math.log(0.2); truth[8] = math.log(0.15)
+        albedo = np.array([[0.3, 0.3, 0.3], [0.5, 0.5, 0.5], [0.2, 0.2, 0.2], [0.4, 0.35, 0.3], [0.25, 0.25, 0.25], [0.55, 0.6, 0.65]])
+        truth[m.n_log + m.n_col:-1] = np.delete(np.log(albedo).ravel(), K.paint * 3 + 1)
+        V = 600
+        Dv = rng.uniform(0.0, 1.0, (V, 10)); Dv[:, 5] = 0.0
+        Iv = rng.uniform(0.0, 0.1, (V, 10, 3))
+        g = np.repeat(np.arange(6), V // 6)
+        E, mu, _gam = HF.model_light(m, truth, Dv, Iv, K)
+        data = HF.VoxelData(Dv_ok=Dv, Iv_ok=Iv, logC=np.log(E) + mu[g], g_ok=g, wg=np.full(V, 1.0 / math.sqrt(V / 6)))
+        sol = HF.solve(m, HF.anchor_albedo(m, HF.initial_x(m, Dv, K), data, K), data, K)
+        w_fit = HF.unpack(m, sol.x, K)[0]
+        w_true = HF.unpack(m, truth, K)[0]
+        lights = [0, 1, 2, 3, 4, 6, 7, 8, 9]                              # sun_cap has no direct light at these voxels
+        np.testing.assert_allclose(w_fit[lights], w_true[lights], rtol=0.02)
+        self.assertLess(HF.data_cost(m, sol.x, data, K), 1e-6)
+
+
+class Acceptance(unittest.TestCase):
+    @staticmethod
+    def report(cost, w_end=1.0, w_centre=2.0, log_phi=-3.0):
+        weights = [1.0] * 10; weights[7] = w_end; weights[8] = w_centre
+        return {"dataCost": cost, "weights": weights, "logPerBulb": log_phi}
+
+    def test_the_refit_may_cost_two_percent_more_and_must_light_the_centre_by_its_lamps(self):
+        counts = HF.LampCounts(end_mean=2.0, centre=4.0)
+        proof = self.report(1.0)
+        self.assertTrue(HF.accept_fit(proof, self.report(1.019), counts)["pass"])
+        self.assertFalse(HF.accept_fit(proof, self.report(1.021), counts)["pass"])
+        self.assertFalse(HF.accept_fit(proof, self.report(1.0, w_centre=1.9), counts)["pass"])
+        self.assertFalse(HF.accept_fit(proof, self.report(1.0, log_phi=-25.0), counts)["pass"])
+
+    def test_the_night_photographs_must_match_no_worse(self):
+        def metrics(r43, r45, mae=0.5, chroma=(0.25, 0.2)):
+            row = lambda r: {HF.PHOTO_JOB: {"r": r, "mae_affine_stops": mae, "chroma_mae_rg_bg": list(chroma)}}
+            return {"mp43_night_end": row(r43), "mp45_night_windows": row(r45)}
+        base = metrics(0.881, 0.820)
+        self.assertTrue(HF.photo_gate(base, metrics(0.877, 0.83))["pass"])
+        self.assertFalse(HF.photo_gate(base, metrics(0.870, 0.83))["pass"])
+        self.assertFalse(HF.photo_gate(base, metrics(0.89, 0.83, mae=0.53))["pass"])
+        self.assertFalse(HF.photo_gate(base, metrics(0.89, 0.83, chroma=(0.28, 0.2)))["pass"])
+
+
+class Outputs(unittest.TestCase):
+    def test_every_bulb_is_named_per_unit_of_its_group_weight_and_glints_are_dark(self):
+        with tempfile.TemporaryDirectory() as d:
+            bulbs = HF.read_bulbs(write(d, full_table()), CENTRES, T_JE)
+        report = {"weights": [1.0] * 7 + [2.25 * 0.5, 4.0 * 0.5, 1.0], "logPerBulb": math.log(0.5)}
+        out = HF.bulb_shares(bulbs, report, "a" * 64)
+        self.assertEqual(out["schema"], "venviewer.bulb-intensities.v1")
+        self.assertEqual(sorted(out["bulbs"]), bulbs["ids"])
+        self.assertAlmostEqual(out["bulbs"]["c0_b00"], 1 / 2.25, places=15)
+        self.assertAlmostEqual(out["bulbs"]["c2_b03"], 1 / 4.0, places=15)
+        self.assertAlmostEqual(out["bulbs"]["c0_b07"], HF.NOT_LAMP_SHARE / 2.25, places=18)
+        self.assertTrue(all(v > 0 for v in out["bulbs"].values()))
+        self.assertEqual(out["fit"]["notLamps"], ["c0_b07"])
+        self.assertAlmostEqual(out["fit"]["groups"]["ch_end"]["chandeliers"]["3"]["share"], 3 / 9, places=15)
+        self.assertAlmostEqual(out["fit"]["lampRatio"], 4.0 / 2.25, places=12)
+
+    def test_two_runs_are_compared_array_by_array_and_byte_by_byte(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            for d in (a, b):
+                np.savez(os.path.join(d, "fit_state.npz"), rho=np.ones((2, 3), np.float32))
+                with open(os.path.join(d, "fit.json"), "w", encoding="utf-8") as f:
+                    f.write('{"a": 1}')
+            self.assertEqual(HF.same_run(a, b), [])
+            np.savez(os.path.join(b, "fit_state.npz"), rho=np.zeros((2, 3), np.float32))
+            with open(os.path.join(b, "extra.json"), "w", encoding="utf-8") as f:
+                f.write("{}")
+            self.assertEqual(HF.same_run(a, b), ["extra.json", "fit_state.npz"])
+
+    def test_the_proof_fit_is_kept_once_and_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as work:
+            os.makedirs(os.path.join(work, "npy"))
+            for name, data in (("fit.json", b'{"weights": [1]}'), ("fit_state.npz", b"npz"), ("npy/E_cap.npy", b"cap"),
+                               ("npy/emb_E_back_cap.npy", b"back")):
+                with open(os.path.join(work, name), "wb") as f:
+                    f.write(data)
+            first = HF.snapshot_fit(work)
+            self.assertEqual(sorted(first), sorted(HF.FIT_FILES))
+            self.assertEqual(HF.snapshot_fit(work), first)                 # again: the same snapshot
+            with open(os.path.join(work, "npy", "E_cap.npy"), "wb") as f:
+                f.write(b"changed")
+            with self.assertRaises(ValueError):
+                HF.snapshot_fit(work)
+            with open(os.path.join(work, "fit.json"), "w", encoding="utf-8") as f:
+                f.write('{"model": {"name": "refit"}}')
+            self.assertEqual(HF.snapshot_fit(work), first)                 # the work holds the refit: the snapshot stands
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Run them to see them fail**
+
+Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_housefit -v`
+Expected: FAIL, `ImportError: cannot import name 'housefit'`.
+
+- [ ] **Step 3: Write the refit** — create `tools/relight/relight/housefit.py`:
+
+```python
+"""The house lights refitted (T-639 R1a Task 4b): the capture's light fit of proof/04_fit.py, run by the same loop, with
+the house lights parameterised by the frontier splats study's bulb table instead of free per-group weights.
+
+The proof's fit gives the centre chandelier a weight of 1.4e-11 (its bound) although the 31 May walk saw it lit
+throughout; albedo flatness cannot tell its light from the dome ring's and the end chandeliers', so they took it.
+
+RefitModel: one per-bulb intensity phi for every chandelier lamp. 03_bases.py's E_ch[:, 0] is the four end
+chandeliers' unit point lights summed and E_ch[:, 1] the centre chandelier's, so ch_end weighs phi x the mean lamp count
+of the four ends and ch_centre phi x its own count: their ratio is the bulb-count ratio exactly. A colour per lamp group
+(cove, chandeliers, dome): the measured lamp/daylight ratio times exp of a fitted (R/G, B/G) offset held by a prior per
+group (colour_priors). Everything else is 04_fit.py's. ProofModel is 04_fit.py's own parameterisation through the same
+loop: it reproduces the proof's fit and is the baseline the refit's data cost is judged against. The plan's Task 4b
+gives the reasons for each choice.
+"""
+from __future__ import annotations
+
+import hashlib, json, math, os, shutil, time
+from dataclasses import dataclass
+
+import numpy as np
+from scipy.optimize import least_squares
+
+BULBS_SCHEMA = "venviewer.frontier.bulbs.v1"
+SHARES_SCHEMA = "venviewer.bulb-intensities.v1"
+CHANDELIERS = 5
+CENTRE = 2
+ENDS = (0, 1, 3, 4)
+VOLUME_RADIUS = (0.75, 0.75, 1.0, 0.75, 0.75)    # 02_geometry.py's chandelier volumes (horizontal radius, m)
+VOLUME_MARGIN = 0.10                            # two triangulated bulbs stand a few mm outside the radius
+CENTROID_TOLERANCE = 0.25                       # a chandelier's lamps' median stands this close to its model centre (m)
+FRAME_TOLERANCE = 1e-9
+LIGHTS = ("W1", "W2", "W3", "W4", "W5", "sun_cap", "cove", "ch_end", "ch_centre", "dome")   # 04_fit.BASES
+COLOUR_PRIOR_SIGMA = {"cove": 0.35, "chandeliers": 0.035, "dome": 0.10}   # natural log: 0.5, 0.05 and 0.15 stop
+PRIOR_WEIGHT = 0.15                             # 04_fit.py's prior strength
+OFFSET_BOUND = 1.0                              # a lamp colour offset stays within e^+-1 (1.44 stops)
+LOG_BOUNDS = (-25.0, 12.0)                      # 04_fit.py's bounds on the log weights
+RESIDUAL_TOLERANCE = 0.02                       # the refit's data cost may exceed the proof model's by at most 2%
+RATIO_TOLERANCE = 1e-9
+BOUND_MARGIN = 0.01
+REPRODUCE_TOLERANCE = 0.01                      # the proof model against fit.json (Task 2's bar)
+NOT_LAMP_SHARE = 1e-6                           # an entry read as brass or glare: named (R1d reads every id), never lit
+PHOTO_VIEWS = ("mp43_night_end", "mp45_night_windows")
+PHOTO_JOB = "A_comp_house"
+PHOTO_R_SLACK = 0.005
+PHOTO_STOPS_SLACK = 0.02
+FIT_FILES = ("fit.json", "fit_state.npz", "npy/E_cap.npy", "npy/emb_E_back_cap.npy")
+SNAPSHOT = "fit-proof"
+SCENARIOS = ("comp_house", "mask", "night", "sunny_morning", "overcast_noon")
+
+
+def sha256_file(path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def is_lamp(entry) -> bool:
+    """A table entry is a lamp unless read by eye as a brass highlight or glare ("exclude: ..."); "low" (unresolved by
+    eye) counts, since it was triangulated from clipped blobs in at least 12 faces."""
+    word = str(entry.get("confidence", "")).split(":")[0].strip()
+    if word not in ("high", "medium", "low", "exclude"):
+        raise ValueError(f"bulb {entry.get('id')!r}: unknown confidence {entry.get('confidence')!r}")
+    return word != "exclude"
+
+
+def blob_balance(bulbs) -> dict:
+    """Evidence for one per-bulb intensity, never fitted: in each face that frames lamps of the centre chandelier and of
+    an end chandelier (one exposure), log2 of the centre's median clipped-core area (mm2 at the bulb) over the ends'; the
+    median over those faces. The area is a relative, monotone proxy of intensity within one face (the table's note)."""
+    faces = {}
+    for b in bulbs:
+        if not is_lamp(b):
+            continue
+        side = "centre" if int(b["chandelier"]) == CENTRE else "end"
+        for f in b.get("faces", []):
+            area = f.get("blob_area_mm2")
+            if area is not None and area > 0:
+                faces.setdefault(f["face"], {"centre": [], "end": []})[side].append(float(area))
+    logs = [math.log2(float(np.median(v["centre"])) / float(np.median(v["end"]))) for v in faces.values() if v["centre"] and v["end"]]
+    return {"faces": len(logs), "medianLog2CentreOverEnd": float(np.median(logs)) if logs else None}
+
+
+def read_bulbs(path, chandelier_centres, t_json_from_e57=None) -> dict:
+    """The bulb table: every id, the lamps per chandelier (each chandelier's checked to stand around the light model's
+    chandelier of the same index), the entries that are not lamps, the clipped-core evidence and the table's SHA-256."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    data = json.loads(raw)
+    if data.get("schema") != BULBS_SCHEMA:
+        raise ValueError(f"{path}: the bulb table must be {BULBS_SCHEMA}")
+    if t_json_from_e57 is not None:
+        theirs = np.asarray(data.get("frames", {}).get("T_json_from_e57"), np.float64)
+        if theirs.shape != (4, 4) or float(np.abs(theirs - np.asarray(t_json_from_e57, np.float64)).max()) > FRAME_TOLERANCE:
+            raise ValueError(f"{path}: the table's T_json_from_e57 is not the canonical frame's")
+    centres = np.asarray(chandelier_centres, np.float64)
+    if centres.shape != (CHANDELIERS, 3):
+        raise ValueError("the light model has five chandelier centres")
+    ids, lamps, not_lamps = set(), {c: [] for c in range(CHANDELIERS)}, []
+    for entry in data["bulbs"]:
+        bid, c = str(entry["id"]), int(entry["chandelier"])
+        if not 0 <= c < CHANDELIERS or not bid.startswith(f"c{c}_b"):
+            raise ValueError(f"bulb {bid!r}: its id and its chandelier {c} disagree")
+        if bid in ids:
+            raise ValueError(f"bulb {bid} appears twice")
+        ids.add(bid)
+        if is_lamp(entry):
+            lamps[c].append((bid, np.asarray(entry["position_e57"], np.float64)))
+        else:
+            not_lamps.append(bid)
+    counts = {}
+    for c in range(CHANDELIERS):
+        if not lamps[c]:
+            raise ValueError(f"chandelier {c} has no lamp in the table: the refit needs all five")
+        P = np.stack([p for _bid, p in lamps[c]])
+        off = float(np.hypot(*(np.median(P, 0)[:2] - centres[c, :2])))
+        reach = float(np.hypot(P[:, 0] - centres[c, 0], P[:, 1] - centres[c, 1]).max())
+        if off > CENTROID_TOLERANCE or reach > VOLUME_RADIUS[c] + VOLUME_MARGIN:
+            raise ValueError(f"chandelier {c}'s lamps do not stand around the light model's chandelier {c} "
+                             f"(median {off:.3f} m off its axis, farthest {reach:.3f} m)")
+        counts[c] = len(lamps[c])
+    return {"sha256": hashlib.sha256(raw).hexdigest(), "ids": sorted(ids), "counts": counts,
+            "lamps": {c: sorted(b for b, _p in lamps[c]) for c in range(CHANDELIERS)}, "notLamps": sorted(not_lamps),
+            "blobBalance": blob_balance(data["bulbs"])}
+
+
+@dataclass(frozen=True)
+class LampCounts:
+    end_mean: float      # mean lamps per end chandelier (the four summed in E_ch[:, 0])
+    centre: float        # the centre chandelier's lamps (E_ch[:, 1])
+
+    @property
+    def ratio(self) -> float:
+        return self.centre / self.end_mean
+
+
+def lamp_counts(counts) -> LampCounts:
+    return LampCounts(sum(counts[c] for c in ENDS) / len(ENDS), float(counts[CENTRE]))
+
+
+def colour_priors(lamp_colours) -> dict:
+    """Each lamp group's prior offset (natural log of R/G and B/G) from the measured lamp/daylight ratio: the chandeliers
+    at 0 (the ratio was measured on their splats, 94% of the sample), the dome at its emitter splats' measured shift from
+    the chandeliers', the cove at 0 (its splats measure the tape times the albedo, not the tape)."""
+    g = lamp_colours["groups"]
+    ch, dome = g["chandelier_emitters_all"]["median_log2_RG_BG"], g["dome_ring_emitters"]["median_log2_RG_BG"]
+    ln2 = math.log(2.0)
+    return {"cove": (0.0, 0.0), "chandeliers": (0.0, 0.0),
+            "dome": (ln2 * (float(dome[0]) - float(ch[0])), ln2 * (float(dome[1]) - float(ch[1])))}
+
+
+@dataclass(frozen=True)
+class FitConstants:
+    """04_fit.py's constants the loop needs (read from the module; tests give their own)."""
+    groups: int
+    paint: int
+    paint_albedo: float
+    huber: float
+    gamma_free: bool
+
+    @classmethod
+    def of(cls, fit04) -> "FitConstants":
+        return cls(len(fit04.GROUPS), int(fit04.PAINT), float(fit04.PAINT_ALBEDO), float(fit04.HUBER), bool(fit04.GAMMA_FREE))
+
+
+class ProofModel:
+    """04_fit.py's parameters: x[0:10] log weights of LIGHTS; x[10:16] the daylight, cove and house colours' (R, B) logs,
+    the lamp colours pinned to cday x the measured ratio; then the albedos and log gamma."""
+    name, n_log, n_col = "proof", 10, 6
+
+    def __init__(self, lamp_ratio):
+        self.lamp_ratio = None if lamp_ratio is None else np.asarray(lamp_ratio, np.float64)
+
+    def init_log(self, w0):
+        return np.log(np.asarray(w0, np.float64))
+
+    def weights(self, x):
+        return np.exp(np.asarray(x[:10], np.float64))
+
+    def colours(self, x):
+        cday, ccove, chouse = (np.exp([x[10 + 2 * i], 0.0, x[11 + 2 * i]]) for i in range(3))
+        if self.lamp_ratio is not None:
+            ccove = cday * self.lamp_ratio
+            chouse = cday * self.lamp_ratio
+        return np.stack([cday] * 6 + [ccove] + [chouse] * 3, 0)
+
+    def bounds(self, lo, hi):
+        lo[:10], hi[:10] = LOG_BOUNDS
+        if self.lamp_ratio is not None:
+            lo[12:16], hi[12:16] = -1e-9, 1e-9
+
+    def priors(self, x):
+        lw = np.asarray(x[:5], np.float64)
+        return np.concatenate([0.15 * (lw - lw.mean()) / 0.6, 0.15 * np.asarray(x[10:16], np.float64) / 0.5])
+
+    def describe(self, x):
+        return {"name": self.name}
+
+
+class RefitModel:
+    """x[0:5] the windows' log weights, x[5] the capture's sun, x[6] the cove, x[7] the dome, x[8] log phi (the per-bulb
+    chandelier intensity); x[9:11] the daylight colour's (R, B) logs; x[11:13], x[13:15], x[15:17] the cove's, the
+    chandeliers' and the dome's colour offsets from cday x the measured ratio; then the albedos and log gamma."""
+    name, n_log, n_col = "refit", 9, 8
+    OFFSETS = (("cove", 11), ("chandeliers", 13), ("dome", 15))
+
+    def __init__(self, lamp_ratio, counts: LampCounts, priors: dict):
+        self.lamp_ratio = np.asarray(lamp_ratio, np.float64)
+        self.counts = counts
+        self.prior_means = {g: tuple(float(v) for v in priors[g]) for g in COLOUR_PRIOR_SIGMA}
+
+    def init_log(self, w0):
+        w0 = np.asarray(w0, np.float64)
+        log_phi = 0.5 * (math.log(w0[7] / self.counts.end_mean) + math.log(w0[8] / self.counts.centre))
+        return np.r_[np.log(w0[:7]), math.log(w0[9]), log_phi]
+
+    def weights(self, x):
+        phi = math.exp(float(x[8]))
+        return np.r_[np.exp(np.asarray(x[:7], np.float64)), phi * self.counts.end_mean, phi * self.counts.centre, math.exp(float(x[7]))]
+
+    def colours(self, x):
+        cday = np.exp([x[9], 0.0, x[10]])
+        base = cday * self.lamp_ratio
+        lamp = {g: base * np.exp([x[i], 0.0, x[i + 1]]) for g, i in self.OFFSETS}
+        return np.stack([cday] * 6 + [lamp["cove"]] + [lamp["chandeliers"]] * 2 + [lamp["dome"]], 0)
+
+    def bounds(self, lo, hi):
+        lo[:9], hi[:9] = LOG_BOUNDS
+        lo[11:17], hi[11:17] = -OFFSET_BOUND, OFFSET_BOUND
+
+    def priors(self, x):
+        x = np.asarray(x, np.float64)
+        lw = x[:5]
+        out = [0.15 * (lw - lw.mean()) / 0.6, 0.15 * x[9:11] / 0.5]
+        for g, i in self.OFFSETS:
+            out.append(PRIOR_WEIGHT * (x[i:i + 2] - np.asarray(self.prior_means[g])) / COLOUR_PRIOR_SIGMA[g])
+        return np.concatenate(out)
+
+    def describe(self, x):
+        return {"name": self.name, "perBulbIntensity": math.exp(float(x[8])), "logPerBulb": float(x[8]),
+                "lampCounts": {"endMean": self.counts.end_mean, "centre": self.counts.centre, "ratio": self.counts.ratio},
+                "colourOffsets": {g: [float(x[i]), float(x[i + 1])] for g, i in self.OFFSETS},
+                "colourPriors": {g: list(self.prior_means[g]) for g in COLOUR_PRIOR_SIGMA}, "colourPriorSigma": dict(COLOUR_PRIOR_SIGMA)}
+
+
+def n_params(model, k: FitConstants) -> int:
+    return model.n_log + model.n_col + k.groups * 3 - 1 + 1
+
+
+def unpack(model, x, k: FitConstants):
+    """(weights (10,), colours (10, 3), log albedos (groups, 3), gamma), as 04_fit.py's unpack."""
+    s = model.n_log + model.n_col
+    mu = np.insert(np.asarray(x[s:-1], np.float64), k.paint * 3 + 1, math.log(k.paint_albedo)).reshape(k.groups, 3)
+    return model.weights(x), model.colours(x), mu, float(math.exp(float(x[-1])))
+
+
+def model_light(model, x, Dv, Iv, k: FitConstants):
+    """The modelled capture light per voxel (04_fit.py's model_E): (E (V, 3), log albedos, gamma)."""
+    wts, cols, mu, gam = unpack(model, x, k)
+    return np.einsum("vbc,bc->vc", Dv[:, :, None] + Iv, wts[:, None] * cols), mu, gam
+
+
+@dataclass
+class VoxelData:
+    Dv_ok: np.ndarray            # (V, 10) direct light per voxel and light
+    Iv_ok: np.ndarray | None     # (V, 10, 3) bounce per voxel, light and channel (set each round)
+    logC: np.ndarray             # (V, 3) log of the captured voxel colour
+    g_ok: np.ndarray             # (V,) material group
+    wg: np.ndarray               # (V,) 1 / sqrt(voxels in the group)
+    C: np.ndarray | None = None  # (V, 3) the captured voxel colour (diagnostics)
+
+
+def residuals(model, x, data: VoxelData, k: FitConstants):
+    """(data part, prior part): 04_fit.py's pseudo-Huber residual on log colour per voxel and channel times the group
+    weight, and the model's priors."""
+    E, mu, gam = model_light(model, x, data.Dv_ok, data.Iv_ok, k)
+    r = data.logC - gam * (np.log(np.maximum(E, 1e-9)) + mu[data.g_ok])
+    rt = np.sign(r) * k.huber * np.sqrt(2.0 * (np.sqrt(1.0 + (r / k.huber) ** 2) - 1.0))
+    return (rt * data.wg[:, None]).ravel(), model.priors(x)
+
+
+def data_cost(model, x, data: VoxelData, k: FitConstants) -> float:
+    d, _p = residuals(model, x, data, k)
+    return float(0.5 * np.dot(d, d))
+
+
+def bounds_of(model, n, k: FitConstants):
+    lo, hi = np.full(n, -np.inf), np.full(n, np.inf)
+    model.bounds(lo, hi)
+    lo[-1], hi[-1] = (math.log(0.3), math.log(1.5)) if k.gamma_free else (-1e-9, 1e-9)
+    return lo, hi
+
+
+def initial_x(model, Dv, k: FitConstants):
+    """04_fit.py's start: every light contributes about 0.2 where it is typical."""
+    nb = Dv.shape[1]
+    dnz = [np.median(Dv[Dv[:, j] > 0, j]) if (Dv[:, j] > 0).any() else 1.0 for j in range(nb)]
+    x = np.zeros(n_params(model, k))
+    x[:model.n_log] = model.init_log(0.2 / np.maximum(dnz, 1e-9))
+    return x
+
+
+def anchor_albedo(model, x, data: VoxelData, k: FitConstants):
+    """04_fit.py's first round: the group albedos the start light implies, every light scaled so the paint band's mean
+    green albedo is the anchor."""
+    E0, _mu, _g = model_light(model, x, data.Dv_ok, data.Iv_ok, k)
+    mu0 = np.stack([np.mean(data.logC[data.g_ok == gi] - np.log(E0[data.g_ok == gi]), 0) for gi in range(k.groups)])
+    shift = mu0[k.paint, 1] - math.log(k.paint_albedo)
+    x = np.array(x, np.float64)
+    x[:model.n_log] += shift
+    mu0 -= shift
+    x[model.n_log + model.n_col:-1] = np.delete(mu0.ravel(), k.paint * 3 + 1)
+    return x
+
+
+def solve(model, x, data: VoxelData, k: FitConstants):
+    """04_fit.py's least_squares call: trust-region reflective, x_scale 'jac', at most 4000 evaluations."""
+    lo, hi = bounds_of(model, len(x), k)
+    return least_squares(lambda z: np.concatenate(residuals(model, z, data, k)), np.clip(x, lo + 1e-9, hi - 1e-9),
+                         bounds=(lo, hi), method="trf", x_scale="jac", max_nfev=4000)
+
+
+def run_capture_fit(model, k: FitConstants, mods, out_dir, write_ecap, log=print) -> dict:
+    """04_fit.py's main with the model's parameters: the fit set and its voxels, four rounds of radiosity, the light fit
+    and the patch albedo from it, the diagnostics, and out_dir/fit.json and fit_state.npz in 04_fit.py's shapes (plus the
+    model's description); with write_ecap also out_dir/E_cap.npy. mods: fit04, radiosity, store, lt, torch."""
+    fit04, rad, st, lt, torch = mods["fit04"], mods["radiosity"], mods["store"], mods["lt"], mods["torch"]
+    if tuple(fit04.BASES) != LIGHTS:
+        raise ValueError(f"04_fit.BASES is {fit04.BASES}, not {LIGHTS}")
+    started = time.time()
+    store, probes, pt, occ = st.Store(), st.Probes(), rad.load_patches(), lt.load_occ()
+    nb = len(LIGHTS)
+    Pdir = fit04.patch_direct_capture(pt, occ)
+    F = rad.form_factors(pt["P"], pt["N"], pt["A"], pt["opening"])
+    fs = fit04.build_fit_set(store)
+    V, vid, w = fs["V"], fs["vid"], fs["w"]
+    wsum = np.bincount(vid, w, V); ncount = np.bincount(vid, minlength=V)
+    Cv = np.stack([np.bincount(vid, w * fs["C"][:, c], V) for c in range(3)], 1) / np.maximum(wsum, 1e-9)[:, None]
+    Dv = np.zeros((V, nb))
+    for a in range(0, len(fs["idx"]), 200_000):
+        D = fit04.direct(store, fs["idx"][a:a + 200_000])
+        for j in range(nb):
+            Dv[:, j] += np.bincount(vid[a:a + 200_000], w[a:a + 200_000] * D[:, j], V)
+    Dv /= np.maximum(wsum, 1e-9)[:, None]
+    ok = (ncount >= 12) & (Cv.min(1) > 0.004) & (Cv.max(1) < 0.97)
+    okv = np.where(ok)[0]; g_ok = fs["vgroup"][okv]
+    ng = np.bincount(g_ok, minlength=k.groups)
+    data = VoxelData(Dv_ok=Dv[okv], Iv_ok=None, logC=np.log(Cv[okv]), g_ok=g_ok, wg=1.0 / np.sqrt(ng[g_ok]), C=Cv[okv])
+    sub = np.arange(0, len(fs["idx"]), 3)
+    S_idx, S_patch = fit04.patch_samples(store, pt)
+    log(f"refit-house {model.name}: voxels {dict(zip(fit04.GROUPS, ng.tolist()))}, {len(S_idx)} albedo samples, "
+        f"{time.time() - started:.0f} s")
+    x = initial_x(model, data.Dv_ok, k)
+    rho = np.full((len(pt["P"]), 3), 0.35, np.float32); rho[pt["opening"]] = 0.0
+    history, sol = [], None
+    for it in range(4):
+        B = rad.radiosity(F, rho, Pdir)
+        Iprobe = rad.probe_indirect(probes.P[probes.kp], pt, B)
+        Iflat = Iprobe.reshape(len(probes.kp), nb * 3, 6)
+        Iv = np.zeros((V, nb * 3))
+        for a in range(0, len(sub), 25_000):
+            jj = sub[a:a + 25_000]; ii = fs["idx"][jj]
+            n, iso = store.normals(ii)
+            I = st.eval_cubes(probes, Iflat, store.pos[ii], n, iso)
+            for j in range(nb * 3):
+                Iv[:, j] += np.bincount(vid[jj], w[jj] * I[:, j], V)
+        Iv /= np.maximum(np.bincount(vid[sub], w[sub], V), 1e-9)[:, None]
+        data.Iv_ok = Iv[okv].reshape(len(okv), nb, 3)
+        if it == 0:
+            x = anchor_albedo(model, x, data, k)
+        sol = solve(model, x, data, k)
+        x = sol.x
+        wts, cols, mu, gam = unpack(model, x, k)
+        Wc = (wts[:, None] * cols).astype(np.float32)
+        Imix = torch.einsum("pbcd,bc->pcd", Iprobe, torch.from_numpy(Wc))
+        Es = fit04.E_capture_at(store, probes, S_idx, Wc, Imix)
+        alb = np.clip(store.colour(S_idx) ** (1.0 / gam) / np.maximum(Es, 1e-6), 0, 1)
+        sums = np.stack([np.bincount(S_patch, alb[:, c], len(pt["P"])) for c in range(3)], 1)
+        cnts = np.bincount(S_patch, minlength=len(pt["P"]))
+        rho_new = sums / np.maximum(cnts, 1)[:, None]
+        rho_new[cnts <= 5] = np.median(rho_new[cnts > 5], 0)
+        rho_new[pt["opening"]] = 0.0
+        rho = np.clip(rho_new, 0.01, 0.9).astype(np.float32)
+        rec = dict(iter=it, cost=round(float(sol.cost), 5), dataCost=data_cost(model, x, data, k), nfev=int(sol.nfev),
+                   gamma=round(gam, 4), weights={b: float(f"{v:.5g}") for b, v in zip(LIGHTS, wts)},
+                   col_day=cols[0].round(3).tolist(), col_cove=cols[6].round(3).tolist(), col_house=cols[7].round(3).tolist(),
+                   col_dome=cols[9].round(3).tolist(), group_albedo_mean=dict(zip(fit04.GROUPS, np.exp(mu).round(3).tolist())),
+                   patch_rho_median=np.median(rho[~pt["opening"]], 0).round(3).tolist())
+        history.append(rec)
+        log(json.dumps(rec) + f" {time.time() - started:.0f} s")
+    E, mu, gam = model_light(model, x, data.Dv_ok, data.Iv_ok, k)
+    wts, cols, _mu, _gam = unpack(model, x, k)
+    spread, budget = {}, {}
+    for gi, gname in enumerate(fit04.GROUPS):
+        m = data.g_ok == gi
+        lc = np.log2(data.C[m]); la = lc - gam * np.log2(np.maximum(E[m], 1e-9))
+        lum_c = np.log2(data.C[m] @ st.LUMW); lum_a = lum_c - gam * np.log2(np.maximum(E[m] @ st.LUMW, 1e-9))
+        spread[gname] = dict(voxels=int(m.sum()), sd_log2_captured_lum=round(float(np.std(lum_c)), 3),
+                             sd_log2_albedo_lum=round(float(np.std(lum_a)), 3), sd_log2_captured_rgb=np.std(lc, 0).round(3).tolist(),
+                             sd_log2_albedo_rgb=np.std(la, 0).round(3).tolist())
+        contrib = ((data.Dv_ok[m][:, :, None] + data.Iv_ok[m]) * (wts[:, None] * cols)[None]) @ st.LUMW
+        ind = (data.Iv_ok[m] * (wts[:, None] * cols)[None]) @ st.LUMW
+        budget[gname] = dict(zip(LIGHTS, (contrib.sum(0) / contrib.sum()).round(3).tolist()))
+        budget[gname]["indirect_share"] = round(float(ind.sum() / contrib.sum()), 3)
+    B = rad.radiosity(F, rho, Pdir)
+    Iprobe = rad.probe_indirect(probes.P[probes.kp], pt, B)
+    Wc = (wts[:, None] * cols).astype(np.float32)
+    os.makedirs(out_dir, exist_ok=True)
+    if write_ecap:
+        Imix = torch.einsum("pbcd,bc->pcd", Iprobe, torch.from_numpy(Wc))
+        part = os.path.join(out_dir, "E_cap.npy.part")
+        out = np.lib.format.open_memmap(part, mode="w+", dtype=np.float32, shape=(store.N, 3))
+        for sl in store.chunks(200_000):
+            n, iso = store.normals(sl)
+            out[sl] = fit04.direct(store, sl) @ Wc + st.eval_cubes(probes, Imix, store.pos[sl], n, iso)
+        out.flush(); del out
+        os.replace(part, os.path.join(out_dir, "E_cap.npy"))
+    np.savez(os.path.join(out_dir, "fit_state.npz"), rho=rho, Pdir_cap=Pdir, weights=wts, cols=cols, Wc=Wc, gamma=np.array(gam))
+    fit = {"bases": list(LIGHTS), "weights": wts.tolist(), "colours": cols.tolist(), "sky_weights_capture": np.asarray(fit04.SKY_W).tolist(),
+           "gamma": gam, "groups": list(fit04.GROUPS), "group_albedo_mean": np.exp(mu).tolist(), "paint_albedo_green": k.paint_albedo,
+           "history": history, "spread": spread, "budget": budget, "model": model.describe(x)}
+    with open(os.path.join(out_dir, "fit.json"), "w", encoding="utf-8") as f:
+        json.dump(fit, f, indent=1, allow_nan=False)
+    report = {"model": model.name, "dataCost": history[-1]["dataCost"], "cost": float(sol.cost), "weights": wts.tolist(),
+              "colours": cols.tolist(), "gamma": gam, "describe": model.describe(x)}
+    if isinstance(model, RefitModel):
+        report["logPerBulb"] = float(x[8])
+    return report
+
+
+def bulb_shares(bulbs, report, fit_sha256) -> dict:
+    """bulb-intensities.json for R1d's Task 3: every id of the table with its intensity per unit of its group's weight
+    (phi over the group's weight: 1 / the mean end-chandelier lamp count for ch_end, 1 / the centre's lamp count for
+    ch_centre), an entry read as brass or glare at NOT_LAMP_SHARE of that (named and positive, never a lamp), and the
+    refit's group shares (each chandelier's share of its group's lamps)."""
+    counts = lamp_counts(bulbs["counts"])
+    per_unit = {"ch_end": 1.0 / counts.end_mean, "ch_centre": 1.0 / counts.centre}
+    group_of = lambda bid: "ch_centre" if int(bid.split("_")[0][1:]) == CENTRE else "ch_end"
+    not_lamps = set(bulbs["notLamps"])
+    values = {bid: per_unit[group_of(bid)] * (NOT_LAMP_SHARE if bid in not_lamps else 1.0) for bid in bulbs["ids"]}
+    ends_total = sum(bulbs["counts"][c] for c in ENDS)
+    groups = {"ch_end": {"source": 6, "weight": report["weights"][7], "perBulbPerUnitWeight": per_unit["ch_end"],
+                         "chandeliers": {str(c): {"lamps": bulbs["counts"][c], "share": bulbs["counts"][c] / ends_total} for c in ENDS}},
+              "ch_centre": {"source": 7, "weight": report["weights"][8], "perBulbPerUnitWeight": per_unit["ch_centre"],
+                            "chandeliers": {str(CENTRE): {"lamps": bulbs["counts"][CENTRE], "share": 1.0}}}}
+    return {"schema": SHARES_SCHEMA, "bulbs": values,
+            "fit": {"model": "one per-bulb intensity for every chandelier lamp (T-639 R1a Task 4b)",
+                    "perBulbIntensity": math.exp(report["logPerBulb"]), "lampRatio": counts.ratio, "groups": groups,
+                    "notLamps": sorted(not_lamps), "notLampShare": NOT_LAMP_SHARE, "blobBalance": bulbs["blobBalance"],
+                    "tableSha256": bulbs["sha256"], "fitJsonSha256": fit_sha256}}
+
+
+def accept_fit(proof, refit, counts: LampCounts) -> dict:
+    residual = refit["dataCost"] / proof["dataCost"]
+    w = refit["weights"]
+    ratio = w[8] / w[7] if w[7] > 0 else math.inf
+    lp = refit["logPerBulb"]
+    out = {"dataCostProof": proof["dataCost"], "dataCostRefit": refit["dataCost"], "residualRatio": residual,
+           "residualPass": bool(residual <= 1.0 + RESIDUAL_TOLERANCE), "centreOverEnd": ratio, "lampRatio": counts.ratio,
+           "ratioPass": bool(abs(ratio / counts.ratio - 1.0) <= RATIO_TOLERANCE), "logPerBulb": lp,
+           "boundPass": bool(LOG_BOUNDS[0] + BOUND_MARGIN < lp < LOG_BOUNDS[1] - BOUND_MARGIN)}
+    out["pass"] = out["residualPass"] and out["ratioPass"] and out["boundPass"]
+    return out
+
+
+def photo_gate(baseline, refit) -> dict:
+    """07_compare's house-light metrics at the night stations, the refit's against the proof fit's: no worse."""
+    views, ok = {}, True
+    for view in PHOTO_VIEWS:
+        b, r = baseline[view][PHOTO_JOB], refit[view][PHOTO_JOB]
+        row = {"rBaseline": b["r"], "rRefit": r["r"], "maeBaseline": b["mae_affine_stops"], "maeRefit": r["mae_affine_stops"],
+               "chromaBaseline": b["chroma_mae_rg_bg"], "chromaRefit": r["chroma_mae_rg_bg"]}
+        row["pass"] = bool(r["r"] >= b["r"] - PHOTO_R_SLACK and r["mae_affine_stops"] <= b["mae_affine_stops"] + PHOTO_STOPS_SLACK
+                           and all(rc <= bc + PHOTO_STOPS_SLACK for rc, bc in zip(r["chroma_mae_rg_bg"], b["chroma_mae_rg_bg"])))
+        ok &= row["pass"]
+        views[view] = row
+    return {"job": PHOTO_JOB, "views": views, "slack": {"r": PHOTO_R_SLACK, "stops": PHOTO_STOPS_SLACK}, "pass": bool(ok)}
+
+
+def same_run(dir_a, dir_b) -> list:
+    """The names of the files that differ between two runs' folders: .npz array by array (keys, dtype, shape, bytes),
+    every other file byte by byte; a file present in one folder only differs."""
+    differ = []
+    for name in sorted(set(os.listdir(dir_a)) | set(os.listdir(dir_b))):
+        pa, pb = os.path.join(dir_a, name), os.path.join(dir_b, name)
+        if not (os.path.isfile(pa) and os.path.isfile(pb)):
+            differ.append(name)
+            continue
+        if name.endswith(".npz"):
+            with np.load(pa) as za, np.load(pb) as zb:
+                same = sorted(za.files) == sorted(zb.files) and all(
+                    za[key].dtype == zb[key].dtype and za[key].shape == zb[key].shape and za[key].tobytes() == zb[key].tobytes()
+                    for key in za.files)
+        else:
+            with open(pa, "rb") as fa, open(pb, "rb") as fb:
+                same = fa.read() == fb.read()
+        if not same:
+            differ.append(name)
+    return differ
+
+
+def copy_verified(src, dst) -> str:
+    """src copied to dst through a partial file renamed over it; returns the SHA-256, checked equal at both ends."""
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    part = dst + ".part"
+    shutil.copyfile(src, part)
+    os.replace(part, dst)
+    digest = sha256_file(dst)
+    if digest != sha256_file(src):
+        raise OSError(f"{dst}: the copied bytes differ from {src}")
+    return digest
+
+
+def snapshot_fit(work) -> dict:
+    """The work's capture fit (FIT_FILES) kept once in <work>/fit-proof/. An existing snapshot must equal the files it
+    would copy, unless the work's fit.json is already the refit (then the snapshot stands as it is); never overwritten."""
+    with open(os.path.join(work, "fit.json"), encoding="utf-8") as f:
+        refitted = (json.load(f).get("model") or {}).get("name") == "refit"
+    out = {}
+    for name in FIT_FILES:
+        src, dst = os.path.join(work, name), os.path.join(work, SNAPSHOT, name)
+        if os.path.exists(dst):
+            if not refitted and sha256_file(dst) != sha256_file(src):
+                raise ValueError(f"{dst} exists and differs from {src}: the snapshot of the proof fit is never overwritten")
+            out[name] = sha256_file(dst)
+        elif refitted:
+            raise ValueError(f"{work} holds the refit but no snapshot of the proof fit")
+        else:
+            out[name] = copy_verified(src, dst)
+    return out
+```
+
+- [ ] **Step 4: Run the tests to see them pass**
+
+Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_housefit -v`
+Expected: PASS, 12 tests.
+
+- [ ] **Step 5: Register the command** — in `tools/relight/relight/__main__.py`, directly after `    ap.add_argument("--config", required=True)` add:
+
+```python
+    ap.add_argument("--from", dest="source", default=None)   # refit-house promote: the staging work folder (Task 4b)
+```
+
+and directly after `COMMANDS["floor"] = cmd_floor` add:
+
+```python
+
+
+def cmd_refit_house(cfg, args) -> int:
+    """The house lights refitted (Task 4b, housefit.py). `proof` runs 04_fit.py's own model through the loop (the
+    baseline: it must reproduce this work's fit.json), `refit` the refit (with bulb-intensities.json); each writes
+    <work>/refit/<mode>/ and never touches the fit the work uses. `compare` checks the refit's two runs (refit/refit
+    against refit/refit-run1); `install` puts an accepted, reproduced refit into this (staging) work; `photo-gate` holds
+    07_compare's night metrics (<work>/cmp/metrics.json) to the baseline's; `promote --from <staging work>` keeps this
+    work's proof fit in <work>/fit-proof/ and copies the accepted refit, its embrasure light and its multipliers in.
+    Evidence: <evidence>/refit/*.json (staging) and <evidence>/refit.json (promote). CPU only."""
+    from . import housefit as HF
+    mode, work = args.step, cfg.paths["work"]
+    refit_dir, ev_dir = os.path.join(work, "refit"), os.path.join(cfg.paths["evidence"], "refit")
+    os.makedirs(ev_dir, exist_ok=True)
+
+    def write_json(path, data):
+        part = path + ".part"
+        with open(part, "w", encoding="utf-8") as f:
+            json.dump(_finite(data), f, indent=1, sort_keys=True, allow_nan=False)
+        os.replace(part, path)
+
+    def read_json(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    if mode in ("proof", "refit"):
+        common, lt, radiosity, fit04 = _proof_modules()
+        import torch
+        import store as store_mod
+        if fit04.LAMP_RATIO is None:
+            print(f"FAIL: {work}/lamp_daylight_ratio.json is missing (04_fit.LAMP_RATIO)", flush=True)
+            return 1
+        current = read_json(os.path.join(work, "fit.json"))
+        if (current.get("model") or {}).get("name") == "refit":
+            print("FAIL: this work's fit.json is already the refit; both fits start from the proof fit's tables", flush=True)
+            return 1
+        k = HF.FitConstants.of(fit04)
+        mods = {"fit04": fit04, "radiosity": radiosity, "store": store_mod, "lt": lt, "torch": torch}
+        out_dir, bulbs = os.path.join(refit_dir, mode), None
+        if mode == "proof":
+            model = HF.ProofModel(fit04.LAMP_RATIO)
+        else:
+            with np.load(os.path.join(work, "geom.npz")) as z:
+                centres = np.asarray(z["chandeliers"], np.float64)
+            bulbs = HF.read_bulbs(cfg.paths["emitters"], centres, common.T_JE)
+            model = HF.RefitModel(fit04.LAMP_RATIO, HF.lamp_counts(bulbs["counts"]), HF.colour_priors(read_json(cfg.paths["lampColours"])))
+        started = time.time()
+        report = HF.run_capture_fit(model, k, mods, out_dir, write_ecap=(mode == "refit"), log=lambda line: print(line, flush=True))
+        report["threads"] = THREADS
+        ok = True
+        if mode == "proof":
+            a, b = np.asarray(current["weights"], np.float64), np.asarray(report["weights"], np.float64)
+            both = (a >= 1e-6) & (b >= 1e-6)
+            change = float(np.max(np.abs(b[both] - a[both]) / a[both]))
+            ok = bool(change <= HF.REPRODUCE_TOLERANCE and int(both.sum()) >= 8)
+            report["reproduction"] = {"maxRelWeightChange": change, "weightsCompared": int(both.sum()),
+                                      "tolerance": HF.REPRODUCE_TOLERANCE, "pass": ok}
+        else:
+            report["bulbs"] = {"path": cfg.paths["emitters"], "sha256": bulbs["sha256"], "notLamps": bulbs["notLamps"],
+                               "counts": {str(c): n for c, n in bulbs["counts"].items()}, "blobBalance": bulbs["blobBalance"]}
+            write_json(os.path.join(out_dir, "bulb-intensities.json"),
+                       HF.bulb_shares(bulbs, report, HF.sha256_file(os.path.join(out_dir, "fit.json"))))
+        write_json(os.path.join(out_dir, "report.json"), report)
+        print(f"refit-house {mode}: data cost {report['dataCost']:.6f}, weights {json.dumps(report['weights'])}, "
+              f"{'PASS' if ok else 'FAIL'}, {time.time() - started:.0f} s", flush=True)
+        return 0 if ok else 1
+    if mode == "compare":
+        run_a, run_b = os.path.join(refit_dir, "refit-run1"), os.path.join(refit_dir, "refit")
+        differ = HF.same_run(run_a, run_b)
+        write_json(os.path.join(ev_dir, "compare.json"), {"runA": run_a, "runB": run_b, "differ": differ, "pass": not differ,
+                                                         "sha256": {n: HF.sha256_file(os.path.join(run_b, n)) for n in sorted(os.listdir(run_b))}})
+        print(f"refit-house compare: {'identical' if not differ else 'DIFFER: ' + ', '.join(differ)}", flush=True)
+        return 0 if not differ else 1
+    if mode == "install":
+        proof = read_json(os.path.join(refit_dir, "proof", "report.json"))
+        refit = read_json(os.path.join(refit_dir, "refit", "report.json"))
+        compare = read_json(os.path.join(ev_dir, "compare.json"))
+        counts = refit["describe"]["lampCounts"]
+        verdict = HF.accept_fit(proof, refit, HF.LampCounts(counts["endMean"], counts["centre"]))
+        verdict.update(reproduction=proof["reproduction"], runsIdentical=compare["pass"])
+        verdict["pass"] = bool(verdict["pass"] and proof["reproduction"]["pass"] and compare["pass"])
+        write_json(os.path.join(ev_dir, "accept.json"), verdict)
+        if not verdict["pass"]:
+            print(f"FAIL: the refit is not accepted: {json.dumps(_finite(verdict))}", flush=True)
+            return 1
+        snapshot = HF.snapshot_fit(work)
+        src = os.path.join(refit_dir, "refit")
+        installed = {name: HF.copy_verified(os.path.join(src, os.path.basename(name)), os.path.join(work, name))
+                     for name in ("fit.json", "fit_state.npz", "npy/E_cap.npy")}
+        write_json(os.path.join(ev_dir, "install.json"), {"snapshot": snapshot, "installed": installed})
+        print(f"refit-house install: {json.dumps(installed)}", flush=True)
+        return 0
+    if mode == "photo-gate":
+        verdict = HF.photo_gate(read_json(os.path.join(ev_dir, "photo-baseline.json")), read_json(os.path.join(work, "cmp", "metrics.json")))
+        write_json(os.path.join(ev_dir, "photo-gate.json"), verdict)
+        print(f"refit-house photo-gate: {json.dumps(verdict)}", flush=True)
+        return 0 if verdict["pass"] else 1
+    if mode == "promote":
+        if args.source is None:
+            print("promote needs --from <the staging work folder>", flush=True)
+            return 2
+        src = os.path.abspath(args.source)
+        src_ev = os.path.join(os.path.dirname(src), "evidence", "refit")
+        gates = {name: read_json(os.path.join(src_ev, f"{name}.json")) for name in ("accept", "compare", "photo-gate")}
+        if not all(g["pass"] for g in gates.values()) or (read_json(os.path.join(src, "fit.json")).get("model") or {}).get("name") != "refit":
+            print("FAIL: the staging work holds no accepted refit (accept, compare and photo-gate must pass)", flush=True)
+            return 1
+        geometry = ("bases_n", "bases_iso", "bases_E_win", "bases_E_ch", "bases_E_dome", "bases_E_cove", "emb_idx", "emb_E_back_win")
+        moved = [n for n in geometry if HF.sha256_file(os.path.join(src, "npy", f"{n}.npy")) != HF.sha256_file(os.path.join(work, "npy", f"{n}.npy"))]
+        if moved:
+            print(f"FAIL: the fit-independent tables differ between the two works: {moved}", flush=True)
+            return 1
+        snapshot = HF.snapshot_fit(work)
+        names = HF.FIT_FILES + tuple(f"mult/{s}.{e}" for s in HF.SCENARIOS for e in ("f16", "json"))
+        copied = {name: HF.copy_verified(os.path.join(src, name), os.path.join(work, name)) for name in names}
+        copied["bulb-intensities.json"] = HF.copy_verified(os.path.join(src, "refit", "refit", "bulb-intensities.json"),
+                                                           os.path.join(work, "bulb-intensities.json"))
+        refit = read_json(os.path.join(src, "refit", "refit", "report.json"))
+        write_json(os.path.join(cfg.paths["evidence"], "refit.json"),
+                   {"staging": src, "gates": gates, "snapshot": snapshot, "copied": copied, "bulbs": refit["bulbs"],
+                    "weights": refit["weights"], "colours": refit["colours"], "describe": refit["describe"]})
+        print(f"refit-house promote: {len(copied)} files from {src}", flush=True)
+        return 0
+    print("refit-house needs a mode: proof, refit, compare, install, photo-gate or promote", flush=True)
+    return 2
+
+
+COMMANDS["refit-house"] = cmd_refit_house
+```
+
+(`json`, `os`, `time` and `np` are imported at the top of `__main__.py`; `_proof_modules`, `_finite` and `THREADS` are its own: `__main__.py:4-7,50-67,358,371-379`.)
+
+- [ ] **Step 6: The config keys and the moved `shots.py`**
+
+In `tools/relight/config/grand-hall.json`, directly after the line `"horizon": "D:/claude/splat-quality-20260923/weather-daylight/horizon.json",` add:
+
+```json
+    "emitters": "D:/claude/real-hall/frontier/splats/evidence/bulbs.json",
+    "lampColours": "D:/claude/real-hall/frontier/light/evidence/lamp_colours.json",
+```
+
+`config.load` keeps every path and requires only `PATH_KEYS` (`config.py:9,24-36`), so both keys are optional for other configs; `refit-house refit` reads them. (R1d's Task 1 adds the same `paths.emitters`; it finds it present.) Then move `shots.py` byte for byte and run the suite:
+
+```bash
+cp D:/claude/real-hall/renovation/relight/scripts/shots.py D:/claude/real-hall/repo/tools/relight/proof/shots.py
+cmp D:/claude/real-hall/renovation/relight/scripts/shots.py D:/claude/real-hall/repo/tools/relight/proof/shots.py && echo identical
+cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest discover -s tests -v 2>&1 | tail -3
+```
+
+Expected: `identical`; `OK` with 133 tests (Task 4's 121 and these 12). `shots.py` reads only `common.ROOT` and an optional system font (`C:/Windows/Fonts/segoeui.ttf`, with a fallback), so Task 2's path rule holds: it names no input.
+
+- [ ] **Step 7: Commit the code**
+
+```bash
+cd D:/claude/real-hall/repo
+git add tools/relight/relight/housefit.py tools/relight/relight/__main__.py tools/relight/tests/test_housefit.py tools/relight/config/grand-hall.json tools/relight/proof/shots.py
+git diff --cached --stat
+git commit -m "feat(relight): refit the house lights from the bulb table, one intensity per chandelier lamp (T-639 R1a)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+- [ ] **Step 8: Stage the refit** (CPU and disk only; about 1.6 GB on D:)
+
+```bash
+STAGE=D:/claude/relight/grand-hall-refit
+mkdir -p $STAGE/evidence/refit $STAGE/verify $STAGE/harness/app D:/claude/relight/grand-hall/verify/task4b
+C:/Python313/python.exe - <<'EOF'
+import json, shutil
+stage = "D:/claude/relight/grand-hall-refit"
+shutil.copytree("D:/claude/relight/grand-hall/work", stage + "/work", ignore=shutil.ignore_patterns("sunfields-4oct", "refit", "fit-proof"))
+cfg = json.load(open("D:/claude/real-hall/repo/tools/relight/config/grand-hall.json", encoding="utf-8"))
+cfg["paths"].update(work=stage + "/work", evidence=stage + "/evidence", out=stage + "/out-unused")
+json.dump(cfg, open(stage + "/config.json", "w", encoding="utf-8"), indent=2)
+for name in ("views.json", "order_check.json"):
+    shutil.copyfile("D:/claude/real-hall/renovation/relight/work/" + name, stage + "/work/" + name)
+views = json.load(open(stage + "/work/views.json", encoding="utf-8"))
+mp = [v["name"] for v in views if v["name"].startswith("mp")]
+linear = {"tone": "none", "exposure": 1.0, "bloom": 0.0, "threshold": 1.0}
+jobs = [{"name": "A_capture", "mult": None, "presentation": linear, "views": mp},
+        {"name": "A_comp_house", "mult": "comp_house.f16", "presentation": linear, "views": ["mp43_night_end", "mp45_night_windows"]},
+        {"name": "A_mask", "mult": "mask.f16", "presentation": linear, "views": mp}]
+json.dump({"views": views, "jobs": jobs}, open(stage + "/work/jobs_photo.json", "w", encoding="utf-8"), indent=1)
+print(mp)
+EOF
+cp D:/claude/real-hall/renovation/relight/harness/run.mjs $STAGE/harness/ && cp -r D:/claude/real-hall/renovation/relight/harness/app/dist $STAGE/harness/app/
+sed "s#verify/task4#verify/task4b#" D:/claude/relight/grand-hall/verify/task4/run_cmd.sh > D:/claude/relight/grand-hall/verify/task4b/run_cmd.sh
+cp D:/claude/relight/grand-hall/verify/task4/compare.py D:/claude/relight/grand-hall/verify/task4b/
+ls D:/claude/splat-quality-20260923/same-data-runtime-bakeoff/native/packages/web/package.json
+```
+
+Expected: the staging work holds every table (`npy/`, `geom.npz`, `bases.npz`, `patches.npz`, `probes.npz`, `occ_cookie.npz`, `fit.json`, `fit_state.npz`, `lamp_daylight_ratio.json`, …) and `views.json`, `order_check.json` and `jobs_photo.json`; the printed views are the four `mp*` stations (`mp43_night_end`, `mp45_night_windows`, `mp15_day_end`, `mp8_day_windows`); the harness copy has `run.mjs` and `app/dist/`; the Playwright package the harness requires exists. The harness's root is the folder above `harness/`, so it reads `$STAGE/work/mult/` and `$STAGE/work/order_check.json` and writes `$STAGE/renders/`, which `07_compare.py` reads (`common.ROOT` is the folder above `work`). The proof's folder is never written.
+
+- [ ] **Step 9: The baseline photo check, from the proof fit** (in the staging work, before any refit is installed; the harness holds the GPU lock itself)
+
+```bash
+STAGE=D:/claude/relight/grand-hall-refit
+cd D:/claude/real-hall/repo/tools/relight/proof
+for run in 1 2; do
+  RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 05_relight.py comp_house mask 2>&1 | tail -3
+  mkdir -p $STAGE/verify/baseline-mult-run$run && cp $STAGE/work/mult/comp_house.* $STAGE/work/mult/mask.* $STAGE/verify/baseline-mult-run$run/
+done
+for f in comp_house.f16 comp_house.json mask.f16 mask.json; do cmp $STAGE/verify/baseline-mult-run1/$f $STAGE/verify/baseline-mult-run2/$f && echo "$f identical"; done
+node $STAGE/harness/run.mjs $STAGE/work/jobs_photo.json
+RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 07_compare.py metrics
+cp $STAGE/work/cmp/metrics.json $STAGE/evidence/refit/photo-baseline.json && mv $STAGE/renders $STAGE/renders-baseline
+```
+
+Expected: four `identical` lines; renders for `A_capture`, `A_comp_house` and `A_mask`; `metrics.json` with `A_comp_house` at `mp43_night_end` and `mp45_night_windows` close to the proof's (r 0.881 and 0.820: the work reproduces the proof's fit within Task 2's bar). The baseline renders move aside so the refit's are rendered fresh.
+
+- [ ] **Step 10: The fits** (CPU; about 2–3 minutes each, one at a time, each in its own process)
+
+```bash
+STAGE=D:/claude/relight/grand-hall-refit
+cd D:/claude/real-hall/repo/tools/relight
+C:/Python313/python.exe -m relight refit-house proof --config $STAGE/config.json 2>&1 | tee $STAGE/verify/refit-proof.log | tail -2
+C:/Python313/python.exe -m relight refit-house refit --config $STAGE/config.json 2>&1 | tee $STAGE/verify/refit-run1.log | tail -2
+mv $STAGE/work/refit/refit $STAGE/work/refit/refit-run1
+C:/Python313/python.exe -m relight refit-house refit --config $STAGE/config.json 2>&1 | tee $STAGE/verify/refit-run2.log | tail -2
+C:/Python313/python.exe -m relight refit-house compare --config $STAGE/config.json
+```
+
+Expected: the proof run ends `PASS` (its `reproduction.maxRelWeightChange` at most 0.01 over the 8 weights above 1e-6); both refit runs end `PASS`; `compare` prints `identical`. Read `$STAGE/work/refit/refit/report.json` and record in the task report: the data costs, the ten weights, `ch_centre / ch_end` (2.021 with the 7 October table), the three colour offsets against their priors (an offset more than two prior widths from its mean goes to the controller: the data then disagrees with the measured emitter colour), `bulbs.blobBalance`, and the budget's `ch_centre` share at the floor and the ceiling in `fit.json`.
+
+- [ ] **Step 11: Install the refit in the staging work and check the photographs**
+
+```bash
+STAGE=D:/claude/relight/grand-hall-refit
+cd D:/claude/real-hall/repo/tools/relight
+C:/Python313/python.exe -m relight refit-house install --config $STAGE/config.json
+for run in 1 2; do
+  C:/Python313/python.exe -m relight proof embrasure-room --config $STAGE/config.json 2>&1 | tail -1
+  C:/Python313/python.exe -m relight proof embrasure-back --config $STAGE/config.json 2>&1 | tail -1
+  C:/Python313/python.exe -c "import hashlib; [print(n, hashlib.sha256(open('$STAGE/work/npy/' + n + '.npy', 'rb').read()).hexdigest()) for n in ('bases_n', 'bases_iso', 'bases_E_win', 'bases_E_ch', 'bases_E_dome', 'bases_E_cove', 'E_cap', 'emb_idx', 'emb_E_back_win', 'emb_E_back_cap')]" > $STAGE/evidence/refit/embrasure-run$run.txt
+done
+diff $STAGE/evidence/refit/embrasure-run1.txt $STAGE/evidence/refit/embrasure-run2.txt && echo "embrasure identical"
+cd proof
+for run in 1 2; do
+  RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 05_relight.py comp_house mask night sunny_morning overcast_noon 2>&1 | tail -3
+  mkdir -p $STAGE/verify/refit-mult-run$run && cp $STAGE/work/mult/*.f16 $STAGE/work/mult/*.json $STAGE/verify/refit-mult-run$run/
+done
+for f in $(ls $STAGE/verify/refit-mult-run1); do cmp -s $STAGE/verify/refit-mult-run1/$f $STAGE/verify/refit-mult-run2/$f && echo "$f identical" || echo "$f DIFFER"; done
+FORCE=1 node $STAGE/harness/run.mjs $STAGE/work/jobs_photo.json
+RELIGHT_CONFIG=$STAGE/config.json C:/Python313/python.exe 07_compare.py metrics
+cd .. && C:/Python313/python.exe -m relight refit-house photo-gate --config $STAGE/config.json
+```
+
+Expected: `install` prints the three installed files; the embrasure tables are identical between the two passes (`embrasure identical`); every multiplier file `identical`; `photo-gate` exits 0 with `"pass": true`. A failing gate is a stop: report both metric sets to the controller (the refit stays in the staging copy; the bake's work is untouched). `03c` takes about 5 minutes and `03d` about 3 per pass (Task 2's logs).
+
+- [ ] **Step 12: Promote, then re-bake the probes and the sky-body bounce** (in the bake's work; one heavy job at a time)
+
+```bash
+cd D:/claude/real-hall/repo/tools/relight
+C:/Python313/python.exe -m relight refit-house promote --from D:/claude/relight/grand-hall-refit/work --config config/grand-hall.json
+cd D:/claude/relight/grand-hall/verify/task4b
+./run_cmd.sh probes 8 6 probes-coarse.npz && cp ../../evidence/probes-check.json probes-check-run8.json
+./run_cmd.sh probes 9 6 probes-coarse.npz && cp ../../evidence/probes-check.json probes-check-run9.json
+C:/Python313/python.exe compare.py probes-coarse-run8.npz probes-coarse-run9.npz
+C:/Python313/python.exe compare.py probes-check-run8.json probes-check-run9.json
+./run_cmd.sh sun-bounce 15 6 sun-bounce.npz && cp ../../evidence/sun-bounce-check.json sun-bounce-check-run15.json
+./run_cmd.sh sun-bounce 16 6 sun-bounce.npz && cp ../../evidence/sun-bounce-check.json sun-bounce-check-run16.json
+C:/Python313/python.exe compare.py sun-bounce-run15.npz sun-bounce-run16.npz
+C:/Python313/python.exe compare.py sun-bounce-check-run15.json sun-bounce-check-run16.json
+```
+
+Expected: `promote` copies the four fit files, the ten multiplier files and `bulb-intensities.json` and writes `evidence/refit.json` (every copied file's SHA-256, the snapshot's and the three gates); `promote` fails, writing nothing, if the fit-independent tables (`bases_*`, `emb_idx`, `emb_E_back_win`) differ between the two works. Both `probes` runs pass their linearity gate and compare `differ: []`; both `sun-bounce` runs exit 0 (K chosen by the stable rule on the same selection draws; the check draw and the strict draw both pass), compare `differ: []` and `parsed values equal`. Record K, its rule and the three draws' worst bright directions; if K changes from 30, say so (Task 5, the package and the browser read K from the data, never a constant). A failing `sun-bounce` gate is BLOCKED with the numbers, as Task 4's rules say: the failing arrays stay in `evidence/sun-bounce-FAILED.npz`, the previous artifact stays in place, and the controller decides before Task 4c. On a mismatch between two runs, a third run decides by majority (the PC's rule).
+
+- [ ] **Step 13: Record**
+
+Write the task report (`.superpowers/sdd/2026-09-29-restored-hall-r1a-light-bake/task-4b-report.md`): the bulb counts and ratio, `blobBalance`, the proof model's reproduction, the two data costs and their ratio, the weights before and after (with `ch_centre`), the colour offsets against their priors, the budget shares at the floor and ceiling, both photo metric sets, every double-run comparison, K and the three draws, and the SHA-256 of every promoted artifact (`evidence/refit.json`). The data stays on D: (never committed); the code was committed in Step 7.
+
+### Task 4c: Record classes for skins and toggles, the skins' light, and each artifact's hash in its evidence
+
+(Added 7 October: R1c's amendments A1 (Python part) and A4 to the committed bake code, `docs/superpowers/plans/2026-10-03-r1c-amendments-to-r1a-r1b.md`, applied as written except the two corrections noted in Steps 1 and 4, and the Task 4 review's deferred items. It runs after Task 4b and before Task 5; R1c's Task 0 greps for its names.)
+
+**Files:**
+- Modify: `tools/relight/relight/codec.py` (R1c A1), `tools/relight/relight/__main__.py` (R1c A4's options and `skin-light` command; `_artifact`, `_write_evidence`; each data command records its artifact; `record-artifacts`)
+- Create: `tools/relight/relight/skinlight.py` (R1c A4), `tools/relight/tests/test_codec_skins.py` (R1c A1), `tools/relight/tests/test_skinlight.py` (R1c A4), `tools/relight/tests/test_artifacts.py`
+
+**Interfaces:**
+- Consumes: Task 1's codec, Task 4 as built (`floorlight.patch_direct`, `probes.patch_direct_by_source`, `windows.sun_reach`, `windows_volumes`, `_proof_modules`, `SOURCES`, `_finite`, `_save_npz_if`), Task 4b (`refit-house`).
+- Produces: `codec.CLASS_SKIN = 7`, `SKIN_GROUP_SHIFT = 5`, `SKIN_GROUP_MAX = 6`, `TOGGLE_SHIFT = 6`, `TOGGLE_NONE, TOGGLE_CLUTTER, TOGGLE_CABINET = 0, 1, 2`, `cover_flags(flags, group)`, `toggle_flags(flags, toggle)`, `skin_group_of(flags)`, `toggle_of(flags)`; `skinlight.VISIBILITY`, `skin_light_grids(path)`, `grid_points(M, size)`, `pack_skin_records(D, normals, ranges)`, `skins_section(skin_light_dir, skin_package_dir, groups) -> (section, files)`; the CLI options `--skins`, `--skin-light`, `--skin-package`, `--out`, `--package` and the command `skin-light`; `__main__._artifact(path) -> {path, sha256, bytes}` and `_write_evidence(path, data)`; every data command's evidence carries `artifact` (`windows.json`, `probes-check.json`, `sun-bounce-check.json`, `floor-light.json`, `skin-light.json`), written after the artifact; the command `record-artifacts`.
+
+**Why the hashes.** Task 4's review deferred three items: an evidence JSON could be written before its artifact (a raising write left `pass: true` beside the old artifact), `sun-check.json` was written without `_finite`, and nothing linked an evidence file to the artifact it describes. Task 5 packages only exact named files whose SHA-256 equals the one their evidence records (the owner's packaging rule, 7 October: never a glob such as `work/sun-bounce*`).
+
+- [ ] **Step 1: The record classes (R1c A1)** — in `tools/relight/relight/codec.py`, directly after `FLAG_CH_CENTRE = 1 << 5` add:
+
+```python
+
+# Skins (R1c, amendment A1): a splat a skin covers is class 7, its wall group in bits 5-7 (0 door wall, 1 window wall,
+# 2 end_xmin, 3 end_xmax, 4 ceiling; 7 reserved, so no record's flags byte is R1b's pass-through 0xff), lit exactly as
+# class 0 and hidden while its group's skins draw. Any other class may carry a toggle in bits 6-7 (bit 5 stays the
+# chandelier group): 1 the loose clutter, 2 the AV cabinet; a toggled splat is hidden while its toggle is.
+CLASS_SKIN = 7
+SKIN_GROUP_SHIFT = 5
+SKIN_GROUP_MAX = 6
+TOGGLE_SHIFT = 6
+TOGGLE_NONE, TOGGLE_CLUTTER, TOGGLE_CABINET = 0, 1, 2
+```
+
+and directly after the function `unpack_records` add:
+
+```python
+
+
+def cover_flags(flags, group):
+    """Class 7 in wall group `group` for the interior splats (class 0) among `flags`, ISO and SUN kept; others unchanged."""
+    f = np.asarray(flags, dtype=np.uint8)
+    g = np.broadcast_to(np.asarray(group, dtype=np.int64), f.shape)
+    if (g < 0).any() or (g > SKIN_GROUP_MAX).any():
+        raise ValueError("a wall group is 0..6")
+    covered = (f & CLASS_MASK) == CLASS_INTERIOR
+    out = (f & (FLAG_ISO | FLAG_SUN)) | CLASS_SKIN | (g.astype(np.uint8) << SKIN_GROUP_SHIFT)
+    return np.where(covered, out, f).astype(np.uint8)
+
+
+def toggle_flags(flags, toggle):
+    """The toggle in bits 6-7 of every splat that is not class 7 (whose bits 5-7 hold its wall group)."""
+    f = np.asarray(flags, dtype=np.uint8)
+    t = np.broadcast_to(np.asarray(toggle, dtype=np.int64), f.shape)
+    if (t < 0).any() or (t > 3).any():
+        raise ValueError("a toggle is 0..3")
+    skin = (f & CLASS_MASK) == CLASS_SKIN
+    return np.where(skin, f, (f & 0b0011_1111) | (t.astype(np.uint8) << TOGGLE_SHIFT)).astype(np.uint8)
+
+
+def skin_group_of(flags):
+    f = np.asarray(flags, dtype=np.uint8)
+    return np.where((f & CLASS_MASK) == CLASS_SKIN, (f >> SKIN_GROUP_SHIFT).astype(np.int64), -1)
+
+
+def toggle_of(flags):
+    f = np.asarray(flags, dtype=np.uint8)
+    return np.where((f & CLASS_MASK) == CLASS_SKIN, 0, f >> TOGGLE_SHIFT).astype(np.int64)
+```
+
+(One correction to A1 as written, found by running its own test on this PC's numpy 2.4.2: A1's `skin_group_of` returned `np.where(cond, f >> SKIN_GROUP_SHIFT, -1).astype(np.int64)`; under NumPy 2's promotion rules (NEP 50) the Python `-1` takes the uint8 operand's type, so every other class read 255, not −1, and A1's test failed. The shift is widened to int64 before `np.where`. Checked: with the correction, A1's tests, A3's and Task 5's reference tests pass, 20 tests.)
+
+Create `tools/relight/tests/test_codec_skins.py`:
+
+```python
+import unittest
+import numpy as np
+from relight import codec
+
+
+class Skins(unittest.TestCase):
+    def test_cover_flags_make_interior_splats_class_7_in_their_group(self):
+        f = np.array([0, codec.FLAG_ISO | codec.FLAG_SUN, codec.CLASS_EMBRASURE, codec.CLASS_CH_EMITTER | codec.FLAG_CH_CENTRE], np.uint8)
+        out = codec.cover_flags(f, np.array([4, 6, 1, 2]))
+        self.assertEqual(int(out[0]), 7 | (4 << 5))
+        self.assertEqual(int(out[1]), 7 | codec.FLAG_ISO | codec.FLAG_SUN | (6 << 5))
+        self.assertEqual(out[2:].tolist(), f[2:].tolist())
+        self.assertEqual(codec.skin_group_of(out).tolist(), [4, 6, -1, -1])
+        self.assertLess(int(out.max()), 0xff)
+        with self.assertRaises(ValueError):
+            codec.cover_flags(f, 7)
+
+    def test_toggles_keep_class_and_flags_and_skip_covered_splats(self):
+        f = np.array([0, codec.CLASS_CH_EMITTER | codec.FLAG_CH_CENTRE, 7 | (2 << 5)], np.uint8)
+        out = codec.toggle_flags(f, 2)
+        self.assertEqual(int(out[0]), 2 << 6)
+        self.assertEqual(int(out[1]) & 0b0011_1111, int(f[1]))
+        self.assertEqual(int(out[2]), int(f[2]))
+        self.assertEqual(codec.toggle_of(out).tolist(), [2, 2, 0])
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_codec tests.test_codec_skins -v`
+Expected: PASS, 12 tests (the codec's 10 and these 2).
+
+- [ ] **Step 2: The skins' light (R1c A4)** — create `tools/relight/relight/skinlight.py`:
+
+```python
+"""The skins' light (R1c, amendment A4): R1a's floor light model at every 5 cm light texel of every skin (the nine
+sources' direct light, white and unit, the windows with the capture's sky weights, at the texel's centre 2 cm in front
+of its bay plane with the height field's normal), packed as R1a records with the skins' own ranges; each skin's share of
+sun-reachable texels on its 2 cm sun grid; and relight package v2's skins section built from them."""
+from __future__ import annotations
+
+import gzip, hashlib, json, os, posixpath
+
+import numpy as np
+
+from . import codec
+
+VISIBILITY = {"toggles": {"clutter": 1, "cabinet": 2}, "defaultHidden": 1}   # the loose clutter hidden, the cabinet shown
+
+
+def skin_light_grids(path):
+    """tools/skins' light-grids.json (R1c Task 5), each skin with its light texels' normals loaded."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    root = os.path.dirname(path)
+    out = []
+    for e in data["skins"]:
+        w, h = (int(v) for v in e["size"])
+        normals = np.load(os.path.join(root, e["normals"])).astype(np.float64)
+        if normals.shape != (h, w, 3):
+            raise ValueError(f"{e['id']}: normals {normals.shape}, expected {(h, w, 3)}")
+        sun = e.get("sun")
+        out.append({"id": e["id"], "group": int(e["group"]), "lightTexel": float(e["lightTexel"]), "size": (w, h),
+                    "texelToModel": np.asarray(e["texelToModel"], np.float64).reshape(4, 4), "normals": normals,
+                    "sun": None if sun is None else {"size": tuple(int(v) for v in sun["size"]),
+                                                    "texelToModel": np.asarray(sun["texelToModel"], np.float64).reshape(4, 4)}})
+    return out
+
+
+def grid_points(M, size):
+    """Every texel's centre, M @ (column, row, 0, 1), row-major."""
+    w, h = size
+    rows, cols = np.meshgrid(np.arange(h, dtype=np.float64), np.arange(w, dtype=np.float64), indexing="ij")
+    return (M[:3, 0] * cols[..., None] + M[:3, 1] * rows[..., None] + M[:3, 3]).reshape(-1, 3)
+
+
+def pack_skin_records(D, normals, ranges):
+    return codec.pack_records(D, normals, np.full(len(D), codec.CLASS_INTERIOR, np.uint8), ranges)
+
+
+def skins_section(skin_light_dir, skin_package_dir, groups):
+    """Relight package v2's `skins` section and its files ({relative path: gzip bytes}) from the skin-light output and the
+    skin package (whose manifest it pins by SHA-256)."""
+    with open(os.path.join(skin_light_dir, "index.json"), encoding="utf-8") as f:
+        index = json.load(f)
+    with open(os.path.join(skin_package_dir, "manifest.json"), "rb") as f:
+        manifest_bytes = f.read()
+    package = posixpath.join(*os.path.normpath(skin_package_dir).replace("\\", "/").split("/")[-2:])
+    if not package.startswith("skins/"):
+        raise ValueError(f"{skin_package_dir} is not a skins/<version> folder")
+    entries, files = [], {}
+    for s in index["skins"]:
+        with open(os.path.join(skin_light_dir, f"{s['id']}.records"), "rb") as f:
+            data = f.read()
+        w, h = s["size"]
+        if len(data) != w * h * codec.RECORD_BYTES:
+            raise ValueError(f"{s['id']}: {len(data)} bytes for {w} x {h} light texels")
+        gz = gzip.compress(data, compresslevel=9, mtime=0)
+        rel = posixpath.join("skins", f"{s['id']}.light.gz")
+        files[rel] = gz
+        M = np.asarray(s["texelToModel"], np.float64).reshape(4, 4)
+        n = np.cross(M[:3, 1], M[:3, 0])
+        n = n / np.linalg.norm(n)
+        entries.append({"id": s["id"], "group": int(s["group"]), "size": [int(w), int(h)], "texelToModel": [float(x) for x in M.ravel()],
+                        "normal": [float(x) for x in n], "file": rel, "sha256": hashlib.sha256(gz).hexdigest(), "bytes": len(gz),
+                        "sun": s["sun"]})
+    section = {"package": package, "manifestSha256": hashlib.sha256(manifest_bytes).hexdigest(),
+               "encoding": [[float(lo), float(hi)] for lo, hi in index["ranges"]], "groups": list(groups), "entries": entries}
+    return section, files
+```
+
+(A light texel's normal in the section is the bay's: the light grid's column and row directions are `u` and `v` with `u × v = −n`, so `n = v × u`.)
+
+Create `tools/relight/tests/test_skinlight.py`:
+
+```python
+import gzip, hashlib, json, os, tempfile, unittest
+import numpy as np
+from relight import codec, skinlight as SL
+
+M = [0.05, 0, 0, 0.025, 0, 0, -1, 0.98, 0, -0.05, 0, 1.975, 0, 0, 0, 1]   # u +x, v -z: the bay faces -y
+
+
+def write_grids(root):
+    os.makedirs(os.path.join(root, "door-w2"))
+    np.save(os.path.join(root, "door-w2", "light-normals.npy"), np.tile([0.0, -1.0, 0.0], (2, 3, 1)))
+    with open(os.path.join(root, "light-grids.json"), "w", encoding="utf-8") as f:
+        json.dump({"skins": [{"id": "door-w2", "group": 0, "lightTexel": 0.05, "size": [3, 2], "texelToModel": M,
+                              "normals": "door-w2/light-normals.npy", "sun": None}]}, f)
+    return os.path.join(root, "light-grids.json")
+
+
+class SkinLight(unittest.TestCase):
+    def test_grids_load_with_their_normals_and_points(self):
+        grids = SL.skin_light_grids(write_grids(tempfile.mkdtemp()))
+        self.assertEqual((grids[0]["id"], grids[0]["size"]), ("door-w2", (3, 2)))
+        P = SL.grid_points(grids[0]["texelToModel"], grids[0]["size"])
+        np.testing.assert_allclose(P[4], [0.025 + 0.05, 0.98, 1.975 - 0.05], atol=1e-12)        # column 1, row 1
+
+    def test_records_round_trip_and_the_section_pins_both_packages(self):
+        root = tempfile.mkdtemp()
+        light = os.path.join(root, "skin-light"); os.makedirs(light)
+        D = np.zeros((6, 9)); D[:, 0] = 0.5; D[:, 5] = 0.25
+        ranges = [codec.source_range(D[:, k]) for k in range(9)]
+        with open(os.path.join(light, "door-w2.records"), "wb") as f:
+            f.write(SL.pack_skin_records(D, np.tile([0.0, -1.0, 0.0], (6, 1)), ranges))
+        with open(os.path.join(light, "index.json"), "w", encoding="utf-8") as f:
+            json.dump({"ranges": [list(r) for r in ranges], "skins": [{"id": "door-w2", "group": 0, "lightTexel": 0.05, "size": [3, 2],
+                                                                       "texelToModel": M, "reachShare": 0.0, "sun": None}]}, f)
+        pkg = os.path.join(root, "grand-hall", "skins", "v1"); os.makedirs(pkg)
+        with open(os.path.join(pkg, "manifest.json"), "wb") as f:
+            f.write(b'{"schema": "venviewer.skins.v1"}')
+        section, files = SL.skins_section(light, pkg, ["door", "window", "end_xmin", "end_xmax", "ceiling"])
+        self.assertEqual(section["package"], "skins/v1")
+        self.assertEqual(section["manifestSha256"], hashlib.sha256(b'{"schema": "venviewer.skins.v1"}').hexdigest())
+        entry = section["entries"][0]
+        np.testing.assert_allclose(entry["normal"], [0.0, -1.0, 0.0], atol=1e-12)
+        direct, _n, flags = codec.unpack_records(gzip.decompress(files[entry["file"]]), ranges)
+        np.testing.assert_allclose(direct[:, 0], 0.5, rtol=0.04)
+        self.assertEqual(flags.tolist(), [codec.CLASS_INTERIOR] * 6)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+The matrix has u = +x and v = −z, so `n = v × u = (0, 0, −1) × (1, 0, 0) = (0, −1, 0)`.
+
+Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_skinlight -v`
+Expected: PASS, 2 tests.
+
+- [ ] **Step 3: Each artifact's hash in its evidence** — in `tools/relight/relight/__main__.py`, directly before `def split_tables(cfg: config.Config) -> None:` add:
+
+```python
+def _artifact(path: str) -> dict:
+    """An artifact's record for its evidence JSON (Task 4c): its exact path, SHA-256 and size. Task 5 packages a work
+    artifact only when its bytes still have the SHA-256 its evidence records."""
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return {"path": os.path.abspath(path).replace("\\", "/"), "sha256": h.hexdigest(), "bytes": os.path.getsize(path)}
+
+
+def _write_evidence(path: str, data: dict) -> None:
+    """An evidence JSON, written after the artifact it describes and through a partial file renamed over the target, with
+    non-finite numbers as null (so a failure never leaves a half-written or stale 'pass')."""
+    part = path + ".part"
+    with open(part, "w", encoding="utf-8") as f:
+        json.dump(_finite(data), f, indent=1, allow_nan=False)
+    os.replace(part, path)
+
+
+```
+
+Then make each data command record its artifact after writing it:
+
+1. `cmd_windows` (`__main__.py:223`): directly after `    np.savez_compressed(os.path.join(cfg.paths["work"], "windows.npz"), **save)` add
+   ```python
+    _write_evidence(os.path.join(cfg.paths["evidence"], "windows.json"),
+                    {"windows": list(cfg.room["windows"]), "artifact": _artifact(os.path.join(cfg.paths["work"], "windows.npz"))})
+   ```
+2. `cmd_check_sun` (`:349-350`): replace the two lines `    with open(os.path.join(cfg.paths["evidence"], "sun-check.json"), "w") as f:` and `        json.dump(out, f, indent=1)` with `    _write_evidence(os.path.join(cfg.paths["evidence"], "sun-check.json"), out)` (the deferred `_finite`; `check-sun` writes no artifact).
+3. `cmd_probes` (`:429-432`): delete the two lines `    with open(os.path.join(cfg.paths["evidence"], "probes-check.json"), "w", encoding="utf-8") as f:` and `        json.dump(_finite(out), f, indent=1, allow_nan=False)`, and directly after the statement `kept = _save_npz_if(os.path.join(work, "probes-coarse.npz"), …, spacing=np.float64(spacing))` add
+   ```python
+    out["artifact"] = _artifact(kept) if out["pass"] else None   # the evidence follows its artifact (Task 4c)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "probes-check.json"), out)
+   ```
+4. `cmd_sun_bounce` (`:679-686`): delete the two lines `    with open(os.path.join(cfg.paths["evidence"], "sun-bounce-check.json"), "w", encoding="utf-8") as f:` and `        json.dump(_finite(out), f, indent=1, allow_nan=False)`, and directly after the line `                        patchArea=room.areas)` (the end of `kept = _save_npz_if(os.path.join(work, "sun-bounce.npz"), …)`) add
+   ```python
+    out["artifact"] = _artifact(kept) if ok else None            # the evidence follows its artifact (Task 4c)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "sun-bounce-check.json"), out)
+   ```
+5. `cmd_floor` (`:763`): directly after `    kept = _save_npz_if(os.path.join(work, "floor-light.npz"), lit_ok, cfg.paths["evidence"], D=D, texelToModel=texel_to_model)` add
+   ```python
+    _write_evidence(os.path.join(cfg.paths["evidence"], "floor-light.json"),
+                    {"shares": share, "w3Share": share["W3"], "threshold": FLOOR_W3_SHARE, "pass": lit_ok,
+                     "artifact": _artifact(kept) if lit_ok else None})
+   ```
+
+(A failing run still writes its evidence, with `artifact: null`; its arrays are the `<evidence>/<stem>-FAILED.npz` that `_save_npz_if` kept, never the artifact.) Then add, directly above `if __name__ == "__main__":`:
+
+```python
+ARTIFACTS = (("windows.npz", "windows.json"), ("probes-coarse.npz", "probes-check.json"),
+             ("sun-bounce.npz", "sun-bounce-check.json"), ("floor-light.npz", "floor-light.json"))
+
+
+def cmd_record_artifacts(cfg, args) -> int:
+    """Each work artifact written before the commands recorded it themselves (Task 4c), added to its evidence JSON with
+    its exact path, SHA-256 and size. Refuses an evidence file that records a failing run or another hash."""
+    for name, evidence in ARTIFACTS:
+        path, ev = os.path.join(cfg.paths["work"], name), os.path.join(cfg.paths["evidence"], evidence)
+        data = {}
+        if os.path.exists(ev):
+            with open(ev, encoding="utf-8") as f:
+                data = json.load(f)
+        if data.get("pass") is False:
+            print(f"FAIL: {evidence} records a failing run; {name} is not recorded", flush=True)
+            return 1
+        record = _artifact(path)
+        old = data.get("artifact")
+        if old and old.get("sha256") != record["sha256"]:
+            print(f"FAIL: {evidence} records {old['sha256']} but {name} is {record['sha256']}", flush=True)
+            return 1
+        data["artifact"] = record
+        _write_evidence(ev, data)
+        print(f"{name}: {record['sha256']} -> {evidence}", flush=True)
+    return 0
+
+
+COMMANDS["record-artifacts"] = cmd_record_artifacts
+```
+
+Create `tools/relight/tests/test_artifacts.py`:
+
+```python
+import hashlib, json, os, tempfile, unittest
+from relight import __main__ as M
+
+
+class Artifacts(unittest.TestCase):
+    def test_an_artifact_is_recorded_by_its_exact_path_hash_and_size(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "a.npz")
+            with open(path, "wb") as f:
+                f.write(b"abc")
+            record = M._artifact(path)
+            self.assertEqual(record["sha256"], hashlib.sha256(b"abc").hexdigest())
+            self.assertEqual(record["bytes"], 3)
+            self.assertTrue(record["path"].endswith("/a.npz") and "\\" not in record["path"])
+
+    def test_evidence_is_written_whole_with_non_finite_numbers_as_null(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "e.json")
+            M._write_evidence(path, {"x": float("inf"), "artifact": None})
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"x": None, "artifact": None})
+            self.assertFalse(os.path.exists(path + ".part"))
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_artifacts tests.test_config -v`
+Expected: PASS: these 2 and `test_config`'s tests (its gate-before-write tests still hold: `_save_npz_if` still writes the artifact).
+
+- [ ] **Step 4: The skins' light command (R1c A4)** — in `tools/relight/relight/__main__.py`, directly after `    ap.add_argument("--config", required=True)` add:
+
+```python
+    ap.add_argument("--skins", default=None)          # R1c: skin-light takes light-grids.json; records takes the geometry folder
+    ap.add_argument("--skin-light", default=None)     # R1c: records' <work>/skin-light, for package v2's skins section
+    ap.add_argument("--skin-package", default=None)   # R1c: the skin package folder package v2 names
+    ap.add_argument("--out", default=None)            # R1c: the package's folder (default the config's out)
+    ap.add_argument("--package", default=None)        # R1c: the package check reads (default the config's out)
+```
+
+and directly after `COMMANDS["floor"] = cmd_floor` add:
+
+```python
+
+
+def cmd_skin_light(cfg, args) -> int:
+    """<work>/skin-light/<id>.records and index.json (R1c, amendment A4): every skin light texel's nine sources' direct
+    light, cmd_floor's model at the skins' texel centres and normals (tools/skins' light-grids.json), as R1a records with
+    the skins' own ranges; each skin's sun-reachable share on its 2 cm sun grid (windows.sun_reach), its sun grid named
+    only when some texel is reachable. CPU only."""
+    import importlib
+    from . import codec, floorlight as FL, probes as PR, skinlight as SL
+    from . import windows as W
+    if args.skins is None:
+        print("skin-light needs --skins <tools/skins work>/geometry/light-grids.json", flush=True)
+        return 2
+    common, lt, _radiosity, fit04 = _proof_modules()
+    b3 = importlib.import_module("03_bases")
+    started, work = time.time(), cfg.paths["work"]
+    with np.load(os.path.join(work, "probes.npz")) as z:
+        volume = {"cubes": z["win_cubes"], "origin": tuple(float(v) for v in z["origin"]),
+                  "shape": tuple(int(v) for v in z["shape"]), "keep": z["keep"]}
+    with np.load(os.path.join(work, "geom.npz")) as z:
+        house = {"chandeliers": z["chandeliers"], "dome_c": z["dome_c"]}
+    with np.load(os.path.join(work, "bases.npz")) as z:
+        house["ring"] = z["ring"]
+    box = (common.X0, common.X1, common.Y0, common.Y1, common.FLOOR_Z)
+    grids = SL.skin_light_grids(args.skins)
+    lights = []
+    for g in grids:
+        q, n = SL.grid_points(g["texelToModel"], g["size"]), g["normals"].reshape(-1, 3)
+        direct = FL.patch_direct(lt, b3.trilinear_weights, volume, house, box, q, n)
+        D = PR.patch_direct_by_source(direct, np.array(fit04.SKY_W))
+        if not np.isfinite(D).all() or (D < 0).any():
+            print(f"FAIL: {g['id']}: the direct light is not finite and non-negative", flush=True)
+            return 1
+        lights.append(D)
+    ranges = [codec.source_range(np.concatenate([D[:, k] for D in lights])) for k in range(len(SOURCES))]
+    vols, _horizons, _fresnel = windows_volumes(cfg)
+    out = os.path.join(work, "skin-light")
+    os.makedirs(out, exist_ok=True)
+    index = {"ranges": [list(r) for r in ranges], "skins": []}
+    for g, D in zip(grids, lights):
+        with open(os.path.join(out, f"{g['id']}.records"), "wb") as f:
+            f.write(SL.pack_skin_records(D, g["normals"].reshape(-1, 3), ranges))
+        reach, sun = 0.0, None
+        if g["sun"] is not None:
+            P = SL.grid_points(g["sun"]["texelToModel"], g["sun"]["size"])
+            reach = float(np.mean(W.sun_reach(vols, P, cfg.room["site"]["latitude"])))
+            if reach > 0:
+                sun = {"size": list(g["sun"]["size"]), "texelToModel": [float(x) for x in g["sun"]["texelToModel"].ravel()]}
+        index["skins"].append({"id": g["id"], "group": g["group"], "lightTexel": g["lightTexel"], "size": list(g["size"]),
+                               "texelToModel": [float(x) for x in g["texelToModel"].ravel()], "reachShare": reach, "sun": sun})
+        print(f"skin-light {g['id']}: {g['size'][0]} x {g['size'][1]} texels, sun reach {reach:.3f}", flush=True)
+    with open(os.path.join(out, "index.json"), "w", encoding="utf-8") as f:
+        json.dump(index, f, indent=1, allow_nan=False)
+    _write_evidence(os.path.join(cfg.paths["evidence"], "skin-light.json"),
+                    {"skins": len(grids), "texels": int(sum(len(D) for D in lights)), "ranges": index["ranges"],
+                     "seconds": round(time.time() - started, 1), "artifact": _artifact(os.path.join(out, "index.json")),
+                     "records": {g["id"]: _artifact(os.path.join(out, f"{g['id']}.records"))["sha256"] for g in grids}})
+    return 0
+
+
+COMMANDS["skin-light"] = cmd_skin_light
+```
+
+(Two changes to A4 as written, both checked against the committed code: `windows_volumes(cfg)` returns `(volumes, horizons, fresnel)` (`__main__.py:190-197`) and `windows.sun_reach` iterates `volumes.values()` (`windows.py:405-416`), so A4's `W.sun_reach(windows_volumes(cfg), …)` would raise on the tuple; the volumes dict is unpacked first. And the evidence is written with `_write_evidence` and records the index's and each record file's hash, Step 3's rule. The `skin-light` output is a data product: R1c Task 8 runs it twice by hand and compares the two folders, as the double-run rule requires.)
+
+- [ ] **Step 5: Run the suite, record the earlier artifacts, commit**
+
+```bash
+cd D:/claude/real-hall/repo/tools/relight
+C:/Python313/python.exe -m unittest discover -s tests -v 2>&1 | tail -3
+C:/Python313/python.exe D:/claude/relight/grand-hall/verify/task4b/compare.py D:/claude/relight/grand-hall/work/probes-coarse.npz D:/claude/relight/grand-hall/verify/task4b/probes-coarse-run9.npz
+C:/Python313/python.exe D:/claude/relight/grand-hall/verify/task4b/compare.py D:/claude/relight/grand-hall/work/sun-bounce.npz D:/claude/relight/grand-hall/verify/task4b/sun-bounce-run16.npz
+C:/Python313/python.exe -m relight record-artifacts --config config/grand-hall.json
+cd D:/claude/real-hall/repo
+git add tools/relight/relight/codec.py tools/relight/relight/skinlight.py tools/relight/relight/__main__.py tools/relight/tests/test_codec_skins.py tools/relight/tests/test_skinlight.py tools/relight/tests/test_artifacts.py
+git diff --cached --stat
+git commit -m "feat(relight): record classes for skins and toggles, the skins' light, and each artifact's hash in its evidence (T-639 R1c amendments A1, A4; R1a)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+Expected: `OK`, 139 tests (Task 4b's 133 and these 6); both comparisons `differ: []` (the work's artifacts are Task 4b's verified runs, so the hashes recorded are theirs); `record-artifacts` prints four lines (`windows.npz`, `probes-coarse.npz`, `sun-bounce.npz`, `floor-light.npz`, each with its SHA-256) and exits 0.
+
 ### Task 5: Records for every served tile, the reference multiplier and the checks
+
+(Revised 7 October, consolidated: the sky bodies' bounce is Task 4's factored basis, not the sunlit-area table; the Moon is a second sky body; the house lights are Task 4b's refit with a colour per lamp group; R1c's covers, toggles and package v2; R1d's lamp tints and `moon_test` vectors; only exact, hash-checked artifacts are packaged. The plan's "Revisions (7 October, consolidated)" lists each change.)
 
 **Files:**
 - Create: `tools/relight/relight/records.py`, `tools/relight/relight/reference.py`, `tools/relight/relight/package.py`, `tools/relight/tests/test_reference.py`, `tools/relight/tests/test_records.py`
@@ -1356,8 +2934,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `tools/relight/relight/__main__.py` (register `records`, `check`)
 
 **Interfaces:**
-- Consumes: the Task 2 tables, `windows.npz` (Task 3 as built: `__main__.windows_volumes(cfg)`, `windows.sun_visibility`, `sun_reach`, `sun_az_el`, `horizon_at`, `fresnel_at`, `volume_arrays`, `volume_from_arrays`, `_sample_depth`, `MIN_DOWN`, `CHUNK`; `__main__.CHECK_SUNS`, `SPLAT_SEED`, `_random_suns`), `probes-coarse.npz`, `sun-bounce.json`, `sun-area.npz` and `windows.sun_area_at`, `sun_area_nodes`, `sunlit_area` (Task 4), `floor-light.npz`, `<evidence>/sun-check.json`, the repo's SOG decoder `tools/xgrids-lcc2/scripts/sog-floor-census.py` (`decode_tile(path) -> (centers, scales, quats, opacity, meta)`).
-- Produces: `records.flags_for(...) -> (N,) uint8`; `records.transfer(src_pos, src_values, dst_pos, k) -> values`; `reference.Model` (with `volumes`, `horizons`, `fresnel`, `sun_area`, `sun_area_origin`), `reference.Setting` (with `captured`, `with_sky`, `with_lamps`), `reference.fresnel_at(model, s) -> float`, `reference.sunlit_glass_area(model, s) -> (5,)`, `reference.multiplier(direct, normals, flags, pos, colour_lin, model, setting) -> (rgb (N,3), alpha (N,))`; `package.write(...)`; the package in `<out>`; `<evidence>/checks.json`; the R1b fixture.
+- Consumes: the Task 2 tables; Task 3 as built (`__main__.windows_volumes(cfg)`, `windows.sun_visibility`, `sun_reach`, `sun_az_el`, `sun_corners`, `horizon_at`, `fresnel_at`, `volume_arrays`, `volume_from_arrays`, `_sample_depth`, `ray_survives`, `MIN_DOWN`, `CHUNK`; `__main__.CHECK_SUNS`, `SPLAT_SEED`, `_random_suns`); Task 4 as built (`<work>/probes-coarse.npz`, `<work>/sun-bounce.npz` and `sunbounce.Table`, `Patches`, `window_power`, `coefficients`, `bounce`, `trilinear_matrix`, `sun_bounce`; `<work>/floor-light.npz`; `moon.py`; `__main__._random_moons`); Task 4b (`<work>/fit.json` and `fit_state.npz`, the refit, model name `refit`; `<work>/mult/{night,sunny_morning,overcast_noon}.f16`; `<evidence>/refit.json`); Task 4c (`codec.CLASS_SKIN` and the toggle bits, `skinlight`, `__main__._artifact`, `_write_evidence`, the `artifact` record of every evidence JSON); `<evidence>/sun-check.json`; the repo's SOG decoder `tools/xgrids-lcc2/scripts/sog-floor-census.py` (`decode_tile(path) -> (centers, scales, quats, opacity, meta)`); R1c's skins geometry (`covers.npz`, `toggles.json`, R1c Task 5) and skin package, only with `--skins`, `--skin-light`, `--skin-package`.
+- Produces: `records.flags_for(...) -> (N,) uint8`; `records.transfer(src_pos, src_values, dst_pos, k) -> values`; `records.cover_test`, `in_boxes`, `apply_covers`, `apply_toggles`, `load_skin_inputs` (R1c A3); `reference.SkyBounce`, `reference.Model` (with `volumes`, `horizons`, `fresnel`, `sky`), `reference.Setting` (with `captured`, `with_sky`, `with_lamps`, `with_emitter_boost`; `lamp_tints`, `moon_dir`, `moon_rgb`), `reference.Visibility`, `NO_VISIBILITY`, `reference.sky_bodies(setting)`, `window_powers(model, s) -> (5,)`, `body_coefficients(model, s) -> (K,)`, `probe_points(model)`, `to_probes(model, values)`, `sky_cubes(model, bodies) -> (M, 3, 6)`, `fresnel_at(model, s)`, `multiplier(direct, normals, flags, pos, colour_lin, model, setting, visibility=NO_VISIBILITY) -> (rgb (N,3), alpha (N,))`; `package.verified(work, evidence, name, evidence_name)` and `package.write(...)`; the package in `<out>` (relight v1; with R1c's options relight v2 in `--out`); `<evidence>/checks.json`; the R1b fixture.
+
+**The sky bodies.** The Sun and the Moon are both directional sky bodies (the owner's direction of 3 October; R1d amendments A4, A5). Each body's direct light is the window volume march of `windows.sun_visibility`, gated per window by its horizon, with the glass; its bounce is Task 4's factored basis: per window w the exact power `P_w` of the 56,448 patch rays (`sunbounce.window_power`), the coefficients `c(σ) = sunbounce.coefficients(table, P(σ), az, el)` at the body's float32 direction, the K basis volumes summed on the 1 m grid with the body's RGB, `S1 = Σ_body RGB ⊙ Σ_k c_k basis_k`, and `S1` read at each 0.5 m probe trilinearly (`sunbounce.trilinear_matrix`: the 1 m cell clamped into the grid, the position into the cell, invalid corners dropped and the rest renormalised). That 0.5 m sky volume joins the nine sources' bounce exactly as `I[k]` does: the browser folds it into the scenario probe volume (R1b Task 10), so every splat, the floor and R1c's skins receive it with no code of their own. On the 1 m nodes the resampling is exact; between them it is the same trilinear function the 1 m grid defines, except near invalid corners (check 5 measures the difference). β, the area-scaled bounce `Σw b[w] sunRGB ⊙ I[w]` and the sunlit-area table are gone (Task 4 as built).
 
 - [ ] **Step 1: Write the failing tests for the reference multiplier**
 
@@ -1365,11 +2945,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ```python
 import unittest
+from dataclasses import replace
 import numpy as np
-from relight import codec, reference
+from relight import codec, reference, sunbounce, windows
 
 
-def model(n_probes_axis=2):
+def model(n_probes_axis=2, spacing=1.0):
     shape = (n_probes_axis,) * 3
     M = int(np.prod(shape))
     cubes = np.zeros((M, 9, 3, 6), np.float32)
@@ -1378,8 +2959,8 @@ def model(n_probes_axis=2):
         capture_w=np.array([1.0, 1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5]),
         capture_c=np.tile([1.0, 1.0, 1.0], (9, 1)),
         daylight_colour=np.array([1.0, 1.0, 1.0]),
-        probes=cubes, probe_valid=np.ones(M, bool), probe_origin=np.zeros(3), probe_spacing=1.0, probe_shape=shape,
-        volumes={}, fresnel=np.ones(101, np.float32), sun_beta=0.0, sky_flux=np.ones(5))
+        probes=cubes, probe_valid=np.ones(M, bool), probe_origin=np.zeros(3), probe_spacing=spacing, probe_shape=shape,
+        volumes={}, fresnel=np.ones(101, np.float32))
 
 
 def splats(n=4):
@@ -1393,9 +2974,18 @@ def splats(n=4):
 
 def window_volume():
     """An empty, open window W1: x 0.3..2.7, z 0.3..2.7 at the wall face y0 = 0, its glass 0.5 m out, bearing 14.3."""
-    from relight import windows
     return windows.volumes_from_occupancy(np.zeros((100, 34, 100), np.float32), np.array([0.0, -1.0, 0.0]), 0.03,
                                           {"W1": (0.3, 2.7, 0.5, 0.3, 2.7, "rect")}, 0.0, x_bearing=14.3)["W1"]
+
+
+def sky_basis(face_value=0.25, valid=None):
+    """One basis volume on a 2 x 2 x 2 grid of 1 m from the origin, every probe holding face_value on +z, and a 2 x 2 table
+    whose every node weighs it 1 for the one window; one 0.5 m patch 1 m from the wall facing it."""
+    basis = np.zeros((1, 8, 3, 6), np.float16); basis[0, :, :, 4] = face_value
+    table = sunbounce.Table(coeffs=np.ones((2, 2, 1, 1), np.float32), az0=100.0, el0=4.0, step=4.0)
+    patches = sunbounce.Patches.from_arrays(np.array([[1.5, 1.0, 1.5]]), np.array([[0.0, -1.0, 0.0]]), np.array([0.25]))
+    return reference.SkyBounce(table=table, basis=basis, origin=np.zeros(3), spacing=1.0, shape=(2, 2, 2),
+                               valid=np.ones(8, bool) if valid is None else valid, patches=patches, floor_mean=np.zeros((1, 3), np.float32))
 
 
 OUT_OF_THE_WALL = np.array([0.0, -np.cos(np.radians(5.7)), np.sin(np.radians(5.7))])   # compass azimuth 104.3, 5.7 degrees up
@@ -1440,8 +3030,17 @@ class Rules(unittest.TestCase):
         off, _ = reference.multiplier(d, n, f, p, c, m, reference.Setting.captured(m).with_lamps(0.0))
         self.assertTrue(np.all(off < 1.0))
 
+    def test_a_lamp_tint_colours_lit_bulbs_and_the_cove(self):
+        m = model()
+        d, n, f, p, c = splats()
+        f[:] = codec.CLASS_CH_EMITTER
+        c[:] = 0.95
+        tints = {g: (1.0, 1.0, 1.0) for g in reference.LAMP_GROUPS}
+        tints["ch_end"] = (1.2, 1.0, 0.6)
+        lit, _ = reference.multiplier(d, n, f, p, c, m, replace(reference.Setting.captured(m), lamp_tints=tints))
+        np.testing.assert_allclose(lit, np.tile([1.2, 1.0, 0.6], (4, 1)), atol=1e-9)
+
     def test_the_horizon_blocks_the_sun(self):
-        from dataclasses import replace
         d, n, f, p, c = splats(1)
         n[:] = [0.0, -1.0, 0.0]; f[:] = codec.FLAG_SUN; p[:] = [1.5, 1.0, 1.5]    # enters at z 1.6, leaves the glass at 1.65
         open_m = replace(model(), volumes={"W1": window_volume()}, horizons={"W1": np.zeros(360, np.float32)})
@@ -1452,24 +3051,67 @@ class Rules(unittest.TestCase):
         self.assertTrue(np.all(lit > 1.0 + 1e-3))
         self.assertTrue(np.allclose(shut, 1.0, atol=1e-9))
 
-    def test_the_sun_bounce_reads_the_baked_area_table_inside_the_horizon_gate(self):
-        from dataclasses import replace
-        from relight import windows
-        table = np.arange(12, dtype=np.float32).reshape(3, 4)                      # t[j, i] = 4 j + i
-        base = replace(model(), volumes={"W1": window_volume()}, horizons={"W1": np.zeros(360, np.float32)},
-                       sun_area={"W1": table}, sun_area_origin=(103.0, 5.0))
-        az, el = windows.sun_az_el(np.asarray(OUT_OF_THE_WALL, np.float32), 14.3)
-        expected = windows.sun_area_at(table, 103.0, 5.0, az, el)
-        self.assertAlmostEqual(expected, 4 * (el - 5.0) + (az - 103.0), places=9)   # bilinear is exact on a plane
-        np.testing.assert_array_equal(reference.sunlit_glass_area(base, OUT_OF_THE_WALL), [expected, 0, 0, 0, 0])
-        shut = replace(base, horizons={"W1": np.full(360, 90.0, np.float32)})
-        np.testing.assert_array_equal(reference.sunlit_glass_area(shut, OUT_OF_THE_WALL), np.zeros(5))
-        np.testing.assert_array_equal(reference.sunlit_glass_area(base, np.array([0.0, 0.995, 0.0995])), np.zeros(5))
+    def test_the_moon_lights_like_the_sun_through_the_same_window(self):
+        d, n, f, p, c = splats(1)
+        n[:] = [0.0, -1.0, 0.0]; f[:] = codec.FLAG_SUN; p[:] = [1.5, 1.0, 1.5]
+        m = replace(model(), volumes={"W1": window_volume()}, horizons={"W1": np.zeros(360, np.float32)})
+        by_sun, _ = reference.multiplier(d, n, f, p, c, m, replace(reference.Setting.captured(m), sun_dir=OUT_OF_THE_WALL, sun_rgb=np.ones(3)))
+        by_moon, _ = reference.multiplier(d, n, f, p, c, m, replace(reference.Setting.captured(m), moon_dir=OUT_OF_THE_WALL, moon_rgb=np.ones(3)))
+        both, _ = reference.multiplier(d, n, f, p, c, m, replace(reference.Setting.captured(m), sun_dir=OUT_OF_THE_WALL, sun_rgb=np.ones(3),
+                                                                    moon_dir=OUT_OF_THE_WALL, moon_rgb=np.ones(3)))
+        np.testing.assert_allclose(by_moon, by_sun, atol=1e-12)
+        self.assertTrue(np.all(both > by_sun))
+
+    def test_the_sky_bodies_bounce_through_the_basis_scaled_by_the_exact_window_power(self):
+        d, n, f, p, c = splats(1)                          # no sun flag: only the bounce reaches this splat
+        horizon = np.zeros(360, np.float32)
+        m = replace(model(), volumes={"W1": window_volume()}, horizons={"W1": horizon}, sky=sky_basis())
+        power = sunbounce.window_power([m.volumes["W1"]], [horizon], m.fresnel, m.sky.patches, np.asarray(OUT_OF_THE_WALL, np.float32))
+        self.assertGreater(float(power[0]), 0.2)           # the patch faces the open window: 0.25 m2 x cos 5.7 degrees
+        sun = replace(reference.Setting.captured(m), sun_dir=OUT_OF_THE_WALL, sun_rgb=np.array([1.0, 2.0, 0.5]))
+        lit, _ = reference.multiplier(d, n, f, p, c, m, sun)
+        np.testing.assert_allclose(lit[0], 1.0 + 0.25 * float(power[0]) * np.array([1.0, 2.0, 0.5]) / 1.3, rtol=1e-9)   # the cove's float32 0.1
+        moon = replace(reference.Setting.captured(m), moon_dir=OUT_OF_THE_WALL, moon_rgb=np.array([1.0, 2.0, 0.5]))
+        np.testing.assert_allclose(reference.multiplier(d, n, f, p, c, m, moon)[0], lit, rtol=1e-12)
+        shut = replace(m, horizons={"W1": np.full(360, 90.0, np.float32)})
+        np.testing.assert_allclose(reference.multiplier(d, n, f, p, c, shut, sun)[0], 1.0, atol=1e-12)
+
+    def test_the_basis_reaches_the_probes_trilinearly(self):
+        m = replace(model(3, 0.5), sky=sky_basis())        # 0.5 m probes over the 1 m basis grid
+        S1 = np.zeros((8, 3, 6)); S1[:, 0, 4] = [0, 0, 0, 0, 1, 1, 1, 1]           # value = x on the basis grid (ix major)
+        out = reference.to_probes(m, S1)
+        self.assertAlmostEqual(float(out[(1 * 3 + 0) * 3 + 0, 0, 4]), 0.5, places=12)   # probe x 0.5
+        self.assertAlmostEqual(float(out[(2 * 3 + 2) * 3 + 2, 0, 4]), 1.0, places=12)   # probe x 1.0
+        valid = np.ones(8, bool); valid[4:] = False                                     # the x = 1 plane is invalid
+        out = reference.to_probes(replace(m, sky=sky_basis(valid=valid)), S1)
+        self.assertEqual(float(out[(1 * 3 + 1) * 3 + 1, 0, 4]), 0.0)                   # only the x = 0 corners remain
+
+    def test_a_covered_splat_is_lit_as_interior_and_hidden_while_its_group_draws(self):
+        d, n, f, p, c = splats(2)
+        f[1] = codec.cover_flags(np.array([codec.CLASS_INTERIOR], np.uint8), 3)[0]
+        m = model(); s = reference.Setting.captured(m)
+        M, a = reference.multiplier(d, n, f, p, c, m, s)
+        np.testing.assert_allclose(M[1], M[0]); self.assertEqual(a.tolist(), [1.0, 1.0])
+        _M, a = reference.multiplier(d, n, f, p, c, m, s, reference.Visibility(skin_groups=1 << 3))
+        self.assertEqual(a.tolist(), [1.0, 0.0])
+        _M, a = reference.multiplier(d, n, f, p, c, m, s, reference.Visibility(skin_groups=1 << 2))
+        self.assertEqual(a.tolist(), [1.0, 1.0])
+
+    def test_a_toggled_splat_is_hidden_with_its_toggle(self):
+        d, n, f, p, c = splats(2)
+        f[:] = codec.toggle_flags(np.zeros(2, np.uint8), np.array([0, 2]))
+        m = model(); s = reference.Setting.captured(m)
+        _M, a = reference.multiplier(d, n, f, p, c, m, s, reference.Visibility(hidden_toggles=0b10))
+        self.assertEqual(a.tolist(), [1.0, 0.0])
+        _M, a = reference.multiplier(d, n, f, p, c, m, s, reference.Visibility(hidden_toggles=0b01))
+        self.assertEqual(a.tolist(), [1.0, 1.0])
 
 
 if __name__ == "__main__":
     unittest.main()
 ```
+
+(`test_a_lamp_tint_colours_lit_bulbs_and_the_cove` is R1d's amendment A1, `test_the_moon_lights_like_the_sun_through_the_same_window` its A5, the two visibility tests R1c's A2; the two sky-bounce tests are this revision's. The sky-bounce test's tolerance is 1e-9 because the synthetic cove bounce is a float32 0.1.)
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -1483,19 +3125,20 @@ Expected: FAIL, no module `relight.reference`.
 ```python
 """The normative relight multiplier (the plan's section "The multiplier"), in numpy.
 
-The browser's GPU kernel (plan R1b) must match this within the codec's precision; the test
-vectors written by `python -m relight check` hold both inputs and expected outputs. The sun's
-visibility is the window volume march of windows.sun_visibility (Task 3 as built), and the sun's
-bounce reads each window's baked sunlit-area table (Task 4) bilinearly (amended 3 October)."""
+The browser's GPU kernel (plan R1b) must match this within the codec's precision; the test vectors written by
+`python -m relight check` hold both inputs and expected outputs. Each sky body's direct light (the Sun's and the Moon's)
+is the window volume march of windows.sun_visibility (Task 3 as built). Their bounce is the factored sky-body basis of
+sunbounce.py (Task 4 as built): per window the exact entering power P_w of the 56,448 patch rays times the smooth
+response R_w of K basis volumes on the 1 m grid, mixed by the 4-degree coefficient table, resampled onto the 0.5 m
+probes and evaluated there exactly as the nine sources' bounce is (the browser folds it into the scenario volume)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from . import codec
-from .probes import sun_bounce_weights_from_area
-from .windows import MIN_DOWN, horizon_at, sun_area_at, sun_az_el, sun_visibility
+from . import codec, sunbounce
+from .windows import sun_az_el, sun_visibility
 from .windows import fresnel_at as window_fresnel_at
 
 LUMW = np.array([0.2126, 0.7152, 0.0722])
@@ -1503,7 +3146,20 @@ WINDOWS = ("W1", "W2", "W3", "W4", "W5")
 LAMP_GROUPS = ("cove", "ch_end", "ch_centre", "dome")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
+class SkyBounce:
+    """The sky bodies' bounce basis as the package carries it (sunbounce.py; the contract's "The sky bodies' bounce")."""
+    table: sunbounce.Table          # coeffs (rows, columns, windows, K) float32; az0, el0, step (degrees)
+    basis: np.ndarray               # (K, M1, 3, 6) float16: the unit-field volumes on the basis grid
+    origin: np.ndarray              # (3,) the basis grid's corner (model frame)
+    spacing: float                  # 1.0 m
+    shape: tuple                    # (22, 11, 7)
+    valid: np.ndarray               # (M1,) bool
+    patches: sunbounce.Patches      # the patch rays (16 n, 3), normals (n, 3) and areas (n,), float32
+    floor_mean: np.ndarray          # (K, 3) float32: each volume's mean +z irradiance over the floor light maps
+
+
+@dataclass(frozen=True, eq=False)
 class Model:
     capture_w: np.ndarray        # (9,)
     capture_c: np.ndarray        # (9, 3)
@@ -1513,13 +3169,10 @@ class Model:
     probe_origin: np.ndarray     # (3,)
     probe_spacing: float
     probe_shape: tuple
-    volumes: dict                # name -> windows.WindowVolume, in window order W1..W5; empty = no sun
+    volumes: dict                # name -> windows.WindowVolume, in window order W1..W5; empty = no sky-body light
     fresnel: np.ndarray          # (101,)
-    sun_beta: float
-    sky_flux: np.ndarray         # (5,)
     horizons: dict = field(default_factory=dict)   # name -> (360,) horizon elevation in degrees by compass azimuth
-    sun_area: dict = field(default_factory=dict)   # name -> (rows, columns) float32 table (windows.sun_area_table)
-    sun_area_origin: tuple = (0.0, 0.0)            # (azimuth0, elevation0) in degrees of the tables' node (0, 0)
+    sky: SkyBounce | None = None                  # the sky bodies' bounce; None in synthetic models without it
 
 
 @dataclass(frozen=True)
@@ -1530,7 +3183,10 @@ class Setting:
     lamp_levels: dict            # group -> level 0..1
     sun_dir: np.ndarray | None   # (3,) toward the sun, model frame
     sun_rgb: np.ndarray          # (3,)
-    emitter_boost: float = 1.0   # 1 at the captured setting; 4 for the proof's night with the lamps lit
+    emitter_boost: float = 1.0   # 1 in every setting (R1d draws crisp bulbs instead of boosting the bulb splats)
+    lamp_tints: dict = field(default_factory=lambda: {g: (1.0, 1.0, 1.0) for g in LAMP_GROUPS})   # group -> RGB tint
+    moon_dir: np.ndarray | None = None   # (3,) toward the Moon, model frame (amendment A5)
+    moon_rgb: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
     @staticmethod
     def captured(model: Model) -> "Setting":
@@ -1548,6 +3204,16 @@ class Setting:
 
     def with_emitter_boost(self, boost: float) -> "Setting":
         return replace(self, emitter_boost=boost)
+
+
+@dataclass(frozen=True)
+class Visibility:
+    """What the browser hides (R1c, amendment A2): wall groups drawn as skins (bit g) and hidden toggles (bit t - 1)."""
+    skin_groups: int = 0
+    hidden_toggles: int = 0
+
+
+NO_VISIBILITY = Visibility()
 
 
 def trilinear(model: Model, pos):
@@ -1585,53 +3251,87 @@ def smoothstep(a, b, x):
 
 
 def fresnel_at(model: Model, s) -> float:
-    """The glass transmission for the sun: windows.fresnel_at at the sun in float32, as windows.sun_visibility takes it."""
+    """The glass transmission for a sky body: windows.fresnel_at at its direction in float32, as sun_visibility takes it."""
     return window_fresnel_at(model.fresnel, np.asarray(s, np.float32))
 
 
-def sunlit_glass_area(model: Model, s) -> np.ndarray:
-    """(5,): each window's sunlit glass area times the cosine to the wall (m2): its baked table interpolated bilinearly
-    (windows.sun_area_at) at the sun's compass azimuth and elevation, 0 while the sun does not face the wall or stands at
-    or below the window's horizon, and 0 for a window without a table. The sun is taken in float32."""
+def sky_bodies(setting: Setting) -> list:
+    """The setting's sky bodies that have a direction, as (direction, RGB): the Sun, then the Moon."""
+    return [(np.asarray(d, np.float64), np.asarray(rgb, np.float64))
+            for d, rgb in ((setting.sun_dir, setting.sun_rgb), (setting.moon_dir, setting.moon_rgb)) if d is not None]
+
+
+def window_powers(model: Model, s) -> np.ndarray:
+    """P_w (windows,) for a sky body toward s: sunbounce.window_power at the float32 direction, each window gated by its
+    horizon; zeros while the body is behind the wall."""
+    names = [n for n in WINDOWS if n in model.volumes]
+    return sunbounce.window_power([model.volumes[n] for n in names], [model.horizons[n] for n in names], model.fresnel,
+                                  model.sky.patches, np.asarray(s, np.float32))
+
+
+def body_coefficients(model: Model, s) -> np.ndarray:
+    """(K,) float64: the basis volumes' weights for a white unit body toward s (sunbounce.coefficients with the exact
+    powers, at the body's azimuth and elevation from its float32 direction)."""
     s32 = np.asarray(s, np.float32)
-    out = np.zeros(len(WINDOWS))
-    if not float(s32[1]) < -MIN_DOWN:
-        return out
-    az0, el0 = model.sun_area_origin
-    for w, name in enumerate(WINDOWS):
-        vol, table = model.volumes.get(name), model.sun_area.get(name)
-        if vol is None or table is None:
-            continue
-        az, el = sun_az_el(s32, vol.x_bearing)
-        if el > horizon_at(model.horizons[name], az):
-            out[w] = sun_area_at(table, az0, el0, az, el)
-    return out
+    first = next(iter(model.volumes.values()))
+    az, el = sun_az_el(s32, first.x_bearing)
+    return sunbounce.coefficients(model.sky.table, window_powers(model, s32), az, el)
 
 
-def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: Setting):
+def probe_points(model: Model) -> np.ndarray:
+    """(M, 3): the probe grid's points, probe (ix ny + iy) nz + iz at origin + spacing (ix, iy, iz)."""
+    nx, ny, nz = model.probe_shape
+    ix, iy, iz = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing="ij")
+    return np.asarray(model.probe_origin, np.float64) + model.probe_spacing * np.stack([ix.ravel(), iy.ravel(), iz.ravel()], 1)
+
+
+def to_probes(model: Model, values) -> np.ndarray:
+    """(M, 3, 6): basis-grid values (M1, 3, 6) at the probes, trilinearly (sunbounce.trilinear_matrix: the cell clamped
+    into the basis grid and the position into the cell, invalid corners dropped and the rest renormalised, none when
+    their weights sum to at most 1e-6)."""
+    sky = model.sky
+    W = sunbounce.trilinear_matrix(sky.origin, sky.spacing, sky.shape, sky.valid, probe_points(model))
+    v = np.asarray(values, np.float64)
+    return (W @ v.reshape(len(v), 18)).reshape(-1, 3, 6)
+
+
+def sky_cubes(model: Model, bodies) -> np.ndarray:
+    """(M, 3, 6) float64: the sky bodies' bounce at the probes, as the browser folds it into the scenario volume: on the
+    basis grid S1 = sum over the bodies of RGB x sum_k c_k basis_k (float16 widened, float64 sums), then to_probes."""
+    S1 = np.zeros(model.sky.basis.shape[1:], np.float64)
+    for s, rgb in bodies:
+        S1 += sunbounce.bounce(model.sky.basis, body_coefficients(model, s)) * np.asarray(rgb, np.float64)[None, :, None]
+    return to_probes(model, S1)
+
+
+def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: Setting, visibility: Visibility = NO_VISIBILITY):
     direct = np.asarray(direct, np.float64)
     n = np.asarray(normals, np.float64)
     flags = np.asarray(flags, np.uint8)
     C = np.asarray(colour_lin, np.float64)
+    P = np.asarray(pos, np.float64)
     cls = flags & codec.CLASS_MASK
     iso = (flags & codec.FLAG_ISO) > 0
-    idx, wts = trilinear(model, pos)
+    idx, wts = trilinear(model, P)
     cubes = (model.probes[idx].astype(np.float64) * wts[:, :, None, None, None]).sum(1)   # (N, 9, 3, 6)
     I = cube_eval(cubes, n, iso)                                                          # (N, 9, 3)
     light = direct[:, :, None] + I
     Ecap = (light * (model.capture_w[:, None] * model.capture_c)[None]).sum(1)
     E = (light * setting.weights[None]).sum(1)
-    if setting.sun_dir is not None and model.volumes:
-        s = np.asarray(setting.sun_dir, np.float64)
+    bodies = sky_bodies(setting)
+    if bodies and model.volumes:
         reach = (flags & codec.FLAG_SUN) > 0
-        vis = np.zeros(len(n))
-        if reach.any():
-            # the window volume march, the owner's horizon gate and the glass transmission (all float32 inside)
-            vis[reach] = sun_visibility(model.volumes, model.horizons, model.fresnel, np.asarray(pos, np.float64)[reach], s)
-        cosv = np.where(iso, 0.25, np.clip(n @ s, 0, None))
-        E = E + (vis * cosv)[:, None] * setting.sun_rgb[None]
-        b = sun_bounce_weights_from_area(sunlit_glass_area(model, s) * fresnel_at(model, s), model.sky_flux, model.sun_beta)
-        E = E + (I[:, :5, :] * b[None, :, None]).sum(1) * setting.sun_rgb[None]
+        for s, rgb in bodies:
+            # the body's direct light: the window volume march, the owner's horizon gate and the glass (float32 inside)
+            vis = np.zeros(len(n))
+            if reach.any():
+                vis[reach] = sun_visibility(model.volumes, model.horizons, model.fresnel, P[reach], s)
+            cosv = np.where(iso, 0.25, np.clip(n @ s, 0, None))
+            E = E + (vis * cosv)[:, None] * rgb[None]
+        if model.sky is not None:
+            # both bodies' bounce: the basis at the probes, then the same trilinear lookup and ambient cube as I[k]
+            sky = (sky_cubes(model, bodies)[idx] * wts[:, :, None, None]).sum(1)          # (N, 3, 6)
+            E = E + cube_eval(sky[:, None], n, iso)[:, 0]
     L = C @ LUMW
     M = E / np.maximum(Ecap, 1e-4)
     emb = cls == codec.CLASS_EMBRASURE
@@ -1650,20 +3350,28 @@ def multiplier(direct, normals, flags, pos, colour_lin, model: Model, setting: S
         c_fx = cls[fx]
         bulb = np.isin(c_fx, [codec.CLASS_CH_EMITTER, codec.CLASS_DOME_EMITTER])[:, None]
         cove = (c_fx == codec.CLASS_COVE)[:, None]
-        lit = np.where(bulb, (1.0 + (setting.emitter_boost - 1.0) * smoothstep(0.45, 0.9, L[fx]))[:, None], np.where(cove, 1.0, M[fx]))
+        tint = np.array([setting.lamp_tints[g] for g in group[fx]], np.float64)
+        lit = np.where(bulb, (1.0 + (setting.emitter_boost - 1.0) * smoothstep(0.45, 0.9, L[fx]))[:, None] * tint,
+                       np.where(cove, tint, M[fx]))
         chroma = np.clip(C[fx] / np.maximum(L[fx], 1e-4)[:, None], 0.5, 2.0) ** 0.4
         A = np.where((c_fx == codec.CLASS_DOME_EMITTER)[:, None], 0.5, 0.35) * chroma
         A = np.where(cove, 0.3, A)
         unlit = A * E[fx] / np.maximum(C[fx], 1e-4)
         M[fx] = np.clip(level * lit + (1 - level) * unlit, 0.0, 8.0)
-    alpha = np.where(cls == codec.CLASS_HIDDEN, 0.0, 1.0)
+    group = (flags >> codec.SKIN_GROUP_SHIFT).astype(np.int64)
+    toggle = (flags >> codec.TOGGLE_SHIFT).astype(np.int64)
+    covered = (cls == codec.CLASS_SKIN) & (((visibility.skin_groups >> group) & 1) == 1)
+    toggled = (cls != codec.CLASS_SKIN) & (toggle > 0) & (((visibility.hidden_toggles >> np.maximum(toggle - 1, 0)) & 1) == 1)
+    alpha = np.where((cls == codec.CLASS_HIDDEN) | covered | toggled, 0.0, 1.0)
     return M, alpha
 ```
+
+(`multiplier`'s alpha lines are R1c's amendment A2, the lamp tint R1d's A1, the loop over the sky bodies R1d's A5; the sky bounce is Task 4's contract. Verified on 7 October against the committed `sunbounce.py` and `windows.py` and Task 4c's `codec.py`: these 12 tests, R1c A1's 2 and Step 5's 6 pass.)
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_reference -v`
-Expected: PASS, 7 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Write the records and transfer, with tests**
 
@@ -1706,11 +3414,30 @@ class Transfer(unittest.TestCase):
         self.assertAlmostEqual(float(out[0, 0]), 2.0, places=6)
 
 
+class Covers(unittest.TestCase):
+    COVERS = {"ids": np.array(["door-w2"]), "groups": np.array([0], np.int8),
+              "frames": np.array([[0.0, 0, 0, 1, 0, 0, 0, 0, -1, 0, -1, 0]]),     # origin, u +x, v -z, normal -y
+              "cell": np.float64(0.05), "shapes": np.array([[2, 2]]), "offsets": np.array([0]),
+              "wmin": np.array([0.0, 0.0, 0.0, np.nan], np.float32), "wmax": np.array([0.01, 0.01, 0.01, np.nan], np.float32)}
+
+    def test_splats_in_the_envelope_are_covered_in_their_group(self):
+        P = np.array([[0.02, -0.02, -0.02], [0.02, -0.20, -0.02], [0.07, -0.02, -0.07], [0.02, 0.05, -0.02]])
+        self.assertEqual(records.cover_test(P, np.full(4, 0.002), self.COVERS).tolist(), [0, -1, -1, 0])
+
+    def test_boxes_keep_objects_as_splats_and_toggle_them(self):
+        P = np.array([[0.02, -0.02, -0.02], [0.03, -0.02, -0.03], [5.0, 5.0, 5.0]])
+        box = (np.array([0.025, -0.1, -0.05]), np.array([0.05, 0.0, 0.0]))
+        covered = records.apply_covers(np.zeros(3, np.uint8), P, np.full(3, 0.002), self.COVERS, [box])
+        self.assertEqual(codec.skin_group_of(covered).tolist(), [0, -1, -1])
+        toggled = records.apply_toggles(covered, P, [(box[0], box[1], 1)])
+        self.assertEqual(codec.toggle_of(toggled).tolist(), [0, 1, 0])
+
+
 if __name__ == "__main__":
     unittest.main()
 ```
 
-`tools/relight/relight/records.py`:
+`tools/relight/relight/records.py` (the covers and toggles are R1c's amendment A3):
 
 ```python
 """Per-splat records: the finest level from the light model's tables, coarser levels by transfer."""
@@ -1746,60 +3473,168 @@ def transfer(src_pos, src_values, dst_pos, k=8):
     w = 1.0 / np.maximum(d, 1e-4)
     w /= w.sum(1, keepdims=True)
     return (v[i] * w[..., None]).sum(1)
+
+
+# Covers and toggles (R1c, amendment A3). tools/skins (R1c Task 5) writes, in its geometry folder, covers.npz (each skin's
+# frame and its relief envelope on 5 cm cells: wmin, wmax along the normal, NaN where it covers nothing) and toggles.json
+# (axis-aligned E57 boxes: the toggleable objects, and the objects that must stay splats).
+COVER_BELOW = 0.10      # a splat up to 10 cm behind the envelope's floor (wmin) is covered,
+COVER_ABOVE = 0.03      # and up to 3 cm in front of its top (wmax),
+COVER_SIGMA = 0.05      # plus twice its own largest scale, at most 5 cm.
+
+
+def cover_test(pos, sigma_max, covers):
+    """Each splat's wall group if a skin's envelope holds it (the cell under its centre, its depth within
+    [wmin - 0.10, wmax + 0.03 + min(2 sigma_max, 0.05)]), else -1. covers: covers.npz as a dict."""
+    P = np.asarray(pos, np.float64)
+    smax = np.asarray(sigma_max, np.float64)
+    out = np.full(len(P), -1, np.int64)
+    cell = float(covers["cell"])
+    wmin_all, wmax_all = np.asarray(covers["wmin"], np.float64), np.asarray(covers["wmax"], np.float64)
+    for s in range(len(covers["ids"])):
+        fr = np.asarray(covers["frames"][s], np.float64)
+        o, u, v, n = fr[0:3], fr[3:6], fr[6:9], fr[9:12]
+        rows, cols = (int(x) for x in covers["shapes"][s])
+        off = int(covers["offsets"][s])
+        D = P - o
+        a, b, w = D @ u, D @ v, D @ n
+        c = np.floor(a / cell).astype(np.int64)
+        r = np.floor(b / cell).astype(np.int64)
+        inside = (c >= 0) & (c < cols) & (r >= 0) & (r < rows) & (out < 0)
+        if not inside.any():
+            continue
+        idx = off + r[inside] * cols + c[inside]
+        lo = wmin_all[idx] - COVER_BELOW
+        hi = wmax_all[idx] + COVER_ABOVE + np.minimum(2 * smax[inside], COVER_SIGMA)
+        ok = np.isfinite(lo) & np.isfinite(hi) & (w[inside] >= lo) & (w[inside] <= hi)
+        out[np.flatnonzero(inside)[ok]] = int(covers["groups"][s])
+    return out
+
+
+def in_boxes(pos, boxes):
+    """Index of the first axis-aligned box (lo, hi) holding each splat, else -1."""
+    P = np.asarray(pos, np.float64)
+    out = np.full(len(P), -1, np.int64)
+    for k, (lo, hi) in enumerate(boxes):
+        hit = np.all((P > np.asarray(lo)) & (P < np.asarray(hi)), 1) & (out < 0)
+        out[hit] = k
+    return out
+
+
+def apply_covers(flags, pos, sigma_max, covers, keep_boxes):
+    """Class 7 for every interior splat a skin's envelope holds, unless a keep or toggle box holds it (the object stays a splat)."""
+    group = cover_test(pos, sigma_max, covers)
+    target = (group >= 0) & (in_boxes(pos, keep_boxes) < 0)
+    out = np.asarray(flags, np.uint8).copy()
+    out[target] = codec.cover_flags(out[target], group[target])
+    return out
+
+
+def apply_toggles(flags, pos, toggle_boxes):
+    """toggle_boxes: [(lo, hi, toggle)]: the toggle of the first box holding each splat (class 7 excepted)."""
+    k = in_boxes(pos, [(lo, hi) for lo, hi, _t in toggle_boxes])
+    out = np.asarray(flags, np.uint8).copy()
+    hit = k >= 0
+    if hit.any():
+        toggles = np.array([t for _lo, _hi, t in toggle_boxes], np.int64)
+        out[hit] = codec.toggle_flags(out[hit], toggles[k[hit]])
+    return out
+
+
+def load_skin_inputs(geometry_dir):
+    """tools/skins' geometry (R1c Task 5): covers.npz, and toggles.json's toggle boxes and keep boxes."""
+    import json, os
+    with np.load(os.path.join(geometry_dir, "covers.npz")) as z:
+        covers = {k: z[k] for k in z.files}
+    with open(os.path.join(geometry_dir, "toggles.json"), encoding="utf-8") as f:
+        t = json.load(f)
+    toggles = [(np.asarray(b["lo"], np.float64), np.asarray(b["hi"], np.float64), int(b["bit"])) for b in t["toggles"]]
+    keep = [(np.asarray(b["lo"], np.float64), np.asarray(b["hi"], np.float64)) for b in t["keep"]] + [(lo, hi) for lo, hi, _t in toggles]
+    return covers, toggles, keep
 ```
 
 Run: `cd D:/claude/real-hall/repo/tools/relight && C:/Python313/python.exe -m unittest tests.test_records -v`
-Expected: PASS, 4 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 6: Build the records and the package**
 
-`tools/relight/relight/package.py` writes every file of `docs/engineering/relight-package.md` into `cfg.paths["out"]`: per served tile the gzip of its records (`gzip.compress(data, compresslevel=9, mtime=0)` so the bytes are deterministic), `probes.bin.gz` (the coarse cubes as `<f2` in `[probe][source][channel][face]` order), `probe-valid.bin.gz`, each window's volume as `windows/<id>.alpha.gz` (the gzip, compressed the same way, of `np.ascontiguousarray(vol.alpha).tobytes()`: `nx·ny·nz` bytes in x-major C order, from `windows.npz` through `windows_volumes(cfg)`), the sunlit-area tables as `windows/sun-area.bin.gz` (the gzip of `np.stack([z[name] for name in ("W1", "W2", "W3", "W4", "W5")]).astype("<f4").tobytes()` with `z = np.load("<work>/sun-area.npz")`) (amended 3 October: these replace the ten stencil PNGs), the three floor light PNGs (RGBA8 log codes per `encoding.floor`), and `manifest.json` with every contract field and a SHA-256 and size per file (`json.dumps(..., indent=1, sort_keys=True, allow_nan=False)`, so a NaN or infinity fails the build instead of writing a file browsers cannot parse). Every path the manifest names (the `files` keys, `tiles[].file`, `probes.file` and `validFile`, `windows[].volume`, `sun.area.file`, `floor.files`) is built with `/` (`posixpath.join` or `PurePosixPath`), never `os.path`, whose `\` on Windows would make R1b refuse the whole package. `capture.gamma` is written as exactly `1` after asserting that the fitted gamma (`fit.json`'s `gamma`, 0.9999999990000007 in the proof: the optimiser's bound) is within 1e-6 of 1; otherwise the build fails, because the kernel has no γ term (R1b accepts a γ within 1e-6 of 1 and refuses any other).
+**Only exact, hash-checked files are packaged** (the owner's rule, 7 October). `package.py` reads each work artifact by its exact name, never a glob (never `work/sun-bounce*`), and only when its SHA-256 equals the one its evidence records (Task 4c) and that evidence passed:
+
+```python
+def verified(work, evidence, name, evidence_name):
+    """The exact work artifact `name`, refused unless its evidence JSON passed and records this file's SHA-256 (Task 4c)."""
+    import hashlib, json, os
+    path = os.path.join(work, name)
+    with open(os.path.join(evidence, evidence_name), encoding="utf-8") as f:
+        ev = json.load(f)
+    record = ev.get("artifact")
+    if ev.get("pass") is False or not record:
+        raise ValueError(f"{evidence_name} records no passing artifact for {name}")
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    if h.hexdigest() != record["sha256"] or os.path.getsize(path) != record["bytes"]:
+        raise ValueError(f"{path} is not the artifact {evidence_name} records ({record['sha256']})")
+    return path, record["sha256"]
+```
+
+The artifacts and their evidence: `windows.npz` (`windows.json`), `probes-coarse.npz` (`probes-check.json`), `sun-bounce.npz` (`sun-bounce-check.json`), `floor-light.npz` (`floor-light.json`); `fit.json` and `fit_state.npz` are checked against `<evidence>/refit.json`'s `copied` hashes, and `fit.json`'s `model.name` must be `refit` (Task 4b promoted it; the bake never packages the proof fit). The manifest's `evidence.artifacts` records `{ name: sha256 }` for every file read.
+
+`tools/relight/relight/package.py` writes every file of `docs/engineering/relight-package.md` into the package folder (`args.out` when given, amended for R1c; otherwise `cfg.paths["out"]`): per served tile the gzip of its records (`gzip.compress(data, compresslevel=9, mtime=0)` so the bytes are deterministic), `probes.bin.gz` (the coarse cubes as `<f2` in `[probe][source][channel][face]` order), `probe-valid.bin.gz`, each window's volume as `windows/<id>.alpha.gz` (the gzip, compressed the same way, of `np.ascontiguousarray(vol.alpha).tobytes()`: `nx·ny·nz` bytes in x-major C order, from `windows.npz` through `windows_volumes(cfg)`), the sky bodies' bounce from `sun-bounce.npz` (amended 7 October; these replace the sunlit-area table): `sky/basis.bin.gz` (`basis` as `<f2`, `[k][probe][channel][face]`, K × 1694 × 3 × 6), `sky/basis-valid.bin.gz` (`valid`, one byte per 1 m probe), `sky/coefficients.bin.gz` (`coeffs` as `<f4`, `[row][column][window][k]`, 18 × 79 × 5 × K), `sky/patch-rays.bin.gz` (`patchRays` as `<f4`, `[ray][x, y, z]`, 56,448 × 3, sub-sample-major), `sky/patch-normals.bin.gz` (`patchNormal`, `<f4`, 3528 × 3) and `sky/patch-areas.bin.gz` (`patchArea`, `<f4`, 3528), each compressed the same way; the three floor light PNGs (RGBA8 log codes per `encoding.floor`), and `manifest.json` with every contract field and a SHA-256 and size per file (`json.dumps(..., indent=1, sort_keys=True, allow_nan=False)`, so a NaN or infinity fails the build instead of writing a file browsers cannot parse). `sun-bounce.npz`'s `needed`, `real` and `nodePower` are bake diagnostics and are not packaged. Every path the manifest names (the `files` keys, `tiles[].file`, `probes.file` and `validFile`, `windows[].volume`, the `sky` files, `floor.files`, `skins.entries[].file`) is built with `/` (`posixpath.join` or `PurePosixPath`), never `os.path`, whose `\` on Windows would make R1b refuse the whole package. `capture.gamma` is written as exactly `1` after asserting that the fitted gamma (`fit.json`'s `gamma`) is within 1e-6 of 1; otherwise the build fails, because the kernel has no γ term (R1b accepts a γ within 1e-6 of 1 and refuses any other).
+
+(Amended for R1c.) With `--skin-light <dir>` and `--skin-package <dir>`, `package.write` also takes `section, files = skinlight.skins_section(skin_light_dir, skin_package_dir, groups)`, where `groups` is `["door", "window", "end_xmin", "end_xmax", "ceiling"]`. It writes each of `files` (`skins/<id>.light.gz`, compressed with `mtime = 0`) with a SHA-256 and size in `files`, and adds the manifest fields `skins: section` and `visibility: skinlight.VISIBILITY`. Without them, neither field is written. The skin-light folder is read only when `<evidence>/skin-light.json`'s `artifact` matches its `index.json` and each `records` hash matches its file. The manifest's `evidence.build` records `{ skins, skinLight, skinPackage }` (the three arguments, or null), so check 4 can rebuild exactly.
 
 Register a `records` command that:
 
-1. Loads the Task 2 tables (memory-mapped) and computes per finest-level splat, in chunks: `direct` (N, 9) from the proof's `04_fit.direct(store, idx)` (ten bases; keep the columns W1..W5, cove, ch_end, ch_centre, dome in that order and drop `sun_cap`, whose fitted weight is 0), with the embrasure room-side and back-face light that `03c`/`03d` produce folded into the window columns exactly as `04_fit.direct` already combines them for class 1; normals `bases_n` (e57 frame); `iso` from `bases_iso`; exterior and pane haze from `05_relight.exterior_masks`; the cove strip from `05_relight.cove_strip`; `fixture` = `geom_chand_id >= 0` with class 0; the centre chandelier's id as `03_bases.py` assigns it to `E_ch` column 1; and `reach` = `windows.sun_reach(vols, P, cfg.room["site"]["latitude"])` for classes 0 and 1 only, False for every other class (amended 3 October: the analytic, conservative flag of Task 3 as built, true wherever some real sun can light the splat through some window; `vols` from `windows_volumes(cfg)`; in chunks of `windows.CHUNK`; numpy, no GPU lock). On the finest level it marks 82.9% of the splats (Task 3's Phase B, `D:/claude/relight/grand-hall/evidence/sun-check.json`, `sunReach.flaggedShare`).
+1. Loads the Task 2 tables (memory-mapped) and computes per finest-level splat, in chunks: `direct` (N, 9) from the proof's `04_fit.direct(store, idx)` (ten bases; keep the columns W1..W5, cove, ch_end, ch_centre, dome in that order and drop `sun_cap`, whose fitted weight is at its bound), with the embrasure room-side and back-face light that `03c`/`03d` produce folded into the window columns exactly as `04_fit.direct` already combines them for class 1; normals `bases_n` (e57 frame); `iso` from `bases_iso`; exterior and pane haze from `05_relight.exterior_masks`; the cove strip from `05_relight.cove_strip`; `fixture` = `geom_chand_id >= 0` with class 0; the centre chandelier's id as `03_bases.py` assigns it to `E_ch` column 1; and `reach` = `windows.sun_reach(vols, P, cfg.room["site"]["latitude"])` for classes 0 and 1 only, False for every other class (the analytic, conservative flag of Task 3 as built, whose band Task 4 widened to the Moon's: true wherever some real sun or moon can light the splat through some window; `vols` from `windows_volumes(cfg)[0]`; in chunks of `windows.CHUNK`; numpy, no GPU lock). On the finest level it marks 83.7% of the splats (`<evidence>/sun-check.json`, `sunReach.flaggedShare` 0.83674 after Task 4).
 2. Splits them per finest tile with `splats_tile` (the order of `cfg.room["finestTiles"]`); `ranges = [codec.source_range(direct[:, k]) for k in range(9)]` over all finest splats.
-3. For each of the other 12 served tiles (every `*.sog` in `cfg.paths["splats"]` not in `finestTiles`): decode the centres with `decode_tile`, convert them to e57 with `common.json_to_e57`, then transfer `direct` (k = `cfg.room["transferNeighbours"]`, 8) and, with k = 1, the normals, class, iso, chandelier id, cove, fixture and pane values; compute `reach` with `windows.sun_reach` at the coarse splats' own e57 positions for their transferred classes 0 and 1 (amended 3 October: a transferred flag would not be conservative at the coarse splat's own position); recompute the flags with `flags_for`.
-4. Writes the package with `package.write`, with `site.north = common.sun_vec_e57(0, 0)`, `site.east = common.sun_vec_e57(90, 0)` and `site.up = [0, 0, 1]` (so the browser's sun matches the proof's); each window, in order W1..W5, as `{ id, frame: windows.volume_arrays(vol)[1].tolist(), volume: "windows/<id>.alpha.gz", horizon: [float(v) for v in horizons[id]] }` from `windows.npz` (the frame float64 in `FRAME_FIELDS` order; assert every window's `res` is the same and that `site.north` equals `(cos x_bearing, sin x_bearing, 0)` within 1e-9); `sun.area = { file: "windows/sun-area.bin.gz", azimuth0: int(z["azimuth0"]), elevation0: int(z["elevation0"]), size: [columns, rows] }` from `<work>/sun-area.npz` (assert `azimuth0` and `elevation0` are whole numbers); and `evidence.sunCheck` (`sun-check.json`'s `pass`, `threshold` and per-direction IoU and mean |ΔT|) and `evidence.sunBounce` (`sun-bounce.json`). The manifest's `tiles` list holds each tile's name, the SHA-256 of the `.sog` file, its level (from the bundle file: 5 for the finest, `null` for `env.sog`), count, file, SHA-256 and size.
+3. For each of the other 12 served tiles (every `*.sog` in `cfg.paths["splats"]` not in `finestTiles`): decode the centres with `decode_tile`, convert them to e57 with `common.json_to_e57`, then transfer `direct` (k = `cfg.room["transferNeighbours"]`, 8) and, with k = 1, the normals, class, iso, chandelier id, cove, fixture and pane values; compute `reach` with `windows.sun_reach` at the coarse splats' own e57 positions for their transferred classes 0 and 1 (a transferred flag would not be conservative at the coarse splat's own position); recompute the flags with `flags_for`.
+4a. (Amended for R1c.) With `--skins <tools/skins geometry folder>`: `covers, toggles, keep = records.load_skin_inputs(folder)`, then on every level, after its flags are computed, `flags = records.apply_toggles(records.apply_covers(flags, P_e57, sigma_max, covers, keep), P_e57, toggles)`, each splat at its own e57 position. `sigma_max` is the splat's largest scale: on the finest level the row maximum of `npy/splats_scl.npy` (float16 metres), on the others the row maximum of `decode_tile`'s `scales` (the codebook already exponentiated, `tools/xgrids-lcc2/scripts/sog-floor-census.py`). Print each level's covered splats per wall group and toggled splats per toggle. Without `--skins` nothing changes.
+4. Writes the package with `package.write` (into `args.out` when given; amended for R1c), with `site.north = common.sun_vec_e57(0, 0)`, `site.east = common.sun_vec_e57(90, 0)` and `site.up = [0, 0, 1]` (so the browser's sun and moon match the bake's); each window, in order W1..W5, as `{ id, frame: windows.volume_arrays(vol)[1].tolist(), volume: "windows/<id>.alpha.gz", horizon: [float(v) for v in horizons[id]] }` from `windows.npz` (the frame float64 in `FRAME_FIELDS` order; assert every window's `res` is the same and that `site.north` equals `(cos x_bearing, sin x_bearing, 0)` within 1e-9); `sun = { fresnel: [101] }`; the `sky` section from `sun-bounce.npz` (`k` = `basis.shape[0]`, read from the data, never a constant; `grid: { origin: gridOrigin, spacing: gridSpacing, shape: gridShape }`, `basis`, `valid`, `table: { azimuth0, elevation0, step, size: [columns, rows], file }`, `patches: { count, subsamples: 16, rays, normals, areas }`, `floorMean` (K × 3), `bodies: ["sun", "moon"]`; assert `azimuth0`, `elevation0` and `step` are whole numbers, `coeffs.shape == (rows, columns, 5, k)`, `patchRays` holds 16 × `count` rays, and the grid's origin equals the probes' origin); the `capture` from Task 4b's `fit.json` (weights and colours selected by name in the source order, `sun_cap` dropped by name, never by position; `daylightColour` its W1 colour); the `lamps` section: for each group `{ source, colour, type }`, `colour` the group's lamp/daylight ratio at full level (`capture.colours[source] / capture.daylightColour`, per channel: the refit's measured-and-fitted colour, never a constant), `type` the installer's record (`cove` `"led-tape"`, `dome` `"led-spot"`, `ch_end` and `ch_centre` `"candle-unconfirmed"`; information only: how a lamp's colour changes as it dims is a setting, R1b's `lampTints`, never a package value), plus `measuredRatio` (`lamp_daylight_ratio.json`) and `refit` (`perBulbIntensity`, `lampRatio`, the bulb table's SHA-256, from `evidence/refit.json`); `evidence.sunCheck` (`sun-check.json`'s `pass`, `threshold` and per-direction IoU and mean |ΔT|), `evidence.skyBounce` (`sun-bounce-check.json`'s `K`, `kRule`, the selection, check and strict draws' `worstBright` and `pooledMedian`, `pass`), `evidence.refit` (`refit.json`'s gates: residual ratio, lamp ratio, photo metrics) and `evidence.artifacts`. The manifest's `tiles` list holds each tile's name, the SHA-256 of the `.sog` file, its level (from the bundle file: 5 for the finest, `null` for `env.sog`), count, file, SHA-256 and size.
 
 Run: `C:/Python313/python.exe -m relight records --config config/grand-hall.json`
-Expected: `D:/claude/splats/trades-hall/grand-hall/relight/v1/` holds `manifest.json`, 24 `tiles/*.relight.gz`, `probes.bin.gz`, `probe-valid.bin.gz`, 5 window volumes (`windows/W1.alpha.gz` … `W5.alpha.gz`, 196,028 bytes in all: 54,129, 26,933, 38,117, 27,205 and 49,644, Task 3's Phase B), `windows/sun-area.bin.gz` and 3 floor maps; the tile counts sum to 11,487,038.
+Expected: `D:/claude/splats/trades-hall/grand-hall/relight/v1/` holds `manifest.json`, 24 `tiles/*.relight.gz`, `probes.bin.gz`, `probe-valid.bin.gz`, 5 window volumes (`windows/W1.alpha.gz` … `W5.alpha.gz`, 196,028 bytes in all: 54,129, 26,933, 38,117, 27,205 and 49,644, Task 3's Phase B), the six `sky/*.bin.gz` files (about 2.1 MB together at K 30) and 3 floor maps; the tile counts sum to 11,487,038; `manifest.json`'s `capture.weights` give `ch_centre / ch_end` the refit's lamp ratio.
 
 - [ ] **Step 7: Run the checks and write the test vectors**
 
-Register a `check` command that reads the package back from disk (never in-memory arrays) and writes `<evidence>/checks.json`. Its `reference.Model` comes from the package's files: each window through `windows.volume_from_arrays(id, np.frombuffer(gzip.decompress(<windows/<id>.alpha.gz>), np.uint8).reshape(nx, ny, nz), np.asarray(frame, np.float64))` with `nx, ny, nz` from the frame, the horizons and the glass table from the manifest, the area tables from `windows/sun-area.bin.gz` as float32 `(5, rows, columns)` and `sun_area_origin = (azimuth0, elevation0)` (amended 3 October).
+Register a `check` command that reads the package back from disk (never in-memory arrays; `--package <dir>` names the package, default `cfg.paths["out"]`, amended for R1c) and writes `<evidence>/checks.json`. Its `reference.Model` comes from the package's files: each window through `windows.volume_from_arrays(id, np.frombuffer(gzip.decompress(<windows/<id>.alpha.gz>), np.uint8).reshape(nx, ny, nz), np.asarray(frame, np.float64))` with `nx, ny, nz` from the frame, the horizons and the glass table from the manifest, and `sky` = `reference.SkyBounce(table=sunbounce.Table(coeffs, azimuth0, elevation0, step), basis, origin, spacing, shape, valid, patches=sunbounce.Patches(rays, normals, areas), floor_mean)` from the `sky` files and fields.
 
 1. **Captured identity:** for every tile, `reference.multiplier` at `Setting.captured(model)` gives |log2 M| ≤ 0.05 for at least 99.9% of non-hidden splats.
-2. **Proof regression:** for the finest level, `reference.multiplier` for the proof's `night` and `overcast_noon` settings (built from `05_relight.SCENARIOS` and `scenario_light`: window weights `W[w] × sky` with `col_sky`, lamp weights `house × WC`) against the proof's own `proofWork/mult/night.f16` and `overcast_noon.f16` (N × 4 float16, product order): median |Δlog2| ≤ 0.1 and 95th percentile ≤ 0.3 over interior splats (class 0, not in a chandelier). For `sunny_morning`: median ≤ 0.25.
+2. **Proof regression:** for the finest level, `reference.multiplier` for the proof's `night` and `overcast_noon` settings (built from `05_relight.SCENARIOS` and `scenario_light` on Task 4b's `fit_state.npz`: window weights `W[w] × sky` with `col_sky`, lamp weights `house × WC`) against the proof's own multipliers for the same fit, `<work>/mult/night.f16` and `overcast_noon.f16` (N × 4 float16, product order; Task 4b ran `05_relight.py` on the refit and promoted them): median |Δlog2| ≤ 0.1 and 95th percentile ≤ 0.3 over interior splats (class 0, not in a chandelier). For `sunny_morning` (`<work>/mult/sunny_morning.f16`; the proof's sun bounce is its full radiosity, the reference's the basis): median ≤ 0.25. The same numbers against the original proof's `proofWork/mult/*.f16` are recorded for information (they show what the refit changed); they are not gated.
 3. **Transfer:** for each coarser tile, the median |Δlog2| between a coarse splat's night multiplier and its nearest finest splat's ≤ 0.1.
-4. **Determinism:** writing the package a second time into a temporary folder on D: gives byte-identical files.
-5. **Sun area table** (amended 3 October): for 48 random real suns facing the wall (`_random_suns(common, 48, SPLAT_SEED + 1)`: the proof's own solar model at random days and times of 2026) and every window, the packaged table read with `windows.sun_area_at(table, azimuth0, elevation0, az, el)` (`az, el = windows.sun_az_el(np.asarray(s, np.float32), vol.x_bearing)`) against `windows.sunlit_area(vol, s)` on the packaged volume. Every pair must agree within `max(0.02 × direct, 0.0005)` m²: 2%, with a floor of 5 cm² where a grazing sun's area tends to zero. Every sun's four corner nodes must be `needed` (`windows.sun_area_nodes` at the site's latitude). Record `suns`, `pairs`, `worstRelative` (over pairs whose direct area is at least 0.025 m²), `worstAbsolute`, `outside` (suns with a corner outside `needed`; must be 0) and `pass`. The table is not gated by the horizon (the browser gates it), so the horizon does not enter this check.
+4. **Determinism:** writing the package a second time into a temporary folder on D: gives byte-identical files. With `--package`, the second write uses the arguments recorded in the package's `evidence.build` (amended for R1c).
+5. **The sky bodies' bounce through the package** (amended 7 October; it replaces the sunlit-area table's check): (a) every `sky` array read back from the package equals `sun-bounce.npz`'s (`basis`, `valid`, `coeffs`, `patchRays`, `patchNormal`, `patchArea`, `floorMean`: dtype, shape and bytes); (b) for 48 random real suns (`_random_suns(common, 48, SPLAT_SEED + 31)`) and 48 random real moons (`_random_moons(cfg, 48, SPLAT_SEED + 37)`), the bounce luminance at 20,000 random finest splats (seeded with `SPLAT_SEED`, isotropic receivers) through the package's path (`reference.sky_cubes` at the 0.5 m probes, then `reference.trilinear` and `cube_eval`) against `sunbounce.sun_bounce` read on the 1 m grid at the same splats (`sunbounce.trilinear_matrix`): where both are positive, median |Δlog2| ≤ 0.02 and 99th percentile ≤ 0.1, and where either is zero both are (the 0.5 m resampling adds no light and loses none). Record per body `directions`, `medianAbsDlog2`, `p99AbsDlog2`, `zeroDisagreements` and `pass`. A miss is reported with the numbers, never loosened.
 
-Then write `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` in exactly the shape of `RelightVectorsSchema` (schema `venviewer.relight-vectors.v1`) defined in plan R1b's Task 4, `docs/superpowers/plans/2026-09-29-restored-hall-r1b-relit-browser.md`: read that block and the helper schemas above it before writing. Every key is camelCase as there, so `reference.py`'s `sky_level`, `sky_colour`, `lamp_levels`, `emitter_boost`, `sun_dir` and `sun_rgb` become `skyLevel`, `skyColour`, `lampLevels`, `emitterBoost`, `sunDir` and `sunRgb`; the lamp group keys stay `cove`, `ch_end`, `ch_centre`, `dome`. Write it with `json.dumps(..., allow_nan=False)`. Its fields, every one required:
+Then write `packages/web/src/lib/relight/__fixtures__/relight-vectors.json` in exactly the shape of `RelightVectorsSchema` (schema `venviewer.relight-vectors.v1`) defined in plan R1b's Task 4, `docs/superpowers/plans/2026-09-29-restored-hall-r1b-relit-browser.md`: read that block and the helper schemas above it before writing. Every key is camelCase as there, so `reference.py`'s `sky_level`, `sky_colour`, `lamp_levels`, `emitter_boost`, `sun_dir`, `sun_rgb`, `moon_dir` and `moon_rgb` become `skyLevel`, `skyColour`, `lampLevels`, `emitterBoost`, `sunDir`, `sunRgb`, `moonDir` and `moonRgb`; the lamp group keys stay `cove`, `ch_end`, `ch_centre`, `dome`. Write it with `json.dumps(..., allow_nan=False)`. Its fields, every one required:
 - `schema`: `"venviewer.relight-vectors.v1"`; `sources`: the nine source names in record order.
 - `encoding`: `{ sources: [[lo, hi] × 9] }`, the manifest's.
-- `capture`: `{ weights: [9], colours: [[r, g, b] × 9], daylightColour: [r, g, b] }`, the manifest's.
+- `capture`: `{ weights: [9], colours: [[r, g, b] × 9], daylightColour: [r, g, b] }`, the manifest's (Task 4b's refit).
 - `site`: `{ north, east, up }`, the manifest's (`sun_vec_e57(0, 0)`, `sun_vec_e57(90, 0)`, `[0, 0, 1]`).
-- `sun`: `{ beta, skyFlux: [5], fresnel: [101] }`.
-- `windows` (amended 3 October; this was two planes with stencil PNGs): the five windows in order, each `{ id, frame: [21], alphaGz, horizon: [360] }`. `frame` and `horizon` are the manifest's; `alphaGz` is the base64 of the package's `windows/<id>.alpha.gz` bytes.
+- `sun`: `{ fresnel: [101] }` (amended 7 October: β and `skyFlux` are gone).
+- `windows`: the five windows in order, each `{ id, frame: [21], alphaGz, horizon: [360] }`. `frame` and `horizon` are the manifest's; `alphaGz` is the base64 of the package's `windows/<id>.alpha.gz` bytes.
 - `sampleDepths`: the 256 values of `windows._sample_depth(vol, np.arange(256, dtype=np.uint8))`, the march's per-sample optical depth for each alpha byte, as floats. Every window has the same cell size: assert that the five arrays are equal, then write W1's. R1b's twin must compute the same table bit for bit.
-- `sunArea`: `{ azimuth0, elevation0, size: [columns, rows], entries, cases }` from the package. `cases` are the eight `windowRays.suns`, each `{ sun, area: [5] }` with `area = reference.sunlit_glass_area(model, sun)` (gated, without the glass transmission). `entries` holds every node that a case's lookup reads (the four corners `windows.sun_area_at` picks from each window's azimuth and elevation), each node once, as `{ index: row × columns + column, values: [5] }` with the five windows' table values. The `sunny_morning` setting's sun is the first case, so its nodes are there too.
-- `windowRays`: `{ suns: [[x, y, z] × 8], points: [[x, y, z] × 96], visibility: [[v × 8] × 96], steps: [[n × 8] × 96], wallFace: [[p, k] × n] }`.
-  - The suns: the `sunny_morning` setting's `sunDir` first, then the five suns of `check-sun` (`CHECK_SUNS` through `common.solar_position` and `common.sun_vec_e57`), then two of `_random_suns(common, 2, SPLAT_SEED + 2)`.
-  - The points: the 64 splats' positions, then 32 points of `check-sun`'s floor grid (5 cm spacing, `z = FLOOR_Z + 0.02`), drawn with `np.random.default_rng(SPLAT_SEED)`: 12 lit at the sunny-morning sun (visibility > 0.3), 12 marched but dark there (steps > 0, visibility < 0.01), and 8 whose first sample, at some of the eight suns, lies on the room side of the wall face `y0` between cells of unlike alpha (the `wallFace` cases below; if fewer than 8 exist on the grid, take all there are and record the number in the task report).
+- `skyBounce` (amended 7 October; it replaces `sunArea`): the factored basis's slice the kernel's tests need. `k`, `azimuth0`, `elevation0`, `step`, `size: [columns, rows]` and `grid: { origin, spacing, shape }`, the manifest's `sky`; `floorMean: [[r, g, b] × K]`.
+  - `cases`: one per `windowRays` direction, in its order (nine): `{ dir: [x, y, z], powers: [5], azimuth, elevation, corners: [[row, column, weight] × 4], coefficients: [K] }`. `dir` is the direction as float32 values; `powers` is `reference.window_powers(model, dir)` (float64); `azimuth` and `elevation` are `windows.sun_az_el` of the float32 direction; `corners` are `windows.sun_corners(azimuth0, elevation0, step, (rows, columns), azimuth, elevation)` in its order; `coefficients` is `reference.body_coefficients(model, dir)`.
+  - `nodes`: every coefficient-table node a case reads, once: `{ index: row × columns + column, values }`, `values` the base64 of the node's float32 little-endian `[window][k]` coefficients (5K values).
+  - `fold`: one 0.5 m probe among the vector splats' trilinear corners whose eight 1 m corners all have positive weight (if none exists, the one with the most), `{ probe, corners: [[index, weight] × 8], basis, rgb, cube }`: `probe` its global 0.5 m index; `corners` that probe's row of `sunbounce.trilinear_matrix(origin, spacing, shape, valid, reference.probe_points(model))` (its eight 1 m corners in the matrix's dx, dy, dz order, `index = (ix·ny + iy)·nz + iz` over the 1 m shape, zero weights kept); `basis`, for each corner of positive weight, `{ index, values }`, `values` the base64 of its float16 little-endian `[k][channel][face]` values (18K); `rgb` the `sunny_morning` setting's `sunRgb`; `cube` the 18 values of `reference.to_probes` at that probe of the first case's bounce (`sunbounce.bounce(basis, coefficients)` times `rgb`).
+  - `probeCubes`: `{ sunny_morning, moon_test }`, each the list of every probe in `probes.entries` with that setting's sky bodies' bounce, `{ index, cube }`: `cube` the base64 of float32 little-endian `[channel][face]` (18 values) of `reference.sky_cubes(model, reference.sky_bodies(setting))` at that probe. (The kernel's vector tests take the folded sky bounce from here: the full basis and the patch rays would add 2 MB. The patch rays are held to `cases[].powers` against the staged package in R1b's Task 5.)
+- `windowRays`: `{ suns: [[x, y, z] × 9], points: [[x, y, z] × 96], visibility: [[v × 9] × 96], steps: [[n × 9] × 96], wallFace: [[p, k] × n] }`.
+  - The directions: the `sunny_morning` setting's `sunDir` first, then the five suns of `check-sun` (`CHECK_SUNS` through `common.solar_position` and `common.sun_vec_e57`), then two of `_random_suns(common, 2, SPLAT_SEED + 2)`, then the `moon_test` setting's `moonDir` (R1d amendment A8: nine directions).
+  - The points: the 64 splats' positions, then 32 points of `check-sun`'s floor grid (5 cm spacing, `z = FLOOR_Z + 0.02`), drawn with `np.random.default_rng(SPLAT_SEED)`: 12 lit at the sunny-morning sun (visibility > 0.3), 12 marched but dark there (steps > 0, visibility < 0.01), and 8 whose first sample, at some of the nine directions, lies on the room side of the wall face `y0` between cells of unlike alpha (the `wallFace` cases below; if fewer than 8 exist on the grid, take all there are and record the number in the task report).
   - `visibility[p][k]` and `steps[p][k]` are `windows.sun_visibility(model.volumes, model.horizons, model.fresnel, points, suns[k], steps=...)`, as float32 values and integers.
-  - `wallFace` lists every point–sun pair `[p, k]` with `steps > 0` whose ray starts in the room and whose first sample the bake puts on the room side of `y0`, where the cells on either side of `y0` hold unlike alpha. `y0` is exactly a cell boundary of the occupancy grid, so every marched room ray's first sample sits on it, and float32 rounding puts about 1% of them on the room side. For the owning window `vol` (the first window, in order, whose `windows.ray_survives` is true for that point and sun), compute in float32 exactly as `windows._rays` does: `P32 = np.float32(P)`, `s32 = np.float32(s)`, `tq = (np.float32(vol.y0) - P32[1]) / s32[1]`, `Q = P32 + s32 * tq`, the first cell `c = np.floor((Q - vol.grid_lo) / np.float32(vol.res)).astype(np.int64)` (grid indices), and `iy0 = int(round((vol.y0 - float(vol.grid_lo[1])) / vol.res))`. The pair is listed when `c[1] >= iy0` and the alphas at grid cells `(c[0], iy0 - 1, c[2])` and `(c[0], iy0, c[2])` differ (a cell outside the box reads 0).
-- The gates must not hang on the last bit of an arcsine (numpy's and the browser's may differ there): for each of the eight suns and every window, assert that the sun's elevation lies more than 1e-6° from that window's horizon at its azimuth (`windows.sun_az_el` from the float32 sun, `windows.horizon_at`). Replace a random sun that fails with the next one `_random_suns` draws.
+  - `wallFace` lists every point–direction pair `[p, k]` with `steps > 0` whose ray starts in the room and whose first sample the bake puts on the room side of `y0`, where the cells on either side of `y0` hold unlike alpha. `y0` is exactly a cell boundary of the occupancy grid, so every marched room ray's first sample sits on it, and float32 rounding puts about 1% of them on the room side. For the owning window `vol` (the first window, in order, whose `windows.ray_survives` is true for that point and direction), compute in float32 exactly as `windows._rays` does: `P32 = np.float32(P)`, `s32 = np.float32(s)`, `tq = (np.float32(vol.y0) - P32[1]) / s32[1]`, `Q = P32 + s32 * tq`, the first cell `c = np.floor((Q - vol.grid_lo) / np.float32(vol.res)).astype(np.int64)` (grid indices), and `iy0 = int(round((vol.y0 - float(vol.grid_lo[1])) / vol.res))`. The pair is listed when `c[1] >= iy0` and the alphas at grid cells `(c[0], iy0 - 1, c[2])` and `(c[0], iy0, c[2])` differ (a cell outside the box reads 0).
+- The gates must not hang on the last bit of an arcsine (numpy's and the browser's may differ there): for each of the nine directions and every window, assert that the direction's elevation lies more than 1e-6° from that window's horizon at its azimuth (`windows.sun_az_el` from the float32 direction, `windows.horizon_at`). Replace a random sun that fails with the next one `_random_suns` draws; the `moon_test` direction is fixed (R1d's A7 checked it above every window's horizon at its azimuth: 32.3° against 14–22°).
 - `probes`: `{ origin, spacing, shape, entries }` on the package's global grid. `origin`, `spacing` and `shape` are the manifest's `probes`, never a local block around the splats (a splat outside the grid is clamped to the global grid's edge, and R1b checks hidden splats too). Each entry is `{ index, valid, cube }`: `index` is the global linear index `(ix·ny + iy)·nz + iz` over `shape`; `valid` is that probe's validity; `cube` is its 162 float16 values (`[source][channel][face]`, little-endian) in base64. `entries` holds every corner that each vector splat's trilinear lookup touches after clamping: all eight per splat, valid or not, as `reference.trilinear` computes them, each probe once.
 - `presetsFromProof`: `{ night, sunny_morning, overcast_noon }`, as in the manifest.
-- `settings`: `captured`, `night` and `sunny_morning`, each `{ weights: [[r, g, b] × 9], skyLevel, skyColour: [r, g, b], lampLevels: { cove, ch_end, ch_centre, dome }, emitterBoost, sunDir: [x, y, z] or null, sunRgb: [r, g, b] }`. `emitterBoost` is 1 for `captured` and `sunny_morning` and 4 for `night`; R1b compares it exactly.
-- `splats`: 64 finest-level splats chosen across classes (16 interior, 16 embrasure, 8 bulbs, 8 fixtures and cove, 8 sun-reachable floor, 8 hidden), each `{ record, position, colour, expected }`: its 12-byte record as 24 hex digits, its position (e57), its captured linear colour, and `expected` with `captured`, `night` and `sunny_morning`, each `{ m: [r, g, b], alpha, word }` (`word` the packed uint32). The eight sun-reachable floor splats are lit at the sunny-morning sun (`windows.sun_visibility` > 0.3). Every splat with the sun flag must keep its sunny-morning visibility (within 1e-6) when its position moves 1 mm along +x, −x, +y, −y, +z or −z; replace one that does not with the next candidate in the seeded order. R1b finds these splats in the live draw by record and position and holds the GPU's words to them within one code, and the served positions and the GPU's float32 differ from the bake's by far less than 1 mm (amended 3 October).
+- `settings`: `captured`, `night`, `sunny_morning` and `moon_test`, each `{ weights: [[r, g, b] × 9], skyLevel, skyColour: [r, g, b], lampLevels: { cove, ch_end, ch_centre, dome }, emitterBoost, sunDir: [x, y, z] or null, sunRgb: [r, g, b], moonDir: [x, y, z] or null, moonRgb: [r, g, b] }`. `emitterBoost` is 1 for every setting (R1d amendment A1); R1b compares it exactly. `moonDir` is null and `moonRgb` zero in the first three. `moon_test` is not a preset: every lamp at 0 (every lamp weight 0), sky 0, no Sun, `moonDir = common.sun_vec_e57(139.3, 32.3)` (the moonlit preset's full Moon) and `moonRgb` equal to `sunny_morning`'s `sunRgb` (a strong light, so the Moon's march, gates, glass and bounce are exercised above the clamp; R1d amendment A8). No setting carries `lampTints` (the kernel reads ones).
+- `splats`: 64 finest-level splats chosen across classes (16 interior, 16 embrasure, 8 bulbs, 8 fixtures and cove, 8 sun-reachable floor, 8 hidden), each `{ record, position, colour, expected }`: its 12-byte record as 24 hex digits, its position (e57), its captured linear colour, and `expected` with `captured`, `night`, `sunny_morning` and `moon_test`, each `{ m: [r, g, b], alpha, word }` (`word` the packed uint32), computed by `reference.multiplier` with the full model (the sky bounce included) and no visibility. The eight sun-reachable floor splats are lit at the sunny-morning sun (`windows.sun_visibility` > 0.3). Every splat with the sun flag must keep its sunny-morning and `moon_test` visibility (within 1e-6) when its position moves 1 mm along +x, −x, +y, −y, +z or −z; replace one that does not with the next candidate in the seeded order. R1b finds these splats in the live draw by record and position and holds the GPU's words to them within one code, and the served positions and the GPU's float32 differ from the bake's by far less than 1 mm.
 - `floorTexels`: eight texels of `<work>/floor-light.npz`, each `{ col, row, direct }` with `direct = D[row, col, :]` (the nine values in source order; `row` is the PNG row). Spread them over the floor (near the windows and under the lamps), so that every source is non-zero at some of them and no two sources have equal values at all eight. R1b decodes the floor PNGs at these texels (its Task 5), so a source written to the wrong channel fails there.
 
-Keep it under 800 kB (raised from 400 kB on 3 October: the five volumes' gzip takes 261,376 bytes of it in base64, measured from the bake's occupancy). Record `capturedIdentity`, `proofRegression`, `transfer`, `determinism` and `sunArea` in the manifest's `evidence` too.
+Keep it under 1,000 kB (raised from 800 kB on 7 October: the sky slice adds about 150 kB, mostly `probeCubes`; the volumes' gzip takes 261,376 bytes in base64). Record `capturedIdentity`, `proofRegression`, `transfer`, `determinism` and `skyBounceCheck` in the manifest's `evidence` too.
 
 Run: `C:/Python313/python.exe -m relight check --config config/grand-hall.json`
-Expected: `checks.json` with all five `pass: true`, and the fixture written (print its size and the number of `wallFace` pairs). If a check fails, stop and report the numbers.
+Expected: `checks.json` with all five `pass: true`, and the fixture written (print its size, the number of `wallFace` pairs and the `fold` probe's corner count). If a check fails, stop and report the numbers.
 
 - [ ] **Step 8: Commit**
 
@@ -1807,7 +3642,7 @@ Expected: `checks.json` with all five `pass: true`, and the fixture written (pri
 cd D:/claude/real-hall/repo
 git add tools/relight/relight/records.py tools/relight/relight/reference.py tools/relight/relight/package.py tools/relight/relight/__main__.py tools/relight/tests/test_reference.py tools/relight/tests/test_records.py packages/web/src/lib/relight/__fixtures__/relight-vectors.json
 git diff --cached --stat
-git commit -m "feat(relight): records for all 24 tiles, the reference multiplier, checks and test vectors (T-639 R1a)
+git commit -m "feat(relight): records for all 24 tiles, the reference multiplier with both sky bodies, checks and test vectors (T-639 R1a)
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -1818,7 +3653,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `tools/floor-skin/build_floor_skin.py`, `tools/floor-skin/README.md`
 
 **Interfaces:**
-- Consumes: `D:/claude/real-hall/renovation/floor/floor_restored_albedo_2mm.png` and `floor_restored_albedo_mask.png` (the prototype; same grid and mask as Arm C); the fitted floor albedo (`<work>/fit.json`, `group_albedo_mean` for `floor`).
+- Consumes: `D:/claude/real-hall/renovation/floor/floor_restored_albedo_2mm.png` and `floor_restored_albedo_mask.png` (the prototype; same grid and mask as Arm C); the fitted floor albedo of Task 4b's refit (`<work>/fit.json`, `group_albedo_mean` for `floor`; its SHA-256 must equal `<evidence>/refit.json`'s `copied["fit.json"]` and its `model.name` must be `refit`; amended 7 October).
 - Produces: floor skin v2 at `D:/claude/splats/trades-hall/grand-hall/floor-skin/v2/`: `provenance.kind = "restored-albedo"`, `provenance.arm = "R"`, the same `grid`, `plane`, `tiles`, `height` and `slab` as v1, and `colour.albedoScale` (the calibration factor, for R1b).
 
 - [ ] **Step 1: Add arm R and the calibration**
@@ -1833,11 +3668,16 @@ and an option `--albedo-luminance <float>`. With arm R it scales the texture in 
 
 - [ ] **Step 2: Build v2**
 
-Prepare the input folder that the prototype's README ("Plugging into the floor-skin package") describes: the restored PNG and mask under the arm R names, next to copies of the Arm C inputs' `floor.json` and `floor_height_resid_5cm.png`. Compute the target luminance from `fit.json` (`group_albedo_mean["floor"]` · (0.2126, 0.7152, 0.0722); 0.3218 for the proof's `[0.342, 0.318, 0.348]`), then run:
+Prepare the input folder that the prototype's README ("Plugging into the floor-skin package") describes: the restored PNG and mask under the arm R names, next to copies of the Arm C inputs' `floor.json` and `floor_height_resid_5cm.png`. Compute the target luminance from Task 4b's `fit.json` (the floor's albedo · (0.2126, 0.7152, 0.0722); the refit moves it, so it is read, never typed: the proof's `[0.342, 0.318, 0.348]` gave 0.3218), then run:
 
 ```bash
-cd D:/claude/real-hall/repo && C:/Python313/python.exe tools/floor-skin/build_floor_skin.py --arm R --room grand-hall --floor D:/claude/relight/grand-hall/floor-R-inputs --out D:/claude/splats/trades-hall/grand-hall/floor-skin/v2 --albedo-luminance 0.3218
+cd D:/claude/real-hall/repo
+LUM=$(C:/Python313/python.exe -c "import json; f = json.load(open('D:/claude/relight/grand-hall/work/fit.json')); assert f['model']['name'] == 'refit'; a = f['group_albedo_mean'][f['groups'].index('floor')]; print(round(0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2], 4))")
+echo "floor albedo luminance $LUM"
+C:/Python313/python.exe tools/floor-skin/build_floor_skin.py --arm R --room grand-hall --floor D:/claude/relight/grand-hall/floor-R-inputs --out D:/claude/splats/trades-hall/grand-hall/floor-skin/v2 --albedo-luminance $LUM
 ```
+
+(`fit.json`'s `group_albedo_mean` is a list in `groups` order, `04_fit.py:288`; `floor` is its first group.)
 
 Expected: v2 written; the builder's slab-mask check passes (the mask equals Arm C's); `floor-skin.json` (the builder's manifest name) shows arm R, `restored-albedo` and the scale.
 
@@ -1862,20 +3702,26 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the README**
 
-`tools/relight/README.md`: what the bake makes (link the contract), the commands in order (`proof all`, `windows`, `check-sun`, `probes`, `sun-area`, `floor`, `records`, `check`; amended 3 October), the GPU-lock and D: rules, each step's time on this PC (from the logs), and how to publish.
+`tools/relight/README.md`: what the bake makes (link the contract), the commands in order (`proof all`, `windows`, `check-sun`, `probes`, `floor`, `sun-bounce`; then Task 4b's house-light refit in its staging copy (`refit-house proof`, `refit` twice, `compare`, `install`, the proof's `embrasure-room`, `embrasure-back` and `05_relight.py`, the copied render harness and `07_compare.py metrics`, `photo-gate`, `promote`) and its re-runs of `probes` and `sun-bounce`; `record-artifacts`; `skin-light` (R1c); `records`; `check`; amended 7 October: `sun-area` is gone), the double-run rule, the GPU-lock and D: rules, the packaging rule (exact named artifacts whose SHA-256 their evidence records), each step's time on this PC (from the logs), and how to publish.
 
 - [ ] **Step 2: Teach the publisher nested package folders**
 
-The relight package has subfolders (`tiles/`, `windows/`, `floor/`), and `packages/api/src/scripts/publish-splat-tiles.ts --package` today collects only the files directly inside the version folder. Read the script's `--package` path and its test file `packages/api/src/scripts/__tests__/publish-splat-tiles.test.ts` first, then test first:
+The relight package has subfolders (`tiles/`, `windows/`, `sky/`, `floor/`; `skins/` in v2), and `packages/api/src/scripts/publish-splat-tiles.ts --package` today collects only the files directly inside the version folder. Read the script's `--package` path and its test file `packages/api/src/scripts/__tests__/publish-splat-tiles.test.ts` first, then test first:
 
-1. Add tests: a package folder with `manifest.json`, `tiles/a.relight.gz`, `windows/W1.alpha.gz` and `floor/light-0.png` publishes all four under the prefix with their relative paths (`<prefix>/tiles/a.relight.gz`); `.gz` objects are uploaded with `Content-Type: application/octet-stream` and no `Content-Encoding` (the browser gunzips them itself; a `Content-Encoding: gzip` header would make the browser decompress twice); `.png` gets `image/png` and `.json` `application/json`; every object keeps the immutable cache header the script already sets.
+1. Add tests: a package folder with `manifest.json`, `tiles/a.relight.gz`, `windows/W1.alpha.gz`, `sky/basis.bin.gz` and `floor/light-0.png` publishes all five under the prefix with their relative paths (`<prefix>/tiles/a.relight.gz`); `.gz` objects are uploaded with `Content-Type: application/octet-stream` and no `Content-Encoding` (the browser gunzips them itself; a `Content-Encoding: gzip` header would make the browser decompress twice); `.png` gets `image/png` and `.json` `application/json`; every object keeps the immutable cache header the script already sets.
 2. Run them and see them fail: `pnpm --filter @omnitwin/api exec vitest run src/scripts/__tests__/publish-splat-tiles.test.ts`.
 3. Make the file collection recursive (relative paths with `/` separators) and the content types as above, changing nothing else.
 4. Run the same command and see them pass; commit with explicit pathspecs.
 
 - [ ] **Step 3: Publish both packages to R2**
 
-The R2 credentials stay in `packages/api/.env`, so run this worktree's publisher script (the one Step 2 changed) with the working directory set to the shared checkout's `packages/api`, where the script reads `.env` in place, as I1a did; never copy `.env`. Use the flags `tools/floor-skin/README.md` documents for publishing a package version (`--package` with the staged folder and the R2 prefix); the publisher refuses to overwrite an existing version. Publish `D:/claude/splats/trades-hall/grand-hall/relight/v1` to `splats/trades-hall/grand-hall/relight/v1`, and `…/floor-skin/v2` to `splats/trades-hall/grand-hall/floor-skin/v2`. Then check one file of each:
+The R2 credentials stay in `packages/api/.env`, so run this worktree's publisher script (the one Step 2 changed) with the working directory set to the shared checkout's `packages/api`, where the script reads `.env` in place, as I1a did; never copy `.env`. Use the flags `tools/floor-skin/README.md` documents for publishing a package version (`--package` with the staged folder and the R2 prefix); the publisher refuses to overwrite an existing version. Before publishing, check that the relight folder holds exactly the files its manifest names (the packaging rule, 7 October: a stray or stale file is never published):
+
+```bash
+C:/Python313/python.exe -c "import json, os; root = 'D:/claude/splats/trades-hall/grand-hall/relight/v1'; m = json.load(open(root + '/manifest.json')); have = {os.path.relpath(os.path.join(d, f), root).replace(os.sep, '/') for d, _s, fs in os.walk(root) for f in fs}; want = set(m['files']) | {'manifest.json'}; print('extra', sorted(have - want), 'missing', sorted(want - have))"
+```
+
+Expected: `extra [] missing []`. Publish `D:/claude/splats/trades-hall/grand-hall/relight/v1` to `splats/trades-hall/grand-hall/relight/v1`, and `…/floor-skin/v2` to `splats/trades-hall/grand-hall/floor-skin/v2`. Then check one file of each:
 
 ```bash
 curl -sI https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats/trades-hall/grand-hall/relight/v1/manifest.json | grep -iE "^HTTP|content-type|cache-control"
@@ -1886,7 +3732,7 @@ Expected: 200, a JSON content type, immutable caching.
 
 - [ ] **Step 4: Record and commit**
 
-Add a section to the day's session log: what was baked, the seven checks with their numbers (the sun check against the proof, sun bounce, sun area table, captured identity, proof regression, transfer, determinism), sizes and times, and the R2 paths. Update T-639's row in `docs/state/tasks.md` (R1a done; R1b next).
+Add a section to the day's session log: what was baked, the checks with their numbers (the sun check against the proof with its Moon coverage; the sky-body bounce's gate on its three draws, with K; the house-light refit's acceptance: data cost ratio, lamp ratio, the night photographs at stations 43 and 45; captured identity, proof regression, transfer, determinism, the sky bounce through the package), each artifact's SHA-256 (`evidence/*.json`), sizes and times, and the R2 paths. Update T-639's row in `docs/state/tasks.md` (R1a done; R1b next).
 
 ```bash
 cd D:/claude/real-hall/repo
@@ -1902,6 +3748,9 @@ git push origin claude/real-hall
 
 ## Self-review notes
 
-- Spec coverage: §4.1 sources, window volumes (amended 3 October), captured light and lamp colour → Tasks 2, 3, 5; §4.2 records, probes, window volumes, the sunlit-area table and manifest (including the data the browser needs to refuse a mismatched package: `tileSha256` and counts) → Tasks 1, 3, 4, 5; the floor's restored albedo and its light → Tasks 4, 6; §6 unit tests (codec, window volumes and their march, the sunlit-area table, probes, reference) and the photo-anchored regression against the proof → Tasks 1, 3, 4, 5 (R1b compares with the photographs directly); §8 package size and build-PC rules → Global Constraints and Task 5. The browser (§4.3, the §4.4 web units, §5 and the rest of §6) is plan R1b.
-- The window-volume revision (3 October): the multiplier's V, `reference.py`, the package and the vectors all take the march from `windows.sun_visibility` and the bounce's area from one table (`windows.sun_area_table`, read with `windows.sun_area_at`); R1b's TypeScript twin repeats both in the same float32 and float64 order, and Task 5 Step 7's vectors give it the volumes, the per-sample depths, the area nodes and 96 points' rays at eight suns.
+- Spec coverage: §4.1 sources, window volumes (amended 3 October), captured light and lamp colour (a colour per lamp group from the refit, never a constant; amended 7 October) → Tasks 2, 3, 4b, 5; §4.2 records, probes, window volumes, the sky bodies' bounce basis and manifest (including the data the browser needs to refuse a mismatched package: `tileSha256` and counts) → Tasks 1, 3, 4, 5; the Moon as a light source (3 October) → Tasks 4, 5; the centre chandelier's light → Task 4b; the floor's restored albedo and its light → Tasks 4, 6; §6 unit tests (codec, window volumes and their march, the sky-body basis, probes, the refit, reference) and the photo-anchored regression against the proof → Tasks 1, 3, 4, 4b, 5 (R1b compares with the photographs directly); §8 package size and build-PC rules → Global Constraints and Task 5; R1c's record classes, skins' light and package v2 → Tasks 4c, 5. The browser (§4.3, the §4.4 web units, §5 and the rest of §6) is plan R1b.
+- The window-volume revision (3 October): the multiplier's V, `reference.py`, the package and the vectors all take the march from `windows.sun_visibility`; R1b's TypeScript twin repeats it in the same float32 order, and Task 5 Step 7's vectors give it the volumes, the per-sample depths and 96 points' rays at nine directions.
+- The sky-body revision (7 October): both bodies' bounce is Task 4's factored basis everywhere (`reference.py`, the package's `sky` files, the contract's "The sky bodies' bounce", the vectors' `skyBounce`); P_w's float32 order is the Task 4 report's contract, which R1b's twin and GPU passes repeat.
+- Packaging (7 October): every artifact the package reads is named exactly and checked against the SHA-256 its evidence records (Tasks 4c, 5); the folder published holds exactly the manifest's files (Task 7).
+- Test counts (7 October): Task 4 as built 121; Task 4b 12 (133); Task 4c 6 (139); Task 5's `test_reference` 12 and `test_records` 6 (157 after Task 5).
 - The section "The multiplier" is normative for both plans and matches `reference.py` line for line.
