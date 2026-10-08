@@ -167,3 +167,72 @@ describe("emptyEventInstructions + hasInstructionContent", () => {
     })).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-648: Martyn's Law readiness lives on EventInstructions as an optional,
+// default-free key. An absent key must parse, stay absent and count as empty,
+// because the live sheet path reads raw JSONB without parsing it.
+// ---------------------------------------------------------------------------
+
+describe("EventInstructions.protectedPremises (T-648)", () => {
+  it("parsing a pre-T-648 blob adds no protectedPremises key", () => {
+    const legacy = {
+      specialInstructions: "Fire exits must remain clear.",
+      dayOfContact: null,
+      phaseDeadlines: [],
+      accessNotes: "",
+      accessibility: null,
+      dietary: null,
+      doorSchedule: null,
+    };
+    const parsed = EventInstructionsSchema.parse(legacy);
+    expect("protectedPremises" in parsed).toBe(false);
+    expect(JSON.stringify(parsed)).toBe(JSON.stringify(legacy));
+  });
+
+  it("emptyEventInstructions keeps the same shape as parsing {}", () => {
+    const empty = emptyEventInstructions();
+    expect("protectedPremises" in empty).toBe(false);
+    expect(JSON.stringify(EventInstructionsSchema.parse({}))).toBe(JSON.stringify(empty));
+  });
+
+  it("parses a null and an entered protectedPremises", () => {
+    expect(EventInstructionsSchema.parse({ protectedPremises: null }).protectedPremises).toBeNull();
+    const entered = EventInstructionsSchema.parse({
+      protectedPremises: { dutyLead: { name: "Sarah Kerr" }, procedures: { evacuation: { briefed: true } } },
+    });
+    expect(entered.protectedPremises).toEqual({ dutyLead: { name: "Sarah Kerr" }, procedures: { evacuation: { briefed: true } } });
+  });
+
+  it("rejects a malformed protectedPremises block", () => {
+    expect(EventInstructionsSchema.safeParse({ protectedPremises: { briefingAt: "tonight" } }).success).toBe(false);
+    expect(EventInstructionsSchema.safeParse({ protectedPremises: { procedures: { evacuation: { briefed: "yes" } } } }).success).toBe(false);
+  });
+
+  it("round-trips through ConfigurationMetadataSchema", () => {
+    const parsed = ConfigurationMetadataSchema.parse({
+      instructions: { protectedPremises: { responsiblePerson: "The Trades House of Glasgow" } },
+    });
+    expect(parsed.instructions?.protectedPremises).toEqual({ responsiblePerson: "The Trades House of Glasgow" });
+  });
+
+  it("hasInstructionContent treats an absent key and an empty block as empty", () => {
+    expect(hasInstructionContent(emptyEventInstructions())).toBe(false);
+    expect(hasInstructionContent({ ...emptyEventInstructions(), protectedPremises: null })).toBe(false);
+    expect(hasInstructionContent({ ...emptyEventInstructions(), protectedPremises: {} })).toBe(false);
+    expect(hasInstructionContent({ ...emptyEventInstructions(), protectedPremises: { notes: "  " } })).toBe(false);
+  });
+
+  it("hasInstructionContent counts a block holding only Martyn's Law entries", () => {
+    expect(hasInstructionContent({
+      ...emptyEventInstructions(),
+      protectedPremises: { procedures: { lockdown: { briefed: false } } },
+    })).toBe(true);
+  });
+
+  it("hasInstructionContent accepts a raw JSONB blob with no protectedPremises key", () => {
+    // What resolveInstructions hands over for a layout saved before T-648.
+    const raw = JSON.parse(JSON.stringify(emptyEventInstructions())) as Parameters<typeof hasInstructionContent>[0];
+    expect(hasInstructionContent(raw)).toBe(false);
+  });
+});

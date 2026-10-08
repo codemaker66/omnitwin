@@ -5,6 +5,10 @@ import {
   DietarySummarySchema,
   DoorScheduleSchema,
 } from "./event-requirements.js";
+import {
+  ProtectedPremisesSchema,
+  hasProtectedPremisesContent,
+} from "./protected-premises.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Instructions — the human layer
@@ -108,6 +112,18 @@ export const EventInstructionsSchema = z.object({
    * when the planner hasn't authored a schedule.
    */
   doorSchedule: DoorScheduleSchema.nullable().default(null),
+  /**
+   * Martyn's Law readiness (T-648): what the operator recorded about the
+   * Terrorism (Protection of Premises) Act 2025 procedures for this event.
+   * Prompts only — see protected-premises.ts for the no-claims rule.
+   *
+   * Deliberately `.nullable().optional()` with NO default, unlike the blocks
+   * above: a default would add the key to every parsed blob, change the
+   * sheet's sourceHash for every configuration and force new snapshot
+   * versions nobody asked for. Absent (or null) means nothing was entered,
+   * and the sheet prints "Not set" / "Not checked".
+   */
+  protectedPremises: ProtectedPremisesSchema.nullable().optional(),
 });
 export type EventInstructions = z.infer<typeof EventInstructionsSchema>;
 
@@ -153,6 +169,10 @@ export type PlacedObjectMetadata = z.infer<typeof PlacedObjectMetadataSchema>;
 // Empty-instructions builder — used by tests and by the route handler
 // when a config has no metadata yet. Guarantees the shape is never
 // "partially defaulted" — every field has a deterministic empty value.
+// `protectedPremises` is left out on purpose: its absence IS its empty
+// value, exactly as `EventInstructionsSchema.parse({})` produces it, so an
+// empty blob keeps the same canonical JSON (and sheet sourceHash) it had
+// before the field existed.
 // ---------------------------------------------------------------------------
 
 export function emptyEventInstructions(): EventInstructions {
@@ -168,8 +188,13 @@ export function emptyEventInstructions(): EventInstructions {
 }
 
 /**
- * True if the instructions block contains no actual content. Used by
+ * True if the instructions block contains actual content. Used by
  * renderers to skip the "no instructions" empty state cleanly.
+ *
+ * The live sheet path casts raw configurations.metadata JSONB without
+ * parsing it, so `protectedPremises` may be an absent key; that reads as
+ * empty. A block holding only Martyn's Law entries still counts as
+ * content, otherwise the live sheet would drop them.
  */
 export function hasInstructionContent(i: EventInstructions): boolean {
   if (i.specialInstructions.trim().length > 0) return true;
@@ -179,5 +204,6 @@ export function hasInstructionContent(i: EventInstructions): boolean {
   if (i.accessibility !== null) return true;
   if (i.dietary !== null) return true;
   if (i.doorSchedule !== null) return true;
+  if (hasProtectedPremisesContent(i.protectedPremises)) return true;
   return false;
 }
