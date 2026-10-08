@@ -145,6 +145,30 @@ describe("the date row", () => {
     const places = STAFF_PLACES.filter((place) => place.id !== "diary");
     expect(build("14 nov", { places }).some((group) => group.key === "date")).toBe(false);
   });
+
+  it("answers in place, room by room, once the Diary has been read for that day, and still opens it", () => {
+    const dayAnswer = {
+      iso: "2026-11-14",
+      rooms: [
+        { name: "Grand Hall", lines: ["Confirmed, Fraser wedding, 13:00–23:00"] },
+        { name: "Saloon", lines: ["Free"] },
+      ],
+    };
+    const [date] = build("14 nov", { dayAnswer });
+    expect(date?.rows[0]).toEqual(expect.objectContaining({
+      title: "Saturday 14 November 2026",
+      detail: "Open this day in the Diary",
+      answer: [{ room: "Grand Hall", text: "Confirmed, Fraser wedding, 13:00–23:00" }, { room: "Saloon", text: "Free" }],
+      label: "Saturday 14 November 2026: Grand Hall, Confirmed, Fraser wedding, 13:00–23:00; Saloon, Free. Open this day in the Diary",
+      target: { kind: "href", href: "/diary?date=2026-11-14&goto=2026-11-14", newTab: false },
+    }));
+  });
+
+  it("never shows another day's answer", () => {
+    const [date] = build("15 nov", { dayAnswer: { iso: "2026-11-14", rooms: [{ name: "Saloon", lines: ["Free"] }] } });
+    expect(date?.rows[0]?.answer).toBeUndefined();
+    expect(date?.rows[0]?.detail).toBe("See each room in the Diary");
+  });
 });
 
 describe("client findings", () => {

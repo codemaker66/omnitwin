@@ -192,7 +192,10 @@ test.describe("Find", () => {
     // A date as it was said: the Diary on that day, answering room by room.
     await page.keyboard.press("Control+k");
     await page.keyboard.type("14 nov");
-    await expect.poll(() => activeRow(page)).toBe("Saturday 14 November 2026, See each room in the Diary");
+    // Answered in place from the Diary, room by room, before anything is opened.
+    await expect.poll(() => activeRow(page))
+      .toBe("Saturday 14 November 2026: Grand Hall, Confirmed, Fraser wedding, 13:00–23:00. Open this day in the Diary");
+    await expect(find.locator(".find__answer")).toContainText("Confirmed, Fraser wedding, 13:00–23:00");
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "The Diary" })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Go to date" })).toHaveValue("Saturday 14 November 2026");
