@@ -60,7 +60,7 @@ photograph, flat walls for the relief) and the caption says planning is unaffect
 fetched at a revision (`HALL_SURVEY_REVISION`), raised whenever they are rebuilt in place.
 
 How much of the finish a device carries is `hall-finish.ts`: phones load the half-size photographs
-(0.79 MB instead of 2.79 MB); a software rasteriser, read from the canvas's own WebGL context with
+(0.80 MB instead of 2.79 MB); a software rasteriser, read from the canvas's own WebGL context with
 no probe context, also leaves out the reflection map and the chandeliers' lights for a soft fill.
 
 ## Checks
