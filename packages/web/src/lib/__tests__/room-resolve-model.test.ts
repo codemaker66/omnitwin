@@ -196,7 +196,7 @@ describe("hallSurfacesCaption", () => {
     expect(hallSurfacesLoading(partial)).toBe(false);
     const note = hallSurfacesCaption(partial) ?? "";
     expect(note).toMatch(/could not load/);
-    expect(note).toMatch(/planning is unaffected/);
+    expect(note).toMatch(/planning is unaffected/i);
     for (const phrase of FORBIDDEN_PHRASES) expect(note.toLowerCase()).not.toContain(phrase);
     expect(note).not.toMatch(/%|\bMB\b/);
   });

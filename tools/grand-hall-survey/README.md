@@ -34,7 +34,9 @@ On four cores the whole build takes about two hours, almost all of it projection
 
     bash tools/grand-hall-survey/build.sh <work-dir> packages/web/public/rooms/grand-hall/survey-2026-07-11
 
-Without the second argument nothing outside the work directory is written. Every script runs in
+Without the second argument nothing outside the work directory is written. After publishing,
+raise `HALL_SURVEY_REVISION` in `packages/web/src/components/grand-hall/hall-photos.ts`: the folder
+is cached by browsers for up to a week, and the revision is what tells them the files changed. Every script runs in
 the work directory; `build.sh` shows each command (`$SURVEY` in the scripts' usage lines is this
 folder). Inputs and depth maps already in the work directory are kept, so a rerun after changing a
 later step skips the downloads.

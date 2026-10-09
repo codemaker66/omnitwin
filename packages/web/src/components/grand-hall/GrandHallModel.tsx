@@ -36,7 +36,7 @@ import { HALL_PHOTO_COUNT, HallPhotos } from "./hall-photos.js";
 import { useHallViewStore } from "../../stores/hall-view-store.js";
 import { useHallFinish } from "./hall-finish.js";
 import { createHallMaterials, disposeHallMaterials, HallSectionUniforms } from "./hall-materials.js";
-import { HALL_MOODS, HallMoodUniforms, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
+import { HALL_MAX_FRAME_STEP, HALL_MOODS, HallMoodUniforms, moodBlendStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_WALLS, HALL_ELEVATION, type HallWall } from "./hall-spec.js";
 
 /** How the planner is looking at the room; "auto" decides from the camera. */
@@ -195,7 +195,7 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   const quality = qualityOverride ?? deviceFinish.photoQuality;
   const resources = useMemo(() => createResources(quality, HALL_MOODS[mood]), [quality]);
   // The mood resources were created with is applied directly; later moods blend.
-  const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number } | null>(null);
+  const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const settledMood = useRef<HallMoodName>(mood);
   const cutState = useRef<number[]>([HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none, HALL_CUTS.none]);
   const capRefs = useRef<(import("three").Mesh | null)[]>([]);
@@ -242,7 +242,7 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
   // Start a blend whenever the requested mood changes.
   useEffect(() => {
     if (mood === settledMood.current && blend.current === null) return;
-    blend.current = { from: resources.mood.snapshot(HALL_MOODS[settledMood.current]), to: HALL_MOODS[mood], t: 0 };
+    blend.current = { from: resources.mood.snapshot(HALL_MOODS[settledMood.current]), to: HALL_MOODS[mood], t: 0, started: false };
     settledMood.current = mood;
     invalidate();
   }, [invalidate, mood, resources]);
@@ -251,7 +251,8 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
     let moving = false;
     const active = blend.current;
     if (active !== null) {
-      active.t = Math.min(1, active.t + delta / Math.max(0.05, moodSeconds));
+      active.t = Math.min(1, active.t + moodBlendStep(delta, !active.started) / Math.max(0.05, moodSeconds));
+      active.started = true;
       resources.mood.apply(active.from, active.to, moodEase(active.t));
       state.gl.toneMappingExposure = resources.mood.exposure;
       if (active.t >= 1) blend.current = null;
@@ -272,7 +273,8 @@ export function GrandHallModel({ mood, view, quality: qualityOverride, overviewC
         && (group.visible ? camera[1] < 11.5 : camera[1] < 10.5));
       if (group.visible !== show) { group.visible = show; moving = true; }
     }
-    const damping = 1 - Math.exp(-delta * 7);
+    // Clamped, so the first frame after the demand loop idles eases too.
+    const damping = 1 - Math.exp(-Math.min(delta, HALL_MAX_FRAME_STEP) * 7);
     targets.forEach((target, index) => {
       const current = cutState.current[index] ?? target;
       // Snap across the "no cut" sentinel instead of easing through 100 m.

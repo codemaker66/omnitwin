@@ -2131,7 +2131,7 @@ test.describe("SS++ representative button behavior", () => {
     await page.waitForSelector("[data-testid='cockpit-shell']", { timeout: 20_000 });
 
     // The Grand Hall is drawn as the surveyed room, with its own views and light.
-    const hallView = page.getByRole("toolbar", { name: "Grand Hall view" });
+    const hallView = page.getByRole("group", { name: "Grand Hall view" });
     const candlelight = hallView.getByRole("button", { name: "Candlelight", exact: true });
     await candlelight.click();
     await expect(candlelight).toHaveAttribute("aria-pressed", "true");

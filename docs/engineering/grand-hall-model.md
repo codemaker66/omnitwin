@@ -9,8 +9,9 @@ place the photographs were edited rather than measured.
 
 ## Where it runs
 
-`PlannerScene` mounts `GrandHallModel` and `HallLightRig` when `isModelledGrandHall(space)` (the
-space is named "Grand Hall", the same test as the planner's room variant). The furniture, its
+`PlannerScene` mounts `GrandHallModel` and `HallLightRig` when `useModelledGrandHall()`: the space
+is named "Grand Hall" (the same test as the planner's room variant) and its venue is Trades Hall,
+read once per venue; another venue's room of that name gets the generic room. The furniture, its
 placement and its saved layouts are the planner's own; furniture nameplates now show only over the
 items in hand, in every room (`PlacedFurniture.tsx`). `/dev/grand-hall` (`GrandHallLabPage`,
 development builds only) shows the room alone, posed through a window bridge for headless review.
@@ -45,17 +46,22 @@ photographed room (`lib/capture-display.ts`), which keeps the photographs' mid-t
 
 `HallViewControls` offers Plan, Room and Walk, the three moods and, where the captured room may be
 shown, Capture. `hall-view-store` carries the request; `HallViewDirector` glides the camera through
-the planner's existing transition (reduced motion respected) and Walk uses `InteriorCamera` with
-the hall's own arrival point. The cutaway (`wallCutHeight`) lowers the walls between the camera and
-the room to the dado rail and, in plan, cuts every wall at 3.12 m, above the doors. Gaussian splats
-stay off the public site (`lib/splat-access.ts`), so production shows only the model; where a
-capture fails to load, Capture is disabled and Walk uses the model.
+the planner's existing transition (reduced motion respected; the views wait while a saved viewpoint
+holds the camera) and Walk uses `InteriorCamera` with the hall's own arrival point. The cutaway
+(`wallCutHeight`) lowers the walls between the camera and the room to the dado rail and, in plan,
+cuts every wall at 3.12 m, above the doors. Gaussian splats stay off the public site
+(`lib/splat-access.ts`), so production shows only the model; where a capture fails to load, Capture
+is disabled and Walk uses the model.
 
 The four photographs and the relief stream in after the first frame. `hall-view-store` counts them
 and `RoomResolveCaption` reports "Loading the Grand Hall's surfaces · N of 5" through the shared
-`Activity` indicator; a failure keeps plain colours and says planning is unaffected. Phones and
-software renderers load the half-size photographs (`hallPhotoQuality`), about 0.8 MB instead of
-2.7 MB.
+`Activity` indicator; if one fails, the room is drawn more simply there (a plain colour for a
+photograph, flat walls for the relief) and the caption says planning is unaffected. The files are
+fetched at a revision (`HALL_SURVEY_REVISION`), raised whenever they are rebuilt in place.
+
+How much of the finish a device carries is `hall-finish.ts`: phones load the half-size photographs
+(0.78 MB instead of 2.70 MB); a software rasteriser, read from the canvas's own WebGL context with
+no probe context, also leaves out the reflection map and the chandeliers' lights for a soft fill.
 
 ## Checks
 

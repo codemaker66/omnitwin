@@ -117,6 +117,8 @@ export interface CameraRigProps {
    * interior angle.
    */
   readonly defaultPose?: { readonly position: readonly [number, number, number]; readonly target: readonly [number, number, number] } | null;
+  /** Told each time the opening framing is applied: true when it was `defaultPose`. */
+  readonly onOpeningPose?: (usedDefaultPose: boolean) => void;
 }
 
 interface PlannerCameraPose {
@@ -148,7 +150,7 @@ interface HumanPovDragState {
  * Pan speed scales with zoom distance (closer = slower, further = faster).
  * Camera target is clamped to room bounds with a small margin.
  */
-export function CameraRig({ dimensions, smoothControls = true, suspended = false, captureUnavailableKey = null, defaultPose = null }: CameraRigProps): React.ReactElement {
+export function CameraRig({ dimensions, smoothControls = true, suspended = false, captureUnavailableKey = null, defaultPose = null, onOpeningPose }: CameraRigProps): React.ReactElement {
   const { camera, gl, invalidate, size } = useThree();
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
@@ -194,6 +196,8 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   // failure has a separate one-shot overview and must not reset on resize.
   const aspect = size.width / Math.max(size.height, 1);
   const openingPose = aspect >= 1.2 ? defaultPose : null;
+  const onOpeningPoseRef = useRef(onOpeningPose);
+  onOpeningPoseRef.current = onOpeningPose;
   const target = useMemo(
     () => openingPose?.target ?? computeCameraTarget(stableDimensions, aspect),
     [openingPose, stableDimensions, aspect],
@@ -204,6 +208,8 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     const [x, y, z] = openingPose?.position ?? computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
+    // A glide under way still owns where the camera ends up.
+    if (useBookmarkStore.getState().transition === null) onOpeningPoseRef.current?.(openingPose !== null);
     invalidate();
   }, [camera, stableDimensions, target, aspect, invalidate, captureUnavailableKey, openingPose]);
   useEffect(() => { previouslySuspended.current = suspended; }, [suspended]);
@@ -739,14 +745,15 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     controls.target.set(interpTarget[0], interpTarget[1], interpTarget[2]);
     controls.update();
 
+    // A finished glide hands the camera on: into the saved viewpoint it flew
+    // to, or back to the orbit.
+    const arrive = (): void => {
+      if (store.activeReferenceId !== null) enterHumanPovMode();
+      else controls.enabled = true;
+    };
     if (done) {
-      const shouldEnterHumanPov = store.activeReferenceId !== null;
       store.clearTransition();
-      if (shouldEnterHumanPov) {
-        enterHumanPovMode();
-      } else {
-        controls.enabled = true;
-      }
+      arrive();
     } else {
       const active = store.transition;
       // A glide started outside a frame (a view button, say) first draws after
@@ -754,12 +761,13 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       const firstFrame = transitionClockOwner.current !== active.fromPosition;
       transitionClockOwner.current = active.fromPosition;
       if (!store.updateTransition(firstFrame ? 0 : frameDelta)) {
-        // A long frame (a slow device, a shader compiling) can carry the
-        // glide past its end before it is drawn there: land on the destination
-        // instead of stopping wherever the last drawn frame left the camera.
+        // The step that completes the glide ends it in the store, so this
+        // frame lands it: a long frame (a slow device, a shader compiling)
+        // must not leave the camera wherever the last drawn frame put it.
         camera.position.set(active.toPosition[0], active.toPosition[1], active.toPosition[2]);
         controls.target.set(active.toTarget[0], active.toTarget[1], active.toTarget[2]);
         controls.update();
+        arrive();
       }
       invalidate();
     }

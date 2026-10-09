@@ -306,6 +306,26 @@ describe("Grand Hall wall relief", () => {
     else view.setUint32(indicesAt, vertexCount, true);
     expect(() => parseWallRelief(bytes)).toThrow(/index/);
   });
+
+  it("rejects a range that is not a span of finite numbers, and a wall given twice", () => {
+    const nan = shippedReliefBytes();
+    new DataView(nan).setFloat32(8 + 24, Number.NaN, true);
+    expect(() => parseWallRelief(nan)).toThrow(/range/);
+    const flat = shippedReliefBytes();
+    const view = new DataView(flat);
+    view.setFloat32(8 + 28, view.getFloat32(8 + 24, true), true);
+    expect(() => parseWallRelief(flat)).toThrow(/range/);
+    // The second wall renamed as the first.
+    const twice = shippedReliefBytes();
+    const first = new Uint8Array(twice, 8, 12).slice();
+    const vertexCount = new DataView(twice).getUint32(8 + 12, true);
+    const triangleCount = new DataView(twice).getUint32(8 + 16, true);
+    const indexBytes = new DataView(twice).getUint32(8 + 20, true);
+    const afterVertices = (8 + 48 + vertexCount * 6 + 3) & ~3;
+    const second = (afterVertices + triangleCount * 3 * indexBytes + 3) & ~3;
+    new Uint8Array(twice, second, 12).set(first);
+    expect(() => parseWallRelief(twice)).toThrow(/twice/);
+  });
 });
 
 describe("Grand Hall geometry", () => {

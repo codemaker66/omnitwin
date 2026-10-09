@@ -47,11 +47,13 @@ def main():
     for remote, local in wanted:
         fetch(f"{BASE}/{remote}", local)
         expected = hashes.get(remote)
-        if expected is not None and sha256(local) != expected:
+        # A file the manifest does not vouch for is not an input.
+        status = "NO HASH IN MANIFEST" if expected is None else "ok" if sha256(local) == expected else "HASH MISMATCH"
+        if status != "ok":
             failed.append(remote)
-        print("ok" if remote not in failed else "HASH MISMATCH", remote)
+        print(status, remote)
     if failed:
-        sys.exit(f"{len(failed)} files do not match the manifest's hashes")
+        sys.exit(f"{len(failed)} files are not the manifest's")
 
 
 if __name__ == "__main__":

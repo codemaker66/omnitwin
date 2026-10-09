@@ -30,9 +30,13 @@ describe("HallViewControls", () => {
     expect(useHallViewStore.getState().viewRequest?.preset).toBe("room");
   });
 
-  it("holds the walk while a saved viewpoint owns the camera", () => {
+  it("holds every view while a saved viewpoint owns the camera", () => {
     render(<HallViewControls captureAvailable={false} povActive />);
-    expect(screen.getByTestId<HTMLButtonElement>("planner-walk-toggle").disabled).toBe(true);
+    for (const id of ["hall-view-plan", "hall-view-room", "planner-walk-toggle"]) {
+      expect(screen.getByTestId<HTMLButtonElement>(id).disabled).toBe(true);
+    }
+    // The light is not the camera's: it stays free.
+    expect(screen.getByTestId<HTMLButtonElement>("hall-mood-evening").disabled).toBe(false);
   });
 
   it("changes the light and shows which light is on", () => {

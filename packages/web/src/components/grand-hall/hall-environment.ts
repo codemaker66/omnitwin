@@ -4,8 +4,9 @@
 // Varnished floorboards, gilt frames, brass and the chandeliers' gilt reflect
 // the room around them. A tiny stand-in of the hall — dark dado, ivory
 // plaster, the uplit frieze band, the warm ceiling, the windows' sky and five
-// bright chandeliers — is rendered once into a pre-filtered environment map
-// whenever the mood settles. It costs one small cube render, not a frame.
+// bright chandeliers — is rendered into a pre-filtered environment map
+// whenever the mood changes. It costs one small cube render, not a frame, and
+// reuses one texture, so no material is rebuilt for a new mood.
 // ---------------------------------------------------------------------------
 
 import {
@@ -18,9 +19,8 @@ import {
   Scene,
   SphereGeometry,
   Vector3,
-  type Texture,
 } from "three";
-import { MeshBasicNodeMaterial, type PMREMGenerator, type WebGPURenderer } from "three/webgpu";
+import { MeshBasicNodeMaterial, type PMREMGenerator, type RenderTarget, type WebGPURenderer } from "three/webgpu";
 import { HALL_CHANDELIERS, HALL_ELEVATION, HALL_HALF_LENGTH, HALL_HALF_WIDTH, HALL_HEIGHT, HALL_OPENINGS, hallWall, isWindow, openingTop, wallPoint } from "./hall-spec.js";
 import type { HallMoodSpec } from "./hall-mood.js";
 
@@ -85,22 +85,22 @@ export function createEnvironmentScene(mood: HallMoodSpec): { scene: Scene; disp
 }
 
 /**
- * Renders the stand-in room into a pre-filtered environment texture with
- * `generator` (kept by the caller across moods, so its filters compile once),
- * leaving the renderer's target and state as it found them.
+ * Renders the stand-in room into a pre-filtered environment map with
+ * `generator`, into `target` when given (both kept by the caller across
+ * moods, so the filters compile once and the texture never changes), leaving
+ * the renderer's target and state as it found them. Returns the target.
  */
-export function renderHallEnvironment(renderer: WebGPURenderer, generator: PMREMGenerator, mood: HallMoodSpec): { texture: Texture; dispose: () => void } {
+export function renderHallEnvironment(renderer: WebGPURenderer, generator: PMREMGenerator, mood: HallMoodSpec, target: RenderTarget | null): RenderTarget {
   const { scene, dispose } = createEnvironmentScene(mood);
-  const target = renderer.getRenderTarget();
+  const previousTarget = renderer.getRenderTarget();
   const face = renderer.getActiveCubeFace();
   const mip = renderer.getActiveMipmapLevel();
   const autoClear = renderer.autoClear;
   try {
-    const result = generator.fromScene(scene, 0.035, 0.1, 60, { size: 256, position: new Vector3(0, 1.4, 0) });
-    return { texture: result.texture, dispose: () => { result.dispose(); } };
+    return generator.fromScene(scene, 0.035, 0.1, 60, { size: 256, position: new Vector3(0, 1.4, 0), renderTarget: target });
   } finally {
     dispose();
     renderer.autoClear = autoClear;
-    renderer.setRenderTarget(target, face, mip);
+    renderer.setRenderTarget(previousTarget, face, mip);
   }
 }

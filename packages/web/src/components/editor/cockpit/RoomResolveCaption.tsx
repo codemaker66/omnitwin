@@ -3,7 +3,7 @@ import { ActivityIndicator } from "../../shared/Activity.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { hallSurfacesCaption, hallSurfacesLoading, roomResolveCaption } from "../../../lib/room-resolve-model.js";
-import { isModelledGrandHall } from "../../grand-hall/hall-space.js";
+import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
 import { useHallViewStore } from "../../../stores/hall-view-store.js";
 import "./RoomResolveCaption.css";
 
@@ -20,7 +20,7 @@ export function RoomResolveCaption(): ReactElement {
   const roomName = useEditorStore((s) => s.space?.name ?? null);
   // The drawn Grand Hall needs no capture: unless its capture is shown, the
   // caption reports the hall's own surveyed surfaces arriving instead.
-  const modelledHall = useEditorStore((s) => isModelledGrandHall(s.space));
+  const modelledHall = useModelledGrandHall();
   const surfaces = useHallViewStore((s) => s.surfaces);
   const drawnHall = modelledHall && layerMode !== "splat";
   const caption = drawnHall ? hallSurfacesCaption(surfaces)

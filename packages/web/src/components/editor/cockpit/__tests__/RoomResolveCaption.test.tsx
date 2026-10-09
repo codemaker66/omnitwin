@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { SpaceSchema } from "@omnitwin/types";
 import { RoomResolveCaption } from "../RoomResolveCaption.js";
+
+// The space's venue is Trades Hall here; reading it is the API's job.
+vi.mock("../../../../hooks/use-trades-hall-venue.js", () => ({ useTradesHallVenue: () => true }));
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useHallViewStore } from "../../../../stores/hall-view-store.js";

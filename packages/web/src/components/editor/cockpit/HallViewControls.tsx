@@ -30,7 +30,7 @@ const MOODS: readonly { readonly id: HallMoodName; readonly label: string; reado
 export interface HallViewControlsProps {
   /** Whether this device may show the captured room at all. */
   readonly captureAvailable: boolean;
-  /** Whether a saved viewpoint holds the camera (walking must wait). */
+  /** Whether a saved viewpoint holds the camera (the views must wait). */
   readonly povActive: boolean;
 }
 
@@ -52,11 +52,12 @@ export function HallViewControls({ captureAvailable, povActive }: HallViewContro
   const pressedView: HallViewPreset | null = walkMode ? "walk" : activePreset === "walk" ? null : activePreset;
 
   return (
-    <div className="cockpit-layer-controls hall-view-controls" role="toolbar" aria-label="Grand Hall view">
+    <div className="cockpit-layer-controls hall-view-controls" role="group" aria-label="Grand Hall view">
       <div className="hall-view-controls__group" role="group" aria-label="View">
         {VIEWS.map(({ id, label, hint, Icon }) => {
           const pressed = pressedView === id;
-          const disabled = id === "walk" && povActive;
+          // A saved viewpoint owns the camera until it is left (Esc).
+          const disabled = povActive;
           return (
             <button
               key={id}
@@ -64,7 +65,7 @@ export function HallViewControls({ captureAvailable, povActive }: HallViewContro
               className={pressed ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
               aria-pressed={pressed}
               disabled={disabled}
-              title={disabled ? "Leave the saved viewpoint before walking the hall" : id === "walk" && walkMode ? "Back to the room (Esc)" : hint}
+              title={disabled ? "Leave the saved viewpoint first (Esc)" : id === "walk" && walkMode ? "Back to the room (Esc)" : hint}
               data-testid={id === "walk" ? "planner-walk-toggle" : `hall-view-${id}`}
               onClick={() => {
                 recordPlannerArrivalChoice();

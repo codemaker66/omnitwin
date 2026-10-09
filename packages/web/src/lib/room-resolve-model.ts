@@ -81,8 +81,9 @@ export interface HallSurfacesProgress {
 
 /**
  * The drawn Grand Hall's own caption: real counts while its surveyed
- * surfaces stream in, a lasting note if any could not load (the room keeps
- * its plain colours there), and silence once everything has arrived.
+ * surfaces stream in, a lasting note if any could not load (a missing
+ * photograph leaves its surface one plain colour, a missing relief leaves the
+ * walls flat), and silence once everything has arrived.
  */
 export function hallSurfacesCaption(progress: HallSurfacesProgress | null): string | null {
   if (progress === null || progress.total <= 0) return null;
@@ -90,7 +91,7 @@ export function hallSurfacesCaption(progress: HallSurfacesProgress | null): stri
   if (settled < progress.total) {
     return `Loading the Grand Hall's surfaces · ${String(progress.loaded)} of ${String(progress.total)}`;
   }
-  if (progress.failed > 0) return "Some of the hall's surfaces could not load. Plain colours are shown; planning is unaffected.";
+  if (progress.failed > 0) return "Some of the hall's surfaces could not load, so parts of the room are drawn more simply. Planning is unaffected.";
   return null;
 }
 

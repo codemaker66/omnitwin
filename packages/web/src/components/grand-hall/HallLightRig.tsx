@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { Color, type DirectionalLight, type HemisphereLight, type PointLight } from "three";
-import { HALL_MOODS, HallMoodUniforms, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
+import { HALL_MOODS, HallMoodUniforms, moodBlendStep, moodEase, type HallMoodName, type HallMoodSpec } from "./hall-mood.js";
 import { HallEnvironment } from "./HallEnvironment.js";
 import { HALL_CHANDELIERS } from "./hall-spec.js";
 import { CHANDELIER_POWER, chandelierScale } from "./hall-lighting-model.js";
@@ -55,14 +55,14 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish }: HallLightRigPr
     created.apply(HALL_MOODS[settled.current], HALL_MOODS[settled.current], 1);
     return created;
   }, []);
-  const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number } | null>(null);
+  const blend = useRef<{ from: HallMoodSpec; to: HallMoodSpec; t: number; started: boolean } | null>(null);
   const lights = useRef<(PointLight | null)[]>([]);
   const daylight = useRef<DirectionalLight | null>(null);
   const fill = useRef<HemisphereLight | null>(null);
 
   useEffect(() => {
     if (mood === settled.current) return;
-    blend.current = { from: uniforms.snapshot(HALL_MOODS[settled.current]), to: HALL_MOODS[mood], t: 0 };
+    blend.current = { from: uniforms.snapshot(HALL_MOODS[settled.current]), to: HALL_MOODS[mood], t: 0, started: false };
     settled.current = mood;
     invalidate();
   }, [invalidate, mood, uniforms]);
@@ -70,7 +70,8 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish }: HallLightRigPr
   useFrame((_, delta) => {
     const active = blend.current;
     if (active !== null) {
-      active.t = Math.min(1, active.t + delta / Math.max(0.05, moodSeconds));
+      active.t = Math.min(1, active.t + moodBlendStep(delta, !active.started) / Math.max(0.05, moodSeconds));
+      active.started = true;
       uniforms.apply(active.from, active.to, moodEase(active.t));
       if (active.t >= 1) blend.current = null;
       else invalidate();
@@ -100,7 +101,8 @@ export function HallLightRig({ mood, moodSeconds = 1.6, finish }: HallLightRigPr
           distance={0}
         />
       )) : <hemisphereLight ref={fill} />}
-      <directionalLight ref={daylight} position={[1.5, 6, -14]} target-position={[0, 0, 2]} />
+      {/* Aimed at the centre of the room, where its unadded target stays. */}
+      <directionalLight ref={daylight} position={[1.5, 6, -14]} />
       {liveLight && <HallEnvironment mood={mood} />}
     </group>
   );

@@ -150,6 +150,20 @@ export class HallMoodUniforms {
 
 const scratch = new Color();
 
+/** The longest frame a blend or an easing advances by, in seconds. */
+export const HALL_MAX_FRAME_STEP = 0.05;
+
+/**
+ * How far a mood blend advances in one frame. Its first frame does not
+ * advance: on demand rendering that frame's delta is the idle gap before the
+ * click, not time spent blending. Later frames advance by at most
+ * HALL_MAX_FRAME_STEP, so a frame that stalls (a shader compiling) cannot
+ * skip the blend.
+ */
+export function moodBlendStep(delta: number, firstFrame: boolean): number {
+  return firstFrame ? 0 : Math.min(Math.max(delta, 0), HALL_MAX_FRAME_STEP);
+}
+
 /** Smooth ease for mood transitions: gentle at both ends. */
 export function moodEase(t: number): number {
   const k = Math.max(0, Math.min(1, t));

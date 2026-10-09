@@ -16,10 +16,10 @@
 // Positions are wall-local: u along the wall, v up, depth into the room.
 // ---------------------------------------------------------------------------
 
-import { HALL_PHOTO_BASE } from "./hall-photos.js";
+import { hallSurveyUrl } from "./hall-photos.js";
 import { HALL_WALLS, type HallWallId } from "./hall-spec.js";
 
-export const WALL_RELIEF_URL = `${HALL_PHOTO_BASE}/walls-relief.bin`;
+export const WALL_RELIEF_URL = hallSurveyUrl("walls-relief.bin");
 
 export interface WallReliefMesh {
   readonly wall: HallWallId;
@@ -58,12 +58,18 @@ export function parseWallRelief(buffer: ArrayBuffer): WallRelief {
     if (offset + HEADER_BYTES > buffer.byteLength) fail("truncated header");
     const id = new TextDecoder("ascii").decode(new Uint8Array(buffer, offset, 12)).replace(/\0+$/, "");
     if (!isWallId(id)) fail(`unknown wall "${id}"`);
+    if (walls.has(id)) fail(`wall "${id}" twice`);
     const vertexCount = view.getUint32(offset + 12, true);
     const triangleCount = view.getUint32(offset + 16, true);
     const indexBytes = view.getUint32(offset + 20, true);
     if (indexBytes !== 2 && indexBytes !== 4) fail(`index size ${String(indexBytes)}`);
     if (indexBytes === 2 && vertexCount > 65536) fail("16-bit indices for too many vertices");
     const ranges = [0, 1, 2, 3, 4, 5].map((i) => view.getFloat32(offset + 24 + i * 4, true));
+    for (let axis = 0; axis < 3; axis++) {
+      const lo = ranges[axis * 2] ?? Number.NaN;
+      const hi = ranges[axis * 2 + 1] ?? Number.NaN;
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) fail(`range ${String(lo)}..${String(hi)}`);
+    }
     offset += HEADER_BYTES;
     const vertexBytes = vertexCount * 6;
     const indexTotal = triangleCount * 3 * indexBytes;

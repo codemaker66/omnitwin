@@ -11,7 +11,7 @@ import "./CanvasLayerControls.css";
 import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
 import { interiorInputBlocked } from "../../rooms/interior-camera-input.js";
 import { gaussianSplatsAvailable } from "../../../lib/splat-access.js";
-import { isModelledGrandHall } from "../../grand-hall/hall-space.js";
+import { useModelledGrandHall } from "../../grand-hall/hall-space.js";
 import { HallViewControls } from "./HallViewControls.js";
 
 const SPLAT_WORK_IN_PROGRESS = "Gaussian splats · Work in progress";
@@ -72,7 +72,7 @@ export function CanvasLayerControls({ embedded = false }: { readonly embedded?: 
   const povActive = useBookmarkStore((s) => s.activeReferenceId !== null);
   const walkAvailable = useMemo(() => walkAvailableForSlug(spaceSlug), [spaceSlug]);
   const walkDisabled = !splatsAvailable || !walkAvailable || povActive;
-  const modelledHall = useEditorStore((s) => isModelledGrandHall(s.space));
+  const modelledHall = useModelledGrandHall();
 
   // Escape leaves the room. Listening only while walking keeps this from
   // shadowing the rig's own Escape duties (tours, POV exit), none of which

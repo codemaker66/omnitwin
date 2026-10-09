@@ -122,7 +122,10 @@ function wallTexel(photos: HallPhotos) {
 function relitPhoto(photos: HallPhotos, kind: HallPhotoKind, mood: HallMoodUniforms) {
   const sample = kind === "walls" ? wallTexel(photos) : photos.sample(kind, uv());
   const image = sample.rgb;
-  const lit = image.mul(bakedIrradiance(mood).div(scanIrradiance().max(vec3(0.06))));
+  // (baked + k) / (scan + k): exactly 1 under the scan's own light, so
+  // Daylight is the photograph, and finite where the bake is nearly dark.
+  const k = float(0.06);
+  const lit = image.mul(bakedIrradiance(mood).add(k).div(scanIrradiance().add(k)));
   if (kind !== "walls") return lit;
   // Glazing seen between the curtains is the view out, not a lit surface: it
   // follows the daylight alone, falling to dusk blue and then dark. The

@@ -536,6 +536,37 @@ describe("CameraRig view glides", () => {
     expect(harness.camera?.position.distanceTo(new Vector3(...destination.position))).toBeLessThan(0.05);
   });
 
+  it("reports which opening framing it applied", () => {
+    useCockpitStore.setState({ layerMode: "mesh" });
+    const pose = { position: [10.2, 12.6, 13.2] as const, target: [0, 0.6, 0] as const };
+    const landscape = vi.fn();
+    const { unmount } = render(<CameraRig dimensions={dimensions} defaultPose={pose} onOpeningPose={landscape} />);
+    expect(landscape).toHaveBeenLastCalledWith(true);
+    for (const axis of [0, 1, 2] as const) expect(harness.camera?.position.getComponent(axis)).toBeCloseTo(pose.position[axis], 6);
+    unmount();
+    harness.size = { width: 600, height: 900 };
+    const portrait = vi.fn();
+    render(<CameraRig dimensions={dimensions} defaultPose={pose} onOpeningPose={portrait} />);
+    expect(portrait).toHaveBeenLastCalledWith(false);
+  });
+
+  it("enters the saved viewpoint once its glide lands", () => {
+    useCockpitStore.setState({ layerMode: "mesh" });
+    const eye = { id: "saved-eye", name: "By the fireplace", kind: "reference" as const,
+      position: [2, 1.6, 3] as const, target: [0, 1.5, 0] as const };
+    useBookmarkStore.setState({ bookmarks: [eye] });
+    render(<CameraRig dimensions={dimensions} />);
+    tick();
+    act(() => { useBookmarkStore.getState().requestNavigation(eye.id); });
+    for (let frame = 0; frame < 300; frame++) tick(1 / 60);
+    expect(useBookmarkStore.getState().transition).toBeNull();
+    expect(useBookmarkStore.getState().activeReferenceId).toBe(eye.id);
+    // The viewpoint owns the camera, as after an instant (reduced-motion) arrival.
+    expect(harness.controls?.enabled).toBe(false);
+    expect(harness.camera?.position.x).toBeCloseTo(eye.position[0], 2);
+    expect(harness.camera?.position.z).toBeCloseTo(eye.position[2], 2);
+  });
+
   it("lands on the destination when one long frame carries the glide past its end", () => {
     useCockpitStore.setState({ layerMode: "mesh" });
     render(<CameraRig dimensions={dimensions} />);

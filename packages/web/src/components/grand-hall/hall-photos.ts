@@ -26,6 +26,18 @@ import { texture as textureNode } from "three/tsl";
 /** Where the survey's images are published (dated by the capture). */
 export const HALL_PHOTO_BASE = "/rooms/grand-hall/survey-2026-07-11";
 
+/**
+ * Raised whenever the survey's files are rebuilt in place. The folder is
+ * served with an hour's cache and a week's stale-while-revalidate, so a new
+ * build must never meet an old atlas or relief kept by a browser.
+ */
+export const HALL_SURVEY_REVISION = 1;
+
+/** A survey file's URL, at this revision. */
+export function hallSurveyUrl(file: string): string {
+  return `${HALL_PHOTO_BASE}/${file}?r=${String(HALL_SURVEY_REVISION)}`;
+}
+
 export type HallPhotoKind = "walls" | "floor" | "ceiling" | "dome";
 
 /** Number of photographs the hall loads. */
@@ -35,10 +47,10 @@ export const HALL_PHOTO_COUNT = 4;
 export function hallPhotoFiles(quality: number): Readonly<Record<HallPhotoKind, string>> {
   const full = quality >= 0.75;
   return {
-    walls: `${HALL_PHOTO_BASE}/walls-${full ? "4096" : "2048"}.webp`,
-    floor: `${HALL_PHOTO_BASE}/floor-${full ? "2560" : "1280"}.webp`,
-    ceiling: `${HALL_PHOTO_BASE}/ceiling-${full ? "3072" : "1536"}.webp`,
-    dome: `${HALL_PHOTO_BASE}/dome-${full ? "4096" : "2048"}.webp`,
+    walls: hallSurveyUrl(`walls-${full ? "4096" : "2048"}.webp`),
+    floor: hallSurveyUrl(`floor-${full ? "2560" : "1280"}.webp`),
+    ceiling: hallSurveyUrl(`ceiling-${full ? "3072" : "1536"}.webp`),
+    dome: hallSurveyUrl(`dome-${full ? "4096" : "2048"}.webp`),
   };
 }
 

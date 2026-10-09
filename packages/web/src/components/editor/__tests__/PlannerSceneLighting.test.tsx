@@ -46,6 +46,7 @@ vi.mock("../../grand-hall/GrandHallModel.js", () => ({
 }));
 // Reflections need a native renderer; the rig's lights are what this checks.
 vi.mock("../../grand-hall/HallEnvironment.js", () => ({ HallEnvironment: () => null }));
+vi.mock("../../../hooks/use-trades-hall-venue.js", () => ({ useTradesHallVenue: () => true }));
 vi.mock("../../grand-hall/hall-finish.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../grand-hall/hall-finish.js")>(),
   useHallFinish: () => finishState,

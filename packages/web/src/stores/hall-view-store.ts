@@ -23,7 +23,7 @@ export interface HallViewRequest {
 interface HallViewState {
   readonly mood: HallMoodName;
   readonly viewRequest: HallViewRequest | null;
-  /** The framing the camera last settled into, for the switcher's state. */
+  /** The framing last asked for or opened in, shown pressed until the camera is turned by hand. */
   readonly activePreset: HallViewPreset | null;
   /** The drawn hall's surveyed surfaces arriving, while it is mounted. */
   readonly surfaces: HallSurfacesProgress | null;

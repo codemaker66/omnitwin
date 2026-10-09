@@ -48,6 +48,9 @@ export function HallViewDirector(): null {
     const store = useHallViewStore.getState();
     const cockpit = useCockpitStore.getState();
     if (request.preset === "walk") {
+      // A glide still under way would hand the camera back to the orbit on
+      // its next frame (any bookmark camera ends a walk): stop it first.
+      useBookmarkStore.setState({ transition: null, pendingNavigationId: null });
       cockpit.setWalkMode(true);
       store.clearViewRequest(request.nonce);
       invalidate();
