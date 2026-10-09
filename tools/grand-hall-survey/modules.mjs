@@ -1,7 +1,7 @@
 // Resolves the libraries these tools use from the workspace packages that
 // already depend on them, so the survey needs no install of its own.
 import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const web = createRequire(new URL("../../packages/web/package.json", import.meta.url));
@@ -18,8 +18,10 @@ export const playwright = async () => {
   const module = await load(web, "@playwright/test");
   return module.chromium !== undefined ? module : module.default;
 };
-export const three = () => load(web, "three");
-export const meshBvh = () => load(drei, "three-mesh-bvh");
+/** Three's ES module build: importing its CommonJS main would hide the named exports. */
+export const three = () => import(pathToFileURL(join(threeDirectory(), "build", "three.module.js")).href);
+/** three-mesh-bvh's ES module source, which imports that same build of three. */
+export const meshBvh = () => import(pathToFileURL(join(dirname(drei.resolve("three-mesh-bvh/package.json")), "src", "index.js")).href);
 export const meshoptimizer = () => load(foundry, "meshoptimizer");
 export const gltfCore = () => load(foundry, "@gltf-transform/core");
 export const gltfExtensions = () => load(foundry, "@gltf-transform/extensions");
